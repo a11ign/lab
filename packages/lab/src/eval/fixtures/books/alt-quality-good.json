@@ -1,0 +1,250 @@
+{
+  "url": "file:///C:/Users/borem/a11y-witness/src/eval/pages/books/alt-quality-good.html",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T16:02:30.451Z",
+  "transcript": [
+    "heading, level 1, Quarterly results",
+    "Our revenue grew steadily through the year.",
+    "graphic, Revenue rose from $2M in Q 1 to $5M in Q 4, roughly tripling over the year",
+    "Meet the team behind the numbers.",
+    "graphic, The five-person finance team standing together in the office lobby"
+  ],
+  "structure": {
+    "headings": [
+      "Quarterly results, heading, level 1"
+    ],
+    "landmarks": [],
+    "formFields": [],
+    "graphics": [
+      "Revenue rose from $2M in Q 1 to $5M in Q 4, roughly tripling over the year, graphic",
+      "The five-person finance team standing together in the office lobby, graphic"
+    ],
+    "links": [],
+    "lists": [],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [],
+    "stateChanges": [],
+    "formChanges": [],
+    "postSubmitFields": [],
+    "focusOrder": []
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 131,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/books/alt-quality-good.html",
+      "captures": 22
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 879,
+      "ok": true,
+      "waitedMs": 748
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 1081,
+      "x": 0,
+      "y": 0,
+      "ms": 202
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 1081,
+      "ok": true,
+      "reused": true,
+      "captures": 23
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 1675,
+      "alive": true,
+      "heard": "heading, level 1, Quarterly results"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 2333,
+      "ok": true,
+      "title": "Quarterly results (descriptive alt text)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 7918,
+      "lastSpoken": "heading, level 1, Quarterly results"
+    },
+    {
+      "event": "readThrough",
+      "atMs": 10133,
+      "count": 5,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 11204,
+      "type": "heading",
+      "found": 1,
+      "prevMs": 755,
+      "nextMs": 316,
+      "prevTrips": 5,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Quarterly results, heading, level 1",
+      "nextStopPhrase": "",
+      "phrases": [
+        "Quarterly results, heading, level 1"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 12779,
+      "type": "landmark",
+      "found": 0,
+      "prevMs": 299,
+      "nextMs": 1275,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 13329,
+      "type": "formField",
+      "found": 0,
+      "prevMs": 279,
+      "nextMs": 271,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "structural",
+      "atMs": 13329,
+      "headings": 1,
+      "landmarks": 0,
+      "formFields": 0,
+      "roundTrips": 20
+    },
+    {
+      "event": "sweep",
+      "atMs": 14545,
+      "type": "graphic",
+      "found": 2,
+      "prevMs": 284,
+      "nextMs": 932,
+      "prevTrips": 3,
+      "nextTrips": 7,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "The five-person finance team standing together in the office lobby, graphic",
+      "phrases": [
+        "Revenue rose from $2M in Q 1 to $5M in Q 4, roughly tripling over the year, graphic",
+        "The five-person finance team standing together in the office lobby, graphic"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 15093,
+      "type": "link",
+      "found": 0,
+      "prevMs": 276,
+      "nextMs": 272,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 15706,
+      "type": "list",
+      "found": 0,
+      "prevMs": 302,
+      "nextMs": 311,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "interaction",
+      "atMs": 15706,
+      "controls": 0,
+      "stateChanges": 0,
+      "formChanges": 0,
+      "postSubmit": 0,
+      "sweepLog": []
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 15718,
+      "landmark": 0,
+      "heading": 1,
+      "link": 0,
+      "graphic": 2,
+      "graphicUnnamed": 0,
+      "names": [
+        "Quarterly results (descriptive alt text)",
+        "Quarterly results",
+        "Revenue rose from $2M in Q1 to $5M in Q4, roughly tripling over the year",
+        "The five-person finance team standing together in the office lobby",
+        "Quarterly results",
+        "Our revenue grew steadily through the year.",
+        "Meet the team behind the numbers.",
+        "Quarterly results",
+        "Our revenue grew steadily through the year.",
+        "Meet the team behind the numbers."
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 15718,
+      "agrees": true,
+      "compared": 4,
+      "disagreements": []
+    },
+    {
+      "event": "done",
+      "atMs": 15718,
+      "transcript": 5
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 15719
+    }
+  ],
+  "task": "Review the quarterly results",
+  "environment": {
+    "measuredAt": "2026-08-04T16:02:30.453Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}

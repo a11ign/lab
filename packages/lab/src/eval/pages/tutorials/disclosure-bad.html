@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>FAQ (broken disclosure)</title></head>
+<body style="font-family:system-ui;max-width:40rem;margin:2rem auto">
+<h1>FAQ</h1>
+<!-- BUG: reveals the panel but never updates aria-expanded, so the state
+     change is not conveyed to screen-reader users (4.1.2). -->
+<button id="t" aria-expanded="false" aria-controls="panel"
+  onclick="document.getElementById('panel').hidden=false;">
+  How do I reset my password?
+</button>
+<div id="panel" hidden><p>Use the reset link on the sign-in page.</p></div>
+</body></html>

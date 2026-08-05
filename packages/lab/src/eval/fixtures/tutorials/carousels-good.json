@@ -1,0 +1,277 @@
+{
+  "url": "tutorial: carousels-good (authored from W3C guidance)",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T15:59:05.523Z",
+  "transcript": [
+    "heading, level 1, Acme store",
+    "Featured products, carousel, heading, level 2, Featured",
+    "button, Previous slide, graphic, Acme running shoe, side view, button, Next slide"
+  ],
+  "structure": {
+    "headings": [
+      "Featured, heading, level 2",
+      "Acme store, heading, level 1",
+      "Featured products, carousel, Featured, heading, level 2"
+    ],
+    "landmarks": [],
+    "formFields": [
+      "Previous slide, button",
+      "Next slide, button"
+    ],
+    "graphics": [
+      "Acme running shoe, side view, graphic"
+    ],
+    "links": [],
+    "lists": [],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [
+      "Previous slide, button",
+      "Next slide, button"
+    ],
+    "stateChanges": [],
+    "formChanges": [],
+    "postSubmitFields": [],
+    "focusOrder": []
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 54,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/tutorials/carousels-good.html",
+      "captures": 12
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 813,
+      "ok": true,
+      "waitedMs": 759
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 986,
+      "x": 0,
+      "y": 0,
+      "ms": 173
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 987,
+      "ok": true,
+      "reused": true,
+      "captures": 13
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 1576,
+      "alive": true,
+      "heard": "heading, level 1, Acme store"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 2150,
+      "ok": true,
+      "title": "Acme - Featured (accessible carousel, observable parts)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 8020,
+      "lastSpoken": "heading, level 1, Acme store"
+    },
+    {
+      "event": "readThrough",
+      "atMs": 9555,
+      "count": 3,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 11167,
+      "type": "heading",
+      "found": 3,
+      "prevMs": 1009,
+      "nextMs": 603,
+      "prevTrips": 7,
+      "nextTrips": 5,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Acme store, heading, level 1",
+      "nextStopPhrase": "Featured products, carousel, Featured, heading, level 2",
+      "phrases": [
+        "Featured, heading, level 2",
+        "Acme store, heading, level 1",
+        "Featured products, carousel, Featured, heading, level 2"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 11699,
+      "type": "landmark",
+      "found": 0,
+      "prevMs": 263,
+      "nextMs": 269,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 13669,
+      "type": "formField",
+      "found": 2,
+      "prevMs": 1055,
+      "nextMs": 915,
+      "prevTrips": 3,
+      "nextTrips": 7,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "Next slide, button",
+      "phrases": [
+        "Previous slide, button",
+        "Next slide, button"
+      ]
+    },
+    {
+      "event": "structural",
+      "atMs": 13669,
+      "headings": 3,
+      "landmarks": 0,
+      "formFields": 2,
+      "roundTrips": 28
+    },
+    {
+      "event": "sweep",
+      "atMs": 14573,
+      "type": "graphic",
+      "found": 1,
+      "prevMs": 624,
+      "nextMs": 280,
+      "prevTrips": 5,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Acme running shoe, side view, graphic",
+      "nextStopPhrase": "",
+      "phrases": [
+        "Acme running shoe, side view, graphic"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 15130,
+      "type": "link",
+      "found": 0,
+      "prevMs": 288,
+      "nextMs": 269,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 15692,
+      "type": "list",
+      "found": 0,
+      "prevMs": 289,
+      "nextMs": 273,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "interaction",
+      "atMs": 15692,
+      "controls": 2,
+      "stateChanges": 0,
+      "formChanges": 0,
+      "postSubmit": 0,
+      "sweepLog": []
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 15710,
+      "landmark": 1,
+      "heading": 2,
+      "link": 0,
+      "graphic": 1,
+      "graphicUnnamed": 0,
+      "names": [
+        "Acme - Featured (accessible carousel, observable parts)",
+        "Acme store",
+        "Featured products",
+        "Acme store",
+        "Featured",
+        "Previous slide",
+        "Acme running shoe, side view",
+        "Next slide",
+        "Acme store",
+        "Featured",
+        "Previous slide",
+        "Next slide",
+        "Featured",
+        "Previous slide",
+        "Next slide"
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 15710,
+      "agrees": false,
+      "compared": 4,
+      "disagreements": [
+        {
+          "type": "heading",
+          "sweep": 3,
+          "elementsList": 2,
+          "kind": "phantom"
+        },
+        {
+          "type": "landmark",
+          "sweep": 0,
+          "elementsList": 1,
+          "kind": "truncated"
+        }
+      ]
+    },
+    {
+      "event": "done",
+      "atMs": 15710,
+      "transcript": 3
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 15711
+    }
+  ],
+  "task": "Browse the featured products",
+  "environment": {
+    "measuredAt": "2026-08-04T15:59:05.524Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}

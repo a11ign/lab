@@ -1,0 +1,258 @@
+{
+  "url": "tutorial: disclosure-good",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T15:59:39.307Z",
+  "transcript": [
+    "heading, level 1, FAQ",
+    "button, collapsed, How do I reset my password?"
+  ],
+  "structure": {
+    "headings": [
+      "FAQ, heading, level 1"
+    ],
+    "landmarks": [],
+    "formFields": [
+      "How do I reset my password?, button, collapsed"
+    ],
+    "graphics": [],
+    "links": [],
+    "lists": [],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [
+      "How do I reset my password?, button, collapsed"
+    ],
+    "stateChanges": [
+      {
+        "control": "How do I reset my password?, button, collapsed",
+        "after": "How do I reset my password?, button, focused, expanded"
+      }
+    ],
+    "formChanges": [],
+    "postSubmitFields": [],
+    "focusOrder": []
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 99,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/tutorials/disclosure-good.html",
+      "captures": 14
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 992,
+      "ok": true,
+      "waitedMs": 893
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 1180,
+      "x": 0,
+      "y": 0,
+      "ms": 188
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 1181,
+      "ok": true,
+      "reused": true,
+      "captures": 15
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 1749,
+      "alive": true,
+      "heard": "heading, level 1, FAQ"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 2432,
+      "ok": true,
+      "title": "FAQ (working disclosure)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 8164,
+      "lastSpoken": "heading, level 1, FAQ"
+    },
+    {
+      "event": "readThrough",
+      "atMs": 9377,
+      "count": 2,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 10270,
+      "type": "heading",
+      "found": 1,
+      "prevMs": 615,
+      "nextMs": 278,
+      "prevTrips": 5,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "FAQ, heading, level 1",
+      "nextStopPhrase": "",
+      "phrases": [
+        "FAQ, heading, level 1"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 10828,
+      "type": "landmark",
+      "found": 0,
+      "prevMs": 281,
+      "nextMs": 277,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 16089,
+      "type": "formField",
+      "found": 1,
+      "prevMs": 275,
+      "nextMs": 4986,
+      "prevTrips": 3,
+      "nextTrips": 5,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "How do I reset my password?, button, collapsed",
+      "phrases": [
+        "How do I reset my password?, button, collapsed"
+      ]
+    },
+    {
+      "event": "structural",
+      "atMs": 16089,
+      "headings": 1,
+      "landmarks": 0,
+      "formFields": 1,
+      "roundTrips": 22
+    },
+    {
+      "event": "sweep",
+      "atMs": 16687,
+      "type": "graphic",
+      "found": 0,
+      "prevMs": 304,
+      "nextMs": 294,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 17263,
+      "type": "link",
+      "found": 0,
+      "prevMs": 303,
+      "nextMs": 273,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 17844,
+      "type": "list",
+      "found": 0,
+      "prevMs": 291,
+      "nextMs": 290,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "formProbe",
+      "atMs": 17845,
+      "activated": 0
+    },
+    {
+      "event": "interaction",
+      "atMs": 17845,
+      "controls": 1,
+      "stateChanges": 1,
+      "formChanges": 0,
+      "postSubmit": 0,
+      "sweepLog": [
+        "disclosure \"How do I reset my password?, button, col\" announced=\"expanded\" state=\"How do I reset my password?, button, focused, expanded\""
+      ]
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 17865,
+      "landmark": 0,
+      "heading": 1,
+      "link": 0,
+      "graphic": 0,
+      "graphicUnnamed": 0,
+      "names": [
+        "FAQ (working disclosure)",
+        "FAQ",
+        "How do I reset my password?",
+        "FAQ",
+        "How do I reset my password?",
+        "FAQ",
+        "How do I reset my password?",
+        "Use the reset link on the sign-in page.",
+        "Use the reset link on the sign-in page."
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 17865,
+      "agrees": true,
+      "compared": 4,
+      "disagreements": []
+    },
+    {
+      "event": "done",
+      "atMs": 17865,
+      "transcript": 2
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 17865
+    }
+  ],
+  "task": "Expand the FAQ answer about resetting a password",
+  "environment": {
+    "measuredAt": "2026-08-04T15:59:39.309Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}

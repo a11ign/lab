@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Acme - Featured (inaccessible carousel, observable parts)</title>
+<style>body{font-family:system-ui,sans-serif;max-width:42rem;margin:2rem auto} .fakeheading{font-size:1.5rem;font-weight:700;margin:1.2rem 0 .4rem} .iconbtn{border:0;background:#eee;padding:.4rem} nav ul{list-style:none;display:flex;gap:1rem;padding:0}</style>
+</head>
+<body>
+<h1>Acme store</h1>
+<section>
+  <p class="fakeheading">Featured</p>
+  <!-- previous/next as unnamed icon buttons -> 4.1.2 -->
+  <button type="button" class="iconbtn"><svg width="18" height="18" aria-hidden="true" focusable="false"><polygon points="12,2 4,9 12,16"></polygon></svg></button>
+  <!-- slide image with no alt -> 1.1.1 -->
+  <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==">
+  <button type="button" class="iconbtn"><svg width="18" height="18" aria-hidden="true" focusable="false"><polygon points="6,2 14,9 6,16"></polygon></svg></button>
+</section>
+</body>
+</html>

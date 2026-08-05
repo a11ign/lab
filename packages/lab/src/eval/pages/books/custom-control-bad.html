@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Settings (custom controls without names or roles)</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:42rem;margin:2rem auto}
+.btn{display:inline-block;padding:.4rem .8rem;background:#1452cc;color:#fff;border-radius:.3rem;cursor:pointer}
+.icon-btn{border:0;background:none;cursor:pointer}
+</style>
+</head>
+<body>
+<h1>Settings</h1>
+
+<!-- A div styled as a button: no role, so it is announced as plain text, not an operable button -->
+<div class="btn" onclick="save()">Save changes</div>
+
+<!-- An icon-only button with no accessible name: announced as "button" with an empty name -->
+<button class="icon-btn" onclick="search()"><svg width="20" height="20" aria-hidden="true"><circle cx="9" cy="9" r="6" fill="none" stroke="currentColor"/></svg></button>
+
+<script>function save(){} function search(){}</script>
+</body>
+</html>

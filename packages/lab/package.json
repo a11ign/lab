@@ -1,0 +1,15 @@
+{
+  "name": "@a11y-witness/lab",
+  "version": "0.1.0",
+  "description": "Internal: the eval harness, the training corpus pipeline, the release gates and the analysis programs. Never published.",
+  "license": "AGPL-3.0-or-later",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@a11y-witness/evidence": "0.1.0",
+    "@a11y-witness/judge": "0.1.0",
+    "@a11y-witness/scorer": "0.1.0",
+    "@a11y-witness/worker-fleet": "0.1.0",
+    "@a11y-witness/nvda-worker": "0.1.0"
+  }
+}

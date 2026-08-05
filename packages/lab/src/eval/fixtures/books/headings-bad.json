@@ -1,0 +1,264 @@
+{
+  "url": "file:///C:/Users/borem/a11y-witness/src/eval/pages/books/headings-bad.html",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T16:02:14.184Z",
+  "transcript": [
+    "heading, level 1, Welcome",
+    "heading, level 2, Exploring the effects behind the nature of things",
+    "Plain language helps everyone understand your content faster.",
+    "heading, level 2, Everything you need to know about how to get the most out of using our writing platform every",
+    "heading, level 2, single day of the week",
+    "Short sentences and common words reduce cognitive load.",
+    "heading, level 2, Stuff",
+    "To reset your password, open Settings and choose Security."
+  ],
+  "structure": {
+    "headings": [
+      "Stuff, heading, level 2",
+      "Everything you need to know about how to get the most out of using our writing platform every single day of the week, heading, level 2",
+      "Exploring the effects behind the nature of things, heading, level 2",
+      "Welcome, heading, level 1"
+    ],
+    "landmarks": [],
+    "formFields": [],
+    "graphics": [],
+    "links": [],
+    "lists": [],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [],
+    "stateChanges": [],
+    "formChanges": [],
+    "postSubmitFields": [],
+    "focusOrder": []
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 71,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/books/headings-bad.html",
+      "captures": 21
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 786,
+      "ok": true,
+      "waitedMs": 715
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 932,
+      "x": 0,
+      "y": 0,
+      "ms": 146
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 932,
+      "ok": true,
+      "reused": true,
+      "captures": 22
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 1501,
+      "alive": true,
+      "heard": "heading, level 1, Welcome"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 2175,
+      "ok": true,
+      "title": "Plain language guide (non-descriptive headings)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 7923,
+      "lastSpoken": "heading, level 1, Welcome"
+    },
+    {
+      "event": "readThrough",
+      "atMs": 11096,
+      "count": 8,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 14754,
+      "type": "heading",
+      "found": 4,
+      "prevMs": 2441,
+      "nextMs": 1217,
+      "prevTrips": 11,
+      "nextTrips": 9,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Welcome, heading, level 1",
+      "nextStopPhrase": "Stuff, heading, level 2",
+      "phrases": [
+        "Stuff, heading, level 2",
+        "Everything you need to know about how to get the most out of using our writing platform every single day of the week, heading, level 2",
+        "Exploring the effects behind the nature of things, heading, level 2",
+        "Welcome, heading, level 1"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 15338,
+      "type": "landmark",
+      "found": 0,
+      "prevMs": 307,
+      "nextMs": 277,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 15913,
+      "type": "formField",
+      "found": 0,
+      "prevMs": 301,
+      "nextMs": 274,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "structural",
+      "atMs": 15913,
+      "headings": 4,
+      "landmarks": 0,
+      "formFields": 0,
+      "roundTrips": 32
+    },
+    {
+      "event": "sweep",
+      "atMs": 16475,
+      "type": "graphic",
+      "found": 0,
+      "prevMs": 285,
+      "nextMs": 276,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 17063,
+      "type": "link",
+      "found": 0,
+      "prevMs": 306,
+      "nextMs": 282,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 17625,
+      "type": "list",
+      "found": 0,
+      "prevMs": 281,
+      "nextMs": 281,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "interaction",
+      "atMs": 17625,
+      "controls": 0,
+      "stateChanges": 0,
+      "formChanges": 0,
+      "postSubmit": 0,
+      "sweepLog": []
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 17645,
+      "landmark": 0,
+      "heading": 4,
+      "link": 0,
+      "graphic": 0,
+      "graphicUnnamed": 0,
+      "names": [
+        "Plain language guide (non-descriptive headings)",
+        "Welcome",
+        "Exploring the effects behind the nature of things",
+        "Everything you need to know about how to get the most out of using our writing platform every single day of the week",
+        "Stuff",
+        "Welcome",
+        "Exploring the effects behind the nature of things",
+        "Plain language helps everyone understand your content faster.",
+        "Everything you need to know about how to get the most out of using our writing platform every single day of the week",
+        "Short sentences and common words reduce cognitive load.",
+        "Stuff",
+        "To reset your password, open Settings and choose Security.",
+        "Welcome",
+        "Exploring the effects behind the nature of things",
+        "Plain language helps everyone understand your content faster.",
+        "Everything you need to know about how to get the most",
+        "out of using our writing platform every single day of the",
+        "week",
+        "Short sentences and common words reduce cognitive load.",
+        "Stuff",
+        "To reset your password, open Settings and choose Security."
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 17645,
+      "agrees": true,
+      "compared": 4,
+      "disagreements": []
+    },
+    {
+      "event": "done",
+      "atMs": 17645,
+      "transcript": 8
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 17645
+    }
+  ],
+  "task": "Find how to reset your password",
+  "environment": {
+    "measuredAt": "2026-08-04T16:02:14.185Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}

@@ -1,0 +1,57 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { relative, resolve } from "node:path";
+import { CASES } from "./case-matrix.mjs";
+
+const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
+const PAGE_ROOT = resolve(ROOT, "pages");
+
+function writeCasePages(testCase) {
+  const caseRoot = resolve(PAGE_ROOT, testCase.id);
+  mkdirSync(caseRoot, { recursive: true });
+  const files = {};
+  for (const variant of ["good", "bad"]) {
+    const filename = variant + ".html";
+    const absolutePath = resolve(caseRoot, filename);
+    writeFileSync(absolutePath, testCase[variant], "utf8");
+    files[variant] = relative(ROOT, absolutePath);
+  }
+  return files;
+}
+
+function buildManifest() {
+  const generatedCases = CASES.map((testCase) => {
+    const files = writeCasePages(testCase);
+    return {
+      id: testCase.id,
+      family: testCase.family,
+      criterion: testCase.criterion,
+      subtype: testCase.subtype,
+      task: testCase.task,
+      probeForms: testCase.probeForms,
+      probeTables: testCase.probeTables,
+      source: testCase.source,
+      mutation: testCase.mutation,
+      badSignal: testCase.badSignal,
+      pages: files,
+    };
+  });
+  return {
+    schema: "a11y-witness/screen-reader-dataset-manifest",
+    version: 1,
+    generatedAt: new Date().toISOString(),
+    captureBoundary: "NVDA announcements and NVDA-derived navigation/interaction output only",
+    cases: generatedCases,
+  };
+}
+
+function main() {
+  mkdirSync(PAGE_ROOT, { recursive: true });
+  const manifest = buildManifest();
+  const manifestPath = resolve(ROOT, "manifest.json");
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+  console.log("Generated " + manifest.cases.length + " controlled page pairs.");
+  console.log("Manifest: " + manifestPath);
+  console.log("Pages: " + PAGE_ROOT);
+}
+
+main();

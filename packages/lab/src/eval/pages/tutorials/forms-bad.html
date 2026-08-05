@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Newsletter sign-up (inaccessible)</title>
+<style>body{font-family:system-ui,sans-serif;max-width:42rem;margin:2rem auto} .fakeheading{font-size:1.6rem;font-weight:700;margin:1.4rem 0 .4rem} table{border-collapse:collapse} td,th{border:1px solid #999;padding:.3rem .6rem} input{display:block;margin:.2rem 0 .9rem}</style>
+</head>
+<body>
+<h1>Sign up</h1>
+<form>
+  <!-- input with NO label -> 3.3.2 / 4.1.2 -->
+  Email address
+  <input type="text" name="email">
+  <!-- radios with NO fieldset/legend and NO labels -> 4.1.2 / 1.3.1 -->
+  Contact preference
+  <input type="radio" name="pref">
+  <input type="radio" name="pref">
+  <button type="submit">Subscribe</button>
+</form>
+</body>
+</html>

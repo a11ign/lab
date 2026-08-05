@@ -1,0 +1,330 @@
+{
+  "url": "tutorial: forms-good (authored from W3C guidance)",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T15:56:35.738Z",
+  "transcript": [
+    "heading, level 1, Sign up",
+    "form, Email address",
+    "edit",
+    "grouping, Contact preference",
+    "radio button, not checked, Email",
+    "radio button, not checked, Phone",
+    "out of grouping, button, Subscribe",
+    "button, Subscribe"
+  ],
+  "structure": {
+    "headings": [
+      "Sign up, heading, level 1"
+    ],
+    "landmarks": [
+      "form, Email address"
+    ],
+    "formFields": [
+      "Email address, edit",
+      "Contact preference, grouping, Email, radio button, not checked",
+      "Phone, radio button, not checked",
+      "Subscribe, button"
+    ],
+    "graphics": [],
+    "links": [],
+    "lists": [],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [
+      "Email address, edit",
+      "Contact preference, grouping, Email, radio button, not checked",
+      "Phone, radio button, not checked",
+      "Subscribe, button"
+    ],
+    "stateChanges": [],
+    "formChanges": [
+      {
+        "control": "Subscribe, button",
+        "kind": "submit",
+        "after": "Newsletter sign-up (accessible), document"
+      }
+    ],
+    "postSubmitFields": [
+      "form, Email address, edit",
+      "Contact preference, grouping, Email, radio button, not checked",
+      "Phone, radio button, not checked",
+      "Subscribe, button"
+    ],
+    "focusOrder": [],
+    "navigatedOnSubmit": {
+      "from": "http://REDACTED-INTERNAL-ADDRESS:5052/tutorials/forms-good",
+      "to": "http://REDACTED-INTERNAL-ADDRESS:5052/tutorials/forms-good?email="
+    },
+    "postSubmitNames": [
+      "Newsletter sign-up (accessible)",
+      "Sign up",
+      "Sign up",
+      "Email address",
+      "Contact preference",
+      "Subscribe",
+      "Sign up",
+      "Email address",
+      "Email",
+      "Phone",
+      "Subscribe",
+      "Email address",
+      "Contact preference",
+      "Subscribe",
+      "Contact preference"
+    ]
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 78,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/tutorials/forms-good.html",
+      "captures": 4
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 1106,
+      "ok": true,
+      "waitedMs": 1028
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 1330,
+      "x": 0,
+      "y": 0,
+      "ms": 224
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 1330,
+      "ok": true,
+      "reused": true,
+      "captures": 5
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 1911,
+      "alive": true,
+      "heard": "heading, level 1, Sign up"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 2508,
+      "ok": true,
+      "title": "Newsletter sign-up (accessible)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 8731,
+      "lastSpoken": "heading, level 1, Sign up"
+    },
+    {
+      "event": "readThrough",
+      "atMs": 11897,
+      "count": 8,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 13748,
+      "type": "heading",
+      "found": 1,
+      "prevMs": 1570,
+      "nextMs": 281,
+      "prevTrips": 5,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Sign up, heading, level 1",
+      "nextStopPhrase": "",
+      "phrases": [
+        "Sign up, heading, level 1"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 14658,
+      "type": "landmark",
+      "found": 1,
+      "prevMs": 284,
+      "nextMs": 626,
+      "prevTrips": 3,
+      "nextTrips": 5,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "form, Email address",
+      "phrases": [
+        "form, Email address"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 22461,
+      "type": "formField",
+      "found": 4,
+      "prevMs": 293,
+      "nextMs": 7510,
+      "prevTrips": 3,
+      "nextTrips": 19,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "Subscribe, button",
+      "phrases": [
+        "Email address, edit",
+        "Contact preference, grouping, Email, radio button, not checked",
+        "Phone, radio button, not checked",
+        "Subscribe, button"
+      ]
+    },
+    {
+      "event": "structural",
+      "atMs": 22462,
+      "headings": 1,
+      "landmarks": 1,
+      "formFields": 4,
+      "roundTrips": 38
+    },
+    {
+      "event": "sweep",
+      "atMs": 23036,
+      "type": "graphic",
+      "found": 0,
+      "prevMs": 297,
+      "nextMs": 277,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 24338,
+      "type": "link",
+      "found": 0,
+      "prevMs": 1040,
+      "nextMs": 262,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 24881,
+      "type": "list",
+      "found": 0,
+      "prevMs": 278,
+      "nextMs": 265,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "formProbe",
+      "atMs": 24881,
+      "activated": 1
+    },
+    {
+      "event": "sweep",
+      "atMs": 29613,
+      "type": "postSubmit",
+      "found": 4,
+      "prevMs": 269,
+      "nextMs": 1575,
+      "prevTrips": 3,
+      "nextTrips": 11,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "Subscribe, button",
+      "phrases": [
+        "form, Email address, edit",
+        "Contact preference, grouping, Email, radio button, not checked",
+        "Phone, radio button, not checked",
+        "Subscribe, button"
+      ]
+    },
+    {
+      "event": "interaction",
+      "atMs": 29613,
+      "controls": 4,
+      "stateChanges": 0,
+      "formChanges": 1,
+      "postSubmit": 4,
+      "sweepLog": [
+        "submit \"Subscribe, button\" -> \"Newsletter sign-up (accessible), document\""
+      ]
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 29626,
+      "landmark": 1,
+      "heading": 1,
+      "link": 0,
+      "graphic": 0,
+      "graphicUnnamed": 0,
+      "names": [
+        "Newsletter sign-up (accessible)",
+        "Sign up",
+        "Sign up",
+        "Email address",
+        "Contact preference",
+        "Subscribe",
+        "Sign up",
+        "Email address",
+        "Email",
+        "Phone",
+        "Subscribe",
+        "Email address",
+        "Contact preference",
+        "Subscribe",
+        "Contact preference"
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 29627,
+      "agrees": true,
+      "compared": 4,
+      "disagreements": []
+    },
+    {
+      "event": "done",
+      "atMs": 29627,
+      "transcript": 8
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 29627
+    }
+  ],
+  "task": "Sign up for the newsletter",
+  "environment": {
+    "measuredAt": "2026-08-04T15:56:35.740Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}

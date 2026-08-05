@@ -1,0 +1,275 @@
+{
+  "url": "tutorial: tables-good (authored from W3C guidance)",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T15:57:48.935Z",
+  "transcript": [
+    "heading, level 1, Train times",
+    "table, with 3 rows and 3 columns, caption, Weekday departures from Central",
+    "out of caption, row 1, column 1, Destination",
+    "column 2, Departs",
+    "column 3, Platform",
+    "row 2, Destination, column 1, Riverside",
+    "Departs, column 2, 09:15",
+    "Platform, column 3, 2",
+    "row 3, Destination, column 1, Hilltop",
+    "Departs, column 2, 09:40",
+    "Platform, column 3, 5",
+    "5"
+  ],
+  "structure": {
+    "headings": [
+      "Train times, heading, level 1"
+    ],
+    "landmarks": [],
+    "formFields": [],
+    "graphics": [],
+    "links": [],
+    "lists": [],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [],
+    "stateChanges": [],
+    "formChanges": [],
+    "postSubmitFields": [],
+    "focusOrder": []
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 63,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/tutorials/tables-good.html",
+      "captures": 8
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 767,
+      "ok": true,
+      "waitedMs": 704
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 923,
+      "x": 0,
+      "y": 0,
+      "ms": 156
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 924,
+      "ok": true,
+      "reused": true,
+      "captures": 9
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 1486,
+      "alive": true,
+      "heard": "heading, level 1, Train times"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 2163,
+      "ok": true,
+      "title": "Train times (accessible table)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 7829,
+      "lastSpoken": "heading, level 1, Train times"
+    },
+    {
+      "event": "readThrough",
+      "atMs": 13127,
+      "count": 12,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 14029,
+      "type": "heading",
+      "found": 1,
+      "prevMs": 614,
+      "nextMs": 288,
+      "prevTrips": 5,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Train times, heading, level 1",
+      "nextStopPhrase": "",
+      "phrases": [
+        "Train times, heading, level 1"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 14597,
+      "type": "landmark",
+      "found": 0,
+      "prevMs": 289,
+      "nextMs": 279,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 15167,
+      "type": "formField",
+      "found": 0,
+      "prevMs": 291,
+      "nextMs": 278,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "structural",
+      "atMs": 15167,
+      "headings": 1,
+      "landmarks": 0,
+      "formFields": 0,
+      "roundTrips": 20
+    },
+    {
+      "event": "sweep",
+      "atMs": 15727,
+      "type": "graphic",
+      "found": 0,
+      "prevMs": 296,
+      "nextMs": 264,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 16315,
+      "type": "link",
+      "found": 0,
+      "prevMs": 310,
+      "nextMs": 278,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 16859,
+      "type": "list",
+      "found": 0,
+      "prevMs": 274,
+      "nextMs": 270,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "interaction",
+      "atMs": 16859,
+      "controls": 0,
+      "stateChanges": 0,
+      "formChanges": 0,
+      "postSubmit": 0,
+      "sweepLog": []
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 16866,
+      "landmark": 0,
+      "heading": 1,
+      "link": 0,
+      "graphic": 0,
+      "graphicUnnamed": 0,
+      "names": [
+        "Train times (accessible table)",
+        "Train times",
+        "Weekday departures from Central",
+        "Train times",
+        "Train times",
+        "Weekday departures from Central",
+        "Destination",
+        "Departs",
+        "Platform",
+        "Riverside",
+        "09:15",
+        "2",
+        "Hilltop",
+        "09:40",
+        "5",
+        "Weekday departures from Central",
+        "Destination",
+        "Departs",
+        "Platform",
+        "Riverside",
+        "09:15",
+        "2",
+        "Hilltop",
+        "09:40",
+        "5",
+        "Destination",
+        "Departs",
+        "Platform",
+        "Riverside",
+        "09:15",
+        "2",
+        "Hilltop",
+        "09:40",
+        "5"
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 16866,
+      "agrees": true,
+      "compared": 4,
+      "disagreements": []
+    },
+    {
+      "event": "done",
+      "atMs": 16866,
+      "transcript": 12
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 16866
+    }
+  ],
+  "task": "Find which platform the Hilltop train departs from",
+  "environment": {
+    "measuredAt": "2026-08-04T15:57:48.936Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}

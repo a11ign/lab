@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Acme Widgets - Sign up</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; }
+    .fake-heading { font-size: 1.6rem; font-weight: 700; margin: 1.5rem 0 0.5rem; }
+    .iconbtn { border: 0; background: #eee; padding: 0.4rem; }
+    input { display: block; margin: 0.3rem 0 1rem; padding: 0.4rem; width: 100%; }
+  </style>
+</head>
+<body>
+  <!-- Authored fresh for a11y-witness contamination testing. Not derived from any
+       public page or report. Planted violations and correct controls are mixed. -->
+
+  <!-- CORRECT: real h1 -->
+  <h1>Acme Widgets</h1>
+
+  <!-- CORRECT: image with a meaningful alt -->
+  <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==" alt="Acme Widgets company logo">
+
+  <p>Acme Widgets helps small teams track inventory. Create an account to get started.</p>
+
+  <!-- VIOLATION (1.3.1): a visual section title that is not a real heading -->
+  <p class="fake-heading">Why teams choose Acme</p>
+  <p>Fast setup, fair pricing, and friendly support.</p>
+
+  <!-- VIOLATION (1.1.1): informative image with no alt text -->
+  <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==">
+
+  <!-- CORRECT: descriptive link -->
+  <p>Not sure yet? <a href="/pricing">See our pricing plans</a>.</p>
+
+  <!-- VIOLATION (2.4.4): vague link with no clarifying context -->
+  <p>To continue, <a href="/signup">click here</a>.</p>
+
+  <form>
+    <p class="fake-heading">Create your account</p>
+
+    <!-- CORRECT: properly labelled input -->
+    <label for="email">Email address</label>
+    <input id="email" type="email" name="email">
+
+    <!-- VIOLATION (3.3.2 / 4.1.2): text input with no label at all -->
+    <input type="text" name="company">
+
+    <!-- VIOLATION (4.1.2): icon-only button with no accessible name -->
+    <button type="button" class="iconbtn">
+      <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+        <circle cx="10" cy="10" r="8" fill="currentColor"></circle>
+      </svg>
+    </button>
+
+    <!-- CORRECT: a normal labelled submit button -->
+    <button type="submit">Create account</button>
+  </form>
+</body>
+</html>

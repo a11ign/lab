@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Products (filter results not announced)</title>
+<style>body{font-family:system-ui,sans-serif;max-width:42rem;margin:2rem auto} ul{padding-left:1.2rem} button{margin-right:.4rem}</style>
+</head>
+<body>
+<h1>Products</h1>
+
+<p>Filter by category:</p>
+<button type="button" onclick="filter('all')">All</button>
+<button type="button" onclick="filter('shoes')">Shoes</button>
+<button type="button" onclick="filter('bags')">Bags</button>
+
+<!-- The result count changes on filter, but nothing announces it: no live region,
+     no focus move. A screen reader user gets no feedback that anything happened. -->
+<p id="count">Showing 4 of 4 products</p>
+<ul id="results">
+  <li data-cat="shoes">Running shoes</li>
+  <li data-cat="shoes">Hiking boots</li>
+  <li data-cat="bags">Tote bag</li>
+  <li data-cat="bags">Backpack</li>
+</ul>
+
+<script>
+function filter(cat){
+  const items = document.querySelectorAll('#results li');
+  let shown = 0;
+  items.forEach(li => {
+    const vis = cat === 'all' || li.dataset.cat === cat;
+    li.style.display = vis ? '' : 'none';
+    if (vis) shown++;
+  });
+  // Updates the text silently — not in any aria-live region.
+  document.getElementById('count').textContent = `Showing ${shown} of ${items.length} products`;
+}
+</script>
+</body>
+</html>

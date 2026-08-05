@@ -1,0 +1,298 @@
+{
+  "url": "file:///C:/Users/borem/a11y-witness/src/eval/pages/books/custom-control-good.html",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T16:03:19.130Z",
+  "transcript": [
+    "heading, level 1, Settings",
+    "button, Save changes, button, Search"
+  ],
+  "structure": {
+    "headings": [
+      "Settings, heading, level 1"
+    ],
+    "landmarks": [],
+    "formFields": [
+      "Save changes, button",
+      "Search, button"
+    ],
+    "graphics": [],
+    "links": [],
+    "lists": [],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [
+      "Save changes, button",
+      "Search, button"
+    ],
+    "stateChanges": [],
+    "formChanges": [
+      {
+        "control": "Save changes, button",
+        "kind": "submit",
+        "after": ""
+      },
+      {
+        "control": "Search, button",
+        "kind": "submit",
+        "after": ""
+      }
+    ],
+    "postSubmitFields": [
+      "Save changes, button",
+      "Search, button"
+    ],
+    "focusOrder": [],
+    "postSubmitNames": [
+      "Settings (native controls with names and roles)",
+      "Settings",
+      "Save changes",
+      "Search",
+      "Settings",
+      "Save changes",
+      "Settings",
+      "Save changes"
+    ]
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 80,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/books/custom-control-good.html",
+      "captures": 24
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 831,
+      "ok": true,
+      "waitedMs": 751
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 994,
+      "x": 0,
+      "y": 0,
+      "ms": 163
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 994,
+      "ok": true,
+      "reused": true,
+      "captures": 25
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 1568,
+      "alive": true,
+      "heard": "heading, level 1, Settings"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 2134,
+      "ok": true,
+      "title": "Settings (native controls with names and roles)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 8073,
+      "lastSpoken": "heading, level 1, Settings"
+    },
+    {
+      "event": "readThrough",
+      "atMs": 9360,
+      "count": 2,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 10260,
+      "type": "heading",
+      "found": 1,
+      "prevMs": 621,
+      "nextMs": 273,
+      "prevTrips": 5,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Settings, heading, level 1",
+      "nextStopPhrase": "",
+      "phrases": [
+        "Settings, heading, level 1"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 10842,
+      "type": "landmark",
+      "found": 0,
+      "prevMs": 293,
+      "nextMs": 289,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 25780,
+      "type": "formField",
+      "found": 2,
+      "prevMs": 274,
+      "nextMs": 14664,
+      "prevTrips": 3,
+      "nextTrips": 7,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "Search, button",
+      "phrases": [
+        "Save changes, button",
+        "Search, button"
+      ]
+    },
+    {
+      "event": "structural",
+      "atMs": 25780,
+      "headings": 1,
+      "landmarks": 0,
+      "formFields": 2,
+      "roundTrips": 24
+    },
+    {
+      "event": "sweep",
+      "atMs": 26351,
+      "type": "graphic",
+      "found": 0,
+      "prevMs": 297,
+      "nextMs": 274,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 26919,
+      "type": "link",
+      "found": 0,
+      "prevMs": 297,
+      "nextMs": 271,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 27490,
+      "type": "list",
+      "found": 0,
+      "prevMs": 301,
+      "nextMs": 270,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "formProbe",
+      "atMs": 27490,
+      "activated": 2
+    },
+    {
+      "event": "sweep",
+      "atMs": 32173,
+      "type": "postSubmit",
+      "found": 2,
+      "prevMs": 323,
+      "nextMs": 944,
+      "prevTrips": 3,
+      "nextTrips": 7,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "Search, button",
+      "phrases": [
+        "Save changes, button",
+        "Search, button"
+      ]
+    },
+    {
+      "event": "interaction",
+      "atMs": 32173,
+      "controls": 2,
+      "stateChanges": 0,
+      "formChanges": 2,
+      "postSubmit": 2,
+      "sweepLog": [
+        "submit \"Save changes, button\" -> \"\"",
+        "submit \"Search, button\" -> \"\""
+      ]
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 32181,
+      "landmark": 0,
+      "heading": 1,
+      "link": 0,
+      "graphic": 0,
+      "graphicUnnamed": 0,
+      "names": [
+        "Settings (native controls with names and roles)",
+        "Settings",
+        "Save changes",
+        "Search",
+        "Settings",
+        "Save changes",
+        "Settings",
+        "Save changes"
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 32181,
+      "agrees": true,
+      "compared": 4,
+      "disagreements": []
+    },
+    {
+      "event": "done",
+      "atMs": 32181,
+      "transcript": 2
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 32181
+    }
+  ],
+  "task": "Save your settings",
+  "environment": {
+    "measuredAt": "2026-08-04T16:03:19.132Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}

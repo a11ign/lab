@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Acme - Home (inaccessible menu)</title>
+<style>body{font-family:system-ui,sans-serif;max-width:42rem;margin:2rem auto} .fakeheading{font-size:1.5rem;font-weight:700;margin:1.2rem 0 .4rem} .iconbtn{border:0;background:#eee;padding:.4rem} nav ul{list-style:none;display:flex;gap:1rem;padding:0}</style>
+</head>
+<body>
+<div class="nav">
+  <a href="/">Home</a>
+  <a href="/products">Products</a>
+  <!-- fly-out toggle as an unnamed icon button -> 4.1.2 -->
+  <button type="button" class="iconbtn"><svg width="18" height="18" aria-hidden="true" focusable="false"><rect width="18" height="3"></rect></svg></button>
+  <div class="submenu"><a href="/help">Help center</a> <a href="/contact">Contact</a></div>
+</div>
+<div class="content"><p class="fakeheading">Home</p><p>Welcome to Acme.</p></div>
+</body>
+</html>

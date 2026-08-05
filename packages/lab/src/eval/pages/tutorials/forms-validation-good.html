@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Newsletter sign-up</title></head>
+<body style="font-family:system-ui;max-width:40rem;margin:2rem auto">
+<h1>Newsletter sign-up</h1>
+<!-- W3C forms/notifications technique: a live region announces the error the
+     moment it appears, and the message is also tied to the field (aria-describedby
+     + aria-invalid). A screen-reader user is told the submission failed and why,
+     without having to hunt for it. -->
+<div id="status" role="alert" aria-live="assertive"></div>
+<form novalidate onsubmit="return validate(event)">
+  <p>
+    <label for="email">Email address (required)</label><br>
+    <input id="email" name="email" type="email" aria-describedby="email-err">
+    <span id="email-err" style="color:#b00"></span>
+  </p>
+  <button type="submit">Sign up</button>
+</form>
+<script>
+function validate(e){
+  e.preventDefault();
+  var email=document.getElementById('email');
+  var status=document.getElementById('status');
+  var err=document.getElementById('email-err');
+  if(!email.value){
+    err.textContent=' Error: enter your email address.';
+    email.setAttribute('aria-invalid','true');
+    status.textContent='There is a problem. Email address is required.';
+    email.focus();
+  }else{
+    err.textContent='';
+    email.removeAttribute('aria-invalid');
+    status.textContent='Thanks, you are signed up.';
+  }
+  return false;
+}
+</script>
+</body></html>

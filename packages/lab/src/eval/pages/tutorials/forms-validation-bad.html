@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Newsletter sign-up</title></head>
+<body style="font-family:system-ui;max-width:40rem;margin:2rem auto">
+<h1>Newsletter sign-up</h1>
+<!-- The same form, but the error is shown ONLY as red text: no live region, no
+     role, not associated with the field, no focus move. A sighted user sees it;
+     a screen-reader user submits, hears nothing, and has no idea what failed.
+     Fails 3.3.1 Error Identification and 4.1.3 Status Messages. -->
+<form novalidate onsubmit="return validate(event)">
+  <p>
+    <label for="email">Email address (required)</label><br>
+    <input id="email" name="email" type="email">
+    <span id="email-err" style="color:#b00"></span>
+  </p>
+  <button type="submit">Sign up</button>
+</form>
+<script>
+function validate(e){
+  e.preventDefault();
+  var email=document.getElementById('email');
+  var err=document.getElementById('email-err');
+  err.textContent=email.value ? '' : ' Email address is required.';
+  return false;
+}
+</script>
+</body></html>

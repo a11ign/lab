@@ -1,0 +1,297 @@
+{
+  "url": "file:///C:/Users/borem/a11y-witness/src/eval/pages/books/links-good.html",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T16:01:16.366Z",
+  "transcript": [
+    "heading, level 1, City News",
+    "heading, level 2, Heat wave linked to record temperatures",
+    "City scientists agree the primary cause of this summer's heat was hot air.",
+    "link, Read more about the record heat wave",
+    "heading, level 2, New park opens downtown",
+    "More green space arrives at the price of car parking.",
+    "link, Read more about the new downtown park",
+    "heading, level 2, Useful resources",
+    "list, with 2 items, bullet, link, How to keep killer bees away from your garden",
+    "bullet, link, Growing onions in a city window box",
+    "out of list, link, Place your order",
+    "link, Place your order"
+  ],
+  "structure": {
+    "headings": [
+      "Useful resources, heading, level 2",
+      "New park opens downtown, heading, level 2",
+      "Heat wave linked to record temperatures, heading, level 2",
+      "City News, heading, level 1"
+    ],
+    "landmarks": [],
+    "formFields": [],
+    "graphics": [],
+    "links": [
+      "Read more about the new downtown park, link",
+      "Read more about the record heat wave, link",
+      "list, with 2 items, How to keep killer bees away from your garden, link",
+      "Growing onions in a city window box, link",
+      "Place your order, link"
+    ],
+    "lists": [
+      "list, with 2 items, bullet, How to keep killer bees away from your garden"
+    ],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [],
+    "stateChanges": [],
+    "formChanges": [],
+    "postSubmitFields": [],
+    "focusOrder": []
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 84,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/books/links-good.html",
+      "captures": 18
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 811,
+      "ok": true,
+      "waitedMs": 727
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 1095,
+      "x": 0,
+      "y": 0,
+      "ms": 284
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 1096,
+      "ok": true,
+      "reused": true,
+      "captures": 19
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 1698,
+      "alive": true,
+      "heard": "heading, level 1, City News"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 3037,
+      "ok": true,
+      "title": "City News (descriptive link text)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 6801,
+      "lastSpoken": "heading, level 1, City News"
+    },
+    {
+      "event": "readThrough",
+      "atMs": 12482,
+      "count": 12,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 15297,
+      "type": "heading",
+      "found": 4,
+      "prevMs": 1601,
+      "nextMs": 1214,
+      "prevTrips": 11,
+      "nextTrips": 9,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "City News, heading, level 1",
+      "nextStopPhrase": "Useful resources, heading, level 2",
+      "phrases": [
+        "Useful resources, heading, level 2",
+        "New park opens downtown, heading, level 2",
+        "Heat wave linked to record temperatures, heading, level 2",
+        "City News, heading, level 1"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 15873,
+      "type": "landmark",
+      "found": 0,
+      "prevMs": 277,
+      "nextMs": 299,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 16457,
+      "type": "formField",
+      "found": 0,
+      "prevMs": 289,
+      "nextMs": 295,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "structural",
+      "atMs": 16457,
+      "headings": 4,
+      "landmarks": 0,
+      "formFields": 0,
+      "roundTrips": 32
+    },
+    {
+      "event": "sweep",
+      "atMs": 17052,
+      "type": "graphic",
+      "found": 0,
+      "prevMs": 309,
+      "nextMs": 286,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 19677,
+      "type": "link",
+      "found": 5,
+      "prevMs": 1004,
+      "nextMs": 1621,
+      "prevTrips": 7,
+      "nextTrips": 11,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Read more about the record heat wave, link",
+      "nextStopPhrase": "Place your order, link",
+      "phrases": [
+        "Read more about the new downtown park, link",
+        "Read more about the record heat wave, link",
+        "list, with 2 items, How to keep killer bees away from your garden, link",
+        "Growing onions in a city window box, link",
+        "Place your order, link"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 20605,
+      "type": "list",
+      "found": 1,
+      "prevMs": 629,
+      "nextMs": 299,
+      "prevTrips": 5,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "list, with 2 items, bullet, How to keep killer bees away from your garden",
+      "nextStopPhrase": "",
+      "phrases": [
+        "list, with 2 items, bullet, How to keep killer bees away from your garden"
+      ]
+    },
+    {
+      "event": "interaction",
+      "atMs": 20605,
+      "controls": 0,
+      "stateChanges": 0,
+      "formChanges": 0,
+      "postSubmit": 0,
+      "sweepLog": []
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 20628,
+      "landmark": 0,
+      "heading": 4,
+      "link": 5,
+      "graphic": 0,
+      "graphicUnnamed": 0,
+      "names": [
+        "City News (descriptive link text)",
+        "City News",
+        "Useful resources",
+        "City News",
+        "Heat wave linked to record temperatures",
+        "Read more about the record heat wave",
+        "New park opens downtown",
+        "Read more about the new downtown park",
+        "Useful resources",
+        "Place your order",
+        "City News",
+        "Heat wave linked to record temperatures",
+        "City scientists agree the primary cause of this summer's heat was hot air.",
+        "Read more about the record heat wave",
+        "New park opens downtown",
+        "More green space arrives at the price of car parking.",
+        "Read more about the new downtown park",
+        "Useful resources",
+        "•",
+        "How to keep killer bees away from your garden",
+        "•",
+        "Growing onions in a city window box",
+        "Place your order",
+        "Heat wave linked to record temperatures",
+        "City scientists agree the primary cause of this summer's heat was hot air.",
+        "Read more about the record heat wave",
+        "New park opens downtown",
+        "More green space arrives at the price of car parking.",
+        "Read more about the new downtown park",
+        "How to keep killer bees away from your garden",
+        "Growing onions in a city window box",
+        "Place your order",
+        "How to keep killer bees away from your garden",
+        "Growing onions in a city window box"
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 20631,
+      "agrees": true,
+      "compared": 4,
+      "disagreements": []
+    },
+    {
+      "event": "done",
+      "atMs": 20631,
+      "transcript": 12
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 20631
+    }
+  ],
+  "task": "Read the latest city news",
+  "environment": {
+    "measuredAt": "2026-08-04T16:01:16.367Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}

@@ -1,0 +1,263 @@
+/**
+ * Fresh screen-reader acceptance pairs. These are deliberately outside CASES and are
+ * never exported into the training JSONL. They measure generalisation after training.
+ */
+
+const STYLE = "body{font:16px system-ui,sans-serif;line-height:1.5;max-width:48rem;margin:2rem auto;padding:0 1rem}main{display:grid;gap:1rem}img{display:block;max-width:100%;margin:1rem 0}label{display:block;margin-top:.75rem}.fake-heading{font-size:1.4rem;font-weight:700;margin-top:1rem}.error{color:#9b1c1c}.card{border:1px solid #bbb;padding:1rem}[hidden]{display:none}";
+
+// NVDA speaks image filenames rather than spelling punctuation: "orchard-gate-03.jpg"
+// becomes "orchard-gate-03 dot jpg". Keep acceptance signals aligned with the
+// screen-reader transcript instead of the source attribute spelling.
+function spokenForm(text) {
+  return text.replaceAll("_", "[ _]").replaceAll(".", "(?:\\.| dot )");
+}
+
+function page({ title, heading, body, script = "", landmark = true }) {
+  const content = "<h1>" + heading + "</h1>" + body;
+  const container = landmark ? "<main>" + content + "</main>" : content;
+  return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>"
+    + title + "</title><style>" + STYLE + "</style></head><body>" + container
+    + (script ? "<script>" + script + "</script>" : "") + "</body></html>";
+}
+
+function pair({ id, criterion, subtype, task, mutation, badSignal, good, bad, probeForms = false, probeTables = false }) {
+  return {
+    id: "acceptance-" + id,
+    family: "acceptance-" + id,
+    criterion,
+    subtype,
+    task,
+    source: "independent acceptance instrument",
+    mutation,
+    badSignal,
+    probeForms,
+    probeTables,
+    good,
+    bad,
+  };
+}
+
+function imagePair({ id, title, description, file, goodAlt, badAlt, subtype, task }) {
+  const badName = badAlt === null
+    ? "(?:\\ufffc|to get missing image descriptions)"
+    : spokenForm(badAlt);
+  return pair({
+    id,
+    criterion: "1.1.1",
+    subtype,
+    task,
+    mutation: "The informative image loses a meaningful alternative.",
+    badSignal: { type: "regex", pattern: "graphic.*" + badName, flags: "i" },
+    good: page({ title, heading: title, body: "<p>" + description + "</p><img src=\"/" + file + "\" alt=\"" + goodAlt + "\">" }),
+    bad: page({ title, heading: title, body: "<p>" + description + "</p><img src=\"/" + file + "\"" + (badAlt === null ? "" : " alt=\"" + badAlt + "\"") + ">" }),
+  });
+}
+
+function linkPair({ id, title, context, vague, descriptive, task }) {
+  return pair({
+    id,
+    criterion: "2.4.4",
+    subtype: "regex",
+    task,
+    mutation: "The link name does not identify its destination.",
+    badSignal: { type: "regex", pattern: "link[, ]+" + vague + "\\b", flags: "i" },
+    good: page({ title, heading: title, body: "<p>" + context + "</p><a href=\"/destination\">" + descriptive + "</a>" }),
+    bad: page({ title, heading: title, body: "<p>" + context + "</p><a href=\"/destination\">" + vague + "</a>" }),
+  });
+}
+
+function headingPair({ id, title, vague, descriptive, task }) {
+  return pair({
+    id,
+    criterion: "2.4.6",
+    subtype: "regex",
+    task,
+    mutation: "The section heading does not identify its topic.",
+    badSignal: { type: "regex", pattern: "heading.*\\b" + vague.toLowerCase() + "\\b", flags: "i" },
+    good: page({ title, heading: title, body: "<h2>" + descriptive + "</h2><p>The section explains the next step.</p>" }),
+    bad: page({ title, heading: title, body: "<h2>" + vague + "</h2><p>The section explains the next step.</p>" }),
+  });
+}
+
+function landmarkPair({ id, title, label, task }) {
+  return pair({
+    id,
+    criterion: "1.3.1",
+    subtype: "missing-landmark",
+    task,
+    mutation: "A meaningful page region is not exposed as a landmark.",
+    badSignal: { type: "structure-empty", field: "landmarks" },
+    good: page({ title, heading: title, body: "<section aria-label=\"" + label + "\"><h2>" + label + "</h2><p>Information is available here.</p></section>" }),
+    bad: page({ title, heading: title, landmark: false, body: "<div><h2>" + label + "</h2><p>Information is available here.</p></div>" }),
+  });
+}
+
+function fakeHeadingPair({ id, title, label, task }) {
+  return pair({
+    id,
+    criterion: "1.3.1",
+    subtype: "fake-heading",
+    task,
+    mutation: "Visible heading text is not exposed with a heading role.",
+    badSignal: { type: "missing-heading", text: label },
+    good: page({ title, heading: title, body: "<h2>" + label + "</h2><p>The section contains useful guidance.</p>" }),
+    bad: page({ title, heading: title, body: "<div class=\"fake-heading\">" + label + "</div><p>The section contains useful guidance.</p>" }),
+  });
+}
+
+function tablePair({ id, title, destination, task }) {
+  const good = "<table><caption>Service schedule</caption><thead><tr><th scope=\"col\">Destination</th><th scope=\"col\">Time</th></tr></thead><tbody><tr><th scope=\"row\">" + destination + "</th><td>10:20</td></tr></tbody></table>";
+  const bad = "<table><caption>Service schedule</caption><tr><td>Destination</td><td>Time</td></tr><tr><td>" + destination + "</td><td>10:20</td></tr></table>";
+  return pair({
+    id,
+    criterion: "1.3.1",
+    subtype: "unassociated-table",
+    task,
+    mutation: "Table headers are visible but not associated with data cells.",
+    badSignal: { type: "table-unassociated" },
+    probeTables: true,
+    good: page({ title, heading: title, body: good }),
+    bad: page({ title, heading: title, body: bad }),
+  });
+}
+
+function errorPair({ id, title, field, submit, task }) {
+  const message = "Enter the " + field.toLowerCase() + " before submitting.";
+  const good = "<form id=\"form\" onsubmit=\"event.preventDefault(); document.querySelector('#field').setAttribute('aria-invalid', 'true'); document.querySelector('#error').hidden = false; document.querySelector('#field').focus();\"><label for=\"field\">" + field + "</label><input id=\"field\" aria-describedby=\"error\"><button type=\"submit\">" + submit + "</button><p id=\"error\" role=\"alert\" hidden>" + message + "</p></form>";
+  const bad = "<form id=\"form\" onsubmit=\"event.preventDefault(); document.querySelector('.error').hidden = false;\"><label for=\"field\">" + field + "</label><input id=\"field\"><button type=\"submit\">" + submit + "</button><p class=\"error\" hidden>" + message + "</p></form>";
+  return pair({
+    id,
+    criterion: "3.3.1",
+    subtype: "validation-error-silent",
+    task,
+    mutation: "The validation message appears visually but is not announced.",
+    badSignal: { type: "validation-error-silent", control: submit },
+    probeForms: true,
+    good: page({ title, heading: title, body: good }),
+    bad: page({ title, heading: title, body: bad }),
+  });
+}
+
+function formPair({ id, title, label, name, task, placeholderOnly = false }) {
+  const goodBody = "<form><label for=\"" + name + "\">" + label + "</label><input id=\"" + name + "\" name=\"" + name + "\" placeholder=\"Example value\"></form>";
+  const badBody = placeholderOnly
+    ? "<form><input name=\"" + name + "\" placeholder=\"Example value\"></form>"
+    : "<form><span>" + label + "</span><input name=\"" + name + "\"></form>";
+  return pair({
+    id,
+    criterion: "3.3.2",
+    subtype: placeholderOnly ? "placeholder-only" : "unnamed-form-field",
+    task,
+    mutation: placeholderOnly ? "The field relies on a placeholder instead of a persistent label." : "The field loses its programmatic label.",
+    badSignal: placeholderOnly
+      ? { type: "placeholder-only", placeholder: "Example value" }
+      : { type: "unnamed-form-field" },
+    probeForms: true,
+    good: page({ title, heading: title, body: goodBody, script: "document.querySelector('input').focus()" }),
+    bad: page({ title, heading: title, body: badBody, script: "document.querySelector('input').focus()" }),
+  });
+}
+
+function iconPair({ id, title, label, task }) {
+  return pair({
+    id,
+    criterion: "4.1.2",
+    subtype: "regex",
+    task,
+    mutation: "An icon-only button has no accessible name.",
+    badSignal: { type: "regex", pattern: "(?:^|\\n)button[, ]*(?:(?:\\ufffc|to get missing image descriptions))?[, ]*(?:$|\\n)", flags: "im" },
+    probeForms: true,
+    good: page({ title, heading: title, body: "<button type=\"button\" aria-label=\"" + label + "\"><span aria-hidden=\"true\">⌕</span></button>", script: "document.querySelector('button').focus()" }),
+    bad: page({ title, heading: title, body: "<button type=\"button\"><span aria-hidden=\"true\">⌕</span></button>", script: "document.querySelector('button').focus()" }),
+  });
+}
+
+function controlPair({ id, title, label, task }) {
+  return pair({
+    id,
+    criterion: "4.1.2",
+    subtype: "missing-role",
+    task,
+    mutation: "A styled interactive element exposes no control role.",
+    badSignal: { type: "missing-role", text: label },
+    probeForms: true,
+    good: page({ title, heading: title, body: "<button type=\"button\">" + label + "</button>", script: "document.querySelector('button').focus()" }),
+    bad: page({ title, heading: title, body: "<div class=\"card\" tabindex=\"0\">" + label + "</div>", script: "document.querySelector('.card').focus()" }),
+  });
+}
+
+function disclosurePair({ id, title, control, task }) {
+  const body = "<button id=\"toggle\" type=\"button\" aria-expanded=\"false\" aria-controls=\"content\">" + control + "</button><div id=\"content\" hidden>More information.</div>";
+  const goodScript = "document.querySelector('#toggle').addEventListener('click',e=>{const b=e.currentTarget;const open=b.getAttribute('aria-expanded')==='true';b.setAttribute('aria-expanded',String(!open));document.querySelector('#content').hidden=open})";
+  const badScript = "document.querySelector('#toggle').addEventListener('click',()=>{document.querySelector('#content').hidden=false})";
+  return pair({
+    id,
+    criterion: "4.1.2",
+    subtype: "state-change-silent",
+    task,
+    mutation: "Activating the disclosure changes content without updating the announced state.",
+    badSignal: { type: "state-change-silent", control },
+    probeForms: true,
+    good: page({ title, heading: title, body, script: goodScript }),
+    bad: page({ title, heading: title, body, script: badScript }),
+  });
+}
+
+function statusPair({ id, title, control, task }) {
+  const body = "<button id=\"filter\" type=\"button\">" + control + "</button><p id=\"count\">Showing 8 items.</p><ul><li>First item</li><li>Second item</li></ul>";
+  const script = "document.querySelector('#filter').addEventListener('click',()=>{document.querySelector('#count').textContent='Showing 2 matching items.'})";
+  return pair({
+    id,
+    criterion: "4.1.3",
+    subtype: "form-activation-silent",
+    task,
+    mutation: "A result count changes without a live status announcement.",
+    badSignal: { type: "form-activation-silent", control, expected: "Showing 2 matching items." },
+    probeForms: true,
+    good: page({
+      title,
+      heading: title,
+      body: body.replace(
+        'id="count"',
+        'id="count" role="status" aria-live="polite" aria-atomic="true"',
+      ),
+      script,
+    }),
+    bad: page({ title, heading: title, body, script }),
+  });
+}
+
+export const ACCEPTANCE_CASES = Object.freeze([
+  imagePair({ id: "generic-lantern", title: "Lantern collection", description: "The collection includes hand-painted lanterns.", file: "lantern.jpg", goodAlt: "Hand-painted lantern beside a window", badAlt: "image", subtype: "generic-alt", task: "Understand what the lantern image shows." }),
+  imagePair({ id: "generic-rain", title: "Rain garden", description: "The rain garden collects water from the roof.", file: "rain-garden.jpg", goodAlt: "Rain garden beside the visitor centre", badAlt: "photo", subtype: "generic-alt", task: "Understand what the rain garden looks like." }),
+  imagePair({ id: "filename-orchard", title: "Orchard map", description: "The orchard entrance is beside the old wall.", file: "orchard-gate-03.jpg", goodAlt: "Entrance gate to the orchard", badAlt: "orchard-gate-03.jpg", subtype: "filename-alt", task: "Find the orchard entrance." }),
+  imagePair({ id: "missing-banners", title: "Festival banners", description: "The banners mark the route to the festival.", file: "festival-banners.png", goodAlt: "Colourful banners along the festival route", badAlt: null, subtype: "missing-alt", task: "Understand what the festival banners show." }),
+  fakeHeadingPair({ id: "fake-hours", title: "Museum visits", label: "Opening hours", task: "Find the museum opening hours." }),
+  fakeHeadingPair({ id: "fake-access", title: "Community centre", label: "Access information", task: "Find the community centre access information." }),
+  landmarkPair({ id: "landmark-services", title: "Visitor services", label: "Visitor services", task: "Jump to visitor services." }),
+  tablePair({ id: "table-bus", title: "Bus timetable", destination: "Market square", task: "Compare the bus time and destination for Market square." }),
+  linkPair({ id: "link-guidance", title: "Cycling guidance", context: "The route avoids the main road.", vague: "Details", descriptive: "Read cycling route safety guidance", task: "Open cycling route safety guidance." }),
+  linkPair({ id: "link-appointments", title: "Appointments", context: "Appointments are available next week.", vague: "Here", descriptive: "Book an appointment next week", task: "Book an appointment next week." }),
+  linkPair({ id: "link-repairs", title: "Repairs", context: "The repair team handles bicycles.", vague: "More", descriptive: "Read bicycle repair information", task: "Read bicycle repair information." }),
+  linkPair({ id: "link-permits", title: "Permits", context: "Permits are required for overnight stays.", vague: "Go", descriptive: "Apply for an overnight stay permit", task: "Apply for an overnight stay permit." }),
+  headingPair({ id: "heading-guidance", title: "Cycling guide", vague: "Overview", descriptive: "Route safety guidance", task: "Find route safety guidance." }),
+  headingPair({ id: "heading-permits", title: "Permit guide", vague: "More", descriptive: "Permit requirements", task: "Find the permit requirements." }),
+  headingPair({ id: "heading-repairs", title: "Repair guide", vague: "Stuff", descriptive: "What to bring for a repair", task: "Find what to bring for a repair." }),
+  headingPair({ id: "heading-visits", title: "Visit guide", vague: "Welcome", descriptive: "Planning your visit", task: "Find how to plan the visit." }),
+  errorPair({ id: "error-name", title: "Membership request", field: "Member name", submit: "Join the scheme", task: "Submit the membership form without a name." }),
+  errorPair({ id: "error-date", title: "Room booking", field: "Booking date", submit: "Book the room", task: "Submit the room booking without a date." }),
+  errorPair({ id: "error-code", title: "Equipment loan", field: "Loan code", submit: "Request equipment", task: "Submit the equipment request without a code." }),
+  errorPair({ id: "error-phone", title: "Callback request", field: "Phone number", submit: "Request a callback", task: "Submit the callback request without a phone number." }),
+  formPair({ id: "placeholder-email", title: "Event registration", label: "Contact email", name: "contact-email", placeholderOnly: true, task: "Enter the contact email for registration." }),
+  formPair({ id: "field-company", title: "Supplier form", label: "Company name", name: "company", task: "Enter the supplier company name." }),
+  formPair({ id: "field-ticket", title: "Support form", label: "Ticket number", name: "ticket", task: "Enter the support ticket number." }),
+  formPair({ id: "field-route", title: "Route form", label: "Route name", name: "route", task: "Enter the route name." }),
+  iconPair({ id: "icon-settings", title: "Settings", label: "Open settings", task: "Open settings." }),
+  iconPair({ id: "icon-calendar", title: "Calendar", label: "Open calendar", task: "Open the calendar." }),
+  controlPair({ id: "control-notify", title: "Notifications", label: "Save notification settings", task: "Save notification settings." }),
+  disclosurePair({ id: "disclosure-access", title: "Access advice", control: "Access advice", task: "Open the access advice." }),
+  statusPair({ id: "status-red", title: "Colour catalogue", control: "Show red items", task: "Show red items and notice the result count." }),
+  statusPair({ id: "status-large", title: "Size catalogue", control: "Show large items", task: "Show large items and notice the result count." }),
+  statusPair({ id: "status-new", title: "New items", control: "Show new items", task: "Show new items and notice the result count." }),
+  statusPair({ id: "status-local", title: "Local items", control: "Show local items", task: "Show local items and notice the result count." }),
+]);

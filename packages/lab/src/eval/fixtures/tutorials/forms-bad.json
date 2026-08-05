@@ -1,0 +1,264 @@
+{
+  "url": "tutorial: forms-bad (authored from W3C guidance)",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T15:56:52.629Z",
+  "transcript": [
+    "heading, level 1, Sign up",
+    "form, Email address",
+    "edit",
+    "Contact preference",
+    "radio button, not checked",
+    "button, Subscribe"
+  ],
+  "structure": {
+    "headings": [
+      "Sign up, heading, level 1"
+    ],
+    "landmarks": [
+      "form, Email address"
+    ],
+    "formFields": [
+      "edit",
+      "radio button, not checked"
+    ],
+    "graphics": [],
+    "links": [],
+    "lists": [],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [
+      "edit",
+      "radio button, not checked"
+    ],
+    "stateChanges": [],
+    "formChanges": [],
+    "postSubmitFields": [],
+    "focusOrder": []
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 64,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/tutorials/forms-bad.html",
+      "captures": 5
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 882,
+      "ok": true,
+      "waitedMs": 818
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 1120,
+      "x": 0,
+      "y": 0,
+      "ms": 238
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 1490,
+      "ok": true,
+      "reused": true,
+      "captures": 6
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 2323,
+      "alive": true,
+      "heard": "heading, level 1, Sign up"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 2935,
+      "ok": true,
+      "title": "Newsletter sign-up (inaccessible)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 6147,
+      "lastSpoken": "heading, level 1, Sign up"
+    },
+    {
+      "event": "readThrough",
+      "atMs": 11222,
+      "count": 6,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 12153,
+      "type": "heading",
+      "found": 1,
+      "prevMs": 639,
+      "nextMs": 291,
+      "prevTrips": 5,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Sign up, heading, level 1",
+      "nextStopPhrase": "",
+      "phrases": [
+        "Sign up, heading, level 1"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 13008,
+      "type": "landmark",
+      "found": 1,
+      "prevMs": 282,
+      "nextMs": 573,
+      "prevTrips": 3,
+      "nextTrips": 5,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "form, Email address",
+      "phrases": [
+        "form, Email address"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 14186,
+      "type": "formField",
+      "found": 2,
+      "prevMs": 272,
+      "nextMs": 906,
+      "prevTrips": 3,
+      "nextTrips": 7,
+      "prevStop": "exhausted",
+      "nextStop": "repeat",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "radio button, not checked",
+      "phrases": [
+        "edit",
+        "radio button, not checked"
+      ]
+    },
+    {
+      "event": "structural",
+      "atMs": 14187,
+      "headings": 1,
+      "landmarks": 1,
+      "formFields": 2,
+      "roundTrips": 26
+    },
+    {
+      "event": "sweep",
+      "atMs": 14785,
+      "type": "graphic",
+      "found": 0,
+      "prevMs": 310,
+      "nextMs": 288,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 15383,
+      "type": "link",
+      "found": 0,
+      "prevMs": 299,
+      "nextMs": 299,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 15935,
+      "type": "list",
+      "found": 0,
+      "prevMs": 278,
+      "nextMs": 274,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "formProbe",
+      "atMs": 15935,
+      "activated": 0
+    },
+    {
+      "event": "interaction",
+      "atMs": 15935,
+      "controls": 2,
+      "stateChanges": 0,
+      "formChanges": 0,
+      "postSubmit": 0,
+      "sweepLog": []
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 15946,
+      "landmark": 1,
+      "heading": 1,
+      "link": 0,
+      "graphic": 0,
+      "graphicUnnamed": 0,
+      "names": [
+        "Newsletter sign-up (inaccessible)",
+        "Sign up",
+        "Sign up",
+        "Email address",
+        "Contact preference",
+        "Subscribe",
+        "Sign up",
+        "Email address",
+        "Contact preference",
+        "Subscribe",
+        "Subscribe"
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 15946,
+      "agrees": true,
+      "compared": 4,
+      "disagreements": []
+    },
+    {
+      "event": "done",
+      "atMs": 15946,
+      "transcript": 6
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 15946
+    }
+  ],
+  "task": "Sign up for the newsletter",
+  "environment": {
+    "measuredAt": "2026-08-04T15:56:52.630Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}

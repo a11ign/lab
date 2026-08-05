@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>FAQ (working disclosure)</title></head>
+<body style="font-family:system-ui;max-width:40rem;margin:2rem auto">
+<h1>FAQ</h1>
+<button id="t" aria-expanded="false" aria-controls="panel"
+  onclick="var x=this.getAttribute('aria-expanded')==='true';this.setAttribute('aria-expanded',String(!x));document.getElementById('panel').hidden=x;">
+  How do I reset my password?
+</button>
+<div id="panel" hidden><p>Use the reset link on the sign-in page.</p></div>
+</body></html>

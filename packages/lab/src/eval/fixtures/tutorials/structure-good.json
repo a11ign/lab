@@ -1,0 +1,306 @@
+{
+  "url": "tutorial: structure-good (authored from W3C guidance)",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T15:57:15.289Z",
+  "transcript": [
+    "same page, link, Skip to main content",
+    "banner landmark, City Library",
+    "Main, navigation landmark, link, Hours, , link, Events",
+    "main landmark, heading, level 1, Welcome to the City Library",
+    "heading, level 2, Opening hours",
+    "Open 9am to 8pm on weekdays.",
+    "heading, level 2, Upcoming events",
+    "heading, level 3, Children's story time",
+    "Saturdays at 11am.",
+    "content info landmark, Contact us at the front desk.",
+    "Contact us at the front desk."
+  ],
+  "structure": {
+    "headings": [
+      "main landmark, Children's story time, heading, level 3",
+      "Upcoming events, heading, level 2",
+      "Opening hours, heading, level 2",
+      "Welcome to the City Library, heading, level 1"
+    ],
+    "landmarks": [
+      "Main, navigation landmark, Hours, link, , Events",
+      "banner landmark, City Library",
+      "main landmark, Welcome to the City Library, heading, level 1",
+      "content info landmark, Contact us at the front desk."
+    ],
+    "formFields": [],
+    "graphics": [],
+    "links": [
+      "Main, navigation landmark, Events, link",
+      "Hours, link",
+      "Skip to main content, same page, link",
+      "Main, navigation landmark, Hours, link",
+      "Events, link"
+    ],
+    "lists": [],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [],
+    "stateChanges": [],
+    "formChanges": [],
+    "postSubmitFields": [],
+    "focusOrder": []
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 155,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/tutorials/structure-good.html",
+      "captures": 6
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 1029,
+      "ok": true,
+      "waitedMs": 874
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 1297,
+      "x": 0,
+      "y": 0,
+      "ms": 268
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 1298,
+      "ok": true,
+      "reused": true,
+      "captures": 7
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 1897,
+      "alive": true,
+      "heard": "same page, link, Skip to main content"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 2583,
+      "ok": true,
+      "title": "City Library (accessible structure)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 7856,
+      "lastSpoken": "same page, link, Skip to main content"
+    },
+    {
+      "event": "readThrough",
+      "atMs": 12821,
+      "count": 11,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 15717,
+      "type": "heading",
+      "found": 4,
+      "prevMs": 1667,
+      "nextMs": 1229,
+      "prevTrips": 11,
+      "nextTrips": 9,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Welcome to the City Library, heading, level 1",
+      "nextStopPhrase": "Children's story time, heading, level 3",
+      "phrases": [
+        "main landmark, Children's story time, heading, level 3",
+        "Upcoming events, heading, level 2",
+        "Opening hours, heading, level 2",
+        "Welcome to the City Library, heading, level 1"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 17978,
+      "type": "landmark",
+      "found": 4,
+      "prevMs": 985,
+      "nextMs": 1276,
+      "prevTrips": 7,
+      "nextTrips": 9,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "banner landmark, City Library",
+      "nextStopPhrase": "content info landmark, Contact us at the front desk.",
+      "phrases": [
+        "Main, navigation landmark, Hours, link, , Events",
+        "banner landmark, City Library",
+        "main landmark, Welcome to the City Library, heading, level 1",
+        "content info landmark, Contact us at the front desk."
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 18535,
+      "type": "formField",
+      "found": 0,
+      "prevMs": 279,
+      "nextMs": 278,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "structural",
+      "atMs": 18535,
+      "headings": 4,
+      "landmarks": 4,
+      "formFields": 0,
+      "roundTrips": 42
+    },
+    {
+      "event": "sweep",
+      "atMs": 19097,
+      "type": "graphic",
+      "found": 0,
+      "prevMs": 286,
+      "nextMs": 276,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 21506,
+      "type": "link",
+      "found": 5,
+      "prevMs": 1477,
+      "nextMs": 932,
+      "prevTrips": 9,
+      "nextTrips": 7,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Skip to main content, same page, link",
+      "nextStopPhrase": "Events, link",
+      "phrases": [
+        "Main, navigation landmark, Events, link",
+        "Hours, link",
+        "Skip to main content, same page, link",
+        "Main, navigation landmark, Hours, link",
+        "Events, link"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 22061,
+      "type": "list",
+      "found": 0,
+      "prevMs": 284,
+      "nextMs": 271,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "interaction",
+      "atMs": 22061,
+      "controls": 0,
+      "stateChanges": 0,
+      "formChanges": 0,
+      "postSubmit": 0,
+      "sweepLog": []
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 22104,
+      "landmark": 4,
+      "heading": 4,
+      "link": 3,
+      "graphic": 0,
+      "graphicUnnamed": 0,
+      "names": [
+        "City Library (accessible structure)",
+        "Skip to main content",
+        "Main",
+        "Skip to main content",
+        "Hours",
+        "Events",
+        "Welcome to the City Library",
+        "Opening hours",
+        "Upcoming events",
+        "Children's story time",
+        "Skip to main content",
+        "City Library",
+        "Hours",
+        "Events",
+        "Welcome to the City Library",
+        "Opening hours",
+        "Open 9am to 8pm on weekdays.",
+        "Upcoming events",
+        "Children's story time",
+        "Saturdays at 11am.",
+        "Contact us at the front desk.",
+        "City Library",
+        "Hours",
+        "Events",
+        "Welcome to the City Library",
+        "Opening hours",
+        "Open 9am to 8pm on weekdays.",
+        "Upcoming events",
+        "Children's story time",
+        "Saturdays at 11am.",
+        "Contact us at the front desk."
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 22105,
+      "agrees": false,
+      "compared": 4,
+      "disagreements": [
+        {
+          "type": "link",
+          "sweep": 5,
+          "elementsList": 3,
+          "kind": "phantom"
+        }
+      ]
+    },
+    {
+      "event": "done",
+      "atMs": 22105,
+      "transcript": 11
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 22105
+    }
+  ],
+  "task": "Find the library's opening hours",
+  "environment": {
+    "measuredAt": "2026-08-04T15:57:15.290Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}

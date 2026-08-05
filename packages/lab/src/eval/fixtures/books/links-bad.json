@@ -1,0 +1,310 @@
+{
+  "url": "file:///C:/Users/borem/a11y-witness/src/eval/pages/books/links-bad.html",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T16:01:38.223Z",
+  "transcript": [
+    "heading, level 1, City News",
+    "heading, level 2, Heat wave linked to record temperatures",
+    "City scientists agree the primary cause of this summer's heat was hot air.",
+    "link, Read more...",
+    "heading, level 2, New park opens downtown",
+    "More green space arrives at the price of car parking.",
+    "link, Read more...",
+    "heading, level 2, Useful resources",
+    "list, with 2 items, bullet Killer bees., link, Click here, dot",
+    "bullet Onions., link, Click here, dot",
+    "out of list, link, Go!",
+    "link, Go!"
+  ],
+  "structure": {
+    "headings": [
+      "Useful resources, heading, level 2",
+      "New park opens downtown, heading, level 2",
+      "Heat wave linked to record temperatures, heading, level 2",
+      "City News, heading, level 1"
+    ],
+    "landmarks": [],
+    "formFields": [],
+    "graphics": [],
+    "links": [
+      "Read more..., link",
+      "list, with 2 items, Click here, link",
+      "Click here, link",
+      "Go!, link"
+    ],
+    "lists": [
+      "list, with 2 items, bullet Killer bees., Click here, link, dot"
+    ],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [],
+    "stateChanges": [],
+    "formChanges": [],
+    "postSubmitFields": [],
+    "focusOrder": []
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 61,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/books/links-bad.html",
+      "captures": 19
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 764,
+      "ok": true,
+      "waitedMs": 703
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 903,
+      "x": 0,
+      "y": 0,
+      "ms": 139
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 904,
+      "ok": true,
+      "reused": true,
+      "captures": 20
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 1467,
+      "alive": true,
+      "heard": "heading, level 1, City News"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 2045,
+      "ok": true,
+      "title": "City News (ambiguous link text)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 7960,
+      "lastSpoken": "heading, level 1, City News"
+    },
+    {
+      "event": "readThrough",
+      "atMs": 13589,
+      "count": 12,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 16441,
+      "type": "heading",
+      "found": 4,
+      "prevMs": 1617,
+      "nextMs": 1235,
+      "prevTrips": 11,
+      "nextTrips": 9,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "City News, heading, level 1",
+      "nextStopPhrase": "Useful resources, heading, level 2",
+      "phrases": [
+        "Useful resources, heading, level 2",
+        "New park opens downtown, heading, level 2",
+        "Heat wave linked to record temperatures, heading, level 2",
+        "City News, heading, level 1"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 17020,
+      "type": "landmark",
+      "found": 0,
+      "prevMs": 302,
+      "nextMs": 277,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 17618,
+      "type": "formField",
+      "found": 0,
+      "prevMs": 300,
+      "nextMs": 298,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "structural",
+      "atMs": 17618,
+      "headings": 4,
+      "landmarks": 0,
+      "formFields": 0,
+      "roundTrips": 32
+    },
+    {
+      "event": "sweep",
+      "atMs": 18179,
+      "type": "graphic",
+      "found": 0,
+      "prevMs": 277,
+      "nextMs": 284,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 20488,
+      "type": "link",
+      "found": 4,
+      "prevMs": 635,
+      "nextMs": 1674,
+      "prevTrips": 5,
+      "nextTrips": 11,
+      "prevStop": "repeat",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Read more..., link",
+      "nextStopPhrase": "Go!, link",
+      "phrases": [
+        "Read more..., link",
+        "list, with 2 items, Click here, link",
+        "Click here, link",
+        "Go!, link"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 21373,
+      "type": "list",
+      "found": 1,
+      "prevMs": 618,
+      "nextMs": 267,
+      "prevTrips": 5,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "list, with 2 items, bullet Killer bees., Click here, link, dot",
+      "nextStopPhrase": "",
+      "phrases": [
+        "list, with 2 items, bullet Killer bees., Click here, link, dot"
+      ]
+    },
+    {
+      "event": "interaction",
+      "atMs": 21373,
+      "controls": 0,
+      "stateChanges": 0,
+      "formChanges": 0,
+      "postSubmit": 0,
+      "sweepLog": []
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 21388,
+      "landmark": 0,
+      "heading": 4,
+      "link": 5,
+      "graphic": 0,
+      "graphicUnnamed": 0,
+      "names": [
+        "City News (ambiguous link text)",
+        "City News",
+        "Useful resources",
+        "City News",
+        "Heat wave linked to record temperatures",
+        "Read more...",
+        "New park opens downtown",
+        "Read more...",
+        "Useful resources",
+        "Go!",
+        "City News",
+        "Heat wave linked to record temperatures",
+        "City scientists agree the primary cause of this summer's heat was hot air.",
+        "Read more...",
+        "New park opens downtown",
+        "More green space arrives at the price of car parking.",
+        "Read more...",
+        "Useful resources",
+        "•",
+        "Killer bees.",
+        "Click here",
+        ".",
+        "•",
+        "Onions.",
+        "Click here",
+        ".",
+        "Go!",
+        "Heat wave linked to record temperatures",
+        "City scientists agree the primary cause of this summer's heat was hot air.",
+        "Read more...",
+        "New park opens downtown",
+        "More green space arrives at the price of car parking.",
+        "Read more...",
+        "Killer bees.",
+        "Click here",
+        ".",
+        "Onions.",
+        "Click here",
+        ".",
+        "Go!",
+        "Click here",
+        "Click here"
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 21388,
+      "agrees": false,
+      "compared": 4,
+      "disagreements": [
+        {
+          "type": "link",
+          "sweep": 4,
+          "elementsList": 5,
+          "kind": "truncated"
+        }
+      ]
+    },
+    {
+      "event": "done",
+      "atMs": 21388,
+      "transcript": 12
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 21389
+    }
+  ],
+  "task": "Read the latest city news",
+  "environment": {
+    "measuredAt": "2026-08-04T16:01:38.226Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}

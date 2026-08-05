@@ -1,0 +1,1512 @@
+/**
+ * Controlled page pairs for collecting screen-reader-only evidence.
+ *
+ * The page is an instrument: it creates a known contrast so the capture
+ * pipeline can produce labels without putting HTML, DOM, CSS, or axe results
+ * into the model input. The wording is original and the accessibility topics
+ * are paraphrased from the repository's bookctx references and existing eval
+ * fixtures.
+ */
+
+const BASE_STYLE = [
+  "body { font: 16px system-ui, sans-serif; line-height: 1.5; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; }",
+  "main { display: grid; gap: 1rem; }",
+  "img { display: block; max-width: 100%; margin: 1rem 0; }",
+  "label { display: block; margin-top: .75rem; }",
+  "input, button, select { font: inherit; padding: .4rem; }",
+  ".card { border: 1px solid #bbb; padding: 1rem; }",
+  ".fake-heading { font-size: 1.4rem; font-weight: 700; margin-top: 1rem; }",
+  ".error { color: #9b1c1c; margin-top: .5rem; }",
+  "[hidden] { display: none; }",
+].join("");
+
+const escapeHtml = (value) => String(value)
+  .replaceAll("&", "&amp;")
+  .replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;")
+  .replaceAll('"', "&quot;");
+
+function page({ title, heading, body, script = "", landmark = true }) {
+  const content = "<h1>" + escapeHtml(heading) + "</h1>" + body;
+  const container = landmark ? "<main>" + content + "</main>" : content;
+  return "<!doctype html>\n"
+    + "<html lang=\"en\">\n"
+    + "<head><meta charset=\"utf-8\"><title>" + escapeHtml(title)
+    + "</title><style>" + BASE_STYLE + "</style></head>\n"
+    + "<body>" + container + "\n"
+    + (script ? "<script>" + script + "</script>" : "")
+    + "</body></html>";
+}
+
+function defaultSubtype({ id, criterion, badSignal }) {
+  if (criterion === "1.1.1") {
+    if (id.includes("missing")) return "missing-alt";
+    if (id.includes("generic")) return "generic-alt";
+    if (id.includes("filename")) return "filename-alt";
+  }
+  if (criterion === "1.3.1") {
+    if (badSignal.type === "structure-empty") return "missing-landmark";
+    if (badSignal.type === "missing-heading") return "fake-heading";
+    if (badSignal.type === "table-unassociated") return "unassociated-table";
+  }
+  if (criterion === "3.3.2" && id.includes("placeholder")) return "placeholder-only";
+  return badSignal.type;
+}
+
+function pair({
+  id,
+  criterion,
+  task,
+  source,
+  mutation,
+  badSignal,
+  good,
+  bad,
+  probeForms = false,
+  // DERIVED from the signal, not asked for per case, and that is the point.
+  //
+  // The table probe is opt-in because it is not deterministic enough to be dataset evidence by default
+  // (`docs/screenreader-coverage.md`), and `preflight-screenreader-dataset.mjs` REFUSES a
+  // `table-unassociated` case that does not request it. But a case whose signal reads `structure.tableCells`
+  // needs the probe by definition, so making all 61 of them say so by hand is 61 chances to forget — and
+  // every one of them HAD forgotten: the field was absent from the whole matrix, so regenerating the
+  // manifest silently produced 61 cases that would capture no cells at all and go blind.
+  //
+  // Deriving it from the badSignal makes the invariant structural. Still overridable, for a case that wants
+  // cells without a table signal.
+  probeTables = badSignal?.type === "table-unassociated",
+  family = id,
+  subtype = null,
+}) {
+  return {
+    id,
+    family,
+    criterion,
+    subtype: subtype || defaultSubtype({ id, criterion, badSignal }),
+    task,
+    source,
+    mutation,
+    badSignal,
+    probeForms,
+    probeTables,
+    good,
+    bad,
+  };
+}
+
+// What NVDA announces for an image it cannot name, across versions: older builds emit the
+// object-replacement character (U+FFFC) as a stand-in for content they cannot describe, while
+// NVDA 2026.1 emits its missing-description hint. Both mean the same thing -- the image has no
+// usable alternative -- so a badSignal that matches only one form silently skips the case at
+// export time, reported as "bad signal was not observable in NVDA output", which reads like
+// the page is wrong rather than the pattern.
+const UNNAMED_GRAPHIC = "(?:\\ufffc|to get missing image descriptions)";
+
+// NVDA speaks a filename rather than spelling it: harbour_07-final.jpg is announced
+// "harbour 07-final dot jpg". A pattern written from the filename therefore never matches
+// what was actually said. Underscores become spaces and "." becomes " dot ".
+function spokenForm(text) {
+  return text.replaceAll("_", "[ _]").replaceAll(".", "(?:\\.| dot )");
+}
+
+const cases = [
+  pair({
+    id: "image-missing-alt",
+    criterion: "1.1.1",
+    task: "Read the project update and understand what the illustration shows.",
+    source: "Practical Web Accessibility, chapter 22; Web Accessibility Cookbook, chapter 3",
+    mutation: "The informative illustration has no alternative text.",
+    badSignal: { type: "regex", pattern: "graphic[, ]+" + UNNAMED_GRAPHIC, flags: "i" },
+    good: page({
+      title: "Project update with an informative illustration",
+      heading: "Project update",
+      body: "<p>The garden project added a shaded seating area.</p><img src=\"/missing-garden.png\" alt=\"A shaded seating area beside the community garden\">",
+    }),
+    bad: page({
+      title: "Project update with an unlabelled illustration",
+      heading: "Project update",
+      body: "<p>The garden project added a shaded seating area.</p><img src=\"/missing-garden.png\">",
+    }),
+  }),
+  pair({
+    id: "image-generic-alt",
+    criterion: "1.1.1",
+    task: "Read the project update and understand what the illustration shows.",
+    source: "Practical Web Accessibility, chapter 22",
+    mutation: "The illustration has a generic placeholder alternative such as image.",
+    badSignal: { type: "regex", pattern: "graphic.*\\bimage\\b", flags: "i" },
+    good: page({
+      title: "Market report with a useful chart",
+      heading: "Market report",
+      body: "<p>Weekend visits increased after the new opening hours.</p><img src=\"/missing-chart.png\" alt=\"Line chart showing weekend visits rising from April to June\">",
+    }),
+    bad: page({
+      title: "Market report with a placeholder chart label",
+      heading: "Market report",
+      body: "<p>Weekend visits increased after the new opening hours.</p><img src=\"/missing-chart.png\" alt=\"image\">",
+    }),
+  }),
+  pair({
+    id: "image-filename-alt",
+    criterion: "1.1.1",
+    task: "Find the image that identifies the new trail entrance.",
+    source: "Practical Web Accessibility, chapter 22",
+    mutation: "The alternative is a file name rather than a useful description.",
+    badSignal: { type: "regex", pattern: "graphic.*trail[ _-]+entrance.*final", flags: "i" },
+    good: page({
+      title: "Trail map",
+      heading: "Trail map",
+      body: "<p>The new entrance is on the east side of the park.</p><img src=\"/trail_entrance-final.jpg\" alt=\"Map showing the new trail entrance on the east side of the park\">",
+    }),
+    bad: page({
+      title: "Trail map",
+      heading: "Trail map",
+      body: "<p>The new entrance is on the east side of the park.</p><img src=\"/trail_entrance-final.jpg\" alt=\"trail_entrance-final.jpg\">",
+    }),
+  }),
+  pair({
+    id: "link-read-more",
+    criterion: "2.4.4",
+    task: "Open the guide for the Saturday workshop.",
+    source: "Practical Web Accessibility, chapter 5; Web Accessibility Cookbook, chapter 22",
+    mutation: "The link name is a repeated, context-poor phrase instead of the destination.",
+    badSignal: { type: "regex", pattern: "link[, ]+(read more|learn more)\\b", flags: "i" },
+    good: page({
+      title: "Community workshops",
+      heading: "Community workshops",
+      body: "<p>Saturday workshop: planting for pollinators.</p><a href=\"/workshop-guide\">Read the planting for pollinators workshop guide</a>",
+    }),
+    bad: page({
+      title: "Community workshops",
+      heading: "Community workshops",
+      body: "<p>Saturday workshop: planting for pollinators.</p><a href=\"/workshop-guide\">Read more</a>",
+    }),
+  }),
+  pair({
+    id: "link-click-here",
+    criterion: "2.4.4",
+    task: "Open the timetable for the evening class.",
+    source: "Practical Web Accessibility, chapter 5",
+    mutation: "The link name says how to operate it but not where it leads.",
+    badSignal: { type: "regex", pattern: "link[, ]+click here\\b", flags: "i" },
+    good: page({
+      title: "Evening classes",
+      heading: "Evening classes",
+      body: "<p>The next class starts at six.</p><a href=\"/evening-timetable\">View the evening class timetable</a>",
+    }),
+    bad: page({
+      title: "Evening classes",
+      heading: "Evening classes",
+      body: "<p>The next class starts at six.</p><a href=\"/evening-timetable\">Click here</a>",
+    }),
+  }),
+  pair({
+    id: "headings-fake",
+    criterion: "1.3.1",
+    task: "Navigate to the contact section and read its opening hours.",
+    source: "Practical Web Accessibility, chapter 4; Web Accessibility Cookbook, chapter 22",
+    mutation: "Visual section headings are styled text rather than heading elements.",
+    badSignal: { type: "missing-heading", text: "Contact and opening hours" },
+    good: page({
+      title: "Library services",
+      heading: "Library services",
+      body: "<h2>Borrowing books</h2><p>Members may borrow six books.</p><h2>Contact and opening hours</h2><p>The desk is open until eight on weekdays.</p>",
+    }),
+    bad: page({
+      title: "Library services",
+      heading: "Library services",
+      body: "<div class=\"fake-heading\">Borrowing books</div><p>Members may borrow six books.</p><div class=\"fake-heading\">Contact and opening hours</div><p>The desk is open until eight on weekdays.</p>",
+    }),
+  }),
+  pair({
+    id: "landmarks-missing",
+    criterion: "1.3.1",
+    task: "Jump to the main content and locate the support navigation.",
+    source: "Web Accessibility Cookbook, chapter 22",
+    mutation: "The page has visible regions but does not expose useful landmarks.",
+    badSignal: { type: "structure-empty", field: "landmarks" },
+    good: page({
+      title: "Account help",
+      heading: "Account help",
+      body: "<nav aria-label=\"Support links\"><a href=\"/faq\">Frequently asked questions</a></nav><section aria-label=\"Main support article\"><h2>Resetting a password</h2><p>Choose a new password with at least twelve characters.</p></section>",
+    }),
+    bad: page({
+      title: "Account help",
+      heading: "Account help",
+      body: "<div><a href=\"/faq\">Frequently asked questions</a></div><div><div class=\"fake-heading\">Resetting a password</div><p>Choose a new password with at least twelve characters.</p></div>",
+      landmark: false,
+    }),
+  }),
+  pair({
+    id: "form-unlabelled",
+    criterion: "3.3.2",
+    task: "Enter the name of the person receiving the parcel.",
+    source: "Practical Web Accessibility, chapter 6; Inclusive Design for Accessibility, chapter 13",
+    mutation: "The text field has no programmatic label and relies on nearby visual text.",
+    badSignal: { type: "unnamed-form-field" },
+    good: page({
+      title: "Parcel details",
+      heading: "Parcel details",
+      body: "<form><label for=\"recipient\">Recipient name</label><input id=\"recipient\" name=\"recipient\"></form>",
+      script: "document.querySelector('input').focus();",
+    }),
+    bad: page({
+      title: "Parcel details",
+      heading: "Parcel details",
+      body: "<form><span>Recipient name</span><input name=\"recipient\"></form>",
+      script: "document.querySelector('input').focus();",
+    }),
+    probeForms: true,
+  }),
+  pair({
+    id: "form-placeholder-only",
+    criterion: "3.3.2",
+    task: "Enter the email address for the booking confirmation.",
+    source: "Practical Web Accessibility, chapter 6",
+    mutation: "The only visible cue is a placeholder that disappears when typing starts.",
+    badSignal: { type: "regex", pattern: "(?:edit text|edit)[, ]*(?:\\ufffc)?\\s*$", flags: "im" },
+    // Deliberately NOT unnamed-form-field: a placeholder-only field is not unnamed, the
+    // placeholder becomes its name. The discriminator is ORDER -- NVDA announces the bad page
+    // as "<placeholder>, edit" (placeholder used as the name) and the good page as
+    // "Confirmation email, edit, <placeholder>" (real label, placeholder as description), so
+    // only the bad one ends on the role.
+    good: page({
+      title: "Booking confirmation",
+      heading: "Booking confirmation",
+      body: "<form><label for=\"email\">Confirmation email</label><input id=\"email\" type=\"email\" name=\"email\" placeholder=\"name@example.com\"></form>",
+      script: "document.querySelector('input').focus();",
+    }),
+    bad: page({
+      title: "Booking confirmation",
+      heading: "Booking confirmation",
+      body: "<form><input type=\"email\" name=\"email\" placeholder=\"name@example.com\"></form>",
+      script: "document.querySelector('input').focus();",
+    }),
+    probeForms: true,
+  }),
+  pair({
+    id: "custom-control-role",
+    criterion: "4.1.2",
+    task: "Save the notification settings.",
+    source: "Practical Web Accessibility, chapter 6; Web Accessibility Cookbook, chapter 22",
+    mutation: "A styled non-button element looks like a control but exposes no role or keyboard behavior.",
+    badSignal: { type: "missing-role", text: "Save notification settings" },
+    good: page({
+      title: "Notification settings",
+      heading: "Notification settings",
+      body: "<button type=\"button\">Save notification settings</button>",
+      script: "document.querySelector('button').focus();",
+    }),
+    bad: page({
+      title: "Notification settings",
+      heading: "Notification settings",
+      body: "<div class=\"card\" id=\"save\">Save notification settings</div>",
+      script: "document.querySelector('#save').focus();",
+    }),
+    probeForms: true,
+  }),
+  pair({
+    id: "icon-button-unnamed",
+    criterion: "4.1.2",
+    task: "Open the account search.",
+    source: "Practical Web Accessibility, chapter 6",
+    mutation: "An icon-only button has no accessible name.",
+    badSignal: { type: "regex", pattern: "(?:^|\\n)button[, ]*(?:$|\\n)", flags: "im" },
+    good: page({
+      title: "Account search",
+      heading: "Account search",
+      body: "<button type=\"button\" aria-label=\"Open account search\"><span aria-hidden=\"true\">⌕</span></button>",
+      script: "document.querySelector('button').focus();",
+    }),
+    bad: page({
+      title: "Account search",
+      heading: "Account search",
+      body: "<button type=\"button\"><span aria-hidden=\"true\">⌕</span></button>",
+      script: "document.querySelector('button').focus();",
+    }),
+    probeForms: true,
+  }),
+  pair({
+    id: "disclosure-state-silent",
+    criterion: "4.1.2",
+    task: "Open the travel advice to read the baggage rules.",
+    source: "Web Accessibility Cookbook, chapter 22; Practical Web Accessibility, chapter 6",
+    mutation: "Activating the disclosure changes visible content but does not update the announced state.",
+    badSignal: { type: "state-change-silent", control: "Travel advice" },
+    good: page({
+      title: "Travel advice",
+      heading: "Travel advice",
+      body: "<button id=\"advice\" type=\"button\" aria-expanded=\"false\" aria-controls=\"rules\">Travel advice</button><div id=\"rules\" hidden>Small bags may be carried into the cabin.</div>",
+      script: "document.querySelector('#advice').addEventListener('click', (event) => { const button = event.currentTarget; const open = button.getAttribute('aria-expanded') === 'true'; button.setAttribute('aria-expanded', String(!open)); document.querySelector('#rules').hidden = open; });",
+    }),
+    bad: page({
+      title: "Travel advice",
+      heading: "Travel advice",
+      body: "<button id=\"advice\" type=\"button\" aria-expanded=\"false\" aria-controls=\"rules\">Travel advice</button><div id=\"rules\" hidden>Small bags may be carried into the cabin.</div>",
+      script: "document.querySelector('#advice').addEventListener('click', () => { document.querySelector('#rules').hidden = false; });",
+    }),
+    probeForms: true,
+  }),
+  pair({
+    id: "form-error-silent",
+    criterion: "3.3.1",
+    task: "Submit the request without entering a reference number and understand what needs fixing.",
+    source: "Web Accessibility Cookbook, chapter 22; Practical Web Accessibility, chapter 6",
+    mutation: "A validation message appears visually but is not associated with the invalid field or announced as a live update.",
+    badSignal: { type: "validation-error-silent", control: "Submit request" },
+    good: page({
+      title: "Service request",
+      heading: "Service request",
+      body: "<form id=\"request\"><label for=\"reference\">Reference number</label><input id=\"reference\" aria-describedby=\"reference-error\"><button type=\"submit\">Submit request</button><p id=\"reference-error\" role=\"alert\" hidden>Enter the reference number before submitting.</p></form>",
+      script: "document.querySelector('#request').addEventListener('submit', (event) => { event.preventDefault(); const input = document.querySelector('#reference'); input.setAttribute('aria-invalid', 'true'); document.querySelector('#reference-error').hidden = false; input.focus(); });",
+    }),
+    bad: page({
+      title: "Service request",
+      heading: "Service request",
+      body: "<form id=\"request\"><span>Reference number</span><input id=\"reference\"><button type=\"submit\">Submit request</button><p class=\"error\" hidden>Enter the reference number before submitting.</p></form>",
+      script: "document.querySelector('#request').addEventListener('submit', (event) => { event.preventDefault(); document.querySelector('.error').hidden = false; });",
+    }),
+    probeForms: true,
+  }),
+  pair({
+    id: "filter-status-silent",
+    criterion: "4.1.3",
+    task: "Filter the catalogue to show only bags and notice how many results remain.",
+    source: "Web Accessibility Cookbook, chapter 22; Practical Web Accessibility, chapter 6",
+    mutation: "Filtering updates the visible result count but does not expose the update through a live status.",
+    badSignal: { type: "form-activation-silent", control: "Show bags" },
+    good: page({
+      title: "Product catalogue",
+      heading: "Product catalogue",
+      body: "<button id=\"bags\" type=\"button\">Show bags</button><p id=\"count\" role=\"status\">Showing 8 products.</p><ul id=\"products\"><li>Canvas bag</li><li>Travel bag</li></ul>",
+      script: "document.querySelector('#bags').addEventListener('click', () => { document.querySelector('#count').textContent = 'Showing 2 bags.'; });",
+    }),
+    bad: page({
+      title: "Product catalogue",
+      heading: "Product catalogue",
+      body: "<button id=\"bags\" type=\"button\">Show bags</button><p id=\"count\">Showing 8 products.</p><ul id=\"products\"><li>Canvas bag</li><li>Travel bag</li></ul>",
+      script: "document.querySelector('#bags').addEventListener('click', () => { document.querySelector('#count').textContent = 'Showing 2 bags.'; });",
+    }),
+    probeForms: true,
+  }),
+  pair({
+    id: "table-unassociated-headers",
+    criterion: "1.3.1",
+    task: "Compare the departure time and platform for Riverside.",
+    source: "Web Accessibility Cookbook, chapter 22; existing table eval fixtures",
+    mutation: "A data table uses visual header cells without exposing their relationships to each data cell.",
+    badSignal: { type: "table-unassociated" },
+    good: page({
+      title: "Train departures",
+      heading: "Train departures",
+      body: "<table><caption>Departures from Central station</caption><thead><tr><th scope=\"col\">Destination</th><th scope=\"col\">Departs</th><th scope=\"col\">Platform</th></tr></thead><tbody><tr><th scope=\"row\">Riverside</th><td>09:15</td><td>3</td></tr><tr><th scope=\"row\">Hilltown</th><td>09:40</td><td>5</td></tr></tbody></table>",
+    }),
+    bad: page({
+      title: "Train departures",
+      heading: "Train departures",
+      body: "<table><caption>Departures from Central station</caption><tr><td>Destination</td><td>Departs</td><td>Platform</td></tr><tr><td>Riverside</td><td>09:15</td><td>3</td></tr><tr><td>Hilltown</td><td>09:40</td><td>5</td></tr></table>",
+    }),
+  }),
+];
+
+function imageVariant({ id, title, heading, description, file, goodAlt, badAlt, task }) {
+  const goodImage = "<img src=\"/" + file + "\" alt=\"" + goodAlt + "\">";
+  const badImage = "<img src=\"/" + file + "\""
+    + (badAlt === null ? "" : " alt=\"" + badAlt + "\"") + ">";
+  return pair({
+    id,
+    family: "image-alternative",
+    criterion: "1.1.1",
+    task,
+    source: "Practical Web Accessibility, chapter 22",
+    mutation: "The informative image loses a useful alternative and is announced without its meaning.",
+    badSignal: {
+      type: "regex",
+      pattern: "graphic.*" + (badAlt === null ? UNNAMED_GRAPHIC : spokenForm(badAlt)),
+      flags: "i",
+    },
+    good: page({ title, heading, body: "<p>" + description + "</p>" + goodImage }),
+    bad: page({ title, heading, body: "<p>" + description + "</p>" + badImage }),
+  });
+}
+
+function linkVariant({ id, title, heading, context, vague, descriptive, task }) {
+  return pair({
+    id,
+    family: "link-purpose",
+    criterion: "2.4.4",
+    task,
+    source: "Practical Web Accessibility, chapter 5; Web Accessibility Cookbook, chapter 22",
+    mutation: "The link name is a short context-poor phrase rather than the destination.",
+    badSignal: { type: "regex", pattern: "link[, ]+" + vague + "\\b", flags: "i" },
+    good: page({
+      title,
+      heading,
+      body: "<p>" + context + "</p><a href=\"/destination\">" + descriptive + "</a>",
+    }),
+    bad: page({
+      title,
+      heading,
+      body: "<p>" + context + "</p><a href=\"/destination\">" + vague + "</a>",
+    }),
+  });
+}
+
+function vagueHeadingVariant({ id, title, heading, vague, descriptive, task }) {
+  return pair({
+    id,
+    family: "heading-purpose",
+    criterion: "2.4.6",
+    task,
+    source: "Practical Web Accessibility, chapter 4; Web Accessibility Cookbook, chapter 22",
+    mutation: "A real heading role is present, but its name does not identify the topic.",
+    badSignal: { type: "regex", pattern: "heading.*\\b" + vague.toLowerCase() + "\\b", flags: "i" },
+    good: page({
+      title,
+      heading,
+      body: "<h2>" + descriptive + "</h2><p>The section explains the next step.</p>",
+    }),
+    bad: page({
+      title,
+      heading,
+      body: "<h2>" + vague + "</h2><p>The section explains the next step.</p>",
+    }),
+  });
+}
+
+function fakeHeadingVariant({ id, title, heading, label, task }) {
+  return pair({
+    id,
+    criterion: "1.3.1",
+    task,
+    source: "Practical Web Accessibility, chapter 4; Web Accessibility Cookbook, chapter 22",
+    mutation: "Visible section text is styled as a heading but has no heading role.",
+    badSignal: { type: "missing-heading", text: label },
+    good: page({
+      title,
+      heading,
+      body: "<h2>" + label + "</h2><p>The section contains useful guidance.</p>",
+    }),
+    bad: page({
+      title,
+      heading,
+      body: "<div class=\"fake-heading\">" + label + "</div><p>The section contains useful guidance.</p>",
+    }),
+  });
+}
+
+function landmarkVariant({ id, title, heading, label, text, task }) {
+  return pair({
+    id,
+    family: "landmark-navigation",
+    criterion: "1.3.1",
+    task,
+    source: "Web Accessibility Cookbook, chapter 22",
+    mutation: "A visible page region is not exposed as a landmark.",
+    badSignal: { type: "structure-empty", field: "landmarks" },
+    good: page({
+      title,
+      heading,
+      body: "<section aria-label=\"" + label + "\"><h2>" + label + "</h2><p>" + text + "</p></section>",
+    }),
+    bad: page({
+      title,
+      heading,
+      body: "<div><h2>" + label + "</h2><p>" + text + "</p></div>",
+      landmark: false,
+    }),
+  });
+}
+
+function unlabelledFieldVariant({ id, title, heading, label, name, task }) {
+  return pair({
+    id,
+    family: "form-labels",
+    criterion: "3.3.2",
+    task,
+    source: "Practical Web Accessibility, chapter 6; Inclusive Design for Accessibility, chapter 13",
+    mutation: "The field has nearby visible text but no programmatic label.",
+    // The SAME signal its 31 generated variants use (see unnamedIconVariant), and deliberately so.
+    //
+    // This seed declared `{type: "unnamed-form-field"}` while every variant of the same mutation
+    // declared this regex, which split one failure mode across two model heads: `4.1.2:regex` trained
+    // on 31 records and `4.1.2:unnamed-form-field` on ONE. The training gate refuses release for any
+    // subtype under 20 positive development records, and it was right to -- a head fitted to a single
+    // example is not a classifier. An icon button with no accessible name is one failure mode and
+    // belongs in one subtype.
+    //
+    // Verified equivalent before changing it: this pattern fires on `icon-button-unnamed.bad` and stays
+    // silent on `.good`, exactly as `hasUnnamedFormField` did. `hasUnnamedFormField` itself is still
+    // exercised by the 115 `form-unlabelled` cases under 3.3.2, so no signal loses coverage. The pages
+    // are untouched, so no capture is invalidated.
+    badSignal: {
+      type: "regex",
+      pattern: "(?:^|\\n)button[, ]*(?:" + UNNAMED_GRAPHIC + ")?[, ]*(?:$|\\n)",
+      flags: "im",
+    },
+    good: page({
+      title,
+      heading,
+      body: "<form><label for=\"" + name + "\">" + label + "</label><input id=\"" + name + "\" name=\"" + name + "\"></form>",
+      script: "document.querySelector('input').focus();",
+    }),
+    bad: page({
+      title,
+      heading,
+      body: "<form><span>" + label + "</span><input name=\"" + name + "\"></form>",
+      script: "document.querySelector('input').focus();",
+    }),
+    probeForms: true,
+  });
+}
+
+function placeholderOnlyVariant({ id, title, heading, label, name, task }) {
+  return pair({
+    id,
+    criterion: "3.3.2",
+    task,
+    source: "Practical Web Accessibility, chapter 6",
+    mutation: "The field relies on a placeholder instead of a persistent label.",
+    badSignal: { type: "regex", pattern: "(?:edit text|edit)[, ]*(?:\\ufffc)?\\s*$", flags: "im" },
+    good: page({
+      title,
+      heading,
+      body: "<form><label for=\"" + name + "\">" + label + "</label><input id=\"" + name + "\" name=\"" + name + "\" placeholder=\"Example value\"></form>",
+      script: "document.querySelector('input').focus();",
+    }),
+    bad: page({
+      title,
+      heading,
+      body: "<form><input name=\"" + name + "\" placeholder=\"Example value\"></form>",
+      script: "document.querySelector('input').focus();",
+    }),
+    probeForms: true,
+  });
+}
+
+function customControlVariant({ id, title, heading, label, task }) {
+  return pair({
+    id,
+    family: "control-name-role",
+    criterion: "4.1.2",
+    task,
+    source: "Practical Web Accessibility, chapter 6; Web Accessibility Cookbook, chapter 22",
+    mutation: "A styled text element looks like a button but has no exposed role.",
+    badSignal: { type: "missing-role", text: label },
+    good: page({
+      title,
+      heading,
+      body: "<button type=\"button\">" + label + "</button>",
+      script: "document.querySelector('button').focus();",
+    }),
+    bad: page({
+      title,
+      heading,
+      body: "<div class=\"card\">" + label + "</div>",
+    }),
+    probeForms: true,
+  });
+}
+
+function unnamedIconVariant({ id, title, heading, name, task }) {
+  return pair({
+    id,
+    family: "control-name-role",
+    criterion: "4.1.2",
+    task,
+    source: "Practical Web Accessibility, chapter 6",
+    mutation: "An icon-only button has no accessible name.",
+    // NVDA announces an unnamed control EITHER as "button, <U+FFFC>" or as a bare "button",
+    // and it varies between runs of the same page -- observed both ways across two full
+    // capture runs. Match both: keying a signal on one observed string is how these went
+    // blind in the first place.
+    badSignal: {
+      type: "regex",
+      pattern: "(?:^|\\n)button[, ]*(?:" + UNNAMED_GRAPHIC + ")?[, ]*(?:$|\\n)",
+      flags: "im",
+    },
+    good: page({
+      title,
+      heading,
+      body: "<button type=\"button\" aria-label=\"" + name + "\"><span aria-hidden=\"true\">⌕</span></button>",
+      script: "document.querySelector('button').focus();",
+    }),
+    bad: page({
+      title,
+      heading,
+      body: "<button type=\"button\"><span aria-hidden=\"true\">⌕</span></button>",
+      script: "document.querySelector('button').focus();",
+    }),
+    probeForms: true,
+  });
+}
+
+function disclosureVariant({ id, title, heading, control, content, task }) {
+  const goodScript = "document.querySelector('#toggle').addEventListener('click', (event) => { const button = event.currentTarget; const open = button.getAttribute('aria-expanded') === 'true'; button.setAttribute('aria-expanded', String(!open)); document.querySelector('#content').hidden = open; });";
+  const badScript = "document.querySelector('#toggle').addEventListener('click', () => { document.querySelector('#content').hidden = false; });";
+  const body = "<button id=\"toggle\" type=\"button\" aria-expanded=\"false\" aria-controls=\"content\">"
+    + control + "</button><div id=\"content\" hidden>" + content + "</div>";
+  return pair({
+    id,
+    family: "dynamic-state",
+    criterion: "4.1.2",
+    task,
+    source: "Web Accessibility Cookbook, chapter 22; Practical Web Accessibility, chapter 6",
+    mutation: "Activation changes visible content without updating the announced expanded state.",
+    badSignal: { type: "state-change-silent", control },
+    good: page({ title, heading, body, script: goodScript }),
+    bad: page({ title, heading, body, script: badScript }),
+    probeForms: true,
+  });
+}
+
+function errorVariant({ id, title, heading, field, submit, message, task }) {
+  const goodBody = "<form id=\"form\"><label for=\"field\">" + field + "</label><input id=\"field\" aria-describedby=\"error\"><button type=\"submit\">" + submit + "</button><p id=\"error\" role=\"alert\" hidden>" + message + "</p></form>";
+  // Keep this pair single-criterion. The original bad fixture also removed the field label,
+  // which made every 3.3.1 failure a hidden 3.3.2 failure and taught the 3.3.2 head that an
+  // unrelated silent validation message is evidence of an unlabeled control. The mutation
+  // here is only the missing error association/announcement; the field stays labelled.
+  const badBody = "<form id=\"form\"><label for=\"field\">" + field + "</label><input id=\"field\"><button type=\"submit\">" + submit + "</button><p class=\"error\" hidden>" + message + "</p></form>";
+  const goodScript = "document.querySelector('#form').addEventListener('submit', (event) => { event.preventDefault(); document.querySelector('#field').setAttribute('aria-invalid', 'true'); document.querySelector('#error').hidden = false; document.querySelector('#field').focus(); });";
+  const badScript = "document.querySelector('#form').addEventListener('submit', (event) => { event.preventDefault(); document.querySelector('.error').hidden = false; });";
+  return pair({
+    id,
+    family: "dynamic-feedback",
+    criterion: "3.3.1",
+    task,
+    source: "Web Accessibility Cookbook, chapter 22; Practical Web Accessibility, chapter 6",
+    mutation: "A validation message appears visually but is not associated with the invalid field or announced.",
+    badSignal: { type: "validation-error-silent", control: submit },
+    good: page({ title, heading, body: goodBody, script: goodScript }),
+    bad: page({ title, heading, body: badBody, script: badScript }),
+    probeForms: true,
+  });
+}
+
+function statusVariant({ id, title, heading, control, task }) {
+  const body = "<button id=\"filter\" type=\"button\">" + control + "</button><p id=\"count\">Showing 8 items.</p><ul><li>First item</li><li>Second item</li></ul>";
+  const goodBody = body.replace("id=\"count\"", "id=\"count\" role=\"status\"");
+  const script = "document.querySelector('#filter').addEventListener('click', () => { document.querySelector('#count').textContent = 'Showing 2 matching items.'; });";
+  return pair({
+    id,
+    family: "dynamic-feedback",
+    criterion: "4.1.3",
+    task,
+    source: "Web Accessibility Cookbook, chapter 22; Practical Web Accessibility, chapter 6",
+    mutation: "A result count changes without a live status announcement.",
+    badSignal: { type: "form-activation-silent", control, expected: "Showing 2 matching items." },
+    good: page({ title, heading, body: goodBody, script }),
+    bad: page({ title, heading, body, script }),
+    probeForms: true,
+  });
+}
+
+function tableVariant({ id, title, heading, destination, task }) {
+  const good = "<table><caption>Departures from Central station</caption><thead><tr><th scope=\"col\">Destination</th><th scope=\"col\">Departs</th><th scope=\"col\">Platform</th></tr></thead><tbody><tr><th scope=\"row\">" + destination + "</th><td>09:15</td><td>3</td></tr></tbody></table>";
+  const bad = "<table><caption>Departures from Central station</caption><tr><td>Destination</td><td>Departs</td><td>Platform</td></tr><tr><td>" + destination + "</td><td>09:15</td><td>3</td></tr></table>";
+  return pair({
+    id,
+    family: "table-relationships",
+    criterion: "1.3.1",
+    task,
+    source: "Web Accessibility Cookbook, chapter 22; existing table eval fixtures",
+    mutation: "Visual table headers are not associated with their data cells.",
+    badSignal: { type: "table-unassociated" },
+    good: page({ title, heading, body: good }),
+    bad: page({ title, heading, body: bad }),
+  });
+}
+
+function variedTableVariant({ id, title, heading, caption, headers, row, task }) {
+  const good = "<table><caption>" + caption + "</caption><thead><tr>"
+    + headers.map((header) => "<th scope=\"col\">" + header + "</th>").join("")
+    + "</tr></thead><tbody><tr><th scope=\"row\">" + row[0] + "</th>"
+    + row.slice(1).map((value) => "<td>" + value + "</td>").join("")
+    + "</tr></tbody></table>";
+  const bad = "<table><caption>" + caption + "</caption><tr>"
+    + headers.map((header) => "<td>" + header + "</td>").join("")
+    + "</tr><tr>" + row.map((value) => "<td>" + value + "</td>").join("") + "</tr></table>";
+  return pair({
+    id,
+    family: id,
+    criterion: "1.3.1",
+    task,
+    source: "Web Accessibility Cookbook, chapter 22; Practical Web Accessibility, chapter 4",
+    mutation: "The data table loses header associations while retaining its visible rows and caption.",
+    badSignal: { type: "table-unassociated" },
+    good: page({ title, heading, body: good }),
+    bad: page({ title, heading, body: bad }),
+  });
+}
+
+function labelledControlVariant({ id, title, heading, label, name, control, selector = "input", task }) {
+  const labelled = control({ labelled: true, name });
+  const unlabelled = control({ labelled: false, name });
+  return pair({
+    id,
+    family: id,
+    criterion: "3.3.2",
+    task,
+    source: "Practical Web Accessibility, chapter 6; Inclusive Design for Accessibility, chapter 13",
+    mutation: "The form control loses its programmatic label while the same visible cue remains nearby.",
+    badSignal: { type: "unnamed-form-field" },
+    good: page({
+      title,
+      heading,
+      body: "<form><label for=\"" + name + "\">" + label + "</label>" + labelled + "</form>",
+      script: "document.querySelector('" + selector + "').focus();",
+    }),
+    bad: page({
+      title,
+      heading,
+      body: "<form><span>" + label + "</span>" + unlabelled + "</form>",
+      script: "document.querySelector('" + selector + "').focus();",
+    }),
+    probeForms: true,
+  });
+}
+
+const generatedCases = [
+  imageVariant({ id: "image-missing-alt-map", title: "Park map", heading: "Park map", description: "The east entrance is beside the lake.", file: "park-map.png", goodAlt: "Map showing the east entrance beside the lake", badAlt: null, task: "Find the east entrance on the park map." }),
+  imageVariant({ id: "image-missing-alt-building", title: "Civic centre", heading: "Civic centre", description: "The restored building opens on Monday.", file: "civic-centre.png", goodAlt: "Front entrance of the restored civic centre", badAlt: null, task: "Understand what the civic centre image shows." }),
+  imageVariant({ id: "image-generic-alt-recipe", title: "Recipe guide", heading: "Recipe guide", description: "The final dish is ready to serve.", file: "finished-dish.png", goodAlt: "Bowl of vegetable soup with herbs on top", badAlt: "image", task: "Understand what the finished dish looks like." }),
+  imageVariant({ id: "image-filename-alt-exhibit", title: "Museum exhibit", heading: "Museum exhibit", description: "The exhibit explains how the harbour changed.", file: "harbour_07-final.jpg", goodAlt: "Historic photograph of the harbour before the new bridge", badAlt: "harbour_07-final.jpg", task: "Read the description of the harbour exhibit." }),
+  linkVariant({ id: "link-vague-details", title: "Course catalogue", heading: "Course catalogue", context: "The evening drawing course begins next month.", vague: "Details", descriptive: "View the evening drawing course details", task: "Open the evening drawing course details." }),
+  linkVariant({ id: "link-vague-here", title: "Travel information", heading: "Travel information", context: "The station has step-free access.", vague: "Here", descriptive: "Read the station step-free access information", task: "Read the station step-free access information." }),
+  linkVariant({ id: "link-vague-more", title: "Volunteer roles", heading: "Volunteer roles", context: "The archive needs help cataloguing photographs.", vague: "More", descriptive: "Learn more about archive cataloguing volunteer roles", task: "Learn about archive cataloguing volunteer roles." }),
+  linkVariant({ id: "link-vague-go", title: "Account options", heading: "Account options", context: "Choose the option for changing a password.", vague: "Go", descriptive: "Open the change password instructions", task: "Open the change password instructions." }),
+  vagueHeadingVariant({ id: "headings-vague-welcome", title: "Museum guide", heading: "Museum guide", vague: "Welcome", descriptive: "Permanent collection highlights", task: "Navigate to the permanent collection highlights." }),
+  vagueHeadingVariant({ id: "headings-vague-stuff", title: "Repair service", heading: "Repair service", vague: "Stuff", descriptive: "What to bring to your appointment", task: "Find what to bring to the repair appointment." }),
+  vagueHeadingVariant({ id: "headings-vague-things", title: "School trip", heading: "School trip", vague: "Things", descriptive: "Information for visiting school groups", task: "Find information for visiting school groups." }),
+  landmarkVariant({ id: "landmarks-missing-news", title: "Town news", heading: "Town news", label: "Latest news", text: "The council approved a new playground.", task: "Jump to the latest news." }),
+  landmarkVariant({ id: "landmarks-missing-help", title: "Help centre", heading: "Help centre", label: "Account help", text: "You can change your sign-in details here.", task: "Jump to account help." }),
+  landmarkVariant({ id: "landmarks-missing-events", title: "Events calendar", heading: "Events calendar", label: "Upcoming events", text: "The next event is on Saturday.", task: "Jump to upcoming events." }),
+  unlabelledFieldVariant({ id: "form-unlabelled-address", title: "Delivery address", heading: "Delivery address", label: "Street address", name: "street", task: "Enter the street address for delivery." }),
+  unlabelledFieldVariant({ id: "form-unlabelled-phone", title: "Contact details", heading: "Contact details", label: "Telephone number", name: "phone", task: "Enter the telephone number for contact." }),
+  unlabelledFieldVariant({ id: "form-unlabelled-reference", title: "Support request", heading: "Support request", label: "Case reference", name: "case", task: "Enter the case reference for support." }),
+  customControlVariant({ id: "custom-control-archive", title: "Archive", heading: "Archive", label: "Archive selected messages", task: "Archive the selected messages." }),
+  customControlVariant({ id: "custom-control-print", title: "Report", heading: "Report", label: "Print this report", task: "Print this report." }),
+  customControlVariant({ id: "custom-control-refresh", title: "Dashboard", heading: "Dashboard", label: "Refresh dashboard", task: "Refresh the dashboard." }),
+  unnamedIconVariant({ id: "icon-button-unnamed-menu", title: "Project menu", heading: "Project menu", name: "Open project menu", task: "Open the project menu." }),
+  unnamedIconVariant({ id: "icon-button-unnamed-help", title: "Help options", heading: "Help options", name: "Open help options", task: "Open help options." }),
+  disclosureVariant({ id: "disclosure-state-silent-parking", title: "Parking advice", heading: "Parking advice", control: "Parking rules", content: "Visitors may park for two hours.", task: "Open the parking rules." }),
+  disclosureVariant({ id: "disclosure-state-silent-refunds", title: "Refund policy", heading: "Refund policy", control: "Refund details", content: "Refunds are processed within five working days.", task: "Open the refund details." }),
+  errorVariant({ id: "form-error-silent-email", title: "Newsletter signup", heading: "Newsletter signup", field: "Email address", submit: "Join newsletter", message: "Enter an email address before joining.", task: "Submit the newsletter form without an email address." }),
+  errorVariant({ id: "form-error-silent-postcode", title: "Parcel booking", heading: "Parcel booking", field: "Postcode", submit: "Book parcel", message: "Enter the postcode before booking.", task: "Submit the parcel booking without a postcode." }),
+  statusVariant({ id: "filter-status-silent-colours", title: "Clothing catalogue", heading: "Clothing catalogue", control: "Show blue items", task: "Show blue items and notice the result count." }),
+  statusVariant({ id: "filter-status-silent-prices", title: "Book catalogue", heading: "Book catalogue", control: "Show books under ten pounds", task: "Show books under ten pounds and notice the result count." }),
+  tableVariant({ id: "table-unassociated-hilltown", title: "Train timetable", heading: "Train timetable", destination: "Hilltown", task: "Compare the departure time and platform for Hilltown." }),
+  tableVariant({ id: "table-unassociated-lakeside", title: "Train timetable", heading: "Train timetable", destination: "Lakeside", task: "Compare the departure time and platform for Lakeside." }),
+];
+
+cases.push(...generatedCases);
+
+// A seed matrix proves that the capture and labelling instruments work. The next layer
+// deliberately varies topic, wording, and content shape while keeping one known mutation
+// per pair. Each generated case gets its own family so grouped train/test splits do not
+// mistake a dozen unrelated pages for one independent example.
+const independent = (testCase) => ({ ...testCase, family: testCase.id });
+
+const expandedCases = [
+  ...[
+    ["image-missing-alt-ferry", "River ferry", "River ferry", "The new ferry leaves every hour.", "ferry-terminal.jpg", "Photograph of the new river ferry at the terminal", null, "Find the new ferry on the page."],
+    ["image-missing-alt-garden", "Winter garden", "Winter garden", "The garden stays open throughout winter.", "winter-garden.jpg", "A glasshouse filled with winter plants", null, "Understand what the winter garden looks like."],
+    ["image-missing-alt-hall", "Community hall", "Community hall", "The hall is available for evening meetings.", "community-hall.jpg", "Front entrance of the community hall", null, "Find the entrance to the community hall."],
+    ["image-missing-alt-coast", "Coastal path", "Coastal path", "The path follows the cliffs to the lighthouse.", "coastal-path.jpg", "Coastal path leading towards the lighthouse", null, "Understand where the coastal path leads."],
+    ["image-missing-alt-orchard", "Community orchard", "Community orchard", "The first apples are ready in September.", "orchard.jpg", "Rows of apple trees in the community orchard", null, "Understand what is growing in the orchard."],
+    ["image-missing-alt-observatory", "Hill observatory", "Hill observatory", "The observatory opens after sunset.", "observatory.jpg", "The hill observatory beneath a clear evening sky", null, "Find out what the observatory looks like."],
+    ["image-missing-alt-cycleway", "Bicycle route", "Bicycle route", "The new route avoids the busy road.", "cycleway.jpg", "A separated bicycle route beside the river", null, "Understand the new bicycle route."],
+    ["image-missing-alt-library", "Library entrance", "Library entrance", "The library entrance is on the quieter side of the building.", "library-entrance.jpg", "The accessible entrance to the public library", null, "Find the accessible library entrance."],
+    ["image-generic-alt-sports", "Sports centre", "Sports centre", "The centre has reopened its swimming pool.", "sports-centre.jpg", "Indoor swimming pool at the sports centre", "image", "Understand what facilities have reopened."],
+    ["image-generic-alt-allotment", "Allotment garden", "Allotment garden", "Volunteers planted vegetables for the food bank.", "allotment.jpg", "Raised vegetable beds in the allotment garden", "photo", "Understand what the volunteers planted."],
+    ["image-generic-alt-market", "Farmers market", "Farmers market", "The Saturday market has moved to the square.", "market-stall.jpg", "A fruit stall at the Saturday farmers market", "picture", "Understand what is sold at the market."],
+    ["image-generic-alt-theatre", "Theatre stage", "Theatre stage", "The autumn programme begins next week.", "theatre-stage.jpg", "The stage prepared for the autumn programme", "graphic", "Understand what is ready for the autumn programme."],
+    ["image-filename-alt-flood", "Flood barrier", "Flood barrier", "The barrier protects the lower walkway.", "flood-barrier-final.jpg", "Flood barrier protecting the lower walkway", "flood-barrier-final.jpg", "Understand what the flood barrier protects."],
+    ["image-filename-alt-wildlife", "Wildlife reserve", "Wildlife reserve", "The reserve protects nesting birds.", "reserve-entrance-02.jpg", "Entrance to the wildlife reserve beside the reed beds", "reserve-entrance-02.jpg", "Find the entrance to the wildlife reserve."],
+    ["image-filename-alt-solar", "Solar array", "Solar array", "The solar array powers the visitor centre.", "solar-array-2026.jpg", "Solar panels beside the visitor centre", "solar-array-2026.jpg", "Understand what powers the visitor centre."],
+    ["image-filename-alt-clinic", "Health clinic", "Health clinic", "The clinic has added a new reception desk.", "clinic-reception-01.jpg", "Reception desk at the new health clinic", "clinic-reception-01.jpg", "Find the new clinic reception desk."],
+  ].map(([id, title, heading, description, file, goodAlt, badAlt, task]) => independent(imageVariant({ id, title, heading, description, file, goodAlt, badAlt, task }))),
+  ...[
+    ["link-vague-ferry", "Ferry timetable", "Ferry timetable", "The morning ferry reaches the island at nine.", "Here", "Read the morning ferry timetable", "Open the morning ferry timetable."],
+    ["link-vague-garden", "Garden visits", "Garden visits", "The winter garden requires a booking.", "Details", "View winter garden booking details", "Open the winter garden booking details."],
+    ["link-vague-hall", "Hall bookings", "Hall bookings", "The community hall is available on Tuesdays.", "More", "See community hall Tuesday availability", "Check Tuesday availability for the hall."],
+    ["link-vague-coast", "Coastal safety", "Coastal safety", "Check the tide before walking near the cliffs.", "Read more", "Read coastal cliff safety advice", "Read the coastal cliff safety advice."],
+    ["link-vague-orchard", "Orchard volunteering", "Orchard volunteering", "The next volunteer day is in October.", "Click here", "Register for the October orchard volunteer day", "Register for the orchard volunteer day."],
+    ["link-vague-observatory", "Observatory visits", "Observatory visits", "The evening tour starts at eight.", "Go", "Open the evening observatory tour information", "Open the evening observatory tour information."],
+    ["link-vague-cycleway", "Cycle route map", "Cycle route map", "The route includes a new bridge crossing.", "Info", "View the cycle route bridge information", "View the cycle route bridge information."],
+    ["link-vague-library", "Library services", "Library services", "The library offers home delivery to members.", "This", "Read about library home delivery", "Read about library home delivery."],
+    ["link-vague-sports", "Sports centre classes", "Sports centre classes", "New swimming classes start in September.", "Learn more", "View September swimming class times", "View the September swimming class times."],
+    ["link-vague-allotment", "Allotment plots", "Allotment plots", "A few plots are available near the entrance.", "More", "Apply for an allotment plot near the entrance", "Apply for an allotment plot."],
+    ["link-vague-market", "Market traders", "Market traders", "Local traders can apply for a Saturday pitch.", "Details", "Read the Saturday market trader requirements", "Read the Saturday market trader requirements."],
+    ["link-vague-theatre", "Theatre programme", "Theatre programme", "The autumn play opens on Thursday.", "Here", "See the autumn theatre programme", "See the autumn theatre programme."],
+    ["link-vague-flood", "Flood preparation", "Flood preparation", "Residents should prepare before heavy rain.", "Click here", "Read flood preparation guidance for residents", "Read flood preparation guidance."],
+    ["link-vague-wildlife", "Wildlife reserve visits", "Wildlife reserve visits", "The nesting area closes in spring.", "More", "Read wildlife reserve nesting-area guidance", "Read the nesting-area guidance."],
+    ["link-vague-solar", "Energy centre", "Energy centre", "The visitor centre explains how solar power works.", "Go", "Visit the solar power explanation", "Visit the solar power explanation."],
+    ["link-vague-clinic", "Clinic appointments", "Clinic appointments", "Appointments can be changed online.", "Details", "Change a health clinic appointment online", "Change a health clinic appointment online."],
+  ].map(([id, title, heading, context, vague, descriptive, task]) => independent(linkVariant({ id, title, heading, context, vague, descriptive, task }))),
+  ...[
+    ["heading-vague-ferry", "Ferry information", "Ferry information", "Welcome", "Ferry departure times", "Find the ferry departure times."],
+    ["heading-vague-garden", "Garden guide", "Garden guide", "Overview", "Winter planting advice", "Find the winter planting advice."],
+    ["heading-vague-hall", "Hall guide", "Hall guide", "Stuff", "Facilities available in the hall", "Find the hall facilities."],
+    ["heading-vague-coast", "Coastal walk", "Coastal walk", "Things", "Safety advice for the coastal walk", "Find the coastal safety advice."],
+    ["heading-vague-orchard", "Orchard guide", "Orchard guide", "Information", "How to volunteer in the orchard", "Find how to volunteer in the orchard."],
+    ["heading-vague-observatory", "Observatory guide", "Observatory guide", "Notes", "What to expect on an evening visit", "Find what to expect on the evening visit."],
+    ["heading-vague-cycleway", "Cycle route guide", "Cycle route guide", "Updates", "Changes to the cycle route", "Find the cycle route changes."],
+    ["heading-vague-library", "Library guide", "Library guide", "Welcome", "How home delivery works", "Find how library home delivery works."],
+    ["heading-vague-sports", "Sports centre guide", "Sports centre guide", "Options", "Swimming classes for beginners", "Find the beginner swimming classes."],
+    ["heading-vague-allotment", "Allotment guide", "Allotment guide", "More", "Preparing a new allotment plot", "Find how to prepare a plot."],
+    ["heading-vague-market", "Market guide", "Market guide", "Section", "Rules for Saturday traders", "Find the Saturday trader rules."],
+    ["heading-vague-theatre", "Theatre guide", "Theatre guide", "Introduction", "Access arrangements for performances", "Find the performance access arrangements."],
+    ["heading-vague-flood", "Flood guide", "Flood guide", "Help", "Steps to take before heavy rain", "Find the flood preparation steps."],
+    ["heading-vague-wildlife", "Wildlife guide", "Wildlife guide", "Miscellaneous", "Keeping dogs away from nesting birds", "Find the nesting-bird guidance."],
+    ["heading-vague-solar", "Energy guide", "Energy guide", "Next", "How the solar array supports the centre", "Find how the solar array works."],
+    ["heading-vague-clinic", "Clinic guide", "Clinic guide", "Details", "Changing an appointment", "Find how to change an appointment."],
+  ].map(([id, title, heading, vague, descriptive, task]) => independent(vagueHeadingVariant({ id, title, heading, vague, descriptive, task }))),
+  ...[
+    ["landmark-vague-ferry", "Ferry services", "Ferry services", "Departure information", "Ferries leave from the east quay.", "Jump to ferry departure information."],
+    ["landmark-vague-garden", "Garden services", "Garden services", "Visitor information", "The glasshouse is open every afternoon.", "Jump to garden visitor information."],
+    ["landmark-vague-hall", "Hall services", "Hall services", "Booking information", "Bookings are available six weeks ahead.", "Jump to hall booking information."],
+    ["landmark-vague-coast", "Coastal services", "Coastal services", "Walking information", "The path is closed during severe weather.", "Jump to coastal walking information."],
+    ["landmark-vague-orchard", "Orchard services", "Orchard services", "Volunteer information", "Volunteers meet at the tool shed.", "Jump to orchard volunteer information."],
+    ["landmark-vague-observatory", "Observatory services", "Observatory services", "Visit information", "Evening visitors should arrive fifteen minutes early.", "Jump to observatory visit information."],
+    ["landmark-vague-cycleway", "Cycle services", "Cycle services", "Route information", "The route is signposted from the station.", "Jump to cycle route information."],
+    ["landmark-vague-library", "Library services", "Library services", "Delivery information", "Members can request two deliveries each month.", "Jump to library delivery information."],
+  ].map(([id, title, heading, label, text, task]) => independent(landmarkVariant({ id, title, heading, label, text, task }))),
+  ...[
+    ["table-ferry", "Ferry departures", "Ferry departures", "Island", "Compare the departure time and platform for Island."],
+    ["table-garden", "Garden timetable", "Garden timetable", "Glasshouse", "Compare the opening time and gate for Glasshouse."],
+    ["table-hall", "Hall timetable", "Hall timetable", "Main hall", "Compare the booking time and room for Main hall."],
+    ["table-coast", "Coastal buses", "Coastal buses", "Lighthouse", "Compare the departure time and stop for Lighthouse."],
+    ["table-orchard", "Orchard schedule", "Orchard schedule", "Tool shed", "Compare the meeting time and location for Tool shed."],
+    ["table-observatory", "Observatory tours", "Observatory tours", "Evening tour", "Compare the start time and room for Evening tour."],
+    ["table-cycleway", "Cycle buses", "Cycle buses", "Riverside", "Compare the departure time and stop for Riverside."],
+    ["table-library", "Library deliveries", "Library deliveries", "Home delivery", "Compare the day and route for Home delivery."],
+  ].map(([id, title, heading, destination, task]) => independent(tableVariant({ id, title, heading, destination, task }))),
+  ...[
+    ["form-unlabelled-ferry", "Ferry booking", "Ferry booking", "Passenger name", "passenger", "Enter the passenger name for the ferry booking."],
+    ["form-unlabelled-garden", "Garden booking", "Garden booking", "Visit date", "visit-date", "Enter the date for the garden visit."],
+    ["form-unlabelled-hall", "Hall booking", "Hall booking", "Booking contact", "contact", "Enter the hall booking contact."],
+    ["form-unlabelled-coast", "Coastal permit", "Coastal permit", "Group size", "group-size", "Enter the group size for the coastal permit."],
+    ["form-unlabelled-orchard", "Orchard volunteer", "Orchard volunteer", "Emergency contact", "emergency", "Enter the emergency contact for volunteering."],
+    ["form-unlabelled-observatory", "Observatory booking", "Observatory booking", "Visitor count", "visitors", "Enter the number of observatory visitors."],
+    ["form-unlabelled-cycleway", "Cycle hire", "Cycle hire", "Hire duration", "duration", "Enter the cycle hire duration."],
+    ["form-unlabelled-library", "Library delivery", "Library delivery", "Delivery postcode", "postcode", "Enter the delivery postcode."],
+    ["form-unlabelled-sports", "Sports class", "Sports class", "Participant name", "participant", "Enter the participant name for the class."],
+    ["form-unlabelled-allotment", "Allotment request", "Allotment request", "Plot preference", "plot", "Enter the preferred allotment plot."],
+    ["form-unlabelled-market", "Market pitch", "Market pitch", "Trader name", "trader", "Enter the trader name for the market pitch."],
+    ["form-unlabelled-theatre", "Theatre booking", "Theatre booking", "Booking email", "booking-email", "Enter the theatre booking email."],
+    ["form-unlabelled-flood", "Flood alert", "Flood alert", "Alert postcode", "alert-postcode", "Enter the postcode for flood alerts."],
+    ["form-unlabelled-wildlife", "Wildlife visit", "Wildlife visit", "Group leader", "leader", "Enter the wildlife group leader."],
+    ["form-unlabelled-solar", "Energy tour", "Energy tour", "Visitor organisation", "organisation", "Enter the visitor organisation."],
+    ["form-unlabelled-clinic", "Clinic booking", "Clinic booking", "Patient identifier", "patient", "Enter the patient identifier."],
+  ].map(([id, title, heading, label, name, task]) => independent(unlabelledFieldVariant({ id, title, heading, label, name, task }))),
+  ...[
+    ["custom-control-ferry", "Ferry dashboard", "Ferry dashboard", "Refresh departure board", "Refresh the ferry departure board."],
+    ["custom-control-garden", "Garden dashboard", "Garden dashboard", "Book a garden visit", "Book a garden visit."],
+    ["custom-control-hall", "Hall dashboard", "Hall dashboard", "Save hall booking", "Save the hall booking."],
+    ["custom-control-coast", "Coastal dashboard", "Coastal dashboard", "Show tide warning", "Show the coastal tide warning."],
+    ["custom-control-orchard", "Orchard dashboard", "Orchard dashboard", "Join volunteer list", "Join the orchard volunteer list."],
+    ["custom-control-observatory", "Observatory dashboard", "Observatory dashboard", "Start evening tour", "Start the evening observatory tour."],
+    ["custom-control-cycleway", "Cycle dashboard", "Cycle dashboard", "Plan cycle route", "Plan the cycle route."],
+    ["custom-control-library", "Library dashboard", "Library dashboard", "Request delivery", "Request a library delivery."],
+  ].map(([id, title, heading, label, task]) => independent(customControlVariant({ id, title, heading, label, task }))),
+  ...[
+    ["icon-button-unnamed-ferry", "Ferry controls", "Ferry controls", "Open departure filters", "Open the ferry departure filters."],
+    ["icon-button-unnamed-garden", "Garden controls", "Garden controls", "Open visitor filters", "Open the garden visitor filters."],
+    ["icon-button-unnamed-hall", "Hall controls", "Hall controls", "Open booking filters", "Open the hall booking filters."],
+    ["icon-button-unnamed-coast", "Coastal controls", "Coastal controls", "Open route filters", "Open the coastal route filters."],
+  ].map(([id, title, heading, name, task]) => independent(unnamedIconVariant({ id, title, heading, name, task }))),
+  ...[
+    ["disclosure-state-silent-ferry", "Ferry advice", "Ferry advice", "Ferry rules", "Passengers may bring one small bag.", "Open the ferry rules."],
+    ["disclosure-state-silent-garden", "Garden advice", "Garden advice", "Glasshouse rules", "Visitors should keep to the marked paths.", "Open the glasshouse rules."],
+    ["disclosure-state-silent-hall", "Hall advice", "Hall advice", "Booking rules", "Bookings must be cancelled two days ahead.", "Open the hall booking rules."],
+    ["disclosure-state-silent-coast", "Coastal advice", "Coastal advice", "Tide rules", "Do not cross the rocks at high tide.", "Open the coastal tide rules."],
+  ].map(([id, title, heading, control, content, task]) => independent(disclosureVariant({ id, title, heading, control, content, task }))),
+  ...[
+    ["form-error-silent-ferry", "Ferry booking", "Ferry booking", "Passenger name", "Submit booking", "Enter the passenger name before booking.", "Submit the ferry booking without a passenger name."],
+    ["form-error-silent-garden", "Garden booking", "Garden booking", "Visit date", "Book visit", "Enter the visit date before booking.", "Submit the garden booking without a visit date."],
+    ["form-error-silent-hall", "Hall booking", "Hall booking", "Contact email", "Save booking", "Enter a contact email before saving.", "Submit the hall booking without a contact email."],
+    ["form-error-silent-coast", "Coastal permit", "Coastal permit", "Group size", "Request permit", "Enter the group size before requesting.", "Submit the coastal permit without a group size."],
+    ["form-error-silent-orchard", "Orchard volunteer", "Orchard volunteer", "Emergency contact", "Join list", "Enter an emergency contact before joining.", "Submit the volunteer form without an emergency contact."],
+    ["form-error-silent-observatory", "Observatory booking", "Observatory booking", "Visitor count", "Submit booking", "Enter the visitor count before booking.", "Submit the observatory booking without a visitor count."],
+    ["form-error-silent-cycleway", "Cycle hire", "Cycle hire", "Hire duration", "Hire cycle", "Enter the hire duration before hiring.", "Submit the cycle hire form without a duration."],
+    ["form-error-silent-library", "Library delivery", "Library delivery", "Delivery postcode", "Request delivery", "Enter the postcode before requesting.", "Submit the library delivery form without a postcode."],
+    ["form-error-silent-sports", "Sports class", "Sports class", "Participant name", "Join class", "Enter the participant name before joining.", "Submit the sports class form without a participant name."],
+    ["form-error-silent-allotment", "Allotment request", "Allotment request", "Plot preference", "Request plot", "Enter a plot preference before requesting.", "Submit the allotment request without a plot preference."],
+    ["form-error-silent-market", "Market pitch", "Market pitch", "Trader name", "Request pitch", "Enter the trader name before requesting.", "Submit the market pitch form without a trader name."],
+    ["form-error-silent-theatre", "Theatre booking", "Theatre booking", "Booking email", "Submit booking", "Enter the booking email before reserving.", "Submit the theatre booking without a booking email."],
+    ["form-error-silent-flood", "Flood alert", "Flood alert", "Alert postcode", "Join alerts", "Enter the postcode before joining alerts.", "Submit the flood alert form without a postcode."],
+    ["form-error-silent-wildlife", "Wildlife visit", "Wildlife visit", "Group leader", "Book visit", "Enter the group leader before booking.", "Submit the wildlife visit without a group leader."],
+    ["form-error-silent-solar", "Energy tour", "Energy tour", "Organisation", "Book tour", "Enter the organisation before booking.", "Submit the energy tour without an organisation."],
+    ["form-error-silent-clinic", "Clinic booking", "Clinic booking", "Patient identifier", "Confirm booking", "Enter the patient identifier before confirming.", "Submit the clinic booking without an identifier."],
+  ].map(([id, title, heading, field, submit, message, task]) => independent(errorVariant({ id, title, heading, field, submit, message, task }))),
+  ...[
+    ["filter-status-silent-ferry", "Ferry results", "Ferry results", "Show morning ferries", "Show morning ferries and notice the result count."],
+    ["filter-status-silent-garden", "Garden results", "Garden results", "Show indoor gardens", "Show indoor gardens and notice the result count."],
+    ["filter-status-silent-hall", "Hall results", "Hall results", "Show evening bookings", "Show evening bookings and notice the result count."],
+    ["filter-status-silent-coast", "Coastal results", "Coastal results", "Show safe routes", "Show safe coastal routes and notice the result count."],
+    ["filter-status-silent-orchard", "Orchard results", "Orchard results", "Show volunteer days", "Show orchard volunteer days and notice the result count."],
+    ["filter-status-silent-observatory", "Observatory results", "Observatory results", "Show evening tours", "Show evening tours and notice the result count."],
+    ["filter-status-silent-cycleway", "Cycle results", "Cycle results", "Show short routes", "Show short cycle routes and notice the result count."],
+    ["filter-status-silent-library", "Library results", "Library results", "Show delivered books", "Show delivered books and notice the result count."],
+    ["filter-status-silent-sports", "Sports results", "Sports results", "Show beginner classes", "Show beginner classes and notice the result count."],
+    ["filter-status-silent-allotment", "Allotment results", "Allotment results", "Show available plots", "Show available plots and notice the result count."],
+    ["filter-status-silent-market", "Market results", "Market results", "Show food traders", "Show food traders and notice the result count."],
+    ["filter-status-silent-theatre", "Theatre results", "Theatre results", "Show accessible shows", "Show accessible shows and notice the result count."],
+    ["filter-status-silent-flood", "Flood results", "Flood results", "Show current alerts", "Show current flood alerts and notice the result count."],
+    ["filter-status-silent-wildlife", "Wildlife results", "Wildlife results", "Show bird walks", "Show bird walks and notice the result count."],
+    ["filter-status-silent-solar", "Energy results", "Energy results", "Show solar tours", "Show solar tours and notice the result count."],
+    ["filter-status-silent-clinic", "Clinic results", "Clinic results", "Show morning appointments", "Show morning appointments and notice the result count."],
+  ].map(([id, title, heading, control, task]) => independent(statusVariant({ id, title, heading, control, task }))),
+];
+
+cases.push(...expandedCases);
+
+// The first 173 pairs proved the instruments. This second batch is intentionally generated
+// from many independent topics so the useful-baseline run has enough positive examples per
+// criterion without hand-authoring hundreds of near-identical fixtures. These are still page
+// instruments only: the exporter uses the NVDA captures, never these HTML strings.
+const BULK_TOPICS = [
+  "Aquarium", "Meadow", "Harbour", "Museum", "Station", "Playground", "Civic hall", "Wetland",
+  "Gallery", "Food co-op", "Health centre", "Town square", "Bus depot", "Railway", "Ferry terminal", "Concert hall",
+  "Learning centre", "Repair cafe", "Energy park", "River walk", "Hill farm", "Marina", "Stadium", "Greenhouse",
+  "Bookshop", "Town hall", "Garden centre", "Science lab", "Swimming pool", "Wildlife trust", "Carers centre", "Housing office",
+  "Youth club", "Shelter", "Recycling centre", "Fire station", "Post office", "Park gate", "Farm shop", "Bird hide",
+  "Community kitchen", "Health pavilion", "Makerspace", "Market garden", "Coastal path", "Waterworks", "Sports field", "Cemetery",
+  "Cultural centre", "Heritage centre", "Visitor dock", "Bus interchange", "Train depot", "Community forest", "Solar field", "Flood gate",
+  "Volunteer centre", "Food bank", "Public square", "Local archive", "Bike workshop", "Day centre", "Civic theatre", "Music room",
+  "Tide station", "Public garden", "Learning hub", "Wellbeing centre", "Nature trail", "Community pool", "Digital lab", "Art studio",
+  "Farmers hall", "Advice centre", "Harbour office", "River station", "Town library", "Marsh boardwalk", "Coastal clinic", "Rail depot",
+  "Forest cabin", "Wind farm", "Community orchard", "Canal lock", "Visitor shelter", "Sports pavilion", "Public archive", "Travel office",
+];
+
+function bulkTopic(index) {
+  const code = String(index).padStart(3, "0");
+  const place = BULK_TOPICS[(index - 1) % BULK_TOPICS.length];
+  const slug = place.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + code;
+  return { code, place, slug, label: place + " " + code };
+}
+
+function bulkImageCase(index) {
+  const topic = bulkTopic(index);
+  return independent(imageVariant({
+    id: "image-missing-alt-bulk-" + topic.slug,
+    title: topic.label + " image",
+    heading: topic.label + " image",
+    description: "The latest update explains what visitors can expect at the " + topic.place.toLowerCase() + ".",
+    file: "bulk-image-" + topic.slug + ".jpg",
+    goodAlt: "Photograph of the " + topic.place.toLowerCase() + " visitor area",
+    badAlt: null,
+    task: "Understand what the " + topic.place.toLowerCase() + " visitor area looks like.",
+  }));
+}
+
+function bulkLinkCase(index) {
+  const topic = bulkTopic(index);
+  const vague = ["Details", "More", "Here", "Go", "Info", "This"][index % 6];
+  return independent(linkVariant({
+    id: "link-vague-bulk-" + topic.slug,
+    title: topic.label + " links",
+    heading: topic.label + " links",
+    context: "Read the latest information about the " + topic.place.toLowerCase() + ".",
+    vague,
+    descriptive: "View the " + topic.place.toLowerCase() + " visitor information",
+    task: "Open the " + topic.place.toLowerCase() + " visitor information.",
+  }));
+}
+
+function bulkHeadingCase(index) {
+  const topic = bulkTopic(index);
+  const vague = ["Overview", "Details", "Stuff", "Things", "Updates", "More"][index % 6];
+  return independent(vagueHeadingVariant({
+    id: "heading-vague-bulk-" + topic.slug,
+    title: topic.label + " guide",
+    heading: topic.label + " guide",
+    vague,
+    descriptive: "Visitor guidance for the " + topic.place.toLowerCase(),
+    task: "Find the visitor guidance for the " + topic.place.toLowerCase() + ".",
+  }));
+}
+
+function bulkLandmarkCase(index) {
+  const topic = bulkTopic(index);
+  const label = topic.place + " information";
+  return independent(landmarkVariant({
+    id: "landmark-vague-bulk-" + topic.slug,
+    title: topic.label + " services",
+    heading: topic.label + " services",
+    label,
+    text: "Opening information for the " + topic.place.toLowerCase() + " is listed here.",
+    task: "Jump to the " + topic.place.toLowerCase() + " information.",
+  }));
+}
+
+function bulkTableCase(index) {
+  const topic = bulkTopic(index);
+  return independent(tableVariant({
+    id: "table-bulk-" + topic.slug,
+    title: topic.label + " schedule",
+    heading: topic.label + " schedule",
+    destination: topic.place,
+    task: "Compare the departure time and platform for " + topic.place + ".",
+  }));
+}
+
+function bulkFieldCase(index) {
+  const topic = bulkTopic(index);
+  const name = "field-" + topic.slug;
+  return independent(unlabelledFieldVariant({
+    id: "form-unlabelled-bulk-" + topic.slug,
+    title: topic.label + " form",
+    heading: topic.label + " form",
+    label: topic.place + " reference",
+    name,
+    task: "Enter the " + topic.place.toLowerCase() + " reference.",
+  }));
+}
+
+function bulkCustomControlCase(index) {
+  const topic = bulkTopic(index);
+  const label = "Open " + topic.place.toLowerCase() + " details";
+  return independent(customControlVariant({
+    id: "custom-control-bulk-" + topic.slug,
+    title: topic.label + " controls",
+    heading: topic.label + " controls",
+    label,
+    task: "Open the " + topic.place.toLowerCase() + " details.",
+  }));
+}
+
+function bulkDisclosureCase(index) {
+  const topic = bulkTopic(index);
+  const control = topic.place + " advice";
+  return independent(disclosureVariant({
+    id: "disclosure-state-silent-bulk-" + topic.slug,
+    title: topic.label + " advice",
+    heading: topic.label + " advice",
+    control,
+    content: "Visitors should follow the posted advice at the " + topic.place.toLowerCase() + ".",
+    task: "Open the " + topic.place.toLowerCase() + " advice.",
+  }));
+}
+
+function bulkErrorCase(index) {
+  const topic = bulkTopic(index);
+  const field = topic.place + " contact";
+  const submit = "Submit " + topic.place.toLowerCase() + " form";
+  return independent(errorVariant({
+    id: "form-error-silent-bulk-" + topic.slug,
+    title: topic.label + " booking",
+    heading: topic.label + " booking",
+    field,
+    submit,
+    message: "Enter the " + topic.place.toLowerCase() + " contact before submitting.",
+    task: "Submit the " + topic.place.toLowerCase() + " form without a contact.",
+  }));
+}
+
+function bulkStatusCase(index) {
+  const topic = bulkTopic(index);
+  const control = "Show " + topic.place.toLowerCase() + " results";
+  return independent(statusVariant({
+    id: "filter-status-silent-bulk-" + topic.slug,
+    title: topic.label + " results",
+    heading: topic.label + " results",
+    control,
+    task: "Show the " + topic.place.toLowerCase() + " results and notice the count.",
+  }));
+}
+
+const bulkCases = [
+  ...Array.from({ length: 77 }, (_, index) => bulkImageCase(index + 1)),
+  ...Array.from({ length: 78 }, (_, index) => bulkLinkCase(index + 1)),
+  ...Array.from({ length: 81 }, (_, index) => bulkHeadingCase(index + 1)),
+  ...Array.from({ length: 38 }, (_, index) => bulkLandmarkCase(index + 1)),
+  ...Array.from({ length: 38 }, (_, index) => bulkTableCase(index + 1)),
+  ...Array.from({ length: 79 }, (_, index) => bulkFieldCase(index + 1)),
+  ...Array.from({ length: 37 }, (_, index) => bulkCustomControlCase(index + 1)),
+  ...Array.from({ length: 37 }, (_, index) => bulkDisclosureCase(index + 1)),
+  ...Array.from({ length: 81 }, (_, index) => bulkErrorCase(index + 1)),
+  ...Array.from({ length: 81 }, (_, index) => bulkStatusCase(index + 1)),
+];
+
+cases.push(...bulkCases);
+
+// Follow-up contrasts are chosen from the held-out error report. The first pass had enough
+// volume to expose the problem, but its broad 1.3.1 head over-weighted the word "table" and
+// its 3.3.2 head saw correctly named controls as suspicious. These are fresh page families,
+// so they remain independent from the original split groups.
+const TARGETED_CASES = [
+  ...[
+    ["table-followup-clinic", "Clinic appointments", "Clinic appointments", "Appointments for Monday", ["Patient", "Time", "Room"], ["Morgan", "09:00", "2"], "Compare Morgan's appointment time and room."],
+    ["table-followup-garden", "Garden tasks", "Garden tasks", "Tasks for volunteers", ["Task", "Start", "Lead"], ["Seed beds", "08:30", "Priya"], "Find who leads seed beds and when it starts."],
+    ["table-followup-market", "Market stalls", "Market stalls", "Saturday stall plan", ["Trader", "Stall", "Produce"], ["Amina", "14", "Apples"], "Find Amina's stall and produce."],
+    ["table-followup-library", "Library returns", "Library returns", "Returns desk rota", ["Day", "Desk", "Staff"], ["Tuesday", "North", "Lee"], "Find the Tuesday returns desk and staff member."],
+    ["table-followup-ferry", "Ferry fares", "Ferry fares", "Fares by passenger type", ["Passenger", "Single", "Return"], ["Adult", "8 pounds", "14 pounds"], "Compare the adult single and return fares."],
+    ["table-followup-theatre", "Theatre seating", "Theatre seating", "Seats for the evening show", ["Section", "Rows", "Access"], ["Balcony", "A to D", "Lift"], "Find the accessible route to the balcony."],
+    ["table-followup-weather", "Weather readings", "Weather readings", "Readings at noon", ["Station", "Temperature", "Wind"], ["Harbour", "18 degrees", "West"], "Find the harbour temperature and wind."],
+    ["table-followup-recycling", "Recycling days", "Recycling days", "Collection schedule", ["Material", "Day", "Bin"], ["Glass", "Friday", "Blue"], "Find the glass collection day and bin."],
+    ["table-followup-sports", "Sports fixtures", "Sports fixtures", "Fixtures this weekend", ["Team", "Opponent", "Pitch"], ["Rovers", "United", "Three"], "Find the Rovers pitch and opponent."],
+    ["table-followup-archive", "Archive boxes", "Archive boxes", "Boxes awaiting review", ["Box", "Date", "Reviewer"], ["A12", "June", "Noor"], "Find who reviews box A12."],
+    ["table-followup-bus", "Bus fares", "Bus fares", "Fares from the station", ["Destination", "Adult", "Child"], ["Riverside", "3 pounds", "1 pound"], "Compare the Riverside adult and child fares."],
+    ["table-followup-courses", "Course timetable", "Course timetable", "Evening classes", ["Course", "Day", "Room"], ["Drawing", "Thursday", "Studio"], "Find the drawing class day and room."],
+  ].map(([id, title, heading, caption, headers, row, task]) => variedTableVariant({ id, title, heading, caption, headers, row, task })),
+  ...[
+    ["landmark-followup-health", "Health centre", "Health centre", "Appointments", "Appointments are listed by clinic.", "Jump to the appointments information."],
+    ["landmark-followup-travel", "Travel office", "Travel office", "Accessible travel", "Step-free routes leave from the east entrance.", "Jump to accessible travel information."],
+    ["landmark-followup-museum", "Museum guide", "Museum guide", "Current exhibition", "The current exhibition opens at ten.", "Jump to the current exhibition."],
+    ["landmark-followup-housing", "Housing advice", "Housing advice", "Repairs", "Emergency repairs can be reported at any time.", "Jump to repairs information."],
+    ["landmark-followup-school", "School visits", "School visits", "Group bookings", "Group bookings need two weeks' notice.", "Jump to group bookings."],
+    ["landmark-followup-water", "Water safety", "Water safety", "River conditions", "The river is fast after heavy rain.", "Jump to river conditions."],
+    ["landmark-followup-park", "Park information", "Park information", "Play area", "The play area is open until dusk.", "Jump to play area information."],
+    ["landmark-followup-energy", "Energy advice", "Energy advice", "Home energy", "Advice is available for insulation and heating.", "Jump to home energy advice."],
+  ].map(([id, title, heading, label, text, task]) => independent(landmarkVariant({ id, title, heading, label, text, task }))),
+  ...[
+    // Native date/number/time inputs are announced by NVDA as composite spin-button and
+    // picker widgets. Their labelled and unlabelled forms can collapse to the same output,
+    // which makes the unnamed-field signal blind. Keep the input vocabulary varied while
+    // using stable text-entry roles for this contrast.
+    ["field-followup-date", "Garden booking", "Garden booking", "Visit date", "visit-date", "input", ({ labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the date for the garden visit."],
+    ["field-followup-number", "Sports booking", "Sports booking", "Number of visitors", "visitor-count", "input", ({ labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the number of visitors."],
+    ["field-followup-email", "Archive contact", "Archive contact", "Contact email", "contact-email", "input", ({ labelled, name }) => `<input type="email" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the archive contact email."],
+    ["field-followup-select", "Ferry booking", "Ferry booking", "Passenger type", "passenger-type", "select", ({ labelled, name }) => `<select ${labelled ? `id="${name}"` : ""} name="${name}"><option>Adult</option><option>Child</option></select>`, "Choose the passenger type."],
+    ["field-followup-select-route", "Travel booking", "Travel booking", "Route preference", "route", "select", ({ labelled, name }) => `<select ${labelled ? `id="${name}"` : ""} name="${name}"><option>Step-free route</option><option>Fastest route</option></select>`, "Choose a route preference."],
+    ["field-followup-textarea", "Volunteer details", "Volunteer details", "Relevant experience", "experience", "textarea", ({ labelled, name }) => `<textarea ${labelled ? `id="${name}"` : ""} name="${name}"></textarea>`, "Describe the relevant experience."],
+    ["field-followup-textarea-notes", "Clinic booking", "Clinic booking", "Appointment notes", "notes", "textarea", ({ labelled, name }) => `<textarea ${labelled ? `id="${name}"` : ""} name="${name}"></textarea>`, "Enter appointment notes."],
+    ["field-followup-time", "Class booking", "Class booking", "Preferred start time", "start-time", "input", ({ labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Choose the preferred start time."],
+    ["field-followup-tel", "Support request", "Support request", "Telephone number", "telephone", "input", ({ labelled, name }) => `<input type="tel" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the telephone number."],
+    ["field-followup-search", "Library search", "Library search", "Search phrase", "search-phrase", "input", ({ labelled, name }) => `<input type="search" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter a library search phrase."],
+    ["field-followup-text", "Market pitch", "Market pitch", "Trader name", "trader-name", "input", ({ labelled, name }) => `<input type="text" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the trader name."],
+    ["field-followup-text-reference", "Housing repair", "Housing repair", "Repair reference", "repair-reference", "input", ({ labelled, name }) => `<input type="text" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the repair reference."],
+    ["field-followup-date-departure", "Ferry departure", "Ferry departure", "Departure date", "departure-date", "input", ({ labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the departure date."],
+    ["field-followup-select-language", "Museum tour", "Museum tour", "Tour language", "tour-language", "select", ({ labelled, name }) => `<select ${labelled ? `id="${name}"` : ""} name="${name}"><option>English</option><option>Welsh</option></select>`, "Choose the tour language."],
+    ["field-followup-textarea-message", "Contact office", "Contact office", "Message", "message", "textarea", ({ labelled, name }) => `<textarea ${labelled ? `id="${name}"` : ""} name="${name}"></textarea>`, "Write a message to the office."],
+    ["field-followup-number-group", "Workshop booking", "Workshop booking", "Group size", "group-size", "input", ({ labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the workshop group size."],
+  ].map(([id, title, heading, label, name, selector, control, task]) => labelledControlVariant({ id, title, heading, label, name, selector, control, task })),
+];
+
+cases.push(...TARGETED_CASES);
+
+const CALIBRATION_TOPICS = [
+  "aquarium", "meadow", "harbour", "museum", "station", "playground", "civic-hall", "wetland", "gallery", "food-co-op",
+  "health-centre", "town-square", "bus-depot", "railway", "ferry-terminal", "concert-hall", "learning-centre", "repair-cafe", "energy-park", "river-walk",
+  "hill-farm", "marina", "stadium", "greenhouse", "bookshop",
+];
+
+const CALIBRATION_CASES = [
+  ...CALIBRATION_TOPICS.map((topic, index) => {
+    const code = String(index + 1).padStart(3, "0");
+    const place = topic.replaceAll("-", " ");
+    const name = "calibration-" + topic + "-" + code;
+    return independent(imageVariant({
+      id: "image-generic-" + name,
+      title: place + " image",
+      heading: place + " image",
+      description: "The latest update explains what visitors can expect at the " + place + ".",
+      file: name + ".jpg",
+      goodAlt: "Photograph of the " + place + " visitor area",
+      badAlt: ["image", "photo", "picture", "graphic"][index % 4],
+      task: "Understand what the " + place + " visitor area looks like.",
+    }));
+  }),
+  ...CALIBRATION_TOPICS.map((topic, index) => {
+    const code = String(index + 1).padStart(3, "0");
+    const place = topic.replaceAll("-", " ");
+    const name = "calibration-" + topic + "-" + code;
+    const badAlt = name + "-final.jpg";
+    return independent(imageVariant({
+      id: "image-filename-" + name,
+      title: place + " exhibit",
+      heading: place + " exhibit",
+      description: "The exhibit explains the history of the " + place + ".",
+      file: badAlt,
+      goodAlt: "Historical photograph of the " + place,
+      badAlt,
+      task: "Read the description of the " + place + " exhibit.",
+    }));
+  }),
+  ...CALIBRATION_TOPICS.map((topic, index) => {
+    const code = String(index + 1).padStart(3, "0");
+    const place = topic.replaceAll("-", " ");
+    return independent(fakeHeadingVariant({
+      id: "headings-fake-calibration-" + topic + "-" + code,
+      title: place + " guide",
+      heading: place + " guide",
+      label: "Visitor requirements",
+      task: "Find the visitor requirements for the " + place + ".",
+    }));
+  }),
+  ...CALIBRATION_TOPICS.map((topic, index) => {
+    const code = String(index + 1).padStart(3, "0");
+    const place = topic.replaceAll("-", " ");
+    return independent(placeholderOnlyVariant({
+      id: "form-placeholder-calibration-" + topic + "-" + code,
+      title: place + " booking",
+      heading: place + " booking",
+      label: "Booking reference",
+      name: "booking-reference-" + code,
+      task: "Enter the booking reference for the " + place + ".",
+    }));
+  }),
+  ...CALIBRATION_TOPICS.map((topic, index) => {
+    const code = String(index + 1).padStart(3, "0");
+    const place = topic.replaceAll("-", " ");
+    return independent(unnamedIconVariant({
+      id: "icon-button-calibration-" + topic + "-" + code,
+      title: place + " controls",
+      heading: place + " controls",
+      name: "Open " + place + " controls",
+      task: "Open the " + place + " controls.",
+    }));
+  }),
+  ...CALIBRATION_TOPICS.map((topic, index) => {
+    const code = String(index + 1).padStart(3, "0");
+    const place = topic.replaceAll("-", " ");
+    return independent(errorVariant({
+      id: "form-error-calibration-" + topic + "-" + code,
+      title: place + " request",
+      heading: place + " request",
+      field: "Reference number",
+      submit: "Submit " + place + " request",
+      message: "Enter the reference number before submitting.",
+      task: "Submit the " + place + " request without a reference number.",
+    }));
+  }),
+  ...CALIBRATION_TOPICS.map((topic, index) => {
+    const code = String(index + 1).padStart(3, "0");
+    const place = topic.replaceAll("-", " ");
+    return independent(statusVariant({
+      id: "filter-status-calibration-" + topic + "-" + code,
+      title: place + " catalogue",
+      heading: place + " catalogue",
+      control: "Show " + place + " items",
+      task: "Show " + place + " items and notice the result count.",
+    }));
+  }),
+  ...CALIBRATION_TOPICS.map((topic, index) => {
+    const code = String(index + 1).padStart(3, "0");
+    const place = topic.replaceAll("-", " ");
+    return independent(customControlVariant({
+      id: "custom-control-calibration-" + topic + "-" + code,
+      title: place + " controls",
+      heading: place + " controls",
+      label: "Open " + place + " details",
+      task: "Open the " + place + " details.",
+    }));
+  }),
+  ...CALIBRATION_TOPICS.map((topic, index) => {
+    const code = String(index + 1).padStart(3, "0");
+    const place = topic.replaceAll("-", " ");
+    return independent(disclosureVariant({
+      id: "disclosure-state-calibration-" + topic + "-" + code,
+      title: place + " advice",
+      heading: place + " advice",
+      control: place + " rules",
+      content: "Visitors should follow the published rules.",
+      task: "Open the " + place + " rules.",
+    }));
+  }),
+];
+
+cases.push(...CALIBRATION_CASES);
+
+export const CASES = Object.freeze(cases);
+
+function structuralTextParts(capture) {
+  return [
+    ...(capture.structure?.headings || []),
+    ...(capture.structure?.landmarks || []),
+    ...(capture.structure?.formFields || []),
+  ];
+}
+
+function interactionTextParts(capture) {
+  return [
+    ...(capture.interaction?.controls || []),
+    ...(capture.interaction?.stateChanges || []).flatMap(({ control, after }) => [control, after]),
+    ...(capture.interaction?.formChanges || []).flatMap(({ control, after }) => [control, after]),
+    ...(capture.interaction?.postSubmitFields || []),
+  ];
+}
+
+function captureTextParts(capture) {
+  return [
+    ...(capture.transcript || []),
+    ...structuralTextParts(capture),
+    ...interactionTextParts(capture),
+  ];
+}
+
+function flattenCapture(capture) {
+  return captureTextParts(capture).filter((value) => typeof value === "string").join("\n");
+}
+
+function regexMatches(capture, signal) {
+  return new RegExp(signal.pattern, signal.flags || "i").test(flattenCapture(capture));
+}
+
+function structureIsEmpty(capture, signal) {
+  return (capture.structure?.[signal.field] || []).length === 0;
+}
+
+function headingIsMissing(capture, signal) {
+  return !(capture.structure?.headings || []).some((heading) => heading.toLowerCase().includes(signal.text.toLowerCase()));
+}
+
+function hasMissingRole(capture, signal) {
+  const values = [
+    ...(capture.transcript || []),
+    ...(capture.structure?.formFields || []),
+    ...(capture.interaction?.controls || []),
+  ];
+  return values.some((value) => value.toLowerCase().includes(signal.text.toLowerCase())
+    && !/button|link|checkbox|radio|menu|switch|heading/i.test(value));
+}
+
+const STATE_WORD = /\b(expanded|collapsed|open|closed|pressed|checked)\b/i;
+
+const stateWordOf = (text) => (text.match(STATE_WORD)?.[1] ?? "").toLowerCase();
+
+// The disclosure failure is "operating the control did not change the announced state".
+//
+// This used to test whether the announcement was EMPTY, which was right when the probe
+// listened for a spontaneous announcement. The probe now re-reads the control after
+// activating it, so `after` always carries a state word and the emptiness test could never
+// fire again -- it silently stopped discriminating and took three cases with it. A probe and
+// its signal are coupled; changing one means revisiting the other.
+function stateChangeIsSilent(capture, signal) {
+  const changes = capture.interaction?.stateChanges || [];
+  return changes.some(({ control, after }) => {
+    if (!control.toLowerCase().includes(signal.control.toLowerCase())) return false;
+    const before = stateWordOf(control);
+    const now = stateWordOf(after);
+    // No state word at all is still a failure: nothing was conveyed either way.
+    return now === "" || now === before;
+  });
+}
+
+// Two failures that both involve activating a control, but whose evidence lives in
+// different channels. Conflating them cost three cases: a single matcher tuned for one
+// reported the other's GOOD page as failing.
+//
+// (a) 4.1.3 Status Messages -- a filter updates results and says nothing. The status IS the
+// announcement, so it lands in `formChanges.after`: the good page carries "Showing 2 bags.",
+// the bad page carries "".
+function formActivationIsSilent(capture, signal) {
+  const changes = capture.interaction?.formChanges || [];
+  const target = changes.filter(({ control }) => control.toLowerCase().includes(signal.control.toLowerCase()));
+  if (signal.expected) return target.length === 0 || target.every(({ after }) => !after.includes(signal.expected));
+  return target.length === 0 || target.every(({ after }) => after.trim() === "");
+}
+
+// An announced validation error leaves a durable trace on the field: NVDA reports
+// "invalid entry" for aria-invalid, plus the message via the field's description.
+const ANNOUNCED_ERROR = /invalid|\berror\b/i;
+
+// (b) 3.3.1 Error Identification -- submitting bad input announces no error. Here
+// `formChanges.after` is useless: it records the focus move after submit and reads
+// "Newsletter signup, document" on BOTH pages. The evidence is in `postSubmitFields`, the
+// deliberate re-read of durable field state -- persistent state over transient speech, which
+// is the lesson the NVDA correctness audit already drew (its Root 2).
+function validationErrorIsSilent(capture, signal) {
+  const changes = capture.interaction?.formChanges || [];
+  const submitted = changes.some(({ control }) => control.toLowerCase().includes(signal.control.toLowerCase()));
+  if (!submitted) return true; // the submit never happened, so nothing could be announced
+  // NVDA versions place the durable invalid-field announcement in either the post-submit
+  // structural sweep or the activation change's `after` value. Both are screen-reader
+  // evidence; relying on only one made a correctly announced error look silent.
+  const announcedEvidence = [
+    ...(capture.interaction?.postSubmitFields || []),
+    ...changes.map(({ after }) => after),
+  ];
+  return !announcedEvidence.some((field) => ANNOUNCED_ERROR.test(field));
+}
+
+// A data cell in a properly-marked-up table is announced with its header
+// ("row 2, Destination, column 1, Riverside"); without header association NVDA can only
+// announce the position ("row 2, column 1, Riverside"). So the failure is a data row whose
+// "row N" runs straight into "column".
+//
+// The previous version could never match ANY input: written as a regex literal, `\\s` is an
+// escaped backslash followed by "s", not whitespace. It also keyed on the literal time
+// "09:15", so it would not have generalised to the other two pages even once fixed.
+// Excludes row 1: that is the header row, which announces "row 1, column 1" on a correct
+// table too. Only DATA rows should carry their header names.
+const POSITION_ONLY_CELL = /row\s+(?!1\b)\d+[, ]+column/i;
+
+function tableHeadersAreUnassociated(capture) {
+  return POSITION_ONLY_CELL.test(flattenCapture(capture));
+}
+
+// A form field NVDA announces as a bare role, with no name in front of it: "edit" rather
+// than "Recipient name, edit".
+//
+// This replaces a transcript regex for a trailing "edit", which fired on the GOOD page too
+// and so discriminated nothing -- NVDA announces a correctly labelled field across two
+// lines, the label then the role, leaving a line that is only "edit". The structural
+// form-field sweep does not have that ambiguity: the name and role arrive together.
+// Same rule as the 4.1.2 check in @a11y-witness/judge/rules.
+const LEADING_ROLE = /^(edit(\s+text)?|button|checkbox|radio|combo\s*box|list\s*box|slider|spin\s*button)\b/i;
+
+function hasUnnamedFormField(capture) {
+  return (capture.structure?.formFields || []).some((field) => LEADING_ROLE.test(field.trim()));
+}
+
+export function signalMatches(capture, signal) {
+  if (signal.type === "unnamed-form-field") return hasUnnamedFormField(capture);
+  if (signal.type === "regex") return regexMatches(capture, signal);
+  if (signal.type === "structure-empty") return structureIsEmpty(capture, signal);
+  if (signal.type === "missing-heading") return headingIsMissing(capture, signal);
+  if (signal.type === "missing-role") return hasMissingRole(capture, signal);
+  if (signal.type === "state-change-silent") return stateChangeIsSilent(capture, signal);
+  if (signal.type === "form-activation-silent") return formActivationIsSilent(capture, signal);
+  if (signal.type === "validation-error-silent") return validationErrorIsSilent(capture, signal);
+  if (signal.type === "table-unassociated") return tableHeadersAreUnassociated(capture);
+  return false;
+}
+
+function appendTextUnits(units, channel, values) {
+  for (const text of values || []) {
+    if (typeof text === "string" && text.length > 0) units.push({ channel, text });
+  }
+}
+
+function appendChangeUnits(units, channel, changes) {
+  for (const { control, after } of changes || []) {
+    const text = control + " -> " + after;
+    if (text.length > 0) units.push({ channel, text });
+  }
+}
+
+export function evidenceUnits(capture) {
+  const units = [];
+  appendTextUnits(units, "transcript", capture.transcript);
+  appendTextUnits(units, "heading-navigation", capture.structure?.headings);
+  // `landmarks` is deliberately NOT a model feature.
+  //
+  // Whether the landmark sweep reaches a landmark that ENCLOSES the caret depends on where the previous
+  // sweep left it, and that varies. Measured on the same unchanged page: `[]` in one capture and
+  // `["Cycling guide"]` (the h1, which is what NVDA announces on entering `main`) in the next. Fed to
+  // the encoder, that swung a CONFORMANT page's 3.3.2 score from 0.004 to 0.39 across a 0.35 threshold,
+  // so the same page was judged clean once and failing once -- on two acceptance cases.
+  //
+  // Anchoring does not rescue it: measured over three runs per page it left one page still varying
+  // (1 of 3) and made another LOSE a landmark it had previously found. The field cannot currently be
+  // both deterministic and complete, so it must not be an input to a scorer.
+  //
+  // This is the same call the exporter already makes in excluding `1.3.1:missing-landmark`, for the same
+  // stated reason -- "not a reliably inferable screen-reader announcement". The field stays in the
+  // capture and stays available to the dataset signals, which read `capture.structure.landmarks`
+  // directly (`structureIsEmpty`) and are unaffected; and `structureCrossCheck` now reports, per
+  // capture, whether the sweep was complete.
+  appendTextUnits(units, "form-navigation", capture.structure?.formFields);
+  appendTextUnits(units, "control-navigation", capture.interaction?.controls);
+  appendChangeUnits(units, "state-change", capture.interaction?.stateChanges);
+  appendChangeUnits(units, "form-change", capture.interaction?.formChanges);
+  appendTextUnits(units, "post-submit-navigation", capture.interaction?.postSubmitFields);
+  return units;
+}
+
+export function captureEvidenceText(capture) {
+  return evidenceUnits(capture).map(({ text }) => text).join("\n");
+}

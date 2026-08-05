@@ -1,0 +1,251 @@
+{
+  "url": "tutorial: carousels-bad (authored from W3C guidance)",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T15:59:20.772Z",
+  "transcript": [
+    "heading, level 1, Acme store",
+    "Featured",
+    "button, , button,"
+  ],
+  "structure": {
+    "headings": [
+      "Acme store, heading, level 1"
+    ],
+    "landmarks": [],
+    "formFields": [
+      "button"
+    ],
+    "graphics": [],
+    "links": [],
+    "lists": [],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [
+      "button"
+    ],
+    "stateChanges": [],
+    "formChanges": [],
+    "postSubmitFields": [],
+    "focusOrder": []
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 89,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/tutorials/carousels-bad.html",
+      "captures": 13
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 847,
+      "ok": true,
+      "waitedMs": 758
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 1042,
+      "x": 0,
+      "y": 0,
+      "ms": 195
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 1042,
+      "ok": true,
+      "reused": true,
+      "captures": 14
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 1631,
+      "alive": true,
+      "heard": "heading, level 1, Acme store"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 2299,
+      "ok": true,
+      "title": "Acme - Featured (inaccessible carousel, observable parts)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 7948,
+      "lastSpoken": "heading, level 1, Acme store"
+    },
+    {
+      "event": "readThrough",
+      "atMs": 9481,
+      "count": 3,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 10380,
+      "type": "heading",
+      "found": 1,
+      "prevMs": 633,
+      "nextMs": 266,
+      "prevTrips": 5,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Acme store, heading, level 1",
+      "nextStopPhrase": "",
+      "phrases": [
+        "Acme store, heading, level 1"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 10928,
+      "type": "landmark",
+      "found": 0,
+      "prevMs": 282,
+      "nextMs": 266,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 12895,
+      "type": "formField",
+      "found": 1,
+      "prevMs": 305,
+      "nextMs": 1662,
+      "prevTrips": 3,
+      "nextTrips": 5,
+      "prevStop": "exhausted",
+      "nextStop": "repeat",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "button",
+      "phrases": [
+        "button"
+      ]
+    },
+    {
+      "event": "structural",
+      "atMs": 12895,
+      "headings": 1,
+      "landmarks": 0,
+      "formFields": 1,
+      "roundTrips": 22
+    },
+    {
+      "event": "sweep",
+      "atMs": 13453,
+      "type": "graphic",
+      "found": 0,
+      "prevMs": 286,
+      "nextMs": 272,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 14013,
+      "type": "link",
+      "found": 0,
+      "prevMs": 289,
+      "nextMs": 271,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 14565,
+      "type": "list",
+      "found": 0,
+      "prevMs": 275,
+      "nextMs": 277,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "interaction",
+      "atMs": 14565,
+      "controls": 1,
+      "stateChanges": 0,
+      "formChanges": 0,
+      "postSubmit": 0,
+      "sweepLog": []
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 14585,
+      "landmark": 0,
+      "heading": 1,
+      "link": 0,
+      "graphic": 1,
+      "graphicUnnamed": 1,
+      "names": [
+        "Acme - Featured (inaccessible carousel, observable parts)",
+        "Acme store",
+        "Acme store",
+        "Acme store",
+        "Featured",
+        "Featured"
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 14585,
+      "agrees": false,
+      "compared": 4,
+      "disagreements": [
+        {
+          "type": "graphic",
+          "sweep": 0,
+          "elementsList": 1,
+          "kind": "truncated"
+        }
+      ]
+    },
+    {
+      "event": "done",
+      "atMs": 14585,
+      "transcript": 3
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 14586
+    }
+  ],
+  "task": "Browse the featured products",
+  "environment": {
+    "measuredAt": "2026-08-04T15:59:20.774Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}

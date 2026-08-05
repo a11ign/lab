@@ -1,0 +1,192 @@
+/**
+ * Judge eval runner.
+ *
+ * Runs the judge over the labeled fixtures and scores its findings against
+ * ground truth, at the WCAG-criterion level. Reports recall (did it catch the
+ * observable failures?) and precision (did it flag anything it shouldn't?).
+ *
+ * Usage:
+ *   npm run eval                 # all cases, 1 run each
+ *   npm run eval -- w3c-bad-before
+ *   EVAL_RUNS=3 npm run eval     # repeat each case to measure consistency
+ *
+ * Fixtures are frozen transcripts, so this evaluates the JUDGE, not capture.
+ */
+import { existsSync, readFileSync } from "node:fs";
+import { judge } from "@a11y-witness/judge";
+import { pageCensus } from "@a11y-witness/evidence/verify";
+import { EVAL_CASES, type EvalCase } from "./cases.js";
+import { evaluateFitness, persistentFalsePositives, thresholdsFromEnv } from "./fitness.js";
+
+const RUNS = Number(process.env.EVAL_RUNS || 1);
+
+/** "1.1.1 Non-text Content (A)" -> "1.1.1" */
+function criterion(wcag: string): string {
+  const m = wcag.match(/(\d+\.\d+\.\d+)/);
+  return m ? m[1] : wcag.trim();
+}
+
+interface RunScore {
+  found: string[];
+  recall: number;
+  precision: number;
+  caught: string[];
+  missed: string[];
+  falsePositives: string[];
+}
+
+async function scoreOnce(c: EvalCase): Promise<RunScore> {
+  const data = JSON.parse(readFileSync(c.fixture, "utf8")) as {
+    url: string;
+    screenReader?: string;
+    transcript: string[];
+    // Declared LOOSELY on purpose. This shape used to name only headings/landmarks/formFields and
+    // controls/stateChanges, which silently stripped `links`, `graphics`, `lists`, `postSubmitFields` and
+    // `formChanges` before the judge ever saw them — so the rules that read those channels could not fire
+    // here, and the model's structured features read zero. That is the same defect as the CLI's `--json`
+    // dropping structure, which suppressed a true 4.1.2 at 0.993. An eval harness that feeds the judge
+    // less than production does is measuring something else.
+    structure?: Record<string, string[]>;
+    interaction?: Record<string, unknown>;
+    diagnostics?: unknown[];
+  };
+  const verdict = await judge({
+    url: data.url,
+    task: c.task,
+    screenReader: data.screenReader ?? "NVDA",
+    transcript: data.transcript,
+    structure: data.structure as never,
+    interaction: data.interaction as never,
+    // The accessibility-tree oracle, which two deterministic rules need: 1.3.1 will not claim "no
+    // headings" without it, and 1.1.1 uses it to see images that expose no name at all — ones quick
+    // navigation walks past, so the announcements alone cannot reach them.
+    census: pageCensus(data as never) ?? undefined,
+  });
+  const found = Array.from(new Set(verdict.findings.map((f) => criterion(f.wcag))));
+  const allow = new Set(c.allow);
+  const caught = c.expect.filter((x) => found.includes(x));
+  const missed = c.expect.filter((x) => !found.includes(x));
+  const falsePositives = found.filter((x) => !allow.has(x));
+  const recall = c.expect.length ? caught.length / c.expect.length : 1;
+  const precision = found.length ? found.filter((x) => allow.has(x)).length / found.length : 1;
+  return { found, recall, precision, caught, missed, falsePositives };
+}
+
+const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
+const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+
+// One scored case: its per-run recalls, whether it expects failures, and how
+// many false positives the last run produced (the unit the aggregate sums).
+interface CaseReport {
+  recalls: number[];
+  isFailureCase: boolean;
+  /** One entry per run, so the aggregate can tell a persistent false positive from sampling noise. */
+  falsePositivesPerRun: string[][];
+}
+
+// Score a case (RUNS times), print its block, and return what the aggregate needs.
+/** Which judge is being measured — the skip below is per backend, because scope is per backend. */
+const BACKEND = (process.env.JUDGE_BACKEND ?? "local").toLowerCase();
+
+async function reportCase(c: EvalCase): Promise<CaseReport> {
+  // A case the active backend cannot assess is NOT APPLICABLE: excluded from recall rather than scored as
+  // a zero, and announced so the exclusion can never be mistaken for a pass. Silence about a skipped case
+  // is how a gate comes to report coverage it does not have.
+  //
+  // Checked BEFORE any judging, so an out-of-scope fixture also stops costing a judge call — and, for the
+  // trained scorer, stops raising an exception that once aborted the whole run part-way.
+  if (c.notApplicableTo?.includes(BACKEND)) {
+    console.log(`\n# ${c.id}\n  SKIPPED  out of scope for the ${BACKEND} backend — ${c.notes ?? "see cases.ts"}`);
+    return { recalls: [], isFailureCase: false, falsePositivesPerRun: [] };
+  }
+  process.stderr.write(`Scoring ${c.id} ...\n`);
+  const scores: RunScore[] = [];
+  for (let i = 0; i < RUNS; i++) scores.push(await scoreOnce(c));
+  const isFailureCase = c.expect.length > 0;
+  printCaseScore(c, scores, isFailureCase);
+  return {
+    recalls: scores.map((score) => score.recall),
+    isFailureCase,
+    falsePositivesPerRun: scores.map((score) => score.falsePositives),
+  };
+}
+
+// Takes the runs and derives the rest. `last` and `recalls` were separate parameters until they put
+// this over the argument limit -- and they were always just views of `scores`, so passing them was
+// duplication rather than information.
+function printCaseScore(c: EvalCase, scores: RunScore[], isFailureCase: boolean): void {
+  const recalls = scores.map((score) => score.recall);
+  const last = scores[scores.length - 1];
+  console.log(`# ${c.id}${isFailureCase ? "" : "  (conformant: expect no findings)"}`);
+  console.log(`  expect:    [${c.expect.join(", ") || "(none)"}]`);
+  console.log(`  found:     [${last.found.join(", ") || "(none)"}]${RUNS > 1 ? " (last run)" : ""}`);
+  if (isFailureCase) {
+    const range = RUNS > 1 ? ` (min ${pct(Math.min(...recalls))}, max ${pct(Math.max(...recalls))})` : "";
+    console.log(`  recall:    ${pct(mean(recalls))}${range}  caught [${last.caught.join(", ") || "-"}]  missed [${last.missed.join(", ") || "-"}]`);
+  }
+  const persistent = persistentFalsePositives(scores.map((s) => s.falsePositives));
+  console.log(`  false positives: ${persistent.length} [${persistent.join(", ") || "none"}]`);
+  // Show what did NOT persist. A criterion that appeared in a minority of runs is the judge's sampling
+  // noise, and hiding it is how a flaky gate gets mistaken for a clean one.
+  if (scores.length > 1) {
+    const transient = [...new Set(scores.flatMap((s) => s.falsePositives))].filter((f) => !persistent.includes(f));
+    if (transient.length) console.log(`  transient (minority of ${scores.length} runs, not gated): [${transient.join(", ")}]`);
+  }
+  if (c.notes) console.log(`  note: ${c.notes}`);
+  console.log("");
+}
+
+async function main(): Promise<void> {
+  const filter = process.argv[2];
+  // Substring match so e.g. `npm run eval -- tut-` runs all tutorial cases.
+  const matched = filter ? EVAL_CASES.filter((c) => c.id.includes(filter)) : EVAL_CASES;
+  if (!matched.length) {
+    console.error(`No eval case matches "${filter}". Known: ${EVAL_CASES.map((c) => c.id).join(", ")}`);
+    process.exit(1);
+  }
+
+  // A case whose fixture has not been captured yet (authored page awaiting the
+  // NVDA worker) is skipped, not an error: it does not exist to score.
+  const cases = matched.filter((c) => existsSync(c.fixture));
+  const pending = matched.filter((c) => !existsSync(c.fixture));
+  if (pending.length) {
+    console.log(`Pending capture (skipped — author'd, awaiting NVDA worker): ${pending.map((c) => c.id).join(", ")}\n`);
+  }
+  if (!cases.length) {
+    console.log("No captured fixtures to score yet.");
+    return;
+  }
+
+  console.log(`a11y-witness judge eval  (${RUNS} run(s) per case)\n`);
+  const failureRecall: number[] = []; // recall, only on cases with expected failures
+  let totalFalsePositives = 0; // persistent across a majority of runs, per case
+  let conformantFalsePositives = 0; // false positives on conformant (expect-none) cases
+
+  for (const c of cases) {
+    const report = await reportCase(c);
+    if (report.isFailureCase) failureRecall.push(...report.recalls);
+    const persistent = persistentFalsePositives(report.falsePositivesPerRun).length;
+    totalFalsePositives += persistent;
+    if (!report.isFailureCase) conformantFalsePositives += persistent;
+  }
+
+  const recall = failureRecall.length ? mean(failureRecall) : 1;
+  console.log(
+    `AGGREGATE  recall ${pct(recall)} (over ${failureRecall.length} failure-case run(s))  |  ` +
+      `false positives ${totalFalsePositives} total, ${conformantFalsePositives} on conformant pages`
+  );
+
+  // Fitness-function gate (opt-in via EVAL_GATE): fail the run if judge quality
+  // regresses below the thresholds, so it can be used as a regression gate.
+  if (process.env.EVAL_GATE) {
+    const thresholds = thresholdsFromEnv();
+    const fitness = evaluateFitness({ recall, conformantFP: conformantFalsePositives }, thresholds);
+    console.log(fitness.pass ? "\nFITNESS: PASS" : `\nFITNESS: FAIL — ${fitness.reasons.join("; ")}`);
+    if (!fitness.pass) process.exitCode = 1;
+  }
+}
+
+main().catch((e) => {
+  console.error(e);
+  process.exit(1);
+});

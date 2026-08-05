@@ -1,0 +1,255 @@
+{
+  "url": "tutorial: images-good (authored from W3C guidance)",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T15:55:49.604Z",
+  "transcript": [
+    "heading, level 1, Acme Trails",
+    "graphic, A red sunset over the Blue Ridge mountains",
+    "Our guided hikes run every weekend.",
+    "link, graphic, Print this page"
+  ],
+  "structure": {
+    "headings": [
+      "Acme Trails, heading, level 1"
+    ],
+    "landmarks": [],
+    "formFields": [],
+    "graphics": [
+      "A red sunset over the Blue Ridge mountains, graphic",
+      "Print this page, graphic, link"
+    ],
+    "links": [],
+    "lists": [],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [],
+    "stateChanges": [],
+    "formChanges": [],
+    "postSubmitFields": [],
+    "focusOrder": []
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 194,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/tutorials/images-good.html",
+      "captures": 2
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 1248,
+      "ok": true,
+      "waitedMs": 1053
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 1560,
+      "x": 0,
+      "y": 0,
+      "ms": 312
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 1560,
+      "ok": true,
+      "reused": true,
+      "captures": 3
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 2151,
+      "alive": true,
+      "heard": "heading, level 1, Acme Trails"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 2777,
+      "ok": true,
+      "title": "Acme Trails - Photos (accessible)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 5951,
+      "lastSpoken": "heading, level 1, Acme Trails"
+    },
+    {
+      "event": "readThrough",
+      "atMs": 9214,
+      "count": 4,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 10486,
+      "type": "heading",
+      "found": 1,
+      "prevMs": 990,
+      "nextMs": 282,
+      "prevTrips": 5,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Acme Trails, heading, level 1",
+      "nextStopPhrase": "",
+      "phrases": [
+        "Acme Trails, heading, level 1"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 11052,
+      "type": "landmark",
+      "found": 0,
+      "prevMs": 290,
+      "nextMs": 276,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 11612,
+      "type": "formField",
+      "found": 0,
+      "prevMs": 280,
+      "nextMs": 280,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "structural",
+      "atMs": 11612,
+      "headings": 1,
+      "landmarks": 0,
+      "formFields": 0,
+      "roundTrips": 20
+    },
+    {
+      "event": "sweep",
+      "atMs": 12820,
+      "type": "graphic",
+      "found": 2,
+      "prevMs": 290,
+      "nextMs": 918,
+      "prevTrips": 3,
+      "nextTrips": 7,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "Print this page, graphic, link",
+      "phrases": [
+        "A red sunset over the Blue Ridge mountains, graphic",
+        "Print this page, graphic, link"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 13386,
+      "type": "link",
+      "found": 0,
+      "prevMs": 296,
+      "nextMs": 270,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 13962,
+      "type": "list",
+      "found": 0,
+      "prevMs": 293,
+      "nextMs": 283,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "interaction",
+      "atMs": 13962,
+      "controls": 0,
+      "stateChanges": 0,
+      "formChanges": 0,
+      "postSubmit": 0,
+      "sweepLog": []
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 13986,
+      "landmark": 0,
+      "heading": 1,
+      "link": 1,
+      "graphic": 2,
+      "graphicUnnamed": 0,
+      "names": [
+        "Acme Trails - Photos (accessible)",
+        "Acme Trails",
+        "A red sunset over the Blue Ridge mountains",
+        "Print this page",
+        "Acme Trails",
+        "Our guided hikes run every weekend.",
+        "Print this page",
+        "Acme Trails",
+        "Our guided hikes run every weekend."
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 13986,
+      "agrees": false,
+      "compared": 4,
+      "disagreements": [
+        {
+          "type": "link",
+          "sweep": 0,
+          "elementsList": 1,
+          "kind": "truncated"
+        }
+      ]
+    },
+    {
+      "event": "done",
+      "atMs": 13986,
+      "transcript": 4
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 13987
+    }
+  ],
+  "task": "View the trail photos",
+  "environment": {
+    "measuredAt": "2026-08-04T15:55:49.606Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}

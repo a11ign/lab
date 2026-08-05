@@ -1,0 +1,257 @@
+{
+  "url": "file:///C:/Users/borem/a11y-witness/src/eval/pages/books/custom-control-bad.html",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T16:03:39.817Z",
+  "transcript": [
+    "heading, level 1, Settings",
+    "clickable, Save changes, button,"
+  ],
+  "structure": {
+    "headings": [
+      "Settings, heading, level 1"
+    ],
+    "landmarks": [],
+    "formFields": [
+      "button"
+    ],
+    "graphics": [],
+    "links": [],
+    "lists": [],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [
+      "button"
+    ],
+    "stateChanges": [],
+    "formChanges": [],
+    "postSubmitFields": [],
+    "focusOrder": []
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 76,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/books/custom-control-bad.html",
+      "captures": 25
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 795,
+      "ok": true,
+      "waitedMs": 719
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 1085,
+      "x": 0,
+      "y": 0,
+      "ms": 290
+    },
+    {
+      "event": "nvdaRecycle",
+      "atMs": 1085,
+      "after": 25
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 8650,
+      "ok": true,
+      "reused": false
+    },
+    {
+      "event": "nvdaReady",
+      "atMs": 8651,
+      "waitedMs": 1
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 9288,
+      "alive": true,
+      "heard": "heading, level 1, Settings"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 9855,
+      "ok": true,
+      "title": "Settings (custom controls without names or roles)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 12722,
+      "lastSpoken": "heading, level 1, Settings"
+    },
+    {
+      "event": "readThrough",
+      "atMs": 15064,
+      "count": 2,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 16040,
+      "type": "heading",
+      "found": 1,
+      "prevMs": 677,
+      "nextMs": 298,
+      "prevTrips": 5,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Settings, heading, level 1",
+      "nextStopPhrase": "",
+      "phrases": [
+        "Settings, heading, level 1"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 17285,
+      "type": "landmark",
+      "found": 0,
+      "prevMs": 284,
+      "nextMs": 961,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 18210,
+      "type": "formField",
+      "found": 1,
+      "prevMs": 298,
+      "nextMs": 627,
+      "prevTrips": 3,
+      "nextTrips": 5,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "button",
+      "phrases": [
+        "button"
+      ]
+    },
+    {
+      "event": "structural",
+      "atMs": 18210,
+      "headings": 1,
+      "landmarks": 0,
+      "formFields": 1,
+      "roundTrips": 22
+    },
+    {
+      "event": "sweep",
+      "atMs": 18766,
+      "type": "graphic",
+      "found": 0,
+      "prevMs": 283,
+      "nextMs": 273,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 19369,
+      "type": "link",
+      "found": 0,
+      "prevMs": 303,
+      "nextMs": 300,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 19935,
+      "type": "list",
+      "found": 0,
+      "prevMs": 283,
+      "nextMs": 283,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "formProbe",
+      "atMs": 19935,
+      "activated": 0
+    },
+    {
+      "event": "interaction",
+      "atMs": 19935,
+      "controls": 1,
+      "stateChanges": 0,
+      "formChanges": 0,
+      "postSubmit": 0,
+      "sweepLog": []
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 19953,
+      "landmark": 0,
+      "heading": 1,
+      "link": 0,
+      "graphic": 0,
+      "graphicUnnamed": 0,
+      "names": [
+        "Settings (custom controls without names or roles)",
+        "Settings",
+        "Settings",
+        "Save changes",
+        "Settings",
+        "Save changes"
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 19953,
+      "agrees": true,
+      "compared": 4,
+      "disagreements": []
+    },
+    {
+      "event": "done",
+      "atMs": 19953,
+      "transcript": 2
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 19953
+    }
+  ],
+  "task": "Save your settings",
+  "environment": {
+    "measuredAt": "2026-08-04T16:03:39.818Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}

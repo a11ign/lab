@@ -1,0 +1,262 @@
+{
+  "url": "tutorial: menus-bad (authored from W3C guidance)",
+  "screenReader": "NVDA",
+  "capturedAt": "2026-08-04T15:58:49.269Z",
+  "transcript": [
+    "link, Home, , link, Products, button,",
+    "link, Help center, , link, Contact",
+    "Home",
+    "Welcome to Acme."
+  ],
+  "structure": {
+    "headings": [],
+    "landmarks": [],
+    "formFields": [
+      "button"
+    ],
+    "graphics": [],
+    "links": [
+      "Products, link",
+      "Home, link",
+      "Help center, link",
+      "Contact, link"
+    ],
+    "lists": [],
+    "tableCells": []
+  },
+  "interaction": {
+    "controls": [
+      "button"
+    ],
+    "stateChanges": [],
+    "formChanges": [],
+    "postSubmitFields": [],
+    "focusOrder": []
+  },
+  "diagnostics": [
+    {
+      "event": "browserReused",
+      "atMs": 82,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/tutorials/menus-bad.html",
+      "captures": 11
+    },
+    {
+      "event": "windowsActivate",
+      "atMs": 847,
+      "ok": true,
+      "waitedMs": 765
+    },
+    {
+      "event": "pointerParked",
+      "atMs": 999,
+      "x": 0,
+      "y": 0,
+      "ms": 152
+    },
+    {
+      "event": "nvdaStart",
+      "atMs": 1000,
+      "ok": true,
+      "reused": true,
+      "captures": 12
+    },
+    {
+      "event": "speechChannel",
+      "atMs": 1600,
+      "alive": true,
+      "heard": "link, Home, , link, Products, button,"
+    },
+    {
+      "event": "documentReady",
+      "atMs": 2290,
+      "ok": true,
+      "title": "Acme - Home (inaccessible menu)",
+      "attempt": 1
+    },
+    {
+      "event": "afterStart",
+      "atMs": 8019,
+      "lastSpoken": "link, Home, , link, Products, button, "
+    },
+    {
+      "event": "readThrough",
+      "atMs": 9874,
+      "count": 4,
+      "stopReason": "repeatBottom",
+      "firstStepError": null
+    },
+    {
+      "event": "sweep",
+      "atMs": 10464,
+      "type": "heading",
+      "found": 0,
+      "prevMs": 313,
+      "nextMs": 277,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 11029,
+      "type": "landmark",
+      "found": 0,
+      "prevMs": 281,
+      "nextMs": 284,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 12897,
+      "type": "formField",
+      "found": 1,
+      "prevMs": 608,
+      "nextMs": 1260,
+      "prevTrips": 5,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "button",
+      "nextStopPhrase": "",
+      "phrases": [
+        "button"
+      ]
+    },
+    {
+      "event": "structural",
+      "atMs": 12897,
+      "headings": 0,
+      "landmarks": 0,
+      "formFields": 1,
+      "roundTrips": 20
+    },
+    {
+      "event": "sweep",
+      "atMs": 13451,
+      "type": "graphic",
+      "found": 0,
+      "prevMs": 278,
+      "nextMs": 276,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "sweep",
+      "atMs": 15616,
+      "type": "link",
+      "found": 4,
+      "prevMs": 922,
+      "nextMs": 1243,
+      "prevTrips": 7,
+      "nextTrips": 9,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "Home, link",
+      "nextStopPhrase": "Contact, link",
+      "phrases": [
+        "Products, link",
+        "Home, link",
+        "Help center, link",
+        "Contact, link"
+      ]
+    },
+    {
+      "event": "sweep",
+      "atMs": 16161,
+      "type": "list",
+      "found": 0,
+      "prevMs": 267,
+      "nextMs": 278,
+      "prevTrips": 3,
+      "nextTrips": 3,
+      "prevStop": "exhausted",
+      "nextStop": "exhausted",
+      "prevStopPhrase": "",
+      "nextStopPhrase": "",
+      "phrases": []
+    },
+    {
+      "event": "interaction",
+      "atMs": 16162,
+      "controls": 1,
+      "stateChanges": 0,
+      "formChanges": 0,
+      "postSubmit": 0,
+      "sweepLog": []
+    },
+    {
+      "event": "structureCensus",
+      "atMs": 16176,
+      "landmark": 0,
+      "heading": 0,
+      "link": 4,
+      "graphic": 0,
+      "graphicUnnamed": 0,
+      "names": [
+        "Acme - Home (inaccessible menu)",
+        "Home",
+        "Products",
+        "Home",
+        "Products",
+        "Help center",
+        "Contact",
+        "Home",
+        "Welcome to Acme.",
+        "Home",
+        "Products",
+        "Help center",
+        "Contact",
+        "Home",
+        "Welcome to Acme.",
+        "Help center",
+        "Contact"
+      ]
+    },
+    {
+      "event": "structureCrossCheck",
+      "atMs": 16176,
+      "agrees": true,
+      "compared": 4,
+      "disagreements": []
+    },
+    {
+      "event": "done",
+      "atMs": 16176,
+      "transcript": 4
+    },
+    {
+      "event": "browserKeptAlive",
+      "atMs": 16177
+    }
+  ],
+  "task": "Go to the Support section",
+  "environment": {
+    "measuredAt": "2026-08-04T15:58:49.270Z",
+    "screenReader": "NVDA",
+    "screenReaderVersion": "2026.1.1",
+    "browser": "Microsoft Edge",
+    "browserVersion": "151.0.4129.59",
+    "guidepupVersion": "0.31.0",
+    "nodeVersion": "v24.18.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
+    "architecture": "arm64",
+    "workerCode": "935baeacbe67c5ff",
+    "captureProtocol": 4,
+    "provisionRevision": "unstamped"
+  }
+}
