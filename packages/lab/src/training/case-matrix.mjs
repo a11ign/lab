@@ -26,6 +26,73 @@ const escapeHtml = (value) => String(value)
   .replaceAll(">", "&gt;")
   .replaceAll('"', "&quot;");
 
+
+/**
+ * Realistic page furniture, identical in both variants of a pair.
+ *
+ * ## Why
+ *
+ * The generated pages were minimal test cases and real pages are not. Measured across the corpus against
+ * real captures:
+ *
+ *   links      corpus p50 0, MAX 1        real pages 41-47
+ *   headings   corpus p50 1, MAX 3        real pages 30-37
+ *   transcript corpus p50 3, max 12       real pages 16-143
+ *
+ * So the scorer had never seen a page with more than one link or three headings, and its structured
+ * features sat 10-40x outside anything it was fitted on. That is why it scores 0.997 on a corpus page and
+ * <=0.002 on a real one: the inputs are off the end of its training range and its heads extrapolate to
+ * nothing. The fix is not more REAL pages — labels would then need validating — it is realistically SIZED
+ * pages, which we can author and label exactly.
+ *
+ * ## Why it cannot disturb a single label
+ *
+ * Applied inside `page()`, so both variants of a pair get byte-identical furniture and the labelled
+ * failure remains the only difference. What it contains is constrained by what the signals read:
+ *
+ * - **No landmarks.** All 58 `structure-empty` cases assert `structure.landmarks` is EMPTY, which holds
+ *   today only because quick navigation cannot reach the `<main>` enclosing the caret. A filler `<nav>`
+ *   WOULD be reachable and would break every one of them. Costless to omit: `evidenceUnits` deliberately
+ *   excludes landmarks as a model feature, so the gap there does not matter.
+ * - **No images and no form fields**, because 150 image cases and 141 label cases are defined by exactly
+ *   what those channels contain.
+ * - **No vague link text.** `regex` signals match `link, read more|learn more`, and 2.4.4's own rule bars
+ *   the phrase family, so filler links are all specific.
+ * - **Headings are safe** — `missing-heading` asserts a NAMED heading is absent, not that none exist, so
+ *   distinctly-worded filler cannot satisfy it. Sequence numbers make collision impossible.
+ */
+function filler({ links: linkCount, sections: sectionCount }) {
+  if (linkCount === 0 && sectionCount === 0) return "";
+  const topics = [
+    "Opening times for the north entrance", "Annual review 2019", "Accessibility statement",
+    "Travel and parking", "Volunteering enquiries", "Room hire rates", "Schools programme",
+    "Conservation projects", "Membership renewal", "Local history archive", "Site safety notes",
+    "Seasonal closures", "Feedback and complaints", "Supplier information", "Research requests",
+    "Community grants", "Weather advisory", "Lost property", "Bicycle storage", "Guided walks",
+  ];
+  // Every link text must be UNIQUE, and this is not cosmetic. The topic list cycles, so at 40 links the
+  // 21st repeated the 1st — and the read-through's bottom-of-page detector treats repeated phrases as
+  // having reached the end (`MAX_REPEATED_PHRASES = 3`). Measured: it stopped inside the link list, the
+  // transcript came back SHORTER for a bigger page (24 lines against 44), and the 28 heading sections were
+  // never read at all. Left unfixed that would have truncated the read-through on every page in the corpus.
+  const links = Array.from({ length: linkCount }, (_, i) =>
+    "<li><a href=\"#ref-" + (i + 1) + "\">"
+    + escapeHtml(topics[i % topics.length] + " " + String(i + 1).padStart(2, "0"))
+    + "</a></li>").join("");
+  const sections = Array.from({ length: sectionCount }, (_, i) => {
+    const n = String(i + 1).padStart(2, "0");
+    // "Reference note", NOT "Reference section". The word `section` collided with a real signal —
+    // `heading.*\bsection\b` on `heading-vague-market` — so the filler itself satisfied the badSignal and
+    // the case reported CONTAMINATED, firing on both variants. Found by testing the filler's announced text
+    // against all 382 regex signals statically, which takes seconds and should be run whenever this text
+    // changes: it would have caught this before a single capture was spent.
+    return "<h2 id=\"ref-" + (i + 1) + "\">Reference note " + n + "</h2>"
+      + "<p>Background detail for reference note " + n
+      + ", retained for records and reviewed each year by the site team.</p>";
+  }).join("");
+  return "<ul>" + links + "</ul>" + sections;
+}
+
 function page({ title, heading, body, script = "", landmark = true }) {
   const content = "<h1>" + escapeHtml(heading) + "</h1>" + body;
   const container = landmark ? "<main>" + content + "</main>" : content;
@@ -63,18 +130,7 @@ function pair({
   good,
   bad,
   probeForms = false,
-  // DERIVED from the signal, not asked for per case, and that is the point.
-  //
-  // The table probe is opt-in because it is not deterministic enough to be dataset evidence by default
-  // (`docs/screenreader-coverage.md`), and `preflight-screenreader-dataset.mjs` REFUSES a
-  // `table-unassociated` case that does not request it. But a case whose signal reads `structure.tableCells`
-  // needs the probe by definition, so making all 61 of them say so by hand is 61 chances to forget — and
-  // every one of them HAD forgotten: the field was absent from the whole matrix, so regenerating the
-  // manifest silently produced 61 cases that would capture no cells at all and go blind.
-  //
-  // Deriving it from the badSignal makes the invariant structural. Still overridable, for a case that wants
-  // cells without a table signal.
-  probeTables = badSignal?.type === "table-unassociated",
+  probeTables = false,
   family = id,
   subtype = null,
 }) {
@@ -264,7 +320,7 @@ const cases = [
     task: "Enter the email address for the booking confirmation.",
     source: "Practical Web Accessibility, chapter 6",
     mutation: "The only visible cue is a placeholder that disappears when typing starts.",
-    badSignal: { type: "regex", pattern: "(?:edit text|edit)[, ]*(?:\\ufffc)?\\s*$", flags: "im" },
+    badSignal: { type: "placeholder-only", placeholder: "name at example dot com" },
     // Deliberately NOT unnamed-form-field: a placeholder-only field is not unnamed, the
     // placeholder becomes its name. The discriminator is ORDER -- NVDA announces the bad page
     // as "<placeholder>, edit" (placeholder used as the name) and the good page as
@@ -311,7 +367,24 @@ const cases = [
     task: "Open the account search.",
     source: "Practical Web Accessibility, chapter 6",
     mutation: "An icon-only button has no accessible name.",
-    badSignal: { type: "regex", pattern: "(?:^|\\n)button[, ]*(?:$|\\n)", flags: "im" },
+    // The SAME signal its 31 generated variants use (see unnamedIconVariant), and deliberately so.
+    //
+    // This seed declared `{type: "unnamed-form-field"}` while every variant of the same mutation
+    // declared this regex, which split one failure mode across two model heads: `4.1.2:regex` trained
+    // on 31 records and `4.1.2:unnamed-form-field` on ONE. The training gate refuses release for any
+    // subtype under 20 positive development records, and it was right to -- a head fitted to a single
+    // example is not a classifier. An icon button with no accessible name is one failure mode and
+    // belongs in one subtype.
+    //
+    // Verified equivalent before changing it: this pattern fires on `icon-button-unnamed.bad` and stays
+    // silent on `.good`, exactly as `hasUnnamedFormField` did. `hasUnnamedFormField` itself is still
+    // exercised by the 115 `form-unlabelled` cases under 3.3.2, so no signal loses coverage. The pages
+    // are untouched, so no capture is invalidated.
+    badSignal: {
+      type: "regex",
+      pattern: "(?:^|\\n)button[, ]*(?:" + UNNAMED_GRAPHIC + ")?[, ]*(?:$|\\n)",
+      flags: "im",
+    },
     good: page({
       title: "Account search",
       heading: "Account search",
@@ -363,7 +436,7 @@ const cases = [
     bad: page({
       title: "Service request",
       heading: "Service request",
-      body: "<form id=\"request\"><span>Reference number</span><input id=\"reference\"><button type=\"submit\">Submit request</button><p class=\"error\" hidden>Enter the reference number before submitting.</p></form>",
+      body: "<form id=\"request\"><label for=\"reference\">Reference number</label><input id=\"reference\"><button type=\"submit\">Submit request</button><p class=\"error\" hidden>Enter the reference number before submitting.</p></form>",
       script: "document.querySelector('#request').addEventListener('submit', (event) => { event.preventDefault(); document.querySelector('.error').hidden = false; });",
     }),
     probeForms: true,
@@ -378,7 +451,7 @@ const cases = [
     good: page({
       title: "Product catalogue",
       heading: "Product catalogue",
-      body: "<button id=\"bags\" type=\"button\">Show bags</button><p id=\"count\" role=\"status\">Showing 8 products.</p><ul id=\"products\"><li>Canvas bag</li><li>Travel bag</li></ul>",
+      body: "<button id=\"bags\" type=\"button\">Show bags</button><p id=\"count\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\">Showing 8 products.</p><ul id=\"products\"><li>Canvas bag</li><li>Travel bag</li></ul>",
       script: "document.querySelector('#bags').addEventListener('click', () => { document.querySelector('#count').textContent = 'Showing 2 bags.'; });",
     }),
     bad: page({
@@ -396,6 +469,7 @@ const cases = [
     source: "Web Accessibility Cookbook, chapter 22; existing table eval fixtures",
     mutation: "A data table uses visual header cells without exposing their relationships to each data cell.",
     badSignal: { type: "table-unassociated" },
+    probeTables: true,
     good: page({
       title: "Train departures",
       heading: "Train departures",
@@ -413,6 +487,9 @@ function imageVariant({ id, title, heading, description, file, goodAlt, badAlt, 
   const goodImage = "<img src=\"/" + file + "\" alt=\"" + goodAlt + "\">";
   const badImage = "<img src=\"/" + file + "\""
     + (badAlt === null ? "" : " alt=\"" + badAlt + "\"") + ">";
+  const spokenBadAlt = badAlt === null
+    ? UNNAMED_GRAPHIC
+    : "\\b" + spokenForm(badAlt) + "\\b";
   return pair({
     id,
     family: "image-alternative",
@@ -422,7 +499,7 @@ function imageVariant({ id, title, heading, description, file, goodAlt, badAlt, 
     mutation: "The informative image loses a useful alternative and is announced without its meaning.",
     badSignal: {
       type: "regex",
-      pattern: "graphic.*" + (badAlt === null ? UNNAMED_GRAPHIC : spokenForm(badAlt)),
+      pattern: "graphic.*" + spokenBadAlt,
       flags: "i",
     },
     good: page({ title, heading, body: "<p>" + description + "</p>" + goodImage }),
@@ -526,24 +603,7 @@ function unlabelledFieldVariant({ id, title, heading, label, name, task }) {
     task,
     source: "Practical Web Accessibility, chapter 6; Inclusive Design for Accessibility, chapter 13",
     mutation: "The field has nearby visible text but no programmatic label.",
-    // The SAME signal its 31 generated variants use (see unnamedIconVariant), and deliberately so.
-    //
-    // This seed declared `{type: "unnamed-form-field"}` while every variant of the same mutation
-    // declared this regex, which split one failure mode across two model heads: `4.1.2:regex` trained
-    // on 31 records and `4.1.2:unnamed-form-field` on ONE. The training gate refuses release for any
-    // subtype under 20 positive development records, and it was right to -- a head fitted to a single
-    // example is not a classifier. An icon button with no accessible name is one failure mode and
-    // belongs in one subtype.
-    //
-    // Verified equivalent before changing it: this pattern fires on `icon-button-unnamed.bad` and stays
-    // silent on `.good`, exactly as `hasUnnamedFormField` did. `hasUnnamedFormField` itself is still
-    // exercised by the 115 `form-unlabelled` cases under 3.3.2, so no signal loses coverage. The pages
-    // are untouched, so no capture is invalidated.
-    badSignal: {
-      type: "regex",
-      pattern: "(?:^|\\n)button[, ]*(?:" + UNNAMED_GRAPHIC + ")?[, ]*(?:$|\\n)",
-      flags: "im",
-    },
+    badSignal: { type: "unnamed-form-field" },
     good: page({
       title,
       heading,
@@ -567,7 +627,7 @@ function placeholderOnlyVariant({ id, title, heading, label, name, task }) {
     task,
     source: "Practical Web Accessibility, chapter 6",
     mutation: "The field relies on a placeholder instead of a persistent label.",
-    badSignal: { type: "regex", pattern: "(?:edit text|edit)[, ]*(?:\\ufffc)?\\s*$", flags: "im" },
+    badSignal: { type: "placeholder-only", placeholder: "Example value" },
     good: page({
       title,
       heading,
@@ -661,14 +721,19 @@ function disclosureVariant({ id, title, heading, control, content, task }) {
 }
 
 function errorVariant({ id, title, heading, field, submit, message, task }) {
-  const goodBody = "<form id=\"form\"><label for=\"field\">" + field + "</label><input id=\"field\" aria-describedby=\"error\"><button type=\"submit\">" + submit + "</button><p id=\"error\" role=\"alert\" hidden>" + message + "</p></form>";
+  // Install the submit behaviour in the instrument itself. A trailing script is loaded only
+  // after the form has rendered, so the probe can submit during that small window and navigate
+  // away before preventDefault is attached (observed in both calibration and bulk fixtures).
+  const goodBody = "<form id=\"form\" onsubmit=\"event.preventDefault(); document.querySelector('#field').setAttribute('aria-invalid', 'true'); document.querySelector('#error').hidden = false; document.querySelector('#field').focus();\"><label for=\"field\">" + field + "</label><input id=\"field\" aria-describedby=\"error\"><button type=\"submit\">" + submit + "</button><p id=\"error\" role=\"alert\" hidden>" + message + "</p></form>";
   // Keep this pair single-criterion. The original bad fixture also removed the field label,
   // which made every 3.3.1 failure a hidden 3.3.2 failure and taught the 3.3.2 head that an
   // unrelated silent validation message is evidence of an unlabeled control. The mutation
   // here is only the missing error association/announcement; the field stays labelled.
   const badBody = "<form id=\"form\"><label for=\"field\">" + field + "</label><input id=\"field\"><button type=\"submit\">" + submit + "</button><p class=\"error\" hidden>" + message + "</p></form>";
-  const goodScript = "document.querySelector('#form').addEventListener('submit', (event) => { event.preventDefault(); document.querySelector('#field').setAttribute('aria-invalid', 'true'); document.querySelector('#error').hidden = false; document.querySelector('#field').focus(); });";
-  const badScript = "document.querySelector('#form').addEventListener('submit', (event) => { event.preventDefault(); document.querySelector('.error').hidden = false; });";
+  const badBodyWithHandler = badBody.replace(
+    '<form id="form">',
+    '<form id="form" onsubmit="event.preventDefault(); document.querySelector(\'.error\').hidden = false;">',
+  );
   return pair({
     id,
     family: "dynamic-feedback",
@@ -677,15 +742,18 @@ function errorVariant({ id, title, heading, field, submit, message, task }) {
     source: "Web Accessibility Cookbook, chapter 22; Practical Web Accessibility, chapter 6",
     mutation: "A validation message appears visually but is not associated with the invalid field or announced.",
     badSignal: { type: "validation-error-silent", control: submit },
-    good: page({ title, heading, body: goodBody, script: goodScript }),
-    bad: page({ title, heading, body: badBody, script: badScript }),
+    good: page({ title, heading, body: goodBody }),
+    bad: page({ title, heading, body: badBodyWithHandler }),
     probeForms: true,
   });
 }
 
 function statusVariant({ id, title, heading, control, task }) {
   const body = "<button id=\"filter\" type=\"button\">" + control + "</button><p id=\"count\">Showing 8 items.</p><ul><li>First item</li><li>Second item</li></ul>";
-  const goodBody = body.replace("id=\"count\"", "id=\"count\" role=\"status\"");
+  const goodBody = body.replace(
+    "id=\"count\"",
+    "id=\"count\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"",
+  );
   const script = "document.querySelector('#filter').addEventListener('click', () => { document.querySelector('#count').textContent = 'Showing 2 matching items.'; });";
   return pair({
     id,
@@ -712,6 +780,7 @@ function tableVariant({ id, title, heading, destination, task }) {
     source: "Web Accessibility Cookbook, chapter 22; existing table eval fixtures",
     mutation: "Visual table headers are not associated with their data cells.",
     badSignal: { type: "table-unassociated" },
+    probeTables: true,
     good: page({ title, heading, body: good }),
     bad: page({ title, heading, body: bad }),
   });
@@ -734,6 +803,7 @@ function variedTableVariant({ id, title, heading, caption, headers, row, task })
     source: "Web Accessibility Cookbook, chapter 22; Practical Web Accessibility, chapter 4",
     mutation: "The data table loses header associations while retaining its visible rows and caption.",
     badSignal: { type: "table-unassociated" },
+    probeTables: true,
     good: page({ title, heading, body: good }),
     bad: page({ title, heading, body: bad }),
   });
@@ -1310,13 +1380,61 @@ const CALIBRATION_CASES = [
 
 cases.push(...CALIBRATION_CASES);
 
-export const CASES = Object.freeze(cases);
+/**
+ * Page sizes to spread the corpus across, smallest to largest.
+ *
+ * A corpus where every page has exactly N links teaches the scorer "N", not "a range" — so the sizes vary
+ * per case and the zero stays in, keeping the small pages the model already handles. Measured per capture
+ * at each size, on one worker: 14 s / 24 s / 38 s / 60 s / 85 s, against real-page evidence of 41-47 links,
+ * 30-37 headings and 16-143 transcript lines. The largest bucket lands on transcript 127, links 40,
+ * headings 29 — the real distribution, reached with authored pages whose labels stay exact.
+ *
+ * The whole corpus is recaptured at these sizes, so the mean is a real cost: about 10 hours across three
+ * workers, against 3 h 45 m for the minimal pages. Change these only with fresh timings.
+ */
+const SCALE_BUCKETS = [
+  { links: 0, sections: 0 },
+  { links: 6, sections: 4 },
+  { links: 14, sections: 9 },
+  { links: 24, sections: 16 },
+  { links: 40, sections: 28 },
+];
+
+/**
+ * Give every case realistic page furniture, identical in both of its variants.
+ *
+ * Done HERE rather than inside `page()` deliberately. `page()` sees only a title and a body, and those
+ * differ between the good and bad variant — so any size derived from them could differ across a pair and
+ * introduce a second difference into a controlled comparison. That is the one defect this corpus cannot
+ * carry. Keyed on the case's index instead, the furniture is provably identical for both variants and
+ * stable across regenerations.
+ */
+function withRealisticScale(list) {
+  return list.map((testCase, index) => {
+    const extra = filler(SCALE_BUCKETS[index % SCALE_BUCKETS.length]);
+    if (!extra) return testCase;
+    // Always at the SAME structural position — before `</body>`, outside any landmark.
+    //
+    // Injecting inside `<main>` "where there is one" looked tidier and was wrong: 58 cases are landmark
+    // cases whose bad variant has no `<main>` at all, because its absence IS the labelled failure. The
+    // furniture would then sit inside a landmark in one variant and outside it in the other, so NVDA would
+    // announce identical text with different container prefixes. That amplifies the difference between a
+    // pair in a way the label does not describe — a shortcut, the same shape as the keystroke leak that
+    // sat on exactly one variant of 125 pairs. Uniform placement costs a little realism and buys a
+    // controlled comparison, which is the trade this corpus exists to make.
+    const inject = (html) => html.replace("</body>", extra + "</body>");
+    return { ...testCase, good: inject(testCase.good), bad: inject(testCase.bad) };
+  });
+}
+
+export const CASES = Object.freeze(withRealisticScale(cases));
 
 function structuralTextParts(capture) {
   return [
     ...(capture.structure?.headings || []),
     ...(capture.structure?.landmarks || []),
     ...(capture.structure?.formFields || []),
+    ...(capture.structure?.tableCells || []),
   ];
 }
 
@@ -1423,19 +1541,36 @@ function validationErrorIsSilent(capture, signal) {
 }
 
 // A data cell in a properly-marked-up table is announced with its header
-// ("row 2, Destination, column 1, Riverside"); without header association NVDA can only
-// announce the position ("row 2, column 1, Riverside"). So the failure is a data row whose
-// "row N" runs straight into "column".
-//
-// The previous version could never match ANY input: written as a regex literal, `\\s` is an
-// escaped backslash followed by "s", not whitespace. It also keyed on the literal time
-// "09:15", so it would not have generalised to the other two pages even once fixed.
-// Excludes row 1: that is the header row, which announces "row 1, column 1" on a correct
-// table too. Only DATA rows should carry their header names.
-const POSITION_ONLY_CELL = /row\s+(?!1\b)\d+[, ]+column/i;
+// ("Departs, column 2, 09:15"); without header association NVDA can only announce the
+// position ("column 2, 09:15"). Read the dedicated table-cell probe only: the normal transcript
+// is not a stable cell boundary and cell counts are not evidence of header relationships.
+const POSITION_ONLY_CELL = /^column\s+\d+\b/i;
 
 function tableHeadersAreUnassociated(capture) {
-  return POSITION_ONLY_CELL.test(flattenCapture(capture));
+  if ((capture.structure?.tableCells || []).some((cell) =>
+    typeof cell === "string" && POSITION_ONLY_CELL.test(cell.trim()))) return true;
+
+  // Some NVDA table probes return only the table summary in `tableCells`, while the
+  // ordered transcript still contains the decisive cell announcements. Once a data row
+  // starts, a line that begins with only "column N, value" proves that the header name
+  // was not carried into that cell. Header-row lines are intentionally ignored.
+  let inDataRow = false;
+  for (const line of capture.transcript || []) {
+    const text = typeof line === "string" ? line.trim() : "";
+    if (/^row\s+[2-9]\d*\b/i.test(text)) {
+      inDataRow = true;
+      continue;
+    }
+    if (inDataRow && POSITION_ONLY_CELL.test(text)) return true;
+  }
+  return false;
+}
+
+function placeholderOnlyIsPresent(capture, signal) {
+  if ((capture.structure?.formFields || []).length > 0) return false;
+  const placeholder = String(signal.placeholder || "").toLowerCase();
+  return captureTextParts(capture).some((value) =>
+    value.toLowerCase().includes(placeholder) && /\bedit(?: text)?\b/i.test(value));
 }
 
 // A form field NVDA announces as a bare role, with no name in front of it: "edit" rather
@@ -1445,8 +1580,8 @@ function tableHeadersAreUnassociated(capture) {
 // and so discriminated nothing -- NVDA announces a correctly labelled field across two
 // lines, the label then the role, leaving a line that is only "edit". The structural
 // form-field sweep does not have that ambiguity: the name and role arrive together.
-// Same rule as the 4.1.2 check in @a11y-witness/judge/rules.
-const LEADING_ROLE = /^(edit(\s+text)?|button|checkbox|radio|combo\s*box|list\s*box|slider|spin\s*button)\b/i;
+// Same rule as the 4.1.2 check in src/spike/rules.ts.
+const LEADING_ROLE = /^(?:\ufffc\s*,\s*)?(edit(\s+text)?|button|checkbox|radio|combo\s*box|list\s*box|slider|spin\s*button)\b/i;
 
 function hasUnnamedFormField(capture) {
   return (capture.structure?.formFields || []).some((field) => LEADING_ROLE.test(field.trim()));
@@ -1461,6 +1596,7 @@ export function signalMatches(capture, signal) {
   if (signal.type === "state-change-silent") return stateChangeIsSilent(capture, signal);
   if (signal.type === "form-activation-silent") return formActivationIsSilent(capture, signal);
   if (signal.type === "validation-error-silent") return validationErrorIsSilent(capture, signal);
+  if (signal.type === "placeholder-only") return placeholderOnlyIsPresent(capture, signal);
   if (signal.type === "table-unassociated") return tableHeadersAreUnassociated(capture);
   return false;
 }
@@ -1500,6 +1636,7 @@ export function evidenceUnits(capture) {
   // directly (`structureIsEmpty`) and are unaffected; and `structureCrossCheck` now reports, per
   // capture, whether the sweep was complete.
   appendTextUnits(units, "form-navigation", capture.structure?.formFields);
+  appendTextUnits(units, "table-cell-navigation", capture.structure?.tableCells);
   appendTextUnits(units, "control-navigation", capture.interaction?.controls);
   appendChangeUnits(units, "state-change", capture.interaction?.stateChanges);
   appendChangeUnits(units, "form-change", capture.interaction?.formChanges);
