@@ -28,8 +28,24 @@ import { SCALE_BUCKETS } from "./case-matrix.mjs";
  * A bucket's element count is links + sections + one list item per link — the filler's actual shape,
  * not just its link count, which is the mistake that made 14 links look cheap.
  */
-const BASELINE_MS = 12_400;
-const MS_PER_ELEMENT = 1_200;
+/**
+ * CORRECTED after regenerating the pages and timing them. The first version of this file used
+ * `BASELINE_MS = 12_400`, taken from CLAUDE.md's documented per-capture figure — and that figure was
+ * measured on a different host state, so the model it produced **underestimated reality by ~55%** and
+ * this test passed against it. A test asserting on a model nobody checked against a measurement is the
+ * count-based check in a new costume: it reports affordability it has not observed.
+ *
+ * Measured on THIS host, deployed code, pages regenerated from the two buckets below:
+ *
+ *   bucket {0, 0}  ->  28.1 s   (predicted 12.4 s)
+ *   bucket {6, 4}  ->  37.2 s   (predicted 21 s)
+ *
+ * So the baseline is the dominant term, not the per-element cost, which is the opposite of what the
+ * five-bucket data suggested — and it means shrinking pages alone cannot buy affordability. Quote the
+ * host state with any of these, per this repo's own rule.
+ */
+const BASELINE_MS = 28_100;
+const MS_PER_ELEMENT = 570; // (37_200 - 28_100) / 16 elements in {6, 4}
 const CAPTURE_BUDGET_MS = 120_000; // DEFAULT_BUDGET_MS in capture-core.mjs
 
 const elements = (b: { links: number; sections: number }) => b.links * 2 + b.sections;
@@ -53,18 +69,26 @@ test("no bucket lets a capture approach the budget, because past that absence is
   }
 });
 
-test("a full recapture of the bulk corpus still fits one night", () => {
+test("a full recapture of the bulk corpus fits one night on the pool we can actually run", () => {
   // The affordability rule, and the reason the top two buckets went. A 33-hour feedback loop does not
   // get run — so in practice it means shipping evidence nobody revalidated, which is worse than a
   // smaller corpus. 1,061 pairs is 2,122 captures; 848 need recapturing today.
+  //
+  // Stated honestly, because the measured baseline is worse than the model was: at ~32.6 s mean this is
+  // ~15.4 h on ONE worker, which does NOT fit a night. It fits on two. Two is the ceiling worth using —
+  // three guests over-commit a 36 GB host into swap, which is the documented way to starve workers — and
+  // two measured 1.90x. So the pool is part of the affordability claim and is named here rather than
+  // hidden in a comfortable single-worker number.
   const CAPTURES = 1_696;
   const NIGHT_HOURS = 12;
+  const WORKERS_SCALING = 1.9; // measured on two guests; three is not affordable on this host
   const mean = SCALE_BUCKETS.reduce((sum, b) => sum + captureMs(b), 0) / SCALE_BUCKETS.length;
-  const hours = (CAPTURES * mean) / 3_600_000;
+  const oneWorkerHours = (CAPTURES * mean) / 3_600_000;
+  const hours = oneWorkerHours / WORKERS_SCALING;
   assert.ok(hours <= NIGHT_HOURS,
-    `mean capture ~${(mean / 1000).toFixed(1)}s implies ~${hours.toFixed(1)}h for ${CAPTURES} captures `
-    + `on one worker, over the ${NIGHT_HOURS}h budget — shrink SCALE_BUCKETS or cut the round trips per `
-    + "sweep step, which is the term that dominates this figure");
+    `mean capture ~${(mean / 1000).toFixed(1)}s implies ~${oneWorkerHours.toFixed(1)}h on one worker and `
+    + `~${hours.toFixed(1)}h on two, over the ${NIGHT_HOURS}h budget — shrink SCALE_BUCKETS, or cut the `
+    + "round trips per sweep step, which is now the only lever big enough to matter");
 });
 
 test("a zero bucket survives, so page size stays a VARIABLE across the corpus", () => {
