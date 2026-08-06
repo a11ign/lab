@@ -23,9 +23,16 @@
 //
 // This delegates to `training:repeat` rather than reimplementing its comparison, which is the same
 // point in miniature: the tool already existed and hand-rolled substitutes were worse.
+import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { resolve } from "node:path";
+
+// Resolved from THIS module. It was the cwd-relative `"src/training/repeat-capture.mjs"`, which stopped
+// existing when M8 moved the corpus pipeline into this package — and `gate:stability` is the check that must
+// pass before any corpus run, so it failing with "Command failed" is exactly the confusing symptom the comment
+// below warns about.
+const REPEAT_CAPTURE = fileURLToPath(new URL("../src/training/repeat-capture.mjs", import.meta.url));
 
 import { leaseWorker, guestReachableUrl } from "@a11y-witness/worker-fleet";
 import { leasePageServer } from "../src/training/page-server.mjs";
@@ -127,7 +134,7 @@ async function judgeCanary({ path, reason, task, probeForms }, { base, worker, r
   // TypeScript verify.js. Under plain node that is ERR_MODULE_NOT_FOUND before a single line of output
   // -- which is precisely how five canaries came back "Command failed" with nothing to read. The repo
   // has hit this before with evidence-check.mjs; the fix there was the same.
-  const args = ["src/training/repeat-capture.mjs", `--url=${url}`, `--times=${TIMES}`,
+  const args = [REPEAT_CAPTURE, `--url=${url}`, `--times=${TIMES}`,
     `--worker=${worker}`];
   // Opt-in per canary: a capture must never pay for evidence nobody asked for, and a probe that does not
   // run is cheaper than one that does.

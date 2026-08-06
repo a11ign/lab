@@ -26,12 +26,17 @@
 // 3.3.1 (error shown but not announced), 4.1.2 state-change-silent (a disclosure whose state never
 // updates). axe inspects a static DOM and cannot observe any of them. This prints our findings beside
 // axe's for the same page so the difference is a fact rather than a claim.
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
+
+// The CLI moved to its own package in M7; this was the cwd-relative `"src/cli.ts"`, right only from the repo
+// root and pointing at nothing afterwards.
+const CLI = fileURLToPath(new URL("../../cli/src/cli.ts", import.meta.url));
 const sites = JSON.parse(process.argv[2]);
 for (const [url, task] of sites) {
   let out;
   try {
-    out = execFileSync("npx", ["tsx", "src/cli.ts", url, "--task", task, "--probe-forms", "--json"], {
+    out = execFileSync("npx", ["tsx", CLI, url, "--task", task, "--probe-forms", "--json"], {
       env: { ...process.env, JUDGE_BACKEND: "local", A11Y_WORKER: "http://REDACTED-INTERNAL-ADDRESS:8765", A11Y_PYTHON: ".venv/bin/python" },
       encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "pipe"], timeout: 600_000,
     });

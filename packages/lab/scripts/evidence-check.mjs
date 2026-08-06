@@ -6,7 +6,7 @@
 // TypeScript (@a11y-witness/evidence/verify). Same reason capture-screenreader-dataset.mjs does.
 //
 // Prints a per-case verdict and one recommendation: ship without invalidating the cache, or bump
-// CAPTURE_PROTOCOL_VERSION and recapture. See src/capture/evidence-diff.mjs for why this exists --
+// CAPTURE_PROTOCOL_VERSION and recapture. See ../src/capture/evidence-diff.mjs for why this exists --
 // briefly, the cache key asks "could this have changed the evidence", never "did it", so before this
 // existed every capture optimisation cost a 2,122-capture recapture to evaluate.
 //
