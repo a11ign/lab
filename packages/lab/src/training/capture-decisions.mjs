@@ -100,7 +100,7 @@ export function rejectionReason(capture, { title, url }) {
  * Never the last one standing: with nothing left to hand the work to, recording the failures is more
  * useful than abandoning the run silently.
  *
- * @param {{ consecutiveFailures: number, poolSize: number, evictedCount: number }} state
+ * @param {{ consecutiveFailures: number, poolSize: number, evictedCount: number, retiredCount?: number }} state
  */
 export function shouldEvictWorker({ consecutiveFailures, poolSize, evictedCount, retiredCount = 0 }) {
   return consecutiveFailures >= MAX_CONSECUTIVE_WORKER_FAILURES && workersStillWorking({
@@ -181,7 +181,7 @@ export function runOutcome({ total, failures, skipped, cached, poolSize, evicted
  * Never the last worker standing, for the same reason eviction is not: a slow run beats no run.
  *
  * @param {{ vitals: object | null | undefined, unreachableStreak?: number,
- *           poolSize: number, retiredCount: number }} state
+ *           poolSize: number, retiredCount: number, evictedCount?: number }} state
  * @returns {{ retire: boolean, reason: string | null }}
  */
 export function shouldRetireWorker({ vitals, unreachableStreak = 0, poolSize, retiredCount, evictedCount = 0 }) {
