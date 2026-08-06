@@ -207,15 +207,20 @@ const unreachableStreaks = new Map();
  *
  * @returns {Promise<boolean>} true when the caller should stop using this worker
  */
-async function retireIfDegraded({ worker, poolSize, retired }) {
+async function retireIfDegraded({ worker, pool }) {
   const { reachable, vitals } = await workerVitals(worker);
   const streak = reachable ? 0 : (unreachableStreaks.get(worker) ?? 0) + 1;
   unreachableStreaks.set(worker, streak);
+  // Both counts, because a worker leaves the pool two ways and the "never the last one standing" guard has to
+  // see both. Reading them here — AFTER the await — is deliberate and safe: the read, the decision and the
+  // push below are one synchronous run, and Node does not interleave those. A read taken before the await
+  // would be a stale snapshot.
   const { retire, reason } = shouldRetireWorker({
-    vitals, unreachableStreak: streak, poolSize, retiredCount: retired.length,
+    vitals, unreachableStreak: streak, poolSize: pool.size,
+    retiredCount: pool.retired.length, evictedCount: pool.evicted.length,
   });
   if (!retire) return false;
-  retired.push(worker);
+  pool.retired.push(worker);
   console.error("  RETIRING " + worker + " — " + reason);
   return true;
 }
@@ -477,13 +482,14 @@ async function drainQueueWithWorker(worker, { ctxBase, done, pool }) {
       // handed back if this worker dies later.
       consecutiveFailures = 0;
       failedHere.length = 0;
-      if (await retireIfDegraded({ worker, poolSize: pool.size, retired: pool.retired })) return;
+      if (await retireIfDegraded({ worker, pool })) return;
     } catch (error) {
       consecutiveFailures += 1;
       // Evict, but never the last worker standing: with nothing left to hand the work to,
       // recording the failures is more useful than abandoning the run quietly.
       if (shouldEvictWorker({
-        consecutiveFailures, poolSize: pool.size, evictedCount: pool.evicted.length,
+        consecutiveFailures, poolSize: pool.size,
+        evictedCount: pool.evicted.length, retiredCount: pool.retired.length,
       })) {
         const handedBack = requeueFrom({ queue: pool.queue, failures: pool.failures, testCase, failedHere });
         pool.evicted.push(worker);
@@ -496,7 +502,7 @@ async function drainQueueWithWorker(worker, { ctxBase, done, pool }) {
       // succeeds, so the success-path check can never see it, and it never fails cleanly enough to
       // reach the eviction threshold either. Its cases go back like an eviction's, because unlike a
       // degraded-but-working guest, this one genuinely did not capture them.
-      if (await retireIfDegraded({ worker, poolSize: pool.size, retired: pool.retired })) {
+      if (await retireIfDegraded({ worker, pool })) {
         console.error("  " + requeueFrom({ queue: pool.queue, failures: pool.failures, testCase, failedHere }) +
           " case(s) go back to the queue");
         return;

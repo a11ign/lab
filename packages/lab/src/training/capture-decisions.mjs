@@ -102,9 +102,26 @@ export function rejectionReason(capture, { title, url }) {
  *
  * @param {{ consecutiveFailures: number, poolSize: number, evictedCount: number }} state
  */
-export function shouldEvictWorker({ consecutiveFailures, poolSize, evictedCount }) {
-  const remaining = poolSize - evictedCount;
-  return consecutiveFailures >= MAX_CONSECUTIVE_WORKER_FAILURES && remaining > 1;
+export function shouldEvictWorker({ consecutiveFailures, poolSize, evictedCount, retiredCount = 0 }) {
+  return consecutiveFailures >= MAX_CONSECUTIVE_WORKER_FAILURES && workersStillWorking({
+    poolSize, evictedCount, retiredCount,
+  }) > 1;
+}
+
+/**
+ * How many workers are still taking cases.
+ *
+ * A worker leaves the pool two different ways — EVICTED for failing, RETIRED for degrading — and both guards
+ * are meant to enforce the same invariant: never remove the last one. Each used to subtract only its own
+ * count, so each was blind to the other. With three workers and two already retired, `shouldEvictWorker` saw
+ * `3 - 0 = 3` remaining and would happily evict the third, leaving **zero** workers; the mirror image was true
+ * of `shouldRetireWorker` after two evictions. A run then abandons the queue with no worker and no explanation.
+ *
+ * One function, so the two guards cannot disagree about what "remaining" means — the same reason the worker
+ * file list and the code hasher are each defined once.
+ */
+export function workersStillWorking({ poolSize, evictedCount = 0, retiredCount = 0 }) {
+  return poolSize - evictedCount - retiredCount;
 }
 
 /**
@@ -167,11 +184,11 @@ export function runOutcome({ total, failures, skipped, cached, poolSize, evicted
  *           poolSize: number, retiredCount: number }} state
  * @returns {{ retire: boolean, reason: string | null }}
  */
-export function shouldRetireWorker({ vitals, unreachableStreak = 0, poolSize, retiredCount }) {
+export function shouldRetireWorker({ vitals, unreachableStreak = 0, poolSize, retiredCount, evictedCount = 0 }) {
   const wedged = unreachableStreak >= UNREACHABLE_PROBES_BEFORE_RETIRE;
   const { degraded, reason } = assessWorker(vitals);
   if (!wedged && !degraded) return { retire: false, reason: null };
-  if (poolSize - retiredCount <= 1) {
+  if (workersStillWorking({ poolSize, evictedCount, retiredCount }) <= 1) {
     return { retire: false, reason: null }; // last one standing: keep using it, however slow
   }
   if (wedged) {
