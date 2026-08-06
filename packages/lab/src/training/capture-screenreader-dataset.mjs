@@ -403,81 +403,20 @@ function requeueFrom({ queue, failures, testCase, failedHere }) {
   return failedHere.length + 1;
 }
 
+/**
+ * Drain the case queue across the pool, and report what happened to the run rather than to each worker.
+ *
+ * The accumulators are shared by every worker on purpose — the queue is the coordination mechanism. They are
+ * bundled as `pool` so a worker's working life can be its own function without threading six loose lists
+ * through it: four things cohesive enough to pass as a unit are already an object.
+ */
 async function captureAcrossPool(ctxBase, cases, done, workers) {
-  const queue = [...cases];
-  const failures = [];
-  const skipped = [];
-  const evicted = [], retired = [];
-  const cachedIds = [];
-  await Promise.all(workers.map(async (worker) => {
-    // Once per worker: the cache key depends on this guest's NVDA, Edge, protocol and provisioning,
-    // and a pool member that differs must not reuse another's evidence.
-    // Wait for THIS worker to be ready before it takes any work. Readiness was previously only
-    // consulted after a failure, so a freshly booted worker still got handed the first case and
-    // still lost it to `nvda.start` -- the exact failure the readiness gate exists to prevent.
-    // A worker that never becomes ready simply takes no cases; the others drain the queue.
-    try {
-      await waitForWorker(worker);
-    } catch (error) {
-      console.error("  worker never became ready, skipping it: " + worker + " (" + error.message + ")");
-      return;
-    }
-    const ctx = { ...ctxBase, worker, environment: await workerEnvironment(worker) };
-    let consecutiveFailures = 0;
-    // What this worker failed. If it turns out to be the worker rather than the cases, all of it
-    // goes back to the pool -- otherwise a broken guest still costs two permanently failed cases
-    // before the threshold trips, and those are cases a healthy worker could have captured.
-    const failedHere = [];
-    while (queue.length) {
-      const testCase = queue.shift();
-      if (done.has(testCase.id)) {
-        ctx.progress.skipped(testCase.id, "already captured (--resume)");
-        skipped.push(testCase.id);
-        continue;
-      }
-      try {
-        const result = await cachedOrCapture(ctx, testCase);
-        if (result.cached) {
-          ctx.progress.skipped(testCase.id, "cached: " + result.reason);
-          cachedIds.push(testCase.id);
-          continue;
-        }
-        ctx.progress.captured(testCase.id, result.phrases);
-        // A success clears the streak AND the blame: these cases were fine, so they must not be
-        // handed back if this worker dies later.
-        consecutiveFailures = 0;
-        failedHere.length = 0;
-        if (await retireIfDegraded({ worker, poolSize: workers.length, retired })) return;
-      } catch (error) {
-        consecutiveFailures += 1;
-        // Evict, but never the last worker standing: with nothing left to hand the work to,
-        // recording the failures is more useful than abandoning the run quietly.
-        if (shouldEvictWorker({
-          consecutiveFailures, poolSize: workers.length, evictedCount: evicted.length,
-        })) {
-          const handedBack = requeueFrom({ queue, failures, testCase, failedHere });
-          evicted.push(worker);
-          console.error("  EVICTING " + worker + " after " + consecutiveFailures +
-            " consecutive failures; " + handedBack +
-            " case(s) go back to the queue. Last error: " + error.message);
-          return;
-        }
-        // A failure is also the moment to ask whether the worker is answering at all. The wedge never
-        // succeeds, so the success-path check can never see it, and it never fails cleanly enough to
-        // reach the eviction threshold either. Its cases go back like an eviction's, because unlike a
-        // degraded-but-working guest, this one genuinely did not capture them.
-        if (await retireIfDegraded({ worker, poolSize: workers.length, retired })) {
-          console.error("  " + requeueFrom({ queue, failures, testCase, failedHere }) +
-            " case(s) go back to the queue");
-          return;
-        }
-        failedHere.push({ id: testCase.id, testCase });
-        failures.push(testCase.id + ": " + error.message);
-        ctx.progress.failed(testCase.id, error.message);
-        console.error("  CAPTURE_FAILED " + failures.at(-1));
-      }
-    }
-  }));
+  const pool = {
+    queue: [...cases], failures: [], skipped: [], evicted: [], retired: [], cachedIds: [],
+    size: workers.length,
+  };
+  await Promise.all(workers.map((worker) => drainQueueWithWorker(worker, { ctxBase, done, pool })));
+  const { failures, evicted, retired, skipped, cachedIds } = pool;
   if (cachedIds.length) {
     console.log("Reused cached evidence for " + cachedIds.length + " case(s); no worker time spent on them.");
   }
@@ -490,6 +429,84 @@ async function captureAcrossPool(ctxBase, cases, done, workers) {
     skippedCount: skipped.length + cachedIds.length,
     cachedCount: cachedIds.length,
   };
+}
+
+/**
+ * One worker's whole working life: become ready, then take cases until the queue empties or it is removed.
+ *
+ * Deliberately NOT split further. The per-case body mutates this worker's streak and blame list and uses
+ * `return` to end the worker — expressing that as a separate function would mean either a mutable bag or a
+ * sentinel return value, and two functions that cannot be understood apart are worse than one that reads
+ * straight through. Every branch below already says why it exists.
+ */
+async function drainQueueWithWorker(worker, { ctxBase, done, pool }) {
+  // Once per worker: the cache key depends on this guest's NVDA, Edge, protocol and provisioning,
+  // and a pool member that differs must not reuse another's evidence.
+  // Wait for THIS worker to be ready before it takes any work. Readiness was previously only
+  // consulted after a failure, so a freshly booted worker still got handed the first case and
+  // still lost it to `nvda.start` -- the exact failure the readiness gate exists to prevent.
+  // A worker that never becomes ready simply takes no cases; the others drain the queue.
+  try {
+    await waitForWorker(worker);
+  } catch (error) {
+    console.error("  worker never became ready, skipping it: " + worker + " (" + error.message + ")");
+    return;
+  }
+  const ctx = { ...ctxBase, worker, environment: await workerEnvironment(worker) };
+  let consecutiveFailures = 0;
+  // What this worker failed. If it turns out to be the worker rather than the cases, all of it
+  // goes back to the pool -- otherwise a broken guest still costs two permanently failed cases
+  // before the threshold trips, and those are cases a healthy worker could have captured.
+  const failedHere = [];
+  while (pool.queue.length) {
+    const testCase = pool.queue.shift();
+    if (done.has(testCase.id)) {
+      ctx.progress.skipped(testCase.id, "already captured (--resume)");
+      pool.skipped.push(testCase.id);
+      continue;
+    }
+    try {
+      const result = await cachedOrCapture(ctx, testCase);
+      if (result.cached) {
+        ctx.progress.skipped(testCase.id, "cached: " + result.reason);
+        pool.cachedIds.push(testCase.id);
+        continue;
+      }
+      ctx.progress.captured(testCase.id, result.phrases);
+      // A success clears the streak AND the blame: these cases were fine, so they must not be
+      // handed back if this worker dies later.
+      consecutiveFailures = 0;
+      failedHere.length = 0;
+      if (await retireIfDegraded({ worker, poolSize: pool.size, retired: pool.retired })) return;
+    } catch (error) {
+      consecutiveFailures += 1;
+      // Evict, but never the last worker standing: with nothing left to hand the work to,
+      // recording the failures is more useful than abandoning the run quietly.
+      if (shouldEvictWorker({
+        consecutiveFailures, poolSize: pool.size, evictedCount: pool.evicted.length,
+      })) {
+        const handedBack = requeueFrom({ queue: pool.queue, failures: pool.failures, testCase, failedHere });
+        pool.evicted.push(worker);
+        console.error("  EVICTING " + worker + " after " + consecutiveFailures +
+          " consecutive failures; " + handedBack +
+          " case(s) go back to the queue. Last error: " + error.message);
+        return;
+      }
+      // A failure is also the moment to ask whether the worker is answering at all. The wedge never
+      // succeeds, so the success-path check can never see it, and it never fails cleanly enough to
+      // reach the eviction threshold either. Its cases go back like an eviction's, because unlike a
+      // degraded-but-working guest, this one genuinely did not capture them.
+      if (await retireIfDegraded({ worker, poolSize: pool.size, retired: pool.retired })) {
+        console.error("  " + requeueFrom({ queue: pool.queue, failures: pool.failures, testCase, failedHere }) +
+          " case(s) go back to the queue");
+        return;
+      }
+      failedHere.push({ id: testCase.id, testCase });
+      pool.failures.push(testCase.id + ": " + error.message);
+      ctx.progress.failed(testCase.id, error.message);
+      console.error("  CAPTURE_FAILED " + pool.failures.at(-1));
+    }
+  }
 }
 
 async function captureAll(ctxBase, cases, done) {
