@@ -1392,12 +1392,20 @@ cases.push(...CALIBRATION_CASES);
  * The whole corpus is recaptured at these sizes, so the mean is a real cost: about 10 hours across three
  * workers, against 3 h 45 m for the minimal pages. Change these only with fresh timings.
  */
-const SCALE_BUCKETS = [
+// Ceiling set by MEASUREMENT, not taste. Capture cost is ~12.4 s + 1.2 s per element, because every
+// element costs a prev and a next sweep step at two round trips each (~225 ms). So the buckets this
+// list used to carry cost, per capture: 14 links -> 58.1 s, 40 links -> 123.4 s, against a 12.4 s
+// baseline. And 123.4 s IS `DEFAULT_BUDGET_MS`, so the top bucket ran out of budget mid-sweep and
+// returned `lists: 0` on a page with 40 list items -- absence indistinguishable from truncation, which
+// is the one thing this project must never report.
+//
+// Two rules replace them. No bucket may be large enough for a capture to approach the budget. And the
+// bulk corpus is sized so a full recapture fits one night: 1,696 captures at these two buckets is
+// ~10 h on one worker, against ~33 h for the five it had. Real-page structure is the realism TIER's
+// job, sampled rather than applied to all 1,061 pairs -- see `docs/adr/0009-dataset-tiers.md`.
+export const SCALE_BUCKETS = [
   { links: 0, sections: 0 },
   { links: 6, sections: 4 },
-  { links: 14, sections: 9 },
-  { links: 24, sections: 16 },
-  { links: 40, sections: 28 },
 ];
 
 /**

@@ -13,6 +13,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+/**
+ * A module namespace indexed by a runtime string. Checking exports BY NAME is the whole point of this
+ * file, and TS types a namespace by its known keys, so the lookup needs a cast. Narrow and named rather
+ * than `any` at each site, so the reason survives.
+ */
+const exportsOf = (mod: object): Record<string, unknown> => mod as Record<string, unknown>;
+
 test("the SOURCE barrels export what the built packages do", async () => {
   // Imported by relative path on purpose. A package-name import resolves to `dist`, so the assertions below
   // verify the BUILT surface — which is what a consumer gets, and the right thing to check. But it means a
@@ -22,7 +29,7 @@ test("the SOURCE barrels export what the built packages do", async () => {
   assert.equal(typeof evidenceSrc.captureReachedThePage, "function");
   const judgeInternal = await import("../../../judge/src/internal.js");
   for (const name of ["hasEvidenceFor", "evidenceFor", "findingsFromScores", "scoreCapture", "applyGate"]) {
-    assert.equal(typeof judgeInternal[name], "function", `judge/src/internal must export ${name}`);
+    assert.equal(typeof exportsOf(judgeInternal)[name], "function", `judge/src/internal must export ${name}`);
   }
   const fleetSrc = await import("../../../worker-fleet/src/index.js");
   assert.equal(typeof fleetSrc.fleetScriptPaths, "function");
@@ -36,7 +43,7 @@ test("evidence exports the wire types and the pure predicates", async () => {
   const verify = await import("@a11y-witness/evidence/verify");
   for (const name of ["captureReachedThePage", "captureHasSubstance", "captureIsSelfConsistent",
     "captureRanRequestedProbes", "captureMentionsTitle", "pageCensus", "captureDoubt", "titleOf"]) {
-    assert.equal(typeof verify[name], "function", `evidence/verify must export ${name} (ADR 0004)`);
+    assert.equal(typeof exportsOf(verify)[name], "function", `evidence/verify must export ${name} (ADR 0004)`);
   }
   const { WCAG_22_AA } = await import("@a11y-witness/evidence/wcag");
   assert.ok(Array.isArray(WCAG_22_AA) && WCAG_22_AA.length > 20, "the criteria list must be populated");
@@ -49,13 +56,13 @@ test("judge exports its four documented subpaths", async () => {
   const rules = await import("@a11y-witness/judge/rules");
   assert.equal(typeof rules.ruleFindings, "function");
   const layers = await import("@a11y-witness/judge/layers");
-  for (const name of ["layerOf", "orderByLayer"]) assert.equal(typeof layers[name], "function", name);
+  for (const name of ["layerOf", "orderByLayer"]) assert.equal(typeof exportsOf(layers)[name], "function", name);
   assert.ok(layers.LAYER_LABEL?.perceive, "every layer needs a human label for the report");
   // Exported so a test can drive the REAL gate rather than a copy of it — documented as unstable, which is why
   // it is worth asserting it exists at all rather than assuming.
   const internal = await import("@a11y-witness/judge/internal");
   for (const name of ["hasEvidenceFor", "evidenceFor", "findingsFromScores", "scoreCapture", "applyGate"]) {
-    assert.equal(typeof internal[name], "function", `judge/internal must export ${name} (ADR 0004)`);
+    assert.equal(typeof exportsOf(internal)[name], "function", `judge/internal must export ${name} (ADR 0004)`);
   }
 });
 
@@ -76,14 +83,14 @@ test("worker-fleet exports the lease surface and the script paths", async () => 
   const fleet = await import("@a11y-witness/worker-fleet");
   for (const name of ["leaseWorker", "leaseWorkerPool", "isAfterRun", "guestReachableUrl",
     "hostAddressForWorker", "fleetScriptPaths"]) {
-    assert.equal(typeof fleet[name], "function", `worker-fleet must export ${name} (ADR 0004)`);
+    assert.equal(typeof exportsOf(fleet)[name], "function", `worker-fleet must export ${name} (ADR 0004)`);
   }
   assert.match(fleet.DEFAULT_WORKER, /^https?:\/\//);
   const health = await import("@a11y-witness/worker-fleet/health");
   assert.equal(typeof health.assessWorker, "function");
   const capacity = await import("@a11y-witness/worker-fleet/capacity");
   for (const name of ["availableHostMemoryMb", "workersHostCanRun"]) {
-    assert.equal(typeof capacity[name], "function", name);
+    assert.equal(typeof exportsOf(capacity)[name], "function", name);
   }
 });
 
