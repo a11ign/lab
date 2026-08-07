@@ -21,14 +21,12 @@ import assert from "node:assert/strict";
 import { SCALE_BUCKETS } from "./case-matrix.mjs";
 
 /**
- * Measured on one guest, quiet host, deployed code: 12.4 s with no filler, 58.1 s at 14 links (which
- * also carries 10 headings and 14 list items), 123.4 s at 40 links. Fitting those gives ~1.2 s per
- * element, which is two sweep steps (prev and next) at two round trips each, ~225 ms per trip.
+ * The cost model. THIS is the single source for these numbers — `case-matrix.mjs` used to restate them
+ * and went stale within the hour, so it now points here instead.
  *
- * A bucket's element count is links + sections + one list item per link — the filler's actual shape,
- * not just its link count, which is the mistake that made 14 links look cheap.
- */
-/**
+ * A bucket's element count is links + sections + one list item per link: the filler's actual shape, not
+ * just its link count, which is the mistake that made 14 links look cheap.
+ *
  * CORRECTED after regenerating the pages and timing them. The first version of this file used
  * `BASELINE_MS = 12_400`, taken from CLAUDE.md's documented per-capture figure — and that figure was
  * measured on a different host state, so the model it produced **underestimated reality by ~55%** and

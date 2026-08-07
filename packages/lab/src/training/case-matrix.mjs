@@ -1384,25 +1384,25 @@ cases.push(...CALIBRATION_CASES);
  * Page sizes to spread the corpus across, smallest to largest.
  *
  * A corpus where every page has exactly N links teaches the scorer "N", not "a range" — so the sizes vary
- * per case and the zero stays in, keeping the small pages the model already handles. Measured per capture
- * at each size, on one worker: 14 s / 24 s / 38 s / 60 s / 85 s, against real-page evidence of 41-47 links,
- * 30-37 headings and 16-143 transcript lines. The largest bucket lands on transcript 127, links 40,
- * headings 29 — the real distribution, reached with authored pages whose labels stay exact.
+ * per case and the zero stays in, keeping the small pages the model already handles.
  *
- * The whole corpus is recaptured at these sizes, so the mean is a real cost: about 10 hours across three
- * workers, against 3 h 45 m for the minimal pages. Change these only with fresh timings.
+ * **The numbers live in `scale-buckets.test.ts`, not here.** This comment used to restate the cost model,
+ * and it went stale within the hour of the model being corrected — two descriptions of one thing that
+ * disagreed, which is worse than one. The test holds `BASELINE_MS` and `MS_PER_ELEMENT` as the single
+ * source, asserts these buckets against them, and fails if a bucket outgrows either rule below.
+ *
+ * Two rules bound this list, both from `docs/adr/0009-dataset-tiers.md`:
+ *
+ * 1. No bucket may be large enough for a capture to approach `DEFAULT_BUDGET_MS`. Past that the sweeps
+ *    truncate mid-page and report an empty field — and an empty field IS the finding for several cases
+ *    here, so absence becomes indistinguishable from truncation. The five-bucket version breached this:
+ *    its largest page took the full budget and reported `lists: 0` on a page with 40 list items.
+ * 2. A full recapture of the bulk corpus must fit one night, because a feedback loop measured in days
+ *    does not get run — which in practice means shipping evidence nobody revalidated.
+ *
+ * Real-page structure is the realism TIER's job, sampled rather than applied to all 1,061 pairs. Change
+ * these only with fresh timings, and update the test's constants in the same commit.
  */
-// Ceiling set by MEASUREMENT, not taste. Capture cost is ~12.4 s + 1.2 s per element, because every
-// element costs a prev and a next sweep step at two round trips each (~225 ms). So the buckets this
-// list used to carry cost, per capture: 14 links -> 58.1 s, 40 links -> 123.4 s, against a 12.4 s
-// baseline. And 123.4 s IS `DEFAULT_BUDGET_MS`, so the top bucket ran out of budget mid-sweep and
-// returned `lists: 0` on a page with 40 list items -- absence indistinguishable from truncation, which
-// is the one thing this project must never report.
-//
-// Two rules replace them. No bucket may be large enough for a capture to approach the budget. And the
-// bulk corpus is sized so a full recapture fits one night: 1,696 captures at these two buckets is
-// ~10 h on one worker, against ~33 h for the five it had. Real-page structure is the realism TIER's
-// job, sampled rather than applied to all 1,061 pairs -- see `docs/adr/0009-dataset-tiers.md`.
 export const SCALE_BUCKETS = [
   { links: 0, sections: 0 },
   { links: 6, sections: 4 },
