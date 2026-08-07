@@ -14,6 +14,7 @@ import { beginRun, readProgress } from "./capture-progress.mjs";
 import { cacheDecision, cacheKey, hashPageDir, stampProvenance } from "./capture-cache.mjs";
 import { previouslyCaptured } from "./capture-resume.mjs";
 import { leasePageServer } from "./page-server.mjs";
+import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.mjs";
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
 const MANIFEST_PATH = resolve(ROOT, "manifest.json");
@@ -34,6 +35,11 @@ const CACHE = !process.argv.includes("--no-cache") && KIND !== "acceptance";
 // `scripts/local-worker/worker-ctl.sh pool`. Unset keeps the single-worker behaviour.
 const WORKERS_ENV = process.env.A11Y_WORKERS ?? null;
 const CAPTURE_TIMEOUT_MS = Number(process.env.DATASET_CAPTURE_TIMEOUT_MS || 300000);
+// Only used to size the power check below, so an estimate is enough — but it must be a MEASURED one,
+// because a stale figure here would wave through a run that cannot finish before the host sleeps.
+// 32.7 s is the mean over the two page-size buckets, timed on this host (see scale-buckets.test.ts,
+// which owns the cost model). A pair is two captures, hence the x2 at the call site.
+const MEAN_CAPTURE_S = 32.7;
 // This is sent over the wire because NVDA lives in the Windows worker process. Setting
 // A11Y_REUSE_NVDA on the host only changes a host process and cannot affect that worker.
 // Keep reuse on for the normal pooled run; acceptance/repeat runs can set this to 0.
@@ -665,6 +671,22 @@ async function main() {
   // The pages are leased like the workers are: started if missing, put back as found. Serving them
   // was a manual step nobody owned, which leaked four `serve` processes onto this host and, worse,
   // let a stray server from another directory 404 an entire run while it reported success.
+  // Power BEFORE anything expensive is leased. A run that dies because the host slept reports every
+  // in-flight capture as `the worker did not come back within 10 minutes`, which reads as a broken
+  // guest and was misdiagnosed here as exactly that. Estimated from what is left to do, not the whole
+  // corpus, so a resume of the last twenty cases is not held to an overnight run's standard.
+  const remaining = cases.length - done.size;
+  const power = await hostPowerState();
+  const verdict = powerVerdict({ ...power, estimatedHours: (remaining * MEAN_CAPTURE_S * 2) / 3600 });
+  if (!verdict.ok && !process.argv.includes("--allow-battery")) {
+    console.error(`Refusing to start: ${verdict.reason}`);
+    process.exitCode = 2;
+    return;
+  }
+  // Leased like everything else here, and released in the same `finally`, so a run that throws does
+  // not leave the host pinned awake.
+  const awake = keepHostAwake();
+
   const pages = await leasePageServer({
     root: PAGE_ROOT,
     port: PAGES_PORT,
@@ -679,6 +701,7 @@ async function main() {
     // the extra second. Both run even if the other throws.
     await lease.release().catch((e) => console.error("worker release failed: " + e.message));
     await pages.release();
+    await awake.release();
   }
 }
 
