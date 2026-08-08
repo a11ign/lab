@@ -57,6 +57,10 @@ DEFAULT_EPOCHS = 250
 
 CALIBRATION_FOLDS = 5
 
+# How many training embeddings to ship as the out-of-distribution reference. 512 x 384 floats is
+# well under a megabyte and describes the support adequately; the full corpus is not needed.
+OOD_REFERENCE_SAMPLES = 512
+
 
 # Criteria decided by a deterministic rule, not by the learned scorer. Their calibration is reported
 # but does not gate release, because the rule is the decision.
@@ -386,6 +390,37 @@ def main() -> None:
                 f"and {calibration_false_negative} false negatives"
             )
         report["criteria"][criterion] = criterion_report
+
+    # A reference sample of the training distribution, so inference can tell whether a page resembles
+    # anything this scorer was trained on. Measured need: every corpus record sits at cosine 0.847-0.99
+    # from its nearest neighbour, while 28 of 32 real eval pages sit at 0.50-0.84 — outside the support
+    # entirely. A linear head on a frozen embedding does not know it is extrapolating and returned 0.97
+    # and 0.99 on two CONFORMANT W3C pages. For an accessibility tool that is an accusation, so the
+    # scorer must be able to decline instead.
+    #
+    # k-nearest-neighbour distance in feature space, per Sun et al. (ICML 2022): non-parametric, no
+    # distributional assumption, and stronger than the Mahalanobis alternative. Subsampled to keep the
+    # artifact small; the whole training set is not needed to describe its support.
+    #
+    # `inDistributionFloor` is DERIVED, not chosen: it is the smallest nearest-neighbour similarity any
+    # training record has. A page less similar to this corpus than the corpus is to itself is outside
+    # what was validated. Provisional — the defensible form is conformal calibration against a stated
+    # error rate on a real-page set, which does not exist yet (see docs/adr/0009-dataset-tiers.md).
+    reference = doc_features[:, :dimension]
+    step = max(1, reference.shape[0] // OOD_REFERENCE_SAMPLES)
+    sample = reference[::step][:OOD_REFERENCE_SAMPLES].contiguous()
+    neighbours = reference @ reference.t()
+    neighbours.fill_diagonal_(-1.0)
+    floor = float(neighbours.max(dim=1).values.min())
+    weights["ood_reference"] = sample
+    report["outOfDistribution"] = {
+        "method": "knn-cosine-document-embedding",
+        "reference": "ood_reference",
+        "referenceCount": int(sample.shape[0]),
+        "inDistributionFloor": round(floor, 4),
+        "calibration": "derived from the training set's own nearest-neighbour minimum; NOT conformally "
+                       "calibrated against a target error rate, because no labelled real-page set exists yet",
+    }
 
     args.output.mkdir(parents=True, exist_ok=True)
     save_file(
