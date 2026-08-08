@@ -25,6 +25,10 @@ function buildManifest() {
       id: testCase.id,
       family: testCase.family,
       criterion: testCase.criterion,
+      // Criteria the case ALSO breaks. The THIRD hand-enumerated field list in this chain — the case
+      // definition, `pair()`, and here — and a field must be added to every one of them or it vanishes
+      // without a word. It vanished twice while three case definitions declared it.
+      alsoFails: testCase.alsoFails ?? [],
       subtype: testCase.subtype,
       task: testCase.task,
       probeForms: testCase.probeForms,

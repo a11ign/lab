@@ -4,6 +4,7 @@
 // drift.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { leaseWorker, leaseWorkerPool, guestReachableUrl, isAfterRun } from "@a11y-witness/worker-fleet";
 import { titleOf } from "@a11y-witness/evidence/verify";
@@ -44,6 +45,31 @@ const MEAN_CAPTURE_S = 32.7;
 // A11Y_REUSE_NVDA on the host only changes a host process and cannot affect that worker.
 // Keep reuse on for the normal pooled run; acceptance/repeat runs can set this to 0.
 const REUSE_NVDA = process.env.DATASET_REUSE_NVDA !== "0";
+
+/**
+ * Choose which cases to run from `--only=`.
+ *
+ * Substring matching stays, because `--only=heading` to sweep a family is the common interactive use.
+ * Two things it could not previously do, both of which are the *retry* workflow this project's own gates
+ * ask for:
+ *
+ * - **An exact id must mean that one case.** `form-error-silent` is a real case id AND a prefix of ~90
+ *   `form-error-silent-bulk-*` ids, so it could not be retried at all: asking for it ran ninety. Any id
+ *   that is a prefix of another was untargetable, and that is precisely the set a gate names when it
+ *   reports contamination.
+ * - **A LIST.** `check-signals` prints the failing ids; the natural next step is to paste them back in.
+ *   Without this, retrying eleven named cases meant eleven runs, each paying a page-server lease and a
+ *   worker connect.
+ *
+ * Exact wins over substring per entry, so pasting a gate's output does what it says.
+ */
+export function selectCases(cases, only) {
+  if (!only) return cases;
+  const wanted = only.split(",").map((s) => s.trim()).filter(Boolean);
+  const ids = new Set(cases.map(({ id }) => id));
+  return cases.filter(({ id }) =>
+    wanted.some((want) => (ids.has(want) ? id === want : id.includes(want))));
+}
 
 async function fetchJson(url, options = {}, timeoutMs = 30000) {
   const response = await fetch(url, {
@@ -655,7 +681,7 @@ async function captureDataset(cases, done, pool, lease) {
 
 async function main() {
   const manifest = readManifest();
-  const cases = ONLY ? manifest.cases.filter(({ id }) => id.includes(ONLY)) : manifest.cases;
+  const cases = selectCases(manifest.cases, ONLY);
   if (!cases.length) throw new Error("No generated case matches --only=" + ONLY);
 
   const done = previouslyCaptured({
@@ -705,7 +731,13 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error("training:capture failed:", error.message);
-  process.exitCode = 1;
-});
+// Guarded, because importing this module used to START A CAPTURE RUN. That bit three times in one
+// session: twice by accident while inspecting it, and once when a unit test imported it to reach the
+// pure `selectCases` — the test hung, having silently begun capturing 1,061 cases against a live
+// worker. A pure function is not testable if reaching it launches the program that contains it.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main().catch((error) => {
+    console.error("training:capture failed:", error.message);
+    process.exitCode = 1;
+  });
+}

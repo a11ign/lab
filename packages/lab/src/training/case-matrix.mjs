@@ -133,11 +133,17 @@ function pair({
   probeTables = false,
   family = id,
   subtype = null,
+  // Criteria this case ALSO breaks. `pair` names every field it forwards, so a case declaring
+  // `alsoFails` without this line is silently dropped -- which it was, and the count read 0 while
+  // three case definitions carried it. A constructor that enumerates its fields must be updated
+  // with them.
+  alsoFails = [],
 }) {
   return {
     id,
     family,
     criterion,
+    alsoFails,
     subtype: subtype || defaultSubtype({ id, criterion, badSignal }),
     task,
     source,
@@ -296,6 +302,18 @@ const cases = [
   pair({
     id: "form-unlabelled",
     criterion: "3.3.2",
+    // An unlabelled field fails TWICE, and single-label ground truth scored the second one as an error.
+    // NVDA announces this field as a bare "edit" -- a role with no accessible name -- which is 4.1.2 as
+    // squarely as the missing label is 3.3.2. The deterministic rule detects it correctly, and because
+    // the case declared only 3.3.2, all 109 of those correct detections counted as FALSE POSITIVES in
+    // calibration. That is the whole of 4.1.2's reported over-firing: not a bad rule, a missing label.
+    //
+    // Asserted per case from the captures, never inferred from the criterion: `form-placeholder-only` is
+    // also 3.3.2 and does NOT fire 4.1.2, because a placeholder supplies a name. Applying this by family
+    // would have taught the scorer "3.3.2 implies 4.1.2", which is a shortcut feature and exactly the
+    // contamination this corpus exists to avoid. Verified on the bad variants only -- 109 of 109, with
+    // zero good variants firing, which is what makes it a real second failure rather than noise.
+    alsoFails: ["4.1.2:missing-role"],
     task: "Enter the name of the person receiving the parcel.",
     source: "Practical Web Accessibility, chapter 6; Inclusive Design for Accessibility, chapter 13",
     mutation: "The text field has no programmatic label and relies on nearby visual text.",
@@ -600,6 +618,11 @@ function unlabelledFieldVariant({ id, title, heading, label, name, task }) {
     id,
     family: "form-labels",
     criterion: "3.3.2",
+    // Same second failure as the base `form-unlabelled` case: the field announces as a bare "edit", a
+    // role with no accessible name. Deliberately NOT on `placeholderOnlyVariant`, which is 3.3.2 only —
+    // a placeholder supplies a name and it does not fire 4.1.2, verified against its capture. See the
+    // base case for why this is asserted per generator rather than by criterion.
+    alsoFails: ["4.1.2:missing-role"],
     task,
     source: "Practical Web Accessibility, chapter 6; Inclusive Design for Accessibility, chapter 13",
     mutation: "The field has nearby visible text but no programmatic label.",
@@ -816,6 +839,11 @@ function labelledControlVariant({ id, title, heading, label, name, control, sele
     id,
     family: id,
     criterion: "3.3.2",
+    // The `field-followup-*` family, and the same second failure: stripping the programmatic label
+    // leaves the control announced as a bare role with no accessible name, which is 4.1.2. Confirmed on
+    // `field-followup-date.bad`, whose 4.1.2 evidence is the single token "edit". See `form-unlabelled`
+    // for why this is asserted per generator rather than applied to every 3.3.2 case.
+    alsoFails: ["4.1.2:missing-role"],
     task,
     source: "Practical Web Accessibility, chapter 6; Inclusive Design for Accessibility, chapter 13",
     mutation: "The form control loses its programmatic label while the same visible cue remains nearby.",

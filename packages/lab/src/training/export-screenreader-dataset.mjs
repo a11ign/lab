@@ -101,8 +101,16 @@ function record(testCase, variant, capture) {
     input,
     target: {
       label: isBad ? "violation" : "clean",
-      criteria: isBad ? [testCase.criterion] : [],
-      subtypes: isBad ? [testCase.criterion + ":" + subtype] : [],
+      // `alsoFails` names a criterion AND the subtype whose head carries it ("4.1.2:missing-role"),
+      // because the grouped criterion decision is COMPUTED FROM the subtype heads. A criterion label
+      // with no matching subtype is a positive nothing can predict — a structurally unreachable
+      // ground truth. Adding one produced 88 guaranteed false negatives, which is how this was found.
+      criteria: isBad
+        ? [testCase.criterion, ...(testCase.alsoFails ?? []).map((s) => s.split(":")[0])]
+        : [],
+      subtypes: isBad
+        ? [testCase.criterion + ":" + subtype, ...(testCase.alsoFails ?? [])]
+        : [],
     },
     provenance: {
       caseId: testCase.id,
