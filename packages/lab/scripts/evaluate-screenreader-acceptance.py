@@ -58,6 +58,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", type=Path, default=SCORER_PACKAGE / "models/screenreader-scorer", help="scorer directory or model.safetensors path")
     parser.add_argument("--training-report", type=Path, default=SCORER_PACKAGE / "models/screenreader-scorer/training-report.json")
     parser.add_argument("--out", type=Path, default=REPO_ROOT / "runs/screenreader-acceptance/acceptance-report.json")
+    # A gate you cannot run until you have already passed it is not a gate. This evaluator hard-coded
+    # `allow_ineligible=False`, so the held-out set could only ever CONFIRM a release decision, never
+    # inform one -- and since release-eligibility currently demands zero errors, it could not be used
+    # to ask whether that bar is the right one. Diagnostics-only, and the report says so.
+    parser.add_argument("--allow-ineligible", action="store_true",
+                        help="score a model that is not releaseEligible; for measurement, never for release")
     parser.add_argument("--min-positive", type=int, default=3)
     parser.add_argument("--min-clean", type=int, default=3)
     parser.add_argument("--max-length", type=int, default=256)
@@ -181,7 +187,7 @@ def main() -> None:
             model=model_directory(args.model),
             training_report=args.training_report,
             encoder=args.encoder,
-            allow_ineligible=False,
+            allow_ineligible=args.allow_ineligible,
         ),
         training,
     )
