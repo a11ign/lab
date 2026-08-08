@@ -57,7 +57,28 @@ DEFAULT_EPOCHS = 250
 
 CALIBRATION_FOLDS = 5
 
-RULE_OWNED_CRITERIA = frozenset({"1.1.1", "4.1.2"})
+# Criteria decided by a deterministic rule, not by the learned scorer. Their calibration is reported
+# but does not gate release, because the rule is the decision.
+#
+# 2.4.6 and 2.4.4 joined 2026-08-08, and the reason is that they were never judgment in the first place.
+# Both signals are hand-written vocabularies -- GENERIC_HEADINGS (15 words) and VAGUE_LINKS -- and the
+# corpus is GENERATED from those same lists, so a head trained on it can only learn the list. Measured:
+# calibration went perfectly clean while the held-out set stayed broken, and on the 32 held-out pairs
+# `generic_heading_present` discriminated 4 of 30, because those pages use words the list has never seen
+# ('appointments', 'repairs', 'bus timetable'). That is not a model deficiency; it is a model correctly
+# failing to generalise something that does not generalise.
+#
+# This is also what the field does. WAVE flags a link whose text is one of "click here" / "here" /
+# "more" / "details" / "read more" / ... -- essentially VAGUE_LINKS, arrived at independently -- and
+# `eslint-plugin-jsx-a11y`'s anchor-ambiguous-text ships DEFAULT_AMBIGUOUS_WORDS matched on EXACT text,
+# the same semantics as ours. axe-core declines to judge text quality at all, checking only that an
+# accessible name exists. So a list is standard practice for these two criteria; training a scorer on
+# one and quoting its accuracy as judgment is not.
+#
+# The consequence is deliberate and narrows the claim honestly: this project exists for "the
+# judgment-based WCAG failures that rule scanners miss", and these two are what rule scanners catch.
+# The learned gate now rests on the criteria that genuinely need judgment.
+RULE_OWNED_CRITERIA = frozenset({"1.1.1", "2.4.4", "2.4.6", "4.1.2"})
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
