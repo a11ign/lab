@@ -57,6 +57,7 @@ DEFAULT_EPOCHS = 250
 
 CALIBRATION_FOLDS = 5
 
+
 # Criteria decided by a deterministic rule, not by the learned scorer. Their calibration is reported
 # but does not gate release, because the rule is the decision.
 #
@@ -321,6 +322,7 @@ def main() -> None:
                 report["modelReleaseEligible"] = False
                 if criterion not in RULE_OWNED_CRITERIA:
                     report["releaseEligible"] = False
+                    report["calibrationClean"] = False
                 report["warnings"].append(f"{subtype}: fewer than 20 positive development records")
             pooling = pooling_for(subtype)
             view_features, view_offsets = views[pooling]
@@ -371,6 +373,7 @@ def main() -> None:
                 report["modelReleaseEligible"] = False
                 if criterion not in RULE_OWNED_CRITERIA:
                     report["releaseEligible"] = False
+                    report["calibrationClean"] = False
                 report["warnings"].append(f"{criterion}: {split} split has no positive records")
         calibration_false_positive = criterion_report["calibration"]["falsePositive"]
         calibration_false_negative = criterion_report["calibration"]["falseNegative"]
@@ -378,6 +381,7 @@ def main() -> None:
             report["modelReleaseEligible"] = False
             if criterion not in RULE_OWNED_CRITERIA:
                 report["releaseEligible"] = False
+                report["calibrationClean"] = False
             report["warnings"].append(
                 f"{criterion}: grouped calibration has {calibration_false_positive} false positives "
                 f"and {calibration_false_negative} false negatives"

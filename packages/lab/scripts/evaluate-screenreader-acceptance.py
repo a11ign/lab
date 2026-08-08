@@ -91,14 +91,23 @@ def load_records(training: Any, paths: list[Path]) -> list[dict[str, Any]]:
     return records
 
 
-def score_criterion(training: Any, criterion_report: dict[str, Any], features: Any, weights: Any) -> Any:
+def score_criterion(training: Any, criterion_report: dict[str, Any], views: dict[str, Any], weights: Any) -> Any:
+    """One score per RECORD, using each head's own pooling.
+
+    `encode_records` returns a row per EVIDENCE UNIT, not per record. This function used to hand that
+    matrix straight to `score_head`, so it produced ~54,000 scores to compare against 120 labels —
+    every held-out number it reported after multiple-instance pooling landed was meaningless, and it
+    read as the model detecting nothing rather than as a broken comparison. That is the train/inference
+    asymmetry this pooling change was warned to watch for, in the one file that measures generalisation.
+    """
     import torch
 
     subtype_scores = []
     for subtype_details in criterion_report["subtypes"].values():
         weight = weights[subtype_details["head"] + ".weight"]
         bias = weights[subtype_details["head"] + ".bias"]
-        subtype_scores.append(training.score_head(features, weight, bias))
+        view_features, view_offsets = views[subtype_details.get("pooling", "document-mean")]
+        subtype_scores.append(training.score_bags(view_features, view_offsets, weight, bias))
     return torch.stack(subtype_scores).amax(dim=0)
 
 
@@ -208,6 +217,11 @@ def main() -> None:
     )
     max_length = int(report["representation"]["maxLength"])
     features, _, _ = training.encode_records(records, args.encoder, max_length)
+    # Both views, keyed exactly as the trainer keys them. A document-pooled head sees a bag of one.
+    views = {
+        "instance-max": (features, training.bag_offsets(records)),
+        "document-mean": training.encode_documents(records, args.encoder, max_length),
+    }
     import torch
 
     result: dict[str, Any] = {
@@ -233,7 +247,7 @@ def main() -> None:
         labels = torch.tensor(
             [criterion in record["target"].get("criteria", []) for record in records], dtype=torch.bool
         )
-        scores = score_criterion(training, criterion_report, features, weights)
+        scores = score_criterion(training, criterion_report, views, weights)
         threshold = float(criterion_report["threshold"])
         included_scores = scores[included_indices]
         included_labels = labels[included_indices]
