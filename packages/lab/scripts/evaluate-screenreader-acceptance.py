@@ -176,6 +176,21 @@ def assert_disjoint(training: Any, acceptance: list[dict[str, Any]], training_da
         raise RuntimeError("acceptance data overlaps training: " + json.dumps({"cases": overlap_cases, "families": overlap_families}))
 
 
+def stamp_generalisation(report_path: Path, passed: bool, reasons: list[str]) -> None:
+    """Write the held-out verdict back into the training report beside the weights it describes.
+
+    Kept next to the weights deliberately: a verdict in a separate file is a verdict that can be lost,
+    and `score.py` reads the training report. Retraining rewrites the report and resets this to False,
+    which is correct — new weights have not been evaluated.
+    """
+    if not report_path.exists():
+        return
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["generalisationVerified"] = bool(passed)
+    report["releaseBlockedBy"] = [] if passed else [f"held-out acceptance failed: {r}" for r in reasons]
+    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+
+
 def main() -> None:
     args = parse_args()
     training = load_training_module()
@@ -263,6 +278,12 @@ def main() -> None:
     result["passed"] = not result["failureReasons"]
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    # This is the ONLY place allowed to claim generalisation, because it is the only thing that measures
+    # it. The trainer sets `generalisationVerified: False` and cannot do better: its calibration runs on
+    # the split the model was tuned against, and it once reported a perfectly clean calibration for
+    # weights this evaluator rejected on four criteria. Recorded on failure too — an absent stamp and a
+    # failed one must not look the same.
+    stamp_generalisation(args.training_report, result["passed"], result["failureReasons"])
     print(json.dumps({"passed": result["passed"], "failureReasons": result["failureReasons"]}, indent=2))
     if not result["passed"]:
         raise SystemExit(1)

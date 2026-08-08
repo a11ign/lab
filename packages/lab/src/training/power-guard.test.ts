@@ -26,6 +26,9 @@ test("a multi-hour run on battery is REFUSED, because its failure would be misle
   assert.equal(verdict.ok, false);
   // The message has to name the real consequence, or the operator overrides it as pedantry. A full
   // battery is refused too: 95% does not survive 8 hours of driving a VM.
+  // `assert.ok` on the typeof, not `assert.equal` of it: only this form narrows `string | undefined`
+  // for the match below. The ok:true branch carries no reason, so the union is real.
+  assert.ok(typeof verdict.reason === "string", "a refusal must carry a reason");
   assert.match(verdict.reason, /unreachable worker|broken guest/,
     `the refusal must explain what a sleeping host looks like from inside a run; got: ${verdict.reason}`);
 });
@@ -38,6 +41,7 @@ test("a short run on a healthy battery proceeds", () => {
 test("a short run on a nearly flat battery is refused", () => {
   const verdict = powerVerdict({ onAcPower: false, batteryPercent: 9, estimatedHours: 0.2 });
   assert.equal(verdict.ok, false);
+  assert.ok(typeof verdict.reason === "string", "a refusal must carry a reason");
   assert.match(verdict.reason, /9%/, "the refusal must quote the reading it acted on");
 });
 

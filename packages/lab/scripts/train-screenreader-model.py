@@ -267,6 +267,17 @@ def main() -> None:
             "developmentRecords": len(development_indices),
         },
         "criteria": {},
+        # What the trainer can actually know: its own calibration, on the DEVELOPMENT split.
+        "calibrationClean": True,
+        # What it cannot know, and used to imply. `releaseEligible` was set purely from calibration, so
+        # it certified a model the held-out set rejects — measured: calibration went perfectly clean
+        # while acceptance failed on four criteria, unchanged. A flag computed on the split a model was
+        # tuned against cannot detect fitting that split, and `score.py` trusts this field.
+        #
+        # Stays False until the acceptance evaluator stamps it, and names what is missing so nobody
+        # reads absence as a pass. `release:gate` runs that evaluator; nothing else may set this.
+        "generalisationVerified": False,
+        "releaseBlockedBy": ["held-out acceptance has not been evaluated for these weights"],
         "releaseEligible": True,
         "modelReleaseEligible": True,
         "warnings": [],
