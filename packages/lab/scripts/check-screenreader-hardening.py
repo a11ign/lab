@@ -29,7 +29,10 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 # which resolved to `packages/lab/packages/scorer` once M8 moved this file into the lab package — a path that
 # does not exist, and the failure was `ModuleNotFoundError: No module named 'screenreader_features'`.
 SCORER_PACKAGE = Path(__file__).resolve().parents[2] / "scorer"
-TRAINING_SCRIPT = REPO_ROOT / "scripts" / "train-screenreader-model.py"
+# Beside this file, not at the repo root: the trainer moved into `packages/lab/scripts/`
+# during the package split and this path was never updated, so the whole check has been
+# dying at import. A gate that cannot start is a gate nobody is running.
+TRAINING_SCRIPT = Path(__file__).resolve().parent / "train-screenreader-model.py"
 SCORER_SCRIPT = SCORER_PACKAGE / "python" / "score.py"
 MIN_TEST_POSITIVES = 10
 

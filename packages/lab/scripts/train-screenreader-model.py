@@ -37,7 +37,12 @@ from screenreader_features import (  # noqa: E402  (path shim must precede the i
     assert_encoder,
     encode_records,
     head_key,
+    bag_gather,
+    bag_offsets,
+    encode_documents,
+    pooling_for,
     read_records,
+    score_bags,
     score_head,
     sha256,
 )
@@ -86,6 +91,7 @@ def out_of_fold_scores(
     records: list[dict[str, Any]],
     development_indices: list[int],
     epochs: int,
+    offsets: list[int],
 ) -> Any:
     import torch
 
@@ -106,8 +112,8 @@ def out_of_fold_scores(
         ]
         if not held_out or not training:
             continue
-        weight, bias = train_head(features[training], labels[training], epochs)
-        scores[held_out] = score_head(features[held_out], weight, bias)
+        weight, bias = train_head(features, offsets, labels, training, epochs)
+        scores[held_out] = score_bags(features, offsets, weight, bias)[held_out]
     return scores
 
 def metrics(scores: Any, labels: Any, threshold: float) -> dict[str, float | int]:
@@ -133,7 +139,13 @@ def metrics(scores: Any, labels: Any, threshold: float) -> dict[str, float | int
         "f1": 2 * precision * recall / max(precision + recall, 1e-9),
     }
 
-def choose_threshold(scores: Any, labels: Any) -> float:
+def choose_threshold(scores: Any, labels: Any, criterion: str = "?", warnings: list[str] | None = None) -> float:
+    """Lowest threshold reaching zero false positives, by F1.
+
+    The fallback is REPORTED, not silent. When no candidate reaches zero false positives this returns
+    0.5 -- a value nobody chose, for a criterion whose calibration just failed -- and a default that
+    looks like a decision is how an unexamined number ends up in a release artifact.
+    """
     candidates = [i / 100 for i in range(5, 100, 5)]
     valid = []
     for threshold in candidates:
@@ -141,6 +153,11 @@ def choose_threshold(scores: Any, labels: Any) -> float:
         if result["falsePositive"] == 0:
             valid.append((result["f1"], threshold))
     if not valid:
+        if warnings is not None:
+            warnings.append(
+                f"{criterion}: no threshold reaches zero false positives; falling back to 0.5, which "
+                "nobody chose — this criterion is not calibrated"
+            )
         return 0.5
     # Once the zero-false-positive guard is satisfied, prefer the lowest
     # threshold among equal-F1 candidates. That preserves recall and follows
@@ -148,19 +165,47 @@ def choose_threshold(scores: Any, labels: Any) -> float:
     # undocumented conservatism bias through tuple ordering.
     return max(valid, key=lambda item: (item[0], -item[1]))[1]
 
-def train_head(features: Any, labels: Any, epochs: int) -> tuple[Any, Any]:
+def bag_logits(unit_logits: Any, offsets: list[int]) -> Any:
+    """Max over each bag's instance logits -> one logit per record.
+
+    On LOGITS rather than probabilities: sigmoid is monotonic, so max-of-sigmoids equals
+    sigmoid-of-max, and BCEWithLogitsLoss is numerically safer than sigmoid-then-BCE. This is the
+    training-side twin of `score_bags`, and the two must stay in step -- a different aggregation on
+    each side yields plausible numbers and wrong findings.
+    """
+    import torch
+
+    gather, mask = bag_gather(offsets)
+    return unit_logits[gather].masked_fill(~mask, float("-inf")).max(dim=1).values
+
+
+def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int], epochs: int) -> tuple[Any, Any]:
+    """Train one subtype head under multiple-instance max pooling.
+
+    Takes the FULL feature matrix plus the record indices to train on, rather than a pre-sliced one:
+    features are now per evidence unit, so slicing by record index would cut the rows apart from the
+    bags they belong to. Every epoch scores all instances, maxes within each bag, then selects the
+    records in this split -- so the gradient reaches only the argmax instance of each record, which is
+    what makes this MIL rather than document classification.
+    """
     import torch
 
     torch.manual_seed(SEED)
     head = torch.nn.Linear(features.shape[1], 1)
-    positives = labels.sum().item()
-    negatives = labels.numel() - positives
+    selected = torch.tensor(indices, dtype=torch.long)
+    split_labels = labels[selected]
+    positives = split_labels.sum().item()
+    negatives = split_labels.numel() - positives
     positive_weight = max(negatives / max(positives, 1), 1.0)
     loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([positive_weight]))
     optimizer = torch.optim.AdamW(head.parameters(), lr=0.02, weight_decay=0.01)
+    # Fixed for the whole run, so it is built once here rather than rebuilt on each of 250 epochs.
+    gather, mask = bag_gather(offsets)
     for _ in range(epochs):
         optimizer.zero_grad()
-        loss = loss_fn(head(features).squeeze(1), labels.float())
+        unit_logits = head(features).squeeze(1)
+        record_logits = unit_logits[gather].masked_fill(~mask, float("-inf")).max(dim=1).values
+        loss = loss_fn(record_logits[selected], split_labels.float())
         loss.backward()
         optimizer.step()
     return head.weight.detach().clone(), head.bias.detach().clone()
@@ -172,6 +217,16 @@ def main() -> None:
     records = read_records(args.data)
     split_for_family = assign_splits(records)
     features, dimension, structured_dimension = encode_records(records, args.encoder, args.max_length)
+    # Derived from the records, never passed between processes: the scorer recomputes it the same way.
+    offsets = bag_offsets(records)
+    # Both views, computed once. A document-pooled head sees one row per capture with identity
+    # offsets, so it runs through the same bag machinery as an instance-pooled one -- a bag of size
+    # one. See INSTANCE_POOLED_SUBTYPES for why the choice is per subtype.
+    doc_features, doc_offsets = encode_documents(records, args.encoder, args.max_length)
+    views = {
+        "instance-max": (features, offsets),
+        "document-mean": (doc_features, doc_offsets),
+    }
     import torch
     from safetensors.torch import save_file
 
@@ -235,27 +290,39 @@ def main() -> None:
                 if criterion not in RULE_OWNED_CRITERIA:
                     report["releaseEligible"] = False
                 report["warnings"].append(f"{subtype}: fewer than 20 positive development records")
+            pooling = pooling_for(subtype)
+            view_features, view_offsets = views[pooling]
             oof_scores = out_of_fold_scores(
-                features,
+                view_features,
                 subtype_labels,
                 records,
                 development_indices,
                 args.epochs,
+                view_offsets,
             )
-            weight, bias = train_head(features[development_indices], subtype_development_labels, args.epochs)
+            weight, bias = train_head(view_features, view_offsets, subtype_labels, development_indices, args.epochs)
             key = head_key(subtype)
             weights[key + ".weight"] = weight
             weights[key + ".bias"] = bias
             subtype_oof_scores.append(oof_scores)
-            subtype_final_scores.append(score_head(features, weight, bias))
+            subtype_final_scores.append(score_bags(view_features, view_offsets, weight, bias))
             subtype_report[subtype] = {
                 "head": key,
+                # The view this head was TRAINED on. Inference reads it rather than assuming, because
+                # scoring a document-pooled head per announcement (or the reverse) produces confident
+                # numbers from the wrong representation -- and nothing downstream could tell.
+                "pooling": pooling,
                 "development": metrics(oof_scores[development_indices], subtype_development_labels, 0.5),
             }
 
         criterion_oof_scores = torch.stack(subtype_oof_scores).amax(dim=0)
         criterion_final_scores = torch.stack(subtype_final_scores).amax(dim=0)
-        threshold = choose_threshold(criterion_oof_scores[development_indices], criterion_labels[development_indices])
+        threshold = choose_threshold(
+            criterion_oof_scores[development_indices],
+            criterion_labels[development_indices],
+            criterion,
+            report["warnings"],
+        )
         criterion_report = {
             "decisionOwner": "deterministic-rules" if criterion in RULE_OWNED_CRITERIA else "learned-screenreader-scorer",
             "threshold": threshold,
