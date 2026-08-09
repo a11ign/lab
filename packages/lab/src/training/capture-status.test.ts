@@ -64,3 +64,39 @@ test("status keeps a recently updated unfinished run live", () => {
   assert.equal(report.verdict, 0);
   assert.equal(report.next_command, "npm run training:wait");
 });
+
+/**
+ * `--json` must always emit JSON.
+ *
+ * The no-run branch printed English whatever the caller asked for, so `JSON.parse(stdout)` threw in
+ * exactly the case an automated caller most needs to handle — "is a run in progress?" answered when there
+ * is none. Driven as a subprocess because the defect was in the OUTPUT, not in a pure function, and a unit
+ * test of the tally would never have seen it.
+ */
+test("--json emits parseable JSON even when no run exists", async () => {
+  const { execFileSync } = await import("node:child_process");
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+
+  const script = fileURLToPath(new URL("./capture-status.mjs", import.meta.url));
+  // An empty directory has no progress file, which is the no-run case.
+  const empty = mkdtempSync(join(tmpdir(), "a11y-status-"));
+  // A non-zero exit is EXPECTED here — "no run" is exit 2 — so the output has to be read from the thrown
+  // error as well as from the success path. Returning from both branches keeps that explicit.
+  const stdout = ((): string => {
+    try {
+      return execFileSync(process.execPath, [script, "--json"], {
+        encoding: "utf8", env: { ...process.env, DATASET_ROOT: empty },
+      });
+    } catch (error) {
+      return String((error as { stdout?: string }).stdout ?? "");
+    }
+  })();
+  const parsed = JSON.parse(stdout);
+  assert.equal(parsed.running, false);
+  assert.equal(parsed.verdict, 2, "no-run is exit 2, and the payload must say so too");
+  assert.equal(parsed.next_command, "npm run training:capture");
+  assert.match(String(parsed.progress_file), /capture-progress\.json$/);
+});

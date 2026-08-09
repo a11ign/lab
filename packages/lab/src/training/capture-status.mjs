@@ -91,6 +91,27 @@ function outcomeExit(progress, counts, now) {
 async function main() {
   const progress = readProgress(ROOT);
   if (!progress) {
+    // `--json` must ALWAYS emit JSON, including here. This branch printed two English lines whatever the
+    // caller asked for, so `JSON.parse(stdout)` threw precisely when there was no run — the one case an
+    // automated caller most needs to handle, and the reason this command was recorded as returning
+    // "nothing parseable". The exit code was right the whole time; the payload was not.
+    if (JSON_OUT) {
+      console.log(JSON.stringify({
+        running: false,
+        stale: false,
+        total: 0,
+        captured: 0,
+        failed: 0,
+        skipped: 0,
+        // Null rather than absent: a consumer reading `progress_file` learns WHERE we looked, which is
+        // the first thing anyone asks when told there is no run.
+        progress_file: ROOT + "/capture-progress.json",
+        verdict: EXIT.noRun,
+        next_command: "npm run training:capture",
+      }, null, 2));
+      process.exitCode = EXIT.noRun;
+      return;
+    }
     console.log("No capture run recorded (" + ROOT + "/capture-progress.json is absent).");
     console.log("Start one with: npm run training:capture");
     process.exitCode = EXIT.noRun;
