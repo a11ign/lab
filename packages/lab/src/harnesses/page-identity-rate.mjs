@@ -43,10 +43,10 @@ const pagesDir = join(dirname(fileURLToPath(import.meta.url)), "../eval/pages/tu
 /**
  * Pages whose announcements cannot be mistaken for each other.
  *
- * `signature` is text this page must produce; `foreign` is the regex that proves a transcript came from
- * somewhere else. Keeping them separate matters: absence of your own signature says only "we did not hear
- * it", while presence of another page's says "we read that page" — a much stronger claim, and the one that
- * distinguishes a stale buffer from a quiet capture.
+ * `signature` is text this page must produce. Each page's signature doubles as the proof that ANOTHER page's
+ * transcript came from it, which is why they must be mutually exclusive: absence of your own signature says
+ * only "we did not hear it", while presence of the previous page's says "we read that page" — a much stronger
+ * claim, and the one that distinguishes a stale buffer from a quiet capture.
  */
 const PAGES = [
   { page: "structure-good.html", signature: /City Library/i },
@@ -111,6 +111,17 @@ function report(tally, reusedCount, refreshedCount, total) {
   for (const [outcome, count] of Object.entries(tally)) {
     const pct = total ? ((count / total) * 100).toFixed(1) : "0.0";
     process.stdout.write(`  ${outcome.padEnd(19)} ${String(count).padEnd(4)} ${pct}%\n`);
+  }
+  // Capture errors are NOT wrong pages, and must not be reported as though the fault under test occurred.
+  // But they shrink the denominator, so a run that lost a third of its captures has a much weaker bound than
+  // its headline suggests — and a cluster of them at the END is the documented speech-channel decay, not a
+  // page problem. Say so, rather than leaving a reader to infer reliability from a percentage.
+  const errors = tally.error ?? 0;
+  if (errors) {
+    const rate = ((errors / total) * 100).toFixed(1);
+    process.stdout.write(`\n  ${errors} capture error(s) (${rate}%) — these are worker reliability, not wrong\n`
+      + "  pages, and they are excluded from the rate below. Consecutive errors late in a long run are the\n"
+      + "  known NVDA speech-channel decay; check /health.vitals.recoveries before blaming the pages.\n");
   }
   // The rate B2 asks for. Stated with its denominator, because "0%" of three captures is not a bound.
   const wrong = tally["wrong-page"] ?? 0;
