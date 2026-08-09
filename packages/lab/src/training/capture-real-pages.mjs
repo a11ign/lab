@@ -1,0 +1,109 @@
+/**
+ * Capture the real-page corpus (ADR 0010).
+ *
+ *   node packages/lab/src/training/capture-real-pages.mjs [--role=calibration|training] [--worker=URL]
+ *
+ * NEVER CACHED, and that is a requirement rather than a default. These pages live on the public web and
+ * can change under us; the whole value of the corpus is that its evidence describes the page as it is now,
+ * against a conformance claim its publisher makes now. A cache hit here would silently pair today's claim
+ * with last month's announcements.
+ *
+ * Each capture records the page's PUBLISHED claim alongside the evidence, so a later training or
+ * calibration step never has to re-derive a label — and never has to guess one. That is the ADR's
+ * selection rule made mechanical: if a page is here, someone else already said whether it conforms.
+ *
+ * Deliberately NOT wired into `training:capture`. That command drives the synthetic corpus, is cached, and
+ * is what a normal run uses; mixing a live-web fetch into it would make a routine run depend on w3.org
+ * being up. This is a separate, explicit act.
+ */
+import { mkdirSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { pagesFor, REAL_PAGES } from "./real-page-corpus.mjs";
+
+const ROLE = process.argv.find((a) => a.startsWith("--role="))?.slice("--role=".length) ?? null;
+const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length)
+  ?? process.env.A11Y_WORKER
+  ?? null;
+const OUT = resolve(process.cwd(), process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
+
+/** One capture may legitimately take a while: a real page is bigger than a generated one. */
+const CAPTURE_TIMEOUT_MS = 300_000;
+/** Between captures, so a run cannot look like a crawl to the site being fetched. */
+const POLITE_GAP_MS = 2_000;
+
+const slug = (url) => url.replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "-").replace(/-+$/g, "");
+
+async function waitUntilReady() {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    try {
+      const health = await (await fetch(`${WORKER}/health`, { signal: AbortSignal.timeout(8_000) })).json();
+      if (health.ready === true) return true;
+    } catch { /* mid-boot or mid-restart; keep waiting */ }
+    await new Promise((r) => setTimeout(r, 5_000));
+  }
+  return false;
+}
+
+async function capture(page) {
+  const response = await fetch(`${WORKER}/capture`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    // `probeForms` is OFF. These are somebody else's live pages, and the same rule the CLI follows applies
+    // with more force here: pressing *Book* on a page we do not own is not a review. `probeFocus` is on —
+    // Tab activates nothing.
+    body: JSON.stringify({ url: page.url, probeForms: false, probeFocus: true }),
+    signal: AbortSignal.timeout(CAPTURE_TIMEOUT_MS),
+  });
+  const data = await response.json();
+  if (data.error) throw new Error(String(data.error).slice(0, 160));
+  return data;
+}
+
+async function main() {
+  if (!WORKER) {
+    process.stderr.write("a worker is required: --worker=http://host:port (or A11Y_WORKER)\n");
+    process.exit(2);
+  }
+  const pages = ROLE ? pagesFor(ROLE) : REAL_PAGES;
+  if (!pages.length) {
+    process.stderr.write(`no pages for role '${ROLE}'\n`);
+    process.exit(2);
+  }
+  mkdirSync(OUT, { recursive: true });
+  process.stdout.write(`Capturing ${pages.length} real page(s) into ${OUT}\n`);
+  process.stdout.write("Never cached: these pages change, and stale evidence would be paired with a "
+    + "current conformance claim.\n");
+
+  let captured = 0;
+  const failed = [];
+  for (const page of pages) {
+    if (!await waitUntilReady()) { failed.push(`${page.url}: worker never became ready`); continue; }
+    process.stdout.write(`  ${page.role}  ${page.url}\n`);
+    try {
+      const evidence = await capture(page);
+      writeFileSync(resolve(OUT, `${slug(page.url)}.json`), JSON.stringify({
+        // The label travels WITH the evidence, and names who made the claim. A later step must never have
+        // to re-derive it, because re-deriving it means deciding conformance ourselves.
+        role: page.role,
+        publishedClaim: page.publishedClaim,
+        claimSource: page.source,
+        demonstrates: page.demonstrates,
+        capturedAt: new Date().toISOString(),
+        capture: evidence,
+      }, null, 2));
+      captured += 1;
+    } catch (error) {
+      process.stdout.write(`    FAILED: ${error.message}\n`);
+      failed.push(`${page.url}: ${error.message}`);
+    }
+    await new Promise((r) => setTimeout(r, POLITE_GAP_MS));
+  }
+
+  process.stdout.write(`\n${captured}/${pages.length} captured\n`);
+  // Named, not counted. "3 failed" tells you nothing about whether the corpus is usable.
+  for (const line of failed) process.stdout.write(`  failed: ${line}\n`);
+  process.exit(failed.length ? 1 : 0);
+}
+
+await main();
