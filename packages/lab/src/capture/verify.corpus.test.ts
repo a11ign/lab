@@ -103,6 +103,77 @@ test("no capture in the corpus recorded a probe crash", () => {
   );
 });
 
+/**
+ * Announcements the MEASURING TOOL put there, not the page.
+ *
+ * Both of these were diagnosed, fixed, and left residue in the corpus that nothing checked for afterwards —
+ * found by hand, which is why this exists:
+ *
+ *   - **U+FFFC**, OBJECT REPLACEMENT CHARACTER. Edge's autofill draws a suggestion icon inside recognised
+ *     inputs and NVDA announces it as an embedded object: `"Recipient name, edit, ￼"`. Suppressed by
+ *     command-line flags now.
+ *   - **A one- or two-character control name.** `"O, button"` is not a button called O; it is a quick-nav key
+ *     that typed itself into the page because NVDA was left in focus mode. `MIN_CONTROL_NAME_LEN` once
+ *     skipped these with a comment calling them a "stray key echo" — the symptom was named and never
+ *     diagnosed.
+ *
+ * Both are worse than noise, because they can land on ONE VARIANT of a pair and correlate with the property
+ * under test — an accessible form focuses the field it rejected, so only the conformant half echoes. That
+ * hands the trained scorer a shortcut feature, which is the one defect this project cannot tolerate.
+ */
+const TOOL_ARTEFACTS: { name: string; detect: (capture: CapturedAnnouncements) => string | null }[] = [
+  {
+    name: "U+FFFC (Edge autofill)",
+    detect: (capture) => {
+      const found = announcementsOf(capture).find((line) => line.includes("\uFFFC"));
+      return found ? JSON.stringify(found) : null;
+    },
+  },
+  {
+    name: "one- or two-character control name (focus-mode key echo)",
+    detect: (capture) => {
+      const controls = [
+        ...(capture.structure?.formFields ?? []),
+        ...((capture.interaction as { controls?: string[] } | undefined)?.controls ?? []),
+      ];
+      const found = controls.find((control) => {
+        const label = String(control).split(",")[0]?.trim() ?? "";
+        return label.length > 0 && label.length <= 2 && /^[A-Za-z]+$/.test(label);
+      });
+      return found ? JSON.stringify(found) : null;
+    },
+  },
+];
+
+/** Every announcement in a capture, whichever channel carried it. */
+function announcementsOf(capture: CapturedAnnouncements): string[] {
+  const structure = (capture.structure ?? {}) as Record<string, string[] | undefined>;
+  const interaction = (capture.interaction ?? {}) as Record<string, unknown>;
+  return [
+    ...(capture.transcript ?? []),
+    ...Object.values(structure).flatMap((values) => values ?? []),
+    ...((interaction.postSubmitFields as string[] | undefined) ?? []),
+  ].map(String);
+}
+
+for (const artefact of TOOL_ARTEFACTS) {
+  test(`no capture carries ${artefact.name}`, () => {
+    if (samples.length === 0) return;
+    const hits = samples
+      .map((s) => ({ id: `${s.id}.${s.variant}`, evidence: artefact.detect(s.capture) }))
+      .filter((s) => s.evidence !== null);
+    assert.deepEqual(
+      hits.map((h) => h.id),
+      [],
+      `${hits.length} of ${samples.length} captures carry an announcement produced by the MEASURING TOOL ` +
+        `rather than by the page. A pair where one variant carries it and the other does not differs for a ` +
+        `reason unrelated to accessibility, and the artefact correlates with the property under test — so it ` +
+        `is available to the scorer as a shortcut feature.\n` +
+        `Recapture these:\n  ${hits.slice(0, 6).map((h) => `${h.id}  ${h.evidence}`).join("\n  ")}`,
+    );
+  });
+}
+
 for (const gate of GATES) {
   test(`${gate.name} rejects no capture in the corpus`, () => {
     if (samples.length === 0) return;
