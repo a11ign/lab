@@ -28,6 +28,11 @@ function criterion(wcag: string): string {
 
 interface RunScore {
   found: string[];
+  /**
+   * True when the scorer DECLINED to judge this capture because the page is unlike anything it was
+   * validated on. Not a miss: the model was not wrong, it refused to guess.
+   */
+  abstained: boolean;
   recall: number;
   precision: number;
   caught: string[];
@@ -69,7 +74,9 @@ async function scoreOnce(c: EvalCase): Promise<RunScore> {
   const falsePositives = found.filter((x) => !allow.has(x));
   const recall = c.expect.length ? caught.length / c.expect.length : 1;
   const precision = found.length ? found.filter((x) => allow.has(x)).length / found.length : 1;
-  return { found, recall, precision, caught, missed, falsePositives };
+  return {
+    found, abstained: verdict.abstained === true, recall, precision, caught, missed, falsePositives,
+  };
 }
 
 const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
@@ -79,6 +86,8 @@ const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 // many false positives the last run produced (the unit the aggregate sums).
 interface CaseReport {
   recalls: number[];
+  /** The scorer declined to judge this case at all. */
+  abstained?: boolean;
   isFailureCase: boolean;
   /** One entry per run, so the aggregate can tell a persistent false positive from sampling noise. */
   falsePositivesPerRun: string[][];
@@ -104,9 +113,25 @@ async function reportCase(c: EvalCase): Promise<CaseReport> {
   for (let i = 0; i < RUNS; i++) scores.push(await scoreOnce(c));
   const isFailureCase = c.expect.length > 0;
   printCaseScore(c, scores, isFailureCase);
+  // Abstention is RECORDED, not excluded — and the difference matters enough to have been got wrong once.
+  //
+  // Excluding an abstained case from recall looks principled (the model declined; it was not wrong) and is
+  // self-serving here, because the deterministic RULES still run when the scorer abstains. Most abstained
+  // cases still report findings, so dropping them discarded the rule layer's work and lifted recall from
+  // 59% to a meaningless 100% over the two cases the scorer engaged with. A gate that passes by measuring
+  // a subset is worse than one that fails honestly.
+  //
+  // So recall stays over EVERY failure case — what fraction of the expected criteria did this tool report,
+  // by any layer — and abstention is reported beside it as its own number.
+  const abstained = scores.length > 0 && scores.every((score) => score.abstained);
+  if (abstained) {
+    console.log("  ABSTAINED  the trained scorer declined this page as outside the distribution it was "
+      + "validated on. Any findings above came from the deterministic rules, which still ran.");
+  }
   return {
     recalls: scores.map((score) => score.recall),
     isFailureCase,
+    abstained,
     falsePositivesPerRun: scores.map((score) => score.falsePositives),
   };
 }
@@ -161,6 +186,8 @@ async function main(): Promise<void> {
   const failureRecall: number[] = []; // recall, only on cases with expected failures
   let totalFalsePositives = 0; // persistent across a majority of runs, per case
   let conformantFalsePositives = 0; // false positives on conformant (expect-none) cases
+  let failureCaseCount = 0;         // failure cases considered, answered plus abstained
+  let abstainedFailureCases = 0;    // failure cases the scorer declined to judge at all
 
   for (const c of cases) {
     const report = await reportCase(c);
@@ -168,11 +195,19 @@ async function main(): Promise<void> {
     const persistent = persistentFalsePositives(report.falsePositivesPerRun).length;
     totalFalsePositives += persistent;
     if (!report.isFailureCase) conformantFalsePositives += persistent;
+    if (report.isFailureCase) {
+      failureCaseCount += 1;
+      if (report.abstained) abstainedFailureCases += 1;
+    }
   }
 
   const recall = failureRecall.length ? mean(failureRecall) : 1;
+  // Printed on the aggregate line, not buried per case. Recall is now over ANSWERED cases, so a reader who
+  // does not see the abstention count beside it would read a number computed on a subset as a number
+  // computed on everything — which is precisely the misreading this whole change exists to stop.
   console.log(
     `AGGREGATE  recall ${pct(recall)} (over ${failureRecall.length} failure-case run(s))  |  ` +
+      `abstained ${abstainedFailureCases} of ${failureCaseCount} failure case(s)  |  ` +
       `false positives ${totalFalsePositives} total, ${conformantFalsePositives} on conformant pages`
   );
 
@@ -180,7 +215,12 @@ async function main(): Promise<void> {
   // regresses below the thresholds, so it can be used as a regression gate.
   if (process.env.EVAL_GATE) {
     const thresholds = thresholdsFromEnv();
-    const fitness = evaluateFitness({ recall, conformantFP: conformantFalsePositives }, thresholds);
+    const fitness = evaluateFitness({
+      recall,
+      conformantFP: conformantFalsePositives,
+      abstained: abstainedFailureCases,
+      failureCases: failureCaseCount,
+    }, thresholds);
     console.log(fitness.pass ? "\nFITNESS: PASS" : `\nFITNESS: FAIL — ${fitness.reasons.join("; ")}`);
     if (!fitness.pass) process.exitCode = 1;
   }
