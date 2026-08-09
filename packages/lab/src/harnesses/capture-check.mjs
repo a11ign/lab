@@ -124,6 +124,28 @@ function titleOf(r) {
   return (r.diagnostics ?? []).find((m) => m && m.event === "documentReady")?.title ?? null;
 }
 
+/**
+ * Why did this capture fail its identity check?
+ *
+ * "Read the wrong content" and "read nothing at all" are different faults with different repairs, and this
+ * message used to claim the first for both. That cost real time: four identity failures on
+ * `structure-bad.html` read as the stale-virtual-buffer fault, because that page's structure fields are all
+ * empty BY DESIGN (div-soup exposes no headings or landmarks), so identity rests entirely on the transcript —
+ * and an empty transcript is the signature of a mute screen reader on a loaded host, not of a wrong page.
+ *
+ * The title is included for the non-empty case because it is what separates the two remaining explanations: a
+ * correct title with someone else's content is the stale buffer, while a wrong title means the navigation
+ * itself went somewhere unexpected.
+ */
+function identityFailureCause(r) {
+  const heard = r.transcript?.length ?? 0;
+  if (heard === 0) {
+    return "read NOTHING — the screen reader was silent, which is not the same as reading the wrong page";
+  }
+  return `read ${heard} line(s) of OTHER content, first ${JSON.stringify(r.transcript[0]).slice(0, 60)},`
+    + ` while documentReady reported the title ${JSON.stringify(titleOf(r))}`;
+}
+
 function capturedText(r) {
   return [
     ...r.transcript,
@@ -170,19 +192,8 @@ async function captureConfirmed(check) {
       continue;
     }
     if (check.signature.test(capturedText(result))) return result; // genuinely read the target page
-    // "Read the wrong content" and "read nothing at all" are different faults with different repairs, and
-    // this message used to claim the first for both. That cost real time: four identity failures on
-    // `structure-bad.html` read as the stale-virtual-buffer fault, because that page's structure fields are
-    // all empty BY DESIGN (div-soup exposes no headings or landmarks), so identity rests entirely on the
-    // transcript — and an empty transcript is the signature of a mute screen reader on a loaded host, not
-    // of a wrong page. Name which one it is, and show what WAS read so the next reader need not guess.
-    const text = capturedText(result);
-    const heard = result.transcript?.length ?? 0;
-    const cause = heard === 0
-      ? "read NOTHING — the screen reader was silent, which is not the same as reading the wrong page"
-      : `read ${heard} line(s) of OTHER content, first: ${JSON.stringify(result.transcript[0]).slice(0, 60)}`;
-    console.log(`  attempt ${attempt}/${MAX_ATTEMPTS}: page identity NOT confirmed (${check.signature}) — ${cause}`);
-    if (heard > 0 && text.length) console.log(`      documentReady title: ${JSON.stringify(titleOf(result))}`);
+    console.log(`  attempt ${attempt}/${MAX_ATTEMPTS}: page identity NOT confirmed (${check.signature})`
+      + ` — ${identityFailureCause(result)}`);
   }
   return null;
 }

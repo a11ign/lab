@@ -87,13 +87,32 @@ function selfTest() {
   process.stdout.write(`  classifier self-test: 4/4 (it detects a constructed stale read)\n`);
 }
 
+/**
+ * Longer than the worker's own 280 s hard timeout, deliberately.
+ *
+ * The client must not give up before the server's bounded failure, or the worker's diagnosis — the fault code
+ * it worked out and put in the response — is replaced by a transport error that says only "no answer". Same
+ * rule as every deadline in the capture path: it has to exceed the slowest honest answer, because a check that
+ * stops listening turns a finding into silence. `fetch`'s default headers timeout is ~300 s, close enough to
+ * 280 s to lose the race, which is exactly what happened.
+ */
+const CAPTURE_HTTP_TIMEOUT_MS = 320_000;
+
 async function captureOnce(base, page) {
-  const response = await fetch(`${WORKER}/capture`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ url: `${base}/${page}`, steps: STEPS }),
-  });
-  const body = await response.json();
+  let body;
+  try {
+    const response = await fetch(`${WORKER}/capture`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url: `${base}/${page}`, steps: STEPS }),
+      signal: AbortSignal.timeout(CAPTURE_HTTP_TIMEOUT_MS),
+    });
+    body = await response.json();
+  } catch (error) {
+    // One unreachable capture must not end a 60-capture measurement. An unhandled rejection here threw away
+    // a whole run's evidence for a single timed-out request.
+    return { error: `transport: ${error?.message ?? error}` };
+  }
   if (body.error) return { error: String(body.error) };
   const marks = (body.diagnostics ?? []).filter((m) => m && typeof m === "object");
   return {
@@ -136,6 +155,50 @@ function report(tally, reusedCount, refreshedCount, total) {
   return wrong;
 }
 
+/**
+ * Capture every page in rotation `rounds` times, classifying each against its predecessor.
+ *
+ * Separated from `main` so the narrative there reads as setup, measurement, report — this function is the
+ * measurement, and it is the only place that knows a capture's outcome depends on what came before it.
+ */
+async function runRounds(base, rounds) {
+  const tally = { correct: 0, "wrong-page": 0, silent: 0, unrecognised: 0, error: 0 };
+  const counts = { reused: 0, refreshed: 0, total: 0 };
+  let previous = null;
+
+  for (let index = 0; index < rounds * PAGES.length; index += 1) {
+    const want = PAGES[index % PAGES.length];
+    const result = await captureOnce(base, want.page);
+    counts.total += 1;
+
+    if (result.error) {
+      tally.error += 1;
+      process.stdout.write(`  ${String(index).padStart(3)} ${want.page.padEnd(28)}`
+        + ` ERROR ${result.error.slice(0, 62)}\n`);
+      // A failed capture leaves no window to reuse, so the next one starts fresh and its predecessor is not
+      // a page we read. Clearing this keeps any later stale-read claim honest.
+      previous = null;
+      continue;
+    }
+
+    if (result.reused) counts.reused += 1;
+    if (result.refreshed) counts.refreshed += 1;
+    const outcome = classifyCapture({ transcript: result.transcript, want, previous });
+    tally[outcome] += 1;
+    process.stdout.write(`  ${String(index).padStart(3)} ${want.page.padEnd(28)}`
+      + ` ${result.reused ? "reused " : "fresh  "} ${outcome.padEnd(13)}${flagFor(outcome, previous)}\n`);
+    previous = want;
+  }
+  return { tally, counts };
+}
+
+/** Anything other than `correct` is called out on its own line, and a stale read names the page it read. */
+function flagFor(outcome, previous) {
+  if (outcome === "correct") return "";
+  const from = outcome === "wrong-page" ? ` (read ${previous?.page})` : "";
+  return `  <-- ${outcome.toUpperCase()}${from}`;
+}
+
 async function main() {
   if (!WORKER) {
     process.stderr.write("usage: npm run identity:rate -- --worker=http://<guest-ip>:8765 [--rounds=20]\n");
@@ -148,40 +211,25 @@ async function main() {
   // The guest reaches the host on the .1 of its own subnet — the same derivation capture-check uses.
   const base = `http://${new URL(WORKER).hostname.replace(/\.\d+$/, ".1")}:${port}`;
 
-  const tally = { correct: 0, "wrong-page": 0, silent: 0, unrecognised: 0, error: 0 };
-  let previous = null;
-  let reusedCount = 0;
-  let refreshedCount = 0;
-  let total = 0;
-
+  let measured;
   try {
-    for (let index = 0; index < ROUNDS * PAGES.length; index += 1) {
-      const want = PAGES[index % PAGES.length];
-      const result = await captureOnce(base, want.page);
-      total += 1;
-      if (result.error) {
-        tally.error += 1;
-        process.stdout.write(`  ${String(index).padStart(3)} ${want.page.padEnd(28)} ERROR ${result.error.slice(0, 60)}\n`);
-        // A failed capture leaves no window to reuse, so the next one starts fresh and its predecessor is
-        // not a page we read. Clearing this keeps a stale-read claim honest.
-        previous = null;
-        continue;
-      }
-      if (result.reused) reusedCount += 1;
-      if (result.refreshed) refreshedCount += 1;
-      const outcome = classifyCapture({ transcript: result.transcript, want, previous });
-      tally[outcome] += 1;
-      const flag = outcome === "correct" ? "" : `  <-- ${outcome.toUpperCase()}`
-        + (outcome === "wrong-page" ? ` (read ${previous?.page})` : "");
-      process.stdout.write(`  ${String(index).padStart(3)} ${want.page.padEnd(28)}`
-        + ` ${result.reused ? "reused " : "fresh  "} ${outcome.padEnd(13)}${flag}\n`);
-      previous = want;
-    }
+    measured = await runRounds(base, ROUNDS);
   } finally {
     await lease.release();
   }
 
-  const wrong = report(tally, reusedCount, refreshedCount, total);
+  const { tally, counts } = measured;
+  const wrong = report(tally, counts.reused, counts.refreshed, counts.total);
+
+  // A run with no reused-window captures MEASURED NOTHING, and it used to say "0/0" and exit 0 — which reads
+  // as a clean result. Found by running it against a worker whose speech channel had died: 3 of 3 captures
+  // errored, the rate printed 0/0, and the exit code said success. That is this repo's own rule about checks
+  // that report success having examined nothing, in a tool written to enforce it.
+  if (counts.reused === 0) {
+    process.stdout.write("\n  MEASURED NOTHING: no capture navigated an already-open window, so the fault under\n"
+      + "  test could not occur and this run is not evidence about it. Check the worker before rerunning.\n");
+    process.exit(3);
+  }
   // Exit non-zero on a wrong page: this is a gate as well as a measurement, and reading evidence from the
   // wrong page is the most damaging failure available to a tool that makes accessibility claims.
   process.exit(wrong > 0 ? 1 : 0);
