@@ -10,7 +10,7 @@
 // What this deliberately does NOT do is choose where the archive lives long-term. A snapshot on the same
 // disk protects against `rm -rf runs/` and a bad recapture; it does not protect against losing the
 // machine. Syncing the output somewhere durable is an operator decision, and a repo that silently
-// uploaded a user's data somewhere would be making it for them. See docs/PRODUCTION-READINESS.md.
+// uploaded a user's data somewhere would be making it for them. See RELEASE.md, "Deferred".
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { promisify } from "node:util";
@@ -53,4 +53,4 @@ const size = statSync(archive).size;
 process.stdout.write(`Wrote ${archive} (${(size / (1024 * 1024)).toFixed(1)} MB)\n`);
 process.stdout.write(
   "This is on the SAME DISK as the corpus. Sync it somewhere durable if you care about it —\n" +
-  "that step is deliberately not automated; see docs/PRODUCTION-READINESS.md.\n");
+  "that step is deliberately not automated; see RELEASE.md, \"Deferred\".\n");
