@@ -190,6 +190,20 @@ def choose_threshold(scores: Any, labels: Any, criterion: str = "?", warnings: l
     # undocumented conservatism bias through tuple ordering.
     return max(valid, key=lambda item: (item[0], -item[1]))[1]
 
+def bag_gather_tensors(offsets: list[int]) -> tuple[Any, Any]:
+    """`bag_gather` as torch tensors — the training-side conversion boundary.
+
+    The shared featurizer returns numpy so inference never imports torch. Torch can index with a numpy
+    array, but `masked_fill` rejects a numpy mask, so the conversion happens once, here, next to the
+    `torch.from_numpy` that converts the features. Deriving the indices is still the shared function's
+    job: only the container changes, so train and inference cannot pool differently.
+    """
+    import torch
+
+    gather, mask = bag_gather(offsets)
+    return torch.from_numpy(gather), torch.from_numpy(mask)
+
+
 def bag_logits(unit_logits: Any, offsets: list[int]) -> Any:
     """Max over each bag's instance logits -> one logit per record.
 
@@ -200,7 +214,7 @@ def bag_logits(unit_logits: Any, offsets: list[int]) -> Any:
     """
     import torch
 
-    gather, mask = bag_gather(offsets)
+    gather, mask = bag_gather_tensors(offsets)
     return unit_logits[gather].masked_fill(~mask, float("-inf")).max(dim=1).values
 
 
@@ -225,7 +239,7 @@ def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int
     loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([positive_weight]))
     optimizer = torch.optim.AdamW(head.parameters(), lr=0.02, weight_decay=0.01)
     # Fixed for the whole run, so it is built once here rather than rebuilt on each of 250 epochs.
-    gather, mask = bag_gather(offsets)
+    gather, mask = bag_gather_tensors(offsets)
     for _ in range(epochs):
         optimizer.zero_grad()
         unit_logits = head(features).squeeze(1)
@@ -236,6 +250,11 @@ def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int
     return head.weight.detach().clone(), head.bias.detach().clone()
 
 def main() -> None:
+    # Imported HERE and not at module scope on purpose: inference must never pull in torch (a ~400 MB
+    # wheel on every Action run), and training is the only caller that needs autograd. It must also be
+    # the FIRST statement -- a later `import torch` inside this function makes the name local for the
+    # whole body, so an earlier use raises UnboundLocalError rather than resolving a global.
+    import torch
     args = parse_args()
     random.seed(SEED)
     encoder_file = assert_encoder(args.encoder)
@@ -259,7 +278,6 @@ def main() -> None:
         "instance-max": (features, offsets),
         "document-mean": (doc_features, doc_offsets),
     }
-    import torch
     from safetensors.torch import save_file
 
     criteria = sorted({criterion for record in records for criterion in record["target"].get("criteria", [])})
