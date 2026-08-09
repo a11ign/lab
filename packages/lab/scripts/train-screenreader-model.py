@@ -241,13 +241,20 @@ def main() -> None:
     encoder_file = assert_encoder(args.encoder)
     records = read_records(args.data)
     split_for_family = assign_splits(records)
-    features, dimension, structured_dimension = encode_records(records, args.encoder, args.max_length)
+    # The featurizer returns NUMPY now, so inference needs no torch — a 400 MB wheel removed from every
+    # Action run. Training does need autograd, so it converts here, at its own boundary, and this is the
+    # ONLY place the conversion happens. One featurizer, one contract: train and inference cannot drift
+    # into different feature values, because they compute them with the same code and differ only in the
+    # container they are handed back in.
+    features_np, dimension, structured_dimension = encode_records(records, args.encoder, args.max_length)
+    features = torch.from_numpy(features_np)
     # Derived from the records, never passed between processes: the scorer recomputes it the same way.
     offsets = bag_offsets(records)
     # Both views, computed once. A document-pooled head sees one row per capture with identity
     # offsets, so it runs through the same bag machinery as an instance-pooled one -- a bag of size
     # one. See INSTANCE_POOLED_SUBTYPES for why the choice is per subtype.
-    doc_features, doc_offsets = encode_documents(records, args.encoder, args.max_length)
+    doc_features_np, doc_offsets = encode_documents(records, args.encoder, args.max_length)
+    doc_features = torch.from_numpy(doc_features_np)
     views = {
         "instance-max": (features, offsets),
         "document-mean": (doc_features, doc_offsets),

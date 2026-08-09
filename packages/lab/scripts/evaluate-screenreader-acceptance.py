@@ -100,7 +100,7 @@ def score_criterion(training: Any, criterion_report: dict[str, Any], views: dict
     read as the model detecting nothing rather than as a broken comparison. That is the train/inference
     asymmetry this pooling change was warned to watch for, in the one file that measures generalisation.
     """
-    import torch
+    import numpy as np
 
     subtype_scores = []
     for subtype_details in criterion_report["subtypes"].values():
@@ -108,7 +108,9 @@ def score_criterion(training: Any, criterion_report: dict[str, Any], views: dict
         bias = weights[subtype_details["head"] + ".bias"]
         view_features, view_offsets = views[subtype_details.get("pooling", "document-mean")]
         subtype_scores.append(training.score_bags(view_features, view_offsets, weight, bias))
-    return torch.stack(subtype_scores).amax(dim=0)
+    # numpy, matching the featurizer: this script only EVALUATES, so nothing here needs autograd, and
+    # `score_bags` now returns numpy for exactly that reason. Mixing the two is what this line used to do.
+    return np.stack(subtype_scores).max(axis=0)
 
 
 def metrics(scores: Any, labels: Any, threshold: float) -> dict[str, Any]:
@@ -118,7 +120,8 @@ def metrics(scores: Any, labels: Any, threshold: float) -> dict[str, Any]:
     false_negative = int((~predicted & labels).sum())
     clean = int((~labels).sum())
     return {
-        "records": int(labels.numel()),
+        # numpy uses .size where torch uses .numel(); the whole evaluator moved to numpy with the featurizer.
+        "records": int(labels.size),
         "positive": int(labels.sum()),
         "clean": clean,
         "truePositive": true_positive,
@@ -222,7 +225,7 @@ def main() -> None:
         "instance-max": (features, training.bag_offsets(records)),
         "document-mean": training.encode_documents(records, args.encoder, max_length),
     }
-    import torch
+    import numpy as np
 
     result: dict[str, Any] = {
         "schema": "a11y-witness/screenreader-scorer-acceptance",
@@ -244,8 +247,8 @@ def main() -> None:
             }
             continue
         included_indices, excluded = eligible_records(criterion, criterion_report, records)
-        labels = torch.tensor(
-            [criterion in record["target"].get("criteria", []) for record in records], dtype=torch.bool
+        labels = np.array(
+            [criterion in record["target"].get("criteria", []) for record in records], dtype=bool
         )
         scores = score_criterion(training, criterion_report, views, weights)
         threshold = float(criterion_report["threshold"])
