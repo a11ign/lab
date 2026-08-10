@@ -35,7 +35,11 @@ const CACHE = !process.argv.includes("--no-cache") && KIND !== "acceptance";
 // A comma-separated list of worker URLs runs cases across them concurrently. Get one from
 // `scripts/local-worker/worker-ctl.sh pool`. Unset keeps the single-worker behaviour.
 const WORKERS_ENV = process.env.A11Y_WORKERS ?? null;
-const CAPTURE_TIMEOUT_MS = Number(process.env.DATASET_CAPTURE_TIMEOUT_MS || 300000);
+// Must sit ABOVE the worker's own hard timeout, or the host gives up before the guest can report WHY a
+// capture failed — the same race the CLI lost, one layer out. `budget-ladder.test.ts` asserts the ordering
+// against the worker's shipped constants, and it is what caught this when the budget was raised for real
+// pages: 520 s hard timeout inside a 300 s host timeout would have silently truncated every long capture.
+const CAPTURE_TIMEOUT_MS = Number(process.env.DATASET_CAPTURE_TIMEOUT_MS || 560000);
 // Only used to size the power check below, so an estimate is enough — but it must be a MEASURED one,
 // because a stale figure here would wave through a run that cannot finish before the host sleeps.
 // 32.7 s is the mean over the two page-size buckets, timed on this host (see scale-buckets.test.ts,
