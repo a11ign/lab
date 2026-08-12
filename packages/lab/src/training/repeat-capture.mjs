@@ -39,6 +39,10 @@ const PROBE_TABLES = process.argv.includes("--probe-tables");
 const PROBE_FORMS = process.argv.includes("--probe-forms");
 const TASK = arg("task");
 const REUSE = process.argv.includes("--reuse");
+// A new browser preset needs its own stability answer before it is trusted: "Chrome captures" and "Chrome
+// captures the SAME THING TWICE" are different claims, and only the second one makes a corpus. Absent means
+// the guest's configured browser, so existing invocations are unchanged.
+const BROWSER = arg("browser");
 const CAPTURE_TIMEOUT_MS = 300_000;
 // Every capture is kept, not just summarised. The first real run of this harness found two degenerate
 // captures and I could not say WHY, because the diagnostics -- stopReason, documentReady,
@@ -96,6 +100,7 @@ async function captureOnce() {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       url: URL_ARG, steps: STEPS, probeTables: PROBE_TABLES, reuseScreenReader: REUSE,
+      ...(BROWSER ? { browser: BROWSER } : {}),
       // The task is what selects which button the probe activates -- a control whose announced name
       // shares a meaningful word with it -- so a probe-forms run without one activates nothing and
       // reports a stable empty field, which looks exactly like a pass.

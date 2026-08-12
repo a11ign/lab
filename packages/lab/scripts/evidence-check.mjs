@@ -1,6 +1,12 @@
 // Re-capture a sample of the dataset and ask whether a pipeline change altered the EVIDENCE.
 //
-//   npm run evidence:check -- <worker-url> [--sample=24] [--only=family]
+//   npm run evidence:check -- <worker-url> [--sample=24] [--only=family] [--browser=chrome]
+//
+// `--browser` is what turns this into the Edge-vs-Chrome experiment. The baseline on disk was captured in
+// Edge, so recapturing the same sample in Chrome and diffing field by field answers a question nobody has
+// published: does NVDA announce the same thing in the two Chromium browsers? A SAME verdict would mean the
+// corpus is browser-portable; a CHANGED one names exactly which fields move, which is a finding either way.
+// It is also the only honest way to promote the Chrome preset from "predicted" to "measured".
 //
 // Runs under tsx, not plain node: it applies the pipeline's own verification gates, which live in
 // TypeScript (@a11y-witness/evidence/verify). Same reason capture-screenreader-dataset.mjs does.
@@ -35,11 +41,15 @@ const flag = (name, fallback) => {
   return found ? found.slice(name.length + 3) : fallback;
 };
 if (!worker) {
-  process.stderr.write("usage: npm run evidence:check -- <worker-url> [--sample=24] [--only=family]\n");
+  process.stderr.write(
+    "usage: npm run evidence:check -- <worker-url> [--sample=24] [--only=family] [--browser=chrome]\n");
   process.exit(2);
 }
 const sampleSize = Number(flag("sample", DEFAULT_SAMPLE));
 const only = flag("only", null);
+// Absent means "whatever the guest is configured for", so an ordinary run is unaffected. The worker
+// validates the name against its allow-list and answers 400 for anything else.
+const browser = flag("browser", null);
 
 function manifestCases() {
   const manifest = JSON.parse(readFileSync(resolve(DATASET, "manifest.json"), "utf8"));
@@ -117,6 +127,7 @@ async function capture(testCase, variant) {
       task: testCase.task ?? null,
       probeForms: !!testCase.probeForms,
       probeTables: !!testCase.probeTables,
+      ...(browser ? { browser } : {}),
     }),
     signal: AbortSignal.timeout(CAPTURE_TIMEOUT_MS),
   });
