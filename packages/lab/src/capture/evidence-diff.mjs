@@ -130,16 +130,28 @@ export function summarise(results) {
     + (counts.SKIPPED
       ? ` ${counts.SKIPPED} capture(s) could not be gated (page title unreadable) and were NOT compared.`
       : "");
+  // Zero comparisons is NOT "unchanged". `evidenceChanged: counts.CHANGED > 0` is false when
+  // nothing was compared at all, so a run in which every capture failed reported "evidence
+  // unchanged — safe to ship" and exited 0. Observed: 48 of 48 captures failed with
+  // EHOSTUNREACH because the worker had gone to sleep, and this said the evidence was fine.
+  //
+  // The note above already says a check that examined less than it was asked to must never be
+  // silent — it just did not cover examining NOTHING, which is the extreme case rather than a
+  // different one.
+  const examinedNothing = compared === 0;
   return {
-    counts, compared,
+    counts, compared, examinedNothing,
     evidenceChanged: counts.CHANGED > 0,
     // Named threshold rather than a bare number: below this, drift is NVDA being NVDA.
     driftIsWidespread: driftShare > WIDESPREAD_DRIFT_SHARE,
-    recommendation: (counts.CHANGED > 0
-      ? "evidence CHANGED — triage each one: a field a signal reads may have moved. If real, bump CAPTURE_PROTOCOL_VERSION and recapture."
-      : driftShare > WIDESPREAD_DRIFT_SHARE
-        ? "no field changed, but most of the sample drifted — re-run to separate NVDA variance from a real effect before trusting this."
-        : "evidence unchanged — safe to ship WITHOUT invalidating the cache.") + rejectedNote,
+    recommendation: (examinedNothing
+      ? "NOTHING WAS COMPARED — this is not a pass. Every capture failed or was excluded, so the "
+        + "evidence is UNKNOWN. Check the worker is reachable and the dataset pages are being served."
+      : counts.CHANGED > 0
+        ? "evidence CHANGED — triage each one: a field a signal reads may have moved. If real, bump CAPTURE_PROTOCOL_VERSION and recapture."
+        : driftShare > WIDESPREAD_DRIFT_SHARE
+          ? "no field changed, but most of the sample drifted — re-run to separate NVDA variance from a real effect before trusting this."
+          : "evidence unchanged — safe to ship WITHOUT invalidating the cache.") + rejectedNote,
   };
 }
 

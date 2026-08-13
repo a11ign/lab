@@ -34,6 +34,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 import { leasePageServer } from "../training/page-server.mjs";
+import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
 
 const WORKER = (process.argv.find((a) => a.startsWith("--worker=")) ?? "").slice("--worker=".length);
 const ROUNDS = Number((process.argv.find((a) => a.startsWith("--rounds=")) ?? "").slice("--rounds=".length) || 20);
@@ -209,7 +210,7 @@ async function main() {
   const port = Number(process.env.DATASET_PAGES_PORT || 5050);
   const lease = await leasePageServer({ root: pagesDir, port, probePath: PAGES[0].page });
   // The guest reaches the host on the .1 of its own subnet — the same derivation capture-check uses.
-  const base = `http://${new URL(WORKER).hostname.replace(/\.\d+$/, ".1")}:${port}`;
+  const base = hostPagesBase(WORKER, port);
 
   let measured;
   try {

@@ -114,3 +114,28 @@ test("rejected captures do not drag the drift share around", () => {
   ];
   assert.equal(summarise(results).driftIsWidespread, true);
 });
+
+test("comparing NOTHING is not a pass", () => {
+  // `evidenceChanged` is `counts.CHANGED > 0`, which is false when nothing was compared at all —
+  // so a run in which every capture failed reported "evidence unchanged — safe to ship" and exited
+  // 0. Observed on the first bare-metal worker: 48 of 48 captures failed with EHOSTUNREACH because
+  // the box had gone to sleep, and this said the evidence was fine.
+  //
+  // The guard is asserted from BOTH directions, because the version that only checked the happy
+  // path is what let this through: an empty run must not pass, and an ordinary one must not now
+  // be flagged as empty.
+  const empty = summarise([]);
+  assert.equal(empty.compared, 0);
+  assert.equal(empty.examinedNothing, true, "zero comparisons must be reported as unexamined");
+  assert.match(empty.recommendation, /NOTHING WAS COMPARED — this is not a pass/);
+
+  const allFailed = summarise(
+    [1, 2, 3].map(() => ({ comparison: { verdict: "REJECTED", changes: [], phrases: null } as never })),
+  );
+  assert.equal(allFailed.compared, 0, "rejects leave the denominator, so this is still zero");
+  assert.equal(allFailed.examinedNothing, true, "a sample that was entirely rejected examined nothing");
+
+  const real = summarise([{ comparison: compareCapture(capture(), capture()) }]);
+  assert.equal(real.examinedNothing, false, "a genuine comparison must not be called unexamined");
+  assert.match(real.recommendation, /evidence unchanged/);
+});

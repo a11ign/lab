@@ -28,6 +28,7 @@ import { isEvidence } from "../src/training/capture-decisions.mjs";
 import { titleOf } from "@a11y-witness/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";
 import { hasUsableCaptureFiles } from "../src/training/capture-resume.mjs";
+import { hostPagesBase } from "../../worker-fleet/src/host-address.mjs";
 
 const DATASET = resolve(process.cwd(), "runs/screenreader-dataset");
 const BASELINE = resolve(DATASET, "captures");
@@ -138,8 +139,7 @@ async function capture(testCase, variant) {
 
 // The guest cannot reach the host's localhost, so the pages must be addressed by the host's LAN IP --
 // the same reason leaseWorkerPool hands back a hostAddress.
-const hostPages = process.env.DATASET_BASE_URL
-  ?? `http://${new URL(worker).hostname.replace(/\.\d+$/, ".1")}:${process.env.DATASET_PAGES_PORT || 5050}`;
+const hostPages = hostPagesBase(worker, process.env.DATASET_PAGES_PORT || 5050);
 
 /** The page's own title, so the verification gates can check the capture against it. */
 async function pageTitle(testCase, variant) {
@@ -270,5 +270,8 @@ process.stdout.write(`\n${summary.compared} compared: ` +
   (summary.counts.REJECTED ? `, ${summary.counts.REJECTED} rejected (excluded)` : "") + "\n");
 process.stdout.write(`${summary.recommendation}\n`);
 process.stdout.write(`Report: ${resolve(OUT, "report.json")}\n`);
-// Exit code is the contract, same as the other gates: 0 safe to ship, 1 evidence changed.
-process.exit(summary.evidenceChanged ? 1 : 0);
+// Exit code is the contract, same as the other gates: 0 safe to ship, 1 evidence changed,
+// 2 could not answer. `examinedNothing` MUST NOT exit 0: a run where every capture failed
+// used to report "evidence unchanged — safe to ship" and succeed, which is the exact shape
+// of a check that reports success having examined nothing.
+process.exit(summary.examinedNothing ? 2 : summary.evidenceChanged ? 1 : 0);

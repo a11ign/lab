@@ -19,6 +19,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { leasePageServer } from "../training/page-server.mjs";
+import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
 
 const WORKER = process.argv[2];
 const RUNS = 3;
@@ -70,7 +71,7 @@ async function capture(base, variant) {
 async function main() {
   if (!WORKER) throw new Error("usage: npm run verdict:stability -- http://<guest-ip>:8765");
   const lease = await leasePageServer({ root: PAGES, port: 5050, probePath: "form-error-silent/good.html" });
-  const base = `http://${new URL(WORKER).hostname.replace(/\.\d+$/, ".1")}:5050`;
+  const base = hostPagesBase(WORKER);
   const results = {};
   try {
     for (const variant of ["good", "bad"]) {

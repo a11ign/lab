@@ -12,6 +12,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { captureWithNvda } from "@a11y-witness/nvda-worker";
 import { leasePageServer } from "../training/page-server.mjs";
+import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
 
 // Drive a live WORKER over HTTP instead of NVDA in-process.
 //
@@ -292,7 +293,7 @@ if (WORKER) {
     port: Number(process.env.DATASET_PAGES_PORT || 5050),
     probePath: CHECKS[0].page,
   });
-  pagesBase = `http://${new URL(WORKER).hostname.replace(/\.\d+$/, ".1")}:${process.env.DATASET_PAGES_PORT || 5050}`;
+  pagesBase = hostPagesBase(WORKER, process.env.DATASET_PAGES_PORT || 5050);
   console.log(`Driving worker ${WORKER}\nPages ${pagesBase}\n`);
 }
 
