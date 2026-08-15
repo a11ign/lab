@@ -21,6 +21,7 @@ import { resolve } from "node:path";
 
 import { pagesFor, REAL_PAGES } from "./real-page-corpus.mjs";
 import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
+import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 
 const ROLE = process.argv.find((a) => a.startsWith("--role="))?.slice("--role=".length) ?? null;
 const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length)
@@ -41,8 +42,11 @@ const slug = (url) => url.replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "-
 async function waitUntilReady() {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
-      const health = await (await fetch(`${WORKER}/health`, { signal: AbortSignal.timeout(8_000) })).json();
-      if (health.ready === true) return true;
+      const health = (await requestJson(`${WORKER}/health`, { timeoutMs: 8_000 })).json;
+      // `workerIsUsable`, not `ready === true`: a worker predating the field reports neither, and this
+      // loop would have spent all 60 attempts against a healthy guest and then recorded "worker never
+      // became ready" as a failure of the PAGE.
+      if (workerIsUsable(health)) return true;
     } catch { /* mid-boot or mid-restart; keep waiting */ }
     await new Promise((r) => setTimeout(r, 5_000));
   }

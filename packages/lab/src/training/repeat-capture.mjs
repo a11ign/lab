@@ -20,6 +20,7 @@ import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { isTransient } from "./capture-decisions.mjs";
 import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
+import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 import { captureIsSelfConsistent } from "@a11y-witness/evidence/verify";
 
 const arg = (name, fallback = null) => {
@@ -138,9 +139,11 @@ async function waitForReady(deadlineMs = 300_000) {
   let announced = false;
   while (Date.now() < deadline) {
     try {
-      const health = await (await fetch(`${WORKER.replace(/\/$/, "")}/health`,
-        { signal: AbortSignal.timeout(15_000) })).json();
-      if (health.ready) return;
+      const health = (await requestJson(`${WORKER.replace(/\/$/, "")}/health`, { timeoutMs: 15_000 })).json;
+      // `workerIsUsable`, not `health.ready`: an older worker reports no `ready` field at all, and testing
+      // it for truthiness waits out the whole budget against a guest that was fine. It also covers `busy`,
+      // so this no longer fires a capture at a worker mid-capture and collects a 429.
+      if (workerIsUsable(health)) return;
       if (!announced) { console.log("  waiting for the worker to report ready ..."); announced = true; }
     } catch {
       if (!announced) { console.log("  waiting for the worker to answer ..."); announced = true; }

@@ -9,6 +9,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { randomUUID } from "node:crypto";
 import { leaseWorker, leaseWorkerPool, guestReachableUrl, isAfterRun } from "@a11y-witness/worker-fleet";
 import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
+import { configuredWorkers } from "../../../worker-fleet/src/fleet-env.mjs";
 import { titleOf } from "@a11y-witness/evidence/verify";
 import {
   isEvidence, isTransient, rejectionReason, runOutcome, shouldEvictWorker, shouldRetireWorker,
@@ -34,9 +35,9 @@ const RESUME = process.argv.includes("--resume");
 // `--no-cache` forces a recapture anywhere.
 const KIND = process.env.DATASET_KIND || "training";
 const CACHE = !process.argv.includes("--no-cache") && KIND !== "acceptance";
-// A comma-separated list of worker URLs runs cases across them concurrently. Get one from
-// `scripts/local-worker/worker-ctl.sh pool`. Unset keeps the single-worker behaviour.
-const WORKERS_ENV = process.env.A11Y_WORKERS ?? null;
+// A comma-separated A11Y_WORKERS runs cases across those workers concurrently; unset keeps the
+// single-worker behaviour. Read via `configuredWorkers()` at the point of use rather than captured
+// here, so this file cannot drift from doctor and worker:code about what the fleet is again.
 // Must sit ABOVE the worker's own hard timeout, or the host gives up before the guest can report WHY a
 // capture failed — the same race the CLI lost, one layer out. `budget-ladder.test.ts` asserts the ordering
 // against the worker's shipped constants, and it is what caught this when the budget was raised for real
@@ -642,9 +643,10 @@ async function acquireDatasetWorkers() {
   // The middle case is the point: pooling used to hand back a no-op release, so a pooled run
   // left every VM running indefinitely. That is the exact cost the single-worker lease exists
   // to avoid, and it came back the moment pooling became the normal way to run.
-  const explicitPool = WORKERS_ENV
-    ? WORKERS_ENV.split(",").map((w) => w.trim().replace(/\/$/, "")).filter(Boolean)
-    : null;
+  // One parser, in fleet-env.mjs. This copy and doctor's and check-worker-code's had drifted apart on
+  // precedence, which meant a diagnostic could describe a different fleet from the one about to run.
+  const named = configuredWorkers();
+  const explicitPool = named.length ? named.map((w) => w.url) : null;
   if (explicitPool) {
     return {
       pool: explicitPool,
