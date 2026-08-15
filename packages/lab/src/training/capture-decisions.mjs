@@ -55,11 +55,36 @@ const TRANSIENT = new RegExp([
  */
 const TRANSIENT_FAULTS = new Set(["screen-reader-mute", "screen-reader-start-failed"]);
 
+/**
+ * Network failures that heal on their own, by CODE rather than by wording.
+ *
+ * These became visible when the capture clients moved off `fetch` to `node:http` (see
+ * `worker-fleet/src/worker-http.mjs` for why they had to). `fetch` collapsed every network failure into
+ * `TypeError: fetch failed`, which the regex above matched — so the whole class was transient by accident,
+ * through a wrapper's wording rather than through anything we had decided.
+ *
+ * `EHOSTUNREACH` is the one that would have bitten. It is how a bare-metal worker presents while its NIC
+ * wakes from selective suspend, recorded in provision-nvda-worker.ps1: 48 instant failures in one
+ * evidence-check run, and the box answered a curl thirty seconds later. Under the real code, and without
+ * this set, that would now be classified FATAL and fail 48 cases permanently.
+ *
+ * `ETIMEDOUT` covers both a dead peer and our own deadline in `requestJson`, which is deliberate: a
+ * capture that outran its budget is exactly the case the worker recovers from by cold-starting NVDA.
+ */
+const TRANSIENT_NETWORK_CODES = new Set([
+  "ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH", "ENETDOWN",
+  "EPIPE", "ETIMEDOUT", "EAI_AGAIN", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT",
+]);
+
 export function isTransient(error) {
   // Prefer the code. The regex below is the fallback for older workers and for host-side failures
   // (a dropped socket has no fault code), but a message is prose and prose gets reworded — see
   // packages/nvda-worker/src/capture-faults.mjs for what that cost.
   if (TRANSIENT_FAULTS.has(error?.code)) return true;
+  if (TRANSIENT_NETWORK_CODES.has(error?.code)) return true;
+  // A node:http error carries its code on the error itself; an undici one hides it on `cause`. Checking
+  // both means the classification does not depend on which client the caller happened to use.
+  if (TRANSIENT_NETWORK_CODES.has(error?.cause?.code)) return true;
   return TRANSIENT.test(String(error?.message ?? error ?? ""));
 }
 

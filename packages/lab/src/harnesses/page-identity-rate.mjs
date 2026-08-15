@@ -35,6 +35,7 @@ import { dirname, join } from "node:path";
 
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
+import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
 
 const WORKER = (process.argv.find((a) => a.startsWith("--worker=")) ?? "").slice("--worker=".length);
 const ROUNDS = Number((process.argv.find((a) => a.startsWith("--rounds=")) ?? "").slice("--rounds=".length) || 20);
@@ -89,26 +90,29 @@ function selfTest() {
 }
 
 /**
- * Longer than the worker's own 280 s hard timeout, deliberately.
+ * Longer than the worker's own hard timeout, deliberately.
  *
  * The client must not give up before the server's bounded failure, or the worker's diagnosis — the fault code
  * it worked out and put in the response — is replaced by a transport error that says only "no answer". Same
  * rule as every deadline in the capture path: it has to exceed the slowest honest answer, because a check that
- * stops listening turns a finding into silence. `fetch`'s default headers timeout is ~300 s, close enough to
- * 280 s to lose the race, which is exactly what happened.
+ * stops listening turns a finding into silence.
+ *
+ * This comment used to note that `fetch`'s ~300 s headers timeout was "close enough to lose the race, which is
+ * exactly what happened" — and then raised the AbortSignal, which does not govern that timeout at all. So the
+ * race was still lost, at 300 s, whatever this number said. `requestJson` is the actual remedy; see
+ * worker-http.mjs for the measurement.
  */
 const CAPTURE_HTTP_TIMEOUT_MS = 320_000;
 
 async function captureOnce(base, page) {
   let body;
   try {
-    const response = await fetch(`${WORKER}/capture`, {
+    const response = await requestJson(`${WORKER}/capture`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ url: `${base}/${page}`, steps: STEPS }),
-      signal: AbortSignal.timeout(CAPTURE_HTTP_TIMEOUT_MS),
+      body: { url: `${base}/${page}`, steps: STEPS },
+      timeoutMs: CAPTURE_HTTP_TIMEOUT_MS,
     });
-    body = await response.json();
+    body = response.json ?? {};
   } catch (error) {
     // One unreachable capture must not end a 60-capture measurement. An unhandled rejection here threw away
     // a whole run's evidence for a single timed-out request.

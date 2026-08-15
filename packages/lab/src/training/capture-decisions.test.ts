@@ -56,6 +56,29 @@ test("an abandoned capture is transient — same self-healing reason", () => {
   assert.equal(isTransient(new Error("capture exceeded the hard timeout of 240000 ms")), true);
 });
 
+test("a bare-metal worker waking its NIC is transient, by CODE not by wording", () => {
+  // The one that would have been silently reclassified when the clients moved off `fetch`. EHOSTUNREACH is
+  // how a physical worker presents while its NIC returns from selective suspend: provisioning records 48
+  // instant failures in one evidence-check run, and the box answered a curl thirty seconds later.
+  //
+  // Under `fetch` this was transient only by ACCIDENT -- undici wrapped every network failure as
+  // "TypeError: fetch failed", which the prose regex matched. `node:http` reports the real code, so nothing
+  // matched the prose any more and 48 recoverable failures would have become 48 permanent ones.
+  const unreachable = Object.assign(new Error("connect EHOSTUNREACH REDACTED-INTERNAL-ADDRESS:8765"), { code: "EHOSTUNREACH" });
+  assert.equal(isTransient(unreachable), true);
+  // And the wording alone must not be what saves it.
+  assert.equal(isTransient(Object.assign(new Error("worker gone"), { code: "EHOSTUNREACH" })), true);
+});
+
+test("undici's headers timeout is transient wherever the code is carried", () => {
+  // A capture that outran the client's patience is exactly what the worker recovers from by cold-starting
+  // NVDA. node:http puts the code on the error; undici hides it on `cause`, so both are checked -- the
+  // classification must not depend on which client the caller happened to use.
+  assert.equal(isTransient(Object.assign(new Error("timed out"), { code: "UND_ERR_HEADERS_TIMEOUT" })), true);
+  assert.equal(isTransient(Object.assign(new TypeError("fetch failed"),
+    { cause: Object.assign(new Error("x"), { code: "UND_ERR_HEADERS_TIMEOUT" }) })), true);
+});
+
 test("a programming error is not transient", () => {
   assert.equal(isTransient(new TypeError("x is not a function")), false);
 });

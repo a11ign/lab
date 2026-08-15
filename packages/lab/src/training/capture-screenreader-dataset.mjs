@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { leaseWorker, leaseWorkerPool, guestReachableUrl, isAfterRun } from "@a11y-witness/worker-fleet";
+import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
 import { titleOf } from "@a11y-witness/evidence/verify";
 import {
   isEvidence, isTransient, rejectionReason, runOutcome, shouldEvictWorker, shouldRetireWorker,
@@ -75,18 +76,12 @@ export function selectCases(cases, only) {
     wanted.some((want) => (ids.has(want) ? id === want : id.includes(want))));
 }
 
+// `requestJson`, not `fetch`: a capture can hold the connection well past undici's 300 s headers cap,
+// which no AbortSignal lifts. See worker-http.mjs — this call site declared 560 s and got 300 s.
 async function fetchJson(url, options = {}, timeoutMs = 30000) {
-  const response = await fetch(url, {
-    ...options,
-    signal: AbortSignal.timeout(timeoutMs),
-  });
-  const text = await response.text();
-  let body;
-  try {
-    body = JSON.parse(text);
-  } catch {
-    body = { raw: text };
-  }
+  const response = await requestJson(url, { ...options, timeoutMs });
+  const text = response.text;
+  const body = response.json ?? { raw: text };
   if (!response.ok) {
     const failed = new Error("HTTP " + response.status + " from " + url + ": " + JSON.stringify(body));
     // Carry the worker's fault code across the wire so retry decisions can key on it instead of on the
@@ -162,11 +157,7 @@ function captureOptions(testCase) {
 
 async function captureOne(ctx, testCase, url) {
   const body = { url, ...captureOptions(testCase) };
-  return fetchJson(ctx.worker + "/capture", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  }, CAPTURE_TIMEOUT_MS);
+  return fetchJson(ctx.worker + "/capture", { method: "POST", body }, CAPTURE_TIMEOUT_MS);
 }
 
 function writeCapture(testCase, variant, capture, provenance) {
