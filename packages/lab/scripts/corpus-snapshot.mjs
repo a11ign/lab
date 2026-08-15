@@ -7,10 +7,12 @@
 // only at the cost of many hours of worker time, which makes them the most expensive artifact in the
 // repo and the only one with no copy.
 //
-// What this deliberately does NOT do is choose where the archive lives long-term. A snapshot on the same
-// disk protects against `rm -rf runs/` and a bad recapture; it does not protect against losing the
-// machine. Syncing the output somewhere durable is an operator decision, and a repo that silently
-// uploaded a user's data somewhere would be making it for them. See RELEASE.md, "Deferred".
+// This ARCHIVES; `corpus-backup.mjs` is what makes it durable. The split is deliberate: a repo that
+// silently uploaded a user's data somewhere would be choosing for them, so the destination stays an
+// explicit operator decision (`A11Y_CORPUS_REMOTE`) — but `corpus:backup` now REFUSES to report success
+// without one, rather than leaving the gap unremarked. A snapshot on the same disk protects against
+// `rm -rf runs/` and a bad recapture; it does not protect against losing the machine, which is the
+// failure that actually costs you the corpus.
 import { execFile } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { promisify } from "node:util";
@@ -52,5 +54,7 @@ await run("tar", ["-czf", archive, "-C", DATASET, ...present], { maxBuffer: 1 <<
 const size = statSync(archive).size;
 process.stdout.write(`Wrote ${archive} (${(size / (1024 * 1024)).toFixed(1)} MB)\n`);
 process.stdout.write(
-  "This is on the SAME DISK as the corpus. Sync it somewhere durable if you care about it —\n" +
-  "that step is deliberately not automated; see RELEASE.md, \"Deferred\".\n");
+  "This is on the SAME DISK as the corpus, so it is not yet a backup — it defends against\n" +
+  "`rm -rf runs/` and a bad recapture, not against losing the machine.\n\n" +
+  "  A11Y_CORPUS_REMOTE=<user@host:/path or /mnt/...>  npm run corpus:backup\n\n" +
+  "which copies it somewhere durable and VERIFIES it arrived by reading it back.\n");
