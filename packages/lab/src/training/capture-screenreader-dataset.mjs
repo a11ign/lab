@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
+import { randomUUID } from "node:crypto";
 import { leaseWorker, leaseWorkerPool, guestReachableUrl, isAfterRun } from "@a11y-witness/worker-fleet";
 import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
 import { titleOf } from "@a11y-witness/evidence/verify";
@@ -84,6 +85,9 @@ async function fetchJson(url, options = {}, timeoutMs = 30000) {
   const body = response.json ?? { raw: text };
   if (!response.ok) {
     const failed = new Error("HTTP " + response.status + " from " + url + ": " + JSON.stringify(body));
+    // The status as a NUMBER, so callers branch on it instead of matching the message they just built.
+    // Recovery needs exactly this: 404 means re-capture, 500 means the worker has a diagnosis for us.
+    failed.status = response.status;
     // Carry the worker's fault code across the wire so retry decisions can key on it instead of on the
     // wording of a message that crossed two processes. Absent from older workers, which is why
     // isTransient still falls back to matching the text.
@@ -155,8 +159,8 @@ function captureOptions(testCase) {
   };
 }
 
-async function captureOne(ctx, testCase, url) {
-  const body = { url, ...captureOptions(testCase) };
+async function captureOne(ctx, testCase, url, captureId) {
+  const body = { url, ...captureOptions(testCase), captureId };
   return fetchJson(ctx.worker + "/capture", { method: "POST", body }, CAPTURE_TIMEOUT_MS);
 }
 
@@ -191,6 +195,13 @@ async function pageTitle(url) {
   }
   return titleOf(await response.text());
 }
+
+/**
+ * Recovery is a cheap read of something already computed, so it gets a short budget -- not the capture's.
+ * If the worker cannot answer this in 30 s it is in no state to be asked, and capturing again is the
+ * better move.
+ */
+const RECOVERY_TIMEOUT_MS = 30000;
 
 const CAPTURE_ATTEMPTS = 3;
 const WORKER_WAIT_MS = Number(process.env.DATASET_WORKER_WAIT_MS || 600000);
@@ -283,15 +294,54 @@ async function waitForWorker(worker) {
   throw new Error("the worker did not come back within " + Math.round(WORKER_WAIT_MS / 60000) + " minutes");
 }
 
+/**
+ * Ask the worker for a capture we already paid for but may not have received.
+ *
+ * Called only after `waitForWorker` has returned, which is what makes one request enough: that function
+ * waits for `busy` to clear, so the capture we lost the socket to has necessarily finished by now and its
+ * outcome is in the worker's store. No polling loop is needed and none is written.
+ *
+ * Returns null when there is nothing to recover -- a worker predating the endpoint (404 from the router's
+ * fallback), one that restarted and lost its memory, or a capture still somehow running. Null means
+ * "capture again", which is exactly what this code did before the endpoint existed.
+ *
+ * A recovered FAILURE is rethrown rather than swallowed, so a replay is indistinguishable from the original
+ * response. That keeps the worker's `fault` code -- the thing it worked out and we would otherwise replace
+ * with "no answer" -- and lets the run's own classification decide, as it would have done all along.
+ */
+async function recoverCapture(worker, captureId) {
+  try {
+    const body = await fetchJson(worker + "/capture/" + captureId, {}, RECOVERY_TIMEOUT_MS);
+    if (body?.state === "running") return null;
+    console.log("    recovered the completed capture " + captureId + " — no re-capture needed");
+    return body;
+  } catch (error) {
+    // 500 is the worker's own account of a failed capture, and it is the answer, not an obstacle.
+    if (error.status === 500) throw error;
+    // 404 from the endpoint, or from an older worker's router fallback: nothing kept, so capture again.
+    if (error.status === 404) return null;
+    // Anything else (the worker went away again mid-question) is not worth a second round trip here;
+    // the caller falls back to capturing, which is what it would have done anyway.
+    return null;
+  }
+}
+
 // One capture, tolerant of the worker disappearing underneath it.
 async function captureTolerantly(ctx, testCase, url) {
+  const captureId = randomUUID();
   try {
-    return await captureOne(ctx, testCase, url);
+    return await captureOne(ctx, testCase, url, captureId);
   } catch (error) {
     if (!isTransient(error)) throw error;
     console.log("    worker unreachable (" + error.message + "); waiting for it to come back");
     await waitForWorker(ctx.worker);
-    return captureOne(ctx, testCase, url);
+    // Before paying for a second full capture, ask whether the first one actually finished. A capture is
+    // 12-520 s of real screen-reader work, and a dropped socket after it completed used to discard all of
+    // it -- then charge the same again, which on a bad network is how three failures in a row evict a
+    // worker that was never faulty.
+    const recovered = await recoverCapture(ctx.worker, captureId);
+    if (recovered) return recovered;
+    return captureOne(ctx, testCase, url, randomUUID());
   }
 }
 
