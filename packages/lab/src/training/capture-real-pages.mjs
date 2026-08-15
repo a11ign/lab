@@ -20,6 +20,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { pagesFor, REAL_PAGES } from "./real-page-corpus.mjs";
+import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
 
 const ROLE = process.argv.find((a) => a.startsWith("--role="))?.slice("--role=".length) ?? null;
 const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length)
@@ -28,6 +29,9 @@ const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--wor
 const OUT = resolve(process.cwd(), process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
 
 /** One capture may legitimately take a while: a real page is bigger than a generated one. */
+// `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
+// AbortSignal says, and the worker writes its status and body together at the END of a capture.
+// See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
 const CAPTURE_TIMEOUT_MS = 300_000;
 /** Between captures, so a run cannot look like a crawl to the site being fetched. */
 const POLITE_GAP_MS = 2_000;
@@ -46,16 +50,15 @@ async function waitUntilReady() {
 }
 
 async function capture(page) {
-  const response = await fetch(`${WORKER}/capture`, {
+  const response = await requestJson(`${WORKER}/capture`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
     // `probeForms` is OFF. These are somebody else's live pages, and the same rule the CLI follows applies
     // with more force here: pressing *Book* on a page we do not own is not a review. `probeFocus` is on —
     // Tab activates nothing.
-    body: JSON.stringify({ url: page.url, probeForms: false, probeFocus: true }),
-    signal: AbortSignal.timeout(CAPTURE_TIMEOUT_MS),
+    body: { url: page.url, probeForms: false, probeFocus: true },
+    timeoutMs: CAPTURE_TIMEOUT_MS,
   });
-  const data = await response.json();
+  const data = response.json ?? {};
   if (data.error) throw new Error(String(data.error).slice(0, 160));
   return data;
 }

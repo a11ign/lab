@@ -19,6 +19,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { isTransient } from "./capture-decisions.mjs";
+import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
 import { captureIsSelfConsistent } from "@a11y-witness/evidence/verify";
 
 const arg = (name, fallback = null) => {
@@ -43,6 +44,9 @@ const REUSE = process.argv.includes("--reuse");
 // captures the SAME THING TWICE" are different claims, and only the second one makes a corpus. Absent means
 // the guest's configured browser, so existing invocations are unchanged.
 const BROWSER = arg("browser");
+// `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
+// AbortSignal says, and the worker writes its status and body together at the END of a capture.
+// See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
 const CAPTURE_TIMEOUT_MS = 300_000;
 // Every capture is kept, not just summarised. The first real run of this harness found two degenerate
 // captures and I could not say WHY, because the diagnostics -- stopReason, documentReady,
@@ -95,10 +99,9 @@ function comparable(capture) {
 }
 
 async function captureOnce() {
-  const response = await fetch(`${WORKER.replace(/\/$/, "")}/capture`, {
+  const response = await requestJson(`${WORKER.replace(/\/$/, "")}/capture`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
+    body: {
       url: URL_ARG, steps: STEPS, probeTables: PROBE_TABLES, reuseScreenReader: REUSE,
       ...(BROWSER ? { browser: BROWSER } : {}),
       // The task is what selects which button the probe activates -- a control whose announced name
@@ -106,10 +109,10 @@ async function captureOnce() {
       // reports a stable empty field, which looks exactly like a pass.
       ...(PROBE_FORMS ? { probeForms: true } : {}),
       ...(TASK ? { task: TASK } : {}),
-    }),
-    signal: AbortSignal.timeout(CAPTURE_TIMEOUT_MS),
+    },
+    timeoutMs: CAPTURE_TIMEOUT_MS,
   });
-  const body = await response.json();
+  const body = response.json ?? {};
   if (!response.ok || body.error) {
     // Carry the worker's fault CODE, not just its prose. `isTransient` matches on codes; matching on
     // message text is the check that silently stops working when somebody rewords a throw site.

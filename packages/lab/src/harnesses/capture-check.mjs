@@ -13,6 +13,7 @@ import { dirname, join } from "node:path";
 import { captureWithNvda } from "@a11y-witness/nvda-worker";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
+import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
 
 // Drive a live WORKER over HTTP instead of NVDA in-process.
 //
@@ -29,6 +30,9 @@ import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
 // the better test, because it is the path production uses. The in-process mode stays the default so
 // capture-regression.yml on a Windows runner, which has no worker, is unaffected.
 const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length);
+// `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
+// AbortSignal says, and the worker writes its status and body together at the END of a capture.
+// See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
 const CAPTURE_TIMEOUT_MS = 300_000;
 
 const STEPS = 40; // tutorial pages are tiny; a small read-through cap keeps it fast
@@ -172,13 +176,12 @@ async function captureOnce(check) {
     return captureWithNvda(pathToFileURL(join(pagesDir, check.page)).href,
       { steps: STEPS, probeForms: !!check.probeForms });
   }
-  const response = await fetch(`${WORKER.replace(/\/$/, "")}/capture`, {
+  const response = await requestJson(`${WORKER.replace(/\/$/, "")}/capture`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ url: `${pagesBase}/${check.page}`, steps: STEPS, probeForms: !!check.probeForms }),
-    signal: AbortSignal.timeout(CAPTURE_TIMEOUT_MS),
+    body: { url: `${pagesBase}/${check.page}`, steps: STEPS, probeForms: !!check.probeForms },
+    timeoutMs: CAPTURE_TIMEOUT_MS,
   });
-  const body = await response.json().catch(() => ({}));
+  const body = response.json ?? {};
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(body).slice(0, 200)}`);
   return body;
 }

@@ -20,6 +20,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
+import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
+
+// This file is why the guard in budget-ladder.test.ts now DISCOVERS capture clients instead of
+// listing three: it declared 560 s and undici gave it 300 s, which is precisely the defect that
+// was "fixed" the same day -- at three call sites out of ten.
+const CAPTURE_TIMEOUT_MS = 560_000;
 
 const WORKER = process.argv[2];
 const RUNS = 3;
@@ -53,18 +59,17 @@ function verdict(capture) {
 }
 
 async function capture(base, variant) {
-  const response = await fetch(`${WORKER}/capture`, {
+  const response = await requestJson(`${WORKER}/capture`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
+    body: {
       url: `${base}/form-error-silent/${variant}.html`,
       task: TASK,
       probeForms: true,
       steps: 25,
-    }),
-    signal: AbortSignal.timeout(560_000),
+    },
+    timeoutMs: CAPTURE_TIMEOUT_MS,
   });
-  const body = await response.json();
+  const body = response.json ?? {};
   return body.error ? { error: String(body.error).slice(0, 62) } : verdict(body);
 }
 
