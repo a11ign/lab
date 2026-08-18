@@ -91,26 +91,32 @@ def load_records(training: Any, paths: list[Path]) -> list[dict[str, Any]]:
     return records
 
 
-def score_criterion(training: Any, criterion_report: dict[str, Any], views: dict[str, Any], weights: Any) -> Any:
-    """One score per RECORD, using each head's own pooling.
+def score_subtypes(training: Any, subtype_reports: dict[str, Any], views: dict[str, Any], weights: Any) -> dict[str, Any]:
+    """One score per RECORD per SUBTYPE, each head using its own pooling.
 
     `encode_records` returns a row per EVIDENCE UNIT, not per record. This function used to hand that
     matrix straight to `score_head`, so it produced ~54,000 scores to compare against 120 labels —
     every held-out number it reported after multiple-instance pooling landed was meaningless, and it
     read as the model detecting nothing rather than as a broken comparison. That is the train/inference
     asymmetry this pooling change was warned to watch for, in the one file that measures generalisation.
-    """
-    import numpy as np
 
-    subtype_scores = []
-    for subtype_details in criterion_report["subtypes"].values():
+    It returned `amax` over the heads until now, for one criterion-level threshold to cut. That is the
+    same arithmetic `score.py` removed: the heads are on different scales, so one cut over their maximum
+    cannot be calibrated. Each head is cut on its own distribution and the criterion is the OR — and when
+    the criterion-level `threshold` disappeared from the report, THIS file kept reading it and died with
+    `KeyError: 'threshold'`. `release:gate` runs this evaluator, so that gate was broken from the same
+    commit, invisibly, because the `releaseEligible` refusal in front of it fired first.
+    """
+
+    scores = {}
+    for subtype, subtype_details in subtype_reports.items():
         weight = weights[subtype_details["head"] + ".weight"]
         bias = weights[subtype_details["head"] + ".bias"]
         view_features, view_offsets = views[subtype_details.get("pooling", "document-mean")]
-        subtype_scores.append(training.score_bags(view_features, view_offsets, weight, bias))
-    # numpy, matching the featurizer: this script only EVALUATES, so nothing here needs autograd, and
-    # `score_bags` now returns numpy for exactly that reason. Mixing the two is what this line used to do.
-    return np.stack(subtype_scores).max(axis=0)
+        # numpy, matching the featurizer: this script only EVALUATES, so nothing here needs autograd,
+        # and `score_bags` returns numpy for exactly that reason.
+        scores[subtype] = training.score_bags(view_features, view_offsets, weight, bias)
+    return scores
 
 
 def metrics(scores: Any, labels: Any, threshold: float) -> dict[str, Any]:
@@ -159,8 +165,37 @@ def stability(scores: Any, records: list[dict[str, Any]], threshold: float) -> d
     }
 
 
-def eligible_records(criterion: str, criterion_report: dict[str, Any], records: list[dict[str, Any]]) -> tuple[list[int], int]:
-    eligible_subtypes = set(criterion_report["subtypes"])
+# `metrics` takes scores and a threshold, so a decided 1.0/0.0 array with a 0.5 cut reuses it exactly --
+# the same device the trainer uses for a criterion that is an OR over its heads.
+DECIDED = 0.5
+
+
+def merge_stability(per_subtype: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """A criterion is stable when EVERY head under it is, and the report names the ones that are not.
+
+    Strictly harsher than asking whether the criterion's OR flipped: a head can wobble while another
+    keeps the OR true. That is the right bar here, because the question this gate answers is whether
+    NVDA's output is repeatable enough for the model to decide the same way twice -- and a head that
+    flips is that failure whether or not a sibling happens to mask it.
+    """
+    measured = [details for details in per_subtype.values() if details["measured"]]
+    return {
+        "measured": bool(measured),
+        "passed": bool(measured) and all(details["passed"] for details in measured),
+        "unstableSubtypes": sorted(s for s, d in per_subtype.items() if d["measured"] and not d["passed"]),
+        "subtypes": per_subtype,
+    }
+
+
+def eligible_records(criterion: str, model_subtypes: dict[str, Any], records: list[dict[str, Any]]) -> tuple[list[int], int]:
+    """Records this criterion's MODEL heads are answerable for.
+
+    It took the criterion's whole subtype map, which included the ones a deterministic rule substitutes
+    for. A record labelled only `3.3.2:unnamed-form-field` then counted as a 3.3.2 positive the model was
+    charged a false negative for, while in production that finding comes from the rule layer. Charging a
+    head for records it is not asked to decide is the mirror of exempting one that is.
+    """
+    eligible_subtypes = set(model_subtypes)
     indices = []
     excluded = 0
     for index, record in enumerate(records):
@@ -188,18 +223,38 @@ def assert_disjoint(training: Any, acceptance: list[dict[str, Any]], training_da
         raise RuntimeError("acceptance data overlaps training: " + json.dumps({"cases": overlap_cases, "families": overlap_families}))
 
 
-def stamp_generalisation(report_path: Path, passed: bool, reasons: list[str]) -> None:
+def stamp_generalisation(report_path: Path, passed: bool, reasons: list[str], diagnostic: bool) -> None:
     """Write the held-out verdict back into the training report beside the weights it describes.
 
     Kept next to the weights deliberately: a verdict in a separate file is a verdict that can be lost,
     and `score.py` reads the training report. Retraining rewrites the report and resets this to False,
     which is correct — new weights have not been evaluated.
+
+    A DIAGNOSTIC run may not stamp a pass, and this is not a formality. `--allow-ineligible` exists to
+    score weights the calibration gate has already rejected; letting such a run write
+    `generalisationVerified: true` would put the release stamp on weights that failed the gate in front
+    of it, and nothing in the artifacts recorded that the flag had been used. A diagnostic failure IS
+    recorded — an absent verdict and a failed one must not look the same, which is this file's own rule.
+
+    `releaseBlockedBy` is REBUILT rather than emptied. It used to be set to `[]` on a pass, which erased
+    the calibration blockers the trainer had put there and left a report saying nothing blocks release
+    while `releaseEligible` was still false.
     """
     if not report_path.exists():
         return
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    report["generalisationVerified"] = bool(passed)
-    report["releaseBlockedBy"] = [] if passed else [f"held-out acceptance failed: {r}" for r in reasons]
+    blockers = [b for b in report.get("releaseBlockedBy", []) if not b.startswith("held-out acceptance")]
+    if diagnostic:
+        report["generalisationVerified"] = False
+        blockers.append(
+            "held-out acceptance was run with --allow-ineligible, which is a measurement, not a verdict"
+            + ("" if passed else f"; it also failed: {'; '.join(reasons)}")
+        )
+    else:
+        report["generalisationVerified"] = bool(passed)
+        if not passed:
+            blockers += [f"held-out acceptance failed: {r}" for r in reasons]
+    report["releaseBlockedBy"] = blockers
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
@@ -235,31 +290,55 @@ def main() -> None:
         "stability": {},
         "passed": False,
         "failureReasons": [],
+        # Recorded, so a measurement taken on rejected weights can never be mistaken for a release
+        # verdict by anything reading this file later.
+        "diagnostic": bool(args.allow_ineligible),
     }
-    scores_by_criterion = {}
+    stability_inputs: dict[str, list[tuple[str, Any, float]]] = {}
+    stability_records: dict[str, list[dict[str, Any]]] = {}
     for criterion, criterion_report in report["criteria"].items():
-        owner = model_decision_owner(criterion_report)
-        if owner != "learned-screenreader-scorer":
+        # PER SUBTYPE, not per criterion. This skipped any criterion whose `decisionOwner` was not
+        # `learned-screenreader-scorer`, which silently dropped 1.1.1, 3.3.2 and 4.1.2 the moment that
+        # field started reporting the honest answer, "mixed" -- and those three carry 8 of the 14 heads.
+        # The held-out gate would have reported a clean pass having evaluated barely half the model.
+        model_subtypes = {
+            subtype: subtype_report
+            for subtype, subtype_report in criterion_report["subtypes"].items()
+            if subtype_report.get("decisionOwner", "learned-screenreader-scorer") == "learned-screenreader-scorer"
+        }
+        if not model_subtypes:
             result["criteria"][criterion] = {
-                "decisionOwner": owner,
+                "decisionOwner": model_decision_owner(criterion_report),
                 "modelEvaluated": False,
-                "reason": "criterion is evaluated by the authoritative deterministic rule layer",
+                "reason": "every subtype of this criterion is decided by the authoritative deterministic rule layer",
             }
             continue
-        included_indices, excluded = eligible_records(criterion, criterion_report, records)
+        included_indices, excluded = eligible_records(criterion, model_subtypes, records)
         labels = np.array(
             [criterion in record["target"].get("criteria", []) for record in records], dtype=bool
         )
-        scores = score_criterion(training, criterion_report, views, weights)
-        threshold = float(criterion_report["threshold"])
-        included_scores = scores[included_indices]
+        subtype_scores = score_subtypes(training, model_subtypes, views, weights)
+        # The criterion is the OR of its heads' own decisions -- what "any of these failures counts"
+        # actually means, and the only formulation that survives the heads being on different scales.
+        decided = np.zeros(len(records), dtype=bool)
+        for subtype, scores in subtype_scores.items():
+            decided |= scores >= float(model_subtypes[subtype]["threshold"])
         included_labels = labels[included_indices]
         result["criteria"][criterion] = {
-            "threshold": threshold,
+            "decisionOwner": model_decision_owner(criterion_report),
+            "modelEvaluated": True,
+            # No criterion-level threshold, deliberately: there is no single number that means anything
+            # once each head is cut on its own scale. The cuts that were actually applied, instead.
+            "subtypeThresholds": {s: float(r["threshold"]) for s, r in model_subtypes.items()},
+            "ruleDecidedSubtypes": sorted(set(criterion_report["subtypes"]) - set(model_subtypes)),
             "excluded": excluded,
-            **metrics(included_scores, included_labels, threshold),
+            **metrics(decided[included_indices].astype(float), included_labels, DECIDED),
         }
-        scores_by_criterion[criterion] = (included_scores, [records[index] for index in included_indices])
+        stability_inputs[criterion] = [
+            (subtype, scores[included_indices], float(model_subtypes[subtype]["threshold"]))
+            for subtype, scores in subtype_scores.items()
+        ]
+        included_records = [records[index] for index in included_indices]
         if result["criteria"][criterion]["positive"] < args.min_positive:
             result["failureReasons"].append(f"{criterion}: fewer than {args.min_positive} acceptance positives")
         if result["criteria"][criterion]["clean"] < args.min_clean:
@@ -268,10 +347,17 @@ def main() -> None:
             result["failureReasons"].append(f"{criterion}: acceptance false positives")
         if result["criteria"][criterion]["falseNegative"]:
             result["failureReasons"].append(f"{criterion}: acceptance false negatives")
+        stability_records[criterion] = included_records
 
+    # Stability is measured PER HEAD, on that head's own scores and its own cut. Measuring it on the
+    # criterion's OR would hide the thing worth knowing: which head wobbles. It also keeps the reported
+    # score range meaningful -- a decided 0/1 array has a min of 0 and a max of 1 and says nothing.
     result["stability"] = {
-        criterion: stability(scores, criterion_records, float(report["criteria"][criterion]["threshold"]))
-        for criterion, (scores, criterion_records) in scores_by_criterion.items()
+        criterion: merge_stability({
+            subtype: stability(scores, stability_records[criterion], threshold)
+            for subtype, scores, threshold in subtypes
+        })
+        for criterion, subtypes in stability_inputs.items()
     }
     if not all(details["passed"] for details in result["stability"].values()):
         # NOT MEASURED and UNSTABLE need different responses, so they get different messages. One
@@ -300,7 +386,7 @@ def main() -> None:
     # the split the model was tuned against, and it once reported a perfectly clean calibration for
     # weights this evaluator rejected on four criteria. Recorded on failure too — an absent stamp and a
     # failed one must not look the same.
-    stamp_generalisation(args.training_report, result["passed"], result["failureReasons"])
+    stamp_generalisation(args.training_report, result["passed"], result["failureReasons"], args.allow_ineligible)
     print(json.dumps({"passed": result["passed"], "failureReasons": result["failureReasons"]}, indent=2))
     if not result["passed"]:
         raise SystemExit(1)

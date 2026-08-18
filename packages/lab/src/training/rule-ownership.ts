@@ -74,7 +74,3 @@ export function readRuleOwnership(path: string = DECLARATION): Map<string, Owner
   }
   return owned;
 }
-
-/** The subtypes a deterministic rule decides outright — what the judge suppresses the model for. */
-export const ruleDecided = (ownership: Map<string, Ownership>): string[] =>
-  [...ownership].filter(([, o]) => o.decidedBy === "rules").map(([key]) => key).sort();

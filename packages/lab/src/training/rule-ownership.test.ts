@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { readRuleOwnership, ruleDecided } from "./rule-ownership.js";
+import { readRuleOwnership } from "./rule-ownership.js";
 
 const withDeclaration = (contents: unknown): string => {
   const path = join(mkdtempSync(join(tmpdir(), "rule-ownership-")), "rule-ownership.json");
@@ -31,16 +31,18 @@ test("the real declaration parses, and every entry is one of the two states", ()
   }
 });
 
-test("an overlap is NOT rule-decided — the head owns the records the rules do not reach", () => {
-  // 2.4.4:regex is the live case: the rules cover 19 of 100 by a six-phrase vocabulary. Treating it as
-  // rule-decided would suppress the scorer on the other 81 and exempt its head from blocking release.
+test("an overlap is kept distinct from a rule-decided subtype", () => {
+  // 2.4.4:regex is the live case: the rules cover 19 of 100 by a six-phrase vocabulary. Collapsing the
+  // two states would suppress the scorer on the other 81 and exempt its head from blocking release.
   const path = withDeclaration({
     subtypes: {
       "4.1.2:regex": { decidedBy: "rules", reportsAs: "4.1.2" },
       "2.4.4:regex": { decidedBy: "overlap", reportsAs: "2.4.4" },
     },
   });
-  assert.deepEqual(ruleDecided(readRuleOwnership(path)), ["4.1.2:regex"]);
+  const ownership = readRuleOwnership(path);
+  assert.equal(ownership.get("4.1.2:regex")?.decidedBy, "rules");
+  assert.equal(ownership.get("2.4.4:regex")?.decidedBy, "overlap");
 });
 
 test("the criterion a rule REPORTS may differ from the subtype's own, and is carried", () => {

@@ -80,15 +80,28 @@ def diagnosis(record: dict[str, Any], score: float, threshold: float, expected: 
     }
 
 
-def criterion_scores(training: Any, criterion_report: dict[str, Any], features: Any, weights: Any) -> Any:
-    import torch
+def subtype_scores(training: Any, subtype_reports: dict[str, Any], views: dict[str, Any], weights: Any) -> dict[str, Any]:
+    """One score per RECORD per SUBTYPE, each head on the view it was trained on.
 
-    subtype_scores = []
-    for subtype_details in criterion_report["subtypes"].values():
-        weight = weights[subtype_details["head"] + ".weight"]
-        bias = weights[subtype_details["head"] + ".bias"]
-        subtype_scores.append(training.score_head(features, weight, bias))
-    return torch.stack(subtype_scores).amax(dim=0)
+    Two defects fixed here at once, and both made every number this file printed meaningless.
+
+    It called `score_head` on the output of `encode_records`, which is a row per EVIDENCE UNIT — so it
+    compared ~54,000 scores against 2,006 per-record labels. That is the same train/inference asymmetry
+    `evaluate-screenreader-acceptance.py` documents having hit, in the file whose whole job is to name
+    which records the model gets wrong.
+
+    And it took `amax` over the heads to cut with one criterion-level threshold. The heads are on
+    different scales, so no such cut is calibratable; `score.py` removed the criterion threshold for that
+    reason and this file kept reading it, dying on `KeyError: 'threshold'`.
+    """
+    return {
+        subtype: training.score_bags(
+            *views[details.get("pooling", "document-mean")],
+            weights[details["head"] + ".weight"],
+            weights[details["head"] + ".bias"],
+        )
+        for subtype, details in subtype_reports.items()
+    }
 
 
 def record_errors(
@@ -123,6 +136,11 @@ def main() -> None:
 
     split_for_family = training.assign_splits(records)
     features, _, _ = training.encode_records(records, args.encoder, args.max_length)
+    # Both views, keyed exactly as the trainer keys them. A document-pooled head sees a bag of one.
+    views = {
+        "instance-max": (features, training.bag_offsets(records)),
+        "document-mean": training.encode_documents(records, args.encoder, args.max_length),
+    }
     weights = load_file(str(args.model))
     selected_splits = ("train", "validation", "test") if args.split == "all" else (args.split,)
     criteria = sorted(report.get("criteria", {}))
@@ -143,31 +161,39 @@ def main() -> None:
         "summary": {"falsePositives": 0, "falseNegatives": 0, "criteriaWithErrors": 0},
     }
 
+    selected_indices = [
+        index for index, record in enumerate(records)
+        if split_for_family[record["provenance"]["family"]] in selected_splits
+    ]
+    # Errors are reported PER SUBTYPE, because that is the granularity a head is trained and cut at, and
+    # therefore the only granularity at which "which records does it get wrong" has an answer you can act
+    # on. Per criterion, 4.1.2's 22 errors were one undifferentiated pile spanning three heads.
     for criterion in criteria:
-        threshold = float(report["criteria"][criterion]["threshold"])
-        labels = torch.tensor(
-            [int(criterion in record["target"].get("criteria", [])) for record in records],
-            dtype=torch.bool,
-        )
-        scores = criterion_scores(training, report["criteria"][criterion], features, weights)
-        selected_indices = [
-            index for index, record in enumerate(records)
-            if split_for_family[record["provenance"]["family"]] in selected_splits
-        ]
-        false_positives, false_negatives = record_errors(
-            records, selected_indices, scores, labels, threshold, ""
-        )
-        result["criteria"][criterion] = {
-            "threshold": threshold,
-            "falsePositiveCount": len(false_positives),
-            "falseNegativeCount": len(false_negatives),
-            "falsePositives": false_positives,
-            "falseNegatives": false_negatives,
-        }
-        result["summary"]["falsePositives"] += len(false_positives)
-        result["summary"]["falseNegatives"] += len(false_negatives)
-        if false_positives or false_negatives:
-            result["summary"]["criteriaWithErrors"] += 1
+        criterion_report = report["criteria"][criterion]
+        scores_by_subtype = subtype_scores(training, criterion_report["subtypes"], views, weights)
+        for subtype, scores in scores_by_subtype.items():
+            details = criterion_report["subtypes"][subtype]
+            threshold = float(details["threshold"])
+            labels = torch.tensor(
+                [int(subtype in record["target"].get("subtypes", [])) for record in records],
+                dtype=torch.bool,
+            )
+            false_positives, false_negatives = record_errors(
+                records, selected_indices, scores, labels, threshold, ""
+            )
+            result["criteria"][subtype] = {
+                "criterion": criterion,
+                "threshold": threshold,
+                "decisionOwner": details.get("decisionOwner", "learned-screenreader-scorer"),
+                "falsePositiveCount": len(false_positives),
+                "falseNegativeCount": len(false_negatives),
+                "falsePositives": false_positives,
+                "falseNegatives": false_negatives,
+            }
+            result["summary"]["falsePositives"] += len(false_positives)
+            result["summary"]["falseNegatives"] += len(false_negatives)
+            if false_positives or false_negatives:
+                result["summary"]["criteriaWithErrors"] += 1
 
     development_indices = [
         index for index, record in enumerate(records)
@@ -181,46 +207,47 @@ def main() -> None:
     }
     for criterion in criteria:
         criterion_report = report["criteria"][criterion]
-        labels = torch.tensor(
-            [int(criterion in record["target"].get("criteria", [])) for record in records],
-            dtype=torch.float32,
-        )
-        subtype_scores = []
-        for subtype in criterion_report["subtypes"]:
+        for subtype, details in criterion_report["subtypes"].items():
             subtype_labels = torch.tensor(
                 [int(subtype in record["target"].get("subtypes", [])) for record in records],
                 dtype=torch.float32,
             )
-            subtype_scores.append(training.out_of_fold_scores(
-                features, subtype_labels, records, development_indices, args.epochs
-            ))
-        calibration_scores = torch.stack(subtype_scores).amax(dim=0)
-        false_positives, false_negatives = record_errors(
-            records,
-            development_indices,
-            calibration_scores,
-            labels.bool(),
-            float(criterion_report["threshold"]),
-            "calibration",
-        )
-        calibration_result["criteria"][criterion] = {
-            "threshold": criterion_report["threshold"],
-            "falsePositiveCount": len(false_positives),
-            "falseNegativeCount": len(false_negatives),
-            "falsePositives": false_positives,
-            "falseNegatives": false_negatives,
-        }
-        calibration_result["summary"]["falsePositives"] += len(false_positives)
-        calibration_result["summary"]["falseNegatives"] += len(false_negatives)
-        if false_positives or false_negatives:
-            calibration_result["summary"]["criteriaWithErrors"] += 1
+            # Out-of-fold, on the head's OWN view and its OWN cut. It used to pool `amax` across the
+            # criterion's heads and cut with one number, which is the arithmetic the calibration it is
+            # reporting on no longer performs -- so this section described a model that does not exist.
+            view_features, view_offsets = views[details.get("pooling", "document-mean")]
+            calibration_scores = training.out_of_fold_scores(
+                view_features, subtype_labels, records, development_indices, args.epochs, view_offsets
+            )
+            false_positives, false_negatives = record_errors(
+                records,
+                development_indices,
+                calibration_scores,
+                subtype_labels.bool(),
+                float(details["threshold"]),
+                "calibration",
+            )
+            calibration_result["criteria"][subtype] = {
+                "criterion": criterion,
+                "threshold": details["threshold"],
+                "falsePositiveCount": len(false_positives),
+                "falseNegativeCount": len(false_negatives),
+                "falsePositives": false_positives,
+                "falseNegatives": false_negatives,
+            }
+            calibration_result["summary"]["falsePositives"] += len(false_positives)
+            calibration_result["summary"]["falseNegatives"] += len(false_negatives)
+            if false_positives or false_negatives:
+                calibration_result["summary"]["criteriaWithErrors"] += 1
     result["calibration"] = calibration_result
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result["summary"], indent=2))
-    for criterion, details in result["criteria"].items():
-        print(f"{criterion}: {details['falsePositiveCount']} false positives, {details['falseNegativeCount']} false negatives")
+    for subtype, details in result["criteria"].items():
+        owner = "" if details["decisionOwner"] == "learned-screenreader-scorer" else f"  [{details['decisionOwner']}]"
+        print(f"{subtype:32} thr {details['threshold']:.2f}  "
+              f"{details['falsePositiveCount']} false positives, {details['falseNegativeCount']} false negatives{owner}")
     print("calibration:", json.dumps(calibration_result["summary"]))
 
 

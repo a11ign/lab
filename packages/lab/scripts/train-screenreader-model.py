@@ -126,8 +126,20 @@ def read_rule_ownership() -> dict[str, dict[str, Any]]:
     return json.loads(RULE_OWNERSHIP_FILE.read_text(encoding="utf-8"))["subtypes"]
 
 RULE_OWNERSHIP = read_rule_ownership()
-RULE_OWNED_SUBTYPES = frozenset(
-    subtype for subtype, entry in RULE_OWNERSHIP.items() if entry["decidedBy"] == "rules"
+
+# ONE condition, used for BOTH consequences, because they are the same question asked twice: does the
+# rule's finding SUBSTITUTE for this head's? A rule substitutes only when it reports the head's own
+# criterion. If it answers a different one, the head is still the only thing that can produce a finding
+# for its criterion, so it must neither be suppressed in production nor excused from blocking release.
+#
+# `3.3.2:unnamed-form-field` is the case that forced this. The rules decide that evidence exactly --
+# 115/115 -- and report it as **4.1.2**. Nothing emits a 3.3.2 finding for it except this head. Marking
+# it rule-owned gave it the worst possible pair of properties: load-bearing in production (the judge
+# correctly declines to suppress it) while exempt from the release gate. A head that decides real
+# findings and cannot block a release is exactly the hole the per-subtype work was opened to close.
+RULE_SUBSTITUTED_SUBTYPES = frozenset(
+    subtype for subtype, entry in RULE_OWNERSHIP.items()
+    if entry["decidedBy"] == "rules" and subtype.startswith(entry["reportsAs"] + ":")
 )
 
 def parse_args() -> argparse.Namespace:
@@ -414,7 +426,7 @@ def main() -> None:
             subtype_development_labels = subtype_labels[development_indices]
             if int(subtype_development_labels.sum()) < 20:
                 report["modelReleaseEligible"] = False
-                if subtype not in RULE_OWNED_SUBTYPES:
+                if subtype not in RULE_SUBSTITUTED_SUBTYPES:
                     report["releaseEligible"] = False
                     report["calibrationClean"] = False
                 report["warnings"].append(f"{subtype}: fewer than 20 positive development records")
@@ -461,7 +473,7 @@ def main() -> None:
                 # because `rules:score` measures coverage per subtype, and the criterion-level answer
                 # is wrong for every criterion the two layers share.
                 "decisionOwner": (
-                    "deterministic-rules" if subtype in RULE_OWNED_SUBTYPES
+                    "deterministic-rules" if subtype in RULE_SUBSTITUTED_SUBTYPES
                     else "learned-screenreader-scorer"
                 ),
                 # The criterion the RULE reports this subtype under, which is not always the criterion
@@ -475,7 +487,7 @@ def main() -> None:
                 # falls back to the subtype's own criterion. That fallback IS the old behaviour, so this
                 # is additive on the wire like `fault` is.
                 **({"ruleReportsAs": RULE_OWNERSHIP[subtype]["reportsAs"]}
-                   if subtype in RULE_OWNED_SUBTYPES else {}),
+                   if RULE_OWNERSHIP.get(subtype, {}).get("decidedBy") == "rules" else {}),
                 "development": metrics(
                     oof_scores[development_indices], subtype_development_labels, subtype_threshold
                 ),
@@ -497,7 +509,7 @@ def main() -> None:
         # No criterion-level `threshold` any more, deliberately: there is no single number that means
         # anything once each subtype is cut on its own scale, and leaving a stale one in the report is
         # how a consumer keeps using the thing that was wrong. Consumers read the subtypes.
-        model_owned = [name for name in subtype_names if name not in RULE_OWNED_SUBTYPES]
+        model_owned = [name for name in subtype_names if name not in RULE_SUBSTITUTED_SUBTYPES]
         criterion_report = {
             # Kept for readability, but it is now DERIVED from the subtypes rather than declared over
             # them. "mixed" is the honest answer for 1.1.1 and 4.1.2, and saying so is the whole point:
@@ -538,6 +550,19 @@ def main() -> None:
                 f"and {calibration_false_negative} false negatives"
             )
         report["criteria"][criterion] = criterion_report
+
+    # `releaseBlockedBy` must name the blockers that ACTUALLY exist, and it did not.
+    #
+    # It was set once, at initialisation, to the single line "held-out acceptance has not been evaluated
+    # for these weights" -- true, but never updated when calibration then failed. So a report blocked by
+    # 22 calibration errors on 4.1.2 announced acceptance as the only thing standing in the way, and the
+    # errors sat in `warnings`, which nothing reads as blocking. That cost real time: it sent the next
+    # step after an acceptance run that could not have helped, because acceptance is downstream of the
+    # calibration this report was failing.
+    #
+    # Derived from the same `warnings` that made the decision, so the two cannot disagree.
+    if not report["calibrationClean"]:
+        report["releaseBlockedBy"] = [f"calibration: {w}" for w in report["warnings"]] + report["releaseBlockedBy"]
 
     # A reference sample of the training distribution, so inference can tell whether a page resembles
     # anything this scorer was trained on. Measured need: every corpus record sits at cosine 0.847-0.99
