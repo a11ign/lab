@@ -82,7 +82,35 @@ OOD_REFERENCE_SAMPLES = 512
 # For the record on prior art, which does not decide this either way: WAVE flags a link whose text is
 # "click here" / "here" / "more" / "details" / ..., eslint-plugin-jsx-a11y ships
 # DEFAULT_AMBIGUOUS_WORDS on exact match, and axe-core declines to judge text quality at all.
-RULE_OWNED_CRITERIA = frozenset({"1.1.1", "4.1.2"})
+# Ownership is per SUBTYPE, because that is where the division of labour actually falls. It was
+# `RULE_OWNED_CRITERIA = {"1.1.1", "4.1.2"}` -- whole criteria -- and that one granularity mistake caused
+# three separate symptoms:
+#
+#   1. One threshold was fitted per criterion, over `amax` across heads with different score
+#      distributions. No cut separates them, so 4.1.2 fell back to 0.5 "which nobody chose".
+#   2. A criterion marked rule-owned is exempt from blocking release, so that failure could only ever
+#      warn -- including for subtypes the rules do not decide.
+#   3. `local-judge` suppresses the model for a rule-owned CRITERION, so subtypes the rules never look
+#      at were decided by neither layer.
+#
+# Measured by `npm run rules:score` over the 2,006-record corpus, which exists to report exactly this:
+#
+#   1.1.1:filename-alt          31/31    rules: EXACT
+#   1.1.1:generic-alt            0/31    rules: none -- the model's heads own this subtype
+#   1.1.1:missing-alt           88/88    rules: EXACT
+#   4.1.2:missing-role           0/74    rules: none -- the model's heads own this subtype
+#   4.1.2:regex                 32/32    rules: EXACT
+#   4.1.2:state-change-silent    0/69    rules: none -- the model's heads own this subtype
+#   4.1.2:unnamed-form-field   115/115   rules: EXACT
+#
+# Rules are 100% precise where they look (0 false positives over 1003 conformant records), so where a
+# rule decides, it is the answer. The 174 records in the "none" rows are the ones that had no decider.
+RULE_OWNED_SUBTYPES = frozenset({
+    "1.1.1:filename-alt",
+    "1.1.1:missing-alt",
+    "4.1.2:regex",
+    "4.1.2:unnamed-form-field",
+})
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -340,6 +368,8 @@ def main() -> None:
         subtype_oof_scores = []
         subtype_final_scores = []
         subtype_report = {}
+        subtype_names: list[str] = []
+        subtype_thresholds: dict[str, float] = {}
         for subtype in subtypes_by_criterion[criterion]:
             subtype_labels = torch.tensor(
                 [int(subtype in record["target"].get("subtypes", [])) for record in records],
@@ -348,7 +378,7 @@ def main() -> None:
             subtype_development_labels = subtype_labels[development_indices]
             if int(subtype_development_labels.sum()) < 20:
                 report["modelReleaseEligible"] = False
-                if criterion not in RULE_OWNED_CRITERIA:
+                if subtype not in RULE_OWNED_SUBTYPES:
                     report["releaseEligible"] = False
                     report["calibrationClean"] = False
                 report["warnings"].append(f"{subtype}: fewer than 20 positive development records")
@@ -368,38 +398,80 @@ def main() -> None:
             weights[key + ".bias"] = bias
             subtype_oof_scores.append(oof_scores)
             subtype_final_scores.append(score_bags(view_features, view_offsets, weight, bias))
+            # Each head is calibrated on its own out-of-fold distribution. A subtype the RULES decide
+            # still gets a threshold -- the report describes what the head would do, and the judge is
+            # what declines to use it -- so the two layers can be compared on the same records instead
+            # of one of them being invisible.
+            subtype_threshold = choose_threshold(
+                oof_scores[development_indices],
+                subtype_development_labels,
+                subtype,
+                report["warnings"],
+            )
+            subtype_names.append(subtype)
+            subtype_thresholds[subtype] = subtype_threshold
             subtype_report[subtype] = {
                 "head": key,
                 # The view this head was TRAINED on. Inference reads it rather than assuming, because
                 # scoring a document-pooled head per announcement (or the reverse) produces confident
                 # numbers from the wrong representation -- and nothing downstream could tell.
                 "pooling": pooling,
-                "development": metrics(oof_scores[development_indices], subtype_development_labels, 0.5),
+                # Calibrated on ITS OWN out-of-fold scores. This used to be a hardcoded 0.5, so every
+                # per-subtype number in the report described an arbitrary cut rather than the one that
+                # would be used -- which is how 4.1.2 came to report 13 false positives that no shipped
+                # threshold had ever produced.
+                "threshold": subtype_threshold,
+                # Who decides this subtype in production. Recorded here rather than on the criterion
+                # because `rules:score` measures coverage per subtype, and the criterion-level answer
+                # is wrong for every criterion the two layers share.
+                "decisionOwner": (
+                    "deterministic-rules" if subtype in RULE_OWNED_SUBTYPES
+                    else "learned-screenreader-scorer"
+                ),
+                "development": metrics(
+                    oof_scores[development_indices], subtype_development_labels, subtype_threshold
+                ),
             }
 
-        criterion_oof_scores = torch.stack(subtype_oof_scores).amax(dim=0)
-        criterion_final_scores = torch.stack(subtype_final_scores).amax(dim=0)
-        threshold = choose_threshold(
-            criterion_oof_scores[development_indices],
-            criterion_labels[development_indices],
-            criterion,
-            report["warnings"],
-        )
+        # A criterion fails when ANY of its subtypes does. It used to be `amax` over the subtype scores
+        # followed by ONE threshold -- a single cut applied to a maximum over heads whose scores are on
+        # different scales, so a high-scoring subtype dragged the cut up and no value reached zero false
+        # positives. Each head is now cut on its own distribution and the criterion is the OR of those
+        # decisions, which is what "any of these failures counts" actually means.
+        criterion_oof_predicted = torch.stack(
+            [scores >= subtype_thresholds[name] for name, scores in zip(subtype_names, subtype_oof_scores)]
+        ).any(dim=0).float()
+        criterion_final_predicted = torch.stack(
+            [scores >= subtype_thresholds[name] for name, scores in zip(subtype_names, subtype_final_scores)]
+        ).any(dim=0).float()
+        # `metrics` takes scores and a threshold, so a decided 1.0/0.0 with a 0.5 cut reuses it exactly.
+        DECIDED = 0.5
+        # No criterion-level `threshold` any more, deliberately: there is no single number that means
+        # anything once each subtype is cut on its own scale, and leaving a stale one in the report is
+        # how a consumer keeps using the thing that was wrong. Consumers read the subtypes.
+        model_owned = [name for name in subtype_names if name not in RULE_OWNED_SUBTYPES]
         criterion_report = {
-            "decisionOwner": "deterministic-rules" if criterion in RULE_OWNED_CRITERIA else "learned-screenreader-scorer",
-            "threshold": threshold,
+            # Kept for readability, but it is now DERIVED from the subtypes rather than declared over
+            # them. "mixed" is the honest answer for 1.1.1 and 4.1.2, and saying so is the whole point:
+            # calling those criteria "deterministic-rules" is what silenced the model on 174 records the
+            # rules never look at.
+            "decisionOwner": (
+                "deterministic-rules" if not model_owned
+                else "learned-screenreader-scorer" if len(model_owned) == len(subtype_names)
+                else "mixed"
+            ),
             "subtypes": subtype_report,
             "calibration": metrics(
-                criterion_oof_scores[development_indices],
+                criterion_oof_predicted[development_indices],
                 criterion_labels[development_indices],
-                threshold,
+                DECIDED,
             ),
         }
         for split, indices in split_indices.items():
-            criterion_report[split] = metrics(criterion_final_scores[indices], criterion_labels[indices], threshold)
+            criterion_report[split] = metrics(criterion_final_predicted[indices], criterion_labels[indices], DECIDED)
             if int(criterion_labels[indices].sum()) == 0:
                 report["modelReleaseEligible"] = False
-                if criterion not in RULE_OWNED_CRITERIA:
+                if model_owned:
                     report["releaseEligible"] = False
                     report["calibrationClean"] = False
                 report["warnings"].append(f"{criterion}: {split} split has no positive records")
@@ -407,7 +479,10 @@ def main() -> None:
         calibration_false_negative = criterion_report["calibration"]["falseNegative"]
         if calibration_false_positive or calibration_false_negative:
             report["modelReleaseEligible"] = False
-            if criterion not in RULE_OWNED_CRITERIA:
+            # Blocks release when ANY subtype of this criterion is the model's to decide. Previously a
+            # criterion labelled rule-owned was excused wholesale, so a model-owned subtype inside it
+            # could fail calibration and only ever produce a warning.
+            if model_owned:
                 report["releaseEligible"] = False
                 report["calibrationClean"] = False
             report["warnings"].append(
