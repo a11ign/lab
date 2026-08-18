@@ -14,8 +14,13 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-/** Every record of the subtype is decided by a deterministic rule; the scorer's head is suppressed. */
-export type DecidedBy = "rules" | "overlap";
+/**
+ * `rules` — every record is decided by a deterministic rule; the scorer's head is suppressed.
+ * `overlap` — the rules decide a subset and the model owns the rest, so neither layer may be silenced.
+ * `unavailable` — NEITHER layer can decide it, because the evidence cannot express the failure. Those
+ *   records are excluded from the model entirely, so the gate asserts they are ABSENT from the export.
+ */
+export type DecidedBy = "rules" | "overlap" | "unavailable";
 
 export interface Ownership {
   /**
@@ -36,6 +41,8 @@ export interface Ownership {
 }
 
 const DECLARATION = fileURLToPath(new URL("../../rule-ownership.json", import.meta.url));
+
+const DECIDED_BY = new Set<DecidedBy>(["rules", "overlap", "unavailable"]);
 
 const CRITERION = /^\d+\.\d+\.\d+$/;
 const SUBTYPE_KEY = /^\d+\.\d+\.\d+:[a-z0-9-]+$/;
@@ -62,9 +69,10 @@ export function readRuleOwnership(path: string = DECLARATION): Map<string, Owner
         + `\`target.subtypes\` vocabulary — "4.1.2:regex", not "regex" — because a bare family name is `
         + "ambiguous: `regex` is a different subtype under 2.4.4, 2.4.6 and 4.1.2.");
     }
-    if (value?.decidedBy !== "rules" && value?.decidedBy !== "overlap") {
+    if (!DECIDED_BY.has(value?.decidedBy as DecidedBy)) {
       throw new Error(`rule ownership: "${key}" has decidedBy=${JSON.stringify(value?.decidedBy)}; `
-        + 'expected "rules" or "overlap". A subtype the model owns is simply absent from this file.');
+        + `expected one of ${[...DECIDED_BY].join(", ")}. A subtype the model owns is simply absent `
+        + "from this file.");
     }
     if (!CRITERION.test(value.reportsAs ?? "")) {
       throw new Error(`rule ownership: "${key}" has reportsAs=${JSON.stringify(value.reportsAs)}; `

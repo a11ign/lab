@@ -162,10 +162,22 @@ if (records.length === 0) {
 const coverage = tally(records);
 console.log(`Rule-layer score over ${records.length} record(s) from ${DATA}\n`);
 console.log("# coverage by subtype (who actually decides what)\n");
-for (const [subtype, c] of [...coverage.entries()].sort()) {
-  // Always over the subtype's FULL record count, so the denominator is what the head was trained on.
-  const share = `${c.dueByRule > 0 ? c.caughtByRule : c.alsoFired}/${c.total}`;
-  console.log(`  ${subtype.padEnd(30)} ${share.padStart(8)}  ${verdictOf(subtype, c)}`);
+// `unavailable` subtypes have no records by construction, and they belong in this table more than
+// anywhere else: it is the map of who decides what, and "nobody" is the answer most worth seeing.
+const rows = [
+  ...[...coverage.entries()].map(([subtype, c]): [string, string, string] => [
+    subtype,
+    // Always over the subtype's FULL record count, so the denominator is what the head was trained on.
+    `${c.dueByRule > 0 ? c.caughtByRule : c.alsoFired}/${c.total}`,
+    verdictOf(subtype, c),
+  ]),
+  ...[...OWNERSHIP].filter(([, e]) => e.decidedBy === "unavailable").map(([subtype]): [string, string, string] => [
+    subtype, "—",
+    "NEITHER LAYER — excluded from the model; the evidence cannot express this failure",
+  ]),
+].sort((a, b) => a[0].localeCompare(b[0]));
+for (const [subtype, share, verdict] of rows) {
+  console.log(`  ${subtype.padEnd(30)} ${share.padStart(8)}  ${verdict}`);
 }
 console.log("");
 
@@ -183,11 +195,25 @@ if (falsePositives.length) {
 }
 console.log("");
 
-// Every declared key must exist in the DATA. The map carried `4.1.2:unnamed-form-field` for as long as
-// it existed and matched nothing, so the entry was neither enforcing anything nor visibly wrong -- a
-// declaration nothing can contradict is a comment. This is the assertion that makes the file real.
-for (const subtype of OWNERSHIP.keys()) {
-  if (coverage.has(subtype)) continue;
+// Every declared key must exist in the DATA -- except the `unavailable` ones, where the assertion is
+// exactly inverted and just as necessary.
+//
+// The map carried `4.1.2:unnamed-form-field` for as long as it existed and matched nothing, so the entry
+// was neither enforcing anything nor visibly wrong; a declaration nothing can contradict is a comment.
+//
+// An `unavailable` subtype is excluded from the export on purpose (MODEL_EXCLUDED_SUBTYPES), so its
+// records MUST be absent -- and if they come back, the exclusion has silently stopped working and a head
+// is being trained on evidence that cannot express its failure. Same reasoning, opposite direction.
+for (const [subtype, entry] of OWNERSHIP) {
+  const present = coverage.has(subtype);
+  if (entry.decidedBy === "unavailable") {
+    if (!present) continue;
+    console.log(`RULES: ${subtype} is declared unavailable and yet appears in the export. The model `
+      + "exclusion has stopped working, so a head is being trained on evidence that cannot express it.");
+    failures.push(`${subtype} is declared unavailable but present in the data`);
+    continue;
+  }
+  if (present) continue;
   console.log(`RULES: ${subtype} is declared in rule-ownership.json and appears in no record. Either the `
     + "corpus vocabulary moved or the key was never right; an entry that matches nothing enforces nothing.");
   failures.push(`${subtype} is declared but absent from the data`);

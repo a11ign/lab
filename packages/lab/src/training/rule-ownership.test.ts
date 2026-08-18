@@ -22,13 +22,23 @@ const withDeclaration = (contents: unknown): string => {
   return path;
 };
 
-test("the real declaration parses, and every entry is one of the two states", () => {
+test("the real declaration parses, and every entry is one of the three states", () => {
   const ownership = readRuleOwnership();
   assert.ok(ownership.size > 0, "an empty declaration would silently exempt nothing");
   for (const [subtype, entry] of ownership) {
     assert.match(subtype, /^\d+\.\d+\.\d+:[a-z0-9-]+$/, `${subtype} is not a corpus subtype key`);
-    assert.ok(["rules", "overlap"].includes(entry.decidedBy));
+    assert.ok(["rules", "overlap", "unavailable"].includes(entry.decidedBy), `${subtype}: ${entry.decidedBy}`);
   }
+});
+
+test("`unavailable` is a state of its own — not rules, and not silently model-owned", () => {
+  // The third state says NEITHER layer decides it, because the evidence cannot express the failure.
+  // Collapsing it into "absent from this file" would make the subtype read as the model's, which is how
+  // a criterion comes to look fully covered while one of its failure modes goes unchecked.
+  const path = withDeclaration({
+    subtypes: { "4.1.2:missing-role": { decidedBy: "unavailable", reportsAs: "4.1.2" } },
+  });
+  assert.equal(readRuleOwnership(path).get("4.1.2:missing-role")?.decidedBy, "unavailable");
 });
 
 test("an overlap is kept distinct from a rule-decided subtype", () => {
@@ -68,7 +78,7 @@ test("a bare family name is rejected — `regex` is three different subtypes", (
 
 test("a state that is neither rules nor overlap is rejected, not treated as model-owned", () => {
   const path = withDeclaration({ subtypes: { "4.1.2:regex": { decidedBy: "model", reportsAs: "4.1.2" } } });
-  assert.throws(() => readRuleOwnership(path), /expected "rules" or "overlap"/);
+  assert.throws(() => readRuleOwnership(path), /expected one of rules, overlap, unavailable/);
 });
 
 test("a reportsAs that is not a criterion number is rejected", () => {

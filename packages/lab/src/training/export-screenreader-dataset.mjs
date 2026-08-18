@@ -15,7 +15,35 @@ const DEFAULT_OUTPUT = resolve(ROOT, "screenreader-evidence.jsonl");
 const outputArg = process.argv.find((arg) => arg.startsWith("--out="));
 const OUTPUT_PATH = resolve(process.cwd(), outputArg?.slice("--out=".length) || DEFAULT_OUTPUT);
 const FORBIDDEN_INPUT_KEYS = ["url", "task", "html", "dom", "css", "axe", "diagnostics"];
-const MODEL_EXCLUDED_SUBTYPES = new Set(["1.3.1:missing-landmark"]);
+// Subtypes the model must not be trained on, because the evidence it is allowed to see cannot express
+// them. Both entries are excluded for the reason the summary prints: "not inferable from screen-reader
+// output alone".
+//
+// `4.1.2:missing-role` is a role-less `<div onclick>` styled as a button. The screen reader CANNOT
+// perceive it -- that is the failure -- so to NVDA a page with a fake button and a page with no button
+// are the same page. Its 74 records all announce `formFields: []` and `controls: []`, and so do 437 of
+// the corpus's 1,003 conformant records, because a page about images or tables has no controls either.
+//
+// Both attempts to close that gap from screen-reader evidence were measured and both failed in the
+// direction that matters. Instance-max pooling reached precision 1.000 at recall 0.824 -- 13 misses.
+// Document-mean reached recall 1.000 at precision 0.782 -- 21 false positives on CONFORMANT pages,
+// which is this tool's worst error, on a synthetic corpus far cleaner than the web. The only remaining
+// signal is "that bare line LOOKS like a button label", which on real pages (nav text, badges,
+// captions, prices) is a false-positive machine and would be learning this generator's phrasing.
+//
+// This is not a permanent verdict, it is a statement about the EVIDENCE. The fact "this element
+// responds to clicks, exposes no role, and cannot be reached by keyboard" is deterministic and
+// obtainable over the CDP socket the capture already opens. Once captured it belongs to the RULE layer,
+// which is exact on 1,003 conformant records, and not to a head guessing from prose. `modelInput()` is
+// an allowlist and FORBIDDEN_INPUT_KEYS names `dom` explicitly, so a rule may use evidence the model
+// never sees -- the same split already made for `landmarks`, which "stays in the capture and stays
+// available to the dataset signals". That work needs a CAPTURE_PROTOCOL_VERSION bump and a recapture,
+// so it is deliberate and scheduled rather than smuggled in here.
+//
+// Declared in `packages/lab/rule-ownership.json` too, so "nobody decides this" stays VISIBLE. Dropping
+// the records silently would make 4.1.2 read as fully covered while one of its three failure modes went
+// unchecked -- and unchecked is not clean.
+const MODEL_EXCLUDED_SUBTYPES = new Set(["1.3.1:missing-landmark", "4.1.2:missing-role"]);
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));

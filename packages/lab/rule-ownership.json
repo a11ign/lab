@@ -59,6 +59,33 @@
       "reportsAs": "4.1.2",
       "note": "An exact-absence case: a control announced with a role and no name -- an icon button or a text input, one failure, one subtype. It was `4.1.2:regex`, a key naming the MATCHER rather than the failure, while the 115 unlabelled-field records sat in `4.1.2:missing-role`, the head for the opposite failure."
     },
+    "4.1.2:missing-role": {
+      "decidedBy": "unavailable",
+      "reportsAs": "4.1.2",
+      "note": [
+        "NOBODY decides this one, and saying so out loud is the whole point of the entry.",
+        "",
+        "A role-less `<div onclick>` styled as a button. The screen reader cannot perceive it -- that IS",
+        "the failure -- so to NVDA a page with a fake button and a page with no button are the same page.",
+        "All 74 records announce `formFields: []` and `controls: []`, and so do 437 of the 1,003",
+        "conformant records, because a page about images or tables has no controls either.",
+        "",
+        "Measured both ways before giving up on it: instance-max pooling gives precision 1.000 at recall",
+        "0.824 (13 misses), document-mean gives recall 1.000 at precision 0.782 (21 false accusations on",
+        "conformant pages, on a corpus far cleaner than the web). So the records are excluded from the",
+        "model -- see MODEL_EXCLUDED_SUBTYPES, whose reason string is exactly 'not inferable from",
+        "screen-reader output alone'.",
+        "",
+        "This is a statement about the EVIDENCE, not a permanent verdict. 'This element responds to",
+        "clicks, exposes no role, and cannot be reached by keyboard' is deterministic and obtainable over",
+        "the CDP socket the capture already opens; once captured it belongs to the rule layer, which is",
+        "exact on 1,003 conformant records. That needs a CAPTURE_PROTOCOL_VERSION bump and a recapture.",
+        "",
+        "Until then 4.1.2 is PARTIALLY covered, and a consumer has to be able to learn that from",
+        "somewhere. `rules:score` asserts these records are absent from the export -- the inverse of the",
+        "check it applies to every other entry -- so the exclusion cannot quietly stop working."
+      ]
+    },
     "2.4.4:regex": {
       "decidedBy": "overlap",
       "reportsAs": "2.4.4",
