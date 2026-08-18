@@ -29,6 +29,8 @@ from typing import Any
 # does not exist, and the failure was `ModuleNotFoundError: No module named 'screenreader_features'`.
 SCORER_PACKAGE = Path(__file__).resolve().parents[2] / "scorer"
 sys.path.insert(0, str(SCORER_PACKAGE / "python"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from embedding_cache import cached_encode  # noqa: E402  (path shim must precede the import)
 from screenreader_features import (  # noqa: E402  (path shim must precede the import)
     ENGINEERED_FEATURE_MULTIPLIERS,
     ENGINEERED_FEATURE_SCALE,
@@ -341,14 +343,19 @@ def main() -> None:
     # ONLY place the conversion happens. One featurizer, one contract: train and inference cannot drift
     # into different feature values, because they compute them with the same code and differ only in the
     # container they are handed back in.
-    features_np, dimension, structured_dimension = encode_records(records, args.encoder, args.max_length)
+    # Cached. The encoder is FROZEN and sees only `input`, so its output is a deterministic function of
+    # unchanged bytes -- and it is 245.8 s of a ~290 s run, measured. Iterating on labels or pooling
+    # recomputes it identically every time; see `embedding_cache.py` for the key and why `target` is
+    # deliberately not in it.
+    features_np, doc_features_np, doc_offsets, dimension, structured_dimension = cached_encode(
+        sys.modules[__name__], records, args.encoder, args.max_length
+    )
     features = torch.from_numpy(features_np)
     # Derived from the records, never passed between processes: the scorer recomputes it the same way.
     offsets = bag_offsets(records)
     # Both views, computed once. A document-pooled head sees one row per capture with identity
     # offsets, so it runs through the same bag machinery as an instance-pooled one -- a bag of size
     # one. See INSTANCE_POOLED_SUBTYPES for why the choice is per subtype.
-    doc_features_np, doc_offsets = encode_documents(records, args.encoder, args.max_length)
     doc_features = torch.from_numpy(doc_features_np)
     views = {
         "instance-max": (features, offsets),

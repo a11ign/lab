@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,10 @@ def load_training_module() -> Any:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from embedding_cache import cached_encode  # noqa: E402  (path shim must precede the import)
 
 
 def parse_args() -> argparse.Namespace:
@@ -142,8 +147,11 @@ def main() -> None:
     # `TypeError: unsupported operand type(s) for @`. Unlike the acceptance evaluator -- which is numpy
     # throughout, because it only scores -- this file also RETRAINS heads out of fold, and
     # `out_of_fold_scores` needs autograd. So it converts at this boundary, exactly as the trainer does.
-    features_np, _, _ = training.encode_records(records, args.encoder, args.max_length)
-    doc_features_np, doc_offsets = training.encode_documents(records, args.encoder, args.max_length)
+    # Cached, like the trainer: this re-encodes the SAME corpus the trainer just encoded, and the two
+    # share a cache entry because the key is the encoder plus the record inputs, not the caller.
+    features_np, doc_features_np, doc_offsets, _, _ = cached_encode(
+        training, records, args.encoder, args.max_length
+    )
     features = torch.from_numpy(features_np)
     views = {
         "instance-max": (features, training.bag_offsets(records)),
