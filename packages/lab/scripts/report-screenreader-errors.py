@@ -135,11 +135,19 @@ def main() -> None:
     from safetensors.torch import load_file
 
     split_for_family = training.assign_splits(records)
-    features, _, _ = training.encode_records(records, args.encoder, args.max_length)
     # Both views, keyed exactly as the trainer keys them. A document-pooled head sees a bag of one.
+    #
+    # TORCH on both sides, deliberately. The featurizer returns numpy and the weights here load as torch
+    # tensors, and `score_head`'s `features @ weight.T` accepts that mixture right up until it raises
+    # `TypeError: unsupported operand type(s) for @`. Unlike the acceptance evaluator -- which is numpy
+    # throughout, because it only scores -- this file also RETRAINS heads out of fold, and
+    # `out_of_fold_scores` needs autograd. So it converts at this boundary, exactly as the trainer does.
+    features_np, _, _ = training.encode_records(records, args.encoder, args.max_length)
+    doc_features_np, doc_offsets = training.encode_documents(records, args.encoder, args.max_length)
+    features = torch.from_numpy(features_np)
     views = {
         "instance-max": (features, training.bag_offsets(records)),
-        "document-mean": training.encode_documents(records, args.encoder, args.max_length),
+        "document-mean": (torch.from_numpy(doc_features_np), doc_offsets),
     }
     weights = load_file(str(args.model))
     selected_splits = ("train", "validation", "test") if args.split == "all" else (args.split,)
