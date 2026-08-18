@@ -19,7 +19,7 @@
     "",
     "## The key is the corpus's own subtype vocabulary",
     "",
-    "`target.subtypes` in the dataset export -- `1.1.1:missing-alt`, `4.1.2:regex` -- and NOT",
+    "`target.subtypes` in the dataset export -- `1.1.1:missing-alt`, `4.1.2:unnamed-control` -- and NOT",
     "`provenance.subtype`, which is a case-family name and is ambiguous: `regex` is three different",
     "subtypes under 2.4.4, 2.4.6 and 4.1.2. The model's heads are named after this vocabulary and the",
     "scorer report keys on it, so making the rule gate speak it too means one vocabulary, not two.",
@@ -54,10 +54,10 @@
       "reportsAs": "4.1.2",
       "note": "See `reportsAs` above: the corpus calls it a missing label, the rule calls it a missing accessible name. These records also carry `4.1.2:missing-role`, so the gate must credit that subtype for them too or its boundary reads as ragged."
     },
-    "4.1.2:regex": {
+    "4.1.2:unnamed-control": {
       "decidedBy": "rules",
       "reportsAs": "4.1.2",
-      "note": "An exact-absence case: a control announced with a role and no name."
+      "note": "An exact-absence case: a control announced with a role and no name -- an icon button or a text input, one failure, one subtype. It was `4.1.2:regex`, a key naming the MATCHER rather than the failure, while the 115 unlabelled-field records sat in `4.1.2:missing-role`, the head for the opposite failure."
     },
     "2.4.4:regex": {
       "decidedBy": "overlap",

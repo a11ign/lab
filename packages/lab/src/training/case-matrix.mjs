@@ -313,7 +313,23 @@ const cases = [
     // would have taught the scorer "3.3.2 implies 4.1.2", which is a shortcut feature and exactly the
     // contamination this corpus exists to avoid. Verified on the bad variants only -- 109 of 109, with
     // zero good variants firing, which is what makes it a real second failure rather than noise.
-    alsoFails: ["4.1.2:missing-role"],
+    // `4.1.2:unnamed-control`, NOT `4.1.2:missing-role`. Every one of these three sites described the
+    // evidence correctly in its own comment -- "a bare role with no accessible name" -- and then routed
+    // it to the head for the OPPOSITE failure. Measured consequence: `4.1.2:missing-role` carried 189
+    // positives that split 74/115 into two disjoint signatures, and the split is perfect -- all 74
+    // genuine fake-button records announce NOTHING (`formFields: []`, `controls: []`), all 115 of these
+    // announce a bare "edit". One linear head over a frozen embedding was asked to learn "nothing is
+    // announced OR something is announced unnamed", with the second class as 61% of its positives.
+    //
+    // It cannot be threshold-tuned away, because "nothing is announced" is not a usable signal on its
+    // own: 437 of the corpus's 1001 CONFORMANT records look identical on that axis (pages about images
+    // and tables have no controls either). So the calibrator must push the cut up until the empty half
+    // is excluded, which is exactly the 0.90 threshold at precision 1.000 and recall 0.875 -- the 20
+    // false negatives that blocked release.
+    //
+    // Same precedent as `icon-button-unnamed` above: one failure mode belongs in one subtype, and an
+    // unnamed field is the same failure as an unnamed icon button.
+    alsoFails: ["4.1.2:unnamed-control"],
     task: "Enter the name of the person receiving the parcel.",
     source: "Practical Web Accessibility, chapter 6; Inclusive Design for Accessibility, chapter 13",
     mutation: "The text field has no programmatic label and relies on nearby visual text.",
@@ -382,6 +398,12 @@ const cases = [
   pair({
     id: "icon-button-unnamed",
     criterion: "4.1.2",
+    // Named for the FAILURE, not for how it is detected. `badSignal.type` is "regex", so without this
+    // the subtype was `4.1.2:regex` -- a key describing the matcher, which says nothing about what went
+    // wrong and collides conceptually with the 2.4.4 and 2.4.6 regex cases that are entirely different
+    // failures. The 115 unlabelled-field records join this head, because "a control announced with a
+    // role and no accessible name" is one failure whether the control is an icon button or a text input.
+    subtype: "unnamed-control",
     task: "Open the account search.",
     source: "Practical Web Accessibility, chapter 6",
     mutation: "An icon-only button has no accessible name.",
@@ -622,7 +644,23 @@ function unlabelledFieldVariant({ id, title, heading, label, name, task }) {
     // role with no accessible name. Deliberately NOT on `placeholderOnlyVariant`, which is 3.3.2 only —
     // a placeholder supplies a name and it does not fire 4.1.2, verified against its capture. See the
     // base case for why this is asserted per generator rather than by criterion.
-    alsoFails: ["4.1.2:missing-role"],
+    // `4.1.2:unnamed-control`, NOT `4.1.2:missing-role`. Every one of these three sites described the
+    // evidence correctly in its own comment -- "a bare role with no accessible name" -- and then routed
+    // it to the head for the OPPOSITE failure. Measured consequence: `4.1.2:missing-role` carried 189
+    // positives that split 74/115 into two disjoint signatures, and the split is perfect -- all 74
+    // genuine fake-button records announce NOTHING (`formFields: []`, `controls: []`), all 115 of these
+    // announce a bare "edit". One linear head over a frozen embedding was asked to learn "nothing is
+    // announced OR something is announced unnamed", with the second class as 61% of its positives.
+    //
+    // It cannot be threshold-tuned away, because "nothing is announced" is not a usable signal on its
+    // own: 437 of the corpus's 1001 CONFORMANT records look identical on that axis (pages about images
+    // and tables have no controls either). So the calibrator must push the cut up until the empty half
+    // is excluded, which is exactly the 0.90 threshold at precision 1.000 and recall 0.875 -- the 20
+    // false negatives that blocked release.
+    //
+    // Same precedent as `icon-button-unnamed` above: one failure mode belongs in one subtype, and an
+    // unnamed field is the same failure as an unnamed icon button.
+    alsoFails: ["4.1.2:unnamed-control"],
     task,
     source: "Practical Web Accessibility, chapter 6; Inclusive Design for Accessibility, chapter 13",
     mutation: "The field has nearby visible text but no programmatic label.",
@@ -670,6 +708,10 @@ function placeholderOnlyVariant({ id, title, heading, label, name, task }) {
 function customControlVariant({ id, title, heading, label, task }) {
   return pair({
     id,
+    // NOTE it shares `family` with `unnamedIconVariant` and is a DIFFERENT failure: this one strips the
+    // role entirely (a styled div, announced as nothing), that one strips the name (a button announced
+    // with no label). Same page shape, so grouping them for the split is right; but the shared family
+    // name makes them easy to confuse, and a subtype marker was briefly attached to the wrong one here.
     family: "control-name-role",
     criterion: "4.1.2",
     task,
@@ -696,6 +738,8 @@ function unnamedIconVariant({ id, title, heading, name, task }) {
     id,
     family: "control-name-role",
     criterion: "4.1.2",
+    // See the `icon-button-unnamed` seed: named for the failure, and shared with the unlabelled fields.
+    subtype: "unnamed-control",
     task,
     source: "Practical Web Accessibility, chapter 6",
     mutation: "An icon-only button has no accessible name.",
@@ -843,7 +887,23 @@ function labelledControlVariant({ id, title, heading, label, name, control, sele
     // leaves the control announced as a bare role with no accessible name, which is 4.1.2. Confirmed on
     // `field-followup-date.bad`, whose 4.1.2 evidence is the single token "edit". See `form-unlabelled`
     // for why this is asserted per generator rather than applied to every 3.3.2 case.
-    alsoFails: ["4.1.2:missing-role"],
+    // `4.1.2:unnamed-control`, NOT `4.1.2:missing-role`. Every one of these three sites described the
+    // evidence correctly in its own comment -- "a bare role with no accessible name" -- and then routed
+    // it to the head for the OPPOSITE failure. Measured consequence: `4.1.2:missing-role` carried 189
+    // positives that split 74/115 into two disjoint signatures, and the split is perfect -- all 74
+    // genuine fake-button records announce NOTHING (`formFields: []`, `controls: []`), all 115 of these
+    // announce a bare "edit". One linear head over a frozen embedding was asked to learn "nothing is
+    // announced OR something is announced unnamed", with the second class as 61% of its positives.
+    //
+    // It cannot be threshold-tuned away, because "nothing is announced" is not a usable signal on its
+    // own: 437 of the corpus's 1001 CONFORMANT records look identical on that axis (pages about images
+    // and tables have no controls either). So the calibrator must push the cut up until the empty half
+    // is excluded, which is exactly the 0.90 threshold at precision 1.000 and recall 0.875 -- the 20
+    // false negatives that blocked release.
+    //
+    // Same precedent as `icon-button-unnamed` above: one failure mode belongs in one subtype, and an
+    // unnamed field is the same failure as an unnamed icon button.
+    alsoFails: ["4.1.2:unnamed-control"],
     task,
     source: "Practical Web Accessibility, chapter 6; Inclusive Design for Accessibility, chapter 13",
     mutation: "The form control loses its programmatic label while the same visible cue remains nearby.",
