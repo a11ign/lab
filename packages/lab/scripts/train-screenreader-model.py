@@ -93,24 +93,42 @@ OOD_REFERENCE_SAMPLES = 512
 #   3. `local-judge` suppresses the model for a rule-owned CRITERION, so subtypes the rules never look
 #      at were decided by neither layer.
 #
-# Measured by `npm run rules:score` over the 2,006-record corpus, which exists to report exactly this:
+# Declared ONCE, in `packages/lab/rule-ownership.json`, and read here. It used to be a frozenset in this
+# file and an array in `score-rules.ts` -- two encodings of one fact, which is what Secure by Design 12.5
+# calls the false-negative DRY violation: no text is repeated, a duplication tool sees nothing, and the two
+# copies "evolve inconsistently". They had, in both directions, before anyone compared them. The file
+# carries the argument; this is only the reader.
+#
+# Measured by `npm run rules:score`, which reports the same boundary from the other side:
 #
 #   1.1.1:filename-alt          31/31    rules: EXACT
 #   1.1.1:generic-alt            0/31    rules: none -- the model's heads own this subtype
 #   1.1.1:missing-alt           88/88    rules: EXACT
-#   4.1.2:missing-role           0/74    rules: none -- the model's heads own this subtype
+#   2.4.4:regex                19/100    rules: declared OVERLAP -- the head owns the other 81
+#   3.3.2:unnamed-form-field   115/115   rules: EXACT
+#   4.1.2:missing-role         115/189   rules: EXACT on the 115 co-labelled; the head alone owns 74
 #   4.1.2:regex                 32/32    rules: EXACT
 #   4.1.2:state-change-silent    0/69    rules: none -- the model's heads own this subtype
-#   4.1.2:unnamed-form-field   115/115   rules: EXACT
 #
-# Rules are 100% precise where they look (0 false positives over 1003 conformant records), so where a
-# rule decides, it is the answer. The 174 records in the "none" rows are the ones that had no decider.
-RULE_OWNED_SUBTYPES = frozenset({
-    "1.1.1:filename-alt",
-    "1.1.1:missing-alt",
-    "4.1.2:regex",
-    "4.1.2:unnamed-form-field",
-})
+# Rules are 100% precise where they look (0 false positives over 1001 conformant records), so where a
+# rule decides, it is the answer.
+#
+# Only `decidedBy: "rules"` exempts a head from blocking release. An `overlap` subtype must NOT be
+# exempt: the rules cover 19 of 2.4.4's 100 records and the head is the only decider for the other 81,
+# so treating the whole subtype as the rules' would silence the layer that does most of the work -- the
+# criterion-level mistake this whole change exists to stop, one granularity down.
+RULE_OWNERSHIP_FILE = Path(__file__).resolve().parents[1] / "rule-ownership.json"
+
+def read_rule_ownership() -> dict[str, dict[str, Any]]:
+    """The declaration, whole. Raises rather than defaulting to empty: an unreadable declaration is not
+    an absent boundary, and a silent {} would exempt nothing while reporting every head as the model's --
+    a wrong answer that looks like a clean one."""
+    return json.loads(RULE_OWNERSHIP_FILE.read_text(encoding="utf-8"))["subtypes"]
+
+RULE_OWNERSHIP = read_rule_ownership()
+RULE_OWNED_SUBTYPES = frozenset(
+    subtype for subtype, entry in RULE_OWNERSHIP.items() if entry["decidedBy"] == "rules"
+)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
@@ -277,6 +295,23 @@ def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int
         optimizer.step()
     return head.weight.detach().clone(), head.bias.detach().clone()
 
+def assert_declaration_matches_data(records: list[dict[str, Any]]) -> None:
+    """Fail if `rule-ownership.json` names a subtype the corpus does not have.
+
+    A declared key that matches nothing enforces nothing, and it fails SILENTLY in the direction that
+    matters: `4.1.2:unnamed-form-field` sat in the old hardcoded map for as long as it existed, exempting
+    a head from blocking release that was never the head it named. `rules:score` asserts the same thing
+    from the other side; this one runs at training time, which is when the exemption is actually applied.
+    """
+    present = {subtype for record in records for subtype in record["target"].get("subtypes", [])}
+    unknown = sorted(set(RULE_OWNERSHIP) - present)
+    if unknown:
+        raise SystemExit(
+            f"rule ownership: {', '.join(unknown)} declared in {RULE_OWNERSHIP_FILE.name} and present in "
+            f"none of {len(records)} records. Either the corpus vocabulary moved or the key was never "
+            "right; the keys are `target.subtypes` values such as '4.1.2:regex'."
+        )
+
 def main() -> None:
     # Imported HERE and not at module scope on purpose: inference must never pull in torch (a ~400 MB
     # wheel on every Action run), and training is the only caller that needs autograd. It must also be
@@ -287,6 +322,7 @@ def main() -> None:
     random.seed(SEED)
     encoder_file = assert_encoder(args.encoder)
     records = read_records(args.data)
+    assert_declaration_matches_data(records)
     split_for_family = assign_splits(records)
     # The featurizer returns NUMPY now, so inference needs no torch — a 400 MB wheel removed from every
     # Action run. Training does need autograd, so it converts here, at its own boundary, and this is the
@@ -428,6 +464,18 @@ def main() -> None:
                     "deterministic-rules" if subtype in RULE_OWNED_SUBTYPES
                     else "learned-screenreader-scorer"
                 ),
+                # The criterion the RULE reports this subtype under, which is not always the criterion
+                # the subtype is named for. `score.py` needs it to decide whether the rule's finding
+                # actually SUBSTITUTES for the model's: an unnamed form field is `3.3.2:unnamed-form-field`
+                # in the corpus and a 4.1.2 finding from the rules, so suppressing the model's 3.3.2 would
+                # leave that criterion decided by neither layer -- the exact failure this file's
+                # per-subtype ownership was written to stop, one granularity down.
+                #
+                # Absent for a model-owned subtype, and absent from older artifacts, where `score.py`
+                # falls back to the subtype's own criterion. That fallback IS the old behaviour, so this
+                # is additive on the wire like `fault` is.
+                **({"ruleReportsAs": RULE_OWNERSHIP[subtype]["reportsAs"]}
+                   if subtype in RULE_OWNED_SUBTYPES else {}),
                 "development": metrics(
                     oof_scores[development_indices], subtype_development_labels, subtype_threshold
                 ),

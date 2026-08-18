@@ -1,0 +1,77 @@
+{
+  "note": [
+    "WHO DECIDES WHAT: the one declaration of the boundary between the deterministic rule layer",
+    "(packages/judge/src/rules.ts) and the trained scorer's per-subtype heads.",
+    "",
+    "It is a FILE, and language-neutral, because two programs need this same fact and they are not",
+    "written in the same language: score-rules.ts gates the rule layer against real captures, and",
+    "train-screenreader-model.py decides which heads may block a release. It was declared twice -- a",
+    "TypeScript array and a Python frozenset -- and by the time anyone compared them they had already",
+    "drifted apart in BOTH directions:",
+    "",
+    "  - the TypeScript list carried `4.1.2:unnamed-form-field`, a key that exists in no record",
+    "  - the Python set omitted the 115 unnamed-form-field records entirely, because it keyed on the",
+    "    corpus vocabulary and the TypeScript keyed on a criterion it minted itself",
+    "",
+    "Secure by Design 12.5 names this exactly: DRY is about duplicated KNOWLEDGE, not duplicated text.",
+    "Two encodings of one business rule 'evolve inconsistently', and the duplication is invisible to a",
+    "text-duplication tool because the two encodings do not look alike. That is what happened here.",
+    "",
+    "## The key is the corpus's own subtype vocabulary",
+    "",
+    "`target.subtypes` in the dataset export -- `1.1.1:missing-alt`, `4.1.2:regex` -- and NOT",
+    "`provenance.subtype`, which is a case-family name and is ambiguous: `regex` is three different",
+    "subtypes under 2.4.4, 2.4.6 and 4.1.2. The model's heads are named after this vocabulary and the",
+    "scorer report keys on it, so making the rule gate speak it too means one vocabulary, not two.",
+    "",
+    "## `reportsAs` exists because the two layers disagree, defensibly",
+    "",
+    "The corpus labels an unnamed form field `3.3.2:unnamed-form-field` (a missing label); the rule",
+    "reports it under 4.1.2 (a missing accessible name). Both are correct readings of the same page.",
+    "Declaring the mapping is the only way the gate can check the rule fired at all -- and previously",
+    "this fact lived in a Python comment that the TypeScript side could not see, which is why the",
+    "TypeScript side invented a key for it.",
+    "",
+    "## Absence means the model decides it",
+    "",
+    "Only the exceptions are listed. A subtype missing from this file is the scorer's, and the gate",
+    "asserts the rules never fire its criterion on it -- so a new subtype the rules DO touch fails",
+    "loudly rather than being silently adopted."
+  ],
+  "subtypes": {
+    "1.1.1:filename-alt": {
+      "decidedBy": "rules",
+      "reportsAs": "1.1.1",
+      "note": "An exact-absence case: alt text that is a filename is no alternative at all."
+    },
+    "1.1.1:missing-alt": {
+      "decidedBy": "rules",
+      "reportsAs": "1.1.1",
+      "note": "An exact-absence case. NVDA's 'unlabeled' prefix is nondeterministic, and keying on it once cost 3 of 88 -- the defect that made this gate exist."
+    },
+    "3.3.2:unnamed-form-field": {
+      "decidedBy": "rules",
+      "reportsAs": "4.1.2",
+      "note": "See `reportsAs` above: the corpus calls it a missing label, the rule calls it a missing accessible name. These records also carry `4.1.2:missing-role`, so the gate must credit that subtype for them too or its boundary reads as ragged."
+    },
+    "4.1.2:regex": {
+      "decidedBy": "rules",
+      "reportsAs": "4.1.2",
+      "note": "An exact-absence case: a control announced with a role and no name."
+    },
+    "2.4.4:regex": {
+      "decidedBy": "overlap",
+      "reportsAs": "2.4.4",
+      "note": [
+        "The rules cover a deliberate SUBSET and the scorer's head owns the rest, so neither 'rules' nor",
+        "silence is true. VAGUE_LINK_NAMES is six phrases chosen to be the ones context cannot rescue;",
+        "the corpus generates its link text from a wider vocabulary, so the rules fire on part of it.",
+        "",
+        "This was invisible before: the old gate filtered to the two criteria it already believed the",
+        "rules owned, so a rule firing on any OTHER criterion could not be seen at all. Declaring the",
+        "overlap is what makes it visible; the gate asserts it stays a strict, non-empty subset, so",
+        "widening the vocabulary to everything (or breaking the rule to nothing) both fail."
+      ]
+    }
+  }
+}
