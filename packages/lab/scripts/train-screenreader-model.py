@@ -318,12 +318,23 @@ def assert_declaration_matches_data(records: list[dict[str, Any]]) -> None:
     from the other side; this one runs at training time, which is when the exemption is actually applied.
     """
     present = {subtype for record in records for subtype in record["target"].get("subtypes", [])}
-    unknown = sorted(set(RULE_OWNERSHIP) - present)
+    expected = {s for s, e in RULE_OWNERSHIP.items() if e["decidedBy"] != "unavailable"}
+    # `unavailable` is asserted the other way round: those records are excluded from the export on
+    # purpose (MODEL_EXCLUDED_SUBTYPES), so their PRESENCE means the exclusion has stopped working and a
+    # head is about to be fitted to evidence that cannot express its failure.
+    forbidden = sorted({s for s in RULE_OWNERSHIP if s not in expected} & present)
+    unknown = sorted(expected - present)
     if unknown:
         raise SystemExit(
             f"rule ownership: {', '.join(unknown)} declared in {RULE_OWNERSHIP_FILE.name} and present in "
             f"none of {len(records)} records. Either the corpus vocabulary moved or the key was never "
             "right; the keys are `target.subtypes` values such as '4.1.2:regex'."
+        )
+    if forbidden:
+        raise SystemExit(
+            f"rule ownership: {', '.join(forbidden)} is declared `unavailable` and yet present in the "
+            f"export. The model exclusion has stopped working, so a head would be trained on evidence "
+            "that cannot express its failure."
         )
 
 def main() -> None:
