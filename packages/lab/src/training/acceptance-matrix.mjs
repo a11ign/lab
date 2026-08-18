@@ -162,7 +162,15 @@ function iconPair({ id, title, label, task }) {
   return pair({
     id,
     criterion: "4.1.2",
-    subtype: "regex",
+    // MUST match the training vocabulary: the head is named `4.1.2:unnamed-control`, so a held-out case
+    // labelled `4.1.2:regex` is a positive no head can predict -- `eligible_records` drops it, and the
+    // gate then reports "fewer than 3 acceptance positives" for a criterion that is in fact covered.
+    //
+    // Renamed in `case-matrix.mjs` and missed here, which is the failure this repo names most often: a
+    // change applied at one of the sites a behaviour reaches. The acceptance matrix is the one place
+    // where a stale subtype cannot be caught by `rules:gate`, because that gate reads the TRAINING
+    // export and never looks at the held-out set.
+    subtype: "unnamed-control",
     task,
     mutation: "An icon-only button has no accessible name.",
     badSignal: { type: "regex", pattern: "(?:^|\\n)button[, ]*(?:(?:\\ufffc|to get missing image descriptions))?[, ]*(?:$|\\n)", flags: "im" },
