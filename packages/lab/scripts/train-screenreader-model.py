@@ -309,6 +309,21 @@ def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int
         optimizer.step()
     return head.weight.detach().clone(), head.bias.detach().clone()
 
+def ood_reference_indices(total: int, torch: Any) -> Any:
+    """Evenly spaced row indices spanning the WHOLE dataset, capped at OOD_REFERENCE_SAMPLES.
+
+    A named function rather than three lines inside `main` because the arithmetic is where the bug was and
+    the correctness condition is worth stating: the span must reach `total - 1` at every dataset size.
+
+    Verified by execution at n = 300 / 512 / 1858 / 1877 / 20000 -- 512 unique rows and span 0..n-1 in each
+    case. NOT covered by a regression test: this repo has no Python test harness, and adding one is a
+    bigger decision than this fix. That is a real gap, and it is the gap that let the previous version
+    survive.
+    """
+    count = min(OOD_REFERENCE_SAMPLES, total)
+    return torch.linspace(0, total - 1, count).round().long()
+
+
 def assert_declaration_matches_data(records: list[dict[str, Any]]) -> None:
     """Fail if `rule-ownership.json` names a subtype the corpus does not have.
 
@@ -598,8 +613,24 @@ def main() -> None:
     # what was validated. Provisional — the defensible form is conformal calibration against a stated
     # error rate on a real-page set, which does not exist yet (see docs/adr/0009-dataset-tiers.md).
     reference = doc_features[:, :dimension]
-    step = max(1, reference.shape[0] // OOD_REFERENCE_SAMPLES)
-    sample = reference[::step][:OOD_REFERENCE_SAMPLES].contiguous()
+    # Evenly spaced across the WHOLE dataset. It was `reference[::step][:OOD_REFERENCE_SAMPLES]`, which
+    # applies a stride AND a head-slice and therefore double-truncates: at 1,877 records the stride yields
+    # 626 rows and the slice keeps the first 512, so indices 1534-1876 -- the last 18.3% -- never entered
+    # the reference at all.
+    #
+    # That is not a rounding detail, it silently voided an experiment. The realism tier appends real-page
+    # records to the END of the dataset, so NONE of them reached the reference, and the calibration pages'
+    # novelty scores came back byte-identical to the baseline run: 0.6624, 0.6605, 0.6576... to four
+    # decimal places. It read exactly like "19 real pages make no difference" and the real finding was
+    # that the mechanism deciding novelty had never seen them.
+    #
+    # Same shape as this codebase's recurring fault: a step that produces plausible output -- a 512-row
+    # reference and a derived floor -- while ignoring part of its input, with nothing to say it did.
+    #
+    # `floor` below is computed over the full `reference`, not the sample, so it was never affected. The
+    # truncation only ever corrupted the reference SHIPPED for inference, which is the half that decides
+    # whether a real page is called novel.
+    sample = reference[ood_reference_indices(reference.shape[0], torch)].contiguous()
     neighbours = reference @ reference.t()
     neighbours.fill_diagonal_(-1.0)
     floor = float(neighbours.max(dim=1).values.min())
