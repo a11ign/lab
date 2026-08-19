@@ -66,6 +66,20 @@ const BAD_AFTER_CLAIM =
 const BAD_BEFORE_CLAIM =
   "W3C publishes the 'before' pages as the inaccessible version, with its own evaluation report "
   + "(https://www.w3.org/WAI/demos/bad/before/annualreport/)";
+// A SECOND publisher, which is the point. Verified 2026-08-19 against the statement itself, which scopes
+// the claim to the whole site and states there is no known non-compliant content:
+//
+//   "The Design System website at design-system.service.gov.uk is fully compliant with the Web Content
+//    Accessibility Guidelines (WCAG) version 2.2 AA standard."
+//
+// WCAG 2.2 AA, a level above the BAD demo's 2.0 AA. GOV.UK itself was considered and REJECTED as a source:
+// its statement says "partially compliant" for the WEBSITE and enumerates 20 failures against specific
+// content, which gives no per-PAGE label -- and a label we inferred would be our judgement, which is
+// exactly what this corpus exists to avoid.
+const DESIGN_SYSTEM_CLAIM =
+  "The Cabinet Office publishes design-system.service.gov.uk as fully compliant with WCAG 2.2 Level AA, "
+  + "with no known non-compliant content (https://design-system.service.gov.uk/accessibility-statement/)";
+
 const TUTORIAL_CLAIM =
   "W3C states its site conforms to WCAG 2 Level AA (https://www.w3.org/WAI/), and each tutorial page "
   + "demonstrates the technique it names";
@@ -96,6 +110,39 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, demonstrates: "purchase form, broken" },
   { url: "https://www.w3.org/WAI/demos/bad/before/template.html", role: "calibration",
     publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, demonstrates: "page template, broken" },
+
+
+  // --- CALIBRATION, second publisher: GOV.UK Design System component pages. --------------------
+  // Chosen to exercise the criteria this scorer actually covers -- form fields, validation,
+  // disclosure state, tables and bypass links -- rather than to be a representative sample of the
+  // web, which twelve pages could not be. Every one is a CONFORMANT claim, deliberately: the column
+  // that decides the abstention floor is false positives on pages their publisher calls conformant.
+  // Nobody publishes 'this page is inaccessible' outside a teaching demo, so the failing side of the
+  // calibration set stays W3C's, and that imbalance is a real limit rather than an oversight.
+  { url: "https://design-system.service.gov.uk/components/text-input/", role: "calibration",
+    publishedClaim: "conformant", source: DESIGN_SYSTEM_CLAIM, demonstrates: "single-line text field with label and hint" },
+  { url: "https://design-system.service.gov.uk/components/checkboxes/", role: "calibration",
+    publishedClaim: "conformant", source: DESIGN_SYSTEM_CLAIM, demonstrates: "checkbox group inside a fieldset legend" },
+  { url: "https://design-system.service.gov.uk/components/radios/", role: "calibration",
+    publishedClaim: "conformant", source: DESIGN_SYSTEM_CLAIM, demonstrates: "radio group inside a fieldset legend" },
+  { url: "https://design-system.service.gov.uk/components/select/", role: "calibration",
+    publishedClaim: "conformant", source: DESIGN_SYSTEM_CLAIM, demonstrates: "native select with a label" },
+  { url: "https://design-system.service.gov.uk/components/date-input/", role: "calibration",
+    publishedClaim: "conformant", source: DESIGN_SYSTEM_CLAIM, demonstrates: "multi-part date field, three inputs one question" },
+  { url: "https://design-system.service.gov.uk/components/error-message/", role: "calibration",
+    publishedClaim: "conformant", source: DESIGN_SYSTEM_CLAIM, demonstrates: "field-level validation message" },
+  { url: "https://design-system.service.gov.uk/components/error-summary/", role: "calibration",
+    publishedClaim: "conformant", source: DESIGN_SYSTEM_CLAIM, demonstrates: "page-level error summary that moves focus" },
+  { url: "https://design-system.service.gov.uk/components/details/", role: "calibration",
+    publishedClaim: "conformant", source: DESIGN_SYSTEM_CLAIM, demonstrates: "disclosure widget, expanded/collapsed state" },
+  { url: "https://design-system.service.gov.uk/components/accordion/", role: "calibration",
+    publishedClaim: "conformant", source: DESIGN_SYSTEM_CLAIM, demonstrates: "multiple disclosures with state" },
+  { url: "https://design-system.service.gov.uk/components/tabs/", role: "calibration",
+    publishedClaim: "conformant", source: DESIGN_SYSTEM_CLAIM, demonstrates: "tab list with selected state" },
+  { url: "https://design-system.service.gov.uk/components/table/", role: "calibration",
+    publishedClaim: "conformant", source: DESIGN_SYSTEM_CLAIM, demonstrates: "data table with row and column headers" },
+  { url: "https://design-system.service.gov.uk/components/skip-link/", role: "calibration",
+    publishedClaim: "conformant", source: DESIGN_SYSTEM_CLAIM, demonstrates: "bypass block, first focusable element" },
 
   // --- TRAINING: the realism tier. Never used to measure anything. -----------------------------------
   // Tutorial sub-examples, which is where the STRUCTURE the scorer has never seen lives: real navigation,
