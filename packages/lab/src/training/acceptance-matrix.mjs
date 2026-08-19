@@ -263,7 +263,18 @@ export const ACCEPTANCE_CASES = Object.freeze([
   iconPair({ id: "icon-settings", title: "Settings", label: "Open settings", task: "Open settings." }),
   iconPair({ id: "icon-calendar", title: "Calendar", label: "Open calendar", task: "Open the calendar." }),
   controlPair({ id: "control-notify", title: "Notifications", label: "Save notification settings", task: "Save notification settings." }),
+  // FOUR disclosure cases, not one, and the reason is a measurement rather than symmetry.
+  //
+  // `4.1.2:unnamed-control` is decided by the deterministic rules, so the acceptance evaluator correctly
+  // excludes it from what the MODEL is answerable for -- leaving `state-change-silent` as 4.1.2's only
+  // model-owned subtype. With a single case across two repeats that is 2 held-out positives against a
+  // floor of 3, and the gate refused to call two records a generalisation claim. It was right to: the
+  // model scored FP 0 / FN 0 on every criterion, and the failure was a shortage of EVIDENCE, not an
+  // error. Four cases give 8 positives, matching the footing 4.1.3 and 3.3.1 already have.
   disclosurePair({ id: "disclosure-access", title: "Access advice", control: "Access advice", task: "Open the access advice." }),
+  disclosurePair({ id: "disclosure-refunds", title: "Refund policy", control: "Refund policy", task: "Open the refund policy." }),
+  disclosurePair({ id: "disclosure-lockers", title: "Locker hire", control: "Locker hire", task: "Open the locker hire details." }),
+  disclosurePair({ id: "disclosure-cycling", title: "Cycle storage", control: "Cycle storage", task: "Open the cycle storage details." }),
   statusPair({ id: "status-red", title: "Colour catalogue", control: "Show red items", task: "Show red items and notice the result count." }),
   statusPair({ id: "status-large", title: "Size catalogue", control: "Show large items", task: "Show large items and notice the result count." }),
   statusPair({ id: "status-new", title: "New items", control: "Show new items", task: "Show new items and notice the result count." }),
