@@ -36,6 +36,28 @@ const OUT = resolve(process.cwd(), process.env.REAL_CORPUS_ROOT || "runs/real-pa
 /** Between captures, so a run cannot look like a crawl to the site being fetched. */
 const POLITE_GAP_MS = 2_000;
 
+/**
+ * `--shard=i/n` -- capture every nth page, offset i. Four shards across the fleet takes 77 pages from
+ * ~6.5 h on one worker to ~1.6 h.
+ *
+ * Sharding rather than a worker pool because this script needs no page server: these are LIVE URLs, so
+ * concurrent shards share nothing and cannot contend. (The dataset runner needs the pool machinery because
+ * it also leases a page server; borrowing that here would be a lot of coupling for no gain.)
+ *
+ * Politeness is preserved where it matters. `POLITE_GAP_MS` is per shard, but shards interleave by index
+ * across DIFFERENT publishers, so no single publisher sees a faster request rate than before -- and one
+ * page per publisher means most see exactly one request either way.
+ */
+const SHARD = (() => {
+  const raw = process.argv.find((a) => a.startsWith("--shard="))?.slice("--shard=".length);
+  if (!raw) return { index: 0, count: 1 };
+  const [index, count] = raw.split("/").map(Number);
+  if (!Number.isInteger(index) || !Number.isInteger(count) || count < 1 || index < 0 || index >= count) {
+    throw new Error(`--shard must be i/n with 0 <= i < n, got ${raw}`);
+  }
+  return { index, count };
+})();
+
 // Read-through lines to allow on a real page. 600 rather than the worker's 150: the longest transcript in
 // the current real-page corpus is ~145 lines under the old cap AND still reported `maxSteps`, so the true
 // length is unknown and 150 was clearly binding. Generous on purpose -- the deadline is what should end a
@@ -88,13 +110,14 @@ async function main() {
     process.stderr.write("a worker is required: --worker=http://host:port (or A11Y_WORKER)\n");
     process.exit(2);
   }
-  const pages = ROLE ? pagesFor(ROLE) : REAL_PAGES;
+  const selected = ROLE ? pagesFor(ROLE) : REAL_PAGES;
+  const pages = selected.filter((_, index) => index % SHARD.count === SHARD.index);
   if (!pages.length) {
     process.stderr.write(`no pages for role '${ROLE}'\n`);
     process.exit(2);
   }
   mkdirSync(OUT, { recursive: true });
-  process.stdout.write(`Capturing ${pages.length} real page(s) into ${OUT}\n`);
+  process.stdout.write(`Capturing ${pages.length} real page(s)${SHARD.count > 1 ? ` (shard ${SHARD.index + 1}/${SHARD.count} of ${selected.length})` : ""} into ${OUT}\n`);
   process.stdout.write("Never cached: these pages change, and stale evidence would be paired with a "
     + "current conformance claim.\n");
 
