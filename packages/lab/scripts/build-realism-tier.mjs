@@ -104,9 +104,17 @@ function main() {
     .map((f) => JSON.parse(readFileSync(resolve(CORPUS, f), "utf8")))
     .filter((e) => e.role === "training");
 
+  // No real-page captures is a legitimate state -- a fresh checkout has none -- so this writes the base
+  // dataset through rather than failing. It says so LOUDLY, because a script that silently produced a
+  // dataset with no realism tier would let someone ship a model that abstains on every real page while
+  // believing they had built the one that does not.
   if (!entries.length) {
-    process.stderr.write(`no TRAINING-role captures in ${CORPUS}\n`);
-    process.exit(2);
+    process.stdout.write(`  NO REALISM TIER: ${CORPUS} holds no training-role captures, so the output is the\n`
+      + `  base dataset unchanged. A model trained on this will ABSTAIN on real pages. Capture the\n`
+      + `  real-page corpus first: node packages/lab/src/training/capture-real-pages.mjs --role=training\n`);
+    writeFileSync(OUT, readFileSync(BASE, "utf8"));
+    process.stdout.write(`  written: ${OUT} (base only)\n`);
+    return;
   }
 
   const { usable, rejected } = completeCaptures(entries);
