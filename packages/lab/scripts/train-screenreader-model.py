@@ -352,6 +352,29 @@ def assert_declaration_matches_data(records: list[dict[str, Any]]) -> None:
             "that cannot express its failure."
         )
 
+def known_indices(records: list[dict[str, Any]], subtype: str, candidates: list[int]) -> list[int]:
+    """`candidates`, minus the records whose status for `subtype` is UNKNOWN.
+
+    A record labelled `clean` is a hard negative for EVERY head, which is only sound when the label's source
+    actually claimed every criterion. W3C publishes a site-wide WCAG 2 AA conformance claim, so for its
+    pages it does. Almost nobody else does: a public sector accessibility statement is typically "partially
+    compliant" with an ENUMERATED list of failures, which is a richer label than a bare "fully compliant" --
+    it says what is good and what is not, from the publisher's own mouth -- but only if the enumerated
+    criteria can be marked unknown rather than silently trained as clean.
+
+    Without this, one real page with a genuinely unlabelled image injects a false negative into
+    `1.1.1:missing-alt` (88 positives), at the exact place the "0 false positives" claim lives. With it, the
+    publishers who describe real APPLICATIONS become usable, and those are where the structural variety is:
+    the full-compliance claims cluster almost entirely in accessibility-led documentation sites, which share
+    the homogeneity the realism tier exists to break.
+    """
+    unknown = {
+        index for index in candidates
+        if subtype in records[index]["target"].get("unknownSubtypes", [])
+    }
+    return [index for index in candidates if index not in unknown]
+
+
 def main() -> None:
     # Imported HERE and not at module scope on purpose: inference must never pull in torch (a ~400 MB
     # wheel on every Action run), and training is the only caller that needs autograd. It must also be
@@ -456,7 +479,14 @@ def main() -> None:
                 [int(subtype in record["target"].get("subtypes", [])) for record in records],
                 dtype=torch.float32,
             )
-            subtype_development_labels = subtype_labels[development_indices]
+            # Records whose status for THIS subtype is unknown are excluded from its head entirely --
+            # training, threshold and metrics -- rather than counted as negatives. See `known_indices`.
+            subtype_indices = known_indices(records, subtype, development_indices)
+            masked = len(development_indices) - len(subtype_indices)
+            if masked:
+                report["warnings"].append(
+                    f"{subtype}: {masked} development record(s) masked as unknown by their publisher's claim")
+            subtype_development_labels = subtype_labels[subtype_indices]
             if int(subtype_development_labels.sum()) < 20:
                 report["modelReleaseEligible"] = False
                 if subtype not in RULE_SUBSTITUTED_SUBTYPES:
@@ -469,11 +499,11 @@ def main() -> None:
                 view_features,
                 subtype_labels,
                 records,
-                development_indices,
+                subtype_indices,
                 args.epochs,
                 view_offsets,
             )
-            weight, bias = train_head(view_features, view_offsets, subtype_labels, development_indices, args.epochs)
+            weight, bias = train_head(view_features, view_offsets, subtype_labels, subtype_indices, args.epochs)
             key = head_key(subtype)
             weights[key + ".weight"] = weight
             weights[key + ".bias"] = bias
@@ -484,7 +514,7 @@ def main() -> None:
             # what declines to use it -- so the two layers can be compared on the same records instead
             # of one of them being invisible.
             subtype_threshold = choose_threshold(
-                oof_scores[development_indices],
+                oof_scores[subtype_indices],
                 subtype_development_labels,
                 subtype,
                 report["warnings"],
@@ -522,7 +552,7 @@ def main() -> None:
                 **({"ruleReportsAs": RULE_OWNERSHIP[subtype]["reportsAs"]}
                    if RULE_OWNERSHIP.get(subtype, {}).get("decidedBy") == "rules" else {}),
                 "development": metrics(
-                    oof_scores[development_indices], subtype_development_labels, subtype_threshold
+                    oof_scores[subtype_indices], subtype_development_labels, subtype_threshold
                 ),
             }
 

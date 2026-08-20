@@ -139,6 +139,10 @@ function record(testCase, variant, capture) {
       subtypes: isBad
         ? [testCase.criterion + ":" + subtype, ...(testCase.alsoFails ?? [])]
         : [],
+      // Empty for a GENERATED case, and that is a real claim rather than a default: we wrote the page, so
+      // we know every criterion's status. Only a real page whose publisher claimed less than everything
+      // carries entries here -- see `build-realism-tier.mjs` and `known_indices` in the trainer.
+      unknownSubtypes: [],
     },
     provenance: {
       caseId: testCase.id,

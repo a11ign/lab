@@ -138,7 +138,14 @@ function main() {
       },
       // The SOURCE's claim, carried verbatim. `clean` because W3C publishes these pages as conforming; if
       // that is ever wrong, it is wrong in W3C's documentation and not in our labelling.
-      target: { label: "clean", criteria: [], subtypes: [] },
+      // `unknownSubtypes` carries what the publisher did NOT claim. Empty for W3C, whose statement is a
+      // site-wide WCAG 2 AA conformance claim covering every criterion we score -- so `clean` here is the
+      // source's assertion, not our inference. A partially-compliant publisher populates it from
+      // `claimExcludes`, and those records then train no head for which the source said nothing.
+      target: {
+        label: "clean", criteria: [], subtypes: [],
+        unknownSubtypes: entry.claimExcludes ?? [],
+      },
       provenance: {
         realismTier: true,
         // `family` is REQUIRED, and it groups records so the split cannot separate pages that share a

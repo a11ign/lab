@@ -58,6 +58,23 @@
  * @property {"conformant" | "inaccessible"} publishedClaim  What the SOURCE says, never our assessment.
  * @property {string} source  Where that claim is published, so a reader can check it.
  * @property {string} demonstrates  What the page is an example of, in the source's own terms.
+ * @property {string[]} [claimExcludes]  Criteria or subtypes the source's statement does NOT claim, as
+ *   `"1.4.3"` or `"1.1.1:missing-alt"`. Empty or absent means the claim covers everything we score.
+ *
+ *   This is what makes a "partially compliant" statement usable, and those are the majority: PSBAR 2018
+ *   obliges every UK public sector body to publish one, and they overwhelmingly say "partially compliant"
+ *   with an ENUMERATED list of failures rather than "fully compliant" -- because they are being honest.
+ *   GOV.UK's lists 20, each mapped to a criterion.
+ *
+ *   Such a statement is a RICHER label than a bare full-compliance claim: it says what is good and what is
+ *   not, in the publisher's own words. It only becomes usable if the enumerated criteria can be marked
+ *   unknown instead of silently trained as clean, which is what this field feeds (`unknownSubtypes` in the
+ *   export, `known_indices` in the trainer).
+ *
+ *   Without it the pool is limited to full-compliance claims, and those cluster almost entirely in
+ *   accessibility-led DOCUMENTATION sites -- W3C's tutorials, the GOV.UK Design System, the NHS service
+ *   manual. All verified, all real, and all sharing the structural homogeneity the realism tier exists to
+ *   break. Measured: 14 extra pages inside six existing families bought +0.004.
  */
 
 const BAD_AFTER_CLAIM =
