@@ -39,6 +39,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { evidenceUnits, captureEvidenceText, producerFeedsModel } from "@a11y-witness/scorer/evidence-units";
+import { realPageFor } from "../src/training/real-page-corpus.mjs";
 import { captureWasTruncated } from "@a11y-witness/evidence/verify";
 
 // Resolved from this module, so the script works from any directory. `--out=` is still taken relative to
@@ -98,6 +99,90 @@ function completeCaptures(entries) {
   return { usable, rejected };
 }
 
+/**
+ * What the publisher of this captured page does NOT claim.
+ *
+ * THROWS on a failed join rather than returning `[]`. A url that has drifted -- a redirect, a publisher
+ * restructuring, a slug change -- would otherwise produce an unmasked page indistinguishable from a
+ * publisher with nothing to disclose, which is precisely the bug this replaces.
+ */
+function claimExcludesFor(entry) {
+  const url = entry.capture?.url;
+  const page = url ? realPageFor(url) : undefined;
+  if (!page) {
+    throw new Error(
+      `captured page ${url ?? "(no url)"} is not in real-page-corpus.mjs, so its publisher's claim cannot `
+      + "be read. Refusing to treat that as \"no exceptions\": an unmasked page trains every head as "
+      + "conformant, including criteria the publisher may state in writing that it fails.");
+  }
+  return page.claimExcludes ?? [];
+}
+
+/**
+ * The mask, VISIBLE. It was inert for its whole existence and nothing said so, because an empty mask and a
+ * broken join print the same nothing. A count per page is the cheapest thing that could have caught it.
+ */
+function reportMasks(records) {
+  const masks = records
+    .map((r) => [r.provenance.url, r.target.unknownSubtypes.length])
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1]);
+  process.stdout.write(`  publisher exceptions honoured: ${masks.length} of ${records.length} page(s)\n`);
+  for (const [url, n] of masks.slice(0, 8)) {
+    process.stdout.write(`    ${n} head(s) masked  ${url}\n`);
+  }
+  if (masks.length > 8) process.stdout.write(`    ... and ${masks.length - 8} more\n`);
+}
+
+/** One capture, as a training record. The channel contract and the publisher's claim both come from
+ * elsewhere on purpose -- see the imports. */
+function recordFor(entry) {
+    const capture = entry.capture;
+    const units = evidenceUnits(capture);
+    return {
+      input: {
+        screenReader: capture.screenReader ?? "NVDA",
+        transcript: capture.transcript ?? [],
+        structure: capture.structure ?? {},
+        interaction: capture.interaction ?? {},
+        evidenceUnits: units,
+        evidenceText: captureEvidenceText(capture),
+      },
+      // The SOURCE's claim, carried verbatim. `clean` because W3C publishes these pages as conforming; if
+      // that is ever wrong, it is wrong in W3C's documentation and not in our labelling.
+      // `unknownSubtypes` carries what the publisher did NOT claim. Empty for W3C, whose statement is a
+      // site-wide WCAG 2 AA conformance claim covering every criterion we score -- so `clean` here is the
+      // source's assertion, not our inference. A partially-compliant publisher populates it from
+      // `claimExcludes`, and those records then train no head for which the source said nothing.
+      //
+      // Joined from the CORPUS, not read off the capture. This line was `entry.claimExcludes ?? []` and the
+      // captured file has no such field -- `capture-real-pages.mjs` writes six keys and that is not one of
+      // them -- so every record got `[]` and every masked head trained the page as clean. The mask existed,
+      // was documented, and never once ran. `?? []` is what made it silent: the join failing and the
+      // publisher having no exceptions produced identical output.
+      target: {
+        label: "clean", criteria: [], subtypes: [],
+        unknownSubtypes: claimExcludesFor(entry),
+      },
+      provenance: {
+        realismTier: true,
+        // `family` is REQUIRED, and it groups records so the split cannot separate pages that share a
+        // template. Derived from the tutorial topic (`images`, `tables`, `forms`, ...) for exactly the
+        // reason the corpus split calibration and training by source family: `images/decorative` and
+        // `images/informative` share navigation, a footer and a page shell, so putting one in training and
+        // the other in a hold-out would measure the model against structure it had already seen.
+        family: `realism-${new URL(capture.url).pathname.split("/").filter(Boolean)[2] ?? "misc"}`,
+        caseId: new URL(capture.url).pathname.replace(/\/+$/, "").split("/").slice(-2).join("-"),
+        variant: "good",
+        url: capture.url,
+        publishedClaim: entry.publishedClaim,
+        claimSource: entry.claimSource,
+        demonstrates: entry.demonstrates,
+        capturedAt: entry.capturedAt,
+      },
+    };
+}
+
 function main() {
   const entries = readdirSync(CORPUS)
     .filter((f) => f.endsWith(".json") && f !== "abstention-sweep.json")
@@ -124,46 +209,7 @@ function main() {
     process.exit(2);
   }
 
-  const records = usable.map((entry) => {
-    const capture = entry.capture;
-    const units = evidenceUnits(capture);
-    return {
-      input: {
-        screenReader: capture.screenReader ?? "NVDA",
-        transcript: capture.transcript ?? [],
-        structure: capture.structure ?? {},
-        interaction: capture.interaction ?? {},
-        evidenceUnits: units,
-        evidenceText: captureEvidenceText(capture),
-      },
-      // The SOURCE's claim, carried verbatim. `clean` because W3C publishes these pages as conforming; if
-      // that is ever wrong, it is wrong in W3C's documentation and not in our labelling.
-      // `unknownSubtypes` carries what the publisher did NOT claim. Empty for W3C, whose statement is a
-      // site-wide WCAG 2 AA conformance claim covering every criterion we score -- so `clean` here is the
-      // source's assertion, not our inference. A partially-compliant publisher populates it from
-      // `claimExcludes`, and those records then train no head for which the source said nothing.
-      target: {
-        label: "clean", criteria: [], subtypes: [],
-        unknownSubtypes: entry.claimExcludes ?? [],
-      },
-      provenance: {
-        realismTier: true,
-        // `family` is REQUIRED, and it groups records so the split cannot separate pages that share a
-        // template. Derived from the tutorial topic (`images`, `tables`, `forms`, ...) for exactly the
-        // reason the corpus split calibration and training by source family: `images/decorative` and
-        // `images/informative` share navigation, a footer and a page shell, so putting one in training and
-        // the other in a hold-out would measure the model against structure it had already seen.
-        family: `realism-${new URL(capture.url).pathname.split("/").filter(Boolean)[2] ?? "misc"}`,
-        caseId: new URL(capture.url).pathname.replace(/\/+$/, "").split("/").slice(-2).join("-"),
-        variant: "good",
-        url: capture.url,
-        publishedClaim: entry.publishedClaim,
-        claimSource: entry.claimSource,
-        demonstrates: entry.demonstrates,
-        capturedAt: entry.capturedAt,
-      },
-    };
-  });
+  const records = usable.map(recordFor);
 
   const base = readFileSync(BASE, "utf8").trimEnd().split("\n");
   writeFileSync(OUT, [...base, ...records.map((r) => JSON.stringify(r))].join("\n") + "\n");
@@ -173,6 +219,7 @@ function main() {
   process.stdout.write(`  written:          ${OUT}\n`);
   process.stdout.write(`  median units/rec: ${median(records.map((r) => r.input.evidenceUnits.length))}\n`);
   process.stdout.write(`  rejected as truncated: ${rejected.length} of ${entries.length}\n`);
+  reportMasks(records);
   // A real page with two evidence units would mean the capture failed, not that the page is simple. Kept as
   // a warning rather than promoted to a reject: the truncation gate above is the principled check, and this
   // is a backstop for a capture that failed in a way no sweep recorded.

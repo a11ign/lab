@@ -33,7 +33,9 @@
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { realPageFor } from "../src/training/real-page-corpus.mjs";
 
 // Resolved from THIS module, never from the caller's cwd. A bare "packages/scorer/python/score.py" is
 // right only when you happen to run from the repo root, and `spawned-paths.test.ts` fails the build for
@@ -81,7 +83,51 @@ function scoreOne(entry) {
     // `predictions` is the scorer's own per-criterion verdict at its trained thresholds, BEFORE the
     // abstention gate. That is what would be reported if the page were accepted.
     predicted: Object.entries(record.predictions ?? {}).filter(([, hit]) => hit).map(([c]) => c),
+    // From the CORPUS, because a captured file does not carry the publisher's exceptions. A miss throws
+    // rather than defaulting to "no exceptions" -- see `realPageFor`.
+    claimExcludes: claimExcludesFor(entry),
   };
+}
+
+/** The publisher's declared exceptions for a captured page. Throws on a failed join; see `realPageFor`. */
+function claimExcludesFor(entry) {
+  const url = entry.capture?.url;
+  const page = url ? realPageFor(url) : undefined;
+  if (!page) {
+    throw new Error(`captured page ${url ?? "(no url)"} is not in real-page-corpus.mjs, so what its `
+      + "publisher claims cannot be read. Refusing to assume it claims everything.");
+  }
+  return page.claimExcludes ?? [];
+}
+
+/**
+ * Findings a publisher's own statement CONTRADICTS. Those are the accusations.
+ *
+ * A finding is only a false positive on a criterion the publisher positively CLAIMS. Three cases, and they
+ * need three different answers:
+ *
+ *   claimed     the statement says this conforms -> a finding contradicts it. FALSE POSITIVE.
+ *   disclosed   the statement names this as failing -> the finding is corroborated. Not an error. And not
+ *               scored as a true positive either: we cannot show it is the SAME instance the publisher
+ *               meant, and a statement usually scopes its failures to features ("the interactive polls").
+ *   unmentioned nothing is claimed either way -> unknown. Excluded from both columns.
+ *
+ * This replaced `predicted.length > 0`, which counted any finding at all. That penalised the model for
+ * being RIGHT about a criterion its publisher discloses in writing -- and it forced a workaround, because
+ * only a publisher with an unqualified claim could be a calibration page. Three of thirty-nine qualified.
+ *
+ * `claimExcludes` may be criterion (`"1.4.3"`) or subtype (`"1.1.1:missing-alt"`) granularity while
+ * `predicted` is criterion-only, so a criterion matches if it or any of its subtypes is excluded. Same
+ * semantics as `known_indices` in the trainer, deliberately -- two rules for one question is how they drift.
+ *
+ * A fully-excluded page yields no claimed criteria and so cannot produce a false positive. That is correct:
+ * a publisher who tells us nothing we can check contributes structure to the corpus and no verdict.
+ *
+ * @param {{predicted: string[], claimExcludes?: string[]}} page
+ */
+export function contradictedFindings(page) {
+  const disclosed = new Set((page.claimExcludes ?? []).map((entry) => entry.split(":")[0]));
+  return page.predicted.filter((criterion) => !disclosed.has(criterion));
 }
 
 function main() {
@@ -101,21 +147,26 @@ function main() {
       + `${page.url.replace("https://www.w3.org/WAI/demos/bad/", "")}\n`);
   }
 
-  process.stdout.write("\n  floor   scored  conformant scored  FALSE POSITIVES  inaccessible caught\n");
-  process.stdout.write("  " + "-".repeat(72) + "\n");
+  process.stdout.write("\n  floor   scored  conformant  FALSE POSITIVES  disclosed  inaccessible caught\n");
+  process.stdout.write("  " + "-".repeat(76) + "\n");
   const rows = [];
   for (const floor of CANDIDATE_FLOORS) {
     const accepted = scored.filter((p) => (p.cosine ?? 0) >= floor);
     const conformant = accepted.filter((p) => p.claim === "conformant");
-    // A finding on a page its publisher calls conformant is a false positive by that publisher's claim.
-    const falsePositives = conformant.filter((p) => p.predicted.length > 0).length;
+    // Only findings the publisher's statement CONTRADICTS. See `contradictedFindings`.
+    const falsePositives = conformant.filter((p) => contradictedFindings(p).length > 0).length;
+    // Findings on criteria the publisher itself discloses as failing. Not errors -- reported so a
+    // corroborated finding is visible rather than merely uncounted, which would read as the model
+    // saying nothing on pages where it was in fact agreeing with the publisher.
+    const disclosed = conformant.filter(
+      (p) => p.predicted.length > contradictedFindings(p).length).length;
     const inaccessible = accepted.filter((p) => p.claim === "inaccessible");
     const caught = inaccessible.filter((p) => p.predicted.length > 0).length;
     rows.push({ floor, scored: accepted.length, conformantScored: conformant.length, falsePositives,
-      inaccessibleScored: inaccessible.length, inaccessibleCaught: caught });
+      disclosed, inaccessibleScored: inaccessible.length, inaccessibleCaught: caught });
     process.stdout.write(`  ${String(floor).padEnd(7)} ${String(accepted.length).padEnd(7)} `
-      + `${String(conformant.length).padEnd(18)} ${String(falsePositives).padEnd(16)} `
-      + `${caught} of ${inaccessible.length}\n`);
+      + `${String(conformant.length).padEnd(11)} ${String(falsePositives).padEnd(16)} `
+      + `${String(disclosed).padEnd(10)} ${caught} of ${inaccessible.length}\n`);
   }
 
   const n = scored.length;
@@ -123,8 +174,10 @@ function main() {
     + `about ${(100 / (n + 1)).toFixed(1)}%.\n`);
   process.stdout.write("  Anything finer than that would be arithmetic theatre. Widening the split is what\n"
     + "  makes a real conformal guarantee possible — see ADR 0010.\n");
-  process.stdout.write("\n  The column that decides it is FALSE POSITIVES: those are accusations against pages\n"
-    + "  their own publisher calls conformant.\n");
+  process.stdout.write("\n  The column that decides it is FALSE POSITIVES: findings a publisher's own statement\n"
+    + "  CONTRADICTS. `disclosed` is the opposite -- findings on criteria the publisher itself names as\n"
+    + "  failing, which are corroborated rather than wrong, and are not scored either way because we\n"
+    + "  cannot show they are the same instance the statement meant.\n");
 
   // A scratch model writes to its own file. Overwriting the shipped model's sweep with a candidate's
   // numbers would silently rewrite the measurement that PLAN.md's B4 decision rests on.
@@ -133,4 +186,10 @@ function main() {
   process.stdout.write(`\n  written: ${outPath}\n`);
 }
 
-main();
+// Only when RUN, never on import. `contradictedFindings` is exported so it can be tested, and importing
+// this module used to execute the whole sweep -- spawning the scorer once per page and overwriting
+// `abstention-sweep.json`, the file whose numbers PLAN.md's decisions rest on. Same guard as
+// `capture-screenreader-dataset.mjs:785`.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main();
+}

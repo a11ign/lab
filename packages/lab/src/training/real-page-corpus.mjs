@@ -412,6 +412,38 @@ export function pagesFor(role) {
 }
 
 /**
+ * One url form, used by every comparison against this corpus.
+ *
+ * Trailing slash, case and fragment all removed, because `…/labels` and `…/labels/` are the same page and a
+ * set membership test would happily call them different. Extracted from `assertDisjoint`, which had it as a
+ * local closure -- two normalisers that drift apart is how a lookup starts quietly missing.
+ */
+export function normaliseUrl(url) {
+  return String(url).trim().toLowerCase().replace(/#.*$/, "").replace(/\/+$/, "");
+}
+
+/**
+ * The corpus entry for a captured page, or `undefined`.
+ *
+ * Exists because a CAPTURED file does not carry the publisher's claim details. `capture-real-pages.mjs`
+ * writes six keys -- role, publishedClaim, claimSource, demonstrates, capturedAt, capture -- and
+ * `claimExcludes` is not among them, so anything needing the exceptions must come back here for them.
+ *
+ * That is deliberate rather than an omission to fix. The corpus is the source of truth for what a publisher
+ * claims: a statement gets corrected, or a reading of one turns out wrong, and that must be fixable without
+ * recapturing. Paying an hour of fleet time to correct a typo in a claim is the wrong trade. A capture
+ * records what the screen reader heard; a conformance claim is not that.
+ *
+ * Callers should treat a miss as an ERROR, not as "no exceptions". A url that has drifted -- a redirect, a
+ * publisher restructuring -- would otherwise silently produce an unmasked page, which is the exact failure
+ * this lookup exists to prevent.
+ */
+export function realPageFor(url) {
+  const key = normaliseUrl(url);
+  return REAL_PAGES.find((page) => normaliseUrl(page.url) === key);
+}
+
+/**
  * Refuse any overlap between the three roles.
  *
  * Returns the offending URLs rather than throwing, so a caller can report ALL of them at once — a check
@@ -423,7 +455,7 @@ export function pagesFor(role) {
  * @param {readonly string[]} testUrls  URLs already used as eval fixtures.
  */
 export function assertDisjoint(testUrls) {
-  const norm = (url) => String(url).trim().toLowerCase().replace(/#.*$/, "").replace(/\/+$/, "");
+  const norm = normaliseUrl;
   const test = new Set(testUrls.map(norm));
   const seen = new Map();
   const collisions = [];
