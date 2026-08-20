@@ -630,8 +630,34 @@ def main() -> None:
     # `floor` below is computed over the full `reference`, not the sample, so it was never affected. The
     # truncation only ever corrupted the reference SHIPPED for inference, which is the half that decides
     # whether a real page is called novel.
-    sample = reference[ood_reference_indices(reference.shape[0], torch)].contiguous()
-    neighbours = reference @ reference.t()
+    # Two further corrections, both of which made the reference describe something other than what it
+    # claims. Neither is a rounding detail either.
+    #
+    # **The test split was in it.** `reference` was every record, so 300 of 1,858 rows -- 16% -- described
+    # captures no head ever trained on. "This page resembles what we trained on" is the whole claim, and a
+    # sixth of the evidence for it came from the split held back to check that claim.
+    #
+    # **Records, not page STRUCTURES, set the floor.** The floor is a minimum over nearest-neighbour
+    # similarity, so a cluster of near-identical records gives each of its members a near-twin and the
+    # minimum cannot move. Measured three ways: 19 real pages from one publisher moved it not at all; 12
+    # GOV.UK pages produced NINE identical cosines to four decimal places; and a good/bad pair differing by
+    # one removed `alt` attribute sits at ~0.99 from its own sibling. Since `family` is exactly "records
+    # that share a template", one row per family makes the floor a statement about distinct structures --
+    # which is what it is supposed to mean, and it stops the statistic being gameable by adding duplicates.
+    development_set = set(development_indices)
+    seen_families = set()
+    reference_rows = []
+    for index, record in enumerate(records):
+        if index not in development_set:
+            continue
+        family = record["provenance"]["family"]
+        if family in seen_families:
+            continue
+        seen_families.add(family)
+        reference_rows.append(index)
+    structures = reference[torch.tensor(reference_rows, dtype=torch.long)]
+    sample = structures[ood_reference_indices(structures.shape[0], torch)].contiguous()
+    neighbours = structures @ structures.t()
     neighbours.fill_diagonal_(-1.0)
     floor = float(neighbours.max(dim=1).values.min())
     weights["ood_reference"] = sample
@@ -639,6 +665,10 @@ def main() -> None:
         "method": "knn-cosine-document-embedding",
         "reference": "ood_reference",
         "referenceCount": int(sample.shape[0]),
+        # What the floor is a statement ABOUT, so a reader never has to guess whether it counts records or
+        # structures. It counted records until 2026-08-20, which is why adding duplicates could not move it.
+        "distinctStructures": len(reference_rows),
+        "splits": ["train", "validation"],
         "inDistributionFloor": round(floor, 4),
         "calibration": "derived from the training set's own nearest-neighbour minimum; NOT conformally "
                        "calibrated against a target error rate, because no labelled real-page set exists yet",
