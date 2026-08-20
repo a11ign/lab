@@ -368,9 +368,15 @@ def known_indices(records: list[dict[str, Any]], subtype: str, candidates: list[
     the full-compliance claims cluster almost entirely in accessibility-led documentation sites, which share
     the homogeneity the realism tier exists to break.
     """
+    # Matches a bare CRITERION as well as an exact subtype, because that is the granularity publishers
+    # write in. An accessibility statement says "WCAG 2.4.4 (Level A) - Link Purpose", never
+    # "2.4.4:regex" -- so a criterion-level exception has to mask every subtype under it or it masks
+    # nothing at all, silently, which is the failure mode this whole mask exists to prevent.
+    criterion = subtype.split(":")[0]
+    excluded = {subtype, criterion}
     unknown = {
         index for index in candidates
-        if subtype in records[index]["target"].get("unknownSubtypes", [])
+        if excluded.intersection(records[index]["target"].get("unknownSubtypes", []))
     }
     return [index for index in candidates if index not in unknown]
 
