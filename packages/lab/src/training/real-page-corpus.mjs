@@ -49,6 +49,38 @@
  * ourselves, which would put us back where we started.
  */
 
+/**
+ * HOW A PUBLISHER'S STATEMENT BECOMES A LABEL. The rule, so nobody has to re-derive it per candidate.
+ *
+ * PSBAR 2018 obliges every UK public sector body to publish an accessibility statement, and the EU
+ * (2016/2102) and US Section 508 have equivalents. Almost all of them say "partially compliant" with an
+ * enumerated list of failures, because they are being honest. That reads like a disqualification and is not:
+ *
+ *   1. Does the exception list name any criterion WE score (1.1.1, 1.3.1, 2.4.4, 2.4.6, 3.3.1, 3.3.2,
+ *      4.1.2, 4.1.3)? If not, the page is effectively FULLY claimed for our purposes and `clean` is the
+ *      source's assertion across every head. Verified example: gov.scot is "partially compliant with WCAG
+ *      2.2 AA", and its exceptions are PDF documents and a menu button at 200% magnification -- neither is
+ *      a criterion we assess, so the intersection is EMPTY.
+ *   2. Otherwise, put the intersection in `claimExcludes`. Verified example: the ONS statement names 1.3.1,
+ *      2.4.4, 2.4.6, 3.3.1, 3.3.2 and 4.1.2 -- six of our eight -- so an ONS page is masked for six heads.
+ *
+ * **A heavily masked page is still fully useful**, and that is what makes the pool large. Its evidence
+ * enters the OOD reference, which is what buys structural familiarity and is the entire point of the
+ * realism tier; the mask only removes it from head TRAINING. So the worst case is a page that contributes
+ * structure and asserts nothing, which is exactly what we want from it.
+ *
+ * That inverts the search. It is not "find publishers claiming full compliance" -- those turn out to be
+ * almost entirely accessibility-led DOCUMENTATION sites (W3C's tutorials, the GOV.UK Design System, the
+ * NHS service manual: all verified, all real, all sharing the homogeneity this tier exists to break). It is
+ * "any public sector body", masked honestly. And our eight are all SCREEN-READER criteria while the typical
+ * public-sector failure list is dominated by contrast, PDFs, resize and target size -- so the intersection
+ * is frequently empty anyway.
+ *
+ * Mask at SITE level, conservatively. A statement usually scopes its failures to specific features ("the
+ * interactive polls", "the NSDP data links") and we cannot attribute those per page, so a page without the
+ * feature is masked anyway. That is the cheap direction to be wrong in: it costs labels, not structure.
+ */
+
 /** @typedef {"calibration" | "training"} CorpusRole */
 
 /**
