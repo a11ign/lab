@@ -20,7 +20,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { pagesFor, REAL_PAGES } from "./real-page-corpus.mjs";
-import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
+import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../../worker-fleet/src/worker-http.mjs";
 import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 
 const ROLE = process.argv.find((a) => a.startsWith("--role="))?.slice("--role=".length) ?? null;
@@ -33,9 +33,15 @@ const OUT = resolve(process.cwd(), process.env.REAL_CORPUS_ROOT || "runs/real-pa
 // `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
 // AbortSignal says, and the worker writes its status and body together at the END of a capture.
 // See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
-const CAPTURE_TIMEOUT_MS = 300_000;
 /** Between captures, so a run cannot look like a crawl to the site being fetched. */
 const POLITE_GAP_MS = 2_000;
+
+// Read-through lines to allow on a real page. 600 rather than the worker's 150: the longest transcript in
+// the current real-page corpus is ~145 lines under the old cap AND still reported `maxSteps`, so the true
+// length is unknown and 150 was clearly binding. Generous on purpose -- the deadline is what should end a
+// read-through on a pathological page, not an arbitrary line count, which is the same argument that took
+// MAX_SWEEP_STEPS from 40 to 250.
+const REAL_PAGE_STEPS = 600;
 
 const slug = (url) => url.replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "-").replace(/-+$/g, "");
 
@@ -59,8 +65,18 @@ async function capture(page) {
     // `probeForms` is OFF. These are somebody else's live pages, and the same rule the CLI follows applies
     // with more force here: pressing *Book* on a page we do not own is not a review. `probeFocus` is on —
     // Tab activates nothing.
-    body: { url: page.url, probeForms: false, probeFocus: true },
-    timeoutMs: CAPTURE_TIMEOUT_MS,
+    // `steps` RAISED for real pages. The worker's default is 150 read-through lines, sized for a generated
+    // corpus whose largest page is 2,118 bytes -- and it truncates the transcript of most real pages.
+    // Measured over the 26 shipped real captures: 9 of the 16 model-visible truncations are
+    // `read-through:capped`, i.e. this cap and nothing else. A capped read-through makes the transcript a
+    // PREFIX, and a prefix presented as a transcript is absence reported as evidence.
+    //
+    // Free, for two reasons. `steps` is part of `captureOptions` so changing it invalidates cached
+    // captures -- and real-page captures are never cached, by construction. And the read-through is
+    // separately bounded by `readThroughDeadline`, so a higher cap cannot run longer than the budget
+    // allows; it only stops the cap binding BEFORE the deadline does. A budget is a ceiling, not a cost.
+    body: { url: page.url, probeForms: false, probeFocus: true, steps: REAL_PAGE_STEPS },
+    timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
   });
   const data = response.json ?? {};
   if (data.error) throw new Error(String(data.error).slice(0, 160));

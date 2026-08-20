@@ -35,7 +35,7 @@ import { dirname, join } from "node:path";
 
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
-import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
+import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../../worker-fleet/src/worker-http.mjs";
 
 const WORKER = (process.argv.find((a) => a.startsWith("--worker=")) ?? "").slice("--worker=".length);
 const ROUNDS = Number((process.argv.find((a) => a.startsWith("--rounds=")) ?? "").slice("--rounds=".length) || 20);
@@ -102,7 +102,6 @@ function selfTest() {
  * race was still lost, at 300 s, whatever this number said. `requestJson` is the actual remedy; see
  * worker-http.mjs for the measurement.
  */
-const CAPTURE_HTTP_TIMEOUT_MS = 320_000;
 
 async function captureOnce(base, page) {
   let body;
@@ -110,7 +109,7 @@ async function captureOnce(base, page) {
     const response = await requestJson(`${WORKER}/capture`, {
       method: "POST",
       body: { url: `${base}/${page}`, steps: STEPS },
-      timeoutMs: CAPTURE_HTTP_TIMEOUT_MS,
+      timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
     });
     body = response.json ?? {};
   } catch (error) {

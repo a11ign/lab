@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { captureWithNvda } from "@a11y-witness/nvda-worker";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
-import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
+import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../../worker-fleet/src/worker-http.mjs";
 
 // Drive a live WORKER over HTTP instead of NVDA in-process.
 //
@@ -33,7 +33,6 @@ const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--wor
 // `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
 // AbortSignal says, and the worker writes its status and body together at the END of a capture.
 // See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
-const CAPTURE_TIMEOUT_MS = 300_000;
 
 const STEPS = 40; // tutorial pages are tiny; a small read-through cap keeps it fast
 const pagesDir = join(dirname(fileURLToPath(import.meta.url)), "../eval/pages/tutorials");
@@ -179,7 +178,7 @@ async function captureOnce(check) {
   const response = await requestJson(`${WORKER.replace(/\/$/, "")}/capture`, {
     method: "POST",
     body: { url: `${pagesBase}/${check.page}`, steps: STEPS, probeForms: !!check.probeForms },
-    timeoutMs: CAPTURE_TIMEOUT_MS,
+    timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
   });
   const body = response.json ?? {};
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(body).slice(0, 200)}`);

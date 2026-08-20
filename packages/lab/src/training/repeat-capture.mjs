@@ -19,7 +19,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { isTransient } from "./capture-decisions.mjs";
-import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
+import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../../worker-fleet/src/worker-http.mjs";
 import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 import { captureIsSelfConsistent } from "@a11y-witness/evidence/verify";
 
@@ -48,7 +48,6 @@ const BROWSER = arg("browser");
 // `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
 // AbortSignal says, and the worker writes its status and body together at the END of a capture.
 // See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
-const CAPTURE_TIMEOUT_MS = 300_000;
 // Every capture is kept, not just summarised. The first real run of this harness found two degenerate
 // captures and I could not say WHY, because the diagnostics -- stopReason, documentReady,
 // readThroughRetry -- had been thrown away with the response. A harness that reports instability
@@ -111,7 +110,7 @@ async function captureOnce() {
       ...(PROBE_FORMS ? { probeForms: true } : {}),
       ...(TASK ? { task: TASK } : {}),
     },
-    timeoutMs: CAPTURE_TIMEOUT_MS,
+    timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
   });
   const body = response.json ?? {};
   if (!response.ok || body.error) {

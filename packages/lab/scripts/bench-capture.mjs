@@ -11,7 +11,7 @@
 // reading less is not an improvement, and a suite that only asserts "it ran" stays green
 // while the evidence turns to garbage (see CLAUDE.md).
 import { setTimeout as sleep } from "node:timers/promises";
-import { requestJson } from "../../worker-fleet/src/worker-http.mjs";
+import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mjs";
 
 const [worker, page, countArg] = process.argv.slice(2);
 if (!process.argv.includes("--from-disk") && (!worker || !page)) {
@@ -23,7 +23,6 @@ const COUNT = Number(countArg || 3);
 // `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
 // AbortSignal says, and the worker writes its status and body together at the END of a capture.
 // See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
-const CAPTURE_TIMEOUT_MS = 300_000;
 const BETWEEN_MS = 1_000;
 
 async function capture(url) {
@@ -31,7 +30,7 @@ async function capture(url) {
   const response = await requestJson(worker.replace(/\/$/, "") + "/capture", {
     method: "POST",
     body: { url, task: "Benchmark the capture cost" },
-    timeoutMs: CAPTURE_TIMEOUT_MS,
+    timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
   });
   const body = response.json ?? {};
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(body)}`);

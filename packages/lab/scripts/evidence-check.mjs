@@ -29,7 +29,7 @@ import { titleOf } from "@a11y-witness/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";
 import { hasUsableCaptureFiles } from "../src/training/capture-resume.mjs";
 import { hostPagesBase } from "../../worker-fleet/src/host-address.mjs";
-import { requestJson } from "../../worker-fleet/src/worker-http.mjs";
+import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mjs";
 
 const DATASET = resolve(process.cwd(), "runs/screenreader-dataset");
 const BASELINE = resolve(DATASET, "captures");
@@ -37,7 +37,6 @@ const OUT = resolve(DATASET, "evidence-check");
 // `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
 // AbortSignal says, and the worker writes its status and body together at the END of a capture.
 // See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
-const CAPTURE_TIMEOUT_MS = 300_000;
 const DEFAULT_SAMPLE = 24;
 
 const [worker] = process.argv.slice(2).filter((a) => !a.startsWith("--"));
@@ -133,7 +132,7 @@ async function capture(testCase, variant) {
       probeTables: !!testCase.probeTables,
       ...(browser ? { browser } : {}),
     },
-    timeoutMs: CAPTURE_TIMEOUT_MS,
+    timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
   });
   const body = response.json ?? {};
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(body).slice(0, 200)}`);
