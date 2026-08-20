@@ -38,7 +38,8 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { evidenceUnits, captureEvidenceText } from "@a11y-witness/scorer/evidence-units";
+import { evidenceUnits, captureEvidenceText, producerFeedsModel } from "@a11y-witness/scorer/evidence-units";
+import { captureWasTruncated } from "@a11y-witness/evidence/verify";
 
 // Resolved from this module, so the script works from any directory. `--out=` is still taken relative to
 // the repo root rather than the cwd, so two runs from different shells cannot write to two places.
@@ -66,6 +67,37 @@ const OUT = resolve(REPO,
 // join, and nothing would report that." It was right, and it was above the table that broke it. The
 // duplication was the defect; the mismatch was only its symptom.
 
+/**
+ * The training captures whose MODEL-VISIBLE evidence is complete, rejecting the rest out loud.
+ *
+ * Rejects rather than warns, because truncation and absence are the same bytes. A capture whose heading
+ * sweep starved reports the headings it reached, and a record built from it teaches the scorer that a real
+ * page has that many headings -- which is how "real pages have no lists" becomes a learned feature. That is
+ * the exact spurious correlation a real-page corpus exists to remove, so it cannot be left to a human
+ * noticing a WARNING line.
+ *
+ * Scoped to the channels the model reads (`producerFeedsModel`). Unscoped, ALL 26 captures in this corpus
+ * are truncated somewhere -- `link`, `list` and `graphic` sweeps starve first on a big page and none of them
+ * is a model input, so gating on them would discard everything for evidence nobody consumes. Scoped, 5 of
+ * 19 training captures survive. That number is the honest state of the corpus, not a knob: the dominant
+ * reason is `read-through:capped`, i.e. the 150-line `DEFAULT_STEPS` cap, which was sized for the generated
+ * corpus and truncates the transcript of most real pages.
+ */
+function completeCaptures(entries) {
+  const rejected = [];
+  const usable = entries.filter((entry) => {
+    const gaps = captureWasTruncated(entry.capture?.diagnostics).filter((g) => producerFeedsModel(g.channel));
+    if (!gaps.length) return true;
+    rejected.push({ url: entry.capture?.url ?? "(no url recorded)", gaps });
+    return false;
+  });
+  for (const { url, gaps } of rejected) {
+    const named = [...new Set(gaps.map((g) => `${g.channel}:${g.kind}`))].sort().join(" ");
+    process.stdout.write(`  REJECTED (truncated) ${url}\n      ${named}\n`);
+  }
+  return { usable, rejected };
+}
+
 function main() {
   const entries = readdirSync(CORPUS)
     .filter((f) => f.endsWith(".json") && f !== "abstention-sweep.json")
@@ -77,7 +109,14 @@ function main() {
     process.exit(2);
   }
 
-  const records = entries.map((entry) => {
+  const { usable, rejected } = completeCaptures(entries);
+  if (!usable.length) {
+    process.stderr.write(`every training capture in ${CORPUS} is truncated on a channel the model reads. `
+      + `Recapture before building a realism tier -- see the budget ladder in capture-real-pages.mjs.\n`);
+    process.exit(2);
+  }
+
+  const records = usable.map((entry) => {
     const capture = entry.capture;
     const units = evidenceUnits(capture);
     return {
@@ -118,7 +157,10 @@ function main() {
   process.stdout.write(`  realism records:  ${records.length}  (all label=clean, from W3C's own claim)\n`);
   process.stdout.write(`  written:          ${OUT}\n`);
   process.stdout.write(`  median units/rec: ${median(records.map((r) => r.input.evidenceUnits.length))}\n`);
-  // A real page with two evidence units would mean the capture failed, not that the page is simple.
+  process.stdout.write(`  rejected as truncated: ${rejected.length} of ${entries.length}\n`);
+  // A real page with two evidence units would mean the capture failed, not that the page is simple. Kept as
+  // a warning rather than promoted to a reject: the truncation gate above is the principled check, and this
+  // is a backstop for a capture that failed in a way no sweep recorded.
   const thin = records.filter((r) => r.input.evidenceUnits.length < 5);
   if (thin.length) {
     process.stdout.write(`  WARNING: ${thin.length} record(s) have fewer than 5 evidence units — check the `
