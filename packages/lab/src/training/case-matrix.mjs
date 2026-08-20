@@ -1697,49 +1697,14 @@ export function signalMatches(capture, signal) {
   return false;
 }
 
-function appendTextUnits(units, channel, values) {
-  for (const text of values || []) {
-    if (typeof text === "string" && text.length > 0) units.push({ channel, text });
-  }
-}
-
-function appendChangeUnits(units, channel, changes) {
-  for (const { control, after } of changes || []) {
-    const text = control + " -> " + after;
-    if (text.length > 0) units.push({ channel, text });
-  }
-}
-
-export function evidenceUnits(capture) {
-  const units = [];
-  appendTextUnits(units, "transcript", capture.transcript);
-  appendTextUnits(units, "heading-navigation", capture.structure?.headings);
-  // `landmarks` is deliberately NOT a model feature.
-  //
-  // Whether the landmark sweep reaches a landmark that ENCLOSES the caret depends on where the previous
-  // sweep left it, and that varies. Measured on the same unchanged page: `[]` in one capture and
-  // `["Cycling guide"]` (the h1, which is what NVDA announces on entering `main`) in the next. Fed to
-  // the encoder, that swung a CONFORMANT page's 3.3.2 score from 0.004 to 0.39 across a 0.35 threshold,
-  // so the same page was judged clean once and failing once -- on two acceptance cases.
-  //
-  // Anchoring does not rescue it: measured over three runs per page it left one page still varying
-  // (1 of 3) and made another LOSE a landmark it had previously found. The field cannot currently be
-  // both deterministic and complete, so it must not be an input to a scorer.
-  //
-  // This is the same call the exporter already makes in excluding `1.3.1:missing-landmark`, for the same
-  // stated reason -- "not a reliably inferable screen-reader announcement". The field stays in the
-  // capture and stays available to the dataset signals, which read `capture.structure.landmarks`
-  // directly (`structureIsEmpty`) and are unaffected; and `structureCrossCheck` now reports, per
-  // capture, whether the sweep was complete.
-  appendTextUnits(units, "form-navigation", capture.structure?.formFields);
-  appendTextUnits(units, "table-cell-navigation", capture.structure?.tableCells);
-  appendTextUnits(units, "control-navigation", capture.interaction?.controls);
-  appendChangeUnits(units, "state-change", capture.interaction?.stateChanges);
-  appendChangeUnits(units, "form-change", capture.interaction?.formChanges);
-  appendTextUnits(units, "post-submit-navigation", capture.interaction?.postSubmitFields);
-  return units;
-}
-
-export function captureEvidenceText(capture) {
-  return evidenceUnits(capture).map(({ text }) => text).join("\n");
-}
+// `evidenceUnits` and `captureEvidenceText` MOVED to `@a11y-witness/scorer/evidence-units`.
+//
+// They define the model's input contract -- which capture field becomes evidence, under which channel name
+// -- and the featurizer embeds the channel name as tokens in every feature vector, versioned by
+// FEATURE_SCHEMA_VERSION. So the contract has to version with the WEIGHTS, not with this file.
+//
+// Living here is why it got duplicated: the table sat inside a generator of SYNTHETIC cases, so a consumer
+// that needed units for REAL pages wrote its own and the two silently disagreed on seven channel names.
+// Re-exported rather than repointed at every call site, because `signalMatches` and `CASES` come from here
+// too and one import per consumer is the smaller change.
+export { evidenceUnits, captureEvidenceText } from "@a11y-witness/scorer/evidence-units";

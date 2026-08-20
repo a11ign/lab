@@ -38,6 +38,8 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { evidenceUnits, captureEvidenceText } from "@a11y-witness/scorer/evidence-units";
+
 // Resolved from this module, so the script works from any directory. `--out=` is still taken relative to
 // the repo root rather than the cwd, so two runs from different shells cannot write to two places.
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
@@ -47,44 +49,22 @@ const OUT = resolve(REPO,
   process.argv.find((a) => a.startsWith("--out="))?.slice("--out=".length)
   ?? "runs/screenreader-dataset/with-realism.jsonl");
 
-/**
- * Which capture field feeds which evidence channel. A table rather than a run of `push` calls: the
- * channel names must match the generator's exactly or the realism records are featurised into different
- * channels from the 2,002 they join, and nothing would report that — the featurizer would simply see
- * channels it had never been trained on.
- */
-const STRUCTURE_CHANNELS = [
-  ["heading-navigation", "headings"],
-  ["landmark-navigation", "landmarks"],
-  ["form-field-navigation", "formFields"],
-  ["link-navigation", "links"],
-  ["list-navigation", "lists"],
-  ["graphic-navigation", "graphics"],
-  ["table-cell-navigation", "tableCells"],
-];
-
-/** Interaction fields carry a before/after pair, so they read as "control -> what was announced". */
-const CHANGE_CHANNELS = [
-  ["state-change", "stateChanges"],
-  ["form-change", "formChanges"],
-];
-
-/** The evidence-unit shape the featurizer expects, built the same way the generator builds it. */
-function evidenceUnits(capture) {
-  const units = [];
-  const push = (channel, values) => {
-    for (const text of values ?? []) if (text) units.push({ channel, text });
-  };
-  push("read-through", capture.transcript);
-  for (const [channel, field] of STRUCTURE_CHANNELS) push(channel, capture.structure?.[field]);
-  push("post-submit-fields", capture.interaction?.postSubmitFields);
-  for (const [channel, field] of CHANGE_CHANNELS) {
-    for (const change of capture.interaction?.[field] ?? []) {
-      if (change?.after) units.push({ channel, text: `${change.control} -> ${change.after}` });
-    }
-  }
-  return units;
-}
+// Channels come from `@a11y-witness/scorer/evidence-units` -- imported at the top -- and are NOT redefined
+// here. This file used to carry its own table, and the two disagreed in three separate ways at once:
+//
+//   channel names   `read-through` vs `transcript`, `form-field-navigation` vs `form-navigation`,
+//                   `post-submit-fields` vs `post-submit-navigation`
+//   membership      `control-navigation` missing; `landmark`/`link`/`list`/`graphic-navigation` invented
+//   evidenceText    built as `[channel] text` when every other producer joins text alone (`score.py:103`)
+//
+// The featurizer embeds `f"{channel}: {text}"`, so four channel tokens appeared only on real records and
+// three only on synthetic ones -- a linear head could separate the two populations on channel names alone.
+// A systematic shortcut feature, in the corpus meant to REMOVE shortcut features.
+//
+// The docblock that used to sit here stated the requirement exactly: "the channel names must match the
+// generator's exactly or the realism records are featurised into different channels from the 2,002 they
+// join, and nothing would report that." It was right, and it was above the table that broke it. The
+// duplication was the defect; the mismatch was only its symptom.
 
 function main() {
   const entries = readdirSync(CORPUS)
@@ -107,7 +87,7 @@ function main() {
         structure: capture.structure ?? {},
         interaction: capture.interaction ?? {},
         evidenceUnits: units,
-        evidenceText: units.map((u) => `[${u.channel}] ${u.text}`).join("\n"),
+        evidenceText: captureEvidenceText(capture),
       },
       // The SOURCE's claim, carried verbatim. `clean` because W3C publishes these pages as conforming; if
       // that is ever wrong, it is wrong in W3C's documentation and not in our labelling.
