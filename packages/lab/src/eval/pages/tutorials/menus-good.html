@@ -8,8 +8,17 @@
   <ul>
     <li><a href="/" aria-current="page">Home</a></li>
     <li><a href="/products">Products</a></li>
-    <li><button type="button" aria-expanded="false">Support</button>
-      <ul><li><a href="/help">Help center</a></li><li><a href="/contact">Contact</a></li></ul></li>
+    <!-- A WORKING fly-out. `aria-expanded` used to be here with no script and an unhidden submenu, which
+         made it a false statement: the panel was always visible, so "collapsed" was never true and
+         activating the button changed nothing. That is the exact evidence signature of a real
+         4.1.2 state-change failure, and the trained scorer reported this ground-truth-conformant page as
+         failing 4.1.2 at 0.9873 -- correctly, for a defect nobody meant to author. The pair here tests
+         NAMING (bad = unnamed icon button), so the disclosure state was incidental and wrong.
+         Same shape as disclosure-good.html and the generated corpus's conformant disclosure: toggle
+         `aria-expanded` AND the panel's `hidden`, so the announced state matches reality. -->
+    <li><button type="button" aria-expanded="false" aria-controls="support-menu"
+          onclick="var x=this.getAttribute('aria-expanded')==='true';this.setAttribute('aria-expanded',String(!x));document.getElementById('support-menu').hidden=x;">Support</button>
+      <ul id="support-menu" hidden><li><a href="/help">Help center</a></li><li><a href="/contact">Contact</a></li></ul></li>
   </ul>
 </nav>
 <main><h1>Home</h1><p>Welcome to Acme.</p></main>
