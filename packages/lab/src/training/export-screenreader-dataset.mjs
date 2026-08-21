@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import {
   captureEvidenceText,
+  CASES,
   evidenceUnits,
   signalMatches,
 } from "./case-matrix.mjs";
@@ -158,6 +159,72 @@ function record(testCase, variant, capture) {
   };
 }
 
+/** Stable JSON, so a key-order difference cannot read as a changed value. */
+function canonicalJson(value) {
+  if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
+  if (value && typeof value === "object") {
+    return "{" + Object.keys(value).sort().map((k) => JSON.stringify(k) + ":" + canonicalJson(value[k])).join(",") + "}";
+  }
+  return JSON.stringify(value ?? null);
+}
+
+/**
+ * Does the manifest still describe the cases the code defines?
+ *
+ * THE EXPORT READS THE MANIFEST, NOT `CASES`, and that indirection has now cost two full cycles in one
+ * session. `probeFocus: true` was added to a case and the capture ran without the probe; then the case's
+ * `subtype` was corrected and the export still emitted the old one, producing the key
+ * `2.1.2:2.1.2:focus-trapped` that `rules:gate` rejected from both sides at once. Both times every check
+ * was green, because the manifest and the captures agreed with each other perfectly -- they were simply
+ * describing case definitions that no longer existed.
+ *
+ * Which of the two is authoritative is genuinely ambiguous, so this REPORTS rather than picking: the
+ * manifest is what the captures were taken under, and `CASES` is what the code now means. A label that
+ * disagrees with the code is not a label anyone can act on, so it fails and names the fields.
+ *
+ * `pages` is manifest-only (it records where the files were written), and the probe flags are compared
+ * because they decide what evidence the capture even contains -- that was the first of the two faults.
+ */
+function assertManifestMatchesCases(manifest) {
+  const defined = new Map(CASES.map((testCase) => [testCase.id, testCase]));
+  // A manifest that shares NO id with `CASES` is not a stale corpus, it is a different case set -- a test
+  // fixture, or an archived corpus exported deliberately via DATASET_ROOT. Comparing it would reject a
+  // supported use, and "every id is missing" is not the drift this guards against.
+  //
+  // Said out loud rather than returned in silence, because a guard that skips quietly is indistinguishable
+  // from one that never ran -- the mistake `refreshBrowseBuffer` made while three green checks vouched for
+  // it. The real corpus shares 1,062 ids, so this branch cannot hide a stale manifest.
+  const overlap = manifest.cases.filter((entry) => defined.has(entry.id)).length;
+  if (overlap === 0) {
+    console.log("Manifest shares no case id with CASES (" + manifest.cases.length
+      + " entries); not comparing definitions.");
+    return;
+  }
+  const drifted = [];
+  for (const entry of manifest.cases) {
+    const testCase = defined.get(entry.id);
+    if (!testCase) { drifted.push(entry.id + ": in the manifest, not in CASES"); continue; }
+    for (const field of Object.keys(entry)) {
+      if (field === "pages") continue;
+      const was = canonicalJson(entry[field]);
+      const now = canonicalJson(testCase[field]);
+      if (was !== now) drifted.push(`${entry.id}.${field}: manifest=${was} CASES=${now}`);
+    }
+  }
+  for (const id of defined.keys()) {
+    if (!manifest.cases.some((entry) => entry.id === id)) drifted.push(id + ": in CASES, not in the manifest");
+  }
+  if (!drifted.length) return;
+  const NAMED = 8; // enough to see the pattern; the count tells you the scale
+  throw new Error("The manifest describes case definitions that no longer match CASES, so the export "
+    + "would label captures using the old ones.\n  "
+    + drifted.slice(0, NAMED).join("\n  ")
+    + (drifted.length > NAMED ? `\n  ... and ${drifted.length - NAMED} more` : "")
+    + "\nRegenerate it: node packages/lab/src/training/generate-screenreader-dataset.mjs"
+    + "\n(Page files are rewritten byte-identically unless a page actually changed, so this does not "
+    + "invalidate captures on its own.)");
+}
+
 function exportCases(manifest) {
   const records = [];
   const summary = { observed: 0, skipped: 0, invalid: 0, excluded: 0, records: 0, reasons: {} };
@@ -194,6 +261,7 @@ function main() {
     throw new Error("Missing " + MANIFEST_PATH + ". Run npm run training:generate first.");
   }
   const manifest = readJson(MANIFEST_PATH);
+  assertManifestMatchesCases(manifest);
   const { records, summary } = exportCases(manifest);
   writeFileSync(OUTPUT_PATH, records.length ? records.join("\n") + "\n" : "", "utf8");
   const summaryPath = OUTPUT_PATH.replace(/\.jsonl$/i, ".summary.json");
