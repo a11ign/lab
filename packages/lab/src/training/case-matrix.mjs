@@ -131,6 +131,14 @@ function pair({
   bad,
   probeForms = false,
   probeTables = false,
+  // The FOCUS probe, and the reason it is opt-in per case rather than always-on: `focusOrder` costs ~8 s on
+  // top of a ~12 s capture, and a capture must never pay for evidence nobody asked for.
+  //
+  // It went unforwarded until 2026-08-21 and the cost was invisible: `focusOrder` is absent from all 4,899
+  // corpus captures, so every criterion reading it — 2.1.2, 2.4.1, 2.4.3, 2.1.1, 3.2.1, 2.1.4 — was
+  // unassessable there. 2.1.2 was the expensive one: `rules.ts` has shipped a keyboard-trap rule the whole
+  // time, and `rules:gate` could never once fire it.
+  probeFocus = false,
   family = id,
   subtype = null,
   // Criteria this case ALSO breaks. `pair` names every field it forwards, so a case declaring
@@ -151,6 +159,7 @@ function pair({
     badSignal,
     probeForms,
     probeTables,
+    probeFocus,
     good,
     bad,
   };
@@ -1468,6 +1477,49 @@ const CALIBRATION_CASES = [
 
 cases.push(...CALIBRATION_CASES);
 
+// A single targeted case rather than a family: 2.1.2 needs exactly one pair to become validatable, and
+// it is pushed here beside the other explicit pushes rather than buried in a generated block.
+cases.push(
+  pair({
+    id: "keyboard-trap-postcode",
+    criterion: "2.1.2",
+    subtype: "2.1.2:focus-trapped",
+    // THE FIRST CASE FOR A RULE THAT ALREADY SHIPPED. `addKeyboardTrap` has been in `rules.ts` the whole
+    // time and had never once fired against known evidence: no case targeted 2.1.2, it was absent from
+    // `rule-ownership.json` so `rules:gate` did not cover it, and it reads `focusOrder`, which no corpus
+    // capture carried because `probeFocus` was never forwarded through the dataset path. Surfaced by
+    // `criteriaAssessableFrom` on the day that function was added.
+    //
+    // A trap is TOTAL in a way most failures are not: a keyboard user who cannot leave a control cannot
+    // use the rest of the page at all. WCAG treats 2.1.2 as non-interference (§5.2.5) — it applies whether
+    // or not the content is relied upon.
+    task: "Fill in the delivery details.",
+    source: "WCAG 2.2 SC 2.1.2 No Keyboard Trap; F10 (failure of 2.1.2 due to a component trapping focus)",
+    mutation: "A keydown handler on the postcode field cancels Tab and refocuses itself, so focus enters "
+      + "the field and can never leave it.",
+    // Read from the PROBE's own `stalled` flag, not re-derived from the stop list the rule reasons over —
+    // see `focusIsTrapped`. Two independent expressions, or the gate compares the rule with itself.
+    badSignal: { type: "focus-trapped" },
+    good: page({
+      title: "Delivery details",
+      heading: "Delivery details",
+      body: "<form><label for=\"a\">Full name</label><input id=\"a\" name=\"a\"><label for=\"b\">Email</label><input id=\"b\" name=\"b\"><label for=\"c\">Postcode</label><input id=\"c\" name=\"c\"><label for=\"d\">Phone</label><input id=\"d\" name=\"d\"><label for=\"e\">Notes</label><input id=\"e\" name=\"e\"></form>",
+    }),
+    bad: page({
+      title: "Delivery details",
+      heading: "Delivery details",
+      body: "<form><label for=\"a\">Full name</label><input id=\"a\" name=\"a\"><label for=\"b\">Email</label><input id=\"b\" name=\"b\"><label for=\"c\">Postcode</label><input id=\"c\" name=\"c\"><label for=\"d\">Phone</label><input id=\"d\" name=\"d\"><label for=\"e\">Notes</label><input id=\"e\" name=\"e\"></form>",
+      // Traps BOTH directions, because trapping only forward Tab leaves Shift+Tab as an escape and is
+      // therefore not a trap. `preventDefault` then refocus is F10's canonical shape.
+      script: "document.getElementById('c').addEventListener('keydown', (event) => { "
+        + "if (event.key === 'Tab') { event.preventDefault(); event.currentTarget.focus(); } });",
+    }),
+    // The whole point: without this the capture carries no `focusOrder` and the case labels every capture
+    // clean while looking like a passing signal.
+    probeFocus: true,
+  }),
+);
+
 /**
  * Page sizes to spread the corpus across, smallest to largest.
  *
@@ -1494,6 +1546,7 @@ cases.push(...CALIBRATION_CASES);
 export const SCALE_BUCKETS = [
   { links: 0, sections: 0 },
   { links: 6, sections: 4 },
+
 ];
 
 /**
@@ -1683,6 +1736,27 @@ function hasUnnamedFormField(capture) {
   return (capture.structure?.formFields || []).some((field) => LEADING_ROLE.test(field.trim()));
 }
 
+/**
+ * 2.1.2 — Tab stopped moving, read from the PROBE's own observation rather than re-derived.
+ *
+ * `probeFocusOrder` records `stalled: true` in its `focusOrder` diagnostic when it saw the same control
+ * `TRAP_REPEATS` times running and gave up. That is the capture saying "Tab stopped moving" in its own
+ * words, and its comment is explicit that deciding WHY is the judge's business, not the probe's.
+ *
+ * Deliberately a DIFFERENT signal from the one `addKeyboardTrap` reasons over. The rule reads the stop list
+ * — trailing repeats, corroborated against how many controls the form-field sweep found — and if this signal
+ * duplicated that logic then `rules:gate` would be comparing the rule against a copy of itself and calling
+ * the agreement validation. Two independent expressions of the same claim is the whole point of having a
+ * labelled corpus.
+ *
+ * Absent diagnostics mean the probe did not run, which is NOT a trap. `probeFocus` is opt-in per case, so a
+ * case that forgets it would otherwise label every capture clean and look like a passing signal.
+ */
+function focusIsTrapped(capture) {
+  const mark = (capture.diagnostics || []).find((entry) => entry && entry.event === "focusOrder");
+  return mark ? mark.stalled === true : false;
+}
+
 export function signalMatches(capture, signal) {
   if (signal.type === "unnamed-form-field") return hasUnnamedFormField(capture);
   if (signal.type === "regex") return regexMatches(capture, signal);
@@ -1694,6 +1768,7 @@ export function signalMatches(capture, signal) {
   if (signal.type === "validation-error-silent") return validationErrorIsSilent(capture, signal);
   if (signal.type === "placeholder-only") return placeholderOnlyIsPresent(capture, signal);
   if (signal.type === "table-unassociated") return tableHeadersAreUnassociated(capture);
+  if (signal.type === "focus-trapped") return focusIsTrapped(capture);
   return false;
 }
 

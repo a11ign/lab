@@ -156,6 +156,7 @@ function captureOptions(testCase) {
     steps: STEPS,
     probeForms: testCase.probeForms,
     probeTables: testCase.probeTables,
+    probeFocus: testCase.probeFocus,
     reuseScreenReader: REUSE_NVDA,
   };
 }
