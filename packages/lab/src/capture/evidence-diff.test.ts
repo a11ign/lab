@@ -139,3 +139,30 @@ test("comparing NOTHING is not a pass", () => {
   assert.equal(real.examinedNothing, false, "a genuine comparison must not be called unexamined");
   assert.match(real.recommendation, /evidence unchanged/);
 });
+
+test("partial coverage is inconclusive, not a pass", () => {
+  // The guard above fixed the extreme case and left the middle open, and the middle is what happened.
+  // Measured 2026-08-21: a concurrent run stopped the page server two captures into a 48-capture check, and
+  // this reported "2 compared: 2 same ... evidence unchanged — safe to ship WITHOUT invalidating the cache"
+  // and exited 0. The skip note was printed and accurate; the verdict above it still said ship.
+  //
+  // The sample is stratified one case per family, so an uncompared capture is a family with no opinion
+  // attached -- while the question being answered is "may I keep 2,122 cached captures?".
+  const same = () => ({ comparison: compareCapture(capture(), capture()) });
+  const skipped = () => ({ comparison: { verdict: "SKIPPED", changes: [], phrases: null } as never });
+
+  const partial = summarise([same(), same(), ...Array.from({ length: 46 }, skipped)]);
+  assert.equal(partial.compared, 2);
+  assert.equal(partial.attempted, 48, "skipped captures stay in the denominator — they were asked for");
+  assert.equal(partial.inconclusive, true, "2 of 48 must never read as a verdict");
+  assert.match(partial.recommendation, /INCONCLUSIVE — only 2 of 48/);
+  assert.doesNotMatch(partial.recommendation, /safe to ship/,
+    "the exact sentence that made this dangerous");
+
+  // And the other direction, because a guard only checked on the failing path is how the first one
+  // shipped half-done: a fully compared sample must still be able to pass.
+  const full = summarise(Array.from({ length: 6 }, same));
+  assert.equal(full.coverage, 1);
+  assert.equal(full.inconclusive, false, "full coverage must still be shippable");
+  assert.match(full.recommendation, /evidence unchanged/);
+});

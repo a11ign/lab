@@ -139,14 +139,34 @@ export function summarise(results) {
   // silent — it just did not cover examining NOTHING, which is the extreme case rather than a
   // different one.
   const examinedNothing = compared === 0;
+  // PARTIAL COVERAGE IS NOT A PASS EITHER, and the comment above stopped one step short of saying so:
+  // it fixed the extreme (nothing compared) and left the middle open. Measured 2026-08-21 -- a concurrent
+  // run stopped the page server 2 captures in, and this reported
+  //
+  //     2 compared: 2 same, 0 drift, 0 changed
+  //     evidence unchanged -- safe to ship WITHOUT invalidating the cache
+  //
+  // on 2 of 48, exiting 0. The skip note was printed and true, and the verdict above it still said ship.
+  //
+  // The sample is STRATIFIED one case per family precisely so no family goes unexamined, so a skipped
+  // capture is not a smaller sample -- it is a family about which this tool now has no opinion, while
+  // answering a question ("may I keep 2,122 cached captures?") whose wrong answer is expensive. Full
+  // coverage or no verdict; a re-run costs minutes.
+  const attempted = compared + counts.SKIPPED + counts.REJECTED;
+  const coverage = attempted ? compared / attempted : 0;
+  const inconclusive = compared === 0 || compared < attempted;
   return {
-    counts, compared, examinedNothing,
+    counts, compared, attempted, coverage, inconclusive, examinedNothing,
     evidenceChanged: counts.CHANGED > 0,
     // Named threshold rather than a bare number: below this, drift is NVDA being NVDA.
     driftIsWidespread: driftShare > WIDESPREAD_DRIFT_SHARE,
     recommendation: (examinedNothing
       ? "NOTHING WAS COMPARED — this is not a pass. Every capture failed or was excluded, so the "
         + "evidence is UNKNOWN. Check the worker is reachable and the dataset pages are being served."
+      : inconclusive
+        ? `INCONCLUSIVE — only ${compared} of ${attempted} captures could be compared, so whole families `
+          + "went unexamined and this cannot say whether the evidence moved. Fix the cause below and re-run; "
+          + "do NOT read the comparisons that did land as a verdict on the ones that did not."
       : counts.CHANGED > 0
         ? "evidence CHANGED — triage each one: a field a signal reads may have moved. If real, bump CAPTURE_PROTOCOL_VERSION and recapture."
         : driftShare > WIDESPREAD_DRIFT_SHARE

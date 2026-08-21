@@ -279,10 +279,11 @@ async function main() {
   process.stdout.write(`${summary.recommendation}\n`);
   process.stdout.write(`Report: ${resolve(OUT, "report.json")}\n`);
   // Exit code is the contract, same as the other gates: 0 safe to ship, 1 evidence changed,
-  // 2 could not answer. `examinedNothing` MUST NOT exit 0: a run where every capture failed
-  // used to report "evidence unchanged — safe to ship" and succeed, which is the exact shape
-  // of a check that reports success having examined nothing.
-  process.exit(summary.examinedNothing ? 2 : summary.evidenceChanged ? 1 : 0);
+  // 2 could not answer. `inconclusive` MUST NOT exit 0, and that now covers PARTIAL coverage as well as
+  // none: this exited 0 with "safe to ship" having compared 2 of 48, because a concurrent run stopped the
+  // page server two captures in. The stratified sample means an uncompared capture is an unexamined
+  // FAMILY, so a verdict drawn from the ones that landed says nothing about the ones that did not.
+  process.exit(summary.inconclusive ? 2 : summary.evidenceChanged ? 1 : 0);
 }
 
 
