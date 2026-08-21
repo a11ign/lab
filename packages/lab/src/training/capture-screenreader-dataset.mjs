@@ -427,7 +427,20 @@ async function cachedOrCapture(ctx, testCase) {
   if (!CACHE) return { cached: false, phrases: await captureCase(ctx, testCase) };
   const { key } = provenanceFor(ctx, testCase);
   const decision = cacheDecision({ captureRoot: CAPTURE_ROOT, caseId: testCase.id, key });
-  if (!decision.reuse) return { cached: false, phrases: await captureCase(ctx, testCase) };
+  if (!decision.reuse) {
+    // SAY WHY. A miss and a hit were both silent, so a run that recaptured all 1,061 cases looked
+    // identical to one that reused them apart from a count at the end -- and the count says "1 captured"
+    // whether the page changed, the worker was upgraded, or a new capture option re-keyed the corpus by
+    // accident. `cacheDecision` has always computed the reason and nothing read it, which is this repo's
+    // `sweepLog` shape: a diagnostic that exists, is correct, and reaches nobody.
+    //
+    // It also distinguishes the two cases that matter most and are otherwise identical from outside:
+    // "no usable pair on disk" (first capture of a new case -- expected) and "page, options or
+    // environment changed" (something re-keyed evidence that already existed -- check what, before
+    // spending hours of fleet time).
+    console.log("  " + testCase.id + ": capturing (" + decision.reason + ")");
+    return { cached: false, phrases: await captureCase(ctx, testCase) };
+  }
   // Worth saying out loud: the evidence is valid by protocol version, but it was produced by
   // different capture code. Silently reusing it is how you lose track of what made your dataset.
   if (decision.staleCode && decision.staleCode !== ctx.environment?.workerCode) {
