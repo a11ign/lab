@@ -32,8 +32,18 @@ function buildManifest() {
       alsoFails: testCase.alsoFails ?? [],
       subtype: testCase.subtype,
       task: testCase.task,
-      probeForms: testCase.probeForms,
-      probeTables: testCase.probeTables,
+      // Every `probe*` flag, forwarded by NAME rather than enumerated, because enumerating them is how this
+      // exact defect happened three times in one feature. `probeFocus` was added to `pair()` and to the
+      // capture runner and MISSED here -- and since the runner reads the MANIFEST, not `CASES`, the flag
+      // arrived as `undefined`, the focus probe never ran, and both captures came back with an empty
+      // `focusOrder` and no diagnostic at all. A case can ask for a probe and be silently ignored.
+      //
+      // `case-matrix.mjs`'s `pair()` already carries a scar comment about the same thing happening to
+      // `alsoFails`: "the count read 0 while three case definitions carried it". Third instance, same shape,
+      // so this hop stops enumerating and `manifest-probes.test.ts` asserts the round trip for all of them.
+      ...Object.fromEntries(
+        Object.entries(testCase).filter(([key]) => key.startsWith("probe")),
+      ),
       source: testCase.source,
       mutation: testCase.mutation,
       badSignal: testCase.badSignal,

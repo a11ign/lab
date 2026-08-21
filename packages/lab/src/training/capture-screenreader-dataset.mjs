@@ -156,7 +156,18 @@ function captureOptions(testCase) {
     steps: STEPS,
     probeForms: testCase.probeForms,
     probeTables: testCase.probeTables,
-    probeFocus: testCase.probeFocus,
+    // Present ONLY when true, and that is a cache-key decision rather than a style one.
+    //
+    // This object IS the cache key (`cacheKey` hashes it), and `JSON.stringify` omits an `undefined`
+    // property while serialising `false`. So an unconditional `probeFocus: testCase.probeFocus` changed the
+    // key for all 1,061 cases that do not use the probe the moment the generator started writing the flag
+    // explicitly — measured: key `e511cc88941f207a` became `b50b03e6e7be45b0`. That is a full recapture of
+    // 2,122 captures, hours of fleet time, to record nothing new about any of them.
+    //
+    // Omitting it also keeps the key and the request honest with each other, which is what the comment
+    // above this function asks for: we do not send the flag, so we do not key on it, and `capture-core`
+    // reads `!!opts.probeFocus` where absent and false are the same thing.
+    ...(testCase.probeFocus ? { probeFocus: true } : {}),
     reuseScreenReader: REUSE_NVDA,
   };
 }
