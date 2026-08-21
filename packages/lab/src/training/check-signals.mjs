@@ -19,6 +19,7 @@
 // when the disclosure probe changed to re-read the control, `after` stopped being empty and
 // the signal that tested for emptiness silently stopped working.
 import { existsSync, readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { signalMatches } from "./case-matrix.mjs";
 import { hasUsableCaptureFiles } from "./capture-resume.mjs";
@@ -110,24 +111,39 @@ function report(result, testCase) {
   return 1;
 }
 
-const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
-const cases = ONLY ? manifest.cases.filter(({ id }) => id.includes(ONLY)) : manifest.cases;
-if (!cases.length) {
-  console.error("No case matches --only=" + ONLY);
-  process.exit(1);
+/**
+ * Only when RUN, never on import.
+ *
+ * This script's exit code is consumed as a gate -- `release:gate` runs it, and 0/1 decides whether a corpus
+ * run may start. Unguarded, importing it called `process.exit` on the IMPORTING process, so
+ * `node -e "import('./check-signals.mjs')"` -- which CLAUDE.md makes the only real check that an .mjs file
+ * still loads -- terminated with a verdict about a corpus it had nothing to do with.
+ *
+ * It also reads the manifest at module scope, which throws on a fresh checkout with no `runs/`. That turned
+ * "does this file load?" into "is there a corpus on this machine?", and those are different questions.
+ */
+function main() {
+  const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
+  const cases = ONLY ? manifest.cases.filter(({ id }) => id.includes(ONLY)) : manifest.cases;
+  if (!cases.length) {
+    console.error("No case matches --only=" + ONLY);
+    process.exit(1);
+  }
+
+  console.log(`Checking ${cases.length} signal(s) against captures in ${CAPTURE_ROOT}\n`);
+  let failures = 0;
+  const counts = { OK: 0, BLIND: 0, CONTAMINATED: 0, "NO CAPTURES": 0, "STALE CAPTURES": 0 };
+  for (const testCase of cases) {
+    const result = checkCase(testCase);
+    counts[result.verdict] += 1;
+    failures += report(result, testCase);
+  }
+
+  console.log(
+    `\n${counts.OK} discriminating, ${counts.BLIND} blind, ${counts.CONTAMINATED} contaminated, ` +
+      `${counts["NO CAPTURES"]} uncaptured, ${counts["STALE CAPTURES"]} stale`
+  );
+  process.exit(failures === 0 ? 0 : 1);
 }
 
-console.log(`Checking ${cases.length} signal(s) against captures in ${CAPTURE_ROOT}\n`);
-let failures = 0;
-const counts = { OK: 0, BLIND: 0, CONTAMINATED: 0, "NO CAPTURES": 0, "STALE CAPTURES": 0 };
-for (const testCase of cases) {
-  const result = checkCase(testCase);
-  counts[result.verdict] += 1;
-  failures += report(result, testCase);
-}
-
-console.log(
-  `\n${counts.OK} discriminating, ${counts.BLIND} blind, ${counts.CONTAMINATED} contaminated, ` +
-    `${counts["NO CAPTURES"]} uncaptured, ${counts["STALE CAPTURES"]} stale`
-);
-process.exit(failures === 0 ? 0 : 1);
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();

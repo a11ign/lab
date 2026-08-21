@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { CASES } from "./case-matrix.mjs";
 import { ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
@@ -108,4 +109,9 @@ function main() {
   }
 }
 
-main();
+// Only when RUN, never on import. CLAUDE.md makes `node -e "import('./this.mjs')"` the only real check
+// that an .mjs file still loads -- neither lint nor tsc can see a ReferenceError at import -- and unguarded
+// that mandated check EXECUTES this script. A verification you cannot safely run is not a verification.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main();
+}

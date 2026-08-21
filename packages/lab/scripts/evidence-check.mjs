@@ -22,6 +22,7 @@
 // that: absence-is-the-finding families (custom-control) and probe-dependent ones (table-*) are
 // present by construction.
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { compareCapture, readCapture, summarise } from "../src/capture/evidence-diff.mjs";
 import { isEvidence } from "../src/training/capture-decisions.mjs";
@@ -44,11 +45,7 @@ const flag = (name, fallback) => {
   const found = process.argv.find((a) => a.startsWith(`--${name}=`));
   return found ? found.slice(name.length + 3) : fallback;
 };
-if (!worker) {
-  process.stderr.write(
-    "usage: npm run evidence:check -- <worker-url> [--sample=24] [--only=family] [--browser=chrome]\n");
-  process.exit(2);
-}
+
 const sampleSize = Number(flag("sample", DEFAULT_SAMPLE));
 const only = flag("only", null);
 // Absent means "whatever the guest is configured for", so an ordinary run is unaffected. The worker
@@ -122,7 +119,7 @@ function stratify(cases, limit) {
 }
 
 async function capture(testCase, variant) {
-  const pageUrl = `${hostPages}/${testCase.id}/${variant}.html`;
+  const pageUrl = `${pagesBase()}/${testCase.id}/${variant}.html`;
   const response = await requestJson(`${worker.replace(/\/$/, "")}/capture`, {
     method: "POST",
     body: {
@@ -141,12 +138,28 @@ async function capture(testCase, variant) {
 
 // The guest cannot reach the host's localhost, so the pages must be addressed by the host's LAN IP --
 // the same reason leaseWorkerPool hands back a hostAddress.
-const hostPages = hostPagesBase(worker, process.env.DATASET_PAGES_PORT || 5050);
+let hostPagesCache = null;
+/**
+ * The base URL the GUEST fetches dataset pages from — resolved LAZILY, on first use.
+ *
+ * This was `const hostPages = hostPagesBase(worker, ...)` at module scope, and `hostPagesBase` throws when
+ * it cannot work out an address: "cannot work out this host's address as seen from undefined". So merely
+ * IMPORTING this file threw whenever no worker argument was present, which is every import. That made
+ * `node -e "import('./evidence-check.mjs')"` — the only real check this repo has that an .mjs file still
+ * loads — unable to distinguish a broken module from a missing argument.
+ *
+ * Lazy rather than threaded through `capture`, `pageTitle` and `requirePagesServed` as a parameter: three
+ * signatures changed to move one constant is a worse trade than one memoised accessor.
+ */
+function pagesBase() {
+  hostPagesCache ??= hostPagesBase(worker, process.env.DATASET_PAGES_PORT || 5050);
+  return hostPagesCache;
+}
 
 /** The page's own title, so the verification gates can check the capture against it. */
 async function pageTitle(testCase, variant) {
   try {
-    const response = await fetch(`${hostPages}/${testCase.id}/${variant}.html`,
+    const response = await fetch(`${pagesBase()}/${testCase.id}/${variant}.html`,
       { signal: AbortSignal.timeout(15_000) });
     if (!response.ok) return null;
     return titleOf(await response.text());
@@ -176,104 +189,142 @@ async function requirePagesServed(cases) {
     if (await pageTitle(probe, variant) !== null) return;
   }
   process.stderr.write(
-    `Cannot read ${hostPages}/${probe.id}/good.html — the dataset pages are not being served.\n` +
+    `Cannot read ${pagesBase()}/${probe.id}/good.html — the dataset pages are not being served.\n` +
     "Refusing to run: without the page title there is nothing to check a capture AGAINST, so every\n" +
     "capture would be compared ungated and an error page would read as changed evidence.\n" +
     "Start the pages (a run leases them automatically) or set DATASET_BASE_URL.\n");
   process.exit(2);
 }
 
-const allCases = manifestCases();
-const pageOk = allCases.filter(pageIsUnchanged);
-const comparable = pageOk.filter(optionsUnchanged);
-const pageSkipped = allCases.length - pageOk.length;
-const optionSkipped = pageOk.length - comparable.length;
-if (pageSkipped) {
-  process.stdout.write(
-    `${pageSkipped} case(s) excluded: their PAGE has changed since capture, so a diff would measure the page `
-    + `and not the code. Recapture them (npm run training:capture -- --resume) to widen this check.\n`);
-}
-if (optionSkipped) {
-  process.stdout.write(
-    `${optionSkipped} case(s) excluded: the manifest now asks for different PROBES than the recorded capture `
-    + `used, so the fresh capture would be asked a different question. Regenerate the manifest `
-    + `(npm run training:generate) and recapture them.\n`);
-}
-if (!comparable.length) {
-  // Refusing is the honest answer. Reporting SAME over nothing examined is how "verified" comes to mean
-  // "unexamined", which is the failure this repo keeps meeting.
-  process.stderr.write("no case has a capture taken against its CURRENT page — nothing can be compared.\n");
-  process.exit(2);
-}
-const selected = stratify(comparable, sampleSize);
-process.stdout.write(`Evidence check: ${selected.length} case(s), both variants, against ${worker}\n`);
-process.stdout.write(`Pages: ${hostPages}\nBaseline: ${BASELINE}\n\n`);
-
-// Lease the pages the same way a real run does, instead of assuming somebody left a server up. What
-// had been serving them here was a manual `npx serve` from eight days earlier; when it was cleared,
-// this tool silently began capturing Edge's error page.
-const pagesLease = await leasePageServer({
-  root: resolve(DATASET, "pages"),
-  port: Number(process.env.DATASET_PAGES_PORT || 5050),
-  probePath: `${selected[0].id}/good.html`,
-});
-await requirePagesServed(selected);
-
-const results = [];
-for (const testCase of selected) {
-  for (const variant of ["good", "bad"]) {
-    const baseline = readCapture(BASELINE, testCase.id, variant);
-    if (!baseline) {
-      process.stdout.write(`  SKIP        ${testCase.id}.${variant} (no baseline capture)\n`);
-      continue;
-    }
-    let candidate;
-    try {
-      candidate = await capture(testCase, variant);
-    } catch (error) {
-      process.stdout.write(`  FAILED      ${testCase.id}.${variant}: ${error.message}\n`);
-      continue;
-    }
-    // Apply the pipeline's OWN gates before comparing. A capture a real run would reject and retry is
-    // not evidence, so diffing it produces a false CHANGED and blames the change for a bad capture.
-    const title = await pageTitle(testCase, variant);
-    if (title === null) {
-      // Preflight proved the server is up, so this is a per-page failure. Skip it: comparing a
-      // capture we cannot gate is how an error page came to read as changed evidence.
-      results.push({ id: testCase.id, variant, comparison: { verdict: "SKIPPED", changes: [], phrases: null } });
-      process.stdout.write(`  SKIPPED     ${testCase.id}.${variant}  page title unreadable; cannot gate, so not compared\n`);
-      continue;
-    }
-    if (!isEvidence(candidate, title)) {
-      results.push({ id: testCase.id, variant, comparison: { verdict: "REJECTED", changes: [], phrases: null } });
-      process.stdout.write(`  REJECTED    ${testCase.id}.${variant}  the pipeline would reject this capture; excluded\n`);
-      continue;
-    }
-    const comparison = compareCapture(baseline, candidate);
-    results.push({ id: testCase.id, variant, comparison });
-    const detail = comparison.verdict === "CHANGED"
-      ? comparison.changes.map((c) => `${c.field} ${c.before}->${c.after}`).join(", ")
-      : comparison.verdict === "DRIFT"
-        ? `phrases ${comparison.phrases.before}->${comparison.phrases.after}` +
-          (comparison.phrases.lost.length ? ` lost: ${JSON.stringify(comparison.phrases.lost.slice(0, 2))}` : "")
-        : "";
-    process.stdout.write(`  ${comparison.verdict.padEnd(11)} ${testCase.id}.${variant}  ${detail}\n`);
+/**
+ * Only when RUN, never on import.
+ *
+ * Everything below leases a page server, drives real captures against a worker, writes a report and then
+ * calls `process.exit` — so importing this file did all of that and terminated the importing process with
+ * evidence-check's verdict. The usage guard came in here too: a missing worker argument is a mistake made
+ * by a CALLER, and there is no caller when a file is merely imported.
+ */
+async function main() {
+  if (!worker) {
+    process.stderr.write(
+      "usage: npm run evidence:check -- <worker-url> [--sample=24] [--only=family] [--browser=chrome]\n");
+    process.exit(2);
   }
+  const comparable = selectComparable();
+  const selected = stratify(comparable, sampleSize);
+  process.stdout.write(`Evidence check: ${selected.length} case(s), both variants, against ${worker}\n`);
+  process.stdout.write(`Pages: ${pagesBase()}\nBaseline: ${BASELINE}\n\n`);
+
+  // Lease the pages the same way a real run does, instead of assuming somebody left a server up. What
+  // had been serving them here was a manual `npx serve` from eight days earlier; when it was cleared,
+  // this tool silently began capturing Edge's error page.
+  const pagesLease = await leasePageServer({
+    root: resolve(DATASET, "pages"),
+    port: Number(process.env.DATASET_PAGES_PORT || 5050),
+    probePath: `${selected[0].id}/good.html`,
+  });
+  await requirePagesServed(selected);
+
+  const results = [];
+  for (const testCase of selected) {
+    for (const variant of ["good", "bad"]) {
+      const baseline = readCapture(BASELINE, testCase.id, variant);
+      if (!baseline) {
+        process.stdout.write(`  SKIP        ${testCase.id}.${variant} (no baseline capture)\n`);
+        continue;
+      }
+      let candidate;
+      try {
+        candidate = await capture(testCase, variant);
+      } catch (error) {
+        process.stdout.write(`  FAILED      ${testCase.id}.${variant}: ${error.message}\n`);
+        continue;
+      }
+      // Apply the pipeline's OWN gates before comparing. A capture a real run would reject and retry is
+      // not evidence, so diffing it produces a false CHANGED and blames the change for a bad capture.
+      const title = await pageTitle(testCase, variant);
+      if (title === null) {
+        // Preflight proved the server is up, so this is a per-page failure. Skip it: comparing a
+        // capture we cannot gate is how an error page came to read as changed evidence.
+        results.push({ id: testCase.id, variant, comparison: { verdict: "SKIPPED", changes: [], phrases: null } });
+        process.stdout.write(`  SKIPPED     ${testCase.id}.${variant}  page title unreadable; cannot gate, so not compared\n`);
+        continue;
+      }
+      if (!isEvidence(candidate, title)) {
+        results.push({ id: testCase.id, variant, comparison: { verdict: "REJECTED", changes: [], phrases: null } });
+        process.stdout.write(`  REJECTED    ${testCase.id}.${variant}  the pipeline would reject this capture; excluded\n`);
+        continue;
+      }
+      const comparison = compareCapture(baseline, candidate);
+      results.push({ id: testCase.id, variant, comparison });
+      const detail = comparison.verdict === "CHANGED"
+        ? comparison.changes.map((c) => `${c.field} ${c.before}->${c.after}`).join(", ")
+        : comparison.verdict === "DRIFT"
+          ? `phrases ${comparison.phrases.before}->${comparison.phrases.after}` +
+            (comparison.phrases.lost.length ? ` lost: ${JSON.stringify(comparison.phrases.lost.slice(0, 2))}` : "")
+          : "";
+      process.stdout.write(`  ${comparison.verdict.padEnd(11)} ${testCase.id}.${variant}  ${detail}\n`);
+    }
+  }
+
+  await pagesLease.release();
+
+  const summary = summarise(results);
+  mkdirSync(OUT, { recursive: true });
+  writeFileSync(resolve(OUT, "report.json"), JSON.stringify({ worker, results, summary }, null, 2) + "\n", "utf8");
+
+  process.stdout.write(`\n${summary.compared} compared: ` +
+    `${summary.counts.SAME} same, ${summary.counts.DRIFT} drift, ${summary.counts.CHANGED} changed` +
+    (summary.counts.REJECTED ? `, ${summary.counts.REJECTED} rejected (excluded)` : "") + "\n");
+  process.stdout.write(`${summary.recommendation}\n`);
+  process.stdout.write(`Report: ${resolve(OUT, "report.json")}\n`);
+  // Exit code is the contract, same as the other gates: 0 safe to ship, 1 evidence changed,
+  // 2 could not answer. `examinedNothing` MUST NOT exit 0: a run where every capture failed
+  // used to report "evidence unchanged — safe to ship" and succeed, which is the exact shape
+  // of a check that reports success having examined nothing.
+  process.exit(summary.examinedNothing ? 2 : summary.evidenceChanged ? 1 : 0);
 }
 
-await pagesLease.release();
 
-const summary = summarise(results);
-mkdirSync(OUT, { recursive: true });
-writeFileSync(resolve(OUT, "report.json"), JSON.stringify({ worker, results, summary }, null, 2) + "\n", "utf8");
+/**
+ * Which cases can honestly be compared, and a loud account of every one excluded.
+ *
+ * Split from `main` to stay inside the lint gate, and it is a real concern rather than a slice taken to
+ * satisfy it: deciding what is comparable is the whole reason this tool can be trusted. A capture taken
+ * against a DIFFERENT version of the page would diff the page rather than the code, and reporting that as
+ * "evidence changed" would send someone recapturing 2,122 pairs for nothing.
+ */
+function selectComparable() 
+{
+  const allCases = manifestCases();
+  const pageOk = allCases.filter(pageIsUnchanged);
+  const comparable = pageOk.filter(optionsUnchanged);
+  const pageSkipped = allCases.length - pageOk.length;
+  const optionSkipped = pageOk.length - comparable.length;
+  if (pageSkipped) {
+    process.stdout.write(
+      `${pageSkipped} case(s) excluded: their PAGE has changed since capture, so a diff would measure the page `
+      + `and not the code. Recapture them (npm run training:capture -- --resume) to widen this check.\n`);
+  }
+  if (optionSkipped) {
+    process.stdout.write(
+      `${optionSkipped} case(s) excluded: the manifest now asks for different PROBES than the recorded capture `
+      + `used, so the fresh capture would be asked a different question. Regenerate the manifest `
+      + `(npm run training:generate) and recapture them.\n`);
+  }
+  if (!comparable.length) {
+    // Refusing is the honest answer. Reporting SAME over nothing examined is how "verified" comes to mean
+    // "unexamined", which is the failure this repo keeps meeting.
+    process.stderr.write("no case has a capture taken against its CURRENT page — nothing can be compared.\n");
+    process.exit(2);
+  }
+  if (!comparable.length) {
+    // Refusing is the honest answer. Reporting SAME over nothing examined is how "verified" comes to mean
+    // "unexamined", which is the failure this repo keeps meeting.
+    process.stderr.write("no case has a capture taken against its CURRENT page — nothing can be compared.\n");
+    process.exit(2);
+  }
+  return comparable;
+}
 
-process.stdout.write(`\n${summary.compared} compared: ` +
-  `${summary.counts.SAME} same, ${summary.counts.DRIFT} drift, ${summary.counts.CHANGED} changed` +
-  (summary.counts.REJECTED ? `, ${summary.counts.REJECTED} rejected (excluded)` : "") + "\n");
-process.stdout.write(`${summary.recommendation}\n`);
-process.stdout.write(`Report: ${resolve(OUT, "report.json")}\n`);
-// Exit code is the contract, same as the other gates: 0 safe to ship, 1 evidence changed,
-// 2 could not answer. `examinedNothing` MUST NOT exit 0: a run where every capture failed
-// used to report "evidence unchanged — safe to ship" and succeed, which is the exact shape
-// of a check that reports success having examined nothing.
-process.exit(summary.examinedNothing ? 2 : summary.evidenceChanged ? 1 : 0);
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main();

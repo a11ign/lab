@@ -12,6 +12,7 @@
  *   3  in progress but wedged (no update within one capture timeout plus slack)
  */
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { inFlight, isStale, readProgress, stalenessMs, tally } from "./capture-progress.mjs";
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
@@ -157,7 +158,13 @@ async function main() {
   process.exitCode = outcomeExit(progress, counts, now);
 }
 
-main().catch((error) => {
-  console.error("training:status failed:", error.message);
-  process.exitCode = 1;
-});
+// Only when RUN, never on import. `training:wait` and the lab status playbook both consume this script's
+// exit code as a contract (0 clean, 1 finished with failures, 2 no run, 3 wedged), and importing it used to
+// set `process.exitCode` on the IMPORTING process -- so a test or tool that merely loaded this file inherited
+// a verdict about a capture run it had nothing to do with.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main().catch((error) => {
+    console.error("training:status failed:", error.message);
+    process.exitCode = 1;
+  });
+}

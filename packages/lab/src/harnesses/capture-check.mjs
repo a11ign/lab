@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { captureWithNvda } from "@a11y-witness/nvda-worker";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
-import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../../worker-fleet/src/worker-http.mjs";
+import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 
 // Drive a live WORKER over HTTP instead of NVDA in-process.
 //
@@ -29,7 +29,22 @@ import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../../worker-fleet/sr
 // structure, interaction -- all of which the worker returns over HTTP. If anything the worker path is
 // the better test, because it is the path production uses. The in-process mode stays the default so
 // capture-regression.yml on a Windows runner, which has no worker, is unaffected.
-const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length);
+const WORKER_ARG = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length);
+// Validated only WHEN GIVEN: no `--worker` is a legitimate mode here (in-process NVDA, which is what
+// `capture-regression.yml` runs on a Windows runner). So absence is a mode and a malformed value is an
+// error, and those must not collapse into one check — `undefined` and `http://:8765` are both falsy.
+const WORKER = validatedWorker(WORKER_ARG);
+
+/** A clean message and exit 2, not a stack trace: a legible failure is the whole point of validating. */
+function validatedWorker(raw) {
+  if (raw === undefined) return undefined;
+  try {
+    return assertWorkerUrl(raw, { source: "--worker" });
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
+    process.exit(2);
+  }
+}
 // `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
 // AbortSignal says, and the worker writes its status and body together at the END of a capture.
 // See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
@@ -175,7 +190,7 @@ async function captureOnce(check) {
     return captureWithNvda(pathToFileURL(join(pagesDir, check.page)).href,
       { steps: STEPS, probeForms: !!check.probeForms });
   }
-  const response = await requestJson(`${WORKER.replace(/\/$/, "")}/capture`, {
+  const response = await requestJson(`${WORKER}/capture`, {
     method: "POST",
     body: { url: `${pagesBase}/${check.page}`, steps: STEPS, probeForms: !!check.probeForms },
     timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
@@ -277,34 +292,48 @@ async function workerIsServing() {
   }
 }
 
-// In worker mode the worker SHOULD be serving -- that is what we are driving.
-if (!WORKER && await workerIsServing()) {
-  console.error(
-    "A capture worker is already serving on this machine. It drives the same NVDA this check " +
-      "would, and whichever finishes first stops the other's screen reader.\n" +
-      "Stop it first:  Stop-ScheduledTask -TaskName a11ysrv\n" +
-      "Then re-run, and start it again afterwards."
-  );
-  process.exit(2);
+/**
+ * Guarded, because importing this file used to RUN it.
+ *
+ * CLAUDE.md makes `node -e "import('./this.mjs')"` the only real check that an .mjs file still loads, and
+ * unguarded that check started an in-process capture: on this Mac it tried to spawn Edge through `cmd` and
+ * died with `spawn cmd ENOENT`, and on the Windows worker it would have started NVDA — against the same
+ * screen reader `a11ysrv` drives, which is the exact collision the first check below exists to prevent.
+ */
+async function main() {
+  // In worker mode the worker SHOULD be serving -- that is what we are driving.
+  if (!WORKER && await workerIsServing()) {
+    console.error(
+      "A capture worker is already serving on this machine. It drives the same NVDA this check " +
+        "would, and whichever finishes first stops the other's screen reader.\n" +
+        "Stop it first:  Stop-ScheduledTask -TaskName a11ysrv\n" +
+        "Then re-run, and start it again afterwards."
+    );
+    process.exit(2);
+  }
+
+  let lease = null;
+  if (WORKER) {
+    lease = await leasePageServer({
+      root: pagesDir,
+      port: Number(process.env.DATASET_PAGES_PORT || 5050),
+      probePath: CHECKS[0].page,
+    });
+    pagesBase = hostPagesBase(WORKER, process.env.DATASET_PAGES_PORT || 5050);
+    console.log(`Driving worker ${WORKER}\nPages ${pagesBase}\n`);
+  }
+
+  let failures = 0;
+  try {
+    for (const check of CHECKS) failures += await runCheck(check);
+  } finally {
+    if (lease) await lease.release();
+  }
+
+  console.log(`\n${failures === 0 ? "ALL CAPTURE CHECKS PASSED" : `${failures} CAPTURE CHECK(S) FAILED`}`);
+  process.exit(failures === 0 ? 0 : 1);
 }
 
-let lease = null;
-if (WORKER) {
-  lease = await leasePageServer({
-    root: pagesDir,
-    port: Number(process.env.DATASET_PAGES_PORT || 5050),
-    probePath: CHECKS[0].page,
-  });
-  pagesBase = hostPagesBase(WORKER, process.env.DATASET_PAGES_PORT || 5050);
-  console.log(`Driving worker ${WORKER}\nPages ${pagesBase}\n`);
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  await main();
 }
-
-let failures = 0;
-try {
-  for (const check of CHECKS) failures += await runCheck(check);
-} finally {
-  if (lease) await lease.release();
-}
-
-console.log(`\n${failures === 0 ? "ALL CAPTURE CHECKS PASSED" : `${failures} CAPTURE CHECK(S) FAILED`}`);
-process.exit(failures === 0 ? 0 : 1);

@@ -16,6 +16,7 @@
 //   2  no run recorded               -> nothing to wait for
 //   3  wedged, gave up waiting       -> the worker stopped updating
 import { watch } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { isStale, readProgress, tally } from "./capture-progress.mjs";
 
@@ -81,17 +82,31 @@ function finish(progress, verdict) {
   process.exit(verdict);
 }
 
-const initial = readProgress(ROOT);
-if (!initial?.startedAt) {
-  report({ failures: [] }, EXIT.noRun);
-  process.exit(EXIT.noRun);
-}
-const startingVerdict = verdictFor(initial);
-if (startingVerdict !== null) finish(initial, startingVerdict);
+// Only when RUN, never on import. This script's exit code IS its contract -- 0 clean, 1 finished with
+// failures, 2 no run, 3 wedged -- and unguarded, importing it called `process.exit(EXIT.noRun)` on the
+// IMPORTING process. So `node -e "import('./wait-for-capture.mjs')"`, which CLAUDE.md makes the only real
+// check that this file still loads, terminated with a verdict about a capture run it had nothing to do with.
+function main() {
+  const initial = readProgress(ROOT);
+  if (!initial?.startedAt) {
+    report({ failures: [] }, EXIT.noRun);
+    process.exit(EXIT.noRun);
+  }
+  const startingVerdict = verdictFor(initial);
+  if (startingVerdict !== null) finish(initial, startingVerdict);
 
-if (!JSON_OUT) {
-  const done = tally(initial);
-  console.log(`Waiting for the run that started ${initial.startedAt} (${done.captured}/${initial.total} so far) ...`);
+  if (!JSON_OUT) {
+    const done = tally(initial);
+    console.log(`Waiting for the run that started ${initial.startedAt} (${done.captured}/${initial.total} so far) ...`);
+  }
+
+  // Watch the DIRECTORY, not the file. The progress file is written atomically — temp file
+  // then rename — and a rename replaces the inode, so a watcher bound to the original file
+  // stops receiving events after the first write and this would hang forever.
+  watch(ROOT, (_event, filename) => {
+    if (filename && filename.startsWith("capture-progress.json")) check();
+  });
+  setInterval(check, BACKSTOP_MS).unref();
 }
 
 function check() {
@@ -101,10 +116,4 @@ function check() {
   if (verdict !== null) finish(progress, verdict);
 }
 
-// Watch the DIRECTORY, not the file. The progress file is written atomically — temp file
-// then rename — and a rename replaces the inode, so a watcher bound to the original file
-// stops receiving events after the first write and this would hang forever.
-watch(ROOT, (_event, filename) => {
-  if (filename && filename.startsWith("capture-progress.json")) check();
-});
-setInterval(check, BACKSTOP_MS).unref();
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();

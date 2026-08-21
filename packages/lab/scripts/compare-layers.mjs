@@ -26,34 +26,47 @@
 // 3.3.1 (error shown but not announced), 4.1.2 state-change-silent (a disclosure whose state never
 // updates). axe inspects a static DOM and cannot observe any of them. This prints our findings beside
 // axe's for the same page so the difference is a fact rather than a claim.
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 
 // The CLI moved to its own package in M7; this was the cwd-relative `"src/cli.ts"`, right only from the repo
 // root and pointing at nothing afterwards.
 const CLI = fileURLToPath(new URL("../../cli/src/cli.ts", import.meta.url));
-const sites = JSON.parse(process.argv[2]);
-for (const [url, task] of sites) {
-  let out;
-  try {
-    out = execFileSync("npx", ["tsx", CLI, url, "--task", task, "--probe-forms", "--json"], {
-      env: { ...process.env, JUDGE_BACKEND: "local", A11Y_WORKER: "http://REDACTED-INTERNAL-ADDRESS:8765", A11Y_PYTHON: ".venv/bin/python" },
-      encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "pipe"], timeout: 600_000,
-    });
-  } catch (e) { console.log(`\n── ${url}\n   FAILED ${String(e.message).slice(0, 90)}`); continue; }
-  const d = JSON.parse(out);
-  if (d.captureVerified === false) { console.log(`\n── ${url}\n   capture unverified — skipped`); continue; }
-  const ours = d.verdict.findings.map((f) => f.wcag.match(/\d+\.\d+\.\d+/)?.[0]).filter(Boolean);
-  const axe = [...new Set((d.ruleBased ?? []).flatMap((v) => v.wcag ?? []))];
-  const onlyOurs = ours.filter((c) => !axe.includes(c));
-  const i = d.interaction ?? {};
-  console.log(`\n── ${url}`);
-  console.log(`   announcements ${d.transcript?.length ?? 0} · activated ${(i.formChanges ?? []).length} · disclosures ${(i.stateChanges ?? []).length} · navigated ${i.navigatedOnSubmit ? "yes" : "no"}`);
-  console.log(`   ours: ${JSON.stringify(ours)}   axe: ${JSON.stringify(axe)}`);
-  console.log(`   ONLY the screen reader: ${onlyOurs.length ? JSON.stringify(onlyOurs) : "(none)"}`);
-  for (const f of d.verdict.findings) {
-    if (!onlyOurs.includes(f.wcag.match(/\d+\.\d+\.\d+/)?.[0])) continue;
-    console.log(`      [${f.severity}] ${f.wcag}`);
-    console.log(`         heard: ${JSON.stringify(f.evidence).slice(0, 150)}`);
+/**
+ * Only when RUN, never on import.
+ *
+ * Two things were wrong at module scope, and the second is the subtler one. It spawned the CLI once per
+ * site -- real captures, up to ten minutes each -- so importing this file drove the fleet. And it began
+ * with `JSON.parse(process.argv[2])`, which THROWS when there is no argument: so
+ * `node -e "import('./compare-layers.mjs')"` could not tell "this module is broken" from "you gave me no
+ * sites", and that import is the only real check this repo has that an .mjs file still loads.
+ */
+async function main() {
+  const sites = JSON.parse(process.argv[2]);
+  for (const [url, task] of sites) {
+    let out;
+    try {
+      out = execFileSync("npx", ["tsx", CLI, url, "--task", task, "--probe-forms", "--json"], {
+        env: { ...process.env, JUDGE_BACKEND: "local", A11Y_WORKER: "http://REDACTED-INTERNAL-ADDRESS:8765", A11Y_PYTHON: ".venv/bin/python" },
+        encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "pipe"], timeout: 600_000,
+      });
+    } catch (e) { console.log(`\n── ${url}\n   FAILED ${String(e.message).slice(0, 90)}`); continue; }
+    const d = JSON.parse(out);
+    if (d.captureVerified === false) { console.log(`\n── ${url}\n   capture unverified — skipped`); continue; }
+    const ours = d.verdict.findings.map((f) => f.wcag.match(/\d+\.\d+\.\d+/)?.[0]).filter(Boolean);
+    const axe = [...new Set((d.ruleBased ?? []).flatMap((v) => v.wcag ?? []))];
+    const onlyOurs = ours.filter((c) => !axe.includes(c));
+    const i = d.interaction ?? {};
+    console.log(`\n── ${url}`);
+    console.log(`   announcements ${d.transcript?.length ?? 0} · activated ${(i.formChanges ?? []).length} · disclosures ${(i.stateChanges ?? []).length} · navigated ${i.navigatedOnSubmit ? "yes" : "no"}`);
+    console.log(`   ours: ${JSON.stringify(ours)}   axe: ${JSON.stringify(axe)}`);
+    console.log(`   ONLY the screen reader: ${onlyOurs.length ? JSON.stringify(onlyOurs) : "(none)"}`);
+    for (const f of d.verdict.findings) {
+      if (!onlyOurs.includes(f.wcag.match(/\d+\.\d+\.\d+/)?.[0])) continue;
+      console.log(`      [${f.severity}] ${f.wcag}`);
+      console.log(`         heard: ${JSON.stringify(f.evidence).slice(0, 150)}`);
+    }
   }
 }
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main();

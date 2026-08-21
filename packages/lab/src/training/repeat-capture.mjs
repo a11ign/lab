@@ -16,6 +16,7 @@
 // reuses one screen reader is measuring a single NVDA session, not the pipeline. `--reuse` opts
 // back in when you specifically want to know whether reuse is what drifts.
 import { mkdirSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { isTransient } from "./capture-decisions.mjs";
@@ -57,18 +58,6 @@ const BETWEEN_MS = 2_000; // let the guest settle, as a real run would between c
 
 // A probe-forms run with no task cannot activate anything, so it would compare an empty field five times
 // and call it stable. Refuse rather than pass vacuously.
-if (PROBE_FORMS && !TASK) {
-  console.error("--probe-forms needs --task=\"...\": the task selects which control is activated, so " +
-    "without one nothing is activated and the run reports a stable empty result.");
-  process.exit(2);
-}
-
-if (!URL_ARG || !WORKER) {
-  console.error("usage: npm run training:repeat -- --url=<page> [--worker=<url>] [--times=5] " +
-    "[--probe-tables] [--probe-forms] [--task=\"...\"] [--reuse]\n" +
-    "  --worker may come from A11Y_WORKER; get one from scripts/local-worker/worker-ctl.sh pool");
-  process.exit(2);
-}
 
 /** The fields worth comparing: everything a dataset signal can read. */
 function comparable(capture) {
@@ -172,97 +161,144 @@ async function captureWithRetry(attempts = 3) {
   }
 }
 
-mkdirSync(OUT_DIR, { recursive: true });
-// Before the FIRST capture, not just between retries. The gate runs straight after `worker:deploy`
-// reboots the guests, and a capture issued into a still-booting worker is what made a stable page
-// report as failed.
-await waitForReady();
-const runs = [];
-const raw = [];  // same order as `runs`
-const errors = [];
-for (let n = 1; n <= TIMES; n += 1) {
-  process.stdout.write(`capture ${n}/${TIMES} ... `);
-  try {
-    const capture = await captureWithRetry();
-    runs.push(comparable(capture));
-    raw.push(capture); // the gates read the real shape (structure.headings), not the flattened one
-    writeFileSync(resolve(OUT_DIR, `capture-${n}.json`), JSON.stringify(capture, null, 2) + "\n", "utf8");
-    const retried = (capture.diagnostics ?? []).some((e) => e.event === "readThroughRetry");
-    console.log(`${capture.transcript.length} phrases${retried ? " (read-through retried)" : ""}`);
-  } catch (e) {
-    errors.push(`${n}: ${e.message}`);
-    console.log(`FAILED ${e.message}`);
+/**
+ * Only when RUN, never on import.
+ *
+ * Two separate things ran at module scope: the usage guards, which called `process.exit(2)` on the
+ * IMPORTING process, and the capture run itself -- `mkdirSync`, then `waitForReady`, then five real
+ * captures against a worker. `stability-gate.mjs` SPAWNS this script per canary, so importing it to check
+ * it still loads meant driving the fleet.
+ *
+ * The usage guards move in here with the run, deliberately: a missing `--url` is a mistake made by a
+ * CALLER, and there is no caller when the file is merely imported.
+ */
+async function main() {
+  if (PROBE_FORMS && !TASK) {
+    console.error("--probe-forms needs --task=\"...\": the task selects which control is activated, so " +
+      "without one nothing is activated and the run reports a stable empty result.");
+    process.exit(2);
   }
-  if (n < TIMES) await sleep(BETWEEN_MS);
-}
 
-// A capture with no phrases heard nothing at all -- the known ForegroundLockTimeout/foreground
-// flake. It is a failure, and it is a DIFFERENT failure from a probe that varies. Comparing it
-// against real captures would report every field as unstable and bury the question being asked.
-// So it is excluded from the comparison and named loudly, never quietly dropped.
-const empty = runs.filter((r) => r.transcript.length === 0);
-// Captures the PRODUCTION pipeline would reject must not be compared here.
-//
-// `captureIsSelfConsistent` catches a capture whose read-through announced a heading while the heading
-// sweep found none -- the page was not traversed. The dataset runner already rejects and retries those
-// (capture-screenreader-dataset.mjs applies isEvidence), so comparing them here reports instability
-// that a real run would never have accepted.
-//
-// That is not hypothetical: the first capture after a worker restart came back HTTP 200 with empty
-// headings, formFields and stateChanges. It had a non-empty transcript, so the empty-capture filter
-// below did not catch it, and this tool declared four fields UNSTABLE. Two correct fixes were nearly
-// reverted on the strength of it.
-//
-// No title needed: this is the one gate in `isEvidence` that reads only the capture, and it is exactly
-// the one this failure trips.
-// Indexed against `raw`, because the gate reads `capture.structure.headings` and `runs` holds the
-// FLATTENED comparison shape where that path does not exist. Applying it to the flat object made every
-// capture look inconsistent -- caught by running the tool, which is the only check that catches this.
-const traversed = runs.map((r, i) => r.transcript.length > 0 && captureIsSelfConsistent(raw[i]));
-const inconsistent = runs.filter((_, i) => runs[i].transcript.length > 0 && !traversed[i]);
-const usable = runs.filter((_, i) => traversed[i]);
-
-if (usable.length < 2) {
-  console.error(`\nOnly ${usable.length} usable capture(s); nothing to compare.`);
-  if (empty.length) console.error(`  ${empty.length} returned 0 phrases (the foreground flake)`);
-  for (const e of errors) console.error("  " + e);
-  process.exit(1);
-}
-
-console.log(`\n${usable.length}/${TIMES} usable` +
-  (empty.length ? `, ${empty.length} empty` : "") +
-  (inconsistent.length ? `, ${inconsistent.length} rejected (not traversed)` : "") +
-  (errors.length ? `, ${errors.length} failed` : "") +
-  ` (${REUSE ? "reused" : "fresh"} NVDA each time)\n`);
-
-let unstable = 0;
-for (const field of Object.keys(usable[0])) {
-  const shapes = usable.map((r) => JSON.stringify(r[field]));
-  const distinct = new Set(shapes);
-  const counts = usable.map((r) => r[field].length).join(",");
-  if (distinct.size === 1) {
-    console.log(`  STABLE    ${field.padEnd(13)} ${usable[0][field].length} item(s), identical every time`);
-    continue;
+  if (!URL_ARG || !WORKER) {
+    console.error("usage: npm run training:repeat -- --url=<page> [--worker=<url>] [--times=5] " +
+      "[--probe-tables] [--probe-forms] [--task=\"...\"] [--reuse]\n" +
+      "  --worker may come from A11Y_WORKER; get one from scripts/local-worker/worker-ctl.sh pool");
+    process.exit(2);
   }
-  unstable += 1;
-  console.log(`  VARIES    ${field.padEnd(13)} counts ${counts} across runs`);
-  // Show the variants, because "it varies" is not actionable and the difference usually names the
-  // cause -- a missing header, a truncated walk, a lagging announcement.
-  for (const shape of distinct) {
-    const parsed = JSON.parse(shape);
-    console.log(`      ${parsed.length}: ${JSON.stringify(parsed).slice(0, 110)}`);
+
+  mkdirSync(OUT_DIR, { recursive: true });
+  // Before the FIRST capture, not just between retries. The gate runs straight after `worker:deploy`
+  // reboots the guests, and a capture issued into a still-booting worker is what made a stable page
+  // report as failed.
+  await waitForReady();
+  const runs = [];
+  const raw = [];  // same order as `runs`
+  const errors = [];
+  for (let n = 1; n <= TIMES; n += 1) {
+    process.stdout.write(`capture ${n}/${TIMES} ... `);
+    try {
+      const capture = await captureWithRetry();
+      runs.push(comparable(capture));
+      raw.push(capture); // the gates read the real shape (structure.headings), not the flattened one
+      writeFileSync(resolve(OUT_DIR, `capture-${n}.json`), JSON.stringify(capture, null, 2) + "\n", "utf8");
+      const retried = (capture.diagnostics ?? []).some((e) => e.event === "readThroughRetry");
+      console.log(`${capture.transcript.length} phrases${retried ? " (read-through retried)" : ""}`);
+    } catch (e) {
+      errors.push(`${n}: ${e.message}`);
+      console.log(`FAILED ${e.message}`);
+    }
+    if (n < TIMES) await sleep(BETWEEN_MS);
   }
+
+  report({ runs, raw, errors });
 }
 
-for (const e of errors) console.log(`  FAILED    ${e}`);
-if (empty.length) {
-  console.log(`  EMPTY     ${empty.length} capture(s) heard nothing at all — the foreground flake, ` +
-    "excluded from the comparison above because it would mark every field unstable");
+/**
+ * The verdict. Split from `main` to stay inside the lint gate's 70-line and complexity-15 limits --
+ * which is the honest fix for a long function, rather than a suppression.
+ */
+function report({ runs, raw, errors }) {
+  // A capture with no phrases heard nothing at all -- the known ForegroundLockTimeout/foreground
+  // flake. It is a failure, and it is a DIFFERENT failure from a probe that varies. Comparing it
+  // against real captures would report every field as unstable and bury the question being asked.
+  // So it is excluded from the comparison and named loudly, never quietly dropped.
+  const empty = runs.filter((r) => r.transcript.length === 0);
+  // Captures the PRODUCTION pipeline would reject must not be compared here.
+  //
+  // `captureIsSelfConsistent` catches a capture whose read-through announced a heading while the heading
+  // sweep found none -- the page was not traversed. The dataset runner already rejects and retries those
+  // (capture-screenreader-dataset.mjs applies isEvidence), so comparing them here reports instability
+  // that a real run would never have accepted.
+  //
+  // That is not hypothetical: the first capture after a worker restart came back HTTP 200 with empty
+  // headings, formFields and stateChanges. It had a non-empty transcript, so the empty-capture filter
+  // below did not catch it, and this tool declared four fields UNSTABLE. Two correct fixes were nearly
+  // reverted on the strength of it.
+  //
+  // No title needed: this is the one gate in `isEvidence` that reads only the capture, and it is exactly
+  // the one this failure trips.
+  // Indexed against `raw`, because the gate reads `capture.structure.headings` and `runs` holds the
+  // FLATTENED comparison shape where that path does not exist. Applying it to the flat object made every
+  // capture look inconsistent -- caught by running the tool, which is the only check that catches this.
+  const traversed = runs.map((r, i) => r.transcript.length > 0 && captureIsSelfConsistent(raw[i]));
+  const inconsistent = runs.filter((_, i) => runs[i].transcript.length > 0 && !traversed[i]);
+  const usable = runs.filter((_, i) => traversed[i]);
+
+  if (usable.length < 2) {
+    console.error(`\nOnly ${usable.length} usable capture(s); nothing to compare.`);
+    if (empty.length) console.error(`  ${empty.length} returned 0 phrases (the foreground flake)`);
+    for (const e of errors) console.error("  " + e);
+    process.exit(1);
+  }
+
+  console.log(`\n${usable.length}/${TIMES} usable` +
+    (empty.length ? `, ${empty.length} empty` : "") +
+    (inconsistent.length ? `, ${inconsistent.length} rejected (not traversed)` : "") +
+    (errors.length ? `, ${errors.length} failed` : "") +
+    ` (${REUSE ? "reused" : "fresh"} NVDA each time)\n`);
+
+  const unstable = compareFields(usable);
+
+  for (const e of errors) console.log(`  FAILED    ${e}`);
+  if (empty.length) {
+    console.log(`  EMPTY     ${empty.length} capture(s) heard nothing at all — the foreground flake, ` +
+      "excluded from the comparison above because it would mark every field unstable");
+  }
+  console.log(`\nraw captures kept in ${OUT_DIR} (diagnostics included)`);
+  console.log(`${unstable === 0 ? "All compared fields are stable." : `${unstable} field(s) vary on an unchanged page.`}`);
+  // A varying field is a failure: evidence that depends on timing rather than on the page. An empty
+  // capture or an error is a failure too, just a different one -- so all three fail the run.
+  // An inconsistent capture is a failure like the others -- production would retry it -- so it fails the
+  // run rather than being quietly dropped from the comparison.
+  process.exit(unstable === 0 && errors.length === 0 && empty.length === 0 && inconsistent.length === 0 ? 0 : 1);
 }
-console.log(`\nraw captures kept in ${OUT_DIR} (diagnostics included)`);
-console.log(`${unstable === 0 ? "All compared fields are stable." : `${unstable} field(s) vary on an unchanged page.`}`);
-// A varying field is a failure: evidence that depends on timing rather than on the page. An empty
-// capture or an error is a failure too, just a different one -- so all three fail the run.
-// An inconsistent capture is a failure like the others -- production would retry it -- so it fails the
-// run rather than being quietly dropped from the comparison.
-process.exit(unstable === 0 && errors.length === 0 && empty.length === 0 && inconsistent.length === 0 ? 0 : 1);
+
+/**
+ * Field by field, is the evidence identical across runs? Returns how many varied.
+ *
+ * Split out of `report` to stay inside the complexity gate, and it is a real concern rather than a slice
+ * taken to satisfy lint: this is the comparison the whole tool exists to make. Everything around it is
+ * deciding WHICH captures are eligible to be compared.
+ */
+function compareFields(usable) {
+  let unstable = 0;
+  for (const field of Object.keys(usable[0])) {
+    const distinct = new Set(usable.map((r) => JSON.stringify(r[field])));
+    const counts = usable.map((r) => r[field].length).join(",");
+    if (distinct.size === 1) {
+      console.log(`  STABLE    ${field.padEnd(13)} ${usable[0][field].length} item(s), identical every time`);
+      continue;
+    }
+    unstable += 1;
+    console.log(`  VARIES    ${field.padEnd(13)} counts ${counts} across runs`);
+    // Show the variants, because "it varies" is not actionable and the difference usually names the
+    // cause -- a missing header, a truncated walk, a lagging announcement.
+    for (const shape of distinct) {
+      const parsed = JSON.parse(shape);
+      console.log(`      ${parsed.length}: ${JSON.stringify(parsed).slice(0, 110)}`);
+    }
+  }
+  return unstable;
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main();

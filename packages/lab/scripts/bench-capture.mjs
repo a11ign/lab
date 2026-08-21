@@ -13,8 +13,21 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mjs";
 
+import { pathToFileURL } from "node:url";
+
 const [worker, page, countArg] = process.argv.slice(2);
-if (!process.argv.includes("--from-disk") && (!worker || !page)) {
+
+/**
+ * Was this file RUN, or merely imported?
+ *
+ * CLAUDE.md makes `node -e "import('./this.mjs')"` the only real check that an .mjs file still loads —
+ * neither lint nor tsc can see a ReferenceError at import. Unguarded, that mandated check ran this whole
+ * benchmark: it drove real captures against a worker, and on a machine with none it exited the IMPORTING
+ * process with a usage error. Either way the check you are told to run is one you cannot safely run.
+ */
+const IS_MAIN = import.meta.url === pathToFileURL(process.argv[1] ?? "").href;
+
+if (IS_MAIN && !process.argv.includes("--from-disk") && (!worker || !page)) {
   console.error("usage: node scripts/bench-capture.mjs <worker-url> <page-url> [count]\n" +
     "   or: node scripts/bench-capture.mjs --from-disk [--dir=<captures dir>]");
   process.exit(1);
@@ -149,29 +162,33 @@ function reportFromDisk(runs) {
   }
 }
 
-if (process.argv.includes("--from-disk")) {
-  const dir = process.argv.find((a) => a.startsWith("--dir="))?.slice("--dir=".length)
-    ?? "runs/screenreader-dataset/captures";
-  const runs = await fromDisk(dir);
-  if (!runs.length) {
-    console.error(`No captures with diagnostics under ${dir}`);
-    process.exit(1);
-  }
-  reportFromDisk(runs);
-  process.exit(0);
-}
+if (IS_MAIN) await main();
 
-const runs = [];
-for (let i = 1; i <= COUNT; i++) {
-  const { wallMs, body } = await capture(page);
-  const start = (body.diagnostics ?? []).find((e) => e.event === "nvdaStart");
-  runs.push({
-    wallMs,
-    costs: phaseCosts(body.diagnostics),
-    phrases: (body.transcript ?? []).length,
-    reused: !!start?.reused,
-  });
-  console.log(`capture ${i}/${COUNT}: ${(wallMs / 1000).toFixed(1)}s, ${runs.at(-1).phrases} phrases${runs.at(-1).reused ? " (NVDA reused)" : ""}`);
-  if (i < COUNT) await sleep(BETWEEN_MS);
+async function main() {
+  if (process.argv.includes("--from-disk")) {
+    const dir = process.argv.find((a) => a.startsWith("--dir="))?.slice("--dir=".length)
+      ?? "runs/screenreader-dataset/captures";
+    const fromDiskRuns = await fromDisk(dir);
+    if (!fromDiskRuns.length) {
+      console.error(`No captures with diagnostics under ${dir}`);
+      process.exit(1);
+    }
+    reportFromDisk(fromDiskRuns);
+    process.exit(0);
+  }
+
+  const runs = [];
+  for (let i = 1; i <= COUNT; i++) {
+      const { wallMs, body } = await capture(page);
+      const start = (body.diagnostics ?? []).find((e) => e.event === "nvdaStart");
+      runs.push({
+        wallMs,
+        costs: phaseCosts(body.diagnostics),
+        phrases: (body.transcript ?? []).length,
+        reused: !!start?.reused,
+      });
+      console.log(`capture ${i}/${COUNT}: ${(wallMs / 1000).toFixed(1)}s, ${runs.at(-1).phrases} phrases${runs.at(-1).reused ? " (NVDA reused)" : ""}`);
+    if (i < COUNT) await sleep(BETWEEN_MS);
+  }
+  report(runs);
 }
-report(runs);

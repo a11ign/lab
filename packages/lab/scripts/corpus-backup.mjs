@@ -33,6 +33,7 @@
 // through the deploy channel. An unverified backup is a belief, not a backup.
 import { execFile } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { resolve, basename } from "node:path";
 
@@ -85,56 +86,68 @@ function refuse(message) {
   process.exit(1);
 }
 
-if (!REMOTE) {
-  refuse(
-    "REFUSING: no A11Y_CORPUS_REMOTE set, so there is nowhere durable to put the corpus.\n" +
-    "\n" +
-    "  A11Y_CORPUS_REMOTE=user@nas:/backups/a11y   npm run corpus:backup\n" +
-    "  A11Y_CORPUS_REMOTE=/mnt/pve/backup/a11y     npm run corpus:backup\n" +
-    "\n" +
-    "This exits non-zero rather than writing a local archive and calling it a backup. The corpus is\n" +
-    "~3h46m of fleet time and cannot be recaptured identically once the browser updates — a tool that\n" +
-    "reported success while leaving one copy on one disk would turn a known risk into an assumed safety.");
-}
-
-const archive = newestArchive();
-if (!archive) {
-  refuse(`No archive in ${BACKUPS}. Run \`npm run corpus:snapshot\` first — this copies and verifies, it\n` +
-    "does not create.");
-}
-
-process.stdout.write(`Corpus archive : ${archive.name} (${(statSync(archive.path).size / 1048576).toFixed(1)} MB)\n`);
-process.stdout.write(`Destination    : ${REMOTE}${isRemotePath(REMOTE) ? "  (ssh)" : "  (path)"}\n\n`);
-
-if (!verifyOnly) {
-  process.stdout.write("Copying ...\n");
-  try {
-    await copyToDestination(archive.path);
-  } catch (error) {
-    refuse(`FAILED to copy: ${error.message}\n\nThe corpus still exists in exactly one place.`);
+/**
+ * Only when RUN, never on import.
+ *
+ * Unguarded, importing this file printed its REFUSING banner and exited the importing process — so
+ * `node -e "import('./corpus-backup.mjs')"`, the only real check this repo has that an .mjs file still
+ * loads, terminated with a verdict about a backup nobody had asked for. With `A11Y_CORPUS_REMOTE` set it
+ * would instead have started copying the corpus.
+ */
+async function main() {
+  if (!REMOTE) {
+    refuse(
+      "REFUSING: no A11Y_CORPUS_REMOTE set, so there is nowhere durable to put the corpus.\n" +
+      "\n" +
+      "  A11Y_CORPUS_REMOTE=user@nas:/backups/a11y   npm run corpus:backup\n" +
+      "  A11Y_CORPUS_REMOTE=/mnt/pve/backup/a11y     npm run corpus:backup\n" +
+      "\n" +
+      "This exits non-zero rather than writing a local archive and calling it a backup. The corpus is\n" +
+      "~3h46m of fleet time and cannot be recaptured identically once the browser updates — a tool that\n" +
+      "reported success while leaving one copy on one disk would turn a known risk into an assumed safety.");
   }
+
+  const archive = newestArchive();
+  if (!archive) {
+    refuse(`No archive in ${BACKUPS}. Run \`npm run corpus:snapshot\` first — this copies and verifies, it\n` +
+      "does not create.");
+  }
+
+  process.stdout.write(`Corpus archive : ${archive.name} (${(statSync(archive.path).size / 1048576).toFixed(1)} MB)\n`);
+  process.stdout.write(`Destination    : ${REMOTE}${isRemotePath(REMOTE) ? "  (ssh)" : "  (path)"}\n\n`);
+
+  if (!verifyOnly) {
+    process.stdout.write("Copying ...\n");
+    try {
+      await copyToDestination(archive.path);
+    } catch (error) {
+      refuse(`FAILED to copy: ${error.message}\n\nThe corpus still exists in exactly one place.`);
+    }
+  }
+
+  // Verify by reading the destination back, never by trusting that the copy returned 0.
+  let remoteSize;
+  try {
+    remoteSize = await sizeAtDestination(archive.path);
+  } catch (error) {
+    refuse(`Copied, but could NOT read it back: ${error.message}\n\n` +
+      "Treat this as a failed backup. A copy you cannot read is a copy you cannot restore.");
+  }
+
+  const localSize = statSync(archive.path).size;
+  if (remoteSize === null) {
+    refuse("Copied, but the archive is NOT at the destination. Treat this as a failed backup.");
+  }
+  if (remoteSize !== localSize) {
+    refuse(`Copied, but the destination has ${remoteSize} bytes and the source has ${localSize}.\n` +
+      "A truncated archive restores as a corrupt corpus, which is worse than an absent one because it\n" +
+      "looks like data.");
+  }
+
+  process.stdout.write(`VERIFIED: ${remoteSize} bytes readable at the destination, matching the source.\n`);
+  process.stdout.write(
+    "\nThis is now in two places. It is not yet in two BUILDINGS — if the destination shares a room,\n" +
+    "or a power supply, with this machine, that is one fire away from being one place again.\n");
 }
 
-// Verify by reading the destination back, never by trusting that the copy returned 0.
-let remoteSize;
-try {
-  remoteSize = await sizeAtDestination(archive.path);
-} catch (error) {
-  refuse(`Copied, but could NOT read it back: ${error.message}\n\n` +
-    "Treat this as a failed backup. A copy you cannot read is a copy you cannot restore.");
-}
-
-const localSize = statSync(archive.path).size;
-if (remoteSize === null) {
-  refuse("Copied, but the archive is NOT at the destination. Treat this as a failed backup.");
-}
-if (remoteSize !== localSize) {
-  refuse(`Copied, but the destination has ${remoteSize} bytes and the source has ${localSize}.\n` +
-    "A truncated archive restores as a corrupt corpus, which is worse than an absent one because it\n" +
-    "looks like data.");
-}
-
-process.stdout.write(`VERIFIED: ${remoteSize} bytes readable at the destination, matching the source.\n`);
-process.stdout.write(
-  "\nThis is now in two places. It is not yet in two BUILDINGS — if the destination shares a room,\n" +
-  "or a power supply, with this machine, that is one fire away from being one place again.\n");
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main();

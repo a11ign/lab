@@ -17,7 +17,7 @@
  * run against anyone's production sign-up form — repeated real submissions create records and send mail.
  */
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
 import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
@@ -114,4 +114,9 @@ async function main() {
     : ">>> verdicts unstable or wrong: the unique direction has the same disease"}\n`);
 }
 
-await main();
+// Only when RUN, never on import. CLAUDE.md makes `node -e "import('./this.mjs')"` the only real check
+// that an .mjs file still loads -- neither lint nor tsc can see a ReferenceError at import -- and unguarded
+// that mandated check EXECUTES this script. A verification you cannot safely run is not a verification.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  await main();
+}

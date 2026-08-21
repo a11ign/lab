@@ -23,7 +23,7 @@
 //
 // This delegates to `training:repeat` rather than reimplementing its comparison, which is the same
 // point in miniature: the tool already existed and hand-rolled substitutes were worse.
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { resolve } from "node:path";
@@ -105,21 +105,6 @@ const CANARIES = [
   },
 ];
 
-// Leased before the first canary and released in the `finally` at the bottom, so a gate that throws
-// half way through still leaves the host as it found it.
-const pages = await leasePageServer({
-  root: resolve(DATASET_ROOT, "pages"),
-  port: PAGES_PORT,
-  probePath: `${CANARIES[0].path}.html`,
-});
-const lease = await leaseWorker({ worker: arg("worker", process.env.A11Y_WORKER), after: "restore" });
-// The GUEST fetches these pages, and the guest's localhost is not ours. `guestReachableUrl` rewrites the
-// host — skipping it is how every capture came to fetch the guest's own localhost, showing Edge
-// "localhost refused to connect" and burning three attempts per page.
-const BASE = arg("base", guestReachableUrl(pages.url, lease));
-process.stdout.write(`worker ${lease.worker} (${lease.source}) · pages ${BASE}\n`);
-
-const results = [];
 /**
  * One canary, captured `TIMES` times and judged.
  *
@@ -194,28 +179,64 @@ function interpretFailure(error, path, results) {
   process.stdout.write(`  ${varies.length ? "UNSTABLE" : "INCONCLUSIVE"} — ${detail}\n`);
 }
 
-try {
-  for (const canary of CANARIES) await judgeCanary(canary, { base: BASE, worker: lease.worker, results });
-} finally {
-  // Release in the reverse order they were taken, and never let a release failure mask the verdict.
-  await lease.release().catch((e) => process.stderr.write(`worker release failed: ${e.message}\n`));
-  await pages.release().catch((e) => process.stderr.write(`page server release failed: ${e.message}\n`));
+/**
+ * The gate. Everything with an effect lives in here, and NOTHING is leased at module scope.
+ *
+ * That distinction is not stylistic, and it is the reason this function exists. `leaseWorker` sat at
+ * module scope, so merely IMPORTING this file leased a worker -- and with no `A11Y_WORKER` set the lease
+ * path "finds every local worker VM, starts what is stopped". A `node -e "import('./stability-gate.mjs')"`
+ * therefore BOOTED a Windows VM on the developer's Mac, took ~15% of its RAM, and never released it,
+ * because the import returned before the `finally` that does the releasing could ever be reached.
+ *
+ * That import is not hypothetical: CLAUDE.md makes it the only real check that an .mjs file still loads,
+ * since neither lint nor tsc can see a ReferenceError at import. So the file most expensive to import was
+ * the one the rules said to import.
+ */
+async function main() {
+  // Leased before the first canary and released in the `finally` below, so a gate that throws half way
+  // through still leaves the host as it found it.
+  const pages = await leasePageServer({
+    root: resolve(DATASET_ROOT, "pages"),
+    port: PAGES_PORT,
+    probePath: `${CANARIES[0].path}.html`,
+  });
+  const lease = await leaseWorker({ worker: arg("worker", process.env.A11Y_WORKER), after: "restore" });
+  // The GUEST fetches these pages, and the guest's localhost is not ours. `guestReachableUrl` rewrites the
+  // host — skipping it is how every capture came to fetch the guest's own localhost, showing Edge
+  // "localhost refused to connect" and burning three attempts per page.
+  const BASE = arg("base", guestReachableUrl(pages.url, lease));
+  process.stdout.write(`worker ${lease.worker} (${lease.source}) · pages ${BASE}\n`);
+
+  const results = [];
+  try {
+    for (const canary of CANARIES) await judgeCanary(canary, { base: BASE, worker: lease.worker, results });
+  } finally {
+    // Release in the reverse order they were taken, and never let a release failure mask the verdict.
+    await lease.release().catch((e) => process.stderr.write(`worker release failed: ${e.message}\n`));
+    await pages.release().catch((e) => process.stderr.write(`page server release failed: ${e.message}\n`));
+  }
+  report(results);
 }
 
-const failed = results.filter((r) => !r.ok);
-process.stdout.write(`\n${results.length - failed.length}/${results.length} canaries stable\n`);
-for (const f of failed) process.stdout.write(`  ${f.path}: ${f.detail}\n`);
-const unstable = failed.filter((f) => f.unstable);
-if (failed.length && !unstable.length) {
-  process.stdout.write("\nNo canary was UNSTABLE, but some could not be judged (errored or empty " +
-    "captures). Re-run the gate; if the same canary keeps failing to complete, that is a worker " +
-    "problem rather than a determinism one.\n");
-  process.exit(2);
+/** The verdict, and the exit code that carries it. Split out to keep `main` inside the complexity gate. */
+function report(results) {
+  const failed = results.filter((r) => !r.ok);
+  process.stdout.write(`\n${results.length - failed.length}/${results.length} canaries stable\n`);
+  for (const f of failed) process.stdout.write(`  ${f.path}: ${f.detail}\n`);
+  const unstable = failed.filter((f) => f.unstable);
+  if (failed.length && !unstable.length) {
+    process.stdout.write("\nNo canary was UNSTABLE, but some could not be judged (errored or empty " +
+      "captures). Re-run the gate; if the same canary keeps failing to complete, that is a worker " +
+      "problem rather than a determinism one.\n");
+    process.exit(2);
+  }
+  if (failed.length) {
+    process.stdout.write("\nDo NOT start a corpus run. Evidence that varies for the same unchanged page " +
+      "is indistinguishable from evidence that differs because the page differs, which is the one defect " +
+      "this project cannot tolerate.\n");
+    process.exit(1);
+  }
+  process.stdout.write("\nStable. Safe to start a corpus run.\n");
 }
-if (failed.length) {
-  process.stdout.write("\nDo NOT start a corpus run. Evidence that varies for the same unchanged page " +
-    "is indistinguishable from evidence that differs because the page differs, which is the one defect " +
-    "this project cannot tolerate.\n");
-  process.exit(1);
-}
-process.stdout.write("\nStable. Safe to start a corpus run.\n");
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main();
