@@ -75,3 +75,30 @@ test("a dependency on a sibling that does not exist is an ERROR, not a silent sk
   const fixture = fileURLToPath(new URL("../../../../scripts/isolation-fixtures/missing-sibling", import.meta.url));
   assert.throws(() => internalDependencies(fixture), /not a package in this repo/);
 });
+
+test("a platform-declined check is SKIPPED, not failed — and not counted as a pass either", () => {
+  // Exit 3 means the smoke test could not make a check on THIS machine: guidepup refusing to import without a
+  // screen reader, or a host-capacity read that is macOS-only because the fleet drives UTM. That is a platform
+  // limit, not a packaging defect.
+  //
+  // It mattered more than it looks. `gate:isolation` is the FIRST leg of `release:gate`, so treating a decline
+  // as a failure stopped the chain on the Linux control plane — the only machine with the Python venv the
+  // judge needs — and every model-quality gate behind it silently never ran. A gate that cannot run somewhere
+  // must say so, the way this file already announces private packages rather than quietly covering less.
+  const verdict = checkIsolation(fixture("platform-declined"));
+
+  assert.equal(verdict.skipped, true, `a decline must be a skip, got: ${JSON.stringify(verdict)}`);
+  assert.notEqual(verdict.ok, true, "a skip must NOT be reported as usable-when-installed");
+  assert.match(verdict.detail, /cannot verify/);
+});
+
+test("a decline is distinguishable from a real failure, which is the whole point", () => {
+  // If these two produced the same verdict the distinction would be decorative. `omitted-dependency` is a
+  // genuine packaging defect and must stay a failure no matter what the platform is.
+  const declined = checkIsolation(fixture("platform-declined"));
+  const broken = checkIsolation(fixture("omitted-dependency"));
+
+  assert.equal(declined.skipped, true);
+  assert.notEqual(broken.skipped, true, "an undeclared dependency is a DEFECT, never a platform limit");
+  assert.equal(broken.ok, false);
+});
