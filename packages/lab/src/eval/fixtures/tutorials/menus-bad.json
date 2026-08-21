@@ -1,7 +1,7 @@
 {
-  "url": "tutorial: menus-bad (authored from W3C guidance)",
+  "url": "http://REDACTED-INTERNAL-ADDRESS:5050/menus-bad.html",
   "screenReader": "NVDA",
-  "capturedAt": "2026-08-04T15:58:49.269Z",
+  "capturedAt": "2026-08-21T14:31:26.507Z",
   "transcript": [
     "link, Home, , link, Products, button,",
     "link, Help center, , link, Contact",
@@ -31,67 +31,108 @@
     "stateChanges": [],
     "formChanges": [],
     "postSubmitFields": [],
-    "focusOrder": []
+    "focusOrder": [
+      "Products, link, focused, linked",
+      "button, focused",
+      "Help center, link, focused, linked",
+      "Contact, link, focused, linked",
+      "Home, link, focused, linked",
+      "Products, link, focused, linked",
+      "button, focused",
+      "Help center, link, focused, linked",
+      "Contact, link, focused, linked",
+      "Home, link, focused, linked",
+      "Products, link, focused, linked",
+      "button, focused"
+    ]
   },
+  "media": [],
   "diagnostics": [
     {
+      "event": "browserSelected",
+      "atMs": 0,
+      "id": "edge",
+      "name": "Microsoft Edge"
+    },
+    {
       "event": "browserReused",
-      "atMs": 82,
-      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/tutorials/menus-bad.html",
-      "captures": 11
+      "atMs": 55,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5050/menus-bad.html",
+      "captures": 3
     },
     {
       "event": "windowsActivate",
-      "atMs": 847,
+      "atMs": 372,
       "ok": true,
-      "waitedMs": 765
+      "via": "cdpBringToFront",
+      "waitedMs": 317
     },
     {
       "event": "pointerParked",
-      "atMs": 999,
+      "atMs": 633,
       "x": 0,
       "y": 0,
-      "ms": 152
+      "ms": 261
     },
     {
       "event": "nvdaStart",
-      "atMs": 1000,
+      "atMs": 634,
       "ok": true,
       "reused": true,
-      "captures": 12
+      "captures": 4
     },
     {
       "event": "speechChannel",
-      "atMs": 1600,
+      "atMs": 1213,
       "alive": true,
       "heard": "link, Home, , link, Products, button,"
     },
     {
       "event": "documentReady",
-      "atMs": 2290,
+      "atMs": 1814,
       "ok": true,
       "title": "Acme - Home (inaccessible menu)",
       "attempt": 1
     },
     {
+      "event": "bufferReady",
+      "atMs": 2104,
+      "sawLoading": false,
+      "refreshed": true,
+      "waitedMs": 1
+    },
+    {
+      "event": "browseBufferRefreshed",
+      "atMs": 2413,
+      "reason": "navigated an already-open window",
+      "ready": true,
+      "refreshed": true
+    },
+    {
       "event": "afterStart",
-      "atMs": 8019,
+      "atMs": 8851,
       "lastSpoken": "link, Home, , link, Products, button, "
     },
     {
+      "event": "readBudget",
+      "atMs": 8851,
+      "readDeadlineInMs": 352362,
+      "reservedMs": 60000
+    },
+    {
       "event": "readThrough",
-      "atMs": 9874,
+      "atMs": 10626,
       "count": 4,
       "stopReason": "repeatBottom",
       "firstStepError": null
     },
     {
       "event": "sweep",
-      "atMs": 10464,
+      "atMs": 11201,
       "type": "heading",
       "found": 0,
-      "prevMs": 313,
-      "nextMs": 277,
+      "prevMs": 301,
+      "nextMs": 274,
       "prevTrips": 3,
       "nextTrips": 3,
       "prevStop": "exhausted",
@@ -102,11 +143,11 @@
     },
     {
       "event": "sweep",
-      "atMs": 11029,
+      "atMs": 11746,
       "type": "landmark",
       "found": 0,
-      "prevMs": 281,
-      "nextMs": 284,
+      "prevMs": 271,
+      "nextMs": 274,
       "prevTrips": 3,
       "nextTrips": 3,
       "prevStop": "exhausted",
@@ -117,11 +158,11 @@
     },
     {
       "event": "sweep",
-      "atMs": 12897,
+      "atMs": 13641,
       "type": "formField",
       "found": 1,
-      "prevMs": 608,
-      "nextMs": 1260,
+      "prevMs": 572,
+      "nextMs": 1323,
       "prevTrips": 5,
       "nextTrips": 3,
       "prevStop": "exhausted",
@@ -134,7 +175,7 @@
     },
     {
       "event": "structural",
-      "atMs": 12897,
+      "atMs": 13641,
       "headings": 0,
       "landmarks": 0,
       "formFields": 1,
@@ -142,11 +183,11 @@
     },
     {
       "event": "sweep",
-      "atMs": 13451,
+      "atMs": 14190,
       "type": "graphic",
       "found": 0,
-      "prevMs": 278,
-      "nextMs": 276,
+      "prevMs": 276,
+      "nextMs": 273,
       "prevTrips": 3,
       "nextTrips": 3,
       "prevStop": "exhausted",
@@ -157,11 +198,11 @@
     },
     {
       "event": "sweep",
-      "atMs": 15616,
+      "atMs": 16291,
       "type": "link",
       "found": 4,
-      "prevMs": 922,
-      "nextMs": 1243,
+      "prevMs": 896,
+      "nextMs": 1205,
       "prevTrips": 7,
       "nextTrips": 9,
       "prevStop": "exhausted",
@@ -177,11 +218,11 @@
     },
     {
       "event": "sweep",
-      "atMs": 16161,
+      "atMs": 19781,
       "type": "list",
       "found": 0,
-      "prevMs": 267,
-      "nextMs": 278,
+      "prevMs": 368,
+      "nextMs": 265,
       "prevTrips": 3,
       "nextTrips": 3,
       "prevStop": "exhausted",
@@ -191,8 +232,20 @@
       "phrases": []
     },
     {
+      "event": "formProbe",
+      "atMs": 19782,
+      "activated": 0
+    },
+    {
+      "event": "focusOrder",
+      "atMs": 31573,
+      "stops": 12,
+      "truncated": true,
+      "stalled": false
+    },
+    {
       "event": "interaction",
-      "atMs": 16162,
+      "atMs": 31573,
       "controls": 1,
       "stateChanges": 0,
       "formChanges": 0,
@@ -201,7 +254,7 @@
     },
     {
       "event": "structureCensus",
-      "atMs": 16176,
+      "atMs": 31581,
       "landmark": 0,
       "heading": 0,
       "link": 4,
@@ -228,35 +281,40 @@
       ]
     },
     {
+      "event": "mediaCensus",
+      "atMs": 31586,
+      "count": 0
+    },
+    {
       "event": "structureCrossCheck",
-      "atMs": 16176,
+      "atMs": 31586,
       "agrees": true,
       "compared": 4,
       "disagreements": []
     },
     {
       "event": "done",
-      "atMs": 16176,
+      "atMs": 31586,
       "transcript": 4
     },
     {
       "event": "browserKeptAlive",
-      "atMs": 16177
+      "atMs": 31586
     }
   ],
-  "task": "Go to the Support section",
+  "task": null,
   "environment": {
-    "measuredAt": "2026-08-04T15:58:49.270Z",
+    "measuredAt": "2026-08-21T14:31:26.507Z",
     "screenReader": "NVDA",
     "screenReaderVersion": "2026.1.1",
     "browser": "Microsoft Edge",
-    "browserVersion": "151.0.4129.59",
+    "browserVersion": "151.0.4129.93",
     "guidepupVersion": "0.31.0",
-    "nodeVersion": "v24.18.0",
-    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
-    "architecture": "arm64",
-    "workerCode": "935baeacbe67c5ff",
-    "captureProtocol": 4,
-    "provisionRevision": "unstamped"
+    "nodeVersion": "v24.19.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22631",
+    "architecture": "x64",
+    "workerCode": "dcf6f929d9829aab",
+    "captureProtocol": 6,
+    "provisionRevision": "67d7a53-7bfec1a8cd547b47"
   }
 }

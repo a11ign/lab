@@ -1,14 +1,12 @@
 {
-  "url": "tutorial: menus-good (authored from W3C guidance)",
+  "url": "http://REDACTED-INTERNAL-ADDRESS:5050/menus-good.html",
   "screenReader": "NVDA",
-  "capturedAt": "2026-08-04T15:58:32.475Z",
+  "capturedAt": "2026-08-21T14:32:05.011Z",
   "transcript": [
     "link, current page, Home",
     "link, Products",
     "button, collapsed, Support",
-    "list, with 2 items, link, Help center",
-    "link, Contact",
-    "out of list, out of list, main landmark, heading, level 1, Home",
+    "out of list, main landmark, heading, level 1, Home",
     "Welcome to Acme."
   ],
   "structure": {
@@ -30,7 +28,6 @@
       "Contact, link"
     ],
     "lists": [
-      "Home, link, current page",
       "list, with 2 items, Help center, link"
     ],
     "tableCells": []
@@ -42,72 +39,113 @@
     "stateChanges": [
       {
         "control": "Main, navigation landmark, list, with 3 items, Support, button, collapsed",
-        "after": "Support, button, focused, collapsed"
+        "after": "Support, button, focused, expanded"
       }
     ],
     "formChanges": [],
     "postSubmitFields": [],
-    "focusOrder": []
+    "focusOrder": [
+      "Products, link, focused, linked",
+      "Support, button, focused, expanded",
+      "Help center, link, focused, linked",
+      "Contact, link, focused, linked",
+      "Home, link, focused, linked, current page",
+      "Products, link, focused, linked",
+      "Support, button, focused, expanded",
+      "Help center, link, focused, linked",
+      "Contact, link, focused, linked",
+      "Home, link, focused, linked, current page",
+      "Products, link, focused, linked",
+      "Support, button, focused, expanded"
+    ]
   },
+  "media": [],
   "diagnostics": [
     {
+      "event": "browserSelected",
+      "atMs": 0,
+      "id": "edge",
+      "name": "Microsoft Edge"
+    },
+    {
       "event": "browserReused",
-      "atMs": 99,
-      "url": "http://REDACTED-INTERNAL-ADDRESS:5052/tutorials/menus-good.html",
-      "captures": 10
+      "atMs": 50,
+      "url": "http://REDACTED-INTERNAL-ADDRESS:5050/menus-good.html",
+      "captures": 4
     },
     {
       "event": "windowsActivate",
-      "atMs": 860,
+      "atMs": 380,
       "ok": true,
-      "waitedMs": 761
+      "via": "cdpBringToFront",
+      "waitedMs": 330
     },
     {
       "event": "pointerParked",
-      "atMs": 1054,
+      "atMs": 622,
       "x": 0,
       "y": 0,
-      "ms": 194
+      "ms": 242
     },
     {
       "event": "nvdaStart",
-      "atMs": 1055,
+      "atMs": 622,
       "ok": true,
       "reused": true,
-      "captures": 11
+      "captures": 5
     },
     {
       "event": "speechChannel",
-      "atMs": 1657,
+      "atMs": 1191,
       "alive": true,
       "heard": "link, current page, Home"
     },
     {
       "event": "documentReady",
-      "atMs": 2254,
+      "atMs": 1765,
       "ok": true,
       "title": "Acme - Home (accessible menu)",
       "attempt": 1
     },
     {
+      "event": "bufferReady",
+      "atMs": 2043,
+      "sawLoading": false,
+      "refreshed": true,
+      "waitedMs": 0
+    },
+    {
+      "event": "browseBufferRefreshed",
+      "atMs": 2344,
+      "reason": "navigated an already-open window",
+      "ready": true,
+      "refreshed": true
+    },
+    {
       "event": "afterStart",
-      "atMs": 7904,
+      "atMs": 8804,
       "lastSpoken": "link, current page, Home"
     },
     {
+      "event": "readBudget",
+      "atMs": 8804,
+      "readDeadlineInMs": 352387,
+      "reservedMs": 60000
+    },
+    {
       "event": "readThrough",
-      "atMs": 10919,
-      "count": 7,
+      "atMs": 10868,
+      "count": 5,
       "stopReason": "repeatBottom",
       "firstStepError": null
     },
     {
       "event": "sweep",
-      "atMs": 12542,
+      "atMs": 11719,
       "type": "heading",
       "found": 1,
-      "prevMs": 655,
-      "nextMs": 968,
+      "prevMs": 594,
+      "nextMs": 257,
       "prevTrips": 5,
       "nextTrips": 3,
       "prevStop": "exhausted",
@@ -120,11 +158,11 @@
     },
     {
       "event": "sweep",
-      "atMs": 13745,
+      "atMs": 13787,
       "type": "landmark",
       "found": 2,
-      "prevMs": 632,
-      "nextMs": 571,
+      "prevMs": 626,
+      "nextMs": 1442,
       "prevTrips": 5,
       "nextTrips": 5,
       "prevStop": "exhausted",
@@ -138,11 +176,11 @@
     },
     {
       "event": "sweep",
-      "atMs": 20553,
+      "atMs": 18598,
       "type": "formField",
       "found": 1,
-      "prevMs": 6517,
-      "nextMs": 291,
+      "prevMs": 4534,
+      "nextMs": 277,
       "prevTrips": 5,
       "nextTrips": 3,
       "prevStop": "exhausted",
@@ -155,7 +193,7 @@
     },
     {
       "event": "structural",
-      "atMs": 20553,
+      "atMs": 18598,
       "headings": 1,
       "landmarks": 2,
       "formFields": 1,
@@ -163,11 +201,11 @@
     },
     {
       "event": "sweep",
-      "atMs": 21116,
+      "atMs": 19147,
       "type": "graphic",
       "found": 0,
-      "prevMs": 275,
-      "nextMs": 288,
+      "prevMs": 285,
+      "nextMs": 264,
       "prevTrips": 3,
       "nextTrips": 3,
       "prevStop": "exhausted",
@@ -178,11 +216,11 @@
     },
     {
       "event": "sweep",
-      "atMs": 23892,
+      "atMs": 22116,
       "type": "link",
       "found": 4,
-      "prevMs": 984,
-      "nextMs": 1792,
+      "prevMs": 943,
+      "nextMs": 2026,
       "prevTrips": 7,
       "nextTrips": 9,
       "prevStop": "exhausted",
@@ -198,36 +236,47 @@
     },
     {
       "event": "sweep",
-      "atMs": 25143,
+      "atMs": 25908,
       "type": "list",
-      "found": 2,
-      "prevMs": 644,
-      "nextMs": 607,
-      "prevTrips": 5,
+      "found": 1,
+      "prevMs": 281,
+      "nextMs": 638,
+      "prevTrips": 3,
       "nextTrips": 5,
       "prevStop": "exhausted",
       "nextStop": "exhausted",
-      "prevStopPhrase": "Home, link, current page",
+      "prevStopPhrase": "",
       "nextStopPhrase": "list, with 2 items, Help center, link",
       "phrases": [
-        "Home, link, current page",
         "list, with 2 items, Help center, link"
       ]
     },
     {
+      "event": "formProbe",
+      "atMs": 25908,
+      "activated": 0
+    },
+    {
+      "event": "focusOrder",
+      "atMs": 38031,
+      "stops": 12,
+      "truncated": true,
+      "stalled": false
+    },
+    {
       "event": "interaction",
-      "atMs": 25143,
+      "atMs": 38031,
       "controls": 1,
       "stateChanges": 1,
       "formChanges": 0,
       "postSubmit": 0,
       "sweepLog": [
-        "disclosure \"Main, navigation landmark, list, with 3 \" announced=\"\" state=\"Support, button, focused, collapsed\""
+        "disclosure \"Main, navigation landmark, list, with 3 \" announced=\"expanded\" state=\"Support, button, focused, expanded\""
       ]
     },
     {
       "event": "structureCensus",
-      "atMs": 25155,
+      "atMs": 38039,
       "landmark": 2,
       "heading": 1,
       "link": 4,
@@ -259,35 +308,40 @@
       ]
     },
     {
+      "event": "mediaCensus",
+      "atMs": 38047,
+      "count": 0
+    },
+    {
       "event": "structureCrossCheck",
-      "atMs": 25156,
+      "atMs": 38047,
       "agrees": true,
       "compared": 4,
       "disagreements": []
     },
     {
       "event": "done",
-      "atMs": 25156,
-      "transcript": 7
+      "atMs": 38047,
+      "transcript": 5
     },
     {
       "event": "browserKeptAlive",
-      "atMs": 25156
+      "atMs": 38047
     }
   ],
-  "task": "Go to the Support section",
+  "task": null,
   "environment": {
-    "measuredAt": "2026-08-04T15:58:32.477Z",
+    "measuredAt": "2026-08-21T14:32:05.011Z",
     "screenReader": "NVDA",
     "screenReaderVersion": "2026.1.1",
     "browser": "Microsoft Edge",
-    "browserVersion": "151.0.4129.59",
+    "browserVersion": "151.0.4129.93",
     "guidepupVersion": "0.31.0",
-    "nodeVersion": "v24.18.0",
-    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22621",
-    "architecture": "arm64",
-    "workerCode": "935baeacbe67c5ff",
-    "captureProtocol": 4,
-    "provisionRevision": "unstamped"
+    "nodeVersion": "v24.19.0",
+    "windowsVersion": "Microsoft Windows 11 Pro 10.0.22631",
+    "architecture": "x64",
+    "workerCode": "dcf6f929d9829aab",
+    "captureProtocol": 6,
+    "provisionRevision": "67d7a53-7bfec1a8cd547b47"
   }
 }
