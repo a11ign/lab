@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en">
 <head><meta charset="utf-8"><title>Acme - Home (accessible menu)</title>
-<style>body{font-family:system-ui,sans-serif;max-width:42rem;margin:2rem auto} .fakeheading{font-size:1.5rem;font-weight:700;margin:1.2rem 0 .4rem} .iconbtn{border:0;background:#eee;padding:.4rem} nav ul{list-style:none;display:flex;gap:1rem;padding:0}</style>
+<style>body{font-family:system-ui,sans-serif;max-width:42rem;margin:2rem auto} .fakeheading{font-size:1.5rem;font-weight:700;margin:1.2rem 0 .4rem} .iconbtn{border:0;background:#eee;padding:.4rem} nav ul{list-style:none;display:flex;gap:1rem;padding:0} /* `nav ul{display:flex}` above OVERRIDES the `hidden` attribute, which is only `display:none` from the UA stylesheet, so an author `display` wins and the submenu stayed visible while `aria-expanded` said false. The first recapture proved it: the fly-out's links were still in the read-through before anything was activated. `[hidden]` is more specific than `nav ul`, so this makes the attribute mean what it says. */ [hidden]{display:none}</style>
 </head>
 <body>
 <nav aria-label="Main">
