@@ -31,7 +31,7 @@
  * there.
  */
 import { execFileSync } from "node:child_process";
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -43,6 +43,8 @@ import { realPageFor } from "../src/training/real-page-corpus.mjs";
 // to read.
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const ROOT = resolve(REPO, process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
+/** Where this script's own OUTPUT goes. Separate from `ROOT`, which is its input. */
+const OUT_DIR = resolve(REPO, process.env.ABSTENTION_OUT || "runs/abstention");
 const PYTHON = process.env.A11Y_PYTHON || resolve(REPO, ".venv/bin/python");
 const SCORER = resolve(REPO, "packages/scorer/python/score.py");
 /**
@@ -53,8 +55,35 @@ const SCORER = resolve(REPO, "packages/scorer/python/score.py");
  */
 const MODEL = process.env.A11Y_SCORER_MODEL;
 
-/** Floors to try. The shipped one (0.847) is included so the status quo appears as a row. */
-const CANDIDATE_FLOORS = [0.847, 0.80, 0.75, 0.70, 0.65, 0.60, 0.55, 0.0];
+/**
+ * Floors to try. Round numbers to show the shape of the curve, plus **the floor the model actually derived**,
+ * which is the only row that describes what shipping these weights would do.
+ *
+ * That row used to be missing, and the omission was the "canary that cannot express the fault" shape: the
+ * list was written when the derived floor was 0.847 and hardcoded it as "the status quo", so once the
+ * statistic fixes moved the floor to 0.7192 and the realism tier moved it to 0.5587, the sweep bracketed the
+ * real operating point without ever evaluating it. A calibration report that cannot score the chosen
+ * threshold is measuring a model nobody is going to ship.
+ */
+const MODEL_DIR = MODEL ?? resolve(REPO, "packages/scorer/models/screenreader-scorer");
+
+function derivedFloor() {
+  try {
+    const report = JSON.parse(readFileSync(resolve(MODEL_DIR, "training-report.json"), "utf8"));
+    return report.outOfDistribution?.inDistributionFloor ?? null;
+  } catch (cause) {
+    // Reported, not swallowed: without this row the table still shows the curve, but it no longer says what
+    // the model would do, and the reader must be told which of the two they are looking at.
+    process.stdout.write(`  NOTE: could not read the derived floor from ${MODEL_DIR} (${cause.code ?? cause.message}); `
+      + "the table below shows the curve but not this model's own operating point\n");
+    return null;
+  }
+}
+
+const ROUND_FLOORS = [0.80, 0.75, 0.70, 0.65, 0.60, 0.55, 0.0];
+const DERIVED = derivedFloor();
+const CANDIDATE_FLOORS = [...new Set([...(DERIVED === null ? [] : [DERIVED]), ...ROUND_FLOORS])]
+  .sort((a, b) => b - a);
 
 function calibrationPages() {
   return readdirSync(ROOT)
@@ -166,7 +195,8 @@ function main() {
       disclosed, inaccessibleScored: inaccessible.length, inaccessibleCaught: caught });
     process.stdout.write(`  ${String(floor).padEnd(7)} ${String(accepted.length).padEnd(7)} `
       + `${String(conformant.length).padEnd(11)} ${String(falsePositives).padEnd(16)} `
-      + `${String(disclosed).padEnd(10)} ${caught} of ${inaccessible.length}\n`);
+      + `${String(disclosed).padEnd(10)} ${caught} of ${inaccessible.length}`
+      + `${floor === DERIVED ? "   <- THIS MODEL'S OWN FLOOR" : ""}\n`);
   }
 
   const n = scored.length;
@@ -181,7 +211,14 @@ function main() {
 
   // A scratch model writes to its own file. Overwriting the shipped model's sweep with a candidate's
   // numbers would silently rewrite the measurement that PLAN.md's B4 decision rests on.
-  const outPath = resolve(ROOT, MODEL ? "abstention-sweep.candidate.json" : "abstention-sweep.json");
+  //
+  // Written to OUT_DIR, not into the corpus. These used to land in `runs/real-page-corpus/` beside the
+  // captures they analyse, and mixing outputs into an input directory produced exactly the kind of coupling
+  // this repo pays for: `build-realism-tier.mjs` had to carry `f !== "abstention-sweep.json"`, a filename
+  // blacklist which `abstention-sweep.candidate.json` had already outgrown — it only escaped notice because
+  // a role filter downstream happened to drop it for an unrelated reason.
+  mkdirSync(OUT_DIR, { recursive: true });
+  const outPath = resolve(OUT_DIR, MODEL ? "abstention-sweep.candidate.json" : "abstention-sweep.json");
   writeFileSync(outPath, JSON.stringify({ model: MODEL ?? "shipped", calibrationPages: n, scored, rows }, null, 2));
   process.stdout.write(`\n  written: ${outPath}\n`);
 }

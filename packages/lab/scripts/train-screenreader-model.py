@@ -144,6 +144,52 @@ RULE_SUBSTITUTED_SUBTYPES = frozenset(
     if entry["decidedBy"] == "rules" and subtype.startswith(entry["reportsAs"] + ":")
 )
 
+def refuse_to_destroy_release_weights(args: argparse.Namespace) -> None:
+    """Do not overwrite a release-eligible model without being told to.
+
+    `--output` defaults into `packages/scorer/models/screenreader-scorer`, a GIT-TRACKED build artifact, and
+    that is deliberate rather than an oversight: four downstream scripts default to reading that same path
+    (`evaluate-screenreader-acceptance.py`, `check-screenreader-hardening.py`,
+    `report-screenreader-errors.py`, and `score.py` at inference). Moving the default out of the tree would
+    decouple train from evaluate, so the acceptance gate would measure the OLD shipped model while the new
+    one sat elsewhere -- a gate reporting on weights nobody is about to ship, which is worse than the
+    problem it would solve.
+
+    So the write stays where the chain expects it and the DESTRUCTION is what gets guarded. A
+    release-eligible model in the output directory is the expensive thing: it passed calibration and
+    held-out acceptance, and one was already lost once to a `git checkout` on the assumption that a tracked
+    file is always recoverable. It is not, if it was never committed.
+
+    Same shape and same reasoning as `worker:deploy --allow-protocol-change`, which guards 2,122 cached
+    captures: refuse by default, name the thing at risk, and say the one flag that proceeds.
+    """
+    report_path = args.output / "training-report.json"
+    if args.allow_overwrite or not report_path.exists():
+        return
+    try:
+        existing = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        # An unreadable report is not a release-eligible model, and refusing on it would block a retrain
+        # after a half-written artifact -- the very situation a retrain fixes.
+        return
+    if not existing.get("releaseEligible"):
+        return
+    floor = (existing.get("outOfDistribution") or {}).get("inDistributionFloor")
+    print(
+        f"REFUSING to overwrite {args.output}: it holds a RELEASE-ELIGIBLE model"
+        f" (generalisationVerified={existing.get('generalisationVerified')}, floor={floor}).\n"
+        "\n"
+        "Train to a scratch directory and compare, which is the workflow the abstention sweep already\n"
+        "expects (`A11Y_SCORER_MODEL=<dir> calibrate-abstention.mjs`):\n"
+        f"  --output runs/model-candidate\n"
+        "\n"
+        "Or overwrite deliberately:\n"
+        "  --allow-overwrite\n",
+        file=sys.stderr,
+    )
+    raise SystemExit(3)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, default=Path("runs/screenreader-dataset/screenreader-evidence.jsonl"))
@@ -151,6 +197,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=SCORER_PACKAGE / "models" / "screenreader-scorer")
     parser.add_argument("--epochs", type=int, default=DEFAULT_EPOCHS)
     parser.add_argument("--max-length", type=int, default=256)
+    # The OPERATING floor, when one has been chosen from held-out data. Absent, the trainer derives a
+    # bootstrap floor from the training set's own nearest-neighbour minimum -- which is all it can see, and
+    # which the report has always labelled "NOT conformally calibrated".
+    #
+    # It needs to be an input because the derived value is not the right operating point and cannot be:
+    # measured on the 22-page calibration set, the derived 0.5587 scored 21 of 22 real pages with 0 false
+    # positives but turned an honest abstention into a MISS on W3C's own "purchase form, broken" demo, while
+    # 0.70 scored 20 of 22 with 0 false positives and caught it. For an accessibility tool "I cannot assess
+    # this page" is a safe answer and "no findings" on a broken form is a wrong one, so the floor is a
+    # calibration decision and belongs here as a value somebody chose and recorded.
+    parser.add_argument("--in-distribution-floor", type=float, default=None)
+    # See `refuse_to_destroy_release_weights`. Named like `worker:deploy --allow-protocol-change`, which
+    # guards the capture cache for the same reason: the thing being overwritten is expensive and its loss
+    # is not obvious afterwards.
+    parser.add_argument("--allow-overwrite", action="store_true",
+                        help="overwrite a release-eligible model in the output directory")
     return parser.parse_args()
 
 def assign_splits(records: list[dict[str, Any]]) -> dict[str, str]:
@@ -388,6 +450,10 @@ def main() -> None:
     # whole body, so an earlier use raises UnboundLocalError rather than resolving a global.
     import torch
     args = parse_args()
+    # BEFORE the work, not at save time. A guard that fires after training has already spent two minutes
+    # (and, on a cold embedding cache, closer to seven) teaches you to pass the override reflexively, which
+    # is how a guard stops being read.
+    refuse_to_destroy_release_weights(args)
     random.seed(SEED)
     encoder_file = assert_encoder(args.encoder)
     records = read_records(args.data)
@@ -697,6 +763,11 @@ def main() -> None:
     neighbours.fill_diagonal_(-1.0)
     floor = float(neighbours.max(dim=1).values.min())
     weights["ood_reference"] = sample
+    # The derived floor is kept and reported alongside, so a reader can always see both what the data
+    # implied and what was chosen. Reporting only the winner is how a number nobody chose ends up looking
+    # like a measurement.
+    chosen_floor = args.in_distribution_floor if args.in_distribution_floor is not None else floor
+
     report["outOfDistribution"] = {
         "method": "knn-cosine-document-embedding",
         "reference": "ood_reference",
@@ -705,15 +776,25 @@ def main() -> None:
         # structures. It counted records until 2026-08-20, which is why adding duplicates could not move it.
         "distinctStructures": len(reference_rows),
         "splits": ["train", "validation"],
-        "inDistributionFloor": round(floor, 4),
-        "calibration": "derived from the training set's own nearest-neighbour minimum; NOT conformally "
-                       "calibrated against a target error rate, because no labelled real-page set exists yet",
+        "inDistributionFloor": round(chosen_floor, 4),
+        "derivedFloor": round(floor, 4),
+        "floorSource": "calibration-set" if args.in_distribution_floor is not None else "training-set-minimum",
+        "calibration": (
+            "chosen on the held-out calibration set and passed in with --in-distribution-floor; the "
+            f"training set's own nearest-neighbour minimum was {round(floor, 4)}. Still NOT conformally "
+            "calibrated against a stated error rate -- 22 calibration pages can express about 4.3% and no "
+            "finer (see docs/adr/0010)."
+            if args.in_distribution_floor is not None else
+            "derived from the training set's own nearest-neighbour minimum; NOT conformally calibrated "
+            "against a target error rate, and NOT the operating point chosen from held-out data. Pass "
+            "--in-distribution-floor to set one."
+        ),
     }
 
     args.output.mkdir(parents=True, exist_ok=True)
     save_file(
         weights,
-        str(args.output / "model.safetensors"),
+        str(args.output / "model.safetensors.tmp"),
         metadata={
             "format": "pt",
             "encoder": "all-MiniLM-L6-v2",
@@ -725,7 +806,19 @@ def main() -> None:
             "max_length": str(args.max_length),
         },
     )
-    (args.output / "training-report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    # Temp + rename, so an interrupted train leaves the PREVIOUS weights intact instead of a truncated
+    # file where a release-eligible model used to be. `save_file` writes in place, and this output
+    # directory is a git-tracked build artifact — so a run killed at the wrong moment did not merely fail,
+    # it destroyed something that took a fleet to produce. `rename` within one directory is atomic on
+    # POSIX, which is the same guarantee `capture-progress.mjs` relies on.
+    #
+    # The report is written second and renamed second, deliberately: a reader that finds new weights and an
+    # old report sees a version mismatch it can detect, whereas a new report promising a floor that the
+    # weights beside it do not implement is a lie with no symptom.
+    (args.output / "model.safetensors.tmp").replace(args.output / "model.safetensors")
+    report_tmp = args.output / "training-report.json.tmp"
+    report_tmp.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    report_tmp.replace(args.output / "training-report.json")
     print(json.dumps(report, indent=2))
     if not report["releaseEligible"]:
         print("WARNING: this is a seed smoke-test artifact, not a release candidate")

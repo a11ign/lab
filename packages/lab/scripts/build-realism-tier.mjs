@@ -36,7 +36,7 @@
  */
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { evidenceUnits, captureEvidenceText, producerFeedsModel } from "@a11y-witness/scorer/evidence-units";
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
@@ -115,23 +115,85 @@ function claimExcludesFor(entry) {
       + "be read. Refusing to treat that as \"no exceptions\": an unmasked page trains every head as "
       + "conformant, including criteria the publisher may state in writing that it fails.");
   }
-  return page.claimExcludes ?? [];
+  return [...new Set([...(page.claimExcludes ?? []), ...unevaluableFor(entry.capture)])];
 }
+
+/**
+ * Criteria whose evidence this capture does not contain, and which therefore cannot be labelled either way.
+ *
+ * `probeForms` is OFF for every real-page capture, because submitting a form on a site we do not own is not
+ * a review. Two criteria read only what that probe produces, so on a real page they are unevaluable:
+ * measured across the corpus, **0 of 77 captures carry `formChanges` or `postSubmitFields`**. Left unmasked,
+ * 41 pages trained 3.3.1 as clean and 39 trained 4.1.3 as clean from evidence that was structurally absent
+ * -- a label asserting something the capture cannot show, and one that looks identical to a failed or
+ * truncated capture. That is the same shape as the U+FFFC contamination: a feature correlating with
+ * something other than the property under test.
+ *
+ * DERIVED from the capture, not a hardcoded pair, so it is self-correcting. Enable form probing for some
+ * page and its 3.3.1/4.1.3 labels become real without anyone remembering to delete an exception -- which is
+ * the failure mode of every list this repo has had to keep in sync by hand.
+ */
+const EVIDENCE_BY_CRITERION = Object.freeze({
+  "3.3.1": (interaction) => (interaction.formChanges ?? []).length > 0,
+  "4.1.3": (interaction) => (interaction.postSubmitFields ?? []).length > 0,
+});
+
+export function unevaluableFor(capture) {
+  const interaction = capture?.interaction ?? {};
+  return Object.entries(EVIDENCE_BY_CRITERION)
+    .filter(([, hasEvidence]) => !hasEvidence(interaction))
+    .map(([criterion]) => criterion);
+}
+
+/**
+ * The head set, derived from the base corpus rather than declared here. A second list of criteria would be a
+ * second source of truth, and the trainer builds its heads from these same labels.
+ */
+function scoredCriteria(baseLines) {
+  const seen = new Set();
+  for (const line of baseLines) {
+    for (const criterion of JSON.parse(line).target?.criteria ?? []) seen.add(criterion);
+  }
+  return [...seen].sort();
+}
+
+/** Which of the scored heads this record is masked on. Criterion-or-subtype, matching `known_indices`. */
+const maskedHeads = (record, heads) => heads.filter((head) =>
+  record.target.unknownSubtypes.some((s) => s === head || String(s).startsWith(`${head}:`)));
 
 /**
  * The mask, VISIBLE. It was inert for its whole existence and nothing said so, because an empty mask and a
  * broken join print the same nothing. A count per page is the cheapest thing that could have caught it.
+ *
+ * Reported per HEAD as well as per page, because those answer different questions and only the second was
+ * being asked. "34 of 53 pages carry an exception" cannot tell you whether a head still has real pages to
+ * learn from; `1.3.1: 28 of 53` does — and that was the number needed to know the mask had bought
+ * correctness without costing coverage. The pages masked on EVERY head are named for the same reason: a
+ * record that is written, embedded and inert is this repo's most expensive recurring shape.
  */
-function reportMasks(records) {
+function reportMasks(records, heads) {
   const masks = records
-    .map((r) => [r.provenance.url, r.target.unknownSubtypes.length])
+    .map((r) => [r.provenance.url, maskedHeads(r, heads).length])
     .filter(([, n]) => n > 0)
     .sort((a, b) => b[1] - a[1]);
   process.stdout.write(`  publisher exceptions honoured: ${masks.length} of ${records.length} page(s)\n`);
   for (const [url, n] of masks.slice(0, 8)) {
-    process.stdout.write(`    ${n} head(s) masked  ${url}\n`);
+    process.stdout.write(`    ${n} of ${heads.length} head(s) masked  ${url}\n`);
   }
   if (masks.length > 8) process.stdout.write(`    ... and ${masks.length - 8} more\n`);
+
+  process.stdout.write(`  real pages still usable, per head:\n`);
+  for (const head of heads) {
+    const usable = records.filter((r) => !maskedHeads(r, heads).includes(head)).length;
+    process.stdout.write(`    ${head}: ${usable} of ${records.length}\n`);
+  }
+
+  const inert = records.filter((r) => maskedHeads(r, heads).length === heads.length);
+  if (inert.length) {
+    process.stdout.write(`  ${inert.length} page(s) masked on EVERY head -- written and embedded, but they `
+      + `train nothing:\n`);
+    for (const r of inert) process.stdout.write(`    ${r.provenance.url}\n`);
+  }
 }
 
 /** One capture, as a training record. The channel contract and the publisher's claim both come from
@@ -185,9 +247,15 @@ function recordFor(entry) {
 
 function main() {
   const entries = readdirSync(CORPUS)
-    .filter((f) => f.endsWith(".json") && f !== "abstention-sweep.json")
+    .filter((f) => f.endsWith(".json"))
     .map((f) => JSON.parse(readFileSync(resolve(CORPUS, f), "utf8")))
-    .filter((e) => e.role === "training");
+    // Selected by SHAPE, not by excluding filenames. This carried `f !== "abstention-sweep.json"` — a
+    // blacklist that `abstention-sweep.candidate.json` had already outgrown, and which only escaped notice
+    // because the role filter below dropped that file for an unrelated reason. A guard that works by
+    // accident is not a guard. The sweep now writes to `runs/abstention/` rather than into this directory,
+    // so nothing needs excluding; requiring a `capture` as well as a `role` means anything else that
+    // appears here is skipped for a reason that will still hold for the next stray file.
+    .filter((e) => e.role === "training" && e.capture);
 
   // No real-page captures is a legitimate state -- a fresh checkout has none -- so this writes the base
   // dataset through rather than failing. It says so LOUDLY, because a script that silently produced a
@@ -215,11 +283,11 @@ function main() {
   writeFileSync(OUT, [...base, ...records.map((r) => JSON.stringify(r))].join("\n") + "\n");
 
   process.stdout.write(`  base records:     ${base.length}\n`);
-  process.stdout.write(`  realism records:  ${records.length}  (all label=clean, from W3C's own claim)\n`);
+  process.stdout.write(`  realism records:  ${records.length}  (label=clean, from each publisher's own statement)\n`);
   process.stdout.write(`  written:          ${OUT}\n`);
   process.stdout.write(`  median units/rec: ${median(records.map((r) => r.input.evidenceUnits.length))}\n`);
   process.stdout.write(`  rejected as truncated: ${rejected.length} of ${entries.length}\n`);
-  reportMasks(records);
+  reportMasks(records, scoredCriteria(base));
   // A real page with two evidence units would mean the capture failed, not that the page is simple. Kept as
   // a warning rather than promoted to a reject: the truncation gate above is the principled check, and this
   // is a backstop for a capture that failed in a way no sweep recorded.
@@ -236,4 +304,13 @@ const median = (xs) => {
   return s.length ? s[Math.floor(s.length / 2)] : 0;
 };
 
-main();
+// Guarded, because CLAUDE.md makes `node -e "import('./this.mjs')"` the ONLY real check that an .mjs file
+// still loads -- lint and tsc cannot see a ReferenceError at import. Unguarded, that mandated verification
+// rebuilds the corpus and overwrites `with-realism.jsonl` as a side effect, so the check you are told to run
+// is the check you cannot safely run. Same guard as `calibrate-abstention.mjs:193`, for the same reason.
+//
+// `bench-capture.mjs`, `corpus-snapshot.mjs` and `evidence-check.mjs` still need it and cannot take it as
+// one line: their top-level bodies are bare statements rather than a `main()`.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  main();
+}

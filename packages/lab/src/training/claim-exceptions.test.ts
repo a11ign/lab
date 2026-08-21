@@ -10,6 +10,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { unevaluableFor } from "../../scripts/build-realism-tier.mjs";
 import { contradictedFindings } from "../../scripts/calibrate-abstention.mjs";
 import { REAL_PAGES, normaliseUrl, realPageFor } from "./real-page-corpus.mjs";
 
@@ -87,4 +88,39 @@ test("a fully-excluded page can never produce a false positive", () => {
 test("absent claimExcludes means the publisher claims everything", () => {
   // W3C's statement is a site-wide AA conformance claim, so `clean` there really is the source's assertion.
   assert.deepEqual(contradictedFindings({ predicted: ["3.3.1"] }), ["3.3.1"]);
+});
+
+/**
+ * The structural mask: criteria whose evidence a real-page capture cannot contain.
+ *
+ * Measured before writing these: 0 of 77 real captures carry `formChanges` or `postSubmitFields`, because
+ * `probeForms` is off for pages we do not own. So 3.3.1 and 4.1.3 were being trained as clean on 41 and 39
+ * real pages from evidence that was never gathered. These assert the mask fires on absence and — the half
+ * that matters — that it does NOT fire when the evidence is present, so enabling the probe one day
+ * un-masks them without anyone having to remember.
+ */
+test("a capture with no form-interaction evidence masks the two criteria that read it", () => {
+  const masked = unevaluableFor({ interaction: { controls: ["Search, button"], stateChanges: [{}] } });
+  assert.deepEqual(masked.sort(), ["3.3.1", "4.1.3"]);
+});
+
+test("formChanges present un-masks 3.3.1, and only 3.3.1", () => {
+  const masked = unevaluableFor({ interaction: { formChanges: [{ control: "Email", after: "" }] } });
+  assert.deepEqual(masked, ["4.1.3"]);
+});
+
+test("postSubmitFields present un-masks 4.1.3, and only 4.1.3", () => {
+  const masked = unevaluableFor({ interaction: { postSubmitFields: ["Email, edit, invalid entry"] } });
+  assert.deepEqual(masked, ["3.3.1"]);
+});
+
+test("both channels present masks nothing — the probe was run, so the labels are real", () => {
+  assert.deepEqual(unevaluableFor({
+    interaction: { formChanges: [{ control: "Email" }], postSubmitFields: ["Error summary"] },
+  }), []);
+});
+
+test("a capture with no interaction at all is masked, not treated as evidence of conformance", () => {
+  assert.deepEqual(unevaluableFor({}).sort(), ["3.3.1", "4.1.3"]);
+  assert.deepEqual(unevaluableFor(undefined).sort(), ["3.3.1", "4.1.3"]);
 });
