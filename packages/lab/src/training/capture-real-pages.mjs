@@ -18,9 +18,11 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { pagesFor, REAL_PAGES } from "./real-page-corpus.mjs";
-import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../../worker-fleet/src/worker-http.mjs";
+import { parseShard, shardOf } from "./shard.mjs";
+import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 
 const ROLE = process.argv.find((a) => a.startsWith("--role="))?.slice("--role=".length) ?? null;
@@ -28,6 +30,16 @@ const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--wor
   ?? process.env.A11Y_WORKER
   ?? null;
 const OUT = resolve(process.cwd(), process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
+
+/**
+ * The validated worker base, set by `main` once `assertWorkerUrl` has accepted it.
+ *
+ * A `let` rather than validating into the const above, because validating at module scope would throw on
+ * IMPORT — and `node -e "import(...)"` is the only real check that an .mjs file still loads. The value that
+ * was checked is the value used, which is the point: an earlier version validated a copy and left the call
+ * sites reading the raw argv, so the trailing-slash normalisation silently did nothing.
+ */
+let WORKER_URL = null;
 
 /** One capture may legitimately take a while: a real page is bigger than a generated one. */
 // `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
@@ -37,26 +49,10 @@ const OUT = resolve(process.cwd(), process.env.REAL_CORPUS_ROOT || "runs/real-pa
 const POLITE_GAP_MS = 2_000;
 
 /**
- * `--shard=i/n` -- capture every nth page, offset i. Four shards across the fleet takes 77 pages from
- * ~6.5 h on one worker to ~1.6 h.
- *
- * Sharding rather than a worker pool because this script needs no page server: these are LIVE URLs, so
- * concurrent shards share nothing and cannot contend. (The dataset runner needs the pool machinery because
- * it also leases a page server; borrowing that here would be a lot of coupling for no gain.)
- *
- * Politeness is preserved where it matters. `POLITE_GAP_MS` is per shard, but shards interleave by index
- * across DIFFERENT publishers, so no single publisher sees a faster request rate than before -- and one
- * page per publisher means most see exactly one request either way.
+ * `--shard=i/n`. The parser and the slice live in `shard.mjs` so they can be tested, and so the job
+ * launcher added in the lab-API work uses the same definition rather than a second one that agrees today.
  */
-const SHARD = (() => {
-  const raw = process.argv.find((a) => a.startsWith("--shard="))?.slice("--shard=".length);
-  if (!raw) return { index: 0, count: 1 };
-  const [index, count] = raw.split("/").map(Number);
-  if (!Number.isInteger(index) || !Number.isInteger(count) || count < 1 || index < 0 || index >= count) {
-    throw new Error(`--shard must be i/n with 0 <= i < n, got ${raw}`);
-  }
-  return { index, count };
-})();
+const SHARD = parseShard(process.argv);
 
 // Read-through lines to allow on a real page. 600 rather than the worker's 150: the longest transcript in
 // the current real-page corpus is ~145 lines under the old cap AND still reported `maxSteps`, so the true
@@ -67,22 +63,46 @@ const REAL_PAGE_STEPS = 600;
 
 const slug = (url) => url.replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "-").replace(/-+$/g, "");
 
+/**
+ * Is this worth another attempt?
+ *
+ * Only a transport condition is. A malformed URL, a programmer error, a thrown assertion — none of those
+ * get better by waiting, and treating them as "mid-boot" is how 29 minutes went missing.
+ */
+function isTransientNetwork(error) {
+  const TRANSIENT = new Set([
+    "ECONNREFUSED", "EHOSTUNREACH", "ECONNRESET", "ETIMEDOUT", "ENETUNREACH", "EAI_AGAIN", "EPIPE",
+  ]);
+  // `requestJson`'s own timeout rejects with a plain Error and no code; that IS a transport condition and
+  // is the common case while a worker boots.
+  return TRANSIENT.has(error?.code) || /timed out|timeout/i.test(error?.message ?? "");
+}
+
 async function waitUntilReady() {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
-      const health = (await requestJson(`${WORKER}/health`, { timeoutMs: 8_000 })).json;
+      const health = (await requestJson(`${WORKER_URL}/health`, { timeoutMs: 8_000 })).json;
       // `workerIsUsable`, not `ready === true`: a worker predating the field reports neither, and this
       // loop would have spent all 60 attempts against a healthy guest and then recorded "worker never
       // became ready" as a failure of the PAGE.
       if (workerIsUsable(health)) return true;
-    } catch { /* mid-boot or mid-restart; keep waiting */ }
+    } catch (error) {
+      // Retry a NETWORK condition; re-throw anything else. This was a bare `catch`, and it absorbed an
+      // `ERR_INVALID_URL` from a malformed `--worker` — spending all 60 attempts and then recording
+      // "worker never became ready" as a failure of the PAGE. The comment directly above already warned
+      // about that exact misattribution for a different cause; this is the same trap, one line down.
+      //
+      // Keyed on `error.code`, matching how this repo classifies everywhere else: `capture-faults.mjs`
+      // records what matching on prose costs. A code we do not recognise is not ours to swallow.
+      if (!isTransientNetwork(error)) throw error;
+    }
     await new Promise((r) => setTimeout(r, 5_000));
   }
   return false;
 }
 
 async function capture(page) {
-  const response = await requestJson(`${WORKER}/capture`, {
+  const response = await requestJson(`${WORKER_URL}/capture`, {
     method: "POST",
     // `probeForms` is OFF. These are somebody else's live pages, and the same rule the CLI follows applies
     // with more force here: pressing *Book* on a page we do not own is not a review. `probeFocus` is on —
@@ -106,12 +126,17 @@ async function capture(page) {
 }
 
 async function main() {
-  if (!WORKER) {
-    process.stderr.write("a worker is required: --worker=http://host:port (or A11Y_WORKER)\n");
+  // Validated HERE, at the boundary, before a single page is fetched. This used to be a truthiness check,
+  // and `http://:8765` is truthy — so the run started, and every page paid a five-minute readiness timeout
+  // before being recorded as a failure of the page. `assertWorkerUrl` explains what an empty host means.
+  try {
+    WORKER_URL = assertWorkerUrl(WORKER, { source: "--worker" });
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`);
     process.exit(2);
   }
   const selected = ROLE ? pagesFor(ROLE) : REAL_PAGES;
-  const pages = selected.filter((_, index) => index % SHARD.count === SHARD.index);
+  const pages = shardOf(selected, SHARD);
   if (!pages.length) {
     process.stderr.write(`no pages for role '${ROLE}'\n`);
     process.exit(2);
@@ -152,4 +177,9 @@ async function main() {
   process.exit(failed.length ? 1 : 0);
 }
 
-await main();
+// Guarded for the same reason as `build-realism-tier.mjs`: CLAUDE.md makes
+// `node -e "import('./this.mjs')"` the only real check that an .mjs file still loads, and unguarded that
+// check STARTS A CAPTURE RUN against the fleet. A verification you cannot safely run is not a verification.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+  await main();
+}

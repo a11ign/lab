@@ -35,7 +35,7 @@ import { dirname, join } from "node:path";
 
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
-import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../../worker-fleet/src/worker-http.mjs";
+import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 
 const WORKER = (process.argv.find((a) => a.startsWith("--worker=")) ?? "").slice("--worker=".length);
 const ROUNDS = Number((process.argv.find((a) => a.startsWith("--rounds=")) ?? "").slice("--rounds=".length) || 20);
@@ -204,8 +204,15 @@ function flagFor(outcome, previous) {
 }
 
 async function main() {
-  if (!WORKER) {
-    process.stderr.write("usage: npm run identity:rate -- --worker=http://<guest-ip>:8765 [--rounds=20]\n");
+  // Validated, not merely present. A truthiness check passes `http://:8765`, and this harness derives the
+  // page-server base FROM the worker address (`hostPagesBase`), so a malformed one produces a wrong pages
+  // URL as well as a wrong worker — captured error pages, which is corrupted evidence rather than an
+  // obvious outage.
+  try {
+    assertWorkerUrl(WORKER, { source: "--worker" });
+  } catch (error) {
+    process.stderr.write(`${error.message}\n`
+      + "usage: npm run identity:rate -- --worker=http://<guest-ip>:8765 [--rounds=20]\n");
     process.exit(2);
   }
   selfTest();
