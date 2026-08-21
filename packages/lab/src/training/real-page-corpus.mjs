@@ -144,7 +144,21 @@ const TUTORIAL_CLAIM =
 export const REAL_PAGES = /** @type {RealPage[]} */ ([
   // --- CALIBRATION: the conformal abstention threshold is fitted here, and nowhere else. -------------
   // The BAD demo, both variants, because a threshold fitted only on conformant pages cannot tell you what
-  // it costs on failing ones. `after/home.html` and `before/home.html` are absent: they are TEST fixtures.
+  // it costs on failing ones.
+  //
+  // FOUR before/after pairs exist upstream and only three are here. `home` and `survey` are absent for the
+  // same reason and it is not symmetry: both are eval TEST fixtures (`w3c-bad-before`,
+  // `w3c-bad-before-survey` in `cases.ts`), and the test set is the only independent number this project
+  // has. This comment used to name `home` alone, which read as an oversight about `survey` — enough of one
+  // that somebody later added `before/survey.html` here on exactly that reasoning. `assertDisjoint` caught
+  // it, which is the guard working; the comment is now specific so the next reader does not have to rely
+  // on it.
+  //
+  // So pages published as INACCESSIBLE are capped at three from this source, and that is a limit of the
+  // labelling discipline rather than an oversight: a site-level accessibility statement says "partially
+  // compliant" and scopes its failures to features, which licenses `claimExcludes` and never a page-level
+  // `inaccessible`. W3C's PER-PAGE reports are the only source here that names what a specific page fails,
+  // and its four before pages are now fully allocated between calibration and test.
   { url: "https://www.w3.org/WAI/demos/bad/after/news.html", role: "calibration",
     publishedClaim: "conformant", source: BAD_AFTER_CLAIM, demonstrates: "news article layout, fixed" },
   { url: "https://www.w3.org/WAI/demos/bad/after/tickets.html", role: "calibration",
