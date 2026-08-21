@@ -27,6 +27,17 @@
  * description is not a feature.
  *
  * Paths here resolve from `import.meta.url`, so they are right from any working directory.
+ *
+ * ## Commit what it writes, from the machine that wrote it
+ *
+ * Fixtures are tracked files, so a recapture leaves the checkout it ran in modified — and a later
+ * `git merge --ff-only` there aborts with "your local changes would be overwritten", even when the incoming
+ * content is byte-identical to what was committed from somewhere else. That happened: the lab recaptured,
+ * the fixtures were committed from a laptop, and the lab then silently refused every subsequent pull, so a
+ * gate re-run measured code from three commits earlier and reported the same failure it had already fixed.
+ *
+ * Compare hashes before resolving it. If the committed copy matches, `git checkout --` the fixture directory
+ * and pull; if it does not, the newer capture is the one to keep and commit.
  */
 import { mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
