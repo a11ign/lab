@@ -1483,7 +1483,12 @@ cases.push(
   pair({
     id: "keyboard-trap-postcode",
     criterion: "2.1.2",
-    subtype: "2.1.2:focus-trapped",
+    // No `subtype:` -- `defaultSubtype` falls through to `badSignal.type`, which is already the right
+    // vocabulary word. Spelling it out here as "2.1.2:focus-trapped" made the exported key
+    // "2.1.2:2.1.2:focus-trapped", because the exporter composes `${criterion}:${subtype}` and every other
+    // case declares the BARE word ("unnamed-control"). `rules:gate` caught it from both sides at once --
+    // declared-but-absent and fired-but-undeclared -- which is the pair of complaints that names a
+    // vocabulary mismatch rather than a missing rule.
     // THE FIRST CASE FOR A RULE THAT ALREADY SHIPPED. `addKeyboardTrap` has been in `rules.ts` the whole
     // time and had never once fired against known evidence: no case targeted 2.1.2, it was absent from
     // `rule-ownership.json` so `rules:gate` did not cover it, and it reads `focusOrder`, which no corpus

@@ -86,6 +86,25 @@
         "check it applies to every other entry -- so the exclusion cannot quietly stop working."
       ]
     },
+    "2.1.2:focus-trapped": {
+      "decidedBy": "rules",
+      "reportsAs": "2.1.2",
+      "note": [
+        "A total failure, and the only criterion here where the rule outranks everything else on the",
+        "report: WCAG 5.2.5 makes 2.1.2 non-interference, so a keyboard user who cannot leave a control",
+        "cannot use the rest of the page at all. Deterministic because the evidence is arithmetic rather",
+        "than wording -- Tab repeated the same stop, and focus reached fewer controls than the form-field",
+        "sweep found. Measured on this case: bad stops at 3 of 5 controls, good cycles 12 stops and",
+        "returns to the first field.",
+        "",
+        "It is declared LAST, deliberately. `rules:gate` refused the entry when it was written first,",
+        "because no capture carried a `focusOrder` -- 'an entry that matches nothing enforces nothing'.",
+        "The probe reached the manifest through three separate hops that each enumerate case fields by",
+        "hand, and it was dropped at the third, so the rule shipped against zero evidence for as long as",
+        "the flag was silently false. Order of operations: capture the evidence, prove the signal",
+        "discriminates, then declare the owner."
+      ]
+    },
     "2.4.4:regex": {
       "decidedBy": "overlap",
       "reportsAs": "2.4.4",
