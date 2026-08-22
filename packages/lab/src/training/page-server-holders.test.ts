@@ -147,10 +147,35 @@ test("both of the starter's teardown paths are guarded by lastOut", () => {
   // `lastOut` itself is covered behaviourally above; what this pins is that neither path stops the server
   // without asking. Deleting either guard is the original incident, and nothing else in this file sees it.
   const source = readFileSync(resolve(process.cwd(), "packages/lab/src/training/page-server.mjs"), "utf8");
-  assert.match(source, /if \(leaveHolders\(root\)\.lastOut\) stopGroup\(child\)/,
+  // Matches the GUARD, not the spelling of the stop call: the exit path now uses the synchronous
+  // `stopPidNow`, and the property under test is that it happens only when nobody else is holding.
+  assert.match(source, /if \(leaveHolders\(root\)\.lastOut\) stopPid(Now)?\(/,
     "the exit path must not stop a server another run still holds");
   assert.match(source, /const \{ lastOut, remaining \} = leaveHolders\(root\);\s*\n\s*if \(!lastOut\)/,
     "release() must check for other holders before stopping");
-  assert.match(source, /if \(lastOut && serverPid\) stopPid\(serverPid\)/,
+  assert.match(source, /if \(lastOut && serverPid\) await stopPid\(serverPid\)/,
     "the last holder out must be able to stop a server it did not start, or the server leaks");
+});
+
+test("stopping the server WAITS for it to be gone, and the crash path does not", () => {
+  // The SIGKILL used to sit on an `unref()`ed timer, so if node exited inside the 2 s grace it never fired.
+  // `npx serve` does not go quietly — its answer to SIGTERM is "Gracefully shutting down. Please wait..."
+  // followed by more serving — and a detached child leaves the process GROUP but stays in the unit's
+  // CGROUP. So systemd inherited the survivor, waited its full 90 s TimeoutStopSec, SIGKILLed it, and wrote
+  //
+  //     a11y-job-capture.service: Failed with result 'timeout'
+  //
+  // as the last line in the journal of a job that had just succeeded. Measured on the 4h34m corpus
+  // recapture: `Release the unit` took 91.46 s, which is that timeout almost exactly.
+  const source = readFileSync(resolve(process.cwd(), "packages/lab/src/training/page-server.mjs"), "utf8");
+  assert.match(source, /async function stopPid\(pid\)/, "the normal path must be able to wait");
+  assert.match(source, /await stopGroup\(child\)/, "and release must actually await it");
+  assert.ok(!/insist\.unref\(\)/.test(source),
+    "a SIGKILL nobody waits for is a SIGKILL that does not happen when the process is exiting");
+
+  // The exit handler is the exception, and must stay one: it cannot await, so it signals without grace.
+  // A `serve` that survives THERE is an orphan holding :5050 — the leak this module was written to end.
+  assert.match(source, /stopPidNow\(child\.pid\)/, "the exit path takes the synchronous variant");
+  assert.match(source, /for \(const signal of \["SIGTERM", "SIGKILL"\]\)/,
+    "which signals both, immediately, because there is no later moment to insist in");
 });

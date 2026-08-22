@@ -28,6 +28,8 @@ const READY_POLL_MS = 250;
 const PROBE_TIMEOUT_MS = 3_000;
 /** After SIGTERM, how long to let `serve` exit before insisting. */
 const SHUTDOWN_GRACE_MS = 2_000;
+/** How often to check whether it has actually gone. A poll, not a sleep -- the condition is observable. */
+const STOP_POLL_MS = 100;
 
 /**
  * WHO IS STILL USING THIS SERVER — a refcount on disk, because the rule above was only half implemented.
@@ -147,6 +149,7 @@ function stopGroup(child) {
   return stopPid(child.pid);
 }
 
+
 /**
  * Stop a server by pid, for a holder that did not spawn it.
  *
@@ -154,20 +157,58 @@ function stopGroup(child) {
  * refcount there was no path by which it could clean up, so the alternative to killing somebody else's
  * server was leaking it.
  */
-function stopPid(pid) {
+/**
+ * Stop it now, without waiting — for the `exit` handler, which cannot await anything.
+ *
+ * SIGTERM then SIGKILL with no grace, deliberately: this runs while the process is already leaving, so
+ * there is no later moment in which to insist. A `serve` that survives here becomes an orphan holding
+ * :5050, which is the leak this module exists to end.
+ */
+function stopPidNow(pid) {
+  for (const signal of ["SIGTERM", "SIGKILL"]) {
+    try {
+      process.kill(-pid, signal);
+    } catch {
+      return; // gone; the second signal has nothing to reach
+    }
+  }
+}
+
+async function stopPid(pid) {
+  const gone = () => {
+    try {
+      process.kill(-pid, 0);
+      return false;
+    } catch {
+      return true;
+    }
+  };
   try {
     process.kill(-pid, "SIGTERM");
   } catch {
     return; // already gone; nothing to insist on
   }
-  const insist = setTimeout(() => {
-    try {
-      process.kill(-pid, "SIGKILL");
-    } catch {
-      // Exited between the SIGTERM and here, which is the outcome we wanted.
-    }
-  }, SHUTDOWN_GRACE_MS);
-  insist.unref();
+  // WAITED FOR, not fired and forgotten. The SIGKILL used to sit on an `unref()`ed timer, so if node
+  // exited within the grace period it never fired at all -- and `npx serve` does not go quietly: its
+  // response to SIGTERM is to print "Gracefully shutting down. Please wait..." and keep serving.
+  //
+  // Measured on the 4h34m corpus recapture: the run finished cleanly, `serve` outlived it, and because a
+  // detached child stays in the unit's CGROUP even though it leaves the process group, systemd inherited
+  // the problem. It waited its full 90 s `TimeoutStopSec`, SIGKILLed the survivor, and recorded
+  // `a11y-job-capture.service: Failed with result 'timeout'` -- as the last word in the journal of a job
+  // that had succeeded. `Release the unit` measured 91.46 s, which is that timeout almost exactly.
+  //
+  // So this now confirms the process is gone before returning. Bounded, because refusing to return is
+  // worse than leaking: a run that cannot exit is the fault we are removing.
+  for (let waited = 0; waited < SHUTDOWN_GRACE_MS && !gone(); waited += STOP_POLL_MS) {
+    await new Promise((done) => setTimeout(done, STOP_POLL_MS));
+  }
+  if (gone()) return;
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    // Exited between the last poll and here, which is the outcome we wanted.
+  }
 }
 
 /**
@@ -190,7 +231,7 @@ export async function leasePageServer({ root, port, probePath }) {
       const { lastOut, serverPid } = leaveHolders(root);
       // The last one out turns the lights off even if it did not start the server -- otherwise the starter
       // (which left it running BECAUSE we were holding it) is gone and nothing owns the process.
-      if (lastOut && serverPid) stopPid(serverPid);
+      if (lastOut && serverPid) await stopPid(serverPid);
     };
     process.once("exit", () => { leaveHolders(root); });
     return { url, started: false, release: releaseAdopted };
@@ -222,7 +263,7 @@ export async function leasePageServer({ root, port, probePath }) {
       return;
     }
     process.stderr.write("Stopping the dataset page server ...\n");
-    stopGroup(child);
+    await stopGroup(child);
   };
 
   // A run that dies still has to clean up, and this is the case that actually leaked: the servers on
@@ -236,7 +277,7 @@ export async function leasePageServer({ root, port, probePath }) {
   // On a crash, stop it only if nobody else is holding it. Leaking a server another run needs is the
   // lesser fault -- and `readHolders` filters dead pids, so a crashed holder cannot pin it forever.
   process.once("exit", () => {
-    if (leaveHolders(root).lastOut) stopGroup(child);
+    if (leaveHolders(root).lastOut) stopPidNow(child.pid);
   });
 
   if (!await waitUntilServing(url, probePath, Date.now() + READY_TIMEOUT_MS)) {
