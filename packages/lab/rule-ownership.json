@@ -125,6 +125,23 @@
         "NVDA reporting the link's own state."
       ]
     },
+    "2.4.3:focus-order-scrambled": {
+      "decidedBy": "rules",
+      "reportsAs": "2.4.3",
+      "note": [
+        "Deterministic because it is a comparison between two sequences the capture already holds: what the",
+        "page READS (structure.formFields) against what Tab VISITS (interaction.focusOrder). No judgement",
+        "enters it.",
+        "",
+        "PARTIAL coverage, and the boundary is honest: whether an order 'preserves meaning' in general is",
+        "human judgement, the same wall 2.4.6 stops at. What is not a judgement call is a tab sequence that",
+        "contradicts the reading sequence for the same controls.",
+        "",
+        "Only a screen reader can make this comparison. A static checker can flag tabindex=\"1\" as a smell,",
+        "but the DOM has no reading order to contradict — that order only exists once something has walked",
+        "the page."
+      ]
+    },
     "2.4.4:regex": {
       "decidedBy": "overlap",
       "reportsAs": "2.4.4",
