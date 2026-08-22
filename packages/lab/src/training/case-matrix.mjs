@@ -1796,6 +1796,44 @@ cases.push(
   }),
 );
 
+/**
+ * The 2.1.1 fixture: an action the screen reader announces as a button, which Tab may or may not reach.
+ *
+ * `tabindex` is the only difference. Both variants announce identically — same role, same name, same
+ * position — so the pair differs solely in whether a keyboard can operate the control. That is the whole
+ * criterion, and it is invisible to the announcement itself.
+ *
+ * Placed FIRST in the body on purpose. The focus probe stops after a fixed number of Tab presses (measured:
+ * every corpus page truncates at 12), so "absent from the tab order" is ambiguous at the tail — it usually
+ * just means the probe stopped. A control near the top is one the probe would certainly have reached.
+ */
+function KEYBOARD_ACTION_PAGE(focusable) {
+  const tab = focusable ? ' tabindex="0"' : "";
+  return `<div role="button"${tab} aria-label="Delete draft" class="card">Delete draft</div>`
+    + "<form>"
+    + "<label for=\"a\">Full name</label><input id=\"a\" name=\"a\">"
+    + "<label for=\"b\">Email</label><input id=\"b\" name=\"b\">"
+    + "</form>";
+}
+
+// 2.1.1 Keyboard. The detectable failure is a control the screen reader ANNOUNCES as operable that the
+// keyboard cannot reach — a `div role="button"` with a click handler and no `tabindex`, which is the most
+// common way this is failed and the one a screen-reader user meets as "I can hear it and I cannot press it".
+//
+// Note this is NOT the roleless `<div onclick>` of the custom-control family. That one is invisible to the
+// screen reader entirely — its absence IS the 4.1.2 finding — and a capture cannot distinguish it from a
+// page with no button at all. This case is the opposite: perfectly perceivable, and unusable.
+cases.push(
+  pair({
+    id: "keyboard-unreachable-action",
+    criterion: "2.1.1",
+    good: page({ title: "Drafts", heading: "Drafts", body: KEYBOARD_ACTION_PAGE(true) }),
+    bad: page({ title: "Drafts", heading: "Drafts", body: KEYBOARD_ACTION_PAGE(false) }),
+    badSignal: { type: "control-unreachable-by-keyboard" },
+    probeFocus: true,
+  }),
+);
+
 export const CASES = Object.freeze(withRealisticScale(cases));
 
 function structuralTextParts(capture) {
@@ -2017,6 +2055,22 @@ function routeTitleIsStale(capture) {
  * first link on the page, which on some pages is a logo or a cookie banner; activating one of those and
  * finding focus unmoved says nothing about bypassing blocks.
  */
+/**
+ * 2.1.1: a control the page announces as operable that Tab never reaches.
+ *
+ * POSITIONAL, because the focus probe truncates. Measured: every corpus page stops at 12 tab stops, so
+ * "absent from `focusOrder`" on its own usually means the probe stopped rather than that the control is
+ * unreachable. A control is only unreachable if it is missing from the tab order while a control that comes
+ * LATER in reading order was reached — the probe demonstrably got past it and never landed on it.
+ */
+function controlUnreachableByKeyboard(capture) {
+  const reading = namesOf(capture.structure?.formFields);
+  const tabbed = new Set(namesOf(capture.interaction?.focusOrder));
+  if (reading.length < 2 || tabbed.size === 0) return false;
+  const lastReached = reading.reduce((last, name, i) => (tabbed.has(name) ? i : last), -1);
+  return reading.slice(0, lastReached).some((name) => !tabbed.has(name));
+}
+
 function skipLinkIsInert(capture) {
   const route = (capture.interaction || {}).routeChange;
   if (!route || route.error || !route.navigated) return false;
@@ -2079,6 +2133,7 @@ export function signalMatches(capture, signal) {
   if (signal.type === "route-title-stale") return routeTitleIsStale(capture);
   if (signal.type === "focus-order-scrambled") return focusOrderIsScrambled(capture);
   if (signal.type === "skip-link-inert") return skipLinkIsInert(capture);
+  if (signal.type === "control-unreachable-by-keyboard") return controlUnreachableByKeyboard(capture);
   return false;
 }
 
