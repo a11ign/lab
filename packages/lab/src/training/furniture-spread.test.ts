@@ -71,7 +71,7 @@ for (const [label, marker] of [["a named form field", NAMED_FIELD], ["a table", 
     }
     assert.deepEqual(starved, [],
       `these subtypes have ${label} on none of their pages, so a head may penalise it at no training `
-      + "cost and will then be silent on any real page that has one — see docs/adr/0015");
+      + "cost and will then be silent on any real page that has one — see docs/adr/0015-one-defect-per-page-taught-the-scorer-to-veto.md");
   });
 }
 

@@ -170,5 +170,5 @@ test("no accompanying defect satisfies its HOST case's own badSignal", () => {
 
 test("multi-defect cases exist, or the check above is vacuous", () => {
   const multi = (CASES as { id: string }[]).filter((c) => c.id.includes("+also-"));
-  assert.ok(multi.length >= 20, `only ${multi.length} multi-defect cases — see docs/adr/0015`);
+  assert.ok(multi.length >= 20, `only ${multi.length} multi-defect cases — see docs/adr/0015-one-defect-per-page-taught-the-scorer-to-veto.md`);
 });

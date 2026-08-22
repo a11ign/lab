@@ -111,7 +111,7 @@ test("adding page furniture silences no badSignal that was firing", () => {
     `${blinded.length} of ${cases.length} cases stop discriminating once page furniture is added. A `
     + "blinded case is indistinguishable from a page with nothing to report, which is the one failure "
     + "this corpus cannot carry — fix the SIGNAL to reason about its own evidence rather than the whole "
-    + "page, never the furniture. See docs/adr/0015 and placeholder-signal.test.ts.");
+    + "page, never the furniture. See docs/adr/0015-one-defect-per-page-taught-the-scorer-to-veto.md and placeholder-signal.test.ts.");
 });
 
 test("every signal type with a CAPTURE is swept, and the rest are named as not-yet-captured", () => {

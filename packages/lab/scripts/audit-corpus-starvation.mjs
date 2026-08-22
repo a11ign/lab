@@ -121,7 +121,7 @@ function render({ starved, unmatched, records }) {
   for (const [name, count] of Object.entries(byFeature).sort((a, z) => z[1] - a[1]).slice(0, 14)) {
     process.stdout.write(`    ${name.padEnd(34)} ${count}\n`);
   }
-  process.stdout.write("\n  See docs/adr/0015 for what each group needs. Furniture cannot supply a feature\n"
+  process.stdout.write("\n  See docs/adr/0015-one-defect-per-page-taught-the-scorer-to-veto.md for what each group needs. Furniture cannot supply a feature\n"
     + "  that is itself a FAILURE — those need a page that fails twice.\n\n");
 }
 
