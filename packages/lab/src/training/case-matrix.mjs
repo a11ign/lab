@@ -1786,6 +1786,10 @@ cases.push(
       body: SKIP_LINK_PAGE("main-content"),
     }),
     badSignal: { type: "skip-link-inert" },
+    // The focus probe as well: the signal compares where the skip link LEFT focus against where the second
+    // Tab would ordinarily go, and that second sequence is `focusOrder`. Without it there is nothing to
+    // compare against and the case labels every capture clean.
+    probeFocus: true,
     // The navigation probe activates the first link — which here IS the skip link — and records where the
     // next Tab lands. That reading is the entire evidence for this case.
     probeNavigation: true,
