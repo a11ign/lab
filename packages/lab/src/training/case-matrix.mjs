@@ -2075,9 +2075,13 @@ function controlUnreachableByKeyboard(capture) {
   const reading = namesOf(capture.structure?.formFields);
   const tabbed = new Set(namesOf(capture.interaction?.focusOrder));
   if (reading.length < 2 || tabbed.size === 0) return false;
+  // The WHOLE tab cycle, or no claim — mirrors `cycleClosed` in rules.ts. Tab wraps to the first control,
+  // so a recording that revisits its start has seen every focusable; without that, the probe's fixed stop
+  // cap is indistinguishable from the page trapping the keyboard.
+  const tabList = namesOf(capture.interaction?.focusOrder);
+  if (!(tabList.length > 1 && tabList.lastIndexOf(tabList[0]) > 0)) return false;
   const trackable = unambiguousNames(reading);
-  const lastReached = reading.reduce((last, name, i) => (tabbed.has(name) ? i : last), -1);
-  return reading.slice(0, lastReached).some((name) => trackable.has(name) && !tabbed.has(name));
+  return reading.some((name) => trackable.has(name) && !tabbed.has(name));
 }
 
 function skipLinkIsInert(capture) {
