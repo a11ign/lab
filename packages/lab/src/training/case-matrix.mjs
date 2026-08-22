@@ -2093,11 +2093,33 @@ function focusOrderIsScrambled(capture) {
   return reading.join("|") !== tabbed.join("|");
 }
 
-/** The accessible name, with role and state words stripped, so the two channels are comparable. */
-function namesOf(entries) {
+/**
+ * The accessible name, with container, role and state words stripped, so the two channels are comparable.
+ *
+ * **This exists TWICE** — here for the dataset signals, and as `comparableNames` in `rules.ts` for the
+ * findings — because one is `.mjs` read by the corpus tooling and the other is TypeScript compiled to
+ * `dist`, and making the generator depend on a build is how a stale `dist` silently scored the wrong rules
+ * earlier today. The duplication is deliberate and it is also a liability: the two drifted within an hour of
+ * being written, when the container fix was applied to the rule and not to this, and `check-signals`
+ * reported the 2.1.1 case CONTAMINATED — the signal firing on the conformant page while the rule stayed
+ * silent on it. `name-normalisation.test.ts` now pins them equal.
+ *
+ * The leading container is the part that matters: the sweep announces `"form, Full name, edit"` where focus
+ * says `"Full name, edit, focused"`, and every real nav bar is a list inside a landmark.
+ */
+export function namesOf(entries) {
   return (entries || [])
+    // Mirrors `accessibleName` + `LEADING_CONTAINER` + `FOCUS_ONLY_STATES` in `rules.ts`, in the same
+    // order, from the same token lists. It is a copy because the corpus generator runs under plain
+    // `node` and cannot import TypeScript, and making it depend on a build is how a stale `dist`
+    // scored the wrong rules earlier today. `name-normalisation.test.ts` pins the two equal on real
+    // announcements, which is what makes a forced duplication safe rather than merely known.
     .map((entry) => String(entry)
-      .replace(/\b(edit|button|link|checkbox|radio|combo box|list box|focused|blank|visited|selected|clickable|required|invalid entry)\b/gi, " ")
+      .split("\u{FFFC}").join(" ")
+      .replace(/^(?:(?:[^,]+\s+)?(?:landmark|form|list|table|group|region|dialog)(?:\s*,\s*with\s+\d+\s+items?)?\s*,\s*)+/i, "")
+      .replace(/\b(focused|blank|visited|same page|linked|has auto ?complete|autocomplete)\b/gi, " ")
+      .replace(/\b(not checked|checked|not pressed|pressed|collapsed|expanded|not selected|selected|read only|required|invalid entry|out of list|out of region|clickable|multi ?line|level \d+)\b/gi, " ")
+      .replace(/\b(navigation landmark|main landmark|banner landmark|radio button|edit text|combo box|list box|menu button|menu item|graphic|image|button|checkbox|heading|region|banner|navigation|radio|edit|link|list)\b/gi, " ")
       .replace(/[\s,]+/g, " ")
       .trim())
     .filter(Boolean);
