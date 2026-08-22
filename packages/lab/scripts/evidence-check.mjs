@@ -237,6 +237,34 @@ async function requirePagesServed(cases) {
  *
  * @returns {Promise<{results: object[], evicted: string[]}>}
  */
+/**
+ * Account for every capture that was ASKED for, so one that never happened reduces coverage instead of
+ * disappearing from it.
+ */
+function countUncomparedAgainstCoverage(selected, results) {
+// A capture that failed left no result at all, so it vanished from the DENOMINATOR: measured on this run,
+// one worker answered `NVDA is running but not speaking`, that case's second variant was never attempted,
+// and the verdict read `46 compared: 46 same ... safe to ship` — complete coverage of a sample two smaller
+// than the one requested. Exactly the fault fixed yesterday for SKIPPED captures, arriving through the
+// path that does not reach `results`. It predates the pool: the old sequential loop also just `continue`d.
+//
+// Reconciled after the drain rather than in the catch, because the pool may hand a failed case to another
+// worker — recording it at the moment of failure would double-count the ones that later succeed. Asking
+// "what has no result?" at the end is true regardless of how many attempts it took.
+//
+// REJECTED, not a new verdict: `summarise` counts it in `attempted` and not in `compared`, which is what
+// makes the coverage rule report INCONCLUSIVE. A worker fault and a capture the pipeline would throw away
+// are the same thing to this tool — we have no opinion about that family, and must not imply one.
+for (const testCase of selected) {
+  for (const variant of ["good", "bad"]) {
+    if (!readCapture(BASELINE, testCase.id, variant)) continue; // never asked for; not missing
+    if (results.some((r) => r.id === testCase.id && r.variant === variant)) continue;
+    results.push({ id: testCase.id, variant, comparison: { verdict: "REJECTED", changes: [], phrases: null } });
+    process.stdout.write(`  UNCOMPARED  ${testCase.id}.${variant}  no usable capture; counted against coverage\n`);
+  }
+}
+}
+
 async function compareAcrossPool(selected) {
 // ONE CASE PER WORKER AT A TIME, across every worker named. This ran against a single worker while the
 // rest of the fleet sat idle — ~20 minutes for 48 captures where four boxes do it in about five. The
@@ -308,29 +336,7 @@ const pooled = await drainAcrossPool({
         + `${handedBack} case(s) go back to the queue\n`),
   },
 });
-  // ACCOUNT FOR EVERY CAPTURE THAT WAS ASKED FOR, and do it here rather than in the catch above.
-  //
-  // A capture that failed left no result at all, so it vanished from the DENOMINATOR: measured on this run,
-  // one worker answered `NVDA is running but not speaking`, that case's second variant was never attempted,
-  // and the verdict read `46 compared: 46 same ... safe to ship` — complete coverage of a sample two smaller
-  // than the one requested. Exactly the fault fixed yesterday for SKIPPED captures, arriving through the
-  // path that does not reach `results`. It predates the pool: the old sequential loop also just `continue`d.
-  //
-  // Reconciled after the drain rather than in the catch, because the pool may hand a failed case to another
-  // worker — recording it at the moment of failure would double-count the ones that later succeed. Asking
-  // "what has no result?" at the end is true regardless of how many attempts it took.
-  //
-  // REJECTED, not a new verdict: `summarise` counts it in `attempted` and not in `compared`, which is what
-  // makes the coverage rule report INCONCLUSIVE. A worker fault and a capture the pipeline would throw away
-  // are the same thing to this tool — we have no opinion about that family, and must not imply one.
-  for (const testCase of selected) {
-    for (const variant of ["good", "bad"]) {
-      if (!readCapture(BASELINE, testCase.id, variant)) continue; // never asked for; not missing
-      if (results.some((r) => r.id === testCase.id && r.variant === variant)) continue;
-      results.push({ id: testCase.id, variant, comparison: { verdict: "REJECTED", changes: [], phrases: null } });
-      process.stdout.write(`  UNCOMPARED  ${testCase.id}.${variant}  no usable capture; counted against coverage\n`);
-    }
-  }
+  countUncomparedAgainstCoverage(selected, results);
   return { results, evicted: pooled.evicted };
 }
 
