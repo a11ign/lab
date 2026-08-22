@@ -12,10 +12,11 @@ import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
 import { configuredWorkers } from "../../../worker-fleet/src/fleet-env.mjs";
 import { titleOf } from "@a11y-witness/evidence/verify";
 import {
-  isEvidence, isTransient, rejectionReason, runOutcome, shouldEvictWorker, shouldRetireWorker,
+  isEvidence, isTransient, rejectionReason, runOutcome, shouldRetireWorker,
 } from "./capture-decisions.mjs";
 import { beginRun, readProgress } from "./capture-progress.mjs";
 import { cacheDecision, cacheKey, hashPageDir, stampProvenance } from "./capture-cache.mjs";
+import { drainAcrossPool } from "./worker-pool.mjs";
 import { previouslyCaptured } from "./capture-resume.mjs";
 import { leasePageServer } from "./page-server.mjs";
 import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.mjs";
@@ -261,7 +262,7 @@ const unreachableStreaks = new Map();
  *
  * @returns {Promise<boolean>} true when the caller should stop using this worker
  */
-async function retireIfDegraded({ worker, pool }) {
+async function retireIfDegraded({ worker, poolSize, evictedCount, retiredCount }) {
   const { reachable, vitals } = await workerVitals(worker);
   const streak = reachable ? 0 : (unreachableStreaks.get(worker) ?? 0) + 1;
   unreachableStreaks.set(worker, streak);
@@ -269,14 +270,11 @@ async function retireIfDegraded({ worker, pool }) {
   // see both. Reading them here — AFTER the await — is deliberate and safe: the read, the decision and the
   // push below are one synchronous run, and Node does not interleave those. A read taken before the await
   // would be a stale snapshot.
-  const { retire, reason } = shouldRetireWorker({
-    vitals, unreachableStreak: streak, poolSize: pool.size,
-    retiredCount: pool.retired.length, evictedCount: pool.evicted.length,
+  // Returned rather than acted on: the pool owns who is in it, and pushing to its list from here was how
+  // this function ended up needing the pool object at all.
+  return shouldRetireWorker({
+    vitals, unreachableStreak: streak, poolSize, retiredCount, evictedCount,
   });
-  if (!retire) return false;
-  pool.retired.push(worker);
-  console.error("  RETIRING " + worker + " — " + reason);
-  return true;
 }
 
 async function waitForWorker(worker) {
@@ -487,138 +485,82 @@ function afterRun() {
   throw new Error('A11Y_VM_AFTER must be restore|stop|pause|leave (got "' + v + '")');
 }
 
-// One case per worker at a time, pulled from a shared queue.
-//
-// The unit of work is a CASE, not a capture: its good and bad variants must be captured by the
-// same worker, because the pair is only comparable if both came from the same screen reader on
-// the same machine. Splitting a pair across workers would compare two NVDA instances and call
-// the difference evidence.
-//
-// A queue rather than a static split, so a slow case does not leave a worker idle while
-// another still has a backlog.
-// A worker that has failed this many cases in a row is not having bad luck.
-//
-// Failures are caught per case, so a dead worker used to keep pulling from the queue and failing
-// everything it touched -- one broken guest could turn a whole run into failures while two healthy
-// ones sat idle. Evicting it hands the work back to the pool.
-
-// Hand a broken worker's cases back to the pool: the one in hand plus everything it already
-// failed, since those failures were the worker's fault rather than the cases'. A progress entry
-// recorded as failed is overwritten when another worker captures it.
-function requeueFrom({ queue, failures, testCase, failedHere }) {
-  queue.push(testCase, ...failedHere.map((f) => f.testCase));
-  for (const { id } of failedHere) {
-    const at = failures.findIndex((f) => f.startsWith(id + ": "));
-    if (at !== -1) failures.splice(at, 1);
-  }
-  return failedHere.length + 1;
-}
-
 /**
  * Drain the case queue across the pool, and report what happened to the run rather than to each worker.
  *
- * The accumulators are shared by every worker on purpose — the queue is the coordination mechanism. They are
- * bundled as `pool` so a worker's working life can be its own function without threading six loose lists
- * through it: four things cohesive enough to pass as a unit are already an object.
+ * The dispatch itself — the shared queue, each worker's failure streak, eviction and requeue — moved to
+ * `worker-pool.mjs` so `evidence:check` and `capture:check` can use the fleet too. They ran against ONE
+ * worker while three sat idle, because this was the only caller that knew how.
+ *
+ * What stays here is what is specific to a corpus run and has no business in a shared module: the cache, the
+ * `--resume` set, and the progress file.
+ *
+ * **The unit of work is a CASE, not a capture**, and that is a correctness constraint rather than a
+ * convenience: a pair is only comparable if both variants came from the same screen reader on the same
+ * machine. Splitting one across workers would compare two NVDA instances and call the difference evidence.
  */
 async function captureAcrossPool(ctxBase, cases, done, workers) {
-  const pool = {
-    queue: [...cases], failures: [], skipped: [], evicted: [], retired: [], cachedIds: [],
-    size: workers.length,
-  };
-  await Promise.all(workers.map((worker) => drainQueueWithWorker(worker, { ctxBase, done, pool })));
-  const { failures, evicted, retired, skipped, cachedIds } = pool;
-  if (cachedIds.length) {
-    console.log("Reused cached evidence for " + cachedIds.length + " case(s); no worker time spent on them.");
-  }
-  // Never silent: a run that finished on two of three workers must say so, or the next person
-  // wonders why it took longer and finds nothing.
-  if (evicted.length) console.error("Evicted " + evicted.length + " worker(s): " + evicted.join(", "));
-  if (retired.length) console.error("Retired " + retired.length + " degraded worker(s): " + retired.join(", "));
-  return {
-    failures, evicted, retired,
-    skippedCount: skipped.length + cachedIds.length,
-    cachedCount: cachedIds.length,
-  };
-}
-
-/**
- * One worker's whole working life: become ready, then take cases until the queue empties or it is removed.
- *
- * Deliberately NOT split further. The per-case body mutates this worker's streak and blame list and uses
- * `return` to end the worker — expressing that as a separate function would mean either a mutable bag or a
- * sentinel return value, and two functions that cannot be understood apart are worse than one that reads
- * straight through. Every branch below already says why it exists.
- */
-async function drainQueueWithWorker(worker, { ctxBase, done, pool }) {
-  // Once per worker: the cache key depends on this guest's NVDA, Edge, protocol and provisioning,
-  // and a pool member that differs must not reuse another's evidence.
-  // Wait for THIS worker to be ready before it takes any work. Readiness was previously only
-  // consulted after a failure, so a freshly booted worker still got handed the first case and
-  // still lost it to `nvda.start` -- the exact failure the readiness gate exists to prevent.
-  // A worker that never becomes ready simply takes no cases; the others drain the queue.
-  try {
-    await waitForWorker(worker);
-  } catch (error) {
-    console.error("  worker never became ready, skipping it: " + worker + " (" + error.message + ")");
-    return;
-  }
-  const ctx = { ...ctxBase, worker, environment: await workerEnvironment(worker) };
-  let consecutiveFailures = 0;
-  // What this worker failed. If it turns out to be the worker rather than the cases, all of it
-  // goes back to the pool -- otherwise a broken guest still costs two permanently failed cases
-  // before the threshold trips, and those are cases a healthy worker could have captured.
-  const failedHere = [];
-  while (pool.queue.length) {
-    const testCase = pool.queue.shift();
-    if (done.has(testCase.id)) {
-      ctx.progress.skipped(testCase.id, "already captured (--resume)");
-      pool.skipped.push(testCase.id);
-      continue;
-    }
-    try {
+  const skipped = [], cachedIds = [];
+  const outcome = await drainAcrossPool({
+    workers,
+    items: cases,
+    // Once per worker: the cache key depends on this guest's NVDA, Edge, protocol and provisioning, and a
+    // pool member that differs must not reuse another's evidence.
+    prepare: async (worker) => {
+      await waitForWorker(worker);
+      return { ...ctxBase, worker, environment: await workerEnvironment(worker) };
+    },
+    handle: async (testCase, { context: ctx }) => {
+      if (done.has(testCase.id)) {
+        ctx.progress.skipped(testCase.id, "already captured (--resume)");
+        skipped.push(testCase.id);
+        return;
+      }
       const result = await cachedOrCapture(ctx, testCase);
       if (result.cached) {
         ctx.progress.skipped(testCase.id, "cached: " + result.reason);
-        pool.cachedIds.push(testCase.id);
-        continue;
+        cachedIds.push(testCase.id);
+        return;
       }
       ctx.progress.captured(testCase.id, result.phrases);
-      // A success clears the streak AND the blame: these cases were fine, so they must not be
-      // handed back if this worker dies later.
-      consecutiveFailures = 0;
-      failedHere.length = 0;
-      if (await retireIfDegraded({ worker, pool })) return;
-    } catch (error) {
-      consecutiveFailures += 1;
-      // Evict, but never the last worker standing: with nothing left to hand the work to,
-      // recording the failures is more useful than abandoning the run quietly.
-      if (shouldEvictWorker({
-        consecutiveFailures, poolSize: pool.size,
-        evictedCount: pool.evicted.length, retiredCount: pool.retired.length,
-      })) {
-        const handedBack = requeueFrom({ queue: pool.queue, failures: pool.failures, testCase, failedHere });
-        pool.evicted.push(worker);
-        console.error("  EVICTING " + worker + " after " + consecutiveFailures +
-          " consecutive failures; " + handedBack +
-          " case(s) go back to the queue. Last error: " + error.message);
-        return;
-      }
-      // A failure is also the moment to ask whether the worker is answering at all. The wedge never
-      // succeeds, so the success-path check can never see it, and it never fails cleanly enough to
-      // reach the eviction threshold either. Its cases go back like an eviction's, because unlike a
-      // degraded-but-working guest, this one genuinely did not capture them.
-      if (await retireIfDegraded({ worker, pool })) {
-        console.error("  " + requeueFrom({ queue: pool.queue, failures: pool.failures, testCase, failedHere }) +
-          " case(s) go back to the queue");
-        return;
-      }
-      failedHere.push({ id: testCase.id, testCase });
-      pool.failures.push(testCase.id + ": " + error.message);
-      ctx.progress.failed(testCase.id, error.message);
-      console.error("  CAPTURE_FAILED " + pool.failures.at(-1));
-    }
+    },
+    // The pool supplies the counts it owns; `retireIfDegraded` measures the vitals and makes the call, so
+    // the decision stays in `capture-decisions.mjs` where `pool-invariants.test.ts` already pins it.
+    isDegraded: ({ worker, poolSize, evictedCount, retiredCount }) =>
+      retireIfDegraded({ worker, poolSize, evictedCount, retiredCount }),
+    hooks: {
+      onWorkerUnusable: (worker, error) =>
+        console.error("  worker never became ready, skipping it: " + worker + " (" + error.message + ")"),
+      onItemFailed: (testCase, error, { worker }) => {
+        // The progress entry is written here and deliberately NOT rolled back on requeue: another worker
+        // capturing the case overwrites it, and a failure that was really the worker's is still worth
+        // having been visible while it stood.
+        ctxBase.progress.failed(testCase.id, error.message, worker);
+        console.error("  CAPTURE_FAILED " + testCase.id + ": " + error.message);
+      },
+      onEvicted: (worker, { consecutiveFailures, handedBack, error }) =>
+        console.error("  EVICTING " + worker + " after " + consecutiveFailures + " consecutive failures; "
+          + handedBack + " case(s) go back to the queue. Last error: " + error.message),
+      onRetired: (worker, { handedBack, reason }) =>
+        console.error("  RETIRING " + worker + " — " + reason
+          + (handedBack ? "; " + handedBack + " case(s) go back to the queue" : "")),
+    },
+  });
+
+  if (cachedIds.length) {
+    console.log("Reused cached evidence for " + cachedIds.length + " case(s); no worker time spent on them.");
   }
+  // Never silent: a run that finished on two of three workers must say so, or the next person wonders why it
+  // took longer and finds nothing.
+  if (outcome.evicted.length) console.error("Evicted " + outcome.evicted.length + " worker(s): " + outcome.evicted.join(", "));
+  if (outcome.retired.length) console.error("Retired " + outcome.retired.length + " degraded worker(s): " + outcome.retired.join(", "));
+  return {
+    failures: outcome.failures.map((f) => f.key + ": " + f.error.message),
+    evicted: outcome.evicted,
+    retired: outcome.retired,
+    skippedCount: skipped.length + cachedIds.length,
+    cachedCount: cachedIds.length,
+  };
 }
 
 async function captureAll(ctxBase, cases, done) {

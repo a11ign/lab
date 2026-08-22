@@ -87,15 +87,30 @@ test("omitting the other count keeps the old behaviour rather than crashing", ()
   );
 });
 
-test("both call sites in the run actually pass both counts", () => {
+test("both call sites actually pass both counts, wherever they now live", () => {
   // The defaults above make a forgetful caller silently wrong, so the callers are checked directly. Read as
   // text: importing the run module starts a capture, because it has no main guard.
-  const source = readFileSync(
+  //
+  // The two calls are in DIFFERENT files since the pool was extracted, and that split is the point of the
+  // extraction rather than an accident. Eviction counts consecutive failures, which only the pool can see,
+  // so it decides there. Retirement needs the worker's vitals, which only the run can measure — so the pool
+  // hands it the counts and the run makes the call. Either half forgetting a count reopens the same hole.
+  const pool = readFileSync(fileURLToPath(new URL("./worker-pool.mjs", import.meta.url)), "utf8");
+  const run = readFileSync(
     fileURLToPath(new URL("./capture-screenreader-dataset.mjs", import.meta.url)), "utf8");
-  const evictCall = /shouldEvictWorker\(\{[\s\S]{0,200}?\}\)/.exec(source)?.[0] ?? "";
+
+  const evictCall = /shouldEvictWorker\(\{[\s\S]{0,200}?\}\)/.exec(pool)?.[0] ?? "";
   assert.match(evictCall, /evictedCount/, "the evict call must pass evictedCount");
   assert.match(evictCall, /retiredCount/, "the evict call must pass retiredCount");
-  const retireCall = /shouldRetireWorker\(\{[\s\S]{0,300}?\}\)/.exec(source)?.[0] ?? "";
+
+  const retireCall = /shouldRetireWorker\(\{[\s\S]{0,300}?\}\)/.exec(run)?.[0] ?? "";
   assert.match(retireCall, /retiredCount/, "the retire call must pass retiredCount");
   assert.match(retireCall, /evictedCount/, "the retire call must pass evictedCount");
+
+  // And the counts must actually REACH the run, which is the new seam and therefore the new way to get this
+  // wrong: the pool passing them and the run ignoring them would look fine in both files alone.
+  assert.match(pool, /poolSize: pool\.size,\s*evictedCount: pool\.evicted\.length,\s*retiredCount: pool\.retired\.length,/,
+    "the pool must hand its counts to the degradation predicate");
+  assert.match(run, /isDegraded: \(\{ worker, poolSize, evictedCount, retiredCount \}\)/,
+    "and the run must take them rather than reaching for a pool it no longer has");
 });

@@ -68,3 +68,22 @@ test("the capture itself reads every probe flag", () => {
       `${flag} is read from opts but never used to gate a probe`);
   }
 });
+
+test("evidence:check forwards every probe flag, and gates on all of them", () => {
+  // A SIXTH place a probe flag must be listed, and the one where forgetting is most expensive: this tool
+  // captures a case fresh and diffs it against the baseline, so a flag it drops produces a capture missing
+  // evidence the baseline HAS — reported as CHANGED, which is the answer that costs a full recapture.
+  //
+  // Its own `optionsUnchanged` guard exists to stop exactly that ("a comparison must not be between two
+  // things that differ for a reason unrelated to the change under test") and named the two flags that
+  // existed when it was written, so it was blind to the two added since.
+  const source = readFileSync(resolve(process.cwd(), "packages/lab/scripts/evidence-check.mjs"), "utf8");
+  assert.match(source, /key\.startsWith\("probe"\)/,
+    "the capture request must forward probe flags by prefix, not by name");
+  assert.match(source, /k\.startsWith\("probe"\)/,
+    "and the comparability guard must consider every probe flag, not the two it was born with");
+  for (const flag of PROBE_FLAGS) {
+    assert.ok(!new RegExp(`${flag}: !!testCase\\.${flag}`).test(source),
+      `${flag} is still enumerated by name in evidence-check; that is how the last two were dropped`);
+  }
+});
