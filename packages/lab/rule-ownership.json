@@ -105,6 +105,23 @@
         "discriminates, then declare the owner."
       ]
     },
+    "2.4.1:skip-link-inert": {
+      "decidedBy": "rules",
+      "reportsAs": "2.4.1",
+      "note": [
+        "PARTIAL, and the part is the only one that is ours. A skip link is NOT required — W3C is explicit",
+        "that headings alone (H69) and landmarks alone (ARIA11) satisfy 2.4.1 — so detecting absence would",
+        "fire on conformant pages, and whether any mechanism EXISTS is a DOM fact the static layer answers",
+        "better than our nondeterministic landmark sweep.",
+        "",
+        "This rule fires only on a mechanism that is present and inert: activating the skip link left focus",
+        "exactly where the next Tab would have gone anyway. Measured on the pair, which differ only in the",
+        "target id — 'Search the archive, edit' against 'News and updates, link'.",
+        "",
+        "It requires the activated control to BE a skip link by name, because the probe takes the first link",
+        "on the page and on a real site that is as likely to be a logo."
+      ]
+    },
     "2.4.2:route-title-stale": {
       "decidedBy": "rules",
       "reportsAs": "2.4.2",
