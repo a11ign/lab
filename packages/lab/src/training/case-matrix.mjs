@@ -1684,6 +1684,62 @@ function withRealisticScale(list) {
   });
 }
 
+/**
+ * The 2.4.3 fixture: the same five fields in the same reading order, differing only in tab order.
+ *
+ * A function rather than two literals so the pair cannot drift apart in any other respect. The one
+ * difference between the variants must be the thing under test — this corpus's central constraint, and the
+ * reason page furniture is injected identically into both.
+ */
+function FOCUS_ORDER_FORM(mode) {
+  const tab = (n) => (mode === " tabindex-trap" ? ` tabindex="${n}"` : "");
+  return "<form>"
+    + "<label for=\"a\">Full name</label><input id=\"a\" name=\"a\">"
+    + "<label for=\"b\">Email</label><input id=\"b\" name=\"b\">"
+    + `<label for="c">Postcode</label><input id="c" name="c"${tab(2)}>`
+    + `<label for="d">Phone</label><input id="d" name="d"${tab(1)}>`
+    + "<label for=\"e\">Notes</label><input id=\"e\" name=\"e\">"
+    + "</form>";
+}
+
+// 2.4.3 Focus Order. APPENDED at the end of `cases`, and that placement is load-bearing: page furniture is
+// sized by array index, so inserting anywhere else re-sizes every case after it and quietly invalidates
+// their captures. That cost one recapture on 2026-08-22; in the middle of a generated family it would cost
+// hundreds.
+//
+// The detectable subset is a tab order that DISAGREES WITH THE READING ORDER. Whether an order "preserves
+// meaning" in general is human judgement — the same wall 2.4.6 stops at — but a positive `tabindex`
+// dragging a field to the front of the tab order is not a judgement call, and it is the canonical way this
+// criterion is failed in practice.
+//
+// Both channels are already captured and neither is new: `structure.formFields` is the order a screen
+// reader READS, `interaction.focusOrder` is the order Tab VISITS. The comparison between them is the whole
+// rule, and it is the kind of claim only a screen-reader tool can make — the DOM has no "reading order" to
+// compare against, which is why a static checker can flag `tabindex="1"` as a smell but cannot say whether
+// it actually broke anything.
+cases.push(
+  pair({
+    id: "focus-order-tabindex",
+    criterion: "2.4.3",
+    good: page({
+      title: "Delivery details",
+      heading: "Delivery details",
+      body: FOCUS_ORDER_FORM(""),
+    }),
+    bad: page({
+      // `tabindex="2"` on Postcode and `1` on Phone: both are pulled ahead of every tabindex=0 control, and
+      // ahead of each other in their own order, so Tab visits Phone, Postcode, then the rest. Reading order
+      // is unchanged, which is exactly the failure — the page looks and reads correctly and operates in a
+      // different sequence.
+      title: "Delivery details",
+      heading: "Delivery details",
+      body: FOCUS_ORDER_FORM(" tabindex-trap"),
+    }),
+    badSignal: { type: "focus-order-scrambled" },
+    probeFocus: true,
+  }),
+);
+
 export const CASES = Object.freeze(withRealisticScale(cases));
 
 function structuralTextParts(capture) {
@@ -1882,6 +1938,44 @@ function routeTitleIsStale(capture) {
   return viewMoved && route.titleBefore === route.titleAfter;
 }
 
+/**
+ * 2.4.3: Tab visits the controls in a different order from the one the page reads in.
+ *
+ * Both sequences are already captured and neither is an inference: `structure.formFields` is what a screen
+ * reader reads walking the page, `interaction.focusOrder` is what Tab visits. Compared on accessible NAME,
+ * because the same control is announced differently by the two paths — the sweep says "Postcode, edit" and
+ * focus says "Postcode, edit, focused, blank".
+ *
+ * Restricted to the controls present in BOTH. `focusOrder` also contains links and anything else focusable,
+ * and the form-field sweep contains controls Tab may never reach; neither absence is a 2.4.3 failure, and
+ * treating it as one would fire on every page with a nav bar.
+ */
+function focusOrderIsScrambled(capture) {
+  const readingOrder = namesOf(capture.structure?.formFields);
+  const tabOrder = dedupeConsecutive(namesOf(capture.interaction?.focusOrder));
+  if (readingOrder.length < 2 || tabOrder.length < 2) return false;
+  const shared = new Set(readingOrder.filter((name) => tabOrder.includes(name)));
+  if (shared.size < 2) return false;
+  const reading = readingOrder.filter((name) => shared.has(name));
+  const tabbed = tabOrder.filter((name) => shared.has(name));
+  return reading.join("|") !== tabbed.join("|");
+}
+
+/** The accessible name, with role and state words stripped, so the two channels are comparable. */
+function namesOf(entries) {
+  return (entries || [])
+    .map((entry) => String(entry)
+      .replace(/\b(edit|button|link|checkbox|radio|combo box|list box|focused|blank|visited|selected|clickable|required|invalid entry)\b/gi, " ")
+      .replace(/[\s,]+/g, " ")
+      .trim())
+    .filter(Boolean);
+}
+
+/** Tab wrapping past the end repeats the first control; a repeat is not a reordering. */
+function dedupeConsecutive(names) {
+  return names.filter((name, i) => i === 0 || name !== names[i - 1]);
+}
+
 function focusIsTrapped(capture) {
   const mark = (capture.diagnostics || []).find((entry) => entry && entry.event === "focusOrder");
   return mark ? mark.stalled === true : false;
@@ -1900,6 +1994,7 @@ export function signalMatches(capture, signal) {
   if (signal.type === "table-unassociated") return tableHeadersAreUnassociated(capture);
   if (signal.type === "focus-trapped") return focusIsTrapped(capture);
   if (signal.type === "route-title-stale") return routeTitleIsStale(capture);
+  if (signal.type === "focus-order-scrambled") return focusOrderIsScrambled(capture);
   return false;
 }
 
