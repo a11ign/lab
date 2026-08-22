@@ -1654,6 +1654,17 @@ export const SCALE_BUCKETS = [
  * introduce a second difference into a controlled comparison. That is the one defect this corpus cannot
  * carry. Keyed on the case's index instead, the furniture is provably identical for both variants and
  * stable across regenerations.
+ *
+ * **But the index is the ARRAY POSITION, so INSERTING a case re-sizes the furniture of every case after
+ * it** — new page bytes, new `pageHash`, new cache key, and those captures become stale. Measured
+ * 2026-08-22: adding `route-title-stale` immediately before `keyboard-trap-postcode` changed exactly one
+ * page, and `check-signals` reported `1 stale` and exited 1. One case is cheap; the same insertion into the
+ * middle of a generated family would invalidate hundreds, silently, with the only symptom being a stale
+ * count nobody was watching for.
+ *
+ * **So APPEND new cases at the end.** Keying the bucket on a hash of the case ID instead would make
+ * insertion free forever, and is the better design — but it re-sizes every page in the corpus once, which
+ * is a full recapture. Worth doing bundled with a recapture that is happening anyway, not on its own.
  */
 function withRealisticScale(list) {
   return list.map((testCase, index) => {
