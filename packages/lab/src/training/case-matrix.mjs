@@ -2063,12 +2063,21 @@ function routeTitleIsStale(capture) {
  * unreachable. A control is only unreachable if it is missing from the tab order while a control that comes
  * LATER in reading order was reached — the probe demonstrably got past it and never landed on it.
  */
+/**
+ * Names identifying exactly ONE control. Mirrors `unambiguous` in `rules.ts` — two controls can announce
+ * identically ("Toggle" twice on MDN), and a name-based comparison then invents a reordering.
+ */
+function unambiguousNames(names) {
+  return new Set(names.filter((name) => names.indexOf(name) === names.lastIndexOf(name)));
+}
+
 function controlUnreachableByKeyboard(capture) {
   const reading = namesOf(capture.structure?.formFields);
   const tabbed = new Set(namesOf(capture.interaction?.focusOrder));
   if (reading.length < 2 || tabbed.size === 0) return false;
+  const trackable = unambiguousNames(reading);
   const lastReached = reading.reduce((last, name, i) => (tabbed.has(name) ? i : last), -1);
-  return reading.slice(0, lastReached).some((name) => !tabbed.has(name));
+  return reading.slice(0, lastReached).some((name) => trackable.has(name) && !tabbed.has(name));
 }
 
 function skipLinkIsInert(capture) {
@@ -2086,7 +2095,8 @@ function focusOrderIsScrambled(capture) {
   const readingOrder = namesOf(capture.structure?.formFields);
   const tabOrder = firstVisitEach(namesOf(capture.interaction?.focusOrder));
   if (readingOrder.length < 2 || tabOrder.length < 2) return false;
-  const shared = new Set(readingOrder.filter((name) => tabOrder.includes(name)));
+  const readingOnce = unambiguousNames(readingOrder), tabOnce = unambiguousNames(tabOrder);
+  const shared = new Set([...readingOnce].filter((name) => tabOnce.has(name)));
   if (shared.size < 2) return false;
   const reading = readingOrder.filter((name) => shared.has(name));
   const tabbed = tabOrder.filter((name) => shared.has(name));
