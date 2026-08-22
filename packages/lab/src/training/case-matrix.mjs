@@ -2118,23 +2118,50 @@ function focusIsTrapped(capture) {
   return mark ? mark.stalled === true : false;
 }
 
+/**
+ * Which predicate decides each signal type — a TABLE rather than a chain of fifteen `if`s.
+ *
+ * It was the chain, and it grew four entries in a day as criteria were added; ESLint stopped it at a
+ * complexity of 16. That limit was doing its job: the branches never interacted, so the chain was a lookup
+ * written the long way, and every new criterion made the function measurably harder to read while changing
+ * nothing about how it works.
+ *
+ * A missing type returns false rather than throwing, deliberately. A signal type nobody implements is a
+ * case that can never fire, which `check-signals` reports as BLIND with the case named — a better error
+ * than a crash inside a corpus run, and one that says which case is affected.
+ */
+const SIGNAL_PREDICATES = Object.freeze({
+  "unnamed-form-field": (capture) => hasUnnamedFormField(capture),
+  regex: (capture, signal) => regexMatches(capture, signal),
+  "structure-empty": (capture, signal) => structureIsEmpty(capture, signal),
+  "missing-heading": (capture, signal) => headingIsMissing(capture, signal),
+  "missing-role": (capture, signal) => hasMissingRole(capture, signal),
+  "state-change-silent": (capture, signal) => stateChangeIsSilent(capture, signal),
+  "form-activation-silent": (capture, signal) => formActivationIsSilent(capture, signal),
+  "validation-error-silent": (capture, signal) => validationErrorIsSilent(capture, signal),
+  "placeholder-only": (capture, signal) => placeholderOnlyIsPresent(capture, signal),
+  "table-unassociated": (capture) => tableHeadersAreUnassociated(capture),
+  "focus-trapped": (capture) => focusIsTrapped(capture),
+  "route-title-stale": (capture) => routeTitleIsStale(capture),
+  "focus-order-scrambled": (capture) => focusOrderIsScrambled(capture),
+  "skip-link-inert": (capture) => skipLinkIsInert(capture),
+  "control-unreachable-by-keyboard": (capture) => controlUnreachableByKeyboard(capture),
+});
+
+/**
+ * Every signal type the checker can evaluate — the KEYS, exported as a value.
+ *
+ * `acceptance-matrix.test.ts` needs this to assert that no case declares a signal nothing implements, and
+ * used to obtain it by regex-scraping this file for `type === "..."`. That was the right instinct — its
+ * comment says a hand-maintained list "would go stale the first time a signal type is added" — reaching
+ * for the only mechanism available at the time. The moment the chain became a table the scrape found
+ * nothing, and a test that derives its expectations from source text is one refactor away from asserting
+ * over an empty set. The list is now a value, so it cannot be read wrongly.
+ */
+export const SIGNAL_TYPES = Object.freeze(Object.keys(SIGNAL_PREDICATES));
+
 export function signalMatches(capture, signal) {
-  if (signal.type === "unnamed-form-field") return hasUnnamedFormField(capture);
-  if (signal.type === "regex") return regexMatches(capture, signal);
-  if (signal.type === "structure-empty") return structureIsEmpty(capture, signal);
-  if (signal.type === "missing-heading") return headingIsMissing(capture, signal);
-  if (signal.type === "missing-role") return hasMissingRole(capture, signal);
-  if (signal.type === "state-change-silent") return stateChangeIsSilent(capture, signal);
-  if (signal.type === "form-activation-silent") return formActivationIsSilent(capture, signal);
-  if (signal.type === "validation-error-silent") return validationErrorIsSilent(capture, signal);
-  if (signal.type === "placeholder-only") return placeholderOnlyIsPresent(capture, signal);
-  if (signal.type === "table-unassociated") return tableHeadersAreUnassociated(capture);
-  if (signal.type === "focus-trapped") return focusIsTrapped(capture);
-  if (signal.type === "route-title-stale") return routeTitleIsStale(capture);
-  if (signal.type === "focus-order-scrambled") return focusOrderIsScrambled(capture);
-  if (signal.type === "skip-link-inert") return skipLinkIsInert(capture);
-  if (signal.type === "control-unreachable-by-keyboard") return controlUnreachableByKeyboard(capture);
-  return false;
+  return SIGNAL_PREDICATES[signal?.type]?.(capture, signal) ?? false;
 }
 
 // `evidenceUnits` and `captureEvidenceText` MOVED to `@a11y-witness/scorer/evidence-units`.

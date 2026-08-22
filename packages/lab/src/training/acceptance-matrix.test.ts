@@ -13,10 +13,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 
 import { ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
+import { SIGNAL_TYPES } from "./case-matrix.mjs";
 import { WCAG_22_AA } from "@a11y-witness/evidence/wcag";
 
 const criteria = new Set(WCAG_22_AA.map((c) => c.num));
@@ -86,10 +85,11 @@ test("every badSignal is a shape the checker can actually evaluate", () => {
   // stale the first time a signal type is added, and the consequence of an unhandled type is that the signal
   // silently never fires — which reads as "the bad page was fine". My first version invented five type names
   // and missed eight of the ten real ones.
-  const checker = readFileSync(fileURLToPath(new URL("./case-matrix.mjs", import.meta.url)), "utf8");
-  const KNOWN = new Set([...checker.matchAll(/type === "([a-z-]+)"|case "([a-z-]+)":/g)]
-    .map((m) => m[1] ?? m[2]).filter(Boolean));
-  assert.ok(KNOWN.size >= 8, `only found ${KNOWN.size} signal types in the checker; the scan is broken`);
+  // From the checker's own exported table, not scraped from its source. This regex-matched `type === "..."`
+  // and returned NOTHING the day the if-chain became a lookup — a test deriving expectations from source
+  // text is one refactor away from asserting over an empty set, which passes.
+  const KNOWN = new Set(SIGNAL_TYPES);
+  assert.ok(KNOWN.size >= 8, `only found ${KNOWN.size} signal types in the checker; the export is broken`);
   for (const c of ACCEPTANCE_CASES) {
     assert.ok(c.badSignal, `${c.id} has no badSignal, so nothing decides whether the bad page failed`);
     assert.ok(KNOWN.has(c.badSignal.type),
