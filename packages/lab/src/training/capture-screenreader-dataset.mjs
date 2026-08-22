@@ -168,6 +168,9 @@ function captureOptions(testCase) {
     // above this function asks for: we do not send the flag, so we do not key on it, and `capture-core`
     // reads `!!opts.probeFocus` where absent and false are the same thing.
     ...(testCase.probeFocus ? { probeFocus: true } : {}),
+    // Same omit-when-false rule, same reason: present only for the cases that ask, so adding the
+    // flag re-keys those and nothing else.
+    ...(testCase.probeNavigation ? { probeNavigation: true } : {}),
     reuseScreenReader: REUSE_NVDA,
   };
 }

@@ -139,6 +139,11 @@ function pair({
   // unassessable there. 2.1.2 was the expensive one: `rules.ts` has shipped a keyboard-trap rule the whole
   // time, and `rules:gate` could never once fire it.
   probeFocus = false,
+  // The NAVIGATION probe. Opt-in for the same reason as the others, and additionally because it is the one
+  // probe that ACTIVATES A LINK -- it can leave the page under measurement, so it runs last and only when a
+  // case asks. It exists for the half of 2.4.2 a screen reader is uniquely placed to prove: a route that
+  // changes without the title changing, so the reader still says the previous page's name.
+  probeNavigation = false,
   family = id,
   subtype = null,
   // Criteria this case ALSO breaks. `pair` names every field it forwards, so a case declaring
@@ -160,6 +165,7 @@ function pair({
     probeForms,
     probeTables,
     probeFocus,
+    probeNavigation,
     good,
     bad,
   };
@@ -1477,6 +1483,92 @@ const CALIBRATION_CASES = [
 
 cases.push(...CALIBRATION_CASES);
 
+// The single-page-app fixture behind the 2.4.2 case below. Both variants share the markup and the
+// navigation; they differ only in what happens to the TITLE and to FOCUS when the route changes.
+//
+// The nav list comes first in DOM order deliberately: `probeRouteChange` quick-navs to the FIRST link, so
+// the control it activates has to be the one that navigates. A case whose first link is a skip link would
+// measure the skip link.
+const NAV_MARKUP =
+  "<nav><ul>"
+  // The NAVIGATING link is first, and that is a constraint of the probe rather than a design choice:
+  // `probeRouteChange` quick-navs to the first link on the page and activates that. Written the natural way
+  // round -- Overview, then Bookings -- both variants activated a plain fragment link, nothing changed on
+  // either, and the good page was indistinguishable from the bad one. A fixture whose conformant variant
+  // cannot pass is the same defect as one whose bad variant cannot fail.
+  + "<li><a href=\"#bookings\" id=\"nav-bookings\">Bookings</a></li>"
+  + "<li><a href=\"#overview\">Overview</a></li>"
+  + "</ul></nav>"
+  + "<div id=\"view\"><p>Opening times and directions for the Riverside Centre.</p></div>";
+
+// `pushState` + an innerHTML swap: a route change with no page load, which is the only shape in which this
+// failure can exist. On a real navigation the browser reads the new document's title whatever the author
+// did, so the bug is unreachable.
+const ROUTE_SWAP =
+  "var view = document.getElementById('view');"
+  + "document.getElementById('nav-bookings').addEventListener('click', function (event) {"
+  + "event.preventDefault();"
+  + "history.pushState({}, '', '#bookings');";
+
+// Conformant: the title becomes the new page's, and focus moves to the new heading. Both matter and they
+// answer different questions — focus is what NVDA announces at the moment of navigation, the title is what
+// a user hears when they ask where they are.
+const GOOD_ROUTE_SCRIPT = ROUTE_SWAP
+  + "view.innerHTML = '<h1 id=\"landed\" tabindex=\"-1\">Bookings</h1>"
+  + "<p>Book a room for up to twelve people.</p>';"
+  + "document.title = 'Bookings - Riverside Centre';"
+  + "document.getElementById('landed').focus();"
+  + "});";
+
+// The failure: the view changes and nothing else does. The page now shows Bookings, the title still says
+// Riverside Centre, focus never moved, and the screen reader says nothing.
+const BAD_ROUTE_SCRIPT = ROUTE_SWAP
+  + "view.innerHTML = '<h1>Bookings</h1>"
+  + "<p>Book a room for up to twelve people.</p>';"
+  + "});";
+
+// 2.4.2, and deliberately NOT the missing-title case. Measured across 4,895 captures there are ZERO
+// missing or placeholder titles, and WebAIM's million-page survey does not list missing title among the
+// failures covering 96% of errors -- a rule there would add a row to the coverage table and detect nothing.
+//
+// This is the half a screen reader is uniquely placed to prove, and that a static analyser cannot reach at
+// all: the markup is valid at every instant, and the failure is the TRANSITION. Both variants navigate the
+// same way and both have a title; only one of them changes it.
+cases.push(
+  pair({
+    id: "route-title-stale",
+    criterion: "2.4.2",
+    // Both pages are single-page apps: the link swaps the view without a page load, which is the shape the
+    // whole case exists for. A real page load cannot express this failure -- the browser reads the new
+    // document's title whatever the author did.
+    //
+    // The nav is FIRST in the body and the navigating link is first within it, because the probe activates
+    // the first link it reaches. See NAV_MARKUP.
+    good: page({
+      title: "Riverside Centre",
+      heading: "Riverside Centre",
+      body: NAV_MARKUP,
+      // Updates the title AND moves focus to the new heading. The focus move is what NVDA actually
+      // announces; the title is what a user navigating by title hears. A conformant SPA does both, and
+      // doing only the second would announce nothing at the moment of navigation.
+      script: GOOD_ROUTE_SCRIPT,
+    }),
+    bad: page({
+      title: "Riverside Centre",
+      heading: "Riverside Centre",
+      body: NAV_MARKUP,
+      // Swaps the content and nothing else. The page now shows Bookings, the title still says Riverside
+      // Centre, focus never moved, and NVDA says nothing -- so a screen reader user has no way to learn
+      // they went anywhere. That is the finding, and it is invisible to the markup.
+      script: BAD_ROUTE_SCRIPT,
+    }),
+    badSignal: { type: "route-title-stale" },
+    // Without this the capture carries no `routeChange` and the case labels every capture clean while
+    // looking like a passing signal -- the exact way 2.1.2 shipped unvalidated.
+    probeNavigation: true,
+  }),
+);
+
 // A single targeted case rather than a family: 2.1.2 needs exactly one pair to become validatable, and
 // it is pushed here beside the other explicit pushes rather than buried in a generated block.
 cases.push(
@@ -1757,6 +1849,26 @@ function hasUnnamedFormField(capture) {
  * Absent diagnostics mean the probe did not run, which is NOT a trap. `probeFocus` is opt-in per case, so a
  * case that forgets it would otherwise label every capture clean and look like a passing signal.
  */
+/**
+ * 2.4.2: the route changed and the screen reader never said where you went.
+ *
+ * TWO signals, both required, for the same reason `addKeyboardTrap` needs two: either alone fires on pages
+ * that are fine. A title that does not change is normal if the activation announced the new context
+ * anyway; silence is normal if the title moved and the user can ask for it. Only both together mean a user
+ * has no way to learn they navigated.
+ *
+ * An unprobed or errored capture is NOT a finding. `routeChange` is absent unless asked for and carries an
+ * `error` when the measurement failed — and an empty `announced` is exactly what the bad page produces, so
+ * a failed probe recorded as one would invert the finding. That is the `probeDisclosure` lesson, which
+ * cost 1 in 20 captures of a correctly implemented page.
+ */
+function routeTitleIsStale(capture) {
+  const route = (capture.interaction || {}).routeChange;
+  if (!route || route.error || !route.navigated) return false;
+  const announced = String(route.announced ?? "").trim();
+  return route.titleBefore === route.titleAfter && announced === "";
+}
+
 function focusIsTrapped(capture) {
   const mark = (capture.diagnostics || []).find((entry) => entry && entry.event === "focusOrder");
   return mark ? mark.stalled === true : false;
@@ -1774,6 +1886,7 @@ export function signalMatches(capture, signal) {
   if (signal.type === "placeholder-only") return placeholderOnlyIsPresent(capture, signal);
   if (signal.type === "table-unassociated") return tableHeadersAreUnassociated(capture);
   if (signal.type === "focus-trapped") return focusIsTrapped(capture);
+  if (signal.type === "route-title-stale") return routeTitleIsStale(capture);
   return false;
 }
 
