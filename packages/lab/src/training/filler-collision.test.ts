@@ -52,10 +52,15 @@ const FURNITURE = {
     "column 2, Reviewed",
     "row 2, Note, column 1, Site safety",
     "Reviewed, column 2, 2019",
+    "Reference notes archive, button, collapsed",
+    "Reference notes archive, button, focused, expanded",
   ],
   headings: ["Reference note 01"],
   formFields: ["Reference lookup, edit"],
   tableCells: ["row 2, Site safety", "Reviewed, column 2, 2019"],
+  controls: ["Reference notes archive, button, collapsed"],
+  stateChanges: [{ control: "Reference notes archive, button, collapsed",
+    after: "Reference notes archive, button, focused, expanded" }],
   links: ["Opening times for the north entrance 01", "Annual review 2019 02"],
 };
 
@@ -86,6 +91,11 @@ const withFurniture = () => {
       links: [...capture.structure.links, ...FURNITURE.links],
       lists: [...capture.structure.lists, "list, with 6 items"],
       tableCells: [...capture.structure.tableCells, ...FURNITURE.tableCells],
+    },
+    interaction: {
+      ...capture.interaction,
+      controls: [...capture.interaction.controls, ...FURNITURE.controls],
+      stateChanges: [...capture.interaction.stateChanges, ...FURNITURE.stateChanges],
     },
   };
 };

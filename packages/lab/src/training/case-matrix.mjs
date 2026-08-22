@@ -91,7 +91,7 @@ function filler(bucket) {
       + "<p>Background detail for reference note " + n
       + ", retained for records and reviewed each year by the site team.</p>";
   }).join("");
-  return "<ul>" + links + "</ul>" + sections + namedField(bucket) + dataTable(bucket);
+  return "<ul>" + links + "</ul>" + sections + namedField(bucket) + dataTable(bucket) + disclosure(bucket);
 }
 
 /**
@@ -118,6 +118,32 @@ function namedField(bucket) {
   // describe. A labelled input needs no form to be announced as a named field.
   return "<p><label for=\"ref-lookup\">Reference lookup</label>"
     + "<input id=\"ref-lookup\" name=\"ref-lookup\" type=\"text\"></p>";
+}
+
+/**
+ * A CONFORMANT disclosure — the one interaction evidence furniture can supply.
+ *
+ * `state_changed` starves more subtypes than any other feature (13 of 13), and `corpus:starvation` models
+ * this bucket as taking the starved pairs from 209 to 178. It is reachable from markup alone because
+ * `probeKindFor` returns "disclosure" for anything announced as `collapsed` and activates it
+ * **unconditionally**, with no `probeForms` gate — its own comment says why: "expanding something is
+ * side-effect-free".
+ *
+ * Everything else in that group needs `probeForms`, which activates a control a page owner chose, and this
+ * tool does not press *Book* on a page it does not own. So this is where furniture's reach ends for
+ * interaction evidence.
+ *
+ * Conformant deliberately: `aria-expanded` flips, so the page announces `expanded` after activation. A
+ * broken one would add a 4.1.2 failure to every page carrying it, which changes labels rather than
+ * features — that is a two-defect CASE, not furniture.
+ */
+function disclosure(bucket) {
+  if (!bucket.disclosure) return "";
+  return "<p><button type=\"button\" id=\"ref-notes-toggle\" aria-expanded=\"false\" "
+    + "aria-controls=\"ref-notes-panel\" onclick=\"var b=this,p=document.getElementById('ref-notes-panel');"
+    + "var open=b.getAttribute('aria-expanded')==='true';b.setAttribute('aria-expanded',String(!open));"
+    + "p.hidden=open;\">Reference notes archive</button></p>"
+    + "<div id=\"ref-notes-panel\" hidden><p>Archived reference notes are retained for seven years.</p></div>";
 }
 
 function dataTable(bucket) {
@@ -1685,6 +1711,9 @@ export const SCALE_BUCKETS = [
   // positives — which is what made them free negative weights. `furniture-spread.test.ts` asserts the
   // property directly, without capturing anything.
   { links: 6, sections: 4, namedField: true },
+  // Ordered by MEASURED capture cost, ascending, which `scale-buckets.test.ts` asserts: a labelled field
+  // is +3.7 s, a disclosure +3.9 s (it activates a control), a table +7.9 s (the sweep walks cells).
+  { links: 6, sections: 4, disclosure: true },
   { links: 6, sections: 4, dataTable: true },
 ];
 

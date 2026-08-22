@@ -50,20 +50,33 @@ const CAPTURE_BUDGET_MS = 120_000; // DEFAULT_BUDGET_MS in capture-core.mjs
  * ADR 0015's cross-criterion furniture costs capture time too, and it must be in the model or the night
  * budget below is measuring a page that no longer exists.
  *
- * Counted from the announcements each produces in a real capture rather than from the markup: a labelled
- * input is one announced field, and the 2x2 table with a caption announces the table, the two header cells
- * and the two data cells — seven lines, taken from `table-bulk-aquarium-001.good`. Both are charged at
- * `MS_PER_ELEMENT`, which is an ASSUMPTION: that figure was measured on links and headings, and nothing
- * has yet timed a table. Re-measure after the first capture with these buckets and correct it here — the
- * comment above this constant records what happened last time a cost model went unchecked.
+ * MEASURED over all 2,122 captures in the corpus, by median total capture time with and without each
+ * feature — not estimated from element counts, which is what the first version of this did and what the
+ * comment above the baseline warns against:
+ *
+ *   a form field     1,032 captures  31.5 s   vs  1,090 without  27.8 s   ->  +3.7 s
+ *   a disclosure       144 captures  32.5 s   vs  1,978 without  28.6 s   ->  +3.9 s
+ *   a table            122 captures  36.5 s   vs  2,000 without  28.6 s   ->  +7.9 s
+ *
+ * Charged as milliseconds rather than as fake "elements": these are a sweep and a probe activation, not
+ * more list items, and converting them into an element count would hide that behind a number whose unit
+ * does not apply. The table is the expensive one — the table sweep walks cells — and it is why the table
+ * bucket is the largest.
+ *
+ * CONFOUNDED, and worth stating: the captures carrying each feature are that feature's own CASES, which
+ * differ in other ways too. So these are upper bounds on what furniture adds, which is the safe direction
+ * for a budget. Re-measure from the first run that carries the furniture itself.
  */
-const NAMED_FIELD_ELEMENTS = 1;
-const DATA_TABLE_ELEMENTS = 7;
+const NAMED_FIELD_MS = 3_700;
+const DISCLOSURE_MS = 3_900;
+const DATA_TABLE_MS = 7_900;
 
-type Bucket = { links: number; sections: number; namedField?: boolean; dataTable?: boolean };
-const elements = (b: Bucket) => b.links * 2 + b.sections
-  + (b.namedField ? NAMED_FIELD_ELEMENTS : 0) + (b.dataTable ? DATA_TABLE_ELEMENTS : 0);
-const captureMs = (b: Bucket) => BASELINE_MS + MS_PER_ELEMENT * elements(b);
+type Bucket = { links: number; sections: number; namedField?: boolean; dataTable?: boolean;
+  disclosure?: boolean };
+const elements = (b: Bucket) => b.links * 2 + b.sections;
+const furnitureMs = (b: Bucket) => (b.namedField ? NAMED_FIELD_MS : 0)
+  + (b.dataTable ? DATA_TABLE_MS : 0) + (b.disclosure ? DISCLOSURE_MS : 0);
+const captureMs = (b: Bucket) => BASELINE_MS + MS_PER_ELEMENT * elements(b) + furnitureMs(b);
 
 test("the buckets are populated, so nothing below is vacuously true", () => {
   assert.ok(SCALE_BUCKETS.length >= 2, `expected at least two buckets, got ${SCALE_BUCKETS.length}`);
@@ -122,10 +135,14 @@ test("buckets are ordered and non-negative, because one is chosen per case by ha
       assert.ok(Number.isInteger(b[key]) && b[key] >= 0, `${JSON.stringify(b)}.${key} is not a count`);
     }
   }
-  const sizes = SCALE_BUCKETS.map(elements);
-  assert.deepEqual(sizes, [...sizes].sort((a, z) => a - z), "buckets must ascend, so the range is legible");
+  // Ordered by what a capture COSTS, not by element count: the furniture pieces are milliseconds rather
+  // than elements, so an element-ordered list would read as ascending while the real costs interleave.
+  const costs = SCALE_BUCKETS.map(captureMs);
+  assert.deepEqual(costs, [...costs].sort((a, z) => a - z),
+    "buckets must ascend in capture cost, so the range is legible");
   // The furniture markers are the point of the last two buckets. A bucket list that lost them would still
   // pass every size assertion above while quietly restoring the correlation ADR 0015 exists to break.
   assert.ok(SCALE_BUCKETS.some((b) => b.namedField), "no bucket carries a named form field");
   assert.ok(SCALE_BUCKETS.some((b) => b.dataTable), "no bucket carries a data table");
+  assert.ok(SCALE_BUCKETS.some((b) => b.disclosure), "no bucket carries a disclosure");
 });

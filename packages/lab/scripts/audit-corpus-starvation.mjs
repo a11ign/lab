@@ -43,6 +43,7 @@ const PYTHON = process.env.A11Y_PYTHON || resolve(REPO, ".venv/bin/python");
 const GRANTS = Object.freeze({
   namedField: ["form_field_named", "form_field_present"],
   dataTable: ["table_present", "table_data_row_present", "table_header_associated"],
+  disclosure: ["state_change_present", "state_changed", "control_present"],
 });
 
 /** A feature absent from the positives is only a shortcut if it is COMMON elsewhere — same rule as the
@@ -57,6 +58,7 @@ function furnitureOf() {
   return new Map(CASES.map((testCase) => [testCase.id, {
     namedField: carries(testCase, /Reference lookup/),
     dataTable: carries(testCase, /Reference notes index/),
+    disclosure: carries(testCase, /Reference notes archive/),
   }]));
 }
 

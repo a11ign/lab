@@ -38,11 +38,16 @@ const FURNITURE = {
     "table, with 2 rows and 2 columns, caption, Reference notes index",
     "out of caption, row 1, column 1, Note",
     "row 2, Note, column 1, Site safety",
+    "Reference notes archive, button, collapsed",
+    "Reference notes archive, button, focused, expanded",
   ],
   headings: ["Reference note 01"],
   formFields: ["Reference lookup, edit"],
   links: ["Opening times for the north entrance 01"],
   tableCells: ["row 2, Site safety"],
+  controls: ["Reference notes archive, button, collapsed"],
+  stateChanges: [{ control: "Reference notes archive, button, collapsed",
+    after: "Reference notes archive, button, focused, expanded" }],
 };
 
 type Capture = {
@@ -51,15 +56,23 @@ type Capture = {
   interaction?: Record<string, unknown>;
 };
 
+/** One nullish fallback, named once — spelling `?? []` at every field is what took this past `complexity`. */
+const merge = <T>(existing: readonly T[] | undefined, added: readonly T[]): T[] => [...(existing ?? []), ...added];
+
 const furnished = (capture: Capture): Capture => ({
   ...capture,
-  transcript: [...(capture.transcript ?? []), ...FURNITURE.transcript],
+  transcript: merge(capture.transcript, FURNITURE.transcript),
   structure: {
     ...(capture.structure ?? {}),
-    headings: [...(capture.structure?.headings ?? []), ...FURNITURE.headings],
-    formFields: [...(capture.structure?.formFields ?? []), ...FURNITURE.formFields],
-    links: [...(capture.structure?.links ?? []), ...FURNITURE.links],
-    tableCells: [...(capture.structure?.tableCells ?? []), ...FURNITURE.tableCells],
+    headings: merge(capture.structure?.headings, FURNITURE.headings),
+    formFields: merge(capture.structure?.formFields, FURNITURE.formFields),
+    links: merge(capture.structure?.links, FURNITURE.links),
+    tableCells: merge(capture.structure?.tableCells, FURNITURE.tableCells),
+  },
+  interaction: {
+    ...(capture.interaction ?? {}),
+    controls: merge(capture.interaction?.controls as string[], FURNITURE.controls),
+    stateChanges: merge(capture.interaction?.stateChanges as object[], FURNITURE.stateChanges),
   },
 });
 
