@@ -1740,6 +1740,58 @@ cases.push(
   }),
 );
 
+/**
+ * The 2.4.1 fixture: a skip link, a block of repeated navigation, then the content.
+ *
+ * `targetId` is the ONLY difference. The good variant's link points at the content wrapper, which carries
+ * `tabindex="-1"` so focus can actually land on it; the bad variant points at an id that no element has —
+ * a renamed or typo'd anchor, which is how this breaks in the wild and exactly what a static checker waves
+ * through: it sees a link, a plausible fragment href and a page full of content.
+ */
+function SKIP_LINK_PAGE(targetId) {
+  return `<a href="#${targetId}">Skip to main content</a>`
+    + "<nav><ul>"
+    + "<li><a href=\"/news\">News and updates</a></li>"
+    + "<li><a href=\"/events\">Events calendar</a></li>"
+    + "<li><a href=\"/contact\">Contact the team</a></li>"
+    + "</ul></nav>"
+    + "<div id=\"content\" tabindex=\"-1\">"
+    + "<label for=\"q\">Search the archive</label><input id=\"q\" name=\"q\">"
+    + "</div>";
+}
+
+// 2.4.1 Bypass Blocks — and deliberately NOT "the page has no skip link", which would be wrong.
+//
+// W3C's Understanding page is explicit: headings alone satisfy this criterion (H69), landmarks alone satisfy
+// it (ARIA11), and a skip link is not required. So absence is not a failure, every corpus page has an h1,
+// and a presence rule would fire on conformant pages. Whether any of those mechanisms EXISTS is a DOM fact
+// the static layer answers better than we can — our own landmark sweep is documented as nondeterministic.
+//
+// The claim that is ours: the mechanism is there and does nothing. Both variants have the same skip link,
+// the same nav block and the same content; only the target differs. Activating it either moves focus past
+// the block or leaves the user exactly where they were, and no amount of markup inspection can tell which.
+cases.push(
+  pair({
+    id: "skip-link-broken",
+    criterion: "2.4.1",
+    good: page({
+      title: "Archive",
+      heading: "Archive",
+      body: SKIP_LINK_PAGE("content"),
+    }),
+    bad: page({
+      title: "Archive",
+      heading: "Archive",
+      // No element has this id. The link is valid HTML, points somewhere plausible, and goes nowhere.
+      body: SKIP_LINK_PAGE("main-content"),
+    }),
+    badSignal: { type: "skip-link-inert" },
+    // The navigation probe activates the first link — which here IS the skip link — and records where the
+    // next Tab lands. That reading is the entire evidence for this case.
+    probeNavigation: true,
+  }),
+);
+
 export const CASES = Object.freeze(withRealisticScale(cases));
 
 function structuralTextParts(capture) {
@@ -1950,6 +2002,28 @@ function routeTitleIsStale(capture) {
  * and the form-field sweep contains controls Tab may never reach; neither absence is a 2.4.3 failure, and
  * treating it as one would fire on every page with a nav bar.
  */
+/**
+ * 2.4.1: the skip link was activated and focus did not move past the block.
+ *
+ * "Did not move" is measured against what the SECOND item in the ordinary tab order would have been — i.e.
+ * the next Tab landed exactly where it would have landed without ever touching the skip link. That is a
+ * stronger statement than "focus is still near the top", and it needs no knowledge of where the block ends.
+ *
+ * Requires the control activated to actually BE a skip link, by its announced name. The probe activates the
+ * first link on the page, which on some pages is a logo or a cookie banner; activating one of those and
+ * finding focus unmoved says nothing about bypassing blocks.
+ */
+function skipLinkIsInert(capture) {
+  const route = (capture.interaction || {}).routeChange;
+  if (!route || route.error || !route.navigated) return false;
+  if (!/\b(skip|jump)\b/i.test(String(route.control ?? ""))) return false;
+  const landed = route.nextFocusAfter;
+  if (typeof landed !== "string" || !landed) return false; // not measured, or silent — no claim
+  const ordinary = namesOf(capture.interaction?.focusOrder)[1];
+  if (!ordinary) return false;
+  return namesOf([landed])[0] === ordinary;
+}
+
 function focusOrderIsScrambled(capture) {
   const readingOrder = namesOf(capture.structure?.formFields);
   const tabOrder = firstVisitEach(namesOf(capture.interaction?.focusOrder));
@@ -2000,6 +2074,7 @@ export function signalMatches(capture, signal) {
   if (signal.type === "focus-trapped") return focusIsTrapped(capture);
   if (signal.type === "route-title-stale") return routeTitleIsStale(capture);
   if (signal.type === "focus-order-scrambled") return focusOrderIsScrambled(capture);
+  if (signal.type === "skip-link-inert") return skipLinkIsInert(capture);
   return false;
 }
 
