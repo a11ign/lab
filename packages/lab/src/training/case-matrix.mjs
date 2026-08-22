@@ -1952,7 +1952,7 @@ function routeTitleIsStale(capture) {
  */
 function focusOrderIsScrambled(capture) {
   const readingOrder = namesOf(capture.structure?.formFields);
-  const tabOrder = dedupeConsecutive(namesOf(capture.interaction?.focusOrder));
+  const tabOrder = firstVisitEach(namesOf(capture.interaction?.focusOrder));
   if (readingOrder.length < 2 || tabOrder.length < 2) return false;
   const shared = new Set(readingOrder.filter((name) => tabOrder.includes(name)));
   if (shared.size < 2) return false;
@@ -1971,9 +1971,14 @@ function namesOf(entries) {
     .filter(Boolean);
 }
 
-/** Tab wrapping past the end repeats the first control; a repeat is not a reordering. */
-function dedupeConsecutive(names) {
-  return names.filter((name, i) => i === 0 || name !== names[i - 1]);
+/**
+ * Each control's FIRST visit, in order. The tab order is a CYCLE — past the last control Tab wraps to the
+ * first — so a faithful recording ends by repeating something it began with, and comparing that raw made
+ * the CONFORMANT variant differ from itself. Measured: five fields, six links, then "Full name" again.
+ */
+function firstVisitEach(names) {
+  const seen = new Set();
+  return names.filter((name) => (seen.has(name) ? false : (seen.add(name), true)));
 }
 
 function focusIsTrapped(capture) {
