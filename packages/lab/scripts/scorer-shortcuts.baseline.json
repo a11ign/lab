@@ -1,0 +1,996 @@
+{
+  "vetoLogits": 1.0,
+  "rows": [
+    {
+      "subtype": "1.1.1:filename-alt",
+      "positives": 31,
+      "vetoes": [
+        {
+          "feature": "vague_link_present",
+          "logits": -4.3987
+        },
+        {
+          "feature": "generic_heading_present",
+          "logits": -3.8806
+        },
+        {
+          "feature": "form_field_unnamed",
+          "logits": -3.7708
+        },
+        {
+          "feature": "unnamed_graphic_present",
+          "logits": -3.4319
+        },
+        {
+          "feature": "form_field_named",
+          "logits": -2.1498
+        },
+        {
+          "feature": "table_position_only",
+          "logits": -1.722
+        },
+        {
+          "feature": "table_data_row_present",
+          "logits": -1.6775
+        },
+        {
+          "feature": "table_present",
+          "logits": -1.661
+        },
+        {
+          "feature": "table_header_associated",
+          "logits": -1.6207
+        },
+        {
+          "feature": "plain_heading_candidate_present",
+          "logits": -1.5167
+        },
+        {
+          "feature": "bare_edit_present",
+          "logits": -1.313
+        },
+        {
+          "feature": "state_change_present",
+          "logits": -1.3101
+        },
+        {
+          "feature": "state_changed",
+          "logits": -1.2895
+        },
+        {
+          "feature": "state_unchanged",
+          "logits": -1.1814
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.117
+        },
+        {
+          "feature": "form_field_present",
+          "logits": -1.1044
+        },
+        {
+          "feature": "control_present",
+          "logits": -1.081
+        },
+        {
+          "feature": "form_change_nonempty",
+          "logits": -1.0411
+        },
+        {
+          "feature": "post_submit_present",
+          "logits": -1.0299
+        }
+      ],
+      "sumLogits": -36.3
+    },
+    {
+      "subtype": "1.1.1:generic-alt",
+      "positives": 31,
+      "vetoes": [
+        {
+          "feature": "vague_link_present",
+          "logits": -4.4451
+        },
+        {
+          "feature": "unnamed_graphic_present",
+          "logits": -4.2447
+        },
+        {
+          "feature": "generic_heading_present",
+          "logits": -3.9262
+        },
+        {
+          "feature": "form_field_unnamed",
+          "logits": -3.6987
+        },
+        {
+          "feature": "form_field_named",
+          "logits": -2.0685
+        },
+        {
+          "feature": "table_position_only",
+          "logits": -1.6521
+        },
+        {
+          "feature": "table_data_row_present",
+          "logits": -1.5979
+        },
+        {
+          "feature": "table_present",
+          "logits": -1.5814
+        },
+        {
+          "feature": "table_header_associated",
+          "logits": -1.5324
+        },
+        {
+          "feature": "plain_heading_candidate_present",
+          "logits": -1.4695
+        },
+        {
+          "feature": "state_change_present",
+          "logits": -1.3149
+        },
+        {
+          "feature": "state_changed",
+          "logits": -1.2958
+        },
+        {
+          "feature": "bare_edit_present",
+          "logits": -1.2663
+        },
+        {
+          "feature": "state_unchanged",
+          "logits": -1.1878
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.0888
+        },
+        {
+          "feature": "form_field_present",
+          "logits": -1.0656
+        },
+        {
+          "feature": "control_present",
+          "logits": -1.0422
+        },
+        {
+          "feature": "form_change_nonempty",
+          "logits": -1.0203
+        },
+        {
+          "feature": "post_submit_present",
+          "logits": -1.0104
+        }
+      ],
+      "sumLogits": -36.51
+    },
+    {
+      "subtype": "1.1.1:missing-alt",
+      "positives": 88,
+      "vetoes": [
+        {
+          "feature": "vague_link_present",
+          "logits": -4.353
+        },
+        {
+          "feature": "generic_heading_present",
+          "logits": -3.7946
+        },
+        {
+          "feature": "form_field_unnamed",
+          "logits": -3.7347
+        },
+        {
+          "feature": "form_field_named",
+          "logits": -2.1045
+        },
+        {
+          "feature": "table_position_only",
+          "logits": -1.7067
+        },
+        {
+          "feature": "table_data_row_present",
+          "logits": -1.6524
+        },
+        {
+          "feature": "table_present",
+          "logits": -1.6359
+        },
+        {
+          "feature": "table_header_associated",
+          "logits": -1.5868
+        },
+        {
+          "feature": "plain_heading_candidate_present",
+          "logits": -1.4289
+        },
+        {
+          "feature": "bare_edit_present",
+          "logits": -1.3142
+        },
+        {
+          "feature": "state_change_present",
+          "logits": -1.3049
+        },
+        {
+          "feature": "state_changed",
+          "logits": -1.2842
+        },
+        {
+          "feature": "state_unchanged",
+          "logits": -1.1743
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.109
+        },
+        {
+          "feature": "form_field_present",
+          "logits": -1.0829
+        },
+        {
+          "feature": "control_present",
+          "logits": -1.0595
+        },
+        {
+          "feature": "form_change_nonempty",
+          "logits": -1.0439
+        },
+        {
+          "feature": "post_submit_present",
+          "logits": -1.0277
+        }
+      ],
+      "sumLogits": -32.4
+    },
+    {
+      "subtype": "1.3.1:fake-heading",
+      "positives": 26,
+      "vetoes": [
+        {
+          "feature": "vague_link_present",
+          "logits": -4.4115
+        },
+        {
+          "feature": "generic_heading_present",
+          "logits": -4.1037
+        },
+        {
+          "feature": "form_field_unnamed",
+          "logits": -3.7524
+        },
+        {
+          "feature": "unnamed_graphic_present",
+          "logits": -2.7774
+        },
+        {
+          "feature": "form_field_named",
+          "logits": -2.4331
+        },
+        {
+          "feature": "table_position_only",
+          "logits": -1.568
+        },
+        {
+          "feature": "table_data_row_present",
+          "logits": -1.5058
+        },
+        {
+          "feature": "table_present",
+          "logits": -1.4918
+        },
+        {
+          "feature": "table_header_associated",
+          "logits": -1.4359
+        },
+        {
+          "feature": "state_change_present",
+          "logits": -1.3565
+        },
+        {
+          "feature": "bare_edit_present",
+          "logits": -1.3215
+        },
+        {
+          "feature": "state_changed",
+          "logits": -1.2952
+        },
+        {
+          "feature": "form_change_empty",
+          "logits": -1.2754
+        },
+        {
+          "feature": "post_submit_present",
+          "logits": -1.2543
+        },
+        {
+          "feature": "form_field_present",
+          "logits": -1.2296
+        },
+        {
+          "feature": "control_present",
+          "logits": -1.2062
+        },
+        {
+          "feature": "status_update_announced",
+          "logits": -1.1933
+        },
+        {
+          "feature": "form_change_nonempty",
+          "logits": -1.1892
+        },
+        {
+          "feature": "state_unchanged",
+          "logits": -1.1841
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.1279
+        },
+        {
+          "feature": "form_change_present",
+          "logits": -1.0609
+        }
+      ],
+      "sumLogits": -38.17
+    },
+    {
+      "subtype": "1.3.1:unassociated-table",
+      "positives": 61,
+      "vetoes": [
+        {
+          "feature": "table_header_associated",
+          "logits": -6.8048
+        },
+        {
+          "feature": "vague_link_present",
+          "logits": -3.4786
+        },
+        {
+          "feature": "form_field_unnamed",
+          "logits": -3.2964
+        },
+        {
+          "feature": "generic_heading_present",
+          "logits": -3.0348
+        },
+        {
+          "feature": "unnamed_graphic_present",
+          "logits": -2.0968
+        },
+        {
+          "feature": "form_field_named",
+          "logits": -1.8868
+        },
+        {
+          "feature": "state_change_present",
+          "logits": -1.1785
+        },
+        {
+          "feature": "state_changed",
+          "logits": -1.1548
+        },
+        {
+          "feature": "bare_edit_present",
+          "logits": -1.1078
+        },
+        {
+          "feature": "state_unchanged",
+          "logits": -1.0476
+        },
+        {
+          "feature": "plain_heading_candidate_present",
+          "logits": -1.0408
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.0377
+        }
+      ],
+      "sumLogits": -27.17
+    },
+    {
+      "subtype": "2.4.4:regex",
+      "positives": 100,
+      "vetoes": [
+        {
+          "feature": "generic_heading_present",
+          "logits": -3.8638
+        },
+        {
+          "feature": "form_field_unnamed",
+          "logits": -3.6697
+        },
+        {
+          "feature": "unnamed_graphic_present",
+          "logits": -2.6702
+        },
+        {
+          "feature": "form_field_named",
+          "logits": -2.0663
+        },
+        {
+          "feature": "table_position_only",
+          "logits": -1.6601
+        },
+        {
+          "feature": "table_data_row_present",
+          "logits": -1.6006
+        },
+        {
+          "feature": "table_present",
+          "logits": -1.5847
+        },
+        {
+          "feature": "table_header_associated",
+          "logits": -1.5323
+        },
+        {
+          "feature": "plain_heading_candidate_present",
+          "logits": -1.404
+        },
+        {
+          "feature": "state_change_present",
+          "logits": -1.2984
+        },
+        {
+          "feature": "state_changed",
+          "logits": -1.2745
+        },
+        {
+          "feature": "bare_edit_present",
+          "logits": -1.2506
+        },
+        {
+          "feature": "state_unchanged",
+          "logits": -1.175
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.1054
+        },
+        {
+          "feature": "form_field_present",
+          "logits": -1.0641
+        },
+        {
+          "feature": "control_present",
+          "logits": -1.0407
+        },
+        {
+          "feature": "form_change_nonempty",
+          "logits": -1.036
+        },
+        {
+          "feature": "post_submit_present",
+          "logits": -1.0243
+        }
+      ],
+      "sumLogits": -30.32
+    },
+    {
+      "subtype": "2.4.6:regex",
+      "positives": 100,
+      "vetoes": [
+        {
+          "feature": "vague_link_present",
+          "logits": -4.2388
+        },
+        {
+          "feature": "form_field_unnamed",
+          "logits": -3.6831
+        },
+        {
+          "feature": "unnamed_graphic_present",
+          "logits": -2.5219
+        },
+        {
+          "feature": "form_field_named",
+          "logits": -2.3067
+        },
+        {
+          "feature": "table_position_only",
+          "logits": -1.6001
+        },
+        {
+          "feature": "plain_heading_candidate_present",
+          "logits": -1.5393
+        },
+        {
+          "feature": "table_data_row_present",
+          "logits": -1.5334
+        },
+        {
+          "feature": "table_present",
+          "logits": -1.5189
+        },
+        {
+          "feature": "table_header_associated",
+          "logits": -1.4614
+        },
+        {
+          "feature": "state_change_present",
+          "logits": -1.3587
+        },
+        {
+          "feature": "bare_edit_present",
+          "logits": -1.3247
+        },
+        {
+          "feature": "state_changed",
+          "logits": -1.2594
+        },
+        {
+          "feature": "form_field_present",
+          "logits": -1.1717
+        },
+        {
+          "feature": "state_unchanged",
+          "logits": -1.1605
+        },
+        {
+          "feature": "control_present",
+          "logits": -1.1483
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.1087
+        },
+        {
+          "feature": "form_change_nonempty",
+          "logits": -1.0233
+        },
+        {
+          "feature": "post_submit_present",
+          "logits": -1.0117
+        }
+      ],
+      "sumLogits": -30.97
+    },
+    {
+      "subtype": "3.3.1:validation-error-silent",
+      "positives": 125,
+      "vetoes": [
+        {
+          "feature": "plain_heading_candidate_present",
+          "logits": -3.7113
+        },
+        {
+          "feature": "form_field_unnamed",
+          "logits": -3.5085
+        },
+        {
+          "feature": "validation_error_announced",
+          "logits": -3.0915
+        },
+        {
+          "feature": "vague_link_present",
+          "logits": -2.6192
+        },
+        {
+          "feature": "form_change_nonempty",
+          "logits": -2.5658
+        },
+        {
+          "feature": "bare_edit_present",
+          "logits": -2.2107
+        },
+        {
+          "feature": "generic_heading_present",
+          "logits": -2.1459
+        },
+        {
+          "feature": "state_change_present",
+          "logits": -1.6502
+        },
+        {
+          "feature": "state_changed",
+          "logits": -1.5974
+        },
+        {
+          "feature": "state_unchanged",
+          "logits": -1.4914
+        },
+        {
+          "feature": "status_update_announced",
+          "logits": -1.4811
+        },
+        {
+          "feature": "unnamed_graphic_present",
+          "logits": -1.4146
+        },
+        {
+          "feature": "table_position_only",
+          "logits": -1.0874
+        },
+        {
+          "feature": "table_data_row_present",
+          "logits": -1.0116
+        },
+        {
+          "feature": "table_present",
+          "logits": -1.0017
+        }
+      ],
+      "sumLogits": -30.59
+    },
+    {
+      "subtype": "3.3.2:placeholder-only",
+      "positives": 26,
+      "vetoes": [
+        {
+          "feature": "form_field_unnamed",
+          "logits": -5.2872
+        },
+        {
+          "feature": "vague_link_present",
+          "logits": -5.1043
+        },
+        {
+          "feature": "generic_heading_present",
+          "logits": -4.9355
+        },
+        {
+          "feature": "form_field_named",
+          "logits": -4.0477
+        },
+        {
+          "feature": "unnamed_graphic_present",
+          "logits": -3.4764
+        },
+        {
+          "feature": "bare_edit_present",
+          "logits": -2.1757
+        },
+        {
+          "feature": "table_data_row_present",
+          "logits": -2.1642
+        },
+        {
+          "feature": "table_header_associated",
+          "logits": -2.1492
+        },
+        {
+          "feature": "table_position_only",
+          "logits": -2.1447
+        },
+        {
+          "feature": "table_present",
+          "logits": -2.143
+        },
+        {
+          "feature": "form_field_present",
+          "logits": -2.0033
+        },
+        {
+          "feature": "control_present",
+          "logits": -1.9798
+        },
+        {
+          "feature": "plain_heading_candidate_present",
+          "logits": -1.9311
+        },
+        {
+          "feature": "state_change_present",
+          "logits": -1.5978
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.3854
+        },
+        {
+          "feature": "state_changed",
+          "logits": -1.3355
+        },
+        {
+          "feature": "state_unchanged",
+          "logits": -1.2229
+        },
+        {
+          "feature": "form_change_nonempty",
+          "logits": -1.2205
+        },
+        {
+          "feature": "validation_error_announced",
+          "logits": -1.2126
+        },
+        {
+          "feature": "post_submit_present",
+          "logits": -1.1718
+        },
+        {
+          "feature": "form_change_empty",
+          "logits": -1.0943
+        }
+      ],
+      "sumLogits": -49.78
+    },
+    {
+      "subtype": "3.3.2:unnamed-form-field",
+      "positives": 115,
+      "vetoes": [
+        {
+          "feature": "form_field_named",
+          "logits": -4.5122
+        },
+        {
+          "feature": "vague_link_present",
+          "logits": -2.9161
+        },
+        {
+          "feature": "generic_heading_present",
+          "logits": -2.4434
+        },
+        {
+          "feature": "state_changed",
+          "logits": -1.768
+        },
+        {
+          "feature": "unnamed_graphic_present",
+          "logits": -1.6442
+        },
+        {
+          "feature": "state_unchanged",
+          "logits": -1.3211
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.2497
+        },
+        {
+          "feature": "table_position_only",
+          "logits": -1.215
+        },
+        {
+          "feature": "table_data_row_present",
+          "logits": -1.1491
+        },
+        {
+          "feature": "form_change_nonempty",
+          "logits": -1.1412
+        },
+        {
+          "feature": "table_present",
+          "logits": -1.1368
+        },
+        {
+          "feature": "post_submit_present",
+          "logits": -1.1196
+        },
+        {
+          "feature": "plain_heading_candidate_present",
+          "logits": -1.091
+        },
+        {
+          "feature": "table_header_associated",
+          "logits": -1.0849
+        },
+        {
+          "feature": "form_change_empty",
+          "logits": -1.0658
+        },
+        {
+          "feature": "validation_error_announced",
+          "logits": -1.0078
+        }
+      ],
+      "sumLogits": -25.87
+    },
+    {
+      "subtype": "4.1.2:state-change-silent",
+      "positives": 69,
+      "vetoes": [
+        {
+          "feature": "state_changed",
+          "logits": -6.481
+        },
+        {
+          "feature": "form_field_unnamed",
+          "logits": -4.3895
+        },
+        {
+          "feature": "vague_link_present",
+          "logits": -2.8363
+        },
+        {
+          "feature": "generic_heading_present",
+          "logits": -2.6056
+        },
+        {
+          "feature": "bare_edit_present",
+          "logits": -2.4776
+        },
+        {
+          "feature": "plain_heading_candidate_present",
+          "logits": -1.7375
+        },
+        {
+          "feature": "unnamed_graphic_present",
+          "logits": -1.6271
+        },
+        {
+          "feature": "form_change_empty",
+          "logits": -1.5731
+        },
+        {
+          "feature": "post_submit_present",
+          "logits": -1.5118
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.476
+        },
+        {
+          "feature": "form_change_nonempty",
+          "logits": -1.3905
+        },
+        {
+          "feature": "form_change_present",
+          "logits": -1.3183
+        },
+        {
+          "feature": "status_update_announced",
+          "logits": -1.2784
+        },
+        {
+          "feature": "validation_error_announced",
+          "logits": -1.2199
+        },
+        {
+          "feature": "table_position_only",
+          "logits": -1.1713
+        },
+        {
+          "feature": "table_data_row_present",
+          "logits": -1.0953
+        },
+        {
+          "feature": "table_present",
+          "logits": -1.0859
+        },
+        {
+          "feature": "table_header_associated",
+          "logits": -1.0309
+        }
+      ],
+      "sumLogits": -36.31
+    },
+    {
+      "subtype": "4.1.2:unnamed-control",
+      "positives": 147,
+      "vetoes": [
+        {
+          "feature": "form_field_named",
+          "logits": -4.3278
+        },
+        {
+          "feature": "vague_link_present",
+          "logits": -2.9482
+        },
+        {
+          "feature": "generic_heading_present",
+          "logits": -2.5256
+        },
+        {
+          "feature": "state_changed",
+          "logits": -2.367
+        },
+        {
+          "feature": "unnamed_graphic_present",
+          "logits": -1.7494
+        },
+        {
+          "feature": "state_unchanged",
+          "logits": -1.6506
+        },
+        {
+          "feature": "table_position_only",
+          "logits": -1.3395
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.2911
+        },
+        {
+          "feature": "table_data_row_present",
+          "logits": -1.2675
+        },
+        {
+          "feature": "table_present",
+          "logits": -1.2554
+        },
+        {
+          "feature": "table_header_associated",
+          "logits": -1.1933
+        },
+        {
+          "feature": "post_submit_present",
+          "logits": -1.185
+        },
+        {
+          "feature": "form_change_nonempty",
+          "logits": -1.1797
+        },
+        {
+          "feature": "plain_heading_candidate_present",
+          "logits": -1.1733
+        },
+        {
+          "feature": "form_change_empty",
+          "logits": -1.154
+        },
+        {
+          "feature": "status_update_announced",
+          "logits": -1.0409
+        },
+        {
+          "feature": "validation_error_announced",
+          "logits": -1.0321
+        }
+      ],
+      "sumLogits": -28.68
+    },
+    {
+      "subtype": "4.1.3:form-activation-silent",
+      "positives": 125,
+      "vetoes": [
+        {
+          "feature": "status_update_announced",
+          "logits": -4.4996
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -4.3802
+        },
+        {
+          "feature": "form_change_nonempty",
+          "logits": -3.7761
+        },
+        {
+          "feature": "form_field_unnamed",
+          "logits": -3.0716
+        },
+        {
+          "feature": "vague_link_present",
+          "logits": -2.3121
+        },
+        {
+          "feature": "generic_heading_present",
+          "logits": -1.7955
+        },
+        {
+          "feature": "state_change_present",
+          "logits": -1.6756
+        },
+        {
+          "feature": "validation_error_announced",
+          "logits": -1.6731
+        },
+        {
+          "feature": "state_changed",
+          "logits": -1.6529
+        },
+        {
+          "feature": "bare_edit_present",
+          "logits": -1.6032
+        },
+        {
+          "feature": "state_unchanged",
+          "logits": -1.5429
+        },
+        {
+          "feature": "unnamed_graphic_present",
+          "logits": -1.2778
+        },
+        {
+          "feature": "table_position_only",
+          "logits": -1.028
+        }
+      ],
+      "sumLogits": -30.29
+    }
+  ]
+}

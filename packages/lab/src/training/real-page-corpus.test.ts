@@ -100,3 +100,30 @@ test("the two roles are split by SOURCE FAMILY, not at random", () => {
       `${page.url} shares a source family with a calibration page`);
   }
 });
+
+test("the TRAINING role is all-conformant, and that is recorded rather than assumed", () => {
+  // ADR 0015, why-2. Every publisher-declared inaccessible page lives in CALIBRATION — correctly, since
+  // calibration data must be held out — so the training distribution contains no real broken page at all.
+  // That is the whole reason a real inaccessible page sits further from the training set than its
+  // conformant twin (0.6978 vs 0.8164 for the two tickets.html variants), and ADR 0010 attributed the
+  // effect to broken pages "failing in several ways at once" before this was noticed. It is a property of
+  // our corpus, not of broken pages.
+  //
+  // This asserts the CURRENT composition so the day it changes, it changes deliberately and visibly.
+  // Adding a training-role inaccessible page should fail here and be a considered edit, not a silent one.
+  const trainingClaims = new Set(pagesFor("training").map((p) => p.publishedClaim));
+  assert.deepEqual([...trainingClaims], ["conformant"],
+    "a training-role page published as inaccessible changes what the novelty score means — see ADR 0015");
+});
+
+test("the positive side is counted in DEFECTS, not pages — three BAD pages share one template", () => {
+  // ADR 0015, decision 2. before/{news,template,tickets}.html are three pages of one template and their
+  // only form control is the same unnamed combo box in shared site chrome. Reporting "3 inaccessible
+  // pages" implies three failures; there is one. This test does not forbid that — it forbids being
+  // unaware of it, by pinning the count of source families the positives actually span.
+  const inaccessible = REAL_PAGES.filter((p) => p.publishedClaim === "inaccessible");
+  const families = new Set(inaccessible.map((p) => new URL(p.url).pathname.replace(/[^/]+$/, "")));
+  assert.equal(families.size, 1,
+    "the positive side spans one source family; any claim of real-page recall must say so — ADR 0015");
+  assert.ok(inaccessible.length >= families.size);
+});
