@@ -105,6 +105,21 @@
         "discriminates, then declare the owner."
       ]
     },
+    "2.1.1:control-unreachable-by-keyboard": {
+      "decidedBy": "rules",
+      "reportsAs": "2.1.1",
+      "note": [
+        "A control the page ANNOUNCES as operable that Tab never reaches — the failure a screen-reader user",
+        "meets as 'I can hear it and I cannot press it'. Deterministic: two captured sequences compared.",
+        "",
+        "POSITIONAL, because the focus probe truncates. Every corpus page stops at 12 tab stops, so absence",
+        "from `focusOrder` alone usually means the probe stopped and a rule keyed on it would fire almost",
+        "everywhere. A control counts as unreachable only when something LATER in reading order was reached.",
+        "",
+        "Not the roleless `<div onclick>` of the custom-control family: that one is invisible to the screen",
+        "reader, which is its 4.1.2 finding, and a capture cannot tell it from a page with no button at all."
+      ]
+    },
     "2.4.1:skip-link-inert": {
       "decidedBy": "rules",
       "reportsAs": "2.4.1",
