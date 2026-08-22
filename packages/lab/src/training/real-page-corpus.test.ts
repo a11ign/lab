@@ -12,7 +12,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { assertDisjoint, pagesFor, REAL_PAGES } from "./real-page-corpus.mjs";
+import { assertDisjoint, pagesFor, REAL_PAGES, UNWITNESSABLE_ON_REAL_PAGES } from "./real-page-corpus.mjs";
+import { SCORED_CRITERIA } from "@a11y-witness/judge/coverage";
 
 /** Every `url` recorded in an eval fixture — the TEST set, derived rather than copied. */
 function testSetUrls(): string[] {
@@ -126,4 +127,55 @@ test("the positive side is counted in DEFECTS, not pages — three BAD pages sha
   assert.equal(families.size, 1,
     "the positive side spans one source family; any claim of real-page recall must say so — ADR 0015");
   assert.ok(inaccessible.length >= families.size);
+});
+
+test("every page published as INACCESSIBLE declares what it can be witnessed as", () => {
+  // ADR 0015 decision 4. A page whose published failure cannot reach the evidence a capture produces adds
+  // a row and no signal — it inflates the denominator while teaching the model nothing. Declaring the
+  // criterion forces the question before capture time instead of after a sweep.
+  const undeclared = REAL_PAGES
+    .filter((page) => page.publishedClaim === "inaccessible" && !page.witnessableAs?.length)
+    .map((page) => page.url);
+  assert.deepEqual(undeclared, [],
+    "these pages claim a failure but do not say which criterion a capture could witness it as — see the "
+    + "WITNESSABILITY note in real-page-corpus.mjs");
+});
+
+test("a declared criterion must be one the scorer has a head for", () => {
+  const scored = new Set<string>(SCORED_CRITERIA);
+  const unreachable: string[] = [];
+  for (const page of REAL_PAGES) {
+    for (const criterion of page.witnessableAs ?? []) {
+      if (!scored.has(criterion)) unreachable.push(`${page.url} -> ${criterion}`);
+    }
+  }
+  assert.deepEqual(unreachable, [],
+    "a criterion with no head cannot be the reason a page is in the CALIBRATION set, which exists to "
+    + "measure the scorer");
+});
+
+test("a declared criterion must not be one real-page capture structurally cannot reach", () => {
+  // 3.3.1 and 4.1.3 read only what the form-submission probe produces, and `capture-real-pages.mjs` sets
+  // `probeForms: false` because pressing *Book* on a stranger's site is not a review. Measured: 0 of 77
+  // real captures carry `formChanges` or `postSubmitFields`. A page admitted on the strength of one of
+  // those would be admitted on evidence that is never collected.
+  const blocked = new Set<string>(UNWITNESSABLE_ON_REAL_PAGES);
+  const impossible: string[] = [];
+  for (const page of REAL_PAGES) {
+    for (const criterion of page.witnessableAs ?? []) {
+      if (blocked.has(criterion)) impossible.push(`${page.url} -> ${criterion}`);
+    }
+  }
+  assert.deepEqual(impossible, [],
+    "this page is justified by a criterion whose probe does not run on pages we do not own, so the "
+    + "evidence it was admitted for will never be gathered");
+});
+
+test("the unwitnessable list names real criteria, or the guard above forbids nothing", () => {
+  // The vacuity check this file's own history argues for: a blocklist of typos blocks nothing and passes.
+  const scored = new Set<string>(SCORED_CRITERIA);
+  for (const criterion of UNWITNESSABLE_ON_REAL_PAGES) {
+    assert.ok(scored.has(criterion),
+      `${criterion} is not a scored criterion, so listing it as unwitnessable guards nothing`);
+  }
 });

@@ -119,6 +119,10 @@
  * @property {"conformant" | "inaccessible"} publishedClaim  What the SOURCE says, never our assessment.
  * @property {string} source  Where that claim is published, so a reader can check it.
  * @property {string} demonstrates  What the page is an example of, in the source's own terms.
+ * @property {string[]} [witnessableAs]  Which criteria a CAPTURE could witness this page's published
+ *   failure as. Required on every `inaccessible` page and meaningless on a conformant one -- see the
+ *   WITNESSABILITY note below `RealPage`. Enforced by `real-page-corpus.test.ts`, which refuses a
+ *   criterion with no scorer head and one whose probe does not run on pages we do not own.
  * @property {string[]} [claimExcludes]  Criteria or subtypes the source's statement does NOT claim, as
  *   `"1.4.3"` or `"1.1.1:missing-alt"`. Empty or absent means the claim covers everything we score.
  *
@@ -170,6 +174,30 @@ const TUTORIAL_CLAIM =
  * template, a navigation bar and a footer — so the threshold would be calibrated against structure the
  * model had already been trained on, which is the leak this separation exists to prevent.
  */
+/**
+ * WITNESSABILITY — what a page has to be able to SHOW before it earns a place here (ADR 0015, decision 4).
+ *
+ * A page whose published failure cannot reach the evidence a capture produces adds a row and no signal. It
+ * inflates the denominator, so it makes the reported rate worse while teaching the model nothing.
+ * `before/tickets.html` is one third of the positive denominator and its real failures — layout tables,
+ * missing structure — are ones this evidence cannot express: `probeTables` is off for pages we do not own,
+ * and layout-table misuse is not in the head set at all. It was never a fair test in either direction.
+ *
+ * So every page published as INACCESSIBLE must declare `witnessableAs`: which criteria its published
+ * failure would fire, through a probe real-page capture actually runs. Naming it forces the question to be
+ * answered before capture time rather than discovered in a sweep afterwards, and
+ * `real-page-corpus.test.ts` refuses an entry that names a criterion this pipeline cannot reach.
+ *
+ * **3.3.1 and 4.1.3 are unreachable here and always will be under this policy.** They read only what the
+ * form-submission probe produces, and `capture-real-pages.mjs` sets `probeForms: false` because pressing
+ * *Book* on a stranger's site is not a review. Measured: 0 of 77 real captures carry `formChanges` or
+ * `postSubmitFields`.
+ *
+ * Conformant pages need no declaration. Their job is to be a page the tool must NOT accuse, and any
+ * structure at all serves that.
+ */
+export const UNWITNESSABLE_ON_REAL_PAGES = Object.freeze(["3.3.1", "4.1.3"]);
+
 export const REAL_PAGES = /** @type {RealPage[]} */ ([
   // --- CALIBRATION: the conformal abstention threshold is fitted here, and nowhere else. -------------
   // The BAD demo, both variants, because a threshold fitted only on conformant pages cannot tell you what
@@ -197,11 +225,11 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   { url: "https://www.w3.org/WAI/demos/bad/after/survey.html", role: "calibration",
     publishedClaim: "conformant", source: BAD_AFTER_CLAIM, demonstrates: "survey form, fixed" },
   { url: "https://www.w3.org/WAI/demos/bad/before/news.html", role: "calibration",
-    publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, demonstrates: "news article layout, broken" },
+    publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, witnessableAs: ["4.1.2"], demonstrates: "news article layout, broken" },
   { url: "https://www.w3.org/WAI/demos/bad/before/tickets.html", role: "calibration",
-    publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, demonstrates: "ticket listing, broken — NOT a form: 0 <form>, 0 <input>, 14 layout tables. See the WHAT THE POSITIVES ACTUALLY ARE note above" },
+    publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, witnessableAs: ["4.1.2"], demonstrates: "ticket listing, broken — NOT a form: 0 <form>, 0 <input>, 14 layout tables. See the WHAT THE POSITIVES ACTUALLY ARE note above" },
   { url: "https://www.w3.org/WAI/demos/bad/before/template.html", role: "calibration",
-    publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, demonstrates: "page template, broken" },
+    publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, witnessableAs: ["4.1.2"], demonstrates: "page template, broken" },
 
 
   // --- CALIBRATION, second publisher: GOV.UK Design System component pages. --------------------
