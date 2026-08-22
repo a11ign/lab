@@ -126,3 +126,49 @@ test("the furniture really is exercised, or the check above is vacuous", () => {
     "no placeholder-only case is present, so the collision this test was extended for cannot occur");
   assert.ok((CASES as Case[]).filter((c) => c.badSignal?.type).length > 100);
 });
+
+/**
+ * The same delta, for the ACCOMPANYING defects a multi-defect case adds to its bad variant.
+ *
+ * Page furniture is conformant, so it can only contaminate. An accompanying defect is a real failure, so it
+ * can do worse: satisfy the HOST case's own badSignal, making a two-defect page report its neighbour's
+ * failure as its own. `withAccompanyingDefects` already refuses to pair a host with a defect carrying its
+ * own subtype, but that guard is on the LABEL and a `regex` signal matches TEXT — `link-vague-details`
+ * matches /link[, ]+(read more|learn more)/ whatever subtype the phrase came from.
+ */
+const ACCOMPANYING_SPEECH: Record<string, string[]> = {
+  "vague-link": ["link, Read more"],
+  "generic-heading": ["heading, level 2, Welcome", "General notes about this service."],
+  "unnamed-graphic": ["graphic, to get missing image descriptions"],
+  "position-only-table": [
+    "table, with 2 rows and 2 columns, caption, Archive index",
+    "out of caption, row 1, column 1, Period",
+    "row 2, column 1, 2019",
+    "column 2, Yes",
+  ],
+  "bare-edit": ["edit"],
+};
+
+test("no accompanying defect satisfies its HOST case's own badSignal", () => {
+  const collisions: string[] = [];
+  for (const testCase of CASES as (Case & { id: string })[]) {
+    const marker = /\+also-(.+)$/.exec(testCase.id);
+    if (!marker || !testCase.badSignal?.type) continue;
+    const names = Object.keys(ACCOMPANYING_SPEECH).filter((name) => marker[1].includes(name));
+    assert.ok(names.length > 0, `${testCase.id}: no known accompanying defect — keep this map in step`);
+    const before = base();
+    const after = { ...before, transcript: [...before.transcript,
+      ...names.flatMap((name) => ACCOMPANYING_SPEECH[name])] };
+    if (signalMatches(before, testCase.badSignal) !== signalMatches(after, testCase.badSignal)) {
+      collisions.push(`${testCase.id}: its own ${testCase.badSignal.type} signal fires on ${names.join("+")}`);
+    }
+  }
+  assert.deepEqual(collisions, [],
+    "a two-defect page whose host signal is satisfied by the ACCOMPANYING defect reports its neighbour's "
+    + "failure as its own — pair that host with a different defect, or reword the snippet");
+});
+
+test("multi-defect cases exist, or the check above is vacuous", () => {
+  const multi = (CASES as { id: string }[]).filter((c) => c.id.includes("+also-"));
+  assert.ok(multi.length >= 20, `only ${multi.length} multi-defect cases — see docs/adr/0015`);
+});

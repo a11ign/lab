@@ -1933,7 +1933,152 @@ cases.push(
   }),
 );
 
-export const CASES = Object.freeze(withRealisticScale(cases));
+
+/**
+ * ACCOMPANYING DEFECTS — a real page fails several ways at once, and this corpus never did.
+ *
+ * ADR 0015 measured what that costs: a feature that is 0 on every positive of a subtype is one the head can
+ * penalise for free, and the shipped weights carry 225 such vetoes. The furniture buckets fixed the ones
+ * conformant structure can supply (263 starved pairs -> 178). What remains are features that ARE failures —
+ * a vague link, a generic heading, an unnamed graphic, a position-only table cell, a bare edit field. No
+ * conformant page can carry them, by definition, so only a page that fails TWICE supplies them.
+ *
+ * Each snippet is a defect this corpus already demonstrates on its own, reused so the pairing cannot invent
+ * a failure mode nothing else asserts. `subtypes` names the heads that carry it, and `alsoFails` puts them
+ * in the label — the `form-unlabelled` precedent, where a missing label is 3.3.2 AND 4.1.2 and scoring it
+ * as one turned 109 correct detections into false positives.
+ */
+const ACCOMPANYING_DEFECTS = Object.freeze({
+  "vague-link": {
+    markup: "<p><a href=\"#detail-note\">Read more</a></p>",
+    subtypes: ["2.4.4:regex"],
+    grants: "vague_link_present",
+  },
+  "generic-heading": {
+    markup: "<h2>Welcome</h2><p>General notes about this service.</p>",
+    subtypes: ["2.4.6:regex"],
+    grants: "generic_heading_present",
+  },
+  "unnamed-graphic": {
+    markup: "<img src=\"/missing-chart.png\">",
+    subtypes: ["1.1.1:missing-alt"],
+    grants: "unnamed_graphic_present",
+  },
+  "position-only-table": {
+    // No `scope`, so NVDA announces the data cells by position and never carries the header name into
+    // them — `row 2, column 1, ...` rather than `row 2, Note, column 1, ...`. That is the announcement
+    // `tableHeadersAreUnassociated` reads, and it is why this cannot be furniture: it is the 1.3.1 failure.
+    markup: "<table><caption>Archive index</caption>"
+      + "<tr><td>Period</td><td>Held</td></tr><tr><td>2019</td><td>Yes</td></tr></table>",
+    subtypes: ["1.3.1:unassociated-table"],
+    grants: "table_position_only",
+  },
+  "bare-edit": {
+    // Announced as a bare role with no name. Two heads, for the reason `form-unlabelled` documents at
+    // length: an unnamed field is 3.3.2 and 4.1.2 as squarely as each other.
+    markup: "<p><input name=\"note-ref\" type=\"text\"></p>",
+    subtypes: ["3.3.2:unnamed-form-field", "4.1.2:unnamed-control"],
+    grants: "bare_edit_present",
+  },
+});
+
+/**
+ * Pair an existing case's failure with one or more OTHER criteria's failures, on the bad variant.
+ *
+ * The bad variant only, because `export-screenreader-dataset.mjs` hardcodes every good variant to
+ * `label: "clean"` with no subtypes — "we wrote the page, so we know every criterion's status". Putting an
+ * accompanying defect on the good variant too would preserve the controlled comparison and produce a
+ * page labelled clean that has a vague link in it, which is a worse trade: a wrong label poisons evidence,
+ * where a labelled second difference merely widens what the pair demonstrates.
+ *
+ * ROTATED, never applied by family. `form-unlabelled`'s comment records why: applying `alsoFails` across a
+ * whole family "would have taught the scorer 3.3.2 implies 4.1.2, which is a shortcut feature and exactly
+ * the contamination this corpus exists to avoid". So each host gets a DIFFERENT subset, and a host is never
+ * paired with a defect it already demonstrates — that would make the accompanying evidence indistinguishable
+ * from its own.
+ */
+function withAccompanyingDefects(template, names) {
+  // Excluded by CRITERION, not by subtype. Excluding only the host's own subtype let `image-generic-alt`
+  // (1.1.1:generic-alt, signal /graphic.*\bimage\b/) be paired with the unnamed graphic (1.1.1:missing-alt),
+  // whose announcement is "graphic, to get missing image descriptions" — so the accompanying defect
+  // satisfied the HOST's signal and the case would have reported its neighbour's failure as its own.
+  // Caught by `filler-collision.test.ts` before any capture.
+  //
+  // Excluding the whole criterion is also the right rule on its own terms: a second failure of the SAME
+  // criterion adds no cross-criterion evidence, which is the only thing these pairings exist to supply.
+  const chosen = names.filter((name) => !ACCOMPANYING_DEFECTS[name].subtypes
+    .some((subtype) => subtype.split(":")[0] === template.criterion));
+  if (chosen.length === 0) return null;
+  const markup = chosen.map((name) => ACCOMPANYING_DEFECTS[name].markup).join("");
+  const added = chosen.flatMap((name) => ACCOMPANYING_DEFECTS[name].subtypes);
+  return pair({
+    ...template,
+    id: `${template.id}+also-${chosen.join("-")}`,
+    // Its OWN family, not the template's. Sharing one would put a two-defect page in the same train/test
+    // split group as the single-defect case it was built from, so a held-out score would be reading a
+    // near-duplicate of something it trained on.
+    family: `multi-defect-${template.criterion}`,
+    mutation: `${template.mutation} It ALSO carries: ${chosen.join(", ")}.`,
+    alsoFails: [...new Set([...(template.alsoFails ?? []), ...added])],
+    good: template.good,
+    bad: template.bad.replace("</body>", `${markup}</body>`),
+  });
+}
+
+/**
+ * One host per scored subtype, each paired with a rotating subset — so no (host, accompanying) pairing is
+ * deterministic and no accompanying defect lands on every positive of any subtype.
+ *
+ * Hosts are chosen from `cases` by subtype rather than written fresh: the host failure is then one this
+ * corpus already proves it can capture and discriminate, so a two-defect page that fails to discriminate
+ * is a fact about the pairing rather than about a page nobody had tried before.
+ */
+/**
+ * WHAT THIS DELIBERATELY DOES NOT REACH, measured after the criterion exclusion above.
+ *
+ * Six subtype/feature cells stay starved because the only defect that would supply them belongs to the
+ * host's own criterion, and pairing those is what produced the `image-generic-alt` collision:
+ *
+ *   1.1.1:generic-alt, 1.1.1:filename-alt  lack `unnamed_graphic_present`  (their graphic IS named)
+ *   1.3.1:fake-heading                     lacks `table_position_only`
+ *   3.3.2:placeholder-only                 lacks `bare_edit_present`       (a placeholder supplies a name)
+ *   4.1.2:missing-role, :state-change-silent  lack `bare_edit_present`
+ *
+ * Each is a real residual: those heads can still penalise that feature for free. The fix is not another
+ * pairing — NVDA announces an unnamed graphic as "to get missing image descriptions", which satisfies
+ * `image-generic-alt`'s own /graphic.*\bimage\b/ whatever we label it. It needs a host written for the
+ * purpose, with a signal that cannot be confused with its neighbour's. Recorded here rather than left for
+ * `corpus:starvation` to report as an unexplained gap.
+ */
+const ROTATIONS = Object.freeze([
+  ["vague-link", "generic-heading"],
+  ["unnamed-graphic", "position-only-table"],
+  ["bare-edit", "vague-link"],
+  ["generic-heading", "unnamed-graphic"],
+  ["position-only-table", "bare-edit"],
+]);
+
+function multiDefectCases(built) {
+  const bySubtype = new Map();
+  for (const testCase of built) {
+    const key = `${testCase.criterion}:${testCase.subtype}`;
+    if (!bySubtype.has(key)) bySubtype.set(key, testCase);
+  }
+  const generated = [];
+  let rotation = 0;
+  for (const template of [...bySubtype.values()].sort((a, z) => a.id.localeCompare(z.id))) {
+    for (let round = 0; round < 3; round += 1) {
+      const made = withAccompanyingDefects(template, ROTATIONS[rotation % ROTATIONS.length]);
+      rotation += 1;
+      if (made) generated.push(made);
+    }
+  }
+  return generated;
+}
+
+// APPENDED, and appending is now free: furniture is keyed on the case ID, so adding cases cannot
+// re-size any existing one's pages.
+export const CASES = Object.freeze(withRealisticScale([...cases, ...multiDefectCases(cases)]));
 
 function structuralTextParts(capture) {
   return [
