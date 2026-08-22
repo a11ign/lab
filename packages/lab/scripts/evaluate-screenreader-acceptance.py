@@ -272,6 +272,9 @@ def main() -> None:
             allow_ineligible=args.allow_ineligible,
         ),
         training,
+        # This tool DECIDES eligibility, so requiring it would be circular: the trainer marks every fresh
+        # candidate ineligible BECAUSE acceptance has not run. See `verify_artifact`'s docstring.
+        require_release_eligible=False,
     )
     max_length = int(report["representation"]["maxLength"])
     features, _, _ = training.encode_records(records, args.encoder, max_length)

@@ -149,6 +149,8 @@ def main() -> None:
             allow_ineligible=args.allow_ineligible,
         ),
         training_module,
+        # Examining a candidate is not shipping it — same reasoning as the acceptance evaluator.
+        require_release_eligible=False,
     )
     baseline = scorer_module.score_records(training, report, weights, training_module, args)
     version_metadata_records = sum(
