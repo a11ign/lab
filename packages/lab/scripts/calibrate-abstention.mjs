@@ -141,6 +141,18 @@ function claimExcludesFor(entry) {
  *               meant, and a statement usually scopes its failures to features ("the interactive polls").
  *   unmentioned nothing is claimed either way -> unknown. Excluded from both columns.
  *
+ * **THE LAST TWO ARE NOT YET DISTINGUISHABLE, and this comment used to imply they were.** The data has two
+ * states — in `claimExcludes`, or not — so *disclosed* and *unmentioned* are handled identically and the
+ * `disclosed` column below counts both. That is this repo's signature defect in its own checker: a comment
+ * naming an ambiguity above code that resolves it by assumption.
+ *
+ * The behaviour is nonetheless correct for the question this sweep asks. Both are non-accusations, and the
+ * FALSE POSITIVES column — the one that decides the floor — is exact either way. What is lost is on the
+ * other side: a publisher who writes "this page fails 3.3.2" has supplied a positive label, and we discard
+ * it. `claimDiscloses` in `real-page-corpus.mjs` is where that becomes expressible; it is empty until each
+ * entry has been classified against its cited statement, because guessing turns a silence into a claimed
+ * failure and invents ground truth.
+ *
  * This replaced `predicted.length > 0`, which counted any finding at all. That penalised the model for
  * being RIGHT about a criterion its publisher discloses in writing -- and it forced a workaround, because
  * only a publisher with an unqualified claim could be a calibration page. Three of thirty-nine qualified.
@@ -205,9 +217,13 @@ function main() {
   process.stdout.write("  Anything finer than that would be arithmetic theatre. Widening the split is what\n"
     + "  makes a real conformal guarantee possible — see ADR 0010.\n");
   process.stdout.write("\n  The column that decides it is FALSE POSITIVES: findings a publisher's own statement\n"
-    + "  CONTRADICTS. `disclosed` is the opposite -- findings on criteria the publisher itself names as\n"
-    + "  failing, which are corroborated rather than wrong, and are not scored either way because we\n"
-    + "  cannot show they are the same instance the statement meant.\n");
+    + "  CONTRADICTS. `disclosed` is the opposite -- findings on criteria the publisher's own statement\n"
+    + "  does not claim, so they are corroborated rather than wrong. They are not scored as true positives\n"
+    + "  either: we cannot show a finding is the SAME instance the statement meant.\n\n"
+    + "  CAVEAT on that column: it currently counts two different things -- criteria the publisher\n"
+    + "  ENUMERATES as failing, and criteria the statement is merely silent about. Both are\n"
+    + "  non-accusations, so FALSE POSITIVES is exact either way, but a disclosed failure is a positive\n"
+    + "  label we are discarding. See `claimDiscloses` in real-page-corpus.mjs.\n");
 
   // A scratch model writes to its own file. Overwriting the shipped model's sweep with a candidate's
   // numbers would silently rewrite the measurement that PLAN.md's B4 decision rests on.

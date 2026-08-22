@@ -123,6 +123,27 @@
  *   failure as. Required on every `inaccessible` page and meaningless on a conformant one -- see the
  *   WITNESSABILITY note below `RealPage`. Enforced by `real-page-corpus.test.ts`, which refuses a
  *   criterion with no scorer head and one whose probe does not run on pages we do not own.
+ * @property {string[]} [claimDiscloses]  Criteria or subtypes the statement ENUMERATES as failing, in its
+ *   own words. A strict subset of `claimExcludes` and, for now, deliberately empty everywhere.
+ *
+ *   **The seam this opens, stated plainly.** `contradictedFindings` documents three cases — *claimed*
+ *   (a finding contradicts the statement: a false positive), *disclosed* (the statement names this as
+ *   failing: corroborated), and *unmentioned* (nothing said either way: unknown). The comment is right and
+ *   the DATA has only two states: in `claimExcludes`, or not. So disclosed and unmentioned are handled
+ *   identically, and the sweep's `disclosed` column counts both — this repo's signature defect, a comment
+ *   naming an ambiguity above code that resolves it by assumption.
+ *
+ *   It costs something real. A publisher who writes "this page fails 3.3.2" has given us a POSITIVE label
+ *   we currently discard. PSBAR 2018 obliges every UK public sector body to publish a statement, and they
+ *   overwhelmingly enumerate their failures — so most of this corpus's 36 excluded pages are probably
+ *   disclosures rather than silences, which would make them usable positives on criteria where the corpus
+ *   has almost none.
+ *
+ *   **Why it is empty rather than populated in this change.** Filling it means re-reading 36 publishers'
+ *   statements and classifying every entry, and a wrong classification turns a silence into a claimed
+ *   failure — inventing ground truth, which is the one thing this corpus exists not to do. The field is
+ *   added so the distinction is EXPRESSIBLE and can be migrated page by page against the cited source. Any
+ *   entry here must also appear in `claimExcludes`, which `real-page-corpus.test.ts` asserts.
  * @property {string[]} [claimExcludes]  Criteria or subtypes the source's statement does NOT claim, as
  *   `"1.4.3"` or `"1.1.1:missing-alt"`. Empty or absent means the claim covers everything we score.
  *

@@ -179,3 +179,27 @@ test("the unwitnessable list names real criteria, or the guard above forbids not
       `${criterion} is not a scored criterion, so listing it as unwitnessable guards nothing`);
   }
 });
+
+test("anything DISCLOSED is also EXCLUDED, or the two fields disagree about one page", () => {
+  // `claimDiscloses` is a strict subset of `claimExcludes`: a criterion the publisher enumerates as failing
+  // is necessarily one their statement does not claim. Letting them diverge would mean a finding counted as
+  // corroborated by one code path and as a false positive by the other.
+  const wrong: string[] = [];
+  for (const page of REAL_PAGES) {
+    const excluded = new Set(page.claimExcludes ?? []);
+    for (const disclosed of page.claimDiscloses ?? []) {
+      if (!excluded.has(disclosed)) wrong.push(`${page.url} discloses ${disclosed} but does not exclude it`);
+    }
+  }
+  assert.deepEqual(wrong, []);
+});
+
+test("the disclosure field is empty until migrated page by page against the cited source", () => {
+  // Deliberate, and asserted so it is a decision rather than an oversight. Classifying an entry wrongly
+  // turns a publisher's SILENCE into a claimed failure, which invents ground truth — the one thing this
+  // corpus exists not to do. Delete this test in the change that populates the field.
+  const populated = REAL_PAGES.filter((page) => page.claimDiscloses?.length).map((page) => page.url);
+  assert.deepEqual(populated, [],
+    "claimDiscloses is now populated — remove this test in the same change, and record in the commit which "
+    + "published statements were read to classify each entry");
+});
