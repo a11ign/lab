@@ -104,3 +104,30 @@ test("both halves of the set are represented", () => {
   assert.ok(conformant >= 5, `only ${conformant} conformant case(s); false positives under-measured`);
   assert.ok(EVAL_CASES.length - conformant >= 10, "too few failure cases to measure recall meaningfully");
 });
+
+test("every eval case records WHERE its expectation came from", () => {
+  const kinds = new Set(["published-report", "published-technique", "authored"]);
+  const missing = EVAL_CASES.filter((c) => !kinds.has(c.groundTruth)).map((c) => c.id);
+  assert.deepEqual(missing, [],
+    "a case with no declared ground truth is one nobody can tell from our own opinion");
+});
+
+test("only the planted and contamination cases are AUTHORED, and that is the whole self-graded set", () => {
+  // `docs/METHODOLOGY.md` claims the baseline derives its ground truth from third parties rather than our
+  // judgement. This is the assertion behind that sentence. Authored cases are legitimate exactly where
+  // knowing the answer IS the test — a planted issue, a freshly built page for contamination — and are
+  // self-grading anywhere else. If this list grows, the eval number means less, and that should be a
+  // deliberate edit rather than a drift.
+  const authored = EVAL_CASES.filter((c) => c.groundTruth === "authored").map((c) => c.id).sort();
+  assert.deepEqual(authored, ["contamination-fresh-page", "planted-contact-form"]);
+});
+
+test("recall is measured mostly on ground truth that is not ours", () => {
+  // The number that decides whether "recall 78%" is a measurement or a self-assessment. Failure cases are
+  // the ones recall is computed over; if most of those were authored, the figure would be circular.
+  const failures = EVAL_CASES.filter((c) => c.expect.length > 0);
+  const theirs = failures.filter((c) => c.groundTruth !== "authored").length;
+  assert.ok(theirs / failures.length >= 0.8,
+    `only ${theirs} of ${failures.length} failure cases have third-party ground truth — below 80%, the `
+    + "eval figure is closer to agreement with ourselves than to a measurement");
+});

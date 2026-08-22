@@ -22,6 +22,29 @@ export interface EvalCase {
   allow: string[];
   notes?: string;
   /**
+   * WHERE the expectation came from — the distinction `docs/METHODOLOGY.md` already claims and the data
+   * could not express.
+   *
+   * That document says the tutorial baseline "derives its ground truth from W3C's own documented
+   * techniques, not our judgment, which reduces (does not eliminate) the self-grading concern". True, and
+   * until now unverifiable: provenance lived in free-text `notes`, so nothing asserted that every case had
+   * a source and nothing reported the split. A number that mixes third-party ground truth with our own
+   * cannot support that sentence.
+   *
+   * Three values, because there are genuinely three situations and collapsing them would repeat the
+   * `claimExcludes` seam:
+   *
+   *   published-report     a third party evaluated THIS page and published the result (W3C BAD). The
+   *                        strongest form: neither the page nor the verdict is ours.
+   *   published-technique  the failure mode is documented by a third party (a W3C tutorial, a book
+   *                        chapter) and the page demonstrates it. The verdict is theirs; the page may be
+   *                        ours.
+   *   authored             we decided what this page fails. Legitimate for planted and contamination
+   *                        tests, where the point IS that we know the answer — and self-grading anywhere
+   *                        else.
+   */
+  groundTruth: "published-report" | "published-technique" | "authored";
+  /**
    * Backends that CANNOT assess this case, so it is excluded from their recall rather than counted as a
    * miss. Scope, not performance — and it must be declared here rather than sniffed from a verdict.
    *
@@ -55,6 +78,7 @@ const W3C_SURVEY_DOCUMENTED_AA = [
 export const EVAL_CASES: EvalCase[] = [
   {
     id: "w3c-bad-before",
+    groundTruth: "published-report",
     fixture: "packages/lab/src/eval/fixtures/nvda/nvda-w3c-bad-before.json",
     task: "Read the City Lights home page and find the latest news",
     // The failures clearly observable from this page's announced reading: unlabelled graphics (1.1.1),
@@ -78,6 +102,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "w3c-bad-after",
+    groundTruth: "published-report",
     fixture: "packages/lab/src/eval/fixtures/nvda/nvda-w3c-bad-after-content.json",
     task: "Read the City Lights home page and find the latest news",
     // W3C documents the accessible page as fully conformant: expect nothing.
@@ -89,6 +114,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "w3c-bad-before-survey",
+    groundTruth: "published-report",
     fixture: "packages/lab/src/eval/fixtures/nvda/nvda-w3c-bad-before-survey.json",
     task: "Fill in and submit the City Lights visitor survey",
     // Form-heavy page: radio buttons are announced with no label ("radio
@@ -101,6 +127,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "w3c-wai-home",
+    groundTruth: "published-report",
     fixture: "packages/lab/src/eval/fixtures/nvda/nvda-w3c-wai-home.json",
     task: "Find guidance on getting started with accessibility",
     // W3C's own WAI site: a reference-quality accessible page, no demo chrome.
@@ -112,6 +139,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "contamination-fresh-page",
+    groundTruth: "authored",
     fixture: "packages/lab/src/eval/fixtures/contamination-test.json",
     task: "Sign up for an Acme Widgets account",
     // Authored fresh (src/eval/pages/contamination-test.html), never published,
@@ -131,6 +159,7 @@ export const EVAL_CASES: EvalCase[] = [
   // surface the documented failure (recall). Pages in src/eval/pages/tutorials/.
   {
     id: "tut-images-good",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/images-good.json",
     task: "View the trail photos",
     expect: [],
@@ -139,6 +168,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-images-bad",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/images-bad.json",
     task: "View the trail photos",
     expect: ["1.1.1"],
@@ -149,6 +179,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-forms-good",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/forms-good.json",
     task: "Sign up for the newsletter",
     expect: [],
@@ -157,6 +188,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-forms-bad",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/forms-bad.json",
     task: "Sign up for the newsletter",
     expect: ["4.1.2"],
@@ -165,6 +197,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-structure-good",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/structure-good.json",
     task: "Find the library's opening hours",
     expect: [],
@@ -173,6 +206,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-structure-bad",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/structure-bad.json",
     task: "Find the library's opening hours",
     expect: ["1.3.1"],
@@ -181,6 +215,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-tables-good",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/tables-good.json",
     task: "Find which platform the Hilltop train departs from",
     expect: [],
@@ -189,6 +224,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-tables-bad",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/tables-bad.json",
     task: "Find which platform the Hilltop train departs from",
     expect: ["1.3.1"],
@@ -197,6 +233,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-menus-good",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/menus-good.json",
     task: "Go to the Support section",
     expect: [],
@@ -205,6 +242,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-menus-bad",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/menus-bad.json",
     task: "Go to the Support section",
     expect: ["4.1.2"],
@@ -213,6 +251,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-carousels-good",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/carousels-good.json",
     task: "Browse the featured products",
     expect: [],
@@ -221,6 +260,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-carousels-bad",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/carousels-bad.json",
     task: "Browse the featured products",
     expect: ["4.1.2", "1.1.1"],
@@ -229,6 +269,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-disclosure-good",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/disclosure-good.json",
     task: "Expand the FAQ answer about resetting a password",
     // A proper disclosure: the toggle is a named button announced "collapsed", and
@@ -247,6 +288,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-disclosure-bad",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/disclosure-bad.json",
     task: "Expand the FAQ answer about resetting a password",
     // A broken disclosure: it visually reveals content but never updates
@@ -261,6 +303,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-forms-validation-good",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/forms-validation-good.json",
     task: "Sign up for the newsletter",
     // Submitting with an empty required field announces the error through a live
@@ -273,6 +316,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "tut-forms-validation-bad",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/tutorials/forms-validation-bad.json",
     task: "Sign up for the newsletter",
     // The same form shows the validation error only as red text: no live region,
@@ -286,6 +330,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "planted-contact-form",
+    groundTruth: "authored",
     notApplicableTo: ["local"],
     fixture: "packages/lab/src/eval/fixtures/planted-contact-form.json",
     task: "Send a message to the team using the contact form",
@@ -306,6 +351,7 @@ export const EVAL_CASES: EvalCase[] = [
   // it (it does not affect metrics), so these can be authored before capture.
   {
     id: "book-links-good",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/books/links-good.json",
     task: "Read the latest city news",
     expect: [],
@@ -314,6 +360,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "book-links-bad",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/books/links-bad.json",
     task: "Read the latest city news",
     // Link text announced detached from its sentence: "Read more...", bullet-list
@@ -325,6 +372,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "book-headings-good",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/books/headings-good.json",
     task: "Find how to reset your password",
     expect: [],
@@ -333,6 +381,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "book-headings-bad",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/books/headings-bad.json",
     task: "Find how to reset your password",
     // Headings have proper roles/levels (so not 1.3.1) but are non-descriptive:
@@ -343,6 +392,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "book-alt-quality-good",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/books/alt-quality-good.json",
     task: "Review the quarterly results",
     expect: [],
@@ -351,6 +401,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "book-alt-quality-bad",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/books/alt-quality-bad.json",
     task: "Review the quarterly results",
     // Alt is PRESENT (so the absence rule won't fire) but unhelpful: a declaration
@@ -362,6 +413,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "book-custom-control-good",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/books/custom-control-good.json",
     task: "Save your settings",
     expect: [],
@@ -370,6 +422,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "book-custom-control-bad",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/books/custom-control-bad.json",
     task: "Save your settings",
     // An icon-only button with no accessible name (rule-catchable 4.1.2) plus a
@@ -380,6 +433,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "book-filter-status-good",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/books/filter-status-good.json",
     task: "Filter the products to show only bags",
     expect: [],
@@ -388,6 +442,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "book-filter-status-bad",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/books/filter-status-bad.json",
     task: "Filter the products to show only bags",
     // Filtering updates the visible result count, but it is not in any live region
@@ -399,6 +454,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "book-layout-table-good",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/books/layout-table-good.json",
     task: "Read about the company",
     expect: [],
@@ -407,6 +463,7 @@ export const EVAL_CASES: EvalCase[] = [
   },
   {
     id: "book-layout-table-bad",
+    groundTruth: "published-technique",
     fixture: "packages/lab/src/eval/fixtures/books/layout-table-bad.json",
     task: "Read about the company",
     // A <table> used purely for two-column layout, with no role=presentation, so a
