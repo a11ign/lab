@@ -105,6 +105,26 @@
         "discriminates, then declare the owner."
       ]
     },
+    "2.4.2:route-title-stale": {
+      "decidedBy": "rules",
+      "reportsAs": "2.4.2",
+      "note": [
+        "Deterministic because the evidence is a comparison, not a reading: the first heading changed and",
+        "the title did not. Both come from the screen reader — `reportTitle` is the same command that fills",
+        "`documentReady.title`, so this is what a user hears when they ask where they are.",
+        "",
+        "It covers ONE of 2.4.2's failure modes and deliberately not the others. A missing title is not",
+        "worth a rule (zero across 4,895 captures, and absent from the failures covering 96% of WebAIM's",
+        "million-page survey), and whether a title DESCRIBES its topic is judgement — W3C flags 2.4.2 on a",
+        "page titled 'Welcome to CityLights! [Inaccessible Survey Page]'. So this is partial coverage of the",
+        "criterion, and the part a screen reader is uniquely placed to prove: a static analyser cannot see",
+        "it at all, because the markup is valid at every instant and the failure is the transition.",
+        "",
+        "The corroborating signal was chosen against a measurement rather than by reasoning. 'Nothing was",
+        "announced' is the obvious one and would never have fired: the failing page announced 'visited',",
+        "NVDA reporting the link's own state."
+      ]
+    },
     "2.4.4:regex": {
       "decidedBy": "overlap",
       "reportsAs": "2.4.4",
