@@ -166,3 +166,22 @@ test("partial coverage is inconclusive, not a pass", () => {
   assert.equal(full.inconclusive, false, "full coverage must still be shippable");
   assert.match(full.recommendation, /evidence unchanged/);
 });
+
+test("a capture that FAILED must count against coverage, not vanish from it", () => {
+  // The failure path left no result at all, so a failed capture disappeared from the denominator rather than
+  // reducing coverage. Measured 2026-08-22: one worker answered "NVDA is running but not speaking", that
+  // case's second variant was never attempted, and the verdict read "46 compared: 46 same ... safe to ship"
+  // — complete coverage of a sample two smaller than the one asked for.
+  //
+  // This is the same shape as the SKIPPED hole closed the day before, arriving by the path that never
+  // reaches `results`. REJECTED is the right home: counted in `attempted`, excluded from `compared`, so the
+  // coverage rule reports INCONCLUSIVE rather than a verdict.
+  const same = () => ({ comparison: compareCapture(capture(), capture()) });
+  const unusable = () => ({ comparison: { verdict: "REJECTED", changes: [], phrases: null } as never });
+
+  const partial = summarise([...Array.from({ length: 46 }, same), unusable(), unusable()]);
+  assert.equal(partial.compared, 46);
+  assert.equal(partial.attempted, 48, "a capture that could not be made was still asked for");
+  assert.equal(partial.inconclusive, true, "46 of 48 is not a verdict");
+  assert.doesNotMatch(partial.recommendation, /safe to ship/);
+});
