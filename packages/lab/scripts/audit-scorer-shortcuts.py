@@ -51,6 +51,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--baseline", type=Path,
                         default=Path(__file__).with_name("scorer-shortcuts.baseline.json"))
     parser.add_argument("--json", action="store_true")
+    # A scratch model trained on scratch data has no baseline to be judged against, and comparing it to
+    # the shipped one reports a regression that means nothing. Measuring an experiment is not a gate.
+    parser.add_argument("--no-baseline", action="store_true",
+                        help="report only; do not compare against the recorded baseline")
     # Writing the baseline is a deliberate act with a flag, never a side effect of running the audit —
     # an audit that rewrites the thing it compares against always passes.
     parser.add_argument("--update-baseline", action="store_true")
@@ -134,10 +138,16 @@ def render(rows: list[dict[str, Any]]) -> None:
     print("  The remedy is the CORPUS — see ADR 0015. A retrain on unchanged data reproduces them.\n")
 
 
-def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path) -> int:
-    """Fail on a WORSE result, per subtype. Silent on an improvement, which is the direction we want."""
+def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path, stream: Any) -> int:
+    """Fail on a WORSE result, per subtype. Silent on an improvement, which is the direction we want.
+
+    `stream` is stderr under `--json`, so a caller parsing the output is never handed prose mixed into it.
+    """
+    def note(line: str) -> None:
+        print(line, file=stream)
+
     if not baseline_path.is_file():
-        print(f"  no baseline at {baseline_path}; run with --update-baseline to record this one.")
+        note(f"  no baseline at {baseline_path}; run with --update-baseline to record this one.")
         return 0
     baseline = {row["subtype"]: row for row in json.loads(baseline_path.read_text())["rows"]}
     regressions = []
@@ -148,10 +158,10 @@ def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path) -> int:
         elif len(row["vetoes"]) > len(was["vetoes"]):
             regressions.append(f"{row['subtype']}: {len(was['vetoes'])} -> {len(row['vetoes'])} vetoes")
     for line in regressions:
-        print(f"  REGRESSION  {line}")
+        note(f"  REGRESSION  {line}")
     if regressions:
-        print("\n  A head gained a free veto. That means the corpus separated two things it should not,")
-        print("  or a new feature was added that no positive carries. See ADR 0015.\n")
+        note("\n  A head gained a free veto. That means the corpus separated two things it should not,")
+        note("  or a new feature was added that no positive carries. See ADR 0015.\n")
         return 1
     return 0
 
@@ -167,7 +177,9 @@ def main() -> int:
         args.baseline.write_text(json.dumps({"vetoLogits": VETO_LOGITS, "rows": rows}, indent=2) + "\n")
         print(f"  baseline written: {args.baseline}")
         return 0
-    return compare_to_baseline(rows, args.baseline)
+    if args.no_baseline:
+        return 0
+    return compare_to_baseline(rows, args.baseline, sys.stderr if args.json else sys.stdout)
 
 
 if __name__ == "__main__":
