@@ -1852,21 +1852,23 @@ function hasUnnamedFormField(capture) {
 /**
  * 2.4.2: the route changed and the screen reader never said where you went.
  *
- * TWO signals, both required, for the same reason `addKeyboardTrap` needs two: either alone fires on pages
- * that are fine. A title that does not change is normal if the activation announced the new context
- * anyway; silence is normal if the title moved and the user can ask for it. Only both together mean a user
- * has no way to learn they navigated.
+ * TWO signals, both required, for the same reason `addKeyboardTrap` needs two: the view MOVED and the title
+ * did NOT. A title that stays put is unremarkable if nothing navigated — and this probe activates the first
+ * link on the page, which on a real site may be a skip link or a plain fragment jump.
+ *
+ * **The obvious second signal — "was anything announced?" — is wrong, and the first capture proved it.**
+ * The failing page announced `"visited"`: NVDA reporting the link's own state. Not silence, and it names
+ * nothing about where the user now is, so a rule keyed on silence would never fire on the page it was
+ * written for. The measurable difference is that the view moved and the title did not follow.
  *
  * An unprobed or errored capture is NOT a finding. `routeChange` is absent unless asked for and carries an
- * `error` when the measurement failed — and an empty `announced` is exactly what the bad page produces, so
- * a failed probe recorded as one would invert the finding. That is the `probeDisclosure` lesson, which
- * cost 1 in 20 captures of a correctly implemented page.
+ * `error` when the measurement failed, and both are distinguishable from a page that navigated silently.
  */
 function routeTitleIsStale(capture) {
   const route = (capture.interaction || {}).routeChange;
   if (!route || route.error || !route.navigated) return false;
-  const announced = String(route.announced ?? "").trim();
-  return route.titleBefore === route.titleAfter && announced === "";
+  const viewMoved = route.headingBefore !== route.headingAfter;
+  return viewMoved && route.titleBefore === route.titleAfter;
 }
 
 function focusIsTrapped(capture) {
