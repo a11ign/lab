@@ -40,15 +40,44 @@
  *
  *   - The tutorial pages are DOCUMENTATION about accessibility, not applications. They are real pages with
  *     real structure, which is what the scorer has never seen — but nobody checks out of a tutorial.
- *   - Every page is W3C's own. A corpus drawn from one publisher shares that publisher's house style, and
- *     a scorer calibrated on it may still find a commercial site novel.
- *   - 26 pages is small. It is enough to calibrate a threshold against a stated error rate; it is not
- *     enough to train a realism tier on its own.
+ *   - It began as W3C's own and now spans 41 publishers, but they are overwhelmingly UK public sector and
+ *     design-system pages, which share a house style: measured, the GOV.UK Design System components all
+ *     land within 0.005 of each other on the novelty score (~0.79). One legacy ASP.NET page sits at 0.4633,
+ *     far outside everything else — that is the shape of structure the corpus still has never seen.
+ *   - 77 pages across 41 publishers, of which **74 are claimed conformant and 3 inaccessible**. That
+ *     imbalance is the real limit, and it is worse than it looks — see the note below on what the three
+ *     actually contain. It is enough to calibrate a threshold; it is not enough to demonstrate that the
+ *     scorer detects real-world failures.
  *
  * Widening past W3C means finding other publishers who state their own conformance — not labelling pages
  * ourselves, which would put us back where we started.
  */
 
+/**
+ * WHAT THE POSITIVE SIDE OF THIS CORPUS ACTUALLY IS — measured 2026-08-22, and smaller than it looks.
+ *
+ * The abstention sweep reports "2 of 3 inaccessible caught", which reads like coverage of three distinct
+ * real-world failures. It is not. Every form control the three `before` captures contain is this:
+ *
+ *   before-news      ["combo box, collapsed, QUICKMENU ---- greater"]
+ *   before-template  ["combo box, collapsed, QUICKMENU ---- greater"]
+ *   before-tickets   ["combo box, collapsed, QUICKMENU ---- greater"]
+ *
+ * One unnamed combo box, in the site chrome the three pages share, in three copies of one template. The
+ * matching `after` pages carry the same widget correctly named ("Explore Site by Topic:, combo box"), so
+ * the 4.1.2 findings are real — but they are ONE defect observed three times, not three failures. The
+ * scorer's entire demonstrated ability to detect a real-world failure rests on it.
+ *
+ * `before/tickets.html` is missed, and that is not a model weakness. It has **no form at all**: 0 `<form>`,
+ * 0 `<input>`, one `<select>`, 14 layout tables, 1 heading, 0 landmarks. Its label said "purchase form,
+ * broken" — the purchase form is on `survey.html`. The failures it does have are largely ones this
+ * evidence cannot express: table structure needs `probeTables`, which real-page captures deliberately do
+ * not run, and layout-table misuse is not in the head set at all.
+ *
+ * So "2 of 3" was never a fair test of the model in either direction. Widening the corpus means finding
+ * pages whose publisher-stated failures are ones a screen reader can actually witness — not simply more
+ * pages labelled inaccessible.
+ */
 /**
  * HOW A PUBLISHER'S STATEMENT BECOMES A LABEL. The rule, so nobody has to re-derive it per candidate.
  *
@@ -162,7 +191,7 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   { url: "https://www.w3.org/WAI/demos/bad/after/news.html", role: "calibration",
     publishedClaim: "conformant", source: BAD_AFTER_CLAIM, demonstrates: "news article layout, fixed" },
   { url: "https://www.w3.org/WAI/demos/bad/after/tickets.html", role: "calibration",
-    publishedClaim: "conformant", source: BAD_AFTER_CLAIM, demonstrates: "purchase form, fixed" },
+    publishedClaim: "conformant", source: BAD_AFTER_CLAIM, demonstrates: "ticket listing, fixed — NOT a form: 0 <form>, 0 <input>, one named combo box in the shared chrome" },
   { url: "https://www.w3.org/WAI/demos/bad/after/template.html", role: "calibration",
     publishedClaim: "conformant", source: BAD_AFTER_CLAIM, demonstrates: "page template, fixed" },
   { url: "https://www.w3.org/WAI/demos/bad/after/survey.html", role: "calibration",
@@ -170,7 +199,7 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   { url: "https://www.w3.org/WAI/demos/bad/before/news.html", role: "calibration",
     publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, demonstrates: "news article layout, broken" },
   { url: "https://www.w3.org/WAI/demos/bad/before/tickets.html", role: "calibration",
-    publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, demonstrates: "purchase form, broken" },
+    publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, demonstrates: "ticket listing, broken — NOT a form: 0 <form>, 0 <input>, 14 layout tables. See the WHAT THE POSITIVES ACTUALLY ARE note above" },
   { url: "https://www.w3.org/WAI/demos/bad/before/template.html", role: "calibration",
     publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, demonstrates: "page template, broken" },
 
