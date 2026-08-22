@@ -1,51 +1,118 @@
 /**
- * The generated page furniture must not satisfy any case's own badSignal.
+ * Page furniture must not change ANY case's badSignal — measured as a delta, over every predicate.
  *
- * Realistic page furniture is added to every case so the scorer sees real-world structure (see `filler()`
- * in case-matrix). Its TEXT is the hazard: a signal is a pattern over what NVDA announced, so a filler
- * phrase that happens to match one makes the signal fire on BOTH variants — the page's labelled failure and
- * the furniture become indistinguishable, and `check-signals` reports CONTAMINATED.
+ * Realistic furniture is added to every case so the scorer sees real-world structure (see `filler()` in
+ * case-matrix). Its announced text is the hazard: a signal is a pattern over what NVDA said, so furniture
+ * that happens to satisfy one makes the signal fire on BOTH variants and `check-signals` reports
+ * CONTAMINATED. That happened once — the furniture said "Reference section 01" and
+ * `heading-vague-market`'s signal is `heading.*\bsection\b` — and it was found only after spending capture
+ * time on it.
  *
- * That happened. The furniture said "Reference section 01", NVDA announced "heading, level 2, Reference
- * section 01", and `heading-vague-market`'s signal is `heading.*\bsection\b`. One word in one phrase
- * contaminated a case, and it was found only after spending capture time on it — whereas this check runs in
- * milliseconds against all 382 regex signals and needs no worker at all.
+ * This used to check the REGEX signals against five hand-written speech lines, which was the cheap 80%. It
+ * now runs **every** signal predicate, because the furniture grew structure as well as text: ADR 0015 added
+ * a labelled field and a data table to break the feature correlations that taught the heads to veto, and
+ * those reach the STRUCTURAL predicates that a regex sweep cannot see.
+ *
+ * It immediately earned itself. `placeholderOnlyIsPresent` began `if (formFields.length > 0) return false`,
+ * so the labelled reference field would have silenced every `placeholder-only` case — blinding them
+ * quietly rather than failing, which is the one failure mode this corpus cannot carry. See
+ * `placeholder-signal.test.ts`.
+ *
+ * **The delta is the assertion, not the value.** Several predicates fire on ABSENCE (`structure-empty`,
+ * `missing-heading`, `control-unreachable-by-keyboard`), so asking "does this signal fire on a
+ * furniture-only capture?" would report alarms that say nothing about the furniture. Asking whether adding
+ * furniture CHANGES the answer is the question that matters, and it is immune to what the base lacks.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { CASES } from "./case-matrix.mjs";
+import { CASES, signalMatches } from "./case-matrix.mjs";
+
+type Signal = { type?: string };
+type Case = { id: string; badSignal?: Signal };
 
 /**
  * What NVDA announces for the furniture, in the shape the signals match against.
  *
- * Hand-written rather than captured on purpose: this test must run in CI with no Windows guest. Keep it in
- * step with `filler()` — if the furniture's wording changes, change these lines too, or the check silently
- * stops covering what it claims to.
+ * Hand-written rather than captured, on purpose: this test must run in CI with no Windows guest. The table
+ * and field lines are taken from real corpus captures of the same markup (`table-bulk-aquarium-001.good`
+ * and `form-placeholder-calibration-aquarium-001.good`) rather than guessed. Keep it in step with
+ * `filler()`, `namedField()` and `dataTable()`.
  */
-const FURNITURE_SPEECH = [
-  "heading, level 2, Reference note 01",
-  "Background detail for reference note 01, retained for records and reviewed each year by the site team.",
-  "bullet, same page, link, Opening times for the north entrance 01",
-  "link, Annual review 2019 02",
-  "list, with 40 items",
-];
+const FURNITURE = {
+  transcript: [
+    "heading, level 2, Reference note 01",
+    "Background detail for reference note 01, retained for records and reviewed each year by the site team.",
+    "list, with 6 items",
+    "bullet, same page, link, Opening times for the north entrance 01",
+    "link, Annual review 2019 02",
+    "Reference lookup, edit",
+    "table, with 2 rows and 2 columns, caption, Reference notes index",
+    "out of caption, row 1, column 1, Note",
+    "column 2, Reviewed",
+    "row 2, Note, column 1, Site safety",
+    "Reviewed, column 2, 2019",
+  ],
+  headings: ["Reference note 01"],
+  formFields: ["Reference lookup, edit"],
+  tableCells: ["row 2, Site safety", "Reviewed, column 2, 2019"],
+  links: ["Opening times for the north entrance 01", "Annual review 2019 02"],
+};
 
-test("no page furniture phrase satisfies any case's badSignal", () => {
+/** A plausible page WITHOUT furniture. Its content is irrelevant; only the delta against it is read. */
+const base = () => ({
+  transcript: [
+    "heading, level 1, Booking a guided walk",
+    "main landmark",
+    "Walks run every Saturday from the north entrance.",
+    "link, Check availability for guided walks",
+  ],
+  structure: {
+    headings: ["Booking a guided walk"], landmarks: ["main"], formFields: [],
+    graphics: [], links: ["Check availability for guided walks"], lists: [], tableCells: [],
+  },
+  interaction: { controls: [], stateChanges: [], formChanges: [], postSubmitFields: [] },
+});
+
+const withFurniture = () => {
+  const capture = base();
+  return {
+    ...capture,
+    transcript: [...capture.transcript, ...FURNITURE.transcript],
+    structure: {
+      ...capture.structure,
+      headings: [...capture.structure.headings, ...FURNITURE.headings],
+      formFields: [...capture.structure.formFields, ...FURNITURE.formFields],
+      links: [...capture.structure.links, ...FURNITURE.links],
+      lists: [...capture.structure.lists, "list, with 6 items"],
+      tableCells: [...capture.structure.tableCells, ...FURNITURE.tableCells],
+    },
+  };
+};
+
+test("adding page furniture flips no case's badSignal", () => {
+  const before = base();
+  const after = withFurniture();
   const collisions: string[] = [];
-  for (const testCase of CASES as { id: string; badSignal?: { type?: string; pattern?: string } }[]) {
+  for (const testCase of CASES as Case[]) {
     const signal = testCase.badSignal;
-    if (signal?.type !== "regex" || !signal.pattern) continue;
-    let pattern: RegExp;
-    try {
-      pattern = new RegExp(signal.pattern, "i");
-    } catch {
-      continue; // an unparseable pattern is a different test's problem
+    if (!signal?.type) continue;
+    if (signalMatches(before, signal) !== signalMatches(after, signal)) {
+      collisions.push(`${testCase.id}: ${signal.type} changed when furniture was added`);
     }
-    const hit = FURNITURE_SPEECH.find((line) => pattern.test(line));
-    if (hit) collisions.push(`${testCase.id}: /${signal.pattern}/ matches ${JSON.stringify(hit)}`);
   }
-  assert.deepEqual(collisions, [],
-    "furniture text satisfies a case's own badSignal, so the signal will fire on the GOOD variant too and "
-    + "the case becomes CONTAMINATED. Reword the furniture, not the signal.");
+  assert.deepEqual([...new Set(collisions)], [],
+    "furniture changes a case's own badSignal, so the case will be CONTAMINATED (it fires on the good "
+    + "variant too) or BLIND (it stops firing on the bad one). Reword or restructure the furniture, never "
+    + "the signal.");
+});
+
+test("the furniture really is exercised, or the check above is vacuous", () => {
+  // The guard this file most needs on itself: an earlier version asserted against five speech lines while
+  // the furniture had grown structure those lines did not describe, so it passed having examined a
+  // fraction of what it claimed. If the two captures are identical, the delta is trivially zero.
+  assert.notDeepEqual(base(), withFurniture());
+  assert.ok((CASES as Case[]).some((c) => c.badSignal?.type === "placeholder-only"),
+    "no placeholder-only case is present, so the collision this test was extended for cannot occur");
+  assert.ok((CASES as Case[]).filter((c) => c.badSignal?.type).length > 100);
 });

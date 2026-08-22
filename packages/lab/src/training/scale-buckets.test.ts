@@ -46,8 +46,24 @@ const BASELINE_MS = 28_100;
 const MS_PER_ELEMENT = 570; // (37_200 - 28_100) / 16 elements in {6, 4}
 const CAPTURE_BUDGET_MS = 120_000; // DEFAULT_BUDGET_MS in capture-core.mjs
 
-const elements = (b: { links: number; sections: number }) => b.links * 2 + b.sections;
-const captureMs = (b: { links: number; sections: number }) => BASELINE_MS + MS_PER_ELEMENT * elements(b);
+/**
+ * ADR 0015's cross-criterion furniture costs capture time too, and it must be in the model or the night
+ * budget below is measuring a page that no longer exists.
+ *
+ * Counted from the announcements each produces in a real capture rather than from the markup: a labelled
+ * input is one announced field, and the 2x2 table with a caption announces the table, the two header cells
+ * and the two data cells — seven lines, taken from `table-bulk-aquarium-001.good`. Both are charged at
+ * `MS_PER_ELEMENT`, which is an ASSUMPTION: that figure was measured on links and headings, and nothing
+ * has yet timed a table. Re-measure after the first capture with these buckets and correct it here — the
+ * comment above this constant records what happened last time a cost model went unchecked.
+ */
+const NAMED_FIELD_ELEMENTS = 1;
+const DATA_TABLE_ELEMENTS = 7;
+
+type Bucket = { links: number; sections: number; namedField?: boolean; dataTable?: boolean };
+const elements = (b: Bucket) => b.links * 2 + b.sections
+  + (b.namedField ? NAMED_FIELD_ELEMENTS : 0) + (b.dataTable ? DATA_TABLE_ELEMENTS : 0);
+const captureMs = (b: Bucket) => BASELINE_MS + MS_PER_ELEMENT * elements(b);
 
 test("the buckets are populated, so nothing below is vacuously true", () => {
   assert.ok(SCALE_BUCKETS.length >= 2, `expected at least two buckets, got ${SCALE_BUCKETS.length}`);
@@ -97,9 +113,10 @@ test("a zero bucket survives, so page size stays a VARIABLE across the corpus", 
   assert.ok(new Set(SCALE_BUCKETS.map(elements)).size >= 2, "all buckets are the same size");
 });
 
-test("buckets are ordered and non-negative, because the index is used round-robin", () => {
-  // `SCALE_BUCKETS[index % length]` spreads sizes across cases, so a negative or NaN entry would
-  // silently produce a page with no filler rather than failing.
+test("buckets are ordered and non-negative, because one is chosen per case by hash", () => {
+  // `bucketFor(id)` picks one, so a negative or NaN entry would silently produce a page with no filler
+  // rather than failing. (It was `SCALE_BUCKETS[index % length]`; keying on the array position meant
+  // inserting a case re-sized every case after it — see `withRealisticScale`.)
   for (const b of SCALE_BUCKETS) {
     for (const key of ["links", "sections"] as const) {
       assert.ok(Number.isInteger(b[key]) && b[key] >= 0, `${JSON.stringify(b)}.${key} is not a count`);
@@ -107,4 +124,8 @@ test("buckets are ordered and non-negative, because the index is used round-robi
   }
   const sizes = SCALE_BUCKETS.map(elements);
   assert.deepEqual(sizes, [...sizes].sort((a, z) => a - z), "buckets must ascend, so the range is legible");
+  // The furniture markers are the point of the last two buckets. A bucket list that lost them would still
+  // pass every size assertion above while quietly restoring the correlation ADR 0015 exists to break.
+  assert.ok(SCALE_BUCKETS.some((b) => b.namedField), "no bucket carries a named form field");
+  assert.ok(SCALE_BUCKETS.some((b) => b.dataTable), "no bucket carries a data table");
 });

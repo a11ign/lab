@@ -61,7 +61,8 @@ const escapeHtml = (value) => String(value)
  * - **Headings are safe** — `missing-heading` asserts a NAMED heading is absent, not that none exist, so
  *   distinctly-worded filler cannot satisfy it. Sequence numbers make collision impossible.
  */
-function filler({ links: linkCount, sections: sectionCount }) {
+function filler(bucket) {
+  const { links: linkCount, sections: sectionCount } = bucket;
   if (linkCount === 0 && sectionCount === 0) return "";
   const topics = [
     "Opening times for the north entrance", "Annual review 2019", "Accessibility statement",
@@ -90,7 +91,43 @@ function filler({ links: linkCount, sections: sectionCount }) {
       + "<p>Background detail for reference note " + n
       + ", retained for records and reviewed each year by the site team.</p>";
   }).join("");
-  return "<ul>" + links + "</ul>" + sections;
+  return "<ul>" + links + "</ul>" + sections + namedField(bucket) + dataTable(bucket);
+}
+
+/**
+ * The furniture that exists to BREAK a correlation rather than to add size.
+ *
+ * ADR 0015: every head learned to penalise features that are 0 on all of its training positives, because
+ * one page demonstrates one thing. Of the 147 records carrying an unnamed form field, none had a table and
+ * none had a named field — so `table_present` (-1.26) and `form_field_named` (-4.33) were free, and the
+ * scorer reports an unnamed control only on a page where nothing is correctly named.
+ *
+ * These two pieces are the cheapest remedy: ordinary, CONFORMANT structure that a real page carries
+ * incidentally, injected identically into both variants like all other furniture. They add no failure, so
+ * no label changes; they only stop the feature being constant.
+ *
+ * Both are deliberately conformant — a properly associated table and a properly labelled field — so they
+ * cannot satisfy any case's badSignal. `filler-collision.test.ts` runs EVERY signal predicate against a
+ * capture built from these announcements rather than only the regex ones, which is how it caught that
+ * `placeholderOnlyIsPresent` would have been silenced by the labelled field.
+ */
+function namedField(bucket) {
+  if (!bucket.namedField) return "";
+  // NO `<form>` wrapper, deliberately. `probeForms` finds a form and submits it, and a second form would
+  // change which one a case's own probe activates — a difference between pages that the label does not
+  // describe. A labelled input needs no form to be announced as a named field.
+  return "<p><label for=\"ref-lookup\">Reference lookup</label>"
+    + "<input id=\"ref-lookup\" name=\"ref-lookup\" type=\"text\"></p>";
+}
+
+function dataTable(bucket) {
+  if (!bucket.dataTable) return "";
+  // Headers associated by `scope`, so this sets `table_header_associated` and NOT `table_position_only`.
+  // The position-only variant is a 1.3.1 FAILURE, so it cannot be furniture — a page that needs it has to
+  // fail two criteria at once, which is a case definition rather than a bucket.
+  return "<table><caption>Reference notes index</caption>"
+    + "<tr><th scope=\"col\">Note</th><th scope=\"col\">Reviewed</th></tr>"
+    + "<tr><td>Site safety</td><td>2019</td></tr></table>";
 }
 
 function page({ title, heading, body, script = "", landmark = true }) {
@@ -1643,7 +1680,12 @@ cases.push(
 export const SCALE_BUCKETS = [
   { links: 0, sections: 0 },
   { links: 6, sections: 4 },
-
+  // The two buckets that exist for ADR 0015 rather than for size. They carry conformant structure belonging
+  // to OTHER criteria, so `form_field_named` and `table_present` stop being constant across any subtype's
+  // positives — which is what made them free negative weights. `furniture-spread.test.ts` asserts the
+  // property directly, without capturing anything.
+  { links: 6, sections: 4, namedField: true },
+  { links: 6, sections: 4, dataTable: true },
 ];
 
 /**
@@ -1666,9 +1708,37 @@ export const SCALE_BUCKETS = [
  * insertion free forever, and is the better design — but it re-sizes every page in the corpus once, which
  * is a full recapture. Worth doing bundled with a recapture that is happening anyway, not on its own.
  */
+/**
+ * Which furniture bucket a case gets — from its ID, never from its position in the array.
+ *
+ * It was `index % SCALE_BUCKETS.length`, and the comment above records what that cost: inserting a case
+ * re-sized the furniture of every case after it, changing their page bytes, their `pageHash` and their
+ * cache key, with the only symptom a stale count nobody was watching. The rule that fell out —
+ * "APPEND to CASES, never insert" — is a thing a human has to remember, which this repo's own housekeeping
+ * rule says does not happen.
+ *
+ * FNV-1a over the case id instead. A case's furniture now depends on nothing but its own name, so cases can
+ * be inserted, reordered or removed and every other case's pages are byte-identical. Changing an id still
+ * re-buckets that one case, which is correct: a renamed case is a different case.
+ */
+function bucketFor(id) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < id.length; i += 1) {
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return SCALE_BUCKETS[hash % SCALE_BUCKETS.length];
+}
+
 function withRealisticScale(list) {
-  return list.map((testCase, index) => {
-    const extra = filler(SCALE_BUCKETS[index % SCALE_BUCKETS.length]);
+  return list.map((testCase) => {
+    const bucket = bucketFor(testCase.id);
+    // A case that drives tables itself never gets the furniture table. Not to avoid a signal collision —
+    // the furniture table is conformant, so `tableHeadersAreUnassociated` cannot see it — but because
+    // `probeTables` walks the page's tables, and a second one changes what the case's own probe reports.
+    // These cases already carry `table_present`, so the correlation this furniture breaks is not theirs.
+    const usable = testCase.probeTables ? { ...bucket, dataTable: false } : bucket;
+    const extra = filler(usable);
     if (!extra) return testCase;
     // Always at the SAME structural position — before `</body>`, outside any landmark.
     //
@@ -1973,11 +2043,32 @@ function tableHeadersAreUnassociated(capture) {
   return false;
 }
 
+/**
+ * 3.3.2 — a field whose only label is its placeholder, announced as the placeholder text and nothing else.
+ *
+ * The guard used to be `if (formFields.length > 0) return false` — "the form sweep found a named field
+ * anywhere on this page, so this is not the placeholder case". That is the ADR 0015 defect in the SIGNAL
+ * layer: it reasons about the page when the evidence is about one field, so a page with a properly
+ * labelled field AND a placeholder-only one reports nothing. Every real page has at least one labelled
+ * field, and it made the corpus structurally unable to contain a page with both — which is exactly the
+ * separation that taught the heads to veto.
+ *
+ * It now asks the narrower question the criterion asks: **is the placeholder text itself standing in for a
+ * name?** Measured on the corpus captures, the bad variant announces `"form, Example value, edit"` with
+ * `formFields: []`, and the good variant announces `"Booking reference, edit, Example value"` — so the
+ * discriminator is whether the placeholder arrives with a real name in front of it, not whether any other
+ * field on the page has one.
+ */
 function placeholderOnlyIsPresent(capture, signal) {
-  if ((capture.structure?.formFields || []).length > 0) return false;
   const placeholder = String(signal.placeholder || "").toLowerCase();
-  return captureTextParts(capture).some((value) =>
-    value.toLowerCase().includes(placeholder) && /\bedit(?: text)?\b/i.test(value));
+  if (!placeholder) return false;
+  // A NAMED field carrying the placeholder as its value ("Booking reference, edit, Example value") is the
+  // conformant announcement, so it must not satisfy this. Only a field whose announcement STARTS with the
+  // placeholder — nothing said before it — is the failure.
+  return captureTextParts(capture).some((value) => {
+    const text = value.toLowerCase().replace(/^form,\s*/, "").trim();
+    return text.startsWith(placeholder) && /\bedit(?: text)?\b/i.test(text);
+  });
 }
 
 // A form field NVDA announces as a bare role, with no name in front of it: "edit" rather
