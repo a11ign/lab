@@ -298,6 +298,35 @@ export const ACCEPTANCE_CASES = Object.freeze([
   errorPair({ id: "error-phone", title: "Callback request", field: "Phone number", submit: "Request a callback", task: "Submit the callback request without a phone number." }),
   formPair({ id: "placeholder-email", title: "Event registration", label: "Contact email", name: "contact-email", placeholderOnly: true, task: "Enter the contact email for registration." }),
   formPair({ id: "field-company", title: "Supplier form", label: "Company name", name: "company", task: "Enter the supplier company name." }),
+
+  // ---- HOLD-OUT BATCH 2, added 2026-08-23 -------------------------------------------------------------
+  //
+  // A second set for the same criteria, on entirely different subject matter, because the first batch
+  // stopped being held-out. It was measured roughly eight times in one day with changes made between
+  // measurements, which turns a test set into a development set: the score it reports is optimistic by
+  // construction, and this project's own ADR 0015 is about exactly that failure.
+  //
+  // What partly rescued the first batch's number is that most of the gain came from mechanism fixes found
+  // by diagnosis rather than by score-chasing — a regex reading 3.4% of announcements, a rule reporting
+  // the wrong criterion, a heuristic matching buttons. Those would have been right with no score attached.
+  // The threshold and pooling experiments WERE score-driven, and both were reverted for failing.
+  //
+  // Different words, different domains, same failure modes. Nothing here reuses a noun from batch 1: the
+  // point is that a model which learned batch 1's vocabulary gains nothing.
+  imagePair({ id: "b2-generic-kiln", title: "Pottery kiln", description: "The kiln fires stoneware twice a week.", file: "kiln.jpg", goodAlt: "Brick kiln with its door open", badAlt: "picture", subtype: "generic-alt", task: "Understand what the kiln image shows." }),
+  imagePair({ id: "b2-filename-quarry", title: "Quarry trail", description: "The trail follows the old quarry edge.", file: "quarry_path_07.jpg", goodAlt: "Gravel path along the quarry edge", badAlt: "quarry_path_07.jpg", subtype: "filename-alt", task: "Follow the quarry trail." }),
+  imagePair({ id: "b2-missing-weir", title: "River weir", description: "The weir controls the level upstream.", file: "weir.png", goodAlt: "Stone weir across the river", badAlt: null, subtype: "missing-alt", task: "Understand what the weir looks like." }),
+  fakeHeadingPair({ id: "b2-fake-collections", title: "Archive service", label: "Collection deposits", task: "Find how to deposit a collection." }),
+  fakeHeadingPair({ id: "b2-fake-lending", title: "Tool library", label: "Lending conditions", task: "Find the tool lending conditions." }),
+  tablePair({ id: "b2-table-ferry", title: "Ferry crossings", destination: "Harbour pier", task: "Compare the ferry time and destination for Harbour pier." }),
+  linkPair({ id: "b2-link-grazing", title: "Grazing rights", context: "Common land is managed by the trust.", vague: "This", descriptive: "Read common grazing rights rules", task: "Open the common grazing rights rules." }),
+  linkPair({ id: "b2-link-moorings", title: "Moorings", context: "Berths are allocated each spring.", vague: "Info", descriptive: "Apply for a seasonal mooring berth", task: "Apply for a seasonal mooring berth." }),
+  headingPair({ id: "b2-heading-kiln", title: "Kiln guide", vague: "Things", descriptive: "Firing schedule and temperatures", task: "Find the firing schedule." }),
+  headingPair({ id: "b2-heading-weir", title: "Weir guide", vague: "Details", descriptive: "Water level and safety notes", task: "Find the water level notes." }),
+  errorPair({ id: "b2-error-plot", title: "Allotment request", field: "Plot number", submit: "Request the plot", task: "Submit the allotment request without a plot number." }),
+  errorPair({ id: "b2-error-vessel", title: "Berth application", field: "Vessel name", submit: "Apply for a berth", task: "Submit the berth application without a vessel name." }),
+  formPair({ id: "b2-field-trust", title: "Trust contact form", label: "Trust name", name: "trust", task: "Enter the trust name." }),
+  formPair({ id: "b2-field-vessel", title: "Vessel register", label: "Vessel registration", name: "vessel-reg", task: "Enter the vessel registration." }),
   formPair({ id: "field-ticket", title: "Support form", label: "Ticket number", name: "ticket", task: "Enter the support ticket number." }),
   formPair({ id: "field-route", title: "Route form", label: "Route name", name: "route", task: "Enter the route name." }),
   iconPair({ id: "icon-settings", title: "Settings", label: "Open settings", task: "Open settings." }),
