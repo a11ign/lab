@@ -27,6 +27,8 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, readdirSync
 import { resolve, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { releasability } from "../src/packaging/releasability.mjs";
+
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const SHIPPED = resolve(REPO, "packages/scorer/models/screenreader-scorer");
 const CHANGESETS = resolve(REPO, ".changeset");
@@ -41,79 +43,33 @@ function readReport(path, what) {
 }
 
 /**
- * Per-subtype precision and recall, from a training report. `{}` for a model that has no such head.
+ * The gates, from ONE definition rather than three.
  *
- * Read from the report rather than recomputed: the numbers a release is judged on must be the ones the
- * trainer actually produced, not a second calculation that could differ.
+ * This file used to carry its own: `releaseEligible` off the candidate, `passed` off the acceptance
+ * report, and a hand-rolled regression comparison. `releasability()` is now the single place that decides,
+ * so the trainer, the evaluator and this command cannot disagree about what "shippable" means — which they
+ * did, and the disagreement was a deadlock nothing could pass.
+ *
+ * Read from the candidate's OWN files. Deliberately not flags the caller can set: the failure that
+ * prevents is promoting a model because you believe it is good, which is exactly the state of mind in
+ * which the belief is wrong.
  */
-function headScores(report) {
-  const out = {};
-  for (const criterion of Object.values(report.criteria ?? {})) {
-    for (const [subtype, sub] of Object.entries(criterion.subtypes ?? {})) {
-      const dev = sub.development ?? {};
-      if (dev.precision === undefined) continue;
-      out[subtype] = { precision: dev.precision, recall: dev.recall, threshold: sub.threshold };
-    }
-  }
-  return out;
-}
-
-/**
- * REFUSE A CANDIDATE THAT IS WORSE THAN WHAT IS ALREADY SHIPPED.
- *
- * The two gates below are ABSOLUTE bars — "this model is good enough" — and a candidate can clear both
- * while being worse than the incumbent on a criterion nobody looked at. "Good enough" is not "better", and
- * for weights that ship to consumers the second is the question.
- *
- * Measured on the first candidate this was applied to: the multi-defect retrain held recall exactly (58
- * true positives, 0 false negatives, same as shipped) and lost precision on ONE subtype,
- * `3.3.2:placeholder-only` — 1.000 to 0.368 on development, and 4 false positives on held-out acceptance
- * where the shipped model has none. Without this check the only thing standing between that and a release
- * was somebody reading two reports side by side.
- *
- * A head the shipped model does not have is NOT a regression — it is new coverage, and blocking on it
- * would make adding a criterion impossible.
- */
-function assertNotWorse(candidateReport, shippedReport, tolerance) {
-  const shipped = headScores(shippedReport);
-  const candidate = headScores(candidateReport);
-  const worse = [];
-  for (const [subtype, now] of Object.entries(candidate)) {
-    const before = shipped[subtype];
-    if (!before) continue; // new head: coverage, not regression
-    for (const metric of ["precision", "recall"]) {
-      if (now[metric] < before[metric] - tolerance) {
-        worse.push(`${subtype} ${metric} ${before[metric].toFixed(3)} -> ${now[metric].toFixed(3)}`);
-      }
-    }
-  }
-  if (worse.length > 0) {
-    throw new Error(`the candidate is WORSE than the shipped model on ${worse.length} head(s):\n  `
-      + `${worse.join("\n  ")}\n`
-      + "A release must not lose ground on a criterion that already worked. If the regression is intended "
-      + "— a deliberate trade — say so and pass --accept-regression, which records it in the changeset "
-      + "rather than hiding it.");
-  }
-}
-
-/**
- * Both gates, read from the CANDIDATE's own files.
- *
- * Deliberately not a flag the caller can set. The failure this prevents is somebody promoting a model
- * because they believe it is good, which is exactly the state of mind in which the belief is wrong.
- */
-function assertPromotable(candidate) {
+function assertPromotable(candidate, shipped, acceptRegression) {
   const training = readReport(join(candidate, "training-report.json"), "the training report");
-  if (!training.releaseEligible) {
-    throw new Error(`${candidate} is not releaseEligible. `
-      + `Blocked by: ${JSON.stringify(training.releaseBlockedBy ?? "(not recorded)")}`);
+  const acceptance = existsSync(join(candidate, "acceptance-report.json"))
+    ? JSON.parse(readFileSync(join(candidate, "acceptance-report.json"), "utf8"))
+    : null;
+  const verdict = releasability({ training, acceptance, shipped });
+  const blockers = acceptRegression
+    ? verdict.blockers.filter((b) => !/ (precision|recall) [\d.]+ -> /.test(b))
+    : verdict.blockers;
+  if (blockers.length > 0) {
+    throw new Error(`${candidate} is not releasable:\n  ${blockers.join("\n  ")}\n`
+      + (verdict.notes.length ? `\nNotes:\n  ${verdict.notes.join("\n  ")}\n` : "")
+      + "\nA deliberate regression against the shipped model can be accepted with --accept-regression, "
+      + "which records it in the changeset rather than hiding it. Nothing else here is overridable.");
   }
-  const acceptance = readReport(join(candidate, "acceptance-report.json"), "the acceptance report");
-  if (acceptance.passed !== true) {
-    throw new Error(`${candidate} did not pass held-out acceptance: `
-      + `${JSON.stringify(acceptance.failureReasons ?? [])}`);
-  }
-  return { training, acceptance };
+  return { training, acceptance: acceptance ?? { passed: false } };
 }
 
 /** The provenance ADR 0007 requires, taken from the report rather than retyped. */
@@ -152,13 +108,8 @@ function changesetPath(candidateName) {
   return join(CHANGESETS, `promote-${candidateName}-${existing + 1}.md`);
 }
 
-export function promote({ candidate, candidateName, dryRun, acceptRegression, shippedReport, tolerance }) {
-  const { training, acceptance } = assertPromotable(candidate);
-  // Tiny movements are noise, not regressions: thresholds are calibrated on a finite development set and
-  // a third decimal place is not a fact about the model. Anything larger is a real loss of ground.
-  if (!acceptRegression && shippedReport) {
-    assertNotWorse(training, shippedReport, tolerance ?? 0.005);
-  }
+export function promote({ candidate, candidateName, dryRun, acceptRegression, shippedReport }) {
+  const { training, acceptance } = assertPromotable(candidate, shippedReport, acceptRegression);
   const entry = `---
 "@a11y-witness/scorer": major
 ---

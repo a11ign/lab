@@ -18,11 +18,19 @@ import { join } from "node:path";
 
 import { promote } from "../../scripts/promote-model.mjs";
 
+const HEAD = {
+  head: "subtype_4_1_2_state_change_silent",
+  threshold: 0.85,
+  development: { records: 1685, positive: 62, precision: 1, recall: 1, falsePositive: 0 },
+};
+
+/** A candidate that has earned promotion. Shaped as the trainer writes it, minus the verdict it used to
+ *  stamp — `releasability()` computes that now, from these facts plus the acceptance report. */
 const REPORT = {
-  releaseEligible: true,
   dataset: { records: 1976 },
   outOfDistribution: { inDistributionFloor: 0.7, derivedFloor: 0.5587, floorSource: "calibration-set" },
-  criteria: { "4.1.2": { subtypes: { "4.1.2:unnamed-control": { threshold: 0.9 } } } },
+  representation: { encoder: "all-MiniLM-L6-v2" },
+  criteria: { "4.1.2": { subtypes: { "4.1.2:state-change-silent": HEAD } } },
 };
 
 function candidate(training: object, acceptance: object): { dir: string; name: string } {
@@ -52,21 +60,28 @@ test("a model that passed both gates yields a MAJOR changeset for the scorer", (
 
 test("the provenance ADR 0007 requires is filled in from the report, not left to memory", () => {
   const { entry } = run(REPORT, { passed: true });
-  for (const expected of ["1976", "0.7", "0.5587", "calibration-set", "4.1.2:unnamed-control", "0.9"]) {
+  for (const expected of ["1976", "0.7", "0.5587", "calibration-set", "4.1.2:state-change-silent", "0.85"]) {
     assert.ok(entry.includes(expected), `changelog entry is missing ${expected}`);
   }
 });
 
-test("a candidate that is not releaseEligible is refused, and the reason is named", () => {
+test("a candidate with an uncalibrated head is refused, and the head is named", () => {
+  // Was "refused because releaseEligible is false" — a self-declared verdict the trainer could not know.
+  // Now it is refused because a head the MODEL decides has false positives at its threshold, which is a
+  // fact in the report rather than a claim about it.
   assert.throws(
-    () => run({ ...REPORT, releaseEligible: false, releaseBlockedBy: ["4.1.2 recall"] }, { passed: true }),
-    /not releaseEligible[\s\S]*4\.1\.2 recall/);
+    () => run({
+      ...REPORT,
+      criteria: { "3.3.2": { subtypes: { "3.3.2:placeholder-only":
+        { threshold: 0.5, development: { positive: 23, precision: 0.368, recall: 0.913, falsePositive: 36 } } } } },
+    }, { passed: true }),
+    /not releasable[\s\S]*placeholder-only: 36 false positive/);
 });
 
 test("a candidate that failed held-out acceptance is refused", () => {
   assert.throws(
     () => run(REPORT, { passed: false, failureReasons: ["3.3.2: acceptance false positives"] }),
-    /did not pass held-out acceptance[\s\S]*3\.3\.2/);
+    /acceptance failed[\s\S]*3\.3\.2/);
 });
 
 test("a candidate with no acceptance report at all is refused, not assumed good", () => {
@@ -75,7 +90,7 @@ test("a candidate with no acceptance report at all is refused, not assumed good"
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "training-report.json"), JSON.stringify(REPORT));
   assert.throws(() => promote({ candidate: dir, candidateName: "bare", dryRun: true }),
-    /acceptance report is missing/);
+    /acceptance has not been run/);
 });
 
 test("a dry run writes nothing", () => {
@@ -94,17 +109,17 @@ test("a candidate WORSE than the shipped model is refused, even if it passed bot
   // candidate this was applied to: identical recall, and 3.3.2:placeholder-only precision 1.000 -> 0.368.
   const shipped = {
     criteria: { "3.3.2": { subtypes: { "3.3.2:placeholder-only":
-      { threshold: 0.45, development: { precision: 1, recall: 1 } } } } },
+      { threshold: 0.45, development: { positive: 20, precision: 1, recall: 1, falsePositive: 0 } } } } },
   };
   const worse = {
     ...REPORT,
     criteria: { "3.3.2": { subtypes: { "3.3.2:placeholder-only":
-      { threshold: 0.5, development: { precision: 0.368, recall: 0.913 } } } } },
+      { threshold: 0.5, development: { positive: 23, precision: 0.368, recall: 0.913, falsePositive: 0 } } } } },
   };
   const { dir, name } = candidate(worse, { passed: true });
   assert.throws(
     () => promote({ candidate: dir, candidateName: name, dryRun: true, shippedReport: shipped }),
-    /WORSE than the shipped model[\s\S]*3\.3\.2:placeholder-only precision 1\.000 -> 0\.368/);
+    /not releasable[\s\S]*placeholder-only precision 1\.000 -> 0\.368/);
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -114,7 +129,7 @@ test("a NEW head is coverage, not a regression", () => {
   const { dir, name } = candidate({
     ...REPORT,
     criteria: { "2.4.2": { subtypes: { "2.4.2:route-title-stale":
-      { threshold: 0.3, development: { precision: 0.8, recall: 0.7 } } } } },
+      { threshold: 0.3, development: { positive: 30, precision: 0.8, recall: 0.7, falsePositive: 0 } } } } },
   }, { passed: true });
   const { entry } = promote({ candidate: dir, candidateName: name, dryRun: true, shippedReport: shipped });
   assert.match(entry, /major/);
@@ -124,12 +139,12 @@ test("a NEW head is coverage, not a regression", () => {
 test("a deliberate regression is allowed, and SAID SO in the changelog", () => {
   const shipped = {
     criteria: { "3.3.2": { subtypes: { "3.3.2:placeholder-only":
-      { threshold: 0.45, development: { precision: 1, recall: 1 } } } } },
+      { threshold: 0.45, development: { positive: 20, precision: 1, recall: 1, falsePositive: 0 } } } } },
   };
   const worse = {
     ...REPORT,
     criteria: { "3.3.2": { subtypes: { "3.3.2:placeholder-only":
-      { threshold: 0.5, development: { precision: 0.368, recall: 0.913 } } } } },
+      { threshold: 0.5, development: { positive: 23, precision: 0.368, recall: 0.913, falsePositive: 0 } } } } },
   };
   const { dir, name } = candidate(worse, { passed: true });
   const { entry } = promote({ candidate: dir, candidateName: name, dryRun: true,
@@ -142,12 +157,12 @@ test("a deliberate regression is allowed, and SAID SO in the changelog", () => {
 test("noise below the tolerance is not a regression", () => {
   const shipped = {
     criteria: { "1.1.1": { subtypes: { "1.1.1:missing-alt":
-      { threshold: 0.25, development: { precision: 1, recall: 1 } } } } },
+      { threshold: 0.25, development: { positive: 76, precision: 1, recall: 1, falsePositive: 0 } } } } },
   };
   const jitter = {
     ...REPORT,
     criteria: { "1.1.1": { subtypes: { "1.1.1:missing-alt":
-      { threshold: 0.3, development: { precision: 0.999, recall: 1 } } } } },
+      { threshold: 0.3, development: { positive: 76, precision: 0.999, recall: 1, falsePositive: 0 } } } } },
   };
   const { dir, name } = candidate(jitter, { passed: true });
   promote({ candidate: dir, candidateName: name, dryRun: true, shippedReport: shipped });
