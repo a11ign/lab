@@ -143,7 +143,34 @@ function main() {
     `\n${counts.OK} discriminating, ${counts.BLIND} blind, ${counts.CONTAMINATED} contaminated, ` +
       `${counts["NO CAPTURES"]} uncaptured, ${counts["STALE CAPTURES"]} stale`
   );
+  console.log(unsyncedCorpusHint(counts));
   process.exit(failures === 0 ? 0 : 1);
+}
+
+/**
+ * Say which question stale-or-uncaptured is actually asking, because there are two and they look identical.
+ *
+ * A count of stale pairs means "the captures on THIS disk do not match the case definitions on this disk".
+ * On the lab, where captures are produced, that means the corpus needs recapturing — hours of fleet time.
+ * On a developer's machine it usually means something far duller: `runs/` is gitignored, so a local copy is
+ * whatever was last synced, and case definitions move every time somebody edits the matrix.
+ *
+ * Measured 2026-08-23: this reported `242 uncaptured, 860 stale` locally and `0 uncaptured, 0 stale` on the
+ * lab, for the same commit. The corpus was complete; the local copy was old. Acting on the local number
+ * meant planning a 2–3 hour recapture of work already done, and pushing with the verification hook
+ * overridden because it "failed".
+ *
+ * A hint rather than a guard: nothing here can see the lab, so this cannot decide which case applies. What
+ * it can do is stop the two reading as one, which is the distinction this whole codebase keeps paying for.
+ */
+export function unsyncedCorpusHint(counts) {
+  const unusable = counts["NO CAPTURES"] + counts["STALE CAPTURES"];
+  if (unusable === 0) return "Every case has evidence matching its current definition.";
+  return `${unusable} case(s) have no usable evidence HERE. That is either a corpus that genuinely needs `
+    + "capturing, or a local `runs/` that is simply out of date — they are indistinguishable from this "
+    + "machine, and `runs/` is gitignored so a local copy is only ever as fresh as its last sync.\n"
+    + "Before planning a recapture, ask the box that owns the corpus:\n"
+    + "  npm run lab:job -- -e job=check-signals";
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();

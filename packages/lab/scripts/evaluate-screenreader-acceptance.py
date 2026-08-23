@@ -223,6 +223,43 @@ def assert_disjoint(training: Any, acceptance: list[dict[str, Any]], training_da
         raise RuntimeError("acceptance data overlaps training: " + json.dumps({"cases": overlap_cases, "families": overlap_families}))
 
 
+# `packages/` is source: tracked, reviewed, and released. `runs/` is where a run's output belongs.
+TRACKED_SOURCE_DIR = "packages"
+
+
+def refuse_to_stamp_source_tree(report_path: Path) -> None:
+    """A measurement may not rewrite released provenance, or dirty the checkout it ran from.
+
+    Scoring the SHIPPED model is a legitimate thing to do — it is how you find out whether the weights in
+    production still pass the held-out set. Stamping the verdict into that model's own training report is
+    not: it overwrites the record of what was true when the weights were released, with the result of a
+    run that released nothing.
+
+    Measured 2026-08-23. `packages/scorer/models/screenreader-scorer/training-report.json` came back
+    modified, carrying `generalisationVerified: false` and two held-out blockers, on weights that had
+    shipped clean. The second cost was larger than the first: `packages/` is tracked, so the lab checkout
+    was dirty, `run-job.yml` refused to pull into somebody's work — correctly — and the lab silently ran
+    **17 commits behind origin** for days. Every job said "Not pulling: the checkout is dirty" and none
+    said what that meant.
+
+    So this is not really about one file. Anything writing into `packages/` from a run turns a source tree
+    into an output directory, and this repo reaches its lab exclusively by pulling into that tree.
+    """
+    parts = report_path.resolve().parts
+    if TRACKED_SOURCE_DIR not in parts:
+        return
+    raise SystemExit(
+        f"refusing to stamp a verdict into {report_path}: it is inside {TRACKED_SOURCE_DIR}/, which is "
+        "tracked source, not run output.\n"
+        "Scoring the shipped model is fine; rewriting its release record is not — that record describes "
+        "what was true when those weights shipped.\n"
+        "Copy the model to runs/ and score the copy:\n"
+        "  cp -r packages/scorer/models/screenreader-scorer runs/model-shipped\n"
+        "  ... --model runs/model-shipped --training-report runs/model-shipped/training-report.json\n"
+        "A dirty packages/ also stops the lab pulling, which is how it ran 17 commits behind for days."
+    )
+
+
 def stamp_generalisation(report_path: Path, passed: bool, reasons: list[str], diagnostic: bool) -> None:
     """Write the held-out verdict back into the training report beside the weights it describes.
 
@@ -242,6 +279,7 @@ def stamp_generalisation(report_path: Path, passed: bool, reasons: list[str], di
     """
     if not report_path.exists():
         return
+    refuse_to_stamp_source_tree(report_path)
     report = json.loads(report_path.read_text(encoding="utf-8"))
     blockers = [b for b in report.get("releaseBlockedBy", []) if not b.startswith("held-out acceptance")]
     if diagnostic:
