@@ -15,6 +15,7 @@
  *   - add heading navigation via voiceOver.perform(voiceOver.keyboardCommands...)
  *   - drive multi-step task flows
  */
+import { pathToFileURL } from "node:url";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { voiceOver } from "@guidepup/guidepup";
@@ -53,7 +54,14 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(verdict, null, 2));
 }
 
-main().catch((err) => {
+/**
+ * Run ONLY when this file is the program, never when it is imported — so a test (or the `import()` load
+ * check) can reach the functions above without executing the script. See `entry-points.test.ts`.
+ */
+const isProgram = process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isProgram) main().catch((err) => {
   console.error(err);
   process.exit(1);
 });

@@ -12,6 +12,7 @@
  *
  * Fixtures are frozen transcripts, so this evaluates the JUDGE, not capture.
  */
+import { pathToFileURL } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
 import { judge } from "@a11y-witness/judge";
 import { pageCensus } from "@a11y-witness/evidence/verify";
@@ -226,7 +227,14 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((e) => {
+/**
+ * Run ONLY when this file is the program, never when it is imported — so a test (or the `import()` load
+ * check) can reach the functions above without executing the script. See `entry-points.test.ts`.
+ */
+const isProgram = process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isProgram) main().catch((e) => {
   console.error(e);
   process.exit(1);
 });

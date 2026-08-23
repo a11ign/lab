@@ -41,6 +41,7 @@
 // It now speaks the corpus's own `target.subtypes` vocabulary -- the same one the scorer's heads are
 // named after -- so the two layers are measured in one language instead of two.
 import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 
 import { ruleFindings } from "@a11y-witness/judge/rules";
@@ -153,100 +154,138 @@ const verdictOf = (subtype: string, c: Coverage): string => {
   return "rules: none — the model's heads own this subtype";
 };
 
-const records = load(DATA);
-if (records.length === 0) {
-  process.stderr.write(`No records at ${DATA}. Run npm run training:export first.\n`);
-  process.exit(2);
-}
-
-const coverage = tally(records);
-console.log(`Rule-layer score over ${records.length} record(s) from ${DATA}\n`);
-console.log("# coverage by subtype (who actually decides what)\n");
-// `unavailable` subtypes have no records by construction, and they belong in this table more than
-// anywhere else: it is the map of who decides what, and "nobody" is the answer most worth seeing.
-const rows = [
-  ...[...coverage.entries()].map(([subtype, c]): [string, string, string] => [
-    subtype,
-    // Always over the subtype's FULL record count, so the denominator is what the head was trained on.
-    `${c.dueByRule > 0 ? c.caughtByRule : c.alsoFired}/${c.total}`,
-    verdictOf(subtype, c),
-  ]),
-  ...[...OWNERSHIP].filter(([, e]) => e.decidedBy === "unavailable").map(([subtype]): [string, string, string] => [
-    subtype, "—",
-    "NEITHER LAYER — excluded from the model; the evidence cannot express this failure",
-  ]),
-].sort((a, b) => a[0].localeCompare(b[0]));
-for (const [subtype, share, verdict] of rows) {
-  console.log(`  ${subtype.padEnd(30)} ${share.padStart(8)}  ${verdict}`);
-}
-console.log("");
-
-const failures: string[] = [];
-
-// A conformant page must never be failed by a deterministic rule, on ANY criterion. This used to be
-// checked only for the criteria the rules were believed to own, which cannot see a rule that fires
-// somewhere unexpected -- the same blindness that hid the 2.4.4 overlap.
-const conformant = records.filter((r) => r.target.label === "clean");
-const falsePositives = conformant.filter((r) => criteriaOf(r).size > 0);
-console.log(`# conformant records\n  ${conformant.length} scored, ${falsePositives.length} false positive(s)`);
-if (falsePositives.length) {
-  console.log(`  FALSE POS  ${falsePositives.slice(0, 6).map(idOf).join(", ")}`);
-  failures.push(`${falsePositives.length} conformant record(s) were failed by a deterministic rule`);
-}
-console.log("");
-
-// Every declared key must exist in the DATA -- except the `unavailable` ones, where the assertion is
-// exactly inverted and just as necessary.
-//
-// The map carried `4.1.2:unnamed-form-field` for as long as it existed and matched nothing, so the entry
-// was neither enforcing anything nor visibly wrong; a declaration nothing can contradict is a comment.
-//
-// An `unavailable` subtype is excluded from the export on purpose (MODEL_EXCLUDED_SUBTYPES), so its
-// records MUST be absent -- and if they come back, the exclusion has silently stopped working and a head
-// is being trained on evidence that cannot express its failure. Same reasoning, opposite direction.
-for (const [subtype, entry] of OWNERSHIP) {
-  const present = coverage.has(subtype);
-  if (entry.decidedBy === "unavailable") {
-    if (!present) continue;
-    console.log(`RULES: ${subtype} is declared unavailable and yet appears in the export. The model `
-      + "exclusion has stopped working, so a head is being trained on evidence that cannot express it.");
-    failures.push(`${subtype} is declared unavailable but present in the data`);
-    continue;
+function main(): void {
+  const records = load(DATA);
+  if (records.length === 0) {
+    process.stderr.write(`No records at ${DATA}. Run npm run training:export first.\n`);
+    process.exit(2);
   }
-  if (present) continue;
-  console.log(`RULES: ${subtype} is declared in rule-ownership.json and appears in no record. Either the `
-    + "corpus vocabulary moved or the key was never right; an entry that matches nothing enforces nothing.");
-  failures.push(`${subtype} is declared but absent from the data`);
+
+  const coverage = tally(records);
+  console.log(`Rule-layer score over ${records.length} record(s) from ${DATA}\n`);
+  console.log("# coverage by subtype (who actually decides what)\n");
+  printCoverage(coverage);
+
+  const failures = [
+    ...falsePositiveFailures(records),
+    ...ownershipFailures(coverage),
+    ...boundaryFailures(coverage),
+  ];
+  reportGate(failures);
 }
 
-for (const [subtype, c] of [...coverage.entries()].sort()) {
-  const declared = OWNERSHIP.get(subtype)?.decidedBy;
-  // Being deterministic, the bar where a rule decides is EXACT: one miss on real evidence is a defect,
-  // not variance. That is the whole reason a rule owns a subtype instead of the judge.
-  if (c.dueByRule > c.caughtByRule) {
-    console.log(`RULES: ${subtype} is rule-decided on ${c.dueByRule} record(s) and caught only `
-      + `${c.caughtByRule} — ${c.missed.slice(0, 6).join(", ")}`);
-    failures.push(`${subtype} misses real evidence`);
+/** The map of who decides what. Printed always, because "nobody" is the answer most worth seeing. */
+function printCoverage(coverage: Map<string, Coverage>): void {
+  // `unavailable` subtypes have no records by construction, and they belong in this table more than
+  // anywhere else: it is the map of who decides what, and "nobody" is the answer most worth seeing.
+  const rows = [
+    ...[...coverage.entries()].map(([subtype, c]): [string, string, string] => [
+      subtype,
+      // Always over the subtype's FULL record count, so the denominator is what the head was trained on.
+      `${c.dueByRule > 0 ? c.caughtByRule : c.alsoFired}/${c.total}`,
+      verdictOf(subtype, c),
+    ]),
+    ...[...OWNERSHIP].filter(([, e]) => e.decidedBy === "unavailable").map(([subtype]): [string, string, string] => [
+      subtype, "—",
+      "NEITHER LAYER — excluded from the model; the evidence cannot express this failure",
+    ]),
+  ].sort((a, b) => a[0].localeCompare(b[0]));
+  for (const [subtype, share, verdict] of rows) {
+    console.log(`  ${subtype.padEnd(30)} ${share.padStart(8)}  ${verdict}`);
   }
-  // A declared overlap must remain one. All of it means the subtype is really the rules', and the
-  // scorer's head is being calibrated against records nobody reads; none of it means the rule broke.
-  if (declared === "overlap" && (c.alsoFired === 0 || c.alsoFired === c.total)) {
-    console.log(`RULES: ${subtype} is declared an overlap and measured ${c.alsoFired}/${c.total} — `
-      + (c.alsoFired === 0 ? "the rule no longer fires on it at all." : "the rules now cover all of it."));
-    failures.push(`${subtype} is no longer the overlap it is declared to be`);
+  console.log("");
+  console.log("");
+}
+
+function falsePositiveFailures(records: Record_[]): string[] {
+  const failures: string[] = [];
+  // A conformant page must never be failed by a deterministic rule, on ANY criterion. This used to be
+  // checked only for the criteria the rules were believed to own, which cannot see a rule that fires
+  // somewhere unexpected -- the same blindness that hid the 2.4.4 overlap.
+  const conformant = records.filter((r) => r.target.label === "clean");
+  const falsePositives = conformant.filter((r) => criteriaOf(r).size > 0);
+  console.log(`# conformant records\n  ${conformant.length} scored, ${falsePositives.length} false positive(s)`);
+  if (falsePositives.length) {
+    console.log(`  FALSE POS  ${falsePositives.slice(0, 6).map(idOf).join(", ")}`);
+    failures.push(`${falsePositives.length} conformant record(s) were failed by a deterministic rule`);
   }
-  // Undeclared and touched: whichever side is wrong, nobody is reliably deciding those records.
-  if (!declared && c.alsoFired > 0) {
-    console.log(`RULES: ${subtype} fired on ${c.alsoFired}/${c.total} record(s) and is not declared in `
-      + "rule-ownership.json — declare the overlap or stop the rule firing; a boundary nobody wrote down "
-      + "is one the scorer's release gate cannot account for.");
-    failures.push(`${subtype} is touched by the rules but undeclared`);
+  console.log("");
+  return failures;
+}
+
+/** Every declared key must exist in the data — and every `unavailable` one must NOT. */
+function ownershipFailures(coverage: Map<string, Coverage>): string[] {
+  const failures: string[] = [];
+  // Every declared key must exist in the DATA -- except the `unavailable` ones, where the assertion is
+  // exactly inverted and just as necessary.
+  //
+  // The map carried `4.1.2:unnamed-form-field` for as long as it existed and matched nothing, so the entry
+  // was neither enforcing anything nor visibly wrong; a declaration nothing can contradict is a comment.
+  //
+  // An `unavailable` subtype is excluded from the export on purpose (MODEL_EXCLUDED_SUBTYPES), so its
+  // records MUST be absent -- and if they come back, the exclusion has silently stopped working and a head
+  // is being trained on evidence that cannot express its failure. Same reasoning, opposite direction.
+  for (const [subtype, entry] of OWNERSHIP) {
+    const present = coverage.has(subtype);
+    if (entry.decidedBy === "unavailable") {
+      if (!present) continue;
+      console.log(`RULES: ${subtype} is declared unavailable and yet appears in the export. The model `
+        + "exclusion has stopped working, so a head is being trained on evidence that cannot express it.");
+      failures.push(`${subtype} is declared unavailable but present in the data`);
+      continue;
+    }
+    if (present) continue;
+    console.log(`RULES: ${subtype} is declared in rule-ownership.json and appears in no record. Either the `
+      + "corpus vocabulary moved or the key was never right; an entry that matches nothing enforces nothing.");
+    failures.push(`${subtype} is declared but absent from the data`);
+  }
+  return failures;
+}
+
+/** Whether each subtype still behaves as `rule-ownership.json` declares it does. */
+function boundaryFailures(coverage: Map<string, Coverage>): string[] {
+  const failures: string[] = [];
+  for (const [subtype, c] of [...coverage.entries()].sort()) {
+    const declared = OWNERSHIP.get(subtype)?.decidedBy;
+    // Being deterministic, the bar where a rule decides is EXACT: one miss on real evidence is a defect,
+    // not variance. That is the whole reason a rule owns a subtype instead of the judge.
+    if (c.dueByRule > c.caughtByRule) {
+      console.log(`RULES: ${subtype} is rule-decided on ${c.dueByRule} record(s) and caught only `
+        + `${c.caughtByRule} — ${c.missed.slice(0, 6).join(", ")}`);
+      failures.push(`${subtype} misses real evidence`);
+    }
+    // A declared overlap must remain one. All of it means the subtype is really the rules', and the
+    // scorer's head is being calibrated against records nobody reads; none of it means the rule broke.
+    if (declared === "overlap" && (c.alsoFired === 0 || c.alsoFired === c.total)) {
+      console.log(`RULES: ${subtype} is declared an overlap and measured ${c.alsoFired}/${c.total} — `
+        + (c.alsoFired === 0 ? "the rule no longer fires on it at all." : "the rules now cover all of it."));
+      failures.push(`${subtype} is no longer the overlap it is declared to be`);
+    }
+    // Undeclared and touched: whichever side is wrong, nobody is reliably deciding those records.
+    if (!declared && c.alsoFired > 0) {
+      console.log(`RULES: ${subtype} fired on ${c.alsoFired}/${c.total} record(s) and is not declared in `
+        + "rule-ownership.json — declare the overlap or stop the rule firing; a boundary nobody wrote down "
+        + "is one the scorer's release gate cannot account for.");
+      failures.push(`${subtype} is touched by the rules but undeclared`);
+    }
+  }
+  return failures;
+}
+
+function reportGate(failures: string[]): void {
+  if (GATE && failures.length) {
+    console.log(`\nRULES: FAIL — ${failures.length} problem(s): ${failures.join("; ")}.`);
+    process.exitCode = 1;
+  } else if (GATE) {
+    console.log("\nRULES: PASS — every declared boundary holds on real captured evidence, with no false positives.");
   }
 }
 
-if (GATE && failures.length) {
-  console.log(`\nRULES: FAIL — ${failures.length} problem(s): ${failures.join("; ")}.`);
-  process.exitCode = 1;
-} else if (GATE) {
-  console.log("\nRULES: PASS — every declared boundary holds on real captured evidence, with no false positives.");
-}
+/**
+ * Run ONLY when this file is the program, never when it is imported — so a test can reach the scoring
+ * functions above without the script running the gate and calling `process.exit`. See `entry-points.test.ts`.
+ */
+const isProgram = process.argv[1] !== undefined
+  && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isProgram) main();
