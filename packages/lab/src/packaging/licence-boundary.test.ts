@@ -117,7 +117,17 @@ test("every PUBLISHED copyleft package ships its licence text", () => {
   //
   // `nvda-speech` is private too, and ships the text regardless: it is derived from someone else's
   // GPL work, so the notice is about honouring their licence rather than satisfying ours.
-  for (const pkg of packages().filter((p) => COPYLEFT.test(p.license) && p.published)) {
+  const obliged = packages().filter((p) => COPYLEFT.test(p.license) && p.published);
+
+  // The filter is the risk, not the loop. Both halves of it are derived — `published` from `private !== true`
+  // and the licence from a regex — so one inverted read yields an empty list and this test reports success
+  // having examined nothing, while the repo ships copyleft code with no licence text. A compliance check
+  // that cannot fail is worse than none, because it is cited. Measured 5 when this was added.
+  assert.ok(obliged.length >= 4,
+    `only ${obliged.length} published copyleft package(s) found of ${packages().length} — the licence or `
+    + "`private` detection has broken, so the obligation below is being asserted over an empty list");
+
+  for (const pkg of obliged) {
     const licence = join(packagesDir, pkg.dir, "LICENSE");
     assert.ok(existsSync(licence), `${pkg.dir} is ${pkg.license} but has no LICENSE file`);
     assert.ok(statSync(licence).size > 10_000, `${pkg.dir}/LICENSE looks truncated, not the full text`);

@@ -53,13 +53,24 @@ test("the manifest carries every probe flag its case declares", () => {
   const byId = new Map(manifest.cases.map((c) => [c.id as string, c]));
 
   const dropped: string[] = [];
+  let compared = 0;
   for (const testCase of CASES as Array<Record<string, unknown>>) {
     const entry = byId.get(testCase.id as string);
     if (!entry) continue; // a case added since the last generate; the count test above is not this test's job
     for (const [flag, value] of Object.entries(probeFlags(testCase))) {
+      if (value === true) compared += 1;
       if (entry[flag] !== value) dropped.push(`${testCase.id}.${flag}: case=${value} manifest=${entry[flag]}`);
     }
   }
+
+  // The `continue` above is the whole risk. A manifest whose ids no longer match — a rename, a regenerate
+  // against a different case list — skips EVERY case, leaves `dropped` empty, and passes having compared
+  // nothing. That is the exact shape this file was written about: a probe silently not running looks
+  // identical to a page with nothing to report. Measured 764 probe-asking cases when this was added.
+  assert.ok(compared >= 100,
+    `only ${compared} probe flags were compared against the manifest (${byId.size} entries, ${CASES.length} `
+    + "cases) — the ids have stopped matching, so this test is passing over an unexamined manifest");
+
   assert.deepEqual(dropped, [],
     "a probe a case asked for did not reach the manifest, so the capture will silently not run it");
 });
