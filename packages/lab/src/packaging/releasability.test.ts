@@ -145,3 +145,29 @@ test("a rule-decided head cannot block as a REGRESSION either, not just on calib
   });
   assert.deepEqual(v.blockers, []);
 });
+
+test("a head that MISSES findings blocks, not only one that invents them", () => {
+  // The asymmetry this closes: checking false positives alone means a head that has gone silent scores a
+  // perfect precision and passes. That is the failure ADR 0015 measured — the shipped model trades two
+  // missed findings for two false accusations, and only one of those was visible to this function.
+  //
+  // Preference between the two error types belongs in the THRESHOLD a criterion is calibrated to, not in
+  // which errors a gate can see.
+  const silent = training({
+    "3.3.2:unnamed-form-field": head({ falsePositive: 0, falseNegative: 7, precision: 1, recall: 0.6 }),
+  });
+  const v = releasability({ training: silent, acceptance: { passed: true }, shipped: null });
+  assert.equal(v.releasable, false);
+  assert.match(v.blockers.join(" "), /7 missed finding\(s\)/);
+});
+
+test("a rule-decided head that misses findings still cannot block", () => {
+  // Same exemption as for false positives, and for the same reason: a rule owns that subtype, so the
+  // head's output never reaches a report and cannot miss anything a consumer would notice.
+  const owned = training({
+    "4.1.2:unnamed-control": { ...head({ falseNegative: 9, recall: 0.5 }),
+      decisionOwner: "deterministic-rules" },
+  });
+  assert.deepEqual(
+    releasability({ training: owned, acceptance: { passed: true }, shipped: null }).blockers, []);
+});

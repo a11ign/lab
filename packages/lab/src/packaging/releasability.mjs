@@ -60,9 +60,26 @@ function calibrationFailures(training) {
       failures.push(`${name}: no positive development records, so its threshold means nothing`);
       continue;
     }
+    // BOTH directions, and the symmetry is deliberate.
+    //
+    // This checked false positives only. That is defensible as a PREFERENCE — for an accessibility tool a
+    // false accusation is worse than a miss, because somebody may budget against it or be challenged over
+    // it — but it is indefensible as a blind spot: a head that has gone silent scores a perfect precision
+    // and passes, which is exactly the failure ADR 0015 measured. The shipped model trades TWO missed
+    // findings for two false accusations and only one of those was visible here.
+    //
+    // The acceptance evaluator already fails on both (`evaluate-screenreader-acceptance.py`), so this was
+    // the only place the asymmetry lived. Preference belongs in the THRESHOLD a criterion is calibrated
+    // to, which the trainer already chooses as the lowest reaching zero false positives — not in which
+    // errors a gate is capable of seeing.
     if (development.falsePositive > 0) {
       failures.push(`${name}: ${development.falsePositive} false positive(s) at threshold `
         + `${subtype.threshold} (precision ${Number(development.precision).toFixed(3)})`);
+    }
+    if (development.falseNegative > 0) {
+      failures.push(`${name}: ${development.falseNegative} missed finding(s) at threshold `
+        + `${subtype.threshold} (recall ${Number(development.recall).toFixed(3)}) — a head that has gone `
+        + "silent scores perfect precision, so this must be checked separately");
     }
   }
   return failures;
