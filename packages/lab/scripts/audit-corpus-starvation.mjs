@@ -108,10 +108,25 @@ function starvation() {
         && positives.every((row) => !row.values[name])),
     };
   }).filter(Boolean);
-  return { starved, unmatched, missing, defined: furniture.size, records: rows.length };
+  // A feature almost nothing carries is EXCLUDED from the starvation table above by
+  // MIN_CORPUS_OCCURRENCES, on the reasoning that a rare feature cannot be a shortcut. True — and it means
+  // the audit looks away from the one thing that distinguishes a rare feature from a BROKEN EXTRACTOR.
+  //
+  // `vague_link_present` sat at 5% of records for the life of the project because `link_name` anchored the
+  // role at the start of the phrase and NVDA almost never puts it there. This audit dropped it as too rare
+  // to mention; `scorer:shortcuts` reported it as a corpus-starvation veto. Both fit the evidence and only
+  // one was true, and six held-out acceptance failures came of the difference.
+  //
+  // Reported, never failed: rarity is suspicious, not wrong. `test_extractor_coverage.py` is the guard that
+  // can actually decide, by asking what fraction of announcements naming a role the extractor can read.
+  const rare = names
+    .filter((name) => occurrences[name] > 0 && occurrences[name] < MIN_CORPUS_OCCURRENCES)
+    .map((name) => ({ name, count: occurrences[name] }))
+    .sort((a, b) => a.count - b.count);
+  return { starved, rare, unmatched, missing, defined: furniture.size, records: rows.length };
 }
 
-function render({ starved, unmatched, missing, defined, records }) {
+function render({ starved, rare, unmatched, missing, defined, records }) {
   const total = starved.reduce((sum, row) => sum + row.features.length, 0);
   process.stdout.write(`\n  ${records} exported records; ${unmatched} whose case is no longer defined.\n`);
   if (unmatched > 0) {
@@ -123,6 +138,17 @@ function render({ starved, unmatched, missing, defined, records }) {
       + "predates them and every count below is computed on part of the corpus.\n"
       + "  Re-export, or ask the box that owns it:  npm run lab:job -- -e job=export\n");
   }
+  if (rare.length) {
+    process.stdout.write(`\n  ${rare.length} feature(s) fire on fewer than ${MIN_CORPUS_OCCURRENCES} `
+      + "records, so they are EXCLUDED from the table below and cannot be judged here.\n"
+      + "  Rare and correct, or an extractor that cannot read its own evidence? This audit cannot tell:\n");
+    for (const { name, count } of rare.slice(0, 8)) {
+      process.stdout.write(`    ${name.padEnd(34)} ${String(count).padStart(5)} record(s)\n`);
+    }
+    process.stdout.write("  `pytest packages/scorer/tests/test_extractor_coverage.py` is the check that "
+      + "decides.\n");
+  }
+
   process.stdout.write("\n  Features that no positive of a subtype carries, so a head could penalise them free:\n\n");
   process.stdout.write(`  ${"subtype".padEnd(32)} ${"pos".padStart(5)} ${"starved".padStart(8)}  worst\n`);
   process.stdout.write(`  ${"-".repeat(80)}\n`);
