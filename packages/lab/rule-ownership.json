@@ -49,6 +49,11 @@
       "reportsAs": "1.1.1",
       "note": "An exact-absence case. NVDA's 'unlabeled' prefix is nondeterministic, and keying on it once cost 3 of 88 -- the defect that made this gate exist."
     },
+    "3.3.2:placeholder-only": {
+      "decidedBy": "unavailable",
+      "reportsAs": "3.3.2",
+      "note": "NOT WITNESSABLE by a screen reader, and this is a property of the criterion rather than a gap in our evidence. When a field has no label the browser uses the placeholder as its accessible name, so NVDA announces it exactly as it announces a real label: `<input placeholder=\"Email address\">` and `<label>Email address</label><input>` both speak \"Email address, edit\". The difference exists only in the DOM, which is axe-core's layer -- this tool runs alongside it, not instead of it. Measured 2026-08-23: the head had no placeholder feature at all, weighted the encoder 598.9 against 9.26 for every document feature combined, and had learned the corpus's placeholder wording -- it fired on 4 of the 6 clean pages containing \"Example value\" and 0 of the 34 without. Eight false accusations on conformant pages. See ADR 0018."
+    },
     "3.3.2:unnamed-form-field": {
       "decidedBy": "rules",
       "reportsAs": "3.3.2",
