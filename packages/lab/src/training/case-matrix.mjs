@@ -2050,6 +2050,45 @@ const ACCOMPANYING_DEFECTS = Object.freeze({
     subtypes: ["2.4.4:regex"],
     grants: "vague_link_present",
   },
+  // The three below were added 2026-08-23 for a measured reason, not for variety.
+  //
+  // Per-head recall tracks the number of POSITIVES, and the cliff is around 140. Every subtype that was
+  // already an accompanying defect had 137-162 positives and recall 0.87-1.00; every subtype that was not
+  // had 38-42 and recall 0.54-0.76 — `1.3.1:fake-heading` at 41 positives and 0.54 was the worst, and it
+  // is where the remaining held-out misses live. An accompaniment multiplies a subtype's positives across
+  // every multi-defect host, which is exactly why the others are healthy.
+  //
+  // The markup is copied from the single-defect case that already demonstrates each failure, for the same
+  // reason `vague-link` reuses the corpus's own phrasings: an accompanying fake heading should be the same
+  // failure the family teaches, not a sixth thing to learn. `withAccompanyingDefects` already refuses to
+  // pair a defect with a host of its own subtype, so no page gets its own failure twice.
+  "fake-heading": {
+    markup: [
+      "<div class=\"fake-heading\">Borrowing books</div><p>Members may borrow six books at a time.</p>",
+      "<div class=\"fake-heading\">Contact and opening hours</div><p>The desk is open until five.</p>",
+      "<div class=\"fake-heading\">Where to find us</div><p>The entrance is on the east side.</p>",
+    ],
+    subtypes: ["1.3.1:fake-heading"],
+    grants: "plain_heading_candidate_present",
+  },
+  "filename-alt": {
+    markup: [
+      "<img src=\"/trail_entrance-final.jpg\" alt=\"trail_entrance-final.jpg\">",
+      "<img src=\"/site_plan_v2.png\" alt=\"site_plan_v2.png\">",
+      "<img src=\"/DSC_0421.jpg\" alt=\"DSC_0421.jpg\">",
+    ],
+    subtypes: ["1.1.1:filename-alt"],
+    grants: "filename_graphic_present",
+  },
+  "generic-alt": {
+    markup: [
+      "<img src=\"/missing-chart.png\" alt=\"image\">",
+      "<img src=\"/notice-board.png\" alt=\"photo\">",
+      "<img src=\"/summary-panel.png\" alt=\"graphic\">",
+    ],
+    subtypes: ["1.1.1:generic-alt"],
+    grants: "generic_graphic_present",
+  },
   "generic-heading": {
     markup: [
       "<h2>Welcome</h2><p>General notes about this service.</p>",
@@ -2227,12 +2266,37 @@ function withAccompanyingDefects(template, names, round = 0) {
  * purpose, with a signal that cannot be confused with its neighbour's. Recorded here rather than left for
  * `corpus:starvation` to report as an unexplained gap.
  */
+//
+// EXTENDED 2026-08-23 with the three under-represented subtypes. Per-head recall tracks the number of
+// positives and the cliff is around 140: every subtype already in this list had 137-162 and recall
+// 0.87-1.00, while `1.3.1:fake-heading` (41, recall 0.54), `1.1.1:filename-alt` (42, 0.71) and
+// `1.1.1:generic-alt` (38, 0.76) were absent from it. Appearing here is what multiplies a subtype's
+// positives across every host, which is why the original five are healthy and these three were not.
+//
+// GROWING THIS LIST RE-ROLLS EVERY MULTI-DEFECT CASE, and there is no version of it that does not.
+//
+// The rotation is chosen by `rotation % ROTATIONS.length`, so going from 5 entries to 11 changes which
+// pairing every existing host gets. Measured when this was extended: all 237 multi-defect cases changed
+// (sha256 ff29f3f903cf4694 -> beb80b93ae7cb105), invalidating 474 captures.
+//
+// I first wrote "appending is safe" here, by analogy with CASES. It is not, and the difference is worth
+// understanding: a case's FURNITURE is keyed on a hash of its own id, so it depends on nothing else; a
+// case's ROTATION is a choice from a shared list, so it depends on how many choices exist. Hashing would
+// not fix it — `hash % length` moves too. Enlarging an option space necessarily re-rolls selections from
+// it, and the only honest response is to treat it like a CAPTURE_PROTOCOL_VERSION bump: do it
+// deliberately, bundled, and pay the recapture once.
 const ROTATIONS = Object.freeze([
   ["vague-link", "generic-heading"],
   ["unnamed-graphic", "position-only-table"],
   ["bare-edit", "vague-link"],
   ["generic-heading", "unnamed-graphic"],
   ["position-only-table", "bare-edit"],
+  ["fake-heading", "vague-link"],
+  ["filename-alt", "bare-edit"],
+  ["generic-alt", "position-only-table"],
+  ["fake-heading", "unnamed-graphic"],
+  ["filename-alt", "generic-heading"],
+  ["generic-alt", "fake-heading"],
 ]);
 
 /**

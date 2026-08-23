@@ -155,6 +155,14 @@ const ACCOMPANYING_SPEECH: Record<string, string[]> = {
     "column 2, Yes",
   ],
   "bare-edit": ["edit"],
+  // Added with the three accompaniments that exist to raise under-represented subtypes above the ~140
+  // positives where per-head recall stops tracking sample size. A fake heading is a `div` styled to look
+  // like one, so NVDA announces only its TEXT — no role, no level — which is precisely the failure.
+  "fake-heading": ["Borrowing books", "Contact and opening hours", "Where to find us"],
+  "filename-alt": [
+    "graphic, trail_entrance-final.jpg", "graphic, site_plan_v2.png", "graphic, DSC_0421.jpg",
+  ],
+  "generic-alt": ["graphic, image", "graphic, photo", "graphic, graphic"],
 };
 
 test("no accompanying defect satisfies its HOST case's own badSignal", () => {
