@@ -16,7 +16,7 @@
  * is what a normal run uses; mixing a live-web fetch into it would make a routine run depend on w3.org
  * being up. This is a separate, explicit act.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -24,28 +24,59 @@ import { pagesFor, REAL_PAGES } from "./real-page-corpus.mjs";
 import { parseShard, shardOf } from "./shard.mjs";
 import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
+import { configuredWorkers } from "../../../worker-fleet/src/fleet-env.mjs";
+import { drainAcrossPool } from "./worker-pool.mjs";
+import { createHostThrottle, hostOf } from "./host-throttle.mjs";
+import { writeJsonAtomic } from "./write-atomic.mjs";
 
 const ROLE = process.argv.find((a) => a.startsWith("--role="))?.slice("--role=".length) ?? null;
-const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length)
-  ?? process.env.A11Y_WORKER
-  ?? null;
+const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length) ?? null;
 const OUT = resolve(process.cwd(), process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
 
 /**
- * The validated worker base, set by `main` once `assertWorkerUrl` has accepted it.
+ * Every worker this run may use, validated.
  *
- * A `let` rather than validating into the const above, because validating at module scope would throw on
- * IMPORT — and `node -e "import(...)"` is the only real check that an .mjs file still loads. The value that
- * was checked is the value used, which is the point: an earlier version validated a copy and left the call
- * sites reading the raw argv, so the trailing-slash normalisation silently did nothing.
+ * The fleet, not a machine. This took a single `--worker` and captured 77 pages serially while three
+ * identical boxes sat idle — ~6.5 h of a ~1.6 h job — and the escape hatch was `--shard=i/n` launched by
+ * hand N times, which is both a manual step and the exact quoting surface that once sent four shards at
+ * `--worker=http://:8765` for 29 minutes. Sharding is not parallelism; it is parallelism the operator has
+ * to perform correctly every time.
+ *
+ * `configuredWorkers()` is the same reader `doctor`, `worker:code` and `fleet:status` use, so this file
+ * cannot drift from them about what the fleet is. `--worker` still names ONE, for comparing two guests.
+ *
+ * Resolved in `main` rather than at module scope: validating on IMPORT would throw, and
+ * `node -e "import(...)"` is the only real check that an .mjs file still loads.
+ *
+ * @returns {string[]}
  */
-let WORKER_URL = null;
+function resolveWorkers() {
+  if (WORKER) return [assertWorkerUrl(WORKER, { source: "--worker" })];
+  const configured = configuredWorkers();
+  if (configured.length) return configured.map((w) => w.url);
+  throw new Error(
+    "no worker to capture with. Set A11Y_WORKERS (npm run fleet:env) for the whole fleet, or pass "
+    + "--worker=http://host:8765 to use exactly one.");
+}
 
 /** One capture may legitimately take a while: a real page is bigger than a generated one. */
 // `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
 // AbortSignal says, and the worker writes its status and body together at the END of a capture.
 // See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
-/** Between captures, so a run cannot look like a crawl to the site being fetched. */
+/**
+ * Minimum gap between requests to ONE publisher, enforced per host rather than per process.
+ *
+ * It was a `sleep` between captures, which is a property of one process: run four and every publisher sees
+ * four times the rate, so politeness silently weakened exactly as the fleet grew. Keyed on the host, the
+ * rate a site sees is the same at any fleet size — which is what makes scaling out a decision nobody has
+ * to weigh against being rude.
+ *
+ * Worth stating what the real limiter is, because it was misjudged once: a capture takes ~191 s and almost
+ * all of it is NVDA reading a page already loaded. One worker therefore fetches from a given site about
+ * once every three minutes, and this gap is ~1% of that cycle. The throttle matters for the case the
+ * arithmetic does not cover — several workers drawing pages from the SAME publisher at once, which the
+ * corpus makes likely (26 of 77 pages are w3.org).
+ */
 const POLITE_GAP_MS = 2_000;
 
 /**
@@ -78,10 +109,10 @@ function isTransientNetwork(error) {
   return TRANSIENT.has(error?.code) || /timed out|timeout/i.test(error?.message ?? "");
 }
 
-async function waitUntilReady() {
+async function waitUntilReady(workerUrl) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
-      const health = (await requestJson(`${WORKER_URL}/health`, { timeoutMs: 8_000 })).json;
+      const health = (await requestJson(`${workerUrl}/health`, { timeoutMs: 8_000 })).json;
       // `workerIsUsable`, not `ready === true`: a worker predating the field reports neither, and this
       // loop would have spent all 60 attempts against a healthy guest and then recorded "worker never
       // became ready" as a failure of the PAGE.
@@ -101,8 +132,8 @@ async function waitUntilReady() {
   return false;
 }
 
-async function capture(page) {
-  const response = await requestJson(`${WORKER_URL}/capture`, {
+async function capture(page, workerUrl) {
+  const response = await requestJson(`${workerUrl}/capture`, {
     method: "POST",
     // `probeForms` is OFF. These are somebody else's live pages, and the same rule the CLI follows applies
     // with more force here: pressing *Book* on a page we do not own is not a review. `probeFocus` is on —
@@ -125,12 +156,76 @@ async function capture(page) {
   return data;
 }
 
+/**
+ * Capture every page, across every worker, writing each as it lands.
+ *
+ * The unit of work is ONE PAGE, and unlike the synthetic corpus that is not a constraint anybody has to
+ * defend: a real page has no good/bad twin to keep on the same guest, so any worker may take any page and
+ * the queue needs no grouping. `drainAcrossPool` supplies the shared queue, per-worker failure streaks,
+ * eviction and requeue — the same dispatch the synthetic corpus, `evidence:check` and `capture:check` use,
+ * rather than a fourth implementation of "hand work to whichever box is free".
+ *
+ * Each record is written the moment its page finishes, never batched to the end. A run that dies at page
+ * 70 of 77 keeps 70 captures; batching would keep none, and these are live fetches that cannot be replayed.
+ */
+async function captureAcrossPool(pages, workers) {
+  const waitTurn = createHostThrottle({ minGapMs: POLITE_GAP_MS });
+  const captured = [];
+  const failed = [];
+
+  const outcome = await drainAcrossPool({
+    workers,
+    items: pages,
+    keyOf: (page) => page.url,
+    prepare: async (worker) => {
+      if (!await waitUntilReady(worker)) throw new Error(`worker never became ready: ${worker}`);
+      return { worker };
+    },
+    handle: async (page, { context }) => {
+      // Per publisher, not per worker — so this waits only when another worker is already on this site.
+      await waitTurn(hostOf(page.url));
+      process.stdout.write(`  ${page.role}  ${page.url}${workers.length > 1 ? `  [${context.worker}]` : ""}\n`);
+      const evidence = await capture(page, context.worker);
+      writeJsonAtomic(resolve(OUT, `${slug(page.url)}.json`), {
+        // The label travels WITH the evidence, and names who made the claim. A later step must never have
+        // to re-derive it, because re-deriving it means deciding conformance ourselves.
+        role: page.role,
+        publishedClaim: page.publishedClaim,
+        claimSource: page.source,
+        demonstrates: page.demonstrates,
+        capturedAt: new Date().toISOString(),
+        capture: evidence,
+      });
+      captured.push(page.url);
+    },
+    hooks: {
+      onWorkerUnusable: (worker, error) =>
+        process.stdout.write(`  worker unusable, skipping it: ${worker} (${error.message})\n`),
+      onItemFailed: (page, error) => {
+        process.stdout.write(`    FAILED: ${page.url}: ${error.message}\n`);
+        failed.push(`${page.url}: ${error.message}`);
+      },
+      onEvicted: (worker, { consecutiveFailures, handedBack }) =>
+        process.stdout.write(`  EVICTING ${worker} after ${consecutiveFailures} consecutive failures; `
+          + `${handedBack} page(s) go back to the queue\n`),
+    },
+  });
+  // A page requeued off an evicted worker and then captured is not a failure; the pool's list is what
+  // actually failed after every attempt.
+  for (const f of outcome.failures) {
+    const line = `${f.id ?? f.key ?? "?"}: ${f.error ?? "failed"}`;
+    if (!failed.includes(line)) failed.push(line);
+  }
+  return { captured: captured.length, failed };
+}
+
 async function main() {
-  // Validated HERE, at the boundary, before a single page is fetched. This used to be a truthiness check,
-  // and `http://:8765` is truthy — so the run started, and every page paid a five-minute readiness timeout
-  // before being recorded as a failure of the page. `assertWorkerUrl` explains what an empty host means.
+  let workers;
   try {
-    WORKER_URL = assertWorkerUrl(WORKER, { source: "--worker" });
+    // Validated HERE, at the boundary, before a single page is fetched. This used to be a truthiness check,
+    // and `http://:8765` is truthy — so the run started, and every page paid a five-minute readiness timeout
+    // before being recorded as a failure of the page. `assertWorkerUrl` explains what an empty host means.
+    workers = resolveWorkers();
   } catch (error) {
     process.stderr.write(`${error.message}\n`);
     process.exit(2);
@@ -143,33 +238,11 @@ async function main() {
   }
   mkdirSync(OUT, { recursive: true });
   process.stdout.write(`Capturing ${pages.length} real page(s)${SHARD.count > 1 ? ` (shard ${SHARD.index + 1}/${SHARD.count} of ${selected.length})` : ""} into ${OUT}\n`);
+  process.stdout.write(`Across ${workers.length} worker(s): ${workers.join(", ")}\n`);
   process.stdout.write("Never cached: these pages change, and stale evidence would be paired with a "
     + "current conformance claim.\n");
 
-  let captured = 0;
-  const failed = [];
-  for (const page of pages) {
-    if (!await waitUntilReady()) { failed.push(`${page.url}: worker never became ready`); continue; }
-    process.stdout.write(`  ${page.role}  ${page.url}\n`);
-    try {
-      const evidence = await capture(page);
-      writeFileSync(resolve(OUT, `${slug(page.url)}.json`), JSON.stringify({
-        // The label travels WITH the evidence, and names who made the claim. A later step must never have
-        // to re-derive it, because re-deriving it means deciding conformance ourselves.
-        role: page.role,
-        publishedClaim: page.publishedClaim,
-        claimSource: page.source,
-        demonstrates: page.demonstrates,
-        capturedAt: new Date().toISOString(),
-        capture: evidence,
-      }, null, 2));
-      captured += 1;
-    } catch (error) {
-      process.stdout.write(`    FAILED: ${error.message}\n`);
-      failed.push(`${page.url}: ${error.message}`);
-    }
-    await new Promise((r) => setTimeout(r, POLITE_GAP_MS));
-  }
+  const { captured, failed } = await captureAcrossPool(pages, workers);
 
   process.stdout.write(`\n${captured}/${pages.length} captured\n`);
   // Named, not counted. "3 failed" tells you nothing about whether the corpus is usable.

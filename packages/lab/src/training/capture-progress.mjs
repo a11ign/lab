@@ -15,8 +15,9 @@
  *     means something. A single capture may legitimately take minutes, so the file also
  *     carries `captureTimeoutMs`: anything past that plus slack is wedged, not working.
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { writeJsonAtomic as writeAtomic } from "./write-atomic.mjs";
+import { resolve } from "node:path";
 
 /** Grace on top of one capture timeout before a quiet run counts as wedged. */
 export const STALE_SLACK_MS = 60_000;
@@ -25,12 +26,7 @@ export function progressPath(root) {
   return resolve(root, "capture-progress.json");
 }
 
-function writeAtomic(path, value) {
-  mkdirSync(dirname(path), { recursive: true });
-  const temp = path + ".tmp";
-  writeFileSync(temp, JSON.stringify(value, null, 2) + "\n", "utf8");
-  renameSync(temp, path);
-}
+
 
 export function readProgress(root) {
   const path = progressPath(root);
