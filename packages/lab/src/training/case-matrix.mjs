@@ -2038,6 +2038,23 @@ function accompanyingMarkup(name, hostId, round) {
  * unnamed graphic announces as "graphic, to get missing image descriptions" — one phrase satisfying two
  * different subtypes' patterns. `filler-collision.test.ts` fails on anything missing from this list.
  */
+/**
+ * Accompanying defects that add a FOCUSABLE element, and the hosts they must never be paired with.
+ *
+ * A different failure from a text collision, and the collision test could not see it. `focus-order-tabindex`
+ * measures the tab order against the reading order; an accompanying `<a href>` or `<input>` ENTERS the tab
+ * order, so it perturbs the very evidence the host depends on. Measured 2026-08-23: pairing bare-edit and
+ * vague-link with that host produced the corpus's only BLIND case in 1,306 — its signal never fired on the
+ * bad page, because the accompanying controls changed what `focusOrder` recorded.
+ *
+ * The general rule, which is worth more than this instance: **an accompanying defect must not perturb the
+ * evidence CHANNEL its host is measured on.** `criterion-coverage.ts` names each criterion's channels, and
+ * the four that read `focusOrder` — 2.1.1, 2.1.2, 2.4.1, 2.4.3 — are the ones a focusable element reaches.
+ * Heading, graphic and table snippets are inert and safe for every host.
+ */
+const PERTURBS_FOCUS_ORDER = Object.freeze(["vague-link", "bare-edit"]);
+const FOCUS_ORDER_CRITERIA = Object.freeze(["2.1.1", "2.1.2", "2.4.1", "2.4.3"]);
+
 const COLLIDING_PAIRINGS = Object.freeze({
   "1.1.1:generic-alt": ["unnamed-graphic"],
   "1.1.1:filename-alt": ["unnamed-graphic"],
@@ -2076,7 +2093,9 @@ function withAccompanyingDefects(template, names, round = 0) {
   // So the collision is named where it happens rather than generalised into a rule that costs more than it
   // saves. `filler-collision.test.ts` catches any pairing this list misses — it caught the original.
   const collides = (COLLIDING_PAIRINGS[`${template.criterion}:${template.subtype}`] ?? []);
+  const readsFocusOrder = FOCUS_ORDER_CRITERIA.includes(template.criterion);
   const chosen = names.filter((name) => !collides.includes(name)
+    && !(readsFocusOrder && PERTURBS_FOCUS_ORDER.includes(name))
     && !ACCOMPANYING_DEFECTS[name].subtypes.some((s) => s === `${template.criterion}:${template.subtype}`));
   if (chosen.length === 0) return null;
   const markup = chosen.map((name) => accompanyingMarkup(name, template.id, round)).join("");

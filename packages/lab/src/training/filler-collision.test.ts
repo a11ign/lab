@@ -202,3 +202,20 @@ test("an accompanying defect has SEVERAL phrasings, or 240 pages teach one strin
       + "model learns that wording rather than the failure");
   }
 });
+
+test("an accompanying defect never perturbs the evidence channel its host is measured on", () => {
+  // A different failure from a text collision, and the delta checks above cannot see it: a focusable
+  // element ENTERS the tab order, and 2.1.1, 2.1.2, 2.4.1 and 2.4.3 are measured on `focusOrder`. Pairing
+  // a vague link or a bare edit with `focus-order-tabindex` produced the corpus's only BLIND case in
+  // 1,306 — its signal never fired on the bad page, because the accompanying controls changed what the
+  // probe recorded.
+  const FOCUSABLE = ["vague-link", "bare-edit"];
+  const READS_FOCUS_ORDER = ["2.1.1", "2.1.2", "2.4.1", "2.4.3"];
+  const offenders = (CASES as { id: string; criterion: string }[])
+    .filter((c) => c.id.includes("+also-") && READS_FOCUS_ORDER.includes(c.criterion))
+    .filter((c) => FOCUSABLE.some((name) => c.id.includes(name)))
+    .map((c) => c.id);
+  assert.deepEqual(offenders, [],
+    "these hosts are measured on focusOrder and carry an accompanying focusable element, which changes "
+    + "the tab order they are being judged on — the case goes BLIND and the label is unbacked");
+});
