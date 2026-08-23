@@ -83,6 +83,17 @@ function starvation() {
     return { values: applied, subtypes: new Set(record.target?.subtypes ?? []) };
   });
   const unmatched = records.filter((r) => !furniture.has(r.provenance.caseId)).length;
+  // The INVERSE, and the direction that was missing. `unmatched` finds records whose case has gone —
+  // a rename or a deletion. It cannot see the far commoner staleness: an export that PREDATES cases which
+  // now exist, where every record it holds is perfectly valid and hundreds simply are not there.
+  //
+  // Measured 2026-08-23: this printed `1868 exported records; 0 whose case is no longer defined` and a full
+  // starvation table, while the lab's export held 2282 records from the same commit. Every number in that
+  // table was computed on two thirds of the corpus and none of it said so. `runs/` is gitignored, so a
+  // working copy is only ever as fresh as its last sync — the same trap that had `check-signals` reporting
+  // 860 stale locally and 0 on the lab.
+  const represented = new Set(records.map((r) => r.provenance.caseId));
+  const missing = [...furniture.keys()].filter((id) => !represented.has(id)).length;
   const names = Object.keys(values[0]);
   const occurrences = Object.fromEntries(
     names.map((name) => [name, rows.filter((row) => row.values[name]).length]));
@@ -97,15 +108,20 @@ function starvation() {
         && positives.every((row) => !row.values[name])),
     };
   }).filter(Boolean);
-  return { starved, unmatched, records: rows.length };
+  return { starved, unmatched, missing, defined: furniture.size, records: rows.length };
 }
 
-function render({ starved, unmatched, records }) {
+function render({ starved, unmatched, missing, defined, records }) {
   const total = starved.reduce((sum, row) => sum + row.features.length, 0);
   process.stdout.write(`\n  ${records} exported records; ${unmatched} whose case is no longer defined.\n`);
   if (unmatched > 0) {
     process.stdout.write("  Those get NO furniture applied, so their subtypes may read as starved when they "
       + "are merely stale — re-export.\n");
+  }
+  if (missing > 0) {
+    process.stdout.write(`  ${missing} of ${defined} defined case(s) have NO record here, so this export `
+      + "predates them and every count below is computed on part of the corpus.\n"
+      + "  Re-export, or ask the box that owns it:  npm run lab:job -- -e job=export\n");
   }
   process.stdout.write("\n  Features that no positive of a subtype carries, so a head could penalise them free:\n\n");
   process.stdout.write(`  ${"subtype".padEnd(32)} ${"pos".padStart(5)} ${"starved".padStart(8)}  worst\n`);
