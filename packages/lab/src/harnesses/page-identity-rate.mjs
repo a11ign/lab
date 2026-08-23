@@ -30,7 +30,7 @@
  * is what sent an afternoon after a stale buffer that was actually a mute screen reader on a loaded host.
  * A silent capture is reported separately and is NOT counted as a wrong page.
  */
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
 import { leasePageServer } from "../training/page-server.mjs";
@@ -246,4 +246,4 @@ async function main() {
   process.exit(wrong > 0 ? 1 : 0);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) await main();
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main();
