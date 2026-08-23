@@ -9,7 +9,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-// @ts-expect-error -- .mjs helper, no declarations
 import { compareTable, criterionDetail } from "../../scripts/explain-scorer.mjs";
 
 const report = (criteria: Record<string, Partial<Record<string, unknown>>>) => ({
