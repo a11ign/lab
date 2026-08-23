@@ -145,6 +145,27 @@ RULE_SUBSTITUTED_SUBTYPES = frozenset(
     if entry["decidedBy"] == "rules" and subtype.startswith(entry["reportsAs"] + ":")
 )
 
+def note(report: dict[str, Any], message: str, *, blocking: bool) -> None:
+    """Record a calibration note, and say whether it can stop a release.
+
+    Every note used to land in one `warnings` list, and `releaseBlockedBy` was then derived by promoting
+    ALL of them. So a purely informational line -- "23 development record(s) masked as unknown by their
+    publisher's claim", which `known_indices` has already handled correctly by excluding those records from
+    the head entirely -- appeared in a report as something standing between the model and release.
+
+    Measured 2026-08-23: 40 blockers, of which 12 were that note. A reader comparing 0 blockers on the
+    shipped model against 40 on a candidate cannot tell a corpus that grew from a model that got worse, and
+    I nearly drew exactly that conclusion.
+
+    The distinction already existed and was thrown away at the last step: a blocking note flips
+    `calibrationClean`, an informational one does not. Recording it at the call site means the two lists
+    cannot disagree -- the repo's standing fix for a fact derived twice.
+    """
+    report["warnings"].append(message)
+    if blocking:
+        report["calibrationBlockers"].append(message)
+
+
 def refuse_to_destroy_release_weights(args: argparse.Namespace) -> None:
     """Do not overwrite a release-eligible model without being told to.
 
@@ -559,6 +580,8 @@ def main() -> None:
         "releaseEligible": True,
         "modelReleaseEligible": True,
         "warnings": [],
+        # Notes that can actually stop a release, kept apart from notes worth reading. See `note()`.
+        "calibrationBlockers": [],
     }
     for criterion in criteria:
         criterion_labels = torch.tensor(
@@ -580,15 +603,19 @@ def main() -> None:
             subtype_indices = known_indices(records, subtype, development_indices)
             masked = len(development_indices) - len(subtype_indices)
             if masked:
-                report["warnings"].append(
-                    f"{subtype}: {masked} development record(s) masked as unknown by their publisher's claim")
+                # Informational: `known_indices` above has already excluded these records from this head's
+                # training, threshold and metrics. It is worth knowing the development set is smaller than it
+                # looks; it is not a reason to refuse a release.
+                note(report, f"{subtype}: {masked} development record(s) masked as unknown by their "
+                     "publisher's claim", blocking=False)
             subtype_development_labels = subtype_labels[subtype_indices]
             if int(subtype_development_labels.sum()) < 20:
                 report["modelReleaseEligible"] = False
                 if subtype not in RULE_SUBSTITUTED_SUBTYPES:
                     report["releaseEligible"] = False
                     report["calibrationClean"] = False
-                report["warnings"].append(f"{subtype}: fewer than 20 positive development records")
+                note(report, f"{subtype}: fewer than 20 positive development records",
+                     blocking=subtype not in RULE_SUBSTITUTED_SUBTYPES)
             pooling = pooling_for(subtype)
             view_features, view_offsets = views[pooling]
             oof_scores = out_of_fold_scores(
@@ -693,7 +720,7 @@ def main() -> None:
                 if model_owned:
                     report["releaseEligible"] = False
                     report["calibrationClean"] = False
-                report["warnings"].append(f"{criterion}: {split} split has no positive records")
+                note(report, f"{criterion}: {split} split has no positive records", blocking=bool(model_owned))
         calibration_false_positive = criterion_report["calibration"]["falsePositive"]
         calibration_false_negative = criterion_report["calibration"]["falseNegative"]
         if calibration_false_positive or calibration_false_negative:
@@ -704,10 +731,10 @@ def main() -> None:
             if model_owned:
                 report["releaseEligible"] = False
                 report["calibrationClean"] = False
-            report["warnings"].append(
-                f"{criterion}: grouped calibration has {calibration_false_positive} false positives "
-                f"and {calibration_false_negative} false negatives"
-            )
+            note(report,
+                 f"{criterion}: grouped calibration has {calibration_false_positive} false positives "
+                 f"and {calibration_false_negative} false negatives",
+                 blocking=bool(model_owned))
         report["criteria"][criterion] = criterion_report
 
     # `releaseBlockedBy` must name the blockers that ACTUALLY exist, and it did not.
@@ -720,8 +747,12 @@ def main() -> None:
     # calibration this report was failing.
     #
     # Derived from the same `warnings` that made the decision, so the two cannot disagree.
+    # From `calibrationBlockers`, NOT from every warning. Promoting all of them put 12 informational
+    # "masked as unknown" notes into a 40-line blocker list, where a reader cannot tell a corpus that grew
+    # from a model that got worse.
     if not report["calibrationClean"]:
-        report["releaseBlockedBy"] = [f"calibration: {w}" for w in report["warnings"]] + report["releaseBlockedBy"]
+        report["releaseBlockedBy"] = ([f"calibration: {w}" for w in report["calibrationBlockers"]]
+                                      + report["releaseBlockedBy"])
 
     # A reference sample of the training distribution, so inference can tell whether a page resembles
     # anything this scorer was trained on. Measured need: every corpus record sits at cosine 0.847-0.99
