@@ -43,6 +43,20 @@ function main() {
     source: testCase.source,
     mutation: testCase.mutation,
     badSignal: testCase.badSignal,
+    // The secondary criteria a multi-defect page genuinely fails, and the THIRD time this field has been
+    // dropped by a hand-written hop. `pair()` carries the scar from the first: "a case declaring
+    // `alsoFails` without this line is silently dropped -- which it was, and the count read 0 while three
+    // case definitions carried it."
+    //
+    // Measured 2026-08-23, and this time it accused the SHIPPED model of a defect it did not have.
+    // `acceptance-link-guidance+also-generic-heading` declares `alsoFails: ["2.4.6:regex"]` and its page
+    // really does carry `<h2>Details</h2>`, a non-descriptive heading. The manifest dropped the field, the
+    // exporter reads the MANIFEST rather than the case, so the record was labelled `criteria: ["2.4.4"]`
+    // alone — and the model detecting a real 2.4.6 failure was scored a FALSE POSITIVE and reported as a
+    // held-out acceptance failure against released weights.
+    //
+    // A label that omits a defect the page actually has does not measure the model; it measures the label.
+    alsoFails: testCase.alsoFails,
     pages: writeCasePages(testCase),
   }));
 
