@@ -1950,37 +1950,85 @@ cases.push(
  */
 const ACCOMPANYING_DEFECTS = Object.freeze({
   "vague-link": {
-    markup: "<p><a href=\"#detail-note\">Read more</a></p>",
+    // FOUR phrasings, not one, and they are the corpus's own — `link-vague-details`, `-here`, `-more`
+    // and `-go` already demonstrate exactly these. Reusing them means an accompanying vague link is the
+    // same failure the single-defect family teaches, rather than a sixth thing the model must learn.
+    markup: [
+      "<p><a href=\"#detail-note\">Details</a></p>",
+      "<p><a href=\"#detail-note\">Here</a></p>",
+      "<p><a href=\"#detail-note\">More</a></p>",
+      "<p><a href=\"#detail-note\">Read more</a></p>",
+    ],
     subtypes: ["2.4.4:regex"],
     grants: "vague_link_present",
   },
   "generic-heading": {
-    markup: "<h2>Welcome</h2><p>General notes about this service.</p>",
+    markup: [
+      "<h2>Welcome</h2><p>General notes about this service.</p>",
+      "<h2>Details</h2><p>Further information is kept with the records.</p>",
+      "<h2>Things</h2><p>Assorted notes retained by the site team.</p>",
+      "<h2>Stuff</h2><p>Miscellaneous items held for reference.</p>",
+    ],
     subtypes: ["2.4.6:regex"],
     grants: "generic_heading_present",
   },
   "unnamed-graphic": {
-    markup: "<img src=\"/missing-chart.png\">",
+    // Three distinct images, because an unnamed graphic announces the same hint whatever the file is —
+    // varying the FILE varies the surrounding transcript, which is what the head reads.
+    markup: [
+      "<img src=\"/missing-chart.png\">",
+      "<img src=\"/missing-garden.png\">",
+      "<img src=\"/missing-trail.png\">",
+    ],
     subtypes: ["1.1.1:missing-alt"],
     grants: "unnamed_graphic_present",
   },
   "position-only-table": {
-    // No `scope`, so NVDA announces the data cells by position and never carries the header name into
-    // them — `row 2, column 1, ...` rather than `row 2, Note, column 1, ...`. That is the announcement
-    // `tableHeadersAreUnassociated` reads, and it is why this cannot be furniture: it is the 1.3.1 failure.
-    markup: "<table><caption>Archive index</caption>"
-      + "<tr><td>Period</td><td>Held</td></tr><tr><td>2019</td><td>Yes</td></tr></table>",
+    // No `scope`, so NVDA announces data cells by position and never carries the header name into them —
+    // `row 2, column 1, ...` rather than `row 2, Note, column 1, ...`. That is the announcement
+    // `tableHeadersAreUnassociated` reads, and it is why this cannot be furniture: it IS the 1.3.1 failure.
+    markup: [
+      "<table><caption>Archive index</caption>"
+        + "<tr><td>Period</td><td>Held</td></tr><tr><td>2019</td><td>Yes</td></tr></table>",
+      "<table><caption>Session times</caption>"
+        + "<tr><td>Day</td><td>Hours</td></tr><tr><td>Saturday</td><td>10 to 4</td></tr></table>",
+      "<table><caption>Room rates</caption>"
+        + "<tr><td>Room</td><td>Rate</td></tr><tr><td>Hall</td><td>45</td></tr></table>",
+    ],
     subtypes: ["1.3.1:unassociated-table"],
     grants: "table_position_only",
   },
   "bare-edit": {
     // Announced as a bare role with no name. Two heads, for the reason `form-unlabelled` documents at
     // length: an unnamed field is 3.3.2 and 4.1.2 as squarely as each other.
-    markup: "<p><input name=\"note-ref\" type=\"text\"></p>",
+    markup: [
+      "<p><input name=\"note-ref\" type=\"text\"></p>",
+      "<p><input name=\"ref-code\" type=\"text\"></p>",
+      "<p><input name=\"visit-note\" type=\"text\"></p>",
+    ],
     subtypes: ["3.3.2:unnamed-form-field", "4.1.2:unnamed-control"],
     grants: "bare_edit_present",
   },
 });
+
+/**
+ * Pick ONE phrasing of an accompanying defect, varying with the host so the same snippet does not land on
+ * every page.
+ *
+ * The first version of this family used a single hardcoded string per defect: "Read more" appeared on 93
+ * of 240 pages, byte-identical. That is the error this project diagnosed in the W3C real-page corpus the
+ * same week — one unnamed combo box repeated three times and counted as three failures. Scaling the number
+ * of PAGES without scaling the variety of the thing being learned teaches the string, not the concept.
+ */
+function accompanyingMarkup(name, hostId, round) {
+  const options = ACCOMPANYING_DEFECTS[name].markup;
+  let hash = 0x811c9dc5;
+  for (const character of `${hostId}|${name}|${round}`) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return options[hash % options.length];
+}
 
 /**
  * Pairings whose ANNOUNCEMENTS collide, so the accompanying defect satisfies the host's own signal.
@@ -2011,7 +2059,7 @@ const COLLIDING_PAIRINGS = Object.freeze({
  * paired with a defect it already demonstrates — that would make the accompanying evidence indistinguishable
  * from its own.
  */
-function withAccompanyingDefects(template, names) {
+function withAccompanyingDefects(template, names, round = 0) {
   // Excluded by SUBTYPE, plus an explicit list of pairings whose ANNOUNCEMENTS collide.
   //
   // This was briefly a criterion-level exclusion, and that was too blunt. It was introduced for a real
@@ -2031,7 +2079,7 @@ function withAccompanyingDefects(template, names) {
   const chosen = names.filter((name) => !collides.includes(name)
     && !ACCOMPANYING_DEFECTS[name].subtypes.some((s) => s === `${template.criterion}:${template.subtype}`));
   if (chosen.length === 0) return null;
-  const markup = chosen.map((name) => ACCOMPANYING_DEFECTS[name].markup).join("");
+  const markup = chosen.map((name) => accompanyingMarkup(name, template.id, round)).join("");
   const added = chosen.flatMap((name) => ACCOMPANYING_DEFECTS[name].subtypes);
   return pair({
     ...template,
@@ -2114,7 +2162,7 @@ function multiDefectCases(built) {
   for (const [, hosts] of [...bySubtype.entries()].sort(([a], [z]) => a.localeCompare(z))) {
     for (const template of hosts) {
       for (let round = 0; round < ROUNDS_PER_HOST; round += 1) {
-        const made = withAccompanyingDefects(template, ROTATIONS[rotation % ROTATIONS.length]);
+        const made = withAccompanyingDefects(template, ROTATIONS[rotation % ROTATIONS.length], round);
         rotation += 1;
         if (made) generated.push(made);
       }

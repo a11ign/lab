@@ -137,11 +137,19 @@ test("the furniture really is exercised, or the check above is vacuous", () => {
  * matches /link[, ]+(read more|learn more)/ whatever subtype the phrase came from.
  */
 const ACCOMPANYING_SPEECH: Record<string, string[]> = {
-  "vague-link": ["link, Read more"],
-  "generic-heading": ["heading, level 2, Welcome", "General notes about this service."],
+  // EVERY phrasing, not one. The snippets vary per host (see `accompanyingMarkup`) so checking a single
+  // wording would examine a quarter of what ships — the vacuity this file exists to prevent.
+  "vague-link": ["link, Details", "link, Here", "link, More", "link, Read more"],
+  "generic-heading": [
+    "heading, level 2, Welcome", "heading, level 2, Details",
+    "heading, level 2, Things", "heading, level 2, Stuff",
+    "General notes about this service.",
+  ],
   "unnamed-graphic": ["graphic, to get missing image descriptions"],
   "position-only-table": [
     "table, with 2 rows and 2 columns, caption, Archive index",
+    "table, with 2 rows and 2 columns, caption, Session times",
+    "table, with 2 rows and 2 columns, caption, Room rates",
     "out of caption, row 1, column 1, Period",
     "row 2, column 1, 2019",
     "column 2, Yes",
@@ -171,4 +179,26 @@ test("no accompanying defect satisfies its HOST case's own badSignal", () => {
 test("multi-defect cases exist, or the check above is vacuous", () => {
   const multi = (CASES as { id: string }[]).filter((c) => c.id.includes("+also-"));
   assert.ok(multi.length >= 20, `only ${multi.length} multi-defect cases — see docs/adr/0015-one-defect-per-page-taught-the-scorer-to-veto.md`);
+});
+
+test("an accompanying defect has SEVERAL phrasings, or 240 pages teach one string", () => {
+  // The error this guards is the one this project diagnosed in the W3C real-page corpus the same week:
+  // one unnamed combo box repeated three times, counted as three failures. The first version of the
+  // multi-defect family put a byte-identical "Read more" on 93 of 240 pages. Scaling the number of PAGES
+  // without scaling the variety of what is being learned teaches the string, not the concept.
+  const multi = (CASES as { bad: string; id: string }[]).filter((c) => c.id.includes("+also-"));
+  assert.ok(multi.length >= 100, `only ${multi.length} multi-defect cases`);
+  for (const [name, phrasings] of Object.entries(ACCOMPANYING_SPEECH)) {
+    if (phrasings.length < 2) continue; // an unnamed graphic announces one hint however many files there are
+    const distinct = new Set<string>();
+    for (const testCase of multi) {
+      for (const phrase of phrasings) {
+        const words = phrase.replace(/^(link|heading, level 2|out of caption[^,]*|row \d+[^,]*), /, "");
+        if (words && testCase.bad.includes(words.split(",")[0])) distinct.add(words);
+      }
+    }
+    assert.ok(distinct.size >= 2,
+      `${name} appears with only ${distinct.size} distinct wording(s) across the family — vary it, or the `
+      + "model learns that wording rather than the failure");
+  }
 });
