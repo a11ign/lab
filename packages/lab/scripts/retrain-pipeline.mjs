@@ -77,10 +77,21 @@ function verdict(candidateDirectory) {
   });
 }
 
-export function pipeline({ dryRun = false, steps = STEPS } = {}) {
+/**
+ * @param {object} [input]
+ * @param {boolean} [input.dryRun]   print what each step would do and run nothing
+ * @param {object[]} [input.steps]   the sequence; defaults to the real one
+ * @param {Function} [input.runStep] how to run a step. INJECTABLE so the ordering and the stop conditions
+ *   can be tested without a fleet — which is the half that has actually gone wrong. The order and the
+ *   gates were in somebody's head for months; a test that proves a failing gate stops the run needs no
+ *   worker, no lab and no corpus.
+ */
+export { STEPS };
+
+export function pipeline({ dryRun = false, steps = STEPS, runStep = run } = {}) {
   const done = [];
   for (const step of steps) {
-    const result = run(step, { dryRun });
+    const result = runStep(step, { dryRun });
     done.push({ step: step.name, ok: result.ok });
     if (!result.ok) {
       process.stdout.write(`\nSTOPPED at ${step.name}.`
