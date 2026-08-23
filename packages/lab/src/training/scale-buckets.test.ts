@@ -106,9 +106,16 @@ test("a full recapture of the bulk corpus fits one night on the pool we can actu
   // three guests over-commit a 36 GB host into swap, which is the documented way to starve workers — and
   // two measured 1.90x. So the pool is part of the affordability claim and is named here rather than
   // hidden in a comfortable single-worker number.
-  const CAPTURES = 1_696;
+  const CAPTURES = 2_612; // 1,306 pairs, after the multi-defect family grew to 240 (ADR 0015)
   const NIGHT_HOURS = 12;
-  const WORKERS_SCALING = 1.9; // measured on two guests; three is not affordable on this host
+  // MEASURED on the bare-metal fleet, 2026-08-22, not inferred: a full recapture moved 855 captures across
+  // four workers in about 193 minutes — 4.43 captures/minute against 1.56 for a single worker at the 38.5 s
+  // mean below, so 2.84x. The old 1.9 was two UTM guests sharing one Mac, which is a different machine and
+  // a different constraint (that host swapped at three guests; these are separate boxes).
+  //
+  // Quote the fleet with this number. It is four bare-metal workers on real Ethernet, and it does not
+  // transfer to a laptop running VMs.
+  const WORKERS_SCALING = 2.84;
   const mean = SCALE_BUCKETS.reduce((sum, b) => sum + captureMs(b), 0) / SCALE_BUCKETS.length;
   const oneWorkerHours = (CAPTURES * mean) / 3_600_000;
   const hours = oneWorkerHours / WORKERS_SCALING;

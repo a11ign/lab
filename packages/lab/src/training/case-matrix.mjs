@@ -1983,6 +1983,20 @@ const ACCOMPANYING_DEFECTS = Object.freeze({
 });
 
 /**
+ * Pairings whose ANNOUNCEMENTS collide, so the accompanying defect satisfies the host's own signal.
+ *
+ * Named individually rather than inferred from the criterion, because the collision is a fact about what
+ * NVDA says and not about WCAG numbering. `1.1.1:generic-alt`'s signal is /graphic.*\bimage\b/ and an
+ * unnamed graphic announces as "graphic, to get missing image descriptions" — one phrase satisfying two
+ * different subtypes' patterns. `filler-collision.test.ts` fails on anything missing from this list.
+ */
+const COLLIDING_PAIRINGS = Object.freeze({
+  "1.1.1:generic-alt": ["unnamed-graphic"],
+  "1.1.1:filename-alt": ["unnamed-graphic"],
+  "1.3.1:unassociated-table": ["position-only-table"],
+});
+
+/**
  * Pair an existing case's failure with one or more OTHER criteria's failures, on the bad variant.
  *
  * The bad variant only, because `export-screenreader-dataset.mjs` hardcodes every good variant to
@@ -1998,16 +2012,24 @@ const ACCOMPANYING_DEFECTS = Object.freeze({
  * from its own.
  */
 function withAccompanyingDefects(template, names) {
-  // Excluded by CRITERION, not by subtype. Excluding only the host's own subtype let `image-generic-alt`
-  // (1.1.1:generic-alt, signal /graphic.*\bimage\b/) be paired with the unnamed graphic (1.1.1:missing-alt),
-  // whose announcement is "graphic, to get missing image descriptions" — so the accompanying defect
-  // satisfied the HOST's signal and the case would have reported its neighbour's failure as its own.
-  // Caught by `filler-collision.test.ts` before any capture.
+  // Excluded by SUBTYPE, plus an explicit list of pairings whose ANNOUNCEMENTS collide.
   //
-  // Excluding the whole criterion is also the right rule on its own terms: a second failure of the SAME
-  // criterion adds no cross-criterion evidence, which is the only thing these pairings exist to supply.
-  const chosen = names.filter((name) => !ACCOMPANYING_DEFECTS[name].subtypes
-    .some((subtype) => subtype.split(":")[0] === template.criterion));
+  // This was briefly a criterion-level exclusion, and that was too blunt. It was introduced for a real
+  // collision — `image-generic-alt` (1.1.1:generic-alt, signal /graphic.*\bimage\b/) paired with the
+  // unnamed graphic (1.1.1:missing-alt), whose announcement is "graphic, to get missing image
+  // descriptions", so the accompanying defect satisfied the HOST's own signal. But excluding the whole
+  // criterion also blocked the one pairing 3.3.2 most needs.
+  //
+  // Measured (ADR 0015, 2026-08-23): `3.3.2:placeholder-only`'s false positives are `form-unlabelled-*`
+  // pages. The two failures are genuinely similar — both are form fields lacking a proper label — the veto
+  // was what separated them, and NO page in the corpus contains both, so the head has never been shown the
+  // difference. Pairing them is exactly the fix, and the criterion rule forbade it.
+  //
+  // So the collision is named where it happens rather than generalised into a rule that costs more than it
+  // saves. `filler-collision.test.ts` catches any pairing this list misses — it caught the original.
+  const collides = (COLLIDING_PAIRINGS[`${template.criterion}:${template.subtype}`] ?? []);
+  const chosen = names.filter((name) => !collides.includes(name)
+    && !ACCOMPANYING_DEFECTS[name].subtypes.some((s) => s === `${template.criterion}:${template.subtype}`));
   if (chosen.length === 0) return null;
   const markup = chosen.map((name) => ACCOMPANYING_DEFECTS[name].markup).join("");
   const added = chosen.flatMap((name) => ACCOMPANYING_DEFECTS[name].subtypes);
@@ -2058,19 +2080,44 @@ const ROTATIONS = Object.freeze([
   ["position-only-table", "bare-edit"],
 ]);
 
+/**
+ * How many DIFFERENT host cases each subtype contributes, and how many rotations each host gets.
+ *
+ * The first version took ONE host per subtype and gave it three rotations — 60 cases, each
+ * host-plus-accompanying pairing seen once or twice. Measured (ADR 0015, 2026-08-23): that was enough to
+ * demonstrate the mechanism and not enough to learn from. The false positives in the retrained candidate
+ * were the multi-defect pages themselves — 9 of 10 for 2.4.1, 12 of 13 for 2.4.3 — because removing the
+ * veto shortcut replaced an easy question ("my defect, or clean?") with a hard one ("my defect, or
+ * somebody else's?") that the corpus barely taught.
+ *
+ * So: more hosts, so a pairing appears on many different pages rather than one. `HOSTS_PER_SUBTYPE` is
+ * what actually varies the page; `ROUNDS_PER_HOST` varies which defects accompany it.
+ *
+ * The cost is capture time and it is bounded by `scale-buckets.test.ts`, which holds the night budget
+ * against MEASURED fleet throughput. Raise these only with that test passing.
+ */
+const HOSTS_PER_SUBTYPE = 5;
+const ROUNDS_PER_HOST = 3;
+
 function multiDefectCases(built) {
+  // Every case per subtype, not just the first, so the hosts differ in their page content and not only in
+  // which defect was bolted on. A pairing repeated across five different pages teaches the distinction;
+  // the same page five times teaches the page.
   const bySubtype = new Map();
   for (const testCase of built) {
     const key = `${testCase.criterion}:${testCase.subtype}`;
-    if (!bySubtype.has(key)) bySubtype.set(key, testCase);
+    const hosts = bySubtype.get(key) ?? [];
+    if (hosts.length < HOSTS_PER_SUBTYPE) bySubtype.set(key, [...hosts, testCase]);
   }
   const generated = [];
   let rotation = 0;
-  for (const template of [...bySubtype.values()].sort((a, z) => a.id.localeCompare(z.id))) {
-    for (let round = 0; round < 3; round += 1) {
-      const made = withAccompanyingDefects(template, ROTATIONS[rotation % ROTATIONS.length]);
-      rotation += 1;
-      if (made) generated.push(made);
+  for (const [, hosts] of [...bySubtype.entries()].sort(([a], [z]) => a.localeCompare(z))) {
+    for (const template of hosts) {
+      for (let round = 0; round < ROUNDS_PER_HOST; round += 1) {
+        const made = withAccompanyingDefects(template, ROTATIONS[rotation % ROTATIONS.length]);
+        rotation += 1;
+        if (made) generated.push(made);
+      }
     }
   }
   return generated;

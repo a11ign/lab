@@ -108,7 +108,8 @@ function changesetPath(candidateName) {
   return join(CHANGESETS, `promote-${candidateName}-${existing + 1}.md`);
 }
 
-export function promote({ candidate, candidateName, dryRun, acceptRegression, shippedReport }) {
+export function promote({ candidate, candidateName, dryRun = false, acceptRegression = false,
+  shippedReport = null }) {
   const { training, acceptance } = assertPromotable(candidate, shippedReport, acceptRegression);
   const entry = `---
 "@a11y-witness/scorer": major
