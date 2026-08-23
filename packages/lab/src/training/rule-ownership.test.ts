@@ -55,13 +55,27 @@ test("an overlap is kept distinct from a rule-decided subtype", () => {
   assert.equal(ownership.get("2.4.4:regex")?.decidedBy, "overlap");
 });
 
-test("the criterion a rule REPORTS may differ from the subtype's own, and is carried", () => {
-  // The fact the whole design turns on: an unnamed form field is 3.3.2 in the corpus and a 4.1.2
-  // finding from the rules. It lived in a Python comment the TypeScript side could not see, so that
-  // side invented `4.1.2:unnamed-form-field` — a key matching no record.
+test("a rule-decided subtype reports its OWN criterion, or the head it should replace cannot go", () => {
+  // This asserted the opposite until 2026-08-23: exactly one entry cross-reported, and that was treated as
+  // a fact of the design. It was a defect, and ADR 0017 records what it cost.
+  //
+  // `train-screenreader-model.py` substitutes a rule for a head only when the rule reports the head's own
+  // criterion — correctly, because a rule answering a DIFFERENT criterion leaves the head as the only thing
+  // that can produce a finding for this one. So a cross-reporting entry declares "the rules decide this" and
+  // simultaneously guarantees the head stays. `3.3.2:unnamed-form-field` sat in that state: decided 115/115
+  // by rules that reported only 4.1.2, so the head remained, and it produced EIGHT false accusations on
+  // conformant form pages before anyone looked.
+  //
+  // The fix was to make the rule report 3.3.2 as well, which it should always have done — an unnamed input
+  // has no accessible name AND no label. A future cross-reporting entry is the same trap, so it fails here.
   const ownership = readRuleOwnership();
-  const crossReporting = [...ownership].filter(([key, e]) => !key.startsWith(`${e.reportsAs}:`));
-  assert.deepEqual(crossReporting.map(([key]) => key), ["3.3.2:unnamed-form-field"]);
+  const crossReporting = [...ownership]
+    .filter(([, e]) => e.decidedBy === "rules")
+    .filter(([key, e]) => !key.startsWith(`${e.reportsAs}:`));
+  assert.deepEqual(crossReporting.map(([key]) => key), [],
+    "a rule-decided subtype whose rule reports a different criterion cannot substitute for its head, so the "
+    + "head stays: load-bearing in production and answering a criterion nothing else covers. Either make the "
+    + "rule report this criterion too, or mark the subtype model-decided and mean it.");
 });
 
 test("a missing file throws rather than reading as an empty boundary", () => {

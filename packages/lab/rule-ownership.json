@@ -27,7 +27,7 @@
     "## `reportsAs` exists because the two layers disagree, defensibly",
     "",
     "The corpus labels an unnamed form field `3.3.2:unnamed-form-field` (a missing label); the rule",
-    "reports it under 4.1.2 (a missing accessible name). Both are correct readings of the same page.",
+    "reported it under 4.1.2 alone until ADR 0017; it now reports BOTH, because both are true.",
     "Declaring the mapping is the only way the gate can check the rule fired at all -- and previously",
     "this fact lived in a Python comment that the TypeScript side could not see, which is why the",
     "TypeScript side invented a key for it.",
@@ -51,8 +51,8 @@
     },
     "3.3.2:unnamed-form-field": {
       "decidedBy": "rules",
-      "reportsAs": "4.1.2",
-      "note": "See `reportsAs` above: the corpus calls it a missing label, the rule calls it a missing accessible name. These records also carry `4.1.2:missing-role`, so the gate must credit that subtype for them too or its boundary reads as ragged."
+      "reportsAs": "3.3.2",
+      "note": "3.3.2 since 2026-08-23 (ADR 0017). The rule ALSO reports 4.1.2 for this evidence -- an unnamed input fails both -- and `4.1.2:unnamed-control` carries that side. What `reportsAs` decides is whether the rule SUBSTITUTES for this head, and it now does. While this said 4.1.2 the trainer kept a head for a subtype the rules already decided 115/115, because nothing emitted the criterion the corpus labels, and that head produced eight false accusations on conformant form pages. These records also carry `4.1.2:missing-role`, so the gate must credit that subtype for them too or its boundary reads as ragged."
     },
     "4.1.2:unnamed-control": {
       "decidedBy": "rules",
