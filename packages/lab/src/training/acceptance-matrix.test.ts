@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
+import { ACCEPTANCE_CASES, ALL_ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
 import { SIGNAL_TYPES } from "./case-matrix.mjs";
 import { WCAG_22_AA } from "@a11y-witness/evidence/wcag";
 
@@ -119,5 +119,25 @@ test("probe flags are booleans, because the wire treats anything else as false",
       assert.ok(c[flag] === undefined || typeof c[flag] === "boolean",
         `${c.id}.${flag} is ${typeof c[flag]}, and the worker coerces it`);
     }
+  }
+});
+
+test("held-out acceptance can express a MULTI-DEFECT page, or it cannot fail on one", () => {
+  // Measured 2026-08-23: the `varied` candidate scored 58 TP / 0 FP / 0 FN on acceptance — a perfect pass
+  // — while its own development figures showed `3.3.2:placeholder-only` at precision 0.244. Acceptance
+  // could not see the difference because 0 of its 35 cases had more than one defect, and multi-defect
+  // pages are exactly where the heads struggle. A gate that cannot represent the hard case cannot fail
+  // on it, which is ADR 0015's own lesson landing on the gate that judges ADR 0015's fix.
+  const multi = ALL_ACCEPTANCE_CASES.filter((c) => (c.alsoFails ?? []).length > 0);
+  assert.ok(multi.length >= 5, `only ${multi.length} multi-defect acceptance cases`);
+  const hosts = new Set(multi.map((c) => `${c.criterion}:${c.subtype}`));
+  assert.ok(hosts.has("3.3.2:placeholder-only"),
+    "the head that actually fails on multi-defect pages must be covered, or this set repeats the omission");
+});
+
+test("a multi-defect acceptance case never claims its own subtype twice", () => {
+  for (const c of ALL_ACCEPTANCE_CASES) {
+    assert.ok(!(c.alsoFails ?? []).includes(`${c.criterion}:${c.subtype}`),
+      `${c.id} lists its own subtype in alsoFails, which double-counts one failure`);
   }
 });

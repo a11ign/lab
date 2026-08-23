@@ -68,25 +68,30 @@ function calibrationFailures(training) {
   return failures;
 }
 
-/** Heads that lost ground against the model already shipped. New heads are coverage, not regression. */
-function regressions(training, shipped, tolerance) {
-  if (!shipped) return [];
-  const before = new Map();
-  for (const { name, subtype } of heads(shipped)) before.set(name, subtype?.development ?? {});
+/**
+ * Heads that lost ground against the model already shipped — measured on the FIXED held-out set.
+ *
+ * The first version compared each model's own DEVELOPMENT figures, and that is not a like-for-like
+ * comparison. A development split describes the corpus a model was trained on: the shipped model's
+ * contains no multi-defect pages and the current candidate's contains 237, so `1.3.1:fake-heading recall
+ * 1.000 -> 0.553` was the same head measured on a substantially harder population, reported as a
+ * regression. Thirteen of sixteen blockers on the first real candidate were that artefact.
+ *
+ * Acceptance is the same 35 cases for every model, so it is the only figure two models can be compared on.
+ * Per CRITERION rather than per subtype, because that is the granularity acceptance reports.
+ *
+ * A criterion the shipped model was not evaluated on is NOT a regression — it is new coverage.
+ */
+function regressions(acceptance, shippedAcceptance, tolerance) {
+  if (!acceptance || !shippedAcceptance) return [];
   const worse = [];
-  for (const { name, subtype } of heads(training)) {
-    // Skipped for the SAME reason calibration failures are: a rule owns this subtype, so the head's
-    // output never reaches a report and cannot get better or worse from a consumer's point of view.
-    // Blocking here while the notes say the head cannot block was an inconsistency in this file's first
-    // version, and it fired on the very first real candidate — `4.1.2:unnamed-control` and
-    // `1.1.1:filename-alt` appeared as blockers and as "cannot block" in the same output.
-    if (isRuleDecided(subtype)) continue;
-    const was = before.get(name);
-    const now = subtype?.development;
-    if (!was || was.precision === undefined || !now || now.precision === undefined) continue;
+  for (const [criterion, now] of Object.entries(acceptance.criteria ?? {})) {
+    const was = (shippedAcceptance.criteria ?? {})[criterion];
+    if (!was?.modelEvaluated || !now?.modelEvaluated) continue;
     for (const metric of ["precision", "recall"]) {
+      if (was[metric] === undefined || now[metric] === undefined) continue;
       if (now[metric] < was[metric] - tolerance) {
-        worse.push(`${name} ${metric} ${was[metric].toFixed(3)} -> ${now[metric].toFixed(3)}`);
+        worse.push(`${criterion} held-out ${metric} ${was[metric].toFixed(3)} -> ${now[metric].toFixed(3)}`);
       }
     }
   }
@@ -97,10 +102,12 @@ function regressions(training, shipped, tolerance) {
  * @param {object} input
  * @param {object} input.training    the candidate's training report
  * @param {object|null} input.acceptance  its acceptance report, or null if never evaluated
- * @param {object|null} input.shipped     the currently shipped model's training report, or null
+ * @param {object|null} input.shipped     the shipped model's training report, or null
+ * @param {object|null} [input.shippedAcceptance] its ACCEPTANCE report — the only fixed-set baseline
  * @returns {{releasable: boolean, blockers: string[], notes: string[]}}
  */
-export function releasability({ training, acceptance, shipped, tolerance = REGRESSION_TOLERANCE }) {
+export function releasability({ training, acceptance, shipped, shippedAcceptance,
+  tolerance = REGRESSION_TOLERANCE }) {
   const blockers = [];
   const notes = [];
 
@@ -115,7 +122,7 @@ export function releasability({ training, acceptance, shipped, tolerance = REGRE
   }
 
   blockers.push(...calibrationFailures(training));
-  blockers.push(...regressions(training, shipped, tolerance));
+  blockers.push(...regressions(acceptance, shippedAcceptance, tolerance));
 
   const ruleOwned = [...heads(training)].filter(({ subtype }) => isRuleDecided(subtype)).map((h) => h.name);
   if (ruleOwned.length > 0) {
@@ -123,6 +130,13 @@ export function releasability({ training, acceptance, shipped, tolerance = REGRE
       + `release: ${ruleOwned.join(", ")}`);
   }
   if (!shipped) notes.push("no model is shipped yet, so nothing was compared against");
+  else if (!shippedAcceptance) {
+    // Said out loud rather than silently skipped. A promotion that compares against nothing, while
+    // looking like it compared, is how a worse model ships — and until 2026-08-23 the shipped model
+    // carried no acceptance report at all, so there was nothing to compare against.
+    notes.push("the shipped model has no acceptance report stored, so NO regression comparison was "
+      + "possible — promote:model now keeps one, so the next candidate can be compared");
+  }
 
   return { releasable: blockers.length === 0, blockers, notes };
 }

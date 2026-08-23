@@ -103,23 +103,18 @@ test("a dry run writes nothing", () => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a candidate WORSE than the shipped model is refused, even if it passed both gates", () => {
-  // The gap this closes: `releaseEligible` and `passed` are absolute bars — "good enough" — and a
-  // candidate can clear both while losing ground on a criterion nobody looked at. Measured on the first
-  // candidate this was applied to: identical recall, and 3.3.2:placeholder-only precision 1.000 -> 0.368.
-  const shipped = {
-    criteria: { "3.3.2": { subtypes: { "3.3.2:placeholder-only":
-      { threshold: 0.45, development: { positive: 20, precision: 1, recall: 1, falsePositive: 0 } } } } },
-  };
-  const worse = {
-    ...REPORT,
-    criteria: { "3.3.2": { subtypes: { "3.3.2:placeholder-only":
-      { threshold: 0.5, development: { positive: 23, precision: 0.368, recall: 0.913, falsePositive: 0 } } } } },
-  };
-  const { dir, name } = candidate(worse, { passed: true });
+test("a candidate worse on the FIXED held-out set is refused, even having passed its own gates", () => {
+  // Compared on acceptance, not development — a development split describes the corpus a model was trained
+  // on, and comparing two models' own splits reports the harder corpus as a regression. Thirteen of
+  // sixteen blockers on the first real candidate were that artefact.
+  const shippedAcceptance = { passed: true,
+    criteria: { "3.3.2": { modelEvaluated: true, precision: 1, recall: 1 } } };
+  const { dir, name } = candidate(REPORT, { passed: true,
+    criteria: { "3.3.2": { modelEvaluated: true, precision: 0.4, recall: 1 } } });
   assert.throws(
-    () => promote({ candidate: dir, candidateName: name, dryRun: true, shippedReport: shipped }),
-    /not releasable[\s\S]*placeholder-only precision 1\.000 -> 0\.368/);
+    () => promote({ candidate: dir, candidateName: name, dryRun: true,
+      shippedReport: REPORT, shippedAcceptance }),
+    /not releasable[\s\S]*3\.3\.2 held-out precision 1\.000 -> 0\.400/);
   rmSync(dir, { recursive: true, force: true });
 });
 

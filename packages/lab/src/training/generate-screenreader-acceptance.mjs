@@ -1,7 +1,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { relative, resolve } from "node:path";
-import { ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
+// ALL of them, single- and multi-defect. Generating only the single-defect set is what made held-out
+// acceptance blind to the case the trained heads actually fail on — see `alsoCarrying` for the measurement.
+import { ALL_ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-acceptance");
 const PAGE_ROOT = resolve(ROOT, "pages");
@@ -30,7 +32,7 @@ function writeCasePages(testCase) {
  * is why these were placed by reading each file rather than by a tool.
  */
 function main() {
-  const cases = ACCEPTANCE_CASES.map((testCase) => ({
+  const cases = ALL_ACCEPTANCE_CASES.map((testCase) => ({
     id: testCase.id,
     family: testCase.family,
     criterion: testCase.criterion,

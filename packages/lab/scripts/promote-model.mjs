@@ -54,12 +54,12 @@ function readReport(path, what) {
  * prevents is promoting a model because you believe it is good, which is exactly the state of mind in
  * which the belief is wrong.
  */
-function assertPromotable(candidate, shipped, acceptRegression) {
+function assertPromotable(candidate, shipped, shippedAcceptance, acceptRegression) {
   const training = readReport(join(candidate, "training-report.json"), "the training report");
   const acceptance = existsSync(join(candidate, "acceptance-report.json"))
     ? JSON.parse(readFileSync(join(candidate, "acceptance-report.json"), "utf8"))
     : null;
-  const verdict = releasability({ training, acceptance, shipped });
+  const verdict = releasability({ training, acceptance, shipped, shippedAcceptance });
   const blockers = acceptRegression
     ? verdict.blockers.filter((b) => !/ (precision|recall) [\d.]+ -> /.test(b))
     : verdict.blockers;
@@ -115,10 +115,12 @@ function changesetPath(candidateName) {
  * @param {boolean} [input.dryRun]       print what would happen and write nothing
  * @param {boolean} [input.acceptRegression]  allow a deliberate loss against the shipped model
  * @param {object|null} [input.shippedReport] the shipped model's training report, or null on a first release
+ * @param {object|null} [input.shippedAcceptance] its acceptance report — the only fixed-set baseline
  */
 export function promote({ candidate, candidateName, dryRun = false, acceptRegression = false,
-  shippedReport = null }) {
-  const { training, acceptance } = assertPromotable(candidate, shippedReport, acceptRegression);
+  shippedReport = null, shippedAcceptance = null }) {
+  const { training, acceptance } = assertPromotable(candidate, shippedReport, shippedAcceptance,
+    acceptRegression);
   const entry = `---
 "@a11y-witness/scorer": major
 ---
@@ -145,7 +147,10 @@ ${acceptRegression ? "\n**Accepted with a known regression against the previousl
     return { target, entry };
   }
   mkdirSync(SHIPPED, { recursive: true });
-  for (const file of ["model.safetensors", "training-report.json"]) {
+  // The acceptance report ships WITH the weights, and that is not tidiness. It is the only fixed-set
+  // measurement a future candidate can be compared against — the shipped model had none, which is why the
+  // first regression check fell back to development figures and reported thirteen false regressions.
+  for (const file of ["model.safetensors", "training-report.json", "acceptance-report.json"]) {
     cpSync(join(candidate, file), join(SHIPPED, file));
   }
   writeFileSync(target, entry);
@@ -174,6 +179,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
       // Compared against whatever is shipped RIGHT NOW, read at promotion time. A baseline recorded
       // earlier would describe a model that may already have been replaced.
       shippedReport: existsSync(shippedPath) ? JSON.parse(readFileSync(shippedPath, "utf8")) : null,
+      // Kept beside the weights by this same command, so every promotion leaves a baseline for the next.
+      shippedAcceptance: existsSync(join(SHIPPED, "acceptance-report.json"))
+        ? JSON.parse(readFileSync(join(SHIPPED, "acceptance-report.json"), "utf8"))
+        : null,
     });
   } catch (cause) {
     process.stderr.write(`REFUSING to promote: ${cause.message}\n`);

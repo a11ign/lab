@@ -20,7 +20,8 @@ function page({ title, heading, body, script = "", landmark = true }) {
     + (script ? "<script>" + script + "</script>" : "") + "</body></html>";
 }
 
-function pair({ id, criterion, subtype, task, mutation, badSignal, good, bad, probeForms = false, probeTables = false }) {
+function pair({ id, criterion, subtype, task, mutation, badSignal, good, bad, probeForms = false,
+  probeTables = false, alsoFails = [] }) {
   return {
     id: "acceptance-" + id,
     family: "acceptance-" + id,
@@ -32,10 +33,49 @@ function pair({ id, criterion, subtype, task, mutation, badSignal, good, bad, pr
     badSignal,
     probeForms,
     probeTables,
+    // `alsoFails` was absent here entirely, so a multi-defect acceptance case was not expressible — which
+    // is why 0 of 35 acceptance cases carried one, and why held-out acceptance passed a model that fails
+    // on multi-defect pages. A gate that cannot represent the hard case cannot fail on it.
+    alsoFails,
     good,
     bad,
   };
 }
+
+/**
+ * The same case, with another criterion's failure added to its bad page.
+ *
+ * Measured 2026-08-23 and this is the whole reason it exists: the `varied` candidate scored 58 TP, 0 FP,
+ * 0 FN on held-out acceptance — a perfect pass — while its own development figures showed
+ * `3.3.2:placeholder-only` at precision 0.244. Acceptance could not see the difference because **0 of its
+ * 35 cases had more than one defect**, and multi-defect pages are exactly where the trained heads now
+ * struggle. That is ADR 0015's own lesson landing on the gate that judges ADR 0015's fix: a metric
+ * computed on data that lacks the hard case cannot see failure on the hard case.
+ *
+ * Deliberately a SMALL set. Acceptance is held out and stays that way: these are new pages built on
+ * acceptance's own instruments, never copies of training hosts, and the point is that the gate can
+ * EXPRESS the case — not that it re-measures the whole corpus.
+ */
+function alsoCarrying(base, { suffix, markup, adds, describes }) {
+  return {
+    ...base,
+    id: `${base.id}+also-${suffix}`,
+    family: `${base.family}+also-${suffix}`,
+    mutation: `${base.mutation} It ALSO carries ${describes}.`,
+    alsoFails: [...new Set([...(base.alsoFails ?? []), ...adds])],
+    bad: base.bad.replace("</body>", `${markup}</body>`),
+  };
+}
+
+/** The accompanying failures, matching the training family's wording so the two teach the same thing. */
+const ACCEPTANCE_ACCOMPANYING = Object.freeze({
+  "vague-link": { markup: "<p><a href=\"#note\">Details</a></p>", adds: ["2.4.4:regex"],
+    describes: "a vague link" },
+  "bare-edit": { markup: "<p><input name=\"ref-code\" type=\"text\"></p>",
+    adds: ["3.3.2:unnamed-form-field", "4.1.2:unnamed-control"], describes: "an unlabelled field" },
+  "generic-heading": { markup: "<h2>Details</h2><p>Further notes are held with the records.</p>",
+    adds: ["2.4.6:regex"], describes: "a vague heading" },
+});
 
 function imagePair({ id, title, description, file, goodAlt, badAlt, subtype, task }) {
   const badName = badAlt === null
@@ -280,3 +320,39 @@ export const ACCEPTANCE_CASES = Object.freeze([
   statusPair({ id: "status-new", title: "New items", control: "Show new items", task: "Show new items and notice the result count." }),
   statusPair({ id: "status-local", title: "Local items", control: "Show local items", task: "Show local items and notice the result count." }),
 ]);
+
+/**
+ * MULTI-DEFECT acceptance cases — the hard case the gate could not previously express.
+ *
+ * Six, derived from acceptance's OWN pairs so they stay held out and disjoint from training. Each takes a
+ * single-defect acceptance case and adds another criterion's failure to its bad page, exactly as the
+ * training family does — so a model that has learned "my defect versus somebody else's" passes, and one
+ * that has learned "this page has something wrong with it" does not.
+ *
+ * Chosen to cover the heads that actually struggled: 3.3.2 (both subtypes), 2.4.4, 1.3.1 and 4.1.2. A
+ * pairing is never made with the host's own subtype, and never adds a focusable element to a host measured
+ * on `focusOrder` — the two rules the training family learned the hard way.
+ */
+const MULTI_DEFECT_ACCEPTANCE = Object.freeze(
+  [
+    // `placeholder-email` paired with a bare edit is the single most important row here: it is exactly the
+    // discrimination `3.3.2:placeholder-only` fails, and no page in either corpus contained both.
+    ["placeholder-email", "bare-edit"],
+    ["field-company", "vague-link"],
+    ["disclosure-access", "generic-heading"],
+    ["link-guidance", "generic-heading"],
+    ["table-bus", "vague-link"],
+    ["fake-hours", "bare-edit"],
+    ["generic-lantern", "vague-link"],
+  ]
+    .map(([id, suffix]) => {
+      const base = ACCEPTANCE_CASES.find((c) => c.id === `acceptance-${id}`);
+      if (!base) return null; // an id that no longer exists is caught by `acceptance-matrix.test.ts`
+      return alsoCarrying(base, { suffix, ...ACCEPTANCE_ACCOMPANYING[suffix] });
+    })
+    .filter(Boolean),
+);
+
+/** Everything the acceptance run captures: the single-defect instruments plus the multi-defect ones. */
+export const ALL_ACCEPTANCE_CASES = Object.freeze([...ACCEPTANCE_CASES, ...MULTI_DEFECT_ACCEPTANCE]);
+

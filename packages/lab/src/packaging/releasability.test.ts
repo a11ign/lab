@@ -75,21 +75,56 @@ test("a head with no positive development records blocks, rather than passing va
   assert.match(v.blockers.join(" "), /no positive development records/);
 });
 
-test("losing ground against the shipped model blocks; new coverage does not", () => {
-  const shipped = training({ "3.3.2:unnamed-form-field": head() });
-  const worse = training({
-    "3.3.2:unnamed-form-field": head({ recall: 0.8 }),
-    "3.3.2:brand-new": head(),
+/** An acceptance report, which is the only figure two models can be compared on — the same 35 cases. */
+const accepted = (criteria: Record<string, unknown>) => ({ passed: true, criteria });
+const crit = (precision: number, recall: number) => ({ modelEvaluated: true, precision, recall });
+
+test("losing ground on the FIXED held-out set blocks; new coverage does not", () => {
+  // Compared on acceptance, never on development. A development split describes the corpus a model was
+  // trained on: the shipped model's has no multi-defect pages and the candidate's has 237, so the same
+  // head measured on a harder population read as a regression. Thirteen of sixteen blockers on the first
+  // real candidate were that artefact.
+  const v = releasability({
+    training: CLEAN,
+    acceptance: accepted({ "3.3.2": crit(1, 0.8), "2.4.9": crit(0.5, 0.5) }),
+    shipped: CLEAN,
+    shippedAcceptance: accepted({ "3.3.2": crit(1, 1) }),
   });
-  const v = releasability({ training: worse, acceptance: { passed: true }, shipped });
   assert.equal(v.blockers.length, 1, JSON.stringify(v.blockers));
-  assert.match(v.blockers[0], /unnamed-form-field recall 1\.000 -> 0\.800/);
+  assert.match(v.blockers[0], /3\.3\.2 held-out recall 1\.000 -> 0\.800/);
+});
+
+test("a development regression is NOT a blocker, because the splits are not comparable", () => {
+  // The corrected behaviour, asserted so it cannot quietly return: a candidate whose development figures
+  // are worse but whose held-out figures hold is releasable.
+  const worseDevelopment = training({
+    "3.3.2:unnamed-form-field": head({ precision: 1, recall: 0.55, falsePositive: 0 }),
+  });
+  const v = releasability({
+    training: worseDevelopment,
+    acceptance: accepted({ "3.3.2": crit(1, 1) }),
+    shipped: CLEAN,
+    shippedAcceptance: accepted({ "3.3.2": crit(1, 1) }),
+  });
+  assert.deepEqual(v.blockers, []);
+});
+
+test("no stored acceptance baseline is SAID, not silently skipped", () => {
+  // A promotion that compares against nothing while looking like it compared is how a worse model ships.
+  const v = releasability({
+    training: CLEAN, acceptance: { passed: true }, shipped: CLEAN, shippedAcceptance: null,
+  });
+  assert.match(v.notes.join(" "), /no acceptance report stored, so NO regression comparison/);
 });
 
 test("noise below the tolerance is not a regression", () => {
-  const shipped = training({ "3.3.2:unnamed-form-field": head() });
-  const jitter = training({ "3.3.2:unnamed-form-field": head({ precision: 0.999 }) });
-  assert.equal(releasability({ training: jitter, acceptance: { passed: true }, shipped }).releasable, true);
+  const v = releasability({
+    training: CLEAN,
+    acceptance: accepted({ "3.3.2": crit(0.999, 1) }),
+    shipped: CLEAN,
+    shippedAcceptance: accepted({ "3.3.2": crit(1, 1) }),
+  });
+  assert.equal(v.releasable, true, JSON.stringify(v.blockers));
 });
 
 test("no shipped model is a NOTE, not a blocker — the first release must be possible", () => {
