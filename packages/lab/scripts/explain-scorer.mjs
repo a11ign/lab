@@ -19,7 +19,20 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const RUNS = resolve(process.cwd(), process.env.RUNS_ROOT || "runs");
-const arg = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
+/**
+ * `--name=value` or `--name value`, because both are what people type.
+ *
+ * It accepted only the first, while this file's own usage line showed the second — so the first real use
+ * printed usage instead of an answer. A tool whose help contradicts its parser is worse than one with no
+ * help: the reader trusts it and is wrong.
+ */
+const arg = (name) => {
+  const argv = process.argv;
+  const joined = argv.find((a) => a.startsWith(`--${name}=`));
+  if (joined) return joined.slice(name.length + 3);
+  const at = argv.indexOf(`--${name}`);
+  return at >= 0 && argv[at + 1] && !argv[at + 1].startsWith("--") ? argv[at + 1] : undefined;
+};
 const listArg = (name) => (arg(name) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
