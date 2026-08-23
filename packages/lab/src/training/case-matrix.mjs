@@ -1750,13 +1750,23 @@ export const SCALE_BUCKETS = [
  * be inserted, reordered or removed and every other case's pages are byte-identical. Changing an id still
  * re-buckets that one case, which is correct: a renamed case is a different case.
  */
-function bucketFor(id) {
+/**
+ * FNV-1a over a case id. The one hash both id-keyed choices use, so they cannot drift apart.
+ *
+ * Extracted rather than copied when the conformant accompaniments needed the same property: a case's
+ * generated content must depend on nothing but its own name, or adding cases elsewhere re-rolls it.
+ */
+function fnv1a(id) {
   let hash = 0x811c9dc5;
   for (let i = 0; i < id.length; i += 1) {
     hash ^= id.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
-  return SCALE_BUCKETS[hash % SCALE_BUCKETS.length];
+  return hash;
+}
+
+function bucketFor(id) {
+  return SCALE_BUCKETS[fnv1a(id) % SCALE_BUCKETS.length];
 }
 
 function withRealisticScale(list) {
@@ -1978,6 +1988,30 @@ cases.push(
  * label does not describe — the one defect this corpus cannot carry.
  */
 const ACCOMPANYING_CONFORMANT = Object.freeze({
+  // A filter that finds nothing and SAYS SO. `validation_error_announced` starves 10 subtypes — the most of
+  // any remaining fixable feature — and it is conformant behaviour: the error being spoken is the criterion
+  // being SATISFIED. `3.3.1:validation-error-silent` is the page where it is not.
+  //
+  // Same button-and-live-region shape as `status-region` rather than a real form, for the reason recorded
+  // there: a second `<form>` makes `probeForms` ambiguous about which one a case's own probe activates.
+  // `ERROR_WORD` in the featurizer matches /invalid|\berror\b/, so the announced text has to carry one.
+  "validation-message": {
+    markup: [
+      "<p><button id=\"check-ref\" type=\"button\">Check reference</button></p>"
+        + "<p id=\"ref-message\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\">Enter a reference to check.</p>"
+        + "<script>document.querySelector('#check-ref').addEventListener('click', () => "
+        + "{ document.querySelector('#ref-message').textContent = "
+        + "'Error: that reference was not recognised.'; });</script>",
+      "<p><button id=\"check-code\" type=\"button\">Check code</button></p>"
+        + "<p id=\"code-message\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\">Enter a code to check.</p>"
+        + "<script>document.querySelector('#check-code').addEventListener('click', () => "
+        + "{ document.querySelector('#code-message').textContent = "
+        + "'That code is invalid. Check it and try again.'; });</script>",
+    ],
+    grants: ["validation_error_announced", "form_change_present", "form_change_nonempty"],
+    probeForms: true,
+    task: "Check the reference and notice what the page says back.",
+  },
   "status-region": {
     markup: [
       "<p><button id=\"filter-notes\" type=\"button\">Show recent notes</button></p>"
@@ -2267,12 +2301,18 @@ function roundsForHost(template, rotation) {
  * stale count. A sixth `SCALE_BUCKETS` entry would have changed `hash % 5` to `hash % 6` and invalidated
  * all 2,606 captures; this invalidates none.
  */
-function withConformantBehaviour(template, name, round = 0) {
+function withConformantBehaviour(template, name) {
   const piece = ACCOMPANYING_CONFORMANT[name];
   // A host with its own control cannot take a second one: `probeForms` would have two things to press and
   // which it chooses is a difference the label does not describe.
   if (HAS_OWN_CONTROL.test(template.bad) || HAS_OWN_CONTROL.test(template.good)) return null;
-  const markup = piece.markup[round % piece.markup.length];
+  // Keyed on the GENERATED case id, never on a running counter.
+  //
+  // It was `round % markup.length`, and adding a second conformant piece immediately re-picked the variant
+  // for all 26 existing cases: the counter now advanced twice per host, so every page changed and 52 valid
+  // captures went stale. Hashing the id makes a case's markup depend on nothing but its own name — the same
+  // remedy `bucketFor` already applies to furniture, for the same reason, one layer up.
+  const markup = piece.markup[fnv1a(`${template.id}+with-${name}`) % piece.markup.length];
   return pair({
     ...template,
     id: `${template.id}+with-${name}`,
@@ -2295,15 +2335,17 @@ function conformantBehaviourCases(built) {
     if (hosts.length < CONFORMANT_HOSTS_PER_SUBTYPE) bySubtype.set(key, [...hosts, testCase]);
   }
   const generated = [];
-  let round = 0;
   for (const [, hosts] of [...bySubtype.entries()].sort(([a], [z]) => a.localeCompare(z))) {
-    for (const template of hosts) {
-      const made = withConformantBehaviour(template, "status-region", round);
-      round += 1;
-      if (made) generated.push(made);
-    }
+    for (const template of hosts) generated.push(...everyConformantPiece(template));
   }
   return generated;
+}
+
+/** Each conformant accompaniment applied to one host, skipping the ones it cannot take. */
+function everyConformantPiece(template) {
+  return Object.keys(ACCOMPANYING_CONFORMANT).sort()
+    .map((piece) => withConformantBehaviour(template, piece))
+    .filter(Boolean);
 }
 
 // APPENDED, and appending is now free: furniture is keyed on the case ID, so adding cases cannot
