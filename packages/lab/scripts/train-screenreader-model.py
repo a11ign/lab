@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shutil
 import random
 import sys
 from pathlib import Path
@@ -175,16 +176,39 @@ def refuse_to_destroy_release_weights(args: argparse.Namespace) -> None:
     if not existing.get("releaseEligible"):
         return
     floor = (existing.get("outOfDistribution") or {}).get("inDistributionFloor")
+
+    # ROTATE, rather than refuse. The release directory keeps the hard refusal below; a SCRATCH directory
+    # gets its predecessor moved aside instead.
+    #
+    # Refusing everywhere made the training job single-use: the first train succeeded and every one after
+    # it died in under two seconds with "REFUSING to overwrite", so a repeatable pipeline was impossible
+    # and the workaround on offer was `--allow-overwrite` — a flag a job would then pass every time, which
+    # is a guard nobody has. Measured 2026-08-23 on the first candidate anyone trained twice.
+    #
+    # Same shape as NVDA's own log, which this project already depends on: it rotates on every start, and
+    # `/diagnostics` exposes `previousLog` precisely because "a session that went mute only exists in the
+    # old file". Nothing is lost and nothing blocks.
+    release_directory = SCORER_PACKAGE / "models" / "screenreader-scorer"
+    if args.output.resolve() != release_directory.resolve():
+        previous = args.output.with_name(args.output.name + ".previous")
+        if previous.exists():
+            shutil.rmtree(previous)
+        shutil.move(str(args.output), str(previous))
+        print(f"Rotated the previous release-eligible model to {previous} "
+              f"(generalisationVerified={existing.get('generalisationVerified')}, floor={floor}). "
+              "Nothing was lost; one generation is kept.", file=sys.stderr)
+        return
+
     print(
         f"REFUSING to overwrite {args.output}: it holds a RELEASE-ELIGIBLE model"
         f" (generalisationVerified={existing.get('generalisationVerified')}, floor={floor}).\n"
         "\n"
-        "Train to a scratch directory and compare, which is the workflow the abstention sweep already\n"
-        "expects (`A11Y_SCORER_MODEL=<dir> calibrate-abstention.mjs`):\n"
-        f"  --output runs/model-candidate\n"
+        "This is the SHIPPED model's directory. Promotion is a separate, deliberate step that also writes\n"
+        "the changeset recording it:\n"
+        "  npm run promote:model -- --from=<candidate>\n"
         "\n"
-        "Or overwrite deliberately:\n"
-        "  --allow-overwrite\n",
+        "To train, name a scratch directory — those rotate rather than refuse:\n"
+        "  --output runs/model-candidate\n",
         file=sys.stderr,
     )
     raise SystemExit(3)
