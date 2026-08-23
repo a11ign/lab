@@ -45,7 +45,21 @@ const FORBIDDEN_INPUT_KEYS = ["url", "task", "html", "dom", "css", "axe", "diagn
 // Declared in `packages/lab/rule-ownership.json` too, so "nobody decides this" stays VISIBLE. Dropping
 // the records silently would make 4.1.2 read as fully covered while one of its three failure modes went
 // unchecked -- and unchecked is not clean.
-const MODEL_EXCLUDED_SUBTYPES = new Set(["1.3.1:missing-landmark", "4.1.2:missing-role"]);
+//
+// `3.3.2:placeholder-only` joined them 2026-08-23 (ADR 0018), and for the same reason stated differently:
+// when a field has no label the BROWSER uses the placeholder as its accessible name, so NVDA announces
+// `<input placeholder="Email address">` exactly as it announces `<label>Email address</label><input>` —
+// "Email address, edit", identical words in identical order. The difference exists only in the DOM, which
+// is axe-core's layer; this tool runs alongside it, not instead of it.
+//
+// The head trained on it produced eight false accusations on conformant pages, because there is no
+// placeholder feature at all (encoder weight mass 598.9 against 9.26 for every document feature combined)
+// and it had learned the corpus's placeholder WORDING — firing on 4 of the 6 clean pages containing
+// "Example value" and 0 of the 34 without. The corpus could express the property because it KNOWS what it
+// wrote; the screen reader cannot hear it. That asymmetry is the whole finding.
+const MODEL_EXCLUDED_SUBTYPES = new Set([
+  "1.3.1:missing-landmark", "4.1.2:missing-role", "3.3.2:placeholder-only",
+]);
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
