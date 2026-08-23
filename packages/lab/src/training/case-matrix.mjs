@@ -2180,14 +2180,24 @@ function multiDefectCases(built) {
   let rotation = 0;
   for (const [, hosts] of [...bySubtype.entries()].sort(([a], [z]) => a.localeCompare(z))) {
     for (const template of hosts) {
-      for (let round = 0; round < ROUNDS_PER_HOST; round += 1) {
-        const made = withAccompanyingDefects(template, ROTATIONS[rotation % ROTATIONS.length], round);
-        rotation += 1;
-        if (made) generated.push(made);
-      }
+      generated.push(...roundsForHost(template, rotation));
+      // Advanced per HOST by the full round count, not per case pushed: a round that produces nothing must
+      // still consume its rotation slot, or every later page's accompanying defect shifts and the whole
+      // generated family is recaptured for a refactor.
+      rotation += ROUNDS_PER_HOST;
     }
   }
   return generated;
+}
+
+/** The rounds of one host page, each taking the next rotation slot. */
+function roundsForHost(template, rotation) {
+  const made = [];
+  for (let round = 0; round < ROUNDS_PER_HOST; round += 1) {
+    const one = withAccompanyingDefects(template, ROTATIONS[(rotation + round) % ROTATIONS.length], round);
+    if (one) made.push(one);
+  }
+  return made;
 }
 
 // APPENDED, and appending is now free: furniture is keyed on the case ID, so adding cases cannot

@@ -190,13 +190,7 @@ test("an accompanying defect has SEVERAL phrasings, or 240 pages teach one strin
   assert.ok(multi.length >= 100, `only ${multi.length} multi-defect cases`);
   for (const [name, phrasings] of Object.entries(ACCOMPANYING_SPEECH)) {
     if (phrasings.length < 2) continue; // an unnamed graphic announces one hint however many files there are
-    const distinct = new Set<string>();
-    for (const testCase of multi) {
-      for (const phrase of phrasings) {
-        const words = phrase.replace(/^(link|heading, level 2|out of caption[^,]*|row \d+[^,]*), /, "");
-        if (words && testCase.bad.includes(words.split(",")[0])) distinct.add(words);
-      }
-    }
+    const distinct = distinctWordings(phrasings, multi);
     assert.ok(distinct.size >= 2,
       `${name} appears with only ${distinct.size} distinct wording(s) across the family — vary it, or the `
       + "model learns that wording rather than the failure");
@@ -219,3 +213,15 @@ test("an accompanying defect never perturbs the evidence channel its host is mea
     "these hosts are measured on focusOrder and carry an accompanying focusable element, which changes "
     + "the tab order they are being judged on — the case goes BLIND and the label is unbacked");
 });
+
+/** Which of a defect's phrasings actually appear in the generated markup, by their leading words. */
+function distinctWordings(phrasings: string[], multi: { bad: string }[]): Set<string> {
+  const distinct = new Set<string>();
+  for (const testCase of multi) {
+    for (const phrase of phrasings) {
+      const words = phrase.replace(/^(link|heading, level 2|out of caption[^,]*|row \d+[^,]*), /, "");
+      if (words && testCase.bad.includes(words.split(",")[0])) distinct.add(words);
+    }
+  }
+  return distinct;
+}

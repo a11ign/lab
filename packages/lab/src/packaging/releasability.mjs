@@ -49,7 +49,7 @@ function* heads(training) {
  */
 function calibrationFailures(training) {
   const failures = [];
-  for (const { criterion, name, subtype } of heads(training)) {
+  for (const { name, subtype } of heads(training)) {
     if (isRuleDecided(subtype)) continue;
     const development = subtype?.development;
     if (!development || development.precision === undefined) {
