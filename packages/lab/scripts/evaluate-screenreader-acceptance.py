@@ -119,13 +119,46 @@ def score_subtypes(training: Any, subtype_reports: dict[str, Any], views: dict[s
     return scores
 
 
-def metrics(scores: Any, labels: Any, threshold: float) -> dict[str, Any]:
+# How many failing cases to name before the list stops being read. Enough to see a pattern -- one subtype
+# repeating, or one page family -- without turning a report into a corpus dump.
+MAX_NAMED_FAILURES = 12
+
+
+def case_identity(record: dict[str, Any]) -> str:
+    """`caseId/variant` — the same key the stability grouping uses, so a name here matches a name there."""
+    provenance = record.get("provenance", {})
+    return f"{provenance.get('caseId', '?')}/{provenance.get('variant', '?')}"
+
+
+def metrics(scores: Any, labels: Any, threshold: float, identities: list[str] | None = None) -> dict[str, Any]:
+    """Counts, and WHICH records produced them.
+
+    It returned counts alone, and a count is where an investigation stops rather than starts. Measured
+    2026-08-23 against the shipped model on a fresh held-out set: `1.3.1: acceptance false negatives` and
+    `2.4.6: acceptance false positives`, two of each. From the report it was impossible to tell whether that
+    was one subtype systematically missed or two unlucky pages -- and those need completely different
+    responses. Answering it meant re-running the evaluator by hand with print statements.
+
+    This repo already states the rule, in `capture-real-pages`: "Named, not counted. '3 failed' tells you
+    nothing about whether the corpus is usable." The same argument that made `crossCheckStructure` report
+    `link 51/58` instead of "examination was INCOMPLETE".
+
+    Bounded and marked when truncated, because a report nobody can read is its own kind of silence.
+    """
     predicted = scores >= threshold
     true_positive = int((predicted & labels).sum())
     false_positive = int((predicted & ~labels).sum())
     false_negative = int((~predicted & labels).sum())
     clean = int((~labels).sum())
+    named: dict[str, Any] = {}
+    if identities is not None:
+        for key, mask in (("falsePositiveCases", predicted & ~labels), ("falseNegativeCases", ~predicted & labels)):
+            hits = [identities[i] for i in range(len(identities)) if mask[i]]
+            named[key] = sorted(hits)[:MAX_NAMED_FAILURES]
+            if len(hits) > MAX_NAMED_FAILURES:
+                named[key + "Truncated"] = len(hits) - MAX_NAMED_FAILURES
     return {
+        **named,
         # numpy uses .size where torch uses .numel(); the whole evaluator moved to numpy with the featurizer.
         "records": int(labels.size),
         "positive": int(labels.sum()),
@@ -373,7 +406,8 @@ def main() -> None:
             "subtypeThresholds": {s: float(r["threshold"]) for s, r in model_subtypes.items()},
             "ruleDecidedSubtypes": sorted(set(criterion_report["subtypes"]) - set(model_subtypes)),
             "excluded": excluded,
-            **metrics(decided[included_indices].astype(float), included_labels, DECIDED),
+            **metrics(decided[included_indices].astype(float), included_labels, DECIDED,
+                      identities=[case_identity(records[index]) for index in included_indices]),
         }
         stability_inputs[criterion] = [
             (subtype, scores[included_indices], float(model_subtypes[subtype]["threshold"]))
@@ -384,10 +418,17 @@ def main() -> None:
             result["failureReasons"].append(f"{criterion}: fewer than {args.min_positive} acceptance positives")
         if result["criteria"][criterion]["clean"] < args.min_clean:
             result["failureReasons"].append(f"{criterion}: fewer than {args.min_clean} acceptance clean records")
-        if result["criteria"][criterion]["falsePositive"]:
-            result["failureReasons"].append(f"{criterion}: acceptance false positives")
-        if result["criteria"][criterion]["falseNegative"]:
-            result["failureReasons"].append(f"{criterion}: acceptance false negatives")
+        block = result["criteria"][criterion]
+        if block["falsePositive"]:
+            result["failureReasons"].append(
+                f"{criterion}: {block['falsePositive']} acceptance false positive(s)"
+                + (": " + ", ".join(block.get("falsePositiveCases", [])) if block.get("falsePositiveCases") else "")
+            )
+        if block["falseNegative"]:
+            result["failureReasons"].append(
+                f"{criterion}: {block['falseNegative']} acceptance false negative(s)"
+                + (": " + ", ".join(block.get("falseNegativeCases", [])) if block.get("falseNegativeCases") else "")
+            )
         stability_records[criterion] = included_records
 
     # Stability is measured PER HEAD, on that head's own scores and its own cut. Measuring it on the
