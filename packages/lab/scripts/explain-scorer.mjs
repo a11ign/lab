@@ -58,13 +58,20 @@ export function compareTable(reports) {
     let row = name.padEnd(10);
     for (const [, report] of reports) {
       const c = report.criteria[name];
-      row += (c ? `TP${c.truePositive} FP${c.falsePositive} FN${c.falseNegative}` : "-").padEnd(24);
+      // A criterion one model scores and the other does not is the interesting case, not an edge case: it
+      // is what a subtype moving to the rules LOOKS like. Printing `TPundefined` there hid the most
+      // important cell in the table the first time this ran.
+      const cell = !c ? "-"
+        : !c.modelEvaluated ? `(${c.decisionOwner ?? "not model-decided"})`
+          : `TP${c.truePositive} FP${c.falsePositive} FN${c.falseNegative}`;
+      row += cell.padEnd(24);
     }
     lines.push(row);
   }
   lines.push("");
   for (const [name, report] of reports) {
-    const totals = Object.values(report.criteria).filter((c) => c.modelEvaluated);
+    const totals = Object.values(report.criteria).filter((c) => c.modelEvaluated
+      && Number.isFinite(c.falsePositive) && Number.isFinite(c.falseNegative));
     const fp = totals.reduce((n, c) => n + c.falsePositive, 0);
     const fn = totals.reduce((n, c) => n + c.falseNegative, 0);
     // FALSE ALARMS FIRST, deliberately. A false positive is an accusation someone may budget against or be
