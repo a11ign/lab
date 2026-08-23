@@ -108,6 +108,14 @@ function changesetPath(candidateName) {
   return join(CHANGESETS, `promote-${candidateName}-${existing + 1}.md`);
 }
 
+/**
+ * @param {object} input
+ * @param {string} input.candidate       directory holding the candidate's weights and reports
+ * @param {string} input.candidateName   the name it is known by, used in the changeset
+ * @param {boolean} [input.dryRun]       print what would happen and write nothing
+ * @param {boolean} [input.acceptRegression]  allow a deliberate loss against the shipped model
+ * @param {object|null} [input.shippedReport] the shipped model's training report, or null on a first release
+ */
 export function promote({ candidate, candidateName, dryRun = false, acceptRegression = false,
   shippedReport = null }) {
   const { training, acceptance } = assertPromotable(candidate, shippedReport, acceptRegression);
