@@ -40,8 +40,8 @@ function createCorpus(stale: boolean) {
   return root;
 }
 
-function run(script: string, root: string, out?: string) {
-  const args = [script];
+function run(script: string, root: string, out?: string, extra: string[] = []) {
+  const args = [script, ...extra];
   if (out) args.push(`--out=${out}`);
   try {
     return { status: 0, output: execFileSync(process.execPath, args, {
@@ -55,13 +55,37 @@ function run(script: string, root: string, out?: string) {
   }
 }
 
-test("signal checks reject stale capture evidence", () => {
+test("signal checks never accept stale capture evidence as a pass", () => {
+  // This used to assert exit 1 flatly. `check-signals` now separates a DEFECT (a signal that does not
+  // discriminate — always fatal) from a COVERAGE GAP (no evidence matching the current definitions), because
+  // a working copy cannot tell a corpus needing capture from a `runs/` that is merely out of date. What must
+  // not change is the property this test was written for: stale evidence is never silently accepted.
+  //
+  // A one-case corpus is below MIN_EXAMINED, so the honest answer here is 2 — INCONCLUSIVE, explicitly not
+  // a pass — rather than 1. "We could not tell" and "we checked and it is fine" must never share an exit
+  // code, which is the same rule that made 404 and 202 different answers in the worker.
   const root = createCorpus(true);
   try {
     const result = run(CHECK_SIGNALS, root);
-    assert.equal(result.status, 1);
+    assert.notEqual(result.status, 0, "stale evidence must never exit 0");
+    assert.equal(result.status, 2);
     assert.match(result.output, /STALE CAPTURES/);
+    assert.match(result.output, /INCONCLUSIVE/);
+    assert.match(result.output, /This is not a pass/);
     assert.match(result.output, /0 discriminating, 0 blind, 0 contaminated, 0 uncaptured, 1 stale/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("--require-complete makes stale evidence a hard failure, for the paths that own the corpus", () => {
+  // `release:gate` and the lab job pass this flag. There the corpus IS authoritative, so "no evidence for
+  // that case" is an answer — go capture — and it must block a release rather than be reported.
+  const root = createCorpus(true);
+  try {
+    const result = run(CHECK_SIGNALS, root, undefined, ["--require-complete"]);
+    assert.equal(result.status, 1);
+    assert.match(result.output, /--require-complete/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

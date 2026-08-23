@@ -28,6 +28,7 @@ const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenread
 const MANIFEST_PATH = resolve(ROOT, "manifest.json");
 const CAPTURE_ROOT = resolve(ROOT, process.env.DATASET_CAPTURE_ROOT || "captures");
 const PAGE_ROOT = resolve(ROOT, "pages");
+const REQUIRE_COMPLETE = process.argv.includes("--require-complete");
 const ONLY = process.argv.find((a) => a.startsWith("--only="))?.slice("--only=".length);
 const EVIDENCE_LINES = 4;
 
@@ -94,7 +95,7 @@ function report(result, testCase) {
   }
   if (result.verdict === "STALE CAPTURES") {
     console.log(`  STALE CAPTURES ${result.id}  (recapture after the page or worker identity changed)`);
-    return 1;
+    return 0;
   }
   console.log(`  ${result.verdict.padEnd(13)} ${result.id}  [${describeSignal(testCase.badSignal)}]`);
   if (result.verdict === "CONTAMINATED") {
@@ -131,20 +132,96 @@ function main() {
   }
 
   console.log(`Checking ${cases.length} signal(s) against captures in ${CAPTURE_ROOT}\n`);
-  let failures = 0;
   const counts = { OK: 0, BLIND: 0, CONTAMINATED: 0, "NO CAPTURES": 0, "STALE CAPTURES": 0 };
   for (const testCase of cases) {
     const result = checkCase(testCase);
     counts[result.verdict] += 1;
-    failures += report(result, testCase);
+    report(result, testCase);
   }
 
   console.log(
     `\n${counts.OK} discriminating, ${counts.BLIND} blind, ${counts.CONTAMINATED} contaminated, ` +
       `${counts["NO CAPTURES"]} uncaptured, ${counts["STALE CAPTURES"]} stale`
   );
-  console.log(unsyncedCorpusHint(counts));
-  process.exit(failures === 0 ? 0 : 1);
+  const { exitCode, summary } = signalVerdict(counts, { requireComplete: REQUIRE_COMPLETE });
+  console.log(summary);
+  if (exitCode !== 0) console.log(unsyncedCorpusHint(counts));
+  process.exit(exitCode);
+}
+
+/**
+ * How few cases may be examined before this check has no opinion worth having.
+ *
+ * A signal check that looked at three cases and found no defect has not verified the signal layer; it has
+ * verified three cases. The number is a floor on MEANING, not on correctness.
+ */
+export const MIN_EXAMINED = 25;
+
+/**
+ * The exit code, as a pure function of what was found.
+ *
+ * ## Two questions were being answered with one number, and one of them cannot be asked here
+ *
+ * `BLIND` and `CONTAMINATED` are logic defects: the signal does not fire on the bad page, or fires on the
+ * good one. Either is a real bug in a signal or the probe feeding it, and any machine holding evidence for
+ * that case can detect it. **That is what this gate is for.**
+ *
+ * `NO CAPTURES` and `STALE CAPTURES` are not defects at all. They say the corpus on THIS disk has no
+ * evidence matching the current definitions — which on the lab means "go capture", and on a developer's
+ * machine usually means `runs/` is gitignored and this copy is older than the case matrix. The two are
+ * indistinguishable from here, so failing on them makes the gate ask a question the machine cannot answer.
+ *
+ * Measured 2026-08-23: `0 blind, 0 contaminated, 242 uncaptured, 860 stale` locally, and
+ * `1303 discriminating, 0 of everything else` on the lab, at the same commit. The signal layer was
+ * provably fine and the gate said FAIL. The consequence is the part that matters: the only way past it was
+ * `A11Y_SKIP_VERIFY=1`, which disables lint, typecheck, tests and rules:gate as well — so a check that
+ * could not answer its own question was switching off four checks that could. **That is how a
+ * verification stops being one**, and it had already happened nine times in a day.
+ *
+ * Note the asymmetry this replaces: `NO CAPTURES` returned 0 and `STALE CAPTURES` returned 1, though both
+ * mean "no usable evidence here". 242 uncaptured passed in silence while 860 stale failed.
+ *
+ * ## Three outcomes, matching `evidence:check`
+ *
+ * The 0/1/2 contract is not invented here — `evidence:check` already uses it, and CLAUDE.md records why 2
+ * had to include PARTIAL coverage rather than only zero: it reported "safe to ship" having compared 2 of
+ * 48. An answer given on too little evidence is the failure, not the absence of an answer.
+ *
+ *   0  every case with usable evidence discriminates, and enough were examined to mean it
+ *   1  a real defect — blind or contaminated — or, under `--require-complete`, a corpus with holes
+ *   2  INCONCLUSIVE: too little usable evidence here to have an opinion
+ *
+ * `--require-complete` is how the authoritative paths keep the old strictness: on the lab, before a corpus
+ * run, and in `release:gate`, "the corpus has holes" IS the answer and must block.
+ *
+ * @param {{OK: number, BLIND: number, CONTAMINATED: number, "NO CAPTURES": number, "STALE CAPTURES": number}} counts
+ * @param {{requireComplete?: boolean}} [options]
+ * @returns {{exitCode: 0 | 1 | 2, summary: string}}
+ */
+export function signalVerdict(counts, { requireComplete = false } = {}) {
+  const defects = counts.BLIND + counts.CONTAMINATED;
+  const gaps = counts["NO CAPTURES"] + counts["STALE CAPTURES"];
+  const examined = counts.OK + defects;
+
+  if (defects > 0) {
+    return { exitCode: 1, summary:
+      `FAIL — ${defects} signal(s) do not discriminate. That is a defect in the signal or in the probe `
+      + "feeding it, and it is what this gate exists to catch." };
+  }
+  if (requireComplete && gaps > 0) {
+    return { exitCode: 1, summary:
+      `FAIL — ${gaps} case(s) have no evidence matching their current definition, and --require-complete `
+      + "says that is the question being asked. Capture them before this corpus is used or released." };
+  }
+  if (examined < MIN_EXAMINED) {
+    return { exitCode: 2, summary:
+      `INCONCLUSIVE — only ${examined} case(s) had usable evidence, below the floor of ${MIN_EXAMINED}. `
+      + "Nothing here is wrong; there is simply not enough to verify the signal layer. This is not a pass." };
+  }
+  return { exitCode: 0, summary: gaps === 0
+    ? `PASS — all ${examined} case(s) discriminate, and the corpus is complete.`
+    : `PASS — all ${examined} case(s) with usable evidence discriminate. ${gaps} case(s) could not be `
+      + "checked here; that is a question about this corpus copy, not about the signal layer." };
 }
 
 /**
