@@ -1948,6 +1948,60 @@ cases.push(
  * in the label — the `form-unlabelled` precedent, where a missing label is 3.3.2 AND 4.1.2 and scoring it
  * as one turned 109 correct detections into false positives.
  */
+/**
+ * CONFORMANT accompaniments — page behaviour that is correct, present in BOTH variants.
+ *
+ * `ACCOMPANYING_DEFECTS` below injects into `bad` only, which is right for a defect and wrong for this:
+ * furniture that appeared solely on failing pages would correlate with the label, and I would be creating
+ * the very shortcut ADR 0015 is about, pointing the other way.
+ *
+ * ## Why this exists
+ *
+ * `corpus:starvation` measures 51 fixable starved pairs, and the two features heading the list —
+ * `status_update_announced` and `validation_error_announced`, 10 subtypes each — are INTERACTION evidence:
+ * a status message spoken after activating something. No page about an image or a table has ever carried
+ * them, so the image head and the table head can penalise them for free. On a real page — which has images
+ * AND a working filter — that veto fires against evidence the head was trained to treat as somebody else's.
+ *
+ * Furniture cannot supply them: the pieces in `SCALE_BUCKETS` are static, and this evidence only exists
+ * when `probeForms` activates something. Hence a conformant accompaniment carrying its own probe flag.
+ *
+ * ## Two constraints that shaped the markup
+ *
+ * The widget is a BUTTON with a live region, not a `<form>` — copied from `filter-status-silent`'s
+ * conformant variant, which this corpus already proves captures and discriminates. `namedField`'s comment
+ * records why a second `<form>` is forbidden: `probeForms` submits a form, and two make it ambiguous which
+ * one a case's own probe activates.
+ *
+ * For the same reason it is paired ONLY with hosts that have no interactive control of their own. A host
+ * with its own button plus this one is two things to press, and which the probe chooses is a difference the
+ * label does not describe — the one defect this corpus cannot carry.
+ */
+const ACCOMPANYING_CONFORMANT = Object.freeze({
+  "status-region": {
+    markup: [
+      "<p><button id=\"filter-notes\" type=\"button\">Show recent notes</button></p>"
+        + "<p id=\"notes-count\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\">Showing 9 notes.</p>"
+        + "<script>document.querySelector('#filter-notes').addEventListener('click', () => "
+        + "{ document.querySelector('#notes-count').textContent = 'Showing 3 recent notes.'; });</script>",
+      "<p><button id=\"filter-records\" type=\"button\">Show current records</button></p>"
+        + "<p id=\"records-count\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\">Showing 12 records.</p>"
+        + "<script>document.querySelector('#filter-records').addEventListener('click', () => "
+        + "{ document.querySelector('#records-count').textContent = 'Showing 4 current records.'; });</script>",
+    ],
+    // No `subtypes`: it adds no failure, so no label changes. That is what makes it furniture rather than
+    // a defect, and why it belongs in both variants.
+    grants: ["status_update_announced", "form_change_present", "form_change_nonempty", "post_submit_present"],
+    // The evidence only exists if something is activated, and `probeForms` with no task activates nothing.
+    probeForms: true,
+    task: "Show the shorter list of notes and notice how many remain.",
+  },
+});
+
+/** Hosts with a control of their own cannot take a second one — see the comment above. */
+const CONFORMANT_HOSTS_PER_SUBTYPE = 3;
+const HAS_OWN_CONTROL = /<button|<input[^>]*type=["']?(submit|button)|<select|<textarea|<form[\s>]/i;
+
 const ACCOMPANYING_DEFECTS = Object.freeze({
   "vague-link": {
     // FOUR phrasings, not one, and they are the corpus's own — `link-vague-details`, `-here`, `-more`
@@ -2200,9 +2254,63 @@ function roundsForHost(template, rotation) {
   return made;
 }
 
+/**
+ * One case per starved subtype: the host failure, unchanged, on a page that ALSO behaves correctly.
+ *
+ * The host's own defect is untouched and its signal must still discriminate — `check-signals` is the
+ * adjudicator and has to stay 1303/0/0 for the existing corpus. What changes is that a positive of this
+ * subtype now carries interaction evidence, so the head can no longer treat that evidence as proof the page
+ * is somebody else's business.
+ *
+ * APPENDED, never inserted. Furniture is keyed on an FNV-1a hash of the case ID, so adding cases cannot
+ * re-size any existing one's pages — proven when 60 new cases left `check-signals` reporting the identical
+ * stale count. A sixth `SCALE_BUCKETS` entry would have changed `hash % 5` to `hash % 6` and invalidated
+ * all 2,606 captures; this invalidates none.
+ */
+function withConformantBehaviour(template, name, round = 0) {
+  const piece = ACCOMPANYING_CONFORMANT[name];
+  // A host with its own control cannot take a second one: `probeForms` would have two things to press and
+  // which it chooses is a difference the label does not describe.
+  if (HAS_OWN_CONTROL.test(template.bad) || HAS_OWN_CONTROL.test(template.good)) return null;
+  const markup = piece.markup[round % piece.markup.length];
+  return pair({
+    ...template,
+    id: `${template.id}+with-${name}`,
+    family: `conformant-behaviour-${template.criterion}`,
+    mutation: `${template.mutation} The page ALSO carries correct behaviour: ${name}.`,
+    probeForms: piece.probeForms,
+    task: piece.task,
+    // BOTH variants. A conformant accompaniment on the failing page alone would correlate with the label.
+    good: template.good.replace("</body>", `${markup}</body>`),
+    bad: template.bad.replace("</body>", `${markup}</body>`),
+  });
+}
+
+/** One host per subtype starved of interaction evidence, chosen the same way multi-defect hosts are. */
+function conformantBehaviourCases(built) {
+  const bySubtype = new Map();
+  for (const testCase of built) {
+    const key = `${testCase.criterion}:${testCase.subtype}`;
+    const hosts = bySubtype.get(key) ?? [];
+    if (hosts.length < CONFORMANT_HOSTS_PER_SUBTYPE) bySubtype.set(key, [...hosts, testCase]);
+  }
+  const generated = [];
+  let round = 0;
+  for (const [, hosts] of [...bySubtype.entries()].sort(([a], [z]) => a.localeCompare(z))) {
+    for (const template of hosts) {
+      const made = withConformantBehaviour(template, "status-region", round);
+      round += 1;
+      if (made) generated.push(made);
+    }
+  }
+  return generated;
+}
+
 // APPENDED, and appending is now free: furniture is keyed on the case ID, so adding cases cannot
 // re-size any existing one's pages.
-export const CASES = Object.freeze(withRealisticScale([...cases, ...multiDefectCases(cases)]));
+export const CASES = Object.freeze(withRealisticScale(
+  [...cases, ...multiDefectCases(cases), ...conformantBehaviourCases(cases)],
+));
 
 function structuralTextParts(capture) {
   return [
