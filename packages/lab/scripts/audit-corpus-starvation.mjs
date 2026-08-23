@@ -46,6 +46,28 @@ const GRANTS = Object.freeze({
   disclosure: ["state_change_present", "state_changed", "control_present"],
 });
 
+/**
+ * Pairs where the feature's ABSENCE is what the subtype means, so no page can ever carry both.
+ *
+ * `3.3.1:validation-error-silent` is a page that submits a form and hears NO error. It cannot also carry
+ * `validation_error_announced` — that is the conformant behaviour whose absence defines the failure. A
+ * negative weight there is correct inference, not a free veto, and no amount of corpus work changes it.
+ *
+ * Without this the audit reported them alongside the fixable ones, so the work list contained items nobody
+ * could complete. Measured 2026-08-23: 55 starved pairs, of which these are structurally impossible — and
+ * the two features heading the "work list" ranking, `status_update_announced` and
+ * `validation_error_announced`, each counted two subtypes that can never carry them.
+ *
+ * A LIST, not a rule, because the relationship is semantic: it is what the subtype's name asserts. Each
+ * entry says which announcement the failure consists of NOT hearing.
+ */
+const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
+  "3.3.1:validation-error-silent": ["validation_error_announced", "status_update_announced"],
+  "4.1.3:form-activation-silent": ["status_update_announced", "validation_error_announced"],
+  "4.1.2:state-change-silent": ["state_changed"],
+  "2.4.1:skip-link-inert": ["skip_link_moves_focus"],
+});
+
 /** A feature absent from the positives is only a shortcut if it is COMMON elsewhere — same rule as the
  * weights-side audit, so the two numbers describe the same thing. */
 const MIN_CORPUS_OCCURRENCES = 50;
@@ -105,7 +127,12 @@ function starvation() {
       subtype,
       positives: positives.length,
       features: names.filter((name) => occurrences[name] >= MIN_CORPUS_OCCURRENCES
-        && positives.every((row) => !row.values[name])),
+        && positives.every((row) => !row.values[name])
+        // Not a shortcut when the subtype is DEFINED by not hearing it. Reporting those put items on a
+        // work list that nobody can complete, and inflated the two features at the top of the ranking.
+        && !(IMPOSSIBLE_BY_DEFINITION[subtype] ?? []).includes(name)),
+      impossible: (IMPOSSIBLE_BY_DEFINITION[subtype] ?? [])
+        .filter((name) => positives.every((row) => !row.values[name])),
     };
   }).filter(Boolean);
   // A feature almost nothing carries is EXCLUDED from the starvation table above by
@@ -147,6 +174,16 @@ function render({ starved, rare, unmatched, missing, defined, records }) {
     }
     process.stdout.write("  `pytest packages/scorer/tests/test_extractor_coverage.py` is the check that "
       + "decides.\n");
+  }
+
+  const impossible = starved.reduce((sum, row) => sum + (row.impossible?.length ?? 0), 0);
+  if (impossible) {
+    process.stdout.write(`\n  ${impossible} starved pair(s) are IMPOSSIBLE BY DEFINITION and excluded below: `
+      + "the subtype\n  is the absence of that announcement, so no page can carry both and the negative "
+      + "weight is\n  correct inference rather than a free veto. Nothing to build.\n");
+    for (const row of starved.filter((r) => r.impossible?.length)) {
+      process.stdout.write(`    ${row.subtype.padEnd(34)} ${row.impossible.join(", ")}\n`);
+    }
   }
 
   process.stdout.write("\n  Features that no positive of a subtype carries, so a head could penalise them free:\n\n");
