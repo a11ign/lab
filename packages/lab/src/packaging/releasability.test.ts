@@ -210,3 +210,61 @@ test("a report with NO sweep still blocks, and says nothing it cannot support", 
   assert.match(v.blockers.join(" "), /7 missed finding\(s\)/);
   assert.doesNotMatch(v.blockers.join(" "), /reachable at/);
 });
+
+const guaranteed = (over = {}) => ({
+  method: "neyman-pearson-order-statistic", falsePositiveRate: 0.005, confidence: 0.95,
+  rank: 1850, negatives: 1860, permittedFalsePositives: 10, exact: false, atTarget: true, ...over,
+});
+
+test("false positives WITHIN the calibrated bound are expected, not a defect", () => {
+  // Under ADR 0022 the cut is an order statistic calibrated to a stated rate, so some development false
+  // positives are the design. Blocking on any of them would refuse every correctly calibrated head —
+  // and the old rule could only ever restate its own constraint, since the threshold was chosen to make
+  // the count zero.
+  const calibrated = training({
+    "3.3.2:unnamed-form-field": {
+      ...head({ falsePositive: 7, falseNegative: 0, precision: 0.95, recall: 1 }),
+      guarantee: guaranteed(),
+    },
+  });
+  const v = releasability({ training: calibrated, acceptance: { passed: true }, shipped: null });
+  assert.equal(v.releasable, true, JSON.stringify(v.blockers));
+});
+
+test("MORE false positives than the rank permits is a calibration fault, and says so", () => {
+  // Distinct from a weak head: the threshold and the scores disagree, which no amount of retraining
+  // fixes and which the zero-or-nothing rule could not express.
+  const broken = training({
+    "3.3.2:unnamed-form-field": {
+      ...head({ falsePositive: 11, falseNegative: 0, precision: 0.9, recall: 1 }),
+      guarantee: guaranteed({ permittedFalsePositives: 10 }),
+    },
+  });
+  const v = releasability({ training: broken, acceptance: { passed: true }, shipped: null });
+  assert.equal(v.releasable, false);
+  assert.match(v.blockers.join(" "), /permits 10 — the threshold and the scores disagree/);
+});
+
+test("a head with too few negatives to reach the target blocks, and names the real remedy", () => {
+  // Previously UNREPORTABLE here. A head that cannot control its false-positive rate scored a perfect
+  // precision and sailed through, because precision on the development set was the constraint restated.
+  const starved = training({
+    "3.3.2:unnamed-form-field": {
+      ...head({ falsePositive: 0, falseNegative: 0, precision: 1, recall: 1 }),
+      guarantee: guaranteed({ atTarget: false, negatives: 120, falsePositiveRate: 0.0248 }),
+    },
+  });
+  const v = releasability({ training: starved, acceptance: { passed: true }, shipped: null });
+  assert.equal(v.releasable, false);
+  assert.match(v.blockers.join(" "), /NOT calibrated to the target/);
+  assert.match(v.blockers.join(" "), /needs more conformant records/);
+});
+
+test("a report predating the bound falls back to the old rule, rather than passing vacuously", () => {
+  const legacy = training({
+    "3.3.2:unnamed-form-field": head({ falsePositive: 3, falseNegative: 0, precision: 0.9, recall: 1 }),
+  });
+  const v = releasability({ training: legacy, acceptance: { passed: true }, shipped: null });
+  assert.equal(v.releasable, false);
+  assert.match(v.blockers.join(" "), /states no bound/);
+});

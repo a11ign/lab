@@ -70,18 +70,57 @@ function calibrationFailures(training) {
     //
     // The acceptance evaluator already fails on both (`evaluate-screenreader-acceptance.py`), so this was
     // the only place the asymmetry lived. Preference belongs in the THRESHOLD a criterion is calibrated
-    // to, which the trainer already chooses as the lowest reaching zero false positives — not in which
-    // errors a gate is capable of seeing.
-    if (development.falsePositive > 0) {
-      failures.push(`${name}: ${development.falsePositive} false positive(s) at threshold `
-        + `${subtype.threshold} (precision ${Number(development.precision).toFixed(3)})`);
-    }
+    // to — which is now a stated Neyman-Pearson bound (ADR 0022) — not in which errors a gate can see.
+    failures.push(...typeOneErrorFailures(name, subtype, development));
     if (development.falseNegative > 0) {
       failures.push(`${name}: ${development.falseNegative} missed finding(s) at threshold `
         + `${subtype.threshold} (recall ${Number(development.recall).toFixed(3)}) — a head that has gone `
         + "silent scores perfect precision, so this must be checked separately"
         + whatPinnedTheThreshold(subtype, development));
     }
+  }
+  return failures;
+}
+
+/**
+ * Does this head hold the false-positive bound it claims?
+ *
+ * "Any false positive blocks" was the right rule while the trainer chose the lowest cut with ZERO of
+ * them on the development set. That target is free — the threshold was picked to make it true — so the
+ * check could only ever restate the constraint, and it was blind to the thing that actually matters:
+ * whether the bound holds on a page nobody has seen.
+ *
+ * Under ADR 0022 the cut is an order statistic calibrated to a stated rate, so a bounded number of
+ * development false positives is EXPECTED and is not a defect. Two things are:
+ *
+ *   - more of them than the rank permits, which means the threshold and the scores disagree — an
+ *     implementation fault, invisible to a rule that only asked whether the count was zero;
+ *   - a head that could not be calibrated to the target at all, because it has too few held-out
+ *     negatives for any order statistic to control the rate. That one used to be UNREPORTABLE here.
+ *
+ * A report with no guarantee block predates ADR 0022. It falls back to the old rule rather than passing
+ * vacuously — unexamined must never read as clean.
+ */
+function typeOneErrorFailures(name, subtype, development) {
+  const guarantee = subtype.guarantee;
+  if (!guarantee) {
+    return development.falsePositive > 0
+      ? [`${name}: ${development.falsePositive} false positive(s) at threshold ${subtype.threshold} `
+        + `(precision ${Number(development.precision).toFixed(3)}), and the report states no bound`]
+      : [];
+  }
+  const failures = [];
+  if (guarantee.atTarget === false) {
+    failures.push(`${name}: NOT calibrated to the target false-positive rate — `
+      + `${guarantee.negatives} held-out negative(s) can only control `
+      + `${Number(guarantee.falsePositiveRate).toFixed(4)}. It needs more conformant records, and no `
+      + "threshold can substitute for them");
+  }
+  const permitted = Number(guarantee.permittedFalsePositives ?? 0);
+  if (development.falsePositive > permitted) {
+    failures.push(`${name}: ${development.falsePositive} false positive(s) where the calibrated rank `
+      + `permits ${permitted} — the threshold and the scores disagree, which is a fault in the `
+      + "calibration itself rather than a weak head");
   }
   return failures;
 }

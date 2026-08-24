@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import shutil
 import random
 import sys
@@ -51,6 +52,27 @@ from screenreader_features import (  # noqa: E402  (path shim must precede the i
 )
 
 SEED = 20260726
+
+# Type I error control, Neyman-Pearson style. See ADR 0022.
+#
+# `NP_ALPHA` is a PROMISE about pages nobody has seen: the population false-positive rate of a head,
+# held with confidence 1 - `NP_DELTA`. It replaces "zero false positives on the development set", which
+# is free, unfalsifiable, and was never a measurement -- the threshold was chosen to make it true, so
+# every head reported precision 1.000 by construction.
+#
+# Tong, Feng & Li (Science Advances, 2018) show the naive procedure -- pick the cut where the EMPIRICAL
+# type I error meets the target -- leaves the POPULATION error above target roughly half the time, and
+# that cross-validating it does not help. Our old cut escaped that only by sitting at the extreme
+# `r = n` order statistic, which bought alpha <= 0.16% and cost 10-25 recall points across six heads
+# while lurching a whole 0.05 grid step whenever one conformant record moved.
+#
+# 0.005 is ten times stricter than the paper's default. It is affordable because of WHO ERRS: the rules
+# layer ASSERTS (conformance-mapped `failed`) and is deterministic, carrying no threshold at all, while
+# a model head only REFERS (`cantTell`). A model false positive costs a human a look at a page that
+# turns out fine -- see ADR 0021 for why that division is the right one.
+NP_ALPHA = 0.005
+
+NP_DELTA = 0.05
 
 TRAIN_RATIO = 0.7
 
@@ -331,6 +353,94 @@ def metrics(scores: Any, labels: Any, threshold: float) -> dict[str, float | int
         "f1": 2 * precision * recall / max(precision + recall, 1e-9),
     }
 
+def np_minimum_negatives(alpha: float = NP_ALPHA, delta: float = NP_DELTA) -> int:
+    """Fewest held-out negatives for which ANY order statistic can control `alpha` at `delta`.
+
+    From Proposition 1: the most conservative cut, r = n, has violation rate (1 - alpha)^n, so control
+    needs (1 - alpha)^n <= delta, i.e. n >= log(delta) / log(1 - alpha). Below it the guarantee is not
+    merely weak, it is unavailable -- and a head that cannot be calibrated must say so rather than
+    quietly return a number that looks like one.
+    """
+    return math.ceil(math.log(delta) / math.log(1 - alpha))
+
+def np_violation_rate(n: int, r: int, alpha: float = NP_ALPHA) -> float:
+    """P[population type I error of `1(score > s_(r))` > alpha], the bound of Proposition 1.
+
+    v(r) = SUM_{j=r..n} C(n,j) (1-alpha)^j alpha^(n-j) -- the upper tail of Binomial(n, 1-alpha).
+    Summed in log space: C(2000, 1000) is an exact integer with 600 digits and the factors it multiplies
+    underflow, so the direct form loses the answer in both directions at once. There is no scipy on the
+    lab and this needs none.
+    """
+    log_p, log_q = math.log1p(-alpha), math.log(alpha)
+    log_n = math.lgamma(n + 1)
+    total = 0.0
+    for j in range(r, n + 1):
+        total += math.exp(log_n - math.lgamma(j + 1) - math.lgamma(n - j + 1)
+                          + j * log_p + (n - j) * log_q)
+    return total
+
+def np_rank(n: int, alpha: float = NP_ALPHA, delta: float = NP_DELTA) -> int | None:
+    """r* = min{r : v(r) <= delta}, or None when `n` is below the minimum sample size.
+
+    Walked down from r = n accumulating the tail, because r* sits within a few ranks of n at these
+    alphas -- a binary search would evaluate more terms, not fewer.
+    """
+    log_p, log_q = math.log1p(-alpha), math.log(alpha)
+    log_n = math.lgamma(n + 1)
+    total = 0.0
+    for r in range(n, 0, -1):
+        total += math.exp(log_n - math.lgamma(r + 1) - math.lgamma(n - r + 1)
+                          + r * log_p + (n - r) * log_q)
+        if total > delta:
+            return r + 1 if r < n else None
+    return 1
+
+def np_threshold(negative_scores: list[float], criterion: str,
+                 warnings: list[str] | None) -> tuple[float, dict[str, Any]]:
+    """The Neyman-Pearson cut: the r*-th order statistic of the held-out NEGATIVE scores.
+
+    Returned alongside what it promises, because a threshold whose guarantee is not recorded is how
+    `precision 1.000` came to be read as evidence for five months.
+
+    Two exactness notes, both deliberate and neither hidden:
+
+    - Inference compares `score >= threshold` while Proposition 1 is stated for `score > s_(r)`. One
+      `nextafter` makes those the same predicate; without it every negative tied at the cut is counted
+      as a positive, which is the one direction this must not be wrong in.
+    - The scores are OUT-OF-FOLD, so each comes from a model that did not see its own record but not
+      all from ONE model, as the proposition assumes. That makes this the cross-validated approximation
+      rather than the exact split guarantee -- the same gap cross-conformal methods carry against split
+      conformal. `exact: false` records it. Closing it needs negatives held back from training entirely.
+    """
+    ordered = sorted(negative_scores)
+    n = len(ordered)
+    needed = np_minimum_negatives()
+    rank = np_rank(n) if n >= needed else None
+    if rank is None:
+        # Not calibratable at this alpha. Take the most conservative cut there is and report the alpha it
+        # DOES buy, rather than the one that was asked for and cannot be had.
+        achievable = 1 - NP_DELTA ** (1 / n) if n else 1.0
+        if warnings is not None:
+            warnings.append(
+                f"{criterion}: {n} held-out negative(s), below the {needed} needed to control a "
+                f"false-positive rate of {NP_ALPHA} at confidence {1 - NP_DELTA}. Using the most "
+                f"conservative cut, which controls only {achievable:.4f}. NOT calibrated to target."
+            )
+        rank, alpha = n, achievable
+    else:
+        alpha = NP_ALPHA
+    cut = min(math.nextafter(ordered[rank - 1], math.inf), 1.0) if n else 0.5
+    return cut, {
+        "method": "neyman-pearson-order-statistic",
+        "falsePositiveRate": alpha,
+        "confidence": 1 - NP_DELTA,
+        "rank": rank,
+        "negatives": n,
+        "permittedFalsePositives": n - rank,
+        "exact": False,
+        "atTarget": alpha == NP_ALPHA,
+    }
+
 def threshold_sweep(scores: Any, labels: Any) -> list[dict[str, float | int]]:
     """Every candidate cut and what it would cost, recorded in the report.
 
@@ -341,59 +451,13 @@ def threshold_sweep(scores: Any, labels: Any) -> list[dict[str, float | int]]:
     reads the same shared feature vector, so that removal does re-fit this head too; but the feature
     describes link text and this head reads validation messages, so a nine-finding swing wanted
     explaining rather than accepting.
-    Since `choose_threshold` is a hard zero-false-positive constraint over ~1,200 negatives, a SINGLE
-    borderline negative moves the cut a whole step and takes recall with it. Without the sweep that is
-    indistinguishable from a regression, and the scores it would be diagnosed from are computed
-    out-of-fold and then discarded.
+    The cut it diagnosed was chosen by a hard zero-false-positive constraint over ~1,900 negatives, so a
+    SINGLE borderline negative moved it a whole 0.05 step and took recall with it. `np_threshold`
+    retired that rule, which is the real fix -- but the sweep stays, because the scores it is computed
+    from are out-of-fold and then discarded, and it is still the only way to see the shape of a head
+    rather than one number from it.
     """
     return [{"threshold": t, **metrics(scores, labels, t)} for t in (i / 100 for i in range(5, 100, 5))]
-
-def choose_threshold(sweep: list[dict[str, float | int]], criterion: str = "?",
-                     warnings: list[str] | None = None) -> float:
-    """Lowest threshold reaching zero false positives, by F1.
-
-    The fallback is REPORTED, not silent -- and it is no longer 0.5. When nothing on the grid reaches
-    zero false positives the head is NOT CALIBRATED, and the cut becomes the one with the FEWEST false
-    positives, ties broken by recall.
-
-    0.5 was a value nobody chose, and it was indefensible in the one direction this project states a
-    preference about. Measured 2026-08-24 on the three heads where calibration failed:
-
-        2.1.2:focus-trapped        36 false positives at 0.5, against 4 at 0.95
-        2.4.2:route-title-stale     6 at 0.5, against 2 at 0.75 AT THE SAME RECALL -- strictly dominated
-        1.3.1:unassociated-table    2 at 0.5, against 1 at 0.55
-
-    It is also a cliff rather than a corner case. `3.3.1` currently holds 0.95 with zero false
-    positives; one more negative crossing 0.95 leaves no valid cut, and its own sweep puts 0.5 at 31
-    false positives. Reporting a bad default loudly does not make it a good default.
-
-    This can never choose worse than 0.5 did, because 0.5 is itself one of the candidates.
-    """
-    valid = [(row["f1"], row["threshold"]) for row in sweep if row["falsePositive"] == 0]
-    if not valid:
-        return least_damaging_threshold(sweep, criterion, warnings)
-    # Once the zero-false-positive guard is satisfied, prefer the lowest
-    # threshold among equal-F1 candidates. That preserves recall and follows
-    # the model's accessibility safety objective rather than adding a second,
-    # undocumented conservatism bias through tuple ordering.
-    return max(valid, key=lambda item: (item[0], -item[1]))[1]
-
-def least_damaging_threshold(sweep: list[dict[str, float | int]], criterion: str,
-                             warnings: list[str] | None) -> float:
-    """The cut for a head that cannot be calibrated: fewest false positives, then most recall.
-
-    Ordered that way round because this project's stated preference is explicit -- a false accusation is
-    worse than a miss, since somebody may budget against it or be challenged over it. Ties go to recall
-    so a needlessly conservative cut is not preferred over an equally clean one.
-    """
-    least = min(sweep, key=lambda row: (row["falsePositive"], -row["recall"], row["threshold"]))
-    if warnings is not None:
-        warnings.append(
-            f"{criterion}: no threshold reaches zero false positives — this criterion is NOT "
-            f"calibrated. Falling back to {least['threshold']}, the fewest-false-positive cut on the "
-            f"grid ({least['falsePositive']} at recall {least['recall']:.3f}); nobody chose it."
-        )
-    return least["threshold"]
 
 def bag_gather_tensors(offsets: list[int]) -> tuple[Any, Any]:
     """`bag_gather` as torch tensors — the training-side conversion boundary.
@@ -722,8 +786,20 @@ def main() -> None:
             # still gets a threshold -- the report describes what the head would do, and the judge is
             # what declines to use it -- so the two layers can be compared on the same records instead
             # of one of them being invisible.
-            sweep = threshold_sweep(oof_scores[subtype_indices], subtype_development_labels)
-            subtype_threshold = choose_threshold(sweep, subtype, report["warnings"])
+            subtype_development_scores = oof_scores[subtype_indices]
+            sweep = threshold_sweep(subtype_development_scores, subtype_development_labels)
+            # The cut is an order statistic of the NEGATIVE scores only -- the positives play no part in
+            # choosing it. That is what makes the type I error bound hold without knowing anything about
+            # how the positives are distributed, and it is why recall is now an OUTCOME to be reported
+            # rather than something the threshold was traded against.
+            negative_scores = [
+                float(score) for score, label
+                in zip(subtype_development_scores.tolist(), subtype_development_labels.tolist())
+                if label == 0
+            ]
+            subtype_threshold, subtype_guarantee = np_threshold(
+                negative_scores, subtype, report["warnings"]
+            )
             subtype_names.append(subtype)
             subtype_thresholds[subtype] = subtype_threshold
             subtype_report[subtype] = {
@@ -737,6 +813,10 @@ def main() -> None:
                 # would be used -- which is how 4.1.2 came to report 13 false positives that no shipped
                 # threshold had ever produced.
                 "threshold": subtype_threshold,
+                # What this cut PROMISES about pages nobody has seen. The whole point of moving to an
+                # order statistic: `precision` on the development set is the constraint restated, and
+                # only this is a claim that can be wrong.
+                "guarantee": subtype_guarantee,
                 # What every other cut would have cost. See `threshold_sweep` for why the chosen
                 # number alone is not enough to diagnose a recall change.
                 "thresholdSweep": sweep,
