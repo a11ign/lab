@@ -23,6 +23,7 @@
  * 3. **It stops there.** Weights are copied and the changeset is written, both left UNCOMMITTED for
  *    review. Nothing is published: that is `release.yml`'s business and it is guarded separately.
  */
+import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, readdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -59,7 +60,20 @@ function assertPromotable(candidate, shipped, shippedAcceptance, acceptRegressio
   const acceptance = existsSync(join(candidate, "acceptance-report.json"))
     ? JSON.parse(readFileSync(join(candidate, "acceptance-report.json"), "utf8"))
     : null;
-  const verdict = releasability({ training, acceptance, shipped, shippedAcceptance });
+  // Hashed HERE, from the file about to be copied, rather than taken from any report. A provenance check
+  // fed a number from the same document it is checking proves only that the document agrees with itself.
+  //
+  // Absent weights are REPORTED alongside every other blocker, never thrown as an ENOENT: the first
+  // version hashed unconditionally and replaced "acceptance has not been run" with a filesystem error,
+  // which is a verdict a reader cannot act on.
+  const weightsFile = join(candidate, "model.safetensors");
+  const candidateModelSha256 = existsSync(weightsFile)
+    ? createHash("sha256").update(readFileSync(weightsFile)).digest("hex")
+    : null;
+  const verdict = releasability({
+    training, acceptance, shipped, shippedAcceptance, candidateModelSha256,
+  });
+  if (!candidateModelSha256) verdict.blockers.unshift(`there are no weights at ${weightsFile} to promote`);
   const blockers = acceptRegression
     ? verdict.blockers.filter((b) => !/ (precision|recall) [\d.]+ -> /.test(b))
     : verdict.blockers;

@@ -83,6 +83,38 @@ function calibrationFailures(training) {
 }
 
 /**
+ * Was this acceptance report produced by the weights being promoted?
+ *
+ * `candidate:gate` does not run the acceptance evaluator, so `promote-model` reads whatever
+ * `acceptance-report.json` is on disk — and nothing checked that it described the model underneath it.
+ * Measured 2026-08-24: a retrain left weights hashed 59620019 beside an acceptance report describing
+ * 561427ab and stating `passed: true`. Only a calibration blocker stopped a promotion on another
+ * model's results.
+ *
+ * The information was already in the file. `artifact.modelSha256` has been written by the evaluator all
+ * along and nothing read it — the same shape as the 604 `sweepLog` crashes and the `browserVersion`
+ * memo: a value recorded correctly, and never compared to the thing it describes.
+ *
+ * Fail-closed in the direction that matters. A report that names its weights is CHECKED, and one that
+ * names them while the caller supplies nothing to compare against is a blocker rather than a pass — the
+ * caller could have proved the link and did not. Only a report predating the stamp is a note, because
+ * refusing those would refuse every model trained before this existed.
+ */
+function acceptanceBelongsToTheseWeights(acceptance, candidateModelSha256) {
+  const claimed = acceptance?.artifact?.modelSha256;
+  if (!acceptance || !claimed) return [];
+  if (!candidateModelSha256) {
+    return ["held-out acceptance names the weights it measured, and nothing was supplied to compare "
+      + "them against — so it cannot be shown to describe this candidate"];
+  }
+  if (claimed === candidateModelSha256) return [];
+  return [`held-out acceptance was measured on DIFFERENT weights: it describes `
+    + `${String(claimed).slice(0, 8)} and the candidate is ${String(candidateModelSha256).slice(0, 8)}. `
+    + "Re-run acceptance for these weights. A stale report is worse than a missing one, because it "
+    + "arrives already saying it passed"];
+}
+
+/**
  * Does this head hold the false-positive bound it claims?
  *
  * "Any false positive blocks" was the right rule while the trainer chose the lowest cut with ZERO of
@@ -186,15 +218,17 @@ function regressions(acceptance, shippedAcceptance, tolerance) {
  * @param {object|null} input.acceptance  its acceptance report, or null if never evaluated
  * @param {object|null} input.shipped     the shipped model's training report, or null
  * @param {object|null} [input.shippedAcceptance] its ACCEPTANCE report — the only fixed-set baseline
+ * @param {string|null} [input.candidateModelSha256] hash of the weights actually being promoted
  * @returns {{releasable: boolean, blockers: string[], notes: string[]}}
  */
 export function releasability({ training, acceptance, shipped, shippedAcceptance,
-  tolerance = REGRESSION_TOLERANCE }) {
+  candidateModelSha256 = null, tolerance = REGRESSION_TOLERANCE }) {
   const blockers = [];
   const notes = [];
 
   // ABSENT and FAILED must never look alike — this repo's most expensive recurring shape. "Nobody has
-  // measured this" and "it was measured and it failed" call for different actions.
+  // measured this" and "it was measured and it failed" call for different actions. STALE is a third,
+  // and it is the most dangerous of the three because it arrives reading `passed: true`.
   if (!acceptance) {
     blockers.push("held-out acceptance has not been run against these weights");
   } else if (acceptance.passed !== true) {
@@ -202,6 +236,7 @@ export function releasability({ training, acceptance, shipped, shippedAcceptance
       blockers.push(`held-out acceptance failed: ${reason}`);
     }
   }
+  blockers.push(...acceptanceBelongsToTheseWeights(acceptance, candidateModelSha256));
 
   blockers.push(...calibrationFailures(training));
   blockers.push(...regressions(acceptance, shippedAcceptance, tolerance));

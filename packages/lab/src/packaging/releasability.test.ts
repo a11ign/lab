@@ -268,3 +268,49 @@ test("a report predating the bound falls back to the old rule, rather than passi
   assert.equal(v.releasable, false);
   assert.match(v.blockers.join(" "), /states no bound/);
 });
+
+const measuredOn = (sha: string) => ({ passed: true, artifact: { modelSha256: sha } });
+
+test("a STALE acceptance report is refused, and is a different blocker from a missing one", () => {
+  // Measured 2026-08-24. `candidate:gate` does not run the acceptance evaluator, so `promote-model`
+  // reads whatever acceptance-report.json is on disk. A retrain left weights hashed 59620019 beside a
+  // report describing 561427ab and saying `passed: true`; only a calibration blocker stopped a
+  // promotion on another model's results. The value needed to catch it — artifact.modelSha256 — had
+  // been written by the evaluator all along and nothing read it.
+  const v = releasability({
+    training: CLEAN, acceptance: measuredOn("561427ab9014f3a8"), shipped: null,
+    candidateModelSha256: "59620019b1e63283",
+  });
+  assert.equal(v.releasable, false);
+  assert.match(v.blockers.join(" "), /measured on DIFFERENT weights/);
+  assert.match(v.blockers.join(" "), /561427ab.*59620019/);
+
+  const missing = releasability({ training: CLEAN, acceptance: null, shipped: null });
+  assert.notDeepEqual(missing.blockers, v.blockers,
+    "'never run' and 'run against other weights' must never read the same — the stale one arrives "
+    + "already saying it passed, which is the more dangerous of the two");
+});
+
+test("a matching acceptance report promotes", () => {
+  const v = releasability({
+    training: CLEAN, acceptance: measuredOn("59620019b1e63283"), shipped: null,
+    candidateModelSha256: "59620019b1e63283",
+  });
+  assert.equal(v.releasable, true, JSON.stringify(v.blockers));
+});
+
+test("a report that names its weights while the caller proves nothing is a BLOCKER, not a pass", () => {
+  // Fail-closed. If the check can be bypassed by simply not passing the hash, it is the `ruleOwned: []`
+  // defect again — a guard handed empty inputs and sitting inert for the life of the corpus.
+  const v = releasability({ training: CLEAN, acceptance: measuredOn("561427ab9014f3a8"), shipped: null });
+  assert.equal(v.releasable, false);
+  assert.match(v.blockers.join(" "), /nothing was supplied to compare/);
+});
+
+test("an acceptance report predating the stamp still promotes, rather than refusing every old model", () => {
+  const v = releasability({
+    training: CLEAN, acceptance: { passed: true }, shipped: null,
+    candidateModelSha256: "59620019b1e63283",
+  });
+  assert.equal(v.releasable, true, JSON.stringify(v.blockers));
+});
