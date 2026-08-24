@@ -1,44 +1,46 @@
 /**
  * Does a conformant page become a FAILURE when you add more conformant content to it?
  *
- * ## The question, and why nothing else asks it
+ * ## What this was built to test, and what it found
  *
- * The scorer decides per PAGE by pooling a bag of announcements. Every pooling rule it uses is a function
- * of bag size:
- *
- *   - instance-max (`fake-heading`, `unnamed-control`, `unnamed-form-field`): the page-level false-alarm
- *     rate is 1-(1-p)^n. At a per-instance p of 0.5%, that is 3% at n=6 and 73% at n=261.
- *   - document-mean with document-level binaries (`vague_link_present`): "does this page contain one" has a
- *     base rate that climbs with page size until it is true of nearly every real page.
- *
- * And the bag sizes do not overlap. Measured over every capture on disk:
+ * The hypothesis: the scorer decides per PAGE by pooling a bag of announcements, every pooling rule it uses
+ * is a function of bag size, and the bag sizes barely overlap between training and deployment. Measured
+ * over every capture on disk, that last part is TRUE and remains true:
  *
  *     announcements per capture   CORPUS  min 3  median 18   max 43
  *                                 REAL    min 8  median 253  max 805
  *
- * The corpus MAXIMUM is below the real-page 25th percentile. So the decision rule is calibrated in a regime
- * that barely intersects the one it runs in — and training, held-out acceptance, `rules:gate`,
- * `check-signals` and `scorer:shortcuts` ALL run on corpus pages, so every one of them is blind to this by
- * construction. The abstention floor does not help either: it asks whether a page is like training data in
- * EMBEDDING space, not whether the bag is the size the thresholds were calibrated for. GOV.UK scored 0.79,
- * comfortably in support, and was accused anyway.
+ * The corpus MAXIMUM is below the real-page 25th percentile. It is a real and large distribution shift.
  *
- * That is why each fix this week MOVED the failure rather than removing it. Fixing vague-link surfaced
- * fake-heading; fixing tables surfaced 2.4.4. We kept repairing whichever feature happened to trip and
- * never the aggregation rule that makes tripping likely.
+ * **But it is NOT what drives the false accusations, and this audit is how that was established.** Padding
+ * 40 conformant pages with conformant content, at 20/50/100/200/400 announcements, produced ZERO
+ * accusations at every size — 200 trials. The page verdict does not depend on how much conformant content
+ * the page carries.
+ *
+ * An earlier run reported 3 accusations at 12 bases. That was an instrument fault, not a finding: the donor
+ * pool was `slice(BASES)`, so changing the number of bases changed the padding CONTENT too and the two runs
+ * were different experiments. Fixed below; the corrected instrument reports STABLE.
+ *
+ * Recorded in full because a measurement that refutes the thing it was built for is the most useful kind,
+ * and the temptation is to keep the tool and quietly drop the finding. The distribution shift is real; the
+ * mechanism inferred from it was wrong.
+ *
+ * ## What the false accusations DO track
+ *
+ * Not size, but WHICH LAYER OWNS THE QUESTION. Every false accusation this week came from a model-decided
+ * JUDGEMENT subtype (2.4.4 vague link, 1.3.1 fake-heading, 1.3.1 unassociated-table). Not one came from a
+ * rule-decided FACT subtype — those score 224/224 and 174/174 EXACT with 0 false positives across 1,183
+ * conformant records. The scorer is 13 logistic regressions on a frozen encoder, 416 parameters per head
+ * against 3 to 224 positives, and a linear model cannot represent the conjunction that judgement is.
  *
  * ## The experiment
  *
  * Take a conformant capture. Pad it with announcements drawn from OTHER conformant captures, so every added
  * line is benign by construction. Score it at increasing sizes. A verdict that depends only on the page
- * cannot change; a verdict that depends on bag size will eventually trip.
+ * cannot change; a verdict that depends on bag size will trip.
  *
- * Needs no worker time and no new captures: it is a pure function of evidence already on disk.
- *
- * ## Reading the result
- *
- * A finding that appears only after padding is a FALSE ACCUSATION the corpus can never show you, because no
- * corpus page is big enough to produce one. The count at each size is the false-alarm rate at that bag size.
+ * Keep it: it is cheap, needs no worker time, and it is the only check here that can see a size effect at
+ * all — so it is what would catch one if a future pooling change introduces it.
  *
  *   npm run scorer:size-sensitivity
  *   npm run scorer:size-sensitivity -- --model=runs/model-candidate
