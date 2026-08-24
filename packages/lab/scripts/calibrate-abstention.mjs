@@ -90,11 +90,29 @@ const DERIVED = derivedFloor();
 const CANDIDATE_FLOORS = [...new Set([...(DERIVED === null ? [] : [DERIVED]), ...ROUND_FLOORS])]
   .sort((a, b) => b - a);
 
+/**
+ * The role comes from the CORPUS, never off the captured file.
+ *
+ * A capture stamps the role it had when it was taken, so moving a page between roles in
+ * `real-page-corpus.mjs` did nothing at all until it was recaptured — the split was rebalanced on
+ * 2026-08-24, every gate went green, and the sweep still reported the same 22 pages because it was reading
+ * a stamp from weeks earlier.
+ *
+ * This is the identical defect `claimExcludes` already carries a scar for, one field over and in this same
+ * file: "Joined from the CORPUS, not read off the capture … The mask existed, was documented, and never
+ * once ran." A page missing from the corpus is COUNTED and reported rather than silently dropped, because
+ * a captured page nobody declares is an anomaly worth seeing.
+ */
 function calibrationPages() {
-  return readdirSync(ROOT)
+  const loaded = readdirSync(ROOT)
     .filter((f) => f.endsWith(".json"))
-    .map((f) => JSON.parse(readFileSync(resolve(ROOT, f), "utf8")))
-    .filter((entry) => entry.role === "calibration");
+    .map((f) => JSON.parse(readFileSync(resolve(ROOT, f), "utf8")));
+  const undeclared = loaded.filter((entry) => !entry.capture?.url || !realPageFor(entry.capture.url));
+  if (undeclared.length) {
+    process.stdout.write(`  NOTE: ${undeclared.length} captured page(s) are not in real-page-corpus.mjs `
+      + "and are excluded; a capture nobody declares cannot be scored against a claim.\n");
+  }
+  return loaded.filter((entry) => realPageFor(entry.capture?.url ?? "")?.role === "calibration");
 }
 
 /**

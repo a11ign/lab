@@ -275,7 +275,10 @@ function main() {
     // accident is not a guard. The sweep now writes to `runs/abstention/` rather than into this directory,
     // so nothing needs excluding; requiring a `capture` as well as a `role` means anything else that
     // appears here is skipped for a reason that will still hold for the next stray file.
-    .filter((e) => e.role === "training" && e.capture);
+    // Role from the CORPUS, never the captured stamp — see calibrate-abstention.mjs for what the stamp
+    // cost. `realPageFor` is already imported and already used for `claimExcludes` twelve lines below,
+    // which is the same join applied to one field and not the other in one file.
+    .filter((e) => e.capture && realPageFor(e.capture.url ?? "")?.role === "training");
 
   // No real-page captures is a legitimate state -- a fresh checkout has none -- so this writes the base
   // dataset through rather than failing. It says so LOUDLY, because a script that silently produced a
