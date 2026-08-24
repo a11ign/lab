@@ -2012,6 +2012,43 @@ const ACCOMPANYING_CONFORMANT = Object.freeze({
     probeForms: true,
     task: "Check the reference and notice what the page says back.",
   },
+  // A SHORT LINK NAME THAT CONFORMS. The remedy for a word-sense monopoly, and the reason it is needed is
+  // measured: every one of the 13 wordlist terms appears on failing pages only — `link:details` 0 good /
+  // 17 bad — so the corpus teaches that the WORD is the failure. It is not. 2.4.4 is Link Purpose IN
+  // CONTEXT, and "Details" naming a component inside an index of component names conforms.
+  //
+  // The scorer accused 11 GOV.UK Design System pages of 2.4.4 on the strength of one announcement,
+  // `"link, Details"`, where the shipped model accused none. This markup is that exact shape: a nav
+  // landmark holding a list of peer links, each a proper noun naming a distinct destination. What makes it
+  // conformant is what makes GOV.UK's conformant — the link is not a lone call to action after prose, it is
+  // one item in a homogeneous index, and its neighbours establish the kind of thing it names.
+  //
+  // No control and no `probeForms`: this is static structure, which is why the control guard below is now
+  // conditional rather than applied to every piece.
+  "component-index": {
+    markup: [
+      "<nav aria-label=\"Components\"><ul>"
+        + "<li><a href=\"/components/accordion\">Accordion</a></li>"
+        + "<li><a href=\"/components/details\">Details</a></li>"
+        + "<li><a href=\"/components/tabs\">Tabs</a></li>"
+        + "<li><a href=\"/components/table\">Table</a></li>"
+        + "</ul></nav>",
+      "<nav aria-label=\"Guidance sections\"><ul>"
+        + "<li><a href=\"/guidance/eligibility\">Eligibility</a></li>"
+        + "<li><a href=\"/guidance/details\">Details</a></li>"
+        + "<li><a href=\"/guidance/deadlines\">Deadlines</a></li>"
+        + "<li><a href=\"/guidance/contacts\">Contacts</a></li>"
+        + "</ul></nav>",
+    ],
+    // No `subtypes`: it adds no failure, so no label changes — the test every accompaniment must pass.
+    grants: ["vague_link_present"],
+    // 2.4.4's own cases USE these words as their failing example — `link-vague-market` and
+    // `link-vague-clinic` are both "Details" — so accompanying one would put the word on its good variant
+    // and its badSignal would fire on both. That is CONTAMINATED, the one thing this corpus cannot carry.
+    // Every other criterion is unaffected: a page about an unnamed form field does not care what a link in
+    // an index is called.
+    notFor: ["2.4.4"],
+  },
   "status-region": {
     markup: [
       "<p><button id=\"filter-notes\" type=\"button\">Show recent notes</button></p>"
@@ -2369,7 +2406,18 @@ function withConformantBehaviour(template, name) {
   const piece = ACCOMPANYING_CONFORMANT[name];
   // A host with its own control cannot take a second one: `probeForms` would have two things to press and
   // which it chooses is a difference the label does not describe.
-  if (HAS_OWN_CONTROL.test(template.bad) || HAS_OWN_CONTROL.test(template.good)) return null;
+  //
+  // Gated on the PIECE needing a control, not applied to every piece. It was unconditional while both
+  // pieces were button-and-live-region shapes, so the distinction never mattered; a static piece excluded
+  // from every host that happens to contain a `<form>` would lose most of its reach for a hazard it does
+  // not create.
+  if (piece.probeForms && (HAS_OWN_CONTROL.test(template.bad) || HAS_OWN_CONTROL.test(template.good))) {
+    return null;
+  }
+  // A piece must not accompany a case whose own failure it would imitate. `component-index` carries the
+  // word "Details", which is exactly what two 2.4.4 cases use as their vague example — so on those hosts it
+  // would satisfy the badSignal on the GOOD variant and the pair would report CONTAMINATED.
+  if ((piece.notFor ?? []).includes(template.criterion)) return null;
   // Keyed on the GENERATED case id, never on a running counter.
   //
   // It was `round % markup.length`, and adding a second conformant piece immediately re-picked the variant

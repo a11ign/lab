@@ -29,7 +29,7 @@ import assert from "node:assert/strict";
 import { CASES, signalMatches } from "./case-matrix.mjs";
 
 type Signal = { type?: string };
-type Case = { id: string; badSignal?: Signal };
+type Case = { id: string; badSignal?: Signal; criterion?: string; good?: string; bad?: string };
 
 /**
  * What NVDA announces for the furniture, in the shape the signals match against.
@@ -233,3 +233,66 @@ function distinctWordings(phrasings: string[], multi: { bad: string }[]): Set<st
   }
   return distinct;
 }
+
+/**
+ * The same delta again, for the CONFORMANT accompaniments — the third path, and the one where a collision
+ * is not merely possible but designed in.
+ *
+ * `component-index` exists to break a word-sense monopoly: every wordlist term appears on failing pages
+ * only (`link:details` 0 good / 17 bad), so the corpus taught that the WORD is the failure rather than the
+ * word WITHOUT CONTEXT. Fixing that means putting "Details" on a conformant page — and two 2.4.4 cases use
+ * "Details" as their vague example, so the same word must not reach their good variant.
+ *
+ * That exclusion is declared by hand (`notFor`). This proves it is COMPLETE, over every case and every
+ * piece, rather than over the two the author happened to think of. The previous two blocks in this file
+ * cover `filler()` and the accompanying DEFECTS; this path had none, which is this repo's most familiar
+ * shape — a remedy applied where somebody was looking.
+ */
+const CONFORMANT_SPEECH: Record<string, { transcript: string[]; links: string[] }> = {
+  // What NVDA announces for the nav-and-list markup. Written from a real capture's shape: the container is
+  // announced, then each link in order.
+  "component-index": {
+    transcript: [
+      "navigation landmark, list, with 4 items",
+      "link, Accordion", "link, Details", "link, Tabs", "link, Table",
+      "link, Eligibility", "link, Deadlines", "link, Contacts",
+      "out of list",
+    ],
+    links: ["Accordion, link", "Details, link", "Tabs, link", "Table, link",
+      "Eligibility, link", "Deadlines, link", "Contacts, link"],
+  },
+};
+
+test("no conformant accompaniment satisfies its HOST case's own badSignal", () => {
+  const collisions: string[] = [];
+  for (const testCase of CASES as Case[]) {
+    const signal = testCase.badSignal;
+    if (!signal?.type) continue;
+    const name = Object.keys(CONFORMANT_SPEECH).find((piece) => testCase.id.endsWith(`+with-${piece}`));
+    if (!name) continue;
+    const piece = CONFORMANT_SPEECH[name];
+    const before = base();
+    const after = {
+      ...before,
+      transcript: [...before.transcript, ...piece.transcript],
+      structure: { ...before.structure, links: [...before.structure.links, ...piece.links] },
+    };
+    if (signalMatches(before, signal) !== signalMatches(after, signal)) {
+      collisions.push(`${testCase.id}: ${signal.type} changed when ${name} was added`);
+    }
+  }
+  assert.deepEqual([...new Set(collisions)], [],
+    "a conformant accompaniment satisfies its host's badSignal, so the pair fires on BOTH variants and "
+    + "reports CONTAMINATED. Add the host's criterion to that piece's `notFor`, or reword the piece — "
+    + "never the signal.");
+});
+
+test("conformant accompaniments exist and carry the word, or the check above is vacuous", () => {
+  const generated = (CASES as Case[]).filter((c) => c.id.endsWith("+with-component-index"));
+  assert.ok(generated.length > 0, "no component-index case was generated; the check examines nothing");
+  assert.ok(generated.every((c) => /Details<\/a>/.test(String(c.good)) && /Details<\/a>/.test(String(c.bad))),
+    "the piece must reach BOTH variants — on the failing one alone it would correlate with the label, "
+    + "which is the shortcut this corpus change exists to remove");
+  assert.ok(generated.every((c) => c.criterion !== "2.4.4"),
+    "a 2.4.4 host received the piece whose word its own case uses as the failure");
+});
