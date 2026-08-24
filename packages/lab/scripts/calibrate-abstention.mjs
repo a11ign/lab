@@ -31,7 +31,7 @@
  * there.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -241,6 +241,72 @@ function main() {
   const outPath = resolve(OUT_DIR, MODEL ? "abstention-sweep.candidate.json" : "abstention-sweep.json");
   writeFileSync(outPath, JSON.stringify({ model: MODEL ?? "shipped", calibrationPages: n, scored, rows }, null, 2));
   process.stdout.write(`\n  written: ${outPath}\n`);
+
+  reportRegression(rows);
+}
+
+/**
+ * Did false accusations on REAL pages get worse?
+ *
+ * This sweep has always printed the number and never COMPARED it. On 2026-08-24 a candidate scoring 0
+ * misses and 0 false accusations on the synthetic hold-out turned out to accuse 12 of 18 conformant real
+ * pages, where the shipped model accused none — and that was found because somebody asked for the sweep by
+ * hand, not because anything checked. A number nothing compares is a number nobody reads.
+ *
+ * Real pages are the only measurement here that shares nothing with the corpus generator, so they are the
+ * only thing that can falsify a generator-shaped assumption. Every other gate — acceptance, rules:gate,
+ * scorer:shortcuts, the enlarged hold-out — runs on pages we wrote, and is blind to this BY CONSTRUCTION.
+ * See ADR 0015 for the same lesson one level down.
+ */
+function reportRegression(rows) {
+  const baseline = readBaselineSweep();
+  if (!baseline) {
+    process.stdout.write("\n  NO BASELINE to compare against, so this run cannot tell better from worse.\n"
+      + `  Run the sweep against the shipped model first; it writes ${resolve(OUT_DIR, "abstention-sweep.json")}.\n`);
+    return;
+  }
+  const comparison = compareAtFloor(rows, baseline.rows ?? [], DERIVED);
+  if (!comparison) return;
+  const { now, was, delta } = comparison;
+
+  const caught = `${now.inaccessibleCaught}/${now.inaccessibleScored}`;
+  const caughtWas = `${was.inaccessibleCaught}/${was.inaccessibleScored}`;
+  process.stdout.write(`\n  AGAINST ${baseline.model}, at floor ${now.floor}:\n`
+    + `    false accusations on conformant real pages  ${was.falsePositives} -> ${now.falsePositives}`
+    + `${delta > 0 ? "   WORSE" : delta < 0 ? "   better" : "   unchanged"}\n`
+    + `    publisher-declared inaccessible caught      ${caughtWas} -> ${caught}\n`);
+
+  if (delta > 0) {
+    process.stdout.write("\n  REGRESSION. A page whose publisher declares it conformant is the closest thing\n"
+      + "  this project has to a negative label it did not author. More of them being accused is not a\n"
+      + "  trade to make for another true positive without saying so out loud.\n");
+    process.exitCode = 1;
+  }
+}
+
+/**
+ * The two rows to compare, at the floor the model actually uses.
+ *
+ * Pure, and exported, so the comparison can be tested without a lab, an encoder and 22 real captures. The
+ * bug it guards against is arithmetic on rows that describe DIFFERENT floors: the sweeps have different
+ * candidate floors (a model's own derived floor is one of them), so `rows[i]` against `rows[i]` compares a
+ * candidate at 0.5587 with a baseline at 0.65 and calls the difference a regression.
+ */
+export function compareAtFloor(rows, baselineRows, floor) {
+  const now = rows.find((r) => r.floor === floor);
+  // The baseline may not have swept this exact floor -- it is derived per model. Fall back to the closest
+  // one AT OR BELOW it, which scores at least as many pages, so the comparison cannot flatter the candidate.
+  const was = baselineRows.find((r) => r.floor === floor)
+    ?? baselineRows.filter((r) => r.floor <= floor).sort((a, b) => b.floor - a.floor)[0];
+  if (!now || !was) return null;
+  return { now, was, delta: now.falsePositives - was.falsePositives };
+}
+
+/** The shipped model's sweep, which is the baseline any candidate must not be worse than. */
+function readBaselineSweep() {
+  const path = resolve(OUT_DIR, "abstention-sweep.json");
+  if (!existsSync(path)) return null;
+  return JSON.parse(readFileSync(path, "utf8"));
 }
 
 // Only when RUN, never on import. `contradictedFindings` is exported so it can be tested, and importing
