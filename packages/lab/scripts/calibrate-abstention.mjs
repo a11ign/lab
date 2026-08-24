@@ -35,7 +35,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { annotateCapture } from "@a11y-witness/evidence";
+import { annotateCapture, evidenceCompleteness, withheldForIncompleteEvidence } from "@a11y-witness/evidence";
 
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 
@@ -117,11 +117,28 @@ function scoreOne(entry) {
     cosine: record.novelty?.nearestTrainingCosine ?? null,
     // `predictions` is the scorer's own per-criterion verdict at its trained thresholds, BEFORE the
     // abstention gate. That is what would be reported if the page were accepted.
-    predicted: Object.entries(record.predictions ?? {}).filter(([, hit]) => hit).map(([c]) => c),
+    ...splitByEvidence(Object.entries(record.predictions ?? {}).filter(([, hit]) => hit).map(([c]) => c),
+      entry.capture),
     // From the CORPUS, because a captured file does not carry the publisher's exceptions. A miss throws
     // rather than defaulting to "no exceptions" -- see `realPageFor`.
     claimExcludes: claimExcludesFor(entry),
   };
+}
+
+/**
+ * Separate what the capture can SUPPORT from what it did not examine.
+ *
+ * A finding on a channel the sweep truncated is not a finding. `1.3.1:unassociated-table` scored 0.946 on a
+ * page W3C publishes as conformant, where the table announced 21 cells and the sweep recorded none — the
+ * model reading UNEXAMINED as FAILING.
+ *
+ * Counted separately from both columns, never folded into either. As a pass it would hide real failures on
+ * exactly the large pages most worth auditing; as an accusation it charges a publisher with something we
+ * did not look at.
+ */
+function splitByEvidence(predicted, capture) {
+  const { supported, inconclusive } = withheldForIncompleteEvidence(predicted, evidenceCompleteness(capture));
+  return { predicted: supported, inconclusive };
 }
 
 /** The publisher's declared exceptions for a captured page. Throws on a failed join; see `realPageFor`. */
@@ -194,6 +211,17 @@ function main() {
       + `${page.url.replace("https://www.w3.org/WAI/demos/bad/", "")}\n`);
   }
 
+  const withheld = scored.reduce((n, page) => n + (page.inconclusive?.length ?? 0), 0);
+  if (withheld) {
+    process.stdout.write(`\n  ${withheld} finding(s) WITHHELD because the capture did not examine the channel `
+      + "they rest on.\n  Neither an accusation nor a pass: re-run those pages with more capture budget.\n");
+    for (const page of scored) {
+      for (const item of page.inconclusive ?? []) {
+        process.stdout.write(`    ${item.criterion}  ${item.channel} ${item.seen}/${item.expected ?? "?"}  `
+          + `${String(page.url).replace(/^https?:\/\//, "").slice(0, 52)}\n`);
+      }
+    }
+  }
   process.stdout.write("\n  floor   scored  conformant  FALSE POSITIVES  disclosed  inaccessible caught\n");
   process.stdout.write("  " + "-".repeat(76) + "\n");
   const rows = [];
