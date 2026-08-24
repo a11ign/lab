@@ -759,6 +759,15 @@ def main() -> None:
                 # is additive on the wire like `fault` is.
                 **({"ruleReportsAs": RULE_OWNERSHIP[subtype]["reportsAs"]}
                    if RULE_OWNERSHIP.get(subtype, {}).get("decidedBy") == "rules" else {}),
+                # NOTE WHAT `precision` HERE CAN AND CANNOT TELL YOU. The threshold was chosen from
+                # these same out-of-fold scores under a zero-false-positive constraint, so whenever
+                # calibration SUCCEEDS this precision is 1.000 by construction -- the constraint
+                # restated, not a measurement. Recall and the threshold are the informative columns.
+                #
+                # The contrapositive is the useful part, and it is stronger than it looks: a precision
+                # below 1.000 can ONLY mean the fallback fired, so the head has no clean cut anywhere on
+                # the grid and is not calibrated at all. "2 false positives" reads like a head that is
+                # slightly over-eager; it actually means a head that cannot be separated.
                 "development": metrics(
                     oof_scores[subtype_indices], subtype_development_labels, subtype_threshold
                 ),
