@@ -148,12 +148,27 @@ function grade(criterion: string, count: Tally, realChannels: Set<string>): Verd
   // collecting the evidence at all. 1.4.2 reads DOM media attributes and 76 of 77 real captures carry an
   // empty media list: no public-body information page autoplays sound.
   const channels = declared?.channels ?? [];
-  if (channels.length && !channels.some((c) => realChannels.has(c))) {
+  const exercised = channels.some((c) => realChannels.has(c));
+  if (channels.length && !exercised) {
     return { ...base, grade: "no-channel",
       because: `no real capture carries ${channels.join(" or ")} — the evidence this rule reads was `
         + "never collected, so it has not been silent, it has been unasked" };
   }
-  return { ...base, grade: count.corpus === 0 ? "unproven" : "corpus-only" };
+  return {
+    ...base,
+    grade: count.corpus === 0 ? "unproven" : "corpus-only",
+    // EXERCISED AND SILENT is not the same as NEVER RUN, and the remedy differs. If real captures carry
+    // the channel, the rule read them and found nothing — which on a conformant page is the CORRECT
+    // outcome and weak evidence it does not false-positive. The work is then finding a page that
+    // actually exhibits the failure, not collecting evidence.
+    //
+    // Deliberately not treated as validation. "A head that has gone silent scores perfect precision" is
+    // this project's most expensive lesson, and a broken rule is silent on conformant pages too.
+    because: exercised
+      ? `its evidence channel IS present on real captures, so it ran and stayed silent — which on a `
+        + "conformant page is the right answer. What is missing is a real page that exhibits the failure"
+      : undefined,
+  };
 }
 
 /**
@@ -223,7 +238,7 @@ function report(verdicts: Verdict[], scanned: Tally): number {
         ? "has never fired on ANY capture. A rule that never executes is an untested assumption with a "
           + "criterion number.\n"
         : `fired ${v.corpus}x on the corpus and never on a real page. The corpus is built from the same `
-          + "assumptions as the rule, so it cannot falsify them.\n"));
+          + `assumptions as the rule, so it cannot falsify them.${v.because ? ` — ${v.because}` : ""}\n`));
   }
   process.stdout.write("\n  Close one by capturing a real page that exercises it, by downgrading the claim "
     + "in `criterion-coverage.ts`,\n  or — where the evidence genuinely cannot exist on a page we do not "
