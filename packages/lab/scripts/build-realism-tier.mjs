@@ -39,7 +39,7 @@ import { createHash } from "node:crypto";
 import { resolve, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { evidenceUnits, captureEvidenceText, producerFeedsModel } from "@a11y-witness/scorer/evidence-units";
+import { modelInput, producerFeedsModel } from "@a11y-witness/scorer/evidence-units";
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 import { captureWasTruncated } from "@a11y-witness/evidence/verify";
 
@@ -201,16 +201,11 @@ function reportMasks(records, heads) {
  * elsewhere on purpose -- see the imports. */
 function recordFor(entry) {
     const capture = entry.capture;
-    const units = evidenceUnits(capture);
     return {
-      input: {
-        screenReader: capture.screenReader ?? "NVDA",
-        transcript: capture.transcript ?? [],
-        structure: capture.structure ?? {},
-        interaction: capture.interaction ?? {},
-        evidenceUnits: units,
-        evidenceText: captureEvidenceText(capture),
-      },
+      // ONE builder, shared with the corpus export. These two constructed the model's input separately
+      // until 2026-08-24, and the copies drifted the moment the contract gained a field: training died on a
+      // real-page record carrying no `parsed` block while every corpus record had one.
+      input: modelInput(capture),
       // The SOURCE's claim, carried verbatim. `clean` because W3C publishes these pages as conforming; if
       // that is ever wrong, it is wrong in W3C's documentation and not in our labelling.
       // `unknownSubtypes` carries what the publisher did NOT claim. Empty for W3C, whose statement is a

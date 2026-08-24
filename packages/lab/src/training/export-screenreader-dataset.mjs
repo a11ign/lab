@@ -1,14 +1,12 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
+import { modelInput } from "@a11y-witness/scorer/evidence-units";
+
 import {
-  captureEvidenceText,
   CASES,
-  evidenceUnits,
   signalMatches,
 } from "./case-matrix.mjs";
-import { annotateCapture } from "@a11y-witness/evidence";
-
 import { hasUsableCaptureFiles } from "./capture-resume.mjs";
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
@@ -91,19 +89,6 @@ function validatePair(testCase, good, bad) {
   return { status: "observed" };
 }
 
-function modelInput(capture) {
-  return {
-    screenReader: capture.screenReader || "unknown",
-    transcript: capture.transcript,
-    structure: capture.structure || null,
-    interaction: capture.interaction || null,
-    evidenceUnits: evidenceUnits(capture),
-    evidenceText: captureEvidenceText(capture),
-    // The parse, so the featurizer reads FIELDS rather than re-deriving the grammar in Python. One
-    // implementation, in `packages/evidence`, because Node always runs before Python in this pipeline.
-    parsed: annotateCapture(capture).parsed,
-  };
-}
 
 function assertModelBoundary(input, caseId) {
   const leaked = FORBIDDEN_INPUT_KEYS.filter((key) => Object.hasOwn(input, key));
