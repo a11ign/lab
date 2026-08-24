@@ -171,3 +171,41 @@ test("a rule-decided head that misses findings still cannot block", () => {
   assert.deepEqual(
     releasability({ training: owned, acceptance: { passed: true }, shipped: null }).blockers, []);
 });
+
+test("a blocked head names what pins its threshold, so ONE record cannot read as a regression", () => {
+  // The situation this was written for, measured on 2026-08-24. Removing a link-text feature moved
+  // `3.3.1:validation-error-silent` from 15 missed findings at 0.90 to 24 at 0.95 — in a change that could
+  // not touch that head's evidence at all. The trainer picks the LOWEST threshold with zero false
+  // positives, so one borderline conformant record pushes the cut a whole step and takes recall with it.
+  //
+  // From the report alone that is indistinguishable from the head getting worse, and the two need opposite
+  // responses: look at the one record, versus retrain. So the blocker states the next cut down and what
+  // rules it out.
+  const sweep = [
+    { threshold: 0.9, falsePositive: 1, falseNegative: 15 },
+    { threshold: 0.95, falsePositive: 0, falseNegative: 24 },
+  ];
+  const pinned = training({
+    "3.3.2:unnamed-form-field": {
+      ...head({ falsePositive: 0, falseNegative: 24, precision: 1, recall: 0.802 }),
+      threshold: 0.95,
+      thresholdSweep: sweep,
+    },
+  });
+  const v = releasability({ training: pinned, acceptance: { passed: true }, shipped: null });
+  const blocker = v.blockers.join(" ");
+  assert.match(blocker, /9 of them are reachable at 0\.9/);
+  assert.match(blocker, /1 false positive\(s\) rule out/);
+});
+
+test("a report with NO sweep still blocks, and says nothing it cannot support", () => {
+  // Every model trained before the sweep existed. A blocker that invented a cause for those would be worse
+  // than one that omits it — this repo's own rule that unexamined must never read as clean.
+  const noSweep = training({
+    "3.3.2:unnamed-form-field": head({ falsePositive: 0, falseNegative: 7, precision: 1, recall: 0.6 }),
+  });
+  const v = releasability({ training: noSweep, acceptance: { passed: true }, shipped: null });
+  assert.equal(v.releasable, false);
+  assert.match(v.blockers.join(" "), /7 missed finding\(s\)/);
+  assert.doesNotMatch(v.blockers.join(" "), /reachable at/);
+});

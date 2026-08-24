@@ -79,10 +79,35 @@ function calibrationFailures(training) {
     if (development.falseNegative > 0) {
       failures.push(`${name}: ${development.falseNegative} missed finding(s) at threshold `
         + `${subtype.threshold} (recall ${Number(development.recall).toFixed(3)}) — a head that has gone `
-        + "silent scores perfect precision, so this must be checked separately");
+        + "silent scores perfect precision, so this must be checked separately"
+        + whatPinnedTheThreshold(subtype, development));
     }
   }
   return failures;
+}
+
+/**
+ * Why the cut sits where it does, when the report carries a threshold sweep.
+ *
+ * "24 missed at 0.95" is a consequence, not a diagnosis. The trainer picks the LOWEST threshold with
+ * zero false positives, so a single borderline conformant record can push the cut a whole step and take
+ * recall with it — and that is indistinguishable from the head itself getting worse, while needing the
+ * opposite response: look at the one record, rather than retrain. On 2026-08-24 this head moved
+ * 15 missed at 0.90 to 24 at 0.95 in a change that touched only link-text features, and the difference
+ * was unreadable from the report.
+ *
+ * So name the next cut down and what rules it out. One false positive there means a record to examine;
+ * forty means the head is genuinely weak and the threshold is doing its job.
+ */
+function whatPinnedTheThreshold(subtype, development) {
+  const sweep = Array.isArray(subtype.thresholdSweep) ? subtype.thresholdSweep : [];
+  const below = sweep.filter((row) => Number(row.threshold) < Number(subtype.threshold));
+  const nextDown = below.sort((a, b) => Number(b.threshold) - Number(a.threshold))[0];
+  if (!nextDown) return "";
+  const recovered = development.falseNegative - Number(nextDown.falseNegative);
+  if (recovered <= 0) return "";
+  return `; ${recovered} of them are reachable at ${nextDown.threshold}, which `
+    + `${nextDown.falsePositive} false positive(s) rule out`;
 }
 
 /**

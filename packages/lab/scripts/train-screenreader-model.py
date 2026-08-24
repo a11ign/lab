@@ -331,19 +331,29 @@ def metrics(scores: Any, labels: Any, threshold: float) -> dict[str, float | int
         "f1": 2 * precision * recall / max(precision + recall, 1e-9),
     }
 
-def choose_threshold(scores: Any, labels: Any, criterion: str = "?", warnings: list[str] | None = None) -> float:
+def threshold_sweep(scores: Any, labels: Any) -> list[dict[str, float | int]]:
+    """Every candidate cut and what it would cost, recorded in the report.
+
+    The chosen threshold alone cannot tell "this head got worse" from "one negative record crossed a
+    line and pinned the cut a step higher". Those need opposite responses -- retrain the head, versus
+    look at the one record -- and on 2026-08-24 the second was nearly read as the first: 3.3.1 went
+    from 15 missed findings at 0.90 to 24 at 0.95 in a change that touched only link-text features.
+    Since `choose_threshold` is a hard zero-false-positive constraint over ~1,200 negatives, a SINGLE
+    borderline negative moves the cut a whole step and takes recall with it. Without the sweep that is
+    indistinguishable from a regression, and the scores it would be diagnosed from are computed
+    out-of-fold and then discarded.
+    """
+    return [{"threshold": t, **metrics(scores, labels, t)} for t in (i / 100 for i in range(5, 100, 5))]
+
+def choose_threshold(sweep: list[dict[str, float | int]], criterion: str = "?",
+                     warnings: list[str] | None = None) -> float:
     """Lowest threshold reaching zero false positives, by F1.
 
     The fallback is REPORTED, not silent. When no candidate reaches zero false positives this returns
     0.5 -- a value nobody chose, for a criterion whose calibration just failed -- and a default that
     looks like a decision is how an unexamined number ends up in a release artifact.
     """
-    candidates = [i / 100 for i in range(5, 100, 5)]
-    valid = []
-    for threshold in candidates:
-        result = metrics(scores, labels, threshold)
-        if result["falsePositive"] == 0:
-            valid.append((result["f1"], threshold))
+    valid = [(row["f1"], row["threshold"]) for row in sweep if row["falsePositive"] == 0]
     if not valid:
         if warnings is not None:
             warnings.append(
@@ -684,12 +694,8 @@ def main() -> None:
             # still gets a threshold -- the report describes what the head would do, and the judge is
             # what declines to use it -- so the two layers can be compared on the same records instead
             # of one of them being invisible.
-            subtype_threshold = choose_threshold(
-                oof_scores[subtype_indices],
-                subtype_development_labels,
-                subtype,
-                report["warnings"],
-            )
+            sweep = threshold_sweep(oof_scores[subtype_indices], subtype_development_labels)
+            subtype_threshold = choose_threshold(sweep, subtype, report["warnings"])
             subtype_names.append(subtype)
             subtype_thresholds[subtype] = subtype_threshold
             subtype_report[subtype] = {
@@ -703,6 +709,9 @@ def main() -> None:
                 # would be used -- which is how 4.1.2 came to report 13 false positives that no shipped
                 # threshold had ever produced.
                 "threshold": subtype_threshold,
+                # What every other cut would have cost. See `threshold_sweep` for why the chosen
+                # number alone is not enough to diagnose a recall change.
+                "thresholdSweep": sweep,
                 # Who decides this subtype in production. Recorded here rather than on the criterion
                 # because `rules:score` measures coverage per subtype, and the criterion-level answer
                 # is wrong for every criterion the two layers share.
