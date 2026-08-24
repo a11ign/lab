@@ -35,7 +35,8 @@
  * retrain to a scratch output, then re-run the sweep on the calibration split.
  */
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { resolve, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { evidenceUnits, captureEvidenceText, producerFeedsModel } from "@a11y-witness/scorer/evidence-units";
@@ -245,6 +246,30 @@ function recordFor(entry) {
     };
 }
 
+/**
+ * Record WHAT this output was derived from, beside the output.
+ *
+ * `with-realism.jsonl` is a derived file, and on 2026-08-24 a retrain consumed one built before 44 new
+ * cases existed: the export had 2,366 records, training reported 2,349, and the whole capture-export-train
+ * cycle produced a model that had never seen the corpus change it was run to test. Nothing was wrong with
+ * any step; the missing one simply left an older file in place, and a stale input looks exactly like a
+ * current one.
+ *
+ * A hash, never a timestamp: mtimes move for reasons that are not content (a checkout, a copy, a sync), so
+ * a timestamp answers a different question from the one being asked. The trainer re-hashes the source
+ * itself rather than trusting anything written here, so the check shares no failure mode with the build.
+ */
+function writeProvenance(baseText, records) {
+  const path = OUT + ".source.json";
+  writeFileSync(path, JSON.stringify({
+    source: relative(REPO, BASE),
+    sourceSha256: createHash("sha256").update(baseText).digest("hex"),
+    sourceRecords: baseText.trimEnd().split("\n").filter(Boolean).length,
+    realismRecords: records.length,
+  }, null, 2) + "\n");
+  return path;
+}
+
 function main() {
   const entries = readdirSync(CORPUS)
     .filter((f) => f.endsWith(".json"))
@@ -265,7 +290,9 @@ function main() {
     process.stdout.write(`  NO REALISM TIER: ${CORPUS} holds no training-role captures, so the output is the\n`
       + `  base dataset unchanged. A model trained on this will ABSTAIN on real pages. Capture the\n`
       + `  real-page corpus first: node packages/lab/src/training/capture-real-pages.mjs --role=training\n`);
-    writeFileSync(OUT, readFileSync(BASE, "utf8"));
+    const baseOnly = readFileSync(BASE, "utf8");
+    writeFileSync(OUT, baseOnly);
+    writeProvenance(baseOnly, []);
     process.stdout.write(`  written: ${OUT} (base only)\n`);
     return;
   }
@@ -279,14 +306,17 @@ function main() {
 
   const records = usable.map(recordFor);
 
-  const base = readFileSync(BASE, "utf8").trimEnd().split("\n");
+  const baseText = readFileSync(BASE, "utf8");
+  const base = baseText.trimEnd().split("\n");
   writeFileSync(OUT, [...base, ...records.map((r) => JSON.stringify(r))].join("\n") + "\n");
+  const provenance = writeProvenance(baseText, records);
 
   process.stdout.write(`  base records:     ${base.length}\n`);
   process.stdout.write(`  realism records:  ${records.length}  (label=clean, from each publisher's own statement)\n`);
   process.stdout.write(`  written:          ${OUT}\n`);
   process.stdout.write(`  median units/rec: ${median(records.map((r) => r.input.evidenceUnits.length))}\n`);
   process.stdout.write(`  rejected as truncated: ${rejected.length} of ${entries.length}\n`);
+  process.stdout.write(`  provenance:       ${provenance}\n`);
   reportMasks(records, scoredCriteria(base));
   // A real page with two evidence units would mean the capture failed, not that the page is simple. Kept as
   // a warning rather than promoted to a reject: the truncation gate above is the principled check, and this

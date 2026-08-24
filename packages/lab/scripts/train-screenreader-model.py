@@ -431,6 +431,53 @@ def ood_reference_indices(total: int, torch: Any) -> Any:
     return torch.linspace(0, total - 1, count).round().long()
 
 
+def assert_dataset_is_current(data: Path) -> None:
+    """Refuse a DERIVED dataset whose source has moved on since it was built.
+
+    `with-realism.jsonl` is produced by `build-realism-tier.mjs` from the export. On 2026-08-24 a retrain
+    consumed one built before 44 new cases existed -- the export held 2,366 records, training reported
+    2,349 -- so a full capture/export/train cycle produced a model that had never seen the corpus change
+    it was run to measure. Every step succeeded. The missing one simply left an older file in place, and a
+    stale input is indistinguishable from a current one at the point of use.
+
+    Re-hashes the SOURCE here rather than trusting anything the builder wrote about it, so this check
+    shares no failure mode with the build -- the rule this repo already applies to deploys, where reading
+    the guest's hash through the same channel that pushed the file verifies nothing.
+
+    A hash, never an mtime: timestamps move for reasons that are not content -- a checkout, a copy, an
+    rsync -- so they answer a different question from the one being asked.
+    """
+    sidecar = data.with_name(data.name + ".source.json")
+    if not sidecar.exists():
+        # No claim to check. Reported rather than assumed either way: this is the third answer, and routing
+        # it to "fine" is what let the stale file through.
+        print(
+            f"  dataset provenance UNKNOWN: no {sidecar.name} beside {data.name}, so whether it is current "
+            f"cannot be decided here.\n"
+            f"  Rebuild it to find out: npm run lab:job -- -e job=build-realism",
+            file=sys.stderr,
+        )
+        return
+
+    claim = json.loads(sidecar.read_text(encoding="utf-8"))
+    source = (data.parent / Path(claim["source"]).name)
+    if not source.exists():
+        return
+
+    actual = sha256(source)
+    if actual == claim.get("sourceSha256"):
+        return
+
+    raise SystemExit(
+        f"REFUSING to train: {data.name} was built from a {source.name} that has since changed.\n"
+        f"  built from : {claim.get('sourceSha256', '?')[:16]}  ({claim.get('sourceRecords', '?')} records)\n"
+        f"  on disk now: {actual[:16]}\n"
+        f"  So this dataset is missing whatever the export has gained, and a model trained on it cannot "
+        f"measure the change you made.\n"
+        f"  Rebuild it: npm run lab:job -- -e job=build-realism"
+    )
+
+
 def assert_declaration_matches_data(records: list[dict[str, Any]]) -> None:
     """Fail if `rule-ownership.json` names a subtype the corpus does not have.
 
@@ -501,6 +548,7 @@ def main() -> None:
     refuse_to_destroy_release_weights(args)
     random.seed(SEED)
     encoder_file = assert_encoder(args.encoder)
+    assert_dataset_is_current(args.data)
     records = read_records(args.data)
     assert_declaration_matches_data(records)
     split_for_family = assign_splits(records)
