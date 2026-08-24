@@ -25,12 +25,30 @@ const FEATURES_PY = fileURLToPath(
 /** Wordlists over PAGE CONTENT. `UNNAMED_GRAPHIC` is deliberately absent — see the assertion below. */
 const CONTENT_WORDLISTS = ["VAGUE_LINKS", "GENERIC_GRAPHICS", "GENERIC_HEADINGS", "FILENAME_GRAPHIC"];
 
-/** Every `values["x"] = ...` assignment whose body mentions `wordlist`. */
+/**
+ * Every `values["x"] = ...` assignment that reaches `wordlist`, directly OR through one helper.
+ *
+ * The indirection is load-bearing and was added after this guard fired for the right reason: when
+ * `vague_link_present` was retired, VAGUE_LINKS stopped appearing in any assignment BODY — it now reaches
+ * `vague_link_without_context` through `vague_link_lacks_context()`. A scrape that only reads the
+ * assignment saw an empty set, which its own message calls out as how a scrape-based test passes while
+ * asserting nothing.
+ *
+ * One level only. Deeper needs a parser, and a test that half-parses Python is worse than one that states
+ * its depth.
+ */
 function featuresDecidedBy(source: string, wordlist: string): string[] {
+  const helpersUsing = new Set<string>();
+  const helper = /^def ([a-z0-9_]+)\(([\s\S]*?)(?=\n\ndef |\n\n#|\n\n[A-Z_]+ =)/gm;
+  for (const [, name, body] of source.matchAll(helper)) {
+    if (body.includes(wordlist)) helpersUsing.add(name);
+  }
   const found: string[] = [];
-  const assignment = /values\["([a-z0-9_]+)"\]\s*=\s*([\s\S]{0,240}?)(?=\n {4}values\["|\n {4}return|\n\n)/g;
+  const assignment = /values\["([a-z0-9_]+)"\]\s*=\s*([\s\S]{0,240}?)(?=\n {4}values\["|\n {4}return|\n {4}#|\n\n)/g;
   for (const [, name, body] of source.matchAll(assignment)) {
-    if (body.includes(wordlist)) found.push(name);
+    const direct = body.includes(wordlist);
+    const viaHelper = [...helpersUsing].some((fn) => body.includes(`${fn}(`));
+    if (direct || viaHelper) found.push(name);
   }
   return found;
 }

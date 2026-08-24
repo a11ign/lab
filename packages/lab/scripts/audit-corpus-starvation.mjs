@@ -92,7 +92,10 @@ const MIN_MONOPOLY_OCCURRENCES = 10;
  * `screenreader_features.py` — `vocabulary-features.test.ts` pins the pair.
  */
 const VOCABULARY_FEATURES = Object.freeze(new Set([
-  "vague_link_present",              // VAGUE_LINKS      — "Details" names a GOV.UK component
+  // `vague_link_present` was here until it was retired as a model input on 2026-08-24: it answers
+  // 2.4.9 (text alone, AAA, unreported) and the 2.4.4 head used it as a shortcut, firing on 22 of
+  // the 44 conformant pages that carry "Details" inside a peer index.
+  "vague_link_without_context",      // VAGUE_LINKS      — "Details" names a GOV.UK component
   "generic_heading_present",         // GENERIC_HEADINGS — "Overview" is a real section title
   "generic_graphic_present",         // GENERIC_GRAPHICS — alt="Photo" beside a photo credit
   "filename_graphic_present",        // FILENAME_GRAPHIC — prose that mentions a file name
