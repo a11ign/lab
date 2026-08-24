@@ -238,6 +238,63 @@ function whatPinnedTheThreshold(subtype, development) {
  *
  * A criterion the shipped model was not evaluated on is NOT a regression — it is new coverage.
  */
+/**
+ * Is this head one record away from having no valid threshold?
+ *
+ * Under ADR 0022 the cut is an order statistic of the held-out negatives, and `np_rank` walks DOWN from
+ * `r = n` — so a head whose rank sits at the extreme has no conservative direction left to move in. The
+ * previous grid search had the same property at 0.95, its top step, and three heads sat there.
+ *
+ * The failure mode is a cliff rather than a slope: the head is clean today and uncalibratable tomorrow,
+ * on one conformant record scoring higher than any before it. `3.3.1`'s own sweep put the fallback at 31
+ * false positives. The gate would refuse the next candidate, which is the system working — but "this was
+ * fine and is now unusable" arriving with no warning is what makes a release feel arbitrary.
+ *
+ * A NOTE, never a blocker. Nothing is wrong with a head at the extreme; it is the most conservative cut
+ * available and it holds its bound. What is worth knowing is that it has no margin.
+ */
+function marginNotes(training) {
+  const out = [];
+  for (const { name, subtype } of heads(training)) {
+    if (isRuleDecided(subtype)) continue;
+    const g = subtype?.guarantee;
+    if (!g || typeof g.rank !== "number" || typeof g.negatives !== "number") continue;
+    if (g.permittedFalsePositives > 0) continue;
+    out.push(`${name}: NO MARGIN — its cut is the most conservative order statistic available `
+      + `(rank ${g.rank} of ${g.negatives}, 0 false positives permitted). One conformant record scoring `
+      + "higher than any so far leaves it with no valid cut at all. Clean today; nothing is wrong.");
+  }
+  return out;
+}
+
+/**
+ * Can these two models be compared at all?
+ *
+ * `regressions()` returns `[]` when either acceptance report is missing, and an empty list of regressions
+ * is indistinguishable from "no regressions" — which is how "nobody could measure this" comes to read as
+ * "nothing is wrong", the shape this file already refuses for acceptance itself.
+ *
+ * There is a second way the comparison can be impossible and nothing reported it. The shipped model is
+ * `screenreader-structured-v7`; the runtime computes `v15`, so `score.py` refuses the shipped weights
+ * outright — *"scorer representation schema does not match the runtime"* — and the shipped acceptance
+ * report on disk describes a model that can no longer be run. Measured 2026-08-24, the real-page sweep
+ * printed `AGAINST shipped ... REGRESSION` from a months-old 22-page JSON while the candidate was scored
+ * on 38 pages, and reported the difference as though it were a change in the model.
+ *
+ * A schema gap is not a blocker: the FIRST model of any new representation necessarily has no comparable
+ * predecessor, and refusing it would make a schema change unshippable forever. It is a NOTE that must be
+ * loud, because every regression check downstream is inert while it holds.
+ */
+function comparabilityNotes(training, shipped) {
+  const candidateSchema = training?.representation?.schema;
+  const shippedSchema = shipped?.representation?.schema;
+  if (!shippedSchema || !candidateSchema || shippedSchema === candidateSchema) return [];
+  return [`NO BASELINE: the shipped model is ${shippedSchema} and this candidate is ${candidateSchema}. `
+    + "The runtime computes only the latter, so the shipped weights cannot be scored and every "
+    + "regression check below is inert — not passing, unable to run. A first model of a new schema is "
+    + "expected to be in this state; a second one is not."];
+}
+
 function regressions(acceptance, shippedAcceptance, tolerance) {
   if (!acceptance || !shippedAcceptance) return [];
   const worse = [];
@@ -284,6 +341,8 @@ export function releasability({ training, acceptance, shipped, shippedAcceptance
   blockers.push(...calibration.failures);
   notes.push(...calibration.notes);
   blockers.push(...regressions(acceptance, shippedAcceptance, tolerance));
+  notes.push(...comparabilityNotes(training, shipped));
+  notes.push(...marginNotes(training));
 
   const ruleOwned = [...heads(training)].filter(({ subtype }) => isRuleDecided(subtype)).map((h) => h.name);
   if (ruleOwned.length > 0) {

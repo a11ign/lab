@@ -339,3 +339,61 @@ test("an acceptance report predating the stamp still promotes, rather than refus
   });
   assert.equal(v.releasable, true, JSON.stringify(v.blockers));
 });
+
+test("a schema gap makes the regression check INERT, and says so rather than passing quietly", () => {
+  // Measured 2026-08-24: shipped is screenreader-structured-v7 and the runtime computes v15, so the
+  // shipped weights cannot be scored at all — `score.py` refuses them. `regressions()` returns [] in that
+  // state, and an empty list of regressions reads exactly like no regressions. The real-page sweep
+  // meanwhile printed "AGAINST shipped ... REGRESSION" off a months-old 22-page file.
+  //
+  // Not a blocker: the FIRST model of a new representation necessarily has no comparable predecessor, and
+  // refusing it would make a schema change unshippable forever.
+  const v = releasability({
+    training: { ...CLEAN, representation: { schema: "screenreader-structured-v15" } },
+    acceptance: { passed: true },
+    shipped: { ...CLEAN, representation: { schema: "screenreader-structured-v7" } },
+    shippedAcceptance: null,
+  });
+  assert.equal(v.releasable, true, JSON.stringify(v.blockers));
+  assert.match(v.notes.join(" "), /NO BASELINE/);
+  assert.match(v.notes.join(" "), /v7.*v15/);
+  assert.match(v.notes.join(" "), /inert — not passing, unable to run/);
+});
+
+test("two models on the SAME schema get no such note — the comparison is real", () => {
+  const v = releasability({
+    training: { ...CLEAN, representation: { schema: "screenreader-structured-v15" } },
+    acceptance: { passed: true },
+    shipped: { ...CLEAN, representation: { schema: "screenreader-structured-v15" } },
+    shippedAcceptance: null,
+  });
+  assert.doesNotMatch(v.notes.join(" "), /NO BASELINE/);
+});
+
+test("a head with NO MARGIN is named — clean today, uncalibratable on one more record", () => {
+  // The cut is an order statistic of the held-out negatives and `np_rank` walks DOWN from r = n, so a
+  // head at the extreme has no conservative direction left. It is a cliff, not a slope: fine today,
+  // no valid cut tomorrow, on one conformant record scoring higher than any before it. 3.3.1's own
+  // sweep puts its fallback at 31 false positives.
+  const atTheEdge = training({
+    "3.3.2:unnamed-form-field": {
+      ...head({ truePositive: 100, falsePositive: 0, falseNegative: 0, precision: 1, recall: 1 }),
+      guarantee: { rank: 1860, negatives: 1860, permittedFalsePositives: 0, atTarget: true },
+    },
+  });
+  const v = releasability({ training: atTheEdge, acceptance: { passed: true }, shipped: null });
+  assert.equal(v.releasable, true, "no margin is not a defect — the bound still holds");
+  assert.match(v.notes.join(" "), /NO MARGIN/);
+  assert.match(v.notes.join(" "), /rank 1860 of 1860/);
+});
+
+test("a head with room to spare gets no margin note", () => {
+  const comfortable = training({
+    "3.3.2:unnamed-form-field": {
+      ...head({ truePositive: 100, falsePositive: 4, falseNegative: 0, precision: 0.96, recall: 1 }),
+      guarantee: { rank: 1850, negatives: 1860, permittedFalsePositives: 10, atTarget: true },
+    },
+  });
+  const v = releasability({ training: comfortable, acceptance: { passed: true }, shipped: null });
+  assert.doesNotMatch(v.notes.join(" "), /NO MARGIN/);
+});
