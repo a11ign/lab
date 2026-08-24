@@ -100,7 +100,11 @@ function calibrationPages() {
  * That is what makes a sweep possible at all.
  */
 function scoreOne(entry) {
-  const args = [SCORER, "--stdin", ...(MODEL ? ["--model", MODEL] : [])];
+  // `--evaluating` when a model is NAMED: pointing this sweep at a specific candidate is measurement, not
+  // inference, and score.py refuses an ineligible artifact by default because scoring somebody's page with
+  // unvetted weights is the error that guard is for. Naming a model is the declaration of purpose; the
+  // shipped-model path below passes nothing and stays under the strict default.
+  const args = [SCORER, "--stdin", ...(MODEL ? ["--model", MODEL, "--evaluating"] : [])];
   const out = JSON.parse(execFileSync(PYTHON, args, {
     input: JSON.stringify(entry.capture), encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
   }));
