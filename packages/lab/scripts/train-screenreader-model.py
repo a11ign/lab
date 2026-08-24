@@ -337,7 +337,10 @@ def threshold_sweep(scores: Any, labels: Any) -> list[dict[str, float | int]]:
     The chosen threshold alone cannot tell "this head got worse" from "one negative record crossed a
     line and pinned the cut a step higher". Those need opposite responses -- retrain the head, versus
     look at the one record -- and on 2026-08-24 the second was nearly read as the first: 3.3.1 went
-    from 15 missed findings at 0.90 to 24 at 0.95 in a change that touched only link-text features.
+    from 15 missed findings at 0.90 to 24 at 0.95 when one LINK-TEXT feature was removed. Every head
+    reads the same shared feature vector, so that removal does re-fit this head too; but the feature
+    describes link text and this head reads validation messages, so a nine-finding swing wanted
+    explaining rather than accepting.
     Since `choose_threshold` is a hard zero-false-positive constraint over ~1,200 negatives, a SINGLE
     borderline negative moves the cut a whole step and takes recall with it. Without the sweep that is
     indistinguishable from a regression, and the scores it would be diagnosed from are computed

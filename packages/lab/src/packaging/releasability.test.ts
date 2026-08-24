@@ -174,8 +174,9 @@ test("a rule-decided head that misses findings still cannot block", () => {
 
 test("a blocked head names what pins its threshold, so ONE record cannot read as a regression", () => {
   // The situation this was written for, measured on 2026-08-24. Removing a link-text feature moved
-  // `3.3.1:validation-error-silent` from 15 missed findings at 0.90 to 24 at 0.95 — in a change that could
-  // not touch that head's evidence at all. The trainer picks the LOWEST threshold with zero false
+  // `3.3.1:validation-error-silent` from 15 missed findings at 0.90 to 24 at 0.95. Every head reads the
+  // same shared feature vector so it WAS re-fitted, but it reads validation messages and the dropped
+  // feature described link text. The trainer picks the LOWEST threshold with zero false
   // positives, so one borderline conformant record pushes the cut a whole step and takes recall with it.
   //
   // From the report alone that is indistinguishable from the head getting worse, and the two need opposite

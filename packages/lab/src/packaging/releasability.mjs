@@ -92,9 +92,10 @@ function calibrationFailures(training) {
  * "24 missed at 0.95" is a consequence, not a diagnosis. The trainer picks the LOWEST threshold with
  * zero false positives, so a single borderline conformant record can push the cut a whole step and take
  * recall with it — and that is indistinguishable from the head itself getting worse, while needing the
- * opposite response: look at the one record, rather than retrain. On 2026-08-24 this head moved
- * 15 missed at 0.90 to 24 at 0.95 in a change that touched only link-text features, and the difference
- * was unreadable from the report.
+ * opposite response: look at the one record, rather than retrain. On 2026-08-24 `3.3.1` moved from
+ * 15 missed at 0.90 to 24 at 0.95 when one link-text feature was dropped — every head reads the same
+ * shared vector, so it was re-fitted, but it reads validation messages and not link text — and the
+ * report gave no way to tell the two apart.
  *
  * So name the next cut down and what rules it out. One false positive there means a record to examine;
  * forty means the head is genuinely weak and the threshold is doing its job.
