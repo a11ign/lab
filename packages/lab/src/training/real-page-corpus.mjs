@@ -232,6 +232,23 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   // it, which is the guard working; the comment is now specific so the next reader does not have to rely
   // on it.
   //
+  // SEARCHED FOR MORE ON 2026-08-24, AND THERE ARE NONE. Three independent sources checked, all aggregate:
+  //
+  //   accessibility statements   site-level by design. "Partially compliant" scopes failures to FEATURES.
+  //                              NPSA's names form controls "missing a 'label' tag" -- a real 3.3.2/4.1.2
+  //                              claim, and about the site, so it licenses `claimExcludes` and no page label.
+  //   WCAG-EM evaluation reports the methodology built for per-page conformance. Fetched a published one
+  //                              (nelincs.gov.uk): it names 20 tested URLs and then reports every criterion
+  //                              AGGREGATED across the sample. No "page X failed 1.1.1" anywhere.
+  //   GDS PSBAR monitoring       1,203 sites monitored, findings reported as themes ("not enough colour
+  //                              contrast", "lack of visible focus"). Per-organisation audit PDFs do exist
+  //                              and are worse for us: dated 2021, so the label describes a page that no
+  //                              longer exists at that URL.
+  //
+  // The last one is the general trap and worth stating: a label must describe the page AS CAPTURED. An
+  // audit and a capture years apart are two different pages wearing one URL, and nothing in the pipeline
+  // would notice.
+  //
   // So pages published as INACCESSIBLE are capped at three from this source, and that is a limit of the
   // labelling discipline rather than an oversight: a site-level accessibility statement says "partially
   // compliant" and scopes its failures to features, which licenses `claimExcludes` and never a page-level
