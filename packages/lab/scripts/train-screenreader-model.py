@@ -352,23 +352,48 @@ def choose_threshold(sweep: list[dict[str, float | int]], criterion: str = "?",
                      warnings: list[str] | None = None) -> float:
     """Lowest threshold reaching zero false positives, by F1.
 
-    The fallback is REPORTED, not silent. When no candidate reaches zero false positives this returns
-    0.5 -- a value nobody chose, for a criterion whose calibration just failed -- and a default that
-    looks like a decision is how an unexamined number ends up in a release artifact.
+    The fallback is REPORTED, not silent -- and it is no longer 0.5. When nothing on the grid reaches
+    zero false positives the head is NOT CALIBRATED, and the cut becomes the one with the FEWEST false
+    positives, ties broken by recall.
+
+    0.5 was a value nobody chose, and it was indefensible in the one direction this project states a
+    preference about. Measured 2026-08-24 on the three heads where calibration failed:
+
+        2.1.2:focus-trapped        36 false positives at 0.5, against 4 at 0.95
+        2.4.2:route-title-stale     6 at 0.5, against 2 at 0.75 AT THE SAME RECALL -- strictly dominated
+        1.3.1:unassociated-table    2 at 0.5, against 1 at 0.55
+
+    It is also a cliff rather than a corner case. `3.3.1` currently holds 0.95 with zero false
+    positives; one more negative crossing 0.95 leaves no valid cut, and its own sweep puts 0.5 at 31
+    false positives. Reporting a bad default loudly does not make it a good default.
+
+    This can never choose worse than 0.5 did, because 0.5 is itself one of the candidates.
     """
     valid = [(row["f1"], row["threshold"]) for row in sweep if row["falsePositive"] == 0]
     if not valid:
-        if warnings is not None:
-            warnings.append(
-                f"{criterion}: no threshold reaches zero false positives; falling back to 0.5, which "
-                "nobody chose — this criterion is not calibrated"
-            )
-        return 0.5
+        return least_damaging_threshold(sweep, criterion, warnings)
     # Once the zero-false-positive guard is satisfied, prefer the lowest
     # threshold among equal-F1 candidates. That preserves recall and follows
     # the model's accessibility safety objective rather than adding a second,
     # undocumented conservatism bias through tuple ordering.
     return max(valid, key=lambda item: (item[0], -item[1]))[1]
+
+def least_damaging_threshold(sweep: list[dict[str, float | int]], criterion: str,
+                             warnings: list[str] | None) -> float:
+    """The cut for a head that cannot be calibrated: fewest false positives, then most recall.
+
+    Ordered that way round because this project's stated preference is explicit -- a false accusation is
+    worse than a miss, since somebody may budget against it or be challenged over it. Ties go to recall
+    so a needlessly conservative cut is not preferred over an equally clean one.
+    """
+    least = min(sweep, key=lambda row: (row["falsePositive"], -row["recall"], row["threshold"]))
+    if warnings is not None:
+        warnings.append(
+            f"{criterion}: no threshold reaches zero false positives — this criterion is NOT "
+            f"calibrated. Falling back to {least['threshold']}, the fewest-false-positive cut on the "
+            f"grid ({least['falsePositive']} at recall {least['recall']:.3f}); nobody chose it."
+        )
+    return least["threshold"]
 
 def bag_gather_tensors(offsets: list[int]) -> tuple[Any, Any]:
     """`bag_gather` as torch tensors — the training-side conversion boundary.
