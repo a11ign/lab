@@ -49,6 +49,7 @@ function* heads(training) {
  */
 function calibrationFailures(training) {
   const failures = [];
+  const notes = [];
   for (const { name, subtype } of heads(training)) {
     if (isRuleDecided(subtype)) continue;
     const development = subtype?.development;
@@ -72,14 +73,11 @@ function calibrationFailures(training) {
     // the only place the asymmetry lived. Preference belongs in the THRESHOLD a criterion is calibrated
     // to — which is now a stated Neyman-Pearson bound (ADR 0022) — not in which errors a gate can see.
     failures.push(...typeOneErrorFailures(name, subtype, development));
-    if (development.falseNegative > 0) {
-      failures.push(`${name}: ${development.falseNegative} missed finding(s) at threshold `
-        + `${subtype.threshold} (recall ${Number(development.recall).toFixed(3)}) — a head that has gone `
-        + "silent scores perfect precision, so this must be checked separately"
-        + whatPinnedTheThreshold(subtype, development));
-    }
+    const { blocking, note } = silentHeadFailures(name, subtype, development);
+    if (blocking) failures.push(blocking);
+    if (note) notes.push(note);
   }
-  return failures;
+  return { failures, notes };
 }
 
 /**
@@ -155,6 +153,50 @@ function typeOneErrorFailures(name, subtype, development) {
       + "calibration itself rather than a weak head");
   }
   return failures;
+}
+
+/**
+ * Has this head gone SILENT?
+ *
+ * This checked `falseNegative > 0`, which demands recall 1.000 on every head — a bar no learned model can
+ * clear, and one the shipped model only appears to clear because its development set is smaller and
+ * easier. That is the artefact `regressions()` twelve lines below already carries a scar for: *"the
+ * shipped model's contains no multi-defect pages and the candidate's contains 237, so
+ * `1.3.1:fake-heading recall 1.000 -> 0.553` was the same head measured on a substantially harder
+ * population, reported as a regression. Thirteen of sixteen blockers on the first real candidate were
+ * that artefact."* The lesson was applied to the regression check and not to this one — the same
+ * one-call-site shape this repo names most often.
+ *
+ * The stated purpose is narrower than the rule was, and the comment above it said so all along: *a head
+ * that has gone silent scores perfect precision, so this must be checked separately*. Going silent and
+ * missing nine of a hundred are different conditions needing different responses.
+ *
+ * So the split, by what each figure can actually support:
+ *
+ *   - **Silent BLOCKS.** "This head found nothing" is an absolute property of one model, true or false
+ *     without reference to any other, and a head that reports nothing is broken however it was measured.
+ *   - **Missing findings are REPORTED.** Development recall is computed on a corpus particular to that
+ *     model, so its absolute value is not comparable between two models and cannot support a gate.
+ *   - **Losing ground BLOCKS, in `regressions()`,** against held-out acceptance — the same 35 cases for
+ *     every model, and the only figure on which two models can honestly be compared.
+ *
+ * Nothing is lost by the move: a head that genuinely weakens still fails, on the measurement that can
+ * see it. What is gained is that a candidate is no longer refused for being measured on harder data.
+ */
+function silentHeadFailures(name, subtype, development) {
+  if (development.truePositive === 0 && development.positive > 0) {
+    return { blocking: `${name}: SILENT — 0 of ${development.positive} positive record(s) found at threshold `
+      + `${subtype.threshold}. A head that reports nothing scores perfect precision, which is why this is `
+      + "checked apart from the false-positive bound." };
+  }
+  if (development.falseNegative > 0) {
+    return { note: `${name}: NOTE — ${development.falseNegative} missed finding(s) at threshold `
+      + `${subtype.threshold} (recall ${Number(development.recall).toFixed(3)})`
+      + whatPinnedTheThreshold(subtype, development)
+      + ". Not blocking: development recall is measured on a corpus particular to this model and is not "
+      + "comparable to another's. Held-out acceptance is where losing ground is caught." };
+  }
+  return {};
 }
 
 /**
@@ -238,7 +280,9 @@ export function releasability({ training, acceptance, shipped, shippedAcceptance
   }
   blockers.push(...acceptanceBelongsToTheseWeights(acceptance, candidateModelSha256));
 
-  blockers.push(...calibrationFailures(training));
+  const calibration = calibrationFailures(training);
+  blockers.push(...calibration.failures);
+  notes.push(...calibration.notes);
   blockers.push(...regressions(acceptance, shippedAcceptance, tolerance));
 
   const ruleOwned = [...heads(training)].filter(({ subtype }) => isRuleDecided(subtype)).map((h) => h.name);

@@ -146,7 +146,7 @@ test("a rule-decided head cannot block as a REGRESSION either, not just on calib
   assert.deepEqual(v.blockers, []);
 });
 
-test("a head that MISSES findings blocks, not only one that invents them", () => {
+test("a SILENT head blocks — it found nothing at all", () => {
   // The asymmetry this closes: checking false positives alone means a head that has gone silent scores a
   // perfect precision and passes. That is the failure ADR 0015 measured — the shipped model trades two
   // missed findings for two false accusations, and only one of those was visible to this function.
@@ -154,11 +154,34 @@ test("a head that MISSES findings blocks, not only one that invents them", () =>
   // Preference between the two error types belongs in the THRESHOLD a criterion is calibrated to, not in
   // which errors a gate can see.
   const silent = training({
-    "3.3.2:unnamed-form-field": head({ falsePositive: 0, falseNegative: 7, precision: 1, recall: 0.6 }),
+    "3.3.2:unnamed-form-field": head({
+      truePositive: 0, falsePositive: 0, falseNegative: 100, precision: 1, recall: 0,
+    }),
   });
   const v = releasability({ training: silent, acceptance: { passed: true }, shipped: null });
   assert.equal(v.releasable, false);
-  assert.match(v.blockers.join(" "), /7 missed finding\(s\)/);
+  assert.match(v.blockers.join(" "), /SILENT — 0 of 100 positive record\(s\)/);
+});
+
+test("a head that merely MISSES some does NOT block — that bar is unclearable and was never the point", () => {
+  // This checked `falseNegative > 0`, which demands recall 1.000 on every head. Nothing learned can clear
+  // it, and the shipped model only appears to because its development set is smaller and easier — the
+  // exact artefact `regressions()` twelve lines below already carries a scar for, applied to that check
+  // and not to this one.
+  //
+  // Development recall is computed on a corpus particular to one model, so its absolute value cannot
+  // support a gate. Losing ground is caught where two models ARE comparable: held-out acceptance, the
+  // same 35 cases for everyone. Nothing is lost — a head that genuinely weakens still fails, on the
+  // measurement that can see it.
+  const imperfect = training({
+    "3.3.2:unnamed-form-field": head({
+      truePositive: 108, falsePositive: 0, falseNegative: 13, precision: 1, recall: 0.893,
+    }),
+  });
+  const v = releasability({ training: imperfect, acceptance: { passed: true }, shipped: null });
+  assert.equal(v.releasable, true, JSON.stringify(v.blockers));
+  assert.match(v.notes.join(" "), /13 missed finding\(s\)/,
+    "still REPORTED — a silent head must never be able to hide behind not being blocked");
 });
 
 test("a rule-decided head that misses findings still cannot block", () => {
@@ -194,21 +217,23 @@ test("a blocked head names what pins its threshold, so ONE record cannot read as
     },
   });
   const v = releasability({ training: pinned, acceptance: { passed: true }, shipped: null });
-  const blocker = v.blockers.join(" ");
-  assert.match(blocker, /9 of them are reachable at 0\.9/);
-  assert.match(blocker, /1 false positive\(s\) rule out/);
+  // Reported rather than blocking since the recall bar moved, but the diagnosis is the whole value here
+  // and must survive that move: without it, "24 missed" cannot be told from a head that weakened.
+  const said = [...v.blockers, ...v.notes].join(" ");
+  assert.match(said, /9 of them are reachable at 0\.9/);
+  assert.match(said, /1 false positive\(s\) rule out/);
 });
 
-test("a report with NO sweep still blocks, and says nothing it cannot support", () => {
+test("a report with NO sweep is still REPORTED, and says nothing it cannot support", () => {
   // Every model trained before the sweep existed. A blocker that invented a cause for those would be worse
   // than one that omits it — this repo's own rule that unexamined must never read as clean.
   const noSweep = training({
     "3.3.2:unnamed-form-field": head({ falsePositive: 0, falseNegative: 7, precision: 1, recall: 0.6 }),
   });
   const v = releasability({ training: noSweep, acceptance: { passed: true }, shipped: null });
-  assert.equal(v.releasable, false);
-  assert.match(v.blockers.join(" "), /7 missed finding\(s\)/);
-  assert.doesNotMatch(v.blockers.join(" "), /reachable at/);
+  const said = [...v.blockers, ...v.notes].join(" ");
+  assert.match(said, /7 missed finding\(s\)/);
+  assert.doesNotMatch(said, /reachable at/);
 });
 
 const guaranteed = (over = {}) => ({
