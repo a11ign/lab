@@ -114,7 +114,7 @@
       "decidedBy": "rules",
       "reportsAs": "2.1.1",
       "note": [
-        "A control the page ANNOUNCES as operable that Tab never reaches — the failure a screen-reader user",
+        "A control the page ANNOUNCES as operable that Tab never reaches \u2014 the failure a screen-reader user",
         "meets as 'I can hear it and I cannot press it'. Deterministic: two captured sequences compared.",
         "",
         "POSITIONAL, because the focus probe truncates. Every corpus page stops at 12 tab stops, so absence",
@@ -129,14 +129,14 @@
       "decidedBy": "rules",
       "reportsAs": "2.4.1",
       "note": [
-        "PARTIAL, and the part is the only one that is ours. A skip link is NOT required — W3C is explicit",
-        "that headings alone (H69) and landmarks alone (ARIA11) satisfy 2.4.1 — so detecting absence would",
+        "PARTIAL, and the part is the only one that is ours. A skip link is NOT required \u2014 W3C is explicit",
+        "that headings alone (H69) and landmarks alone (ARIA11) satisfy 2.4.1 \u2014 so detecting absence would",
         "fire on conformant pages, and whether any mechanism EXISTS is a DOM fact the static layer answers",
         "better than our nondeterministic landmark sweep.",
         "",
         "This rule fires only on a mechanism that is present and inert: activating the skip link left focus",
         "exactly where the next Tab would have gone anyway. Measured on the pair, which differ only in the",
-        "target id — 'Search the archive, edit' against 'News and updates, link'.",
+        "target id \u2014 'Search the archive, edit' against 'News and updates, link'.",
         "",
         "It requires the activated control to BE a skip link by name, because the probe takes the first link",
         "on the page and on a real site that is as likely to be a logo."
@@ -147,12 +147,12 @@
       "reportsAs": "2.4.2",
       "note": [
         "Deterministic because the evidence is a comparison, not a reading: the first heading changed and",
-        "the title did not. Both come from the screen reader — `reportTitle` is the same command that fills",
+        "the title did not. Both come from the screen reader \u2014 `reportTitle` is the same command that fills",
         "`documentReady.title`, so this is what a user hears when they ask where they are.",
         "",
         "It covers ONE of 2.4.2's failure modes and deliberately not the others. A missing title is not",
         "worth a rule (zero across 4,895 captures, and absent from the failures covering 96% of WebAIM's",
-        "million-page survey), and whether a title DESCRIBES its topic is judgement — W3C flags 2.4.2 on a",
+        "million-page survey), and whether a title DESCRIBES its topic is judgement \u2014 W3C flags 2.4.2 on a",
         "page titled 'Welcome to CityLights! [Inaccessible Survey Page]'. So this is partial coverage of the",
         "criterion, and the part a screen reader is uniquely placed to prove: a static analyser cannot see",
         "it at all, because the markup is valid at every instant and the failure is the transition.",
@@ -175,7 +175,7 @@
         "contradicts the reading sequence for the same controls.",
         "",
         "Only a screen reader can make this comparison. A static checker can flag tabindex=\"1\" as a smell,",
-        "but the DOM has no reading order to contradict — that order only exists once something has walked",
+        "but the DOM has no reading order to contradict \u2014 that order only exists once something has walked",
         "the page."
       ]
     },
@@ -192,6 +192,11 @@
         "overlap is what makes it visible; the gate asserts it stays a strict, non-empty subset, so",
         "widening the vocabulary to everything (or breaking the rule to nothing) both fail."
       ]
+    },
+    "4.1.2:state-change-silent": {
+      "decidedBy": "rules",
+      "reportsAs": "4.1.2",
+      "note": "MOVED from the model on 2026-08-24, reversing a decision made on accuracy alone. The model scored 59/0/0 and a deterministic rule had been written and measured at 69/69 EXACT with no false positives across 1,001 conformant records -- so a rule looked redundant. It is not, because the two layers differ in what they may CLAIM, not only in how often they are right: a model finding carries no `mapping`, which means `secondary`, which `criterionOutcomes` reports as `cantTell`. A rule may be conformance-mapped and assert. `compare-layers.mjs` names this exact criterion as the difference between this tool and a static scanner -- axe can see that `aria-expanded` exists and cannot see that it never changes -- so the one finding nothing else can make was being reported as a maybe. Re-measured on the whole corpus after the move: 69 true positives, 0 false positives, 0 false negatives across 144 captures carrying state evidence."
     }
   }
 }
