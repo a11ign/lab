@@ -1987,7 +1987,7 @@ cases.push(
  * with its own button plus this one is two things to press, and which the probe chooses is a difference the
  * label does not describe — the one defect this corpus cannot carry.
  */
-const ACCOMPANYING_CONFORMANT = Object.freeze({
+export const ACCOMPANYING_CONFORMANT = Object.freeze({
   // A filter that finds nothing and SAYS SO. `validation_error_announced` starves 10 subtypes — the most of
   // any remaining fixable feature — and it is conformant behaviour: the error being spoken is the criterion
   // being SATISFIED. `3.3.1:validation-error-silent` is the page where it is not.
@@ -2027,18 +2027,26 @@ const ACCOMPANYING_CONFORMANT = Object.freeze({
   // conditional rather than applied to every piece.
   "component-index": {
     markup: [
-      "<nav aria-label=\"Components\"><ul>"
+      // A bare list, NOT a `<nav>`. The landmark version was captured and broke three cases: NVDA announces
+      // a container transition when the caret crosses one, so `form-unlabelled`'s bare `"edit"` became
+      // `"main landmark, form, edit"` and its signal stopped matching — the role-prefix problem one layer
+      // out. It also gave a landmark to `landmarks-missing`, whose failure IS having none.
+      //
+      // Nothing is lost. What makes the link conform is that it is one item in a homogeneous index of peer
+      // links, which the list supplies; WCAG's programmatically determined context names the LIST ITEM, not
+      // the landmark.
+      "<ul>"
         + "<li><a href=\"/components/accordion\">Accordion</a></li>"
         + "<li><a href=\"/components/details\">Details</a></li>"
         + "<li><a href=\"/components/tabs\">Tabs</a></li>"
         + "<li><a href=\"/components/table\">Table</a></li>"
-        + "</ul></nav>",
-      "<nav aria-label=\"Guidance sections\"><ul>"
+        + "</ul>",
+      "<ul>"
         + "<li><a href=\"/guidance/eligibility\">Eligibility</a></li>"
         + "<li><a href=\"/guidance/details\">Details</a></li>"
         + "<li><a href=\"/guidance/deadlines\">Deadlines</a></li>"
         + "<li><a href=\"/guidance/contacts\">Contacts</a></li>"
-        + "</ul></nav>",
+        + "</ul>",
     ],
     // No `subtypes`: it adds no failure, so no label changes — the test every accompaniment must pass.
     grants: ["vague_link_present"],
@@ -2047,7 +2055,15 @@ const ACCOMPANYING_CONFORMANT = Object.freeze({
     // and its badSignal would fire on both. That is CONTAMINATED, the one thing this corpus cannot carry.
     // Every other criterion is unaffected: a page about an unnamed form field does not care what a link in
     // an index is called.
-    notFor: ["2.4.4"],
+    // 2.4.4's own cases USE these words as their failing example -- `link-vague-market` and
+    // `link-vague-clinic` are both "Details" -- so accompanying one would put the word on its good variant
+    // and its badSignal would fire on both. That is CONTAMINATED, the one thing this corpus cannot carry.
+    //
+    // The rest are criteria whose evidence IS the focus order, and this piece adds four focusable links.
+    // `focusOrder` truncates at 12 stops, so four more push the case's own controls out of the window and
+    // both variants come back looking alike -- measured on `focus-order-tabindex`, which reported
+    // CONTAMINATED for exactly that reason.
+    notFor: ["2.4.4", "2.4.3", "2.1.1", "2.1.2"],
   },
   "status-region": {
     markup: [
@@ -2430,8 +2446,14 @@ function withConformantBehaviour(template, name) {
     id: `${template.id}+with-${name}`,
     family: `conformant-behaviour-${template.criterion}`,
     mutation: `${template.mutation} The page ALSO carries correct behaviour: ${name}.`,
-    probeForms: piece.probeForms,
-    task: piece.task,
+    // `?? template.*`, never the piece's value outright. Both existing pieces declare a `probeForms` and a
+    // `task` because both are button-and-live-region shapes, so nothing ever noticed that assigning them
+    // unconditionally ERASES the host's own. A static piece declares neither, and it silently turned
+    // `form-error-silent` from `probeForms: true, task: "Submit the request..."` into `false` and `""` --
+    // so the form was never submitted, no validation error was announced on EITHER variant, and six cases
+    // reported CONTAMINATED. An accompaniment adds to a case; it does not get to disarm its probes.
+    probeForms: piece.probeForms ?? template.probeForms,
+    task: piece.task ?? template.task,
     // BOTH variants. A conformant accompaniment on the failing page alone would correlate with the label.
     good: template.good.replace("</body>", `${markup}</body>`),
     bad: template.bad.replace("</body>", `${markup}</body>`),

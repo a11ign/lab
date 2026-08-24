@@ -26,7 +26,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { CASES, signalMatches } from "./case-matrix.mjs";
+import { ACCOMPANYING_CONFORMANT, CASES, signalMatches } from "./case-matrix.mjs";
 
 type Signal = { type?: string };
 type Case = { id: string; badSignal?: Signal; criterion?: string; good?: string; bad?: string };
@@ -252,8 +252,10 @@ const CONFORMANT_SPEECH: Record<string, { transcript: string[]; links: string[] 
   // What NVDA announces for the nav-and-list markup. Written from a real capture's shape: the container is
   // announced, then each link in order.
   "component-index": {
+    // No landmark line: the piece is a bare `<ul>`. A `<nav>` was captured and broke three cases by
+    // changing NVDA's container prefixes — see the markup's comment in case-matrix.
     transcript: [
-      "navigation landmark, list, with 4 items",
+      "list, with 4 items",
       "link, Accordion", "link, Details", "link, Tabs", "link, Table",
       "link, Eligibility", "link, Deadlines", "link, Contacts",
       "out of list",
@@ -295,4 +297,38 @@ test("conformant accompaniments exist and carry the word, or the check above is 
     + "which is the shortcut this corpus change exists to remove");
   assert.ok(generated.every((c) => c.criterion !== "2.4.4"),
     "a 2.4.4 host received the piece whose word its own case uses as the failure");
+  assert.ok(generated.every((c) => !["2.4.3", "2.1.1", "2.1.2"].includes(String(c.criterion))),
+    "a focus-order case received four extra focusable links, and `focusOrder` truncates at 12 stops");
+  // Asserted on the piece's own markup, which is a VALUE. Diffing the generated page against its host does
+  // not work: the two have different IDs, so `withRealisticScale` gives them different furniture, and the
+  // residue contained the HOST's `<nav>` rather than the piece's.
+  for (const markup of ACCOMPANYING_CONFORMANT["component-index"].markup) {
+    assert.ok(!/<nav[\s>]/.test(markup),
+      "the piece injects a landmark, which changes NVDA's container prefixes for everything after it — "
+      + "measured, it turned a bare \"edit\" into \"main landmark, form, edit\" and blinded three cases");
+  }
+});
+
+test("an accompaniment adds to a host, it does not DISARM it", () => {
+  // `probeForms: piece.probeForms` erased the host's own. Both existing pieces declare one, so nothing
+  // noticed until a static piece declared neither and turned `form-error-silent` from
+  // `probeForms: true, task: "Submit the request..."` into `false` and `""` — the form was never submitted,
+  // no validation error was announced on EITHER variant, and six cases reported CONTAMINATED.
+  const hosts = new Map((CASES as Case[]).map((c) => [c.id, c]));
+  const generated = (CASES as Case[]).filter((c) => /\+with-[a-z-]+$/.test(c.id));
+  assert.ok(generated.length > 0, "no accompanied case exists; this check examines nothing");
+  let checked = 0;
+  for (const testCase of generated) {
+    const host = hosts.get(testCase.id.replace(/\+with-[a-z-]+$/, ""));
+    if (!host) continue;
+    const hostProbes = host as unknown as { probeForms?: boolean; task?: string };
+    const madeProbes = testCase as unknown as { probeForms?: boolean; task?: string };
+    if (!hostProbes.probeForms) continue;
+    checked += 1;
+    assert.ok(madeProbes.probeForms,
+      `${testCase.id} lost its host's probeForms, so the evidence its label describes is never captured`);
+    assert.ok((madeProbes.task ?? "").length > 0,
+      `${testCase.id} lost its host's task; probeForms with no task activates nothing`);
+  }
+  assert.ok(checked > 0, "no accompanied case had a probing host, so this guard examined nothing");
 });
