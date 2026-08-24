@@ -58,7 +58,11 @@ const SCORER = resolve(REPO, "packages/scorer/python/score.py");
  * -- "retrain to a scratch output, then re-run the sweep" -- so a candidate model could only be judged by
  * replacing the shipped one first, which is the wrong order.
  */
-const MODEL = process.env.A11Y_SCORER_MODEL;
+//
+// `|| undefined`, not a bare read: `??` below does not treat "" as absent, so an env var set to the empty
+// string would become the model DIRECTORY. That is exactly what a templated `-e model=` produces when the
+// variable is not supplied, and it would point the sweep at "" while reading as a deliberate choice.
+const MODEL = process.env.A11Y_SCORER_MODEL || undefined;
 
 /**
  * Floors to try. Round numbers to show the shape of the curve, plus **the floor the model actually derived**,
