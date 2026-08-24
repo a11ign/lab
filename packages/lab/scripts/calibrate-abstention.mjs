@@ -288,8 +288,7 @@ function main() {
       }
     }
   }
-  process.stdout.write("\n  ASSERTED means the tool states the criterion is NOT SATISFIED. `referred` means it said\n"
-    + "  cantTell — a possible failure sent to a human, which is neither an accusation nor a pass.\n");
+  printLegend();
   process.stdout.write("\n  floor   scored  conformant  ASSERTED-WRONGLY  referred  wrong/cells  disclosed  inaccessible caught\n");
   process.stdout.write("  " + "-".repeat(76) + "\n");
   const rows = [];
@@ -361,6 +360,23 @@ function main() {
  * scorer:shortcuts, the enlarged hold-out — runs on pages we wrote, and is blind to this BY CONSTRUCTION.
  * See ADR 0015 for the same lesson one level down.
  */
+/**
+ * What the columns mean, printed above them because a reader meets the number before any prose about it.
+ *
+ * Extracted from `main` for the second time today: a long explanation inside it breaches both the
+ * `max-lines-per-function` budget and the physical-line one, and the physical-line guard exists precisely
+ * because ESLint's `skipComments: true` lets a comment-dense function run to twice its stated limit.
+ */
+function printLegend() {
+  process.stdout.write("\n  ASSERTED means the tool states the criterion is NOT SATISFIED. `referred` means it said\n"
+    + "  cantTell — a possible failure sent to a human, which is neither an accusation nor a pass.\n"
+    + "\n  ASSERTED-WRONGLY counts disagreement with a PUBLISHED CLAIM, not proven tool error. A\n"
+    + "  publisher can be wrong, and on 2026-08-24 both residual disagreements were: scotcourts.gov.uk\n"
+    + "  carries `<button class=\"inner mobileMenuButton\">` with no text and no aria-label, which is\n"
+    + "  exactly the 4.1.2 we reported. Treat a rise here as a prompt to read the markup, never as a\n"
+    + "  defect count — the four that cleared today WERE ours, and these two are not.\n");
+}
+
 function reportRegression(rows) {
   const baseline = readBaselineSweep();
   if (!baseline) {
