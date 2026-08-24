@@ -46,7 +46,7 @@ import { ruleFindings } from "@a11y-witness/judge/rules";
 // RULE_CRITERIA lives in coverage.ts and is imported by rules.ts, not re-exported from it. Taken from the
 // source rather than the convenient neighbour: locally tsx resolves TypeScript and the mistake is silent,
 // while the lab resolves `dist` and it is a hard failure — the stale-dist hazard, one door along.
-import { RULE_CRITERIA } from "@a11y-witness/judge/coverage";
+import { RULE_CRITERIA, SCORED_CRITERIA } from "@a11y-witness/judge/coverage";
 import { CRITERION_COVERAGE } from "@a11y-witness/judge/internal";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
@@ -58,6 +58,20 @@ type Tally = { corpus: number; real: number };
 
 /** Claims the product makes about itself. `reachable` and `out-of-scope` claim nothing, so they cannot lie. */
 const CLAIMED = new Set(["assessed", "partial"]);
+
+/**
+ * Criteria NOTHING else covers, so an unvalidated rule leaves them uncovered outright.
+ *
+ * `CRITERION_COVERAGE` describes a CRITERION — both layers — while this audit measures whether a RULE
+ * fired. Conflating the two makes the audit block on something correct: 1.3.1's rule catches only the
+ * no-headings-at-all mode and has never fired, but the scorer has heads for `1.3.1:fake-heading` and
+ * `1.3.1:unassociated-table`, so the criterion is genuinely assessed and the coverage claim is true.
+ *
+ * For a rule-only criterion there is no second layer to carry it, so "the rule never fired" and "the
+ * criterion is not assessed" are the same statement. Those block; the rest are reported, because an
+ * unvalidated rule is still worth naming even when something else covers its criterion.
+ */
+const RULE_ONLY = new Set(RULE_CRITERIA.filter((c) => !SCORED_CRITERIA.includes(c as never)));
 
 function capturesIn(dir: string): unknown[] {
   let entries: string[];
@@ -137,8 +151,10 @@ function grade(criterion: string, count: Tally): Verdict {
 const EXPECTED_REAL_CAPTURES = 60;
 
 function report(verdicts: Verdict[], scanned: Tally): number {
-  const blocking = verdicts.filter((v) => CLAIMED.has(v.status)
+  const unvalidated = verdicts.filter((v) => CLAIMED.has(v.status)
     && (v.grade === "unproven" || v.grade === "corpus-only"));
+  const blocking = unvalidated.filter((v) => RULE_ONLY.has(v.criterion));
+  const alsoScored = unvalidated.filter((v) => !RULE_ONLY.has(v.criterion));
 
   process.stdout.write(`\n  Rule coverage — what has actually FIRED, over ${scanned.corpus} corpus and `
     + `${scanned.real} real capture(s)\n\n`);
@@ -154,9 +170,18 @@ function report(verdicts: Verdict[], scanned: Tally): number {
       + `${String(v.corpus).padStart(6)} ${String(v.real).padStart(8)}   ${label}\n`);
   }
 
+  if (alsoScored.length) {
+    process.stdout.write(`\n  ${alsoScored.length} rule(s) unvalidated on a real page whose criterion the `
+      + "TRAINED SCORER also covers, so the criterion is not left uncovered:\n");
+    for (const v of alsoScored) {
+      process.stdout.write(`    ${v.criterion} — rule fired ${v.corpus}x on the corpus, ${v.real}x on a `
+        + "real page. Reported, not blocking.\n");
+    }
+  }
+
   if (!blocking.length) {
-    process.stdout.write("\n  PASS — every criterion this project claims has fired on a real page, or "
-      + "declares why it cannot.\n");
+    process.stdout.write("\n  PASS — every RULE-ONLY criterion has fired on a real page, or declares why "
+      + "it cannot. Nothing this project claims rests solely on an untested rule.\n");
     return 0;
   }
 
@@ -168,7 +193,8 @@ function report(verdicts: Verdict[], scanned: Tally): number {
     return 2;
   }
 
-  process.stdout.write(`\n  ${blocking.length} criterion(a) claimed but never demonstrated on a real page:\n`);
+  process.stdout.write(`\n  ${blocking.length} RULE-ONLY criterion(a) claimed but never demonstrated on a `
+    + "real page — nothing else covers these:\n");
   for (const v of blocking) {
     process.stdout.write(`    ${v.criterion} (${v.status}) — `
       + (v.grade === "unproven"
@@ -194,7 +220,7 @@ function main(): void {
   const verdicts = RULE_CRITERIA.map((c) => grade(c, fires.get(c) ?? { corpus: 0, real: 0 }));
   if (JSON_OUT) {
     process.stdout.write(`${JSON.stringify({ scanned, verdicts }, null, 2)}\n`);
-    process.exitCode = verdicts.some((v) => CLAIMED.has(v.status)
+    process.exitCode = verdicts.some((v) => CLAIMED.has(v.status) && RULE_ONLY.has(v.criterion)
       && (v.grade === "unproven" || v.grade === "corpus-only")) ? 1 : 0;
     return;
   }

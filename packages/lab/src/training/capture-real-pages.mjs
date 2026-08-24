@@ -138,6 +138,20 @@ async function capture(page, workerUrl) {
     // `probeForms` is OFF. These are somebody else's live pages, and the same rule the CLI follows applies
     // with more force here: pressing *Book* on a page we do not own is not a review. `probeFocus` is on —
     // Tab activates nothing.
+    //
+    // `probeNavigation` is ON as of 2026-08-24, and the line it sits on the right side of is worth stating
+    // because it is not the same line as `probeForms`. It follows the FIRST LINK, which is ordinary
+    // browsing — the thing this tool already did to reach the page — where submitting a form writes to
+    // somebody's system. On essentially every real page the first link IS the skip link, which is exactly
+    // what 2.4.1 exists to test.
+    //
+    // Without it, two rules could never fire on a real page: `addInertSkipLink` and `addStaleRouteTitle`
+    // both read `interaction.routeChange`, and 0 of 77 real captures carried any. `criterion-coverage.ts`
+    // listed both as assessed the whole time. That is the defect `rules:coverage` was built to name — a
+    // rule whose evidence is never collected is not covered, it is unexamined.
+    //
+    // Scope is deliberate: this is the LAB's research corpus of public information pages, not a change to
+    // what the CLI does when pointed at an arbitrary URL. `chooseProbe` still owns that decision.
     // `steps` RAISED for real pages. The worker's default is 150 read-through lines, sized for a generated
     // corpus whose largest page is 2,118 bytes -- and it truncates the transcript of most real pages.
     // Measured over the 26 shipped real captures: 9 of the 16 model-visible truncations are
@@ -148,7 +162,9 @@ async function capture(page, workerUrl) {
     // captures -- and real-page captures are never cached, by construction. And the read-through is
     // separately bounded by `readThroughDeadline`, so a higher cap cannot run longer than the budget
     // allows; it only stops the cap binding BEFORE the deadline does. A budget is a ceiling, not a cost.
-    body: { url: page.url, probeForms: false, probeFocus: true, steps: REAL_PAGE_STEPS },
+    body: {
+      url: page.url, probeForms: false, probeFocus: true, probeNavigation: true, steps: REAL_PAGE_STEPS,
+    },
     timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
   });
   const data = response.json ?? {};
