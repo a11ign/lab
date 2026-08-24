@@ -7,6 +7,8 @@
  * are paraphrased from the repository's bookctx references and existing eval
  * fixtures.
  */
+import { parseAnnouncement } from "@a11y-witness/evidence";
+
 
 const BASE_STYLE = [
   "body { font: 16px system-ui, sans-serif; line-height: 1.5; max-width: 48rem; margin: 2rem auto; padding: 0 1rem; }",
@@ -2783,32 +2785,28 @@ function focusOrderIsScrambled(capture) {
 /**
  * The accessible name, with container, role and state words stripped, so the two channels are comparable.
  *
- * **This exists TWICE** — here for the dataset signals, and as `comparableNames` in `rules.ts` for the
- * findings — because one is `.mjs` read by the corpus tooling and the other is TypeScript compiled to
- * `dist`, and making the generator depend on a build is how a stale `dist` silently scored the wrong rules
- * earlier today. The duplication is deliberate and it is also a liability: the two drifted within an hour of
- * being written, when the container fix was applied to the rule and not to this, and `check-signals`
- * reported the 2.1.1 case CONTAMINATED — the signal firing on the conformant page while the rule stayed
- * silent on it. `name-normalisation.test.ts` now pins them equal.
+ * **It used to exist TWICE** — here for the dataset signals and as `comparableNames` in `rules.ts` for the
+ * findings — on the stated grounds that "the corpus generator runs under plain node and cannot import
+ * TypeScript". That premise was false by 2026-08-24: five `.mjs` files in this package already import
+ * `@a11y-witness/evidence`, `repeat-capture.mjs` among them, in this very directory.
  *
- * The leading container is the part that matters: the sweep announces `"form, Full name, edit"` where focus
- * says `"Full name, edit, focused"`, and every real nav bar is a list inside a landmark.
+ * The duplication cost what duplication costs. The two drifted within an hour of being written, which
+ * `check-signals` caught as a CONTAMINATED 2.1.1 case. `name-normalisation.test.ts` then pinned them
+ * equal — and pinned them on CORPUS announcements, where a container is one comma group. Real sites name
+ * their landmarks, which NVDA announces as two (`"Main navigation, navigation landmark"`), and neither
+ * copy handled that or knew `frame` or `grouping`. The rule reduced
+ * `"banner landmark, Main navigation, navigation landmark, list, with 6 items, About us, button"` to
+ * `"main navigation navigation with 6 items about us"`, matched it against nothing in the tab order, and
+ * reported a keyboard-unreachable control on 23 of 35 CONFORMANT real pages.
+ *
+ * So the copy is gone rather than corrected a fifth time. `parseAnnouncement` is channel-aware and
+ * validated on 6,555 cross-channel comparisons at 0.08% disagreement; the test above still pins the two
+ * call sites equal, and now does it on real-page shapes too.
  */
 export function namesOf(entries) {
   return (entries || [])
-    // Mirrors `accessibleName` + `LEADING_CONTAINER` + `FOCUS_ONLY_STATES` in `rules.ts`, in the same
-    // order, from the same token lists. It is a copy because the corpus generator runs under plain
-    // `node` and cannot import TypeScript, and making it depend on a build is how a stale `dist`
-    // scored the wrong rules earlier today. `name-normalisation.test.ts` pins the two equal on real
-    // announcements, which is what makes a forced duplication safe rather than merely known.
-    .map((entry) => String(entry)
-      .split("\u{FFFC}").join(" ")
-      .replace(/^(?:(?:[^,]+\s+)?(?:landmark|form|list|table|group|region|dialog)(?:\s*,\s*with\s+\d+\s+items?)?\s*,\s*)+/i, "")
-      .replace(/\b(focused|blank|visited|same page|linked|has auto ?complete|autocomplete)\b/gi, " ")
-      .replace(/\b(not checked|checked|not pressed|pressed|collapsed|expanded|not selected|selected|read only|required|invalid entry|out of list|out of region|clickable|multi ?line|level \d+)\b/gi, " ")
-      .replace(/\b(navigation landmark|main landmark|banner landmark|radio button|edit text|combo box|list box|menu button|menu item|graphic|image|button|checkbox|heading|region|banner|navigation|radio|edit|link|list)\b/gi, " ")
-      .replace(/[\s,]+/g, " ")
-      .trim())
+    .map((entry) => parseAnnouncement(String(entry), "sweep").objects[0]?.name ?? "")
+    .map((name) => name.replace(/[\s,]+/g, " ").trim())
     .filter(Boolean);
 }
 

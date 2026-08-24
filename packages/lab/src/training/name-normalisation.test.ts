@@ -34,6 +34,14 @@ const ANNOUNCEMENTS = [
   "list, with 6 items, Opening times for the north entrance 01, link",
   "Search the archive, edit, focused, blank",
   "Bookings, heading, level 1",
+  // FROM REAL PAGES, added 2026-08-24. Every fixture above came from CORPUS captures, and the corpus
+  // announces a container as ONE comma group. Real sites name their landmarks, which NVDA announces as
+  // two — and the list above could not tell the two normalisers apart on that shape, so a divergence that
+  // made 2.1.1 fire on 23 of 35 conformant pages sat under a green test. ADR 0019, in a fixture list.
+  "banner landmark, Main navigation, navigation landmark, list, with 6 items, About us, button, collapsed",
+  "About us, button, collapsed",
+  "main landmark, Nunjucks, tab, collapsed",
+  "Radios example, frame, Where do you live?, grouping, Wales, radio button, not checked",
 ];
 
 test("the dataset signal and the shipped rule reduce an announcement to the same name", () => {
