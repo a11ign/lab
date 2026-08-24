@@ -35,7 +35,10 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { annotateCapture, evidenceCompleteness, withheldForIncompleteEvidence } from "@a11y-witness/evidence";
+import { annotateCapture } from "@a11y-witness/evidence";
+import { criterionOutcomes } from "@a11y-witness/judge/outcomes";
+import { findingsFromScores } from "@a11y-witness/judge/internal";
+import { ruleFindings } from "@a11y-witness/judge/rules";
 
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 
@@ -117,8 +120,7 @@ function scoreOne(entry) {
     cosine: record.novelty?.nearestTrainingCosine ?? null,
     // `predictions` is the scorer's own per-criterion verdict at its trained thresholds, BEFORE the
     // abstention gate. That is what would be reported if the page were accepted.
-    ...splitByEvidence(Object.entries(record.predictions ?? {}).filter(([, hit]) => hit).map(([c]) => c),
-      entry.capture),
+    ...productOutcomes(record, entry.capture),
     // From the CORPUS, because a captured file does not carry the publisher's exceptions. A miss throws
     // rather than defaulting to "no exceptions" -- see `realPageFor`.
     claimExcludes: claimExcludesFor(entry),
@@ -126,19 +128,41 @@ function scoreOne(entry) {
 }
 
 /**
- * Separate what the capture can SUPPORT from what it did not examine.
+ * What the PRODUCT would report, not what the model raw-predicts.
  *
- * A finding on a channel the sweep truncated is not a finding. `1.3.1:unassociated-table` scored 0.946 on a
- * page W3C publishes as conformant, where the table announced 21 cells and the sweep recorded none — the
- * model reading UNEXAMINED as FAILING.
+ * This sweep read `record.predictions` straight out of `score.py` and counted every true one as a FALSE
+ * POSITIVE. That is an intermediate value which never reaches a user in that form. The CLI routes findings
+ * through `criterionOutcomes`, and a model finding carries no `mapping` — which `RequirementMapping`
+ * documents as meaning `secondary`, "a new finding source has to opt IN to asserting non-conformance". So
+ * ACT and EARL both call it `cantTell`: a possible failure needing human confirmation, never an assertion.
  *
- * Counted separately from both columns, never folded into either. As a pass it would hide real failures on
- * exactly the large pages most worth auditing; as an accusation it charges a publisher with something we
- * did not look at.
+ * Verified end to end before this was written: the same finding scores `cantTell` unmapped and `failed`
+ * when conformance-mapped.
+ *
+ * The consequence is that every "false accusation" number this sweep has ever produced described something
+ * the tool does not say. That is exactly the defect CLAUDE.md records for `JUDGE_BACKEND` defaulting to
+ * `codex` — "a gate that does not exercise what ships is not a gate" — and it had been quietly true here of
+ * the number the whole real-page calibration rests on.
+ *
+ * `truncatedSweeps` and `abstained` come along for the ride because the outcomes model already turns both
+ * into `cantTell`, per criterion, citing WCAG Conformance Requirement 2. That mechanism existed before
+ * today and this sweep was bypassing it.
  */
-function splitByEvidence(predicted, capture) {
-  const { supported, inconclusive } = withheldForIncompleteEvidence(predicted, evidenceCompleteness(capture));
-  return { predicted: supported, inconclusive };
+function productOutcomes(record, capture) {
+  const { findings } = findingsFromScores(record, capture);
+  const rules = ruleFindings(capture);
+  const outcomes = criterionOutcomes({
+    capture,
+    findings: [...findings, ...rules],
+    abstained: false,
+    truncatedSweeps: [],
+  });
+  return {
+    // An ASSERTION: the tool states this criterion is not satisfied.
+    predicted: outcomes.filter((o) => o.outcome === "failed").map((o) => o.criterion),
+    // Referred to a human. Neither an accusation nor a pass, and counted as neither.
+    cantTell: outcomes.filter((o) => o.outcome === "cantTell").map((o) => o.criterion),
+  };
 }
 
 /** The publisher's declared exceptions for a captured page. Throws on a failed join; see `realPageFor`. */
@@ -222,7 +246,9 @@ function main() {
       }
     }
   }
-  process.stdout.write("\n  floor   scored  conformant  FALSE POSITIVES  disclosed  inaccessible caught\n");
+  process.stdout.write("\n  ASSERTED means the tool states the criterion is NOT SATISFIED. `referred` means it said\n"
+    + "  cantTell — a possible failure sent to a human, which is neither an accusation nor a pass.\n");
+  process.stdout.write("\n  floor   scored  conformant  ASSERTED-WRONGLY  referred  disclosed  inaccessible caught\n");
   process.stdout.write("  " + "-".repeat(76) + "\n");
   const rows = [];
   for (const floor of CANDIDATE_FLOORS) {
@@ -237,10 +263,12 @@ function main() {
       (p) => p.predicted.length > contradictedFindings(p).length).length;
     const inaccessible = accepted.filter((p) => p.claim === "inaccessible");
     const caught = inaccessible.filter((p) => p.predicted.length > 0).length;
-    rows.push({ floor, scored: accepted.length, conformantScored: conformant.length, falsePositives,
+    const referred = conformant.reduce((n, p) => n + (p.cantTell?.length ?? 0), 0);
+    rows.push({ floor, scored: accepted.length, conformantScored: conformant.length, falsePositives, referred,
       disclosed, inaccessibleScored: inaccessible.length, inaccessibleCaught: caught });
     process.stdout.write(`  ${String(floor).padEnd(7)} ${String(accepted.length).padEnd(7)} `
-      + `${String(conformant.length).padEnd(11)} ${String(falsePositives).padEnd(16)} `
+      + `${String(conformant.length).padEnd(11)} ${String(falsePositives).padEnd(17)} `
+      + `${String(referred).padEnd(9)} `
       + `${String(disclosed).padEnd(10)} ${caught} of ${inaccessible.length}`
       + `${floor === DERIVED ? "   <- THIS MODEL'S OWN FLOOR" : ""}\n`);
   }
