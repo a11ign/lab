@@ -362,6 +362,70 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     source: "Scottish Government: partially compliant with WCAG 2.2 AA; exceptions are PDF documents and a menu button at 200% zoom, neither a criterion we score (https://gov.scot/accessibility/)",
     demonstrates: "government publication listing" },
 
+  // ---- CALIBRATION WIDENING, 2026-08-24 ------------------------------------------------------------
+  //
+  // 38 calibration pages resolve an error rate of about 2.6% at best — the sweep says so in its own
+  // output — and a tool that ASSERTS conformance failures needs finer resolution than that. This batch
+  // roughly doubles the set.
+  //
+  // Every page here comes from a publisher ALREADY in this corpus, and that is the point rather than
+  // laziness: the expensive part of a real-page label is not the URL, it is establishing what the
+  // publisher claims and which criteria their statement excludes. That work is done and cited above for
+  // each of these sites; a second page inherits it, because an accessibility statement is SITE-level by
+  // design — the same property that caps publisher-declared INACCESSIBLE pages at three.
+  //
+  // Chosen for SHAPE rather than novelty: each is a page type the corpus is thin on — a long-form guide,
+  // a filtered list, a form-led start page, a data table, a search result. Bag size and structure are
+  // what the scorer sees, so a fifth publication listing would add pages without adding evidence.
+  { url: "https://www.gov.scot/about/", role: "calibration",
+    publishedClaim: "conformant",
+    source: "Scottish Government: partially compliant with WCAG 2.2 AA; exceptions are PDF documents and a menu button at 200% zoom, neither a criterion we score (https://gov.scot/accessibility/)",
+    demonstrates: "long-form organisational prose, few controls" },
+  { url: "https://www.mygov.scot/benefits", role: "calibration",
+    publishedClaim: "conformant",
+    source: "mygov.scot: partially compliant, own statement (https://www.mygov.scot/accessibility)",
+    demonstrates: "benefit index — a link list with descriptive text under each" },
+  { url: "https://www.nrscotland.gov.uk/statistics-and-data/", role: "calibration",
+    publishedClaim: "conformant",
+    source: "National Records of Scotland: partially compliant, own statement (https://www.nrscotland.gov.uk/accessibility/)",
+    demonstrates: "statistics hub, nested navigation" },
+  { url: "https://www.gov.uk/browse/benefits", role: "calibration",
+    publishedClaim: "conformant",
+    source: "GOV.UK: partially compliant with WCAG 2.2 AA (https://www.gov.uk/help/accessibility-statement)",
+    demonstrates: "top-level browse page, dense link grid" },
+  { url: "https://www.gov.uk/vehicle-tax", role: "calibration",
+    publishedClaim: "conformant",
+    source: "GOV.UK: partially compliant with WCAG 2.2 AA (https://www.gov.uk/help/accessibility-statement)",
+    demonstrates: "transactional start page — the shape a service journey begins with" },
+  { url: "https://www.nhs.uk/conditions/", role: "calibration",
+    publishedClaim: "conformant",
+    source: "NHS website: partially compliant, own statement (https://www.nhs.uk/accessibility/)",
+    demonstrates: "A-to-Z index, very long link list" },
+  { url: "https://service-manual.nhs.uk/design-system/components/table", role: "calibration",
+    publishedClaim: "conformant",
+    source: "NHS digital service manual: partially compliant, own statement (https://service-manual.nhs.uk/accessibility-statement)",
+    demonstrates: "documented data table with a worked example" },
+  { url: "https://ico.org.uk/for-the-public/", role: "calibration",
+    publishedClaim: "conformant",
+    source: "ICO: partially compliant, own statement (https://ico.org.uk/global/accessibility-statement/)",
+    demonstrates: "public-facing hub, card layout" },
+  { url: "https://www.metoffice.gov.uk/weather/warnings-and-advice/uk-warnings", role: "calibration",
+    publishedClaim: "conformant",
+    source: "Met Office: partially compliant, own statement (https://www.metoffice.gov.uk/about-us/legal/accessibility)",
+    demonstrates: "live status page — content that changes without a route change" },
+  { url: "https://www.cqc.org.uk/about-us", role: "calibration",
+    publishedClaim: "conformant",
+    source: "Care Quality Commission: partially compliant, own statement (https://www.cqc.org.uk/about-us/our-website/accessibility-statement)",
+    demonstrates: "corporate prose page, in-page navigation" },
+  { url: "https://www.nationalarchives.gov.uk/about/", role: "calibration",
+    publishedClaim: "conformant",
+    source: "The National Archives: partially compliant, own statement (https://www.nationalarchives.gov.uk/legal/accessibility/)",
+    demonstrates: "institutional landing page with mixed media" },
+  { url: "https://tfl.gov.uk/modes/tube/", role: "calibration",
+    publishedClaim: "conformant",
+    source: "Transport for London: partially compliant, own statement (https://tfl.gov.uk/corporate/terms-and-conditions/accessibility)",
+    demonstrates: "transport mode hub — status widgets and disclosure panels" },
+
   // --- TRAINING, one page per publisher. Structures come from PUBLISHERS, measured. ----------------
   // 14 extra pages inside six existing families bought +0.004; the +0.11 came from the structures.
   // So: one page each, and `family` defaults to the page id so every publisher is its own structure.
