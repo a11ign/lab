@@ -241,7 +241,11 @@ function assertManifestMatchesCases(manifest) {
 
 function exportCases(manifest) {
   const records = [];
-  const summary = { observed: 0, skipped: 0, invalid: 0, excluded: 0, records: 0, reasons: {} };
+  // The exclusion set is recorded, not just applied. Without it a consumer of this export cannot tell an
+  // exclusion that STOPPED WORKING from an export that simply predates the exclusion -- and those have
+  // opposite remedies (fix the exporter / re-run the exporter). `rules:gate` asserted the alarming one.
+  const summary = { observed: 0, skipped: 0, invalid: 0, excluded: 0, records: 0, reasons: {},
+    excludedSubtypes: [...MODEL_EXCLUDED_SUBTYPES].sort() };
   for (const testCase of manifest.cases) {
     const good = readCapture(testCase, "good");
     const bad = readCapture(testCase, "bad");

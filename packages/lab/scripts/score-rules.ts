@@ -40,7 +40,7 @@
 //
 // It now speaks the corpus's own `target.subtypes` vocabulary -- the same one the scorer's heads are
 // named after -- so the two layers are measured in one language instead of two.
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 
@@ -213,6 +213,28 @@ function falsePositiveFailures(records: Record_[]): string[] {
   return failures;
 }
 
+/**
+ * A problem this copy of the corpus cannot attribute.
+ *
+ * Marked rather than described in prose because two readers act on it: `reportGate`, which must exit 2
+ * INCONCLUSIVE rather than 1 FAIL, and a human. One exported constant, so the two cannot drift — the
+ * failure this repo pays for most often is the same fact written down twice.
+ */
+export const UNDETERMINED = "[undetermined] ";
+
+/**
+ * The exclusions the export on disk was actually produced with, or null if it did not record them.
+ *
+ * Null is not "none": an export written before this was recorded cannot answer the question, and treating
+ * that as "excluded nothing" would turn every old export into a false "the exporter is broken".
+ */
+function exportedExclusions(): string[] | null {
+  const path = DATA.replace(/\.jsonl$/i, ".summary.json");
+  if (!existsSync(path)) return null;
+  const summary = JSON.parse(readFileSync(path, "utf8")) as { excludedSubtypes?: string[] };
+  return Array.isArray(summary.excludedSubtypes) ? summary.excludedSubtypes : null;
+}
+
 /** Every declared key must exist in the data — and every `unavailable` one must NOT. */
 function ownershipFailures(coverage: Map<string, Coverage>): string[] {
   const failures: string[] = [];
@@ -229,8 +251,32 @@ function ownershipFailures(coverage: Map<string, Coverage>): string[] {
     const present = coverage.has(subtype);
     if (entry.decidedBy === "unavailable") {
       if (!present) continue;
-      console.log(`RULES: ${subtype} is declared unavailable and yet appears in the export. The model `
-        + "exclusion has stopped working, so a head is being trained on evidence that cannot express it.");
+      // Two causes, opposite remedies, and this used to assert the alarming one unconditionally: either the
+      // exporter's exclusion stopped working, or the export on disk simply predates the exclusion being
+      // added. The export records the set it ran with, so the two are now distinguishable rather than
+      // guessed -- a stale local corpus reported "the model exclusion has stopped working", which sends the
+      // reader to debug code that is fine.
+      const excludedAtExportTime = exportedExclusions();
+      if (excludedAtExportTime && !excludedAtExportTime.includes(subtype)) {
+        console.log(`RULES: ${subtype} is declared unavailable and appears in the export — but the export `
+          + "was produced BEFORE that exclusion existed, so this is stale data, not a broken exporter. "
+          + "Re-run the export against the current corpus.");
+        failures.push(UNDETERMINED + `${subtype} present in the data, from an export that predates its exclusion (stale export)`);
+        continue;
+      }
+      if (!excludedAtExportTime) {
+        // "Cannot answer" is a third outcome and must not be reported as either of the other two. Routing it
+        // to the alarming branch is the same guess the record was added to remove.
+        console.log(`RULES: ${subtype} is declared unavailable and appears in the export, and that export `
+          + "did not record which exclusions it ran with — so this is either a broken exclusion or an export "
+          + "that predates it, and this check cannot tell which. Re-run the export: the answer is the same "
+          + "either way if it clears, and definite if it does not.");
+        failures.push(UNDETERMINED + `${subtype} present in the data; the export records no exclusion set, so the cause is undetermined`);
+        continue;
+      }
+      console.log(`RULES: ${subtype} is declared unavailable and yet appears in an export that DID exclude `
+        + "it. The model exclusion has stopped working, so a head is being trained on evidence that cannot "
+        + "express its failure.");
       failures.push(`${subtype} is declared unavailable but present in the data`);
       continue;
     }
@@ -272,9 +318,32 @@ function boundaryFailures(coverage: Map<string, Coverage>): string[] {
   return failures;
 }
 
+export function partitionProblems(failures: string[]): { conclusive: string[]; undetermined: string[] } {
+  return {
+    conclusive: failures.filter((f) => !f.startsWith(UNDETERMINED)),
+    undetermined: failures.filter((f) => f.startsWith(UNDETERMINED)).map((f) => f.slice(UNDETERMINED.length)),
+  };
+}
+
 function reportGate(failures: string[]): void {
-  if (GATE && failures.length) {
-    console.log(`\nRULES: FAIL — ${failures.length} problem(s): ${failures.join("; ")}.`);
+  const { conclusive, undetermined } = partitionProblems(failures);
+
+  // A stale working copy of `runs/` is not a defect in the code being pushed, and this check cannot tell a
+  // stale corpus from one that legitimately needs recapture. Failing on it is what made A11Y_SKIP_VERIFY=1
+  // routine -- and that switch disables lint, typecheck and 953 tests too, so the check that could not
+  // answer its own question switched off the ones that could. Exit 2 INCONCLUSIVE instead, exactly as
+  // check-signals already does, and let the hook report it as SKIPPED. The authoritative answer is
+  // `npm run lab:job -- -e job=rules-gate`, where the corpus IS the corpus.
+  if (GATE && !conclusive.length && undetermined.length) {
+    console.log(`\nRULES: INCONCLUSIVE — ${undetermined.length} problem(s) this copy of runs/ cannot `
+      + `attribute: ${undetermined.join("; ")}.`);
+    console.log("This is not a pass. Re-export, or ask the lab, which holds the authoritative corpus.");
+    process.exitCode = 2;
+    return;
+  }
+  if (GATE && conclusive.length) {
+    const all = [...conclusive, ...undetermined.map((u) => `${u} (undetermined)`)];
+    console.log(`\nRULES: FAIL — ${all.length} problem(s): ${all.join("; ")}.`);
     process.exitCode = 1;
   } else if (GATE) {
     console.log("\nRULES: PASS — every declared boundary holds on real captured evidence, with no false positives.");
