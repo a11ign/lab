@@ -50,8 +50,11 @@ function run(script: string, root: string, out?: string, extra: string[] = []) {
       encoding: "utf8",
     }) };
   } catch (error) {
-    const failure = error as { status?: number; stdout?: string };
-    return { status: failure.status ?? 1, output: failure.stdout ?? "" };
+    // stderr too. It was stdout only, so a script that DIED reported an empty output and every assertion
+    // on it read as "the export printed nothing" rather than naming the exception — which is this repo's
+    // usual defect (a check that cannot tell two causes apart) inside its own test helper.
+    const failure = error as { status?: number; stdout?: string; stderr?: string };
+    return { status: failure.status ?? 1, output: (failure.stdout ?? "") + (failure.stderr ?? "") };
   }
 }
 
@@ -97,7 +100,7 @@ test("export accepts only a page-matching capture pair", () => {
   try {
     const currentOut = resolve(current, "evidence.jsonl");
     const currentResult = run(EXPORT, current, currentOut);
-    assert.equal(currentResult.status, 0);
+    assert.equal(currentResult.status, 0, currentResult.output.slice(0, 900));
     assert.match(currentResult.output, /Exported 2 records/);
     assert.equal(readFileSync(currentOut, "utf8").trim().split("\n").length, 2);
 

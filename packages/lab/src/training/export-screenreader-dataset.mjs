@@ -7,6 +7,8 @@ import {
   evidenceUnits,
   signalMatches,
 } from "./case-matrix.mjs";
+import { annotateCapture } from "@a11y-witness/evidence";
+
 import { hasUsableCaptureFiles } from "./capture-resume.mjs";
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
@@ -97,6 +99,9 @@ function modelInput(capture) {
     interaction: capture.interaction || null,
     evidenceUnits: evidenceUnits(capture),
     evidenceText: captureEvidenceText(capture),
+    // The parse, so the featurizer reads FIELDS rather than re-deriving the grammar in Python. One
+    // implementation, in `packages/evidence`, because Node always runs before Python in this pipeline.
+    parsed: annotateCapture(capture).parsed,
   };
 }
 

@@ -35,6 +35,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { annotateCapture } from "@a11y-witness/evidence";
+
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 
 // Resolved from THIS module, never from the caller's cwd. A bare "packages/scorer/python/score.py" is
@@ -106,7 +108,7 @@ function scoreOne(entry) {
   // shipped-model path below passes nothing and stays under the strict default.
   const args = [SCORER, "--stdin", ...(MODEL ? ["--model", MODEL, "--evaluating"] : [])];
   const out = JSON.parse(execFileSync(PYTHON, args, {
-    input: JSON.stringify(entry.capture), encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
+    input: JSON.stringify(annotateCapture(entry.capture)), encoding: "utf8", maxBuffer: 64 * 1024 * 1024,
   }));
   const record = out.records[0];
   return {
