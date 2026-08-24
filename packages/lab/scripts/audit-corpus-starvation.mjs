@@ -74,6 +74,32 @@ const MIN_CORPUS_OCCURRENCES = 50;
 /** Below this a subtype has too few positives for "none of them carry it" to mean anything. */
 const MIN_POSITIVES = 20;
 
+// Lower than MIN_CORPUS_OCCURRENCES (50), because a monopoly does not need to be common to be harmful. It
+// needs to be REACHABLE on a real page, and "details" reached eleven GOV.UK pages while appearing on 17
+// records here.
+const MIN_MONOPOLY_OCCURRENCES = 10;
+
+/**
+ * Features decided by a hand-written VOCABULARY, and therefore the actionable half of a monopoly.
+ *
+ * A monopoly is only a defect when the feature can be true on a conforming page, and that is exactly what
+ * separates these from the rest. `unnamed_graphic_present` is a monopoly because an unnamed graphic IS the
+ * failure — no corpus change can or should give it a conformant example. `vague_link_present` is a monopoly
+ * because the corpus only ever uses "details" in the failing sense, and English does not.
+ *
+ * Listing them beats inferring it: a work list nobody can complete is what `IMPOSSIBLE_BY_DEFINITION` was
+ * added to stop, and this is the same mistake one sign over. Keep this in step with the wordlists in
+ * `screenreader_features.py` — `vocabulary-features.test.ts` pins the pair.
+ */
+const VOCABULARY_FEATURES = Object.freeze(new Set([
+  "vague_link_present",              // VAGUE_LINKS      — "Details" names a GOV.UK component
+  "generic_heading_present",         // GENERIC_HEADINGS — "Overview" is a real section title
+  "generic_graphic_present",         // GENERIC_GRAPHICS — alt="Photo" beside a photo credit
+  "filename_graphic_present",        // FILENAME_GRAPHIC — prose that mentions a file name
+  "plain_heading_candidate_present", // a heading-shaped line that is not announced as one
+  "unit_is_plain_heading_candidate",
+]));
+
 /** The furniture a case will actually get, read from its GENERATED HTML rather than recomputed. */
 function furnitureOf() {
   const carries = (testCase, marker) => marker.test(testCase.good) && marker.test(testCase.bad);
@@ -150,10 +176,37 @@ function starvation() {
     .filter((name) => occurrences[name] > 0 && occurrences[name] < MIN_CORPUS_OCCURRENCES)
     .map((name) => ({ name, count: occurrences[name] }))
     .sort((a, b) => a.count - b.count);
-  return { starved, rare, unmatched, missing, defined: furniture.size, records: rows.length };
+  // The OPPOSITE SIGN, and the direction that cost a real measurement.
+  //
+  // `starved` finds a feature no positive carries, which a head may penalise for free (ADR 0015). This
+  // finds a feature no CONFORMANT record carries — one that is perfectly correlated with failing, so its
+  // mere presence is a free PREDICTOR. Same shortcut, opposite sign, and nothing looked for it.
+  //
+  // Measured 2026-08-24, on the shipped corpus: all 13 wordlist terms appear on bad variants only.
+  //
+  //     link:details  0 good / 17 bad     graphic:image  0 good / 10 bad
+  //     link:more     0 good / 17 bad     graphic:photo  0 good /  7 bad
+  //
+  // So the corpus teaches that the WORD is the failure. It is not: 2.4.4 is Link Purpose IN CONTEXT, and
+  // "Details" naming a component inside an index of component names conforms — which is what the GOV.UK
+  // Design System publishes and what this scorer accused 11 of its pages of, on the strength of the one
+  // announcement `"link, Details"`.
+  //
+  // Reported, not failed. A monopoly is a question about the corpus, and for some features it is correct:
+  // `unnamed_graphic_present` genuinely cannot appear on a conformant page. The ones to fix are those whose
+  // feature is a WORD that carries a second sense in ordinary English.
+  const conformant = rows.filter((row) => row.subtypes.size === 0);
+  const monopoly = conformant.length === 0 ? [] : names
+    .filter((name) => occurrences[name] >= MIN_MONOPOLY_OCCURRENCES
+      && conformant.every((row) => !row.values[name]))
+    .map((name) => ({ name, onFailing: occurrences[name], onConformant: 0 }))
+    .sort((a, b) => b.onFailing - a.onFailing);
+
+  return { starved, rare, monopoly, conformantRecords: conformant.length,
+    unmatched, missing, defined: furniture.size, records: rows.length };
 }
 
-function render({ starved, rare, unmatched, missing, defined, records }) {
+function render({ starved, rare, monopoly, conformantRecords, unmatched, missing, defined, records }) {
   const total = starved.reduce((sum, row) => sum + row.features.length, 0);
   process.stdout.write(`\n  ${records} exported records; ${unmatched} whose case is no longer defined.\n`);
   if (unmatched > 0) {
@@ -201,7 +254,42 @@ function render({ starved, rare, unmatched, missing, defined, records }) {
     process.stdout.write(`    ${name.padEnd(34)} ${count}\n`);
   }
   process.stdout.write("\n  See docs/adr/0015-one-defect-per-page-taught-the-scorer-to-veto.md for what each group needs. Furniture cannot supply a feature\n"
-    + "  that is itself a FAILURE — those need a page that fails twice.\n\n");
+    + "  that is itself a FAILURE — those need a page that fails twice.\n");
+
+  renderMonopoly(monopoly, conformantRecords);
+}
+
+/**
+ * The monopoly section, split out because it asks a SECOND question.
+ *
+ * `render` answers which features the corpus will STARVE; this answers which it will OVER-TEACH. Same
+ * audit, opposite sign. Keeping both in one function pushed it past the line-count and complexity gates,
+ * which is those rules doing their job rather than something to widen.
+ */
+function renderMonopoly(monopoly, conformantRecords) {
+  process.stdout.write(`\n  WORD-SENSE MONOPOLY — features no conformant page carries (of ${conformantRecords} conformant records):\n\n`);
+  if (monopoly.length === 0) {
+    process.stdout.write("    none.\n");
+  } else {
+    const actionable = monopoly.filter((m) => VOCABULARY_FEATURES.has(m.name));
+    const inherent = monopoly.filter((m) => !VOCABULARY_FEATURES.has(m.name));
+    process.stdout.write("    FIX THESE — decided by a hand-written wordlist, so the word has another sense in English:\n");
+    for (const { name, onFailing } of actionable) {
+      process.stdout.write(`      ${name.padEnd(32)} ${String(onFailing).padStart(5)} failing / 0 conformant\n`);
+    }
+    if (actionable.length === 0) process.stdout.write("      none.\n");
+    process.stdout.write("\n    CORRECT AS THEY ARE — the feature IS the failure, so no conformant page can carry it:\n");
+    for (const { name, onFailing } of inherent) {
+      process.stdout.write(`      ${name.padEnd(32)} ${String(onFailing).padStart(5)} failing / 0 conformant\n`);
+    }
+    process.stdout.write("\n  A feature above is perfectly correlated with failing, so its PRESENCE is a free predictor. For the\n"
+      + "  first group that is a defect: the head fires on any real page using the word in a conforming\n"
+      + "  sense. \"Details\" naming a component inside an index of components conforms — and this scorer\n"
+      + "  accused 11 GOV.UK Design System pages of 2.4.4 on the strength of one announcement, `link,\n"
+      + "  Details`, where the shipped model accused none.\n"
+      + "  The remedy is the CORPUS, never the weights: a conformant page that uses the word legitimately.\n"
+      + "  See ADR 0019.\n\n");
+  }
 }
 
 // Guarded, so importing this module cannot run it. `entry-points.test.ts` asserts it across every npm
@@ -211,4 +299,4 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   else process.stdout.write(`  no exported corpus at ${RECORDS} — run \`npm run training:export\` first.\n`);
 }
 
-export { starvation, GRANTS };
+export { starvation, GRANTS, VOCABULARY_FEATURES };
