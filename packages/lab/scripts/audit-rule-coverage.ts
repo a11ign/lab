@@ -47,7 +47,7 @@ import { ruleFindings } from "@a11y-witness/judge/rules";
 // source rather than the convenient neighbour: locally tsx resolves TypeScript and the mistake is silent,
 // while the lab resolves `dist` and it is a hard failure — the stale-dist hazard, one door along.
 import { RULE_CRITERIA, SCORED_CRITERIA } from "@a11y-witness/judge/coverage";
-import { CRITERION_COVERAGE } from "@a11y-witness/judge/internal";
+import { CRITERION_COVERAGE, channelsPresent } from "@a11y-witness/judge/internal";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const CORPUS = resolve(REPO, process.env.CAPTURE_ROOT || "runs/screenreader-dataset/captures");
@@ -100,9 +100,16 @@ function capturesIn(dir: string): unknown[] {
   return out;
 }
 
-function tally(): { fires: Map<string, Tally>; scanned: Tally } {
+function tally(): { fires: Map<string, Tally>; scanned: Tally; realChannels: Set<string> } {
   const fires = new Map<string, Tally>(RULE_CRITERIA.map((c) => [c, { corpus: 0, real: 0 }]));
   const scanned: Tally = { corpus: 0, real: 0 };
+  // Which evidence channels any real capture actually carried. A rule whose channel is absent everywhere
+  // did not stay SILENT on real pages — it had nothing to read, and those are different verdicts needing
+  // different work: find a page that exhibits the failure, versus collect the evidence at all.
+  const realChannels = new Set<string>();
+  const noteChannels = (capture: unknown): void => {
+    for (const channel of channelsPresent(capture as never)) realChannels.add(channel);
+  };
   const record = (kind: "corpus" | "real", capture: unknown): void => {
     for (const finding of ruleFindings(capture as never)) {
       // `add()` in rules.ts refuses an unlisted criterion, so this cannot be undefined in practice.
@@ -115,24 +122,36 @@ function tally(): { fires: Map<string, Tally>; scanned: Tally } {
     for (const capture of capturesIn(dir)) {
       scanned[kind] += 1;
       record(kind, capture);
+      if (kind === "real") noteChannels(capture);
     }
   }
-  return { fires, scanned };
+  return { fires, scanned, realChannels };
 }
 
 type Verdict = {
   criterion: string; status: string; corpus: number; real: number;
-  grade: "unproven" | "corpus-only" | "declared-unavailable" | "validated";
+  grade: "unproven" | "corpus-only" | "declared-unavailable" | "no-channel" | "validated";
   because?: string;
 };
 
-function grade(criterion: string, count: Tally): Verdict {
+function grade(criterion: string, count: Tally, realChannels: Set<string>): Verdict {
   const declared = CRITERION_COVERAGE[criterion];
   const status = declared?.status ?? "undeclared";
   const base = { criterion, status, corpus: count.corpus, real: count.real };
   if (count.real > 0) return { ...base, grade: "validated" };
   if (declared?.realPageEvidence?.available === false) {
     return { ...base, grade: "declared-unavailable", because: declared.realPageEvidence.because };
+  }
+  // NOTHING TO READ is not the same as NOTHING TO SAY. If not one real capture carries any channel this
+  // criterion is decided from, the rule never got the chance to be wrong — reporting that as "assumptions
+  // untested" would be true but useless, because it points at finding a better page when the work is
+  // collecting the evidence at all. 1.4.2 reads DOM media attributes and 76 of 77 real captures carry an
+  // empty media list: no public-body information page autoplays sound.
+  const channels = declared?.channels ?? [];
+  if (channels.length && !channels.some((c) => realChannels.has(c))) {
+    return { ...base, grade: "no-channel",
+      because: `no real capture carries ${channels.join(" or ")} — the evidence this rule reads was `
+        + "never collected, so it has not been silent, it has been unasked" };
   }
   return { ...base, grade: count.corpus === 0 ? "unproven" : "corpus-only" };
 }
@@ -152,7 +171,7 @@ const EXPECTED_REAL_CAPTURES = 60;
 
 function report(verdicts: Verdict[], scanned: Tally): number {
   const unvalidated = verdicts.filter((v) => CLAIMED.has(v.status)
-    && (v.grade === "unproven" || v.grade === "corpus-only"));
+    && (v.grade === "unproven" || v.grade === "corpus-only" || v.grade === "no-channel"));
   const blocking = unvalidated.filter((v) => RULE_ONLY.has(v.criterion));
   const alsoScored = unvalidated.filter((v) => !RULE_ONLY.has(v.criterion));
 
@@ -164,6 +183,7 @@ function report(verdicts: Verdict[], scanned: Tally): number {
       unproven: "NEVER FIRED ANYWHERE — the claim rests on nothing",
       "corpus-only": "never on a REAL page — assumptions untested",
       "declared-unavailable": "no real-page evidence possible, declared",
+      "no-channel": "its evidence channel is absent from EVERY real capture",
       validated: "validated on real evidence",
     }[v.grade];
     process.stdout.write(`  ${v.criterion.padEnd(10)} ${v.status.padEnd(9)} `
@@ -197,7 +217,9 @@ function report(verdicts: Verdict[], scanned: Tally): number {
     + "real page — nothing else covers these:\n");
   for (const v of blocking) {
     process.stdout.write(`    ${v.criterion} (${v.status}) — `
-      + (v.grade === "unproven"
+      + (v.grade === "no-channel"
+        ? `${v.because}.\n`
+        : v.grade === "unproven"
         ? "has never fired on ANY capture. A rule that never executes is an untested assumption with a "
           + "criterion number.\n"
         : `fired ${v.corpus}x on the corpus and never on a real page. The corpus is built from the same `
@@ -210,18 +232,18 @@ function report(verdicts: Verdict[], scanned: Tally): number {
 }
 
 function main(): void {
-  const { fires, scanned } = tally();
+  const { fires, scanned, realChannels } = tally();
   if (scanned.corpus === 0 && scanned.real === 0) {
     process.stdout.write("\n  SKIPPED: no captures under runs/ — this audit needs a corpus to examine.\n"
       + "  That is an honest skip, not a pass. The lab holds the authoritative copy.\n");
     process.exitCode = 0;
     return;
   }
-  const verdicts = RULE_CRITERIA.map((c) => grade(c, fires.get(c) ?? { corpus: 0, real: 0 }));
+  const verdicts = RULE_CRITERIA.map((c) => grade(c, fires.get(c) ?? { corpus: 0, real: 0 }, realChannels));
   if (JSON_OUT) {
     process.stdout.write(`${JSON.stringify({ scanned, verdicts }, null, 2)}\n`);
     process.exitCode = verdicts.some((v) => CLAIMED.has(v.status) && RULE_ONLY.has(v.criterion)
-      && (v.grade === "unproven" || v.grade === "corpus-only")) ? 1 : 0;
+      && (v.grade === "unproven" || v.grade === "corpus-only" || v.grade === "no-channel")) ? 1 : 0;
     return;
   }
   process.exitCode = report(verdicts, scanned);
