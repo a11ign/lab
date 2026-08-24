@@ -73,6 +73,43 @@ const CLAIMED = new Set(["assessed", "partial"]);
  */
 const RULE_ONLY = new Set(RULE_CRITERIA.filter((c) => !SCORED_CRITERIA.includes(c as never)));
 
+/**
+ * How recently a capture file was written, in minutes, or null when the directory is empty.
+ *
+ * A corpus being recaptured is a MOVING TARGET, and a number measured against one describes a state that
+ * no longer exists by the time it is read. On 2026-08-24 this was not hypothetical: coverage and error
+ * rates were reported from a 38-page corpus while a 50-page recapture was overwriting the same files, so
+ * every figure quoted was already stale — the very "measured against something that does not match"
+ * defect this audit exists to catch, committed by the person running the audit.
+ *
+ * Deliberately a file-mtime check rather than asking systemd whether a job is running: the question is
+ * whether this EVIDENCE is settled, not whether a particular unit happens to be up, and a corpus can be
+ * mid-write from a run nobody remembers starting.
+ */
+function minutesSinceLastWrite(dirs: string[]): number | null {
+  let newest = 0;
+  for (const dir of dirs) {
+    let entries: string[];
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.endsWith(".json")) continue;
+      try {
+        newest = Math.max(newest, statSync(join(dir, entry)).mtimeMs);
+      } catch {
+        continue;
+      }
+    }
+  }
+  return newest ? (Date.now() - newest) / 60_000 : null;
+}
+
+/** Below this, treat the corpus as still being written. One capture takes minutes, so this is generous. */
+const SETTLED_AFTER_MINUTES = 10;
+
 function capturesIn(dir: string): unknown[] {
   let entries: string[];
   try {
@@ -252,6 +289,15 @@ function main(): void {
     process.stdout.write("\n  SKIPPED: no captures under runs/ — this audit needs a corpus to examine.\n"
       + "  That is an honest skip, not a pass. The lab holds the authoritative copy.\n");
     process.exitCode = 0;
+    return;
+  }
+  const idleMinutes = minutesSinceLastWrite([CORPUS, REAL]);
+  if (idleMinutes !== null && idleMinutes < SETTLED_AFTER_MINUTES) {
+    process.stdout.write(`\n  IN FLUX — a capture was written ${idleMinutes.toFixed(1)} minute(s) ago, so `
+      + "this corpus is still being recaptured.\n  Every count below describes a state that will have "
+      + "changed by the time you read it. Wait for the run to finish.\n  This is NOT a pass and NOT a "
+      + "failure; it is a refusal to measure a moving target.\n");
+    process.exitCode = 2;
     return;
   }
   const verdicts = RULE_CRITERIA.map((c) => grade(c, fires.get(c) ?? { corpus: 0, real: 0 }, realChannels));
