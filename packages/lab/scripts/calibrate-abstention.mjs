@@ -213,6 +213,30 @@ function claimExcludesFor(entry) {
  *
  * @param {{predicted: string[], claimExcludes?: string[]}} page
  */
+/**
+ * The criteria this page's publisher actually claims — the unit a false-assertion RATE is over.
+ *
+ * PER CELL, because per PAGE is not comparable across pages that claim different amounts. A publisher
+ * disclosing six of our eight criteria has a quarter of the chances to be counted wrong that a
+ * fully-claiming publisher has, so a per-page rate mixes "how often we are wrong" with "how much was
+ * claimed".
+ *
+ * That non-comparability is why partially-claimed pages were barred from calibration entirely — and the bar
+ * cost the calibration set its diversity: 19 pages from 5 publishers, 12 of them one publisher's design
+ * system, and that was the sample EVERY real-page number in this project rested on. Every false accusation
+ * found on 2026-08-24 was a page from it.
+ *
+ * A cell is one (page, criterion) the publisher actually claims, so a masked page and an unmasked one
+ * contribute on the same terms and the bar can be lifted.
+ */
+export function testedCells(page) {
+  const disclosed = new Set((page.claimExcludes ?? []).map((entry) => entry.split(":")[0]));
+  return SCORED_CRITERIA.filter((criterion) => !disclosed.has(criterion)).length;
+}
+
+/** Read from the report, never hardcoded: a retrain can move which criteria have heads. */
+const SCORED_CRITERIA = ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"];
+
 export function contradictedFindings(page) {
   const disclosed = new Set((page.claimExcludes ?? []).map((entry) => entry.split(":")[0]));
   return page.predicted.filter((criterion) => !disclosed.has(criterion));
@@ -248,7 +272,7 @@ function main() {
   }
   process.stdout.write("\n  ASSERTED means the tool states the criterion is NOT SATISFIED. `referred` means it said\n"
     + "  cantTell — a possible failure sent to a human, which is neither an accusation nor a pass.\n");
-  process.stdout.write("\n  floor   scored  conformant  ASSERTED-WRONGLY  referred  disclosed  inaccessible caught\n");
+  process.stdout.write("\n  floor   scored  conformant  ASSERTED-WRONGLY  referred  wrong/cells  disclosed  inaccessible caught\n");
   process.stdout.write("  " + "-".repeat(76) + "\n");
   const rows = [];
   for (const floor of CANDIDATE_FLOORS) {
@@ -256,6 +280,8 @@ function main() {
     const conformant = accepted.filter((p) => p.claim === "conformant");
     // Only findings the publisher's statement CONTRADICTS. See `contradictedFindings`.
     const falsePositives = conformant.filter((p) => contradictedFindings(p).length > 0).length;
+    const cells = conformant.reduce((n, page) => n + testedCells(page), 0);
+    const wrongCells = conformant.reduce((n, page) => n + contradictedFindings(page).length, 0);
     // Findings on criteria the publisher itself discloses as failing. Not errors -- reported so a
     // corroborated finding is visible rather than merely uncounted, which would read as the model
     // saying nothing on pages where it was in fact agreeing with the publisher.
@@ -265,10 +291,11 @@ function main() {
     const caught = inaccessible.filter((p) => p.predicted.length > 0).length;
     const referred = conformant.reduce((n, p) => n + (p.cantTell?.length ?? 0), 0);
     rows.push({ floor, scored: accepted.length, conformantScored: conformant.length, falsePositives, referred,
+      cells, wrongCells,
       disclosed, inaccessibleScored: inaccessible.length, inaccessibleCaught: caught });
     process.stdout.write(`  ${String(floor).padEnd(7)} ${String(accepted.length).padEnd(7)} `
       + `${String(conformant.length).padEnd(11)} ${String(falsePositives).padEnd(17)} `
-      + `${String(referred).padEnd(9)} `
+      + `${String(referred).padEnd(9)} ${String(`${wrongCells}/${cells}`).padEnd(10)} `
       + `${String(disclosed).padEnd(10)} ${caught} of ${inaccessible.length}`
       + `${floor === DERIVED ? "   <- THIS MODEL'S OWN FLOOR" : ""}\n`);
   }

@@ -35,13 +35,24 @@ test("every declared exception names a criterion the model actually scores", () 
   }
 });
 
-test("a page that declares exceptions is a TRAINING page, never calibration", () => {
-  // `calibrate-abstention.mjs` reports false positives per page, not per criterion, so a partially-claimed
-  // page in the calibration set would make the headline number mean two different things at once.
+test("a partially-claimed calibration page declares what it claims, so the rate stays comparable", () => {
+  // This used to require `role: "training"` for any page with exceptions, because
+  // `calibrate-abstention.mjs` counted false positives PER PAGE: a publisher disclosing six of our eight
+  // criteria has a quarter of the chances to be counted wrong that a fully-claiming one has, so mixing them
+  // made the headline mean two things at once. Correct, and it cost the calibration set its diversity —
+  // 19 pages from 5 publishers, 12 of them one design system, and that was the sample EVERY real-page
+  // number in this project rested on. Every false accusation found on 2026-08-24 was a page from it.
+  //
+  // The sweep now also reports a per-CELL rate, where a cell is one (page, criterion) the publisher
+  // actually claims. That makes a masked page and an unmasked one contribute on the same terms, so the bar
+  // is lifted and what remains is the thing that has to be true: a calibration page's exceptions must be
+  // DECLARED, or its cells cannot be counted correctly either way.
   for (const page of REAL_PAGES) {
-    if ((page.claimExcludes ?? []).length === 0) continue;
-    assert.equal(page.role, "training",
-      `${page.url} declares exceptions but sits in ${page.role}`);
+    if (page.role !== "calibration") continue;
+    for (const entry of page.claimExcludes ?? []) {
+      assert.ok(typeof entry === "string" && entry.length > 0,
+        `${page.url} has a malformed exception, so its tested-cell count would be wrong`);
+    }
   }
 });
 
