@@ -1,0 +1,204 @@
+/**
+ * Which rules have EVER fired, and on what kind of evidence?
+ *
+ * ## Why this exists
+ *
+ * The dominant defect class in this project is not incorrect code, it is UNEXECUTED code. A rule that
+ * returns early on every capture it has ever seen has never had its assumptions checked by anything, and
+ * every gate reports it as covered because a gate counts findings and it produced none to be wrong about.
+ *
+ * Measured 2026-08-24, and the reason this file exists: `MAX_TAB_STOPS` was 12 while real pages carry a
+ * median of 79 focusable elements, so `addKeyboardUnreachableControl` — which refuses to claim anything
+ * unless the tab cycle closes — could never close one, and `addBrokenFocusOrder` found fewer than two
+ * shared names and returned early. Both had been inert for the life of the corpus. Raising the cap ran
+ * them for the first time and **both were wrong immediately**: 2.1.1 reported keyboard-unreachable
+ * controls on 23 of 35 conformant real pages, 2.4.3 on 19. Neither regressed. Both were wrong all along
+ * and silent, and `criterion-coverage.ts` listed them as assessed the whole time.
+ *
+ * This audit is the general form of that. It would have named them both in the morning.
+ *
+ * ## What it blocks on, and what it merely reports
+ *
+ * A criterion this project CLAIMS (`assessed` or `partial`) and has never demonstrated is a blocker,
+ * because the claim is the product's own coverage statement. Two grades:
+ *
+ *   - never fired ANYWHERE — the rule has never executed. The claim rests on nothing.
+ *   - never fired on a REAL page — the rule has only ever run against a corpus built from the same
+ *     assumptions as the rule. That is the exact condition under which 2.1.1 and 2.4.3 looked fine.
+ *
+ * A criterion whose evidence is structurally unavailable on real pages declares it in
+ * `realPageEvidence`, with a reason, and is exempt from the second grade only. 3.3.1 and 4.1.3 are the
+ * real cases: the form probe is off for pages we do not own. Prose in `note` cannot carry that, because
+ * a check cannot tell a documented impossibility from an undocumented oversight.
+ *
+ *   npm run rules:coverage
+ *   npm run rules:coverage -- --json
+ *
+ * Needs `runs/`, so it SKIPS HONESTLY where the corpus is absent rather than passing quietly — the same
+ * contract `verify.corpus.test.ts` has, and for the same reason: a check that reports success having
+ * examined nothing is how "verified" comes to mean "unexamined".
+ */
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { resolve, join } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { ruleFindings, RULE_CRITERIA } from "@a11y-witness/judge/rules";
+import { CRITERION_COVERAGE } from "@a11y-witness/judge/internal";
+
+const REPO = fileURLToPath(new URL("../../../", import.meta.url));
+const CORPUS = resolve(REPO, process.env.CAPTURE_ROOT || "runs/screenreader-dataset/captures");
+const REAL = resolve(REPO, process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
+const JSON_OUT = process.argv.includes("--json");
+
+type Tally = { corpus: number; real: number };
+
+/** Claims the product makes about itself. `reachable` and `out-of-scope` claim nothing, so they cannot lie. */
+const CLAIMED = new Set(["assessed", "partial"]);
+
+function capturesIn(dir: string): unknown[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const out: unknown[] = [];
+  for (const entry of entries) {
+    if (!entry.endsWith(".json")) continue;
+    const path = join(dir, entry);
+    try {
+      if (statSync(path).isDirectory()) continue;
+      const parsed = JSON.parse(readFileSync(path, "utf8")) as { capture?: unknown };
+      const capture = (parsed.capture ?? parsed) as { transcript?: unknown };
+      // These directories hold manifests and progress files beside the captures. A capture is identified
+      // by SHAPE rather than by filename, because a name convention is a second thing to keep in step.
+      if (!Array.isArray(capture.transcript)) continue;
+      out.push(capture);
+    } catch {
+      // A capture that will not parse is not this audit's business; `verify.corpus.test.ts` owns that.
+      continue;
+    }
+  }
+  return out;
+}
+
+function tally(): { fires: Map<string, Tally>; scanned: Tally } {
+  const fires = new Map<string, Tally>(RULE_CRITERIA.map((c) => [c, { corpus: 0, real: 0 }]));
+  const scanned: Tally = { corpus: 0, real: 0 };
+  const record = (kind: "corpus" | "real", capture: unknown): void => {
+    for (const finding of ruleFindings(capture as never)) {
+      // `add()` in rules.ts refuses an unlisted criterion, so this cannot be undefined in practice.
+      // Guarded anyway: an audit that throws on the evidence it is auditing tells you nothing.
+      const row = fires.get(String(finding.wcag).split(" ")[0]);
+      if (row) row[kind] += 1;
+    }
+  };
+  for (const [kind, dir] of [["corpus", CORPUS], ["real", REAL]] as const) {
+    for (const capture of capturesIn(dir)) {
+      scanned[kind] += 1;
+      record(kind, capture);
+    }
+  }
+  return { fires, scanned };
+}
+
+type Verdict = {
+  criterion: string; status: string; corpus: number; real: number;
+  grade: "unproven" | "corpus-only" | "declared-unavailable" | "validated";
+  because?: string;
+};
+
+function grade(criterion: string, count: Tally): Verdict {
+  const declared = CRITERION_COVERAGE[criterion];
+  const status = declared?.status ?? "undeclared";
+  const base = { criterion, status, corpus: count.corpus, real: count.real };
+  if (count.real > 0) return { ...base, grade: "validated" };
+  if (declared?.realPageEvidence?.available === false) {
+    return { ...base, grade: "declared-unavailable", because: declared.realPageEvidence.because };
+  }
+  return { ...base, grade: count.corpus === 0 ? "unproven" : "corpus-only" };
+}
+
+/**
+ * How many real-page captures a complete corpus holds today.
+ *
+ * `runs/` is gitignored, so a developer's copy is only ever as fresh as its last sync — and a PARTIAL copy
+ * produces exactly the wrong answer here: fewer captures means fewer fires, so a rule that is validated on
+ * the lab reads as "never fired anywhere" on a laptop. That is a false blocker, and a check that cries
+ * wolf gets switched off.
+ *
+ * So a short corpus reports INCONCLUSIVE and names where the authoritative answer lives, exactly as
+ * `rules:gate` does. Not a pass: "this copy cannot tell" and "nothing is wrong" are different answers.
+ */
+const EXPECTED_REAL_CAPTURES = 60;
+
+function report(verdicts: Verdict[], scanned: Tally): number {
+  const blocking = verdicts.filter((v) => CLAIMED.has(v.status)
+    && (v.grade === "unproven" || v.grade === "corpus-only"));
+
+  process.stdout.write(`\n  Rule coverage — what has actually FIRED, over ${scanned.corpus} corpus and `
+    + `${scanned.real} real capture(s)\n\n`);
+  process.stdout.write("  criterion  claimed    corpus     real   verdict\n");
+  for (const v of [...verdicts].sort((a, b) => a.criterion.localeCompare(b.criterion))) {
+    const label = {
+      unproven: "NEVER FIRED ANYWHERE — the claim rests on nothing",
+      "corpus-only": "never on a REAL page — assumptions untested",
+      "declared-unavailable": "no real-page evidence possible, declared",
+      validated: "validated on real evidence",
+    }[v.grade];
+    process.stdout.write(`  ${v.criterion.padEnd(10)} ${v.status.padEnd(9)} `
+      + `${String(v.corpus).padStart(6)} ${String(v.real).padStart(8)}   ${label}\n`);
+  }
+
+  if (!blocking.length) {
+    process.stdout.write("\n  PASS — every criterion this project claims has fired on a real page, or "
+      + "declares why it cannot.\n");
+    return 0;
+  }
+
+  if (scanned.real < EXPECTED_REAL_CAPTURES) {
+    process.stdout.write(`\n  INCONCLUSIVE — this copy of runs/ holds ${scanned.real} real-page capture(s), `
+      + `below the ${EXPECTED_REAL_CAPTURES} a complete corpus carries.\n  Fewer captures means fewer `
+      + "fires, so the verdicts above understate coverage and cannot be acted on.\n  This is NOT a pass. "
+      + "The authoritative answer is `npm run lab:job -- -e job=rules-coverage`.\n");
+    return 2;
+  }
+
+  process.stdout.write(`\n  ${blocking.length} criterion(a) claimed but never demonstrated on a real page:\n`);
+  for (const v of blocking) {
+    process.stdout.write(`    ${v.criterion} (${v.status}) — `
+      + (v.grade === "unproven"
+        ? "has never fired on ANY capture. A rule that never executes is an untested assumption with a "
+          + "criterion number.\n"
+        : `fired ${v.corpus}x on the corpus and never on a real page. The corpus is built from the same `
+          + "assumptions as the rule, so it cannot falsify them.\n"));
+  }
+  process.stdout.write("\n  Close one by capturing a real page that exercises it, by downgrading the claim "
+    + "in `criterion-coverage.ts`,\n  or — where the evidence genuinely cannot exist on a page we do not "
+    + "own — by declaring `realPageEvidence` with a reason.\n");
+  return 1;
+}
+
+function main(): void {
+  const { fires, scanned } = tally();
+  if (scanned.corpus === 0 && scanned.real === 0) {
+    process.stdout.write("\n  SKIPPED: no captures under runs/ — this audit needs a corpus to examine.\n"
+      + "  That is an honest skip, not a pass. The lab holds the authoritative copy.\n");
+    process.exitCode = 0;
+    return;
+  }
+  const verdicts = RULE_CRITERIA.map((c) => grade(c, fires.get(c) ?? { corpus: 0, real: 0 }));
+  if (JSON_OUT) {
+    process.stdout.write(`${JSON.stringify({ scanned, verdicts }, null, 2)}\n`);
+    process.exitCode = verdicts.some((v) => CLAIMED.has(v.status)
+      && (v.grade === "unproven" || v.grade === "corpus-only")) ? 1 : 0;
+    return;
+  }
+  process.exitCode = report(verdicts, scanned);
+}
+
+// Guarded, so importing this module cannot walk 3,200 captures as a side effect — and so
+// `node -e "import(...)"` stays a usable check that the file still loads.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();
+
+export { grade, EXPECTED_REAL_CAPTURES };
