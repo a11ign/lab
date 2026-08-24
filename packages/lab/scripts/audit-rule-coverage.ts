@@ -42,7 +42,11 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { ruleFindings, RULE_CRITERIA } from "@a11y-witness/judge/rules";
+import { ruleFindings } from "@a11y-witness/judge/rules";
+// RULE_CRITERIA lives in coverage.ts and is imported by rules.ts, not re-exported from it. Taken from the
+// source rather than the convenient neighbour: locally tsx resolves TypeScript and the mistake is silent,
+// while the lab resolves `dist` and it is a hard failure — the stale-dist hazard, one door along.
+import { RULE_CRITERIA } from "@a11y-witness/judge/coverage";
 import { CRITERION_COVERAGE } from "@a11y-witness/judge/internal";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
