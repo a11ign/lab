@@ -36,6 +36,7 @@ import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { annotateCapture } from "@a11y-witness/evidence";
+import { sweepOutcomes, truncatedSweeps } from "@a11y-witness/evidence/conformance";
 import { criterionOutcomes } from "@a11y-witness/judge/outcomes";
 import { findingsFromScores } from "@a11y-witness/judge/internal";
 import { ruleFindings } from "@a11y-witness/judge/rules";
@@ -176,8 +177,17 @@ function productOutcomes(record, capture) {
   const outcomes = criterionOutcomes({
     capture,
     findings: [...findings, ...rules],
+    // `abstained` stays false because THIS script models abstention itself, one floor per row -- passing
+    // it here as well would count the same refusal twice.
     abstained: false,
-    truncatedSweeps: [],
+    // `truncatedSweeps` was `[]`, and that was not a simplification, it was a different measurement.
+    // The CLI passes the real value off `cap.diagnostics`, and a sweep that stopped at its cap makes a
+    // criterion `cantTell` rather than `passed` -- Conformance Requirement 2, per page. Stubbed, this
+    // script reported 18 referrals across 35 real pages where the product reports 151: the focus probe
+    // caps at MAX_TAB_STOPS = 12 and real pages carry a median of 79 focusable elements, so 2.1.1,
+    // 2.1.2, 2.4.1 and 2.4.3 are undetermined on almost every one of them. The corpus cannot show this
+    // -- no corpus page has more than 22 -- which is why it survived every gate.
+    truncatedSweeps: truncatedSweeps(sweepOutcomes(capture.diagnostics ?? [])),
   });
   return {
     // An ASSERTION: the tool states this criterion is not satisfied.
