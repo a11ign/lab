@@ -125,9 +125,24 @@ function main() {
     process.stderr.write(`only ${all.length} conformant captures under ${CAPTURES}; this audit needs a corpus.\n`);
     process.exit(2);
   }
+  // The donor pool is FIXED, never `slice(BASES)`.
+  //
+  // It was the tail after the bases, so changing `BASES` changed the padding CONTENT too — and the audit
+  // reported 3 accusations at 12 bases and 0 at 40, which reads as a size effect disappearing when it is
+  // really two different experiments. An instrument whose answer depends on a knob that should not affect
+  // it cannot support either answer.
+  //
+  // Bases are taken from the front and donors from the BACK, so the two never overlap and neither moves
+  // when the other grows.
   const ordered = [...deterministicOrder(all)];
+  const DONORS = 60;
+  const donors = ordered.slice(-DONORS);
   const bases = ordered.slice(0, BASES);
-  const donors = ordered.slice(BASES);
+  if (bases.length + donors.length > ordered.length) {
+    process.stderr.write(`corpus too small: ${BASES} bases and ${DONORS} donors need `
+      + `${BASES + DONORS} distinct captures, and only ${ordered.length} exist.\n`);
+    process.exit(2);
+  }
 
   process.stdout.write(`\n  Padding ${BASES} CONFORMANT pages with CONFORMANT content, and asking whether\n`
     + `  they become failures. Model: ${MODEL ?? "shipped"}\n\n`);
