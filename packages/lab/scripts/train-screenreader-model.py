@@ -395,6 +395,18 @@ def np_rank(n: int, alpha: float = NP_ALPHA, delta: float = NP_DELTA) -> int | N
             return r + 1 if r < n else None
     return 1
 
+def float32_above(value: float) -> float:
+    """The smallest float32-representable number strictly greater than `value`.
+
+    Not `math.nextafter`, which works in float64: head scores live in a `torch.float32` tensor during
+    training and as Python floats at inference, and a float64 nudge is rounded back onto `value` by the
+    float32 cast. A float32 step is strictly greater under BOTH dtypes, which is the only property that
+    makes one threshold correct in both places.
+    """
+    import numpy
+
+    return float(numpy.nextafter(numpy.float32(value), numpy.float32(numpy.inf)))
+
 def np_threshold(negative_scores: list[float], criterion: str,
                  warnings: list[str] | None) -> tuple[float, dict[str, Any]]:
     """The Neyman-Pearson cut: the r*-th order statistic of the held-out NEGATIVE scores.
@@ -404,9 +416,13 @@ def np_threshold(negative_scores: list[float], criterion: str,
 
     Two exactness notes, both deliberate and neither hidden:
 
-    - Inference compares `score >= threshold` while Proposition 1 is stated for `score > s_(r)`. One
-      `nextafter` makes those the same predicate; without it every negative tied at the cut is counted
-      as a positive, which is the one direction this must not be wrong in.
+    - Inference compares `score >= threshold` while Proposition 1 is stated for `score > s_(r)`, so the
+      cut must be the next value ABOVE the order statistic -- and it must be nudged in FLOAT32, not
+      float64. Head scores are a `torch.float32` tensor here and Python floats in `score.py`, and a
+      float64 `math.nextafter` rounds straight back onto the value it was meant to clear the moment it
+      meets the float32 tensor. Measured: that put exactly one extra false positive on every one of the
+      seventeen heads, which is what a uniform off-by-one looks like from the outside. A float32 nudge
+      is strictly greater in both dtypes, so it survives the round trip in either direction.
     - The scores are OUT-OF-FOLD, so each comes from a model that did not see its own record but not
       all from ONE model, as the proposition assumes. That makes this the cross-validated approximation
       rather than the exact split guarantee -- the same gap cross-conformal methods carry against split
@@ -429,7 +445,16 @@ def np_threshold(negative_scores: list[float], criterion: str,
         rank, alpha = n, achievable
     else:
         alpha = NP_ALPHA
-    cut = min(math.nextafter(ordered[rank - 1], math.inf), 1.0) if n else 0.5
+    cut = min(float32_above(ordered[rank - 1]), 1.0) if n else 0.5
+    # Verified by COUNTING, not by trusting the arithmetic that produced it. The float32 trap above
+    # defeated a `nextafter` that reads correctly, and the released weights would have carried a cut
+    # that quietly admitted one more negative than it promised.
+    admitted = sum(1 for score in ordered if score >= cut)
+    if n and admitted > n - rank:
+        raise RuntimeError(
+            f"{criterion}: the cut at {cut!r} admits {admitted} of {n} negatives where rank {rank} "
+            f"permits {n - rank}. The threshold and the scores disagree; do not ship these weights."
+        )
     return cut, {
         "method": "neyman-pearson-order-statistic",
         "falsePositiveRate": alpha,
