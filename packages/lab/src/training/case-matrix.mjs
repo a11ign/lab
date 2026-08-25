@@ -2106,7 +2106,13 @@ export const ACCOMPANYING_DEFECTS = Object.freeze({
       "<p><a href=\"#detail-note\">Read more</a></p>",
     ],
     subtypes: ["2.4.4:regex"],
-    grants: "vague_link_present",
+    // `vague_link_present` was REMOVED from the feature vector on 2026-08-25 -- it asks 2.4.9's question
+    // (is the text alone vague), a AAA criterion this project does not report, and the 2.4.4 head was
+    // using it as a shortcut: dropping it took that head from 27 false positives to 0. The declaration
+    // kept naming it, so `corpus:grants-audit` read a feature that does not exist and reported 52 records
+    // as missing evidence. `vague_link_without_context` is the one the pipeline computes, and it is the
+    // right claim anyway: this markup appends a bare link with nothing around it.
+    grants: "vague_link_without_context",
   },
   // The three below were added 2026-08-23 for a measured reason, not for variety.
   //
