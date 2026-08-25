@@ -407,8 +407,25 @@ def float32_above(value: float) -> float:
 
     return float(numpy.nextafter(numpy.float32(value), numpy.float32(numpy.inf)))
 
+def raise_to_same_power(floor: float, positive_scores: list[float] | None) -> float:
+    """The highest cut that admits exactly the positives `floor` admits. PURE.
+
+    Inference compares ``score >= threshold``, so the count of admitted positives is unchanged for every
+    cut up to and including the smallest positive score at or above the floor. Raising to exactly that
+    value keeps it (``p >= p``) and drops every negative below it.
+
+    With no positives at or above the floor there is nothing to preserve and nothing to gain: the cut
+    stays where the bound put it rather than being raised to an arbitrary place.
+    """
+    if not positive_scores:
+        return floor
+    admitted = [score for score in positive_scores if score >= floor]
+    return min(admitted) if admitted else floor
+
+
 def np_threshold(negative_scores: list[float], criterion: str,
-                 warnings: list[str] | None) -> tuple[float, dict[str, Any]]:
+                 warnings: list[str] | None,
+                 positive_scores: list[float] | None = None) -> tuple[float, dict[str, Any]]:
     """The Neyman-Pearson cut: the r*-th order statistic of the held-out NEGATIVE scores.
 
     Returned alongside what it promises, because a threshold whose guarantee is not recorded is how
@@ -445,7 +462,25 @@ def np_threshold(negative_scores: list[float], criterion: str,
         rank, alpha = n, achievable
     else:
         alpha = NP_ALPHA
-    cut = min(float32_above(ordered[rank - 1]), 1.0) if n else 0.5
+    floor = min(float32_above(ordered[rank - 1]), 1.0) if n else 0.5
+    # THE ORDER STATISTIC IS A FLOOR, NOT THE ANSWER -- and taking it as the answer shipped a strictly
+    # dominated cut.
+    #
+    # `s_(r*)` is by construction the LOWEST cut satisfying the bound, which is right in the continuous
+    # idealisation where a lower cut always buys power. In a finite sample it often buys none: recall goes
+    # flat below some point, and the whole false-positive budget is then spent for nothing.
+    #
+    # Measured 2026-08-25 on 2.4.4:regex. Chosen cut 0.0694 gave TP 144, FP 4. The sweep at 0.25 and at
+    # 0.75 gave TP 144, FP 0 -- identical recall, no false positives, a cut an order of magnitude higher.
+    # That head then fired 2.4.4 on `acceptance-b2-generic-kiln/good`, a page with NO LINK ON IT, and
+    # failed the held-out gate.
+    #
+    # So the cut is raised to the highest value that admits the same positives. The guarantee survives a
+    # fortiori: a higher cut admits weakly fewer negatives, so `P[type-I error > alpha] <= delta` still
+    # holds, and `permittedFalsePositives` still reports what the BOUND allows rather than what this cut
+    # spends. This is the same call the fallback path already made -- "the fewest-false-positive cut, ties
+    # broken by recall" -- applied to the main path, which kept the flaw.
+    cut = raise_to_same_power(floor, positive_scores)
     # Verified by COUNTING, not by trusting the arithmetic that produced it. The float32 trap above
     # defeated a `nextafter` that reads correctly, and the released weights would have carried a cut
     # that quietly admitted one more negative than it promised.
@@ -462,6 +497,11 @@ def np_threshold(negative_scores: list[float], criterion: str,
         "rank": rank,
         "negatives": n,
         "permittedFalsePositives": n - rank,
+        # What the bound ALLOWS versus what this cut actually spends. Reported separately because they
+        # are different facts and the gate compares against the first: a cut raised off the floor uses
+        # less of its budget, and hiding that would make the improvement invisible in the report.
+        "admittedFalsePositives": admitted,
+        "floor": floor,
         "exact": False,
         "atTarget": alpha == NP_ALPHA,
     }
@@ -864,8 +904,13 @@ def main() -> None:
                 in zip(subtype_development_scores.tolist(), subtype_development_labels.tolist())
                 if label == 0
             ]
+            positive_scores = [
+                float(score) for score, label
+                in zip(subtype_development_scores.tolist(), subtype_development_labels.tolist())
+                if label == 1
+            ]
             subtype_threshold, subtype_guarantee = np_threshold(
-                negative_scores, subtype, report["warnings"]
+                negative_scores, subtype, report["warnings"], positive_scores
             )
             subtype_names.append(subtype)
             subtype_thresholds[subtype] = subtype_threshold
