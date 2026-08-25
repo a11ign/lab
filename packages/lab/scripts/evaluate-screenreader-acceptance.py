@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import sys
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -28,6 +29,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 # which resolved to `packages/lab/packages/scorer` once M8 moved this file into the lab package — a path that
 # does not exist, and the failure was `ModuleNotFoundError: No module named 'screenreader_features'`.
 SCORER_PACKAGE = Path(__file__).resolve().parents[2] / "scorer"
+# The DECISION lives in the scorer package, so this reaches for it rather than reimplementing it. Loaded
+# by path for the same reason `score.py` is: this file is not inside that package and must not assume an
+# installed one.
+sys.path.insert(0, str(SCORER_PACKAGE / "python"))
+import applicability  # noqa: E402  (path shim must precede the import)
 
 
 def load_training_module() -> Any:
@@ -396,7 +402,16 @@ def main() -> None:
         # actually means, and the only formulation that survives the heads being on different scales.
         decided = np.zeros(len(records), dtype=bool)
         for subtype, scores in subtype_scores.items():
-            decided |= scores >= float(model_subtypes[subtype]["threshold"])
+            # THE SAME DECISION `score.py` MAKES, including the applicability gate. This compared
+            # `scores >= threshold` directly, which is how the gate came to be live in the product and
+            # absent from the measurement that judges it -- the held-out set went on scoring pages the
+            # product rules inapplicable, and the resulting failure read as the fix not working.
+            threshold = float(model_subtypes[subtype]["threshold"])
+            decided |= np.array(
+                [applicability.decide(subtype, float(score), threshold, record)
+                 for score, record in zip(scores, records)],
+                dtype=bool,
+            )
         included_labels = labels[included_indices]
         result["criteria"][criterion] = {
             "decisionOwner": model_decision_owner(criterion_report),
