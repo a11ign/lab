@@ -110,7 +110,23 @@
  * feature is masked anyway. That is the cheap direction to be wrong in: it costs labels, not structure.
  */
 
-/** @typedef {"calibration" | "training"} CorpusRole */
+/**
+ * @typedef {"calibration" | "training" | "fixture"} CorpusRole
+ *
+ * `calibration` fits the scorer's abstention threshold. `training` is what the scorer learns from.
+ * `fixture` is NEITHER, and the separation is load-bearing rather than tidy.
+ *
+ * ADR 0015's why-2: every publisher-declared inaccessible page lives in calibration, so the TRAINING
+ * distribution contains no broken page at all — which is why a real inaccessible page sits further from
+ * the training set than its conformant twin (0.6978 vs 0.8164 on the two tickets.html variants). Put a
+ * broken page in training and that novelty signal changes meaning; put one in calibration and it is no
+ * longer held out.
+ *
+ * `fixture` pages are for the RULE layer, which is a different question with a different measurement.
+ * They demonstrate one criterion each, carry a `witnessableAs` label we authored, and are excluded from
+ * both statistical sets by construction — so `rules:coverage` can be satisfied without touching what
+ * either scorer number means.
+ */
 
 /**
  * @typedef {object} RealPage
@@ -166,6 +182,37 @@
 const BAD_AFTER_CLAIM =
   "W3C publishes the Before/After Demo 'after' pages as conforming to WCAG 2.0 Level AA "
   + "(https://www.w3.org/WAI/demos/bad/)";
+/**
+ * Our OWN fixtures, served over HTTP and captured through the real-page path.
+ *
+ * The corpus can express three failures no published source does — an inert skip link, a route that
+ * changes while the title stands still, a control announced but unreachable — and that is not a
+ * coincidence: `criterion-coverage.ts` calls those three "structurally unreachable by a static
+ * analyser", so static test suites do not contain them BECAUSE static tools cannot test them.
+ *
+ * Searched for an external source on 2026-08-25 before authoring these. W3C's ACT Rules publish 1,213
+ * machine-readable test cases with per-page pass/fail outcomes — the right SHAPE of label, and the only
+ * one found — and they do not cover it: **zero** failed examples for 2.4.1; 2.4.2's eight are all
+ * missing-or-undescriptive title rather than the route-change mode; and 2.1.1's three are nine-line DOM
+ * fixtures like `<iframe tabindex="-1" srcdoc="<a>Home</a>">`, which cannot produce the closed tab cycle
+ * our rule requires. They are fixtures for static checkers, and this is a screen-reader tool.
+ *
+ * So the label here is ours, and it is honest for the same reason the eval fixtures are: we wrote the
+ * page to demonstrate one defect, and `witnessableAs` names which. The distinction from a publisher
+ * claim is real and is why these are TRAINING rather than calibration — calibration fits the scorer's
+ * abstention threshold against labels we did not author, and these would weaken that.
+ */
+/**
+ * Where the fixture pages are served. `DATASET_BASE_URL` is the same variable the corpus runner uses, so
+ * the lab rewrites `localhost` to its own LAN address for the guests exactly as it already does — the
+ * workers are remote, and a guest's `localhost` is the guest.
+ */
+const FIXTURE_BASE = (process.env.DATASET_BASE_URL || "http://localhost:5050").replace(/\/$/, "");
+
+const OWN_FIXTURE_CLAIM =
+  "Authored by this project to demonstrate one failure, served over HTTP and captured through the "
+  + "real-page path (packages/lab/src/training/case-matrix.mjs)";
+
 const BAD_BEFORE_CLAIM =
   "W3C publishes the 'before' pages as the inaccessible version, with its own evaluation report "
   + "(https://www.w3.org/WAI/demos/bad/before/annualreport/)";
@@ -577,6 +624,24 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"],
     source: "British Library: partially compliant, own statement (https://bl.uk/accessibility-statement)",
     demonstrates: "events listing" },
+  // ---- OUR OWN FIXTURES, for the three criteria no published source demonstrates ------------------
+  //
+  // Each closes a `rules:coverage` blocker that could not otherwise be closed: the rule fires on the
+  // corpus and had never fired on a real page, because no conformant page exhibits the failure and no
+  // external suite publishes one. See `OWN_FIXTURE_CLAIM` for what was searched first.
+  //
+  // `witnessableAs` is the per-criterion label, which is what these have that a publisher statement
+  // cannot give: a statement is site-level and says "partially compliant", never "this page fails 2.4.1".
+  { url: `${FIXTURE_BASE}/skip-link-broken/bad.html`, role: "fixture",
+    publishedClaim: "inaccessible", source: OWN_FIXTURE_CLAIM, witnessableAs: ["2.4.1"],
+    demonstrates: "a skip link that is present, valid HTML, points at a plausible id, and goes nowhere" },
+  { url: `${FIXTURE_BASE}/route-title-stale/bad.html`, role: "fixture",
+    publishedClaim: "inaccessible", source: OWN_FIXTURE_CLAIM, witnessableAs: ["2.4.2"],
+    demonstrates: "activating a navigation control changes the view and not the title" },
+  { url: `${FIXTURE_BASE}/focus-order-tabindex/bad.html`, role: "fixture",
+    publishedClaim: "inaccessible", source: OWN_FIXTURE_CLAIM, witnessableAs: ["2.1.1"],
+    demonstrates: "a div role=button the screen reader announces and Tab never reaches" },
+
 ]);
 
 /** Pages for one role. */

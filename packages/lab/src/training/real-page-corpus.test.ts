@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertDisjoint, pagesFor, REAL_PAGES, UNWITNESSABLE_ON_REAL_PAGES } from "./real-page-corpus.mjs";
-import { SCORED_CRITERIA } from "@a11y-witness/judge/coverage";
+import { SCORED_CRITERIA, RULE_CRITERIA } from "@a11y-witness/judge/coverage";
 
 /** Every `url` recorded in an eval fixture — the TEST set, derived rather than copied. */
 function testSetUrls(): string[] {
@@ -68,13 +68,33 @@ test("a collision IS detected — including a trailing-slash variant of a test p
   assert.equal(withTrailingSlash.length, 1, "a trailing slash must not hide a collision");
 });
 
-test("every page carries a PUBLISHED claim and a citation for it", () => {
+test("every PUBLISHED page carries a published claim and a citation for it", () => {
   // The selection rule of the whole corpus: the label comes from the source, never from us. A page whose
   // `source` does not say where the claim is published is a page we labelled ourselves.
+  //
+  // `fixture` pages are exempt BY DEFINITION — they are the ones we labelled ourselves, deliberately —
+  // and the exemption is narrow on purpose. They cannot enter calibration or training (see `CorpusRole`),
+  // so no statistical claim rests on them; they exist so a rule-only criterion can be validated at all.
+  // The rest of the corpus keeps the rule that makes it worth having.
   for (const page of REAL_PAGES) {
+    if (page.role === "fixture") continue;
     assert.match(page.url, /^https:\/\//, `${page.url} must be a real fetchable page`);
     assert.ok(["conformant", "inaccessible"].includes(page.publishedClaim));
     assert.match(page.source, /https:\/\//, `${page.url} must cite where its claim is published`);
+    assert.ok(page.demonstrates.length > 5, `${page.url} must say what it is an example of`);
+  }
+});
+
+test("a FIXTURE page says it is ours, and says which criterion it demonstrates", () => {
+  // The exemption above is not a hole: a fixture still has to declare what it is for. Without
+  // `witnessableAs` it is a broken page with no claim attached, which is worse than not having it —
+  // nothing could tell whether a capture of it witnessed the intended failure or a different one.
+  for (const page of REAL_PAGES.filter((p) => p.role === "fixture")) {
+    assert.equal(page.publishedClaim, "inaccessible", `${page.url} is a fixture; it demonstrates a defect`);
+    assert.match(page.source, /^Authored by this project/,
+      `${page.url} must say the label is ours, so it is never mistaken for a publisher's`);
+    assert.ok((page.witnessableAs ?? []).length === 1,
+      `${page.url} must name exactly ONE criterion — a fixture demonstrating two proves neither`);
     assert.ok(page.demonstrates.length > 5, `${page.url} must say what it is an example of`);
   }
 });
@@ -122,7 +142,11 @@ test("the positive side is counted in DEFECTS, not pages — three BAD pages sha
   // only form control is the same unnamed combo box in shared site chrome. Reporting "3 inaccessible
   // pages" implies three failures; there is one. This test does not forbid that — it forbids being
   // unaware of it, by pinning the count of source families the positives actually span.
-  const inaccessible = REAL_PAGES.filter((p) => p.publishedClaim === "inaccessible");
+  // PUBLISHED positives only. Our own fixtures are a second family by construction and would make this
+  // assertion read as "the positive side spans two sources" — which is true of the pages and false of the
+  // thing this guards, which is what a real-page RECALL number may claim. Recall is measured on published
+  // labels; a fixture we authored cannot support that claim and is excluded from it here.
+  const inaccessible = REAL_PAGES.filter((p) => p.publishedClaim === "inaccessible" && p.role !== "fixture");
   const families = new Set(inaccessible.map((p) => new URL(p.url).pathname.replace(/[^/]+$/, "")));
   assert.equal(families.size, 1,
     "the positive side spans one source family; any claim of real-page recall must say so — ADR 0015");
@@ -141,10 +165,19 @@ test("every page published as INACCESSIBLE declares what it can be witnessed as"
     + "WITNESSABILITY note in real-page-corpus.mjs");
 });
 
-test("a declared criterion must be one the scorer has a head for", () => {
+test("a CALIBRATION page's declared criterion must be one the scorer has a head for", () => {
+  // Scoped to calibration, which is what the assertion always SAID and not what it checked. Calibration
+  // fits the scorer's abstention threshold, so a page admitted there on a criterion no head scores is
+  // admitted on evidence that measurement never reads.
+  //
+  // TRAINING pages are a different question. A rule-only criterion — 2.1.1, 2.4.1, 2.4.2 — has no head
+  // by design and is decided by the deterministic layer, so a page demonstrating one is exactly the
+  // evidence `rules:coverage` asks for and cannot be admitted under the old blanket rule.
   const scored = new Set<string>(SCORED_CRITERIA);
+  const ruleOnly = new Set<string>(RULE_CRITERIA);
   const unreachable: string[] = [];
   for (const page of REAL_PAGES) {
+    if (page.role !== "calibration") continue;
     for (const criterion of page.witnessableAs ?? []) {
       if (!scored.has(criterion)) unreachable.push(`${page.url} -> ${criterion}`);
     }
@@ -152,6 +185,19 @@ test("a declared criterion must be one the scorer has a head for", () => {
   assert.deepEqual(unreachable, [],
     "a criterion with no head cannot be the reason a page is in the CALIBRATION set, which exists to "
     + "measure the scorer");
+
+  // And the training side still has a bar: some layer must decide it.
+  const undecidable: string[] = [];
+  for (const page of REAL_PAGES) {
+    if (page.role === "calibration") continue;
+    for (const criterion of page.witnessableAs ?? []) {
+      if (!scored.has(criterion) && !ruleOnly.has(criterion)) {
+        undecidable.push(`${page.url} -> ${criterion}`);
+      }
+    }
+  }
+  assert.deepEqual(undecidable, [],
+    "no layer decides this criterion, so no capture of this page can witness the claim");
 });
 
 test("a declared criterion must not be one real-page capture structurally cannot reach", () => {
