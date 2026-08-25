@@ -1,0 +1,113 @@
+{
+  "https://caselaw.nationalarchives.gov.uk/judgments/search?query=": [
+    "3.3.2",
+    "4.1.2"
+  ],
+  "https://check-for-flooding.service.gov.uk/river-and-sea-levels": [],
+  "https://data.southwark.gov.uk/data-catalog-explorer/": [],
+  "https://design-system.service.gov.uk/components/accordion/": [],
+  "https://design-system.service.gov.uk/components/checkboxes/": [],
+  "https://design-system.service.gov.uk/components/date-input/": [],
+  "https://design-system.service.gov.uk/components/details/": [],
+  "https://design-system.service.gov.uk/components/error-message/": [],
+  "https://design-system.service.gov.uk/components/error-summary/": [],
+  "https://design-system.service.gov.uk/components/radios/": [],
+  "https://design-system.service.gov.uk/components/select/": [],
+  "https://design-system.service.gov.uk/components/skip-link/": [],
+  "https://design-system.service.gov.uk/components/table/": [],
+  "https://design-system.service.gov.uk/components/tabs/": [],
+  "https://design-system.service.gov.uk/components/text-input/": [],
+  "https://disinfectants.defra.gov.uk/DisinfectantsExternal/Default.aspx?Module=ApprovalsList_SI": [],
+  "https://docs.sign-in.service.gov.uk/integrate-with-integration-environment/": [],
+  "https://find-and-update.company-information.service.gov.uk/company/00000006": [],
+  "https://forms.charitycommission.gov.uk/raising-concerns/": [],
+  "https://ico.org.uk/action-weve-taken/enforcement/": [],
+  "https://ico.org.uk/for-the-public/": [
+    "2.4.3"
+  ],
+  "https://primary-authority.beis.gov.uk/par": [],
+  "https://ratings.food.gov.uk/search-a-local-authority-area": [],
+  "https://reports.ofsted.gov.uk/search?q=school": [
+    "3.3.2",
+    "4.1.2"
+  ],
+  "https://service-manual.nhs.uk/design-system/components/table": [],
+  "https://service-manual.nhs.uk/design-system/components/text-input": [],
+  "https://tfl.gov.uk/modes/tube/": [],
+  "https://tfl.gov.uk/plan-a-journey/": [],
+  "https://www.bl.uk/whats-on/": [
+    "2.4.3"
+  ],
+  "https://www.british-history.ac.uk/catalogue": [],
+  "https://www.cqc.org.uk/about-us": [],
+  "https://www.cqc.org.uk/search/all?query=hospital": [
+    "3.3.2",
+    "4.1.2"
+  ],
+  "https://www.financial-ombudsman.org.uk/decisions-case-studies/ombudsman-decisions": [],
+  "https://www.gla.ac.uk/undergraduate/degrees/": [],
+  "https://www.gov.scot/about/": [],
+  "https://www.gov.scot/publications/": [],
+  "https://www.gov.uk/browse/benefits": [],
+  "https://www.gov.uk/guidance/rates-and-thresholds-for-employers-2025-to-2026": [],
+  "https://www.gov.uk/vehicle-tax": [],
+  "https://www.gov.wales/statistics-and-research": [],
+  "https://www.historicenvironment.scot/visit-a-place/places/edinburgh-castle/": [],
+  "https://www.lbhf.gov.uk/council-tax": [],
+  "https://www.leeds.ac.uk/undergraduate": [],
+  "https://www.metoffice.gov.uk/weather/forecast/gcpvj0v07": [],
+  "https://www.metoffice.gov.uk/weather/warnings-and-advice/uk-warnings": [],
+  "https://www.mygov.scot/benefits": [],
+  "https://www.mygov.scot/scottish-child-payment": [],
+  "https://www.nationalarchives.gov.uk/about/": [],
+  "https://www.nationalarchives.gov.uk/help-with-your-research/research-guides/": [],
+  "https://www.networkrail.co.uk/careers/careers-search/": [
+    "1.1.1",
+    "4.1.2"
+  ],
+  "https://www.nhs.uk/conditions/": [],
+  "https://www.nhs.uk/service-search/find-a-gp": [],
+  "https://www.nidirect.gov.uk/information-and-services/motoring/mot-and-vehicle-testing": [
+    "2.4.3"
+  ],
+  "https://www.nls.uk/join/": [],
+  "https://www.nrscotland.gov.uk/publications/": [],
+  "https://www.nrscotland.gov.uk/statistics-and-data/": [],
+  "https://www.ofgem.gov.uk/energy-price-cap": [
+    "2.4.3"
+  ],
+  "https://www.ons.gov.uk/economy/inflationandpriceindices": [],
+  "https://www.scotcourts.gov.uk/judgments/": [
+    "2.1.2",
+    "4.1.2"
+  ],
+  "https://www.sepa.org.uk/environment/water/bathing-waters/": [],
+  "https://www.sheffield.ac.uk/postgraduate/taught/courses": [],
+  "https://www.sportengland.org/research-and-data/data/active-lives": [],
+  "https://www.transport.gov.scot/publications/": [
+    "4.1.2"
+  ],
+  "https://www.w3.org/WAI/demos/bad/after/news.html": [],
+  "https://www.w3.org/WAI/demos/bad/after/survey.html": [],
+  "https://www.w3.org/WAI/demos/bad/after/template.html": [],
+  "https://www.w3.org/WAI/demos/bad/after/tickets.html": [],
+  "https://www.w3.org/WAI/tutorials/carousels/structure/": [],
+  "https://www.w3.org/WAI/tutorials/forms/grouping/": [],
+  "https://www.w3.org/WAI/tutorials/forms/instructions/": [],
+  "https://www.w3.org/WAI/tutorials/forms/labels/": [],
+  "https://www.w3.org/WAI/tutorials/forms/multi-page/": [],
+  "https://www.w3.org/WAI/tutorials/forms/validation/": [],
+  "https://www.w3.org/WAI/tutorials/images/complex/": [],
+  "https://www.w3.org/WAI/tutorials/images/decorative/": [],
+  "https://www.w3.org/WAI/tutorials/images/functional/": [],
+  "https://www.w3.org/WAI/tutorials/images/groups/": [],
+  "https://www.w3.org/WAI/tutorials/images/informative/": [],
+  "https://www.w3.org/WAI/tutorials/menus/flyout/": [],
+  "https://www.w3.org/WAI/tutorials/menus/structure/": [],
+  "https://www.w3.org/WAI/tutorials/page-structure/headings/": [],
+  "https://www.w3.org/WAI/tutorials/page-structure/regions/": [],
+  "https://www.w3.org/WAI/tutorials/tables/irregular/": [],
+  "https://www.w3.org/WAI/tutorials/tables/multi-level/": [],
+  "https://www.w3.org/WAI/tutorials/tables/one-header/": [],
+  "https://www.w3.org/WAI/tutorials/tables/two-headers/": []
+}
