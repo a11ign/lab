@@ -26,6 +26,7 @@ import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../.
 import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 import { configuredWorkers } from "../../../worker-fleet/src/fleet-env.mjs";
 import { leasePageServer } from "./page-server.mjs";
+import { hostAddressForWorker } from "@a11y-witness/worker-fleet";
 import { fleetConsistency, describeMismatches } from "../../../worker-fleet/src/fleet-consistency.mjs";
 import { drainAcrossPool } from "./worker-pool.mjs";
 import { createHostThrottle, hostOf } from "./host-throttle.mjs";
@@ -167,7 +168,10 @@ async function capture(page, workerUrl) {
     // separately bounded by `readThroughDeadline`, so a higher cap cannot run longer than the budget
     // allows; it only stops the cap binding BEFORE the deadline does. A budget is a ceiling, not a cost.
     body: {
-      url: page.url, probeForms: false, probeFocus: true, probeNavigation: true, steps: REAL_PAGE_STEPS,
+      // REWRITTEN FOR THE WORKER, not sent as written. A fixture URL says `localhost`, and a worker's
+      // localhost is the worker. See `workerReachable`.
+      url: workerReachable(page.url, workerUrl),
+      probeForms: false, probeFocus: true, probeNavigation: true, steps: REAL_PAGE_STEPS,
     },
     timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
   });
@@ -293,6 +297,27 @@ async function assertOneBrowserAcross(workers, when) {
  * Only for fixture URLs. A run over published pages must not start a local server it has no use for,
  * and asking whether any page needs it is cheaper than a flag somebody has to remember.
  */
+/**
+ * A fixture URL the WORKER can fetch, which is not the one we wrote it as.
+ *
+ * The workers are separate machines. `localhost:5050` on a worker is the worker — it serves nothing, Edge
+ * shows "Hmmm... can't reach this page", and that error page is captured and recorded as evidence.
+ * Measured 2026-08-25: three fixture captures whose first transcript line was exactly that heading, from
+ * a run that reported "2/3 captured".
+ *
+ * `guestReachableUrl` was written for this and its own comment describes it — *"every capture fetched the
+ * GUEST's localhost … three attempts are burned per page"*. The corpus runner calls it; this one did not,
+ * because until fixtures existed every page here was already on the internet.
+ */
+function workerReachable(url, workerUrl) {
+  const parsed = new URL(url);
+  if (parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") return url;
+  const hostAddress = hostAddressForWorker(workerUrl);
+  if (!hostAddress) return url;
+  parsed.hostname = hostAddress;
+  return parsed.toString().replace(/\/$/, "");
+}
+
 async function leaseFixtureServer(pages) {
   const local = pages.filter((page) => /^https?:\/\/(localhost|127\.0\.0\.1)/.test(page.url));
   if (!local.length) return null;
