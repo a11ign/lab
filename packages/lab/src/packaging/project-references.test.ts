@@ -22,7 +22,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
@@ -65,4 +65,69 @@ test("a sound composite project builds and emits declarations", () => {
   }
   rmSync(join(dir, "dist"), { recursive: true, force: true });
   rmSync(join(dir, "tsconfig.tsbuildinfo"), { force: true });
+});
+
+/**
+ * Every cross-package import must have a matching project reference — DISCOVERED, not listed.
+ *
+ * The two tests above verify the MECHANISM: a cycle is a build error, a sound project emits. Neither ever
+ * looked at this repo's actual packages, so the mechanism was proven while guarding nothing — the failure
+ * this file's own docstring names ("a check that exists and does not run"). It cost a fresh worker's
+ * provisioning on 2026-08-25: `scorer` imported `@a11y-witness/evidence` and declared no reference, so
+ * `tsc --build` had no ordering information and read a `.d.ts` one second after it was written.
+ *
+ * `judge` had suffered the identical fault, been fixed, and carried a comment explaining it. The knowledge
+ * was in the repo; the coverage was not. A list of packages here would rot the same way — so the imports
+ * are read from source and the references from the tsconfigs, and the two must agree.
+ */
+const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+
+/** A package is a TS project if it has a tsconfig; `nvda-worker` is `.mjs` and deliberately is not. */
+function tsProjects(): string[] {
+  return readdirSync(join(REPO_ROOT, "packages"))
+    .filter((name) => existsSync(join(REPO_ROOT, "packages", name, "tsconfig.json")))
+    .sort();
+}
+
+/** Strip `//` comments — these tsconfigs are JSONC and half their value is the comments. */
+const readJsonc = (path: string) =>
+  JSON.parse(readFileSync(path, "utf8").split("\n")
+    .filter((line) => !line.trimStart().startsWith("//")).join("\n"));
+
+function importedPackages(pkg: string): Set<string> {
+  const found = new Set<string>();
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (!/\.(ts|mjs)$/.test(entry.name) || entry.name.endsWith(".test.ts")) continue;
+      for (const m of readFileSync(full, "utf8").matchAll(/["']@a11y-witness\/([a-z-]+)/g)) found.add(m[1]);
+    }
+  };
+  walk(join(REPO_ROOT, "packages", pkg, "src"));
+  found.delete(pkg);
+  return found;
+}
+
+test("every cross-package import is backed by a project reference", () => {
+  const projects = new Set(tsProjects());
+  assert.ok(projects.size >= 4, `only ${projects.size} TS projects found; the layout moved and this is blind`);
+
+  const missing: string[] = [];
+  for (const pkg of projects) {
+    const config = readJsonc(join(REPO_ROOT, "packages", pkg, "tsconfig.json"));
+    const declared = new Set(((config.references ?? []) as Array<{ path: string }>)
+      .map((r) => r.path.replace(/^\.\.\//, "")));
+    for (const dep of importedPackages(pkg)) {
+      // Only TS projects can be referenced. `nvda-worker` is `.mjs` with no tsconfig, and worker-fleet
+      // reaches it through subpath exports precisely so it never loads the win32 capture driver.
+      if (!projects.has(dep) || declared.has(dep)) continue;
+      missing.push(`packages/${pkg} imports @a11y-witness/${dep} and declares no { "path": "../${dep}" }`);
+    }
+  }
+  assert.deepEqual(missing, [],
+    "tsc --build follows `references` to decide build ORDER. Without one, a package compiles against "
+    + "whatever the sibling's dist happens to be — always fine on a warm machine, a race on a first "
+    + "`npm install`. Add the reference; a cycle is a build error (TS6202), which the test above proves "
+    + "is enforced.");
 });
