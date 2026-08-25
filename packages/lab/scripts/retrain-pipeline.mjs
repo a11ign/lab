@@ -54,8 +54,18 @@ function run(step, { dryRun }) {
     process.stdout.write(output.split("\n").slice(-6).join("\n") + "\n");
     return { ok: true, output };
   } catch (cause) {
+    // STDERR TOO, and it is not a nicety. This printed only `cause.stdout`, so a step that died with a
+    // stack trace reported nothing at all: measured 2026-08-25, `capture` failed at import with
+    // `No available supported screen readers` from guidepup and the pipeline said exactly
+    // `STOPPED at capture. That step is required` and not one word of the reason. Diagnosing it took a
+    // manual re-run of the same command with 2>&1.
+    //
+    // A caught error whose message is discarded is worse than an uncaught one: this repo's rule is that a
+    // caught-and-LOGGED error is not a handled error, and this was caught and not even logged.
+    const stderr = (cause.stderr ?? "").trim();
     process.stdout.write(`${(cause.stdout ?? "").split("\n").slice(-12).join("\n")}\n`);
-    return { ok: false, output: cause.stdout ?? "", error: cause };
+    if (stderr) process.stdout.write(`--- stderr ---\n${stderr.split("\n").slice(-20).join("\n")}\n`);
+    return { ok: false, output: `${cause.stdout ?? ""}${stderr}`, error: cause };
   }
 }
 
