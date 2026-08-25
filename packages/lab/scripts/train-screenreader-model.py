@@ -466,6 +466,48 @@ def np_threshold(negative_scores: list[float], criterion: str,
         "atTarget": alpha == NP_ALPHA,
     }
 
+def type_one_error_blocker(name: str, development: dict, guarantee: dict | None) -> str | None:
+    """Does this head's TYPE-I ERROR block a release? Returns a message, or None.
+
+    THE SAME RULE `releasability.mjs` APPLIES, deliberately, and pinned to it by
+    `scripts/fixtures/calibration-verdicts.json`, which both this module's tests and
+    `releasability.test.ts` read. Python and JavaScript cannot import each other, so the duplication is
+    forced; CLAUDE.md's remedy for a forced duplication is to pin the copies equal with a test.
+
+    They HAD drifted. This module blocked on ``if falsePositive or falseNegative`` -- zero tolerance, left
+    over from before Neyman-Pearson calibration -- while the gate had moved to the bound the threshold was
+    actually chosen for. Measured 2026-08-25: a candidate was declared ineligible by SIX criteria and FIVE
+    were inside their own guarantee. Retraining to satisfy them would have been tuning against a rule that
+    should not exist, while the one genuine failure stayed buried among the five.
+
+    Two things this rule deliberately does NOT do:
+
+    - It does not block on false negatives. NP bounds type-I error and trades recall on purpose, and
+      development recall is computed on a corpus particular to one model, so its absolute value cannot
+      support a gate. A head that genuinely weakens is caught on held-out acceptance, where two models are
+      comparable. `releasability.test.ts` has pinned this since before the drift.
+    - It works per SUBTYPE, never per criterion. The guarantee is computed per subtype, so that is the only
+      level at which `permittedFalsePositives` means anything. Aggregating to the criterion and comparing
+      against no bound at all was the second half of the same defect.
+    """
+    false_positive = int(development.get("falsePositive", 0))
+    if guarantee is None:
+        # An uncalibrated head makes no claim about unseen pages, so the only defensible bar is the old
+        # one. This is the pre-NP path and stays strict.
+        if false_positive:
+            return f"{name}: {false_positive} false positive(s) and no calibrated guarantee to permit them"
+        return None
+    if guarantee.get("atTarget") is False:
+        return (f"{name}: NOT calibrated to the target false-positive rate. It needs more conformant "
+                f"records; no threshold can fix this.")
+    permitted = int(guarantee.get("permittedFalsePositives", 0))
+    if false_positive > permitted:
+        return (f"{name}: {false_positive} false positive(s) where the calibrated rank permits "
+                f"{permitted} -- the threshold and the scores disagree, which is a fault in the "
+                f"calibration itself rather than a weak head")
+    return None
+
+
 def threshold_sweep(scores: Any, labels: Any) -> list[dict[str, float | int]]:
     """Every candidate cut and what it would cost, recorded in the report.
 
@@ -920,9 +962,23 @@ def main() -> None:
                     report["releaseEligible"] = False
                     report["calibrationClean"] = False
                 note(report, f"{criterion}: {split} split has no positive records", blocking=bool(model_owned))
-        calibration_false_positive = criterion_report["calibration"]["falsePositive"]
-        calibration_false_negative = criterion_report["calibration"]["falseNegative"]
-        if calibration_false_positive or calibration_false_negative:
+        # PER SUBTYPE, against the bound that subtype was calibrated to -- the same rule and the same axis
+        # `releasability.mjs` uses, pinned to it by scripts/fixtures/calibration-verdicts.json.
+        #
+        # This read the CRITERION-level aggregate and blocked on `falsePositive or falseNegative`, which
+        # was wrong twice over. Zero tolerance predates Neyman-Pearson calibration, where bounded type-I
+        # error is the point rather than a defect; and the criterion has no guarantee to compare against,
+        # because the guarantee is computed per subtype. Measured 2026-08-25: six criteria declared
+        # ineligible, five of them inside their own bound, and blocking on false negatives contradicted a
+        # rule `releasability.test.ts` had pinned for weeks.
+        for subtype_name, subtype_report in criterion_report["subtypes"].items():
+            blocker = type_one_error_blocker(
+                subtype_name,
+                subtype_report.get("development") or {},
+                subtype_report.get("guarantee"),
+            )
+            if not blocker:
+                continue
             report["modelReleaseEligible"] = False
             # Blocks release when ANY subtype of this criterion is the model's to decide. Previously a
             # criterion labelled rule-owned was excused wholesale, so a model-owned subtype inside it
@@ -930,10 +986,7 @@ def main() -> None:
             if model_owned:
                 report["releaseEligible"] = False
                 report["calibrationClean"] = False
-            note(report,
-                 f"{criterion}: grouped calibration has {calibration_false_positive} false positives "
-                 f"and {calibration_false_negative} false negatives",
-                 blocking=bool(model_owned))
+            note(report, blocker, blocking=bool(model_owned))
         report["criteria"][criterion] = criterion_report
 
     # `releaseBlockedBy` must name the blockers that ACTUALLY exist, and it did not.

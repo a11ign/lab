@@ -131,7 +131,13 @@ function acceptanceBelongsToTheseWeights(acceptance, candidateModelSha256) {
  * A report with no guarantee block predates ADR 0022. It falls back to the old rule rather than passing
  * vacuously — unexamined must never read as clean.
  */
-function typeOneErrorFailures(name, subtype, development) {
+/**
+ * EXPORTED so it can be driven by `scripts/fixtures/calibration-verdicts.json`, which the Python trainer's
+ * `type_one_error_blocker` is driven by too. The rule exists in two languages because the trainer decides
+ * eligibility at train time and this decides the release at promote time, and neither can import the
+ * other — so the copies are pinned equal rather than deleted.
+ */
+export function typeOneErrorFailures(name, subtype, development) {
   const guarantee = subtype.guarantee;
   if (!guarantee) {
     return development.falsePositive > 0

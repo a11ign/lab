@@ -9,7 +9,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
+import { typeOneErrorFailures } from "./releasability.mjs";
 import { releasability } from "./releasability.mjs";
 
 const head = (over = {}) => ({
@@ -396,4 +399,45 @@ test("a head with room to spare gets no margin note", () => {
   });
   const v = releasability({ training: comfortable, acceptance: { passed: true }, shipped: null });
   assert.doesNotMatch(v.notes.join(" "), /NO MARGIN/);
+});
+
+/**
+ * THE SAME RULE THE TRAINER APPLIES, pinned to it by a shared fixture.
+ *
+ * The tests above cover this gate thoroughly and `test_np_threshold.py` covers the NP maths thoroughly.
+ * Neither could see that the Python trainer was still blocking on `if falsePositive or falseNegative` —
+ * zero tolerance from before Neyman-Pearson calibration — while this file has pinned "false negatives must
+ * not block" for weeks. Both suites passed. The contradiction lived between them, in two languages, where
+ * no compiler or linter could reach it.
+ *
+ * Measured cost, 2026-08-25: a candidate declared ineligible by SIX criteria, of which FIVE were inside
+ * the bound they had been calibrated to. Retraining to satisfy them would have been tuning against a rule
+ * that should not exist, while the one genuine failure stayed buried among the five.
+ *
+ * The cases are read from disk by BOTH implementations. Neither side can be changed alone.
+ */
+const VERDICTS = JSON.parse(readFileSync(
+  fileURLToPath(new URL("../../../../scripts/fixtures/calibration-verdicts.json", import.meta.url)),
+  "utf8",
+)) as { cases: Array<{ name: string; development: Record<string, number>;
+  guarantee: Record<string, unknown> | null; blocks: boolean; why: string }> };
+
+test("the shared fixture is real and covers both verdicts", () => {
+  // A guard reading an empty or one-sided fixture passes while examining nothing.
+  assert.ok(VERDICTS.cases.length >= 6, `only ${VERDICTS.cases.length} shared cases; the fixture shrank`);
+  assert.ok(VERDICTS.cases.some((c) => c.blocks), "no blocking case — the rule could block never");
+  assert.ok(VERDICTS.cases.some((c) => !c.blocks), "no passing case — the rule could block always");
+});
+
+test("this gate agrees with the shared contract the trainer is held to", () => {
+  for (const shared of VERDICTS.cases) {
+    const failures = typeOneErrorFailures(
+      "subtype",
+      { guarantee: shared.guarantee ?? undefined, threshold: 0.5 },
+      { precision: 1, ...shared.development },
+    );
+    assert.equal(failures.length > 0, shared.blocks,
+      `${shared.name}: gate ${failures.length ? "blocked" : "passed"} where the shared contract says `
+      + `${shared.blocks ? "block" : "pass"}. ${shared.why}`);
+  }
 });
