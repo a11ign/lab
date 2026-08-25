@@ -25,12 +25,15 @@ import { parseShard, shardOf } from "./shard.mjs";
 import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 import { configuredWorkers } from "../../../worker-fleet/src/fleet-env.mjs";
+import { fleetConsistency, describeMismatches } from "../../../worker-fleet/src/fleet-consistency.mjs";
 import { drainAcrossPool } from "./worker-pool.mjs";
 import { createHostThrottle, hostOf } from "./host-throttle.mjs";
 import { writeJsonAtomic } from "./write-atomic.mjs";
 
 const ROLE = process.argv.find((a) => a.startsWith("--role="))?.slice("--role=".length) ?? null;
 const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length) ?? null;
+/** Build one corpus from two browser builds anyway. Says so in the output; never the default. */
+const ALLOW_MIXED = process.argv.includes("--allow-mixed-browsers");
 const OUT = resolve(process.cwd(), process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
 
 /**
@@ -235,6 +238,45 @@ async function captureAcrossPool(pages, workers) {
   return { captured: captured.length, failed };
 }
 
+/**
+ * Refuse to build ONE corpus out of workers running different browsers.
+ *
+ * `browserVersion` is in the capture cache key precisely because a fleet can run more than one image, and
+ * `fleet:status` has reported INCONSISTENT for a long time — but only when a human ran it, and only
+ * before a run rather than during one.
+ *
+ * Measured 2026-08-24: a worker that had been down came back with Edge auto-updated from the pinned
+ * .101 to .107 while a corpus run was in flight. The fleet was consistent when the run started and was
+ * not when it finished, and nothing noticed. Fifteen pages were captured under the wrong build before I
+ * happened to look.
+ *
+ * Checked HERE, at the boundary, for the same reason `assertWorkerUrl` is: the alternative is discovering
+ * it in the evidence weeks later, where a split fleet looks like a page that changed. And re-checked
+ * after the run, because "consistent when it started" is exactly the claim that failed.
+ *
+ * `--allow-mixed-browsers` exists for the case where you know something the check does not, and it says
+ * so in the output rather than passing quietly.
+ */
+async function assertOneBrowserAcross(workers, when) {
+  if (ALLOW_MIXED) return;
+  const guests = await Promise.all(workers.map(async (url) => {
+    try {
+      return (await requestJson(`${url}/health`, { timeoutMs: 10_000 })).json ?? null;
+    } catch {
+      // Unreachable is not INCONSISTENT. A box that is asleep contributes no evidence and no mismatch,
+      // and treating silence as a fault is how a check earns a reputation for crying wolf.
+      return null;
+    }
+  }));
+  const verdict = fleetConsistency(guests.filter(Boolean));
+  if (verdict.consistent) return;
+  process.stderr.write(`\nFLEET INCONSISTENT ${when}: ${describeMismatches(verdict.mismatches)}\n`
+    + "Two browser builds must never write into one corpus — `browserVersion` is in the capture cache\n"
+    + "key for exactly this reason, and a split shows up later as evidence that cannot be compared.\n"
+    + "Pin the fleet (`provision-role.yml --tags edge`) or run with --allow-mixed-browsers.\n");
+  process.exit(3);
+}
+
 async function main() {
   let workers;
   try {
@@ -258,7 +300,12 @@ async function main() {
   process.stdout.write("Never cached: these pages change, and stale evidence would be paired with a "
     + "current conformance claim.\n");
 
+  await assertOneBrowserAcross(workers, "before the run");
   const { captured, failed } = await captureAcrossPool(pages, workers);
+  // AND AFTER. A worker can rejoin mid-run with a browser that updated while it was away, which is
+  // exactly what happened on 2026-08-24 — so checking only at the start proves only that the start
+  // was clean.
+  await assertOneBrowserAcross(workers, "by the END of the run");
 
   process.stdout.write(`\n${captured}/${pages.length} captured\n`);
   // Named, not counted. "3 failed" tells you nothing about whether the corpus is usable.
