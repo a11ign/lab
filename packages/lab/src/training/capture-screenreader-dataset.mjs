@@ -9,7 +9,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { randomUUID } from "node:crypto";
 import { leaseWorker, leaseWorkerPool, guestReachableUrl, isAfterRun } from "@a11y-witness/worker-fleet";
 import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
-import { configuredWorkers } from "../../../worker-fleet/src/fleet-env.mjs";
+import { configuredWorkers, inventoryWorkerUrls } from "../../../worker-fleet/src/fleet-env.mjs";
+import { assertFleetRunsThisCheckout } from "../../../worker-fleet/src/worker-code-check.mjs";
 import { titleOf } from "@a11y-witness/evidence/verify";
 import {
   isEvidence, isTransient, rejectionReason, runOutcome, shouldRetireWorker,
@@ -31,6 +32,8 @@ const PAGES_PORT = Number(process.env.DATASET_PAGES_PORT || new URL(DEFAULT_BASE
 const STEPS = Number(process.env.DATASET_CAPTURE_STEPS || 150);
 const ONLY = process.argv.find((arg) => arg.startsWith("--only="))?.slice("--only=".length);
 const RESUME = process.argv.includes("--resume");
+/** Capture with a fleet that is not running this checkout. Says so in the output; never the default. */
+const ALLOW_STALE = process.argv.includes("--allow-stale-workers");
 // Caching is refused for acceptance runs, whatever the flags say: those runs exist to test whether
 // NVDA's output is still stable, and reusing evidence would make them pass by construction.
 // `--no-cache` forces a recapture anywhere.
@@ -649,9 +652,17 @@ async function checkDatasetWorkers(pool, lease) {
     // the hour, and the pool driver would keep handing it cases.
     for (const worker of pool) await checkWorker({ worker, source: "explicit" });
     console.log(`Pool of ${pool.length}: ${pool.join(", ")}`);
-    return;
+  } else {
+    await checkWorker(lease);
   }
-  await checkWorker(lease);
+  // AND that they run the code this checkout expects — here as well as in `capture-real-pages.mjs`, which
+  // is the whole point. A remedy that reaches one of several paths is this repo's most expensive recurring
+  // shape, and the SYNTHETIC corpus is the worse half of it: real-page captures never cache, so a stale
+  // worker's evidence there is at least overwritten next run. Here it is CACHED, and `workerCode` is
+  // deliberately outside the cache key — so one stale guest's capture is reused for ever with nothing
+  // recording which code produced it.
+  await assertFleetRunsThisCheckout(pool ?? [lease.worker],
+    { when: "before the run", allow: ALLOW_STALE, bareMetalUrls: inventoryWorkerUrls() });
 }
 
 function captureProgress(cases, lease, pool, baseUrl) {

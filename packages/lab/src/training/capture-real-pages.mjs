@@ -24,10 +24,11 @@ import { pagesFor, REAL_PAGES } from "./real-page-corpus.mjs";
 import { parseShard, shardOf } from "./shard.mjs";
 import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
-import { configuredWorkers } from "../../../worker-fleet/src/fleet-env.mjs";
+import { configuredWorkers, inventoryWorkerUrls } from "../../../worker-fleet/src/fleet-env.mjs";
 import { leasePageServer } from "./page-server.mjs";
 import { hostAddressForWorker } from "@a11y-witness/worker-fleet";
 import { fleetConsistency, describeMismatches } from "../../../worker-fleet/src/fleet-consistency.mjs";
+import { assertFleetRunsThisCheckout } from "../../../worker-fleet/src/worker-code-check.mjs";
 import { drainAcrossPool } from "./worker-pool.mjs";
 import { createHostThrottle, hostOf } from "./host-throttle.mjs";
 import { writeJsonAtomic } from "./write-atomic.mjs";
@@ -36,6 +37,8 @@ const ROLE = process.argv.find((a) => a.startsWith("--role="))?.slice("--role=".
 const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length) ?? null;
 /** Build one corpus from two browser builds anyway. Says so in the output; never the default. */
 const ALLOW_MIXED = process.argv.includes("--allow-mixed-browsers");
+/** Capture with a fleet that is not running this checkout. Says so in the output; never the default. */
+const ALLOW_STALE = process.argv.includes("--allow-stale-workers");
 const OUT = resolve(process.cwd(), process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
 
 /**
@@ -355,6 +358,11 @@ async function main() {
     + "current conformance claim.\n");
 
   await assertOneBrowserAcross(workers, "before the run");
+  // AND that they are running the code this checkout expects. The browser check asks whether the guests
+  // agree with EACH OTHER; this asks whether they agree with the commit that will be stamped on the
+  // evidence. A fleet can be perfectly consistent and uniformly four commits behind.
+  await assertFleetRunsThisCheckout(workers,
+    { when: "before the run", allow: ALLOW_STALE, bareMetalUrls: inventoryWorkerUrls() });
   const pageServer = await leaseFixtureServer(pages);
   let captured, failed;
   try {
