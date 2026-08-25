@@ -1,0 +1,398 @@
+/**
+ * What state are the lab's corpus, exports and models actually in?
+ *
+ *     npm run lab:inventory            # on the lab, or against a local copy of runs/
+ *     npm run lab:inventory -- --json
+ *     npm run lab:job -- -e job=inventory      # the authoritative answer, where the corpus lives
+ *
+ * ## Why this exists
+ *
+ * Every other moving part here has a status command — `fleet:status` for the boxes, `lab:status` for a
+ * job, `doctor` for the local environment, `worker:code` for what the guests are running. The corpus and
+ * the artefacts trained from it had none, and they are the things everything else exists to produce.
+ *
+ * The consequence was measured on 2026-08-25: answering "which Edge build is this corpus captured
+ * under?", "which schema is this candidate stamped with?" and "is the acceptance export current?" meant
+ * opening an SSH shell on the lab and running ad-hoc Python — about eight times in one afternoon. That is
+ * the hand-crank this repo removes everywhere else, and it produced its own defect within the hour: a
+ * hand-rolled script read the wrong progress field and reported `captured: 0` while `lab:status`
+ * correctly reported 85. A one-off script has no tests, no review and no second reader.
+ *
+ * ## What it answers, and why these four
+ *
+ * Each one is a question that has cost a run:
+ *
+ *   - **Is the corpus homogeneous?** `environmentKey` puts browser, screen reader, guidepup, OS and
+ *     provisionRevision in the capture cache key precisely because a fleet can differ. A corpus holding
+ *     two populations is not comparable evidence, and the symptom is silent: cache misses that read as
+ *     ordinary churn. On 2026-08-25 the corpus held FOUR worker-code populations and two Edge builds.
+ *   - **Are the exports current?** The featurizer reads a `parsed` block baked in at export time, so an
+ *     announcement-grammar change moves the model input without touching a line of Python. A candidate
+ *     trained on a stale export is fitted to a parse that no longer exists — and its schema STAMP still
+ *     looks right, because a version string is not a content hash.
+ *   - **What schema is each model stamped with?** The answer lives in safetensors metadata, not in
+ *     `training-report.json`, which is why it was unreadable without a script.
+ *   - **Is a schema migration open?** That is what `release:gate` refuses on, and knowing which candidate
+ *     could close it is the difference between a retrain and a promote.
+ *
+ * ## It refuses to measure a moving target
+ *
+ * Same guard as `rules:coverage` and `rules:real-pages`, for the same reason: a corpus written in the
+ * last few minutes is being rewritten underneath the count, and a number computed from it describes a
+ * state that is already gone. Reporting it would be worse than reporting nothing.
+ */
+import { readdirSync, readFileSync, statSync, existsSync, openSync, readSync, closeSync } from "node:fs";
+import { resolve, join, basename } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const REPO = fileURLToPath(new URL("../../../", import.meta.url));
+const RUNS = resolve(REPO, process.env.A11Y_RUNS_ROOT || "runs");
+const SHIPPED = resolve(REPO, "packages/scorer/models/screenreader-scorer");
+const MIGRATION = resolve(REPO, "packages/scorer/models/schema-migration.json");
+const JSON_OUT = process.argv.includes("--json");
+
+/** Below this the corpus is being rewritten and every count describes a state that is already gone. */
+const SETTLED_AFTER_MINUTES = 10;
+/** Enough captures to be worth describing; fewer is a partial copy, not a corpus. */
+const PARTIAL_CORPUS = 50;
+
+const readJson = (path) => {
+  try {
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The `representation` a model was trained under, from safetensors METADATA.
+ *
+ * Not from `training-report.json`, which does not carry it — that is exactly why this question needed a
+ * script rather than a `jq`. The format is an 8-byte little-endian header length, then that many bytes of
+ * JSON whose `__metadata__` holds the stamps.
+ */
+function modelSchema(dir) {
+  const path = join(dir, "model.safetensors");
+  if (!existsSync(path)) return null;
+  let fd;
+  try {
+    fd = openSync(path, "r");
+    const size = Buffer.alloc(8);
+    readSync(fd, size, 0, 8, 0);
+    const length = Number(size.readBigUInt64LE(0));
+    const header = Buffer.alloc(length);
+    readSync(fd, header, 0, length, 8);
+    return JSON.parse(header.toString("utf8")).__metadata__ ?? {};
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+const minutesSince = (ms) => (Date.now() - ms) / 60_000;
+
+function newestWrite(dir) {
+  let newest = 0;
+  try {
+    for (const entry of readdirSync(dir)) {
+      if (!entry.endsWith(".json")) continue;
+      newest = Math.max(newest, statSync(join(dir, entry)).mtimeMs);
+    }
+  } catch {
+    return 0;
+  }
+  return newest;
+}
+
+/**
+ * The distribution of every field the capture cache keys on. PURE.
+ *
+ * Reported as a distribution rather than as a verdict, because "the corpus is split" and "the corpus is
+ * split 3,168 to 42" are different facts and only the second tells you whether you are looking at a
+ * finished migration or a run that died halfway.
+ *
+ * @param {Array<{environment?: object, provenance?: object}>} captures
+ * @returns {Record<string, Record<string, number>>}
+ */
+export function environmentSpread(captures) {
+  const fields = {
+    browserVersion: (c) => c.environment?.browserVersion,
+    screenReaderVersion: (c) => c.environment?.screenReaderVersion,
+    guidepupVersion: (c) => c.environment?.guidepupVersion,
+    windowsVersion: (c) => c.environment?.windowsVersion,
+    captureProtocol: (c) => c.provenance?.captureProtocol,
+    provisionRevision: (c) => c.provenance?.provisionRevision,
+    workerCode: (c) => c.provenance?.workerCode,
+  };
+  const spread = {};
+  for (const [name, read] of Object.entries(fields)) {
+    const counts = {};
+    for (const capture of captures) {
+      // ABSENT is counted as its own value, never skipped. A field missing from half the corpus is the
+      // single most useful thing this report can say — the cache key reads it as "unknown", so those
+      // captures can never match a live guest, and the symptom is only ever unexplained cache misses.
+      const value = String(read(capture) ?? "(absent)");
+      counts[value] = (counts[value] ?? 0) + 1;
+    }
+    spread[name] = counts;
+  }
+  return spread;
+}
+
+/** Which fields hold more than one value, worst first. PURE. */
+export function splitFields(spread) {
+  return Object.entries(spread)
+    .filter(([, counts]) => Object.keys(counts).length > 1)
+    .map(([field, counts]) => ({ field, values: counts, populations: Object.keys(counts).length }))
+    .sort((a, b) => b.populations - a.populations);
+}
+
+function readCorpus(dir) {
+  const captures = [];
+  let files;
+  try {
+    files = readdirSync(dir).filter((f) => f.endsWith(".json"));
+  } catch {
+    // No such directory is the ordinary case off the lab, not an error worth a diagnostic.
+    return { captures, files: 0 };
+  }
+  for (const file of files) {
+    const parsed = readJson(join(dir, file));
+    if (parsed) captures.push(parsed.capture ?? parsed);
+  }
+  return { captures, files: files.length };
+}
+
+/** An export is STALE when the newest capture is younger than it — the parse baked in predates them. */
+function exportState(path, newestCaptureMs) {
+  if (!existsSync(path)) return { path: basename(path), present: false };
+  const { mtimeMs, size } = statSync(path);
+  return {
+    path: basename(path),
+    present: true,
+    writtenMinutesAgo: Math.round(minutesSince(mtimeMs)),
+    bytes: size,
+    // Compared against the CAPTURES it is derived from, not against the clock. "Two days old" says
+    // nothing; "older than the evidence it was built from" says everything.
+    stale: newestCaptureMs > 0 && mtimeMs < newestCaptureMs,
+  };
+}
+
+function models() {
+  const found = [];
+  const add = (dir, label) => {
+    if (!existsSync(dir)) return;
+    const meta = modelSchema(dir);
+    const report = readJson(join(dir, "training-report.json"));
+    found.push({
+      name: label,
+      schema: meta?.representation ?? "(unstamped)",
+      releasable: report?.releasable ?? null,
+      acceptanceReport: existsSync(join(dir, "acceptance-report.json")),
+      writtenMinutesAgo: existsSync(join(dir, "model.safetensors"))
+        ? Math.round(minutesSince(statSync(join(dir, "model.safetensors")).mtimeMs)) : null,
+    });
+  };
+  add(SHIPPED, "shipped");
+  try {
+    for (const entry of readdirSync(RUNS).filter((e) => e.startsWith("model-")).sort()) {
+      add(join(RUNS, entry), entry);
+    }
+  } catch { /* no runs/ — reported by the caller as a skip */ }
+  return found;
+}
+
+/** Which candidate, if any, could close an open schema migration. PURE. */
+export function migrationVerdict(migration, modelList) {
+  if (!migration) return { open: false };
+  const pending = migration.pendingSchema;
+  const shipped = modelList.find((m) => m.name === "shipped");
+  const candidates = modelList.filter((m) => m.name !== "shipped" && m.schema === pending);
+  return {
+    open: true,
+    pendingSchema: pending,
+    shippedSchema: shipped?.schema ?? "(unknown)",
+    openedAt: migration.openedAt,
+    // A candidate carrying the pending schema is NECESSARY and not sufficient: the schema is a version
+    // string, so it cannot tell a candidate trained on the current parse from one trained before an
+    // announcement-grammar change that moved the features underneath the same version.
+    candidatesWithPendingSchema: candidates.map((c) => c.name),
+  };
+}
+
+function collect() {
+  const datasetCaptures = join(RUNS, "screenreader-dataset/captures");
+  const realPages = join(RUNS, "real-page-corpus");
+  const newestDataset = newestWrite(datasetCaptures);
+
+  const dataset = readCorpus(datasetCaptures);
+  const real = readCorpus(realPages);
+  const modelList = models();
+
+  return {
+    corpus: {
+      dataset: {
+        captures: dataset.files,
+        newestWrittenMinutesAgo: newestDataset ? Math.round(minutesSince(newestDataset)) : null,
+        spread: environmentSpread(dataset.captures),
+      },
+      realPages: { captures: real.files, spread: environmentSpread(real.captures) },
+    },
+    exports: [
+      exportState(join(RUNS, "screenreader-dataset/screenreader-evidence.jsonl"), newestDataset),
+      exportState(join(RUNS, "screenreader-dataset/with-realism.jsonl"), newestDataset),
+      exportState(join(RUNS, "screenreader-acceptance/repeat-1.jsonl"), 0),
+      exportState(join(RUNS, "screenreader-acceptance/repeat-2.jsonl"), 0),
+    ],
+    models: modelList,
+    migration: migrationVerdict(readJson(MIGRATION), modelList),
+  };
+}
+
+/**
+ * A report is READ, often through `| head` or `| grep`, and a closed pipe must not look like a crash.
+ *
+ * Node raises EPIPE as an unhandled `error` event on stdout and exits with a stack trace, so
+ * `npm run lab:inventory | head` printed a `write EPIPE` dump under perfectly good output. A diagnostic
+ * that appears to crash when you page it is one people stop running.
+ */
+process.stdout.on("error", (error) => {
+  if (error.code !== "EPIPE") throw error;
+  process.exit(0);
+});
+
+function line(text = "") {
+  process.stdout.write(`${text}\n`);
+}
+
+function reportSpread(label, count, spread) {
+  const splits = splitFields(spread);
+  line(`  ${label}: ${count} capture(s)`);
+  if (!count) return;
+  if (!splits.length) {
+    line("    HOMOGENEOUS — every cache-key field holds one value across the corpus");
+    return;
+  }
+  line(`    SPLIT across ${splits.length} field(s) — these captures are not comparable evidence:`);
+  for (const { field, values } of splits) {
+    const detail = Object.entries(values).sort((a, b) => b[1] - a[1])
+      .map(([value, n]) => `${value}=${n}`).join("  ");
+    line(`      ${field.padEnd(20)} ${detail}`);
+  }
+}
+
+/**
+ * WHERE this was read, and whether that place is the authority.
+ *
+ * Added because the first run of this tool lied by omission on its own author's laptop: it reported "NO
+ * candidate carries it yet" — true of the local copy, and false on the lab, which holds a v15 candidate.
+ * That is this repo's oldest rule pointed at a new tool: *a number is only as good as what it was
+ * computed from, so make every reported number carry that.*
+ *
+ * The lab checkout is `/opt/a11y` (`group_vars/a11y_lab.yml: lab_repo_path`). Anywhere else is a copy,
+ * and `runs/` is gitignored — so a local copy is only ever as fresh as its last sync, and is missing
+ * `runs/model-*` entirely unless somebody fetched them.
+ */
+const LAB_REPO_PATH = "/opt/a11y";
+const onTheLab = () => REPO.replace(/\/$/, "") === LAB_REPO_PATH;
+
+function reportProvenance(state) {
+  line(`\nREAD FROM  ${RUNS}`);
+  if (onTheLab()) {
+    line("  This IS the lab, so these are the authoritative numbers.");
+    return;
+  }
+  const oldest = state.corpus.dataset.newestWrittenMinutesAgo;
+  line("  This is NOT the lab — `runs/` is gitignored, so this is a copy, only as fresh as its last sync,");
+  line("  and it carries no `runs/model-*` unless somebody fetched them. Treat every count below as being");
+  line("  about THIS MACHINE.");
+  if (oldest !== null && oldest > 60) {
+    line(`  Its newest capture is ${(oldest / 60).toFixed(1)} h old.`);
+  }
+  line("  The authoritative answer:  npm run lab:job -- -e job=inventory");
+}
+
+/**
+ * Refuse to report, and say which refusal it is. Returns an exit code, or null to carry on.
+ *
+ * IN FLUX and NOTHING TO READ are different answers and must not collapse into one: the first means
+ * "ask again shortly", the second means "you are on the wrong machine".
+ */
+function refusal(state) {
+  const idle = state.corpus.dataset.newestWrittenMinutesAgo;
+  if (idle !== null && idle < SETTLED_AFTER_MINUTES) {
+    line(`\n  IN FLUX — a capture was written ${idle} minute(s) ago. Every count below describes a state`);
+    line("  that will have changed by the time you read it. Wait for the run, or watch it with");
+    line("  `npm run lab:status -- -e job=<name>`. This is a refusal to measure a moving target.");
+    return 2;
+  }
+  if (!state.corpus.dataset.captures && !state.corpus.realPages.captures) {
+    line("\n  SKIPPED: no captures under runs/ — this reads the corpus, and the lab holds it.");
+    line("  `npm run lab:job -- -e job=inventory` asks the box that has it.");
+    return 0;
+  }
+  return null;
+}
+
+function main() {
+  const state = collect();
+
+  if (JSON_OUT) {
+    process.stdout.write(`${JSON.stringify(state, null, 2)}\n`);
+    process.exit(0);
+  }
+
+  const declined = refusal(state);
+  if (declined !== null) process.exit(declined);
+
+  reportProvenance(state);
+  line("\nCORPUS");
+  reportSpread("dataset", state.corpus.dataset.captures, state.corpus.dataset.spread);
+  reportSpread("real pages", state.corpus.realPages.captures, state.corpus.realPages.spread);
+  if (state.corpus.dataset.captures && state.corpus.dataset.captures < PARTIAL_CORPUS) {
+    line("    NOTE: too few captures to be the authoritative corpus — this looks like a partial copy.");
+  }
+
+  line("\nEXPORTS  (stale = older than the captures it was built from)");
+  for (const e of state.exports) {
+    if (!e.present) { line(`  ${e.path.padEnd(28)} MISSING`); continue; }
+    line(`  ${e.path.padEnd(28)} ${e.stale ? "STALE" : "current"}  `
+      + `${(e.bytes / 1e6).toFixed(1)} MB, written ${e.writtenMinutesAgo} min ago`);
+  }
+
+  line("\nMODELS  (schema is read from safetensors metadata, not from training-report.json)");
+  for (const m of state.models) {
+    line(`  ${m.name.padEnd(26)} ${String(m.schema).padEnd(30)}`
+      + `${m.acceptanceReport ? "acceptance ✓" : "no acceptance report"}`);
+  }
+
+  line("\nSCHEMA MIGRATION");
+  if (!state.migration.open) {
+    line("  none open — nothing here blocks release:gate.");
+  } else {
+    line(`  OPEN since ${state.migration.openedAt}: ${state.migration.shippedSchema} -> `
+      + `${state.migration.pendingSchema}`);
+    line("  release:gate refuses while this is open, and closing it means promoting weights stamped");
+    line(`  ${state.migration.pendingSchema} and deleting schema-migration.json in the same commit.`);
+    const ready = state.migration.candidatesWithPendingSchema;
+    if (ready.length) {
+      line(`  Candidate(s) already carrying it: ${ready.join(", ")}`);
+    } else if (onTheLab()) {
+      line("  NO candidate carries it yet — train one first.");
+    } else {
+      // The distinction that made this tool wrong on its first run. "None here" and "none anywhere" are
+      // different answers, and reporting the first as the second is this repo's most-named defect.
+      line("  No candidate HERE carries it — but this machine has no `runs/model-*` to speak of, so that");
+      line("  says nothing about the lab. Ask it: npm run lab:job -- -e job=inventory");
+    }
+    if (ready.length) {
+      line("  A matching schema is NECESSARY, not sufficient: it is a version string, so it cannot tell a");
+      line("  candidate trained on the current parse from one trained before the grammar moved underneath it.");
+      line("  Check the exports above are current before trusting any candidate.");
+    }
+  }
+  line("");
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();
