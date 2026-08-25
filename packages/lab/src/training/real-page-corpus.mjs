@@ -638,9 +638,18 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   { url: `${FIXTURE_BASE}/route-title-stale/bad.html`, role: "fixture",
     publishedClaim: "inaccessible", source: OWN_FIXTURE_CLAIM, witnessableAs: ["2.4.2"],
     demonstrates: "activating a navigation control changes the view and not the title" },
-  { url: `${FIXTURE_BASE}/focus-order-tabindex/bad.html`, role: "fixture",
+  // `keyboard-unreachable-action`, NOT `focus-order-tabindex`. I picked the wrong page first: the
+  // tabindex fixture's five fields are all reachable by Tab and merely in the wrong ORDER, so it
+  // witnesses 2.4.3 — correctly — and never 2.1.1. `KEYBOARD_ACTION_PAGE(false)` is the 2.1.1 case: a
+  // `div role="button"` with no tabindex, which the screen reader announces as operable and the keyboard
+  // cannot reach.
+  { url: `${FIXTURE_BASE}/keyboard-unreachable-action/bad.html`, role: "fixture",
     publishedClaim: "inaccessible", source: OWN_FIXTURE_CLAIM, witnessableAs: ["2.1.1"],
     demonstrates: "a div role=button the screen reader announces and Tab never reaches" },
+  // Kept as well: it witnesses 2.4.3, which no published page in this corpus demonstrates either.
+  { url: `${FIXTURE_BASE}/focus-order-tabindex/bad.html`, role: "fixture",
+    publishedClaim: "inaccessible", source: OWN_FIXTURE_CLAIM, witnessableAs: ["2.4.3"],
+    demonstrates: "positive tabindex displacing form fields past every link in the tab order" },
 
 ]);
 
