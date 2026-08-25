@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 
 import { assertDisjoint, pagesFor, REAL_PAGES, UNWITNESSABLE_ON_REAL_PAGES } from "./real-page-corpus.mjs";
 import { SCORED_CRITERIA, RULE_CRITERIA } from "@a11y-witness/judge/coverage";
+import { CASES } from "./case-matrix.mjs";
 
 /** Every `url` recorded in an eval fixture — the TEST set, derived rather than copied. */
 function testSetUrls(): string[] {
@@ -248,4 +249,31 @@ test("the disclosure field is empty until migrated page by page against the cite
   assert.deepEqual(populated, [],
     "claimDiscloses is now populated — remove this test in the same change, and record in the commit which "
     + "published statements were read to classify each entry");
+});
+
+test("a FIXTURE's declared criterion matches the case it is built from", () => {
+  // ONE FACT, TWO PLACES. A fixture URL points at a generated case page, and that case ALREADY declares
+  // which criterion it demonstrates — `case-matrix.mjs` has `criterion: "2.4.3"` on `focus-order-tabindex`
+  // — while the fixture entry declares `witnessableAs` separately. Nothing compared them.
+  //
+  // Measured 2026-08-25, and it cost three capture runs: the 2.1.1 fixture pointed at
+  // `focus-order-tabindex`, whose five fields are ALL reachable by Tab and merely in the wrong order. It
+  // witnessed 2.4.3 correctly and could never witness 2.1.1. The right page — `keyboard-unreachable-action`
+  // — was in the same file, thirty lines away, already labelled 2.1.1.
+  //
+  // The symptom was "the rule did not fire", which reads as a capture problem or a rule problem, and I
+  // treated it as both before checking the premise. This check runs offline in milliseconds and answers
+  // it before a worker is ever asked.
+  const declared = new Map(CASES.map((c: { id: string; criterion: string }) => [c.id, c.criterion]));
+  const wrong: string[] = [];
+  for (const page of REAL_PAGES.filter((p) => p.role === "fixture")) {
+    const caseId = new URL(page.url).pathname.split("/").filter(Boolean)[0];
+    const expected = declared.get(caseId);
+    assert.ok(expected, `${page.url} names no case in CASES — a fixture must point at a generated page`);
+    const claimed = (page.witnessableAs ?? [])[0];
+    if (claimed !== expected) wrong.push(`${caseId}: fixture says ${claimed}, the case says ${expected}`);
+  }
+  assert.deepEqual(wrong, [],
+    "a fixture claiming a criterion its page does not demonstrate cannot witness it, and the failure "
+    + "looks exactly like a broken rule");
 });
