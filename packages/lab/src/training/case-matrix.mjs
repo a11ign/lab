@@ -2091,7 +2091,10 @@ export const ACCOMPANYING_CONFORMANT = Object.freeze({
 const CONFORMANT_HOSTS_PER_SUBTYPE = 3;
 const HAS_OWN_CONTROL = /<button|<input[^>]*type=["']?(submit|button)|<select|<textarea|<form[\s>]/i;
 
-const ACCOMPANYING_DEFECTS = Object.freeze({
+// EXPORTED so the `grants` field can be verified rather than merely declared. It was read nowhere: eleven
+// accompanying defects each state the feature their markup is supposed to produce in the captured
+// evidence, and nothing ever checked that it did. `audit-grants.mjs` is that check.
+export const ACCOMPANYING_DEFECTS = Object.freeze({
   "vague-link": {
     // FOUR phrasings, not one, and they are the corpus's own — `link-vague-details`, `-here`, `-more`
     // and `-go` already demonstrate exactly these. Reusing them means an accompanying vague link is the
