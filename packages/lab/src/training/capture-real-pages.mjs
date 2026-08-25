@@ -25,6 +25,7 @@ import { parseShard, shardOf } from "./shard.mjs";
 import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 import { configuredWorkers } from "../../../worker-fleet/src/fleet-env.mjs";
+import { leasePageServer } from "./page-server.mjs";
 import { fleetConsistency, describeMismatches } from "../../../worker-fleet/src/fleet-consistency.mjs";
 import { drainAcrossPool } from "./worker-pool.mjs";
 import { createHostThrottle, hostOf } from "./host-throttle.mjs";
@@ -277,6 +278,34 @@ async function assertOneBrowserAcross(workers, when) {
   process.exit(3);
 }
 
+/**
+ * Serve the fixture pages, when this run needs them.
+ *
+ * Real pages are somebody else's and already on the internet; our own fixtures are files on disk, and
+ * nothing was serving them. Measured 2026-08-25: the first fixture run reported "2/3 captured" and both
+ * captures held **2 transcript lines, the first of which was "blank"** — Edge fetched a dead port,
+ * served its own error page, and the run called it a success.
+ *
+ * That is verbatim the failure `page-server.mjs` was written for: *"a stray one can 404 an entire run
+ * while it reports success"*. The lease is refcounted and returns the server it found if one is already
+ * up, so this cannot kill a server another run is using.
+ *
+ * Only for fixture URLs. A run over published pages must not start a local server it has no use for,
+ * and asking whether any page needs it is cheaper than a flag somebody has to remember.
+ */
+async function leaseFixtureServer(pages) {
+  const local = pages.filter((page) => /^https?:\/\/(localhost|127\.0\.0\.1)/.test(page.url));
+  if (!local.length) return null;
+  const first = new URL(local[0].url);
+  return leasePageServer({
+    root: resolve(process.cwd(), "runs/screenreader-dataset/pages"),
+    port: Number(first.port),
+    // A page this very run intends to capture, so a server answering the WRONG directory is caught here
+    // rather than as an empty transcript later.
+    probePath: first.pathname.replace(/^\//, ""),
+  });
+}
+
 async function main() {
   let workers;
   try {
@@ -301,7 +330,13 @@ async function main() {
     + "current conformance claim.\n");
 
   await assertOneBrowserAcross(workers, "before the run");
-  const { captured, failed } = await captureAcrossPool(pages, workers);
+  const pageServer = await leaseFixtureServer(pages);
+  let captured, failed;
+  try {
+    ({ captured, failed } = await captureAcrossPool(pages, workers));
+  } finally {
+    await pageServer?.release?.();
+  }
   // AND AFTER. A worker can rejoin mid-run with a browser that updated while it was away, which is
   // exactly what happened on 2026-08-24 — so checking only at the start proves only that the start
   // was clean.
