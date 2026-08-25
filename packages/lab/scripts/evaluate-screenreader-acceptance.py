@@ -401,17 +401,25 @@ def main() -> None:
         # The criterion is the OR of its heads' own decisions -- what "any of these failures counts"
         # actually means, and the only formulation that survives the heads being on different scales.
         decided = np.zeros(len(records), dtype=bool)
+        subtype_fired: dict[str, Any] = {}
         for subtype, scores in subtype_scores.items():
             # THE SAME DECISION `score.py` MAKES, including the applicability gate. This compared
             # `scores >= threshold` directly, which is how the gate came to be live in the product and
             # absent from the measurement that judges it -- the held-out set went on scoring pages the
             # product rules inapplicable, and the resulting failure read as the fix not working.
             threshold = float(model_subtypes[subtype]["threshold"])
-            decided |= np.array(
+            # WHICH SUBTYPE fired, not just that the criterion did. A criterion-level false positive names
+            # a page and leaves the head unidentified, and 1.3.1 has two heads that need opposite fixes --
+            # `fake-heading` reads the transcript, `unassociated-table` reads table announcements.Three wrong
+            # theories on 2026-08-25 came from not knowing which. Recorded per subtype so the report can
+            # say it.
+            fired = np.array(
                 [applicability.decide(subtype, float(score), threshold, record)
                  for score, record in zip(scores, records)],
                 dtype=bool,
             )
+            subtype_fired[subtype] = fired
+            decided |= fired
         included_labels = labels[included_indices]
         result["criteria"][criterion] = {
             "decisionOwner": model_decision_owner(criterion_report),
@@ -421,6 +429,21 @@ def main() -> None:
             "subtypeThresholds": {s: float(r["threshold"]) for s, r in model_subtypes.items()},
             "ruleDecidedSubtypes": sorted(set(criterion_report["subtypes"]) - set(model_subtypes)),
             "excluded": excluded,
+            # WHICH HEAD produced each false positive. The criterion-level list names a page and leaves
+            # the head unidentified, and a criterion with two heads needs opposite fixes depending on
+            # which one fired -- `1.3.1:fake-heading` reads the transcript, `1.3.1:unassociated-table`
+            # reads table announcements. Three wrong theories on 2026-08-25 came from not knowing which,
+            # and each cost a round trip to the lab to find out by hand.
+            "falsePositivesBySubtype": {
+                subtype: sorted({
+                    case_identity(records[index])
+                    for position, index in enumerate(included_indices)
+                    if fired[index] and not included_labels[position]
+                })
+                for subtype, fired in subtype_fired.items()
+                if any(fired[index] and not included_labels[position]
+                       for position, index in enumerate(included_indices))
+            },
             **metrics(decided[included_indices].astype(float), included_labels, DECIDED,
                       identities=[case_identity(records[index]) for index in included_indices]),
         }
