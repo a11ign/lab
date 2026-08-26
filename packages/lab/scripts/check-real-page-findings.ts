@@ -90,8 +90,35 @@ function currentFindings(): Findings {
     // findings, and holding those to a baseline would be measuring the wrong thing entirely.
     if (!page || page.publishedClaim !== "conformant") continue;
     noteEvidence(capture);
+    // HONOUR THE PUBLISHER'S OWN EXCEPTIONS, which this gate was ignoring.
+    //
+    // `publishedClaim: "conformant"` does not mean the publisher claims every criterion. Almost every UK
+    // public-sector statement says "partially compliant" with an enumerated list, and `real-page-corpus`
+    // records the intersection with our eight in `claimExcludes` — the realism tier already honours it
+    // ("publisher exceptions honoured: 37 of 37 page(s)"). This gate read only `publishedClaim`, so it
+    // reported findings on criteria the publisher had explicitly declined to claim, under the headline
+    // "pages whose publisher declares them conformant". They do not declare that.
+    //
+    // Measured 2026-08-26, the run that found this: 9 of 12 flagged findings were inside a declared
+    // exception — tfl, bl.uk, financial-ombudsman, lbhf, leeds, metoffice/forecast, nationalarchives,
+    // nls and sepa all name 1.1.1 in their own statements. A gate that cannot see the mask its own corpus
+    // declares is measuring the publisher's honesty, not this tool's accuracy.
+    // EXACT criterion entries only. `claimExcludes` may hold a SUBTYPE ("1.1.1:missing-alt"), and these
+    // findings are criterion-level — so widening a subtype exclusion to its whole criterion would hide
+    // real findings on the subtypes the publisher still claims. All 145 entries are bare criteria today;
+    // this refuses to guess if that changes, and `subtypeScoped` makes the skip visible rather than
+    // silent, because "we could not attribute it" and "it was not excluded" are different answers.
+    const declared = (page.claimExcludes ?? []).map(String);
+    const subtypeScoped = declared.filter((entry) => entry.includes(":"));
+    if (subtypeScoped.length) {
+      process.stdout.write(`  NOTE ${capture.url}: ${subtypeScoped.join(", ")} `
+        + "is subtype-scoped and these findings are criterion-level, so it cannot mask them.\n");
+    }
+    const excluded = new Set(declared.filter((entry) => !entry.includes(":")));
     const criteria = [...new Set(ruleFindings(withCensus(capture))
-      .map((finding) => String(finding.wcag).split(" ")[0]))].sort();
+      .map((finding) => String(finding.wcag).split(" ")[0]))]
+      .filter((criterion) => !excluded.has(criterion))
+      .sort();
     out[String(capture.url)] = criteria;
   }
   return out;

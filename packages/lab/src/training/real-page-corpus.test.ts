@@ -277,3 +277,34 @@ test("a FIXTURE's declared criterion matches the case it is built from", () => {
     "a fixture claiming a criterion its page does not demonstrate cannot witness it, and the failure "
     + "looks exactly like a broken rule");
 });
+
+test("the real-page gate honours claimExcludes, and only on exact criteria", () => {
+  // The gate reported "NEW finding(s) on pages whose publisher declares them conformant" for criteria
+  // those publishers had EXPLICITLY declined to claim. Measured 2026-08-26: 9 of 12 flagged findings were
+  // inside a declared exception — tfl, bl.uk, financial-ombudsman, lbhf, leeds, metoffice/forecast,
+  // nationalarchives, nls and sepa all name 1.1.1 in their own statements.
+  //
+  // `publishedClaim: "conformant"` does not mean every criterion is claimed. Almost every UK
+  // public-sector statement says "partially compliant" with an enumerated list, and `claimExcludes` is
+  // the field that records the intersection with our eight — the realism tier already honours it. A gate
+  // that cannot see the mask its own corpus declares is measuring the publisher's honesty, not this
+  // tool's accuracy.
+  const source = readFileSync(
+    new URL("../../scripts/check-real-page-findings.ts", import.meta.url), "utf8");
+  assert.match(source, /page\.claimExcludes/,
+    "the gate must read the exceptions the corpus declares");
+  assert.match(source, /entry\.includes\(":"\)/,
+    "and must NOT widen a subtype exclusion to its whole criterion, which would hide real findings");
+});
+
+test("every claimExcludes entry names a criterion we actually score", () => {
+  // An entry naming something we do not score masks nothing and quietly overstates how excused a page is.
+  const scored = new Set(["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"]);
+  const stray: string[] = [];
+  for (const page of REAL_PAGES) {
+    for (const entry of page.claimExcludes ?? []) {
+      if (!scored.has(String(entry).split(":")[0])) stray.push(`${page.url}: ${entry}`);
+    }
+  }
+  assert.deepEqual(stray, [], "these exclude a criterion this tool does not assess");
+});
