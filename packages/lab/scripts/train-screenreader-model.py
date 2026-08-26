@@ -506,6 +506,19 @@ def np_threshold(negative_scores: list[float], criterion: str,
         "atTarget": alpha == NP_ALPHA,
     }
 
+def dataset_grade(records: list) -> str:
+    """"test" if any record carries that stamp, otherwise "release".
+
+    ANY, not all: a dataset that mixes graded and ungraded records is a test dataset, because the reason
+    the grade exists is that some of its evidence does not describe the page it is labelled against.
+    Taking the majority, or the first record, would let one stale pair ride into a promoted model.
+    """
+    for record in records:
+        if (record.get("provenance") or {}).get("grade") == "test":
+            return "test"
+    return "release"
+
+
 def type_one_error_blocker(name: str, development: dict, guarantee: dict | None) -> str | None:
     """Does this head's TYPE-I ERROR block a release? Returns a message, or None.
 
@@ -815,7 +828,11 @@ def main() -> None:
             "structuredFeatures": list(FEATURE_NAMES),
             "maxLength": args.max_length,
         },
-        "dataset": {"path": str(args.data), "sha256": sha256(args.data), "records": len(records)},
+        "dataset": {"path": str(args.data), "sha256": sha256(args.data), "records": len(records),
+                    # Read from the RECORDS, not from a flag or a filename. A test-grade export stamps
+                    # every record, so a dataset cannot arrive here having lost its grade in transit —
+                    # which is the whole reason the stamp is per record rather than in a summary file.
+                    "grade": dataset_grade(records)},
         "split": {split: len(indices) for split, indices in split_indices.items()},
         "calibration": {
             "method": "grouped-out-of-fold-threshold-calibration",
@@ -833,9 +850,22 @@ def main() -> None:
         # Stays False until the acceptance evaluator stamps it, and names what is missing so nobody
         # reads absence as a pass. `release:gate` runs that evaluator; nothing else may set this.
         "generalisationVerified": False,
-        "releaseBlockedBy": ["held-out acceptance has not been evaluated for these weights"],
-        "releaseEligible": True,
-        "modelReleaseEligible": True,
+        "releaseBlockedBy": ["held-out acceptance has not been evaluated for these weights"]
+        + (["dataset is TEST GRADE: some captures do not describe the page they are labelled against, "
+            "so this model exists to answer a question and can never be promoted. Recapture and export "
+            "without A11Y_DATASET_GRADE=test to produce a releasable one."]
+           if dataset_grade(records) == "test" else []),
+        # A TEST-GRADE DATASET CAN NEVER PRODUCE A RELEASABLE MODEL, and this is where that is enforced
+        # rather than promised. Test grade means some captures do not describe the page they are labelled
+        # against — deliberately, so a question can be answered without a four-hour recapture — and a
+        # model fitted to that must not be promotable however good its numbers look.
+        #
+        # Set at INITIALISATION, before any gate can set it True: an eligibility that starts True and is
+        # cleared later is one a later branch can quietly restore. `promote-model.mjs` refuses a model
+        # that is not release-eligible, so this is the first of three independent gates and the only one
+        # that cannot be argued with.
+        "releaseEligible": dataset_grade(records) != "test",
+        "modelReleaseEligible": dataset_grade(records) != "test",
         "warnings": [],
         # Notes that can actually stop a release, kept apart from notes worth reading. See `note()`.
         "calibrationBlockers": [],

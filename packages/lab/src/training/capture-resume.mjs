@@ -9,6 +9,29 @@ const hasTranscript = (capture) =>
  * A completed pair is eligible for --resume only while it still describes the current page bytes.
  * The fallback recomputes the old cache identity for captures made before pageHash was recorded.
  */
+/**
+ * TEST GRADE: accept a capture whose page has moved, for answering a question rather than shipping.
+ *
+ * `hasUsableCaptureFiles` compares `provenance.pageHash` to the page on disk and rejects a mismatch
+ * wholesale. That is exactly right for a RELEASE — mixed evidence in a promoted model is the failure the
+ * cache key exists to prevent — and it is the wrong rule for a TEST.
+ *
+ * The two are different questions. "May this evidence ship?" needs every capture to describe the page it
+ * is labelled against. "Did my change move the number?" needs the cases I CHANGED to be current and the
+ * rest to be present at all — because a veto, a starvation count or a signal check is computed per
+ * subtype, so untouched subtypes contribute the same answer either way.
+ *
+ * Measured 2026-08-26, and it is why this exists: a corpus change left 1,082 of 1,401 pairs stale, so an
+ * export dropped them and a retrain would have used 319 pairs — a worse model that every gate scores as
+ * if it were whole. The only way to ask "did the fix work?" was to spend four hours first.
+ *
+ * **A test-grade dataset must never be promotable**, and that is enforced rather than promised: the
+ * export stamps `grade: "test"`, the trainer refuses to mark such a model release-eligible, and
+ * `promote-model.mjs` already refuses a model that is not eligible. Three independent gates, none of
+ * which is this comment.
+ */
+export const TEST_GRADE = process.env.A11Y_DATASET_GRADE === "test";
+
 export function hasUsableCaptureFiles({ id, captureRoot, pageRoot }) {
   let pageHash;
   try {
@@ -23,6 +46,10 @@ export function hasUsableCaptureFiles({ id, captureRoot, pageRoot }) {
       if (!hasTranscript(capture)) return false;
 
       const provenance = capture.provenance ?? {};
+      // In test grade the capture must still be REAL — an NVDA transcript for this case — but it need not
+      // describe the current page bytes. The check above (`hasTranscript`) is what stays; only the
+      // page-identity comparison relaxes.
+      if (TEST_GRADE) return true;
       if (provenance.pageHash) return provenance.pageHash === pageHash;
 
       // Legacy captures still have the complete worker environment on the capture and the exact

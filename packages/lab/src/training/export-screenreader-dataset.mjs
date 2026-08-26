@@ -7,7 +7,7 @@ import {
   CASES,
   signalMatches,
 } from "./case-matrix.mjs";
-import { hasUsableCaptureFiles } from "./capture-resume.mjs";
+import { hasUsableCaptureFiles, TEST_GRADE } from "./capture-resume.mjs";
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
 const MANIFEST_PATH = resolve(ROOT, "manifest.json");
@@ -152,6 +152,10 @@ function record(testCase, variant, capture) {
     },
     provenance: {
       caseId: testCase.id,
+      // STAMPED ON EVERY RECORD, not on a summary file beside them. A grade that lives next to the data
+      // is a grade that gets separated from it — and the whole point is that a test-grade dataset must be
+      // recognisable by anything that reads it, including a trainer somebody points at it by hand.
+      ...(TEST_GRADE ? { grade: "test" } : {}),
       family: testCase.family || testCase.id,
       subtype,
       variant,
