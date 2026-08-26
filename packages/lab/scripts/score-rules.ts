@@ -58,6 +58,12 @@ const OWNERSHIP = readRuleOwnership();
 
 interface Record_ {
   input: { transcript?: string[] };
+  /**
+   * Evidence the RULES may use and the MODEL may not — carried as a sibling of `input` so the exporter's
+   * model boundary and the featurizer, which both read `input`, cannot reach it. Optional because an
+   * export predating it must still score rather than the gate refusing every record.
+   */
+  ruleEvidence?: { census?: { heading?: number; graphicUnnamed?: number } };
   target: { label: string; criteria: string[]; subtypes?: string[] };
   provenance: { caseId: string; variant: string; subtype: string };
 }
@@ -108,6 +114,38 @@ const idOf = (record: Record_): string => `${record.provenance.caseId}.${record.
  * caught. Scored naively that is a boundary defect; scored against what the record actually is, it is
  * 115/115 rule-decided and 0 of the remaining 74 touched, which is exactly right and exactly clean.
  */
+/**
+ * How many records carried the evidence only the RULES are allowed, and how many had something in it.
+ *
+ * "The rule never fired" and "the rule never had its evidence" are different answers, and this gate
+ * reported the first while the second was true — for the entire life of two rules. `input.census` was
+ * stripped at export, so `addMissingHeadings` (1.3.1) and the census-based 1.1.1 rule returned on their
+ * first line every time, and the coverage table said `NEVER FIRED ANYWHERE — the claim rests on nothing`.
+ * That sentence sends you to the corpus. The fault was in the pipeline.
+ *
+ * Stating the count converts that ambiguity into a fact, for the same reason `crossCheckStructure` reports
+ * `link 51/58` rather than "examination was INCOMPLETE": a number tells you whether two links were missed
+ * or two hundred, and a word does not.
+ */
+function reportRuleOnlyEvidence(records: Record_[]): void {
+  const carried = records.filter((record) => record.ruleEvidence !== undefined);
+  const census = records.filter((record) => record.ruleEvidence?.census);
+  console.log(`# evidence the rules may see and the model may not\n  ${carried.length} of `
+    + `${records.length} record(s) carry ruleEvidence; ${census.length} carry a census`);
+  if (carried.length === 0) {
+    console.log("  NONE. Every census-reading rule is unreachable here, whatever the corpus contains —");
+    console.log("  re-export (`npm run lab:job -- -e job=export`); this is a pipeline fault, not a corpus one.");
+    return;
+  }
+  const headings = census.map((record) => record.ruleEvidence!.census!.heading ?? -1);
+  const unnamed = census.map((record) => record.ruleEvidence!.census!.graphicUnnamed ?? 0);
+  // The two values the two census rules actually gate on. Printing them makes "the rule is silent because
+  // the corpus has no such page" checkable rather than assumed — which is the whole difference between a
+  // coverage gap you fix in the corpus and one you fix in the exporter.
+  console.log(`  census.heading === 0 on ${headings.filter((n) => n === 0).length} record(s); `
+    + `census.graphicUnnamed > 0 on ${unnamed.filter((n) => n > 0).length}`);
+}
+
 function tally(records: Record_[]): Map<string, Coverage> {
   const coverage = new Map<string, Coverage>();
   for (const record of records) {
@@ -219,6 +257,7 @@ function falsePositiveFailures(records: Record_[]): string[] {
   const conformant = records.filter((r) => r.target.label === "clean");
   const falsePositives = conformant.filter((r) => criteriaOf(r).size > 0);
   console.log(`# conformant records\n  ${conformant.length} scored, ${falsePositives.length} false positive(s)`);
+  reportRuleOnlyEvidence(records);
   if (falsePositives.length) {
     console.log(`  FALSE POS  ${falsePositives.slice(0, 6).map(idOf).join(", ")}`);
     failures.push(`${falsePositives.length} conformant record(s) were failed by a deterministic rule`);
