@@ -56,3 +56,30 @@ test("the GOOD variant does supply it, or the pair cannot discriminate", () => {
     .map((testCase) => testCase.id);
   assert.deepEqual(missing, [], "the conformant control must contain what the failing page lacks");
 });
+
+test("a no-headings page carries enough content to be a PAGE, not a fragment", () => {
+  // The rule this subtype exists to test requires at least MIN_CONTENT_LINES (15) announcements before it
+  // will say a page has no headings — deliberately, because "a fragment or an error page legitimately has
+  // none". A case built to exercise that rule must clear its threshold BY CONSTRUCTION.
+  //
+  // Three of the first 29 did not, and the gate said so: `1.3.1:no-headings is rule-decided on 29
+  // record(s) and caught only 26`. They were the three with the least content — 12, 12 and 13 block
+  // elements — and two cases that DID pass sat at 13, so the whole subtype was one furniture bucket away
+  // from flaking. A case that only sometimes trips the rule it tests is worse than one that never does:
+  // it reads as an intermittent capture fault.
+  //
+  // The margin is the point, not the exact number. Announcements are not block elements one-for-one, so
+  // this asks for comfortably more than the threshold rather than exactly it.
+  const MIN_CONTENT_LINES = 15;
+  const thin = cases()
+    .filter((testCase) => testCase.badSignal?.field === "headings")
+    .map((testCase) => ({
+      id: testCase.id,
+      blocks: (testCase.bad.match(/<p>|<li>|<a /g) ?? []).length,
+    }))
+    .filter((entry) => entry.blocks < MIN_CONTENT_LINES + 3);
+  assert.deepEqual(thin, [],
+    `these pages have too few block elements to reliably produce ${MIN_CONTENT_LINES} announcements, so `
+    + "the rule reads them as fragments and stays silent — which the gate reports as the rule MISSING "
+    + "EVIDENCE on a case built to provide it");
+});
