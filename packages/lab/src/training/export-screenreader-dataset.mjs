@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { modelInput } from "@a11y-witness/scorer/evidence-units";
+import { pageCensus } from "@a11y-witness/evidence/verify";
 
 import {
   CASES,
@@ -142,6 +143,23 @@ function record(testCase, variant, capture) {
   assertModelBoundary(input, testCase.id);
   return {
     input,
+    // EVIDENCE THE RULES MAY SEE AND THE MODEL MAY NOT, carried as a SIBLING of `input` so the model
+    // boundary above is untouched and the featurizer — which reads named fields under `input` — cannot
+    // reach it.
+    //
+    // This closes a gap that made `rules:gate` structurally unable to fire two rules. The AX-tree census
+    // is recorded by every capture as a `structureCensus` diagnostic, and `diagnostics` is correctly on
+    // FORBIDDEN_INPUT_KEYS — so the census never reached the exported record, `input.census` was
+    // `undefined` on all 3,790 of them, and `addMissingHeadings` (1.3.1) plus the unnamed-graphics rule
+    // (1.1.1) returned on their first line every time. The product path was fine: the CLI builds
+    // `census: pageCensus(cap)` itself, so the rules work where it matters and were unexercised where
+    // they are checked. That is this repo's most-recorded defect — "a gate that does not exercise what
+    // ships is not a gate" — and the split it needs was already DESIGNED, thirty lines above: "a rule
+    // may use evidence the model never sees". It had simply never been implemented.
+    //
+    // 1.3.1 at least reported it (`NEVER FIRED ANYWHERE — the claim rests on nothing`). The 1.1.1 one
+    // was invisible, because sibling 1.1.1 rules DO fire and the criterion therefore read as validated.
+    ruleEvidence: { census: pageCensus(capture) ?? null },
     target: {
       label: isBad ? "violation" : "clean",
       // `alsoFails` names a criterion AND the subtype whose head carries it ("4.1.2:missing-role"),

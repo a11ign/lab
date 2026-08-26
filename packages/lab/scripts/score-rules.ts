@@ -81,7 +81,21 @@ function load(path: string): Record_[] {
 }
 
 const criteriaOf = (record: Record_): Set<string> =>
-  new Set(ruleFindings(record.input as never).map((f) => f.wcag.match(/(\d+\.\d+\.\d+)/)?.[1] ?? f.wcag));
+  new Set(ruleFindings(ruleInput(record)).map((f) => f.wcag.match(/(\d+\.\d+\.\d+)/)?.[1] ?? f.wcag));
+
+/**
+ * What the rules get to see: the model's input PLUS the evidence only they are allowed.
+ *
+ * This used to be `record.input` alone — the model allowlist — so any rule reading a field the model is
+ * not given could never fire here. Two did (`census`), and the gate reported one of them as
+ * "NEVER FIRED ANYWHERE" while the other hid behind working siblings for the same criterion.
+ *
+ * `?? {}` rather than a hard requirement: an export made before `ruleEvidence` existed still scores,
+ * exactly as it did before, instead of the gate refusing every record on an older corpus.
+ */
+function ruleInput(record: { input: unknown; ruleEvidence?: Record<string, unknown> }) {
+  return { ...(record.input as object), ...(record.ruleEvidence ?? {}) } as never;
+}
 
 const idOf = (record: Record_): string => `${record.provenance.caseId}.${record.provenance.variant}`;
 
