@@ -97,6 +97,21 @@ function assertPromotable(candidate, shipped, shippedAcceptance, acceptRegressio
 }
 
 /** The provenance ADR 0007 requires, taken from the report rather than retyped. */
+/**
+ * Render one provenance value.
+ *
+ * An OBJECT is rendered by whatever identifies it, never by `${value}` — which produces the literal
+ * string `[object Object]`, and did, in every changeset this has ever written. The encoder is the case:
+ * `representation.encoder` is null so it falls through to the top-level one, which is
+ * `{path, hiddenSize, modelSha256}`. This function's own docstring calls the encoder HASH the point of
+ * recording it, and the hash was the part being destroyed.
+ */
+function describeValue(value) {
+  if (value === null || typeof value !== "object") return String(value);
+  const identity = value.modelSha256 ?? value.sha256 ?? value.hash ?? value.version ?? value.path;
+  return identity === undefined ? JSON.stringify(value) : String(identity);
+}
+
 function provenanceLines(training) {
   const ood = training.outOfDistribution ?? {};
   const rows = [
@@ -105,10 +120,17 @@ function provenanceLines(training) {
     ["derived floor", ood.derivedFloor],
     ["floor source", ood.floorSource],
     ["encoder", training.representation?.encoder ?? training.encoder],
-    ["feature schema", training.representation?.featureSchemaVersion],
+    // `representation.schema`, which is what the report actually carries and what `scorer:migration`
+    // gates on. It read `representation.featureSchemaVersion` — a field name that appears NOWHERE else in
+    // this repo and that nothing writes — so the row was filtered out as absent and this provenance has
+    // never once appeared in a changeset. A row that silently vanishes is worse than a missing one: the
+    // template promises it, so its absence reads as "this model has no feature schema".
+    ["feature schema", training.representation?.schema ?? training.representation?.featureSchemaVersion],
   ].filter(([, value]) => value !== undefined && value !== null);
-  return rows.map(([name, value]) => `- ${name}: \`${value}\``).join("\n");
+  return rows.map(([name, value]) => `- ${name}: \`${describeValue(value)}\``).join("\n");
 }
+
+export { describeValue, provenanceLines };
 
 function thresholdLines(training) {
   const out = [];
