@@ -145,3 +145,44 @@ test("furniture depends on a case's ID, not its position, so inserting a case ca
   assert.equal(new Set(ids).size, ids.length, "case ids must be unique or the hash keys two cases alike");
   assert.equal(before.size, ids.length);
 });
+
+test("furniture is DEALT across each subtype, so no subtype can miss a bucket by chance", () => {
+  // The property that replaces luck. `bucketFor` hashed the case id alone, giving each case an
+  // independent 1-in-5 chance of the `namedField` bucket and a SUBTYPE no guarantee at all. For seven
+  // cases the chance of missing it entirely is 0.8^7 = 0.21 — one subtype in five — and exactly one did:
+  // `2.4.2:route-title-stale`, seven cases, no named field, a real free veto for `form_field_named`.
+  //
+  // Asserting the OUTCOME rather than the mechanism: whatever the dealing looks like, every subtype with
+  // at least as many cases as there are buckets must see every bucket. A future refactor that reverts to
+  // independent hashing fails here rather than in a corpus nobody re-audits.
+  const buckets = new Map<string, Set<string>>();
+  for (const testCase of CASES as Case[]) {
+    const key = `${testCase.criterion}:${testCase.subtype}`;
+    const shape = [
+      carries(testCase, NAMED_FIELD) ? "named" : "",
+      carries(testCase, TABLE) ? "table" : "",
+    ].filter(Boolean).join("+") || "plain";
+    buckets.set(key, (buckets.get(key) ?? new Set()).add(shape));
+  }
+
+  const thin: string[] = [];
+  for (const [subtype, shapes] of buckets) {
+    const cases = (CASES as Case[]).filter((c) => `${c.criterion}:${c.subtype}` === subtype).length;
+    // Only subtypes with enough cases to see the spread — the same floor the starvation checks use.
+    if (cases < MIN_CASES_TO_SPREAD) continue;
+    // BOTH markers must appear somewhere in the subtype, not merely two shapes of any kind. `shapes.size
+    // < 2` was the first version and it did not catch a revert to independent hashing, because random
+    // assignment still produces two shapes most of the time — it just does not produce ALL of them. The
+    // starvation being fixed is per FEATURE, so the assertion has to be per feature too.
+    const hasNamed = [...shapes].some((shape) => shape.includes("named"));
+    const hasTable = [...shapes].some((shape) => shape.includes("table"));
+    if (!hasNamed || !hasTable) {
+      thin.push(`${subtype} (${cases} cases; ${hasNamed ? "" : "no named field"}`
+        + `${!hasNamed && !hasTable ? ", " : ""}${hasTable ? "" : "no table"})`);
+    }
+  }
+  assert.deepEqual(thin, [],
+    "these subtypes see one furniture shape across every case, so any feature that shape carries is "
+    + "constant across their positives — the free veto ADR 0015 is about. Furniture is dealt by position "
+    + "within the subtype; if that changed, this is what it broke.");
+});

@@ -1767,13 +1767,46 @@ function fnv1a(id) {
   return hash;
 }
 
-function bucketFor(id) {
-  return SCALE_BUCKETS[fnv1a(id) % SCALE_BUCKETS.length];
+/**
+ * Which furniture bucket a case gets — SPREAD ACROSS ITS SUBTYPE, not hashed independently.
+ *
+ * It was `SCALE_BUCKETS[fnv1a(id) % length]`, which gives each case an independent 1-in-5 chance of the
+ * `namedField` bucket and therefore gives a SUBTYPE no guarantee at all. For seven cases the chance of
+ * missing that bucket entirely is 0.8^7 = 0.21 — one subtype in five — and measured 2026-08-26 exactly
+ * one did: `2.4.2:route-title-stale`, all seven cases without a named form field, which
+ * `furniture-spread.test.ts` correctly reported as a free veto for `form_field_named`.
+ *
+ * The fix is not to special-case that subtype. Random assignment does not spread, and ADR 0015 is about
+ * a feature being constant across a subtype's positives — so the index must be taken WITHIN the subtype:
+ * case k of a subtype gets bucket (offset + k) % 5, and every subtype with 5+ cases sees all five buckets
+ * by construction rather than by luck.
+ *
+ * The offset is still hashed, from the SUBTYPE, so two subtypes do not receive the buckets in lockstep —
+ * which would make `namedField` correlate with position-in-subtype instead of with nothing.
+ *
+ * Keyed on the subtype and the case's index within it, so inserting a case re-buckets only that subtype's
+ * later cases. That is a weaker guarantee than the id hash gave (`insert freely, nothing moves`) and it
+ * is the trade the starvation forces; `check-signals` reports what moved, and the pages are regenerated
+ * from the definitions anyway.
+ */
+function bucketFor(id, subtype, indexInSubtype) {
+  const offset = fnv1a(subtype ?? id);
+  const index = indexInSubtype ?? fnv1a(id);
+  return SCALE_BUCKETS[(offset + index) % SCALE_BUCKETS.length];
 }
 
 function withRealisticScale(list) {
+  // Position within the subtype, so the buckets can be dealt round-robin rather than drawn independently.
+  const seen = new Map();
+  const indexOf = (testCase) => {
+    const key = `${testCase.criterion}:${testCase.subtype}`;
+    const next = (seen.get(key) ?? 0);
+    seen.set(key, next + 1);
+    return { key, index: next };
+  };
   return list.map((testCase) => {
-    const bucket = bucketFor(testCase.id);
+    const { key, index } = indexOf(testCase);
+    const bucket = bucketFor(testCase.id, key, index);
     // A case that drives tables itself never gets the furniture table. Not to avoid a signal collision —
     // the furniture table is conformant, so `tableHeadersAreUnassociated` cannot see it — but because
     // `probeTables` walks the page's tables, and a second one changes what the case's own probe reports.
