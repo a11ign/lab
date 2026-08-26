@@ -36,6 +36,16 @@ const REPEAT_CAPTURE = fileURLToPath(new URL("../src/training/repeat-capture.mjs
 
 import { leaseWorker, guestReachableUrl } from "@a11y-witness/worker-fleet";
 import { leasePageServer } from "../src/training/page-server.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { assertWorkerUrl } from "../../worker-fleet/src/worker-http.mjs";
+
+/**
+ * the canaries that must pass before a corpus run. `--probe-forms`, `--task` and `--url` appear in
+ * this file because it PASSES them to repeat-capture; they are not its own.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--base=", "--times=", "--worker="], { command: "npm run gate:stability" });
 
 const run = promisify(execFile);
 
@@ -200,7 +210,14 @@ async function main() {
     port: PAGES_PORT,
     probePath: `${CANARIES[0].path}.html`,
   });
-  const lease = await leaseWorker({ worker: arg("worker", process.env.A11Y_WORKER), after: "restore" });
+  // VALIDATED, not merely truthy. `http://:8765` is a truthy string that `new URL` rejects, and a client
+  // that took it on trust spent five minutes per page in readiness timeouts recorded as a failure of the
+  // PAGE. This read `--worker` through the `arg()` helper, so the discovery test that requires exactly
+  // this could not see it until the flag was named literally in the file — the second time that has
+  // happened today, which is the argument for naming flags literally rather than only through a helper.
+  const named = arg("worker", process.env.A11Y_WORKER);
+  if (named) assertWorkerUrl(named);
+  const lease = await leaseWorker({ worker: named, after: "restore" });
   // The GUEST fetches these pages, and the guest's localhost is not ours. `guestReachableUrl` rewrites the
   // host — skipping it is how every capture came to fetch the guest's own localhost, showing Edge
   // "localhost refused to connect" and burning three attempts per page.

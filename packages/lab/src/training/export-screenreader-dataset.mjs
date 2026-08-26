@@ -8,6 +8,15 @@ import {
   signalMatches,
 } from "./case-matrix.mjs";
 import { hasUsableCaptureFiles, TEST_GRADE } from "./capture-resume.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * a mistyped `--out=` exports to a path nothing downstream reads, and the trainer then fits on the
+ * PREVIOUS export — which looks exactly like a successful run.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--out="], { command: "npm run training:export" });
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
 const MANIFEST_PATH = resolve(ROOT, "manifest.json");

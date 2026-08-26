@@ -42,6 +42,15 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { modelInput, producerFeedsModel } from "@a11y-witness/scorer/evidence-units";
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 import { captureWasTruncated } from "@a11y-witness/evidence/verify";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * run by the `build-realism` job and by `training:train`; a mistyped `--out=` writes the realism tier
+ * somewhere the trainer will not read, and the trainer then fits on the tier-less dataset.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--out="], { command: "npm run training:build-realism" });
 
 // Resolved from this module, so the script works from any directory. `--out=` is still taken relative to
 // the repo root rather than the cwd, so two runs from different shells cannot write to two places.

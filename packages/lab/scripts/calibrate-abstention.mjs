@@ -42,6 +42,16 @@ import { findingsFromScores } from "@a11y-witness/judge/internal";
 import { ruleFindings } from "@a11y-witness/judge/rules";
 
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * takes NO flags — it is configured entirely by environment, so any flag passed to it today is
+ * discarded in silence. The `--model` in its output is `-e model=` on the JOB, which becomes
+ * A11Y_SCORER_MODEL.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags([], { command: "npm run lab:job -- -e job=sweep" });
 
 // Resolved from THIS module, never from the caller's cwd. A bare "packages/scorer/python/score.py" is
 // right only when you happen to run from the repo root, and `spawned-paths.test.ts` fails the build for

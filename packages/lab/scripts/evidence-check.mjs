@@ -33,6 +33,15 @@ import { hostPagesBase } from "../../worker-fleet/src/host-address.mjs";
 import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mjs";
 import { workerIsUsable } from "../../worker-fleet/src/worker-health.mjs";
 import { drainAcrossPool } from "../src/training/worker-pool.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * the check that decides whether 2,122 cached captures survive a change. It also takes worker URLs
+ * POSITIONALLY, which this guard does not touch.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--sample=", "--only=", "--browser="], { command: "npm run evidence:check" });
 
 const DATASET = resolve(process.cwd(), "runs/screenreader-dataset");
 const BASELINE = resolve(DATASET, "captures");
