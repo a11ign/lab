@@ -89,6 +89,7 @@ function currentFindings(): Findings {
     // Conformant pages only. A page whose publisher declares it INACCESSIBLE is supposed to produce
     // findings, and holding those to a baseline would be measuring the wrong thing entirely.
     if (!page || page.publishedClaim !== "conformant") continue;
+    noteEvidence(capture);
     const criteria = [...new Set(ruleFindings(withCensus(capture))
       .map((finding) => String(finding.wcag).split(" ")[0]))].sort();
     out[String(capture.url)] = criteria;
@@ -142,6 +143,29 @@ function withCensus(capture: unknown): never {
   return { ...(capture as object), census: pageCensus(capture as never) ?? undefined } as never;
 }
 
+/**
+ * One line of the evidence behind a finding, so the verdict can be judged where it is printed.
+ *
+ * Deliberately the CENSUS and the transcript size: those are what the census-reading rules decide on, and
+ * `heading=0 link=0 graphic=0` versus `heading=0 link=47 graphic=12` is the difference between "the tree
+ * was never built" and "this page really has no headings" — a distinction no count can carry.
+ */
+function describeEvidence(url: string): string {
+  return EVIDENCE.get(url) ?? "(no capture found for this url in runs/)";
+}
+
+/** url -> one line of the evidence behind it, filled while walking the captures rather than re-reading. */
+const EVIDENCE = new Map<string, string>();
+
+function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
+  const census = pageCensus(capture as never);
+  const lines = Array.isArray(capture.transcript) ? capture.transcript.length : 0;
+  EVIDENCE.set(String(capture.url), census
+    ? `census heading=${census.heading} link=${census.link} graphic=${census.graphic} `
+      + `graphicUnnamed=${census.graphicUnnamed}; ${lines} announcement(s)`
+    : `no census recorded; ${lines} announcement(s)`);
+}
+
 function main(): void {
   const idle = minutesSinceLastWrite(REAL);
   if (idle !== null && idle < SETTLED_AFTER_MINUTES) {
@@ -192,6 +216,12 @@ function main(): void {
   process.stdout.write(`\n  ${added.length} NEW finding(s) on pages whose publisher declares them conformant:\n`);
   for (const change of added) {
     process.stdout.write(`    ${change.criterion}  ${change.url.replace(/^https:\/\//, "")}\n`);
+    // THE EVIDENCE, not just the URL. This told the reader to "read the evidence for each" and then gave
+    // them a list of URLs — so reading it meant an ssh session and ad-hoc JSON, which is the step this
+    // repo removes everywhere else. The census is the whole basis of the two rules most likely to appear
+    // here, and it also settles the question a bare count cannot: a census reading zero for EVERYTHING is
+    // a tree that was never built, which is not the same finding as a page that genuinely has none.
+    process.stdout.write(`           ${describeEvidence(change.url)}\n`);
   }
   process.stdout.write("\n  Read the evidence for each before doing anything else. It is one of three things:\n"
     + "    - the tool is wrong, and this is the defect class that ran for eleven separate causes;\n"
