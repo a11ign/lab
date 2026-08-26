@@ -11,6 +11,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STEPS } from "../../scripts/everything-pipeline.mjs";
+import { STEPS as RETRAIN_STEPS } from "../../scripts/retrain-pipeline.mjs";
+import { PIPELINES } from "../../../worker-fleet/src/lab-pipeline.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const SCRIPTS = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).scripts;
@@ -29,7 +31,57 @@ test("the chain runs in the only order that works", () => {
   // Each stage consumes what the one before it produced: you cannot train on an export that has not
   // happened, promote a candidate that has not been trained, or gate weights that have not been promoted.
   assert.deepEqual(STEPS.map((step) => step.name),
-    ["retrain", "export-acceptance", "train", "promote", "grants-audit", "release-gate"]);
+    ["retrain", "export-acceptance", "train", "shortcuts", "acceptance", "promote",
+     "grants-audit", "applicability-audit", "release-gate"]);
+});
+
+/**
+ * A stage of the `full` pipeline that this chain does not run under its own name, and the stage that
+ * DOES run it. Every claim here is verified below against the thing that supposedly contains it — an
+ * unverified containment list is just a way of writing "trust me" in test form.
+ */
+const COVERED_BY: Record<string, string> = {
+  capture: "retrain",
+  "rules-gate": "release-gate",
+  "rules-coverage": "release-gate",
+  "rules-real-pages": "release-gate",
+};
+
+test("this chain runs every stage the authoritative full pipeline does", () => {
+  // THE GUARD THAT WAS MISSING, and its absence cost a full run. `lab:everything` was six npm scripts
+  // joined with `&&`; `lab-pipeline.mjs`'s `full` names thirteen jobs. Two spellings of "the whole
+  // chain", and nothing compared them — so `shortcuts`, `acceptance` and `applicability-audit` were
+  // simply absent, and the run died at
+  //
+  //     REFUSING to promote: runs/model-candidate is not releasable:
+  //       held-out acceptance has not been run against these weights
+  //
+  // after every earlier gate had passed. `acceptance` is what writes the report `promote` requires; it
+  // had no npm script at all, existing only as Ansible job argv, so the npm chain could not have run it.
+  const ours = new Set(STEPS.map((step) => step.name));
+  for (const job of PIPELINES.full.jobs) {
+    if (ours.has(job)) continue;
+    const container = COVERED_BY[job];
+    assert.ok(container,
+      `the 'full' pipeline runs '${job}' and this chain does not — either add it as a stage, or record `
+      + `in COVERED_BY which stage contains it and prove that below`);
+    assert.ok(ours.has(container), `${job} is claimed to be covered by '${container}', which is not a stage`);
+  }
+});
+
+test("every claimed containment is real", () => {
+  // Verified, not asserted. `retrain` genuinely runs a capture step, and `release:gate` genuinely chains
+  // the three rules gates — if either stops doing so, the coverage claim above silently becomes false and
+  // three gates vanish from the chain with nothing saying so.
+  const retrainSteps = new Set(RETRAIN_STEPS.map((step) => step.name));
+  assert.ok(retrainSteps.has("capture"),
+    "retrain no longer runs a capture step, so 'capture' is not covered and must become its own stage");
+  const releaseGate = SCRIPTS["release:gate"];
+  for (const [job, container] of Object.entries(COVERED_BY)) {
+    if (container !== "release-gate") continue;
+    assert.ok(releaseGate.includes(job.replace("rules-", "rules:")),
+      `release:gate no longer runs ${job}, so the chain would skip it entirely`);
+  }
 });
 
 test("promotion is told which candidate, and the trainer is told where to write", () => {
@@ -48,5 +100,9 @@ test("the stages whose failure means the WORK is wrong are marked as gates", () 
   // that changes what you go and look at. A gate silently demoted to an ordinary step sends the next
   // reader to debug the pipeline instead of the corpus.
   assert.deepEqual(STEPS.filter((step) => step.gate).map((step) => step.name),
-    ["promote", "grants-audit", "release-gate"]);
+    ["shortcuts", "acceptance", "promote", "grants-audit", "applicability-audit", "release-gate"]);
+  // The three that are NOT gates produce the material the gates judge. If one of those fails the
+  // pipeline still stops — it is required — but you go and look at the corpus, not at a verdict.
+  assert.deepEqual(STEPS.filter((step) => !step.gate).map((step) => step.name),
+    ["retrain", "export-acceptance", "train"]);
 });

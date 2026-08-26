@@ -44,10 +44,19 @@ const STEPS = [
   { name: "train", script: "training:train",
     why: "fit the heads into runs/model-candidate. NOT the shipped directory: the trainer refuses that, "
       + "and this stage is where that refusal killed the chain twice" },
+  { name: "shortcuts", script: "scorer:shortcuts:candidate", gate: true,
+    why: "which features did a head penalise for FREE? A veto that costs nothing is invisible to every "
+      + "accuracy number, because the held-out split has the same structure (ADR 0015)" },
+  { name: "acceptance", script: "training:evaluate-acceptance:candidate", gate: true,
+    why: "score the held-out set AGAINST THESE WEIGHTS. Its absence is what refused promotion: "
+      + "`model-candidate is not releasable: held-out acceptance has not been run against these weights`" },
   { name: "promote", script: "promote:gated", args: ["--from=candidate"], gate: true,
     why: "candidate:gate, and only then copy the weights in — it never promotes on a failed gate" },
   { name: "grants-audit", script: "corpus:grants-audit", gate: true,
     why: "does every multi-defect page carry the evidence its labels claim?" },
+  { name: "applicability-audit", script: "corpus:applicability-audit", gate: true,
+    why: "does any precondition silence a record labelled positive? A precondition that does is strictly "
+      + "worse than the false positive it removes, and nothing about it shows in a score" },
   { name: "release-gate", script: "release:gate", gate: true,
     why: "migration, shortcuts, signals, rules, held-out acceptance, judge quality — the verdict" },
 ];
