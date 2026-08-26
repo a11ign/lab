@@ -193,13 +193,44 @@ function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
   // wall, a loading shell, or the page — which are three different verdicts needing three different
   // responses. What the screen reader SAID is the only thing that distinguishes them, and fetching it by
   // hand afterwards is the step this line exists to remove.
-  const opening = (Array.isArray(capture.transcript) ? capture.transcript : [])
-    .slice(0, 3).map((line) => JSON.stringify(String(line).slice(0, 60))).join(" ");
+  const openingLines = (Array.isArray(capture.transcript) ? capture.transcript : [])
+    .slice(0, 3).map((line) => String(line));
+  OPENINGS.set(String(capture.url), openingLines);
+  const opening = openingLines.map((line) => JSON.stringify(line.slice(0, 60))).join(" ");
   EVIDENCE.set(String(capture.url), (census
     ? `census heading=${census.heading} link=${census.link} graphic=${census.graphic} `
       + `graphicUnnamed=${census.graphicUnnamed}; ${lines} announcement(s)`
     : `no census recorded; ${lines} announcement(s)`) + (opening ? `\n           opens: ${opening}` : ""));
 }
+
+/**
+ * Captures that read the site's FURNITURE rather than its page, counted across the whole corpus.
+ *
+ * Two were found by reading transcripts on 2026-08-26 and both produce findings that are about this tool,
+ * not about the page: the Met Office warnings page opened `"blank"` and announced 27 lines of navigation
+ * with zero headings, while its published HTML carries forty; and networkrail opened
+ * `"heading, level 2, This website uses cookies"`, so `graphicUnnamed=21` counted a consent overlay's
+ * icons. Neither cookie banners nor render-readiness is handled anywhere in the capture path — every wait
+ * there is speech-based, and speech settles just as happily on a shell as on a page.
+ *
+ * A count is what turns "I found two" into "how much of this corpus is like that", which is the question
+ * that decides whether this is two pages to re-capture or a capture-path change.
+ */
+function furnitureCaptures(): { consent: string[]; shell: string[] } {
+  const consent: string[] = [];
+  const shell: string[] = [];
+  for (const [url, opening] of OPENINGS) {
+    const text = opening.join(" ").toLowerCase();
+    if (/cookie|consent|privacy preference|usercentrics|onetrust/.test(text)) consent.push(url);
+    // A capture whose FIRST announcement is blank and which never reaches a heading is a page that had
+    // not rendered — distinct from a page that genuinely has none, which still announces its content.
+    else if (opening[0]?.trim().toLowerCase() === "blank") shell.push(url);
+  }
+  return { consent, shell };
+}
+
+/** url -> its opening announcements, kept so the summary above can be computed without a second read. */
+const OPENINGS = new Map<string, string[]>();
 
 function main(): void {
   // ASKED, not inferred from file age — the same fix `audit-rule-coverage.ts` took, applied here too.
@@ -263,6 +294,15 @@ function main(): void {
     // here, and it also settles the question a bare count cannot: a census reading zero for EVERYTHING is
     // a tree that was never built, which is not the same finding as a page that genuinely has none.
     process.stdout.write(`           ${describeEvidence(change.url)}\n`);
+  }
+  const furniture = furnitureCaptures();
+  if (furniture.consent.length || furniture.shell.length) {
+    process.stdout.write(`\n  ${furniture.consent.length} capture(s) opened on a COOKIE/CONSENT overlay and `
+      + `${furniture.shell.length} on an unrendered SHELL — those read the site's furniture, not its page, `
+      + "so any finding on them is about this tool.\n");
+    for (const url of [...furniture.consent, ...furniture.shell].slice(0, 8)) {
+      process.stdout.write(`    furniture: ${url.replace(/^https:\/\//, "")}\n`);
+    }
   }
   process.stdout.write("\n  Read the evidence for each before doing anything else. It is one of three things:\n"
     + "    - the tool is wrong, and this is the defect class that ran for eleven separate causes;\n"
