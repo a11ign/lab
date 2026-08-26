@@ -2543,8 +2543,11 @@ function everyConformantPiece(template) {
     .filter(Boolean);
 }
 
-// APPENDED, and appending is now free: furniture is keyed on the case ID, so adding cases cannot
-// re-size any existing one's pages.
+// APPENDED. Appending is cheap and INSERTING is not, which is the opposite of what this comment said
+// until 2026-08-26 — furniture was keyed on the case ID, and is now dealt by position WITHIN the subtype
+// so no subtype can miss a bucket by chance (see `bucketFor`). Appending a case to the end of its
+// subtype leaves the earlier ones alone; inserting one re-buckets everything after it in that subtype,
+// and those pages recapture. That is the price of the ADR 0015 guarantee.
 export const CASES = Object.freeze(withRealisticScale(
   [...cases, ...multiDefectCases(cases), ...conformantBehaviourCases(cases)],
 ));
