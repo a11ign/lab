@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Is the corpus still being written — asked, not guessed from the clock.
  *

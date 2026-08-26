@@ -52,6 +52,11 @@ export function beginRun({ root, worker, baseUrl, cases, captureTimeoutMs }) {
     workers: [],
     // A LIST, because with a worker pool there are several cases in flight at once. Readers
     // must tolerate the old single-object shape from runs recorded before pooling.
+    /**
+     * The cases in flight right now. Typed because an empty literal infers as `never[]`, and every push
+     * into it then fails a check — the value is real and the annotation is what states it.
+     * @type {{id: string, variant: string|null, worker: string|null, startedAt: string}[]}
+     */
     current: [],
     cases: Object.fromEntries(cases.map((c) => [c.id, { status: "pending" }])),
   };

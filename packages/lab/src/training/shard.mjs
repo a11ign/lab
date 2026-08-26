@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * `--shard=i/n` — split a work list across concurrent runs.
  *
