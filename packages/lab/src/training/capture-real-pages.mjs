@@ -190,7 +190,14 @@ async function capture(page, workerUrl) {
     timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
   });
   const data = response.json ?? {};
-  if (data.error) throw new Error(String(data.error).slice(0, 160));
+  if (data.error) {
+    // CARRY THE FAULT CODE ACROSS. The worker sends `{error, fault}` and this kept only the message, so
+    // the host could not tell a wrong-page from a mute screen reader without matching on prose — the
+    // exact thing `capture-faults.mjs` exists to avoid. Attached, not parsed.
+    const failure = new Error(String(data.error).slice(0, 300));
+    if (data.fault) failure.code = String(data.fault);
+    throw failure;
+  }
   return data;
 }
 
@@ -261,6 +268,16 @@ async function captureAcrossPool(pages, workers) {
         process.stdout.write(`  worker unusable, skipping it: ${worker} (${error.message})\n`),
       onItemFailed: (page, error) => {
         process.stdout.write(`    FAILED: ${page.url}: ${error.message}\n`);
+        // A WRONG PAGE on a corpus URL is almost always the SITE having moved it, not the tool going
+        // wrong — measured 2026-08-26, when 7 of 50 calibration captures failed this way and every one
+        // turned out to be a redirect the corpus had never been updated for. Saying so turns "14% of
+        // captures failed" into one line of maintenance, and stops the next reader chasing the capture
+        // path for a fault that is not there.
+        if (error.code === "wrong-page") {
+          process.stdout.write("      ^ the site probably MOVED this page. The message above names what "
+            + "it served; if that is the same content at a new address, update this entry's url in "
+            + "real-page-corpus.mjs rather than debugging the capture.\n");
+        }
         progress.failed(page.url, error.message);
         failed.push(`${page.url}: ${error.message}`);
       },
