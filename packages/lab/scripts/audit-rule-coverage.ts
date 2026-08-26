@@ -43,6 +43,7 @@ import { resolve, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ruleFindings } from "@a11y-witness/judge/rules";
+import { pageCensus } from "@a11y-witness/evidence/verify";
 // RULE_CRITERIA lives in coverage.ts and is imported by rules.ts, not re-exported from it. Taken from the
 // source rather than the convenient neighbour: locally tsx resolves TypeScript and the mistake is silent,
 // while the lab resolves `dist` and it is a hard failure — the stale-dist hazard, one door along.
@@ -153,7 +154,7 @@ function tally(): { fires: Map<string, Tally>; scanned: Tally; realChannels: Set
     for (const channel of channelsPresent(capture as never)) realChannels.add(channel);
   };
   const record = (kind: "corpus" | "real", capture: unknown): void => {
-    for (const finding of ruleFindings(capture as never)) {
+    for (const finding of ruleFindings(withCensus(capture))) {
       // `add()` in rules.ts refuses an unlisted criterion, so this cannot be undefined in practice.
       // Guarded anyway: an audit that throws on the evidence it is auditing tells you nothing.
       const row = fires.get(String(finding.wcag).split(" ")[0]);
@@ -286,6 +287,22 @@ function report(verdicts: Verdict[], scanned: Tally): number {
     + "in `criterion-coverage.ts`,\n  or — where the evidence genuinely cannot exist on a page we do not "
     + "own — by declaring `realPageEvidence` with a reason.\n");
   return 1;
+}
+
+/**
+ * A capture, plus the census the rules are allowed to read.
+ *
+ * `ruleFindings` expects `census` as a FIELD; a raw capture records it as a `structureCensus` diagnostic,
+ * and only `pageCensus` extracts it. The CLI has always built it — `census: pageCensus(cap)` — and these
+ * audits passed the raw capture, so every census-reading rule was silently unreachable HERE while working
+ * in the product.
+ *
+ * Caught by two gates disagreeing about one corpus: `rules:gate` reported `1.3.1:no-headings 29/29 EXACT`
+ * while this reported the same criterion as having fired `0x`. The same defect was fixed in
+ * `score-rules.ts` hours earlier and did not reach this path — the shape this repo names most often.
+ */
+function withCensus(capture: unknown): never {
+  return { ...(capture as object), census: pageCensus(capture as never) ?? undefined } as never;
 }
 
 function main(): void {

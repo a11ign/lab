@@ -40,6 +40,7 @@ import { resolve, join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ruleFindings } from "@a11y-witness/judge/rules";
+import { pageCensus } from "@a11y-witness/evidence/verify";
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
@@ -88,7 +89,7 @@ function currentFindings(): Findings {
     // Conformant pages only. A page whose publisher declares it INACCESSIBLE is supposed to produce
     // findings, and holding those to a baseline would be measuring the wrong thing entirely.
     if (!page || page.publishedClaim !== "conformant") continue;
-    const criteria = [...new Set(ruleFindings(capture as never)
+    const criteria = [...new Set(ruleFindings(withCensus(capture))
       .map((finding) => String(finding.wcag).split(" ")[0]))].sort();
     out[String(capture.url)] = criteria;
   }
@@ -123,6 +124,22 @@ function compare(current: Findings, baseline: Findings): { added: Change[]; remo
     for (const criterion of criteria) if (!now.has(criterion)) removed.push({ url, criterion });
   }
   return { added, removed };
+}
+
+/**
+ * A capture, plus the census the rules are allowed to read.
+ *
+ * `ruleFindings` expects `census` as a FIELD; a raw capture records it as a `structureCensus` diagnostic,
+ * and only `pageCensus` extracts it. The CLI has always built it — `census: pageCensus(cap)` — and these
+ * audits passed the raw capture, so every census-reading rule was silently unreachable HERE while working
+ * in the product.
+ *
+ * Caught by two gates disagreeing about one corpus: `rules:gate` reported `1.3.1:no-headings 29/29 EXACT`
+ * while this reported the same criterion as having fired `0x`. The same defect was fixed in
+ * `score-rules.ts` hours earlier and did not reach this path — the shape this repo names most often.
+ */
+function withCensus(capture: unknown): never {
+  return { ...(capture as object), census: pageCensus(capture as never) ?? undefined } as never;
 }
 
 function main(): void {
