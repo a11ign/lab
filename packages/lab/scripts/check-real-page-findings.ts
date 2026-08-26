@@ -40,6 +40,7 @@ import { resolve, join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ruleFindings } from "@a11y-witness/judge/rules";
+import { corpusState } from "../src/training/corpus-settled.mjs";
 import { pageCensus } from "@a11y-witness/evidence/verify";
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 
@@ -49,7 +50,7 @@ const BASELINE = resolve(REPO, "packages/lab/baselines/real-page-findings.json")
 const UPDATE = process.argv.includes("--update");
 
 /** Below this the corpus is being recaptured and every count describes a state that is already gone. */
-const SETTLED_AFTER_MINUTES = 10;
+// `SETTLED_AFTER_MINUTES` lives in `corpus-settled.mjs` now, with the check that uses it.
 
 type Findings = Record<string, string[]>;
 
@@ -194,10 +195,16 @@ function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
 }
 
 function main(): void {
-  const idle = minutesSinceLastWrite(REAL);
-  if (idle !== null && idle < SETTLED_AFTER_MINUTES) {
-    process.stdout.write(`\n  IN FLUX — a capture was written ${idle.toFixed(1)} minute(s) ago. Every count\n`
-      + "  below describes a state that will have changed by the time you read it. Wait for the run.\n"
+  // ASKED, not inferred from file age — the same fix `audit-rule-coverage.ts` took, applied here too.
+  // It was applied to ONE of the three audits that carry this guard, which is the shape this repo names
+  // most often, and it showed up immediately: this refused a run that had finished 0.6 minutes earlier.
+  const settle = corpusState({
+    datasetRoots: [REAL],
+    evidenceDirs: [REAL],
+    minutesSinceLastWrite: (dirs: string[]) => minutesSinceLastWrite(dirs[0]),
+  });
+  if (settle.blocking) {
+    process.stdout.write(`\n  ${settle.state === "abandoned" ? "ABANDONED RUN" : "IN FLUX"} — ${settle.why}.\n`
       + "  This is NOT a pass and NOT a failure; it is a refusal to measure a moving target.\n");
     process.exitCode = 2;
     return;

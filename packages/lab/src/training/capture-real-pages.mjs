@@ -33,6 +33,7 @@ import { drainAcrossPool } from "./worker-pool.mjs";
 import { createHostThrottle, hostOf } from "./host-throttle.mjs";
 import { writeJsonAtomic } from "./write-atomic.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { beginRun } from "./capture-progress.mjs";
 
 /**
  * THE script that ran four shards against `--worker=http://:8765` for 29 minutes. `--shard=` arrives
@@ -209,6 +210,25 @@ async function captureAcrossPool(pages, workers) {
   const waitTurn = createHostThrottle({ minGapMs: POLITE_GAP_MS });
   const captured = [];
   const failed = [];
+  // A PROGRESS FILE, so this run can be ASKED about rather than guessed at.
+  //
+  // It printed a line per page to stdout and wrote nothing machine-readable, so
+  // `lab:status -e job=capture-real-pages` fell back to the DATASET run's file and reported that run's
+  // numbers under this job's name — `captured: 29, total: 1431` for a 50-page job. Reading another job's
+  // progress as this one's is the first of the six misdiagnoses this file's own repo lists as costing a
+  // day, and a status command that fills a gap with the wrong data is worse than one that says "no data".
+  //
+  // It also unblocks the settle check. `corpus-settled.mjs` asks a run whether it FINISHED; with no
+  // progress file to ask, it falls back to the ten-minute clock, so the real-page audits refuse for ten
+  // minutes after a run that ended cleanly. The Ansible plan named this work — "give the remaining long
+  // jobs the beginRun() treatment" — and only the dataset capture ever got it.
+  const progress = beginRun({
+    root: OUT,
+    worker: workers[0],
+    baseUrl: null,
+    cases: pages.map((page) => ({ id: page.url })),
+    captureTimeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
+  });
 
   const outcome = await drainAcrossPool({
     workers,
@@ -234,12 +254,14 @@ async function captureAcrossPool(pages, workers) {
         capture: evidence,
       });
       captured.push(page.url);
+      progress.captured(page.url, (evidence?.transcript ?? []).length);
     },
     hooks: {
       onWorkerUnusable: (worker, error) =>
         process.stdout.write(`  worker unusable, skipping it: ${worker} (${error.message})\n`),
       onItemFailed: (page, error) => {
         process.stdout.write(`    FAILED: ${page.url}: ${error.message}\n`);
+        progress.failed(page.url, error.message);
         failed.push(`${page.url}: ${error.message}`);
       },
       onEvicted: (worker, { consecutiveFailures, handedBack }) =>
@@ -253,6 +275,7 @@ async function captureAcrossPool(pages, workers) {
     const line = `${f.id ?? f.key ?? "?"}: ${f.error ?? "failed"}`;
     if (!failed.includes(line)) failed.push(line);
   }
+  progress.finish(`${captured.length} of ${pages.length} captured, ${failed.length} failed`);
   return { captured: captured.length, failed };
 }
 

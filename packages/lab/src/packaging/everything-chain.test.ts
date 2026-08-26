@@ -153,3 +153,23 @@ test("a declared subtype absent from the export names WHICH of the two it is", (
   assert.match(source, /declared but nothing defines it/,
     "declared with nothing defining it is a real error and must stay conclusive");
 });
+
+test("every long capture writes a progress file, or lab:status reports another job's numbers", () => {
+  // `lab:status -e job=capture-real-pages` printed `captured: 29, total: 1431` for a 50-page job — the
+  // DATASET run's file, under this job's name, with nothing saying so. That is the first of the six
+  // misdiagnoses this repo records as costing a day: "I was reading a later, unrelated job."
+  //
+  // A status command that fills a gap with the wrong data is worse than one that says it has none.
+  for (const script of [
+    "packages/lab/src/training/capture-screenreader-dataset.mjs",
+    "packages/lab/src/training/capture-real-pages.mjs",
+  ]) {
+    const source = readFileSync(join(REPO, script), "utf8");
+    assert.match(source, /beginRun\(/,
+      `${script} runs for minutes to hours and must report progress somewhere a tool can read, or `
+      + `lab:status falls back to whichever progress file happens to be on disk`);
+    assert.match(source, /progress\.finish\(/,
+      `${script} must record that it FINISHED — corpus-settled.mjs asks that question, and without an `
+      + `answer it falls back to a ten-minute clock and refuses audits after a clean run`);
+  }
+});

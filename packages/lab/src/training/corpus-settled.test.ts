@@ -7,7 +7,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { corpusState, SETTLED_AFTER_MINUTES } from "./corpus-settled.mjs";
@@ -79,4 +79,22 @@ test("with no progress file the clock is all there is, and it says so", () => {
   assert.equal(old.blocking, false);
   const none = corpusState({ datasetRoots: [], evidenceDirs: [], minutesSinceLastWrite: () => null });
   assert.equal(none.blocking, false, "nothing to date-check is not a reason to refuse");
+});
+
+test("every audit carrying this guard uses the shared check", () => {
+  // The first version of this fix reached ONE of the three audits that refuse a moving corpus, and the
+  // gap showed up within the hour: `rules:real-pages` refused a run that had finished 0.6 minutes
+  // earlier. A remedy reaching one of several paths is this repo's most expensive recurring shape, and
+  // it was committed here by the change written to remove exactly that shape elsewhere.
+  const root = new URL("../../../../", import.meta.url);
+  for (const script of [
+    "packages/lab/scripts/audit-rule-coverage.ts",
+    "packages/lab/scripts/check-real-page-findings.ts",
+  ]) {
+    const source = readFileSync(new URL(script, root), "utf8");
+    assert.match(source, /corpusState\(/,
+      `${script} must ask the run whether it finished, not infer it from how new the files are`);
+    assert.ok(!/const SETTLED_AFTER_MINUTES\s*=/.test(source),
+      `${script} must not keep its own copy of the window — three copies is how they drift`);
+  }
 });
