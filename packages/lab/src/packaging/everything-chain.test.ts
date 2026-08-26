@@ -131,3 +131,25 @@ test("every stage's full output is kept, not just the tail the runner prints", (
   assert.ok(written.indexOf("first") < written.indexOf("boom"),
     "appended per stage, so a chain killed at hour three still leaves what it had done");
 });
+
+test("a declared subtype absent from the export names WHICH of the two it is", () => {
+  // `rules:gate` failed hard on "declared in rule-ownership.json and appears in no record", offering two
+  // explanations — the vocabulary moved, or the key was never right — and missing the third, which is the
+  // common one locally: the export simply PREDATES the declaration. `runs/` is gitignored, so a working
+  // copy is only ever as fresh as its last sync, and adding a subtype made every local gate fail until a
+  // re-export only the lab can do.
+  //
+  // That is why the pre-push hook was being bypassed rather than fixed, and a check that gets skipped is
+  // a check that does not run — this repo's own rule, arriving at the check itself.
+  //
+  // The case definitions decide it outright, so the gate states a fact instead of offering a guess.
+  const source = readFileSync(
+    join(REPO, "packages/lab/scripts/score-rules.ts"), "utf8");
+  assert.match(source, /DEFINED_SUBTYPES/,
+    "the gate must ask whether the CASE MATRIX defines the subtype; that is what separates a stale "
+    + "export from a wrong declaration");
+  assert.match(source, /UNDETERMINED \+ `\$\{subtype\} declared and defined/,
+    "defined-but-absent is a stale export and must be UNDETERMINED, not a hard failure");
+  assert.match(source, /declared but nothing defines it/,
+    "declared with nothing defining it is a real error and must stay conclusive");
+});

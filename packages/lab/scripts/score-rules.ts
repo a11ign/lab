@@ -47,6 +47,19 @@ import { resolve } from "node:path";
 import { ruleFindings } from "@a11y-witness/judge/rules";
 
 import { readRuleOwnership } from "../src/training/rule-ownership.js";
+import { CASES } from "../src/training/case-matrix.mjs";
+
+/**
+ * Subtypes the CASE DEFINITIONS carry, which is a different question from what the export contains.
+ *
+ * It is the question that makes "declared but absent" decidable. A declaration naming a subtype the corpus
+ * does not define is genuinely wrong; one naming a subtype the corpus DOES define, absent from this
+ * export, means the export predates the definition — a stale copy, not a broken declaration. The two need
+ * opposite responses and used to produce the same message.
+ */
+const DEFINED_SUBTYPES: Set<string> = new Set(
+  (CASES as Array<{ criterion: string; subtype: string }>)
+    .map((testCase) => `${testCase.criterion}:${testCase.subtype}`));
 
 const arg = (name: string, fallback: string): string =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
@@ -334,9 +347,26 @@ function ownershipFailures(coverage: Map<string, Coverage>): string[] {
       continue;
     }
     if (present) continue;
-    console.log(`RULES: ${subtype} is declared in rule-ownership.json and appears in no record. Either the `
-      + "corpus vocabulary moved or the key was never right; an entry that matches nothing enforces nothing.");
-    failures.push(`${subtype} is declared but absent from the data`);
+    // WHICH of the two it is, stated rather than guessed. This said "either the corpus vocabulary moved or
+    // the key was never right" and failed hard on both — but there is a third case it never considered and
+    // which is the common one locally: the export simply PREDATES the declaration. `runs/` is gitignored,
+    // so a working copy is only ever as fresh as its last sync, and adding a subtype makes every local
+    // gate fail until a re-export that only the lab can do.
+    //
+    // That is why this check was being skipped rather than fixed, and a check that gets bypassed is a
+    // check that does not run. The case definitions answer it outright: if the corpus DEFINES the subtype,
+    // the declaration is fine and the export is behind.
+    if (DEFINED_SUBTYPES.has(subtype)) {
+      console.log(`RULES: ${subtype} is declared in rule-ownership.json and the case matrix DEFINES it, `
+        + "but no record in this export carries it — so this export predates the cases. Re-export "
+        + "(`npm run lab:job -- -e job=export`); the declaration is not implicated.");
+      failures.push(UNDETERMINED + `${subtype} declared and defined, absent from THIS export (stale export)`);
+      continue;
+    }
+    console.log(`RULES: ${subtype} is declared in rule-ownership.json and NOTHING defines it — not the `
+      + "export, and not the case matrix. The key was never right, or the corpus vocabulary moved; an "
+      + "entry that matches nothing enforces nothing.");
+    failures.push(`${subtype} is declared but nothing defines it`);
   }
   return failures;
 }
