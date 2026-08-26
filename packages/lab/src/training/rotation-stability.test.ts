@@ -19,7 +19,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { CASES } from "./case-matrix.mjs";
+import { CASES as RAW_CASES } from "./case-matrix.mjs";
+
+type Case = { id: string; criterion: string; subtype: string };
+const CASES = RAW_CASES as Case[];
 
 const SOURCE = readFileSync(fileURLToPath(new URL("./case-matrix.mjs", import.meta.url)), "utf8");
 
