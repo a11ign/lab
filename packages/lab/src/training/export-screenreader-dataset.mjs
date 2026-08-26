@@ -243,7 +243,11 @@ function exportCases(manifest) {
   for (const testCase of manifest.cases) {
     const good = readCapture(testCase, "good");
     const bad = readCapture(testCase, "bad");
-    const result = hasUsableCaptureFiles({ id: testCase.id, captureRoot: CAPTURE_ROOT, pageRoot: PAGE_ROOT })
+    const result = hasUsableCaptureFiles({ id: testCase.id, captureRoot: CAPTURE_ROOT, pageRoot: PAGE_ROOT,
+        // Only the EXPORT accepts stale pages, and only in test grade. Resume must never: it decides what
+        // to SKIP, so accepting stale there would refuse to recapture the very cases a test run exists
+        // to refresh.
+        acceptStalePages: TEST_GRADE })
       ? validatePair(testCase, good, bad)
       : { status: "skipped", reason: "capture is missing, empty, or does not match current page/provenance" };
     summary[result.status]++;

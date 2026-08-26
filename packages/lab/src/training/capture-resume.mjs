@@ -32,7 +32,18 @@ const hasTranscript = (capture) =>
  */
 export const TEST_GRADE = process.env.A11Y_DATASET_GRADE === "test";
 
-export function hasUsableCaptureFiles({ id, captureRoot, pageRoot }) {
+/**
+ * `acceptStalePages` is a PARAMETER, never read from the environment here — and that distinction is a
+ * defect this nearly shipped with.
+ *
+ * `previouslyCaptured` below uses this function to decide what `--resume` may SKIP. Reading the grade
+ * ambiently made a test-grade capture run treat a stale capture as already done and skip recapturing it,
+ * which is the exact opposite of what a test run needs: the whole point is to refresh the cases that
+ * moved. The EXPORT wants to accept stale evidence; the CAPTURE must still refuse it.
+ *
+ * So the caller says which question it is asking. The export passes `TEST_GRADE`; resume never does.
+ */
+export function hasUsableCaptureFiles({ id, captureRoot, pageRoot, acceptStalePages = false }) {
   let pageHash;
   try {
     pageHash = hashPageDir(resolve(pageRoot, id));
@@ -49,7 +60,7 @@ export function hasUsableCaptureFiles({ id, captureRoot, pageRoot }) {
       // In test grade the capture must still be REAL — an NVDA transcript for this case — but it need not
       // describe the current page bytes. The check above (`hasTranscript`) is what stays; only the
       // page-identity comparison relaxes.
-      if (TEST_GRADE) return true;
+      if (acceptStalePages) return true;
       if (provenance.pageHash) return provenance.pageHash === pageHash;
 
       // Legacy captures still have the complete worker environment on the capture and the exact
