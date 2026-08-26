@@ -45,11 +45,17 @@ const STEPS = [
     why: "add the real-page tier" },
 ];
 
-function run(step, { dryRun }) {
+/**
+ * Run one step. Exported so a SECOND pipeline can name it rather than reimplement it — see
+ * `everything-pipeline.mjs`, which is the same shape over a longer chain. `step.args` are appended after
+ * npm's `--`, for the steps that take one; a step without them is unchanged.
+ */
+export function run(step, { dryRun }) {
   process.stdout.write(`\n=== ${step.name}\n    ${step.why}\n`);
   if (dryRun) return { ok: true, output: "(dry run)" };
+  const argv = ["run", "--silent", step.script, ...(step.args?.length ? ["--", ...step.args] : [])];
   try {
-    const output = execFileSync("npm", ["run", "--silent", step.script],
+    const output = execFileSync("npm", argv,
       { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
     process.stdout.write(output.split("\n").slice(-6).join("\n") + "\n");
     return { ok: true, output };
