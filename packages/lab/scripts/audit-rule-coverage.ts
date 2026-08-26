@@ -47,6 +47,7 @@ import { ruleFindings } from "@a11y-witness/judge/rules";
 // source rather than the convenient neighbour: locally tsx resolves TypeScript and the mistake is silent,
 // while the lab resolves `dist` and it is a hard failure — the stale-dist hazard, one door along.
 import { RULE_CRITERIA, SCORED_CRITERIA } from "@a11y-witness/judge/coverage";
+import { corpusState } from "../src/training/corpus-settled.mjs";
 import { CRITERION_COVERAGE, channelsPresent } from "@a11y-witness/judge/internal";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
@@ -71,7 +72,11 @@ const CLAIMED = new Set(["assessed", "partial"]);
  * criterion is not assessed" are the same statement. Those block; the rest are reported, because an
  * unvalidated rule is still worth naming even when something else covers its criterion.
  */
-const RULE_ONLY = new Set(RULE_CRITERIA.filter((c) => !SCORED_CRITERIA.includes(c as never)));
+// `ReadonlySet<string>` deliberately: inference narrows this to a union of the eleven criterion literals,
+// so every `RULE_ONLY.has(someCriterion)` where the criterion is a plain string is a type error — and
+// those errors were invisible because `packages/*/scripts` was outside the typecheck entirely.
+const RULE_ONLY: ReadonlySet<string> = new Set(
+  RULE_CRITERIA.filter((c) => !SCORED_CRITERIA.includes(c as never)));
 
 /**
  * How recently a capture file was written, in minutes, or null when the directory is empty.
@@ -107,8 +112,8 @@ function minutesSinceLastWrite(dirs: string[]): number | null {
   return newest ? (Date.now() - newest) / 60_000 : null;
 }
 
-/** Below this, treat the corpus as still being written. One capture takes minutes, so this is generous. */
-const SETTLED_AFTER_MINUTES = 10;
+// `SETTLED_AFTER_MINUTES` now lives in `corpus-settled.mjs`, with the check that uses it — one copy, and
+// only as the fallback for a corpus carrying no progress file.
 
 function capturesIn(dir: string): unknown[] {
   let entries: string[];
@@ -291,12 +296,16 @@ function main(): void {
     process.exitCode = 0;
     return;
   }
-  const idleMinutes = minutesSinceLastWrite([CORPUS, REAL]);
-  if (idleMinutes !== null && idleMinutes < SETTLED_AFTER_MINUTES) {
-    process.stdout.write(`\n  IN FLUX — a capture was written ${idleMinutes.toFixed(1)} minute(s) ago, so `
-      + "this corpus is still being recaptured.\n  Every count below describes a state that will have "
-      + "changed by the time you read it. Wait for the run to finish.\n  This is NOT a pass and NOT a "
-      + "failure; it is a refusal to measure a moving target.\n");
+  // ASKED, not inferred from file age. See `corpus-settled.mjs`: the run records `finishedAt` itself, and
+  // a clean finish thirty seconds ago is settled however new the files are.
+  const settle = corpusState({
+    datasetRoots: [resolve(CORPUS, "..")],
+    evidenceDirs: [CORPUS, REAL],
+    minutesSinceLastWrite,
+  });
+  if (settle.blocking) {
+    process.stdout.write(`\n  ${settle.state === "abandoned" ? "ABANDONED RUN" : "IN FLUX"} — ${settle.why}.\n`
+      + "  This is NOT a pass and NOT a failure; it is a refusal to measure a moving target.\n");
     process.exitCode = 2;
     return;
   }
