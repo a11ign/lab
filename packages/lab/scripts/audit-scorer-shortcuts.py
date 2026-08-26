@@ -152,6 +152,7 @@ def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path, stream:
     baseline = {row["subtype"]: row for row in json.loads(baseline_path.read_text())["rows"]}
     regressions = []
     unbaselined = []
+    rule_decided = rule_decided_subtypes()
     # UNBASELINED and WORSE are different findings, and calling both a regression sends the reader at the
     # wrong thing. A head absent from the baseline may be genuinely new, or may have existed for months
     # and only just become visible to this audit — measured 2026-08-26, when correcting SCORED_CRITERIA
@@ -163,7 +164,24 @@ def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path, stream:
     for row in rows:
         was = baseline.get(row["subtype"])
         if was is None:
-            unbaselined.append(f"{row['subtype']}: {len(row['vetoes'])} veto(es), never audited")
+            # The two facts that decide whether an unaudited veto is a DEFECT or the corpus's shape, and
+            # both were established by hand on 2026-08-26 before this reported them.
+            #
+            # A head with 4 positives has a free veto on nearly every feature — that is arithmetic, not a
+            # corpus fault, and it is why `furniture-spread.test.ts` skips a subtype under six cases. And
+            # ADR 0015's harm requires the head to DECIDE: where `rule-ownership.json` says `rules`, the
+            # deterministic layer reports the verdict and the veto cannot reach a user.
+            #
+            # Reported, never used to excuse: it still blocks, and the day ownership moves the veto is
+            # waiting. What changes is that the reader is told which question to ask.
+            context = []
+            if row.get("positives") is not None and row["positives"] < MIN_POSITIVES_TO_JUDGE:
+                context.append(f"only {row['positives']} positive(s) — too few to separate anything")
+            if row["subtype"] in rule_decided:
+                context.append("rule-decided, so this veto cannot reach a user today")
+            suffix = f" [{'; '.join(context)}]" if context else ""
+            unbaselined.append(
+                f"{row['subtype']}: {len(row['vetoes'])} veto(es), never audited{suffix}")
         elif len(row["vetoes"]) > len(was["vetoes"]):
             regressions.append(f"{row['subtype']}: {len(was['vetoes'])} -> {len(row['vetoes'])} vetoes")
     for line in regressions:
@@ -181,6 +199,22 @@ def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path, stream:
     if regressions or unbaselined:
         return 1
     return 0
+
+
+#: Below this, a head cannot separate anything and every feature reads as a free veto. Matches the floor
+#: `furniture-spread.test.ts` applies for the same reason.
+MIN_POSITIVES_TO_JUDGE = 6
+
+
+def rule_decided_subtypes() -> set[str]:
+    """Subtypes the deterministic rules decide, read from the ownership file rather than listed here."""
+    path = Path(__file__).resolve().parents[1] / "rule-ownership.json"
+    try:
+        ownership = json.loads(path.read_text(encoding="utf-8"))["subtypes"]
+    except (OSError, KeyError, json.JSONDecodeError):
+        # Absent or unreadable means no context to add, never a silent claim that nothing is rule-decided.
+        return set()
+    return {name for name, entry in ownership.items() if entry.get("decidedBy") == "rules"}
 
 
 def main() -> int:
