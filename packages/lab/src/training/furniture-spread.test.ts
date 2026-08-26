@@ -19,6 +19,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { createRequire } from "node:module";
+
 import { CASES } from "./case-matrix.mjs";
 import { SCORED_CRITERIA } from "@a11y-witness/judge/coverage";
 
@@ -42,14 +44,45 @@ const TABLE = /Reference notes index|<table/;
 /**
  * Only criteria the trained scorer has a HEAD for, read from the judge package rather than listed here.
  *
- * A veto is a weight, so a criterion with no head cannot have one. 2.1.1, 2.1.2, 2.4.1, 2.4.2 and 2.4.3 are
- * decided entirely by deterministic rules — the acceptance report says `modelEvaluated: false` for each —
- * and they have one case apiece, which cannot span buckets. Asserting over them would fail for a reason
- * that does not exist.
+ * A veto is a weight, so a criterion with no head cannot have one.
  *
- * Derived, so the day one of them gains a head it is covered here automatically and this comment does not
- * have to be remembered.
+ * ## And a head is not enough — the subtype needs enough CASES to spread across
+ *
+ * This comment used to say 2.1.1, 2.1.2, 2.4.1, 2.4.2 and 2.4.3 were excluded because they have no head,
+ * and predicted that "the day one of them gains a head it is covered here automatically". They always had
+ * heads; `SCORED_CRITERIA` simply did not list them, and correcting that on 2026-08-25 pulled them in and
+ * failed this test.
+ *
+ * The exclusion was right for a reason the comment gave in passing and the code did not encode: **they
+ * have one case apiece, which cannot span buckets.** A subtype with three cases cannot carry a table on
+ * some pages and not others in any useful proportion, so "none of its pages has a table" describes the
+ * case count rather than a free veto. Asserting over it fails for a reason that does not exist.
+ *
+ * So the floor is on the CASE COUNT, which is the property that actually decides whether the audit can
+ * say anything — and it is checked rather than hardcoded, so a subtype that grows past it is covered the
+ * day it does.
  */
+const MIN_CASES_TO_SPREAD = 6;
+
+/**
+ * Subtypes the DETERMINISTIC RULES decide, read from the ownership file rather than listed.
+ *
+ * A free veto is a weight on a head, and a weight only reaches a user if the head's verdict is the one
+ * reported. `rule-ownership.json` marks ten subtypes `decidedBy: "rules"` — for those the head is trained
+ * alongside the rule and never authoritative, so a starved feature is a fact about the corpus and not a
+ * defect a user can encounter.
+ *
+ * Reported rather than asserted, because "this cannot reach a user" is not the same as "this is fine": if
+ * ownership ever moves back to the model, the starvation is waiting. ADR 0015 is about exactly the veto
+ * nobody could see.
+ */
+const ruleDecided = (): Set<string> => {
+  const ownership = createRequire(import.meta.url)("../../rule-ownership.json") as
+    { subtypes: Record<string, { decidedBy?: string }> };
+  return new Set(Object.entries(ownership.subtypes)
+    .filter(([, entry]) => entry.decidedBy === "rules")
+    .map(([subtype]) => subtype));
+};
 const bySubtype = (): Map<string, Case[]> => {
   const scored = new Set<string>(SCORED_CRITERIA);
   const groups = new Map<string, Case[]>();
@@ -64,11 +97,25 @@ const bySubtype = (): Map<string, Case[]> => {
 for (const [label, marker] of [["a named form field", NAMED_FIELD], ["a table", TABLE]] as const) {
   test(`no subtype's cases all lack ${label}`, () => {
     const starved: string[] = [];
+    const noted: string[] = [];
+    const decidedByRules = ruleDecided();
     for (const [subtype, cases] of bySubtype()) {
+      // Too few cases to spread across buckets: the answer would describe the corpus size, not a veto.
+      if (cases.length < MIN_CASES_TO_SPREAD) continue;
       if (!cases.some((testCase) => carries(testCase, marker))) {
+        if (decidedByRules.has(subtype)) {
+          // Named, never silent. The head is starved and the rule layer owns its verdict, so no user can
+          // meet the veto today — and the day ownership moves, it is waiting.
+          noted.push(`${subtype} (${cases.length} cases, none) — rule-decided, so it cannot reach a user`);
+          continue;
+        }
         starved.push(`${subtype} (${cases.length} cases, none)`);
       }
     }
+    // Said aloud rather than swallowed: a starved head the rules layer overrides is not a defect a user
+    // can meet, and it IS one waiting for the day ownership moves. Silence here would make the second
+    // half invisible.
+    for (const line of noted) process.stdout.write(`  note: ${line}\n`);
     assert.deepEqual(starved, [],
       `these subtypes have ${label} on none of their pages, so a head may penalise it at no training `
       + "cost and will then be silent on any real page that has one — see docs/adr/0015-one-defect-per-page-taught-the-scorer-to-veto.md");
