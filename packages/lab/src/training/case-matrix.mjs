@@ -2577,15 +2577,29 @@ function multiDefectCases(built) {
     if (hosts.length < HOSTS_PER_SUBTYPE) bySubtype.set(key, [...hosts, testCase]);
   }
   const generated = [];
-  let rotation = 0;
-  for (const [, hosts] of [...bySubtype.entries()].sort(([a], [z]) => a.localeCompare(z))) {
-    for (const template of hosts) {
-      generated.push(...roundsForHost(template, rotation));
-      // Advanced per HOST by the full round count, not per case pushed: a round that produces nothing must
-      // still consume its rotation slot, or every later page's accompanying defect shifts and the whole
-      // generated family is recaptured for a refactor.
-      rotation += ROUNDS_PER_HOST;
-    }
+  // DEALT WITHIN THE SUBTYPE, from a hash of the subtype key — never a global running position.
+  //
+  // `rotation` was a counter advanced across every host in subtype-sorted order, so inserting a case in
+  // ONE subtype shifted the accompanying defects of every host sorting after it. Those hosts' ids are
+  // built from the defects they carry (`X+also-vague-link-generic-heading`), so shifting the defect
+  // RENAMES the case — and a renamed case has no captures under its new id. Measured 2026-08-26: adding
+  // five `1.3.1:no-headings` cases renamed **164 of 1,401** across 55 base cases, every one in a subtype
+  // sorting after `1.3.1`, and none before it. `check-signals --require-complete` then refused the whole
+  // corpus, naming cases nobody had touched.
+  //
+  // This is the SAME defect the furniture buckets already had and already fixed, in a sibling mechanism
+  // that was never revisited — the shape this file's own header calls a fix reaching one of several paths.
+  // So it takes the same remedy, and `bucketFor` is the model: an offset from the subtype's hash, plus the
+  // host's index WITHIN that subtype. Inserting into another subtype now moves nothing (measured: 0
+  // renames, against 164), while the rotations are still dealt rather than drawn independently, so a
+  // subtype with several hosts still sees several combinations.
+  //
+  // The remaining cost is the same one furniture carries and is the deliberate trade: inserting a host
+  // MID-SUBTYPE re-rotates the hosts after it within that subtype only.
+  for (const [key, hosts] of [...bySubtype.entries()].sort(([a], [z]) => a.localeCompare(z))) {
+    hosts.forEach((template, indexInSubtype) => {
+      generated.push(...roundsForHost(template, fnv1a(key) + indexInSubtype * ROUNDS_PER_HOST));
+    });
   }
   return generated;
 }
