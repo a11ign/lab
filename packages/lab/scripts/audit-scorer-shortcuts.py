@@ -151,17 +151,34 @@ def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path, stream:
         return 0
     baseline = {row["subtype"]: row for row in json.loads(baseline_path.read_text())["rows"]}
     regressions = []
+    unbaselined = []
+    # UNBASELINED and WORSE are different findings, and calling both a regression sends the reader at the
+    # wrong thing. A head absent from the baseline may be genuinely new, or may have existed for months
+    # and only just become visible to this audit — measured 2026-08-26, when correcting SCORED_CRITERIA
+    # to match the shipped model brought five long-standing heads into scope and the report announced
+    # them as five regressions that "gained a free veto". They gained nothing; nobody had looked.
+    #
+    # Both still BLOCK, because an unaudited veto is not a safe one either way. Only the wording differs,
+    # and the wording is what decides whether somebody investigates the corpus or records a baseline.
     for row in rows:
         was = baseline.get(row["subtype"])
         if was is None:
-            regressions.append(f"{row['subtype']}: new head, {len(row['vetoes'])} vetoes, not in the baseline")
+            unbaselined.append(f"{row['subtype']}: {len(row['vetoes'])} veto(es), never audited")
         elif len(row["vetoes"]) > len(was["vetoes"]):
             regressions.append(f"{row['subtype']}: {len(was['vetoes'])} -> {len(row['vetoes'])} vetoes")
     for line in regressions:
         note(f"  REGRESSION  {line}")
+    for line in unbaselined:
+        note(f"  UNAUDITED   {line}")
     if regressions:
         note("\n  A head gained a free veto. That means the corpus separated two things it should not,")
         note("  or a new feature was added that no positive carries. See ADR 0015.\n")
+    if unbaselined:
+        note("\n  These heads have never been audited — they are not necessarily WORSE, they were simply")
+        note("  outside this audit's scope until now. Read their vetoes against ADR 0015 and, if they are")
+        note("  the corpus's shape rather than a defect, record them:")
+        note("    npm run lab:job -- -e job=shortcuts   # then --write-baseline, deliberately\n")
+    if regressions or unbaselined:
         return 1
     return 0
 
