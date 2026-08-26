@@ -188,10 +188,17 @@ const EVIDENCE = new Map<string, string>();
 function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
   const census = pageCensus(capture as never);
   const lines = Array.isArray(capture.transcript) ? capture.transcript.length : 0;
-  EVIDENCE.set(String(capture.url), census
+  // The FIRST few announcements as well as the counts. The counts said `heading=0` on a page whose
+  // published HTML carries forty of them, and a count cannot tell you whether the tool read a cookie
+  // wall, a loading shell, or the page — which are three different verdicts needing three different
+  // responses. What the screen reader SAID is the only thing that distinguishes them, and fetching it by
+  // hand afterwards is the step this line exists to remove.
+  const opening = (Array.isArray(capture.transcript) ? capture.transcript : [])
+    .slice(0, 3).map((line) => JSON.stringify(String(line).slice(0, 60))).join(" ");
+  EVIDENCE.set(String(capture.url), (census
     ? `census heading=${census.heading} link=${census.link} graphic=${census.graphic} `
       + `graphicUnnamed=${census.graphicUnnamed}; ${lines} announcement(s)`
-    : `no census recorded; ${lines} announcement(s)`);
+    : `no census recorded; ${lines} announcement(s)`) + (opening ? `\n           opens: ${opening}` : ""));
 }
 
 function main(): void {
