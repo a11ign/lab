@@ -47,6 +47,15 @@ import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl }
   from "../../../worker-fleet/src/worker-http.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
 import { leasePageServer } from "../training/page-server.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * recaptures the eval fixtures. `--ff-only` appears in this file because it is passed to GIT, not
+ * because it is a flag of this command.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--set=", "--only=", "--worker="], { command: "npm run eval:capture" });
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EVAL_ROOT = resolve(HERE, "../eval");

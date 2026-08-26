@@ -21,6 +21,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
 import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * takes its worker POSITIONALLY and no flags at all, so any flag passed to it is discarded.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags([], { command: "npm run verdict:stability" });
 
 // This file is why the guard in budget-ladder.test.ts now DISCOVERS capture clients instead of
 // listing three: it declared 560 s and undici gave it 300 s, which is precisely the defect that

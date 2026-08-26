@@ -14,6 +14,15 @@ import { captureWithNvda } from "@a11y-witness/nvda-worker";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
 import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * the capture-layer regression check. `--worker=` mistyped falls back to in-process mode, which
+ * REFUSES while a worker is serving — so the check reports a refusal rather than running.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--worker="], { command: "npm run capture:check" });
 
 // Drive a live WORKER over HTTP instead of NVDA in-process.
 //
