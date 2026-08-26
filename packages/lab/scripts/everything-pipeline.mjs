@@ -20,7 +20,9 @@
  * "print a banner and stop at the first failure" is exactly the duplication that lets two pipelines
  * disagree about what a failure means.
  */
-import { pathToFileURL } from "node:url";
+import { appendFileSync, mkdirSync, rmSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { pipeline, run } from "./retrain-pipeline.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
@@ -63,12 +65,50 @@ const STEPS = [
 
 export { STEPS };
 
+const REPO = fileURLToPath(new URL("../../../", import.meta.url));
+
+/** Where the FULL output of every stage lands, whatever the runner chooses to print. */
+export const TRANSCRIPT = resolve(REPO, "runs", "everything-transcript.log");
+
+/**
+ * Run a stage, and keep everything it said.
+ *
+ * The runner prints a six-line tail per stage, which is what makes a nine-stage chain legible — and it
+ * captures the child's stdout to do that, so the detail no longer reaches the journal AT ALL. Measured
+ * on the first green run: the fetched log went from 400 lines to 63, and `RULES: PASS`, the per-criterion
+ * table and `1183 scored, 0 false positive(s)` were all simply gone. The chain reported a pass with the
+ * evidence FOR that pass discarded, which is worse than the illegibility it replaced — this repo's oldest
+ * rule is that a number is only as good as what it was computed from.
+ *
+ * So the tail is the summary and this is the record. Appended per stage rather than written at the end,
+ * because a chain killed at hour three must still leave behind what it had already done.
+ */
+export function keepingTranscript(runStep, { transcript = TRANSCRIPT } = {}) {
+  return (step, options) => {
+    const result = runStep(step, options);
+    mkdirSync(dirname(transcript), { recursive: true });
+    appendFileSync(transcript,
+      `\n${"=".repeat(78)}\n=== ${step.name}${result.ok ? "" : "  — FAILED"}\n`
+      + `${"=".repeat(78)}\n${result.output ?? ""}\n`, "utf8");
+    return result;
+  };
+}
+
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const dryRun = process.argv.includes("--dry-run");
-  const result = pipeline({ dryRun, steps: STEPS, runStep: run });
+  // A fresh transcript per run: appending to the previous one is how "the fixture capture keeps failing"
+  // came to be read off a later, unrelated job.
+  if (!dryRun) rmSync(TRANSCRIPT, { force: true });
+  const result = pipeline({ dryRun, steps: STEPS, runStep: keepingTranscript(run) });
   // The stage names, always — on success as well as failure. "It passed" and "it passed these six things"
   // are different claims, and only the second survives being read back a week later.
   process.stdout.write(`\n=== ${result.ok ? "COMPLETE" : `STOPPED at ${result.stoppedAt}`}\n`);
   for (const { step, ok } of result.done) process.stdout.write(`  ${ok ? "ok  " : "FAIL"} ${step}\n`);
+  // Named on SUCCESS too. The evidence for a pass is exactly as worth keeping as the evidence for a
+  // failure, and it is the half nobody thinks to go and fetch.
+  if (!dryRun) {
+    process.stdout.write(`\n  every stage's full output: ${TRANSCRIPT.replace(REPO, "")}\n`
+      + "  fetch it with: npm run lab:fetch -- -e artifact=everything-transcript\n");
+  }
   process.exit(result.ok ? 0 : 1);
 }

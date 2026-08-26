@@ -7,10 +7,11 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { STEPS } from "../../scripts/everything-pipeline.mjs";
+import { STEPS, keepingTranscript } from "../../scripts/everything-pipeline.mjs";
 import { STEPS as RETRAIN_STEPS } from "../../scripts/retrain-pipeline.mjs";
 import { PIPELINES } from "../../../worker-fleet/src/lab-pipeline.mjs";
 
@@ -105,4 +106,28 @@ test("the stages whose failure means the WORK is wrong are marked as gates", () 
   // pipeline still stops — it is required — but you go and look at the corpus, not at a verdict.
   assert.deepEqual(STEPS.filter((step) => !step.gate).map((step) => step.name),
     ["retrain", "export-acceptance", "train"]);
+});
+
+test("every stage's full output is kept, not just the tail the runner prints", () => {
+  // THE REGRESSION THIS GUARDS, introduced while improving observability and caught by reading the first
+  // green run rather than trusting its exit code. The runner prints a six-line tail per stage — which is
+  // what makes nine stages legible — and captures the child's stdout to do it, so the detail stopped
+  // reaching the journal at all. Measured: the fetched log fell from 400 lines to 63, and `RULES: PASS`,
+  // the per-criterion table and `1183 scored, 0 false positive(s)` were all gone. The chain reported a
+  // pass with the evidence FOR that pass discarded.
+  const stages: Array<{ name: string; output: string }> = [];
+  const fake = (step: { name: string }) => ({ ok: step.name !== "boom", output: `full detail of ${step.name}` });
+  const transcript = join(tmpdir(), `everything-transcript-test-${process.pid}.log`);
+  const wrapped = keepingTranscript(fake, { transcript });
+  for (const step of [{ name: "first" }, { name: "boom" }]) {
+    const result = wrapped(step, {});
+    stages.push({ name: step.name, output: result.output });
+  }
+  const written = readFileSync(transcript, "utf8");
+  rmSync(transcript, { force: true });
+  assert.match(written, /full detail of first/, "a passing stage's output must be kept too");
+  assert.match(written, /full detail of boom/, "a failing stage's output must be kept");
+  assert.match(written, /=== boom {2}— FAILED/, "the transcript must say which stage failed");
+  assert.ok(written.indexOf("first") < written.indexOf("boom"),
+    "appended per stage, so a chain killed at hour three still leaves what it had done");
 });
