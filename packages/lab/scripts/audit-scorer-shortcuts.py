@@ -195,7 +195,7 @@ def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path, stream:
         note("\n  These heads have never been audited — they are not necessarily WORSE, they were simply")
         note("  outside this audit's scope until now. Read their vetoes against ADR 0015 and, if they are")
         note("  the corpus's shape rather than a defect, record them:")
-        note("    npm run lab:job -- -e job=shortcuts   # then --write-baseline, deliberately\n")
+        note("    npm run lab:job -- -e job=shortcuts-baseline   # deliberate, and it writes\n")
     if regressions or unbaselined:
         return 1
     return 0
