@@ -196,6 +196,7 @@ function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
   const openingLines = (Array.isArray(capture.transcript) ? capture.transcript : [])
     .slice(0, 3).map((line) => String(line));
   OPENINGS.set(String(capture.url), openingLines);
+  if (census) CENSUS.set(String(capture.url), census);
   const opening = openingLines.map((line) => JSON.stringify(line.slice(0, 60))).join(" ");
   EVIDENCE.set(String(capture.url), (census
     ? `census heading=${census.heading} link=${census.link} graphic=${census.graphic} `
@@ -220,14 +221,25 @@ function furnitureCaptures(): { consent: string[]; shell: string[] } {
   const consent: string[] = [];
   const shell: string[] = [];
   for (const [url, opening] of OPENINGS) {
+    // STOPPED at the furniture, not merely started there — and the first version of this check got that
+    // wrong, reporting 50 of 86. Every UK public-sector site opens with a cookie banner and the read-through
+    // goes straight past it: networkrail opens on Cookiebot and still reaches 69 announcements and 11
+    // headings. "Has a banner" and "never got past the banner" are different facts, and a count that
+    // merges them is the defect this file exists to report, committed inside the report.
+    //
+    // The tree is the discriminator: a capture that reached the page has HEADINGS in its census. One that
+    // did not has the site's chrome — nav, logo, banner — and nothing under it.
+    const reachedThePage = (CENSUS.get(url)?.heading ?? 0) > 0;
+    if (reachedThePage) continue;
     const text = opening.join(" ").toLowerCase();
     if (/cookie|consent|privacy preference|usercentrics|onetrust/.test(text)) consent.push(url);
-    // A capture whose FIRST announcement is blank and which never reaches a heading is a page that had
-    // not rendered — distinct from a page that genuinely has none, which still announces its content.
     else if (opening[0]?.trim().toLowerCase() === "blank") shell.push(url);
   }
   return { consent, shell };
 }
+
+/** url -> its census, so the summary can ask whether a capture ever reached the page. */
+const CENSUS = new Map<string, { heading?: number }>();
 
 /** url -> its opening announcements, kept so the summary above can be computed without a second read. */
 const OPENINGS = new Map<string, string[]>();
@@ -298,8 +310,8 @@ function main(): void {
   const furniture = furnitureCaptures();
   if (furniture.consent.length || furniture.shell.length) {
     process.stdout.write(`\n  ${furniture.consent.length} capture(s) opened on a COOKIE/CONSENT overlay and `
-      + `${furniture.shell.length} on an unrendered SHELL — those read the site's furniture, not its page, `
-      + "so any finding on them is about this tool.\n");
+      + `${furniture.shell.length} on an unrendered SHELL and NEVER REACHED A HEADING — those read the `
+      + "site's furniture, not its page, so any finding on them is about this tool.\n");
     for (const url of [...furniture.consent, ...furniture.shell].slice(0, 8)) {
       process.stdout.write(`    furniture: ${url.replace(/^https:\/\//, "")}\n`);
     }
