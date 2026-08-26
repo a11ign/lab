@@ -19,6 +19,15 @@ import { watch } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { isStale, readProgress, tally } from "./capture-progress.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * its EXIT CODE is the contract — 0 clean, 1 failures, 2 no run, 3 wedged — so a caller reading it has
+ * already decided what the output shape is.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--json"], { command: "npm run training:wait" });
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
 const JSON_OUT = process.argv.includes("--json");

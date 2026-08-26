@@ -14,6 +14,14 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { inFlight, isStale, readProgress, stalenessMs, tally } from "./capture-progress.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * as `doctor`.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--json"], { command: "npm run training:status" });
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
 const HEALTH_TIMEOUT_MS = 5_000;

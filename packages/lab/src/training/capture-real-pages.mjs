@@ -32,6 +32,16 @@ import { assertFleetRunsThisCheckout } from "../../../worker-fleet/src/worker-co
 import { drainAcrossPool } from "./worker-pool.mjs";
 import { createHostThrottle, hostOf } from "./host-throttle.mjs";
 import { writeJsonAtomic } from "./write-atomic.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * THE script that ran four shards against `--worker=http://:8765` for 29 minutes. `--shard=` arrives
+ * through `parseShard`, so a regex over this file would not find it — which is why the list is read out
+ * by hand rather than derived.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--role=", "--worker=", "--shard=", "--allow-mixed-browsers", "--allow-stale-workers"], { command: "npm run lab:job -- -e job=capture-real-pages" });
 
 const ROLE = process.argv.find((a) => a.startsWith("--role="))?.slice("--role=".length) ?? null;
 const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length) ?? null;
