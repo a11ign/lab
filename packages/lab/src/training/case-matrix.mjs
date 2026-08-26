@@ -1602,6 +1602,14 @@ const BAD_ROUTE_SCRIPT = ROUTE_SWAP
 cases.push(
   pair({
     id: "route-title-stale",
+    // Written from the case's own definition, not invented: `preflight` requires task/source/mutation on
+    // every case and these four families never had them, so 21 cases failed it for as long as the
+    // criteria have existed. The metadata is what makes a case REVIEWABLE — "what was the user doing,
+    // where does this failure come from, what exactly was changed" — and a case nobody can review is a
+    // label nobody can check.
+    task: "Open the Overview view and confirm where you are.",
+    source: "WCAG 2.4.2 Understanding; W3C WAI single-page-application patterns",
+    mutation: "The route changes and the document title does not, so the page announces the old title.",
     criterion: "2.4.2",
     // Both pages are single-page apps: the link swaps the view without a page load, which is the shape the
     // whole case exists for. A real page load cannot express this failure -- the browser reads the new
@@ -1864,6 +1872,9 @@ function FOCUS_ORDER_FORM(mode) {
 cases.push(
   pair({
     id: "focus-order-tabindex",
+    task: "Tab through the form and complete it in the order it reads.",
+    source: "WCAG 2.4.3 Understanding; Practical Web Accessibility, chapter 6",
+    mutation: "Positive tabindex pulls two fields ahead of the rest, so tab order contradicts reading order.",
     criterion: "2.4.3",
     good: page({
       title: "Delivery details",
@@ -1917,6 +1928,9 @@ function SKIP_LINK_PAGE(targetId) {
 cases.push(
   pair({
     id: "skip-link-broken",
+    task: "Use the skip link to jump past the navigation to the main content.",
+    source: "WCAG 2.4.1 Understanding; W3C technique G1 (skip link)",
+    mutation: "The skip link targets an id no element has, so it is present, plausible and inert.",
     criterion: "2.4.1",
     good: page({
       title: "Archive",
@@ -1970,6 +1984,9 @@ function KEYBOARD_ACTION_PAGE(focusable) {
 cases.push(
   pair({
     id: "keyboard-unreachable-action",
+    task: "Reach the delete action for a draft using the keyboard alone.",
+    source: "WCAG 2.1.1 Understanding; Practical Web Accessibility, chapter 5",
+    mutation: "The action is a div with a click handler and no tabindex, so Tab never reaches it.",
     criterion: "2.1.1",
     good: page({ title: "Drafts", heading: "Drafts", body: KEYBOARD_ACTION_PAGE(true) }),
     bad: page({ title: "Drafts", heading: "Drafts", body: KEYBOARD_ACTION_PAGE(false) }),

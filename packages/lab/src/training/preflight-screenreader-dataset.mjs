@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { CASES } from "./case-matrix.mjs";
+import { CASES, SIGNAL_TYPES } from "./case-matrix.mjs";
 import { ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
@@ -9,18 +9,23 @@ const EXPECTED_CASES = process.env.DATASET_KIND === "acceptance" ? ACCEPTANCE_CA
 const MANIFEST_PATH = resolve(ROOT, "manifest.json");
 const REPORT_PATH = resolve(ROOT, "preflight.json");
 const REQUIRED_HTML = "<!doctype html>";
-const KNOWN_SIGNALS = new Set([
-  "regex",
-  "structure-empty",
-  "missing-heading",
-  "missing-role",
-  "state-change-silent",
-  "form-activation-silent",
-  "table-unassociated",
-  "unnamed-form-field",
-  "validation-error-silent",
-  "placeholder-only",
-]);
+// DERIVED, never listed. `SIGNAL_TYPES` is `Object.keys(SIGNAL_PREDICATES)` — the signals that actually
+// exist — so a signal cannot be added to the matrix and missed here.
+//
+// It was a hand-written literal, and it drifted exactly as this repo's rule predicts: five signal types
+// (`route-title-stale`, `focus-trapped`, `focus-order-scrambled`, `skip-link-inert`,
+// `control-unreachable-by-keyboard`) were added to `case-matrix.mjs` and never here, so preflight
+// reported "unknown bad signal" on 25 cases and "missing label metadata" on 21 — 46 failures, for
+// criteria that are correctly defined. Measured 2026-08-26; identical counts on the previous commit, so
+// it had been failing since those criteria were added.
+//
+// `check-signals` never caught it because it EVALUATES each signal against real captures rather than
+// validating the type name, so it passed on the same cases preflight refused. Two checks, one
+// disagreeing, and the disagreement invisible until somebody ran both.
+//
+// CLAUDE.md records SIGNAL_TYPES being exported for precisely this: "the test reads the list instead of
+// scraping the source it is testing". The remedy existed and this file did not use it.
+const KNOWN_SIGNALS = new Set(SIGNAL_TYPES);
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));

@@ -15,7 +15,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { ACCEPTANCE_CASES, ALL_ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
-import { SIGNAL_TYPES } from "./case-matrix.mjs";
+import { CASES, SIGNAL_TYPES } from "./case-matrix.mjs";
 import { WCAG_22_AA } from "@a11y-witness/evidence/wcag";
 
 const criteria = new Set(WCAG_22_AA.map((c) => c.num));
@@ -140,4 +140,26 @@ test("a multi-defect acceptance case never claims its own subtype twice", () => 
     assert.ok(!(c.alsoFails ?? []).includes(`${c.criterion}:${c.subtype}`),
       `${c.id} lists its own subtype in alsoFails, which double-counts one failure`);
   }
+});
+
+test("every case carries the metadata that makes it REVIEWABLE", () => {
+  // `preflight` requires task, source and mutation on every case, and four families never had them —
+  // route-title-stale, focus-order-tabindex, skip-link-broken, keyboard-unreachable-action — so 21 cases
+  // failed it for as long as those criteria have existed. Measured 2026-08-26: 46 preflight failures,
+  // identical on the previous commit, so nothing about the furniture change caused them.
+  //
+  // Asserted HERE as well as in preflight because preflight needs generated pages on disk and this needs
+  // nothing: a case added without its metadata fails in a second rather than after a generate.
+  //
+  // The fields are not bookkeeping. "What was the user doing", "where does this failure come from" and
+  // "what exactly was changed" are what let somebody check a label rather than trust it, and a corpus of
+  // labels nobody can check is the thing this project measures everything against.
+  const incomplete: string[] = [];
+  for (const testCase of CASES as Array<Record<string, unknown>>) {
+    const missing = ["task", "source", "mutation"].filter((field) => !testCase[field]);
+    if (missing.length) incomplete.push(`${testCase.id} (no ${missing.join(", ")})`);
+  }
+  assert.deepEqual(incomplete, [],
+    "these cases cannot be reviewed: a label with no task, source or mutation is a claim with no way to "
+    + "check it. `npm run training:preflight` refuses them too, but only after generating 1401 pages.");
 });
