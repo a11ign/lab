@@ -78,8 +78,20 @@ export function selectCases(cases, only) {
   if (!only) return cases;
   const wanted = only.split(",").map((s) => s.trim()).filter(Boolean);
   const ids = new Set(cases.map(({ id }) => id));
-  return cases.filter(({ id }) =>
-    wanted.some((want) => (ids.has(want) ? id === want : id.includes(want))));
+  // A TRAILING `+` MEANS "this case and everything built from it".
+  //
+  // The exact-id rule above is right and cannot be relaxed: `form-error-silent` is a real id and a prefix
+  // of ~90 others, so asking for it must mean that one. But the FAMILY is what a corpus change usually
+  // touches — a base case plus its `+also-` and `+with-` variants — and there was no way to say it.
+  // Measured 2026-08-26: `--only=route-title-stale` to prove a furniture fix captured 1 case of 7, and
+  // the four uncaptured ones stayed stale while the run reported success.
+  //
+  // `route-title-stale+` is unambiguous because `+` is the variant separator, so it cannot collide with
+  // an id: no case is named `X+` and every variant of X begins `X+`.
+  return cases.filter(({ id }) => wanted.some((want) => {
+    if (want.endsWith("+")) return id === want.slice(0, -1) || id.startsWith(want);
+    return ids.has(want) ? id === want : id.includes(want);
+  }));
 }
 
 // `requestJson`, not `fetch`: a capture can hold the connection well past undici's 300 s headers cap,

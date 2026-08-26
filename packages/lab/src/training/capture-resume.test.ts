@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { CASES } from "./case-matrix.mjs";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -67,4 +68,30 @@ test("resume does not trust pre-cache captures with no provenance", () => {
     cache: false,
   }), new Set());
   rmSync(root, { recursive: true, force: true });
+});
+
+test("`--only=X+` selects the family; `--only=X` still means exactly X", () => {
+  // The exact-id rule cannot be relaxed — `form-error-silent` is a real id AND a prefix of ~90 others, so
+  // asking for it must mean that one. But a corpus change usually touches a FAMILY: a base case plus its
+  // `+also-` and `+with-` variants, and there was no way to say so.
+  //
+  // Measured 2026-08-26: `--only=route-title-stale`, used to prove a furniture fix before committing a
+  // four-hour recapture, captured 1 case of 7. The run reported success and four cases stayed stale — the
+  // targeted-verification loop giving a confident partial answer, which is worse than no answer.
+  //
+  // `+` is unambiguous because it is the variant separator: no case is named `X+`, and every variant of
+  // X begins `X+`.
+  const ids = new Set(CASES.map((c: { id: string }) => c.id));
+  const pick = (only: string) => (CASES as Array<{ id: string }>).filter(({ id }) =>
+    only.split(",").map((s) => s.trim()).some((want) => {
+      if (want.endsWith("+")) return id === want.slice(0, -1) || id.startsWith(want);
+      return ids.has(want) ? id === want : id.includes(want);
+    })).length;
+
+  assert.equal(pick("route-title-stale"), 1, "an exact id must still mean exactly that case");
+  assert.ok(pick("route-title-stale+") > 1, "a trailing + must reach the variants");
+  assert.equal(pick("route-title-stale+"), pick("route-title-stale") + 6,
+    "the family is the base case plus its variants — 7 for this subtype");
+  // The rule that made exact matching necessary in the first place, still holding.
+  assert.equal(pick("form-error-silent"), 1, "a prefix of ~90 other ids must not sweep them");
 });
