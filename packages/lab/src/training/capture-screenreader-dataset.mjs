@@ -21,6 +21,16 @@ import { drainAcrossPool } from "./worker-pool.mjs";
 import { previouslyCaptured } from "./capture-resume.mjs";
 import { leasePageServer } from "./page-server.mjs";
 import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * a typo here costs a full corpus run: `--resmue` silently means a fresh capture of 1,061 pairs.
+ *
+ * An unrecognised flag is otherwise IGNORED — every CLI here parses argv by looking for the flags it
+ * knows — so it runs the default and reports success. See `cli-flags.mjs`.
+ */
+refuseUnknownFlags(["--only=", "--resume", "--no-cache", "--allow-stale-workers", "--allow-battery"],
+  { command: "npm run training:capture" });
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
 const MANIFEST_PATH = resolve(ROOT, "manifest.json");

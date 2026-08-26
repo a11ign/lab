@@ -29,6 +29,16 @@ import { resolve, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { releasability } from "../src/packaging/releasability.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * the most dangerous silent default here: a mistyped `--dry-run` PROMOTES.
+ *
+ * An unrecognised flag is otherwise IGNORED — every CLI here parses argv by looking for the flags it
+ * knows — so it runs the default and reports success. See `cli-flags.mjs`.
+ */
+refuseUnknownFlags(["--from=", "--dry-run", "--accept-regression"],
+  { command: "npm run promote:model" });
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const SHIPPED = resolve(REPO, "packages/scorer/models/screenreader-scorer");

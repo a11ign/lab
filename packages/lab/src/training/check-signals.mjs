@@ -23,6 +23,17 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { signalMatches } from "./case-matrix.mjs";
 import { hasUsableCaptureFiles } from "./capture-resume.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * a mistyped `--require-complete` scores whatever happens to be on disk and passes — a check that
+ * reports success having examined a partial corpus.
+ *
+ * An unrecognised flag is otherwise IGNORED — every CLI here parses argv by looking for the flags it
+ * knows — so it runs the default and reports success. See `cli-flags.mjs`.
+ */
+refuseUnknownFlags(["--only=", "--require-complete"],
+  { command: "npm run training:check-signals" });
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
 const MANIFEST_PATH = resolve(ROOT, "manifest.json");

@@ -22,7 +22,20 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { isTransient } from "./capture-decisions.mjs";
 import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../../worker-fleet/src/worker-http.mjs";
 import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
+import { assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { captureIsSelfConsistent } from "@a11y-witness/evidence/verify";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * `--probe-forms` and `--probe-tables` are how a canary reaches the fields that carry interaction
+ * evidence, and a canary that cannot express the fault is worthless.
+ *
+ * An unrecognised flag is otherwise IGNORED — every CLI here parses argv by looking for the flags it
+ * knows — so it runs the default and reports success. See `cli-flags.mjs`.
+ */
+refuseUnknownFlags(["--url=", "--worker=", "--times=", "--steps=", "--task=", "--browser=", "--out=",
+   "--probe-forms", "--probe-tables", "--reuse"],
+  { command: "npm run training:repeat" });
 
 const arg = (name, fallback = null) => {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -30,7 +43,12 @@ const arg = (name, fallback = null) => {
 };
 
 const URL_ARG = arg("url");
+// VALIDATED, not merely truthy. `http://:8765` is a truthy string that `new URL` rejects, and every
+// client that took it on trust spent five minutes per page in readiness timeouts recorded as a failure
+// of the PAGE. This one read `--worker` through the `arg()` helper, so the discovery test that requires
+// exactly this could not see it until the flag was named literally in the file.
 const WORKER = arg("worker", process.env.A11Y_WORKER);
+if (WORKER) assertWorkerUrl(WORKER);
 const TIMES = Number(arg("times", "5"));
 const STEPS = Number(arg("steps", "10"));
 const PROBE_TABLES = process.argv.includes("--probe-tables");
