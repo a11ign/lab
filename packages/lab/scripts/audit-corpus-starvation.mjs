@@ -117,8 +117,28 @@ function featureValues(path) {
   const script = "import json,sys; sys.path.insert(0,'packages/scorer/python');\n"
     + "import screenreader_features as F;\n"
     + "print(json.dumps([F.structured_feature_values(json.loads(l)) for l in open(sys.argv[1]) if l.strip()]))";
-  return JSON.parse(execFileSync(PYTHON, ["-c", script, path],
-    { cwd: REPO, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }));
+  try {
+    return JSON.parse(execFileSync(PYTHON, ["-c", script, path],
+      { cwd: REPO, encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }));
+  } catch (cause) {
+    // A STALE EXPORT IS NOT A BROKEN TOOL, and it read as one: a record written before the `parsed` block
+    // existed raises a RuntimeError inside the featurizer, and this surfaced it as a raw node traceback
+    // with a Python stack inside it. Measured 2026-08-26 — the same fault `audit_grants.py` already turns
+    // into a named refusal, here uncaught.
+    //
+    // The distinction matters because the two need opposite responses: re-export, versus debug the
+    // featurizer. An audit that cannot tell them apart sends its reader at the wrong one.
+    const stderr = String(cause.stderr ?? "");
+    if (stderr.includes("no `parsed` block")) {
+      process.stderr.write("\n  STALE EXPORT — this copy of the dataset predates the announcement parse,\n"
+        + "  so the featurizer cannot read it. That is a fact about the FILE, not a defect in the corpus.\n"
+        + `  Re-export it, or ask the lab, which holds the current one:\n`
+        + "    npm run lab:job -- -e job=export\n"
+        + "    npm run lab:job -- -e job=starvation\n");
+      process.exit(2);
+    }
+    throw cause;
+  }
 }
 
 function starvation() {
