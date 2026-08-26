@@ -60,8 +60,11 @@ const escapeHtml = (value) => String(value)
  *   what those channels contain.
  * - **No vague link text.** `regex` signals match `link, read more|learn more`, and 2.4.4's own rule bars
  *   the phrase family, so filler links are all specific.
- * - **Headings are safe** — `missing-heading` asserts a NAMED heading is absent, not that none exist, so
- *   distinctly-worded filler cannot satisfy it. Sequence numbers make collision impossible.
+ * - **Headings are safe for `missing-heading`** — it asserts a NAMED heading is absent, not that none
+ *   exist, so distinctly-worded filler cannot satisfy it. Sequence numbers make collision impossible.
+ *   **Not safe for `structure-empty` on `headings`**, which asserts there are NONE: furniture sections
+ *   would supply them and quietly void the case. `withRealisticScale` drops sections for those, the same
+ *   way it drops the furniture table from a case that drives tables itself.
  */
 function filler(bucket) {
   const { links: linkCount, sections: sectionCount } = bucket;
@@ -158,8 +161,17 @@ function dataTable(bucket) {
     + "<tr><td>Site safety</td><td>2019</td></tr></table>";
 }
 
+/**
+ * `heading` may be FALSE, for a page that genuinely has none.
+ *
+ * It was unconditional, and that one line is why `1.3.1`'s missing-headings rule could never fire on
+ * anything: every generated page carried an `h1` by construction, so across 2,366 records the count with
+ * zero headings was 0 and the gate reported "NEVER FIRED ANYWHERE — the claim rests on nothing". A page
+ * with no headings at all is a real and common failure — a screen reader user skims BY heading, so a page
+ * without any forces a line-by-line read to find anything — and the corpus simply could not express it.
+ */
 function page({ title, heading, body, script = "", landmark = true }) {
-  const content = "<h1>" + escapeHtml(heading) + "</h1>" + body;
+  const content = (heading ? "<h1>" + escapeHtml(heading) + "</h1>" : "") + body;
   const container = landmark ? "<main>" + content + "</main>" : content;
   return "<!doctype html>\n"
     + "<html lang=\"en\">\n"
@@ -177,7 +189,12 @@ function defaultSubtype({ id, criterion, badSignal }) {
     if (id.includes("filename")) return "filename-alt";
   }
   if (criterion === "1.3.1") {
-    if (badSignal.type === "structure-empty") return "missing-landmark";
+    // KEYED ON THE FIELD, because `structure-empty` says only "this channel is empty" and the channel is
+    // the whole claim. It returned `missing-landmark` for every one, so a headings case would have been
+    // labelled as a landmarks failure — a label for a defect the page does not have.
+    if (badSignal.type === "structure-empty") {
+      return badSignal.field === "headings" ? "no-headings" : "missing-landmark";
+    }
     if (badSignal.type === "missing-heading") return "fake-heading";
     if (badSignal.type === "table-unassociated") return "unassociated-table";
   }
@@ -358,6 +375,106 @@ const cases = [
       title: "Library services",
       heading: "Library services",
       body: "<div class=\"fake-heading\">Borrowing books</div><p>Members may borrow six books.</p><div class=\"fake-heading\">Contact and opening hours</div><p>The desk is open until eight on weekdays.</p>",
+    }),
+  }),
+  pair({
+    id: "headings-none-refunds",
+    criterion: "1.3.1",
+    task: "Find out how long a refund takes.",
+    source: "Web Content Accessibility Guidelines, Understanding SC 1.3.1",
+    mutation: "The policy is one undifferentiated wall of text with no headings to skim by.",
+    badSignal: { type: "structure-empty", field: "headings" },
+    good: page({
+      title: "Refunds policy",
+      heading: "Refunds policy",
+      body: "<h2>Requesting a refund</h2><p>You may request a refund within thirty days of delivery.</p><p>Refunds are issued to the original payment method.</p><p>We cannot refund postage on an unwanted item.</p><h2>How long it takes</h2><p>Card refunds appear within five working days.</p><p>Bank transfers can take up to ten working days.</p><p>We will email you when the refund is sent.</p><h2>Faulty items</h2><p>A faulty item is refunded in full, including postage.</p><p>Keep the packaging until the refund has cleared.</p><p>Photographs of the fault help us process the claim.</p><p>Faulty electrical goods are collected rather than returned by post.</p><p>We do not charge a restocking fee on faulty goods.</p><p>A replacement may be offered instead, at your choice.</p>",
+    }),
+    bad: page({
+      title: "Refunds policy",
+      // NO heading, and none in the body either. This is the defect: a screen reader user skims by
+      // jumping heading to heading, so a page with none forces a line-by-line read to find anything.
+      heading: false,
+      body: "<p>You may request a refund within thirty days of delivery.</p><p>Refunds are issued to the original payment method.</p><p>We cannot refund postage on an unwanted item.</p><p>Card refunds appear within five working days.</p><p>Bank transfers can take up to ten working days.</p><p>We will email you when the refund is sent.</p><p>A faulty item is refunded in full, including postage.</p><p>Keep the packaging until the refund has cleared.</p><p>Photographs of the fault help us process the claim.</p><p>Faulty electrical goods are collected rather than returned by post.</p><p>We do not charge a restocking fee on faulty goods.</p><p>A replacement may be offered instead, at your choice.</p>",
+    }),
+  }),
+  pair({
+    id: "headings-none-booking",
+    criterion: "1.3.1",
+    task: "Check what time you need to arrive.",
+    source: "Web Content Accessibility Guidelines, Understanding SC 1.3.1",
+    mutation: "A confirmation page runs every section together with no headings.",
+    badSignal: { type: "structure-empty", field: "headings" },
+    good: page({
+      title: "Booking confirmed",
+      heading: "Booking confirmed",
+      body: "<h2>Your appointment</h2><p>Your appointment is confirmed for Tuesday at half past two.</p><p>Please arrive fifteen minutes early.</p><p>Bring photographic identification with you.</p><h2>Getting here</h2><p>The entrance is on Wellgate, beside the pharmacy.</p><p>Step-free access is available from the rear car park.</p><p>Parking is free for the first two hours.</p><h2>If you cannot attend</h2><p>Cancel at least one working day in advance.</p><p>A missed appointment may be charged at the full rate.</p><p>You can rebook online at any time.</p><p>Telephone bookings are taken between nine and five.</p><p>Interpreters can be arranged with three days' notice.</p><p>A carer may attend with you at no extra cost.</p>",
+    }),
+    bad: page({
+      title: "Booking confirmed",
+      // NO heading, and none in the body either. This is the defect: a screen reader user skims by
+      // jumping heading to heading, so a page with none forces a line-by-line read to find anything.
+      heading: false,
+      body: "<p>Your appointment is confirmed for Tuesday at half past two.</p><p>Please arrive fifteen minutes early.</p><p>Bring photographic identification with you.</p><p>The entrance is on Wellgate, beside the pharmacy.</p><p>Step-free access is available from the rear car park.</p><p>Parking is free for the first two hours.</p><p>Cancel at least one working day in advance.</p><p>A missed appointment may be charged at the full rate.</p><p>You can rebook online at any time.</p><p>Telephone bookings are taken between nine and five.</p><p>Interpreters can be arranged with three days' notice.</p><p>A carer may attend with you at no extra cost.</p>",
+    }),
+  }),
+  pair({
+    id: "headings-none-outage",
+    criterion: "1.3.1",
+    task: "Find out when the service will be back.",
+    source: "Web Content Accessibility Guidelines, Understanding SC 1.3.1",
+    mutation: "A status notice presents unrelated updates as one continuous block.",
+    badSignal: { type: "structure-empty", field: "headings" },
+    good: page({
+      title: "Service status",
+      heading: "Service status",
+      body: "<h2>Current status</h2><p>Online applications are unavailable this morning.</p><p>Saved drafts have not been affected.</p><p>We expect the service to return by midday.</p><h2>What you can still do</h2><p>Telephone applications are being taken as usual.</p><p>Existing appointments are running normally.</p><p>Payments already submitted have gone through.</p><h2>Why this happened</h2><p>A scheduled upgrade ran longer than planned.</p><p>No personal data was affected at any point.</p><p>The upgrade will be rescheduled for a weekend.</p><p>We will publish a fuller explanation next week.</p><p>Subscribers to the status feed were notified at seven.</p><p>Compensation is not payable for a planned upgrade.</p>",
+    }),
+    bad: page({
+      title: "Service status",
+      // NO heading, and none in the body either. This is the defect: a screen reader user skims by
+      // jumping heading to heading, so a page with none forces a line-by-line read to find anything.
+      heading: false,
+      body: "<p>Online applications are unavailable this morning.</p><p>Saved drafts have not been affected.</p><p>We expect the service to return by midday.</p><p>Telephone applications are being taken as usual.</p><p>Existing appointments are running normally.</p><p>Payments already submitted have gone through.</p><p>A scheduled upgrade ran longer than planned.</p><p>No personal data was affected at any point.</p><p>The upgrade will be rescheduled for a weekend.</p><p>We will publish a fuller explanation next week.</p><p>Subscribers to the status feed were notified at seven.</p><p>Compensation is not payable for a planned upgrade.</p>",
+    }),
+  }),
+  pair({
+    id: "headings-none-guide",
+    criterion: "1.3.1",
+    task: "Work out which office to attend.",
+    source: "Web Content Accessibility Guidelines, Understanding SC 1.3.1",
+    mutation: "A step-by-step guide is written as continuous prose with no headings.",
+    badSignal: { type: "structure-empty", field: "headings" },
+    good: page({
+      title: "Registering a birth",
+      heading: "Registering a birth",
+      body: "<h2>Before you go</h2><p>Register the birth within forty-two days.</p><p>You will need the hospital's notification of birth.</p><p>Both parents may attend, but only one is required.</p><h2>At the office</h2><p>The registrar will ask for the child's full name.</p><p>Names cannot be changed casually once registered.</p><p>You may buy certified copies on the day.</p><h2>Afterwards</h2><p>The short certificate is free of charge.</p><p>A full certificate carries a fee.</p><p>Certificates are needed for a passport application.</p><p>Copies ordered later are posted within a week.</p><p>Corrections after registration require evidence.</p><p>The register cannot be amended by telephone.</p>",
+    }),
+    bad: page({
+      title: "Registering a birth",
+      // NO heading, and none in the body either. This is the defect: a screen reader user skims by
+      // jumping heading to heading, so a page with none forces a line-by-line read to find anything.
+      heading: false,
+      body: "<p>Register the birth within forty-two days.</p><p>You will need the hospital's notification of birth.</p><p>Both parents may attend, but only one is required.</p><p>The registrar will ask for the child's full name.</p><p>Names cannot be changed casually once registered.</p><p>You may buy certified copies on the day.</p><p>The short certificate is free of charge.</p><p>A full certificate carries a fee.</p><p>Certificates are needed for a passport application.</p><p>Copies ordered later are posted within a week.</p><p>Corrections after registration require evidence.</p><p>The register cannot be amended by telephone.</p>",
+    }),
+  }),
+  pair({
+    id: "headings-none-directory",
+    criterion: "1.3.1",
+    task: "Find the number for planning enquiries.",
+    source: "Web Content Accessibility Guidelines, Understanding SC 1.3.1",
+    mutation: "A contact directory lists every team as plain paragraphs with no headings.",
+    badSignal: { type: "structure-empty", field: "headings" },
+    good: page({
+      title: "Who to contact",
+      heading: "Who to contact",
+      body: "<h2>Housing</h2><p>Housing repairs are reported on the repairs line.</p><p>Rent enquiries are handled by the accounts team.</p><p>Homelessness support is available at any hour.</p><h2>Planning</h2><p>Planning enquiries are taken weekday mornings.</p><p>Applications are viewed at the planning counter.</p><p>Objections must be submitted in writing.</p><h2>Everything else</h2><p>Council tax questions go to the revenues team.</p><p>School admissions are handled by the county.</p><p>Licensing enquiries are taken by email only.</p><p>Environmental health responds within two working days.</p><p>Bulky waste collections are booked online.</p><p>The switchboard can transfer you to any team.</p>",
+    }),
+    bad: page({
+      title: "Who to contact",
+      // NO heading, and none in the body either. This is the defect: a screen reader user skims by
+      // jumping heading to heading, so a page with none forces a line-by-line read to find anything.
+      heading: false,
+      body: "<p>Housing repairs are reported on the repairs line.</p><p>Rent enquiries are handled by the accounts team.</p><p>Homelessness support is available at any hour.</p><p>Planning enquiries are taken weekday mornings.</p><p>Applications are viewed at the planning counter.</p><p>Objections must be submitted in writing.</p><p>Council tax questions go to the revenues team.</p><p>School admissions are handled by the county.</p><p>Licensing enquiries are taken by email only.</p><p>Environmental health responds within two working days.</p><p>Bulky waste collections are booked online.</p><p>The switchboard can transfer you to any team.</p>",
     }),
   }),
   pair({
@@ -1819,7 +1936,18 @@ function withRealisticScale(list) {
     // the furniture table is conformant, so `tableHeadersAreUnassociated` cannot see it — but because
     // `probeTables` walks the page's tables, and a second one changes what the case's own probe reports.
     // These cases already carry `table_present`, so the correlation this furniture breaks is not theirs.
-    const usable = testCase.probeTables ? { ...bucket, dataTable: false } : bucket;
+    let usable = testCase.probeTables ? { ...bucket, dataTable: false } : bucket;
+    // SAME RULE, applied to headings. Four of the five buckets add `sections: 4`, and furniture is dealt
+    // round-robin within a subtype — so four of every five `no-headings` cases would silently be given
+    // headings and stop testing anything, while `check-signals` reported them as not discriminating.
+    //
+    // This is the principle `filler()` already states for images and form fields ("150 image cases and
+    // 141 label cases are defined by exactly what those channels contain"). Headings were listed as SAFE
+    // there, and that was true while the only heading case asserted a NAMED heading was absent. It stops
+    // being true the moment a case asserts there are none.
+    if (testCase.badSignal?.type === "structure-empty" && testCase.badSignal.field === "headings") {
+      usable = { ...usable, sections: 0 };
+    }
     const extra = filler(usable);
     if (!extra) return testCase;
     // Always at the SAME structural position — before `</body>`, outside any landmark.
@@ -2300,6 +2428,12 @@ const COLLIDING_PAIRINGS = Object.freeze({
   "1.1.1:generic-alt": ["unnamed-graphic"],
   "1.1.1:filename-alt": ["unnamed-graphic"],
   "1.3.1:unassociated-table": ["position-only-table"],
+  // `generic-heading` adds a REAL <h2> — vaguely worded, which is 2.4.6's failure, but a heading all the
+  // same. On a page whose whole claim is "there are no headings" that does not merely muddy the label, it
+  // makes the assertion FALSE: `structure.headings` is no longer empty, so the case stops testing
+  // anything while still being labelled a 1.3.1 positive. Caught by generating the pages and grepping the
+  // markup for `<h1-6>`; 5 of the 29 variants carried one.
+  "1.3.1:no-headings": ["generic-heading"],
 });
 
 /**

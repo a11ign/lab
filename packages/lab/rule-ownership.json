@@ -197,6 +197,19 @@
       "decidedBy": "rules",
       "reportsAs": "4.1.2",
       "note": "MOVED from the model on 2026-08-24, reversing a decision made on accuracy alone. The model scored 59/0/0 and a deterministic rule had been written and measured at 69/69 EXACT with no false positives across 1,001 conformant records -- so a rule looked redundant. It is not, because the two layers differ in what they may CLAIM, not only in how often they are right: a model finding carries no `mapping`, which means `secondary`, which `criterionOutcomes` reports as `cantTell`. A rule may be conformance-mapped and assert. `compare-layers.mjs` names this exact criterion as the difference between this tool and a static scanner -- axe can see that `aria-expanded` exists and cannot see that it never changes -- so the one finding nothing else can make was being reported as a maybe. Re-measured on the whole corpus after the move: 69 true positives, 0 false positives, 0 false negatives across 144 captures carrying state evidence."
+    },
+    "1.3.1:no-headings": {
+      "decidedBy": "rules",
+      "reportsAs": "1.3.1",
+      "note": [
+        "Deterministic, and gated on the AX tree CONFIRMING zero headings rather than on the sweep finding",
+        "none -- a sweep alone cannot tell 'this page has none' from 'we could not ask'. That makes it a",
+        "rule and not a judgement, the same move ADR 0021 made for 4.1.2:state-change-silent.",
+        "",
+        "Added 2026-08-26 with the five `headings-none-*` cases. Before them the rule was UNTESTABLE: page()",
+        "emitted an <h1> unconditionally, so across 2,366 records the count with zero headings was 0 and",
+        "rules:coverage read 'NEVER FIRED ANYWHERE -- the claim rests on nothing'."
+      ]
     }
   }
 }
