@@ -81,9 +81,7 @@ const GATE_PROOFS: Record<string, GateProof> = {
   },
   "training:check-signals:complete": {
     catches: "a corpus signal that fires on both variants, or on neither, so a case discriminates nothing",
-    unproven: "needs runs/ — the corpus is gitignored, so a proof would skip in CI and vouch for nothing. "
-      + "`verify.corpus.test.ts` covers the adjacent claim (no gating predicate rejects real evidence) and "
-      + "skips honestly when the corpus is absent",
+    provenBy: "packages/lab/src/training/signal-predicates-discriminate.test.ts",
   },
   "rules:gate": {
     catches: "a rule that scores well by having gone DEAF — quieter is only good if it still fires on the "
@@ -150,7 +148,7 @@ const GATE_PROOFS: Record<string, GateProof> = {
 };
 
 /** Gates whose refusal has been WATCHED. May only rise. */
-const PROVEN_AT_LEAST = 7;
+const PROVEN_AT_LEAST = 8;
 
 function gatesInUse(): string[] {
   const chain = STEPS.filter((step: { gate?: boolean }) => step.gate)
