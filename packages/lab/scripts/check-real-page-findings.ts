@@ -241,14 +241,14 @@ function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
  * safe and orchestrating the run are two different things.
  */
 function updateBaseline(current: Record<string, string[]>, pages: number): number {
-  const stale = staleBaselineKeys(current);
+  const stale = staleBaselineKeys(current, readBaseline());
   if (stale.length) {
     process.stdout.write(`\n  ${stale.length} baseline key(s) name a URL the corpus no longer declares — `
       + "dropping them,\n  because the page was renamed or removed on purpose and the old address is the "
       + "stale record:\n");
     for (const url of stale) process.stdout.write(`    ${url.replace(/^https:\/\//, "")}\n`);
   }
-  const dropped = pagesTheUpdateWouldDrop(current);
+  const dropped = pagesTheUpdateWouldDrop(current, readBaseline());
   if (dropped.length && !ALLOW_PARTIAL) {
     refuseToWriteFromPartialCoverage(dropped);
     return 2;
@@ -287,8 +287,10 @@ function updateBaseline(current: Record<string, string[]>, pages: number): numbe
  * scoring what happens to be on disk, and `evidence:check` returns INCONCLUSIVE on PARTIAL coverage
  * rather than only on zero. A claim written from evidence we do not have is worse than no claim.
  */
-function pagesTheUpdateWouldDrop(current: Record<string, string[]>): Array<{ url: string; findings: string[] }> {
-  const baseline = readBaseline();
+export function pagesTheUpdateWouldDrop(
+  current: Record<string, string[]>,
+  baseline: Record<string, string[]> | null,
+): Array<{ url: string; findings: string[] }> {
   if (!baseline) return [];
   return Object.entries(baseline)
     .filter(([url]) => !(url in current))
@@ -309,8 +311,10 @@ function pagesTheUpdateWouldDrop(current: Record<string, string[]>): Array<{ url
 }
 
 /** Baseline keys the corpus no longer declares — reported, never refused. */
-function staleBaselineKeys(current: Record<string, string[]>): string[] {
-  const baseline = readBaseline();
+export function staleBaselineKeys(
+  current: Record<string, string[]>,
+  baseline: Record<string, string[]> | null,
+): string[] {
   if (!baseline) return [];
   return Object.keys(baseline)
     .filter((url) => !(url in current) && !REAL_PAGES.some((page) => page.url === url));
