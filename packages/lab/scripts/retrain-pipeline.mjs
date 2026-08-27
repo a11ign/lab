@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The whole retrain, as ONE command.
  *
@@ -58,6 +59,11 @@ const STEPS = [
  * `everything-pipeline.mjs`, which is the same shape over a longer chain. `step.args` are appended after
  * npm's `--`, for the steps that take one; a step without them is unchanged.
  */
+/**
+ * @param {{ name: string, why: string, script: string, args?: string[] }} step
+ * @param {{ dryRun?: boolean }} options
+ * @returns {{ ok: boolean, output: string, error?: unknown }}
+ */
 export function run(step, { dryRun }) {
   process.stdout.write(`\n=== ${step.name}\n    ${step.why}\n`);
   if (dryRun) return { ok: true, output: "(dry run)" };
@@ -76,10 +82,14 @@ export function run(step, { dryRun }) {
     //
     // A caught error whose message is discarded is worse than an uncaught one: this repo's rule is that a
     // caught-and-LOGGED error is not a handled error, and this was caught and not even logged.
-    const stderr = (cause.stderr ?? "").trim();
-    process.stdout.write(`${(cause.stdout ?? "").split("\n").slice(-12).join("\n")}\n`);
+    // The thrown value from `execFileSync`, typed so its captured streams are readable. `cause` is
+    // `unknown` under strict, and this block exists precisely to PRINT those streams -- the repo's rule
+    // that a caught-and-logged error is not a handled one, with the logging half restored.
+    const failure = /** @type {{ stdout?: string, stderr?: string }} */ (cause);
+    const stderr = (failure.stderr ?? "").trim();
+    process.stdout.write(`${(failure.stdout ?? "").split("\n").slice(-12).join("\n")}\n`);
     if (stderr) process.stdout.write(`--- stderr ---\n${stderr.split("\n").slice(-20).join("\n")}\n`);
-    return { ok: false, output: `${cause.stdout ?? ""}${stderr}`, error: cause };
+    return { ok: false, output: `${failure.stdout ?? ""}${stderr}`, error: cause };
   }
 }
 
@@ -90,8 +100,9 @@ export function run(step, { dryRun }) {
  * definition would let a candidate look shippable here and be refused there, which is how a release
  * process comes to be argued with rather than trusted.
  */
+/** @param {string} candidateDirectory */
 function verdict(candidateDirectory) {
-  const read = (path) => (existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null);
+  const read = (/** @type {string} */ path) => (existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null);
   const shipped = resolve(REPO, "packages/scorer/models/screenreader-scorer");
   return releasability({
     training: read(resolve(candidateDirectory, "training-report.json")),

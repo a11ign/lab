@@ -1,8 +1,9 @@
+// @ts-check
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { cacheKey, hashPageDir } from "./capture-cache.mjs";
 
-const hasTranscript = (capture) =>
+const hasTranscript = (/** @type {{ screenReader?: string, transcript?: unknown[] } | null} */ capture) =>
   capture?.screenReader === "NVDA" && Array.isArray(capture.transcript) && capture.transcript.length > 0;
 
 /**
@@ -43,6 +44,9 @@ export const TEST_GRADE = process.env.A11Y_DATASET_GRADE === "test";
  *
  * So the caller says which question it is asking. The export passes `TEST_GRADE`; resume never does.
  */
+/**
+ * @param {{ id: string, captureRoot: string, pageRoot: string, acceptStalePages?: boolean }} request
+ */
 export function hasUsableCaptureFiles({ id, captureRoot, pageRoot, acceptStalePages = false }) {
   let pageHash;
   try {
@@ -82,6 +86,14 @@ export function hasUsableCaptureFiles({ id, captureRoot, pageRoot, acceptStalePa
   });
 }
 
+/**
+ * @param {{ cases: { id: string }[],
+ *           previous: { cases?: Record<string, { status?: string, reason?: string }> } | null,
+ *           captureRoot: string, pageRoot: string, resume?: boolean, cache?: boolean }} request
+ *   `previous.cases` is the progress file's map, whose entries carry a `status` and, when that
+ *   status is `failed`, the `reason` the retry rule reads.
+ * @returns {Set<string>}
+ */
 export function previouslyCaptured({ cases, previous, captureRoot, pageRoot, resume, cache }) {
   if (!resume || cache) return new Set();
   const allowed = new Set(cases.map(({ id }) => id));
