@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Why did the scorer decide that? — the question this project asks after every surprising result.
  *
@@ -34,19 +35,19 @@ const RUNS = resolve(process.cwd(), process.env.RUNS_ROOT || "runs");
  * printed usage instead of an answer. A tool whose help contradicts its parser is worse than one with no
  * help: the reader trusts it and is wrong.
  */
-const arg = (name) => {
+const arg = (/** @type {any} */ name) => {
   const argv = process.argv;
   const joined = argv.find((a) => a.startsWith(`--${name}=`));
   if (joined) return joined.slice(name.length + 3);
   const at = argv.indexOf(`--${name}`);
   return at >= 0 && argv[at + 1] && !argv[at + 1].startsWith("--") ? argv[at + 1] : undefined;
 };
-const listArg = (name) => (arg(name) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+const listArg = (/** @type {any} */ name) => (arg(name) ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
-const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
+const readJson = (/** @type {any} */ path) => JSON.parse(readFileSync(path, "utf8"));
 
 /** A model's acceptance report, or a clear explanation of what is missing. */
-function acceptance(model) {
+function acceptance(/** @type {any} */ model) {
   const path = resolve(RUNS, `model-${model}`, "acceptance-report.json");
   if (!existsSync(path)) {
     const have = existsSync(RUNS) ? readdirSync(RUNS).filter((d) => d.startsWith("model-")) : [];
@@ -58,10 +59,10 @@ function acceptance(model) {
 }
 
 /** Per-criterion counts, for the models named. The table this project keeps rebuilding. */
-export function compareTable(reports) {
-  const criteria = [...new Set(reports.flatMap(([, r]) =>
+export function compareTable(/** @type {any} */ reports) {
+  const criteria = [...new Set(reports.flatMap((/** @type {[string, any]} */ [, r]) =>
     Object.entries(r.criteria).filter(([, c]) => c.modelEvaluated).map(([n]) => n)))].sort();
-  const lines = [`${"criterion".padEnd(10)}${reports.map(([n]) => n.padEnd(24)).join("")}`];
+  const lines = [`${"criterion".padEnd(10)}$/** @type {any} */ {reports.map(([n]) => n.padEnd(24)).join("")}`];
   for (const name of criteria) {
     let row = name.padEnd(10);
     for (const [, report] of reports) {
@@ -92,7 +93,7 @@ export function compareTable(reports) {
 }
 
 /** Which cases a criterion got wrong, named, with the cut that decided them. */
-export function criterionDetail(report, criterion) {
+export function criterionDetail(/** @type {any} */ report, /** @type {any} */ criterion) {
   const c = report.criteria?.[criterion];
   if (!c) return [`no criterion '${criterion}' in this report`];
   if (!c.modelEvaluated) return [`${criterion} is not model-evaluated here (decisionOwner: ${c.decisionOwner})`];
@@ -108,15 +109,15 @@ export function criterionDetail(report, criterion) {
 }
 
 /** A head's document-feature weights, largest magnitude first — where a decision actually comes from. */
-export function weightTable(report, subtype, weights, featureNames) {
+export function weightTable(/** @type {any} */ report, /** @type {any} */ subtype, /** @type {any} */ weights, /** @type {any} */ featureNames) {
   for (const criterion of Object.values(report.criteria ?? {})) {
     for (const [name, sub] of Object.entries(criterion.subtypes ?? {})) {
       if (name !== subtype) continue;
       const vec = weights[`${sub.head}.weight`];
       const doc = vec.slice(vec.length - featureNames.length);
-      const ranked = featureNames.map((n, i) => [n, doc[i]]).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+      const ranked = featureNames.map((/** @type {any} */ n, /** @type {any} */ i) => [n, doc[i]]).sort((/** @type {any} */ a, /** @type {any} */ b) => Math.abs(b[1]) - Math.abs(a[1]));
       return [`${subtype}  head=${sub.head}  pooling=${sub.pooling ?? "document-mean"}  threshold=${sub.threshold}`,
-        ...ranked.slice(0, 10).map(([n, v]) => `  ${n.padEnd(34)} ${v >= 0 ? "+" : ""}${v.toFixed(3)}`)];
+        ...ranked.slice(0, 10).map((/** @type {[string, number]} */ [n, v]) => `  ${n.padEnd(34)} ${v >= 0 ? "+" : ""}${v.toFixed(3)}`)];
     }
   }
   return [`no subtype '${subtype}' in this training report`];

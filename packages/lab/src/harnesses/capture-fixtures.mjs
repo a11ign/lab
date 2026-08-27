@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Recapture eval fixtures — over a live worker, or in-process on the capture guest.
  *
@@ -62,11 +63,21 @@ const EVAL_ROOT = resolve(HERE, "../eval");
 const DEFAULT_STEPS = 150;
 const DEFAULT_PAGES_PORT = 5050;
 
+/**
+ * A named `--flag=value`, or the fallback.
+ *
+ * `fallback` is typed rather than inferred: defaulting to `null` infers exactly `null`, so every call
+ * that supplies a real default -- a page set, a step count, a worker from the environment -- became the
+ * type error, which is the argument that matters most here.
+ *
+ * @param {string} name
+ * @param {string | number | null} [fallback]
+ */
 const arg = (name, fallback = null) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 
 /** Every `.html` in a page set, so a page added to the directory is captured without editing a list here. */
-function pagesIn(set) {
+function pagesIn(/** @type {any} */ set) {
   const dir = resolve(EVAL_ROOT, "pages", set);
   return readdirSync(dir)
     .filter((f) => f.endsWith(".html"))
@@ -75,7 +86,7 @@ function pagesIn(set) {
 }
 
 /** One capture, over the worker's own HTTP interface — the path production uses. */
-async function captureOverWorker(url, worker, steps) {
+async function captureOverWorker(/** @type {any} */ url, /** @type {any} */ worker, /** @type {any} */ steps) {
   const response = await requestJson(`${worker}/capture`, {
     method: "POST",
     // `probeForms` ON: these are OUR pages, written to be activated, and the interaction criteria
@@ -90,12 +101,12 @@ async function captureOverWorker(url, worker, steps) {
 }
 
 /** In-process, for the Windows guest. Imported lazily so this file loads on a Mac or on Linux. */
-async function captureInProcess(url, steps) {
+async function captureInProcess(/** @type {any} */ url, /** @type {any} */ steps) {
   const { captureWithNvda } = await import("@a11y-witness/nvda-worker");
   return captureWithNvda(url, { steps, probeForms: true });
 }
 
-function report(name, result, outPath) {
+function report(/** @type {any} */ name, /** @type {any} */ result, /** @type {any} */ outPath) {
   const i = result.interaction ?? {};
   const events = (i.stateChanges ?? []).length + (i.formChanges ?? []).length;
   process.stdout.write(`  wrote ${name.padEnd(22)} ${String(result.transcript?.length ?? 0).padStart(4)}`
@@ -107,13 +118,13 @@ function report(name, result, outPath) {
 }
 
 async function main() {
-  const set = arg("set", "tutorials");
+  const set = String(arg("set", "tutorials"));
   const only = arg("only");
   const steps = Number(arg("steps", DEFAULT_STEPS));
-  const workerArg = arg("worker", process.env.A11Y_WORKER);
-  const worker = workerArg ? assertWorkerUrl(workerArg, { source: "--worker" }) : null;
+  const workerArg = arg("worker", process.env.A11Y_WORKER ?? null);
+  const worker = workerArg ? assertWorkerUrl(String(workerArg), { source: "--worker" }) : null;
 
-  const names = pagesIn(set).filter((n) => !only || n.includes(only));
+  const names = pagesIn(set).filter((/** @type {string} */ n) => !only || n.includes(String(only)));
   if (!names.length) {
     process.stderr.write(`no pages in ${set}${only ? ` matching --only=${only}` : ""}\n`);
     process.exit(2);
@@ -141,8 +152,8 @@ async function main() {
         writeFileSync(outPath, `${JSON.stringify(result, null, 2)}\n`);
         report(name, result, outPath);
       } catch (error) {
-        failed.push(`${name}: ${error.message.split("\n")[0]}`);
-        process.stdout.write(`  FAILED  ${name}: ${error.message.split("\n")[0]}\n`);
+        failed.push(`${name}: ${/** @type {any} */ (error).message.split("\n")[0]}`);
+        process.stdout.write(`  FAILED  ${name}: ${/** @type {any} */ (error).message.split("\n")[0]}\n`);
       }
     }
   } finally {

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Turn the real-page corpus's TRAINING split into training records — the realism tier (ADR 0009/0010).
  *
@@ -94,16 +95,17 @@ const OUT = resolve(REPO,
  * reason is `read-through:capped`, i.e. the 150-line `DEFAULT_STEPS` cap, which was sized for the generated
  * corpus and truncates the transcript of most real pages.
  */
-function completeCaptures(entries) {
+function completeCaptures(/** @type {any} */ entries) {
+  /** @type {any[]} */
   const rejected = [];
-  const usable = entries.filter((entry) => {
+  const usable = entries.filter((/** @type {any} */ entry) => {
     const gaps = captureWasTruncated(entry.capture?.diagnostics).filter((g) => producerFeedsModel(g.channel));
     if (!gaps.length) return true;
     rejected.push({ url: entry.capture?.url ?? "(no url recorded)", gaps });
     return false;
   });
   for (const { url, gaps } of rejected) {
-    const named = [...new Set(gaps.map((g) => `${g.channel}:${g.kind}`))].sort().join(" ");
+    const named = [...new Set(gaps.map((/** @type {any} */ g) => `${g.channel}:${g.kind}`))].sort().join(" ");
     process.stdout.write(`  REJECTED (truncated) ${url}\n      ${named}\n`);
   }
   return { usable, rejected };
@@ -116,7 +118,7 @@ function completeCaptures(entries) {
  * restructuring, a slug change -- would otherwise produce an unmasked page indistinguishable from a
  * publisher with nothing to disclose, which is precisely the bug this replaces.
  */
-function claimExcludesFor(entry) {
+function claimExcludesFor(/** @type {any} */ entry) {
   const url = entry.capture?.url;
   const page = url ? realPageFor(url) : undefined;
   if (!page) {
@@ -144,11 +146,11 @@ function claimExcludesFor(entry) {
  * the failure mode of every list this repo has had to keep in sync by hand.
  */
 const EVIDENCE_BY_CRITERION = Object.freeze({
-  "3.3.1": (interaction) => (interaction.formChanges ?? []).length > 0,
-  "4.1.3": (interaction) => (interaction.postSubmitFields ?? []).length > 0,
+  "3.3.1": (/** @type {any} */ interaction) => (interaction.formChanges ?? []).length > 0,
+  "4.1.3": (/** @type {any} */ interaction) => (interaction.postSubmitFields ?? []).length > 0,
 });
 
-export function unevaluableFor(capture) {
+export function unevaluableFor(/** @type {any} */ capture) {
   const interaction = capture?.interaction ?? {};
   return Object.entries(EVIDENCE_BY_CRITERION)
     .filter(([, hasEvidence]) => !hasEvidence(interaction))
@@ -159,7 +161,7 @@ export function unevaluableFor(capture) {
  * The head set, derived from the base corpus rather than declared here. A second list of criteria would be a
  * second source of truth, and the trainer builds its heads from these same labels.
  */
-function scoredCriteria(baseLines) {
+function scoredCriteria(/** @type {any} */ baseLines) {
   const seen = new Set();
   for (const line of baseLines) {
     for (const criterion of JSON.parse(line).target?.criteria ?? []) seen.add(criterion);
@@ -168,8 +170,8 @@ function scoredCriteria(baseLines) {
 }
 
 /** Which of the scored heads this record is masked on. Criterion-or-subtype, matching `known_indices`. */
-const maskedHeads = (record, heads) => heads.filter((head) =>
-  record.target.unknownSubtypes.some((s) => s === head || String(s).startsWith(`${head}:`)));
+const maskedHeads = (/** @type {any} */ record, /** @type {any} */ heads) => heads.filter((/** @type {any} */ head) =>
+  record.target.unknownSubtypes.some((/** @type {any} */ s) => s === head || String(s).startsWith(`${head}:`)));
 
 /**
  * The mask, VISIBLE. It was inert for its whole existence and nothing said so, because an empty mask and a
@@ -181,11 +183,11 @@ const maskedHeads = (record, heads) => heads.filter((head) =>
  * correctness without costing coverage. The pages masked on EVERY head are named for the same reason: a
  * record that is written, embedded and inert is this repo's most expensive recurring shape.
  */
-function reportMasks(records, heads) {
+function reportMasks(/** @type {any} */ records, /** @type {any} */ heads) {
   const masks = records
-    .map((r) => [r.provenance.url, maskedHeads(r, heads).length])
-    .filter(([, n]) => n > 0)
-    .sort((a, b) => b[1] - a[1]);
+    .map((/** @type {any} */ r) => [r.provenance.url, maskedHeads(r, heads).length])
+    .filter((/** @type {[string, number]} */ [, n]) => n > 0)
+    .sort((/** @type {any} */ a, /** @type {any} */ b) => b[1] - a[1]);
   process.stdout.write(`  publisher exceptions honoured: ${masks.length} of ${records.length} page(s)\n`);
   for (const [url, n] of masks.slice(0, 8)) {
     process.stdout.write(`    ${n} of ${heads.length} head(s) masked  ${url}\n`);
@@ -194,11 +196,11 @@ function reportMasks(records, heads) {
 
   process.stdout.write(`  real pages still usable, per head:\n`);
   for (const head of heads) {
-    const usable = records.filter((r) => !maskedHeads(r, heads).includes(head)).length;
+    const usable = records.filter((/** @type {any} */ r) => !maskedHeads(r, heads).includes(head)).length;
     process.stdout.write(`    ${head}: ${usable} of ${records.length}\n`);
   }
 
-  const inert = records.filter((r) => maskedHeads(r, heads).length === heads.length);
+  const inert = records.filter((/** @type {any} */ r) => maskedHeads(r, heads).length === heads.length);
   if (inert.length) {
     process.stdout.write(`  ${inert.length} page(s) masked on EVERY head -- written and embedded, but they `
       + `train nothing:\n`);
@@ -208,7 +210,7 @@ function reportMasks(records, heads) {
 
 /** One capture, as a training record. The channel contract and the publisher's claim both come from
  * elsewhere on purpose -- see the imports. */
-function recordFor(entry) {
+function recordFor(/** @type {any} */ entry) {
     const capture = entry.capture;
     return {
       // ONE builder, shared with the corpus export. These two constructed the model's input separately
@@ -263,7 +265,7 @@ function recordFor(entry) {
  * a timestamp answers a different question from the one being asked. The trainer re-hashes the source
  * itself rather than trusting anything written here, so the check shares no failure mode with the build.
  */
-function writeProvenance(baseText, records) {
+function writeProvenance(/** @type {any} */ baseText, /** @type {any} */ records) {
   const path = OUT + ".source.json";
   writeFileSync(path, JSON.stringify({
     source: relative(REPO, BASE),
@@ -315,20 +317,20 @@ function main() {
 
   const baseText = readFileSync(BASE, "utf8");
   const base = baseText.trimEnd().split("\n");
-  writeFileSync(OUT, [...base, ...records.map((r) => JSON.stringify(r))].join("\n") + "\n");
+  writeFileSync(OUT, [...base, ...records.map((/** @type {any} */ r) => JSON.stringify(r))].join("\n") + "\n");
   const provenance = writeProvenance(baseText, records);
 
   process.stdout.write(`  base records:     ${base.length}\n`);
   process.stdout.write(`  realism records:  ${records.length}  (label=clean, from each publisher's own statement)\n`);
   process.stdout.write(`  written:          ${OUT}\n`);
-  process.stdout.write(`  median units/rec: ${median(records.map((r) => r.input.evidenceUnits.length))}\n`);
+  process.stdout.write(`  median units/rec: ${median(records.map((/** @type {any} */ r) => r.input.evidenceUnits.length))}\n`);
   process.stdout.write(`  rejected as truncated: ${rejected.length} of ${entries.length}\n`);
   process.stdout.write(`  provenance:       ${provenance}\n`);
   reportMasks(records, scoredCriteria(base));
   // A real page with two evidence units would mean the capture failed, not that the page is simple. Kept as
   // a warning rather than promoted to a reject: the truncation gate above is the principled check, and this
   // is a backstop for a capture that failed in a way no sweep recorded.
-  const thin = records.filter((r) => r.input.evidenceUnits.length < 5);
+  const thin = records.filter((/** @type {any} */ r) => r.input.evidenceUnits.length < 5);
   if (thin.length) {
     process.stdout.write(`  WARNING: ${thin.length} record(s) have fewer than 5 evidence units — check the `
       + `capture before training on them:\n`);
@@ -336,7 +338,7 @@ function main() {
   }
 }
 
-const median = (xs) => {
+const median = (/** @type {any} */ xs) => {
   const s = [...xs].sort((a, b) => a - b);
   return s.length ? s[Math.floor(s.length / 2)] : 0;
 };

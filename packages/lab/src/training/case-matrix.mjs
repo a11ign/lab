@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Controlled page pairs for collecting screen-reader-only evidence.
  *
@@ -22,7 +23,7 @@ const BASE_STYLE = [
   "[hidden] { display: none; }",
 ].join("");
 
-const escapeHtml = (value) => String(value)
+const escapeHtml = (/** @type {any} */ value) => String(value)
   .replaceAll("&", "&amp;")
   .replaceAll("<", "&lt;")
   .replaceAll(">", "&gt;")
@@ -66,7 +67,7 @@ const escapeHtml = (value) => String(value)
  *   would supply them and quietly void the case. `withRealisticScale` drops sections for those, the same
  *   way it drops the furniture table from a case that drives tables itself.
  */
-function filler(bucket) {
+function filler(/** @type {any} */ bucket) {
   const { links: linkCount, sections: sectionCount } = bucket;
   if (linkCount === 0 && sectionCount === 0) return "";
   const topics = [
@@ -116,7 +117,7 @@ function filler(bucket) {
  * capture built from these announcements rather than only the regex ones, which is how it caught that
  * `placeholderOnlyIsPresent` would have been silenced by the labelled field.
  */
-function namedField(bucket) {
+function namedField(/** @type {any} */ bucket) {
   if (!bucket.namedField) return "";
   // NO `<form>` wrapper, deliberately. `probeForms` finds a form and submits it, and a second form would
   // change which one a case's own probe activates — a difference between pages that the label does not
@@ -142,7 +143,7 @@ function namedField(bucket) {
  * broken one would add a 4.1.2 failure to every page carrying it, which changes labels rather than
  * features — that is a two-defect CASE, not furniture.
  */
-function disclosure(bucket) {
+function disclosure(/** @type {any} */ bucket) {
   if (!bucket.disclosure) return "";
   return "<p><button type=\"button\" id=\"ref-notes-toggle\" aria-expanded=\"false\" "
     + "aria-controls=\"ref-notes-panel\" onclick=\"var b=this,p=document.getElementById('ref-notes-panel');"
@@ -151,7 +152,7 @@ function disclosure(bucket) {
     + "<div id=\"ref-notes-panel\" hidden><p>Archived reference notes are retained for seven years.</p></div>";
 }
 
-function dataTable(bucket) {
+function dataTable(/** @type {any} */ bucket) {
   if (!bucket.dataTable) return "";
   // Headers associated by `scope`, so this sets `table_header_associated` and NOT `table_position_only`.
   // The position-only variant is a 1.3.1 FAILURE, so it cannot be furniture — a page that needs it has to
@@ -170,7 +171,7 @@ function dataTable(bucket) {
  * with no headings at all is a real and common failure — a screen reader user skims BY heading, so a page
  * without any forces a line-by-line read to find anything — and the corpus simply could not express it.
  */
-function page({ title, heading, body, script = "", landmark = true }) {
+function page(/** @type {any} */ { title, heading, body, script = "", landmark = true }) {
   const content = (heading ? "<h1>" + escapeHtml(heading) + "</h1>" : "") + body;
   const container = landmark ? "<main>" + content + "</main>" : content;
   return "<!doctype html>\n"
@@ -182,7 +183,7 @@ function page({ title, heading, body, script = "", landmark = true }) {
     + "</body></html>";
 }
 
-function defaultSubtype({ id, criterion, badSignal }) {
+function defaultSubtype(/** @type {any} */ { id, criterion, badSignal }) {
   if (criterion === "1.1.1") {
     if (id.includes("missing")) return "missing-alt";
     if (id.includes("generic")) return "generic-alt";
@@ -202,6 +203,13 @@ function defaultSubtype({ id, criterion, badSignal }) {
   return badSignal.type;
 }
 
+/**
+ * @param {Record<string, any>} spec
+ *   Spelled out FIELD BY FIELD in the destructuring below rather than in this type, and deliberately so:
+ *   the comment inside says `pair` names every field it forwards, and that list is the contract. A
+ *   duplicate of it here would be a second copy of the one thing this function exists to be explicit
+ *   about, which is this repo's most expensive shape.
+ */
 function pair({
   id,
   criterion,
@@ -264,7 +272,7 @@ const UNNAMED_GRAPHIC = "(?:\\ufffc|to get missing image descriptions)";
 // NVDA speaks a filename rather than spelling it: harbour_07-final.jpg is announced
 // "harbour 07-final dot jpg". A pattern written from the filename therefore never matches
 // what was actually said. Underscores become spaces and "." becomes " dot ".
-function spokenForm(text) {
+function spokenForm(/** @type {any} */ text) {
   return text.replaceAll("_", "[ _]").replaceAll(".", "(?:\\.| dot )");
 }
 
@@ -720,7 +728,7 @@ const cases = [
   }),
 ];
 
-function imageVariant({ id, title, heading, description, file, goodAlt, badAlt, task }) {
+function imageVariant(/** @type {any} */ { id, title, heading, description, file, goodAlt, badAlt, task }) {
   const goodImage = "<img src=\"/" + file + "\" alt=\"" + goodAlt + "\">";
   const badImage = "<img src=\"/" + file + "\""
     + (badAlt === null ? "" : " alt=\"" + badAlt + "\"") + ">";
@@ -744,7 +752,7 @@ function imageVariant({ id, title, heading, description, file, goodAlt, badAlt, 
   });
 }
 
-function linkVariant({ id, title, heading, context, vague, descriptive, task }) {
+function linkVariant(/** @type {any} */ { id, title, heading, context, vague, descriptive, task }) {
   return pair({
     id,
     family: "link-purpose",
@@ -766,7 +774,7 @@ function linkVariant({ id, title, heading, context, vague, descriptive, task }) 
   });
 }
 
-function vagueHeadingVariant({ id, title, heading, vague, descriptive, task }) {
+function vagueHeadingVariant(/** @type {any} */ { id, title, heading, vague, descriptive, task }) {
   return pair({
     id,
     family: "heading-purpose",
@@ -788,7 +796,7 @@ function vagueHeadingVariant({ id, title, heading, vague, descriptive, task }) {
   });
 }
 
-function fakeHeadingVariant({ id, title, heading, label, task }) {
+function fakeHeadingVariant(/** @type {any} */ { id, title, heading, label, task }) {
   return pair({
     id,
     criterion: "1.3.1",
@@ -809,7 +817,7 @@ function fakeHeadingVariant({ id, title, heading, label, task }) {
   });
 }
 
-function landmarkVariant({ id, title, heading, label, text, task }) {
+function landmarkVariant(/** @type {any} */ { id, title, heading, label, text, task }) {
   return pair({
     id,
     family: "landmark-navigation",
@@ -832,7 +840,7 @@ function landmarkVariant({ id, title, heading, label, text, task }) {
   });
 }
 
-function unlabelledFieldVariant({ id, title, heading, label, name, task }) {
+function unlabelledFieldVariant(/** @type {any} */ { id, title, heading, label, name, task }) {
   return pair({
     id,
     family: "form-labels",
@@ -878,7 +886,7 @@ function unlabelledFieldVariant({ id, title, heading, label, name, task }) {
   });
 }
 
-function placeholderOnlyVariant({ id, title, heading, label, name, task }) {
+function placeholderOnlyVariant(/** @type {any} */ { id, title, heading, label, name, task }) {
   return pair({
     id,
     criterion: "3.3.2",
@@ -902,7 +910,7 @@ function placeholderOnlyVariant({ id, title, heading, label, name, task }) {
   });
 }
 
-function customControlVariant({ id, title, heading, label, task }) {
+function customControlVariant(/** @type {any} */ { id, title, heading, label, task }) {
   return pair({
     id,
     // NOTE it shares `family` with `unnamedIconVariant` and is a DIFFERENT failure: this one strips the
@@ -930,7 +938,7 @@ function customControlVariant({ id, title, heading, label, task }) {
   });
 }
 
-function unnamedIconVariant({ id, title, heading, name, task }) {
+function unnamedIconVariant(/** @type {any} */ { id, title, heading, name, task }) {
   return pair({
     id,
     family: "control-name-role",
@@ -965,7 +973,7 @@ function unnamedIconVariant({ id, title, heading, name, task }) {
   });
 }
 
-function disclosureVariant({ id, title, heading, control, content, task }) {
+function disclosureVariant(/** @type {any} */ { id, title, heading, control, content, task }) {
   const goodScript = "document.querySelector('#toggle').addEventListener('click', (event) => { const button = event.currentTarget; const open = button.getAttribute('aria-expanded') === 'true'; button.setAttribute('aria-expanded', String(!open)); document.querySelector('#content').hidden = open; });";
   const badScript = "document.querySelector('#toggle').addEventListener('click', () => { document.querySelector('#content').hidden = false; });";
   const body = "<button id=\"toggle\" type=\"button\" aria-expanded=\"false\" aria-controls=\"content\">"
@@ -984,7 +992,7 @@ function disclosureVariant({ id, title, heading, control, content, task }) {
   });
 }
 
-function errorVariant({ id, title, heading, field, submit, message, task }) {
+function errorVariant(/** @type {any} */ { id, title, heading, field, submit, message, task }) {
   // Install the submit behaviour in the instrument itself. A trailing script is loaded only
   // after the form has rendered, so the probe can submit during that small window and navigate
   // away before preventDefault is attached (observed in both calibration and bulk fixtures).
@@ -1012,7 +1020,7 @@ function errorVariant({ id, title, heading, field, submit, message, task }) {
   });
 }
 
-function statusVariant({ id, title, heading, control, task }) {
+function statusVariant(/** @type {any} */ { id, title, heading, control, task }) {
   const body = "<button id=\"filter\" type=\"button\">" + control + "</button><p id=\"count\">Showing 8 items.</p><ul><li>First item</li><li>Second item</li></ul>";
   const goodBody = body.replace(
     "id=\"count\"",
@@ -1033,7 +1041,7 @@ function statusVariant({ id, title, heading, control, task }) {
   });
 }
 
-function tableVariant({ id, title, heading, destination, task }) {
+function tableVariant(/** @type {any} */ { id, title, heading, destination, task }) {
   const good = "<table><caption>Departures from Central station</caption><thead><tr><th scope=\"col\">Destination</th><th scope=\"col\">Departs</th><th scope=\"col\">Platform</th></tr></thead><tbody><tr><th scope=\"row\">" + destination + "</th><td>09:15</td><td>3</td></tr></tbody></table>";
   const bad = "<table><caption>Departures from Central station</caption><tr><td>Destination</td><td>Departs</td><td>Platform</td></tr><tr><td>" + destination + "</td><td>09:15</td><td>3</td></tr></table>";
   return pair({
@@ -1050,15 +1058,15 @@ function tableVariant({ id, title, heading, destination, task }) {
   });
 }
 
-function variedTableVariant({ id, title, heading, caption, headers, row, task }) {
+function variedTableVariant(/** @type {any} */ { id, title, heading, caption, headers, row, task }) {
   const good = "<table><caption>" + caption + "</caption><thead><tr>"
-    + headers.map((header) => "<th scope=\"col\">" + header + "</th>").join("")
+    + headers.map((/** @type {any} */ header) => "<th scope=\"col\">" + header + "</th>").join("")
     + "</tr></thead><tbody><tr><th scope=\"row\">" + row[0] + "</th>"
-    + row.slice(1).map((value) => "<td>" + value + "</td>").join("")
+    + row.slice(1).map((/** @type {any} */ value) => "<td>" + value + "</td>").join("")
     + "</tr></tbody></table>";
   const bad = "<table><caption>" + caption + "</caption><tr>"
-    + headers.map((header) => "<td>" + header + "</td>").join("")
-    + "</tr><tr>" + row.map((value) => "<td>" + value + "</td>").join("") + "</tr></table>";
+    + headers.map((/** @type {any} */ header) => "<td>" + header + "</td>").join("")
+    + "</tr><tr>" + row.map((/** @type {any} */ value) => "<td>" + value + "</td>").join("") + "</tr></table>";
   return pair({
     id,
     family: id,
@@ -1073,7 +1081,7 @@ function variedTableVariant({ id, title, heading, caption, headers, row, task })
   });
 }
 
-function labelledControlVariant({ id, title, heading, label, name, control, selector = "input", task }) {
+function labelledControlVariant(/** @type {any} */ { id, title, heading, label, name, control, selector = "input", task }) {
   const labelled = control({ labelled: true, name });
   const unlabelled = control({ labelled: false, name });
   return pair({
@@ -1160,7 +1168,7 @@ cases.push(...generatedCases);
 // deliberately varies topic, wording, and content shape while keeping one known mutation
 // per pair. Each generated case gets its own family so grouped train/test splits do not
 // mistake a dozen unrelated pages for one independent example.
-const independent = (testCase) => ({ ...testCase, family: testCase.id });
+const independent = (/** @type {any} */ testCase) => ({ ...testCase, family: testCase.id });
 
 const expandedCases = [
   ...[
@@ -1335,14 +1343,14 @@ const BULK_TOPICS = [
   "Forest cabin", "Wind farm", "Community orchard", "Canal lock", "Visitor shelter", "Sports pavilion", "Public archive", "Travel office",
 ];
 
-function bulkTopic(index) {
+function bulkTopic(/** @type {any} */ index) {
   const code = String(index).padStart(3, "0");
   const place = BULK_TOPICS[(index - 1) % BULK_TOPICS.length];
   const slug = place.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + code;
   return { code, place, slug, label: place + " " + code };
 }
 
-function bulkImageCase(index) {
+function bulkImageCase(/** @type {any} */ index) {
   const topic = bulkTopic(index);
   return independent(imageVariant({
     id: "image-missing-alt-bulk-" + topic.slug,
@@ -1356,7 +1364,7 @@ function bulkImageCase(index) {
   }));
 }
 
-function bulkLinkCase(index) {
+function bulkLinkCase(/** @type {any} */ index) {
   const topic = bulkTopic(index);
   const vague = ["Details", "More", "Here", "Go", "Info", "This"][index % 6];
   return independent(linkVariant({
@@ -1370,7 +1378,7 @@ function bulkLinkCase(index) {
   }));
 }
 
-function bulkHeadingCase(index) {
+function bulkHeadingCase(/** @type {any} */ index) {
   const topic = bulkTopic(index);
   const vague = ["Overview", "Details", "Stuff", "Things", "Updates", "More"][index % 6];
   return independent(vagueHeadingVariant({
@@ -1383,7 +1391,7 @@ function bulkHeadingCase(index) {
   }));
 }
 
-function bulkLandmarkCase(index) {
+function bulkLandmarkCase(/** @type {any} */ index) {
   const topic = bulkTopic(index);
   const label = topic.place + " information";
   return independent(landmarkVariant({
@@ -1396,7 +1404,7 @@ function bulkLandmarkCase(index) {
   }));
 }
 
-function bulkTableCase(index) {
+function bulkTableCase(/** @type {any} */ index) {
   const topic = bulkTopic(index);
   return independent(tableVariant({
     id: "table-bulk-" + topic.slug,
@@ -1407,7 +1415,7 @@ function bulkTableCase(index) {
   }));
 }
 
-function bulkFieldCase(index) {
+function bulkFieldCase(/** @type {any} */ index) {
   const topic = bulkTopic(index);
   const name = "field-" + topic.slug;
   return independent(unlabelledFieldVariant({
@@ -1420,7 +1428,7 @@ function bulkFieldCase(index) {
   }));
 }
 
-function bulkCustomControlCase(index) {
+function bulkCustomControlCase(/** @type {any} */ index) {
   const topic = bulkTopic(index);
   const label = "Open " + topic.place.toLowerCase() + " details";
   return independent(customControlVariant({
@@ -1432,7 +1440,7 @@ function bulkCustomControlCase(index) {
   }));
 }
 
-function bulkDisclosureCase(index) {
+function bulkDisclosureCase(/** @type {any} */ index) {
   const topic = bulkTopic(index);
   const control = topic.place + " advice";
   return independent(disclosureVariant({
@@ -1445,7 +1453,7 @@ function bulkDisclosureCase(index) {
   }));
 }
 
-function bulkErrorCase(index) {
+function bulkErrorCase(/** @type {any} */ index) {
   const topic = bulkTopic(index);
   const field = topic.place + " contact";
   const submit = "Submit " + topic.place.toLowerCase() + " form";
@@ -1460,7 +1468,7 @@ function bulkErrorCase(index) {
   }));
 }
 
-function bulkStatusCase(index) {
+function bulkStatusCase(/** @type {any} */ index) {
   const topic = bulkTopic(index);
   const control = "Show " + topic.place.toLowerCase() + " results";
   return independent(statusVariant({
@@ -1521,22 +1529,22 @@ const TARGETED_CASES = [
     // picker widgets. Their labelled and unlabelled forms can collapse to the same output,
     // which makes the unnamed-field signal blind. Keep the input vocabulary varied while
     // using stable text-entry roles for this contrast.
-    ["field-followup-date", "Garden booking", "Garden booking", "Visit date", "visit-date", "input", ({ labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the date for the garden visit."],
-    ["field-followup-number", "Sports booking", "Sports booking", "Number of visitors", "visitor-count", "input", ({ labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the number of visitors."],
-    ["field-followup-email", "Archive contact", "Archive contact", "Contact email", "contact-email", "input", ({ labelled, name }) => `<input type="email" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the archive contact email."],
-    ["field-followup-select", "Ferry booking", "Ferry booking", "Passenger type", "passenger-type", "select", ({ labelled, name }) => `<select ${labelled ? `id="${name}"` : ""} name="${name}"><option>Adult</option><option>Child</option></select>`, "Choose the passenger type."],
-    ["field-followup-select-route", "Travel booking", "Travel booking", "Route preference", "route", "select", ({ labelled, name }) => `<select ${labelled ? `id="${name}"` : ""} name="${name}"><option>Step-free route</option><option>Fastest route</option></select>`, "Choose a route preference."],
-    ["field-followup-textarea", "Volunteer details", "Volunteer details", "Relevant experience", "experience", "textarea", ({ labelled, name }) => `<textarea ${labelled ? `id="${name}"` : ""} name="${name}"></textarea>`, "Describe the relevant experience."],
-    ["field-followup-textarea-notes", "Clinic booking", "Clinic booking", "Appointment notes", "notes", "textarea", ({ labelled, name }) => `<textarea ${labelled ? `id="${name}"` : ""} name="${name}"></textarea>`, "Enter appointment notes."],
-    ["field-followup-time", "Class booking", "Class booking", "Preferred start time", "start-time", "input", ({ labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Choose the preferred start time."],
-    ["field-followup-tel", "Support request", "Support request", "Telephone number", "telephone", "input", ({ labelled, name }) => `<input type="tel" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the telephone number."],
-    ["field-followup-search", "Library search", "Library search", "Search phrase", "search-phrase", "input", ({ labelled, name }) => `<input type="search" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter a library search phrase."],
-    ["field-followup-text", "Market pitch", "Market pitch", "Trader name", "trader-name", "input", ({ labelled, name }) => `<input type="text" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the trader name."],
-    ["field-followup-text-reference", "Housing repair", "Housing repair", "Repair reference", "repair-reference", "input", ({ labelled, name }) => `<input type="text" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the repair reference."],
-    ["field-followup-date-departure", "Ferry departure", "Ferry departure", "Departure date", "departure-date", "input", ({ labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the departure date."],
-    ["field-followup-select-language", "Museum tour", "Museum tour", "Tour language", "tour-language", "select", ({ labelled, name }) => `<select ${labelled ? `id="${name}"` : ""} name="${name}"><option>English</option><option>Welsh</option></select>`, "Choose the tour language."],
-    ["field-followup-textarea-message", "Contact office", "Contact office", "Message", "message", "textarea", ({ labelled, name }) => `<textarea ${labelled ? `id="${name}"` : ""} name="${name}"></textarea>`, "Write a message to the office."],
-    ["field-followup-number-group", "Workshop booking", "Workshop booking", "Group size", "group-size", "input", ({ labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the workshop group size."],
+    ["field-followup-date", "Garden booking", "Garden booking", "Visit date", "visit-date", "input", (/** @type {any} */ { labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the date for the garden visit."],
+    ["field-followup-number", "Sports booking", "Sports booking", "Number of visitors", "visitor-count", "input", (/** @type {any} */ { labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the number of visitors."],
+    ["field-followup-email", "Archive contact", "Archive contact", "Contact email", "contact-email", "input", (/** @type {any} */ { labelled, name }) => `<input type="email" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the archive contact email."],
+    ["field-followup-select", "Ferry booking", "Ferry booking", "Passenger type", "passenger-type", "select", (/** @type {any} */ { labelled, name }) => `<select ${labelled ? `id="${name}"` : ""} name="${name}"><option>Adult</option><option>Child</option></select>`, "Choose the passenger type."],
+    ["field-followup-select-route", "Travel booking", "Travel booking", "Route preference", "route", "select", (/** @type {any} */ { labelled, name }) => `<select ${labelled ? `id="${name}"` : ""} name="${name}"><option>Step-free route</option><option>Fastest route</option></select>`, "Choose a route preference."],
+    ["field-followup-textarea", "Volunteer details", "Volunteer details", "Relevant experience", "experience", "textarea", (/** @type {any} */ { labelled, name }) => `<textarea ${labelled ? `id="${name}"` : ""} name="${name}"></textarea>`, "Describe the relevant experience."],
+    ["field-followup-textarea-notes", "Clinic booking", "Clinic booking", "Appointment notes", "notes", "textarea", (/** @type {any} */ { labelled, name }) => `<textarea ${labelled ? `id="${name}"` : ""} name="${name}"></textarea>`, "Enter appointment notes."],
+    ["field-followup-time", "Class booking", "Class booking", "Preferred start time", "start-time", "input", (/** @type {any} */ { labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Choose the preferred start time."],
+    ["field-followup-tel", "Support request", "Support request", "Telephone number", "telephone", "input", (/** @type {any} */ { labelled, name }) => `<input type="tel" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the telephone number."],
+    ["field-followup-search", "Library search", "Library search", "Search phrase", "search-phrase", "input", (/** @type {any} */ { labelled, name }) => `<input type="search" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter a library search phrase."],
+    ["field-followup-text", "Market pitch", "Market pitch", "Trader name", "trader-name", "input", (/** @type {any} */ { labelled, name }) => `<input type="text" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the trader name."],
+    ["field-followup-text-reference", "Housing repair", "Housing repair", "Repair reference", "repair-reference", "input", (/** @type {any} */ { labelled, name }) => `<input type="text" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the repair reference."],
+    ["field-followup-date-departure", "Ferry departure", "Ferry departure", "Departure date", "departure-date", "input", (/** @type {any} */ { labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the departure date."],
+    ["field-followup-select-language", "Museum tour", "Museum tour", "Tour language", "tour-language", "select", (/** @type {any} */ { labelled, name }) => `<select ${labelled ? `id="${name}"` : ""} name="${name}"><option>English</option><option>Welsh</option></select>`, "Choose the tour language."],
+    ["field-followup-textarea-message", "Contact office", "Contact office", "Message", "message", "textarea", (/** @type {any} */ { labelled, name }) => `<textarea ${labelled ? `id="${name}"` : ""} name="${name}"></textarea>`, "Write a message to the office."],
+    ["field-followup-number-group", "Workshop booking", "Workshop booking", "Group size", "group-size", "input", (/** @type {any} */ { labelled, name }) => `<input type="text" inputmode="numeric" ${labelled ? `id="${name}"` : ""} name="${name}">`, "Enter the workshop group size."],
   ].map(([id, title, heading, label, name, selector, control, task]) => labelledControlVariant({ id, title, heading, label, name, selector, control, task })),
 ];
 
@@ -1850,7 +1858,7 @@ export const SCALE_BUCKETS = [
  * Extracted rather than copied when the conformant accompaniments needed the same property: a case's
  * generated content must depend on nothing but its own name, or adding cases elsewhere re-rolls it.
  */
-function fnv1a(id) {
+function fnv1a(/** @type {any} */ id) {
   let hash = 0x811c9dc5;
   for (let i = 0; i < id.length; i += 1) {
     hash ^= id.charCodeAt(i);
@@ -1881,7 +1889,7 @@ function fnv1a(id) {
  * is the trade the starvation forces; `check-signals` reports what moved, and the pages are regenerated
  * from the definitions anyway.
  */
-function bucketFor(id, subtype, indexInSubtype) {
+function bucketFor(/** @type {any} */ id, /** @type {any} */ subtype, /** @type {any} */ indexInSubtype) {
   const offset = fnv1a(subtype ?? id);
   const index = indexInSubtype ?? fnv1a(id);
   return SCALE_BUCKETS[(offset + index) % SCALE_BUCKETS.length];
@@ -1906,16 +1914,16 @@ function bucketFor(id, subtype, indexInSubtype) {
  * `furniture-spread.test.ts` asserts the property per feature, and it is what caught the regression a
  * comment could not.
  */
-function withRealisticScale(list) {
+function withRealisticScale(/** @type {any} */ list) {
   // Position within the subtype, so the buckets can be dealt round-robin rather than drawn independently.
   const seen = new Map();
-  const indexOf = (testCase) => {
+  const indexOf = (/** @type {any} */ testCase) => {
     const key = `${testCase.criterion}:${testCase.subtype}`;
     const next = (seen.get(key) ?? 0);
     seen.set(key, next + 1);
     return { key, index: next };
   };
-  return list.map((testCase) => {
+  return list.map((/** @type {any} */ testCase) => {
     const { key, index } = indexOf(testCase);
     const bucket = bucketFor(testCase.id, key, index);
     // A case that drives tables itself never gets the furniture table. Not to avoid a signal collision —
@@ -1945,7 +1953,7 @@ function withRealisticScale(list) {
     // pair in a way the label does not describe — a shortcut, the same shape as the keystroke leak that
     // sat on exactly one variant of 125 pairs. Uniform placement costs a little realism and buys a
     // controlled comparison, which is the trade this corpus exists to make.
-    const inject = (html) => html.replace("</body>", extra + "</body>");
+    const inject = (/** @type {any} */ html) => html.replace("</body>", extra + "</body>");
     return { ...testCase, good: inject(testCase.good), bad: inject(testCase.bad) };
   });
 }
@@ -1957,8 +1965,8 @@ function withRealisticScale(list) {
  * difference between the variants must be the thing under test — this corpus's central constraint, and the
  * reason page furniture is injected identically into both.
  */
-function FOCUS_ORDER_FORM(mode) {
-  const tab = (n) => (mode === " tabindex-trap" ? ` tabindex="${n}"` : "");
+function FOCUS_ORDER_FORM(/** @type {any} */ mode) {
+  const tab = (/** @type {any} */ n) => (mode === " tabindex-trap" ? ` tabindex="${n}"` : "");
   return "<form>"
     + "<label for=\"a\">Full name</label><input id=\"a\" name=\"a\">"
     + "<label for=\"b\">Email</label><input id=\"b\" name=\"b\">"
@@ -2035,7 +2043,7 @@ cases.push(
  * a renamed or typo'd anchor, which is how this breaks in the wild and exactly what a static checker waves
  * through: it sees a link, a plausible fragment href and a page full of content.
  */
-function SKIP_LINK_PAGE(targetId) {
+function SKIP_LINK_PAGE(/** @type {any} */ targetId) {
   return `<a href="#${targetId}">Skip to main content</a>`
     + "<nav><ul>"
     + "<li><a href=\"/news\">News and updates</a></li>"
@@ -2097,7 +2105,7 @@ cases.push(
  * every corpus page truncates at 12), so "absent from the tab order" is ambiguous at the tail — it usually
  * just means the probe stopped. A control near the top is one the probe would certainly have reached.
  */
-function KEYBOARD_ACTION_PAGE(focusable) {
+function KEYBOARD_ACTION_PAGE(/** @type {any} */ focusable) {
   const tab = focusable ? ' tabindex="0"' : "";
   return `<div role="button"${tab} aria-label="Delete draft" class="card">Delete draft</div>`
     + "<form>"
@@ -2136,7 +2144,7 @@ function KEYBOARD_ACTION_PAGE(focusable) {
  * the CASE that could not be witnessed, which is a fact about where the control sits and not about the
  * criterion.
  */
-function NATIVE_ACTION_PAGE(focusable) {
+function NATIVE_ACTION_PAGE(/** @type {any} */ focusable) {
   const tab = focusable ? "" : ' tabindex="-1"';
   return "<form>"
     + "<label for=\"a\">Full name</label><input id=\"a\" name=\"a\">"
@@ -2338,6 +2346,7 @@ cases.push(
  * with its own button plus this one is two things to press, and which the probe chooses is a difference the
  * label does not describe — the one defect this corpus cannot carry.
  */
+/** @type {Record<string, any>} */
 export const ACCOMPANYING_CONFORMANT = Object.freeze({
   // A filter that finds nothing and SAYS SO. `validation_error_announced` starves 10 subtypes — the most of
   // any remaining fixable feature — and it is conformant behaviour: the error being spoken is the criterion
@@ -2443,6 +2452,7 @@ const HAS_OWN_CONTROL = /<button|<input[^>]*type=["']?(submit|button)|<select|<t
 // EXPORTED so the `grants` field can be verified rather than merely declared. It was read nowhere: eleven
 // accompanying defects each state the feature their markup is supposed to produce in the captured
 // evidence, and nothing ever checked that it did. `audit-grants.mjs` is that check.
+/** @type {Record<string, any>} */
 export const ACCOMPANYING_DEFECTS = Object.freeze({
   "vague-link": {
     // FOUR phrasings, not one, and they are the corpus's own — `link-vague-details`, `-here`, `-more`
@@ -2588,7 +2598,7 @@ export const ACCOMPANYING_DEFECTS = Object.freeze({
  * same week — one unnamed combo box repeated three times and counted as three failures. Scaling the number
  * of PAGES without scaling the variety of the thing being learned teaches the string, not the concept.
  */
-function accompanyingMarkup(name, hostId, round) {
+function accompanyingMarkup(/** @type {any} */ name, /** @type {any} */ hostId, /** @type {any} */ round) {
   const options = ACCOMPANYING_DEFECTS[name].markup;
   let hash = 0x811c9dc5;
   for (const character of `${hostId}|${name}|${round}`) {
@@ -2623,6 +2633,8 @@ function accompanyingMarkup(name, hostId, round) {
 const PERTURBS_FOCUS_ORDER = Object.freeze(["vague-link", "bare-edit"]);
 const FOCUS_ORDER_CRITERIA = Object.freeze(["2.1.1", "2.1.2", "2.4.1", "2.4.3"]);
 
+/** @type {Record<string, any>} */
+
 const COLLIDING_PAIRINGS = Object.freeze({
   "1.1.1:generic-alt": ["unnamed-graphic"],
   "1.1.1:filename-alt": ["unnamed-graphic"],
@@ -2650,7 +2662,7 @@ const COLLIDING_PAIRINGS = Object.freeze({
  * paired with a defect it already demonstrates — that would make the accompanying evidence indistinguishable
  * from its own.
  */
-function withAccompanyingDefects(template, names, round = 0) {
+function withAccompanyingDefects(/** @type {any} */ template, /** @type {any} */ names, round = 0) {
   // Excluded by SUBTYPE, plus an explicit list of pairings whose ANNOUNCEMENTS collide.
   //
   // This was briefly a criterion-level exclusion, and that was too blunt. It was introduced for a real
@@ -2684,13 +2696,13 @@ function withAccompanyingDefects(template, names, round = 0) {
   //
   // `vague-link` keeps being dropped: a link is a tab stop by nature, and `tabindex="-1"` on one would
   // make it unreachable, which is a DIFFERENT defect and would collide with 2.1.1's own signal.
-  const focusSafe = (name) => (readsFocusOrder && name === "bare-edit" ? "bare-edit-inert" : name);
-  const chosen = names.map(focusSafe).filter((name) => !collides.includes(name)
+  const focusSafe = (/** @type {any} */ name) => (readsFocusOrder && name === "bare-edit" ? "bare-edit-inert" : name);
+  const chosen = names.map(focusSafe).filter((/** @type {any} */ name) => !collides.includes(name)
     && !(readsFocusOrder && PERTURBS_FOCUS_ORDER.includes(name))
-    && !ACCOMPANYING_DEFECTS[name].subtypes.some((s) => s === `${template.criterion}:${template.subtype}`));
+    && !ACCOMPANYING_DEFECTS[name].subtypes.some((/** @type {any} */ s) => s === `${template.criterion}:${template.subtype}`));
   if (chosen.length === 0) return null;
-  const markup = chosen.map((name) => accompanyingMarkup(name, template.id, round)).join("");
-  const added = chosen.flatMap((name) => ACCOMPANYING_DEFECTS[name].subtypes);
+  const markup = chosen.map((/** @type {any} */ name) => accompanyingMarkup(name, template.id, round)).join("");
+  const added = chosen.flatMap((/** @type {any} */ name) => ACCOMPANYING_DEFECTS[name].subtypes);
   return pair({
     ...template,
     id: `${template.id}+also-${chosen.join("-")}`,
@@ -2782,7 +2794,7 @@ const ROTATIONS = Object.freeze([
 const HOSTS_PER_SUBTYPE = 5;
 const ROUNDS_PER_HOST = 3;
 
-function multiDefectCases(built) {
+function multiDefectCases(/** @type {any} */ built) {
   // Every case per subtype, not just the first, so the hosts differ in their page content and not only in
   // which defect was bolted on. A pairing repeated across five different pages teaches the distinction;
   // the same page five times teaches the page.
@@ -2792,6 +2804,7 @@ function multiDefectCases(built) {
     const hosts = bySubtype.get(key) ?? [];
     if (hosts.length < HOSTS_PER_SUBTYPE) bySubtype.set(key, [...hosts, testCase]);
   }
+  /** @type {any[]} */
   const generated = [];
   // DEALT WITHIN THE SUBTYPE, from a hash of the subtype key — never a global running position.
   //
@@ -2813,7 +2826,7 @@ function multiDefectCases(built) {
   // The remaining cost is the same one furniture carries and is the deliberate trade: inserting a host
   // MID-SUBTYPE re-rotates the hosts after it within that subtype only.
   for (const [key, hosts] of [...bySubtype.entries()].sort(([a], [z]) => a.localeCompare(z))) {
-    hosts.forEach((template, indexInSubtype) => {
+    hosts.forEach((/** @type {any} */ template, /** @type {any} */ indexInSubtype) => {
       generated.push(...roundsForHost(template, fnv1a(key) + indexInSubtype * ROUNDS_PER_HOST));
     });
   }
@@ -2821,7 +2834,7 @@ function multiDefectCases(built) {
 }
 
 /** The rounds of one host page, each taking the next rotation slot. */
-function roundsForHost(template, rotation) {
+function roundsForHost(/** @type {any} */ template, /** @type {any} */ rotation) {
   const made = [];
   for (let round = 0; round < ROUNDS_PER_HOST; round += 1) {
     const one = withAccompanyingDefects(template, ROTATIONS[(rotation + round) % ROTATIONS.length], round);
@@ -2843,7 +2856,7 @@ function roundsForHost(template, rotation) {
  * stale count. A sixth `SCALE_BUCKETS` entry would have changed `hash % 5` to `hash % 6` and invalidated
  * all 2,606 captures; this invalidates none.
  */
-function withConformantBehaviour(template, name) {
+function withConformantBehaviour(/** @type {any} */ template, /** @type {any} */ name) {
   const piece = ACCOMPANYING_CONFORMANT[name];
   // A host with its own control cannot take a second one: `probeForms` would have two things to press and
   // which it chooses is a difference the label does not describe.
@@ -2886,7 +2899,7 @@ function withConformantBehaviour(template, name) {
 }
 
 /** One host per subtype starved of interaction evidence, chosen the same way multi-defect hosts are. */
-function conformantBehaviourCases(built) {
+function conformantBehaviourCases(/** @type {any} */ built) {
   const bySubtype = new Map();
   for (const testCase of built) {
     const key = `${testCase.criterion}:${testCase.subtype}`;
@@ -2901,7 +2914,7 @@ function conformantBehaviourCases(built) {
 }
 
 /** Each conformant accompaniment applied to one host, skipping the ones it cannot take. */
-function everyConformantPiece(template) {
+function everyConformantPiece(/** @type {any} */ template) {
   return Object.keys(ACCOMPANYING_CONFORMANT).sort()
     .map((piece) => withConformantBehaviour(template, piece))
     .filter(Boolean);
@@ -2916,7 +2929,7 @@ export const CASES = Object.freeze(withRealisticScale(
   [...cases, ...multiDefectCases(cases), ...conformantBehaviourCases(cases)],
 ));
 
-function structuralTextParts(capture) {
+function structuralTextParts(/** @type {any} */ capture) {
   return [
     ...(capture.structure?.headings || []),
     ...(capture.structure?.landmarks || []),
@@ -2925,16 +2938,16 @@ function structuralTextParts(capture) {
   ];
 }
 
-function interactionTextParts(capture) {
+function interactionTextParts(/** @type {any} */ capture) {
   return [
     ...(capture.interaction?.controls || []),
-    ...(capture.interaction?.stateChanges || []).flatMap(({ control, after }) => [control, after]),
-    ...(capture.interaction?.formChanges || []).flatMap(({ control, after }) => [control, after]),
+    ...(capture.interaction?.stateChanges || []).flatMap((/** @type {any} */ { control, after }) => [control, after]),
+    ...(capture.interaction?.formChanges || []).flatMap((/** @type {any} */ { control, after }) => [control, after]),
     ...(capture.interaction?.postSubmitFields || []),
   ];
 }
 
-function captureTextParts(capture) {
+function captureTextParts(/** @type {any} */ capture) {
   return [
     ...(capture.transcript || []),
     ...structuralTextParts(capture),
@@ -2942,23 +2955,23 @@ function captureTextParts(capture) {
   ];
 }
 
-function flattenCapture(capture) {
+function flattenCapture(/** @type {any} */ capture) {
   return captureTextParts(capture).filter((value) => typeof value === "string").join("\n");
 }
 
-function regexMatches(capture, signal) {
+function regexMatches(/** @type {any} */ capture, /** @type {any} */ signal) {
   return new RegExp(signal.pattern, signal.flags || "i").test(flattenCapture(capture));
 }
 
-function structureIsEmpty(capture, signal) {
+function structureIsEmpty(/** @type {any} */ capture, /** @type {any} */ signal) {
   return (capture.structure?.[signal.field] || []).length === 0;
 }
 
-function headingIsMissing(capture, signal) {
-  return !(capture.structure?.headings || []).some((heading) => heading.toLowerCase().includes(signal.text.toLowerCase()));
+function headingIsMissing(/** @type {any} */ capture, /** @type {any} */ signal) {
+  return !(capture.structure?.headings || []).some((/** @type {any} */ heading) => heading.toLowerCase().includes(signal.text.toLowerCase()));
 }
 
-function hasMissingRole(capture, signal) {
+function hasMissingRole(/** @type {any} */ capture, /** @type {any} */ signal) {
   const values = [
     ...(capture.transcript || []),
     ...(capture.structure?.formFields || []),
@@ -2970,7 +2983,7 @@ function hasMissingRole(capture, signal) {
 
 const STATE_WORD = /\b(expanded|collapsed|open|closed|pressed|checked)\b/i;
 
-const stateWordOf = (text) => (text.match(STATE_WORD)?.[1] ?? "").toLowerCase();
+const stateWordOf = (/** @type {any} */ text) => (text.match(STATE_WORD)?.[1] ?? "").toLowerCase();
 
 // The disclosure failure is "operating the control did not change the announced state".
 //
@@ -2979,9 +2992,9 @@ const stateWordOf = (text) => (text.match(STATE_WORD)?.[1] ?? "").toLowerCase();
 // activating it, so `after` always carries a state word and the emptiness test could never
 // fire again -- it silently stopped discriminating and took three cases with it. A probe and
 // its signal are coupled; changing one means revisiting the other.
-function stateChangeIsSilent(capture, signal) {
+function stateChangeIsSilent(/** @type {any} */ capture, /** @type {any} */ signal) {
   const changes = capture.interaction?.stateChanges || [];
-  return changes.some(({ control, after }) => {
+  return changes.some((/** @type {any} */ { control, after }) => {
     if (!control.toLowerCase().includes(signal.control.toLowerCase())) return false;
     const before = stateWordOf(control);
     const now = stateWordOf(after);
@@ -2997,11 +3010,11 @@ function stateChangeIsSilent(capture, signal) {
 // (a) 4.1.3 Status Messages -- a filter updates results and says nothing. The status IS the
 // announcement, so it lands in `formChanges.after`: the good page carries "Showing 2 bags.",
 // the bad page carries "".
-function formActivationIsSilent(capture, signal) {
+function formActivationIsSilent(/** @type {any} */ capture, /** @type {any} */ signal) {
   const changes = capture.interaction?.formChanges || [];
-  const target = changes.filter(({ control }) => control.toLowerCase().includes(signal.control.toLowerCase()));
-  if (signal.expected) return target.length === 0 || target.every(({ after }) => !after.includes(signal.expected));
-  return target.length === 0 || target.every(({ after }) => after.trim() === "");
+  const target = changes.filter((/** @type {any} */ { control }) => control.toLowerCase().includes(signal.control.toLowerCase()));
+  if (signal.expected) return target.length === 0 || target.every((/** @type {any} */ { after }) => !after.includes(signal.expected));
+  return target.length === 0 || target.every((/** @type {any} */ { after }) => after.trim() === "");
 }
 
 // An announced validation error leaves a durable trace on the field: NVDA reports
@@ -3013,16 +3026,16 @@ const ANNOUNCED_ERROR = /invalid|\berror\b/i;
 // "Newsletter signup, document" on BOTH pages. The evidence is in `postSubmitFields`, the
 // deliberate re-read of durable field state -- persistent state over transient speech, which
 // is the lesson the NVDA correctness audit already drew (its Root 2).
-function validationErrorIsSilent(capture, signal) {
+function validationErrorIsSilent(/** @type {any} */ capture, /** @type {any} */ signal) {
   const changes = capture.interaction?.formChanges || [];
-  const submitted = changes.some(({ control }) => control.toLowerCase().includes(signal.control.toLowerCase()));
+  const submitted = changes.some((/** @type {any} */ { control }) => control.toLowerCase().includes(signal.control.toLowerCase()));
   if (!submitted) return true; // the submit never happened, so nothing could be announced
   // NVDA versions place the durable invalid-field announcement in either the post-submit
   // structural sweep or the activation change's `after` value. Both are screen-reader
   // evidence; relying on only one made a correctly announced error look silent.
   const announcedEvidence = [
     ...(capture.interaction?.postSubmitFields || []),
-    ...changes.map(({ after }) => after),
+    ...changes.map((/** @type {any} */ { after }) => after),
   ];
   return !announcedEvidence.some((field) => ANNOUNCED_ERROR.test(field));
 }
@@ -3033,8 +3046,8 @@ function validationErrorIsSilent(capture, signal) {
 // is not a stable cell boundary and cell counts are not evidence of header relationships.
 const POSITION_ONLY_CELL = /^column\s+\d+\b/i;
 
-function tableHeadersAreUnassociated(capture) {
-  if ((capture.structure?.tableCells || []).some((cell) =>
+function tableHeadersAreUnassociated(/** @type {any} */ capture) {
+  if ((capture.structure?.tableCells || []).some((/** @type {any} */ cell) =>
     typeof cell === "string" && POSITION_ONLY_CELL.test(cell.trim()))) return true;
 
   // Some NVDA table probes return only the table summary in `tableCells`, while the
@@ -3069,7 +3082,7 @@ function tableHeadersAreUnassociated(capture) {
  * discriminator is whether the placeholder arrives with a real name in front of it, not whether any other
  * field on the page has one.
  */
-function placeholderOnlyIsPresent(capture, signal) {
+function placeholderOnlyIsPresent(/** @type {any} */ capture, /** @type {any} */ signal) {
   const placeholder = String(signal.placeholder || "").toLowerCase();
   if (!placeholder) return false;
   // A NAMED field carrying the placeholder as its value ("Booking reference, edit, Example value") is the
@@ -3091,8 +3104,8 @@ function placeholderOnlyIsPresent(capture, signal) {
 // Same rule as the 4.1.2 check in src/spike/rules.ts.
 const LEADING_ROLE = /^(?:\ufffc\s*,\s*)?(edit(\s+text)?|button|checkbox|radio|combo\s*box|list\s*box|slider|spin\s*button)\b/i;
 
-function hasUnnamedFormField(capture) {
-  return (capture.structure?.formFields || []).some((field) => LEADING_ROLE.test(field.trim()));
+function hasUnnamedFormField(/** @type {any} */ capture) {
+  return (capture.structure?.formFields || []).some((/** @type {any} */ field) => LEADING_ROLE.test(field.trim()));
 }
 
 /**
@@ -3126,7 +3139,7 @@ function hasUnnamedFormField(capture) {
  * An unprobed or errored capture is NOT a finding. `routeChange` is absent unless asked for and carries an
  * `error` when the measurement failed, and both are distinguishable from a page that navigated silently.
  */
-function routeTitleIsStale(capture) {
+function routeTitleIsStale(/** @type {any} */ capture) {
   const route = (capture.interaction || {}).routeChange;
   if (!route || route.error || !route.navigated) return false;
   const viewMoved = route.headingBefore !== route.headingAfter;
@@ -3168,11 +3181,11 @@ function routeTitleIsStale(capture) {
  * Names identifying exactly ONE control. Mirrors `unambiguous` in `rules.ts` — two controls can announce
  * identically ("Toggle" twice on MDN), and a name-based comparison then invents a reordering.
  */
-function unambiguousNames(names) {
-  return new Set(names.filter((name) => names.indexOf(name) === names.lastIndexOf(name)));
+function unambiguousNames(/** @type {any} */ names) {
+  return new Set(names.filter((/** @type {any} */ name) => names.indexOf(name) === names.lastIndexOf(name)));
 }
 
-function controlUnreachableByKeyboard(capture) {
+function controlUnreachableByKeyboard(/** @type {any} */ capture) {
   const reading = namesOf(capture.structure?.formFields);
   const tabbed = new Set(namesOf(capture.interaction?.focusOrder));
   if (reading.length < 2 || tabbed.size === 0) return false;
@@ -3182,10 +3195,10 @@ function controlUnreachableByKeyboard(capture) {
   const tabList = namesOf(capture.interaction?.focusOrder);
   if (!(tabList.length > 1 && tabList.lastIndexOf(tabList[0]) > 0)) return false;
   const trackable = unambiguousNames(reading);
-  return reading.some((name) => trackable.has(name) && !tabbed.has(name));
+  return reading.some((/** @type {any} */ name) => trackable.has(name) && !tabbed.has(name));
 }
 
-function skipLinkIsInert(capture) {
+function skipLinkIsInert(/** @type {any} */ capture) {
   const route = (capture.interaction || {}).routeChange;
   if (!route || route.error || !route.navigated) return false;
   if (!/\b(skip|jump)\b/i.test(String(route.control ?? ""))) return false;
@@ -3196,15 +3209,15 @@ function skipLinkIsInert(capture) {
   return namesOf([landed])[0] === ordinary;
 }
 
-function focusOrderIsScrambled(capture) {
+function focusOrderIsScrambled(/** @type {any} */ capture) {
   const readingOrder = namesOf(capture.structure?.formFields);
   const tabOrder = firstVisitEach(namesOf(capture.interaction?.focusOrder));
   if (readingOrder.length < 2 || tabOrder.length < 2) return false;
   const readingOnce = unambiguousNames(readingOrder), tabOnce = unambiguousNames(tabOrder);
   const shared = new Set([...readingOnce].filter((name) => tabOnce.has(name)));
   if (shared.size < 2) return false;
-  const reading = readingOrder.filter((name) => shared.has(name));
-  const tabbed = tabOrder.filter((name) => shared.has(name));
+  const reading = readingOrder.filter((/** @type {any} */ name) => shared.has(name));
+  const tabbed = tabOrder.filter((/** @type {any} */ name) => shared.has(name));
   return reading.join("|") !== tabbed.join("|");
 }
 
@@ -3229,10 +3242,10 @@ function focusOrderIsScrambled(capture) {
  * validated on 6,555 cross-channel comparisons at 0.08% disagreement; the test above still pins the two
  * call sites equal, and now does it on real-page shapes too.
  */
-export function namesOf(entries) {
+export function namesOf(/** @type {any} */ entries) {
   return (entries || [])
-    .map((entry) => parseAnnouncement(String(entry), "sweep").objects[0]?.name ?? "")
-    .map((name) => name.replace(/[\s,]+/g, " ").trim())
+    .map((/** @type {any} */ entry) => parseAnnouncement(String(entry), "sweep").objects[0]?.name ?? "")
+    .map((/** @type {any} */ name) => name.replace(/[\s,]+/g, " ").trim())
     .filter(Boolean);
 }
 
@@ -3241,13 +3254,13 @@ export function namesOf(entries) {
  * first — so a faithful recording ends by repeating something it began with, and comparing that raw made
  * the CONFORMANT variant differ from itself. Measured: five fields, six links, then "Full name" again.
  */
-function firstVisitEach(names) {
+function firstVisitEach(/** @type {any} */ names) {
   const seen = new Set();
-  return names.filter((name) => (seen.has(name) ? false : (seen.add(name), true)));
+  return names.filter((/** @type {any} */ name) => (seen.has(name) ? false : (seen.add(name), true)));
 }
 
-function focusIsTrapped(capture) {
-  const mark = (capture.diagnostics || []).find((entry) => entry && entry.event === "focusOrder");
+function focusIsTrapped(/** @type {any} */ capture) {
+  const mark = (capture.diagnostics || []).find((/** @type {any} */ entry) => entry && entry.event === "focusOrder");
   return mark ? mark.stalled === true : false;
 }
 
@@ -3263,22 +3276,23 @@ function focusIsTrapped(capture) {
  * case that can never fire, which `check-signals` reports as BLIND with the case named — a better error
  * than a crash inside a corpus run, and one that says which case is affected.
  */
+/** @type {Record<string, any>} */
 const SIGNAL_PREDICATES = Object.freeze({
-  "unnamed-form-field": (capture) => hasUnnamedFormField(capture),
-  regex: (capture, signal) => regexMatches(capture, signal),
-  "structure-empty": (capture, signal) => structureIsEmpty(capture, signal),
-  "missing-heading": (capture, signal) => headingIsMissing(capture, signal),
-  "missing-role": (capture, signal) => hasMissingRole(capture, signal),
-  "state-change-silent": (capture, signal) => stateChangeIsSilent(capture, signal),
-  "form-activation-silent": (capture, signal) => formActivationIsSilent(capture, signal),
-  "validation-error-silent": (capture, signal) => validationErrorIsSilent(capture, signal),
-  "placeholder-only": (capture, signal) => placeholderOnlyIsPresent(capture, signal),
-  "table-unassociated": (capture) => tableHeadersAreUnassociated(capture),
-  "focus-trapped": (capture) => focusIsTrapped(capture),
-  "route-title-stale": (capture) => routeTitleIsStale(capture),
-  "focus-order-scrambled": (capture) => focusOrderIsScrambled(capture),
-  "skip-link-inert": (capture) => skipLinkIsInert(capture),
-  "control-unreachable-by-keyboard": (capture) => controlUnreachableByKeyboard(capture),
+  "unnamed-form-field": (/** @type {any} */ capture) => hasUnnamedFormField(capture),
+  regex: (/** @type {any} */ capture, /** @type {any} */ signal) => regexMatches(capture, signal),
+  "structure-empty": (/** @type {any} */ capture, /** @type {any} */ signal) => structureIsEmpty(capture, signal),
+  "missing-heading": (/** @type {any} */ capture, /** @type {any} */ signal) => headingIsMissing(capture, signal),
+  "missing-role": (/** @type {any} */ capture, /** @type {any} */ signal) => hasMissingRole(capture, signal),
+  "state-change-silent": (/** @type {any} */ capture, /** @type {any} */ signal) => stateChangeIsSilent(capture, signal),
+  "form-activation-silent": (/** @type {any} */ capture, /** @type {any} */ signal) => formActivationIsSilent(capture, signal),
+  "validation-error-silent": (/** @type {any} */ capture, /** @type {any} */ signal) => validationErrorIsSilent(capture, signal),
+  "placeholder-only": (/** @type {any} */ capture, /** @type {any} */ signal) => placeholderOnlyIsPresent(capture, signal),
+  "table-unassociated": (/** @type {any} */ capture) => tableHeadersAreUnassociated(capture),
+  "focus-trapped": (/** @type {any} */ capture) => focusIsTrapped(capture),
+  "route-title-stale": (/** @type {any} */ capture) => routeTitleIsStale(capture),
+  "focus-order-scrambled": (/** @type {any} */ capture) => focusOrderIsScrambled(capture),
+  "skip-link-inert": (/** @type {any} */ capture) => skipLinkIsInert(capture),
+  "control-unreachable-by-keyboard": (/** @type {any} */ capture) => controlUnreachableByKeyboard(capture),
 });
 
 /**
@@ -3293,7 +3307,7 @@ const SIGNAL_PREDICATES = Object.freeze({
  */
 export const SIGNAL_TYPES = Object.freeze(Object.keys(SIGNAL_PREDICATES));
 
-export function signalMatches(capture, signal) {
+export function signalMatches(/** @type {any} */ capture, /** @type {any} */ signal) {
   return SIGNAL_PREDICATES[signal?.type]?.(capture, signal) ?? false;
 }
 

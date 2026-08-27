@@ -1,3 +1,4 @@
+// @ts-check
 // Re-capture a sample of the dataset and ask whether a pipeline change altered the EVIDENCE.
 //
 //   npm run evidence:check -- <worker-url> [--sample=24] [--only=family] [--browser=chrome]
@@ -61,7 +62,7 @@ const DEFAULT_SAMPLE = 24;
 // fixed.
 const workers = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const worker = workers[0];
-const flag = (name, fallback) => {
+const flag = (/** @type {any} */ name, /** @type {any} */ fallback) => {
   const found = process.argv.find((a) => a.startsWith(`--${name}=`));
   return found ? found.slice(name.length + 3) : fallback;
 };
@@ -74,7 +75,7 @@ const browser = flag("browser", null);
 
 function manifestCases() {
   const manifest = JSON.parse(readFileSync(resolve(DATASET, "manifest.json"), "utf8"));
-  return manifest.cases.filter((c) => !only || (c.family ?? c.id).includes(only));
+  return manifest.cases.filter((/** @type {any} */ c) => !only || (c.family ?? c.id).includes(only));
 }
 
 /**
@@ -94,7 +95,7 @@ function manifestCases() {
  * `hasUsableCaptureFiles` is the same predicate `--resume` and `check-signals` use, so "comparable here" and
  * "current on disk" cannot drift apart.
  */
-const pageIsUnchanged = (testCase) => hasUsableCaptureFiles({
+const pageIsUnchanged = (/** @type {any} */ testCase) => hasUsableCaptureFiles({
   id: testCase.id,
   captureRoot: resolve(DATASET, "captures"),
   pageRoot: resolve(DATASET, "pages"),
@@ -112,7 +113,7 @@ const pageIsUnchanged = (testCase) => hasUsableCaptureFiles({
  * Same rule as the page check, one field along: **a comparison must not be between two things that differ for
  * a reason unrelated to the change under test.**
  */
-function optionsUnchanged(testCase) {
+function optionsUnchanged(/** @type {any} */ testCase) {
   return ["good", "bad"].every((variant) => {
     try {
       const recorded = JSON.parse(readFileSync(resolve(DATASET, "captures", `${testCase.id}.${variant}.json`), "utf8"))
@@ -137,7 +138,7 @@ function optionsUnchanged(testCase) {
 }
 
 /** One case per family until the sample is full, so no family can be silently absent. */
-function stratify(cases, limit) {
+function stratify(/** @type {any} */ cases, /** @type {any} */ limit) {
   const byFamily = new Map();
   for (const testCase of cases) {
     const family = testCase.family ?? testCase.id;
@@ -146,7 +147,7 @@ function stratify(cases, limit) {
   return [...byFamily.values()].slice(0, limit);
 }
 
-async function capture(testCase, variant, worker) {
+async function capture(/** @type {any} */ testCase, /** @type {any} */ variant, /** @type {any} */ worker) {
   const pageUrl = `${pagesBase()}/${testCase.id}/${variant}.html`;
   const response = await requestJson(`${worker.replace(/\/$/, "")}/capture`, {
     method: "POST",
@@ -191,7 +192,7 @@ function pagesBase() {
 }
 
 /** The page's own title, so the verification gates can check the capture against it. */
-async function pageTitle(testCase, variant) {
+async function pageTitle(/** @type {any} */ testCase, /** @type {any} */ variant) {
   try {
     const response = await fetch(`${pagesBase()}/${testCase.id}/${variant}.html`,
       { signal: AbortSignal.timeout(15_000) });
@@ -217,7 +218,7 @@ async function pageTitle(testCase, variant) {
  * Acting on that would have invalidated 2,122 captures because a static file server was not running.
  * "Cannot verify" must never resolve to "proceed" in a tool whose whole output is a verdict.
  */
-async function requirePagesServed(cases) {
+async function requirePagesServed(/** @type {any} */ cases) {
   const probe = cases[0];
   for (const variant of ["good", "bad"]) {
     if (await pageTitle(probe, variant) !== null) return;
@@ -250,7 +251,7 @@ async function requirePagesServed(cases) {
  * Account for every capture that was ASKED for, so one that never happened reduces coverage instead of
  * disappearing from it.
  */
-function countUncomparedAgainstCoverage(selected, results) {
+function countUncomparedAgainstCoverage(/** @type {any} */ selected, /** @type {any} */ results) {
 // A capture that failed left no result at all, so it vanished from the DENOMINATOR: measured on this run,
 // one worker answered `NVDA is running but not speaking`, that case's second variant was never attempted,
 // and the verdict read `46 compared: 46 same ... safe to ship` — complete coverage of a sample two smaller
@@ -267,14 +268,14 @@ function countUncomparedAgainstCoverage(selected, results) {
 for (const testCase of selected) {
   for (const variant of ["good", "bad"]) {
     if (!readCapture(BASELINE, testCase.id, variant)) continue; // never asked for; not missing
-    if (results.some((r) => r.id === testCase.id && r.variant === variant)) continue;
+    if (results.some((/** @type {any} */ r) => r.id === testCase.id && r.variant === variant)) continue;
     results.push({ id: testCase.id, variant, comparison: { verdict: "REJECTED", changes: [], phrases: null } });
     process.stdout.write(`  UNCOMPARED  ${testCase.id}.${variant}  no usable capture; counted against coverage\n`);
   }
 }
 }
 
-async function compareAcrossPool(selected) {
+async function compareAcrossPool(/** @type {any} */ selected) {
 // ONE CASE PER WORKER AT A TIME, across every worker named. This ran against a single worker while the
 // rest of the fleet sat idle — ~20 minutes for 48 captures where four boxes do it in about five. The
 // dispatch is `worker-pool.mjs`, shared with the corpus runner, because a second copy of a pool is the
@@ -282,8 +283,9 @@ async function compareAcrossPool(selected) {
 //
 // A case is the unit, both variants together, for the reason it always is here: a pair is only comparable
 // if both halves came from the same screen reader on the same machine.
+/** @type {any[]} */
 const results = [];
-const compareCase = async (testCase, { worker }) => {
+const compareCase = async (/** @type {any} */ testCase, /** @type {any} */ { worker }) => {
   for (const variant of ["good", "bad"]) {
     const baseline = readCapture(BASELINE, testCase.id, variant);
     if (!baseline) {
@@ -294,7 +296,7 @@ const compareCase = async (testCase, { worker }) => {
     try {
       candidate = await capture(testCase, variant, worker);
     } catch (error) {
-      process.stdout.write(`  FAILED      ${testCase.id}.${variant}: ${error.message}\n`);
+      process.stdout.write(`  FAILED      ${testCase.id}.${variant}: ${/** @type {any} */ (error).message}\n`);
       // Rethrown so the POOL sees it: a worker that fails three cases running is evicted and its work is
       // handed back, which is the entire reason for using the pool rather than a plain loop. Swallowing it
       // here would leave a dead guest quietly failing everything it touched.
@@ -338,9 +340,9 @@ const pooled = await drainAcrossPool({
   },
   handle: compareCase,
   hooks: {
-    onWorkerUnusable: (worker, error) =>
+    onWorkerUnusable: (/** @type {any} */ worker, /** @type {any} */ error) =>
       process.stdout.write(`  worker unusable, skipping it: ${worker} (${error.message})\n`),
-    onEvicted: (worker, { consecutiveFailures, handedBack }) =>
+    onEvicted: (/** @type {any} */ worker, /** @type {any} */ { consecutiveFailures, handedBack }) =>
       process.stdout.write(`  EVICTING ${worker} after ${consecutiveFailures} consecutive failures; `
         + `${handedBack} case(s) go back to the queue\n`),
   },

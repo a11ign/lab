@@ -1,3 +1,4 @@
+// @ts-check
 // Capture ONE page N times and report which fields are stable.
 //
 //   npm run training:repeat -- --url=http://REDACTED-INTERNAL-ADDRESS:5050/<case>/good --times=5
@@ -37,6 +38,15 @@ refuseUnknownFlags(["--url=", "--worker=", "--times=", "--steps=", "--task=", "-
    "--probe-forms", "--probe-tables", "--reuse"],
   { entry: import.meta.url, command: "npm run training:repeat" });
 
+/**
+ * A named `--flag=value`, or the fallback.
+ *
+ * `fallback` typed rather than inferred: defaulting to `null` infers exactly `null`, so every caller
+ * supplying a real default became the error. The same shape `capture-fixtures.mjs` has.
+ *
+ * @param {string} name
+ * @param {string | number | null} [fallback]
+ */
 const arg = (name, fallback = null) => {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : fallback;
@@ -48,7 +58,7 @@ const URL_ARG = arg("url");
 // of the PAGE. This one read `--worker` through the `arg()` helper, so the discovery test that requires
 // exactly this could not see it until the flag was named literally in the file.
 const WORKER = arg("worker", process.env.A11Y_WORKER);
-if (WORKER) assertWorkerUrl(WORKER);
+if (WORKER) assertWorkerUrl(String(WORKER));
 const TIMES = Number(arg("times", "5"));
 const STEPS = Number(arg("steps", "10"));
 const PROBE_TABLES = process.argv.includes("--probe-tables");
@@ -71,14 +81,14 @@ const BROWSER = arg("browser");
 // captures and I could not say WHY, because the diagnostics -- stopReason, documentReady,
 // readThroughRetry -- had been thrown away with the response. A harness that reports instability
 // without keeping the evidence makes you run it twice.
-const OUT_DIR = resolve(arg("out", "runs/repeat-captures"));
+const OUT_DIR = resolve(String(arg("out", "runs/repeat-captures")));
 const BETWEEN_MS = 2_000; // let the guest settle, as a real run would between cases
 
 // A probe-forms run with no task cannot activate anything, so it would compare an empty field five times
 // and call it stable. Refuse rather than pass vacuously.
 
 /** The fields worth comparing: everything a dataset signal can read. */
-function comparable(capture) {
+function comparable(/** @type {any} */ capture) {
   const s = capture.structure ?? {};
   const i = capture.interaction ?? {};
   return {
@@ -100,13 +110,13 @@ function comparable(capture) {
     //
     // Flattened to strings so a differing `after` shows up as a VARIES rather than as two objects the
     // comparison treats as opaque.
-    formChanges: (i.formChanges ?? []).map((c) => `${c.control} [${c.kind ?? "?"}] -> ${c.after ?? ""}`),
+    formChanges: (i.formChanges ?? []).map((/** @type {any} */ c) => `${c.control} [${c.kind ?? "?"}] -> ${c.after ?? ""}`),
     postSubmitFields: i.postSubmitFields ?? [],
   };
 }
 
 async function captureOnce() {
-  const response = await requestJson(`${WORKER.replace(/\/$/, "")}/capture`, {
+  const response = await requestJson(`${String(WORKER).replace(/\/$/, "")}/capture`, {
     method: "POST",
     body: {
       url: URL_ARG, steps: STEPS, probeTables: PROBE_TABLES, reuseScreenReader: REUSE,
@@ -145,7 +155,7 @@ async function waitForReady(deadlineMs = 300_000) {
   let announced = false;
   while (Date.now() < deadline) {
     try {
-      const health = (await requestJson(`${WORKER.replace(/\/$/, "")}/health`, { timeoutMs: 15_000 })).json;
+      const health = (await requestJson(`${String(WORKER).replace(/\/$/, "")}/health`, { timeoutMs: 15_000 })).json;
       // `workerIsUsable`, not `health.ready`: an older worker reports no `ready` field at all, and testing
       // it for truthiness waits out the whole budget against a guest that was fine. It also covers `busy`,
       // so this no longer fires a capture at a worker mid-capture and collects a 429.
@@ -173,7 +183,7 @@ async function captureWithRetry(attempts = 3) {
       return await captureOnce();
     } catch (error) {
       if (attempt >= attempts || !isTransient(error)) throw error;
-      console.log(`    transient (${error.code ?? error.message.slice(0, 40)}), retrying ${attempt}/${attempts - 1}`);
+      console.log(`    transient (${/** @type {any} */ (error).code ?? /** @type {any} */ (error).message.slice(0, 40)}), retrying ${attempt}/${attempts - 1}`);
       await waitForReady();
     }
   }
@@ -219,11 +229,11 @@ async function main() {
       runs.push(comparable(capture));
       raw.push(capture); // the gates read the real shape (structure.headings), not the flattened one
       writeFileSync(resolve(OUT_DIR, `capture-${n}.json`), JSON.stringify(capture, null, 2) + "\n", "utf8");
-      const retried = (capture.diagnostics ?? []).some((e) => e.event === "readThroughRetry");
+      const retried = (capture.diagnostics ?? []).some((/** @type {any} */ e) => e.event === "readThroughRetry");
       console.log(`${capture.transcript.length} phrases${retried ? " (read-through retried)" : ""}`);
     } catch (e) {
-      errors.push(`${n}: ${e.message}`);
-      console.log(`FAILED ${e.message}`);
+      errors.push(`${n}: ${/** @type {any} */ (e).message}`);
+      console.log(`FAILED ${/** @type {any} */ (e).message}`);
     }
     if (n < TIMES) await sleep(BETWEEN_MS);
   }
@@ -235,12 +245,12 @@ async function main() {
  * The verdict. Split from `main` to stay inside the lint gate's 70-line and complexity-15 limits --
  * which is the honest fix for a long function, rather than a suppression.
  */
-function report({ runs, raw, errors }) {
+function report(/** @type {any} */ { runs, raw, errors }) {
   // A capture with no phrases heard nothing at all -- the known ForegroundLockTimeout/foreground
   // flake. It is a failure, and it is a DIFFERENT failure from a probe that varies. Comparing it
   // against real captures would report every field as unstable and bury the question being asked.
   // So it is excluded from the comparison and named loudly, never quietly dropped.
-  const empty = runs.filter((r) => r.transcript.length === 0);
+  const empty = runs.filter((/** @type {any} */ r) => r.transcript.length === 0);
   // Captures the PRODUCTION pipeline would reject must not be compared here.
   //
   // `captureIsSelfConsistent` catches a capture whose read-through announced a heading while the heading
@@ -258,9 +268,9 @@ function report({ runs, raw, errors }) {
   // Indexed against `raw`, because the gate reads `capture.structure.headings` and `runs` holds the
   // FLATTENED comparison shape where that path does not exist. Applying it to the flat object made every
   // capture look inconsistent -- caught by running the tool, which is the only check that catches this.
-  const traversed = runs.map((r, i) => r.transcript.length > 0 && captureIsSelfConsistent(raw[i]));
-  const inconsistent = runs.filter((_, i) => runs[i].transcript.length > 0 && !traversed[i]);
-  const usable = runs.filter((_, i) => traversed[i]);
+  const traversed = runs.map((/** @type {any} */ r, /** @type {any} */ i) => r.transcript.length > 0 && captureIsSelfConsistent(raw[i]));
+  const inconsistent = runs.filter((/** @type {any} */ _, /** @type {any} */ i) => runs[i].transcript.length > 0 && !traversed[i]);
+  const usable = runs.filter((/** @type {any} */ _, /** @type {any} */ i) => traversed[i]);
 
   if (usable.length < 2) {
     console.error(`\nOnly ${usable.length} usable capture(s); nothing to compare.`);
@@ -298,11 +308,11 @@ function report({ runs, raw, errors }) {
  * taken to satisfy lint: this is the comparison the whole tool exists to make. Everything around it is
  * deciding WHICH captures are eligible to be compared.
  */
-function compareFields(usable) {
+function compareFields(/** @type {any} */ usable) {
   let unstable = 0;
   for (const field of Object.keys(usable[0])) {
-    const distinct = new Set(usable.map((r) => JSON.stringify(r[field])));
-    const counts = usable.map((r) => r[field].length).join(",");
+    const distinct = new Set(usable.map((/** @type {any} */ r) => JSON.stringify(r[field])));
+    const counts = usable.map((/** @type {any} */ r) => r[field].length).join(",");
     if (distinct.size === 1) {
       console.log(`  STABLE    ${field.padEnd(13)} ${usable[0][field].length} item(s), identical every time`);
       continue;

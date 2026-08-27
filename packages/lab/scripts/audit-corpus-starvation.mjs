@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Which features will the corpus STARVE — asked of the case definitions, before any capture.
  *
@@ -70,6 +71,7 @@ const GRANTS = Object.freeze({
  * A LIST, not a rule, because the relationship is semantic: it is what the subtype's name asserts. Each
  * entry says which announcement the failure consists of NOT hearing.
  */
+/** @type {Record<string, any>} */
 const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
   "3.3.1:validation-error-silent": ["validation_error_announced", "status_update_announced"],
   "4.1.3:form-activation-silent": ["status_update_announced", "validation_error_announced"],
@@ -114,15 +116,15 @@ const VOCABULARY_FEATURES = Object.freeze(new Set([
 
 /** The furniture a case will actually get, read from its GENERATED HTML rather than recomputed. */
 function furnitureOf() {
-  const carries = (testCase, marker) => marker.test(testCase.good) && marker.test(testCase.bad);
-  return new Map(CASES.map((testCase) => [testCase.id, {
+  const carries = (/** @type {any} */ testCase, /** @type {any} */ marker) => marker.test(testCase.good) && marker.test(testCase.bad);
+  return new Map(CASES.map((/** @type {any} */ testCase) => [testCase.id, {
     namedField: carries(testCase, /Reference lookup/),
     dataTable: carries(testCase, /Reference notes index/),
     disclosure: carries(testCase, /Reference notes archive/),
   }]));
 }
 
-function featureValues(path) {
+function featureValues(/** @type {any} */ path) {
   const script = "import json,sys; sys.path.insert(0,'packages/scorer/python');\n"
     + "import screenreader_features as F;\n"
     + "print(json.dumps([F.structured_feature_values(json.loads(l)) for l in open(sys.argv[1]) if l.strip()]))";
@@ -137,7 +139,7 @@ function featureValues(path) {
     //
     // The distinction matters because the two need opposite responses: re-export, versus debug the
     // featurizer. An audit that cannot tell them apart sends its reader at the wrong one.
-    const stderr = String(cause.stderr ?? "");
+    const stderr = String(/** @type {any} */ (cause).stderr ?? "");
     if (stderr.includes("no `parsed` block")) {
       process.stderr.write("\n  STALE EXPORT — this copy of the dataset predates the announcement parse,\n"
         + "  so the featurizer cannot read it. That is a fact about the FILE, not a defect in the corpus.\n"
@@ -190,7 +192,7 @@ function starvation() {
         // work list that nobody can complete, and inflated the two features at the top of the ranking.
         && !(IMPOSSIBLE_BY_DEFINITION[subtype] ?? []).includes(name)),
       impossible: (IMPOSSIBLE_BY_DEFINITION[subtype] ?? [])
-        .filter((name) => positives.every((row) => !row.values[name])),
+        .filter((/** @type {any} */ name) => positives.every((row) => !row.values[name])),
     };
   }).filter(Boolean);
   // A feature almost nothing carries is EXCLUDED from the starvation table above by
@@ -238,8 +240,8 @@ function starvation() {
     unmatched, missing, defined: furniture.size, records: rows.length };
 }
 
-function render({ starved, rare, monopoly, conformantRecords, unmatched, missing, defined, records }) {
-  const total = starved.reduce((sum, row) => sum + row.features.length, 0);
+function render(/** @type {any} */ { starved, rare, monopoly, conformantRecords, unmatched, missing, defined, records }) {
+  const total = starved.reduce((/** @type {any} */ sum, /** @type {any} */ row) => sum + row.features.length, 0);
   process.stdout.write(`\n  ${records} exported records; ${unmatched} whose case is no longer defined.\n`);
   if (unmatched > 0) {
     process.stdout.write("  Those get NO furniture applied, so their subtypes may read as starved when they "
@@ -261,12 +263,12 @@ function render({ starved, rare, monopoly, conformantRecords, unmatched, missing
       + "decides.\n");
   }
 
-  const impossible = starved.reduce((sum, row) => sum + (row.impossible?.length ?? 0), 0);
+  const impossible = starved.reduce((/** @type {any} */ sum, /** @type {any} */ row) => sum + (row.impossible?.length ?? 0), 0);
   if (impossible) {
     process.stdout.write(`\n  ${impossible} starved pair(s) are IMPOSSIBLE BY DEFINITION and excluded below: `
       + "the subtype\n  is the absence of that announcement, so no page can carry both and the negative "
       + "weight is\n  correct inference rather than a free veto. Nothing to build.\n");
-    for (const row of starved.filter((r) => r.impossible?.length)) {
+    for (const row of starved.filter((/** @type {any} */ r) => r.impossible?.length)) {
       process.stdout.write(`    ${row.subtype.padEnd(34)} ${row.impossible.join(", ")}\n`);
     }
   }
@@ -278,6 +280,7 @@ function render({ starved, rare, monopoly, conformantRecords, unmatched, missing
     process.stdout.write(`  ${row.subtype.padEnd(32)} ${String(row.positives).padStart(5)} `
       + `${String(row.features.length).padStart(8)}  ${row.features.slice(0, 3).join(", ")}\n`);
   }
+  /** @type {Record<string, any>} */
   const byFeature = {};
   for (const row of starved) for (const name of row.features) byFeature[name] = (byFeature[name] ?? 0) + 1;
   process.stdout.write(`\n  ${total} starved feature/subtype pairs across ${starved.length} subtypes.\n`);
@@ -298,13 +301,13 @@ function render({ starved, rare, monopoly, conformantRecords, unmatched, missing
  * audit, opposite sign. Keeping both in one function pushed it past the line-count and complexity gates,
  * which is those rules doing their job rather than something to widen.
  */
-function renderMonopoly(monopoly, conformantRecords) {
+function renderMonopoly(/** @type {any} */ monopoly, /** @type {any} */ conformantRecords) {
   process.stdout.write(`\n  WORD-SENSE MONOPOLY — features no conformant page carries (of ${conformantRecords} conformant records):\n\n`);
   if (monopoly.length === 0) {
     process.stdout.write("    none.\n");
   } else {
-    const actionable = monopoly.filter((m) => VOCABULARY_FEATURES.has(m.name));
-    const inherent = monopoly.filter((m) => !VOCABULARY_FEATURES.has(m.name));
+    const actionable = monopoly.filter((/** @type {any} */ m) => VOCABULARY_FEATURES.has(m.name));
+    const inherent = monopoly.filter((/** @type {any} */ m) => !VOCABULARY_FEATURES.has(m.name));
     process.stdout.write("    FIX THESE — decided by a hand-written wordlist, so the word has another sense in English:\n");
     for (const { name, onFailing } of actionable) {
       process.stdout.write(`      ${name.padEnd(32)} ${String(onFailing).padStart(5)} failing / 0 conformant\n`);

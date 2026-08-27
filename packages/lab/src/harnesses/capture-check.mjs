@@ -1,3 +1,4 @@
+// @ts-check
 // capture-check.mjs — capture-regression test (ADR 0003, Phase 1).
 //
 // Drives the REAL capture worker over the bundled W3C tutorial pages and asserts
@@ -45,12 +46,12 @@ const WORKER_ARG = process.argv.find((a) => a.startsWith("--worker="))?.slice("-
 const WORKER = validatedWorker(WORKER_ARG);
 
 /** A clean message and exit 2, not a stack trace: a legible failure is the whole point of validating. */
-function validatedWorker(raw) {
+function validatedWorker(/** @type {any} */ raw) {
   if (raw === undefined) return undefined;
   try {
     return assertWorkerUrl(raw, { source: "--worker" });
   } catch (error) {
-    process.stderr.write(`${error.message}\n`);
+    process.stderr.write(`${/** @type {any} */ (error).message}\n`);
     process.exit(2);
   }
 }
@@ -73,12 +74,12 @@ const CHECKS = [
   {
     page: "structure-good.html",
     signature: /City Library/i,
-    assert: (r) => [
+    assert: (/** @type {any} */ r) => [
       ["read-through produced lines", r.transcript.length >= 3, r.transcript.length],
       // Specifically the h1: this is the announcement the readiness gate used to eat.
       ["read-through announces a heading level",
-        r.transcript.some((p) => /heading, level/i.test(p)),
-        r.transcript.filter((p) => /heading, level/i.test(p)).length],
+        r.transcript.some((/** @type {any} */ p) => /heading, level/i.test(p)),
+        r.transcript.filter((/** @type {any} */ p) => /heading, level/i.test(p)).length],
       ["structural nav found headings", r.structure.headings.length >= 3, r.structure.headings.length],
       ["structural nav found landmarks", r.structure.landmarks.length >= 1, r.structure.landmarks.length],
     ],
@@ -88,7 +89,7 @@ const CHECKS = [
     signature: /City Library/i,
     // The point of the bad page: visual titles and div-soup expose NO real
     // headings or landmarks, even though it looks structured.
-    assert: (r) => [
+    assert: (/** @type {any} */ r) => [
       ["no real headings exposed", r.structure.headings.length === 0, r.structure.headings.length],
       ["no landmarks exposed", r.structure.landmarks.length === 0, r.structure.landmarks.length],
     ],
@@ -102,7 +103,7 @@ const CHECKS = [
   {
     page: "disclosure-good.html",
     signature: /password|FAQ/i,
-    assert: (r) => [
+    assert: (/** @type {any} */ r) => [
       ["disclosure probe fired", r.interaction.stateChanges.length >= 1, r.interaction.stateChanges.length],
       ["found a collapsed control", /collapsed/i.test(r.interaction.stateChanges[0]?.control ?? ""), r.interaction.stateChanges[0]?.control],
       ["state updated to expanded", /\bexpanded\b/i.test(r.interaction.stateChanges[0]?.after ?? ""), r.interaction.stateChanges[0]?.after],
@@ -111,7 +112,7 @@ const CHECKS = [
   {
     page: "disclosure-bad.html",
     signature: /password|FAQ/i,
-    assert: (r) => [
+    assert: (/** @type {any} */ r) => [
       ["disclosure probe fired", r.interaction.stateChanges.length >= 1, r.interaction.stateChanges.length],
       // The whole point of the bad page: it reveals the panel but never updates
       // aria-expanded, so the re-read must still say "collapsed".
@@ -130,7 +131,7 @@ const CHECKS = [
     page: "forms-validation-good.html",
     signature: /Newsletter|Email address/i,
     probeForms: true,
-    assert: (r) => [
+    assert: (/** @type {any} */ r) => [
       ["form-submit probe fired", r.interaction.formChanges.length >= 1, r.interaction.formChanges.length],
       ["submit control identified", /sign ?up|submit|button/i.test(r.interaction.formChanges[0]?.control ?? ""), r.interaction.formChanges[0]?.control],
     ],
@@ -139,7 +140,7 @@ const CHECKS = [
     page: "forms-validation-bad.html",
     signature: /Newsletter|Email address/i,
     probeForms: true,
-    assert: (r) => [
+    assert: (/** @type {any} */ r) => [
       ["form-submit probe fired", r.interaction.formChanges.length >= 1, r.interaction.formChanges.length],
     ],
   },
@@ -148,8 +149,8 @@ const CHECKS = [
 // Everything NVDA announced for a capture, flattened — used to confirm page identity.
 /** What the worker believed it had loaded. A title matching the target with a transcript from elsewhere is
  * the stale-virtual-buffer fault specifically; both matching means the read, not the navigation, failed. */
-function titleOf(r) {
-  return (r.diagnostics ?? []).find((m) => m && m.event === "documentReady")?.title ?? null;
+function titleOf(/** @type {any} */ r) {
+  return (r.diagnostics ?? []).find((/** @type {any} */ m) => m && m.event === "documentReady")?.title ?? null;
 }
 
 /**
@@ -165,7 +166,7 @@ function titleOf(r) {
  * correct title with someone else's content is the stale buffer, while a wrong title means the navigation
  * itself went somewhere unexpected.
  */
-function identityFailureCause(r) {
+function identityFailureCause(/** @type {any} */ r) {
   const heard = r.transcript?.length ?? 0;
   if (heard === 0) {
     return "read NOTHING — the screen reader was silent, which is not the same as reading the wrong page";
@@ -174,12 +175,12 @@ function identityFailureCause(r) {
     + ` while documentReady reported the title ${JSON.stringify(titleOf(r))}`;
 }
 
-function capturedText(r) {
+function capturedText(/** @type {any} */ r) {
   return [
     ...r.transcript,
     ...r.structure.headings, ...r.structure.landmarks, ...r.structure.formFields,
-    ...r.interaction.stateChanges.map((s) => `${s.control} ${s.after}`),
-    ...r.interaction.formChanges.map((s) => `${s.control} ${s.after}`),
+    ...r.interaction.stateChanges.map((/** @type {any} */ s) => `${s.control} ${s.after}`),
+    ...r.interaction.formChanges.map((/** @type {any} */ s) => `${s.control} ${s.after}`),
     ...(r.interaction.postSubmitFields ?? []),
   ].join(" | ");
 }
@@ -192,9 +193,10 @@ const MAX_ATTEMPTS = 4;
 
 // The guest cannot reach the host's filesystem, so worker mode serves the same pages over HTTP and
 // addresses them by the host's LAN IP -- the same reason evidence-check derives `hostPages`.
+/** @type {string | null} */
 let pagesBase = null;
 
-async function captureOnce(check) {
+async function captureOnce(/** @type {any} */ check) {
   if (!WORKER) {
     return captureWithNvda(pathToFileURL(join(pagesDir, check.page)).href,
       { steps: STEPS, probeForms: !!check.probeForms });
@@ -209,13 +211,13 @@ async function captureOnce(check) {
   return body;
 }
 
-async function captureConfirmed(check) {
+async function captureConfirmed(/** @type {any} */ check) {
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     let result;
     try {
       result = await captureOnce(check);
     } catch (e) {
-      console.log(`  attempt ${attempt}/${MAX_ATTEMPTS}: capture threw: ${(e && e.message) || e}`);
+      console.log(`  attempt ${attempt}/${MAX_ATTEMPTS}: capture threw: ${(e && /** @type {any} */ (e).message) || e}`);
       continue;
     }
     if (check.signature.test(capturedText(result))) return result; // genuinely read the target page
@@ -247,23 +249,23 @@ async function captureConfirmed(check) {
 // fell from 105 to 15 and every check stayed green.
 const ROLE_WORD = /\b(button|link|graphic|edit|heading|table|row|column|form|list)\b/i;
 
-function fidelityAssertions(result) {
+function fidelityAssertions(/** @type {any} */ result) {
   const spoken = result.transcript ?? [];
-  const withRole = spoken.filter((phrase) => ROLE_WORD.test(phrase));
+  const withRole = spoken.filter((/** @type {any} */ phrase) => ROLE_WORD.test(phrase));
   return [
     ["read-through carries role information", withRole.length > 0, `${withRole.length}/${spoken.length} phrases`],
   ];
 }
 
-function diagnosticsAssertions(result) {
-  const ready = (result.diagnostics ?? []).find((e) => e.event === "documentReady");
+function diagnosticsAssertions(/** @type {any} */ result) {
+  const ready = (result.diagnostics ?? []).find((/** @type {any} */ e) => e.event === "documentReady");
   return [
     ["documentReady recorded", !!ready, ready ? "present" : "MISSING"],
     ["documentReady agrees the page was read", ready?.ok === true, ready?.title ?? null],
   ];
 }
 
-async function runCheck(check) {
+async function runCheck(/** @type {any} */ check) {
   process.stdout.write(`\n=== ${check.page} ===\n`);
   const result = await captureConfirmed(check);
   if (!result) {

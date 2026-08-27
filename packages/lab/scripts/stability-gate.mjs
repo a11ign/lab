@@ -1,3 +1,4 @@
+// @ts-check
 // Refuse to start a corpus run if the pipeline does not produce the same evidence twice.
 //
 //   npm run gate:stability                       # before any recapture
@@ -49,7 +50,7 @@ refuseUnknownFlags(["--base=", "--times=", "--worker="], { entry: import.meta.ur
 
 const run = promisify(execFile);
 
-const arg = (name, fallback) =>
+const arg = (/** @type {any} */ name, /** @type {any} */ fallback) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 
 const TIMES = Number(arg("times", "5"));
@@ -122,7 +123,7 @@ const CANARIES = [
  * to four levels of nesting -- the lint gate's limit is three, and the honest fix for depth is a named
  * function rather than a suppression.
  */
-async function judgeCanary({ path, reason, task, probeForms }, { base, worker, results }) {
+async function judgeCanary(/** @type {any} */ { path, reason, task, probeForms }, /** @type {any} */ { base, worker, results }) {
   const url = `${base}/${path}`;
   process.stdout.write(`\n=== ${path} (${TIMES}x) ===\n    why: ${reason}\n`);
   // tsx, not node: repeat-capture imports isTransient from capture-decisions.mjs, which imports the
@@ -163,7 +164,7 @@ async function judgeCanary({ path, reason, task, probeForms }, { base, worker, r
  * "Command failed" once made a transient capture error read exactly like genuine instability and cost a
  * re-run to discover the page was fine. repeat-capture puts its report on stdout even when it exits 1.
  */
-function interpretFailure(error, path, results) {
+function interpretFailure(/** @type {any} */ error, /** @type {any} */ path, /** @type {any} */ results) {
   const out = String(error.stdout ?? "");
   const varies = out.split("\n").filter((l) => l.includes("VARIES")).map((l) => l.trim());
   const empty = /(\d+) capture\(s\) heard nothing/.exec(out)?.[1];
@@ -224,6 +225,7 @@ async function main() {
   const BASE = arg("base", guestReachableUrl(pages.url, lease));
   process.stdout.write(`worker ${lease.worker} (${lease.source}) · pages ${BASE}\n`);
 
+  /** @type {any[]} */
   const results = [];
   try {
     for (const canary of CANARIES) await judgeCanary(canary, { base: BASE, worker: lease.worker, results });
@@ -236,11 +238,11 @@ async function main() {
 }
 
 /** The verdict, and the exit code that carries it. Split out to keep `main` inside the complexity gate. */
-function report(results) {
-  const failed = results.filter((r) => !r.ok);
+function report(/** @type {any} */ results) {
+  const failed = results.filter((/** @type {any} */ r) => !r.ok);
   process.stdout.write(`\n${results.length - failed.length}/${results.length} canaries stable\n`);
   for (const f of failed) process.stdout.write(`  ${f.path}: ${f.detail}\n`);
-  const unstable = failed.filter((f) => f.unstable);
+  const unstable = failed.filter((/** @type {any} */ f) => f.unstable);
   if (failed.length && !unstable.length) {
     process.stdout.write("\nNo canary was UNSTABLE, but some could not be judged (errored or empty " +
       "captures). Re-run the gate; if the same canary keeps failing to complete, that is a worker " +

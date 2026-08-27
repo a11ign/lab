@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * What state are the lab's corpus, exports and models actually in?
  *
@@ -64,7 +65,7 @@ const SETTLED_AFTER_MINUTES = 10;
 /** Enough captures to be worth describing; fewer is a partial copy, not a corpus. */
 const PARTIAL_CORPUS = 50;
 
-const readJson = (path) => {
+const readJson = (/** @type {any} */ path) => {
   try {
     return JSON.parse(readFileSync(path, "utf8"));
   } catch {
@@ -79,7 +80,7 @@ const readJson = (path) => {
  * script rather than a `jq`. The format is an 8-byte little-endian header length, then that many bytes of
  * JSON whose `__metadata__` holds the stamps.
  */
-function modelSchema(dir) {
+function modelSchema(/** @type {any} */ dir) {
   const path = join(dir, "model.safetensors");
   if (!existsSync(path)) return null;
   let fd;
@@ -98,9 +99,9 @@ function modelSchema(dir) {
   }
 }
 
-const minutesSince = (ms) => (Date.now() - ms) / 60_000;
+const minutesSince = (/** @type {any} */ ms) => (Date.now() - ms) / 60_000;
 
-function newestWrite(dir) {
+function newestWrite(/** @type {any} */ dir) {
   let newest = 0;
   try {
     for (const entry of readdirSync(dir)) {
@@ -125,16 +126,18 @@ function newestWrite(dir) {
  */
 export function environmentSpread(captures) {
   const fields = {
-    browserVersion: (c) => c.environment?.browserVersion,
-    screenReaderVersion: (c) => c.environment?.screenReaderVersion,
-    guidepupVersion: (c) => c.environment?.guidepupVersion,
-    windowsVersion: (c) => c.environment?.windowsVersion,
-    captureProtocol: (c) => c.provenance?.captureProtocol,
-    provisionRevision: (c) => c.provenance?.provisionRevision,
-    workerCode: (c) => c.provenance?.workerCode,
+    browserVersion: (/** @type {any} */ c) => c.environment?.browserVersion,
+    screenReaderVersion: (/** @type {any} */ c) => c.environment?.screenReaderVersion,
+    guidepupVersion: (/** @type {any} */ c) => c.environment?.guidepupVersion,
+    windowsVersion: (/** @type {any} */ c) => c.environment?.windowsVersion,
+    captureProtocol: (/** @type {any} */ c) => c.provenance?.captureProtocol,
+    provisionRevision: (/** @type {any} */ c) => c.provenance?.provisionRevision,
+    workerCode: (/** @type {any} */ c) => c.provenance?.workerCode,
   };
+  /** @type {Record<string, any>} */
   const spread = {};
   for (const [name, read] of Object.entries(fields)) {
+    /** @type {Record<string, any>} */
     const counts = {};
     for (const capture of captures) {
       // ABSENT is counted as its own value, never skipped. A field missing from half the corpus is the
@@ -149,14 +152,15 @@ export function environmentSpread(captures) {
 }
 
 /** Which fields hold more than one value, worst first. PURE. */
-export function splitFields(spread) {
+export function splitFields(/** @type {any} */ spread) {
   return Object.entries(spread)
     .filter(([, counts]) => Object.keys(counts).length > 1)
     .map(([field, counts]) => ({ field, values: counts, populations: Object.keys(counts).length }))
     .sort((a, b) => b.populations - a.populations);
 }
 
-function readCorpus(dir) {
+function readCorpus(/** @type {any} */ dir) {
+  /** @type {any[]} */
   const captures = [];
   let files;
   try {
@@ -173,7 +177,7 @@ function readCorpus(dir) {
 }
 
 /** An export is STALE when the newest capture is younger than it — the parse baked in predates them. */
-function exportState(path, newestCaptureMs) {
+function exportState(/** @type {any} */ path, /** @type {any} */ newestCaptureMs) {
   if (!existsSync(path)) return { path: basename(path), present: false };
   const { mtimeMs, size } = statSync(path);
   return {
@@ -188,8 +192,9 @@ function exportState(path, newestCaptureMs) {
 }
 
 function models() {
+  /** @type {any[]} */
   const found = [];
-  const add = (dir, label) => {
+  const add = (/** @type {any} */ dir, /** @type {any} */ label) => {
     if (!existsSync(dir)) return;
     const meta = modelSchema(dir);
     const report = readJson(join(dir, "training-report.json"));
@@ -212,11 +217,11 @@ function models() {
 }
 
 /** Which candidate, if any, could close an open schema migration. PURE. */
-export function migrationVerdict(migration, modelList) {
+export function migrationVerdict(/** @type {any} */ migration, /** @type {any} */ modelList) {
   if (!migration) return { open: false };
   const pending = migration.pendingSchema;
-  const shipped = modelList.find((m) => m.name === "shipped");
-  const candidates = modelList.filter((m) => m.name !== "shipped" && m.schema === pending);
+  const shipped = modelList.find((/** @type {any} */ m) => m.name === "shipped");
+  const candidates = modelList.filter((/** @type {any} */ m) => m.name !== "shipped" && m.schema === pending);
   return {
     open: true,
     pendingSchema: pending,
@@ -225,7 +230,7 @@ export function migrationVerdict(migration, modelList) {
     // A candidate carrying the pending schema is NECESSARY and not sufficient: the schema is a version
     // string, so it cannot tell a candidate trained on the current parse from one trained before an
     // announcement-grammar change that moved the features underneath the same version.
-    candidatesWithPendingSchema: candidates.map((c) => c.name),
+    candidatesWithPendingSchema: candidates.map((/** @type {any} */ c) => c.name),
   };
 }
 
@@ -266,7 +271,7 @@ function collect() {
  * that appears to crash when you page it is one people stop running.
  */
 process.stdout.on("error", (error) => {
-  if (error.code !== "EPIPE") throw error;
+  if (/** @type {any} */ (error).code !== "EPIPE") throw error;
   process.exit(0);
 });
 
@@ -274,7 +279,7 @@ function line(text = "") {
   process.stdout.write(`${text}\n`);
 }
 
-function reportSpread(label, count, spread) {
+function reportSpread(/** @type {any} */ label, /** @type {any} */ count, /** @type {any} */ spread) {
   const splits = splitFields(spread);
   line(`  ${label}: ${count} capture(s)`);
   if (!count) return;
@@ -305,7 +310,7 @@ function reportSpread(label, count, spread) {
 const LAB_REPO_PATH = "/opt/a11y";
 const onTheLab = () => REPO.replace(/\/$/, "") === LAB_REPO_PATH;
 
-function reportProvenance(state) {
+function reportProvenance(/** @type {any} */ state) {
   line(`\nREAD FROM  ${RUNS}`);
   if (onTheLab()) {
     line("  This IS the lab, so these are the authoritative numbers.");
@@ -327,7 +332,7 @@ function reportProvenance(state) {
  * IN FLUX and NOTHING TO READ are different answers and must not collapse into one: the first means
  * "ask again shortly", the second means "you are on the wrong machine".
  */
-function refusal(state) {
+function refusal(/** @type {any} */ state) {
   const idle = state.corpus.dataset.newestWrittenMinutesAgo;
   if (idle !== null && idle < SETTLED_AFTER_MINUTES) {
     line(`\n  IN FLUX — a capture was written ${idle} minute(s) ago. Every count below describes a state`);
@@ -366,7 +371,7 @@ function main() {
   for (const e of state.exports) {
     if (!e.present) { line(`  ${e.path.padEnd(28)} MISSING`); continue; }
     line(`  ${e.path.padEnd(28)} ${e.stale ? "STALE" : "current"}  `
-      + `${(e.bytes / 1e6).toFixed(1)} MB, written ${e.writtenMinutesAgo} min ago`);
+      + `${((e.bytes ?? 0) / 1e6).toFixed(1)} MB, written ${e.writtenMinutesAgo} min ago`);
   }
 
   line("\nMODELS  (schema is read from safetensors metadata, not from training-report.json)");

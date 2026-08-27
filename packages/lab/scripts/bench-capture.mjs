@@ -1,3 +1,4 @@
+// @ts-check
 // Measure what a capture actually costs, phase by phase.
 //
 //   node scripts/bench-capture.mjs <worker-url> <page-url> [count]
@@ -47,7 +48,7 @@ const COUNT = Number(countArg || 3);
 // See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
 const BETWEEN_MS = 1_000;
 
-async function capture(url) {
+async function capture(/** @type {any} */ url) {
   const startedAt = Date.now();
   const response = await requestJson(worker.replace(/\/$/, "") + "/capture", {
     method: "POST",
@@ -60,7 +61,8 @@ async function capture(url) {
 }
 
 // Diagnostics carry cumulative atMs, so each phase's own cost is the gap from the last one.
-function phaseCosts(diagnostics) {
+function phaseCosts(/** @type {any} */ diagnostics) {
+  /** @type {Record<string, any>} */
   const costs = {};
   let previous = 0;
   for (const entry of diagnostics ?? []) {
@@ -71,11 +73,12 @@ function phaseCosts(diagnostics) {
   return costs;
 }
 
-function mean(values) {
-  return values.reduce((a, b) => a + b, 0) / values.length;
+function mean(/** @type {any} */ values) {
+  return values.reduce((/** @type {any} */ a, /** @type {any} */ b) => a + b, 0) / values.length;
 }
 
-function report(runs) {
+function report(/** @type {any} */ runs) {
+  /** @type {Record<string, any>} */
   const phases = {};
   for (const run of runs) {
     for (const [phase, ms] of Object.entries(run.costs)) (phases[phase] ??= []).push(ms);
@@ -88,15 +91,15 @@ function report(runs) {
   for (const { phase, seconds } of rows) {
     console.log(`  ${phase.padEnd(18)}${String(seconds).padStart(6)}s  ${"#".repeat(Math.round(seconds))}`);
   }
-  const wall = mean(runs.map((r) => r.wallMs)) / 1000;
+  const wall = mean(runs.map((/** @type {any} */ r) => r.wallMs)) / 1000;
   console.log(`  ${"WALL".padEnd(18)}${wall.toFixed(1).padStart(6)}s`);
 
   // Faster is only better if the capture still heard the page.
-  const phrases = runs.map((r) => r.phrases);
+  const phrases = runs.map((/** @type {any} */ r) => r.phrases);
   console.log(`\nphrases per capture: ${phrases.join(", ")} (mean ${mean(phrases).toFixed(1)})`);
-  const empty = phrases.filter((p) => p === 0).length;
+  const empty = phrases.filter((/** @type {any} */ p) => p === 0).length;
   if (empty) console.log(`  WARNING: ${empty} capture(s) returned NOTHING — faster but broken`);
-  const reused = runs.filter((r) => r.reused).length;
+  const reused = runs.filter((/** @type {any} */ r) => r.reused).length;
   console.log(`NVDA reused on ${reused}/${runs.length} captures`);
 }
 
@@ -109,7 +112,7 @@ function report(runs) {
 // Nothing new is instrumented: every capture already carries per-phase diagnostics. This only
 // aggregates them, and reports p50/p95 rather than a mean because the tail is where a wedged
 // guest shows up -- a mean hides one 60-second capture among fifty good ones.
-async function fromDisk(root) {
+async function fromDisk(/** @type {any} */ root) {
   const { readdirSync, readFileSync } = await import("node:fs");
   const { resolve } = await import("node:path");
   const files = readdirSync(root).filter((f) => f.endsWith(".json") && f !== "manifest.json");
@@ -120,8 +123,8 @@ async function fromDisk(root) {
       capture = JSON.parse(readFileSync(resolve(root, file), "utf8"));
     } catch { continue; } // a partial write is not a data point
     if (!Array.isArray(capture.diagnostics)) continue;
-    const done = capture.diagnostics.filter((e) => typeof e.atMs === "number").at(-1);
-    const start = capture.diagnostics.find((e) => e.event === "nvdaStart");
+    const done = capture.diagnostics.filter((/** @type {any} */ e) => typeof e.atMs === "number").at(-1);
+    const start = capture.diagnostics.find((/** @type {any} */ e) => e.event === "nvdaStart");
     runs.push({
       // No client-side timing on disk, so the last diagnostic's atMs is the in-capture duration.
       // Labelled WALL(in-capture) rather than WALL so nobody compares it with the live number.
@@ -135,12 +138,13 @@ async function fromDisk(root) {
   return runs;
 }
 
-function percentile(values, p) {
+function percentile(/** @type {any} */ values, /** @type {any} */ p) {
   const sorted = [...values].sort((a, b) => a - b);
   return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
 }
 
-function reportFromDisk(runs) {
+function reportFromDisk(/** @type {any} */ runs) {
+  /** @type {Record<string, any>} */
   const phases = {};
   for (const run of runs) {
     for (const [phase, ms] of Object.entries(run.costs)) (phases[phase] ??= []).push(ms);
@@ -152,14 +156,15 @@ function reportFromDisk(runs) {
     const p95 = (percentile(values, 95) / 1000).toFixed(1);
     console.log(`  ${phase.padEnd(18)}${p50.padStart(6)}s  ${p95.padStart(6)}s  ${"#".repeat(Math.round(+p50))}`);
   }
-  const walls = runs.map((r) => r.wallMs);
+  const walls = runs.map((/** @type {any} */ r) => r.wallMs);
   console.log(`  ${"WALL(in-capture)".padEnd(18)}${(percentile(walls, 50) / 1000).toFixed(1).padStart(6)}s  ` +
     `${(percentile(walls, 95) / 1000).toFixed(1).padStart(6)}s`);
 
-  const empty = runs.filter((r) => r.phrases === 0).length;
+  const empty = runs.filter((/** @type {any} */ r) => r.phrases === 0).length;
   if (empty) console.log(`\nWARNING: ${empty}/${runs.length} captures on disk have NO phrases`);
 
   // Per worker, because "the run was slow" is only actionable once it names a guest.
+  /** @type {Record<string, any>} */
   const byWorker = {};
   for (const run of runs) (byWorker[run.worker] ??= []).push(run.wallMs);
   if (Object.keys(byWorker).length > 1 || !byWorker.unrecorded) {
@@ -189,14 +194,14 @@ async function main() {
   const runs = [];
   for (let i = 1; i <= COUNT; i++) {
       const { wallMs, body } = await capture(page);
-      const start = (body.diagnostics ?? []).find((e) => e.event === "nvdaStart");
+      const start = (body.diagnostics ?? []).find((/** @type {any} */ e) => e.event === "nvdaStart");
       runs.push({
         wallMs,
         costs: phaseCosts(body.diagnostics),
         phrases: (body.transcript ?? []).length,
         reused: !!start?.reused,
       });
-      console.log(`capture ${i}/${COUNT}: ${(wallMs / 1000).toFixed(1)}s, ${runs.at(-1).phrases} phrases${runs.at(-1).reused ? " (NVDA reused)" : ""}`);
+      console.log(`capture ${i}/${COUNT}: ${(wallMs / 1000).toFixed(1)}s, ${runs.at(-1)?.phrases} phrases${runs.at(-1)?.reused ? " (NVDA reused)" : ""}`);
     if (i < COUNT) await sleep(BETWEEN_MS);
   }
   report(runs);

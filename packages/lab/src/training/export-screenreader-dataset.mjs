@@ -1,3 +1,4 @@
+// @ts-check
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
@@ -71,24 +72,24 @@ const MODEL_EXCLUDED_SUBTYPES = new Set([
   "1.3.1:missing-landmark", "4.1.2:missing-role", "3.3.2:placeholder-only",
 ]);
 
-function readJson(path) {
+function readJson(/** @type {any} */ path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
-function capturePath(testCase, variant) {
+function capturePath(/** @type {any} */ testCase, /** @type {any} */ variant) {
   return resolve(CAPTURE_ROOT, testCase.id + "." + variant + ".json");
 }
 
-function readCapture(testCase, variant) {
+function readCapture(/** @type {any} */ testCase, /** @type {any} */ variant) {
   const path = capturePath(testCase, variant);
   return existsSync(path) ? readJson(path) : null;
 }
 
-function usableCapture(capture) {
+function usableCapture(/** @type {any} */ capture) {
   return capture && Array.isArray(capture.transcript) && capture.transcript.length > 0;
 }
 
-function validatePair(testCase, good, bad) {
+function validatePair(/** @type {any} */ testCase, /** @type {any} */ good, /** @type {any} */ bad) {
   if (!usableCapture(good) || !usableCapture(bad)) {
     return { status: "skipped", reason: "missing or empty screen-reader capture" };
   }
@@ -100,27 +101,27 @@ function validatePair(testCase, good, bad) {
 }
 
 
-function assertModelBoundary(input, caseId) {
+function assertModelBoundary(/** @type {any} */ input, /** @type {any} */ caseId) {
   const leaked = FORBIDDEN_INPUT_KEYS.filter((key) => Object.hasOwn(input, key));
   if (leaked.length) throw new Error(caseId + " leaked forbidden model input: " + leaked.join(", "));
 }
 
-function lifecycleProfile(capture) {
-  const nvdaStart = (capture.diagnostics || []).find((event) => event.event === "nvdaStart");
+function lifecycleProfile(/** @type {any} */ capture) {
+  const nvdaStart = (capture.diagnostics || []).find((/** @type {any} */ event) => event.event === "nvdaStart");
   return typeof nvdaStart?.reused === "boolean"
     ? (nvdaStart.reused ? "nvda-reused" : "nvda-fresh")
     : "unspecified";
 }
 
-function workerEnvironment(capture) {
+function workerEnvironment(/** @type {any} */ capture) {
   return capture.environment && typeof capture.environment === "object" ? capture.environment : {};
 }
 
-function knownOr(value, fallback) {
+function knownOr(/** @type {any} */ value, /** @type {any} */ fallback) {
   return value || fallback;
 }
 
-function captureEnvironment(capture) {
+function captureEnvironment(/** @type {any} */ capture) {
   const worker = workerEnvironment(capture);
   return {
     profile: lifecycleProfile(capture),
@@ -136,7 +137,7 @@ function captureEnvironment(capture) {
   };
 }
 
-function record(testCase, variant, capture) {
+function record(/** @type {any} */ testCase, /** @type {any} */ variant, /** @type {any} */ capture) {
   const isBad = variant === "bad";
   const subtype = testCase.subtype || testCase.badSignal.type;
   const input = modelInput(capture);
@@ -172,7 +173,7 @@ function record(testCase, variant, capture) {
       // with no matching subtype is a positive nothing can predict — a structurally unreachable
       // ground truth. Adding one produced 88 guaranteed false negatives, which is how this was found.
       criteria: isBad
-        ? [testCase.criterion, ...(testCase.alsoFails ?? []).map((s) => s.split(":")[0])]
+        ? [testCase.criterion, ...(testCase.alsoFails ?? []).map((/** @type {any} */ s) => s.split(":")[0])]
         : [],
       subtypes: isBad
         ? [testCase.criterion + ":" + subtype, ...(testCase.alsoFails ?? [])]
@@ -200,7 +201,8 @@ function record(testCase, variant, capture) {
 }
 
 /** Stable JSON, so a key-order difference cannot read as a changed value. */
-function canonicalJson(value) {
+/** @param {unknown} value @returns {unknown} */
+function canonicalJson(/** @type {any} */ value) {
   if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
   if (value && typeof value === "object") {
     return "{" + Object.keys(value).sort().map((k) => JSON.stringify(k) + ":" + canonicalJson(value[k])).join(",") + "}";
@@ -225,8 +227,8 @@ function canonicalJson(value) {
  * `pages` is manifest-only (it records where the files were written), and the probe flags are compared
  * because they decide what evidence the capture even contains -- that was the first of the two faults.
  */
-function assertManifestMatchesCases(manifest) {
-  const defined = new Map(CASES.map((testCase) => [testCase.id, testCase]));
+function assertManifestMatchesCases(/** @type {any} */ manifest) {
+  const defined = new Map(CASES.map((/** @type {any} */ testCase) => [testCase.id, testCase]));
   // A manifest that shares NO id with `CASES` is not a stale corpus, it is a different case set -- a test
   // fixture, or an archived corpus exported deliberately via DATASET_ROOT. Comparing it would reject a
   // supported use, and "every id is missing" is not the drift this guards against.
@@ -234,7 +236,7 @@ function assertManifestMatchesCases(manifest) {
   // Said out loud rather than returned in silence, because a guard that skips quietly is indistinguishable
   // from one that never ran -- the mistake `refreshBrowseBuffer` made while three green checks vouched for
   // it. The real corpus shares 1,062 ids, so this branch cannot hide a stale manifest.
-  const overlap = manifest.cases.filter((entry) => defined.has(entry.id)).length;
+  const overlap = manifest.cases.filter((/** @type {any} */ entry) => defined.has(entry.id)).length;
   if (overlap === 0) {
     console.log("Manifest shares no case id with CASES (" + manifest.cases.length
       + " entries); not comparing definitions.");
@@ -252,7 +254,7 @@ function assertManifestMatchesCases(manifest) {
     }
   }
   for (const id of defined.keys()) {
-    if (!manifest.cases.some((entry) => entry.id === id)) drifted.push(id + ": in CASES, not in the manifest");
+    if (!manifest.cases.some((/** @type {any} */ entry) => entry.id === id)) drifted.push(id + ": in CASES, not in the manifest");
   }
   if (!drifted.length) return;
   const NAMED = 8; // enough to see the pattern; the count tells you the scale
@@ -265,11 +267,12 @@ function assertManifestMatchesCases(manifest) {
     + "invalidate captures on its own.)");
 }
 
-function exportCases(manifest) {
+function exportCases(/** @type {any} */ manifest) {
   const records = [];
   // The exclusion set is recorded, not just applied. Without it a consumer of this export cannot tell an
   // exclusion that STOPPED WORKING from an export that simply predates the exclusion -- and those have
   // opposite remedies (fix the exporter / re-run the exporter). `rules:gate` asserted the alarming one.
+  /** @type {Record<string, any>} */
   const summary = { observed: 0, skipped: 0, invalid: 0, excluded: 0, records: 0, reasons: {},
     excludedSubtypes: [...MODEL_EXCLUDED_SUBTYPES].sort() };
   for (const testCase of manifest.cases) {

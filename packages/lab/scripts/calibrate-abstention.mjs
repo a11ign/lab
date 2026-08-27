@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * What does lowering the abstention floor actually COST? Measured, per candidate floor.
  *
@@ -94,7 +95,7 @@ function derivedFloor() {
   } catch (cause) {
     // Reported, not swallowed: without this row the table still shows the curve, but it no longer says what
     // the model would do, and the reader must be told which of the two they are looking at.
-    process.stdout.write(`  NOTE: could not read the derived floor from ${MODEL_DIR} (${cause.code ?? cause.message}); `
+    process.stdout.write(`  NOTE: could not read the derived floor from ${MODEL_DIR} (${/** @type {any} */ (cause).code ?? /** @type {any} */ (cause).message}); `
       + "the table below shows the curve but not this model's own operating point\n");
     return null;
   }
@@ -137,7 +138,7 @@ function calibrationPages() {
  * page score if we accepted it?" means reading the raw scores and novelty and applying a floor ourselves.
  * That is what makes a sweep possible at all.
  */
-function scoreOne(entry) {
+function scoreOne(/** @type {any} */ entry) {
   // `--evaluating` when a model is NAMED: pointing this sweep at a specific candidate is measurement, not
   // inference, and score.py refuses an ineligible artifact by default because scoring somebody's page with
   // unvetted weights is the error that guard is for. Naming a model is the declaration of purpose; the
@@ -181,7 +182,7 @@ function scoreOne(entry) {
  * into `cantTell`, per criterion, citing WCAG Conformance Requirement 2. That mechanism existed before
  * today and this sweep was bypassing it.
  */
-function productOutcomes(record, capture) {
+function productOutcomes(/** @type {any} */ record, /** @type {any} */ capture) {
   const { findings } = findingsFromScores(record, capture);
   const rules = ruleFindings(capture);
   const outcomes = criterionOutcomes({
@@ -208,7 +209,7 @@ function productOutcomes(record, capture) {
 }
 
 /** The publisher's declared exceptions for a captured page. Throws on a failed join; see `realPageFor`. */
-function claimExcludesFor(entry) {
+function claimExcludesFor(/** @type {any} */ entry) {
   const url = entry.capture?.url;
   const page = url ? realPageFor(url) : undefined;
   if (!page) {
@@ -271,17 +272,17 @@ function claimExcludesFor(entry) {
  * A cell is one (page, criterion) the publisher actually claims, so a masked page and an unmasked one
  * contribute on the same terms and the bar can be lifted.
  */
-export function testedCells(page) {
-  const disclosed = new Set((page.claimExcludes ?? []).map((entry) => entry.split(":")[0]));
+export function testedCells(/** @type {any} */ page) {
+  const disclosed = new Set((page.claimExcludes ?? []).map((/** @type {any} */ entry) => entry.split(":")[0]));
   return SCORED_CRITERIA.filter((criterion) => !disclosed.has(criterion)).length;
 }
 
 /** Read from the report, never hardcoded: a retrain can move which criteria have heads. */
 const SCORED_CRITERIA = ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"];
 
-export function contradictedFindings(page) {
-  const disclosed = new Set((page.claimExcludes ?? []).map((entry) => entry.split(":")[0]));
-  return page.predicted.filter((criterion) => !disclosed.has(criterion));
+export function contradictedFindings(/** @type {any} */ page) {
+  const disclosed = new Set((page.claimExcludes ?? []).map((/** @type {any} */ entry) => entry.split(":")[0]));
+  return page.predicted.filter((/** @type {any} */ criterion) => !disclosed.has(criterion));
 }
 
 function main() {
@@ -301,12 +302,13 @@ function main() {
       + `${page.url.replace("https://www.w3.org/WAI/demos/bad/", "")}\n`);
   }
 
-  const withheld = scored.reduce((n, page) => n + (page.inconclusive?.length ?? 0), 0);
+  const withheld = scored.reduce((/** @type {number} */ n, /** @type {any} */ page) =>
+  n + (page.inconclusive?.length ?? 0), 0);
   if (withheld) {
     process.stdout.write(`\n  ${withheld} finding(s) WITHHELD because the capture did not examine the channel `
       + "they rest on.\n  Neither an accusation nor a pass: re-run those pages with more capture budget.\n");
     for (const page of scored) {
-      for (const item of page.inconclusive ?? []) {
+      for (const item of /** @type {any} */ (page).inconclusive ?? []) {
         process.stdout.write(`    ${item.criterion}  ${item.channel} ${item.seen}/${item.expected ?? "?"}  `
           + `${String(page.url).replace(/^https?:\/\//, "").slice(0, 52)}\n`);
       }
@@ -401,7 +403,7 @@ function printLegend() {
     + "  defect count — the four that cleared today WERE ours, and these two are not.\n");
 }
 
-function reportRegression(rows) {
+function reportRegression(/** @type {any} */ rows) {
   const baseline = readBaselineSweep();
   if (!baseline) {
     process.stdout.write("\n  NO BASELINE to compare against, so this run cannot tell better from worse.\n"
@@ -435,12 +437,12 @@ function reportRegression(rows) {
  * candidate floors (a model's own derived floor is one of them), so `rows[i]` against `rows[i]` compares a
  * candidate at 0.5587 with a baseline at 0.65 and calls the difference a regression.
  */
-export function compareAtFloor(rows, baselineRows, floor) {
-  const now = rows.find((r) => r.floor === floor);
+export function compareAtFloor(/** @type {any} */ rows, /** @type {any} */ baselineRows, /** @type {any} */ floor) {
+  const now = rows.find((/** @type {any} */ r) => r.floor === floor);
   // The baseline may not have swept this exact floor -- it is derived per model. Fall back to the closest
   // one AT OR BELOW it, which scores at least as many pages, so the comparison cannot flatter the candidate.
-  const was = baselineRows.find((r) => r.floor === floor)
-    ?? baselineRows.filter((r) => r.floor <= floor).sort((a, b) => b.floor - a.floor)[0];
+  const was = baselineRows.find((/** @type {any} */ r) => r.floor === floor)
+    ?? baselineRows.filter((/** @type {any} */ r) => r.floor <= floor).sort((/** @type {any} */ a, /** @type {any} */ b) => b.floor - a.floor)[0];
   if (!now || !was) return null;
   return { now, was, delta: now.falsePositives - was.falsePositives };
 }
