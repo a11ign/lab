@@ -494,7 +494,7 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   // `claimExcludes` is the intersection of the statement's OWN enumerated failures with the eight
   // criteria we score. Those heads see nothing from this page; the rest take it as clean. Where a
   // claim is unclear or unquantified the whole set is excluded -- structure only, asserting nothing.
-  { url: "https://www.financial-ombudsman.org.uk/decisions-case-studies/ombudsman-decisions", role: "training",
+  { url: "https://www.financial-ombudsman.org.uk/businesses/resolving-complaint/ombudsman-decisions", role: "training",
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"],
     source: "Financial Ombudsman Service: partially compliant, own statement (https://financial-ombudsman.org.uk/accessibility-statement)",
     demonstrates: "ombudsman decision search" },
@@ -542,11 +542,15 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.6", "4.1.2"],
     source: "GOV.UK: partially compliant, own statement (https://gov.uk/help/accessibility-statement)",
     demonstrates: "tax guidance with 23 data tables" },
-  { url: "https://www.sepa.org.uk/environment/water/bathing-waters/", role: "training",
+  { url: "https://bathingwaters.sepa.org.uk/", role: "training",
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "4.1.2"],
     source: "SEPA: partially compliant, own statement (https://sepa.org.uk/help/accessibility/)",
     demonstrates: "environmental data index" },
-  { url: "https://www.sheffield.ac.uk/postgraduate/taught/courses", role: "training",
+  // ROTS EVERY YEAR, and that is a property of the page rather than a mistake. The unversioned path
+  // redirects to the current intake — `/courses/2026` today — so this entry needs the year moving each
+  // autumn. Pinned rather than left unversioned because the capture refuses a redirect: an unversioned
+  // url fails EVERY capture, where a versioned one fails once a year and `npm run corpus:urls` says so.
+  { url: "https://www.sheffield.ac.uk/postgraduate/taught/courses/2026", role: "training",
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.6", "4.1.2"],
     source: "University of Sheffield: partially compliant, own statement (https://sheffield.ac.uk/accessibility)",
     demonstrates: "postgraduate course search" },
@@ -626,7 +630,7 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"],
     source: "NHS digital service manual: partially compliant, own statement (https://service-manual.nhs.uk/accessibility-statement)",
     demonstrates: "design system component documentation" },
-  { url: "https://www.metoffice.gov.uk/weather/forecast/gcpvj0v07", role: "training",
+  { url: "https://weather.metoffice.gov.uk/forecast/gcpvj0v07", role: "training",
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"],
     source: "Met Office: partially compliant, own statement (https://metoffice.gov.uk/policies/accessibility-met-office-website)",
     demonstrates: "weather forecast with 85 data tables" },
@@ -634,7 +638,7 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"],
     source: "nidirect: partially compliant, own statement (https://nidirect.gov.uk/articles/accessibility-statement-nidirect)",
     demonstrates: "motoring service index" },
-  { url: "https://www.bl.uk/whats-on/", role: "training",
+  { url: "https://events.bl.uk/", role: "training",
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"],
     source: "British Library: partially compliant, own statement (https://bl.uk/accessibility-statement)",
     demonstrates: "events listing" },
