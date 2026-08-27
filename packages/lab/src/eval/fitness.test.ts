@@ -11,6 +11,13 @@ const T = { minRecall: 0.8, maxConformantFP: 0, maxAbstentionRate: 0.9 };
  * positives — and so the abstention tests, which set them deliberately, stand out as the ones about
  * abstention.
  */
+
+/**
+ * Proves the DECISION half of the gate `eval:gate`, which is `EVAL_GATE=1` around this function: forcing
+ * `pass: true` fails five of these tests. The half NOT covered is running the 34 fixtures through the
+ * scorer, which needs the Python venv and so cannot run in CI — the same limitation `npm run eval` has,
+ * and it is declared in `gates-are-proven.test.ts` rather than implied by this file's coverage.
+ */
 const m = (recall: number, conformantFP: number, abstained = 0, failureCases = 10) =>
   ({ recall, conformantFP, abstained, failureCases });
 

@@ -66,6 +66,7 @@ const SCRIPTS = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).scr
  */
 type GateProof =
   | { catches: string; provenBy: string }
+  | { catches: string; provenByComposition: true }
   | { catches: string; unproven: string };
 
 const GATE_PROOFS: Record<string, GateProof> = {
@@ -139,16 +140,16 @@ const GATE_PROOFS: Record<string, GateProof> = {
   },
   "release:gate": {
     catches: "a release with any of the above unmet — it is the composite",
-    unproven: "composite; proving it means proving its stages",
+    provenByComposition: true,
   },
   "eval:gate": {
     catches: "judge quality regressing against the 34 labelled fixtures",
-    unproven: "needs the Python venv, so it cannot run in CI — the same limitation `npm run eval` has",
+    provenBy: "packages/lab/src/eval/fitness.test.ts",
   },
 };
 
 /** Gates whose refusal has been WATCHED. May only rise. */
-const PROVEN_AT_LEAST = 12;
+const PROVEN_AT_LEAST = 14;
 
 function gatesInUse(): string[] {
   const chain = STEPS.filter((step: { gate?: boolean }) => step.gate)
@@ -182,8 +183,29 @@ test("a registered proof names a test that exists and actually references the ga
   }
 });
 
+/**
+ * A COMPOSITE gate is proven when every stage it runs is proven — and that is a containment claim, so it
+ * is verified here rather than asserted in a comment. `everything-chain.test.ts` makes the same demand of
+ * its `COVERED_BY` map and explains why: an unverified containment list is "trust me" written in test form.
+ */
+test("a composite gate is proven only if every stage it runs is proven", () => {
+  const proven = new Set(Object.entries(GATE_PROOFS)
+    .filter(([, p]) => "provenBy" in p).map(([gate]) => gate));
+  for (const [gate, proof] of Object.entries(GATE_PROOFS)) {
+    if (!("provenByComposition" in proof)) continue;
+    const stages = [...String(SCRIPTS[gate]).matchAll(/npm run ([a-z0-9:_-]+)/g)].map((m) => m[1]);
+    assert.ok(stages.length > 0,
+      `${gate} claims composition but runs no npm stages, so there is nothing holding the claim up`);
+    const unproven = stages.filter((stage) => !proven.has(stage));
+    assert.deepEqual(unproven, [],
+      `${gate} is registered as proven by composition, but ${unproven.length} of its ${stages.length} `
+      + `stage(s) are not themselves proven: ${unproven.join(", ")}`);
+  }
+});
+
 test("the number of gates whose refusal has been WATCHED never falls", () => {
-  const proven = Object.values(GATE_PROOFS).filter((p) => "provenBy" in p).length;
+  const proven = Object.values(GATE_PROOFS)
+    .filter((p) => "provenBy" in p || "provenByComposition" in p).length;
   assert.ok(proven >= PROVEN_AT_LEAST,
     `${proven} of ${Object.keys(GATE_PROOFS).length} gates are proven, down from ${PROVEN_AT_LEAST}. `
     + "Removing a proof un-watches a gate that had been watched.");
