@@ -65,14 +65,41 @@ def read_records(path: Path) -> list[tuple[dict[str, float], set[str]]]:
     if not path.is_file():
         raise SystemExit(f"no exported corpus at {path} — run `npm run training:export` first")
     records = []
+    unfeaturizable = 0
+    reason = ""
     for line in path.read_text().splitlines():
         if not line.strip():
             continue
         record = json.loads(line)
         subtypes = set(record.get("target", {}).get("subtypes") or [])
-        records.append((features.structured_feature_values(record), subtypes))
+        try:
+            records.append((features.structured_feature_values(record), subtypes))
+        except RuntimeError as error:
+            # A record predating the `parsed` block cannot be featurized, and that is a fact about this COPY
+            # of runs/ rather than about the corpus. `audit_grants.py` already counts and reports exactly
+            # this, and reaching the same condition through a TRACEBACK here sent a reader to the Python
+            # rather than to their stale export — the same remedy present at one call site and absent at
+            # the sibling, which is this repo's most expensive recurring shape.
+            unfeaturizable += 1
+            reason = str(error).split(".")[0]
+    if unfeaturizable:
+        print(f"  {unfeaturizable} of {unfeaturizable + len(records)} record(s) carry no `parsed` block.")
+        print(f"  {reason}.")
+        print("  This copy of runs/ predates the parse. Re-export, or ask the box that holds the corpus:")
+        print("    npm run lab:job -- -e job=shortcuts")
     if not records:
+        # Never a pass. A local checkout with a stale corpus must not read as a clean audit — that is the
+        # "reports success having examined nothing" failure this file exists to prevent one layer up.
+        if unfeaturizable:
+            # EXIT 2, not 1, and matching `audit_grants.py`. "This audit found a shortcut" and "this audit
+            # could not run" need opposite responses — retrain versus re-export — and collapsing the two
+            # into one status is the failure this repo names most often. A caller that stops on any
+            # non-zero still stops; a human, and any wrapper that reads the code, learns which happened.
+            print(f"\n  REFUSING: no record in {path} could be featurized, so this audit examined nothing.")
+            raise SystemExit(2)
         raise SystemExit(f"{path} is empty, so this audit would report a clean fleet having examined nothing")
+    if unfeaturizable:
+        print(f"  Continuing over the {len(records)} record(s) that CAN be read; counts below are of those.")
     return records
 
 
