@@ -52,23 +52,69 @@ function readCapture(id, variant) {
   return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
 }
 
-// The fields a signal could plausibly be reading, so a failure report shows where the
-// evidence actually is rather than making someone open two JSON files to find out.
+/**
+ * Which capture fields each signal is DECIDED from — a table, not a chain of `if`s.
+ *
+ * It was the chain, and ESLint stopped it at a complexity of 16 the moment the focus signals were added.
+ * That limit was doing its job, for exactly the reason `SIGNAL_PREDICATES` gives one file over: the
+ * branches never interact, so the chain was a lookup written the long way.
+ *
+ * **A signal missing from this table falls back to the transcript, and for three of them that was
+ * actively misleading.** `focus-trapped`, `focus-order-scrambled` and `control-unreachable-by-keyboard`
+ * are decided from the focus probe and from nothing spoken — and their pairs announce IDENTICALLY by
+ * design, since the whole point is two pages that sound the same and operate differently. So a blind
+ * focus case printed two fields its signal never consults, hid the one it does, and read as "these pages
+ * are the same" when the evidence had simply not been looked at. Measured 2026-08-27 on
+ * `keyboard-unreachable-native-button`, where it cost a diagnosis.
+ *
+ * @type {Record<string, string[]>}
+ */
+const EVIDENCE_FIELDS = Object.freeze({
+  "state-change-silent": ["interaction.stateChanges"],
+  "form-activation-silent": ["interaction.formChanges", "interaction.postSubmitFields"],
+  "structure-empty": ["structure.headings", "structure.formFields"],
+  "missing-heading": ["structure.headings", "structure.formFields"],
+  "focus-trapped": ["structure.formFields", "interaction.focusOrder", "probe.focusOrder"],
+  "focus-order-scrambled": ["structure.formFields", "interaction.focusOrder", "probe.focusOrder"],
+  "control-unreachable-by-keyboard": ["structure.formFields", "interaction.focusOrder", "probe.focusOrder"],
+});
+
+/** What a signal shows when the table has no entry for it. */
+const DEFAULT_EVIDENCE_FIELDS = Object.freeze(["transcript", "structure.formFields"]);
+
+/** Follow a dotted path into a capture. `transcript` is top level; the rest are one level down. */
+function fieldAt(capture, path) {
+  return path.split(".").reduce((value, key) => (value == null ? value : value[key]), capture);
+}
+
+/**
+ * The probe's OWN diagnostic mark, which no field can express.
+ *
+ * `focusIsTrapped` reads `stalled` from here and from nowhere else, so without this line the single value
+ * that decides a 2.1.2 case was unprintable. An empty `focusOrder` beside `stops: 0` says the probe never
+ * ran; beside `stops: 12` it says the probe ran and found nothing — opposite fixes, and previously the
+ * same silence.
+ */
+function probeMarkLine(capture, event) {
+  const mark = (capture.diagnostics || []).find((entry) => entry && entry.event === event);
+  return mark
+    ? `      ${event} probe: ${JSON.stringify(mark)}`
+    : `      ${event} probe: NO MARK — the probe did not run on this capture`;
+}
+
+// The fields a signal is decided from, so a failure report shows where the evidence actually is rather
+// than making someone open two JSON files to find out.
 function evidenceFor(capture, signal) {
   const lines = [];
-  const add = (label, values) => {
-    if (values?.length) lines.push(`      ${label}: ${JSON.stringify(values.slice(0, EVIDENCE_LINES))}`);
-  };
-  if (signal.type === "state-change-silent") add("stateChanges", capture.interaction?.stateChanges);
-  else if (signal.type === "form-activation-silent") {
-    add("formChanges", capture.interaction?.formChanges);
-    add("postSubmitFields", capture.interaction?.postSubmitFields);
-  } else if (signal.type === "structure-empty" || signal.type === "missing-heading") {
-    add("headings", capture.structure?.headings);
-    add("formFields", capture.structure?.formFields);
-  } else {
-    add("transcript", capture.transcript);
-    add("formFields", capture.structure?.formFields);
+  for (const path of EVIDENCE_FIELDS[signal.type] ?? DEFAULT_EVIDENCE_FIELDS) {
+    if (path.startsWith("probe.")) {
+      lines.push(probeMarkLine(capture, path.slice("probe.".length)));
+      continue;
+    }
+    const values = fieldAt(capture, path);
+    if (values?.length) {
+      lines.push(`      ${path.split(".").pop()}: ${JSON.stringify(values.slice(0, EVIDENCE_LINES))}`);
+    }
   }
   return lines;
 }
