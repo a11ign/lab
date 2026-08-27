@@ -1984,6 +1984,27 @@ function FOCUS_ORDER_FORM(/** @type {any} */ mode) {
  * argument that could in principle diverge, and it is the right shape whenever the defect is behavioural
  * rather than structural: the pair then provably differs in exactly one place.
  */
+/**
+ * A page whose dialog holds THREE controls while FOUR more sit behind it.
+ *
+ * The proportion is the point. A cycling focus trap is told from a conformant tab wrap by the cycle
+ * covering a strict SUBSET of the page's controls, so a dialog holding most of the page would shrink that
+ * difference to nothing. Three of seven leaves it unambiguous, which is what a canary is for.
+ */
+function MODAL_TRAP_FORM() {
+  return "<form>"
+    + "<label for=\"a\">Full name</label><input id=\"a\" name=\"a\">"
+    + "<label for=\"b\">Email</label><input id=\"b\" name=\"b\">"
+    + "<label for=\"d\">Phone</label><input id=\"d\" name=\"d\">"
+    + "<label for=\"e\">Delivery notes</label><input id=\"e\" name=\"e\">"
+    + "</form>"
+    + "<div id=\"confirm\" role=\"dialog\" aria-label=\"Confirm address\">"
+    + "<label for=\"m1\">House number</label><input id=\"m1\" name=\"m1\">"
+    + "<label for=\"m2\">Street</label><input id=\"m2\" name=\"m2\">"
+    + "<label for=\"m3\">Town</label><input id=\"m3\" name=\"m3\">"
+    + "</div>";
+}
+
 function TRAP_FIELDSET_FORM() {
   return "<form><fieldset id=\"addr\"><legend>Address</legend>"
     + "<label for=\"a\">Full name</label><input id=\"a\" name=\"a\">"
@@ -2233,6 +2254,62 @@ cases.push(
       script: "document.getElementById('c').addEventListener('focusout', (event) => {"
         + "  if (!event.target.value) {"
         + "    queueMicrotask(() => event.target.focus());"
+        + "  }"
+        + "});",
+    }),
+    badSignal: { type: "focus-trapped" },
+    probeFocus: true,
+  }),
+);
+
+cases.push(
+  pair({
+    id: "keyboard-trap-modal-cycle",
+    task: "Tab through the page and reach the delivery notes at the end.",
+    source: "WCAG 2.2 SC 2.1.2 No Keyboard Trap; F10; ARIA Authoring Practices, Dialog (Modal) Pattern",
+    mutation: "A focus guard on the dialog pulls focus back to its first control whenever focus leaves "
+      + "it, so focus CYCLES for ever among the dialog's three controls and never reaches the four "
+      + "fields behind it.",
+    criterion: "2.1.2",
+    // THE TRAP THE PROBE COULD NOT SEE, and the reason this case exists rather than being another
+    // refocus-one-field variant.
+    //
+    // `keyboard-trap-blur-revalidate` records the gap in its own comment: its first version used a guard
+    // that pulled focus back to a fieldset's FIRST control -- "the canonical modal focus-trap shape" --
+    // and was rewritten because `stalled` requires the same control repeatedly, while a guard that cycles
+    // focus among several controls moves focus every press and "reads as `cycled`, which is exactly what
+    // a conformant page's tab order does when it wraps". That case would have entered the corpus BLIND,
+    // so the mechanism was changed to one the probe could express, and the limitation was written down.
+    //
+    // The limitation was real about the CYCLE and not about its CONTENTS. A conformant wrap visits every
+    // control on the page; a modal cycle visits a subset, and the sweep already records what the whole
+    // page has. So the dialog here holds THREE controls while four more sit behind it: distinct focus
+    // stops 3, form fields 7. That difference is the evidence, it is in every capture already taken, and
+    // no probe change or recapture was needed to read it.
+    //
+    // The residual gap is narrower and stays: a dialog holding MOST of a page's controls still cycles
+    // over nearly everything, so the subset shrinks toward zero. Recorded in
+    // `docs/screenreader-coverage.md`; closing it needs Shift+Tab or Escape, and Escape collides with
+    // NVDA's own route out of focus mode.
+    good: page({
+      title: "Delivery details",
+      heading: "Delivery details",
+      body: MODAL_TRAP_FORM(),
+      // The SAME dialog, focusable and escapable. A conformant modal moves focus in and keeps it there
+      // WHILE OPEN -- so the honest conformant variant is the dialog closed, which is the state a keyboard
+      // user reaches by dismissing it. Nothing here guards focus, so Tab walks the whole page and wraps.
+    }),
+    bad: page({
+      title: "Delivery details",
+      heading: "Delivery details",
+      body: MODAL_TRAP_FORM(),
+      // `focusin` on the document, deferred with a microtask because moving focus during focus-event
+      // dispatch is ignored by Chromium -- the same reason `keyboard-trap-blur-revalidate` defers.
+      // Pulls focus to the dialog's FIRST control, so the cycle is dialog-only and never stalls.
+      script: "document.addEventListener('focusin', (event) => {"
+        + "  const dialog = document.getElementById('confirm');"
+        + "  if (!dialog.contains(event.target)) {"
+        + "    queueMicrotask(() => document.getElementById('m1').focus());"
         + "  }"
         + "});",
     }),
@@ -3259,9 +3336,53 @@ function firstVisitEach(/** @type {any} */ names) {
   return names.filter((/** @type {any} */ name) => (seen.has(name) ? false : (seen.add(name), true)));
 }
 
+/**
+ * Does this capture show focus TRAPPED — by either shape the probe can express?
+ *
+ * 1. STALLED: the last control repeats consecutively, which is Tab not moving at all.
+ * 2. A CLOSED CYCLE over a strict SUBSET of the page's controls, which is the modal trap.
+ *
+ * The second was a declared blind spot until 2026-08-28, and `keyboard-trap-blur-revalidate`'s comment
+ * records why: its first version used the canonical modal shape and the probe could not see it, because
+ * "a guard that cycles focus among several fields moves focus every press, so it reads as `cycled`,
+ * which is exactly what a conformant page's tab order does when it wraps".
+ *
+ * That is true of the CYCLE and not of its CONTENTS. A conformant wrap visits everything the page has;
+ * a modal cycle visits what the dialog has. Measured on `keyboard-trap-modal-cycle`: the trapped variant
+ * closes over 3 distinct stops against 5 form fields, the conformant one over 14. The evidence was in
+ * every capture already taken — no probe change, no recapture.
+ *
+ * DECIDED FROM THE STOPS ALONE, not from the probe's `cycled`/`truncated` mark, and that is deliberate:
+ * the RULE in `rules.ts` reads `input.interaction.focusOrder` and has no diagnostics, so a formulation
+ * needing the mark could not be the same decision in both places. This repo pays more for one fact
+ * stated two ways than for a slightly indirect test.
+ *
+ * A truncated probe cannot produce a false fire here for the same reason: truncation cuts the walk short,
+ * and a walk cut short before it wrapped has no repeat at all. A repeat means the cycle CLOSED.
+ *
+ * COUNTS, never names. Comparing a focus stop ("Postcode, edit, focused, blank") against a swept field
+ * ("Postcode, edit") would need name normalisation, which already exists in two places pinned equal by a
+ * test; a third copy is how those come apart.
+ *
+ * @param {string[]} stops   `interaction.focusOrder`
+ * @param {number} onPage    how many form fields the structural sweep found
+ */
+export function focusIsTrappedIn(stops, onPage) {
+  if (!Array.isArray(stops) || stops.length < 3 || onPage <= 0) return false;
+  const reached = new Set(stops).size;
+  // Focus reached at least as many distinct things as the page has controls: no trap, whatever the shape.
+  // This is the corroboration that separates a trap from the end of a short document, and it is why a
+  // conformant wrap — which also visits links, so `reached` exceeds `onPage` — never fires.
+  if (reached >= onPage) return false;
+  let trailing = 0;
+  for (let i = stops.length - 1; i >= 0 && stops[i] === stops[stops.length - 1]; i -= 1) trailing += 1;
+  if (trailing >= 2) return true;                       // stalled: Tab stopped moving
+  return reached < stops.length;                        // a stop recurred, so the cycle closed
+}
+
 function focusIsTrapped(/** @type {any} */ capture) {
-  const mark = (capture.diagnostics || []).find((/** @type {any} */ entry) => entry && entry.event === "focusOrder");
-  return mark ? mark.stalled === true : false;
+  return focusIsTrappedIn(capture.interaction?.focusOrder ?? [],
+    (capture.structure?.formFields ?? []).length);
 }
 
 /**
