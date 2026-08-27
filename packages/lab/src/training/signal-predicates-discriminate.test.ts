@@ -40,6 +40,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { CASES, SIGNAL_TYPES, signalMatches } from "./case-matrix.mjs";
+import REAL_EVIDENCE from "./fixtures/signal-evidence.json" with { type: "json" };
 
 /**
  * Per signal type: a signal, a capture that MUST trip it, and one that must not.
@@ -79,18 +80,56 @@ const DISCRIMINATES: Record<string, { signal: object; fires: object; silent: obj
  * the probe, which is worse than an admitted gap: it would read as coverage.
  */
 const NO_FIXTURE: Record<string, string> = {
-  "state-change-silent": "reads interaction.stateChanges, which only an activation produces",
-  "form-activation-silent": "reads interaction.formChanges, which only a submit produces",
-  "validation-error-silent": "reads interaction.postSubmitFields, which only a submit produces",
-  "placeholder-only": "reads the announcement grammar's parse of a field, not a plain field",
-  "table-unassociated": "reads structure.tableCells, which only probeTables produces",
-  "missing-role": "reads the announcement grammar, so a fixture asserts my model of NVDA not NVDA",
-  "focus-trapped": "reads the focusOrder probe's diagnostic mark, which only a capture writes",
-  "focus-order-scrambled": "compares two captured channels, so a fixture would compare my own two guesses",
-  "control-unreachable-by-keyboard": "same — needs both formFields and a closed focusOrder cycle",
-  "route-title-stale": "reads a title across a navigation, which is a transition and not a state",
-  "skip-link-inert": "reads whether focus MOVED, which only the probe can answer",
+  // ALL FIVE ARE FOCUS-PROBE TYPES, and the reason is one fact rather than five.
+  //
+  // Each is decided from `interaction.focusOrder` or the probe's `focusOrder` diagnostic mark, and this
+  // checkout's corpus copy carries neither for them: the cases are recent, and `probeFocus` evidence is
+  // absent from the captures on disk. Six sibling types WERE fixtured from real captures in the same
+  // sweep, which is what makes this a gap in the EVIDENCE rather than in the method.
+  //
+  // The way in is the same extraction, run once a corpus with focus evidence exists — not a hand-built
+  // fixture, which for a probe mark would assert my model of the probe rather than the probe.
+  "focus-trapped": "reads the focusOrder probe's `stalled` mark; no capture on disk carries one for a "
+    + "case using this type, so a fixture would be my model of the probe rather than the probe",
+  "focus-order-scrambled": "compares structure.formFields against interaction.focusOrder; the same "
+    + "captures are missing, and hand-building both sides compares two of my own guesses",
+  "control-unreachable-by-keyboard": "needs formFields AND a CLOSED focusOrder cycle, which is the "
+    + "hardest of these to synthesise honestly — the cycle-closing rule is the guard, not the evidence",
+  "route-title-stale": "reads a document title across a navigation, which is a TRANSITION and not a "
+    + "state; no single capture can hold it and no fixture can fake the moment between two",
+  "skip-link-inert": "reads whether focus MOVED when a skip link was activated, which only the probe "
+    + "can answer; a fixture would be asserting the answer rather than the mechanism",
 };
+
+/**
+ * Evidence CUT FROM REAL CAPTURES, for the types a hand-built fixture cannot honestly express.
+ *
+ * Six of the eleven previously-exempt types read an interaction delta, a table sweep or the announcement
+ * grammar — where writing a fixture by hand asserts my model of the probe rather than the probe, which is
+ * worse than an admitted gap because it reads as coverage.
+ *
+ * So the fixture is extracted from captures NVDA actually produced, trimmed to the fields the predicate
+ * reads, and COMMITTED — which is what lets this run in CI. A test needing `runs/` skips where the corpus
+ * is absent, and a test that skips vouches for nothing. This is the SRE Workbook's stated fallback for
+ * when synthetic testing is impossible: *"a running system that exports well-known metrics"*, frozen.
+ *
+ * The extraction asserted that trimming did not change either verdict, so what is stored still
+ * discriminates for the same reason the full capture did.
+ */
+test("the types read from real evidence both fire and stay silent", () => {
+  const covered = Object.keys(REAL_EVIDENCE);
+  assert.ok(covered.length >= 6, `expected real evidence for six types, got ${covered.length}`);
+  for (const [type, sample] of Object.entries(REAL_EVIDENCE as Record<string, {
+    caseId: string; signal: { type: string }; fires: object; silent: object;
+  }>)) {
+    assert.equal(sample.signal.type, type, `${type}: the stored signal must be the one it claims to be`);
+    assert.equal(signalMatches(sample.fires, sample.signal), true,
+      `${type} did not fire on the BAD capture of ${sample.caseId} — every case using it is now BLIND`);
+    assert.equal(signalMatches(sample.silent, sample.signal), false,
+      `${type} fired on the GOOD capture of ${sample.caseId} — every case using it is CONTAMINATED, which `
+      + "is the worse half: the signal appears to work and the pair proves nothing");
+  }
+});
 
 test("every exercised predicate both fires and stays silent", () => {
   for (const [type, { signal, fires, silent }] of Object.entries(DISCRIMINATES)) {
@@ -105,7 +144,7 @@ test("every exercised predicate both fires and stays silent", () => {
 
 test("every signal type is either exercised or exempted with a reason", () => {
   for (const type of SIGNAL_TYPES) {
-    const covered = type in DISCRIMINATES || type in NO_FIXTURE;
+    const covered = type in DISCRIMINATES || type in NO_FIXTURE || type in REAL_EVIDENCE;
     assert.ok(covered,
       `signal type '${type}' is neither exercised nor exempted. A type nobody proved can go dead and take `
       + "every case using it with it, silently.");
@@ -116,7 +155,7 @@ test("every signal type is either exercised or exempted with a reason", () => {
   // And nothing here names a type that no longer exists — a fixture for a deleted predicate is dead
   // weight that reads as coverage.
   const known = new Set(SIGNAL_TYPES);
-  for (const type of [...Object.keys(DISCRIMINATES), ...Object.keys(NO_FIXTURE)]) {
+  for (const type of [...Object.keys(DISCRIMINATES), ...Object.keys(NO_FIXTURE), ...Object.keys(REAL_EVIDENCE)]) {
     assert.ok(known.has(type), `'${type}' is exercised or exempted here but is not a signal type any more`);
   }
 });
