@@ -307,6 +307,21 @@ function main(): void {
     process.stdout.write(`  ${removed.length} finding(s) no longer reported. Not a failure — if that was a `
       + "false positive, this is the fix landing.\n  Run with --update to accept.\n");
   }
+  // REPORTED WHETHER OR NOT ANYTHING FAILED, and it used to print only alongside findings. A capture
+  // that read the site's furniture instead of its page is a defect regardless: if it matches a baseline
+  // entry made from an equally bad capture, the gate says PASS and the corpus quietly holds evidence of
+  // a cookie banner. A bad capture that reproduces itself looks exactly like stability.
+  const furniture = furnitureCaptures();
+  if (furniture.consent.length || furniture.shell.length) {
+    process.stdout.write(`\n  ${furniture.consent.length} capture(s) opened on a COOKIE/CONSENT overlay `
+      + `and ${furniture.shell.length} on an unrendered SHELL, and NEVER REACHED A HEADING — those read `
+      + "the site's furniture, not its page, so anything they say is about this tool.\n");
+    for (const url of [...furniture.consent, ...furniture.shell].slice(0, 8)) {
+      process.stdout.write(`    furniture: ${url.replace(/^https:\/\//, "")}\n`);
+      process.stdout.write(`           ${describeEvidence(url)}\n`);
+    }
+  }
+
   if (!added.length) {
     process.stdout.write("\n  PASS — no conformant page gained a finding.\n");
     return;
@@ -320,15 +335,6 @@ function main(): void {
     // here, and it also settles the question a bare count cannot: a census reading zero for EVERYTHING is
     // a tree that was never built, which is not the same finding as a page that genuinely has none.
     process.stdout.write(`           ${describeEvidence(change.url)}\n`);
-  }
-  const furniture = furnitureCaptures();
-  if (furniture.consent.length || furniture.shell.length) {
-    process.stdout.write(`\n  ${furniture.consent.length} capture(s) opened on a COOKIE/CONSENT overlay and `
-      + `${furniture.shell.length} on an unrendered SHELL and NEVER REACHED A HEADING — those read the `
-      + "site's furniture, not its page, so any finding on them is about this tool.\n");
-    for (const url of [...furniture.consent, ...furniture.shell].slice(0, 8)) {
-      process.stdout.write(`    furniture: ${url.replace(/^https:\/\//, "")}\n`);
-    }
   }
   process.stdout.write("\n  Read the evidence for each before doing anything else. It is one of three things:\n"
     + "    - the tool is wrong, and this is the defect class that ran for eleven separate causes;\n"
