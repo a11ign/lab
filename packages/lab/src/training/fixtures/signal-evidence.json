@@ -1,657 +1,1613 @@
 {
- "state-change-silent": {
-  "caseId": "disclosure-state-silent",
-  "signal": {
-   "type": "state-change-silent",
-   "control": "Travel advice"
+  "state-change-silent": {
+    "caseId": "disclosure-state-silent",
+    "signal": {
+      "type": "state-change-silent",
+      "control": "Travel advice"
+    },
+    "fires": {
+      "transcript": [
+        "heading, level 1, Travel advice",
+        "button, collapsed, Travel advice",
+        "list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
+        "bullet, same page, link, Annual review 2019 02",
+        "bullet, same page, link, Accessibility statement 03",
+        "bullet, same page, link, Travel and parking 04",
+        "bullet, same page, link, Volunteering enquiries 05",
+        "bullet, same page, link, Room hire rates 06",
+        "out of list, heading, level 2, Reference note 01",
+        "Background detail for reference note 01, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 02",
+        "Background detail for reference note 02, retained for records and reviewed each year by the site",
+        "team."
+      ],
+      "structure": {
+        "headings": [
+          "Reference note 04, heading, level 2",
+          "Reference note 03, heading, level 2",
+          "Reference note 02, heading, level 2",
+          "Reference note 01, heading, level 2",
+          "main landmark, Travel advice, heading, level 1"
+        ],
+        "landmarks": [
+          "main landmark, Travel advice, heading, level 1"
+        ],
+        "formFields": [
+          "Travel advice, button, collapsed"
+        ],
+        "graphics": [],
+        "links": [
+          "list, with 6 items, Opening times for the north entrance 01, same page, link",
+          "Annual review 2019 02, same page, link",
+          "Accessibility statement 03, same page, link",
+          "Travel and parking 04, same page, link",
+          "Volunteering enquiries 05, same page, link",
+          "Room hire rates 06, same page, link"
+        ],
+        "lists": [
+          "list, with 6 items, bullet, Opening times for the north entrance 01"
+        ],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Travel advice, button, collapsed"
+        ],
+        "stateChanges": [
+          {
+            "control": "Travel advice, button, collapsed",
+            "after": "Travel advice, button, focused, collapsed"
+          }
+        ],
+        "formChanges": [],
+        "postSubmitFields": [],
+        "focusOrder": []
+      },
+      "diagnostics": []
+    },
+    "silent": {
+      "transcript": [
+        "heading, level 1, Travel advice",
+        "button, collapsed, Travel advice",
+        "list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
+        "bullet, same page, link, Annual review 2019 02",
+        "bullet, same page, link, Accessibility statement 03",
+        "bullet, same page, link, Travel and parking 04",
+        "bullet, same page, link, Volunteering enquiries 05",
+        "bullet, same page, link, Room hire rates 06",
+        "out of list, heading, level 2, Reference note 01",
+        "Background detail for reference note 01, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 02",
+        "Background detail for reference note 02, retained for records and reviewed each year by the site",
+        "team."
+      ],
+      "structure": {
+        "headings": [
+          "Reference note 04, heading, level 2",
+          "Reference note 03, heading, level 2",
+          "Reference note 02, heading, level 2",
+          "Reference note 01, heading, level 2",
+          "main landmark, Travel advice, heading, level 1"
+        ],
+        "landmarks": [
+          "main landmark, Travel advice, heading, level 1"
+        ],
+        "formFields": [
+          "Travel advice, button, collapsed"
+        ],
+        "graphics": [],
+        "links": [
+          "list, with 6 items, Opening times for the north entrance 01, same page, link",
+          "Annual review 2019 02, same page, link",
+          "Accessibility statement 03, same page, link",
+          "Travel and parking 04, same page, link",
+          "Volunteering enquiries 05, same page, link",
+          "Room hire rates 06, same page, link"
+        ],
+        "lists": [
+          "list, with 6 items, bullet, Opening times for the north entrance 01"
+        ],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Travel advice, button, collapsed"
+        ],
+        "stateChanges": [
+          {
+            "control": "Travel advice, button, collapsed",
+            "after": "Travel advice, button, focused, expanded"
+          }
+        ],
+        "formChanges": [],
+        "postSubmitFields": [],
+        "focusOrder": []
+      },
+      "diagnostics": []
+    }
   },
-  "fires": {
-   "transcript": [
-    "heading, level 1, Travel advice",
-    "button, collapsed, Travel advice",
-    "list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
-    "bullet, same page, link, Annual review 2019 02",
-    "bullet, same page, link, Accessibility statement 03",
-    "bullet, same page, link, Travel and parking 04",
-    "bullet, same page, link, Volunteering enquiries 05",
-    "bullet, same page, link, Room hire rates 06",
-    "out of list, heading, level 2, Reference note 01",
-    "Background detail for reference note 01, retained for records and reviewed each year by the site",
-    "team.",
-    "heading, level 2, Reference note 02",
-    "Background detail for reference note 02, retained for records and reviewed each year by the site",
-    "team."
-   ],
-   "structure": {
-    "headings": [
-     "Reference note 04, heading, level 2",
-     "Reference note 03, heading, level 2",
-     "Reference note 02, heading, level 2",
-     "Reference note 01, heading, level 2",
-     "main landmark, Travel advice, heading, level 1"
-    ],
-    "landmarks": [
-     "main landmark, Travel advice, heading, level 1"
-    ],
-    "formFields": [
-     "Travel advice, button, collapsed"
-    ],
-    "graphics": [],
-    "links": [
-     "list, with 6 items, Opening times for the north entrance 01, same page, link",
-     "Annual review 2019 02, same page, link",
-     "Accessibility statement 03, same page, link",
-     "Travel and parking 04, same page, link",
-     "Volunteering enquiries 05, same page, link",
-     "Room hire rates 06, same page, link"
-    ],
-    "lists": [
-     "list, with 6 items, bullet, Opening times for the north entrance 01"
-    ],
-    "tableCells": []
-   },
-   "interaction": {
-    "controls": [
-     "Travel advice, button, collapsed"
-    ],
-    "stateChanges": [
-     {
-      "control": "Travel advice, button, collapsed",
-      "after": "Travel advice, button, focused, collapsed"
-     }
-    ],
-    "formChanges": [],
-    "postSubmitFields": [],
-    "focusOrder": []
-   },
-   "diagnostics": []
+  "form-activation-silent": {
+    "caseId": "filter-status-silent",
+    "signal": {
+      "type": "form-activation-silent",
+      "control": "Show bags"
+    },
+    "fires": {
+      "transcript": [
+        "heading, level 1, Product catalogue",
+        "button, Show bags",
+        "Showing 8 products.",
+        "list, with 2 items, bullet Canvas bag",
+        "bullet Travel bag",
+        "out of list, list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
+        "bullet, same page, link, Annual review 2019 02",
+        "bullet, same page, link, Accessibility statement 03",
+        "bullet, same page, link, Travel and parking 04",
+        "bullet, same page, link, Room hire rates 06",
+        "out of list, heading, level 2, Reference note 01",
+        "team.",
+        "heading, level 2, Reference note 02",
+        "Background detail for reference note 02, retained for records and reviewed each year by the site"
+      ],
+      "structure": {
+        "headings": [
+          "Reference note 04, heading, level 2",
+          "Reference note 03, heading, level 2",
+          "Reference note 02, heading, level 2",
+          "Reference note 01, heading, level 2",
+          "main landmark, Product catalogue, heading, level 1"
+        ],
+        "landmarks": [
+          "main landmark, Product catalogue, heading, level 1"
+        ],
+        "formFields": [
+          "Show bags, button"
+        ],
+        "graphics": [],
+        "links": [
+          "list, with 6 items, Opening times for the north entrance 01, same page, link",
+          "Annual review 2019 02, same page, link",
+          "Accessibility statement 03, same page, link",
+          "Travel and parking 04, same page, link",
+          "Volunteering enquiries 05, same page, link",
+          "Room hire rates 06, same page, link"
+        ],
+        "lists": [
+          "list, with 2 items, bullet Canvas bag",
+          "list, with 6 items, bullet, Opening times for the north entrance 01"
+        ],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Show bags, button"
+        ],
+        "stateChanges": [],
+        "formChanges": [
+          {
+            "control": "Show bags, button",
+            "kind": "taskButton",
+            "after": ""
+          }
+        ],
+        "postSubmitFields": [
+          "Show bags, button"
+        ],
+        "focusOrder": []
+      },
+      "diagnostics": []
+    },
+    "silent": {
+      "transcript": [
+        "heading, level 1, Product catalogue",
+        "button, Show bags",
+        "Showing 8 products.",
+        "list, with 2 items, bullet Canvas bag",
+        "bullet Travel bag",
+        "out of list, list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
+        "bullet, same page, link, Annual review 2019 02",
+        "bullet, same page, link, Accessibility statement 03",
+        "bullet, same page, link, Travel and parking 04",
+        "bullet, same page, link, Volunteering enquiries 05",
+        "bullet, same page, link, Room hire rates 06",
+        "out of list, heading, level 2, Reference note 01",
+        "Background detail for reference note 01, retained for records and reviewed each year by the site",
+        "team."
+      ],
+      "structure": {
+        "headings": [
+          "Reference note 04, heading, level 2",
+          "Reference note 03, heading, level 2",
+          "Reference note 02, heading, level 2",
+          "Reference note 01, heading, level 2",
+          "main landmark, Product catalogue, heading, level 1"
+        ],
+        "landmarks": [
+          "main landmark, Product catalogue, heading, level 1"
+        ],
+        "formFields": [
+          "Show bags, button"
+        ],
+        "graphics": [],
+        "links": [
+          "list, with 6 items, Opening times for the north entrance 01, same page, link",
+          "Annual review 2019 02, same page, link",
+          "Accessibility statement 03, same page, link",
+          "Travel and parking 04, same page, link",
+          "Volunteering enquiries 05, same page, link",
+          "Room hire rates 06, same page, link"
+        ],
+        "lists": [
+          "list, with 2 items, bullet Canvas bag",
+          "list, with 6 items, bullet, Opening times for the north entrance 01"
+        ],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Show bags, button"
+        ],
+        "stateChanges": [],
+        "formChanges": [
+          {
+            "control": "Show bags, button",
+            "kind": "taskButton",
+            "after": "Showing 2 bags."
+          }
+        ],
+        "postSubmitFields": [
+          "Show bags, button"
+        ],
+        "focusOrder": []
+      },
+      "diagnostics": []
+    }
   },
-  "silent": {
-   "transcript": [
-    "heading, level 1, Travel advice",
-    "button, collapsed, Travel advice",
-    "list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
-    "bullet, same page, link, Annual review 2019 02",
-    "bullet, same page, link, Accessibility statement 03",
-    "bullet, same page, link, Travel and parking 04",
-    "bullet, same page, link, Volunteering enquiries 05",
-    "bullet, same page, link, Room hire rates 06",
-    "out of list, heading, level 2, Reference note 01",
-    "Background detail for reference note 01, retained for records and reviewed each year by the site",
-    "team.",
-    "heading, level 2, Reference note 02",
-    "Background detail for reference note 02, retained for records and reviewed each year by the site",
-    "team."
-   ],
-   "structure": {
-    "headings": [
-     "Reference note 04, heading, level 2",
-     "Reference note 03, heading, level 2",
-     "Reference note 02, heading, level 2",
-     "Reference note 01, heading, level 2",
-     "main landmark, Travel advice, heading, level 1"
-    ],
-    "landmarks": [
-     "main landmark, Travel advice, heading, level 1"
-    ],
-    "formFields": [
-     "Travel advice, button, collapsed"
-    ],
-    "graphics": [],
-    "links": [
-     "list, with 6 items, Opening times for the north entrance 01, same page, link",
-     "Annual review 2019 02, same page, link",
-     "Accessibility statement 03, same page, link",
-     "Travel and parking 04, same page, link",
-     "Volunteering enquiries 05, same page, link",
-     "Room hire rates 06, same page, link"
-    ],
-    "lists": [
-     "list, with 6 items, bullet, Opening times for the north entrance 01"
-    ],
-    "tableCells": []
-   },
-   "interaction": {
-    "controls": [
-     "Travel advice, button, collapsed"
-    ],
-    "stateChanges": [
-     {
-      "control": "Travel advice, button, collapsed",
-      "after": "Travel advice, button, focused, expanded"
-     }
-    ],
-    "formChanges": [],
-    "postSubmitFields": [],
-    "focusOrder": []
-   },
-   "diagnostics": []
+  "validation-error-silent": {
+    "caseId": "form-error-silent",
+    "signal": {
+      "type": "validation-error-silent",
+      "control": "Submit request"
+    },
+    "fires": {
+      "transcript": [
+        "heading, level 1, Service request",
+        "form, Reference number",
+        "edit, , button, Submit request"
+      ],
+      "structure": {
+        "headings": [
+          "Service request, heading, level 1"
+        ],
+        "landmarks": [
+          "form, Reference number"
+        ],
+        "formFields": [
+          "Reference number, edit",
+          "Submit request, button"
+        ],
+        "graphics": [],
+        "links": [],
+        "lists": [],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Reference number, edit",
+          "Submit request, button"
+        ],
+        "stateChanges": [],
+        "formChanges": [
+          {
+            "control": "Submit request, button",
+            "kind": "submit",
+            "after": ""
+          }
+        ],
+        "postSubmitFields": [
+          "form, Reference number, edit",
+          "Submit request, button"
+        ],
+        "focusOrder": [],
+        "postSubmitNames": []
+      },
+      "diagnostics": []
+    },
+    "silent": {
+      "transcript": [
+        "heading, level 1, Service request",
+        "form, Reference number",
+        "edit, , button, Submit request"
+      ],
+      "structure": {
+        "headings": [
+          "Service request, heading, level 1"
+        ],
+        "landmarks": [
+          "form, Reference number"
+        ],
+        "formFields": [
+          "Reference number, edit, Enter the reference number before submitting.",
+          "Submit request, button"
+        ],
+        "graphics": [],
+        "links": [],
+        "lists": [],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Reference number, edit, Enter the reference number before submitting.",
+          "Submit request, button"
+        ],
+        "stateChanges": [],
+        "formChanges": [
+          {
+            "control": "Submit request, button",
+            "kind": "submit",
+            "after": "Reference number, edit, invalid entry, Enter the reference number before submitting., blank"
+          }
+        ],
+        "postSubmitFields": [
+          "form, Reference number, edit, Enter the reference number before submitting.",
+          "Submit request, button"
+        ],
+        "focusOrder": [],
+        "postSubmitNames": []
+      },
+      "diagnostics": []
+    }
+  },
+  "placeholder-only": {
+    "caseId": "form-placeholder-only",
+    "signal": {
+      "type": "placeholder-only",
+      "placeholder": "name at example dot com"
+    },
+    "fires": {
+      "transcript": [
+        "out of form, heading, level 1, Booking confirmation",
+        "form, name at example dot com, edit",
+        "name at example dot com, edit"
+      ],
+      "structure": {
+        "headings": [
+          "Booking confirmation, heading, level 1"
+        ],
+        "landmarks": [
+          "form, name at example dot com, edit"
+        ],
+        "formFields": [],
+        "graphics": [],
+        "links": [],
+        "lists": [],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [],
+        "stateChanges": [],
+        "formChanges": [],
+        "postSubmitFields": [],
+        "focusOrder": []
+      },
+      "diagnostics": []
+    },
+    "silent": {
+      "transcript": [
+        "out of form, heading, level 1, Booking confirmation",
+        "form, Confirmation email",
+        "edit, name at example dot com"
+      ],
+      "structure": {
+        "headings": [
+          "Booking confirmation, heading, level 1"
+        ],
+        "landmarks": [
+          "form, Confirmation email"
+        ],
+        "formFields": [
+          "Confirmation email, edit, name at example dot com"
+        ],
+        "graphics": [],
+        "links": [],
+        "lists": [],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Confirmation email, edit, name at example dot com"
+        ],
+        "stateChanges": [],
+        "formChanges": [],
+        "postSubmitFields": [],
+        "focusOrder": []
+      },
+      "diagnostics": []
+    }
+  },
+  "table-unassociated": {
+    "caseId": "table-unassociated-headers",
+    "signal": {
+      "type": "table-unassociated"
+    },
+    "fires": {
+      "transcript": [
+        "heading, level 1, Train departures",
+        "table, with 3 rows and 3 columns, caption, Departures from Central station",
+        "out of caption, row 1, column 1, Destination",
+        "column 2, Departs",
+        "column 3, Platform",
+        "row 2, column 1, Riverside",
+        "column 2, 09:15",
+        "column 3, 3",
+        "row 3, column 1, Hilltown",
+        "column 2, 09:40",
+        "column 3, 5",
+        "5"
+      ],
+      "structure": {
+        "headings": [
+          "Train departures, heading, level 1"
+        ],
+        "landmarks": [],
+        "formFields": [],
+        "graphics": [],
+        "links": [],
+        "lists": [],
+        "tableCells": [
+          "Departures from Central station, table, with 3 rows and 3 columns, caption, Departures from Central station",
+          "row 2, Riverside",
+          "column 2, 09:15",
+          "column 3, 3",
+          "row 3, 5"
+        ]
+      },
+      "interaction": {
+        "controls": [],
+        "stateChanges": [],
+        "formChanges": [],
+        "postSubmitFields": [],
+        "focusOrder": []
+      },
+      "diagnostics": []
+    },
+    "silent": {
+      "transcript": [
+        "heading, level 1, Train departures",
+        "table, with 3 rows and 3 columns, caption, Departures from Central station",
+        "out of caption, row 1, column 1, Destination",
+        "column 2, Departs",
+        "column 3, Platform",
+        "row 2, Destination, column 1, Riverside",
+        "Departs, column 2, 09:15",
+        "Platform, column 3, 3",
+        "row 3, Destination, column 1, Hilltown",
+        "Departs, column 2, 09:40",
+        "Platform, column 3, 5",
+        "5"
+      ],
+      "structure": {
+        "headings": [
+          "Train departures, heading, level 1"
+        ],
+        "landmarks": [],
+        "formFields": [],
+        "graphics": [],
+        "links": [],
+        "lists": [],
+        "tableCells": [
+          "Departures from Central station, table, with 3 rows and 3 columns, caption, Departures from Central station",
+          "row 2, Riverside",
+          "Departs, column 2, 09:15",
+          "Platform, column 3, 3",
+          "Hilltown, row 3, 5"
+        ]
+      },
+      "interaction": {
+        "controls": [],
+        "stateChanges": [],
+        "formChanges": [],
+        "postSubmitFields": [],
+        "focusOrder": []
+      },
+      "diagnostics": []
+    }
+  },
+  "missing-role": {
+    "caseId": "custom-control-role",
+    "signal": {
+      "type": "missing-role",
+      "text": "Save notification settings"
+    },
+    "fires": {
+      "transcript": [
+        "heading, level 1, Notification settings",
+        "Save notification settings",
+        "list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
+        "bullet, same page, link, Annual review 2019 02",
+        "bullet, same page, link, Accessibility statement 03",
+        "bullet, same page, link, Travel and parking 04",
+        "bullet, same page, link, Volunteering enquiries 05",
+        "bullet, same page, link, Room hire rates 06",
+        "out of list, heading, level 2, Reference note 01",
+        "Background detail for reference note 01, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 02",
+        "Background detail for reference note 02, retained for records and reviewed each year by the site",
+        "team."
+      ],
+      "structure": {
+        "headings": [
+          "Reference note 04, heading, level 2",
+          "Reference note 03, heading, level 2",
+          "Reference note 02, heading, level 2",
+          "Reference note 01, heading, level 2",
+          "main landmark, Notification settings, heading, level 1"
+        ],
+        "landmarks": [
+          "main landmark, Notification settings, heading, level 1"
+        ],
+        "formFields": [],
+        "graphics": [],
+        "links": [
+          "list, with 6 items, Opening times for the north entrance 01, same page, link",
+          "Annual review 2019 02, same page, link",
+          "Accessibility statement 03, same page, link",
+          "Travel and parking 04, same page, link",
+          "Volunteering enquiries 05, same page, link",
+          "Room hire rates 06, same page, link"
+        ],
+        "lists": [
+          "list, with 6 items, bullet, Opening times for the north entrance 01"
+        ],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [],
+        "stateChanges": [],
+        "formChanges": [],
+        "postSubmitFields": [],
+        "focusOrder": []
+      },
+      "diagnostics": []
+    },
+    "silent": {
+      "transcript": [
+        "heading, level 1, Notification settings",
+        "button, Save notification settings",
+        "list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
+        "bullet, same page, link, Annual review 2019 02",
+        "bullet, same page, link, Accessibility statement 03",
+        "bullet, same page, link, Travel and parking 04",
+        "bullet, same page, link, Volunteering enquiries 05",
+        "bullet, same page, link, Room hire rates 06",
+        "out of list, heading, level 2, Reference note 01",
+        "Background detail for reference note 01, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 02",
+        "Background detail for reference note 02, retained for records and reviewed each year by the site",
+        "team."
+      ],
+      "structure": {
+        "headings": [
+          "Reference note 04, heading, level 2",
+          "Reference note 03, heading, level 2",
+          "Reference note 02, heading, level 2",
+          "Reference note 01, heading, level 2",
+          "main landmark, Notification settings, heading, level 1"
+        ],
+        "landmarks": [
+          "main landmark, Notification settings, heading, level 1"
+        ],
+        "formFields": [
+          "Save notification settings, button"
+        ],
+        "graphics": [],
+        "links": [
+          "list, with 6 items, Opening times for the north entrance 01, same page, link",
+          "Annual review 2019 02, same page, link",
+          "Accessibility statement 03, same page, link",
+          "Travel and parking 04, same page, link",
+          "Volunteering enquiries 05, same page, link",
+          "Room hire rates 06, same page, link"
+        ],
+        "lists": [
+          "list, with 6 items, bullet, Opening times for the north entrance 01"
+        ],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Save notification settings, button"
+        ],
+        "stateChanges": [],
+        "formChanges": [
+          {
+            "control": "Save notification settings, button",
+            "kind": "submit",
+            "after": ""
+          }
+        ],
+        "postSubmitFields": [
+          "Save notification settings, button"
+        ],
+        "focusOrder": [],
+        "postSubmitNames": [
+          "Notification settings",
+          "Reference note 01",
+          "Reference note 02",
+          "Reference note 03",
+          "Reference note 04",
+          "Notification settings",
+          "Save notification settings",
+          "Reference note 01",
+          "Background detail for reference note 01, retained for records and reviewed each year by the site team.",
+          "Reference note 02",
+          "Background detail for reference note 02, retained for records and reviewed each year by the site team.",
+          "Reference note 03",
+          "Background detail for reference note 03, retained for records and reviewed each year by the site team.",
+          "Reference note 04"
+        ]
+      },
+      "diagnostics": []
+    }
+  },
+  "focus-trapped": {
+    "caseId": "keyboard-trap-postcode",
+    "signal": {
+      "type": "focus-trapped"
+    },
+    "fires": {
+      "transcript": [
+        "heading, level 1, Delivery details",
+        "form, Full name",
+        "edit",
+        "Email",
+        "edit",
+        "Postcode",
+        "edit",
+        "Phone",
+        "edit",
+        "Notes",
+        "edit"
+      ],
+      "structure": {
+        "headings": [
+          "Delivery details, heading, level 1"
+        ],
+        "landmarks": [
+          "form, Full name"
+        ],
+        "formFields": [
+          "Full name, edit",
+          "Email, edit",
+          "Postcode, edit",
+          "Phone, edit",
+          "Notes, edit"
+        ],
+        "graphics": [],
+        "links": [],
+        "lists": [],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Full name, edit",
+          "Email, edit",
+          "Postcode, edit",
+          "Phone, edit",
+          "Notes, edit"
+        ],
+        "stateChanges": [],
+        "formChanges": [],
+        "postSubmitFields": [],
+        "focusOrder": [
+          "Full name, edit, focused, blank",
+          "Email, edit, focused, blank",
+          "Postcode, edit, focused, blank",
+          "Postcode, edit, focused, blank",
+          "Postcode, edit, focused, blank"
+        ]
+      },
+      "diagnostics": [
+        {
+          "event": "focusOrder",
+          "atMs": 36342,
+          "stops": 5,
+          "cycled": false,
+          "stalled": true,
+          "truncated": false
+        }
+      ]
+    },
+    "silent": {
+      "transcript": [
+        "heading, level 1, Delivery details",
+        "form, Full name",
+        "edit",
+        "Email",
+        "edit",
+        "Postcode",
+        "edit",
+        "Phone",
+        "edit",
+        "Notes",
+        "edit"
+      ],
+      "structure": {
+        "headings": [
+          "Delivery details, heading, level 1"
+        ],
+        "landmarks": [
+          "form, Full name"
+        ],
+        "formFields": [
+          "Full name, edit",
+          "Email, edit",
+          "Postcode, edit",
+          "Phone, edit",
+          "Notes, edit"
+        ],
+        "graphics": [],
+        "links": [],
+        "lists": [],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Full name, edit",
+          "Email, edit",
+          "Postcode, edit",
+          "Phone, edit",
+          "Notes, edit"
+        ],
+        "stateChanges": [],
+        "formChanges": [],
+        "postSubmitFields": [],
+        "focusOrder": [
+          "Full name, edit, focused, blank",
+          "Email, edit, focused, blank",
+          "Postcode, edit, focused, blank",
+          "Phone, edit, focused, blank",
+          "Notes, edit, focused, blank",
+          "Full name, edit, focused, blank",
+          "Email, edit, focused, blank",
+          "Postcode, edit, focused, blank"
+        ]
+      },
+      "diagnostics": [
+        {
+          "event": "focusOrder",
+          "atMs": 34866,
+          "stops": 8,
+          "cycled": true,
+          "stalled": false,
+          "truncated": false
+        }
+      ]
+    }
+  },
+  "focus-order-scrambled": {
+    "caseId": "focus-order-tabindex",
+    "signal": {
+      "type": "focus-order-scrambled"
+    },
+    "fires": {
+      "transcript": [
+        "heading, level 1, Delivery details",
+        "form, Full name",
+        "edit",
+        "Email",
+        "edit",
+        "Postcode",
+        "edit",
+        "Phone",
+        "edit",
+        "Notes",
+        "edit",
+        "out of form, list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
+        "bullet, same page, link, Annual review 2019 02",
+        "bullet, same page, link, Accessibility statement 03",
+        "bullet, same page, link, Travel and parking 04",
+        "bullet, same page, link, Volunteering enquiries 05",
+        "bullet, same page, link, Room hire rates 06",
+        "out of list, heading, level 2, Reference note 01",
+        "Background detail for reference note 01, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 02",
+        "Background detail for reference note 02, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 03",
+        "Background detail for reference note 03, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 04",
+        "Background detail for reference note 04, retained for records and reviewed each year by the site",
+        "team."
+      ],
+      "structure": {
+        "headings": [
+          "Reference note 04, heading, level 2",
+          "Reference note 03, heading, level 2",
+          "Reference note 02, heading, level 2",
+          "Reference note 01, heading, level 2",
+          "main landmark, Delivery details, heading, level 1"
+        ],
+        "landmarks": [
+          "main landmark, form, Full name",
+          "Delivery details, heading, level 1"
+        ],
+        "formFields": [
+          "Full name, edit",
+          "Email, edit",
+          "Postcode, edit",
+          "Phone, edit",
+          "Notes, edit"
+        ],
+        "graphics": [],
+        "links": [
+          "list, with 6 items, Opening times for the north entrance 01, same page, link",
+          "Annual review 2019 02, same page, link",
+          "Accessibility statement 03, same page, link",
+          "Travel and parking 04, same page, link",
+          "Volunteering enquiries 05, same page, link",
+          "Room hire rates 06, same page, link"
+        ],
+        "lists": [
+          "list, with 6 items, bullet, Opening times for the north entrance 01"
+        ],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Full name, edit",
+          "Email, edit",
+          "Postcode, edit",
+          "Phone, edit",
+          "Notes, edit"
+        ],
+        "stateChanges": [],
+        "formChanges": [],
+        "postSubmitFields": [],
+        "focusOrder": [
+          "Full name, edit, focused, blank",
+          "Email, edit, focused, blank",
+          "Notes, edit, focused, blank",
+          "Opening times for the north entrance 01, link, focused, linked, same page",
+          "Annual review 2019 02, link, focused, linked, same page",
+          "Accessibility statement 03, link, focused, linked, same page",
+          "Travel and parking 04, link, focused, linked, same page",
+          "Volunteering enquiries 05, link, focused, linked, same page",
+          "Room hire rates 06, link, focused, linked, same page",
+          "Phone, edit, focused, blank",
+          "Postcode, edit, focused, blank",
+          "Full name, edit, focused, blank",
+          "Email, edit, focused, blank",
+          "Notes, edit, focused, blank"
+        ]
+      },
+      "diagnostics": [
+        {
+          "event": "focusOrder",
+          "atMs": 52035,
+          "stops": 14,
+          "cycled": true,
+          "stalled": false,
+          "truncated": false
+        }
+      ]
+    },
+    "silent": {
+      "transcript": [
+        "heading, level 1, Delivery details",
+        "form, Full name",
+        "edit",
+        "Email",
+        "edit",
+        "Postcode",
+        "edit",
+        "Phone",
+        "edit",
+        "Notes",
+        "edit",
+        "out of form, list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
+        "bullet, same page, link, Annual review 2019 02",
+        "bullet, same page, link, Accessibility statement 03",
+        "bullet, same page, link, Travel and parking 04",
+        "bullet, same page, link, Volunteering enquiries 05",
+        "bullet, same page, link, Room hire rates 06",
+        "out of list, heading, level 2, Reference note 01",
+        "Background detail for reference note 01, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 02",
+        "Background detail for reference note 02, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 03",
+        "Background detail for reference note 03, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 04",
+        "Background detail for reference note 04, retained for records and reviewed each year by the site",
+        "team."
+      ],
+      "structure": {
+        "headings": [
+          "Reference note 04, heading, level 2",
+          "Reference note 03, heading, level 2",
+          "Reference note 02, heading, level 2",
+          "Reference note 01, heading, level 2",
+          "main landmark, Delivery details, heading, level 1"
+        ],
+        "landmarks": [
+          "main landmark, form, Full name",
+          "Delivery details, heading, level 1"
+        ],
+        "formFields": [
+          "Full name, edit",
+          "Email, edit",
+          "Postcode, edit",
+          "Phone, edit",
+          "Notes, edit"
+        ],
+        "graphics": [],
+        "links": [
+          "list, with 6 items, Opening times for the north entrance 01, same page, link",
+          "Annual review 2019 02, same page, link",
+          "Accessibility statement 03, same page, link",
+          "Travel and parking 04, same page, link",
+          "Volunteering enquiries 05, same page, link",
+          "Room hire rates 06, same page, link"
+        ],
+        "lists": [
+          "list, with 6 items, bullet, Opening times for the north entrance 01"
+        ],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Full name, edit",
+          "Email, edit",
+          "Postcode, edit",
+          "Phone, edit",
+          "Notes, edit"
+        ],
+        "stateChanges": [],
+        "formChanges": [],
+        "postSubmitFields": [],
+        "focusOrder": [
+          "Full name, edit, focused, blank",
+          "Email, edit, focused, blank",
+          "Postcode, edit, focused, blank",
+          "Phone, edit, focused, blank",
+          "Notes, edit, focused, blank",
+          "Opening times for the north entrance 01, link, focused, linked, same page",
+          "Annual review 2019 02, link, focused, linked, same page",
+          "Accessibility statement 03, link, focused, linked, same page",
+          "Travel and parking 04, link, focused, linked, same page",
+          "Volunteering enquiries 05, link, focused, linked, same page",
+          "Room hire rates 06, link, focused, linked, same page",
+          "Full name, edit, focused, blank",
+          "Email, edit, focused, blank",
+          "Postcode, edit, focused, blank"
+        ]
+      },
+      "diagnostics": [
+        {
+          "event": "focusOrder",
+          "atMs": 51392,
+          "stops": 14,
+          "cycled": true,
+          "stalled": false,
+          "truncated": false
+        }
+      ]
+    }
+  },
+  "skip-link-inert": {
+    "caseId": "skip-link-broken",
+    "signal": {
+      "type": "skip-link-inert"
+    },
+    "fires": {
+      "transcript": [
+        "heading, level 1, Archive",
+        "same page, link, Skip to main content",
+        "navigation landmark, list, with 3 items, bullet, link, News and updates",
+        "bullet, link, Events calendar",
+        "bullet, link, Contact the team",
+        "out of list, Search the archive",
+        "edit",
+        "list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
+        "bullet, same page, link, Annual review 2019 02",
+        "bullet, same page, link, Accessibility statement 03",
+        "bullet, same page, link, Travel and parking 04",
+        "bullet, same page, link, Volunteering enquiries 05",
+        "bullet, same page, link, Room hire rates 06",
+        "out of list, heading, level 2, Reference note 01",
+        "Background detail for reference note 01, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 02",
+        "Background detail for reference note 02, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 03",
+        "Background detail for reference note 03, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 04",
+        "Background detail for reference note 04, retained for records and reviewed each year by the site",
+        "team."
+      ],
+      "structure": {
+        "headings": [
+          "Reference note 04, heading, level 2",
+          "Reference note 03, heading, level 2",
+          "Reference note 02, heading, level 2",
+          "Reference note 01, heading, level 2",
+          "main landmark, Archive, heading, level 1"
+        ],
+        "landmarks": [
+          "main landmark, navigation landmark, list, with 3 items, bullet, News and updates",
+          "Archive, heading, level 1",
+          "navigation landmark, list, with 3 items, bullet, News and updates"
+        ],
+        "formFields": [
+          "Search the archive, edit"
+        ],
+        "graphics": [],
+        "links": [
+          "navigation landmark, list, with 3 items, Contact the team, link",
+          "Events calendar, link",
+          "News and updates, link",
+          "Skip to main content, same page, link",
+          "navigation landmark, list, with 3 items, News and updates, link",
+          "Contact the team, link",
+          "list, with 6 items, Opening times for the north entrance 01, same page, link",
+          "Annual review 2019 02, same page, link",
+          "Accessibility statement 03, same page, link",
+          "Travel and parking 04, same page, link",
+          "Volunteering enquiries 05, same page, link",
+          "Room hire rates 06, same page, link"
+        ],
+        "lists": [
+          "navigation landmark, list, with 3 items, bullet, News and updates",
+          "list, with 6 items, bullet, Opening times for the north entrance 01"
+        ],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Search the archive, edit"
+        ],
+        "stateChanges": [],
+        "formChanges": [
+          {
+            "control": "Skip to main content, same page, link",
+            "kind": "route",
+            "after": "visited",
+            "baselineQuiet": true
+          }
+        ],
+        "postSubmitFields": [],
+        "focusOrder": [
+          "Skip to main content, link, focused, linked, same page",
+          "News and updates, link, focused, linked",
+          "Events calendar, link, focused, linked",
+          "Contact the team, link, focused, linked",
+          "Search the archive, edit, focused, blank",
+          "Opening times for the north entrance 01, link, focused, linked, same page",
+          "Annual review 2019 02, link, focused, linked, same page",
+          "Accessibility statement 03, link, focused, linked, same page",
+          "Travel and parking 04, link, focused, linked, same page",
+          "Volunteering enquiries 05, link, focused, linked, same page",
+          "Room hire rates 06, link, focused, linked, same page",
+          "Skip to main content, link, focused, linked, same page",
+          "News and updates, link, focused, linked",
+          "Events calendar, link, focused, linked"
+        ],
+        "routeChange": {
+          "control": "Skip to main content, same page, link",
+          "titleBefore": "Archive",
+          "titleAfter": "Archive",
+          "headingBefore": "Reference note 01, heading, level 2",
+          "headingAfter": "Reference note 01, heading, level 2",
+          "nextFocusAfter": "News and updates, link, focused, linked",
+          "announced": "visited",
+          "navigated": true
+        }
+      },
+      "diagnostics": [
+        {
+          "event": "focusOrder",
+          "atMs": 51952,
+          "stops": 14,
+          "cycled": true,
+          "stalled": false,
+          "truncated": false
+        },
+        {
+          "event": "routeChange",
+          "atMs": 59678,
+          "activating": "Skip to main content, same page, link"
+        },
+        {
+          "event": "routeChange",
+          "atMs": 68696,
+          "found": true,
+          "titleChanged": false,
+          "viewChanged": false,
+          "announcedChars": 7
+        }
+      ]
+    },
+    "silent": {
+      "transcript": [
+        "heading, level 1, Archive",
+        "same page, link, Skip to main content",
+        "navigation landmark, list, with 3 items, bullet, link, News and updates",
+        "bullet, link, Events calendar",
+        "bullet, link, Contact the team",
+        "out of list, Search the archive",
+        "edit",
+        "list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
+        "bullet, same page, link, Annual review 2019 02",
+        "bullet, same page, link, Accessibility statement 03",
+        "bullet, same page, link, Travel and parking 04",
+        "bullet, same page, link, Volunteering enquiries 05",
+        "bullet, same page, link, Room hire rates 06",
+        "out of list, heading, level 2, Reference note 01",
+        "Background detail for reference note 01, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 02",
+        "Background detail for reference note 02, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 03",
+        "Background detail for reference note 03, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 04",
+        "Background detail for reference note 04, retained for records and reviewed each year by the site",
+        "team."
+      ],
+      "structure": {
+        "headings": [
+          "Reference note 04, heading, level 2",
+          "Reference note 03, heading, level 2",
+          "Reference note 02, heading, level 2",
+          "Reference note 01, heading, level 2",
+          "main landmark, Archive, heading, level 1"
+        ],
+        "landmarks": [
+          "main landmark, navigation landmark, list, with 3 items, bullet, News and updates",
+          "Archive, heading, level 1",
+          "navigation landmark, list, with 3 items, bullet, News and updates"
+        ],
+        "formFields": [
+          "Search the archive, edit"
+        ],
+        "graphics": [],
+        "links": [
+          "navigation landmark, list, with 3 items, Contact the team, link",
+          "Events calendar, link",
+          "News and updates, link",
+          "Skip to main content, same page, link",
+          "navigation landmark, list, with 3 items, News and updates, link",
+          "Contact the team, link",
+          "list, with 6 items, Opening times for the north entrance 01, same page, link",
+          "Annual review 2019 02, same page, link",
+          "Accessibility statement 03, same page, link",
+          "Travel and parking 04, same page, link",
+          "Volunteering enquiries 05, same page, link",
+          "Room hire rates 06, same page, link"
+        ],
+        "lists": [
+          "navigation landmark, list, with 3 items, bullet, News and updates",
+          "list, with 6 items, bullet, Opening times for the north entrance 01"
+        ],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Search the archive, edit"
+        ],
+        "stateChanges": [],
+        "formChanges": [
+          {
+            "control": "Skip to main content, same page, link",
+            "kind": "route",
+            "after": "Search the archive, Search the archive, edit,",
+            "baselineQuiet": true
+          }
+        ],
+        "postSubmitFields": [],
+        "focusOrder": [
+          "Skip to main content, link, focused, linked, same page",
+          "News and updates, link, focused, linked",
+          "Events calendar, link, focused, linked",
+          "Contact the team, link, focused, linked",
+          "Search the archive, edit, focused, blank",
+          "Opening times for the north entrance 01, link, focused, linked, same page",
+          "Annual review 2019 02, link, focused, linked, same page",
+          "Accessibility statement 03, link, focused, linked, same page",
+          "Travel and parking 04, link, focused, linked, same page",
+          "Volunteering enquiries 05, link, focused, linked, same page",
+          "Room hire rates 06, link, focused, linked, same page",
+          "Skip to main content, link, focused, linked, same page",
+          "News and updates, link, focused, linked",
+          "Events calendar, link, focused, linked"
+        ],
+        "routeChange": {
+          "control": "Skip to main content, same page, link",
+          "titleBefore": "Archive",
+          "titleAfter": "Archive",
+          "headingBefore": "Reference note 01, heading, level 2",
+          "headingAfter": "Reference note 01, heading, level 2",
+          "nextFocusAfter": "Search the archive, edit, focused, blank",
+          "announced": "Search the archive, Search the archive, edit,",
+          "navigated": true
+        }
+      },
+      "diagnostics": [
+        {
+          "event": "focusOrder",
+          "atMs": 49114,
+          "stops": 14,
+          "cycled": true,
+          "stalled": false,
+          "truncated": false
+        },
+        {
+          "event": "routeChange",
+          "atMs": 56739,
+          "activating": "Skip to main content, same page, link"
+        },
+        {
+          "event": "routeChange",
+          "atMs": 66264,
+          "found": true,
+          "titleChanged": false,
+          "viewChanged": false,
+          "announcedChars": 45
+        }
+      ]
+    }
+  },
+  "control-unreachable-by-keyboard": {
+    "caseId": "keyboard-unreachable-action",
+    "signal": {
+      "type": "control-unreachable-by-keyboard"
+    },
+    "fires": {
+      "transcript": [
+        "heading, level 1, Drafts",
+        "button, Delete draft",
+        "form, Full name",
+        "edit",
+        "Email",
+        "edit",
+        "out of form, list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
+        "bullet, same page, link, Annual review 2019 02",
+        "bullet, same page, link, Accessibility statement 03",
+        "bullet, same page, link, Travel and parking 04",
+        "bullet, same page, link, Volunteering enquiries 05",
+        "bullet, same page, link, Room hire rates 06",
+        "out of list, heading, level 2, Reference note 01",
+        "Background detail for reference note 01, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 02",
+        "Background detail for reference note 02, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 03",
+        "Background detail for reference note 03, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 04",
+        "Background detail for reference note 04, retained for records and reviewed each year by the site",
+        "team.",
+        "table, with 2 rows and 2 columns, caption, Reference notes index",
+        "out of caption, row 1, column 1, Note",
+        "column 2, Reviewed",
+        "row 2, Note, column 1, Site safety",
+        "Reviewed, column 2, 2019",
+        "2019"
+      ],
+      "structure": {
+        "headings": [
+          "Reference note 04, heading, level 2",
+          "Reference note 03, heading, level 2",
+          "Reference note 02, heading, level 2",
+          "Reference note 01, heading, level 2",
+          "main landmark, Drafts, heading, level 1"
+        ],
+        "landmarks": [
+          "main landmark, form, Full name",
+          "Drafts, heading, level 1"
+        ],
+        "formFields": [
+          "Delete draft, button",
+          "form, Full name, edit",
+          "Email, edit"
+        ],
+        "graphics": [],
+        "links": [
+          "list, with 6 items, Opening times for the north entrance 01, same page, link",
+          "Annual review 2019 02, same page, link",
+          "Accessibility statement 03, same page, link",
+          "Travel and parking 04, same page, link",
+          "Volunteering enquiries 05, same page, link",
+          "Room hire rates 06, same page, link"
+        ],
+        "lists": [
+          "list, with 6 items, bullet, Opening times for the north entrance 01"
+        ],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Delete draft, button",
+          "form, Full name, edit",
+          "Email, edit"
+        ],
+        "stateChanges": [],
+        "formChanges": [],
+        "postSubmitFields": [],
+        "focusOrder": [
+          "Full name, edit, focused, blank",
+          "Email, edit, focused, blank",
+          "Opening times for the north entrance 01, link, focused, linked, same page",
+          "Annual review 2019 02, link, focused, linked, same page",
+          "Accessibility statement 03, link, focused, linked, same page",
+          "Travel and parking 04, link, focused, linked, same page",
+          "Volunteering enquiries 05, link, focused, linked, same page",
+          "Room hire rates 06, link, focused, linked, same page",
+          "Full name, edit, focused, blank",
+          "Email, edit, focused, blank",
+          "Opening times for the north entrance 01, link, focused, linked, same page"
+        ]
+      },
+      "diagnostics": [
+        {
+          "event": "focusOrder",
+          "atMs": 49726,
+          "stops": 11,
+          "cycled": true,
+          "stalled": false,
+          "truncated": false
+        }
+      ]
+    },
+    "silent": {
+      "transcript": [
+        "heading, level 1, Drafts",
+        "button, Delete draft",
+        "form, Full name",
+        "edit",
+        "Email",
+        "edit",
+        "out of form, list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
+        "bullet, same page, link, Annual review 2019 02",
+        "bullet, same page, link, Accessibility statement 03",
+        "bullet, same page, link, Travel and parking 04",
+        "bullet, same page, link, Volunteering enquiries 05",
+        "bullet, same page, link, Room hire rates 06",
+        "out of list, heading, level 2, Reference note 01",
+        "Background detail for reference note 01, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 02",
+        "Background detail for reference note 02, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 03",
+        "Background detail for reference note 03, retained for records and reviewed each year by the site",
+        "team.",
+        "heading, level 2, Reference note 04",
+        "Background detail for reference note 04, retained for records and reviewed each year by the site",
+        "team.",
+        "table, with 2 rows and 2 columns, caption, Reference notes index",
+        "out of caption, row 1, column 1, Note",
+        "column 2, Reviewed",
+        "row 2, Note, column 1, Site safety",
+        "Reviewed, column 2, 2019",
+        "2019"
+      ],
+      "structure": {
+        "headings": [
+          "Reference note 04, heading, level 2",
+          "Reference note 03, heading, level 2",
+          "Reference note 02, heading, level 2",
+          "Reference note 01, heading, level 2",
+          "main landmark, Drafts, heading, level 1"
+        ],
+        "landmarks": [
+          "main landmark, form, Full name",
+          "Drafts, heading, level 1"
+        ],
+        "formFields": [
+          "Delete draft, button",
+          "form, Full name, edit",
+          "Email, edit"
+        ],
+        "graphics": [],
+        "links": [
+          "list, with 6 items, Opening times for the north entrance 01, same page, link",
+          "Annual review 2019 02, same page, link",
+          "Accessibility statement 03, same page, link",
+          "Travel and parking 04, same page, link",
+          "Volunteering enquiries 05, same page, link",
+          "Room hire rates 06, same page, link"
+        ],
+        "lists": [
+          "list, with 6 items, bullet, Opening times for the north entrance 01"
+        ],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [
+          "Delete draft, button",
+          "form, Full name, edit",
+          "Email, edit"
+        ],
+        "stateChanges": [],
+        "formChanges": [],
+        "postSubmitFields": [],
+        "focusOrder": [
+          "Delete draft, button, focused",
+          "Full name, edit, focused, blank",
+          "Email, edit, focused, blank",
+          "Opening times for the north entrance 01, link, focused, linked, same page",
+          "Annual review 2019 02, link, focused, linked, same page",
+          "Accessibility statement 03, link, focused, linked, same page",
+          "Travel and parking 04, link, focused, linked, same page",
+          "Volunteering enquiries 05, link, focused, linked, same page",
+          "Room hire rates 06, link, focused, linked, same page",
+          "Delete draft, button, focused",
+          "Full name, edit, focused, blank",
+          "Email, edit, focused, blank"
+        ]
+      },
+      "diagnostics": [
+        {
+          "event": "focusOrder",
+          "atMs": 49574,
+          "stops": 12,
+          "cycled": true,
+          "stalled": false,
+          "truncated": false
+        }
+      ]
+    }
+  },
+  "route-title-stale": {
+    "caseId": "route-title-stale",
+    "signal": {
+      "type": "route-title-stale"
+    },
+    "fires": {
+      "transcript": [
+        "heading, level 1, Riverside Centre",
+        "navigation landmark, list, with 2 items, bullet, same page, link, Bookings",
+        "bullet, same page, link, Overview",
+        "out of list, Opening times and directions for the Riverside Centre.",
+        "Opening times and directions for the Riverside Centre."
+      ],
+      "structure": {
+        "headings": [
+          "Riverside Centre, heading, level 1"
+        ],
+        "landmarks": [
+          "navigation landmark, list, with 2 items, bullet, Bookings"
+        ],
+        "formFields": [],
+        "graphics": [],
+        "links": [
+          "Bookings, same page, link",
+          "Overview, same page, link"
+        ],
+        "lists": [
+          "navigation landmark, list, with 2 items, bullet, Bookings"
+        ],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [],
+        "stateChanges": [],
+        "formChanges": [
+          {
+            "control": "navigation landmark, list, with 2 items, Bookings, same page, link",
+            "kind": "route",
+            "after": "visited",
+            "baselineQuiet": true
+          }
+        ],
+        "postSubmitFields": [],
+        "focusOrder": [],
+        "routeChange": {
+          "control": "navigation landmark, list, with 2 items, Bookings, same page, link",
+          "titleBefore": "Riverside Centre",
+          "titleAfter": "Riverside Centre",
+          "headingBefore": "no next heading",
+          "headingAfter": "Bookings, heading, level 1",
+          "nextFocusAfter": "Overview, link, focused, linked, same page",
+          "announced": "visited",
+          "navigated": true
+        }
+      },
+      "diagnostics": [
+        {
+          "event": "routeChange",
+          "atMs": 29462,
+          "activating": "navigation landmark, list, with 2 items, Bookings, same page, link"
+        },
+        {
+          "event": "routeChange",
+          "atMs": 38372,
+          "found": true,
+          "titleChanged": false,
+          "viewChanged": true,
+          "announcedChars": 7
+        }
+      ]
+    },
+    "silent": {
+      "transcript": [
+        "heading, level 1, Riverside Centre",
+        "navigation landmark, list, with 2 items, bullet, same page, link, Bookings",
+        "bullet, same page, link, Overview",
+        "out of list, Opening times and directions for the Riverside Centre.",
+        "Opening times and directions for the Riverside Centre."
+      ],
+      "structure": {
+        "headings": [
+          "Riverside Centre, heading, level 1"
+        ],
+        "landmarks": [
+          "navigation landmark, list, with 2 items, bullet, Bookings"
+        ],
+        "formFields": [],
+        "graphics": [],
+        "links": [
+          "Bookings, same page, link",
+          "Overview, same page, link"
+        ],
+        "lists": [
+          "navigation landmark, list, with 2 items, bullet, Bookings"
+        ],
+        "tableCells": []
+      },
+      "interaction": {
+        "controls": [],
+        "stateChanges": [],
+        "formChanges": [
+          {
+            "control": "navigation landmark, list, with 2 items, Bookings, same page, link",
+            "kind": "route",
+            "after": "Bookings, heading, level 1",
+            "baselineQuiet": true
+          }
+        ],
+        "postSubmitFields": [],
+        "focusOrder": [],
+        "routeChange": {
+          "control": "navigation landmark, list, with 2 items, Bookings, same page, link",
+          "titleBefore": "Riverside Centre",
+          "titleAfter": "Bookings - Riverside Centre",
+          "headingBefore": "no next heading",
+          "headingAfter": "Bookings, heading, level 1",
+          "nextFocusAfter": "Bookings, link, focused, visited, linked, same page",
+          "announced": "Bookings, heading, level 1",
+          "navigated": true
+        }
+      },
+      "diagnostics": [
+        {
+          "event": "routeChange",
+          "atMs": 26296,
+          "activating": "navigation landmark, list, with 2 items, Bookings, same page, link"
+        },
+        {
+          "event": "routeChange",
+          "atMs": 34601,
+          "found": true,
+          "titleChanged": true,
+          "viewChanged": true,
+          "announcedChars": 26
+        }
+      ]
+    }
   }
- },
- "form-activation-silent": {
-  "caseId": "filter-status-silent",
-  "signal": {
-   "type": "form-activation-silent",
-   "control": "Show bags"
-  },
-  "fires": {
-   "transcript": [
-    "heading, level 1, Product catalogue",
-    "button, Show bags",
-    "Showing 8 products.",
-    "list, with 2 items, bullet Canvas bag",
-    "bullet Travel bag",
-    "out of list, list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
-    "bullet, same page, link, Annual review 2019 02",
-    "bullet, same page, link, Accessibility statement 03",
-    "bullet, same page, link, Travel and parking 04",
-    "bullet, same page, link, Room hire rates 06",
-    "out of list, heading, level 2, Reference note 01",
-    "team.",
-    "heading, level 2, Reference note 02",
-    "Background detail for reference note 02, retained for records and reviewed each year by the site"
-   ],
-   "structure": {
-    "headings": [
-     "Reference note 04, heading, level 2",
-     "Reference note 03, heading, level 2",
-     "Reference note 02, heading, level 2",
-     "Reference note 01, heading, level 2",
-     "main landmark, Product catalogue, heading, level 1"
-    ],
-    "landmarks": [
-     "main landmark, Product catalogue, heading, level 1"
-    ],
-    "formFields": [
-     "Show bags, button"
-    ],
-    "graphics": [],
-    "links": [
-     "list, with 6 items, Opening times for the north entrance 01, same page, link",
-     "Annual review 2019 02, same page, link",
-     "Accessibility statement 03, same page, link",
-     "Travel and parking 04, same page, link",
-     "Volunteering enquiries 05, same page, link",
-     "Room hire rates 06, same page, link"
-    ],
-    "lists": [
-     "list, with 2 items, bullet Canvas bag",
-     "list, with 6 items, bullet, Opening times for the north entrance 01"
-    ],
-    "tableCells": []
-   },
-   "interaction": {
-    "controls": [
-     "Show bags, button"
-    ],
-    "stateChanges": [],
-    "formChanges": [
-     {
-      "control": "Show bags, button",
-      "kind": "taskButton",
-      "after": ""
-     }
-    ],
-    "postSubmitFields": [
-     "Show bags, button"
-    ],
-    "focusOrder": []
-   },
-   "diagnostics": []
-  },
-  "silent": {
-   "transcript": [
-    "heading, level 1, Product catalogue",
-    "button, Show bags",
-    "Showing 8 products.",
-    "list, with 2 items, bullet Canvas bag",
-    "bullet Travel bag",
-    "out of list, list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
-    "bullet, same page, link, Annual review 2019 02",
-    "bullet, same page, link, Accessibility statement 03",
-    "bullet, same page, link, Travel and parking 04",
-    "bullet, same page, link, Volunteering enquiries 05",
-    "bullet, same page, link, Room hire rates 06",
-    "out of list, heading, level 2, Reference note 01",
-    "Background detail for reference note 01, retained for records and reviewed each year by the site",
-    "team."
-   ],
-   "structure": {
-    "headings": [
-     "Reference note 04, heading, level 2",
-     "Reference note 03, heading, level 2",
-     "Reference note 02, heading, level 2",
-     "Reference note 01, heading, level 2",
-     "main landmark, Product catalogue, heading, level 1"
-    ],
-    "landmarks": [
-     "main landmark, Product catalogue, heading, level 1"
-    ],
-    "formFields": [
-     "Show bags, button"
-    ],
-    "graphics": [],
-    "links": [
-     "list, with 6 items, Opening times for the north entrance 01, same page, link",
-     "Annual review 2019 02, same page, link",
-     "Accessibility statement 03, same page, link",
-     "Travel and parking 04, same page, link",
-     "Volunteering enquiries 05, same page, link",
-     "Room hire rates 06, same page, link"
-    ],
-    "lists": [
-     "list, with 2 items, bullet Canvas bag",
-     "list, with 6 items, bullet, Opening times for the north entrance 01"
-    ],
-    "tableCells": []
-   },
-   "interaction": {
-    "controls": [
-     "Show bags, button"
-    ],
-    "stateChanges": [],
-    "formChanges": [
-     {
-      "control": "Show bags, button",
-      "kind": "taskButton",
-      "after": "Showing 2 bags."
-     }
-    ],
-    "postSubmitFields": [
-     "Show bags, button"
-    ],
-    "focusOrder": []
-   },
-   "diagnostics": []
-  }
- },
- "validation-error-silent": {
-  "caseId": "form-error-silent",
-  "signal": {
-   "type": "validation-error-silent",
-   "control": "Submit request"
-  },
-  "fires": {
-   "transcript": [
-    "heading, level 1, Service request",
-    "form, Reference number",
-    "edit, , button, Submit request"
-   ],
-   "structure": {
-    "headings": [
-     "Service request, heading, level 1"
-    ],
-    "landmarks": [
-     "form, Reference number"
-    ],
-    "formFields": [
-     "Reference number, edit",
-     "Submit request, button"
-    ],
-    "graphics": [],
-    "links": [],
-    "lists": [],
-    "tableCells": []
-   },
-   "interaction": {
-    "controls": [
-     "Reference number, edit",
-     "Submit request, button"
-    ],
-    "stateChanges": [],
-    "formChanges": [
-     {
-      "control": "Submit request, button",
-      "kind": "submit",
-      "after": ""
-     }
-    ],
-    "postSubmitFields": [
-     "form, Reference number, edit",
-     "Submit request, button"
-    ],
-    "focusOrder": [],
-    "postSubmitNames": []
-   },
-   "diagnostics": []
-  },
-  "silent": {
-   "transcript": [
-    "heading, level 1, Service request",
-    "form, Reference number",
-    "edit, , button, Submit request"
-   ],
-   "structure": {
-    "headings": [
-     "Service request, heading, level 1"
-    ],
-    "landmarks": [
-     "form, Reference number"
-    ],
-    "formFields": [
-     "Reference number, edit, Enter the reference number before submitting.",
-     "Submit request, button"
-    ],
-    "graphics": [],
-    "links": [],
-    "lists": [],
-    "tableCells": []
-   },
-   "interaction": {
-    "controls": [
-     "Reference number, edit, Enter the reference number before submitting.",
-     "Submit request, button"
-    ],
-    "stateChanges": [],
-    "formChanges": [
-     {
-      "control": "Submit request, button",
-      "kind": "submit",
-      "after": "Reference number, edit, invalid entry, Enter the reference number before submitting., blank"
-     }
-    ],
-    "postSubmitFields": [
-     "form, Reference number, edit, Enter the reference number before submitting.",
-     "Submit request, button"
-    ],
-    "focusOrder": [],
-    "postSubmitNames": []
-   },
-   "diagnostics": []
-  }
- },
- "placeholder-only": {
-  "caseId": "form-placeholder-only",
-  "signal": {
-   "type": "placeholder-only",
-   "placeholder": "name at example dot com"
-  },
-  "fires": {
-   "transcript": [
-    "out of form, heading, level 1, Booking confirmation",
-    "form, name at example dot com, edit",
-    "name at example dot com, edit"
-   ],
-   "structure": {
-    "headings": [
-     "Booking confirmation, heading, level 1"
-    ],
-    "landmarks": [
-     "form, name at example dot com, edit"
-    ],
-    "formFields": [],
-    "graphics": [],
-    "links": [],
-    "lists": [],
-    "tableCells": []
-   },
-   "interaction": {
-    "controls": [],
-    "stateChanges": [],
-    "formChanges": [],
-    "postSubmitFields": [],
-    "focusOrder": []
-   },
-   "diagnostics": []
-  },
-  "silent": {
-   "transcript": [
-    "out of form, heading, level 1, Booking confirmation",
-    "form, Confirmation email",
-    "edit, name at example dot com"
-   ],
-   "structure": {
-    "headings": [
-     "Booking confirmation, heading, level 1"
-    ],
-    "landmarks": [
-     "form, Confirmation email"
-    ],
-    "formFields": [
-     "Confirmation email, edit, name at example dot com"
-    ],
-    "graphics": [],
-    "links": [],
-    "lists": [],
-    "tableCells": []
-   },
-   "interaction": {
-    "controls": [
-     "Confirmation email, edit, name at example dot com"
-    ],
-    "stateChanges": [],
-    "formChanges": [],
-    "postSubmitFields": [],
-    "focusOrder": []
-   },
-   "diagnostics": []
-  }
- },
- "table-unassociated": {
-  "caseId": "table-unassociated-headers",
-  "signal": {
-   "type": "table-unassociated"
-  },
-  "fires": {
-   "transcript": [
-    "heading, level 1, Train departures",
-    "table, with 3 rows and 3 columns, caption, Departures from Central station",
-    "out of caption, row 1, column 1, Destination",
-    "column 2, Departs",
-    "column 3, Platform",
-    "row 2, column 1, Riverside",
-    "column 2, 09:15",
-    "column 3, 3",
-    "row 3, column 1, Hilltown",
-    "column 2, 09:40",
-    "column 3, 5",
-    "5"
-   ],
-   "structure": {
-    "headings": [
-     "Train departures, heading, level 1"
-    ],
-    "landmarks": [],
-    "formFields": [],
-    "graphics": [],
-    "links": [],
-    "lists": [],
-    "tableCells": [
-     "Departures from Central station, table, with 3 rows and 3 columns, caption, Departures from Central station",
-     "row 2, Riverside",
-     "column 2, 09:15",
-     "column 3, 3",
-     "row 3, 5"
-    ]
-   },
-   "interaction": {
-    "controls": [],
-    "stateChanges": [],
-    "formChanges": [],
-    "postSubmitFields": [],
-    "focusOrder": []
-   },
-   "diagnostics": []
-  },
-  "silent": {
-   "transcript": [
-    "heading, level 1, Train departures",
-    "table, with 3 rows and 3 columns, caption, Departures from Central station",
-    "out of caption, row 1, column 1, Destination",
-    "column 2, Departs",
-    "column 3, Platform",
-    "row 2, Destination, column 1, Riverside",
-    "Departs, column 2, 09:15",
-    "Platform, column 3, 3",
-    "row 3, Destination, column 1, Hilltown",
-    "Departs, column 2, 09:40",
-    "Platform, column 3, 5",
-    "5"
-   ],
-   "structure": {
-    "headings": [
-     "Train departures, heading, level 1"
-    ],
-    "landmarks": [],
-    "formFields": [],
-    "graphics": [],
-    "links": [],
-    "lists": [],
-    "tableCells": [
-     "Departures from Central station, table, with 3 rows and 3 columns, caption, Departures from Central station",
-     "row 2, Riverside",
-     "Departs, column 2, 09:15",
-     "Platform, column 3, 3",
-     "Hilltown, row 3, 5"
-    ]
-   },
-   "interaction": {
-    "controls": [],
-    "stateChanges": [],
-    "formChanges": [],
-    "postSubmitFields": [],
-    "focusOrder": []
-   },
-   "diagnostics": []
-  }
- },
- "missing-role": {
-  "caseId": "custom-control-role",
-  "signal": {
-   "type": "missing-role",
-   "text": "Save notification settings"
-  },
-  "fires": {
-   "transcript": [
-    "heading, level 1, Notification settings",
-    "Save notification settings",
-    "list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
-    "bullet, same page, link, Annual review 2019 02",
-    "bullet, same page, link, Accessibility statement 03",
-    "bullet, same page, link, Travel and parking 04",
-    "bullet, same page, link, Volunteering enquiries 05",
-    "bullet, same page, link, Room hire rates 06",
-    "out of list, heading, level 2, Reference note 01",
-    "Background detail for reference note 01, retained for records and reviewed each year by the site",
-    "team.",
-    "heading, level 2, Reference note 02",
-    "Background detail for reference note 02, retained for records and reviewed each year by the site",
-    "team."
-   ],
-   "structure": {
-    "headings": [
-     "Reference note 04, heading, level 2",
-     "Reference note 03, heading, level 2",
-     "Reference note 02, heading, level 2",
-     "Reference note 01, heading, level 2",
-     "main landmark, Notification settings, heading, level 1"
-    ],
-    "landmarks": [
-     "main landmark, Notification settings, heading, level 1"
-    ],
-    "formFields": [],
-    "graphics": [],
-    "links": [
-     "list, with 6 items, Opening times for the north entrance 01, same page, link",
-     "Annual review 2019 02, same page, link",
-     "Accessibility statement 03, same page, link",
-     "Travel and parking 04, same page, link",
-     "Volunteering enquiries 05, same page, link",
-     "Room hire rates 06, same page, link"
-    ],
-    "lists": [
-     "list, with 6 items, bullet, Opening times for the north entrance 01"
-    ],
-    "tableCells": []
-   },
-   "interaction": {
-    "controls": [],
-    "stateChanges": [],
-    "formChanges": [],
-    "postSubmitFields": [],
-    "focusOrder": []
-   },
-   "diagnostics": []
-  },
-  "silent": {
-   "transcript": [
-    "heading, level 1, Notification settings",
-    "button, Save notification settings",
-    "list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
-    "bullet, same page, link, Annual review 2019 02",
-    "bullet, same page, link, Accessibility statement 03",
-    "bullet, same page, link, Travel and parking 04",
-    "bullet, same page, link, Volunteering enquiries 05",
-    "bullet, same page, link, Room hire rates 06",
-    "out of list, heading, level 2, Reference note 01",
-    "Background detail for reference note 01, retained for records and reviewed each year by the site",
-    "team.",
-    "heading, level 2, Reference note 02",
-    "Background detail for reference note 02, retained for records and reviewed each year by the site",
-    "team."
-   ],
-   "structure": {
-    "headings": [
-     "Reference note 04, heading, level 2",
-     "Reference note 03, heading, level 2",
-     "Reference note 02, heading, level 2",
-     "Reference note 01, heading, level 2",
-     "main landmark, Notification settings, heading, level 1"
-    ],
-    "landmarks": [
-     "main landmark, Notification settings, heading, level 1"
-    ],
-    "formFields": [
-     "Save notification settings, button"
-    ],
-    "graphics": [],
-    "links": [
-     "list, with 6 items, Opening times for the north entrance 01, same page, link",
-     "Annual review 2019 02, same page, link",
-     "Accessibility statement 03, same page, link",
-     "Travel and parking 04, same page, link",
-     "Volunteering enquiries 05, same page, link",
-     "Room hire rates 06, same page, link"
-    ],
-    "lists": [
-     "list, with 6 items, bullet, Opening times for the north entrance 01"
-    ],
-    "tableCells": []
-   },
-   "interaction": {
-    "controls": [
-     "Save notification settings, button"
-    ],
-    "stateChanges": [],
-    "formChanges": [
-     {
-      "control": "Save notification settings, button",
-      "kind": "submit",
-      "after": ""
-     }
-    ],
-    "postSubmitFields": [
-     "Save notification settings, button"
-    ],
-    "focusOrder": [],
-    "postSubmitNames": [
-     "Notification settings",
-     "Reference note 01",
-     "Reference note 02",
-     "Reference note 03",
-     "Reference note 04",
-     "Notification settings",
-     "Save notification settings",
-     "Reference note 01",
-     "Background detail for reference note 01, retained for records and reviewed each year by the site team.",
-     "Reference note 02",
-     "Background detail for reference note 02, retained for records and reviewed each year by the site team.",
-     "Reference note 03",
-     "Background detail for reference note 03, retained for records and reviewed each year by the site team.",
-     "Reference note 04"
-    ]
-   },
-   "diagnostics": []
-  }
- }
 }

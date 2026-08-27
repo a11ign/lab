@@ -80,25 +80,17 @@ const DISCRIMINATES: Record<string, { signal: object; fires: object; silent: obj
  * the probe, which is worse than an admitted gap: it would read as coverage.
  */
 const NO_FIXTURE: Record<string, string> = {
-  // ALL FIVE ARE FOCUS-PROBE TYPES, and the reason is one fact rather than five.
+  // EMPTY, and it stayed non-empty for the right reason until 2026-08-27.
   //
-  // Each is decided from `interaction.focusOrder` or the probe's `focusOrder` diagnostic mark, and this
-  // checkout's corpus copy carries neither for them: the cases are recent, and `probeFocus` evidence is
-  // absent from the captures on disk. Six sibling types WERE fixtured from real captures in the same
-  // sweep, which is what makes this a gap in the EVIDENCE rather than in the method.
+  // All five entries here were focus-probe types — `focus-trapped`, `focus-order-scrambled`,
+  // `control-unreachable-by-keyboard`, `route-title-stale`, `skip-link-inert` — exempted because no
+  // capture on disk carried `interaction.focusOrder` or the probe's mark for a case using them, and the
+  // note said a hand-built fixture "would be my model of the probe rather than the probe". That was the
+  // correct call: the gap was in the EVIDENCE, not the method.
   //
-  // The way in is the same extraction, run once a corpus with focus evidence exists — not a hand-built
-  // fixture, which for a probe mark would assert my model of the probe rather than the probe.
-  "focus-trapped": "reads the focusOrder probe's `stalled` mark; no capture on disk carries one for a "
-    + "case using this type, so a fixture would be my model of the probe rather than the probe",
-  "focus-order-scrambled": "compares structure.formFields against interaction.focusOrder; the same "
-    + "captures are missing, and hand-building both sides compares two of my own guesses",
-  "control-unreachable-by-keyboard": "needs formFields AND a CLOSED focusOrder cycle, which is the "
-    + "hardest of these to synthesise honestly — the cycle-closing rule is the guard, not the evidence",
-  "route-title-stale": "reads a document title across a navigation, which is a TRANSITION and not a "
-    + "state; no single capture can hold it and no fixture can fake the moment between two",
-  "skip-link-inert": "reads whether focus MOVED when a skip link was activated, which only the probe "
-    + "can answer; a fixture would be asserting the answer rather than the mechanism",
+  // So the evidence was captured. Five cases, both variants, across the real fleet; all five then
+  // discriminated, and the extraction below refuses any trim that changes either verdict. The exemption
+  // is gone because the reason for it is, not because the bar moved.
 };
 
 /**
@@ -118,7 +110,7 @@ const NO_FIXTURE: Record<string, string> = {
  */
 test("the types read from real evidence both fire and stay silent", () => {
   const covered = Object.keys(REAL_EVIDENCE);
-  assert.ok(covered.length >= 6, `expected real evidence for six types, got ${covered.length}`);
+  assert.ok(covered.length >= 11, `expected real evidence for eleven types, got ${covered.length}`);
   for (const [type, sample] of Object.entries(REAL_EVIDENCE as Record<string, {
     caseId: string; signal: { type: string }; fires: object; silent: object;
   }>)) {
