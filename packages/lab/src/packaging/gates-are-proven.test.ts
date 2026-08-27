@@ -80,6 +80,12 @@ const GATE_PROOFS: Record<string, GateProof> = {
       + "measured, 85 -> 81, taking events.bl.uk's known 2.4.3 with it",
     provenBy: "packages/lab/src/training/real-page-baseline-coverage.test.ts",
   },
+  "corpus:distribution": {
+    catches: "a field empty on EVERY record — no page can cause that, so the probe or exporter filling it "
+      + "has stopped. `postSubmitFields` was [] on all 2,122 captures with every check green, because an "
+      + "empty field is not a malformed one. Also a collapsed label balance and a missing required key",
+    provenBy: "packages/lab/src/training/dataset-distribution.test.ts",
+  },
   "training:check-signals:complete": {
     catches: "a corpus signal that fires on both variants, or on neither, so a case discriminates nothing",
     provenBy: "packages/lab/src/training/signal-predicates-discriminate.test.ts",
@@ -149,7 +155,7 @@ const GATE_PROOFS: Record<string, GateProof> = {
 };
 
 /** Gates whose refusal has been WATCHED. May only rise. */
-const PROVEN_AT_LEAST = 14;
+const PROVEN_AT_LEAST = 15;
 
 function gatesInUse(): string[] {
   const chain = STEPS.filter((step: { gate?: boolean }) => step.gate)
