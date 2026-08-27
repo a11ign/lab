@@ -241,6 +241,13 @@ function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
  * safe and orchestrating the run are two different things.
  */
 function updateBaseline(current: Record<string, string[]>, pages: number): number {
+  const stale = staleBaselineKeys(current);
+  if (stale.length) {
+    process.stdout.write(`\n  ${stale.length} baseline key(s) name a URL the corpus no longer declares — `
+      + "dropping them,\n  because the page was renamed or removed on purpose and the old address is the "
+      + "stale record:\n");
+    for (const url of stale) process.stdout.write(`    ${url.replace(/^https:\/\//, "")}\n`);
+  }
   const dropped = pagesTheUpdateWouldDrop(current);
   if (dropped.length && !ALLOW_PARTIAL) {
     refuseToWriteFromPartialCoverage(dropped);
@@ -285,7 +292,28 @@ function pagesTheUpdateWouldDrop(current: Record<string, string[]>): Array<{ url
   if (!baseline) return [];
   return Object.entries(baseline)
     .filter(([url]) => !(url in current))
+    // A URL THE CORPUS NO LONGER DECLARES IS NOT MEMORY LOSS, and conflating the two made this guard
+    // refuse the very run it was built to let through.
+    //
+    // Two ways a baseline key can be absent from a fresh scoring, and they are opposites. The page is
+    // still in `REAL_PAGES` and simply was not captured — that is partial coverage, and writing now
+    // erases what we know. Or the corpus no longer lists that URL at all, because it was RENAMED or
+    // removed on purpose: `www.bl.uk/whats-on/` became `events.bl.uk/`, and its 2.4.3 reappeared under
+    // the new address on the very next run. Keeping the old key would be the memory loss, not dropping it.
+    //
+    // Measured 2026-08-27: five baseline keys were stale URLs corrected earlier the same day, and a guard
+    // that could not tell them from uncaptured pages would have forced `--allow-partial` on a complete
+    // run — which is how an escape hatch becomes the normal path and stops meaning anything.
+    .filter(([url]) => REAL_PAGES.some((page) => page.url === url))
     .map(([url, findings]) => ({ url, findings: findings as string[] }));
+}
+
+/** Baseline keys the corpus no longer declares — reported, never refused. */
+function staleBaselineKeys(current: Record<string, string[]>): string[] {
+  const baseline = readBaseline();
+  if (!baseline) return [];
+  return Object.keys(baseline)
+    .filter((url) => !(url in current) && !REAL_PAGES.some((page) => page.url === url));
 }
 
 /** Say which pages, which findings, and the one command that fixes it. */
