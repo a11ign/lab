@@ -3,254 +3,265 @@
   "rows": [
     {
       "subtype": "1.1.1:filename-alt",
-      "positives": 87,
+      "positives": 95,
       "vetoes": [],
       "sumLogits": 0
     },
     {
       "subtype": "1.1.1:generic-alt",
-      "positives": 85,
+      "positives": 95,
       "vetoes": [],
       "sumLogits": 0
     },
     {
       "subtype": "1.1.1:missing-alt",
-      "positives": 155,
+      "positives": 160,
       "vetoes": [],
       "sumLogits": 0
     },
     {
       "subtype": "1.3.1:fake-heading",
-      "positives": 98,
+      "positives": 108,
       "vetoes": [],
       "sumLogits": 0
     },
     {
+      "subtype": "1.3.1:no-headings",
+      "positives": 29,
+      "vetoes": [
+        {
+          "feature": "heading_present",
+          "logits": -2.9259
+        },
+        {
+          "feature": "generic_heading_present",
+          "logits": -2.915
+        },
+        {
+          "feature": "state_unchanged",
+          "logits": -1.4589
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.2972
+        },
+        {
+          "feature": "form_change_empty",
+          "logits": -1.1552
+        }
+      ],
+      "sumLogits": -9.75
+    },
+    {
       "subtype": "1.3.1:unassociated-table",
-      "positives": 134,
+      "positives": 140,
       "vetoes": [],
       "sumLogits": 0
     },
     {
       "subtype": "2.1.1:control-unreachable-by-keyboard",
-      "positives": 3,
-      "vetoes": [
-        {
-          "feature": "vague_link_without_context",
-          "logits": -2.658
-        },
-        {
-          "feature": "form_field_unnamed",
-          "logits": -2.2499
-        },
-        {
-          "feature": "filename_graphic_present",
-          "logits": -1.03
-        }
-      ],
-      "sumLogits": -5.94
-    },
-    {
-      "subtype": "2.1.2:focus-trapped",
-      "positives": 4,
+      "positives": 8,
       "vetoes": [
         {
           "feature": "form_field_unnamed",
-          "logits": -7.0136
+          "logits": -4.6012
         },
         {
           "feature": "vague_link_without_context",
-          "logits": -4.8611
-        },
-        {
-          "feature": "generic_heading_present",
-          "logits": -3.3557
+          "logits": -4.0398
         },
         {
           "feature": "state_unchanged",
-          "logits": -2.879
-        },
-        {
-          "feature": "unnamed_graphic_present",
-          "logits": -2.4314
-        },
-        {
-          "feature": "form_change_nonempty",
-          "logits": -1.7736
-        },
-        {
-          "feature": "validation_error_missing",
-          "logits": -1.6087
-        },
-        {
-          "feature": "table_header_associated",
-          "logits": -1.6011
+          "logits": -2.0541
         },
         {
           "feature": "form_change_empty",
-          "logits": -1.5881
+          "logits": -1.5578
+        },
+        {
+          "feature": "form_change_nonempty",
+          "logits": -1.5329
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.4968
         },
         {
           "feature": "post_submit_present",
-          "logits": -1.5171
+          "logits": -1.4665
         },
         {
           "feature": "form_change_present",
-          "logits": -1.5073
+          "logits": -1.3607
         },
         {
           "feature": "status_update_announced",
-          "logits": -1.2902
+          "logits": -1.2558
         },
         {
           "feature": "validation_error_announced",
-          "logits": -1.2673
+          "logits": -1.2474
         }
       ],
-      "sumLogits": -32.69
+      "sumLogits": -20.61
+    },
+    {
+      "subtype": "2.1.2:focus-trapped",
+      "positives": 8,
+      "vetoes": [
+        {
+          "feature": "form_field_unnamed",
+          "logits": -6.595
+        },
+        {
+          "feature": "vague_link_without_context",
+          "logits": -4.7671
+        },
+        {
+          "feature": "state_unchanged",
+          "logits": -3.0784
+        },
+        {
+          "feature": "form_change_nonempty",
+          "logits": -2.7571
+        },
+        {
+          "feature": "form_change_present",
+          "logits": -2.1566
+        },
+        {
+          "feature": "form_change_empty",
+          "logits": -1.8031
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.7324
+        },
+        {
+          "feature": "post_submit_present",
+          "logits": -1.4777
+        },
+        {
+          "feature": "status_update_announced",
+          "logits": -1.2782
+        },
+        {
+          "feature": "validation_error_announced",
+          "logits": -1.2143
+        }
+      ],
+      "sumLogits": -26.86
     },
     {
       "subtype": "2.4.1:skip-link-inert",
       "positives": 7,
       "vetoes": [
         {
-          "feature": "vague_link_without_context",
-          "logits": -3.968
-        },
-        {
           "feature": "form_field_unnamed",
-          "logits": -3.8344
+          "logits": -4.5852
         },
         {
-          "feature": "table_position_only",
-          "logits": -2.716
+          "feature": "vague_link_without_context",
+          "logits": -4.4273
         },
         {
-          "feature": "state_change_present",
-          "logits": -1.7692
+          "feature": "generic_heading_present",
+          "logits": -4.1445
         },
         {
           "feature": "validation_error_missing",
-          "logits": -1.7434
-        },
-        {
-          "feature": "state_changed",
-          "logits": -1.5557
+          "logits": -3.0896
         },
         {
           "feature": "state_unchanged",
-          "logits": -1.4337
+          "logits": -1.5335
         }
       ],
-      "sumLogits": -17.02
+      "sumLogits": -17.78
     },
     {
       "subtype": "2.4.2:route-title-stale",
       "positives": 7,
       "vetoes": [
         {
-          "feature": "vague_link_without_context",
-          "logits": -4.1125
+          "feature": "generic_heading_present",
+          "logits": -4.4599
         },
         {
           "feature": "validation_error_missing",
-          "logits": -2.3518
-        },
-        {
-          "feature": "filename_graphic_present",
-          "logits": -2.3382
-        },
-        {
-          "feature": "state_unchanged",
-          "logits": -1.8955
+          "logits": -3.0132
         },
         {
           "feature": "generic_graphic_present",
-          "logits": -1.7577
+          "logits": -2.3383
         },
         {
-          "feature": "unit_is_plain_heading_candidate",
-          "logits": -1.6245
+          "feature": "unnamed_graphic_present",
+          "logits": -2.2564
         },
         {
-          "feature": "plain_heading_candidate_present",
-          "logits": -1.533
+          "feature": "state_unchanged",
+          "logits": -1.3854
         }
       ],
-      "sumLogits": -15.61
+      "sumLogits": -13.45
     },
     {
       "subtype": "2.4.3:focus-order-scrambled",
-      "positives": 4,
+      "positives": 7,
       "vetoes": [
         {
           "feature": "form_field_unnamed",
-          "logits": -5.4484
+          "logits": -6.5944
         },
         {
           "feature": "vague_link_without_context",
-          "logits": -4.6986
-        },
-        {
-          "feature": "generic_graphic_present",
-          "logits": -4.1079
-        },
-        {
-          "feature": "filename_graphic_present",
-          "logits": -2.9135
-        },
-        {
-          "feature": "state_change_present",
-          "logits": -2.1987
+          "logits": -4.8553
         },
         {
           "feature": "state_unchanged",
-          "logits": -2.1875
+          "logits": -3.1927
         },
         {
           "feature": "form_change_nonempty",
-          "logits": -2.1699
-        },
-        {
-          "feature": "state_changed",
-          "logits": -2.1356
+          "logits": -2.3584
         },
         {
           "feature": "form_change_present",
-          "logits": -1.7342
-        },
-        {
-          "feature": "validation_error_missing",
-          "logits": -1.6863
+          "logits": -1.9192
         },
         {
           "feature": "form_change_empty",
-          "logits": -1.5989
+          "logits": -1.7671
+        },
+        {
+          "feature": "validation_error_missing",
+          "logits": -1.7401
         },
         {
           "feature": "post_submit_present",
-          "logits": -1.5584
+          "logits": -1.5001
         },
         {
           "feature": "status_update_announced",
-          "logits": -1.3689
+          "logits": -1.3039
         },
         {
           "feature": "validation_error_announced",
-          "logits": -1.3187
+          "logits": -1.2178
         }
       ],
-      "sumLogits": -35.13
+      "sumLogits": -26.45
     },
     {
       "subtype": "2.4.4:regex",
-      "positives": 170,
+      "positives": 169,
       "vetoes": [],
       "sumLogits": 0
     },
     {
       "subtype": "2.4.6:regex",
-      "positives": 175,
+      "positives": 172,
       "vetoes": [],
       "sumLogits": 0
     },
@@ -260,41 +271,37 @@
       "vetoes": [
         {
           "feature": "validation_error_announced",
-          "logits": -2.4316
+          "logits": -2.4793
         },
         {
           "feature": "form_change_nonempty",
-          "logits": -2.3437
+          "logits": -2.3976
         },
         {
           "feature": "status_update_announced",
-          "logits": -1.8788
+          "logits": -1.9559
         },
         {
           "feature": "state_unchanged",
-          "logits": -1.5717
+          "logits": -1.5719
         }
       ],
-      "sumLogits": -8.23
+      "sumLogits": -8.4
     },
     {
       "subtype": "3.3.2:unnamed-form-field",
-      "positives": 174,
+      "positives": 178,
       "vetoes": [
         {
-          "feature": "form_change_nonempty",
-          "logits": -1.2645
-        },
-        {
           "feature": "status_update_announced",
-          "logits": -1.1012
+          "logits": -1.1026
         },
         {
           "feature": "validation_error_announced",
-          "logits": -1.0187
+          "logits": -1.0138
         }
       ],
-      "sumLogits": -3.38
+      "sumLogits": -2.12
     },
     {
       "subtype": "4.1.2:state-change-silent",
@@ -302,53 +309,49 @@
       "vetoes": [
         {
           "feature": "form_change_nonempty",
-          "logits": -1.6033
+          "logits": -1.6382
         },
         {
           "feature": "form_change_empty",
-          "logits": -1.5407
+          "logits": -1.4939
         },
         {
           "feature": "post_submit_present",
-          "logits": -1.4938
+          "logits": -1.4583
         },
         {
           "feature": "validation_error_missing",
-          "logits": -1.3983
+          "logits": -1.3961
         },
         {
           "feature": "form_change_present",
-          "logits": -1.3938
+          "logits": -1.3904
         },
         {
           "feature": "status_update_announced",
-          "logits": -1.3581
+          "logits": -1.3272
         },
         {
           "feature": "validation_error_announced",
-          "logits": -1.1844
+          "logits": -1.1782
         }
       ],
-      "sumLogits": -9.97
+      "sumLogits": -9.88
     },
     {
       "subtype": "4.1.2:unnamed-control",
-      "positives": 224,
+      "positives": 228,
       "vetoes": [
         {
-          "feature": "form_change_nonempty",
-          "logits": -1.3604
-        },
-        {
           "feature": "status_update_announced",
-          "logits": -1.1722
+          "logits": -1.1737
         },
         {
           "feature": "validation_error_announced",
-          "logits": -1.1098
+          "logits": -1.0972
         }
       ],
-      "sumLogits": -3.64
+      "sumLogits": -2.27
     },
     {
       "subtype": "4.1.3:form-activation-silent",
@@ -356,22 +359,22 @@
       "vetoes": [
         {
           "feature": "status_update_announced",
-          "logits": -4.2156
+          "logits": -4.0522
         },
         {
           "feature": "form_change_nonempty",
-          "logits": -3.5547
+          "logits": -3.5475
         },
         {
           "feature": "validation_error_announced",
-          "logits": -2.1916
+          "logits": -2.5072
         },
         {
           "feature": "state_unchanged",
-          "logits": -1.6431
+          "logits": -1.6768
         }
       ],
-      "sumLogits": -11.61
+      "sumLogits": -11.78
     }
   ]
 }
