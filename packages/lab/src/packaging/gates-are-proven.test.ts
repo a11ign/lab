@@ -100,12 +100,11 @@ const GATE_PROOFS: Record<string, GateProof> = {
   "scorer:shortcuts": {
     catches: "a head that gained a FREE veto — a feature constant at zero across a subtype's positives, "
       + "which no accuracy number can see because the held-out split has the same structure (ADR 0015)",
-    unproven: "needs trained weights and the exported corpus",
+    provenBy: "packages/scorer/tests/test_shortcuts_gate_refuses.py",
   },
   "scorer:shortcuts:candidate": {
     catches: "the same, against the candidate rather than the shipped weights",
-    unproven: "needs a trained candidate under runs/model-candidate. The weights are fitted heads, "
-      + "so no fixture can supply one without reproducing a train",
+    provenBy: "packages/scorer/tests/test_shortcuts_gate_refuses.py",
   },
   "gate:isolation": {
     catches: "a package a consumer could not actually install and use — a phantom dependency, "
@@ -150,7 +149,7 @@ const GATE_PROOFS: Record<string, GateProof> = {
 };
 
 /** Gates whose refusal has been WATCHED. May only rise. */
-const PROVEN_AT_LEAST = 8;
+const PROVEN_AT_LEAST = 10;
 
 function gatesInUse(): string[] {
   const chain = STEPS.filter((step: { gate?: boolean }) => step.gate)
