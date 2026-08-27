@@ -110,9 +110,10 @@ const GATE_PROOFS: Record<string, GateProof> = {
       + "so no fixture can supply one without reproducing a train",
   },
   "gate:isolation": {
-    catches: "a train/test split that puts a near-duplicate of a training page in the held-out set",
-    unproven: "needs the exported corpus and a train/test split large enough for the isolation "
-      + "check to have something to separate",
+    catches: "a package a consumer could not actually install and use — a phantom dependency, "
+      + "cwd-relative resolution, a file dropped by `files`, or an `exports` subpath that does not "
+      + "resolve. A workspace install is STRUCTURALLY blind to all four (ADR 0007)",
+    provenBy: "packages/lab/src/packaging/isolation-gate-refuses.test.ts",
   },
   "corpus:grants-audit": {
     catches: "a multi-defect page LABELLED for a defect whose evidence was never captured, so the head "
@@ -149,7 +150,7 @@ const GATE_PROOFS: Record<string, GateProof> = {
 };
 
 /** Gates whose refusal has been WATCHED. May only rise. */
-const PROVEN_AT_LEAST = 6;
+const PROVEN_AT_LEAST = 7;
 
 function gatesInUse(): string[] {
   const chain = STEPS.filter((step: { gate?: boolean }) => step.gate)
