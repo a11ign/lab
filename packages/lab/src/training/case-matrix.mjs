@@ -1845,39 +1845,6 @@ export const SCALE_BUCKETS = [
 ];
 
 /**
- * Give every case realistic page furniture, identical in both of its variants.
- *
- * Done HERE rather than inside `page()` deliberately. `page()` sees only a title and a body, and those
- * differ between the good and bad variant — so any size derived from them could differ across a pair and
- * introduce a second difference into a controlled comparison. That is the one defect this corpus cannot
- * carry. Keyed on the case's index instead, the furniture is provably identical for both variants and
- * stable across regenerations.
- *
- * **But the index is the ARRAY POSITION, so INSERTING a case re-sizes the furniture of every case after
- * it** — new page bytes, new `pageHash`, new cache key, and those captures become stale. Measured
- * 2026-08-22: adding `route-title-stale` immediately before `keyboard-trap-postcode` changed exactly one
- * page, and `check-signals` reported `1 stale` and exited 1. One case is cheap; the same insertion into the
- * middle of a generated family would invalidate hundreds, silently, with the only symptom being a stale
- * count nobody was watching for.
- *
- * **So APPEND new cases at the end.** Keying the bucket on a hash of the case ID instead would make
- * insertion free forever, and is the better design — but it re-sizes every page in the corpus once, which
- * is a full recapture. Worth doing bundled with a recapture that is happening anyway, not on its own.
- */
-/**
- * Which furniture bucket a case gets — from its ID, never from its position in the array.
- *
- * It was `index % SCALE_BUCKETS.length`, and the comment above records what that cost: inserting a case
- * re-sized the furniture of every case after it, changing their page bytes, their `pageHash` and their
- * cache key, with the only symptom a stale count nobody was watching. The rule that fell out —
- * "APPEND to CASES, never insert" — is a thing a human has to remember, which this repo's own housekeeping
- * rule says does not happen.
- *
- * FNV-1a over the case id instead. A case's furniture now depends on nothing but its own name, so cases can
- * be inserted, reordered or removed and every other case's pages are byte-identical. Changing an id still
- * re-buckets that one case, which is correct: a renamed case is a different case.
- */
-/**
  * FNV-1a over a case id. The one hash both id-keyed choices use, so they cannot drift apart.
  *
  * Extracted rather than copied when the conformant accompaniments needed the same property: a case's
@@ -1920,6 +1887,25 @@ function bucketFor(id, subtype, indexInSubtype) {
   return SCALE_BUCKETS[(offset + index) % SCALE_BUCKETS.length];
 }
 
+/**
+ * Give every case realistic page furniture, identical in both of its variants.
+ *
+ * Done HERE rather than inside `page()` deliberately. `page()` sees only a title and a body, and those
+ * differ between the good and bad variant — so any size derived from them could differ across a pair and
+ * introduce a second difference into a controlled comparison. That is the one defect this corpus cannot
+ * carry. Keyed on the case's identity instead, the furniture is provably identical for both variants.
+ *
+ * **This rule has been written down three times and said something different each time, which is the most
+ * useful thing about it.** Furniture was first keyed on ARRAY POSITION, so the rule was "APPEND, never
+ * insert" — a thing a human has to remember, which this repo's housekeeping rule says does not happen.
+ * Then on `fnv1a(id)` alone, so it became "insert, reorder or delete freely". Both were true when written
+ * and both are now wrong: independent hashing gives a SUBTYPE no coverage guarantee, which ADR 0015 makes
+ * a free veto. See `bucketFor` for what replaced them.
+ *
+ * The rule that survived all three is the one that is a TEST rather than a paragraph:
+ * `furniture-spread.test.ts` asserts the property per feature, and it is what caught the regression a
+ * comment could not.
+ */
 function withRealisticScale(list) {
   // Position within the subtype, so the buckets can be dealt round-robin rather than drawn independently.
   const seen = new Map();
@@ -1980,6 +1966,24 @@ function FOCUS_ORDER_FORM(mode) {
     + `<label for="d">Phone</label><input id="d" name="d"${tab(1)}>`
     + "<label for=\"e\">Notes</label><input id=\"e\" name=\"e\">"
     + "</form>";
+}
+
+/**
+ * The second 2.1.2 fixture: the same five fields, wrapped in a named group the trap can watch.
+ *
+ * One function used by BOTH variants, with no parameter — the trap is a script and the markup is
+ * byte-identical either side. That is stronger than the parameterised helpers above, which still take an
+ * argument that could in principle diverge, and it is the right shape whenever the defect is behavioural
+ * rather than structural: the pair then provably differs in exactly one place.
+ */
+function TRAP_FIELDSET_FORM() {
+  return "<form><fieldset id=\"addr\"><legend>Address</legend>"
+    + "<label for=\"a\">Full name</label><input id=\"a\" name=\"a\">"
+    + "<label for=\"b\">Email</label><input id=\"b\" name=\"b\">"
+    + "<label for=\"c\">Postcode</label><input id=\"c\" name=\"c\">"
+    + "<label for=\"d\">Phone</label><input id=\"d\" name=\"d\">"
+    + "<label for=\"e\">Notes</label><input id=\"e\" name=\"e\">"
+    + "</fieldset></form>";
 }
 
 // 2.4.3 Focus Order. APPENDED at the end of `cases`, and that placement is load-bearing: page furniture is
@@ -2102,6 +2106,26 @@ function KEYBOARD_ACTION_PAGE(focusable) {
     + "</form>";
 }
 
+/**
+ * The second 2.1.1 fixture: a NATIVE button, reachable or not by `tabindex` alone.
+ *
+ * `tabindex="-1"` on a real `<button>` keeps it in the accessibility tree and takes it out of the tab
+ * order, so both variants announce `"Delete draft, button"` and only one can be operated. Contrast
+ * `KEYBOARD_ACTION_PAGE`, whose control is a `div role="button"`: same announcement, same failure, and a
+ * shape static analysis recognises. Having both means the head sees the failure rather than the markup.
+ *
+ * Placed FIRST in the body for the reason given on its sibling — the focus probe truncates, so a control
+ * near the top is one the probe would certainly have reached, and "absent" means absent.
+ */
+function NATIVE_ACTION_PAGE(focusable) {
+  const tab = focusable ? "" : ' tabindex="-1"';
+  return `<button type="button"${tab} class="card">Delete draft</button>`
+    + "<form>"
+    + "<label for=\"a\">Full name</label><input id=\"a\" name=\"a\">"
+    + "<label for=\"b\">Email</label><input id=\"b\" name=\"b\">"
+    + "</form>";
+}
+
 // 2.1.1 Keyboard. The detectable failure is a control the screen reader ANNOUNCES as operable that the
 // keyboard cannot reach — a `div role="button"` with a click handler and no `tabindex`, which is the most
 // common way this is failed and the one a screen-reader user meets as "I can hear it and I cannot press it".
@@ -2123,6 +2147,122 @@ cases.push(
   }),
 );
 
+
+/**
+ * A FIFTH CASE FOR EACH OF THE THREE FOCUS SUBTYPES, and each one is a different MECHANISM.
+ *
+ * The arithmetic first, because it is the reason these exist: furniture is dealt round-robin within a
+ * subtype across five buckets, so a subtype with four cases misses one bucket BY CONSTRUCTION. For these
+ * three that bucket was `namedField`, which is exactly ADR 0015's free veto — a feature constant at zero
+ * across every positive of the subtype, available to the head as a costless negative weight.
+ * `furniture-spread.test.ts` reports it per feature, which is how it was visible rather than inferred.
+ *
+ * **But a fifth case that restates the fourth buys the bucket and no evidence.** Each subtype already had
+ * exactly one mechanism and three multi-defect variants of it, so the head had seen one way of failing
+ * four times. These add a second way, chosen so that a STATIC checker handles it differently from the
+ * first — which is the standing question this project exists to answer.
+ */
+cases.push(
+  pair({
+    id: "keyboard-trap-focusin",
+    task: "Fill in the delivery details.",
+    source: "WCAG 2.2 SC 2.1.2 No Keyboard Trap; F10",
+    mutation: "A focusin handler on the fieldset returns focus to its first control whenever focus leaves, "
+      + "so the group cannot be left by any means.",
+    criterion: "2.1.2",
+    // A DIFFERENT TRAP FROM `keyboard-trap-postcode`, and the difference is what it catches. That one
+    // cancels Tab in a keydown handler, so it traps the two keys it names and nothing else. This one
+    // watches focus ITSELF, so it holds against Tab, Shift+Tab, an arrow key, a click, and a programmatic
+    // focus call alike — the shape a hand-rolled "focus trap" for a modal takes when its author forgot
+    // that a trap needs a documented way out (WCAG 2.1.2's own requirement).
+    //
+    // It also fails a static checker differently: there is no `tabindex` and no key handler to find. The
+    // markup is a plain fieldset of labelled inputs and is entirely conformant on its face.
+    good: page({
+      title: "Delivery details",
+      heading: "Delivery details",
+      body: TRAP_FIELDSET_FORM(),
+    }),
+    bad: page({
+      title: "Delivery details",
+      heading: "Delivery details",
+      body: TRAP_FIELDSET_FORM(),
+      // `focusin` on the CONTAINER fires for any descendant gaining focus; the guard fires when focus
+      // lands anywhere outside it. Deferred with a microtask because moving focus inside a focus event is
+      // ignored by Chromium during dispatch.
+      script: "const group = document.getElementById('addr');"
+        + "document.addEventListener('focusin', (event) => {"
+        + "  if (!group.contains(event.target)) {"
+        + "    queueMicrotask(() => document.getElementById('c').focus());"
+        + "  }"
+        + "});",
+    }),
+    badSignal: { type: "focus-trapped" },
+    probeFocus: true,
+  }),
+);
+
+cases.push(
+  pair({
+    id: "focus-order-scripted-advance",
+    task: "Tab through the form and complete it in the order it reads.",
+    source: "WCAG 2.4.3 Understanding; Practical Web Accessibility, chapter 6",
+    mutation: "A keydown handler redirects Tab to a field further down the form, so tab order contradicts "
+      + "reading order without any tabindex being present.",
+    criterion: "2.4.3",
+    // A DIFFERENT SCRAMBLE FROM `focus-order-tabindex`. That one is declarative — a positive `tabindex`,
+    // which every static checker already flags as a smell. This one has no `tabindex` anywhere: the order
+    // is scrambled at runtime by an auto-advance handler, the pattern real forms grow when somebody makes
+    // tabbing "smarter". Markup alone cannot answer it, which is the criterion's whole point here.
+    good: page({
+      title: "Delivery details",
+      heading: "Delivery details",
+      body: FOCUS_ORDER_FORM(""),
+    }),
+    bad: page({
+      title: "Delivery details",
+      heading: "Delivery details",
+      body: FOCUS_ORDER_FORM(""),
+      // Tab from Email jumps PAST Postcode and Phone to Notes, then Postcode is reached only afterwards.
+      // Reading order is untouched — the fields are in the same DOM order in both variants.
+      script: "document.getElementById('b').addEventListener('keydown', (event) => {"
+        + "  if (event.key === 'Tab' && !event.shiftKey) {"
+        + "    event.preventDefault(); document.getElementById('e').focus();"
+        + "  }"
+        + "});"
+        + "document.getElementById('e').addEventListener('keydown', (event) => {"
+        + "  if (event.key === 'Tab' && !event.shiftKey) {"
+        + "    event.preventDefault(); document.getElementById('c').focus();"
+        + "  }"
+        + "});",
+    }),
+    badSignal: { type: "focus-order-scrambled" },
+    probeFocus: true,
+  }),
+);
+
+cases.push(
+  pair({
+    id: "keyboard-unreachable-native-button",
+    task: "Reach the delete action for a draft using the keyboard alone.",
+    source: "WCAG 2.1.1 Understanding; F55",
+    mutation: "A real button carries tabindex=\"-1\", so it announces as a button and Tab never reaches it.",
+    criterion: "2.1.1",
+    // A DIFFERENT UNREACHABILITY FROM `keyboard-unreachable-action`, and the more interesting one. That
+    // case is a `div role="button"` with no `tabindex` — the shape every static rule looks for. This is a
+    // NATIVE `<button>`, which is focusable by default and which a checker scanning for "interactive
+    // element without a tabindex" passes without comment. `tabindex="-1"` removes it from the tab order
+    // while leaving it in the accessibility tree, so NVDA announces it exactly as it announces the
+    // reachable one.
+    //
+    // That makes the pair announce IDENTICALLY and differ only in whether a keyboard can operate it,
+    // which is the same controlled comparison the sibling case makes by a route static analysis can see.
+    good: page({ title: "Drafts", heading: "Drafts", body: NATIVE_ACTION_PAGE(true) }),
+    bad: page({ title: "Drafts", heading: "Drafts", body: NATIVE_ACTION_PAGE(false) }),
+    badSignal: { type: "control-unreachable-by-keyboard" },
+    probeFocus: true,
+  }),
+);
 
 /**
  * ACCOMPANYING DEFECTS — a real page fails several ways at once, and this corpus never did.

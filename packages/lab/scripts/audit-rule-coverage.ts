@@ -54,6 +54,50 @@ import { CRITERION_COVERAGE, channelsPresent } from "@a11y-witness/judge/interna
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const CORPUS = resolve(REPO, process.env.CAPTURE_ROOT || "runs/screenreader-dataset/captures");
 const REAL = resolve(REPO, process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
+/**
+ * The eval fixtures, which hold captures of REAL websites and were never counted as such.
+ *
+ * `2.4.4` reported `68x on the corpus, 0x on a real page — assumptions untested` for as long as this audit
+ * has existed, and `docs/known-gaps.md` recorded the fix as "a real page that exhibits it". It was already
+ * fixed. `nvda-w3c-bad-before.json` is a capture of `w3.org/WAI/demos/bad/before/home.html`, it carries
+ * `"Click here, link"`, and the rule fires on it — verified offline, in milliseconds, before this constant
+ * was added.
+ *
+ * So the rule was validated on real evidence and the audit could not see it, because "real" meant ONE
+ * DIRECTORY. That is this repo's most-repeated defect in its usual costume: a number bounded to a
+ * population that excludes the evidence, reported as absence. `1.3.1` reached the same state by the
+ * exporter stripping the census, and the lesson recorded then was that "the rule never fired" and "the
+ * rule never had its evidence" are different answers — this adds a third, "the rule fired where nobody
+ * counted".
+ */
+const EVAL_FIXTURES = resolve(REPO, "packages/lab/src/eval/fixtures/nvda");
+
+/**
+ * Is this capture of a page out on the web, rather than one we generated?
+ *
+ * Keyed on the URL and never on the directory, for the reason `capturesIn` already gives about filenames:
+ * a directory convention is a second thing to keep in step. `fixtures/tutorials` and `fixtures/books` sit
+ * beside the real ones and are authored pages and local files — same class as the corpus, and counting
+ * them as real evidence would be the opposite error to the one this fixes.
+ *
+ * The local page server is excluded by the same test: `REDACTED-INTERNAL-ADDRESS:5050` serves OUR pages over http, so
+ * a scheme check alone would admit them.
+ */
+function isRealPage(capture: unknown): boolean {
+  const raw = (capture as { url?: unknown }).url;
+  if (typeof raw !== "string") return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return false; // "tutorial: forms-bad (authored from W3C guidance)" — not a URL, and says so
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  return !LOCAL_HOST.test(parsed.hostname);
+}
+
+/** Loopback, link-local and the RFC1918 ranges the lab and page server live on. */
+const LOCAL_HOST = /^(localhost$|127\.|0\.0\.0\.0$|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.)/;
 const JSON_OUT = process.argv.includes("--json");
 
 type Tally = { corpus: number; real: number };
@@ -161,8 +205,18 @@ function tally(): { fires: Map<string, Tally>; scanned: Tally; realChannels: Set
       if (row) row[kind] += 1;
     }
   };
-  for (const [kind, dir] of [["corpus", CORPUS], ["real", REAL]] as const) {
+  // Three sources, two populations. The eval fixtures hold captures of real websites BESIDE authored ones,
+  // so the directory cannot decide the kind and `isRealPage` reads the capture's own URL instead. A
+  // fixture that is not of a real page is skipped entirely rather than counted as corpus: it is neither,
+  // and inflating the corpus count would misstate what the left-hand column was computed from.
+  const sources = [
+    { kind: "corpus" as const, dir: CORPUS, realOnly: false },
+    { kind: "real" as const, dir: REAL, realOnly: false },
+    { kind: "real" as const, dir: EVAL_FIXTURES, realOnly: true },
+  ];
+  for (const { kind, dir, realOnly } of sources) {
     for (const capture of capturesIn(dir)) {
+      if (realOnly && !isRealPage(capture)) continue;
       scanned[kind] += 1;
       record(kind, capture);
       if (kind === "real") noteChannels(capture);
