@@ -2164,20 +2164,33 @@ cases.push(
  */
 cases.push(
   pair({
-    id: "keyboard-trap-focusin",
+    id: "keyboard-trap-blur-revalidate",
     task: "Fill in the delivery details.",
     source: "WCAG 2.2 SC 2.1.2 No Keyboard Trap; F10",
-    mutation: "A focusin handler on the fieldset returns focus to its first control whenever focus leaves, "
-      + "so the group cannot be left by any means.",
+    mutation: "Blur-triggered validation refocuses the postcode field whenever it is left empty, so focus "
+      + "cannot move on by any route — not just by Tab.",
     criterion: "2.1.2",
     // A DIFFERENT TRAP FROM `keyboard-trap-postcode`, and the difference is what it catches. That one
-    // cancels Tab in a keydown handler, so it traps the two keys it names and nothing else. This one
-    // watches focus ITSELF, so it holds against Tab, Shift+Tab, an arrow key, a click, and a programmatic
-    // focus call alike — the shape a hand-rolled "focus trap" for a modal takes when its author forgot
-    // that a trap needs a documented way out (WCAG 2.1.2's own requirement).
+    // cancels Tab in a KEYDOWN handler, so it traps the keys it names and nothing else — Shift+Tab, a
+    // click, or a programmatic focus call all escape it. This one watches focus ITSELF via `focusout`, so
+    // it holds against every route out. Validate-on-blur that refocuses the offending field is how this
+    // is failed in real forms, and its author generally believes they have written a helpful form.
     //
     // It also fails a static checker differently: there is no `tabindex` and no key handler to find. The
     // markup is a plain fieldset of labelled inputs and is entirely conformant on its face.
+    //
+    // THE MECHANISM WAS CHOSEN AGAINST THE PROBE, not just against the criterion. The first version of
+    // this case used a `focusin` guard on the fieldset that pulled focus back to its FIRST control, which
+    // is the canonical modal focus-trap shape — and `probeFocusOrder` could not have seen it. `stalled`
+    // requires the same control `TRAP_REPEATS` times running; a guard that cycles focus among several
+    // fields moves focus every press, so it reads as `cycled`, which is exactly what a conformant page's
+    // tab order does when it wraps. That case would have entered the corpus BLIND, and this repo's rule is
+    // that a canary which cannot express the fault is worthless. Refocusing ONE field produces the
+    // consecutive repeat the probe is built to detect.
+    //
+    // The limitation is real and stays: a trap that lets you cycle inside a modal for ever is a genuine
+    // 2.1.2 failure this tool cannot currently distinguish from a normal tab cycle, because the probe
+    // presses only Tab. Recorded in `docs/screenreader-coverage.md` rather than worked around here.
     good: page({
       title: "Delivery details",
       heading: "Delivery details",
@@ -2187,13 +2200,12 @@ cases.push(
       title: "Delivery details",
       heading: "Delivery details",
       body: TRAP_FIELDSET_FORM(),
-      // `focusin` on the CONTAINER fires for any descendant gaining focus; the guard fires when focus
-      // lands anywhere outside it. Deferred with a microtask because moving focus inside a focus event is
-      // ignored by Chromium during dispatch.
-      script: "const group = document.getElementById('addr');"
-        + "document.addEventListener('focusin', (event) => {"
-        + "  if (!group.contains(event.target)) {"
-        + "    queueMicrotask(() => document.getElementById('c').focus());"
+      // `focusout` fires whatever takes focus away — Tab, Shift+Tab, a click, a script — which is the
+      // whole point of choosing it over a key handler. Deferred with a microtask because moving focus
+      // during focus-event dispatch is ignored by Chromium.
+      script: "document.getElementById('c').addEventListener('focusout', (event) => {"
+        + "  if (!event.target.value) {"
+        + "    queueMicrotask(() => event.target.focus());"
         + "  }"
         + "});",
     }),

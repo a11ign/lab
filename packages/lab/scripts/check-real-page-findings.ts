@@ -198,6 +198,7 @@ function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
     .slice(0, 3).map((line) => String(line));
   OPENINGS.set(String(capture.url), openingLines);
   if (census) CENSUS.set(String(capture.url), census);
+  if (dom) DOM_CENSUS.set(String(capture.url), dom);
   const opening = openingLines.map((line) => JSON.stringify(line.slice(0, 60))).join(" ");
   // THE PAIR, because either alone is ambiguous. A tree census of zero headings means the page did not
   // render OR the page exposes nothing; the DOM count is the only thing that separates them, and that
@@ -245,6 +246,25 @@ function furnitureCaptures(): { consent: string[]; shell: string[] } {
     // did not has the site's chrome — nav, logo, banner — and nothing under it.
     const reachedThePage = (CENSUS.get(url)?.heading ?? 0) > 0;
     if (reachedThePage) continue;
+    // AND THE DOM HAS TO AGREE, or this bucket accuses the tool of the page's defect.
+    //
+    // The tree alone cannot tell "we read a shell" from "the page exposes nothing", and until the DOM was
+    // counted it was the only signal available — so every zero-heading capture was filed as furniture and
+    // the report said "anything they say is about this tool". Measured 2026-08-27 on the Met Office
+    // warnings page: `census heading=0` against `DOM heading=55, link=281`. The page rendered in full and
+    // exposed none of it, which is a finding about the page, and this function was calling it ours.
+    //
+    // Worse than merely wrong: `noteEvidence` had ALREADY computed the correct verdict and printed it on
+    // the very next line, so the report contradicted itself in adjacent sentences — the headline excusing
+    // the page while the evidence beneath convicted it. A remedy that reaches one consumer and not the
+    // one that CLASSIFIES is this repo's most expensive recurring shape, committed inside the report
+    // written to expose it.
+    //
+    // An UNCOUNTED DOM stays furniture. That is the conservative direction: an older capture carrying no
+    // DOM census cannot demonstrate the page rendered, and claiming a finding on evidence we do not have
+    // is the one error this report must never make.
+    const domHeadings = DOM_CENSUS.get(url)?.heading;
+    if (typeof domHeadings === "number" && domHeadings > 0) continue;
     const text = opening.join(" ").toLowerCase();
     if (/cookie|consent|privacy preference|usercentrics|onetrust/.test(text)) consent.push(url);
     else if (opening[0]?.trim().toLowerCase() === "blank") shell.push(url);
@@ -254,6 +274,14 @@ function furnitureCaptures(): { consent: string[]; shell: string[] } {
 
 /** url -> its census, so the summary can ask whether a capture ever reached the page. */
 const CENSUS = new Map<string, { heading?: number }>();
+
+/**
+ * url -> what the DOM actually contained, which is the other half of that question.
+ *
+ * Recorded separately from `CENSUS` because they answer different things and the difference IS the
+ * verdict: the tree is what a screen reader can reach, the DOM is what the page put there.
+ */
+const DOM_CENSUS = new Map<string, { heading?: number }>();
 
 /** url -> its opening announcements, kept so the summary above can be computed without a second read. */
 const OPENINGS = new Map<string, string[]>();
