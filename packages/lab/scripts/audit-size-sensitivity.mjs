@@ -51,6 +51,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolve, join } from "node:path";
 
 import { annotateCapture } from "@a11y-witness/evidence";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * `--evaluating` and `--stdin` appear in this file because it PASSES them to the Python scorer.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--model="], { command: "npm run scorer:size-sensitivity" });
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const CAPTURES = resolve(REPO, process.env.CAPTURE_ROOT || "runs/screenreader-dataset/captures");

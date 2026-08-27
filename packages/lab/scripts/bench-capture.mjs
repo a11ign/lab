@@ -14,6 +14,15 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mjs";
 
 import { pathToFileURL } from "node:url";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * `--from-disk` decides whether it measures a live capture or replays one; mistyped, it silently
+ * drives the fleet when you meant to read a file.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--dir=", "--from-disk"], { command: "npm run bench:capture" });
 
 const [worker, page, countArg] = process.argv.slice(2);
 

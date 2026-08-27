@@ -18,6 +18,14 @@
  * `assert-action-report.test.ts`, because a guard nobody has watched fail is not a guard.
  */
 import { readFileSync } from "node:fs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * these ARE the assertion: a mistyped `--require-wcag=` asserts nothing and the harness reports success.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--expect-activation", "--require-wcag=", "--forbid-wcag="], { command: "npm run assert:action-report" });
 
 /**
  * The contract fields, checked against what `packages/cli/src/action/run.ts` actually depends on rather

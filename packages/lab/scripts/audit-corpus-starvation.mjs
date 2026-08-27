@@ -28,6 +28,15 @@ import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { CASES } from "../src/training/case-matrix.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * takes no flags: it reads the corpus on disk and reports which features are constant across a
+ * subtype's positives.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags([], { command: "npm run corpus:starvation" });
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const RECORDS = resolve(REPO, process.env.DATASET_EXPORT

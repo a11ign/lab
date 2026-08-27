@@ -28,6 +28,15 @@
 // axe's for the same page so the difference is a fact rather than a claim.
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * takes its sites as a POSITIONAL JSON argument and no flags; `--json`, `--probe-forms` and `--task`
+ * appear here because it passes them onward.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags([], { command: "npm run layers:compare" });
 
 // The CLI moved to its own package in M7; this was the cwd-relative `"src/cli.ts"`, right only from the repo
 // root and pointing at nothing afterwards.

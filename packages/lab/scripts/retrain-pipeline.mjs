@@ -23,6 +23,14 @@ import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { releasability } from "../src/packaging/releasability.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * a mistyped `--dry-run` runs the REAL retrain; `--silent` in this file is npm's, passed to each step.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--candidate=", "--dry-run"], { command: "npm run lab:retrain" });
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 

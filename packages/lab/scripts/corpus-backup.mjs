@@ -36,6 +36,14 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { resolve, basename } from "node:path";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * `--verify-only` is the difference between checking a backup and WRITING one.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--verify-only"], { command: "npm run corpus:backup" });
 
 const run = promisify(execFile);
 

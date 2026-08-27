@@ -18,6 +18,14 @@ import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { promisify } from "node:util";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * a mistyped `--out=` writes the snapshot somewhere you will not look for it.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--out="], { command: "npm run corpus:snapshot" });
 
 const run = promisify(execFile);
 const DATASET = resolve(process.cwd(), process.env.DATASET_ROOT ?? "runs/screenreader-dataset");

@@ -17,6 +17,14 @@
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * `--name`, `--case` and `--weights` appear in this file's prose, not in its argv.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags(["--model=", "--criterion=", "--compare="], { command: "npm run scorer:explain" });
 
 const RUNS = resolve(process.cwd(), process.env.RUNS_ROOT || "runs");
 /**

@@ -2,6 +2,14 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { relative, resolve } from "node:path";
 import { CASES } from "./case-matrix.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * takes no flags: it regenerates every page from the case definitions.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags([], { command: "npm run training:generate" });
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
 const PAGE_ROOT = resolve(ROOT, "pages");

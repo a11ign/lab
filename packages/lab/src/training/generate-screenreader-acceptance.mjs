@@ -4,6 +4,14 @@ import { relative, resolve } from "node:path";
 // ALL of them, single- and multi-defect. Generating only the single-defect set is what made held-out
 // acceptance blind to the case the trained heads actually fail on — see `alsoCarrying` for the measurement.
 import { ALL_ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * takes no flags: the held-out set is generated whole or not at all.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags([], { command: "npm run training:generate-acceptance" });
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-acceptance");
 const PAGE_ROOT = resolve(ROOT, "pages");

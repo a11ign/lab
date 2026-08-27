@@ -15,6 +15,14 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ACCOMPANYING_DEFECTS } from "../src/training/case-matrix.mjs";
+import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+
+/**
+ * takes no flags: it emits the JS-side declarations for the Python audit to read.
+ *
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ */
+refuseUnknownFlags([], { command: "npm run corpus:grants-map" });
 
 const OUT = resolve(fileURLToPath(new URL("../../../", import.meta.url)), "runs/accompanying-grants.json");
 
