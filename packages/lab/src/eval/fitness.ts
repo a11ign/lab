@@ -19,6 +19,8 @@ export interface FitnessThresholds {
    * than a silent zero.
    */
   maxAbstentionRate: number;
+  /** The floor on what the TRAINED SCORER catches by itself. See `evaluateFitness` for why it is separate. */
+  minModelRecall: number;
 }
 
 export interface FitnessMetrics {
@@ -30,6 +32,13 @@ export interface FitnessMetrics {
    * the number from 59% to 100% over the two cases the scorer engaged with.
    */
   recall: number;
+  /**
+   * The share of expected criteria the TRAINED SCORER reported, by itself.
+   *
+   * Optional: an older report does not carry it, and a caller measuring only the other bounds should not
+   * be forced to invent one. An absent measurement is not a failing measurement.
+   */
+  modelRecall?: number;
   conformantFP: number;
   /** Failure cases the scorer declined to judge. */
   abstained: number;
@@ -48,6 +57,18 @@ export function evaluateFitness(m: FitnessMetrics, t: FitnessThresholds): Fitnes
   const reasons: string[] = [];
   if (m.recall < t.minRecall) {
     reasons.push(`recall ${pct(m.recall)} below floor ${pct(t.minRecall)}`);
+  }
+  // THE MODEL'S OWN CONTRIBUTION, floored separately, because the combined figure above cannot see one
+  // of the two layers disappear. Measured 2026-08-27 by driving this gate with a scorer that reports
+  // NOTHING: 59% combined, against a floor of 0.55. It would have passed.
+  //
+  // `modelRecall` is undefined for a caller that does not supply it — an older report, or a unit test of
+  // the other bounds — and an absent measurement must not become a failing one. That is the same rule
+  // this project applies to a probe that did not run.
+  if (m.modelRecall !== undefined && m.modelRecall < t.minModelRecall) {
+    reasons.push(`the TRAINED SCORER caught ${pct(m.modelRecall)} of expected criteria, below its own `
+      + `floor ${pct(t.minModelRecall)} — the deterministic rules can carry the combined recall above `
+      + "while the model contributes nothing, which is what this bound exists to notice");
   }
   if (m.conformantFP > t.maxConformantFP) {
     reasons.push(`${m.conformantFP} false positive(s) on conformant pages (max ${t.maxConformantFP})`);
@@ -132,5 +153,13 @@ export function thresholdsFromEnv(env: NodeJS.ProcessEnv = process.env): Fitness
     // recall. Tightening this is what the real-page calibration corpus in ADR 0010 is for; lowering it to
     // make a run pass would be fitting a threshold to a number we want.
     maxAbstentionRate: Number(env.EVAL_MAX_ABSTENTION_RATE ?? 0.9),
+    // 0.2, against 33% measured for the shipped scorer and 0% for one that reports nothing. Chosen from
+    // those two numbers rather than from preference: it catches the failure this bound exists for — a
+    // layer going silent — with room for the abstention behaviour to move, since the model declines
+    // out-of-distribution pages deliberately and this fixture set is mostly out of distribution.
+    //
+    // A RATCHET, like the recall floor above. Raise it when real-page calibration lifts the model's own
+    // contribution; never lower it to make a run pass.
+    minModelRecall: Number(env.EVAL_MIN_MODEL_RECALL ?? 0.2),
   };
 }

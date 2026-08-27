@@ -35,6 +35,19 @@ interface RunScore {
    */
   abstained: boolean;
   recall: number;
+  /**
+   * The same recall, split by WHICH LAYER reported the criterion.
+   *
+   * `rulesRecall` counts conformance-mapped findings — the deterministic layer, the only one that
+   * ASSERTS. `modelRecall` counts the rest, which is the trained scorer, whose findings become
+   * `cantTell`. A criterion both layers report counts in both: the question each answers is "would this
+   * layer have caught it", not "who got there first".
+   *
+   * They exist because the combined number cannot notice a layer vanishing. Measured 2026-08-27 by
+   * driving this gate with a scorer that reports nothing: 59% recall against a floor of 0.55.
+   */
+  modelRecall: number;
+  rulesRecall: number;
   precision: number;
   caught: string[];
   missed: string[];
@@ -69,14 +82,34 @@ async function scoreOnce(c: EvalCase): Promise<RunScore> {
     census: pageCensus(data as never) ?? undefined,
   });
   const found = Array.from(new Set(verdict.findings.map((f) => criterion(f.wcag))));
+  // WHICH LAYER reported it, keyed on whether `mapping` is PRESENT rather than on its value.
+  //
+  // `rules.ts`'s `add()` defaults it to `"secondary"` and passes `"conformance"` where the criterion is
+  // conformance-mapped, so every rule finding carries one; `findingsFromScores` sets none at all, which
+  // `RequirementMapping` treats as `secondary` and `criterionOutcomes` turns into `cantTell`. Splitting
+  // on `!== "conformance"` therefore counts the rules' own REFERRALS as model findings -- measured, a
+  // silent scorer scored 27% that way -- and is wrong for the reason this whole split exists: it cannot
+  // see one layer disappear.
+  //
+  // Measured that day by driving the gate with a scorer that reports NOTHING: recall 59%, against 92%
+  // shipped and a floor of 0.55. A judge that went completely silent would have passed the gate that
+  // exists to measure it — not because the threshold was wrong so much as because the number could not
+  // see one of the two layers disappear.
+  const byModel = new Set(verdict.findings.filter((f) => f.mapping === undefined)
+    .map((f) => criterion(f.wcag)));
+  const byRules = new Set(verdict.findings.filter((f) => f.mapping !== undefined)
+    .map((f) => criterion(f.wcag)));
   const allow = new Set(c.allow);
   const caught = c.expect.filter((x) => found.includes(x));
+  const caughtByModel = c.expect.filter((x) => byModel.has(x));
+  const caughtByRules = c.expect.filter((x) => byRules.has(x));
   const missed = c.expect.filter((x) => !found.includes(x));
   const falsePositives = found.filter((x) => !allow.has(x));
-  const recall = c.expect.length ? caught.length / c.expect.length : 1;
+  const over = (xs: string[]) => (c.expect.length ? xs.length / c.expect.length : 1);
   const precision = found.length ? found.filter((x) => allow.has(x)).length / found.length : 1;
   return {
-    found, abstained: verdict.abstained === true, recall, precision, caught, missed, falsePositives,
+    found, abstained: verdict.abstained === true, recall: over(caught), precision, caught, missed,
+    falsePositives, modelRecall: over(caughtByModel), rulesRecall: over(caughtByRules),
   };
 }
 
@@ -87,6 +120,9 @@ const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
 // many false positives the last run produced (the unit the aggregate sums).
 interface CaseReport {
   recalls: number[];
+  /** The same runs, split by layer. See `RunScore` for why the combined figure is not enough. */
+  modelRecalls: number[];
+  rulesRecalls: number[];
   /** The scorer declined to judge this case at all. */
   abstained?: boolean;
   isFailureCase: boolean;
@@ -107,7 +143,7 @@ async function reportCase(c: EvalCase): Promise<CaseReport> {
   // trained scorer, stops raising an exception that once aborted the whole run part-way.
   if (c.notApplicableTo?.includes(BACKEND)) {
     console.log(`\n# ${c.id}\n  SKIPPED  out of scope for the ${BACKEND} backend — ${c.notes ?? "see cases.ts"}`);
-    return { recalls: [], isFailureCase: false, falsePositivesPerRun: [] };
+    return { recalls: [], modelRecalls: [], rulesRecalls: [], isFailureCase: false, falsePositivesPerRun: [] };
   }
   process.stderr.write(`Scoring ${c.id} ...\n`);
   const scores: RunScore[] = [];
@@ -131,6 +167,8 @@ async function reportCase(c: EvalCase): Promise<CaseReport> {
   }
   return {
     recalls: scores.map((score) => score.recall),
+    modelRecalls: scores.map((score) => score.modelRecall),
+    rulesRecalls: scores.map((score) => score.rulesRecall),
     isFailureCase,
     abstained,
     falsePositivesPerRun: scores.map((score) => score.falsePositives),
@@ -185,6 +223,8 @@ async function main(): Promise<void> {
 
   console.log(`a11y-witness judge eval  (${RUNS} run(s) per case)\n`);
   const failureRecall: number[] = []; // recall, only on cases with expected failures
+  const modelRecall: number[] = [];   // the same, counting only what the TRAINED SCORER reported
+  const rulesRecall: number[] = [];   // and only what the deterministic rules reported
   let totalFalsePositives = 0; // persistent across a majority of runs, per case
   let conformantFalsePositives = 0; // false positives on conformant (expect-none) cases
   let failureCaseCount = 0;         // failure cases considered, answered plus abstained
@@ -192,13 +232,19 @@ async function main(): Promise<void> {
 
   for (const c of cases) {
     const report = await reportCase(c);
-    if (report.isFailureCase) failureRecall.push(...report.recalls);
     const persistent = persistentFalsePositives(report.falsePositivesPerRun).length;
     totalFalsePositives += persistent;
-    if (!report.isFailureCase) conformantFalsePositives += persistent;
+    // ONE branch on `isFailureCase`, not four. Three separate `if`s reading the same condition took this
+    // function to a complexity of 16 against a limit of 15 — and the limit was right: they are one
+    // decision about one case, written as several.
     if (report.isFailureCase) {
+      failureRecall.push(...report.recalls);
+      modelRecall.push(...report.modelRecalls);
+      rulesRecall.push(...report.rulesRecalls);
       failureCaseCount += 1;
       if (report.abstained) abstainedFailureCases += 1;
+    } else {
+      conformantFalsePositives += persistent;
     }
   }
 
@@ -211,6 +257,15 @@ async function main(): Promise<void> {
       `abstained ${abstainedFailureCases} of ${failureCaseCount} failure case(s)  |  ` +
       `false positives ${totalFalsePositives} total, ${conformantFalsePositives} on conformant pages`
   );
+  // BY LAYER, beside the combined figure and never instead of it. The combined number is what a user
+  // gets; these two are what say whether both layers are still working. A scorer reporting NOTHING scores
+  // 59% on the line above, because the rules supply the rest — measured, not supposed.
+  const layerMean = (xs: number[]) => (xs.length ? mean(xs) : 1);
+  console.log(
+    `           by layer: trained scorer ${pct(layerMean(modelRecall))}  |  `
+      + `deterministic rules ${pct(layerMean(rulesRecall))}  `
+      + "(a criterion both report counts in both)"
+  );
 
   // Fitness-function gate (opt-in via EVAL_GATE): fail the run if judge quality
   // regresses below the thresholds, so it can be used as a regression gate.
@@ -218,6 +273,7 @@ async function main(): Promise<void> {
     const thresholds = thresholdsFromEnv();
     const fitness = evaluateFitness({
       recall,
+      modelRecall: layerMean(modelRecall),
       conformantFP: conformantFalsePositives,
       abstained: abstainedFailureCases,
       failureCases: failureCaseCount,

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { evaluateFitness, persistentFalsePositives, thresholdsFromEnv } from "./fitness.js";
 
-const T = { minRecall: 0.8, maxConformantFP: 0, maxAbstentionRate: 0.9 };
+const T = { minRecall: 0.8, maxConformantFP: 0, maxAbstentionRate: 0.9, minModelRecall: 0.2 };
 
 /**
  * Metrics with the abstention fields defaulted to "nothing was declined".
@@ -14,9 +14,9 @@ const T = { minRecall: 0.8, maxConformantFP: 0, maxAbstentionRate: 0.9 };
 
 /**
  * Proves the DECISION half of the gate `eval:gate`, which is `EVAL_GATE=1` around this function: forcing
- * `pass: true` fails five of these tests. The half NOT covered is running the 34 fixtures through the
- * scorer, which needs the Python venv and so cannot run in CI — the same limitation `npm run eval` has,
- * and it is declared in `gates-are-proven.test.ts` rather than implied by this file's coverage.
+ * `pass: true` fails five of these tests. The WIRING half is proven in `eval-gate-refuses.test.ts`, which
+ * drives the real command with an injected scorer — it turned out not to need the Python venv at all,
+ * because `scorerPaths()` reads `A11Y_PYTHON` and a twelve-line stub satisfies the whole contract.
  */
 const m = (recall: number, conformantFP: number, abstained = 0, failureCases = 10) =>
   ({ recall, conformantFP, abstained, failureCases });
@@ -50,13 +50,14 @@ test("reports both failures at once", () => {
 test("thresholdsFromEnv reads overrides and applies defaults", () => {
   assert.deepEqual(thresholdsFromEnv({
     EVAL_MIN_RECALL: "0.9", EVAL_MAX_CONFORMANT_FP: "2", EVAL_MAX_ABSTENTION_RATE: "0.25",
-  }), { minRecall: 0.9, maxConformantFP: 2, maxAbstentionRate: 0.25 });
+    EVAL_MIN_MODEL_RECALL: "0.4",
+  }), { minRecall: 0.9, maxConformantFP: 2, maxAbstentionRate: 0.25, minModelRecall: 0.4 });
   // The shipped defaults, pinned. `maxConformantFP: 0` is the one that must never move: a false positive
   // on a conformant page is an accusation. The abstention cap is deliberately loose because 28 of 32 real
   // fixtures sit below the scorer's support floor — tightening it is what ADR 0010's calibration corpus is
   // for, and loosening it to make a run pass would be fitting the threshold to the answer.
   assert.deepEqual(thresholdsFromEnv({}), {
-    minRecall: 0.55, maxConformantFP: 0, maxAbstentionRate: 0.9,
+    minRecall: 0.55, maxConformantFP: 0, maxAbstentionRate: 0.9, minModelRecall: 0.2,
   });
 });
 
@@ -141,4 +142,31 @@ test("no failure cases at all does not divide by zero", () => {
   // must not throw or report a NaN rate.
   const r = evaluateFitness(m(1, 0, 0, 0), T);
   assert.equal(r.pass, true);
+});
+
+test("a TRAINED SCORER that goes silent fails, even when the rules carry the combined recall", () => {
+  // THE DEFECT THIS BOUND EXISTS FOR, and it was live. Measured 2026-08-27 by driving `eval:gate` with a
+  // scorer that reports nothing: combined recall 59%, against a floor of 0.55 — the gate passed. The
+  // deterministic rules supply that 59% on their own, so the combined figure cannot see the model vanish.
+  //
+  // A combined recall of 0.59 also trips this fixture's own 0.8 floor, so the reason is looked for among
+  // ALL of them rather than at index 0 — asserting on `reasons[0]` couples the test to the order the
+  // checks happen to run in, which is not a property of the gate.
+  const r = evaluateFitness({ ...m(0.59, 0), modelRecall: 0 }, T);
+  assert.equal(r.pass, false);
+  const modelReason = r.reasons.find((reason) => /TRAINED SCORER/.test(reason));
+  assert.ok(modelReason, `no reason named the trained scorer: ${JSON.stringify(r.reasons)}`);
+  assert.match(modelReason, /0%/, "and it must say what the model actually caught");
+});
+
+test("the shipped model's own contribution passes, which is what makes this a floor and not a wall", () => {
+  // 33% measured for the shipped scorer against a floor of 20%. Without this the bound above is satisfied
+  // by one that refuses every model.
+  assert.deepEqual(evaluateFitness({ ...m(0.92, 0), modelRecall: 0.33 }, T), { pass: true, reasons: [] });
+});
+
+test("a report with no modelRecall at all is not failed for lacking one", () => {
+  // An absent measurement must not become a failing measurement — the same rule this project applies to a
+  // probe that did not run. An older report, or a caller checking only the other bounds, still passes.
+  assert.deepEqual(evaluateFitness(m(1, 0), T), { pass: true, reasons: [] });
 });

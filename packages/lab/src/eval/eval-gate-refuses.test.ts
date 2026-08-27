@@ -14,11 +14,16 @@
  * stub that reads a capture on stdin and prints a scorer's JSON is enough to drive the whole path
  * without torch, a model, or a GPU.
  *
- * ## What running it measured, which is worth more than the test
+ * ## What running it measured, which was worth more than the test
  *
  * A scorer reporting NOTHING AT ALL still scores 59% recall on this fixture set, because the
- * deterministic rules supply the rest. The gate's floor is 0.55. So a judge that went completely silent
- * would pass the gate that exists to measure it — see `docs/not-working.md`.
+ * deterministic rules supply the rest — and the gate's floor was 0.55, so a judge that went completely
+ * silent PASSED the gate that exists to measure it.
+ *
+ * Fixed the same day: recall is now reported and floored PER LAYER. Measured, shipped scorer 33% of its
+ * own against a floor of 0.20; a silent one, 0%. The test below still drives the gate with a raised
+ * combined floor, because that is the bound it is proving the wiring of — the layer floor has its own
+ * cases in `fitness.test.ts`.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
