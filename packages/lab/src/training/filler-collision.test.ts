@@ -26,7 +26,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { ACCOMPANYING_CONFORMANT, CASES, signalMatches } from "./case-matrix.mjs";
+import { ACCOMPANYING_CONFORMANT, ACCOMPANYING_DEFECTS, CASES, signalMatches } from "./case-matrix.mjs";
 
 type Signal = { type?: string };
 type Case = { id: string; badSignal?: Signal; criterion?: string; good?: string; bad?: string };
@@ -211,11 +211,52 @@ test("an accompanying defect never perturbs the evidence channel its host is mea
   // a vague link or a bare edit with `focus-order-tabindex` produced the corpus's only BLIND case in
   // 1,306 — its signal never fired on the bad page, because the accompanying controls changed what the
   // probe recorded.
-  const FOCUSABLE = ["vague-link", "bare-edit"];
+  // READ THE MARKUP, not the case id — and the id version was wrong twice over.
+  //
+  // It matched `c.id.includes("bare-edit")`, which is a PROXY for "carries a focusable element". Two
+  // problems. A new defect that adds a focusable element without being on the list is invisible to it,
+  // which is the failure the whole test exists to prevent. And `bare-edit-inert` contains the substring
+  // `bare-edit`, so the proxy fired on the one defect built specifically NOT to perturb the tab order —
+  // the same substring trap `defects_in` in `audit_grants.py` documents and solves by matching
+  // longest-first.
+  //
+  // What actually matters is SEQUENTIAL focusability. `tabindex="-1"` makes an element focusable
+  // programmatically and unreachable by Tab, which is exactly the property that lets an unnamed field
+  // reach a focus-order host without changing the channel it is judged on.
   const READS_FOCUS_ORDER = ["2.1.1", "2.1.2", "2.4.1", "2.4.3"];
+  const NATIVELY_FOCUSABLE = /<(a\s[^>]*href|input|button|select|textarea)\b[^>]*>/gi;
+  const sequentiallyFocusable = (html: string): boolean => {
+    for (const [tag] of html.matchAll(NATIVELY_FOCUSABLE)) {
+      if (!/tabindex\s*=\s*["']?-\d/i.test(tag)) return true;
+    }
+    return false;
+  };
+
+  // Read each DEFINITION's markup, which is the source of truth. Diffing the assembled pages was tried
+  // and does not work: `bad` is not `good` plus the injection — the host's own mutation differs too — so
+  // `bad.replace(good, "")` matches nothing and hands back the whole page, inputs and all.
+  const perturbing = new Set(Object.entries(ACCOMPANYING_DEFECTS as Record<string, { markup: string[] }>)
+    .filter(([, defect]) => defect.markup.some(sequentiallyFocusable))
+    .map(([name]) => name));
+  assert.ok(perturbing.size > 0,
+    "no accompanying defect looks focusable, so this test would pass having examined nothing");
+
+  // LONGEST FIRST, because the names nest: `bare-edit-inert` contains `bare-edit`, and matching greedily
+  // is what stops the inert variant being blamed for its tabbable sibling. `defects_in` in
+  // `audit_grants.py` documents the same trap and solves it the same way.
+  const byLength = [...perturbing].sort((a, b) => b.length - a.length);
+  const carries = (id: string): boolean => {
+    let suffix = id.split("+also-")[1] ?? "";
+    for (const name of [...Object.keys(ACCOMPANYING_DEFECTS)].sort((a, b) => b.length - a.length)) {
+      if (!suffix.includes(name)) continue;
+      suffix = suffix.replace(name, "");
+      if (byLength.includes(name)) return true;
+    }
+    return false;
+  };
   const offenders = (CASES as { id: string; criterion: string }[])
     .filter((c) => c.id.includes("+also-") && READS_FOCUS_ORDER.includes(c.criterion))
-    .filter((c) => FOCUSABLE.some((name) => c.id.includes(name)))
+    .filter((c) => carries(c.id))
     .map((c) => c.id);
   assert.deepEqual(offenders, [],
     "these hosts are measured on focusOrder and carry an accompanying focusable element, which changes "

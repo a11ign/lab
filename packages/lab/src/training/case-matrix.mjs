@@ -2538,6 +2538,34 @@ export const ACCOMPANYING_DEFECTS = Object.freeze({
     subtypes: ["1.3.1:unassociated-table"],
     grants: "table_position_only",
   },
+  // THE FOCUS-SAFE BARE EDIT, and it exists to close a free veto no other pairing can reach.
+  //
+  // `form_field_unnamed` is 0 on every positive of the three focus subtypes, so each head may penalise it
+  // at no cost — measured at -4.60 to -6.59 logits, and the cost is real because a real page frequently
+  // HAS an unnamed field, which then pushes the head down on exactly the pages it should fire on.
+  //
+  // `bare-edit` is the only accompanying defect granting that feature and `PERTURBS_FOCUS_ORDER` rightly
+  // excludes it: the accompanying markup is injected into the BAD variant ONLY, so an `<input>` adds a tab
+  // stop to one half of a controlled pair and corrupts the very channel those cases are measured on. That
+  // produced the corpus's only BLIND case in 1,306.
+  //
+  // `tabindex="-1"` breaks the tie. The field stays in the accessibility tree — NVDA's form-field
+  // quick-nav walks the browse-mode buffer, not the tab order — while adding no tab stop at all, so the
+  // pair stays controlled and the feature becomes reachable.
+  //
+  // UNVERIFIED UNTIL CAPTURED. Whether NVDA's `f` quick-nav actually reaches a non-focusable input is a
+  // question about NVDA, not about this markup, and `--pipeline=verify --only=` answers it in minutes.
+  // If it does not, this defect grants nothing and must be deleted rather than left looking useful —
+  // `corpus:grants-audit` is what will say so.
+  "bare-edit-inert": {
+    markup: [
+      "<p><input name=\"note-ref\" type=\"text\" tabindex=\"-1\"></p>",
+      "<p><input name=\"ref-code\" type=\"text\" tabindex=\"-1\"></p>",
+      "<p><input name=\"visit-note\" type=\"text\" tabindex=\"-1\"></p>",
+    ],
+    subtypes: ["3.3.2:unnamed-form-field", "4.1.2:unnamed-control"],
+    grants: "bare_edit_present",
+  },
   "bare-edit": {
     // Announced as a bare role with no name. Two heads, for the reason `form-unlabelled` documents at
     // length: an unnamed field is 3.3.2 and 4.1.2 as squarely as each other.
@@ -2640,7 +2668,24 @@ function withAccompanyingDefects(template, names, round = 0) {
   // saves. `filler-collision.test.ts` catches any pairing this list misses — it caught the original.
   const collides = (COLLIDING_PAIRINGS[`${template.criterion}:${template.subtype}`] ?? []);
   const readsFocusOrder = FOCUS_ORDER_CRITERIA.includes(template.criterion);
-  const chosen = names.filter((name) => !collides.includes(name)
+  // SUBSTITUTED, not dropped — and substituting rather than adding a rotation is the whole reason this
+  // costs three subtypes instead of the corpus.
+  //
+  // `bare-edit` is the only accompanying defect granting `form_field_unnamed`, and dropping it from the
+  // four focus-order criteria left that feature at 0 on every positive of three subtypes: a free veto
+  // worth -4.60 to -6.59 logits, which pushes those heads DOWN on any page carrying an unnamed field —
+  // and real pages frequently do. `bare-edit-inert` is the same markup with `tabindex="-1"`, so it is an
+  // unnamed field in the accessibility tree and adds no tab stop to the bad variant.
+  //
+  // Adding it to ROTATIONS instead would have re-rolled every multi-defect pairing in the corpus, because
+  // the choice is `(rotation + round) % ROTATIONS.length` — that list's own comment says enlarging it must
+  // be treated like a protocol bump. Substituting inside the filter touches only the cases that were
+  // already dropping the defect, so every other page stays byte-identical.
+  //
+  // `vague-link` keeps being dropped: a link is a tab stop by nature, and `tabindex="-1"` on one would
+  // make it unreachable, which is a DIFFERENT defect and would collide with 2.1.1's own signal.
+  const focusSafe = (name) => (readsFocusOrder && name === "bare-edit" ? "bare-edit-inert" : name);
+  const chosen = names.map(focusSafe).filter((name) => !collides.includes(name)
     && !(readsFocusOrder && PERTURBS_FOCUS_ORDER.includes(name))
     && !ACCOMPANYING_DEFECTS[name].subtypes.some((s) => s === `${template.criterion}:${template.subtype}`));
   if (chosen.length === 0) return null;
