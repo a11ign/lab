@@ -32,8 +32,35 @@ test("the chain runs in the only order that works", () => {
   // Each stage consumes what the one before it produced: you cannot train on an export that has not
   // happened, promote a candidate that has not been trained, or gate weights that have not been promoted.
   assert.deepEqual(STEPS.map((step) => step.name),
-    ["retrain", "export-acceptance", "train", "shortcuts", "acceptance", "promote",
-     "grants-audit", "applicability-audit", "release-gate"]);
+    ["retrain", "export-acceptance", "grants-audit", "applicability-audit", "train",
+     "shortcuts", "acceptance", "promote", "release-gate"]);
+});
+
+/**
+ * Stages that audit the CORPUS, and therefore belong before the stage that consumes it.
+ *
+ * Neither opens the model — both read `with-realism.jsonl` and the acceptance repeats and nothing else.
+ * They ran AFTER `promote` until 2026-08-27, which meant the heads were fitted to a corpus that had not
+ * been audited and the weights were in the shipped directory before the answer arrived. `grants-audit`
+ * then refused the chain over one record, having prevented nothing — the difference between a gate and
+ * a report is entirely when it runs.
+ */
+const CORPUS_AUDITS = ["grants-audit", "applicability-audit"];
+
+test("a stage that audits the CORPUS runs before the stage that trains on it", () => {
+  // The RULE, not the sequence. The literal above catches an accidental reorder; this says why one order
+  // is right, so a future stage is placed by reasoning rather than by copying the list.
+  const order = STEPS.map((step) => step.name);
+  const train = order.indexOf("train");
+  assert.ok(train > 0, "there must be a train stage for this constraint to mean anything");
+  for (const audit of CORPUS_AUDITS) {
+    const at = order.indexOf(audit);
+    assert.ok(at !== -1, `${audit} must be in the chain; it is what says the corpus can support its labels`);
+    assert.ok(at < train,
+      `'${audit}' runs at ${at}, AFTER train at ${train}. It reads the corpus and never the model, so `
+      + "running it later fits the heads to data whose audit has not happened — and if it also lands after "
+      + "`promote`, the weights are already in the shipped directory when it refuses.");
+  }
 });
 
 /**
@@ -101,7 +128,7 @@ test("the stages whose failure means the WORK is wrong are marked as gates", () 
   // that changes what you go and look at. A gate silently demoted to an ordinary step sends the next
   // reader to debug the pipeline instead of the corpus.
   assert.deepEqual(STEPS.filter((step) => step.gate).map((step) => step.name),
-    ["shortcuts", "acceptance", "promote", "grants-audit", "applicability-audit", "release-gate"]);
+    ["grants-audit", "applicability-audit", "shortcuts", "acceptance", "promote", "release-gate"]);
   // The three that are NOT gates produce the material the gates judge. If one of those fails the
   // pipeline still stops — it is required — but you go and look at the corpus, not at a verdict.
   assert.deepEqual(STEPS.filter((step) => !step.gate).map((step) => step.name),

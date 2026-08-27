@@ -43,6 +43,26 @@ const STEPS = [
   { name: "export-acceptance", script: "training:export-acceptance:all",
     why: "the held-out set, EVERY repeat — the evaluator reads every repeat, and exporting one is how a "
       + "held-out score comes to be computed half on each" },
+  // THE CORPUS AUDITS RUN BEFORE THE TRAIN, and they used to run after the PROMOTE.
+  //
+  // Both ask a question about the training data — does a multi-defect page carry the evidence its labels
+  // claim, does a precondition silence a labelled positive — and neither reads the model at all: they
+  // open `with-realism.jsonl` and the acceptance repeats and nothing else. Answering them after `train`
+  // means the heads were already fitted to a corpus that failed its own audit; answering them after
+  // `promote` means those weights are already in the shipped directory when the answer arrives.
+  //
+  // Measured 2026-08-27: `grants-audit` refused the chain over one record, and by then `promote` had
+  // copied the weights and written a changeset. The gate worked and arrived too late to prevent anything,
+  // which is the difference between a gate and a report.
+  //
+  // Ordering rule, stated once: a stage that reads the CORPUS belongs before the stage that consumes it.
+  // Everything below `train` reads the weights and cannot move up.
+  { name: "grants-audit", script: "corpus:grants-audit", gate: true,
+    why: "does every multi-defect page carry the evidence its labels claim? BEFORE the train, because a "
+      + "label for a defect nothing captured teaches the head to predict it from something else" },
+  { name: "applicability-audit", script: "corpus:applicability-audit", gate: true,
+    why: "does any precondition silence a record labelled positive? A precondition that does is strictly "
+      + "worse than the false positive it removes, and nothing about it shows in a score" },
   { name: "train", script: "training:train",
     why: "fit the heads into runs/model-candidate. NOT the shipped directory: the trainer refuses that, "
       + "and this stage is where that refusal killed the chain twice" },
@@ -54,11 +74,6 @@ const STEPS = [
       + "`model-candidate is not releasable: held-out acceptance has not been run against these weights`" },
   { name: "promote", script: "promote:gated", args: ["--from=candidate"], gate: true,
     why: "candidate:gate, and only then copy the weights in — it never promotes on a failed gate" },
-  { name: "grants-audit", script: "corpus:grants-audit", gate: true,
-    why: "does every multi-defect page carry the evidence its labels claim?" },
-  { name: "applicability-audit", script: "corpus:applicability-audit", gate: true,
-    why: "does any precondition silence a record labelled positive? A precondition that does is strictly "
-      + "worse than the false positive it removes, and nothing about it shows in a score" },
   { name: "release-gate", script: "release:gate", gate: true,
     why: "migration, shortcuts, signals, rules, held-out acceptance, judge quality — the verdict" },
 ];
