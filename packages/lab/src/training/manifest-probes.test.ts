@@ -95,7 +95,11 @@ test("a probe flag that is FALSE must not change the capture cache key", () => {
   //
   // The rule this encodes: a flag only belongs in the key when it is actually SENT, and absent must equal
   // false, which is what `capture-core`'s `!!opts.probeFocus` already assumes.
-  const shared = { caseId: "c", pageHash: "p", environment: { os: "win" } };
+  // A REAL environment field. This said `{ os: "win" }`, which `environmentKey` never reads -- it DERIVES
+  // `os` from `windowsVersion` and `architecture`. Harmless here, since all three keys shared it and the
+  // assertions are about options, but a fixture naming a field the code ignores is the sort of thing a
+  // later reader copies into a test where it matters.
+  const shared = { caseId: "c", pageHash: "p", environment: { windowsVersion: "10.0.26100", architecture: "x64" } };
   const options = (extra: Record<string, unknown>) =>
     ({ task: "t", steps: 150, probeForms: false, probeTables: false, ...extra, reuseScreenReader: true });
 

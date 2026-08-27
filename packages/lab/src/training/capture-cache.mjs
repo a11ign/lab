@@ -1,3 +1,4 @@
+// @ts-check
 // Should this case be captured again, or is the evidence on disk still valid?
 //
 // A full dataset run is 1,061 pairs and ~1.5 h across three workers, and almost all of it is
@@ -27,16 +28,24 @@ import { resolve } from "node:path";
 
 const KEY_LENGTH = 16; // enough to be unique across ~2k cases, short enough to read in a log
 
-/** Stable JSON: object key order must not change the key. */
+/**
+ * Stable JSON: object key order must not change the key.
+ *
+ * @param {unknown} value
+ * @returns {unknown}  ANNOTATED because it recurses -- without a declared return TypeScript refuses to
+ *   infer one at all (TS7023), and the result silently becomes `any`, which is the opposite of what a
+ *   function computing a CACHE KEY wants.
+ */
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.keys(value).sort().map((k) => [k, canonical(value[k])]));
+    const record = /** @type {Record<string, unknown>} */ (value);
+    return Object.fromEntries(Object.keys(record).sort().map((k) => [k, canonical(record[k])]));
   }
   return value;
 }
 
-const sha256 = (input) => createHash("sha256").update(input).digest("hex");
+const sha256 = (/** @type {string} */ input) => createHash("sha256").update(input).digest("hex");
 
 /**
  * Hash every file in a case's page directory.
@@ -45,6 +54,7 @@ const sha256 = (input) => createHash("sha256").update(input).digest("hex");
  * 2,122 page files are HTML) but a fixture that gains an image must invalidate its evidence, and
  * a cache that silently ignores new files is worse than no cache.
  */
+/** @param {string} pageDir */
 export function hashPageDir(pageDir) {
   const hash = createHash("sha256");
   for (const name of readdirSync(pageDir).sort()) {
@@ -71,6 +81,15 @@ export function hashPageDir(pageDir) {
  * `"unstamped"` until they are deliberately re-provisioned; current workers read the stamp from their
  * actual checkout, so a later provisioning change invalidates the environment key.
  */
+/**
+ * @param {{ screenReader?: string, screenReaderVersion?: string, guidepupVersion?: string,
+ *           browser?: string, browserVersion?: string, windowsVersion?: string, architecture?: string,
+ *           captureProtocol?: string|number, provisionRevision?: string }} [environment]
+ *
+ * EVERY FIELD LISTED, because each is a cache key and an absent one silently becomes `"unknown"` -- which
+ * is a value two different guests can share. The comments below record what each costs when it is wrong;
+ * the type is what stops a NEW field being read here and never reaching the record.
+ */
 export function environmentKey(environment = {}) {
   return {
     screenReader: `${environment.screenReader ?? "NVDA"}/${environment.screenReaderVersion ?? "unknown"}`,
@@ -89,6 +108,10 @@ export function environmentKey(environment = {}) {
 }
 
 /** The identity of a capture: same key means the same evidence should result. */
+/**
+ * @param {{ caseId: string, pageHash: string, options?: Record<string, unknown>,
+ *           environment?: Parameters<typeof environmentKey>[0] }} input
+ */
 export function cacheKey({ caseId, pageHash, options, environment }) {
   return sha256(JSON.stringify(canonical({
     caseId,
@@ -103,6 +126,17 @@ export function cacheKey({ caseId, pageHash, options, environment }) {
  *
  * @param {object} capture
  * @param {{ key: string, pageHash?: string|null, options: object, environment: object, worker?: string|null }} provenance
+ */
+/**
+ * @param {{ capturedAt?: string, [key: string]: unknown }} capture
+ * @param {{ key: string, pageHash?: string|null, options?: Record<string, unknown>,
+ *           environment?: (Parameters<typeof environmentKey>[0] & { workerCode?: string }) | null,
+ *           worker?: string|null }} stamp
+ *
+ * `workerCode` is on the ENVIRONMENT here and deliberately not on `environmentKey`'s input: it is
+ * recorded and never keyed, for the reason the header gives -- it changes when a comment changes, and
+ * invalidating 1,061 pairs over a reworded comment is how a cache gets switched off. The type says which
+ * side of that line each field is on.
  */
 export function stampProvenance(capture, { key, pageHash = null, options, environment, worker = null }) {
   return {
@@ -124,6 +158,7 @@ export function stampProvenance(capture, { key, pageHash = null, options, enviro
   };
 }
 
+/** @param {string} captureRoot @param {string} caseId @param {string} variant */
 function readCapture(captureRoot, caseId, variant) {
   try {
     return JSON.parse(readFileSync(resolve(captureRoot, `${caseId}.${variant}.json`), "utf8"));
@@ -133,7 +168,7 @@ function readCapture(captureRoot, caseId, variant) {
   }
 }
 
-const isUsable = (capture) =>
+const isUsable = (/** @type {Record<string, any>|null} */ capture) =>
   capture?.screenReader === "NVDA" && Array.isArray(capture.transcript) && capture.transcript.length > 0;
 
 /**
@@ -146,6 +181,7 @@ const isUsable = (capture) =>
  *
  * @returns {{reuse: boolean, reason: string, staleCode: string|null}}
  */
+/** @param {{ captureRoot: string, caseId: string, key: string }} request */
 export function cacheDecision({ captureRoot, caseId, key }) {
   const captures = ["good", "bad"].map((v) => readCapture(captureRoot, caseId, v));
   if (!captures.every(isUsable)) return { reuse: false, reason: "no usable pair on disk", staleCode: null };

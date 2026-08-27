@@ -25,14 +25,21 @@ import assert from "node:assert/strict";
 import { ALL_ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
 import { CASES } from "./case-matrix.mjs";
 
-/** Every case that declares a secondary failure — the ones this guard exists for. */
-const multiDefect = (list: Array<Record<string, unknown>>) =>
+/**
+ * Every case that declares a secondary failure — the ones this guard exists for.
+ *
+ * `readonly` and an unknown-indexed element, so the two case lists can be passed AS THEY ARE. They used
+ * to be cast to `Array<Record<string, unknown>>` at every call, which stopped compiling the moment
+ * `acceptance-matrix.mjs` acquired real types — a cast written to satisfy a checker is a cast that goes
+ * wrong when the checker learns something.
+ */
+const multiDefect = (list: readonly Record<string, unknown>[]) =>
   list.filter((c) => Array.isArray(c.alsoFails) && (c.alsoFails as unknown[]).length > 0);
 
 test("acceptance cases that declare alsoFails exist at all, or this guard is decoration", () => {
   // The discovery must find something. A guard over an empty set passes in perfect silence, which is the
   // defect it exists to catch wearing a different hat. Measured 7 multi-defect acceptance cases.
-  const declared = multiDefect(ALL_ACCEPTANCE_CASES as Array<Record<string, unknown>>);
+  const declared = multiDefect(ALL_ACCEPTANCE_CASES);
   assert.ok(declared.length >= 5,
     `only ${declared.length} acceptance case(s) declare alsoFails; the discovery is broken, not the corpus`);
 });
@@ -41,7 +48,7 @@ test("the criteria a multi-defect page ACTUALLY fails are all derivable from its
   // The property the exporter relies on: `criterion` plus the criterion half of each `alsoFails` entry is
   // the full set of criteria that page fails. If a case declared a subtype with no criterion prefix, the
   // exporter would silently produce a label missing that criterion — the same class of loss, one layer in.
-  for (const testCase of multiDefect(ALL_ACCEPTANCE_CASES as Array<Record<string, unknown>>)) {
+  for (const testCase of multiDefect(ALL_ACCEPTANCE_CASES)) {
     for (const entry of testCase.alsoFails as string[]) {
       assert.match(entry, /^\d+\.\d+\.\d+:[a-z0-9-]+$/,
         `${testCase.id} declares alsoFails "${entry}", which is not criterion:subtype — the exporter splits `
@@ -66,6 +73,6 @@ test("the training and acceptance corpora agree on what alsoFails means", () => 
   const shapeOf = (list: Array<Record<string, unknown>>) =>
     new Set(list.flatMap((c) => (c.alsoFails as string[]).map((e) => e.split(":").length)));
   assert.deepEqual([...shapeOf(training)], [2], "training alsoFails entries must all be criterion:subtype");
-  assert.deepEqual([...shapeOf(multiDefect(ALL_ACCEPTANCE_CASES as Array<Record<string, unknown>>))], [2],
+  assert.deepEqual([...shapeOf(multiDefect(ALL_ACCEPTANCE_CASES))], [2],
     "acceptance alsoFails entries must all be criterion:subtype, like training's");
 });

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * MAY THIS MODEL SHIP? One function, computed from the facts, at the moment you ask.
  *
@@ -28,9 +29,10 @@ const REGRESSION_TOLERANCE = 0.005;
  * because the rule owns that subtype and `findingsFromScores` suppresses the model for it. A release
  * refused over output nobody receives is a gate measuring the wrong thing.
  */
-const isRuleDecided = (subtype) => subtype?.decisionOwner === "deterministic-rules";
+const isRuleDecided = (/** @type {Record<string, any>} */ subtype) => subtype?.decisionOwner === "deterministic-rules";
 
 /** Every (criterion, subtype, report) triple in a training report, flattened. */
+/** @param {Record<string, any>} training */
 function* heads(training) {
   for (const [criterion, entry] of Object.entries(training?.criteria ?? {})) {
     for (const [name, subtype] of Object.entries(entry?.subtypes ?? {})) {
@@ -47,6 +49,7 @@ function* heads(training) {
  * text match silently stops working while its tests, which assert on their own copy of the string, keep
  * passing.
  */
+/** @param {Record<string, any>} training */
 function calibrationFailures(training) {
   const failures = [];
   const notes = [];
@@ -98,6 +101,7 @@ function calibrationFailures(training) {
  * caller could have proved the link and did not. Only a report predating the stamp is a note, because
  * refusing those would refuse every model trained before this existed.
  */
+/** @param {Record<string, any>|null} acceptance @param {string|null} candidateModelSha256 */
 function acceptanceBelongsToTheseWeights(acceptance, candidateModelSha256) {
   const claimed = acceptance?.artifact?.modelSha256;
   if (!acceptance || !claimed) return [];
@@ -137,6 +141,7 @@ function acceptanceBelongsToTheseWeights(acceptance, candidateModelSha256) {
  * eligibility at train time and this decides the release at promote time, and neither can import the
  * other — so the copies are pinned equal rather than deleted.
  */
+/** @param {string} name @param {Record<string, any>} subtype @param {Record<string, any>} development */
 export function typeOneErrorFailures(name, subtype, development) {
   const guarantee = subtype.guarantee;
   if (!guarantee) {
@@ -189,6 +194,7 @@ export function typeOneErrorFailures(name, subtype, development) {
  * Nothing is lost by the move: a head that genuinely weakens still fails, on the measurement that can
  * see it. What is gained is that a candidate is no longer refused for being measured on harder data.
  */
+/** @param {string} name @param {Record<string, any>} subtype @param {Record<string, any>} development */
 function silentHeadFailures(name, subtype, development) {
   if (development.truePositive === 0 && development.positive > 0) {
     return { blocking: `${name}: SILENT — 0 of ${development.positive} positive record(s) found at threshold `
@@ -219,10 +225,11 @@ function silentHeadFailures(name, subtype, development) {
  * So name the next cut down and what rules it out. One false positive there means a record to examine;
  * forty means the head is genuinely weak and the threshold is doing its job.
  */
+/** @param {Record<string, any>} subtype @param {Record<string, any>} development */
 function whatPinnedTheThreshold(subtype, development) {
   const sweep = Array.isArray(subtype.thresholdSweep) ? subtype.thresholdSweep : [];
-  const below = sweep.filter((row) => Number(row.threshold) < Number(subtype.threshold));
-  const nextDown = below.sort((a, b) => Number(b.threshold) - Number(a.threshold))[0];
+  const below = sweep.filter((/** @type {Record<string, any>} */ row) => Number(row.threshold) < Number(subtype.threshold));
+  const nextDown = below.sort((/** @type {Record<string, any>} */ a, /** @type {Record<string, any>} */ b) => Number(b.threshold) - Number(a.threshold))[0];
   if (!nextDown) return "";
   const recovered = development.falseNegative - Number(nextDown.falseNegative);
   if (recovered <= 0) return "";
@@ -259,6 +266,7 @@ function whatPinnedTheThreshold(subtype, development) {
  * A NOTE, never a blocker. Nothing is wrong with a head at the extreme; it is the most conservative cut
  * available and it holds its bound. What is worth knowing is that it has no margin.
  */
+/** @param {Record<string, any>} training */
 function marginNotes(training) {
   const out = [];
   for (const { name, subtype } of heads(training)) {
@@ -291,6 +299,7 @@ function marginNotes(training) {
  * predecessor, and refusing it would make a schema change unshippable forever. It is a NOTE that must be
  * loud, because every regression check downstream is inert while it holds.
  */
+/** @param {Record<string, any>} training @param {Record<string, any>|null} shipped */
 function comparabilityNotes(training, shipped) {
   const candidateSchema = training?.representation?.schema;
   const shippedSchema = shipped?.representation?.schema;
@@ -301,6 +310,7 @@ function comparabilityNotes(training, shipped) {
     + "expected to be in this state; a second one is not."];
 }
 
+/** @param {Record<string, any>|null} acceptance @param {Record<string, any>|null} shippedAcceptance @param {number} tolerance */
 function regressions(acceptance, shippedAcceptance, tolerance) {
   if (!acceptance || !shippedAcceptance) return [];
   const worse = [];
@@ -319,11 +329,14 @@ function regressions(acceptance, shippedAcceptance, tolerance) {
 
 /**
  * @param {object} input
- * @param {object} input.training    the candidate's training report
- * @param {object|null} input.acceptance  its acceptance report, or null if never evaluated
- * @param {object|null} input.shipped     the shipped model's training report, or null
- * @param {object|null} [input.shippedAcceptance] its ACCEPTANCE report — the only fixed-set baseline
+ * @param {Record<string, any>} input.training    the candidate's training report
+ * @param {Record<string, any>|null} input.acceptance  its acceptance report, or null if never evaluated
+ * @param {Record<string, any>|null} input.shipped     the shipped model's training report, or null
+ * @param {Record<string, any>|null} [input.shippedAcceptance] its ACCEPTANCE report — the only fixed-set baseline
  * @param {string|null} [input.candidateModelSha256] hash of the weights actually being promoted
+ * @param {number} [input.tolerance] the noise floor below which a difference is not a regression --
+ *   DESTRUCTURED here for as long as this function has existed and never documented, so it was invisible
+ *   to every reader of the signature and to the compiler alike
  * @returns {{releasable: boolean, blockers: string[], notes: string[]}}
  */
 export function releasability({ training, acceptance, shipped, shippedAcceptance,
@@ -346,7 +359,7 @@ export function releasability({ training, acceptance, shipped, shippedAcceptance
   const calibration = calibrationFailures(training);
   blockers.push(...calibration.failures);
   notes.push(...calibration.notes);
-  blockers.push(...regressions(acceptance, shippedAcceptance, tolerance));
+  blockers.push(...regressions(acceptance, shippedAcceptance ?? null, tolerance));
   notes.push(...comparabilityNotes(training, shipped));
   notes.push(...marginNotes(training));
 

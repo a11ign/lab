@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Fresh screen-reader acceptance pairs. These are deliberately outside CASES and are
  * never exported into the training JSONL. They measure generalisation after training.
@@ -8,10 +9,23 @@ const STYLE = "body{font:16px system-ui,sans-serif;line-height:1.5;max-width:48r
 // NVDA speaks image filenames rather than spelling punctuation: "orchard-gate-03.jpg"
 // becomes "orchard-gate-03 dot jpg". Keep acceptance signals aligned with the
 // screen-reader transcript instead of the source attribute spelling.
+/** @param {string} text */
 function spokenForm(text) {
   return text.replaceAll("_", "[ _]").replaceAll(".", "(?:\\.| dot )");
 }
 
+/**
+ * @typedef {{ id: string, task: string }} PairBase
+ *   What `pair()` itself needs. It does NOT take a `title` -- the first version of this typedef said it
+ *   did, from a glance at the generators rather than at `pair`, and every one of its twelve call sites
+ *   became an error. The generators build a title and pass a page; `pair` never sees one.
+ *
+ * @typedef {PairBase & { title: string }} TitledPair
+ *   What the twelve page generators take. Named once because there are twelve of them and twelve inline
+ *   shapes is twelve chances for one to drift from the rest.
+ *
+ * @param {{ title: string, heading: string, body: string, script?: string, landmark?: boolean }} spec
+ */
 function page({ title, heading, body, script = "", landmark = true }) {
   const content = "<h1>" + heading + "</h1>" + body;
   const container = landmark ? "<main>" + content + "</main>" : content;
@@ -20,6 +34,11 @@ function page({ title, heading, body, script = "", landmark = true }) {
     + (script ? "<script>" + script + "</script>" : "") + "</body></html>";
 }
 
+/**
+ * @param {PairBase & { criterion: string, subtype: string, mutation: string,
+ *   badSignal: Record<string, any>, good: string, bad: string, probeForms?: boolean,
+ *   probeTables?: boolean, alsoFails?: string[] }} spec
+ */
 function pair({ id, criterion, subtype, task, mutation, badSignal, good, bad, probeForms = false,
   probeTables = false, alsoFails = [] }) {
   return {
@@ -56,6 +75,15 @@ function pair({ id, criterion, subtype, task, mutation, badSignal, good, bad, pr
  * acceptance's own instruments, never copies of training hosts, and the point is that the gate can
  * EXPRESS the case — not that it re-measures the whole corpus.
  */
+/**
+ * @param {ReturnType<typeof pair>} base
+ * @param {{ suffix: string, markup: string, adds: string[], describes: string }} extra
+ * @returns {ReturnType<typeof pair>}
+ *
+ * IN AND OUT are the same shape, and saying so is what keeps `ALL_ACCEPTANCE_CASES` a homogeneous list.
+ * Typed loosely, the multi-defect half of that array lost `criterion` and `subtype` from its type -- the
+ * two fields `acceptance-matrix.test.ts` groups by, which is how the test noticed.
+ */
 function alsoCarrying(base, { suffix, markup, adds, describes }) {
   return {
     ...base,
@@ -77,6 +105,13 @@ const ACCEPTANCE_ACCOMPANYING = Object.freeze({
     adds: ["2.4.6:regex"], describes: "a vague heading" },
 });
 
+/**
+ * @param {TitledPair & { description: string, file: string, goodAlt: string,
+ *   badAlt: string | null, subtype: string }} spec
+ *   `badAlt` is NULLABLE and that is the `missing-alt` case -- an image with no alternative at all, which
+ *   is a different defect from one with a bad alternative. A non-null type here would have made the
+ *   subtype this generator exists to produce unexpressible.
+ */
 function imagePair({ id, title, description, file, goodAlt, badAlt, subtype, task }) {
   const badName = badAlt === null
     ? "(?:\\ufffc|to get missing image descriptions)"
@@ -93,6 +128,7 @@ function imagePair({ id, title, description, file, goodAlt, badAlt, subtype, tas
   });
 }
 
+/** @param {TitledPair & { context: string, vague: string, descriptive: string }} spec */
 function linkPair({ id, title, context, vague, descriptive, task }) {
   return pair({
     id,
@@ -106,6 +142,7 @@ function linkPair({ id, title, context, vague, descriptive, task }) {
   });
 }
 
+/** @param {TitledPair & { vague: string, descriptive: string }} spec */
 function headingPair({ id, title, vague, descriptive, task }) {
   return pair({
     id,
@@ -119,6 +156,7 @@ function headingPair({ id, title, vague, descriptive, task }) {
   });
 }
 
+/** @param {TitledPair & { label: string }} spec */
 function landmarkPair({ id, title, label, task }) {
   return pair({
     id,
@@ -132,6 +170,7 @@ function landmarkPair({ id, title, label, task }) {
   });
 }
 
+/** @param {TitledPair & { label: string }} spec */
 function fakeHeadingPair({ id, title, label, task }) {
   return pair({
     id,
@@ -145,6 +184,7 @@ function fakeHeadingPair({ id, title, label, task }) {
   });
 }
 
+/** @param {TitledPair & { destination: string }} spec */
 function tablePair({ id, title, destination, task }) {
   const good = "<table><caption>Service schedule</caption><thead><tr><th scope=\"col\">Destination</th><th scope=\"col\">Time</th></tr></thead><tbody><tr><th scope=\"row\">" + destination + "</th><td>10:20</td></tr></tbody></table>";
   const bad = "<table><caption>Service schedule</caption><tr><td>Destination</td><td>Time</td></tr><tr><td>" + destination + "</td><td>10:20</td></tr></table>";
@@ -161,6 +201,7 @@ function tablePair({ id, title, destination, task }) {
   });
 }
 
+/** @param {TitledPair & { field: string, submit: string }} spec */
 function errorPair({ id, title, field, submit, task }) {
   const message = "Enter the " + field.toLowerCase() + " before submitting.";
   const good = "<form id=\"form\" onsubmit=\"event.preventDefault(); document.querySelector('#field').setAttribute('aria-invalid', 'true'); document.querySelector('#error').hidden = false; document.querySelector('#field').focus();\"><label for=\"field\">" + field + "</label><input id=\"field\" aria-describedby=\"error\"><button type=\"submit\">" + submit + "</button><p id=\"error\" role=\"alert\" hidden>" + message + "</p></form>";
@@ -178,6 +219,7 @@ function errorPair({ id, title, field, submit, task }) {
   });
 }
 
+/** @param {TitledPair & { label: string, name: string, placeholderOnly?: boolean }} spec */
 function formPair({ id, title, label, name, task, placeholderOnly = false }) {
   const goodBody = "<form><label for=\"" + name + "\">" + label + "</label><input id=\"" + name + "\" name=\"" + name + "\" placeholder=\"Example value\"></form>";
   const badBody = placeholderOnly
@@ -198,6 +240,7 @@ function formPair({ id, title, label, name, task, placeholderOnly = false }) {
   });
 }
 
+/** @param {TitledPair & { label: string }} spec */
 function iconPair({ id, title, label, task }) {
   return pair({
     id,
@@ -220,6 +263,7 @@ function iconPair({ id, title, label, task }) {
   });
 }
 
+/** @param {TitledPair & { label: string }} spec */
 function controlPair({ id, title, label, task }) {
   return pair({
     id,
@@ -234,6 +278,7 @@ function controlPair({ id, title, label, task }) {
   });
 }
 
+/** @param {TitledPair & { control: string }} spec */
 function disclosurePair({ id, title, control, task }) {
   const body = "<button id=\"toggle\" type=\"button\" aria-expanded=\"false\" aria-controls=\"content\">" + control + "</button><div id=\"content\" hidden>More information.</div>";
   const goodScript = "document.querySelector('#toggle').addEventListener('click',e=>{const b=e.currentTarget;const open=b.getAttribute('aria-expanded')==='true';b.setAttribute('aria-expanded',String(!open));document.querySelector('#content').hidden=open})";
@@ -251,6 +296,7 @@ function disclosurePair({ id, title, control, task }) {
   });
 }
 
+/** @param {TitledPair & { control: string }} spec */
 function statusPair({ id, title, control, task }) {
   const body = "<button id=\"filter\" type=\"button\">" + control + "</button><p id=\"count\">Showing 8 items.</p><ul><li>First item</li><li>Second item</li></ul>";
   const script = "document.querySelector('#filter').addEventListener('click',()=>{document.querySelector('#count').textContent='Showing 2 matching items.'})";
@@ -374,12 +420,15 @@ const MULTI_DEFECT_ACCEPTANCE = Object.freeze(
     ["fake-hours", "bare-edit"],
     ["generic-lantern", "vague-link"],
   ]
-    .map(([id, suffix]) => {
-      const base = ACCEPTANCE_CASES.find((c) => c.id === `acceptance-${id}`);
-      if (!base) return null; // an id that no longer exists is caught by `acceptance-matrix.test.ts`
-      return alsoCarrying(base, { suffix, ...ACCEPTANCE_ACCOMPANYING[suffix] });
-    })
-    .filter(Boolean),
+    // `flatMap` rather than map-then-`filter(Boolean)`. The old shape was correct at runtime and left
+    // `null` in the exported array's type, so every reader of `ALL_ACCEPTANCE_CASES` -- including its own
+    // test -- had to treat a case as possibly absent. Deciding and building in one place needs no
+    // narrowing to explain, and it is the same fix `parseProcessMemory` took for the same reason.
+    .flatMap(([id, suffix]) => {
+      const base = ACCEPTANCE_CASES.find((/** @type {{ id: string }} */ c) => c.id === `acceptance-${id}`);
+      if (!base) return []; // an id that no longer exists is caught by `acceptance-matrix.test.ts`
+      return [alsoCarrying(base, { suffix, .../** @type {Record<string, any>} */ (ACCEPTANCE_ACCOMPANYING)[suffix] })];
+    }),
 );
 
 /** Everything the acceptance run captures: the single-defect instruments plus the multi-defect ones. */

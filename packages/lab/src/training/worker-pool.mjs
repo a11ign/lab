@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Drain a queue of work across a pool of workers — one item per worker at a time.
  *
@@ -36,11 +37,19 @@ import { shouldEvictWorker } from "./capture-decisions.mjs";
  * Those failures were the WORKER's fault rather than the items', so they must not stay recorded against the
  * items — otherwise a broken guest permanently fails two cases before the eviction threshold even trips, and
  * those are cases a healthy worker could have captured.
+ *
+ * One block -- an adjacent second one would orphan everything above it, and only the last attaches.
+ *
+ * @param {{ queue: any[], failures: any[], item: any, failedHere: any[],
+ *           keyOf: (item: any) => string }} state
+ *   `failedHere` is the LIST of cases this worker failed, not a count of them: it is spread back onto the
+ *   queue and walked to drop their failure records. Typing it as a number compiled and described the
+ *   opposite of what the paragraph above says this function is for.
  */
 function requeueFrom({ queue, failures, item, failedHere, keyOf }) {
   queue.push(item, ...failedHere);
   for (const failed of failedHere) {
-    const at = failures.findIndex((f) => f.key === keyOf(failed));
+    const at = failures.findIndex((/** @type {Record<string, any>} */ f) => f.key === keyOf(failed));
     if (at !== -1) failures.splice(at, 1);
   }
   return failedHere.length + 1;
@@ -54,6 +63,7 @@ function requeueFrom({ queue, failures, item, failedHere, keyOf }) {
  * sentinel return value, and two functions that cannot be understood apart are worse than one that reads
  * straight through.
  */
+/** @param {string} worker @param {Record<string, any>} ctx */
 async function drainWithWorker(worker, { pool, prepare, handle, isDegraded, hooks, keyOf }) {
   // Prepared BEFORE it takes any work. Readiness used to be consulted only after a failure, so a freshly
   // booted worker was still handed the first item and still lost it — the exact failure a readiness gate
@@ -117,6 +127,7 @@ async function drainWithWorker(worker, { pool, prepare, handle, isDegraded, hook
  * A predicate that throws is not evidence that the worker is bad: a health probe which cannot answer says
  * nothing about the guest, and treating it as a retirement would remove a healthy worker on a network blip.
  */
+/** @param {Record<string, any>} ctx */
 async function retire({ worker, context, pool, isDegraded, hooks, requeue }) {
   if (!isDegraded) return false;
   let verdict;
@@ -155,7 +166,7 @@ async function retire({ worker, context, pool, isDegraded, hooks, requeue }) {
  * @returns {Promise<{failures: object[], evicted: string[], retired: string[]}>}
  */
 export async function drainAcrossPool({
-  workers, items, prepare, handle, isDegraded, keyOf = (item) => item.id, hooks = {},
+  workers, items, prepare, handle, isDegraded, keyOf = (/** @type {any} */ item) => item.id, hooks = {},
 }) {
   // The accumulators are shared by every worker on purpose — the queue IS the coordination mechanism.
   const pool = { queue: [...items], failures: [], evicted: [], retired: [], size: workers.length };

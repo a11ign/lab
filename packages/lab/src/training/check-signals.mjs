@@ -1,3 +1,4 @@
+// @ts-check
 // Prove every badSignal can actually tell a good page from a bad one.
 //
 //   npm run training:check-signals
@@ -43,10 +44,12 @@ const REQUIRE_COMPLETE = process.argv.includes("--require-complete");
 const ONLY = process.argv.find((a) => a.startsWith("--only="))?.slice("--only=".length);
 const EVIDENCE_LINES = 4;
 
+/** @param {string} id @param {string} variant */
 function capturePath(id, variant) {
   return resolve(CAPTURE_ROOT, id + "." + variant + ".json");
 }
 
+/** @param {string} id @param {string} variant */
 function readCapture(id, variant) {
   const path = capturePath(id, variant);
   return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
@@ -83,6 +86,7 @@ const EVIDENCE_FIELDS = Object.freeze({
 const DEFAULT_EVIDENCE_FIELDS = Object.freeze(["transcript", "structure.formFields"]);
 
 /** Follow a dotted path into a capture. `transcript` is top level; the rest are one level down. */
+/** @param {Record<string, any>} capture @param {string} path */
 function fieldAt(capture, path) {
   return path.split(".").reduce((value, key) => (value == null ? value : value[key]), capture);
 }
@@ -95,8 +99,9 @@ function fieldAt(capture, path) {
  * ran; beside `stops: 12` it says the probe ran and found nothing — opposite fixes, and previously the
  * same silence.
  */
+/** @param {Record<string, any>} capture @param {string} event */
 function probeMarkLine(capture, event) {
-  const mark = (capture.diagnostics || []).find((entry) => entry && entry.event === event);
+  const mark = (capture.diagnostics || []).find((/** @type {Record<string, any>} */ entry) => entry && entry.event === event);
   return mark
     ? `      ${event} probe: ${JSON.stringify(mark)}`
     : `      ${event} probe: NO MARK — the probe did not run on this capture`;
@@ -104,6 +109,7 @@ function probeMarkLine(capture, event) {
 
 // The fields a signal is decided from, so a failure report shows where the evidence actually is rather
 // than making someone open two JSON files to find out.
+/** @param {Record<string, any>} capture @param {Record<string, any>} signal */
 function evidenceFor(capture, signal) {
   const lines = [];
   for (const path of EVIDENCE_FIELDS[signal.type] ?? DEFAULT_EVIDENCE_FIELDS) {
@@ -119,11 +125,13 @@ function evidenceFor(capture, signal) {
   return lines;
 }
 
+/** @param {Record<string, any>} signal */
 function describeSignal(signal) {
   const detail = signal.pattern ?? signal.text ?? signal.field ?? signal.control ?? "";
   return signal.type + (detail ? ` (${detail})` : "");
 }
 
+/** @param {Record<string, any>} testCase */
 function checkCase(testCase) {
   const good = readCapture(testCase.id, "good");
   const bad = readCapture(testCase.id, "bad");
@@ -141,6 +149,7 @@ function checkCase(testCase) {
   return { id: testCase.id, verdict: "OK" };
 }
 
+/** @param {Record<string, any>} result @param {Record<string, any>} testCase */
 function report(result, testCase) {
   if (result.verdict === "OK") {
     console.log(`  OK            ${result.id}`);
@@ -182,7 +191,7 @@ function report(result, testCase) {
  */
 function main() {
   const manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
-  const cases = ONLY ? manifest.cases.filter(({ id }) => id.includes(ONLY)) : manifest.cases;
+  const cases = ONLY ? manifest.cases.filter((/** @type {{ id: string }} */ { id }) => id.includes(ONLY)) : manifest.cases;
   if (!cases.length) {
     console.error("No case matches --only=" + ONLY);
     process.exit(1);
@@ -192,7 +201,10 @@ function main() {
   const counts = { OK: 0, BLIND: 0, CONTAMINATED: 0, "NO CAPTURES": 0, "STALE CAPTURES": 0 };
   for (const testCase of cases) {
     const result = checkCase(testCase);
-    counts[result.verdict] += 1;
+    // The literal type is kept -- `signalVerdict` takes exactly these five keys and widening the
+    // variable would push the loss of precision into it. Only the dynamic write is cast, which is the
+    // one place a verdict name arrives as data.
+    /** @type {Record<string, number>} */ (counts)[result.verdict] += 1;
     report(result, testCase);
   }
 
@@ -296,6 +308,12 @@ export function signalVerdict(counts, { requireComplete = false } = {}) {
  *
  * A hint rather than a guard: nothing here can see the lab, so this cannot decide which case applies. What
  * it can do is stop the two reading as one, which is the distinction this whole codebase keeps paying for.
+ *
+ * ONE BLOCK. This was two adjacent ones, which is the fourth pair found today: only the last attaches, so
+ * the paragraph above reached no tool and the `@param` below did not apply either -- the parameter stayed
+ * inferred from its one call site.
+ *
+ * @param {Record<string, number>} counts
  */
 export function unsyncedCorpusHint(counts) {
   const unusable = counts["NO CAPTURES"] + counts["STALE CAPTURES"];
