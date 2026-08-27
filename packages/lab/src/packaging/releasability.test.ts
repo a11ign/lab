@@ -1,6 +1,11 @@
 /**
  * The verdict, tested against situations the lab has never produced — which is where the deadlock lived.
  *
+ * Proves the DECISION half of the gate `promote:gated`: suppressing `releasability()`'s blockers fails 13
+ * of these tests. The WIRING half — copying the weights into `packages/scorer/models/` and refusing a
+ * dirty tree — is NOT covered here, and `gates-are-proven.test.ts` records that rather than letting this
+ * file's 31 tests imply it.
+ *
  * The old design had the TRAINER write a `releaseEligible` boolean, one of whose inputs (did held-out
  * acceptance pass?) only exists after training. It could only ever be false, so every consumer worked
  * around it, and the workarounds were the bugs: a gate that refused to run on the models it existed to

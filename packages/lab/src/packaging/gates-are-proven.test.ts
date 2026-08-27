@@ -133,9 +133,11 @@ const GATE_PROOFS: Record<string, GateProof> = {
       + "capture or a train rather than declared",
   },
   "promote:gated": {
-    catches: "promotion on a failed candidate gate, or into a dirty tree",
-    unproven: "needs a candidate; `releasability.test.ts` pins the DECISION rule it applies, which is the "
-      + "half that can be tested offline",
+    catches: "promotion on a failed candidate gate. `releasability()` is the DECISION and is proven "
+      + "— suppressing its blockers fails 13 tests. The WIRING half (copying the weights, refusing a "
+      + "dirty tree) is NOT covered, and saying so is the point: a register that overclaims is worse "
+      + "than one with a gap in it",
+    provenBy: "packages/lab/src/packaging/releasability.test.ts",
   },
   "release:gate": {
     catches: "a release with any of the above unmet — it is the composite",
