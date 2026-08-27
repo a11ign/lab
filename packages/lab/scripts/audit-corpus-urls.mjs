@@ -43,6 +43,7 @@ const POLITE_GAP_MS = 2_000;
 /** Long enough for a slow government host, short enough that 92 of them finish. */
 const DEFAULT_TIMEOUT_MS = 15_000;
 
+/** @param {string} name */
 const arg = (name) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const TIMEOUT_MS = Number(arg("timeout") ?? DEFAULT_TIMEOUT_MS);
@@ -54,6 +55,10 @@ const AS_JSON = process.argv.includes("--json");
  * GET rather than HEAD: several of these hosts answer HEAD with 405 or with a different redirect chain,
  * so HEAD would report a move that a real capture never sees. `redirect: "follow"` gives the final
  * address in `response.url`, which is exactly what the capture's own guard compares against.
+ */
+/**
+ * @param {string} url
+ * @returns {Promise<{final: string|null, status: number|null, error?: string}>}
  */
 async function landsAt(url) {
   const controller = new AbortController();
@@ -68,7 +73,7 @@ async function landsAt(url) {
     });
     return { final: response.url, status: response.status };
   } catch (error) {
-    return { final: null, status: null, error: String(error?.message ?? error) };
+    return { final: null, status: null, error: error instanceof Error ? error.message : String(error) };
   } finally {
     clearTimeout(timer);
   }
@@ -79,10 +84,15 @@ async function landsAt(url) {
  * it would refuse. Trailing slashes and `.html` are things a server adds or drops while serving exactly
  * what was asked for.
  */
+/**
+ * @param {string} actual
+ * @param {string} requested
+ */
 function addressesSamePage(actual, requested) {
   try {
     const got = new URL(actual);
     const want = new URL(requested);
+    /** @param {string} path */
     const normalise = (path) => path.replace(/\/$/, "").replace(/\.html?$/i, "").replace(/\/index$/i, "");
     return got.origin === want.origin && normalise(got.pathname) === normalise(want.pathname);
   } catch {
