@@ -1,3 +1,4 @@
+// @ts-check
 // The decisions a capture run makes: is this capture evidence, is this error worth retrying, and is
 // this worker worth keeping.
 //
@@ -76,19 +77,28 @@ const TRANSIENT_NETWORK_CODES = new Set([
   "EPIPE", "ETIMEDOUT", "EAI_AGAIN", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT",
 ]);
 
+/**
+ * @param {unknown} error  anything a failed request threw — a node:http Error, an undici one, a string
+ * @returns {boolean}
+ */
 export function isTransient(error) {
+  const failure = /** @type {{ code?: string, cause?: { code?: string }, message?: string }} */ (error);
   // Prefer the code. The regex below is the fallback for older workers and for host-side failures
   // (a dropped socket has no fault code), but a message is prose and prose gets reworded — see
   // packages/nvda-worker/src/capture-faults.mjs for what that cost.
-  if (TRANSIENT_FAULTS.has(error?.code)) return true;
-  if (TRANSIENT_NETWORK_CODES.has(error?.code)) return true;
+  if (TRANSIENT_FAULTS.has(failure?.code ?? "")) return true;
+  if (TRANSIENT_NETWORK_CODES.has(failure?.code ?? "")) return true;
   // A node:http error carries its code on the error itself; an undici one hides it on `cause`. Checking
   // both means the classification does not depend on which client the caller happened to use.
-  if (TRANSIENT_NETWORK_CODES.has(error?.cause?.code)) return true;
-  return TRANSIENT.test(String(error?.message ?? error ?? ""));
+  if (TRANSIENT_NETWORK_CODES.has(failure?.cause?.code ?? "")) return true;
+  return TRANSIENT.test(String(failure?.message ?? error ?? ""));
 }
 
-/** Is this capture usable as evidence? */
+/**
+ * Is this capture usable as evidence?
+ * @param {import("@a11y-witness/evidence/verify").CapturedAnnouncements} capture
+ * @param {string} title
+ */
 export function isEvidence(capture, title) {
   return captureMentionsTitle(capture, title) &&
     captureHasSubstance(capture, title) &&
@@ -103,6 +113,10 @@ export function isEvidence(capture, title) {
  * human acts on, so it is the thing worth testing.
  *
  * Returns null when the capture IS evidence — asking why a good capture failed is a caller bug.
+ *
+ * @param {import("@a11y-witness/evidence/verify").CapturedAnnouncements} capture
+ * @param {{ title: string, url: string }} expected
+ * @returns {string | null}
  */
 export function rejectionReason(capture, { title, url }) {
   if (isEvidence(capture, title)) return null;
@@ -115,7 +129,7 @@ export function rejectionReason(capture, { title, url }) {
       `(${capture.transcript.length} phrase(s), no structure) — the page was not read`;
   }
   const preview = capture.transcript.slice(0, REJECTED_PREVIEW_PHRASES)
-    .map((phrase) => JSON.stringify(phrase)).join(", ");
+    .map((/** @type {string} */ phrase) => JSON.stringify(phrase)).join(", ");
   return `the screen reader did not read "${title}" at ${url} (announced: ${preview || "nothing"})`;
 }
 
@@ -144,6 +158,10 @@ export function shouldEvictWorker({ consecutiveFailures, poolSize, evictedCount,
  *
  * One function, so the two guards cannot disagree about what "remaining" means — the same reason the worker
  * file list and the code hasher are each defined once.
+ */
+/**
+ * @param {{ poolSize: number, evictedCount?: number, retiredCount?: number }} pool
+ * @returns {number}
  */
 export function workersStillWorking({ poolSize, evictedCount = 0, retiredCount = 0 }) {
   return poolSize - evictedCount - retiredCount;
