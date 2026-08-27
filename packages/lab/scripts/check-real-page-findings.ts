@@ -42,12 +42,13 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { ruleFindings } from "@a11y-witness/judge/rules";
 import { corpusState } from "../src/training/corpus-settled.mjs";
 import { pageCensus, domCensus } from "@a11y-witness/evidence/verify";
-import { realPageFor } from "../src/training/real-page-corpus.mjs";
+import { realPageFor, REAL_PAGES } from "../src/training/real-page-corpus.mjs";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const REAL = resolve(REPO, process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
 const BASELINE = resolve(REPO, "packages/lab/baselines/real-page-findings.json");
 const UPDATE = process.argv.includes("--update");
+const ALLOW_PARTIAL = process.argv.includes("--allow-partial");
 
 /** Below this the corpus is being recaptured and every count describes a state that is already gone. */
 // `SETTLED_AFTER_MINUTES` lives in `corpus-settled.mjs` now, with the check that uses it.
@@ -232,6 +233,80 @@ function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
  * A count is what turns "I found two" into "how much of this corpus is like that", which is the question
  * that decides whether this is two pages to re-capture or a capture-path change.
  */
+/**
+ * Write the baseline, unless doing so would erase what we already know. Returns the exit code.
+ *
+ * Its own function because `main` crossed the physical-line budget the moment the refusal went in, and
+ * `function-size.test.ts` caught it — the budget doing exactly its job, since deciding whether a write is
+ * safe and orchestrating the run are two different things.
+ */
+function updateBaseline(current: Record<string, string[]>, pages: number): number {
+  const dropped = pagesTheUpdateWouldDrop(current);
+  if (dropped.length && !ALLOW_PARTIAL) {
+    refuseToWriteFromPartialCoverage(dropped);
+    return 2;
+  }
+  if (dropped.length) {
+    process.stdout.write(`\n  --allow-partial: dropping ${dropped.length} baseline entr(y/ies) on purpose.\n`);
+    for (const { url, findings } of dropped) {
+      process.stdout.write(`    dropping ${url.replace(/^https:\/\//, "")} ${JSON.stringify(findings)}\n`);
+    }
+  }
+  writeBaseline(current);
+  const total = Object.values(current).reduce((n, list) => n + list.length, 0);
+  process.stdout.write(`\n  Baseline updated: ${total} finding(s) across ${pages} conformant real page(s).\n`
+    + "  Every one of these is now asserted to be CORRECT. Review before committing.\n");
+  return 0;
+}
+
+/**
+ * Baseline entries this update would ERASE, because the page behind them was not captured this run.
+ *
+ * `--update` wrote `currentFindings()` straight over the file, so the baseline silently became "whatever
+ * happened to be on disk". A run that captured one ROLE therefore deleted every entry belonging to the
+ * other — and `capture-real-pages` DEFAULTS to `--role=training`, so `--pipeline=real-pages` does exactly
+ * that: it captures 39 of 89 pages and then scores and rewrites against all of them.
+ *
+ * Measured 2026-08-27, by doing it: a calibration-only capture followed by `--update` took the baseline
+ * from 85 pages to 81 and erased `events.bl.uk`'s known 2.4.3. Nothing said so. The next capture of those
+ * pages would then report their findings as NEW and refuse a promotion, which reads as a regression and
+ * is this file rewriting its own memory.
+ *
+ * **A count of what is present cannot see what is missing**, which is why this compares against the
+ * BASELINE rather than against the corpus definition: a page absent from both disk and the baseline is
+ * new and unremarkable, while a page the baseline knows and disk does not is memory loss.
+ *
+ * The idiom is this repo's own — `training:check-signals:complete` refuses a partial corpus rather than
+ * scoring what happens to be on disk, and `evidence:check` returns INCONCLUSIVE on PARTIAL coverage
+ * rather than only on zero. A claim written from evidence we do not have is worse than no claim.
+ */
+function pagesTheUpdateWouldDrop(current: Record<string, string[]>): Array<{ url: string; findings: string[] }> {
+  const baseline = readBaseline();
+  if (!baseline) return [];
+  return Object.entries(baseline)
+    .filter(([url]) => !(url in current))
+    .map(([url, findings]) => ({ url, findings: findings as string[] }));
+}
+
+/** Say which pages, which findings, and the one command that fixes it. */
+function refuseToWriteFromPartialCoverage(dropped: Array<{ url: string; findings: string[] }>): void {
+  const roles = [...new Set(dropped
+    .map(({ url }) => REAL_PAGES.find((page) => page.url === url)?.role ?? "no longer in the corpus"))];
+  process.stdout.write(`\n  REFUSING to update: ${dropped.length} page(s) in the baseline were not captured `
+    + "this run,\n  so writing now would erase what we know about them.\n\n");
+  for (const { url, findings } of dropped.slice(0, 10)) {
+    const role = REAL_PAGES.find((page) => page.url === url)?.role ?? "not in the corpus";
+    process.stdout.write(`    ${url.replace(/^https:\/\//, "")}\n`
+      + `      baseline holds ${JSON.stringify(findings)}, role=${role}\n`);
+  }
+  if (dropped.length > 10) process.stdout.write(`    ... and ${dropped.length - 10} more\n`);
+  process.stdout.write("\n  Capture them first — `capture-real-pages` DEFAULTS to --role=training, so a run\n"
+    + `  that named one role has only that one. Missing role(s): ${roles.join(", ")}.\n`
+    + "    npm run lab:pipeline -- --pipeline=real-pages     # captures EVERY role, then updates\n\n"
+    + "  If the baseline should genuinely shrink — a page removed from the corpus on purpose —\n"
+    + "  `--allow-partial` says so out loud and names every entry it drops.\n");
+}
+
 function furnitureCaptures(): { consent: string[]; shell: string[] } {
   const consent: string[] = [];
   const shell: string[] = [];
@@ -311,10 +386,7 @@ function main(): void {
   }
 
   if (UPDATE) {
-    writeBaseline(current);
-    const total = Object.values(current).reduce((n, list) => n + list.length, 0);
-    process.stdout.write(`\n  Baseline updated: ${total} finding(s) across ${pages} conformant real page(s).\n`
-      + "  Every one of these is now asserted to be CORRECT. Review before committing.\n");
+    process.exitCode = updateBaseline(current, pages);
     return;
   }
 
