@@ -99,6 +99,11 @@ const GATE_PROOFS: Record<string, GateProof> = {
     catches: "an executable-on-load weight format (.pt, .pkl, .ckpt) in the shipped model directory",
     provenBy: "packages/lab/src/packaging/scorer-verify-refuses.test.ts",
   },
+  "release:provenance": {
+    catches: "a release whose weights no changelog entry accounts for -- and two entries saying one "
+      + "thing, which is how a filename derived from a directory COUNT presents",
+    provenBy: "packages/lab/src/packaging/provenance-gate-refuses.test.ts",
+  },
   "scorer:migration": {
     catches: "a release while a feature-schema migration is open, so the weights and the featurizer "
       + "disagree about what the inputs mean",
@@ -155,7 +160,7 @@ const GATE_PROOFS: Record<string, GateProof> = {
 };
 
 /** Gates whose refusal has been WATCHED. May only rise. */
-const PROVEN_AT_LEAST = 15;
+const PROVEN_AT_LEAST = 17;
 
 function gatesInUse(): string[] {
   const chain = STEPS.filter((step: { gate?: boolean }) => step.gate)
