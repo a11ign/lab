@@ -42,7 +42,7 @@ export function readProgress(root) {
  * persists immediately, because the value of this file is that it survives the process.
  */
 /**
- * @param {{ root: string, worker?: string|null, baseUrl?: string, cases: { id: string }[],
+ * @param {{ root: string, worker?: string|null, baseUrl?: string|null, cases: { id: string }[],
  *           captureTimeoutMs?: number }} run
  */
 export function beginRun({ root, worker, baseUrl, cases, captureTimeoutMs }) {

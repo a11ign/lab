@@ -1,3 +1,4 @@
+// @ts-check
 // Run under tsx, not plain node (see package.json), so this host-side script can import the
 // TypeScript worker-lease module. The rest of src/training is .mjs under node; this one file
 // needs the shared lifecycle logic, and duplicating it in .mjs would let the two copies
@@ -84,10 +85,10 @@ const REUSE_NVDA = process.env.DATASET_REUSE_NVDA !== "0";
  *
  * Exact wins over substring per entry, so pasting a gate's output does what it says.
  */
-export function selectCases(cases, only) {
+export function selectCases(/** @type {any} */ cases, /** @type {any} */ only) {
   if (!only) return cases;
-  const wanted = only.split(",").map((s) => s.trim()).filter(Boolean);
-  const ids = new Set(cases.map(({ id }) => id));
+  const wanted = only.split(",").map((/** @type {any} */ s) => s.trim()).filter(Boolean);
+  const ids = new Set(cases.map((/** @type {any} */ { id }) => id));
   // A TRAILING `+` MEANS "this case and everything built from it".
   //
   // The exact-id rule above is right and cannot be relaxed: `form-error-silent` is a real id and a prefix
@@ -98,7 +99,7 @@ export function selectCases(cases, only) {
   //
   // `route-title-stale+` is unambiguous because `+` is the variant separator, so it cannot collide with
   // an id: no case is named `X+` and every variant of X begins `X+`.
-  return cases.filter(({ id }) => wanted.some((want) => {
+  return cases.filter((/** @type {any} */ { id }) => wanted.some((/** @type {any} */ want) => {
     if (want.endsWith("+")) return id === want.slice(0, -1) || id.startsWith(want);
     return ids.has(want) ? id === want : id.includes(want);
   }));
@@ -106,12 +107,15 @@ export function selectCases(cases, only) {
 
 // `requestJson`, not `fetch`: a capture can hold the connection well past undici's 300 s headers cap,
 // which no AbortSignal lifts. See worker-http.mjs — this call site declared 560 s and got 300 s.
-async function fetchJson(url, options = {}, timeoutMs = 30000) {
+async function fetchJson(/** @type {any} */ url, options = {}, timeoutMs = 30000) {
   const response = await requestJson(url, { ...options, timeoutMs });
   const text = response.text;
   const body = response.json ?? { raw: text };
   if (!response.ok) {
-    const failed = new Error("HTTP " + response.status + " from " + url + ": " + JSON.stringify(body));
+    // Typed at construction, because the two fields attached below are the ENTIRE point of this error:
+    // recovery keys on the status and on the worker's fault CODE, never on the message text.
+    const failed = /** @type {Error & { status?: number, code?: string }} */ (
+      new Error("HTTP " + response.status + " from " + url + ": " + JSON.stringify(body)));
     // The status as a NUMBER, so callers branch on it instead of matching the message they just built.
     // Recovery needs exactly this: 404 means re-capture, 500 means the worker has a diagnosis for us.
     failed.status = response.status;
@@ -131,7 +135,7 @@ function readManifest() {
   return JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
 }
 
-async function checkWorker({ worker, source }) {
+async function checkWorker(/** @type {any} */ { worker, source }) {
   if (source === "default") {
     throw new Error(
       "No NVDA worker available. Dataset capture needs the interactive Windows/NVDA worker: " +
@@ -160,7 +164,7 @@ async function checkWorker({ worker, source }) {
 // The guest fetches these pages itself, so the base URL has to be reachable from THERE.
 // With a local VM, the host's `localhost` is not: it resolves to the guest, which serves
 // nothing, and every capture then comes back describing an empty page with no error.
-function resolveBaseUrl(lease) {
+function resolveBaseUrl(/** @type {any} */ lease) {
   const configured = (process.env.DATASET_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, "");
   const reachable = guestReachableUrl(configured, lease);
   if (reachable !== configured) {
@@ -169,14 +173,14 @@ function resolveBaseUrl(lease) {
   return reachable;
 }
 
-function captureUrl(baseUrl, testCase, variant) {
+function captureUrl(/** @type {any} */ baseUrl, /** @type {any} */ testCase, /** @type {any} */ variant) {
   return baseUrl + "/" + testCase.id + "/" + variant + ".html";
 }
 
 // Exactly what shapes the evidence, defined once. The cache keys on this and the worker receives
 // it, so the two cannot drift -- a key that ignored an option we actually send would reuse evidence
 // captured a different way.
-function captureOptions(testCase) {
+function captureOptions(/** @type {any} */ testCase) {
   return {
     task: testCase.task,
     steps: STEPS,
@@ -201,12 +205,12 @@ function captureOptions(testCase) {
   };
 }
 
-async function captureOne(ctx, testCase, url, captureId) {
+async function captureOne(/** @type {any} */ ctx, /** @type {any} */ testCase, /** @type {any} */ url, /** @type {any} */ captureId) {
   const body = { url, ...captureOptions(testCase), captureId };
   return fetchJson(ctx.worker + "/capture", { method: "POST", body }, CAPTURE_TIMEOUT_MS);
 }
 
-function writeCapture(testCase, variant, capture, provenance) {
+function writeCapture(/** @type {any} */ testCase, /** @type {any} */ variant, /** @type {any} */ capture, /** @type {any} */ provenance) {
   mkdirSync(CAPTURE_ROOT, { recursive: true });
   if (provenance) capture = stampProvenance(capture, provenance);
   const path = resolve(CAPTURE_ROOT, testCase.id + "." + variant + ".json");
@@ -223,7 +227,7 @@ const SERVE_HINT =
   "The capture command normally leases the page server automatically; check that no other " +
   `process owns port ${PAGES_PORT} (a stray server can answer 404 for every page).`;
 
-async function pageTitle(url) {
+async function pageTitle(/** @type {any} */ url) {
   let response;
   try {
     response = await fetch(url, { signal: AbortSignal.timeout(15000) });
@@ -260,7 +264,7 @@ const WORKER_POLL_MS = 10000;
  *
  * @returns {Promise<{ reachable: boolean, vitals: object | null }>}
  */
-async function workerVitals(worker) {
+async function workerVitals(/** @type {any} */ worker) {
   try {
     return { reachable: true, vitals: (await fetchJson(worker + "/health", {}, 15000)).vitals ?? null };
   } catch {
@@ -285,9 +289,12 @@ const unreachableStreaks = new Map();
  * so eviction never reached it. It sat in the rotation for twelve minutes spinning at 178% CPU while
  * its neighbour's mute rate went from 0/10 to 6/18.
  *
- * @returns {Promise<boolean>} true when the caller should stop using this worker
+ * @returns {Promise<{retire: boolean, reason: string|null}>}
+ *   The VERDICT AND ITS REASON, which is what `shouldRetireWorker` returns and what the pool accepts.
+ *   This said `Promise<boolean>` for as long as it has existed -- a contract nobody could act on, since
+ *   the run summary names why a worker was retired and a boolean cannot say.
  */
-async function retireIfDegraded({ worker, poolSize, evictedCount, retiredCount }) {
+async function retireIfDegraded(/** @type {any} */ { worker, poolSize, evictedCount, retiredCount }) {
   const { reachable, vitals } = await workerVitals(worker);
   const streak = reachable ? 0 : (unreachableStreaks.get(worker) ?? 0) + 1;
   unreachableStreaks.set(worker, streak);
@@ -302,7 +309,7 @@ async function retireIfDegraded({ worker, poolSize, evictedCount, retiredCount }
   });
 }
 
-async function waitForWorker(worker) {
+async function waitForWorker(/** @type {any} */ worker) {
   const deadline = Date.now() + WORKER_WAIT_MS;
   while (Date.now() < deadline) {
     try {
@@ -348,7 +355,7 @@ async function waitForWorker(worker) {
  * response. That keeps the worker's `fault` code -- the thing it worked out and we would otherwise replace
  * with "no answer" -- and lets the run's own classification decide, as it would have done all along.
  */
-async function recoverCapture(worker, captureId) {
+async function recoverCapture(/** @type {any} */ worker, /** @type {any} */ captureId) {
   try {
     const body = await fetchJson(worker + "/capture/" + captureId, {}, RECOVERY_TIMEOUT_MS);
     if (body?.state === "running") return null;
@@ -356,9 +363,9 @@ async function recoverCapture(worker, captureId) {
     return body;
   } catch (error) {
     // 500 is the worker's own account of a failed capture, and it is the answer, not an obstacle.
-    if (error.status === 500) throw error;
+    if (/** @type {any} */ (error).status === 500) throw error;
     // 404 from the endpoint, or from an older worker's router fallback: nothing kept, so capture again.
-    if (error.status === 404) return null;
+    if (/** @type {any} */ (error).status === 404) return null;
     // Anything else (the worker went away again mid-question) is not worth a second round trip here;
     // the caller falls back to capturing, which is what it would have done anyway.
     return null;
@@ -366,13 +373,13 @@ async function recoverCapture(worker, captureId) {
 }
 
 // One capture, tolerant of the worker disappearing underneath it.
-async function captureTolerantly(ctx, testCase, url) {
+async function captureTolerantly(/** @type {any} */ ctx, /** @type {any} */ testCase, /** @type {any} */ url) {
   const captureId = randomUUID();
   try {
     return await captureOne(ctx, testCase, url, captureId);
   } catch (error) {
     if (!isTransient(error)) throw error;
-    console.log("    worker unreachable (" + error.message + "); waiting for it to come back");
+    console.log("    worker unreachable (" + /** @type {any} */ (error).message + "); waiting for it to come back");
     await waitForWorker(ctx.worker);
     // Before paying for a second full capture, ask whether the first one actually finished. A capture is
     // 12-520 s of real screen-reader work, and a dropped socket after it completed used to discard all of
@@ -384,14 +391,18 @@ async function captureTolerantly(ctx, testCase, url) {
   }
 }
 
-function writeRejected(testCase, variant, capture, attempt) {
+function writeRejected(/** @type {any} */ testCase, /** @type {any} */ variant, /** @type {any} */ capture, /** @type {any} */ attempt) {
   mkdirSync(REJECTED_ROOT, { recursive: true });
   const path = resolve(REJECTED_ROOT, testCase.id + "." + variant + ".attempt" + attempt + ".json");
   writeFileSync(path, JSON.stringify(capture, null, 2) + "\n", "utf8");
   return path;
 }
 
-async function captureVerified(ctx, testCase, { url, title, variant }) {
+async function captureVerified(/** @type {any} */ ctx, /** @type {any} */ testCase, /** @type {any} */ { url, title, variant }) {
+  // `rejectionReason` answers null when the capture IS evidence, and this accumulates whichever
+  // reason the last attempt produced. Typed to carry both, since an empty string and "no reason"
+  // are the same thing here only by accident.
+  /** @type {string | null} */
   let wrong = "";
   for (let attempt = 1; attempt <= CAPTURE_ATTEMPTS; attempt++) {
     const capture = await captureTolerantly(ctx, testCase, url);
@@ -420,7 +431,7 @@ async function captureVerified(ctx, testCase, { url, title, variant }) {
 }
 
 /** The worker's own account of what it is, which the cache key depends on. */
-async function workerEnvironment(worker) {
+async function workerEnvironment(/** @type {any} */ worker) {
   try {
     return (await fetchJson(worker + "/health", {}, 15000)).environment ?? {};
   } catch {
@@ -430,7 +441,7 @@ async function workerEnvironment(worker) {
   }
 }
 
-function provenanceFor(ctx, testCase) {
+function provenanceFor(/** @type {any} */ ctx, /** @type {any} */ testCase) {
   const pageDir = resolve(PAGE_ROOT, testCase.id);
   const pageHash = hashPageDir(pageDir);
   const options = captureOptions(testCase);
@@ -449,7 +460,7 @@ function provenanceFor(ctx, testCase) {
  *
  * @returns {Promise<{cached: boolean, phrases?: object, reason?: string}>}
  */
-async function cachedOrCapture(ctx, testCase) {
+async function cachedOrCapture(/** @type {any} */ ctx, /** @type {any} */ testCase) {
   if (!CACHE) return { cached: false, phrases: await captureCase(ctx, testCase) };
   const { key } = provenanceFor(ctx, testCase);
   const decision = cacheDecision({ captureRoot: CAPTURE_ROOT, caseId: testCase.id, key });
@@ -476,7 +487,8 @@ async function cachedOrCapture(ctx, testCase) {
   return { cached: true, reason: decision.reason };
 }
 
-async function captureCase(ctx, testCase) {
+async function captureCase(/** @type {any} */ ctx, /** @type {any} */ testCase) {
+  /** @type {Record<string, number>} */
   const phrases = {};
   ctx = { ...ctx, provenance: provenanceFor(ctx, testCase) };
   for (const variant of ["good", "bad"]) {
@@ -524,7 +536,7 @@ function afterRun() {
  * convenience: a pair is only comparable if both variants came from the same screen reader on the same
  * machine. Splitting one across workers would compare two NVDA instances and call the difference evidence.
  */
-async function captureAcrossPool(ctxBase, cases, done, workers) {
+async function captureAcrossPool(/** @type {any} */ ctxBase, /** @type {any} */ cases, /** @type {any} */ done, /** @type {any} */ workers) {
   const skipped = [], cachedIds = [];
   const outcome = await drainAcrossPool({
     workers,
@@ -551,22 +563,22 @@ async function captureAcrossPool(ctxBase, cases, done, workers) {
     },
     // The pool supplies the counts it owns; `retireIfDegraded` measures the vitals and makes the call, so
     // the decision stays in `capture-decisions.mjs` where `pool-invariants.test.ts` already pins it.
-    isDegraded: ({ worker, poolSize, evictedCount, retiredCount }) =>
+    isDegraded: (/** @type {any} */ { worker, poolSize, evictedCount, retiredCount }) =>
       retireIfDegraded({ worker, poolSize, evictedCount, retiredCount }),
     hooks: {
-      onWorkerUnusable: (worker, error) =>
-        console.error("  worker never became ready, skipping it: " + worker + " (" + error.message + ")"),
-      onItemFailed: (testCase, error, { worker }) => {
+      onWorkerUnusable: (/** @type {any} */ worker, /** @type {any} */ error) =>
+        console.error("  worker never became ready, skipping it: " + worker + " (" + /** @type {any} */ (error).message + ")"),
+      onItemFailed: (/** @type {any} */ testCase, /** @type {any} */ error, /** @type {any} */ { worker }) => {
         // The progress entry is written here and deliberately NOT rolled back on requeue: another worker
         // capturing the case overwrites it, and a failure that was really the worker's is still worth
         // having been visible while it stood.
-        ctxBase.progress.failed(testCase.id, error.message, worker);
-        console.error("  CAPTURE_FAILED " + testCase.id + ": " + error.message);
+        ctxBase.progress.failed(testCase.id, /** @type {any} */ (error).message, worker);
+        console.error("  CAPTURE_FAILED " + testCase.id + ": " + /** @type {any} */ (error).message);
       },
-      onEvicted: (worker, { consecutiveFailures, handedBack, error }) =>
+      onEvicted: (/** @type {any} */ worker, /** @type {any} */ { consecutiveFailures, handedBack, error }) =>
         console.error("  EVICTING " + worker + " after " + consecutiveFailures + " consecutive failures; "
-          + handedBack + " case(s) go back to the queue. Last error: " + error.message),
-      onRetired: (worker, { handedBack, reason }) =>
+          + handedBack + " case(s) go back to the queue. Last error: " + /** @type {any} */ (error).message),
+      onRetired: (/** @type {any} */ worker, /** @type {any} */ { handedBack, reason }) =>
         console.error("  RETIRING " + worker + " — " + reason
           + (handedBack ? "; " + handedBack + " case(s) go back to the queue" : "")),
     },
@@ -588,7 +600,7 @@ async function captureAcrossPool(ctxBase, cases, done, workers) {
   };
 }
 
-async function captureAll(ctxBase, cases, done) {
+async function captureAll(/** @type {any} */ ctxBase, /** @type {any} */ cases, /** @type {any} */ done) {
   const failures = [];
   const ctx = { ...ctxBase, environment: await workerEnvironment(ctxBase.worker) };
   let cached = 0;
@@ -608,8 +620,8 @@ async function captureAll(ctxBase, cases, done) {
       }
       ctx.progress.captured(testCase.id, result.phrases);
     } catch (error) {
-      failures.push(testCase.id + ": " + error.message);
-      ctx.progress.failed(testCase.id, error.message);
+      failures.push(testCase.id + ": " + /** @type {any} */ (error).message);
+      ctx.progress.failed(testCase.id, /** @type {any} */ (error).message);
       console.error("  CAPTURE_FAILED " + failures.at(-1));
     }
   }
@@ -665,10 +677,10 @@ async function acquireDatasetWorkers() {
     }
     // Fall through to the single-worker lease, which starts and restores one VM on its own.
   }
-  return { pool: null, lease: await leaseWorker({ worker: process.env.A11Y_WORKER, after: afterRun() }) };
+  return { pool: null, lease: await leaseWorker({ worker: process.env.A11Y_WORKER ?? null, after: afterRun() }) };
 }
 
-async function checkDatasetWorkers(pool, lease) {
+async function checkDatasetWorkers(/** @type {any} */ pool, /** @type {any} */ lease) {
   if (pool) {
     // Check every one of them before starting: discovering a dead worker an hour in wastes
     // the hour, and the pool driver would keep handing it cases.
@@ -687,7 +699,7 @@ async function checkDatasetWorkers(pool, lease) {
     { when: "before the run", allow: ALLOW_STALE, bareMetalUrls: inventoryWorkerUrls() });
 }
 
-function captureProgress(cases, lease, pool, baseUrl) {
+function captureProgress(/** @type {any} */ cases, /** @type {any} */ lease, /** @type {any} */ pool, /** @type {any} */ baseUrl) {
   const progress = beginRun({
     root: ROOT,
     worker: lease.worker,
@@ -700,7 +712,7 @@ function captureProgress(cases, lease, pool, baseUrl) {
   return progress;
 }
 
-async function captureWithPool({ baseUrl, progress, pool }, cases, done) {
+async function captureWithPool(/** @type {any} */ { baseUrl, progress, pool }, /** @type {any} */ cases, /** @type {any} */ done) {
   const { failures, skippedCount, cachedCount, evicted } = await captureAcrossPool(
     { baseUrl, progress, poolSize: pool.length }, cases, done, pool);
   const outcome = runOutcome({
@@ -715,7 +727,7 @@ async function captureWithPool({ baseUrl, progress, pool }, cases, done) {
   }
 }
 
-async function captureDataset(cases, done, pool, lease) {
+async function captureDataset(/** @type {any} */ cases, /** @type {any} */ done, /** @type {any} */ pool, /** @type {any} */ lease) {
   const baseUrl = resolveBaseUrl(lease);
   // Prove the pages are served before capturing anything. captureAll treats a bad page as
   // a per-case failure, so without this a wrong base URL reports the same error 45 times
@@ -775,7 +787,7 @@ async function main() {
   } finally {
     // Workers first: they are the expensive resource, and the page server costs nothing to hold for
     // the extra second. Both run even if the other throws.
-    await lease.release().catch((e) => console.error("worker release failed: " + e.message));
+    await lease.release().catch((e) => console.error("worker release failed: " + /** @type {any} */ (e).message));
     await pages.release();
     await awake.release();
   }
@@ -787,7 +799,7 @@ async function main() {
 // worker. A pure function is not testable if reaching it launches the program that contains it.
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   main().catch((error) => {
-    console.error("training:capture failed:", error.message);
+    console.error("training:capture failed:", /** @type {any} */ (error).message);
     process.exitCode = 1;
   });
 }

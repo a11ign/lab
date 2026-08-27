@@ -72,7 +72,7 @@ const CHECKED = MJS.filter((path) =>
  * the same shape as the CLI flag guards' `UNGUARDED` list. Raise this when you mark more files; it should
  * never need lowering, and lowering it is the review conversation.
  */
-const AT_LEAST = 85;
+const AT_LEAST = 91;
 
 test("the typechecked `.mjs` count never falls", () => {
   assert.ok(CHECKED.length >= AT_LEAST,

@@ -1,3 +1,4 @@
+// @ts-check
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
@@ -35,11 +36,11 @@ const REQUIRED_HTML = "<!doctype html>";
 // scraping the source it is testing". The remedy existed and this file did not use it.
 const KNOWN_SIGNALS = new Set(SIGNAL_TYPES);
 
-function readJson(path) {
+function readJson(/** @type {any} */ path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
-function metadataErrors(testCase) {
+function metadataErrors(/** @type {any} */ testCase) {
   const errors = [];
   if (!/^\d+\.\d+\.\d+$/.test(testCase.criterion)) errors.push("invalid criterion");
   if (!testCase.task || !testCase.source || !testCase.mutation) errors.push("missing label metadata");
@@ -50,7 +51,7 @@ function metadataErrors(testCase) {
   return errors;
 }
 
-function variantErrors(testCase, manifestCase, variant) {
+function variantErrors(/** @type {any} */ testCase, /** @type {any} */ manifestCase, /** @type {any} */ variant) {
   const html = testCase[variant];
   const path = manifestCase?.pages?.[variant] ? resolve(ROOT, manifestCase.pages[variant]) : "";
   const errors = [];
@@ -61,7 +62,7 @@ function variantErrors(testCase, manifestCase, variant) {
   return errors;
 }
 
-function assertCase(testCase, manifestCase) {
+function assertCase(/** @type {any} */ testCase, /** @type {any} */ manifestCase) {
   const errors = metadataErrors(testCase);
   if (!manifestCase || manifestCase.id !== testCase.id) errors.push("manifest mismatch");
   for (const variant of ["good", "bad"]) errors.push(...variantErrors(testCase, manifestCase, variant));
@@ -69,35 +70,35 @@ function assertCase(testCase, manifestCase) {
   return errors;
 }
 
-function countBy(values) {
-  return values.reduce((counts, value) => {
+function countBy(/** @type {any} */ values) {
+  return values.reduce((/** @type {any} */ counts, /** @type {any} */ value) => {
     counts[value] = (counts[value] || 0) + 1;
     return counts;
   }, {});
 }
 
-function probeName({ probeForms, probeTables }) {
+function probeName(/** @type {any} */ { probeForms, probeTables }) {
   const probes = [];
   if (probeForms) probes.push("interaction");
   if (probeTables) probes.push("table");
   return probes.length ? probes.join("+") + "-probe" : "read-through-only";
 }
 
-function buildReport(manifest) {
-  const results = EXPECTED_CASES.map((testCase) => ({
+function buildReport(/** @type {any} */ manifest) {
+  const results = EXPECTED_CASES.map((/** @type {any} */ testCase) => ({
     id: testCase.id,
-    errors: assertCase(testCase, manifest.cases.find(({ id }) => id === testCase.id)),
+    errors: assertCase(testCase, manifest.cases.find((/** @type {any} */ { id }) => id === testCase.id)),
   }));
-  const errors = results.flatMap(({ id, errors: caseErrors }) => caseErrors.map((error) => id + ": " + error));
+  const errors = results.flatMap((/** @type {any} */ { id, errors: caseErrors }) => caseErrors.map((/** @type {any} */ error) => id + ": " + error));
   return {
     schema: "a11y-witness/screen-reader-dataset-preflight",
     generatedAt: new Date().toISOString(),
     status: errors.length ? "failed" : "ready-for-NVDA-capture",
     note: "This report validates page instruments and metadata only; it is not screen-reader evidence.",
     cases: EXPECTED_CASES.length,
-    families: countBy(EXPECTED_CASES.map(({ family }) => family)),
-    criteria: countBy(EXPECTED_CASES.map(({ criterion }) => criterion)),
-    signalTypes: countBy(EXPECTED_CASES.map(({ badSignal }) => badSignal.type)),
+    families: countBy(EXPECTED_CASES.map((/** @type {any} */ { family }) => family)),
+    criteria: countBy(EXPECTED_CASES.map((/** @type {any} */ { criterion }) => criterion)),
+    signalTypes: countBy(EXPECTED_CASES.map((/** @type {any} */ { badSignal }) => badSignal.type)),
     probes: countBy(EXPECTED_CASES.map(probeName)),
     errors,
   };

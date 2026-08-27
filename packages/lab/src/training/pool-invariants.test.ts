@@ -111,6 +111,12 @@ test("both call sites actually pass both counts, wherever they now live", () => 
   // wrong: the pool passing them and the run ignoring them would look fine in both files alone.
   assert.match(pool, /poolSize: pool\.size,\s*evictedCount: pool\.evicted\.length,\s*retiredCount: pool\.retired\.length,/,
     "the pool must hand its counts to the degradation predicate");
-  assert.match(run, /isDegraded: \(\{ worker, poolSize, evictedCount, retiredCount \}\)/,
+  // The JSDoc type comment is optional in this pattern, and that is not laxity. This is a CALL-SITE
+  // check, so it reads source text -- and source text includes annotations. When `capture-screenreader-
+  // dataset.mjs` was typechecked, `/** @type {any} */` appeared between the paren and the brace and this
+  // failed, reporting that the run had stopped taking the counts when nothing about that had changed.
+  // A guard that a correct file can break gets weakened rather than fixed; the property under test is
+  // the four NAMES, so the pattern matches those and tolerates what sits beside them.
+  assert.match(run, /isDegraded: \((?:\s*\/\*\*[^*]*\*\/\s*)?\{ worker, poolSize, evictedCount, retiredCount \}\)/,
     "and the run must take them rather than reaching for a pool it no longer has");
 });

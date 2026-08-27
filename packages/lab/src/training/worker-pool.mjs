@@ -156,14 +156,30 @@ async function retire({ worker, context, pool, isDegraded, hooks, requeue }) {
  *
  * @param {object} options
  * @param {string[]} options.workers
- * @param {unknown[]} options.items                   indivisible units of work
- * @param {(worker: string) => Promise<unknown>} options.prepare   throws to take this worker out
- * @param {(item: unknown, ctx: {worker: string, context: unknown}) => Promise<void>} options.handle
+ * @param {any[]} options.items                      indivisible units of work
+ * @param {(worker: string) => Promise<any>} options.prepare   throws to take this worker out
+ * @param {(item: any, ctx: {worker: string, context: any}) => Promise<void>} options.handle
  *        throws to mark the item failed on this worker
- * @param {((ctx: {worker: string, context: unknown}) => Promise<boolean>)} [options.isDegraded]
- * @param {(item: unknown) => string} [options.keyOf] item identity, for requeue bookkeeping
+ * @param {((ctx: {worker: string, context: any, poolSize: number, evictedCount: number,
+ *              retiredCount: number}) => Promise<boolean | {retire: boolean, reason: string|null}>)}
+ *        [options.isDegraded]
+ *   BOTH SHAPES, because `retire()` below already accepts both and says so -- "`{retire, reason}` or a
+ *   bare boolean, because `shouldRetireWorker` returns the former and a simpler caller has no reason to
+ *   invent one". Declaring only the boolean made the real caller's return a type error and, worse, would
+ *   have invited someone to "fix" it by dropping the reason a worker was retired.
+ * @param {(item: any) => string} [options.keyOf] item identity, for requeue bookkeeping
+ *
+ * `any` rather than `unknown` for the ITEM and the worker CONTEXT, deliberately. This pool is generic
+ * over both -- the dataset run passes cases and a `prepare` returning an environment, the real-page run
+ * passes pages -- and `unknown` forces every caller to cast its own item back to what it just handed in,
+ * which is a cast that proves nothing. The types that matter here are `workers`, the callbacks' arity and
+ * the returned accounting, and those stay exact.
  * @param {object} [options.hooks]                    reporting only; never control flow
- * @returns {Promise<{failures: object[], evicted: string[], retired: string[]}>}
+ * @returns {Promise<{failures: {key: string, item: any, worker: string, error: any}[],
+ *                     evicted: string[], retired: string[]}>}
+ *   The failure records are NAMED, because both callers build their run summary out of them -- `f.key`
+ *   and `f.error` are what a human reads when a corpus run ends short. As `object[]` every one of those
+ *   reads was a type error at the call site, which is the wrong end: the shape is decided here.
  */
 export async function drainAcrossPool({
   workers, items, prepare, handle, isDegraded, keyOf = (/** @type {any} */ item) => item.id, hooks = {},

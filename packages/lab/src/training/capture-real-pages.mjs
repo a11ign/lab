@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Capture the real-page corpus (ADR 0010).
  *
@@ -63,7 +64,9 @@ const OUT = resolve(process.cwd(), process.env.REAL_CORPUS_ROOT || "runs/real-pa
  */
 function existingCaptures() {
   try {
-    return readdirSync(OUT)
+    // The cast states what the final filter establishes: entries that failed the shape check are null
+    // and are dropped. A filter cannot narrow, and this repo has now met that five times in one day.
+    return /** @type {any[]} */ (readdirSync(OUT)
       .filter((name) => name.endsWith(".json"))
       .map((name) => {
         try {
@@ -79,7 +82,7 @@ function existingCaptures() {
           return null;
         }
       })
-      .filter(Boolean);
+      .filter((/** @type {any} */ entry) => entry !== null));
   } catch {
     return []; // no directory yet: a first run, not a fault
   }
@@ -144,7 +147,7 @@ const SHARD = parseShard(process.argv);
 // MAX_SWEEP_STEPS from 40 to 250.
 const REAL_PAGE_STEPS = 600;
 
-const slug = (url) => url.replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "-").replace(/-+$/g, "");
+const slug = (/** @type {any} */ url) => url.replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "-").replace(/-+$/g, "");
 
 /**
  * Is this worth another attempt?
@@ -152,16 +155,16 @@ const slug = (url) => url.replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "-
  * Only a transport condition is. A malformed URL, a programmer error, a thrown assertion — none of those
  * get better by waiting, and treating them as "mid-boot" is how 29 minutes went missing.
  */
-function isTransientNetwork(error) {
+function isTransientNetwork(/** @type {any} */ error) {
   const TRANSIENT = new Set([
     "ECONNREFUSED", "EHOSTUNREACH", "ECONNRESET", "ETIMEDOUT", "ENETUNREACH", "EAI_AGAIN", "EPIPE",
   ]);
   // `requestJson`'s own timeout rejects with a plain Error and no code; that IS a transport condition and
   // is the common case while a worker boots.
-  return TRANSIENT.has(error?.code) || /timed out|timeout/i.test(error?.message ?? "");
+  return TRANSIENT.has(error?.code) || /timed out|timeout/i.test(/** @type {any} */ (error)?.message ?? "");
 }
 
-async function waitUntilReady(workerUrl) {
+async function waitUntilReady(/** @type {any} */ workerUrl) {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
       const health = (await requestJson(`${workerUrl}/health`, { timeoutMs: 8_000 })).json;
@@ -184,7 +187,7 @@ async function waitUntilReady(workerUrl) {
   return false;
 }
 
-async function capture(page, workerUrl) {
+async function capture(/** @type {any} */ page, /** @type {any} */ workerUrl) {
   const response = await requestJson(`${workerUrl}/capture`, {
     method: "POST",
     // `probeForms` is OFF. These are somebody else's live pages, and the same rule the CLI follows applies
@@ -227,7 +230,7 @@ async function capture(page, workerUrl) {
     // CARRY THE FAULT CODE ACROSS. The worker sends `{error, fault}` and this kept only the message, so
     // the host could not tell a wrong-page from a mute screen reader without matching on prose — the
     // exact thing `capture-faults.mjs` exists to avoid. Attached, not parsed.
-    const failure = new Error(String(data.error).slice(0, 300));
+    const failure = /** @type {NodeJS.ErrnoException} */ (new Error(String(data.error).slice(0, 300)));
     if (data.fault) failure.code = String(data.fault);
     throw failure;
   }
@@ -246,9 +249,10 @@ async function capture(page, workerUrl) {
  * Each record is written the moment its page finishes, never batched to the end. A run that dies at page
  * 70 of 77 keeps 70 captures; batching would keep none, and these are live fetches that cannot be replayed.
  */
-async function captureAcrossPool(pages, workers) {
+async function captureAcrossPool(/** @type {any} */ pages, /** @type {any} */ workers) {
   const waitTurn = createHostThrottle({ minGapMs: POLITE_GAP_MS });
   const captured = [];
+  /** @type {any[]} */
   const failed = [];
   // A PROGRESS FILE, so this run can be ASKED about rather than guessed at.
   //
@@ -266,7 +270,7 @@ async function captureAcrossPool(pages, workers) {
     root: OUT,
     worker: workers[0],
     baseUrl: null,
-    cases: pages.map((page) => ({ id: page.url })),
+    cases: pages.map((/** @type {any} */ page) => ({ id: page.url })),
     captureTimeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
   });
 
@@ -297,10 +301,10 @@ async function captureAcrossPool(pages, workers) {
       progress.captured(page.url, (evidence?.transcript ?? []).length);
     },
     hooks: {
-      onWorkerUnusable: (worker, error) =>
-        process.stdout.write(`  worker unusable, skipping it: ${worker} (${error.message})\n`),
-      onItemFailed: (page, error) => {
-        process.stdout.write(`    FAILED: ${page.url}: ${error.message}\n`);
+      onWorkerUnusable: (/** @type {any} */ worker, /** @type {any} */ error) =>
+        process.stdout.write(`  worker unusable, skipping it: ${worker} (${/** @type {any} */ (error).message})\n`),
+      onItemFailed: (/** @type {any} */ page, /** @type {any} */ error) => {
+        process.stdout.write(`    FAILED: ${page.url}: ${/** @type {any} */ (error).message}\n`);
         // A WRONG PAGE on a corpus URL is almost always the SITE having moved it, not the tool going
         // wrong — measured 2026-08-26, when 7 of 50 calibration captures failed this way and every one
         // turned out to be a redirect the corpus had never been updated for. Saying so turns "14% of
@@ -311,10 +315,10 @@ async function captureAcrossPool(pages, workers) {
             + "it served; if that is the same content at a new address, update this entry's url in "
             + "real-page-corpus.mjs rather than debugging the capture.\n");
         }
-        progress.failed(page.url, error.message);
-        failed.push(`${page.url}: ${error.message}`);
+        progress.failed(page.url, /** @type {any} */ (error).message);
+        failed.push(`${page.url}: ${/** @type {any} */ (error).message}`);
       },
-      onEvicted: (worker, { consecutiveFailures, handedBack }) =>
+      onEvicted: (/** @type {any} */ worker, /** @type {any} */ { consecutiveFailures, handedBack }) =>
         process.stdout.write(`  EVICTING ${worker} after ${consecutiveFailures} consecutive failures; `
           + `${handedBack} page(s) go back to the queue\n`),
     },
@@ -322,7 +326,7 @@ async function captureAcrossPool(pages, workers) {
   // A page requeued off an evicted worker and then captured is not a failure; the pool's list is what
   // actually failed after every attempt.
   for (const f of outcome.failures) {
-    const line = `${f.id ?? f.key ?? "?"}: ${f.error ?? "failed"}`;
+    const line = `${f.item?.url ?? f.key ?? "?"}: ${f.error ?? "failed"}`;
     if (!failed.includes(line)) failed.push(line);
   }
   progress.finish(`${captured.length} of ${pages.length} captured, ${failed.length} failed`);
@@ -348,9 +352,9 @@ async function captureAcrossPool(pages, workers) {
  * `--allow-mixed-browsers` exists for the case where you know something the check does not, and it says
  * so in the output rather than passing quietly.
  */
-async function assertOneBrowserAcross(workers, when) {
+async function assertOneBrowserAcross(/** @type {any} */ workers, /** @type {any} */ when) {
   if (ALLOW_MIXED) return;
-  const guests = await Promise.all(workers.map(async (url) => {
+  const guests = await Promise.all(workers.map(async (/** @type {any} */ url) => {
     try {
       return (await requestJson(`${url}/health`, { timeoutMs: 10_000 })).json ?? null;
     } catch {
@@ -395,7 +399,7 @@ async function assertOneBrowserAcross(workers, when) {
  * GUEST's localhost … three attempts are burned per page"*. The corpus runner calls it; this one did not,
  * because until fixtures existed every page here was already on the internet.
  */
-function workerReachable(url, workerUrl) {
+function workerReachable(/** @type {any} */ url, /** @type {any} */ workerUrl) {
   const parsed = new URL(url);
   if (parsed.hostname !== "localhost" && parsed.hostname !== "127.0.0.1") return url;
   const hostAddress = hostAddressForWorker(workerUrl);
@@ -404,8 +408,8 @@ function workerReachable(url, workerUrl) {
   return parsed.toString().replace(/\/$/, "");
 }
 
-async function leaseFixtureServer(pages) {
-  const local = pages.filter((page) => /^https?:\/\/(localhost|127\.0\.0\.1)/.test(page.url));
+async function leaseFixtureServer(/** @type {any} */ pages) {
+  const local = pages.filter((/** @type {any} */ page) => /^https?:\/\/(localhost|127\.0\.0\.1)/.test(page.url));
   if (!local.length) return null;
   const first = new URL(local[0].url);
   return leasePageServer({
@@ -425,10 +429,10 @@ async function main() {
     // before being recorded as a failure of the page. `assertWorkerUrl` explains what an empty host means.
     workers = resolveWorkers();
   } catch (error) {
-    process.stderr.write(`${error.message}\n`);
+    process.stderr.write(`${/** @type {any} */ (error).message}\n`);
     process.exit(2);
   }
-  const selected = ROLE ? pagesFor(ROLE) : REAL_PAGES;
+  const selected = ROLE ? pagesFor(/** @type {any} */ (ROLE)) : REAL_PAGES;
   const pages = shardOf(selected, SHARD);
   if (!pages.length) {
     process.stderr.write(`no pages for role '${ROLE}'\n`);
