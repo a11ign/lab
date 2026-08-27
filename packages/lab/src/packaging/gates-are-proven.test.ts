@@ -124,12 +124,11 @@ const GATE_PROOFS: Record<string, GateProof> = {
   },
   "training:evaluate-acceptance:candidate": {
     catches: "weights promoted without held-out acceptance having been run AGAINST THEM",
-    unproven: "needs a trained candidate and the acceptance set",
+    provenBy: "packages/scorer/tests/test_acceptance_gate_refuses.py",
   },
   "training:evaluate-acceptance:shipped": {
     catches: "the same, for the shipped weights at release time",
-    unproven: "needs the acceptance set — and no fixture can supply it, because the artefact is produced by a "
-      + "capture or a train rather than declared",
+    provenBy: "packages/scorer/tests/test_acceptance_gate_refuses.py",
   },
   "promote:gated": {
     catches: "promotion on a failed candidate gate. `releasability()` is the DECISION and is proven "
@@ -149,7 +148,7 @@ const GATE_PROOFS: Record<string, GateProof> = {
 };
 
 /** Gates whose refusal has been WATCHED. May only rise. */
-const PROVEN_AT_LEAST = 10;
+const PROVEN_AT_LEAST = 12;
 
 function gatesInUse(): string[] {
   const chain = STEPS.filter((step: { gate?: boolean }) => step.gate)
