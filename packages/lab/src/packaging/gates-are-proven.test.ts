@@ -86,7 +86,7 @@ const GATE_PROOFS: Record<string, GateProof> = {
   "rules:gate": {
     catches: "a rule that scores well by having gone DEAF — quieter is only good if it still fires on the "
       + "corpus records it owns",
-    unproven: "needs runs/; the same honest-skip problem as check-signals",
+    provenBy: "packages/lab/src/packaging/rules-gate-refuses.test.ts",
   },
   "scorer:verify": {
     catches: "an executable-on-load weight format (.pt, .pkl, .ckpt) in the shipped model directory",

@@ -159,7 +159,7 @@ function reportRuleOnlyEvidence(records: Record_[]): void {
     + `census.graphicUnnamed > 0 on ${unnamed.filter((n) => n > 0).length}`);
 }
 
-function tally(records: Record_[]): Map<string, Coverage> {
+export function tally(records: Record_[]): Map<string, Coverage> {
   const coverage = new Map<string, Coverage>();
   for (const record of records) {
     const subtypes = record.target.subtypes ?? [];
@@ -206,7 +206,7 @@ function credit(
  * EXACT" would be true of the records the rules are answerable for and a lie about the subtype -- the
  * scorer's head is trained on all 189 and is the only decider for 74 of them.
  */
-const verdictOf = (subtype: string, c: Coverage): string => {
+export const verdictOf = (subtype: string, c: Coverage): string => {
   const declared = OWNERSHIP.get(subtype)?.decidedBy;
   if (c.dueByRule > c.caughtByRule) return "rules: MISSING EVIDENCE";
   if (c.dueByRule === c.total && c.total > 0) return "rules: EXACT";
@@ -262,7 +262,7 @@ function printCoverage(coverage: Map<string, Coverage>): void {
   console.log("");
 }
 
-function falsePositiveFailures(records: Record_[]): string[] {
+export function falsePositiveFailures(records: Record_[]): string[] {
   const failures: string[] = [];
   // A conformant page must never be failed by a deterministic rule, on ANY criterion. This used to be
   // checked only for the criteria the rules were believed to own, which cannot see a rule that fires
@@ -273,7 +273,12 @@ function falsePositiveFailures(records: Record_[]): string[] {
   reportRuleOnlyEvidence(records);
   if (falsePositives.length) {
     console.log(`  FALSE POS  ${falsePositives.slice(0, 6).map(idOf).join(", ")}`);
-    failures.push(`${falsePositives.length} conformant record(s) were failed by a deterministic rule`);
+    // NAMED, not counted. The ids are console.logged a line above, but the FAILURE string is what
+    // `reportGate` prints at the end and what a reader acts on — and this repo's own rule is that a count
+    // is where an investigation stops. `MISSING EVIDENCE` already names its records; this did not.
+    failures.push(`${falsePositives.length} conformant record(s) were failed by a deterministic rule: `
+      + `${falsePositives.slice(0, 6).map(idOf).join(", ")}`
+      + (falsePositives.length > 6 ? `, and ${falsePositives.length - 6} more` : ""));
   }
   console.log("");
   return failures;
