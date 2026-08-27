@@ -19,8 +19,28 @@
  * follows imports and `checkJs` applies program-wide; and turning `allowJs` on in the ROOT config pulls
  * every `.mjs` into the main program through the import graph, where `@ts-check` then fails under strict.
  *
- * So: `checkJs` OFF, `@ts-check` per file, a second `tsc` pass. Only marked files are checked, imports
- * come along unchecked, and the list can grow one verified file at a time.
+ * So: `checkJs` OFF, `@ts-check` per file. Only marked files are checked, imports come along unchecked,
+ * and the list can grow one verified file at a time.
+ *
+ * ## The count used to be of MARKERS, which is not the same as coverage
+ *
+ * Measured 2026-08-27: **21 of the 53 files this test counted as checked were outside the `tsc` program
+ * entirely**, so their `// @ts-check` was a comment. The root config included only the `.ts` under each
+ * package's `src` and `scripts`, so an `.mjs` reached the program solely by being imported from an
+ * included `.ts` — and a script nobody imports never was. The real figure was 32 of 107.
+ *
+ * (That sentence originally quoted the glob itself, which ends a JSDoc block at its first `*` followed by
+ * `/` and moved the syntax error nine lines away from its cause. The same shape as the backtick that once
+ * terminated a template literal here. Globs go in code, not in block comments.)
+ *
+ * Proved rather than reasoned: planting `const X: number = "s"` in a marked file produced NO error.
+ * A zero that means "examined nothing" is this repo's oldest defect, here inside the metric that reports
+ * how much is examined.
+ *
+ * Including the `.mjs` directories fixed it and cost five errors — every one in a file whose marker had
+ * been inert, and two of them real narrowing bugs where a runtime `assert` does not narrow for the
+ * compiler. `every marked file is in the tsc program` below is what stops the gap reopening: a marker
+ * outside the include patterns now fails rather than reassuring.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -52,7 +72,7 @@ const CHECKED = MJS.filter((path) =>
  * the same shape as the CLI flag guards' `UNGUARDED` list. Raise this when you mark more files; it should
  * never need lowering, and lowering it is the review conversation.
  */
-const AT_LEAST = 51;
+const AT_LEAST = 53;
 
 test("the typechecked `.mjs` count never falls", () => {
   assert.ok(CHECKED.length >= AT_LEAST,
@@ -87,4 +107,44 @@ test("a marked file is one the second pass actually covers", () => {
   const scripts = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).scripts;
   assert.match(scripts.typecheck, /tsconfig\.mjs\.json/,
     "npm run typecheck must run the second pass, or none of this is enforced anywhere");
+});
+
+/**
+ * The tsconfig `include` patterns, as regexes. Read from the file rather than restated, because a pattern
+ * spelled twice is this repo's most expensive shape and this test exists to catch exactly that class.
+ */
+function includePatterns(): RegExp[] {
+  const raw = readFileSync(join(REPO, "tsconfig.json"), "utf8")
+    .split("\n").filter((line) => !line.trimStart().startsWith("//")).join("\n");
+  const include: string[] = JSON.parse(raw).include;
+  return include.map((glob) => new RegExp(`^${glob
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*\*\//g, "(?:.*/)?")
+    .replace(/\*/g, "[^/]*")}$`));
+}
+
+test("every marked file is IN the tsc program, so a marker can never be a comment", () => {
+  // THE DEFECT THIS FILE HAD. `// @ts-check` on a file the compiler never opens is inert, and the count
+  // above read it as coverage -- 21 of 53 files, and the metric said 53. Nothing could have noticed,
+  // because the symptom of an unchecked file is silence, which is also the symptom of a clean one.
+  //
+  // Asserted structurally against the include globs rather than by running `tsc --listFiles`: a unit test
+  // that shells out to the compiler is one people stop running, and membership by glob is decidable here
+  // because every source file lives under `packages/`.
+  const patterns = includePatterns();
+  const inert = CHECKED.filter((path) => !patterns.some((pattern) => pattern.test(path)));
+  assert.deepEqual(inert, [],
+    `${inert.length} file(s) carry \`// @ts-check\` and are outside every tsconfig include pattern, so `
+      + "the compiler never opens them and the marker does nothing. Add the directory to `include`, or "
+      + "remove the marker -- but do not leave a file claiming to be checked when it is not.");
+});
+
+test("the include patterns reach every .mjs, so marking one is always enough", () => {
+  // The other half: a file can only be marked usefully if the patterns would cover it. Without this, the
+  // next `.mjs` in a new directory is silently unmarkable and the failure looks like "it passes".
+  const patterns = includePatterns();
+  const unreachable = MJS.filter((path) => !patterns.some((pattern) => pattern.test(path)));
+  assert.deepEqual(unreachable, [],
+    `${unreachable.length} .mjs file(s) match no tsconfig include pattern, so adding \`// @ts-check\` to `
+      + "them would do nothing. Widen `include` before marking them.");
 });
