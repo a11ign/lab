@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The whole chain — corpus, model, promotion, gates — as one supervised unit that says where it is.
  *
@@ -97,6 +98,23 @@ export const TRANSCRIPT = resolve(REPO, "runs", "everything-transcript.log");
  *
  * So the tail is the summary and this is the record. Appended per stage rather than written at the end,
  * because a chain killed at hour three must still leave behind what it had already done.
+ */
+/**
+ * Typed by what this wrapper DOES, not by redeclaring what it wraps.
+ *
+ * A first attempt spelled out a guessed signature for `runStep`, and the guess made the CALL SITE fail
+ * to typecheck against the real `run` — which takes `{ dryRun }`. A wrapper that restates its subject's
+ * shape has two copies of that shape, and this is the cheaper half of the same lesson the `Mismatch`
+ * typedef records one package over.
+ *
+ * Both parameters are loose on purpose. A generic that MIRRORS the wrapped function's type was tried and
+ * is too clever: it forces the wrapper to have the wrapped function's exact arity, so a caller passing a
+ * one-argument stub could no longer invoke the two-argument wrapper. The honest description is what this
+ * wrapper guarantees — a step goes in, a result comes out, and the output reaches the transcript.
+ *
+ * @param {(step: any, options?: any) => {ok: boolean, output: string}} runStep
+ * @param {{transcript?: string}} [where]
+ * @returns {(step: any, options?: any) => {ok: boolean, output: string}}
  */
 export function keepingTranscript(runStep, { transcript = TRANSCRIPT } = {}) {
   return (step, options) => {

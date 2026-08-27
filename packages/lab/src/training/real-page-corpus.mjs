@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The real-page corpus (ADR 0010), defined.
  *
@@ -669,7 +670,7 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
 
 ]);
 
-/** Pages for one role. */
+/** Pages for one role. @param {CorpusRole} role @returns {RealPage[]} */
 export function pagesFor(role) {
   return REAL_PAGES.filter((page) => page.role === role);
 }
@@ -681,6 +682,7 @@ export function pagesFor(role) {
  * set membership test would happily call them different. Extracted from `assertDisjoint`, which had it as a
  * local closure -- two normalisers that drift apart is how a lookup starts quietly missing.
  */
+/** @param {unknown} url @returns {string} */
 export function normaliseUrl(url) {
   return String(url).trim().toLowerCase().replace(/#.*$/, "").replace(/\/+$/, "");
 }
@@ -700,6 +702,14 @@ export function normaliseUrl(url) {
  * Callers should treat a miss as an ERROR, not as "no exceptions". A url that has drifted -- a redirect, a
  * publisher restructuring -- would otherwise silently produce an unmasked page, which is the exact failure
  * this lookup exists to prevent.
+ */
+/**
+ * `unknown`, because the callers hold a capture's `url` field and it is optional there. `String(url)`
+ * below is deliberate defensive code, not an accident — narrowing the parameter to `string` would push
+ * a guard onto every call site to protect a function that already handles it.
+ *
+ * @param {unknown} url
+ * @returns {RealPage | undefined}
  */
 export function realPageFor(url) {
   const key = normaliseUrl(url);

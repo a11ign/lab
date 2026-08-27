@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * A corpus run outlives the host's patience, and a sleeping host looks exactly like a dead worker.
  *
@@ -19,6 +20,7 @@
  */
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
+import { errorText } from "@a11y-witness/nvda-worker/error-text";
 
 const run = promisify(execFile);
 
@@ -31,6 +33,9 @@ const MIN_BATTERY_PERCENT = 30;
  * Pure so it can be tested without a Mac in a particular battery state — the reason this is separated
  * from the `pmset` call at all. Returns a reason rather than throwing: the caller decides whether a
  * warning or a refusal is right, and a short run has every right to proceed on battery.
+ */
+/**
+ * @param {{onAcPower: boolean, batteryPercent: number, estimatedHours: number}} reading
  */
 export function powerVerdict({ onAcPower, batteryPercent, estimatedHours }) {
   if (onAcPower) return { ok: true };
@@ -64,7 +69,7 @@ export async function hostPowerState() {
     return { onAcPower, batteryPercent: percent ? Number(percent[1]) : 100, measured: true };
   } catch (error) {
     // Never block a run because the probe itself failed; say so and continue.
-    return { onAcPower: true, batteryPercent: 100, measured: false, error: String(error?.message ?? error) };
+    return { onAcPower: true, batteryPercent: 100, measured: false, error: errorText(error) };
   }
 }
 

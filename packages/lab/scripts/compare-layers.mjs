@@ -1,3 +1,4 @@
+// @ts-check
 // Which findings can ONLY the screen-reader layer produce?
 //
 //   node scripts/compare-layers.mjs '[["https://example.com","Complete the checkout"]]'
@@ -29,6 +30,7 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { errorText } from "@a11y-witness/nvda-worker/error-text";
 
 /**
  * takes its sites as a POSITIONAL JSON argument and no flags; `--json`, `--probe-forms` and `--task`
@@ -59,12 +61,13 @@ async function main() {
         env: { ...process.env, JUDGE_BACKEND: "local", A11Y_WORKER: "http://REDACTED-INTERNAL-ADDRESS:8765", A11Y_PYTHON: ".venv/bin/python" },
         encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "pipe"], timeout: 600_000,
       });
-    } catch (e) { console.log(`\n── ${url}\n   FAILED ${String(e.message).slice(0, 90)}`); continue; }
+    } catch (e) { console.log(`\n── ${url}\n   FAILED ${errorText(e).slice(0, 90)}`); continue; }
     const d = JSON.parse(out);
     if (d.captureVerified === false) { console.log(`\n── ${url}\n   capture unverified — skipped`); continue; }
-    const ours = d.verdict.findings.map((f) => f.wcag.match(/\d+\.\d+\.\d+/)?.[0]).filter(Boolean);
-    const axe = [...new Set((d.ruleBased ?? []).flatMap((v) => v.wcag ?? []))];
-    const onlyOurs = ours.filter((c) => !axe.includes(c));
+    const ours = d.verdict.findings.map((/** @type {{wcag: string}} */ f) =>
+      f.wcag.match(/\d+\.\d+\.\d+/)?.[0]).filter(Boolean);
+    const axe = [...new Set((d.ruleBased ?? []).flatMap((/** @type {{wcag?: string[]}} */ v) => v.wcag ?? []))];
+    const onlyOurs = ours.filter((/** @type {string} */ c) => !axe.includes(c));
     const i = d.interaction ?? {};
     console.log(`\n── ${url}`);
     console.log(`   announcements ${d.transcript?.length ?? 0} · activated ${(i.formChanges ?? []).length} · disclosures ${(i.stateChanges ?? []).length} · navigated ${i.navigatedOnSubmit ? "yes" : "no"}`);
