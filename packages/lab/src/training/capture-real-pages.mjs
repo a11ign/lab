@@ -16,7 +16,7 @@
  * is what a normal run uses; mixing a live-web fetch into it would make a routine run depend on w3.org
  * being up. This is a separate, explicit act.
  */
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -34,6 +34,7 @@ import { createHostThrottle, hostOf } from "./host-throttle.mjs";
 import { writeJsonAtomic } from "./write-atomic.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { beginRun } from "./capture-progress.mjs";
+import { resumePlan, describeResume } from "./real-page-resume.mjs";
 
 /**
  * THE script that ran four shards against `--worker=http://:8765` for 29 minutes. `--shard=` arrives
@@ -42,7 +43,8 @@ import { beginRun } from "./capture-progress.mjs";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--role=", "--worker=", "--shard=", "--allow-mixed-browsers", "--allow-stale-workers"], { entry: import.meta.url, command: "npm run lab:job -- -e job=capture-real-pages" });
+refuseUnknownFlags(["--role=", "--worker=", "--shard=", "--allow-mixed-browsers", "--allow-stale-workers",
+  "--resume"], { entry: import.meta.url, command: "npm run lab:job -- -e job=capture-real-pages" });
 
 const ROLE = process.argv.find((a) => a.startsWith("--role="))?.slice("--role=".length) ?? null;
 const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length) ?? null;
@@ -51,6 +53,37 @@ const ALLOW_MIXED = process.argv.includes("--allow-mixed-browsers");
 /** Capture with a fleet that is not running this checkout. Says so in the output; never the default. */
 const ALLOW_STALE = process.argv.includes("--allow-stale-workers");
 const OUT = resolve(process.cwd(), process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
+
+/**
+ * The captures already on disk, as `{ url, capturedAt }` — the only two fields resume reasons about.
+ *
+ * Deliberately tolerant of a file that will not parse: a half-written capture from the kill this resume
+ * exists to recover from is exactly what would be there, and treating it as unreadable means it gets
+ * taken again, which is the safe direction.
+ */
+function existingCaptures() {
+  try {
+    return readdirSync(OUT)
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => {
+        try {
+          const parsed = JSON.parse(readFileSync(resolve(OUT, name), "utf8"));
+          // A CAPTURE, identified by shape. This directory also holds `abstention-sweep*.json` and other
+          // reports, which carry no `capture.url` — they would read as `url: ""`, match no wanted page and
+          // be harmless, which is accidentally safe rather than deliberately. `capturesIn` in
+          // `audit-rule-coverage.ts` identifies by shape for the same reason and says why: a name
+          // convention is a second thing to keep in step.
+          const url = parsed?.capture?.url;
+          return typeof url === "string" && url ? { url, capturedAt: parsed.capturedAt } : null;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+  } catch {
+    return []; // no directory yet: a first run, not a fault
+  }
+}
 
 /**
  * Every worker this run may use, validated.
@@ -407,6 +440,24 @@ async function main() {
   process.stdout.write("Never cached: these pages change, and stale evidence would be paired with a "
     + "current conformance claim.\n");
 
+  // CHECKPOINTING, which is a different thing from caching and the distinction is the whole design.
+  //
+  // A cache would reuse a capture because the URL matches, which is what these pages must never do. This
+  // reuses one only while it is recent enough to belong to the SAME measurement — 50 pages at ~191 s is
+  // ~32 minutes across five workers, and a kill loses all of it. The Workbook names checkpointing as the
+  // pattern for exactly that; the window is what keeps it from becoming the cache this file refuses.
+  const plan = resumePlan({
+    urls: pages.map((page) => page.url),
+    existing: existingCaptures(),
+    now: Date.now(),
+    resume: process.argv.includes("--resume"),
+  });
+  process.stdout.write(describeResume(plan, pages.length));
+  // A NEW binding rather than reassigning `pages`, which is const — and the const is right: everything
+  // above this line reasoned about the full list (the shard message, the page count), so rebinding it
+  // would make those lines describe a set that no longer exists.
+  const toCapture = plan.skip.size ? pages.filter((page) => !plan.skip.has(page.url)) : pages;
+
   await assertOneBrowserAcross(workers, "before the run");
   // AND that they are running the code this checkout expects. The browser check asks whether the guests
   // agree with EACH OTHER; this asks whether they agree with the commit that will be stamped on the
@@ -416,7 +467,7 @@ async function main() {
   const pageServer = await leaseFixtureServer(pages);
   let captured, failed;
   try {
-    ({ captured, failed } = await captureAcrossPool(pages, workers));
+    ({ captured, failed } = await captureAcrossPool(toCapture, workers));
   } finally {
     await pageServer?.release?.();
   }
@@ -425,7 +476,11 @@ async function main() {
   // was clean.
   await assertOneBrowserAcross(workers, "by the END of the run");
 
-  process.stdout.write(`\n${captured}/${pages.length} captured\n`);
+  // Reported against the WHOLE role, not against what this invocation happened to take. A resumed run
+  // saying "3/3 captured" would be true of the run and a lie about the corpus, which is the shape this
+  // repo names most often: a number that cannot be judged without the denominator it was computed from.
+  process.stdout.write(`\n${captured + plan.reused}/${pages.length} captured`
+    + (plan.reused ? ` (${plan.reused} reused by --resume, ${toCapture.length} taken now)` : "") + "\n");
   // Named, not counted. "3 failed" tells you nothing about whether the corpus is usable.
   for (const line of failed) process.stdout.write(`  failed: ${line}\n`);
   process.exit(failed.length ? 1 : 0);
