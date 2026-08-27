@@ -143,11 +143,12 @@ const GATE_PROOFS: Record<string, GateProof> = {
     provenBy: "packages/scorer/tests/test_acceptance_gate_refuses.py",
   },
   "promote:gated": {
-    catches: "promotion on a failed candidate gate. `releasability()` is the DECISION and is proven "
-      + "— suppressing its blockers fails 13 tests. The WIRING half (copying the weights, refusing a "
-      + "dirty tree) is NOT covered, and saying so is the point: a register that overclaims is worse "
-      + "than one with a gap in it",
-    provenBy: "packages/lab/src/packaging/releasability.test.ts",
+    catches: "promotion on a failed candidate gate, and promotion ON TOP of a previous one still "
+      + "uncommitted — which is what left the lab checkout dirty and made every later job refuse to "
+      + "pull. Both halves proven now: `releasability()` is the decision (suppressing its blockers "
+      + "fails 13 tests) and the wiring runs against a planted git repo, watching the refusal, the "
+      + "weights land and the changeset appear",
+    provenBy: "packages/lab/src/packaging/promotion-refuses-dirty.test.ts",
   },
   "release:gate": {
     catches: "a release with any of the above unmet — it is the composite",

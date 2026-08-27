@@ -24,12 +24,14 @@
  * 3. **It stops there.** Weights are copied and the changeset is written, both left UNCOMMITTED for
  *    review. Nothing is published: that is `release.yml`'s business and it is guarded separately.
  */
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { releasability } from "../src/packaging/releasability.mjs";
+import { dirtyTargets, promotionBlockedBy } from "../src/packaging/promotion-targets.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 
 /**
@@ -180,6 +182,24 @@ function thresholdLines(training) {
  * changeset is the only record of why weights moved (`lab-fetch.yml` says so where it fetches this file),
  * and losing one is losing a release's reason while the tree still looks tidy.
  */
+/**
+ * `git status --porcelain` for the paths a promotion writes, or empty when git cannot be asked.
+ *
+ * A missing or broken git is not a reason to refuse: this runs on the lab and on a laptop, and the guard
+ * exists to catch a stale PROMOTION, not to require a repository. Failing open is safe here because the
+ * promotion still writes nothing that git would not show a human afterwards.
+ *
+ * @returns {string}
+ */
+function gitStatusForTargets() {
+  try {
+    return execFileSync("git", ["status", "--porcelain", "--", SHIPPED, CHANGESETS],
+      { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  } catch {
+    return "";
+  }
+}
+
 /** @param {string} candidateName @param {string} entry @returns {string} */
 function changesetPath(candidateName, entry) {
   const identity = createHash("sha256").update(entry).digest("hex").slice(0, 8);
@@ -223,6 +243,17 @@ ${acceptRegression ? "\n**Accepted with a known regression against the previousl
     process.stdout.write(`DRY RUN — would copy ${candidate} -> ${SHIPPED}\n`
       + `DRY RUN — would write ${target}:\n\n${entry}\n`);
     return { target, entry };
+  }
+  // THE GUARD TWO DOCUMENTS ALREADY CLAIMED. `lab-job.yml` says "it stops at an uncommitted working
+  // tree, exactly as `promote-model.mjs` does" and CLAUDE.md's table says the same; until 2026-08-27
+  // this file did not import `node:child_process` and could not look at git at all.
+  //
+  // AFTER the dry-run return above, so `--dry-run` still describes what a promotion would do on a tree
+  // that is not ready for one — the whole point of a dry run is to answer that without preconditions.
+  const blocked = promotionBlockedBy(dirtyTargets(gitStatusForTargets()));
+  if (blocked) {
+    process.stderr.write(`${blocked}\n`);
+    process.exit(3);
   }
   mkdirSync(SHIPPED, { recursive: true });
   // The acceptance report ships WITH the weights, and that is not tidiness. It is the only fixed-set
