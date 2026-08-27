@@ -456,24 +456,22 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant",
     source: "ICO: partially compliant, own statement (https://ico.org.uk/global/accessibility-statement/)",
     demonstrates: "public-facing hub, card layout" },
-  // REMOVED 2026-08-26: weather.metoffice.gov.uk/warnings-and-advice/uk-warnings
+  // RE-ADDED 2026-08-27, once the tool could say WHICH verdict it was.
   //
-  // This tool captures 27 announcements of navigation from it and a census of `heading=0`, twice, byte
-  // for byte — while the page's published HTML carries FORTY headings. Two WCAG findings came out of
-  // that (1.1.1 and 1.3.1) against a site whose publisher declares it conformant.
+  // Removed the day before because this tool captured it as 27 announcements of navigation with a census
+  // of `heading=0`, while its published HTML carries forty headings — and nothing could distinguish "we
+  // never rendered it" from "it exposes almost nothing", which are opposite verdicts needing opposite
+  // responses. Waiting for the DOM to settle changed the output not at all, so it was never a race.
   //
-  // WHICH IT IS REMAINS UNDETERMINED, and that is why the page is out rather than excused. Either this
-  // tool never renders the page — a defect here — or the page renders and exposes almost nothing to the
-  // accessibility tree, which would be a severe and genuine finding. Waiting for the DOM to settle
-  // changed nothing, so it is not a race.
-  //
-  // The measurement that would settle it does not exist: `crossCheckStructure` compares the SWEEP to the
-  // AX-TREE CENSUS, and both are accessibility-layer, so neither can see a DOM the tree is not exposing.
-  // A DOM-side count is the missing evidence, and it is the same shape as `ruleEvidence` — something the
-  // rules may see that the model may not.
-  //
-  // Kept out until then, because a corpus entry that produces two findings nobody can attribute is not
-  // evidence: it is a question wearing a label. The other 92 pages are unaffected.
+  // `ruleEvidence.dom` counts the DOM beside the tree, so the capture now answers it: `dom.heading 0`
+  // means the page did not render and the defect is ours; `dom.heading 40` means forty headings the
+  // accessibility tree cannot see, which is a severe finding about the page and exactly what this project
+  // exists to make. Back in the corpus because the question is now answerable, not because it was
+  // decided — `rules:real-pages` prints which verdict each capture is.
+  { url: "https://weather.metoffice.gov.uk/warnings-and-advice/uk-warnings", role: "calibration",
+    publishedClaim: "conformant",
+    source: "Met Office: partially compliant, own statement (https://www.metoffice.gov.uk/about-us/legal/accessibility)",
+    demonstrates: "live status page — content that changes without a route change" },
   { url: "https://www.cqc.org.uk/about-us", role: "calibration",
     publishedClaim: "conformant",
     source: "Care Quality Commission: partially compliant, own statement (https://www.cqc.org.uk/about-us/our-website/accessibility-statement)",
