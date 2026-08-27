@@ -97,7 +97,7 @@ const GATE_PROOFS: Record<string, GateProof> = {
   "scorer:migration": {
     catches: "a release while a feature-schema migration is open, so the weights and the featurizer "
       + "disagree about what the inputs mean",
-    unproven: "no test opens a synthetic migration and asserts the gate refuses",
+    provenBy: "packages/lab/src/packaging/migration-gate-refuses.test.ts",
   },
   "scorer:shortcuts": {
     catches: "a head that gained a FREE veto — a feature constant at zero across a subtype's positives, "
@@ -122,8 +122,7 @@ const GATE_PROOFS: Record<string, GateProof> = {
   "corpus:applicability-audit": {
     catches: "a precondition that silences a record labelled positive — strictly worse than the false "
       + "positive it removes, and invisible in any score",
-    unproven: "needs the exported corpus; a synthetic labelled record could be hand-built to "
-      + "trip it, which makes this among the cheapest of the unproven ones to close",
+    provenBy: "packages/scorer/tests/test_applicability_audit_refuses.py",
   },
   "training:evaluate-acceptance:candidate": {
     catches: "weights promoted without held-out acceptance having been run AGAINST THEM",
@@ -150,7 +149,7 @@ const GATE_PROOFS: Record<string, GateProof> = {
 };
 
 /** Gates whose refusal has been WATCHED. May only rise. */
-const PROVEN_AT_LEAST = 4;
+const PROVEN_AT_LEAST = 6;
 
 function gatesInUse(): string[] {
   const chain = STEPS.filter((step: { gate?: boolean }) => step.gate)
