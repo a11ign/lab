@@ -1,3 +1,4 @@
+// @ts-check
 // Archive the capture corpus, because it is expensive and nothing else protects it.
 //
 //   node scripts/corpus-snapshot.mjs [--out=dir]
@@ -29,6 +30,7 @@ refuseUnknownFlags(["--out="], { entry: import.meta.url, command: "npm run corpu
 
 const run = promisify(execFile);
 const DATASET = resolve(process.cwd(), process.env.DATASET_ROOT ?? "runs/screenreader-dataset");
+/** @param {string} name @param {string} fallback @returns {string} */
 const flag = (name, fallback) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 const outDir = resolve(process.cwd(), flag("out", "backups"));

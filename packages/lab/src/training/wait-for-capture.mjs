@@ -1,3 +1,4 @@
+// @ts-check
 // Block until a capture run finishes, then exit with its outcome.
 //
 //   npm run training:wait
@@ -40,6 +41,18 @@ const BACKSTOP_MS = 30_000;
 
 const EXIT = { ok: 0, failures: 1, noRun: 2, stale: 3 };
 
+/**
+ * The progress fields THIS command reads — not the whole record.
+ *
+ * Declared here rather than imported because `capture-progress.mjs` is not yet typechecked, and stating
+ * what a consumer needs is the more useful half anyway: these five fields are the contract between a
+ * running capture and the waiter, and the exit codes below are derived from nothing else.
+ *
+ * @typedef {{finishedAt?: unknown, outcome?: unknown, startedAt?: unknown, total?: unknown,
+ *            cases?: unknown, updatedAt?: unknown}} Progress
+ */
+
+/** @param {Progress} progress */
 function summarise(progress) {
   const counts = tally(progress);
   return {
@@ -59,6 +72,7 @@ function summarise(progress) {
 
 // The point of the whole exercise: say what to do next, so the caller does not have to
 // work it out from counts.
+/** @param {Partial<ReturnType<typeof summarise>>} summary @param {number} verdict @returns {string} */
 function nextCommand(summary, verdict) {
   if (verdict === EXIT.failures) return "npm run training:capture -- --resume --no-cache";
   if (verdict === EXIT.stale) return "npm run doctor && npm run training:capture -- --resume --no-cache";
@@ -66,6 +80,13 @@ function nextCommand(summary, verdict) {
   return "npm run training:check-signals && npm run training:export";
 }
 
+/**
+ * PARTIAL, deliberately. The no-run path has no run to summarise and calls this with `{ failures: [] }`
+ * alone — so requiring a whole summary here would be a type that the code's own main path violates.
+ *
+ * @param {Partial<ReturnType<typeof summarise>>} summary
+ * @param {number} verdict
+ */
 function report(summary, verdict) {
   const next = nextCommand(summary, verdict);
   if (JSON_OUT) {
@@ -75,17 +96,23 @@ function report(summary, verdict) {
   if (verdict === EXIT.noRun) console.log("No capture run recorded — nothing to wait for.");
   else if (verdict === EXIT.stale) console.log(`WEDGED: no progress update in too long (${summary.captured}/${summary.total} captured).`);
   else console.log(`Run finished: ${summary.outcome ?? `${summary.captured}/${summary.total}`}`);
-  for (const f of summary.failures) console.log(`  failed: ${f.id}: ${f.reason}`);
+  for (const f of summary.failures ?? []) console.log(`  failed: ${f.id}: ${f.reason}`);
   console.log(`next: ${next}`);
 }
 
-/** Terminal verdict for this progress state, or null to keep waiting. */
+/**
+ * Terminal verdict for this progress state, or null to keep waiting.
+ *
+ * @param {Progress} progress
+ * @returns {number|null}
+ */
 function verdictFor(progress) {
   if (progress.finishedAt) return tally(progress).failed ? EXIT.failures : EXIT.ok;
   if (isStale(progress, Date.now())) return EXIT.stale;
   return null;
 }
 
+/** @param {Progress} progress @param {number} verdict */
 function finish(progress, verdict) {
   report(summarise(progress), verdict);
   process.exit(verdict);

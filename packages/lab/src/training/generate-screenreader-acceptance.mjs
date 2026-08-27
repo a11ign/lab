@@ -1,3 +1,4 @@
+// @ts-check
 import { mkdirSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { relative, resolve } from "node:path";
@@ -16,11 +17,16 @@ refuseUnknownFlags([], { entry: import.meta.url, command: "npm run training:gene
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-acceptance");
 const PAGE_ROOT = resolve(ROOT, "pages");
 
+/**
+ * @param {{id: string, good: string, bad: string}} testCase
+ * @returns {Record<string, string>}
+ */
 function writeCasePages(testCase) {
   const caseRoot = resolve(PAGE_ROOT, testCase.id);
   mkdirSync(caseRoot, { recursive: true });
+  /** @type {Record<string, string>} */
   const pages = {};
-  for (const variant of ["good", "bad"]) {
+  for (const variant of /** @type {const} */ (["good", "bad"])) {
     const path = resolve(caseRoot, variant + ".html");
     writeFileSync(path, testCase[variant], "utf8");
     pages[variant] = relative(ROOT, path);

@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Does a conformant page become a FAILURE when you add more conformant content to it?
  *
@@ -76,6 +77,12 @@ const BASES = Number(process.env.SIZE_BASES || 12);
  * Deterministic, because a size audit that reports a different number every run cannot gate anything.
  * `Math.random` would also make a regression indistinguishable from a reroll.
  */
+/**
+ * @template T
+ * @param {T[]} items
+ * @param {number} [seed]
+ * @returns {Generator<T>}
+ */
 function* deterministicOrder(items, seed = 7) {
   let state = seed;
   const pool = [...items];
@@ -85,6 +92,14 @@ function* deterministicOrder(items, seed = 7) {
   }
 }
 
+/** @param {unknown} v @returns {v is string} */
+/**
+ * A conformant capture used as padding — its transcript is the only part read.
+ *
+ * @typedef {{capture: {transcript?: unknown[]}}} Donor
+ */
+
+/** @param {unknown} v @returns {v is string} */
 const isString = (v) => typeof v === "string";
 
 function conformantCaptures() {
@@ -108,6 +123,11 @@ function conformantCaptures() {
  * Padding is drawn from conformant captures ONLY, so nothing added can carry a defect. That is what makes a
  * new finding attributable to size rather than to content — the whole design of the control.
  */
+/**
+ * @param {Donor} base
+ * @param {Donor[]} donors
+ * @param {number} size
+ */
 function paddedTo(base, donors, size) {
   const lines = [...(base.capture.transcript ?? []).filter(isString)];
   for (const donor of donors) {
@@ -120,6 +140,7 @@ function paddedTo(base, donors, size) {
   return { ...base.capture, transcript: lines };
 }
 
+/** @param {Record<string, unknown>} capture */
 function findingsFor(capture) {
   const args = [SCORER, "--stdin", ...(MODEL ? ["--model", MODEL, "--evaluating"] : [])];
   const out = JSON.parse(execFileSync(PYTHON, args, {
@@ -176,6 +197,7 @@ function main() {
   report(rows);
 }
 
+/** @param {Array<{size: number, accused: number, raised: Map<string, number>}>} rows */
 function report(rows) {
   const smallest = rows[0];
   const largest = rows[rows.length - 1];

@@ -60,13 +60,16 @@ test("only captures of live websites count as real evidence — the URL decides,
   for (const dir of ["nvda", "tutorials", "books"]) {
     for (const entry of readdirSync(join(FIXTURES, dir)).filter((f) => f.endsWith(".json"))) {
       const { url } = captureFrom(join(FIXTURES, dir, entry));
-      let host = "";
-      try {
-        const parsed = new URL(String(url));
-        host = parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.hostname : "";
-      } catch {
-        host = ""; // "tutorial: forms-bad (authored from W3C guidance)" is not a URL and says so
-      }
+      // "tutorial: forms-bad (authored from W3C guidance)" is not a URL at all, and a `file:///` capture
+      // parses but has no host — both are authored pages, and both must land on the same side.
+      const host = ((): string => {
+        try {
+          const parsed = new URL(String(url));
+          return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.hostname : "";
+        } catch {
+          return "";
+        }
+      })();
       (host && !/^(localhost$|127\.|10\.|192\.168\.|169\.254\.)/.test(host) ? real : authored).push(entry);
     }
   }

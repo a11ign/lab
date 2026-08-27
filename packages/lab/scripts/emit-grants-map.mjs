@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Emit the accompanying-defect `grants` map, so the Python audit can read a JavaScript declaration.
  *
@@ -27,7 +28,12 @@ refuseUnknownFlags([], { entry: import.meta.url, command: "npm run corpus:grants
 const OUT = resolve(fileURLToPath(new URL("../../../", import.meta.url)), "runs/accompanying-grants.json");
 
 /** `grants` is a string on most defects and an array on three; the audit wants one feature per defect. */
+/**
+ * @param {Record<string, {grants?: string | string[]}> | undefined} defects
+ * @returns {Record<string, string>}
+ */
 export function grantsMap(defects) {
+  /** @type {Record<string, string>} */
   const map = {};
   for (const [name, defect] of Object.entries(defects ?? {})) {
     const grants = defect?.grants;

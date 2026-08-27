@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 
 /**
  * Check a local model directory before it is used for training or conversion.
