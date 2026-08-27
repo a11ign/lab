@@ -532,7 +532,7 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant", claimExcludes: ["1.3.1", "3.3.2", "4.1.2", "4.1.3"],
     source: "Primary Authority Register: partially compliant, own statement (https://gov.uk/guidance/primary-authority-register-accessibility-statement)",
     demonstrates: "regulatory register search" },
-  { url: "https://www.historicenvironment.scot/visit-a-place/places/edinburgh-castle/", role: "training",
+  { url: "https://www.historicenvironment.scot/visit/all/edinburgh-castle/", role: "training",
     publishedClaim: "conformant", claimExcludes: ["1.3.1", "3.3.1", "4.1.2", "4.1.3"],
     source: "Historic Environment Scotland: partially compliant, own statement (https://historicenvironment.scot/accessibility-statements/website-accessibility/)",
     demonstrates: "visitor attraction page" },
@@ -548,7 +548,7 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   // redirects to the current intake — `/courses/2026` today — so this entry needs the year moving each
   // autumn. Pinned rather than left unversioned because the capture refuses a redirect: an unversioned
   // url fails EVERY capture, where a versioned one fails once a year and `npm run corpus:urls` says so.
-  { url: "https://www.sheffield.ac.uk/postgraduate/taught/courses/2026", role: "training",
+  { url: "https://sheffield.ac.uk/postgraduate/taught/courses/2026", role: "training",
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.6", "4.1.2"],
     source: "University of Sheffield: partially compliant, own statement (https://sheffield.ac.uk/accessibility)",
     demonstrates: "postgraduate course search" },

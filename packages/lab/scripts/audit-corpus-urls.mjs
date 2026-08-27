@@ -47,6 +47,9 @@ const DEFAULT_TIMEOUT_MS = 15_000;
 const arg = (name) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const TIMEOUT_MS = Number(arg("timeout") ?? DEFAULT_TIMEOUT_MS);
+/** Below this a response is an answer about the page; at or above it, it is an answer about us. */
+const HTTP_ERROR = 400;
+
 const AS_JSON = process.argv.includes("--json");
 
 /**
@@ -104,6 +107,8 @@ async function main() {
   const waitTurn = createHostThrottle({ minGapMs: POLITE_GAP_MS });
   const moved = [];
   const unreachable = [];
+  /** Answered, but with a status that means we did not see the page. */
+  const blocked = [];
   let checked = 0;
   let local = 0;
 
@@ -125,6 +130,24 @@ async function main() {
       if (!AS_JSON) process.stdout.write(`  UNREACHABLE  ${page.url}\n               ${error}\n`);
       continue;
     }
+    // A NON-OK STATUS IS A THIRD ANSWER, and treating it as the second is how this audit lied.
+    //
+    // A 403 returns `final` equal to the URL asked for, so `addressesSamePage` says "same page" and the
+    // entry passed silently. Measured 2026-08-27: historicenvironment.scot answers 403 to `fetch` (bot
+    // protection) and the audit reported it fine — while the CAPTURE, which drives a real browser, found
+    // it redirecting to a different path entirely. The audit counted it among "89 checked" having seen
+    // nothing of it.
+    //
+    // So the two checks are not redundant and the weaker one must say where it is blind: a real browser
+    // sees what a `fetch` cannot, and "I could not look" is not "I looked and it was fine".
+    if (status !== null && status >= HTTP_ERROR) {
+      blocked.push({ url: page.url, status, role: page.role });
+      if (!AS_JSON) {
+        process.stdout.write(`  BLOCKED  ${page.url.replace(/^https:\/\//, "")}  (${status})\n`
+          + "           This audit cannot say whether it moved. A capture drives a real browser and can.\n");
+      }
+      continue;
+    }
     if (addressesSamePage(final, page.url)) continue;
     moved.push({ url: page.url, to: final, status, role: page.role, demonstrates: page.demonstrates });
     if (!AS_JSON) {
@@ -135,10 +158,18 @@ async function main() {
   }
 
   if (AS_JSON) {
-    process.stdout.write(`${JSON.stringify({ checked, local, moved, unreachable }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ checked, local, moved, unreachable, blocked }, null, 2)}\n`);
   } else {
-    process.stdout.write(`\n  ${checked} checked, ${moved.length} moved, ${unreachable.length} `
-      + `unreachable, ${local} locally served (not subject to rot)\n`);
+    // `checked` MINUS what could not be seen, because the whole defect above was a page counted as
+    // checked that nothing looked at. The two numbers are printed together so the gap is never implicit.
+    const seen = checked - blocked.length;
+    process.stdout.write(`\n  ${checked} checked (${seen} actually seen), ${moved.length} moved, `
+      + `${unreachable.length} unreachable, ${blocked.length} blocked to this audit, `
+      + `${local} locally served (not subject to rot)\n`);
+    if (blocked.length) {
+      process.stdout.write("  A BLOCKED page is not a passing page. Those are unverified here; the capture\n"
+        + "  run is what can answer them, because it drives a real browser.\n");
+    }
     if (moved.length) {
       process.stdout.write("\n  A move is one of three things and only you can tell them apart:\n"
         + "    - the SAME page at a new address — update `url` in real-page-corpus.mjs;\n"
