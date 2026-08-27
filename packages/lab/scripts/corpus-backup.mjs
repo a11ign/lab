@@ -1,3 +1,4 @@
+// @ts-check
 // Put the corpus somewhere it survives this machine, and PROVE it arrived.
 //
 //   A11Y_CORPUS_REMOTE=user@nas:/backups/a11y  npm run corpus:backup
@@ -52,7 +53,7 @@ const BACKUPS = resolve(process.cwd(), process.env.A11Y_BACKUP_DIR ?? "backups")
 const verifyOnly = process.argv.includes("--verify-only");
 
 /** `user@host:/path` needs scp/ssh; a plain path is a mount and needs neither. */
-const isRemotePath = (target) => /^[^/]+@[^:]+:/.test(target);
+const isRemotePath = (/** @type {string} */ target) => /^[^/]+@[^:]+:/.test(target);
 
 function newestArchive() {
   if (!existsSync(BACKUPS)) return null;
@@ -64,6 +65,7 @@ function newestArchive() {
 }
 
 /** The size the destination reports, read back over the channel a restore would use. */
+/** @param {string} archive */
 async function sizeAtDestination(archive) {
   const name = basename(archive);
   if (isRemotePath(REMOTE)) {
@@ -77,6 +79,7 @@ async function sizeAtDestination(archive) {
   return existsSync(at) ? statSync(at).size : null;
 }
 
+/** @param {string} archive */
 async function copyToDestination(archive) {
   const name = basename(archive);
   if (isRemotePath(REMOTE)) {
@@ -89,6 +92,14 @@ async function copyToDestination(archive) {
   await run("cp", [archive, resolve(REMOTE, name)], { timeout: 600_000 });
 }
 
+/**
+ * @param {string} message
+ * @returns {never}
+ *
+ * `never`, not void. It calls `process.exit`, so nothing after a `refuse()` runs -- and saying so is what
+ * lets every `if (!x) refuse(...)` below narrow `x` for the rest of the function. Without it the code
+ * reads as if it carries on with a null, which is exactly what it does NOT do.
+ */
 function refuse(message) {
   process.stderr.write(`${message}\n`);
   process.exit(1);
@@ -129,7 +140,7 @@ async function main() {
     try {
       await copyToDestination(archive.path);
     } catch (error) {
-      refuse(`FAILED to copy: ${error.message}\n\nThe corpus still exists in exactly one place.`);
+      refuse(`FAILED to copy: ${/** @type {Error} */ (error).message}\n\nThe corpus still exists in exactly one place.`);
     }
   }
 
@@ -138,7 +149,7 @@ async function main() {
   try {
     remoteSize = await sizeAtDestination(archive.path);
   } catch (error) {
-    refuse(`Copied, but could NOT read it back: ${error.message}\n\n` +
+    refuse(`Copied, but could NOT read it back: ${/** @type {Error} */ (error).message}\n\n` +
       "Treat this as a failed backup. A copy you cannot read is a copy you cannot restore.");
   }
 

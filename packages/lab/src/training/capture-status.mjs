@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Report the state of a dataset capture run: npm run training:status
  *
@@ -31,12 +32,14 @@ const SECONDS_PER_MINUTE = 60;
 const EXIT = { ok: 0, failures: 1, noRun: 2, stale: 3 };
 const JSON_OUT = process.argv.includes("--json");
 
+/** @param {number} ms */
 function minutes(ms) {
   return (ms / MS_PER_SECOND / SECONDS_PER_MINUTE).toFixed(1) + " min";
 }
 
 // Reported as unreachable rather than thrown: the worker being gone is a finding to print,
 // not a reason for the status command itself to fail.
+/** @param {string} worker */
 async function workerState(worker) {
   if (!worker) return "not recorded";
   try {
@@ -45,10 +48,11 @@ async function workerState(worker) {
     const health = await response.json();
     return health.busy ? "capturing now" : "idle";
   } catch (error) {
-    return "unreachable (" + error.message + ")";
+    return "unreachable (" + /** @type {Error} */ (error).message + ")";
   }
 }
 
+/** @param {Record<string, any>} progress */
 function printFailures(progress) {
   const failed = Object.entries(progress.cases ?? {}).filter(([, c]) => c.status === "failed");
   if (!failed.length) return;
@@ -58,6 +62,7 @@ function printFailures(progress) {
 
 // Remaining time from observed throughput. Deliberately derived from THIS run rather than a
 // stored average: capture cost varies with page size and with what else the host is doing.
+/** @param {Record<string, any>} progress @param {Record<string, number>} counts @param {number} now */
 function etaMinutes(progress, counts, now) {
   const done = counts.captured + counts.failed + counts.skipped;
   if (!done || progress.finishedAt || isStale(progress, now)) return null;
@@ -65,6 +70,7 @@ function etaMinutes(progress, counts, now) {
   return +(((progress.total - done) * perCase) / 60000).toFixed(1);
 }
 
+/** @param {Record<string, any>} progress @param {Record<string, number>} counts @param {number} now */
 function printProgressLines(progress, counts, now) {
   const done = counts.captured + counts.failed + counts.skipped;
   console.log("run:      started " + progress.startedAt + (progress.finishedAt ? ", finished " + progress.finishedAt : ""));
@@ -82,11 +88,13 @@ function printProgressLines(progress, counts, now) {
   if (eta !== null) console.log("eta:      ~" + eta + " min at the rate so far");
 }
 
+/** @param {Record<string, any>} progress @param {Record<string, number>} counts @param {number} now */
 function outcomeExitQuiet(progress, counts, now) {
   if (progress.finishedAt) return counts.failed ? EXIT.failures : EXIT.ok;
   return isStale(progress, now) ? EXIT.stale : EXIT.ok;
 }
 
+/** @param {Record<string, any>} progress @param {Record<string, number>} counts @param {number} now */
 function outcomeExit(progress, counts, now) {
   if (progress.finishedAt) return counts.failed ? EXIT.failures : EXIT.ok;
   if (isStale(progress, now)) {
