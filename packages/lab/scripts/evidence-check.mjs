@@ -41,7 +41,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--sample=", "--only=", "--browser="], { command: "npm run evidence:check" });
+refuseUnknownFlags(["--sample=", "--only=", "--browser="], { entry: import.meta.url, command: "npm run evidence:check" });
 
 const DATASET = resolve(process.cwd(), "runs/screenreader-dataset");
 const BASELINE = resolve(DATASET, "captures");

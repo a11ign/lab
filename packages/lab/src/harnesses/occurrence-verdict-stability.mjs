@@ -28,7 +28,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags([], { command: "npm run verdict:stability" });
+refuseUnknownFlags([], { entry: import.meta.url, command: "npm run verdict:stability" });
 
 // This file is why the guard in budget-ladder.test.ts now DISCOVERS capture clients instead of
 // listing three: it declared 560 s and undici gave it 300 s, which is precisely the defect that

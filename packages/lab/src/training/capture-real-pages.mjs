@@ -42,7 +42,7 @@ import { beginRun } from "./capture-progress.mjs";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--role=", "--worker=", "--shard=", "--allow-mixed-browsers", "--allow-stale-workers"], { command: "npm run lab:job -- -e job=capture-real-pages" });
+refuseUnknownFlags(["--role=", "--worker=", "--shard=", "--allow-mixed-browsers", "--allow-stale-workers"], { entry: import.meta.url, command: "npm run lab:job -- -e job=capture-real-pages" });
 
 const ROLE = process.argv.find((a) => a.startsWith("--role="))?.slice("--role=".length) ?? null;
 const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length) ?? null;

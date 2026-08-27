@@ -25,7 +25,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--expect-activation", "--require-wcag=", "--forbid-wcag="], { command: "npm run assert:action-report" });
+refuseUnknownFlags(["--expect-activation", "--require-wcag=", "--forbid-wcag="], { entry: import.meta.url, command: "npm run assert:action-report" });
 
 /**
  * The contract fields, checked against what `packages/cli/src/action/run.ts` actually depends on rather

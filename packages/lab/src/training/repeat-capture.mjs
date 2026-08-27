@@ -35,7 +35,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  */
 refuseUnknownFlags(["--url=", "--worker=", "--times=", "--steps=", "--task=", "--browser=", "--out=",
    "--probe-forms", "--probe-tables", "--reuse"],
-  { command: "npm run training:repeat" });
+  { entry: import.meta.url, command: "npm run training:repeat" });
 
 const arg = (name, fallback = null) => {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));

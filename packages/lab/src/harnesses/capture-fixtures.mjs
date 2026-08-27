@@ -55,7 +55,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--set=", "--only=", "--worker="], { command: "npm run eval:capture" });
+refuseUnknownFlags(["--set=", "--only=", "--worker="], { entry: import.meta.url, command: "npm run eval:capture" });
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const EVAL_ROOT = resolve(HERE, "../eval");

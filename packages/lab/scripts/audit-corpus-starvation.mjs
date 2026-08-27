@@ -36,7 +36,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags([], { command: "npm run corpus:starvation" });
+refuseUnknownFlags([], { entry: import.meta.url, command: "npm run corpus:starvation" });
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const RECORDS = resolve(REPO, process.env.DATASET_EXPORT

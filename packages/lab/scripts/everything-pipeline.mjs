@@ -28,7 +28,7 @@ import { pipeline, run } from "./retrain-pipeline.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 
 // This chain is hours long and unattended. A mistyped `--dry-run` would run the REAL thing.
-refuseUnknownFlags(["--dry-run"], { command: "npm run lab:everything" });
+refuseUnknownFlags(["--dry-run"], { entry: import.meta.url, command: "npm run lab:everything" });
 
 /**
  * Every stage, in the order the `&&` chain ran them, with what each is for.

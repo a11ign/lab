@@ -51,7 +51,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--json"], { command: "npm run lab:inventory" });
+refuseUnknownFlags(["--json"], { entry: import.meta.url, command: "npm run lab:inventory" });
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const RUNS = resolve(REPO, process.env.A11Y_RUNS_ROOT || "runs");

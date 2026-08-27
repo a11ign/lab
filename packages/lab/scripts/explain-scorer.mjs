@@ -24,7 +24,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--model=", "--criterion=", "--compare="], { command: "npm run scorer:explain" });
+refuseUnknownFlags(["--model=", "--criterion=", "--compare="], { entry: import.meta.url, command: "npm run scorer:explain" });
 
 const RUNS = resolve(process.cwd(), process.env.RUNS_ROOT || "runs");
 /**

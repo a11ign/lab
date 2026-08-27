@@ -38,7 +38,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  * knows — so it runs the default and reports success. See `cli-flags.mjs`.
  */
 refuseUnknownFlags(["--from=", "--dry-run", "--accept-regression"],
-  { command: "npm run promote:model" });
+  { entry: import.meta.url, command: "npm run promote:model" });
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const SHIPPED = resolve(REPO, "packages/scorer/models/screenreader-scorer");

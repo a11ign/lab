@@ -22,7 +22,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--dir=", "--from-disk"], { command: "npm run bench:capture" });
+refuseUnknownFlags(["--dir=", "--from-disk"], { entry: import.meta.url, command: "npm run bench:capture" });
 
 const [worker, page, countArg] = process.argv.slice(2);
 

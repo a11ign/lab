@@ -30,7 +30,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--candidate=", "--dry-run"], { command: "npm run lab:retrain" });
+refuseUnknownFlags(["--candidate=", "--dry-run"], { entry: import.meta.url, command: "npm run lab:retrain" });
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 

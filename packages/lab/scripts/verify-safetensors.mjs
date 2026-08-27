@@ -19,7 +19,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--inference"], { command: "npm run scorer:verify" });
+refuseUnknownFlags(["--inference"], { entry: import.meta.url, command: "npm run scorer:verify" });
 
 /**
  * Wrapped and GUARDED, so importing this module does not run it.

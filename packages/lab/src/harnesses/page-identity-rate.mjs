@@ -44,7 +44,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--worker=", "--rounds="], { command: "npm run identity:rate" });
+refuseUnknownFlags(["--worker=", "--rounds="], { entry: import.meta.url, command: "npm run identity:rate" });
 
 const WORKER = (process.argv.find((a) => a.startsWith("--worker=")) ?? "").slice("--worker=".length);
 const ROUNDS = Number((process.argv.find((a) => a.startsWith("--rounds=")) ?? "").slice("--rounds=".length) || 20);

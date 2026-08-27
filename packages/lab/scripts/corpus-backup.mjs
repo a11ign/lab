@@ -43,7 +43,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--verify-only"], { command: "npm run corpus:backup" });
+refuseUnknownFlags(["--verify-only"], { entry: import.meta.url, command: "npm run corpus:backup" });
 
 const run = promisify(execFile);
 

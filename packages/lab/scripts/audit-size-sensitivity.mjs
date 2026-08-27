@@ -58,7 +58,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--model="], { command: "npm run scorer:size-sensitivity" });
+refuseUnknownFlags(["--model="], { entry: import.meta.url, command: "npm run scorer:size-sensitivity" });
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const CAPTURES = resolve(REPO, process.env.CAPTURE_ROOT || "runs/screenreader-dataset/captures");

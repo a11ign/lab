@@ -45,7 +45,7 @@ import { assertWorkerUrl } from "../../worker-fleet/src/worker-http.mjs";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--base=", "--times=", "--worker="], { command: "npm run gate:stability" });
+refuseUnknownFlags(["--base=", "--times=", "--worker="], { entry: import.meta.url, command: "npm run gate:stability" });
 
 const run = promisify(execFile);
 

@@ -21,7 +21,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--json"], { command: "npm run training:status" });
+refuseUnknownFlags(["--json"], { entry: import.meta.url, command: "npm run training:status" });
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
 const HEALTH_TIMEOUT_MS = 5_000;

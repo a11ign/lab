@@ -9,7 +9,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags([], { command: "npm run training:generate" });
+refuseUnknownFlags([], { entry: import.meta.url, command: "npm run training:generate" });
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
 const PAGE_ROOT = resolve(ROOT, "pages");

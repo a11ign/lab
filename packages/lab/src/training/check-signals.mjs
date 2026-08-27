@@ -33,7 +33,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  * knows — so it runs the default and reports success. See `cli-flags.mjs`.
  */
 refuseUnknownFlags(["--only=", "--require-complete"],
-  { command: "npm run training:check-signals" });
+  { entry: import.meta.url, command: "npm run training:check-signals" });
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
 const MANIFEST_PATH = resolve(ROOT, "manifest.json");

@@ -10,7 +10,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags([], { command: "npm run training:preflight" });
+refuseUnknownFlags([], { entry: import.meta.url, command: "npm run training:preflight" });
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
 const EXPECTED_CASES = process.env.DATASET_KIND === "acceptance" ? ACCEPTANCE_CASES : CASES;

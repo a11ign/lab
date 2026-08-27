@@ -22,7 +22,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--worker="], { command: "npm run capture:check" });
+refuseUnknownFlags(["--worker="], { entry: import.meta.url, command: "npm run capture:check" });
 
 // Drive a live WORKER over HTTP instead of NVDA in-process.
 //

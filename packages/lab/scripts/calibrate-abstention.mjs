@@ -51,7 +51,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags([], { command: "npm run lab:job -- -e job=sweep" });
+refuseUnknownFlags([], { entry: import.meta.url, command: "npm run lab:job -- -e job=sweep" });
 
 // Resolved from THIS module, never from the caller's cwd. A bare "packages/scorer/python/score.py" is
 // right only when you happen to run from the repo root, and `spawned-paths.test.ts` fails the build for

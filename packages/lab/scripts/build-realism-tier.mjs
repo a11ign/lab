@@ -50,7 +50,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--out="], { command: "npm run training:build-realism" });
+refuseUnknownFlags(["--out="], { entry: import.meta.url, command: "npm run training:build-realism" });
 
 // Resolved from this module, so the script works from any directory. `--out=` is still taken relative to
 // the repo root rather than the cwd, so two runs from different shells cannot write to two places.
