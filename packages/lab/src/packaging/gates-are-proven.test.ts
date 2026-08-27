@@ -92,8 +92,7 @@ const GATE_PROOFS: Record<string, GateProof> = {
   },
   "scorer:verify": {
     catches: "an executable-on-load weight format (.pt, .pkl, .ckpt) in the shipped model directory",
-    unproven: "no test plants a poisoned artefact and asserts refusal. This is the cheapest of the "
-      + "unproven ones to close and it guards the only artefact this project publishes",
+    provenBy: "packages/lab/src/packaging/scorer-verify-refuses.test.ts",
   },
   "scorer:migration": {
     catches: "a release while a feature-schema migration is open, so the weights and the featurizer "
@@ -118,8 +117,7 @@ const GATE_PROOFS: Record<string, GateProof> = {
   "corpus:grants-audit": {
     catches: "a multi-defect page LABELLED for a defect whose evidence was never captured, so the head "
       + "learns to predict the label from something else",
-    unproven: "needs the exported corpus; it did fire for real on 2026-08-27 (57 of 58) and that is an "
-      + "observation, not a test",
+    provenBy: "packages/scorer/tests/test_grants_map_is_current.py",
   },
   "corpus:applicability-audit": {
     catches: "a precondition that silences a record labelled positive — strictly worse than the false "
@@ -152,7 +150,7 @@ const GATE_PROOFS: Record<string, GateProof> = {
 };
 
 /** Gates whose refusal has been WATCHED. May only rise. */
-const PROVEN_AT_LEAST = 2;
+const PROVEN_AT_LEAST = 4;
 
 function gatesInUse(): string[] {
   const chain = STEPS.filter((step: { gate?: boolean }) => step.gate)

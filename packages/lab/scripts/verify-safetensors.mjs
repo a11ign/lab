@@ -56,7 +56,7 @@ async function filesUnder(dir) {
  *
  * @param {string[]} files @param {string} modelDir
  */
-async function classify(files, modelDir) {
+export async function classify(files, modelDir) {
   /** @type {{unsafe: string[], safetensors: string[], inference: string[]}} */
   const found = { unsafe: [], safetensors: [], inference: [] };
   for (const file of files) {
@@ -77,7 +77,7 @@ async function classify(files, modelDir) {
  * @param {{unsafe: string[], safetensors: string[], inference: string[]}} found
  * @param {"training"|"inference"} mode
  */
-function problems(found, mode) {
+export function problems(found, mode) {
   const errors = [];
   if (found.unsafe.length) errors.push(`unsafe checkpoint files: ${found.unsafe.join(", ")}`);
   if (mode === "training" && !found.safetensors.length) {
