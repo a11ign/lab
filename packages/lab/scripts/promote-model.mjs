@@ -24,7 +24,7 @@
  *    review. Nothing is published: that is `release.yml`'s business and it is guarded separately.
  */
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -144,14 +144,30 @@ function thresholdLines(training) {
 }
 
 /**
- * A changeset filename that cannot collide, without a timestamp.
+ * A changeset filename derived from WHAT IS BEING PROMOTED, without a timestamp.
  *
  * `Date.now()` is unavailable in some of this repo's runners and a random name would differ between a dry
- * run and the real one. The candidate name plus a count of existing files is stable and readable.
+ * run and the real one, so the name must be a pure function of the release. It is now a hash of the
+ * changeset body — which is itself derived entirely from the training report — giving three properties
+ * the previous scheme did not have: promoting the same weights twice rewrites ONE file with identical
+ * content, promoting different weights can never land on the same name, and a dry run names the file the
+ * real run will write.
+ *
+ * THE PREVIOUS SCHEME COLLIDED, and its docstring claimed it could not. It counted every `.md` in
+ * `.changeset/` and appended `count + 1`, on the assumption that the count only grows. It does not:
+ * `changeset version` CONSUMES changesets on release, and unrelated ones (`quiet-melons-smile.md`) move
+ * the number without having anything to do with a promotion. Measured 2026-08-27 on this repo — five
+ * changesets on disk, so the next promotion computed `promote-candidate-6.md`, **a tracked file already
+ * holding a previous promotion's release note.** That is what the lab's `M .changeset/promote-candidate-6.md`
+ * was: not an edit, a promotion overwriting an earlier one's provenance.
+ *
+ * It presents as a MODIFICATION rather than an untracked file, which is why nothing caught it — the
+ * changeset is the only record of why weights moved (`lab-fetch.yml` says so where it fetches this file),
+ * and losing one is losing a release's reason while the tree still looks tidy.
  */
-function changesetPath(candidateName) {
-  const existing = readdirSync(CHANGESETS).filter((f) => f.endsWith(".md") && f !== "README.md").length;
-  return join(CHANGESETS, `promote-${candidateName}-${existing + 1}.md`);
+function changesetPath(candidateName, entry) {
+  const identity = createHash("sha256").update(entry).digest("hex").slice(0, 8);
+  return join(CHANGESETS, `promote-${candidateName}-${identity}.md`);
 }
 
 /**
@@ -186,7 +202,7 @@ ${thresholdLines(training)}
 
 Held-out acceptance: ${acceptance.passed ? "passed" : "FAILED"}.
 ${acceptRegression ? "\n**Accepted with a known regression against the previously shipped weights.** See the commit for why.\n" : ""}`;
-  const target = changesetPath(candidateName);
+  const target = changesetPath(candidateName, entry);
   if (dryRun) {
     process.stdout.write(`DRY RUN — would copy ${candidate} -> ${SHIPPED}\n`
       + `DRY RUN — would write ${target}:\n\n${entry}\n`);

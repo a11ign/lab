@@ -18,6 +18,9 @@ import { join } from "node:path";
 
 import { promote } from "../../scripts/promote-model.mjs";
 
+/** The real `.changeset/`, because the name used to be computed from what is in it. */
+const CHANGESET_DIR = new URL("../../../../.changeset/", import.meta.url).pathname;
+
 const HEAD = {
   head: "subtype_4_1_2_state_change_silent",
   threshold: 0.85,
@@ -162,4 +165,45 @@ test("noise below the tolerance is not a regression", () => {
   const { dir, name } = candidate(jitter, { passed: true });
   promote({ candidate: dir, candidateName: name, dryRun: true, shippedReport: shipped });
   rmSync(dir, { recursive: true, force: true });
+});
+
+test("the changeset is named for WHAT IS PROMOTED, never for a count of unrelated changesets", () => {
+  // REPRODUCING THE FAULT, because the previous scheme's docstring claimed it could not collide.
+  //
+  // It named the file `promote-<candidate>-<count of .md in .changeset/ + 1>.md`, on the assumption that
+  // the count only grows. It does not: `changeset version` CONSUMES changesets at release, and an
+  // unrelated one moves the number without having anything to do with a promotion. Measured on this repo
+  // 2026-08-27 -- five changesets on disk, so the next promotion computed `promote-candidate-6.md`, a
+  // TRACKED file already holding an earlier promotion's release note. The lab's dirty
+  // `M .changeset/promote-candidate-6.md` was that overwrite, presenting as an edit rather than a loss.
+  //
+  // The changeset is the only record of why weights moved, so losing one loses a release's reason while
+  // the tree still looks tidy -- which is why nothing caught it.
+  const before = run(REPORT, { passed: true, evaluated: 90, falsePositive: 0, falseNegative: 0 });
+
+  // AN UNRELATED CHANGESET APPEARS. Under the old scheme this alone moved the name; under the new one it
+  // cannot, because the name is a function of the release and of nothing else.
+  const intruder = join(CHANGESET_DIR, "zz-unrelated-fixture.md");
+  writeFileSync(intruder, '---\n"@a11y-witness/scorer": patch\n---\n\nnot a promotion\n');
+  try {
+    const after = run(REPORT, { passed: true, evaluated: 90, falsePositive: 0, falseNegative: 0 });
+    assert.equal(after.target, before.target,
+      "an unrelated changeset must not move the name -- that is exactly how one promotion came to "
+        + "overwrite another's release note");
+  } finally {
+    rmSync(intruder, { force: true });
+  }
+
+  // A HASH, not a small integer. The distinction matters: `-6` is reachable by counting to six, and
+  // therefore reachable again.
+  assert.match(before.target, /promote-under-test-[0-9a-f]{8}\.md$/,
+    "the suffix must identify the release, not enumerate the directory");
+
+  // DIFFERENT WEIGHTS, DIFFERENT NAME. Idempotence is only half the property -- a scheme that returned a
+  // constant would pass the assertion above and lose every note but the last.
+  const moved = JSON.parse(JSON.stringify(REPORT));
+  moved.criteria["4.1.2"].subtypes["4.1.2:state-change-silent"].threshold = 0.9;
+  const other = run(moved, { passed: true, evaluated: 90, falsePositive: 0, falseNegative: 0 });
+  assert.notEqual(other.target, before.target,
+    "two different promotions must never land on one filename");
 });
