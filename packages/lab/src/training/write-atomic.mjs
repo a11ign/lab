@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Write a JSON file so a reader never sees half of one.
  *
@@ -17,6 +18,10 @@
 import { mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
+/**
+ * @param {string} path
+ * @param {unknown} value
+ */
 export function writeJsonAtomic(path, value) {
   mkdirSync(dirname(path), { recursive: true });
   const temp = `${path}.tmp`;

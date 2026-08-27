@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * A minimum gap between requests to the SAME publisher, however many workers are running.
  *
@@ -26,10 +27,15 @@
  * @returns {(host: string) => Promise<number>} resolves with the ms waited (0 if it went straight through)
  */
 export function createHostThrottle({
+  // REQUIRED, and no `= {}` default on the parameter — the JSDoc always said so and the signature did
+  // not. Defaulting `minGapMs` to 0 would make a POLITENESS throttle silently not throttle, so a caller
+  // who forgot it would hammer a third-party site and nothing would say so. That is the silent-default
+  // class this repo keeps paying for; a missing argument should be a TypeError at the call, not a
+  // courteous-looking no-op.
   minGapMs,
   now = () => Date.now(),
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
-} = {}) {
+}) {
   const nextAllowed = new Map();
 
   return async function waitTurn(host) {
