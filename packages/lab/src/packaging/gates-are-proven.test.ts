@@ -155,8 +155,12 @@ const GATE_PROOFS: Record<string, GateProof> = {
     provenByComposition: true,
   },
   "eval:gate": {
-    catches: "judge quality regressing against the 34 labelled fixtures",
-    provenBy: "packages/lab/src/eval/fitness.test.ts",
+    catches: "judge quality regressing against the 34 labelled fixtures. Both halves proven: the "
+      + "decision in `fitness.test.ts`, and the wiring by driving the real command with an injected "
+      + "scorer -- no venv, no torch -- watching it refuse below the floor and pass with the gate off. "
+      + "Note what that measured: a scorer reporting NOTHING still scores 59% here, because the rules "
+      + "supply the rest, and the floor is 0.55",
+    provenBy: "packages/lab/src/eval/eval-gate-refuses.test.ts",
   },
 };
 
