@@ -186,6 +186,21 @@ function describeEvidence(url: string): string {
 /** url -> one line of the evidence behind it, filled while walking the captures rather than re-reading. */
 const EVIDENCE = new Map<string, string>();
 
+/**
+ * The unnamed graphics by name, or nothing if this capture predates them.
+ *
+ * Silent when absent rather than printing "not recorded": every capture taken before the DOM census
+ * learned to name them is in that state, and a line saying so on every historical row would be noise
+ * about the corpus rather than news about the page.
+ */
+function unnamedGraphicLine(dom: { unnamedGraphics?: unknown; unnamedGraphicCount?: unknown } | null): string {
+  const names = Array.isArray(dom?.unnamedGraphics) ? (dom.unnamedGraphics as string[]) : [];
+  if (!names.length) return "";
+  const total = typeof dom?.unnamedGraphicCount === "number" ? dom.unnamedGraphicCount : names.length;
+  const more = total > names.length ? `, and ${total - names.length} more` : "";
+  return `\n           unnamed graphics: ${names.join(", ")}${more}`;
+}
+
 function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
   const census = pageCensus(capture as never);
   const dom = domCensus(capture as never);
@@ -216,6 +231,9 @@ function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
     ? `census heading=${census.heading} link=${census.link} graphic=${census.graphic} `
       + `graphicUnnamed=${census.graphicUnnamed}; ${lines} announcement(s)`
       + (dom ? ` | DOM heading=${dom.heading} link=${dom.link} graphic=${dom.graphic}` : " | DOM not counted")
+      // WHICH graphics carry no accessible name. `graphicUnnamed=2` sent me to fetch cqc.org.uk by hand
+      // and count <svg> elements without a <title>; this is that step, done once, by the capture.
+      + unnamedGraphicLine(dom)
       + verdict
     : `no census recorded; ${lines} announcement(s)`) + (opening ? `\n           opens: ${opening}` : ""));
 }
