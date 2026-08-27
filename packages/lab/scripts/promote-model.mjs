@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Promote a trained candidate to the shipped weights — and write the changeset that says so.
  *
@@ -45,6 +46,7 @@ const SHIPPED = resolve(REPO, "packages/scorer/models/screenreader-scorer");
 const CHANGESETS = resolve(REPO, ".changeset");
 
 /** Read a JSON file, or explain which missing file blocks the promotion. */
+/** @param {string} path @param {string} what */
 function readReport(path, what) {
   if (!existsSync(path)) {
     throw new Error(`${what} is missing at ${path}. A candidate that has not been evaluated cannot be `
@@ -64,6 +66,12 @@ function readReport(path, what) {
  * Read from the candidate's OWN files. Deliberately not flags the caller can set: the failure that
  * prevents is promoting a model because you believe it is good, which is exactly the state of mind in
  * which the belief is wrong.
+ */
+/**
+ * @param {string} candidate
+ * @param {Record<string, any> | null} shipped
+ * @param {Record<string, any> | null} shippedAcceptance
+ * @param {boolean} acceptRegression
  */
 function assertPromotable(candidate, shipped, shippedAcceptance, acceptRegression) {
   const training = readReport(join(candidate, "training-report.json"), "the training report");
@@ -106,12 +114,18 @@ function assertPromotable(candidate, shipped, shippedAcceptance, acceptRegressio
  * `{path, hiddenSize, modelSha256}`. This function's own docstring calls the encoder HASH the point of
  * recording it, and the hash was the part being destroyed.
  */
+/** @param {unknown} value @returns {string} */
 function describeValue(value) {
   if (value === null || typeof value !== "object") return String(value);
-  const identity = value.modelSha256 ?? value.sha256 ?? value.hash ?? value.version ?? value.path;
+  // `typeof x === "object"` narrows to `object`, which has no index signature -- so reading a candidate
+  // identity off it needs the cast. This function exists BECAUSE an object stringified as
+  // `[object Object]` in every changeset ever written; the fields it probes are the whole point.
+  const fields = /** @type {Record<string, unknown>} */ (value);
+  const identity = fields.modelSha256 ?? fields.sha256 ?? fields.hash ?? fields.version ?? fields.path;
   return identity === undefined ? JSON.stringify(value) : String(identity);
 }
 
+/** @param {Record<string, any>} training @returns {string} */
 function provenanceLines(training) {
   const ood = training.outOfDistribution ?? {};
   const rows = [
@@ -132,6 +146,7 @@ function provenanceLines(training) {
 
 export { describeValue, provenanceLines };
 
+/** @param {Record<string, any>} training @returns {string} */
 function thresholdLines(training) {
   const out = [];
   for (const [criterion, report] of Object.entries(training.criteria ?? {})) {
@@ -165,6 +180,7 @@ function thresholdLines(training) {
  * changeset is the only record of why weights moved (`lab-fetch.yml` says so where it fetches this file),
  * and losing one is losing a release's reason while the tree still looks tidy.
  */
+/** @param {string} candidateName @param {string} entry @returns {string} */
 function changesetPath(candidateName, entry) {
   const identity = createHash("sha256").update(entry).digest("hex").slice(0, 8);
   return join(CHANGESETS, `promote-${candidateName}-${identity}.md`);
@@ -247,7 +263,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
         : null,
     });
   } catch (cause) {
-    process.stderr.write(`REFUSING to promote: ${cause.message}\n`);
+    process.stderr.write(`REFUSING to promote: ${/** @type {Error} */ (cause).message}\n`);
     process.exit(1);
   }
 }

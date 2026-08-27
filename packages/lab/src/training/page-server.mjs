@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * The dataset pages, served for the duration of a run — and stopped afterwards.
  *
@@ -49,11 +50,12 @@ const STOP_POLL_MS = 100;
  * That is the property that makes a crash safe: the file is a hint, and the process table is the truth.
  */
 /** Exported for the test: the fault is a two-process interleaving, and the bookkeeping is where it lives. */
+/** @param {string} root @returns {string} */
 export function holdersPath(root) {
   return resolve(root, "..", "page-server.holders.json");
 }
 
-const isAlive = (pid) => {
+const isAlive = (/** @type {number} */ pid) => {
   try {
     process.kill(pid, 0);
     return true;
@@ -62,10 +64,11 @@ const isAlive = (pid) => {
     // reuse a recorded holder can be somebody else's process entirely. Reading EPERM as dead would let this
     // run decide it is the last one out and stop a server another run is still using, which is the exact
     // fault the refcount exists to prevent, reintroduced one level down.
-    return error?.code !== "ESRCH";
+    return /** @type {NodeJS.ErrnoException} */ (error)?.code !== "ESRCH";
   }
 };
 
+/** @param {string} path @returns {HolderState} */
 export function readHolders(path) {
   let parsed;
   try {
@@ -73,19 +76,31 @@ export function readHolders(path) {
   } catch {
     return { serverPid: null, holders: [] }; // absent or unreadable both mean "nobody has registered"
   }
-  const holders = (parsed.holders ?? []).filter((pid) => Number.isInteger(pid) && isAlive(pid));
+  const holders = (parsed.holders ?? []).filter((/** @type {number} */ pid) => Number.isInteger(pid) && isAlive(pid));
   // A dead serverPid means the file outlived its server, so it describes nothing.
   const serverPid = Number.isInteger(parsed.serverPid) && isAlive(parsed.serverPid) ? parsed.serverPid : null;
   return { serverPid, holders };
 }
 
 /** Atomic, so a concurrent reader never sees half a file. Same temp+rename as capture-progress.mjs. */
+/**
+ * @typedef {{ serverPid: number | null, holders: number[] }} HolderState
+ *
+ * `serverPid` is nullable and that is the ADOPTER case, not an oversight: a run that joins a server
+ * somebody else started has no pid of its own to contribute, which is why `joinHolders` writes
+ * `serverPid ?? state.serverPid`. A non-null type here would have made the adopter -- the case this
+ * refcount exists for -- unexpressible.
+ *
+ * @param {string} path
+ * @param {HolderState} state
+ */
 function writeHolders(path, state) {
   const temp = `${path}.${process.pid}.tmp`;
   writeFileSync(temp, JSON.stringify(state) + "\n", "utf8");
   renameSync(temp, path);
 }
 
+/** @param {string} root @param {number | null} serverPid */
 export function joinHolders(root, serverPid) {
   const path = holdersPath(root);
   const state = readHolders(path);
@@ -101,10 +116,11 @@ export function joinHolders(root, serverPid) {
  * Synchronous throughout because an `exit` handler cannot await, and the exit path is the one that actually
  * leaked processes.
  */
+/** @param {string} root */
 export function leaveHolders(root) {
   const path = holdersPath(root);
   const state = readHolders(path);
-  const remaining = state.holders.filter((pid) => pid !== process.pid);
+  const remaining = state.holders.filter((/** @type {number} */ pid) => pid !== process.pid);
   if (remaining.length) {
     writeHolders(path, { serverPid: state.serverPid, holders: remaining });
     return { lastOut: false, serverPid: state.serverPid, remaining };
@@ -121,6 +137,7 @@ export function leaveHolders(root) {
  * Probes a real page, never `/`. "Something answers" is not "our pages are being served", and the
  * difference is the 404-dataset above.
  */
+/** @param {string} url @param {string} probePath */
 async function servesOurPages(url, probePath) {
   try {
     const response = await fetch(`${url}/${probePath}`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) });
@@ -130,6 +147,7 @@ async function servesOurPages(url, probePath) {
   }
 }
 
+/** @param {string} url @param {string} probePath @param {number} deadline */
 async function waitUntilServing(url, probePath, deadline) {
   while (Date.now() < deadline) {
     if (await servesOurPages(url, probePath)) return true;
@@ -145,6 +163,7 @@ async function waitUntilServing(url, probePath, deadline) {
  * alone orphans the child — which is exactly the shape of the four leaked processes. Spawning
  * detached puts both in their own process group, and a negative pid signals the group.
  */
+/** @param {import("node:child_process").ChildProcess} child */
 function stopGroup(child) {
   return stopPid(child.pid);
 }
@@ -164,7 +183,18 @@ function stopGroup(child) {
  * there is no later moment in which to insist. A `serve` that survives here becomes an orphan holding
  * :5050, which is the leak this module exists to end.
  */
+/**
+ * @param {number | undefined} pid
+ *
+ * UNDEFINED IS A REAL CASE and belongs here rather than at each call site. A spawn that never started has
+ * no pid, and `process.kill(undefined)` throws -- on the exit path that throw happens inside a
+ * `process.once("exit")` handler, losing the rest of the cleanup, which is the leak the refcount exists
+ * to stop. Guarding here also keeps the two call sites in the literal shape
+ * `page-server-holders.test.ts` pins: that test reads the SOURCE of the `lastOut` guard, so a condition
+ * added beside it silently fails a check about something else entirely.
+ */
 function stopPidNow(pid) {
+  if (pid === undefined) return;
   for (const signal of ["SIGTERM", "SIGKILL"]) {
     try {
       process.kill(-pid, signal);
@@ -174,7 +204,9 @@ function stopPidNow(pid) {
   }
 }
 
+/** @param {number | undefined} pid — see `stopPidNow`: nothing to stop is success, not an error */
 async function stopPid(pid) {
+  if (pid === undefined) return;
   const gone = () => {
     try {
       process.kill(-pid, 0);
@@ -249,7 +281,7 @@ export async function leasePageServer({ root, port, probePath }) {
   child.on("error", (error) => process.stderr.write(`page server failed to spawn: ${error.message}\n`));
   child.unref();
 
-  joinHolders(root, child.pid);
+  joinHolders(root, child.pid ?? null);
 
   let released = false;
   const release = async () => {

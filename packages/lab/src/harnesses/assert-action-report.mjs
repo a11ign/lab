@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * Assert things about a report the ACTION produced, from a file you can also run locally.
  *
@@ -49,21 +50,29 @@ export function contractFailure(report) {
 }
 
 /** How many controls the capture operated. Zero on a default run means `probe-forms` silently regressed. */
+/** @param {Record<string, any>} report */
 export function activationCount(report) {
   const interaction = report?.capture?.interaction ?? report?.interaction;
   return (interaction?.formChanges ?? []).length + (interaction?.stateChanges ?? []).length;
 }
 
 /** Findings for one criterion, matched on the `wcag` prefix so "1.1.1 Non-text Content" matches "1.1.1". */
+/**
+ * @param {Record<string, any>} report
+ * @param {string} wcag
+ * @returns {Record<string, any>[]}
+ */
 export function findingsFor(report, wcag) {
-  return (report?.verdict?.findings ?? []).filter((f) => String(f?.wcag ?? "").startsWith(wcag));
+  return (report?.verdict?.findings ?? []).filter((/** @type {Record<string, any>} */ f) => String(f?.wcag ?? "").startsWith(wcag));
 }
 
+/** @param {string[]} args @param {string} name */
 function flagValue(args, name) {
   const hit = args.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : null;
 }
 
+/** @param {string[]} argv */
 function main(argv) {
   const [path, ...flags] = argv;
   if (!path) {
@@ -102,6 +111,7 @@ function main(argv) {
   return 0;
 }
 
+/** @param {string} reason @returns {number} */
 function fail(reason) {
   process.stderr.write(`::error::${reason}\n`);
   return 1;
