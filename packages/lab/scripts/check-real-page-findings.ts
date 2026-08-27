@@ -41,7 +41,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ruleFindings } from "@a11y-witness/judge/rules";
 import { corpusState } from "../src/training/corpus-settled.mjs";
-import { pageCensus } from "@a11y-witness/evidence/verify";
+import { pageCensus, domCensus } from "@a11y-witness/evidence/verify";
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
@@ -187,6 +187,7 @@ const EVIDENCE = new Map<string, string>();
 
 function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
   const census = pageCensus(capture as never);
+  const dom = domCensus(capture as never);
   const lines = Array.isArray(capture.transcript) ? capture.transcript.length : 0;
   // The FIRST few announcements as well as the counts. The counts said `heading=0` on a page whose
   // published HTML carries forty of them, and a count cannot tell you whether the tool read a cookie
@@ -198,9 +199,22 @@ function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
   OPENINGS.set(String(capture.url), openingLines);
   if (census) CENSUS.set(String(capture.url), census);
   const opening = openingLines.map((line) => JSON.stringify(line.slice(0, 60))).join(" ");
+  // THE PAIR, because either alone is ambiguous. A tree census of zero headings means the page did not
+  // render OR the page exposes nothing; the DOM count is the only thing that separates them, and that
+  // ambiguity is what forced a page out of the corpus with its verdict unattributable.
+  const verdict = census && dom && typeof dom.heading === "number"
+    ? (dom.heading > 0 && census.heading === 0
+        ? `  <- ${dom.heading} headings in the DOM, 0 in the tree: the page EXPOSES nothing, which is a `
+          + "finding about it, not about this tool"
+        : (dom.heading === 0 && census.heading === 0
+            ? "  <- no headings in the DOM either, so the page did not render — OUR defect, not theirs"
+            : ""))
+    : "";
   EVIDENCE.set(String(capture.url), (census
     ? `census heading=${census.heading} link=${census.link} graphic=${census.graphic} `
       + `graphicUnnamed=${census.graphicUnnamed}; ${lines} announcement(s)`
+      + (dom ? ` | DOM heading=${dom.heading} link=${dom.link} graphic=${dom.graphic}` : " | DOM not counted")
+      + verdict
     : `no census recorded; ${lines} announcement(s)`) + (opening ? `\n           opens: ${opening}` : ""));
 }
 
