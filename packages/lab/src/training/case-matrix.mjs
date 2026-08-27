@@ -2114,14 +2114,33 @@ function KEYBOARD_ACTION_PAGE(focusable) {
  * `KEYBOARD_ACTION_PAGE`, whose control is a `div role="button"`: same announcement, same failure, and a
  * shape static analysis recognises. Having both means the head sees the failure rather than the markup.
  *
- * Placed FIRST in the body for the reason given on its sibling — the focus probe truncates, so a control
- * near the top is one the probe would certainly have reached, and "absent" means absent.
+ * Placed SECOND, and NOT first — which is the opposite of its sibling and was settled by measuring.
+ *
+ * `KEYBOARD_ACTION_PAGE` puts its control first, reasoning that the probe truncates so a control near the
+ * top is certainly reached. True, and for a `tabindex="-1"` element it backfires: the probe records the
+ * button as stop 0 on BOTH variants, and Tab can never return to a non-tabbable element, so the bad
+ * variant's tab order never closes its cycle. `controlUnreachableByKeyboard` requires a closed cycle
+ * before it will claim anything — "the WHOLE tab cycle, or no claim", because otherwise the probe's stop
+ * cap is indistinguishable from the page trapping the keyboard — so it correctly refused to fire, and the
+ * case was BLIND.
+ *
+ * Measured on the first capture, which is what `--pipeline=verify` is for:
+ *
+ *     bad   focusOrder ["Delete draft, button", "Full name", "Email", "Full name"]
+ *           probe {stops: 92, cycled: false, truncated: true}     <- 92 presses, never wrapped
+ *     good  focusOrder ["Delete draft, button", "Full name", "Email", "Delete draft, button"]
+ *           probe {stops: 6, cycled: true}
+ *
+ * Second position fixes both: the cycle closes on `Full name` in either variant, and `Delete draft`
+ * appears in `formFields` and only the good variant's `focusOrder`. The guard is right and stays; it was
+ * the CASE that could not be witnessed, which is a fact about where the control sits and not about the
+ * criterion.
  */
 function NATIVE_ACTION_PAGE(focusable) {
   const tab = focusable ? "" : ' tabindex="-1"';
-  return `<button type="button"${tab} class="card">Delete draft</button>`
-    + "<form>"
+  return "<form>"
     + "<label for=\"a\">Full name</label><input id=\"a\" name=\"a\">"
+    + `<button type="button"${tab} class="card">Delete draft</button>`
     + "<label for=\"b\">Email</label><input id=\"b\" name=\"b\">"
     + "</form>";
 }
