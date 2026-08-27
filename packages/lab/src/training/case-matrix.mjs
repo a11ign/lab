@@ -2550,6 +2550,39 @@ export const ACCOMPANYING_DEFECTS = Object.freeze({
     // right claim anyway: this markup appends a bare link with nothing around it.
     grants: "vague_link_without_context",
   },
+  // THE SAME DEFECT, REACHABLE BY THE THREE FOCUS HEADS. `bare-edit-inert`'s argument, one feature along.
+  //
+  // `vague_link_without_context` is 0 on every positive of `2.1.1:control-unreachable-by-keyboard`,
+  // `2.1.2:focus-trapped` and `2.4.3:focus-order-scrambled`, so each may penalise it at no cost — it is
+  // the WORST veto on all three, and the cost is real: a page with a bare "Read more" is ordinary, and
+  // the penalty pushes those heads down on exactly the pages they should fire on.
+  //
+  // `vague-link` is the only accompanying defect granting it, and `PERTURBS_FOCUS_ORDER` rightly excludes
+  // it: an `<a href>` is a TAB STOP, injected into the BAD variant only, so it corrupts the very channel
+  // those three subtypes are measured on.
+  //
+  // `tabindex="-1"` breaks the tie exactly as it did for the field. NVDA's link quick-nav (`k`) walks the
+  // browse-mode buffer, not the tab order, so the link is still announced and still has no context around
+  // it — while adding no tab stop, leaving the controlled pair controlled.
+  //
+  // A NON-FOCUSABLE LINK IS NOT A CONTRIVANCE. `tabindex="-1"` on an anchor is what a script does when it
+  // takes over activation, and it is its own accessibility failure — which is the point: this markup is a
+  // real defect, not a marker planted to move a number.
+  //
+  // UNVERIFIED UNTIL CAPTURED, like its sibling. Whether NVDA's `k` reaches a non-focusable anchor is a
+  // question about NVDA; `--pipeline=verify --only=` answers it in minutes, and `corpus:grants-audit`
+  // reports it if the answer is no — in which case this grants nothing and must be DELETED rather than
+  // left looking useful.
+  "vague-link-inert": {
+    markup: [
+      "<p><a href=\"#detail-note\" tabindex=\"-1\">Details</a></p>",
+      "<p><a href=\"#detail-note\" tabindex=\"-1\">Here</a></p>",
+      "<p><a href=\"#detail-note\" tabindex=\"-1\">More</a></p>",
+      "<p><a href=\"#detail-note\" tabindex=\"-1\">Read more</a></p>",
+    ],
+    subtypes: ["2.4.4:regex"],
+    grants: "vague_link_without_context",
+  },
   // The three below were added 2026-08-23 for a measured reason, not for variety.
   //
   // Per-head recall tracks the number of POSITIVES, and the cliff is around 140. Every subtype that was
@@ -2771,9 +2804,23 @@ function withAccompanyingDefects(/** @type {any} */ template, /** @type {any} */
   // be treated like a protocol bump. Substituting inside the filter touches only the cases that were
   // already dropping the defect, so every other page stays byte-identical.
   //
-  // `vague-link` keeps being dropped: a link is a tab stop by nature, and `tabindex="-1"` on one would
-  // make it unreachable, which is a DIFFERENT defect and would collide with 2.1.1's own signal.
-  const focusSafe = (/** @type {any} */ name) => (readsFocusOrder && name === "bare-edit" ? "bare-edit-inert" : name);
+  // `vague-link` WAS dropped too, on the reasoning that "a link is a tab stop by nature, and
+  // `tabindex="-1"` on one would make it unreachable, which is a DIFFERENT defect and would collide with
+  // 2.1.1's own signal". CHECKED against the predicates rather than accepted, 2026-08-28, and it does not
+  // hold: `controlUnreachableByKeyboard` and `focusOrderIsScrambled` both compare
+  // `structure.formFields` against `interaction.focusOrder`, and neither reads `structure.links`. An
+  // inert anchor enters neither channel — not a form field, not a tab stop — so it cannot move either
+  // verdict. `skipLinkIsInert` reads `routeChange`, and the 2.1.2 rule reads the same two channels.
+  //
+  // `vague_link_without_context` is the WORST veto on all three focus heads, so leaving it unreachable
+  // costs more than the collision that turned out not to exist.
+  //
+  // A MAP, not a chain: two substitutions were an `if`, a third would be the fifteen-`if` shape
+  // `SIGNAL_PREDICATES` one file along exists to avoid.
+  /** @type {Record<string, string>} */
+  const FOCUS_SAFE = { "bare-edit": "bare-edit-inert", "vague-link": "vague-link-inert" };
+  const focusSafe = (/** @type {any} */ name) =>
+    (readsFocusOrder && name in FOCUS_SAFE ? FOCUS_SAFE[name] : name);
   const chosen = names.map(focusSafe).filter((/** @type {any} */ name) => !collides.includes(name)
     && !(readsFocusOrder && PERTURBS_FOCUS_ORDER.includes(name))
     && !ACCOMPANYING_DEFECTS[name].subtypes.some((/** @type {any} */ s) => s === `${template.criterion}:${template.subtype}`));
