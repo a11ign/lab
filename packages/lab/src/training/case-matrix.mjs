@@ -9,6 +9,7 @@
  * fixtures.
  */
 import { parseAnnouncement } from "@a11y-witness/evidence";
+import { domCensus } from "@a11y-witness/evidence/verify";
 
 
 const BASE_STYLE = [
@@ -2075,6 +2076,35 @@ function MODAL_TRAP_FORM() {
     + "</div>";
 }
 
+/**
+ * A dialog holding EVERY form field on the page, with the page's links outside it.
+ *
+ * The shape `keyboard-trap-modal-cycle` names as its residual gap. That case corroborates a trap by
+ * comparing the tab ring against the SWEPT FORM FIELDS, which works while some fields sit outside the
+ * dialog. Here none do, so `reached >= onPage` and the comparison goes quiet on the most total trap of
+ * all — the blind spot is widest exactly where the failure is worst.
+ *
+ * The links are the point. They are tab stops the dialog does not hold, so a denominator that counts TAB
+ * STOPS rather than form fields still sees the page the cycle never reaches.
+ */
+function MODAL_TRAP_TOTAL_FORM() {
+  return "<nav aria-label=\"Sections\">"
+    + "<a href=\"#orders\">Recent orders</a>"
+    + "<a href=\"#returns\">Start a return</a>"
+    + "<a href=\"#account\">Account settings</a>"
+    + "<a href=\"#help\">Help centre</a>"
+    + "<a href=\"#contact\">Contact us</a>"
+    + "<a href=\"#privacy\">Privacy notice</a>"
+    + "</nav>"
+    + "<h2 id=\"orders\">Recent orders</h2>"
+    + "<p>Your most recent order was delivered on 3 March.</p>"
+    + "<div id=\"confirm\" role=\"dialog\" aria-label=\"Confirm address\">"
+    + "<label for=\"m1\">House number</label><input id=\"m1\" name=\"m1\">"
+    + "<label for=\"m2\">Street</label><input id=\"m2\" name=\"m2\">"
+    + "<label for=\"m3\">Town</label><input id=\"m3\" name=\"m3\">"
+    + "</div>";
+}
+
 function TRAP_FIELDSET_FORM() {
   return "<form><fieldset id=\"addr\"><legend>Address</legend>"
     + "<label for=\"a\">Full name</label><input id=\"a\" name=\"a\">"
@@ -2391,10 +2421,11 @@ cases.push(
     // stops 3, form fields 7. That difference is the evidence, it is in every capture already taken, and
     // no probe change or recapture was needed to read it.
     //
-    // The residual gap is narrower and stays: a dialog holding MOST of a page's controls still cycles
-    // over nearly everything, so the subset shrinks toward zero. Recorded in
-    // `docs/screenreader-coverage.md`; closing it needs Shift+Tab or Escape, and Escape collides with
-    // NVDA's own route out of focus mode.
+    // The residual gap this comment used to call permanent is CLOSED, and `keyboard-trap-modal-total` is
+    // the case that closed it. Not by pressing Escape, which this predicted: on a conformant page with no
+    // dialog Escape reveals nothing new either, so it cannot discriminate. The fix was a truthful
+    // DENOMINATOR — `domCensus.tabbable` counts the page's rendered tab stops, so a dialog holding every
+    // form field no longer looks like a page whose fields were all reached.
     good: page({
       title: "Delivery details",
       heading: "Delivery details",
@@ -2410,6 +2441,60 @@ cases.push(
       // `focusin` on the document, deferred with a microtask because moving focus during focus-event
       // dispatch is ignored by Chromium -- the same reason `keyboard-trap-blur-revalidate` defers.
       // Pulls focus to the dialog's FIRST control, so the cycle is dialog-only and never stalls.
+      script: "document.addEventListener('focusin', (event) => {"
+        + "  const dialog = document.getElementById('confirm');"
+        + "  if (!dialog.contains(event.target)) {"
+        + "    queueMicrotask(() => document.getElementById('m1').focus());"
+        + "  }"
+        + "});",
+    }),
+    badSignal: { type: "focus-trapped" },
+    probeFocus: true,
+  }),
+);
+
+cases.push(
+  pair({
+    id: "keyboard-trap-modal-total",
+    task: "Tab through the page and reach the site navigation.",
+    source: "WCAG 2.2 SC 2.1.2 No Keyboard Trap; F10; ARIA Authoring Practices, Dialog (Modal) Pattern",
+    mutation: "A focus guard on the dialog pulls focus back whenever it leaves, and the dialog holds EVERY "
+      + "form field on the page — so the tab ring covers all the fields the sweep can find while six "
+      + "links behind it are never reached.",
+    criterion: "2.1.2",
+    // THE BLIND SPOT `keyboard-trap-modal-cycle` RECORDED, now a case rather than a paragraph.
+    //
+    // That case's comment says it plainly: "a dialog holding MOST of a page's controls still cycles over
+    // nearly everything, so the subset shrinks toward zero". Here it reaches zero. The dialog holds all
+    // three form fields, so the tab ring covers every field the sweep finds, `reached >= onPage`, and the
+    // form-field corroboration goes SILENT on the most total trap in the corpus. A rule blindest where the
+    // failure is worst is not a conservative rule, it is an inverted one.
+    //
+    // The remedy that comment predicted was Shift+Tab or Escape, and BOTH are wrong. Escape is NVDA's own
+    // route out of focus mode, so pressing it means the probe can no longer tell a page that released
+    // focus from a screen reader that changed mode. And neither discriminates: on a CONFORMANT page with
+    // no dialog, Escape and Shift+Tab reveal nothing new either, so the evidence is the same on both
+    // variants — which is the one thing a signal may not do.
+    //
+    // What the rule actually lacked was a DENOMINATOR. It was asking "did focus reach every form field",
+    // when 2.1.2 asks "did focus reach the page". `domCensus.tabbable` counts the page's rendered tab
+    // stops, so the six links here are in the denominator and the dialog does not contain them. Measured
+    // on `keyboard-trap-modal-cycle` the moment the count existed: conformant 14 distinct stops of 14
+    // tabbable, trapped 3 of 14. The conformant variant matching EXACTLY is what makes it a denominator
+    // rather than another estimate.
+    good: page({
+      title: "Your account",
+      heading: "Your account",
+      body: MODAL_TRAP_TOTAL_FORM(),
+      // Nothing guards focus, so Tab walks the links and the dialog alike and wraps. Same markup as the
+      // bad variant to the byte — the pair differs by the script and by nothing else.
+    }),
+    bad: page({
+      title: "Your account",
+      heading: "Your account",
+      body: MODAL_TRAP_TOTAL_FORM(),
+      // Deferred with a microtask because moving focus during focus-event dispatch is ignored by
+      // Chromium — the same reason `keyboard-trap-blur-revalidate` and `keyboard-trap-modal-cycle` defer.
       script: "document.addEventListener('focusin', (event) => {"
         + "  const dialog = document.getElementById('confirm');"
         + "  if (!dialog.contains(event.target)) {"
@@ -3525,22 +3610,72 @@ function firstVisitEach(/** @type {any} */ names) {
  * @param {string[]} stops   `interaction.focusOrder`
  * @param {number} onPage    how many form fields the structural sweep found
  */
-export function focusIsTrappedIn(stops, onPage) {
-  if (!Array.isArray(stops) || stops.length < 3 || onPage <= 0) return false;
+/**
+ * The generous floor, and the SAME NUMBER as `TAB_RING_FLOOR` in `rules.ts`. The two are pinned equal by
+ * `focus-trap-parity.test.ts`, which drives both over every capture on disk and requires identical
+ * verdicts — this fact is stated twice because the corpus generator runs under plain `node` and the rule
+ * is TypeScript, and a fact stated twice with nothing comparing the copies is this repo's most-recorded
+ * defect. It cost a drift within the hour: the rule learned the tab-stop denominator, this did not, and
+ * `check-signals` reported `keyboard-trap-modal-total` BLIND while the rule fired on the same capture.
+ */
+export const TAB_RING_FLOOR = 0.5;
+
+/**
+ * @param {string[]} stops    `interaction.focusOrder`
+ * @param {number} onPage     form fields the structural sweep found
+ * @param {number} [tabbable] the page's RENDERED tab stops, from the DOM census — absent on any capture
+ *   taken before that count existed, and absence must make no claim
+ */
+export function focusIsTrappedIn(stops, onPage, tabbable) {
+  if (!Array.isArray(stops) || stops.length < 3) return false;
   const reached = new Set(stops).size;
-  // Focus reached at least as many distinct things as the page has controls: no trap, whatever the shape.
-  // This is the corroboration that separates a trap from the end of a short document, and it is why a
-  // conformant wrap — which also visits links, so `reached` exceeds `onPage` — never fires.
-  if (reached >= onPage) return false;
+  if (!fellShortOfThePage(reached, onPage, stops, tabbable)) return false;
   let trailing = 0;
   for (let i = stops.length - 1; i >= 0 && stops[i] === stops[stops.length - 1]; i -= 1) trailing += 1;
   if (trailing >= 2) return true;                       // stalled: Tab stopped moving
   return reached < stops.length;                        // a stop recurred, so the cycle closed
 }
 
+/**
+ * Did the tab ring fall short of the PAGE? The mirror of `tabRingCoverage` in `rules.ts`.
+ *
+ * Two denominators, and the second exists because the first goes silent on the worst case. Swept FORM
+ * FIELDS answer "did focus reach every field"; when a dialog holds them all, `reached >= onPage` and the
+ * most total trap in the corpus reads as clean. `keyboard-trap-modal-total` is that page: 3 distinct stops
+ * against 3 swept fields, and 3 against 16 tab stops.
+ *
+ * The tab-stop test applies ONLY to a CLOSED cycle, and that guard is not optional: the focus probe stops
+ * at `MAX_TAB_STOPS` and a real page can hold hundreds, so a truncated walk covers a fraction of the page
+ * and would accuse every large site. A repeated stop proves the walk WRAPPED; a walk cut short before
+ * wrapping has no repeat at all.
+ */
+/**
+ * @param {number} reached    distinct focus stops
+ * @param {number} onPage     form fields the structural sweep found
+ * @param {string[]} stops    `interaction.focusOrder`
+ * @param {number} [tabbable] the page's rendered tab stops
+ */
+function fellShortOfThePage(reached, onPage, stops, tabbable) {
+  // Focus reached at least as many distinct things as the page has controls: no trap by this measure.
+  // This is the corroboration that separates a trap from the end of a short document, and it is why a
+  // conformant wrap — which also visits links, so `reached` exceeds `onPage` — never fires.
+  if (onPage > 0 && reached < onPage) return true;
+  if (typeof tabbable !== "number" || !cycleClosedIn(stops)) return false;
+  return reached < tabbable * TAB_RING_FLOOR;
+}
+
+/** A stop recurred, so the walk wrapped — the same test `cycleClosed` makes in `rules.ts`.
+ * @param {string[]} stops */
+function cycleClosedIn(stops) {
+  return stops.length > 1 && stops.lastIndexOf(stops[0]) > 0;
+}
+
 function focusIsTrapped(/** @type {any} */ capture) {
   return focusIsTrappedIn(capture.interaction?.focusOrder ?? [],
-    (capture.structure?.formFields ?? []).length);
+    (capture.structure?.formFields ?? []).length,
+    // Read through `domCensus`, never by walking `diagnostics` here: that extraction is the step six rule
+    // callers each spelled themselves, and four of them got it wrong at some point.
+    domCensus(capture)?.tabbable);
 }
 
 /**
