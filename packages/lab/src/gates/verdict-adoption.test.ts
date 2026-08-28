@@ -30,7 +30,7 @@ const ROOT = resolve(import.meta.dirname, "../../../..");
  *
  * `owed` is a WORK LIST. `not-a-gate` is a decision, and each says what makes it one.
  */
-const EXEMPT: Record<string, { category: "owed" | "not-a-gate"; why: string }> = {
+const EXEMPT: Record<string, { category: "owed" | "not-a-gate" | "deliberate"; why: string }> = {
   "audit-corpus-starvation.mjs": { category: "not-a-gate",
     why: "emits a work list, and `IMPOSSIBLE_BY_DEFINITION` items mean a shorter list is not a better "
       + "score. There is no pass/fail here to condition on coverage" },
@@ -47,14 +47,14 @@ const EXEMPT: Record<string, { category: "owed" | "not-a-gate"; why: string }> =
     why: "emits the JS-side `grants` declarations for the Python audit, which REFUSES without it rather "
       + "than examining an empty set — that file's version of this same rule" },
 
-  "score-rules.ts": { category: "owed",
-    why: "already prints six populations and reports INCONCLUSIVE when the corpus cannot attribute a "
-      + "problem, so migrating is mechanical — but it guards every rule, so do it with `rules:gate` green "
-      + "before and after" },
-  "evidence-check.mjs": { category: "owed",
-    why: "the reason the shape exists: it passed on 2 of 48 because its guard covered `compared === 0` "
-      + "rather than `compared < expected`. Fixed by hand since; migrating replaces that hand-rolled guard "
-      + "with one that cannot be written too narrowly" },
+  "evidence-check.mjs": { category: "deliberate",
+    why: "CONSIDERED AND DECIDED AGAINST, 2026-08-28. Its coverage rule is already correct — `compared === "
+      + "0 || compared < attempted` — so migrating buys nothing behavioural, and it would FLIP a decision "
+      + "someone made on purpose: this gate ranks INCONCLUSIVE above CHANGED (`inconclusive ? 2 : changed ? "
+      + "1 : 0`), where `gateVerdict` ranks failures first. Its comment gives the reason — 'the sample is "
+      + "STRATIFIED one case per family, so a skipped capture is a family about which this tool now has no "
+      + "opinion... Full coverage or no verdict'. Adding a flag to `gateVerdict` to support both orderings "
+      + "would be the conflation D6 exists to remove, wearing a shared function's clothes" },
 };
 
 function discoverGates(): string[] {
@@ -95,10 +95,22 @@ for (const name of gates) {
 
 test("the exemption list is a WORK LIST, and every entry still exists", () => {
   const owed = Object.entries(EXEMPT).filter(([, e]) => e.category === "owed").map(([n]) => n);
+  // `deliberate` is a DECISION, not a backlog item, and it must not be silently reclassified into one.
+  // Every entry carries the reasoning so the next reader can disagree with it on the merits rather than
+  // assume it was an oversight.
+  for (const [name, e] of Object.entries(EXEMPT)) {
+    if (e.category !== "deliberate") continue;
+    assert.ok(e.why.length > 200, `${name} was decided against — the reason must be long enough to argue `
+      + "with, or it will read as an excuse");
+  }
   for (const name of Object.keys(EXEMPT)) {
     assert.ok(gates.includes(name), `${name} is exempted but no longer exists — delete its line`);
   }
-  // Stated so the remaining work is visible in the test output rather than only in a plan nobody opens.
-  assert.ok(owed.length > 0, "if nothing is owed, delete this assertion along with the last owed entry");
-  process.stdout.write(`      ${owed.length} gate(s) still owed the verdict shape: ${owed.join(", ")}\n`);
+  // The backlog is EMPTY as of 2026-08-28, and `owed` stays in the type rather than being deleted with the
+  // last entry: a gate added tomorrow starts unmigrated, and the next person needs somewhere to say so that
+  // is not a comment. What was deleted is the assertion demanding the list be non-empty — it existed to keep
+  // the remaining work visible in test output, and it fired the moment the work was done, which is the
+  // correct end for a work-list assertion rather than a defect in it.
+  assert.equal(owed.length, 0,
+    `${owed.length} gate(s) still owed the verdict shape: ${owed.join(", ")}`);
 });

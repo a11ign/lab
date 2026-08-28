@@ -48,6 +48,7 @@ import { ruleFindings } from "@a11y-witness/judge/rules";
 
 import { readRuleOwnership } from "../src/training/rule-ownership.js";
 import { CASES } from "../src/training/case-matrix.mjs";
+import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 
 /**
  * Subtypes the CASE DEFINITIONS carry, which is a different question from what the export contains.
@@ -272,7 +273,7 @@ function main(): void {
     ...ownershipFailures(coverage),
     ...boundaryFailures(coverage),
   ];
-  reportGate(failures);
+  reportGate(failures, records.length);
 }
 
 /** The map of who decides what. Printed always, because "nobody" is the answer most worth seeing. */
@@ -449,29 +450,41 @@ export function partitionProblems(failures: string[]): { conclusive: string[]; u
   };
 }
 
-function reportGate(failures: string[]): void {
+function reportGate(failures: string[], scored: number): void {
   const { conclusive, undetermined } = partitionProblems(failures);
+  if (!GATE) return;
 
-  // A stale working copy of `runs/` is not a defect in the code being pushed, and this check cannot tell a
-  // stale corpus from one that legitimately needs recapture. Failing on it is what made A11Y_SKIP_VERIFY=1
-  // routine -- and that switch disables lint, typecheck and 953 tests too, so the check that could not
-  // answer its own question switched off the ones that could. Exit 2 INCONCLUSIVE instead, exactly as
-  // check-signals already does, and let the hook report it as SKIPPED. The authoritative answer is
-  // `npm run lab:job -- -e job=rules-gate`, where the corpus IS the corpus.
-  if (GATE && !conclusive.length && undetermined.length) {
-    console.log(`\nRULES: INCONCLUSIVE — ${undetermined.length} problem(s) this copy of runs/ cannot `
-      + `attribute: ${undetermined.join("; ")}.`);
-    console.log("This is not a pass. Re-export, or ask the lab, which holds the authoritative corpus.");
-    process.exitCode = 2;
-    return;
+  // COVERAGE IS BOUNDARIES DECIDED, not subtypes present -- and the difference is measurable on this very
+  // corpus, which carries one of each: `1.3.1:no-headings` is ABSENT from a stale export, while
+  // `3.3.2:placeholder-only` is PRESENT and unattributable because the export recorded no exclusion set.
+  // Counting presence would have called the second one examined. Every declared entry is one boundary this
+  // gate sets out to decide, and every `undetermined` is one it could not -- for either reason.
+  const of = OWNERSHIP.size;
+  const verdict = gateVerdict({
+    examined: of - undetermined.length,
+    of,
+    source: `rule-ownership.json, against ${scored} record(s) in ${DATA}`,
+    // Failures are deliberately NOT a subset of `examined`: the undeclared-and-touched check finds problems
+    // on subtypes that are in no declaration at all, so this count can exceed `of`. `gateVerdict`'s wording
+    // was fixed for exactly that case.
+    failures: conclusive.length,
+  });
+
+  // The detail is already printed above, per problem, with the remedy. This line is the one a hook or a
+  // pipeline reads, and it now carries its own scope -- "1 of 41" cannot be mistaken for "clean".
+  console.log(`\nRULES: ${renderVerdict(verdict)}`);
+  if (conclusive.length) {
+    console.log(`  problems: ${[...conclusive, ...undetermined.map((u) => `${u} (undetermined)`)].join("; ")}`);
+  } else if (undetermined.length) {
+    // A stale working copy of `runs/` is not a defect in the code being pushed, and this check cannot tell a
+    // stale corpus from one that legitimately needs recapture. Failing on it is what made A11Y_SKIP_VERIFY=1
+    // routine -- and that switch disables lint, typecheck and 1337 tests too, so the check that could not
+    // answer its own question switched off the ones that could. Exit 2 INCONCLUSIVE, as check-signals does,
+    // and let the hook report it as SKIPPED.
+    console.log(`  cannot attribute: ${undetermined.join("; ")}.`);
+    console.log("  This is not a pass. Re-export, or ask the lab, which holds the authoritative corpus.");
   }
-  if (GATE && conclusive.length) {
-    const all = [...conclusive, ...undetermined.map((u) => `${u} (undetermined)`)];
-    console.log(`\nRULES: FAIL — ${all.length} problem(s): ${all.join("; ")}.`);
-    process.exitCode = 1;
-  } else if (GATE) {
-    console.log("\nRULES: PASS — every declared boundary holds on real captured evidence, with no false positives.");
-  }
+  process.exitCode = exitCodeFor(verdict);
 }
 
 /**
