@@ -2061,19 +2061,20 @@ function FOCUS_ORDER_FORM(/** @type {any} */ mode) {
  * covering a strict SUBSET of the page's controls, so a dialog holding most of the page would shrink that
  * difference to nothing. Three of seven leaves it unambiguous, which is what a canary is for.
  */
-function MODAL_TRAP_FORM() {
-  return "<form>"
-    + "<label for=\"a\">Full name</label><input id=\"a\" name=\"a\">"
-    + "<label for=\"b\">Email</label><input id=\"b\" name=\"b\">"
-    + "<label for=\"d\">Phone</label><input id=\"d\" name=\"d\">"
-    + "<label for=\"e\">Delivery notes</label><input id=\"e\" name=\"e\">"
-    + "</form>"
-    + "<div id=\"confirm\" role=\"dialog\" aria-label=\"Confirm address\">"
-    + "<label for=\"m1\">House number</label><input id=\"m1\" name=\"m1\">"
-    + "<label for=\"m2\">Street</label><input id=\"m2\" name=\"m2\">"
-    + "<label for=\"m3\">Town</label><input id=\"m3\" name=\"m3\">"
-    + "</div>";
-}
+/*
+ * `MODAL_TRAP_FORM` and its case `keyboard-trap-modal-cycle` stood here: a dialog holding three controls
+ * with four form fields behind it, and a `focusin` guard cycling focus among the three.
+ *
+ * REMOVED 2026-08-28 with the rule branch that read it. Both were exact on this corpus and wrong on the
+ * web — 7 new 2.1.2 findings on 86 conformant real pages — because the page this builds and a cookie
+ * consent banner are THE SAME EVIDENCE: a ring smaller than the swept form fields. Compare
+ * networkrail.co.uk/careers/ (ring 4, swept 7) against this case (ring 3, swept 5). With the branch gone
+ * the case has no signal that can fire, and `check-signals` correctly calls that BLIND.
+ *
+ * Recorded here rather than only in git because the page shape is right and will be needed again: what it
+ * lacks is a CONFORMANT sibling whose dialog releases focus on Escape. Without that control the corpus
+ * cannot express the distinction the rule has to turn on, which is exactly why it read as clean.
+ */
 
 /*
  * `MODAL_TRAP_TOTAL_FORM` and its case `keyboard-trap-modal-total` stood here on 2026-08-28: a dialog
@@ -2371,63 +2372,6 @@ cases.push(
       script: "document.getElementById('c').addEventListener('focusout', (event) => {"
         + "  if (!event.target.value) {"
         + "    queueMicrotask(() => event.target.focus());"
-        + "  }"
-        + "});",
-    }),
-    badSignal: { type: "focus-trapped" },
-    probeFocus: true,
-  }),
-);
-
-cases.push(
-  pair({
-    id: "keyboard-trap-modal-cycle",
-    task: "Tab through the page and reach the delivery notes at the end.",
-    source: "WCAG 2.2 SC 2.1.2 No Keyboard Trap; F10; ARIA Authoring Practices, Dialog (Modal) Pattern",
-    mutation: "A focus guard on the dialog pulls focus back to its first control whenever focus leaves "
-      + "it, so focus CYCLES for ever among the dialog's three controls and never reaches the four "
-      + "fields behind it.",
-    criterion: "2.1.2",
-    // THE TRAP THE PROBE COULD NOT SEE, and the reason this case exists rather than being another
-    // refocus-one-field variant.
-    //
-    // `keyboard-trap-blur-revalidate` records the gap in its own comment: its first version used a guard
-    // that pulled focus back to a fieldset's FIRST control -- "the canonical modal focus-trap shape" --
-    // and was rewritten because `stalled` requires the same control repeatedly, while a guard that cycles
-    // focus among several controls moves focus every press and "reads as `cycled`, which is exactly what
-    // a conformant page's tab order does when it wraps". That case would have entered the corpus BLIND,
-    // so the mechanism was changed to one the probe could express, and the limitation was written down.
-    //
-    // The limitation was real about the CYCLE and not about its CONTENTS. A conformant wrap visits every
-    // control on the page; a modal cycle visits a subset, and the sweep already records what the whole
-    // page has. So the dialog here holds THREE controls while four more sit behind it: distinct focus
-    // stops 3, form fields 7. That difference is the evidence, it is in every capture already taken, and
-    // no probe change or recapture was needed to read it.
-    //
-    // The residual gap this comment used to call permanent is CLOSED, and `keyboard-trap-modal-total` is
-    // the case that closed it. Not by pressing Escape, which this predicted: on a conformant page with no
-    // dialog Escape reveals nothing new either, so it cannot discriminate. The fix was a truthful
-    // DENOMINATOR — `domCensus.tabbable` counts the page's rendered tab stops, so a dialog holding every
-    // form field no longer looks like a page whose fields were all reached.
-    good: page({
-      title: "Delivery details",
-      heading: "Delivery details",
-      body: MODAL_TRAP_FORM(),
-      // The SAME dialog, focusable and escapable. A conformant modal moves focus in and keeps it there
-      // WHILE OPEN -- so the honest conformant variant is the dialog closed, which is the state a keyboard
-      // user reaches by dismissing it. Nothing here guards focus, so Tab walks the whole page and wraps.
-    }),
-    bad: page({
-      title: "Delivery details",
-      heading: "Delivery details",
-      body: MODAL_TRAP_FORM(),
-      // `focusin` on the document, deferred with a microtask because moving focus during focus-event
-      // dispatch is ignored by Chromium -- the same reason `keyboard-trap-blur-revalidate` defers.
-      // Pulls focus to the dialog's FIRST control, so the cycle is dialog-only and never stalls.
-      script: "document.addEventListener('focusin', (event) => {"
-        + "  const dialog = document.getElementById('confirm');"
-        + "  if (!dialog.contains(event.target)) {"
-        + "    queueMicrotask(() => document.getElementById('m1').focus());"
         + "  }"
         + "});",
     }),
@@ -3550,7 +3494,13 @@ export function focusIsTrappedIn(stops, onPage) {
   let trailing = 0;
   for (let i = stops.length - 1; i >= 0 && stops[i] === stops[stops.length - 1]; i -= 1) trailing += 1;
   if (trailing >= 2) return true;                       // stalled: Tab stopped moving
-  return reached < stops.length;                        // a stop recurred, so the cycle closed
+  // A stop recurring without recurring CONSECUTIVELY — a closed cycle over a ring smaller than the page —
+  // used to return true here. Withdrawn 2026-08-28 with its rule-side twin: it produced 7 new 2.1.2
+  // findings on 86 conformant real pages, because a consent banner confines Tab to its own controls while
+  // the sweep walks the whole document. Measured on tfl.gov.uk (ring 5, swept 28, of which three are
+  // "Accept all cookies" and friends) and networkrail.co.uk (ring 4, swept 7). `tabRingCoverage` in
+  // `rules.ts` carries the full argument, and `focus-trap-parity.corpus.test.ts` keeps the two in step.
+  return false;
 }
 
 /**

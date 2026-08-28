@@ -69,18 +69,22 @@ test("the signal and the rule agree about every focus capture on disk", { skip: 
 
 test("both fire on the trapped variant of every trap case, and on neither conformant one", { skip: CAPTURES.length === 0 && "no runs/ here — run this locally" }, () => {
   // THE CONTROL, and this test is worthless without it: two predicates that both answer `false` always
-  // agree perfectly. Measured — the corpus holds `keyboard-trap-postcode` (stalled) and
-  // `keyboard-trap-modal-cycle` (cycling), which are the two shapes.
+  // agree perfectly. The corpus now holds only the STALLED shape — `keyboard-trap-postcode` and
+  // `keyboard-trap-blur-revalidate`. `keyboard-trap-modal-cycle` and the cycling branch that read it were
+  // withdrawn on 2026-08-28, after `rules-real-pages` measured 7 new 2.1.2 findings on 86 conformant real
+  // pages: a consent banner confines Tab to its own controls while the sweep walks the whole document, so
+  // that page and the corpus trap are the same evidence (tfl ring 5 of 28 swept; the case, 3 of 5).
   const fired = CAPTURES.filter(({ capture }) => {
     const interaction = capture.interaction as { focusOrder: string[] };
     const structure = capture.structure as { formFields?: string[] } | undefined;
     return focusIsTrappedIn(interaction.focusOrder, (structure?.formFields ?? []).length);
   }).map((c) => c.name);
 
-  assert.ok(fired.some((n) => n.startsWith("keyboard-trap-modal-cycle.bad")),
-    "the CYCLING trap must fire, or the blind spot this case was added for is still there");
   assert.ok(fired.some((n) => n.startsWith("keyboard-trap-postcode.bad")),
-    "and the stalling trap must still fire, or closing the blind spot broke what already worked");
+    "the STALLING trap must fire — it is the one shape 2.1.2 can assert from a capture, because a control "
+      + "that will not release focus on Tab offers no documented means to leave");
+  assert.ok(fired.length > 0,
+    "nothing fired at all, so the assertion below about conformant pages is vacuous");
   const conformant = fired.filter((n) => n.includes(".good."));
   assert.deepEqual(conformant, [],
     "a trap reported on a conformant page is an accusation; 2.1.2 is TOTAL — it says a keyboard user "
