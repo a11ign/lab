@@ -43,7 +43,20 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 refuseUnknownFlags(["--from=", "--dry-run", "--accept-regression"],
   { entry: import.meta.url, command: "npm run promote:model" });
 
-const REPO = fileURLToPath(new URL("../../../", import.meta.url));
+/**
+ * The tree to promote INTO. Overridable so this can be proven without copying the repository.
+ *
+ * `docs/proving-a-gate.md` step 2: separate the DECISION from the DATA. The first version of
+ * `promotion-refuses-dirty.test.ts` planted a temp repo and `cpSync`-ed the whole of `node_modules` into
+ * it so the copied script could resolve its imports — six seconds per test, and it died on the pre-push
+ * hook with `EINTR, Interrupted system call` partway through the copy. A test that copies the world to
+ * observe one refusal is slow, flaky, and copies the world.
+ *
+ * With this the REAL script runs in place, from the repo, pointed at a three-file tree. Same override
+ * `check-shipped-provenance.mjs` takes, and the same convention as `audit-rule-coverage.ts`'s
+ * `CAPTURE_ROOT`.
+ */
+const REPO = process.env.A11Y_PROMOTE_ROOT || fileURLToPath(new URL("../../../", import.meta.url));
 const SHIPPED = resolve(REPO, "packages/scorer/models/screenreader-scorer");
 const CHANGESETS = resolve(REPO, ".changeset");
 

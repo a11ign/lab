@@ -72,38 +72,38 @@ test("the refusal NAMES the files and says where the originals are", () => {
  * small files.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, cpSync, realpathSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
-/** A repo with a committed shipped model and a candidate ready to promote. */
+/**
+ * A tree with a committed shipped model and a candidate ready to promote.
+ *
+ * NOTHING IS COPIED INTO IT but four small JSON files. The first version of this planted the real script
+ * here and `cpSync`-ed the whole of `node_modules` alongside it, so the copy could resolve its imports —
+ * six seconds per test, and it died on the pre-push hook with `EINTR, Interrupted system call` partway
+ * through. A test that copies the world to observe one refusal is slow, flaky, and copies the world.
+ *
+ * `A11Y_PROMOTE_ROOT` and `A11Y_CANDIDATE_ROOT` let the REAL script run in place and write here instead,
+ * which is `docs/proving-a-gate.md` step 2 — separate the DECISION from the DATA — and is what makes the
+ * tier-2 proof cheap enough to keep.
+ */
 function plantedRepo(): string {
-  // REALPATH, and this is not tidiness. On macOS `/var` is a symlink to `/private/var`, so a script
-  // resolving its root from `import.meta.url` (realpath) while its entry guard compares
-  // `process.argv[1]` (as given) never matches — `main` does not run, nothing is printed and the exit
-  // code is 0. A test written without this reports "the guard did not fire" about a script that never
-  // started, which is the same class of wrong answer the guard itself exists to prevent.
+  // REALPATH, and this is not tidiness. On macOS `/var` is a symlink to `/private/var`, and `git status`
+  // reports paths against the resolved root; comparing the two forms makes a clean tree look dirty.
   const root = realpathSync(mkdtempSync(join(tmpdir(), "a11y-promote-")));
-  const git = (...args: string[]) =>
-    execFileSync("git", args, { cwd: root, stdio: "ignore" });
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
   git("init", "-q");
   git("config", "user.email", "t@example.com");
   git("config", "user.name", "t");
 
-  // The real script, so this exercises the file that ships — not a copy of its logic.
-  for (const rel of ["packages/lab/scripts", "packages/lab/src/packaging",
-                     "packages/scorer/models/screenreader-scorer", "runs/model-candidate", ".changeset"]) {
-    mkdirSync(join(root, rel), { recursive: true });
-  }
-  for (const rel of ["packages/lab/scripts/promote-model.mjs",
-                     "packages/lab/src/packaging/releasability.mjs",
-                     "packages/lab/src/packaging/promotion-targets.mjs"]) {
-    cpSync(join(REPO, rel), join(root, rel));
-  }
-  cpSync(join(REPO, "node_modules"), join(root, "node_modules"), { recursive: true, dereference: false });
+  const model = join(root, "packages/scorer/models/screenreader-scorer");
+  mkdirSync(model, { recursive: true });
+  mkdirSync(join(root, "runs/model-candidate"), { recursive: true });
+  mkdirSync(join(root, ".changeset"), { recursive: true });
 
   const report = {
     dataset: { records: 2000 },
@@ -131,11 +131,19 @@ function plantedRepo(): string {
   return root;
 }
 
+const SCRIPT = join(REPO, "packages/lab/scripts/promote-model.mjs");
+
+/** @returns the command's exit code and its combined output. */
 const runPromote = (root: string) => {
   try {
-    const out = execFileSync(process.execPath,
-      [join(root, "packages/lab/scripts/promote-model.mjs"), "--from=candidate"],
-      { cwd: root, encoding: "utf8" });
+    const out = execFileSync(process.execPath, [SCRIPT, "--from=candidate"], {
+      cwd: root, encoding: "utf8",
+      env: {
+        ...process.env,
+        A11Y_PROMOTE_ROOT: root,
+        A11Y_CANDIDATE_ROOT: join(root, "runs"),
+      },
+    });
     return { code: 0, out };
   } catch (error) {
     const failure = error as { status?: number; stdout?: string; stderr?: string };
