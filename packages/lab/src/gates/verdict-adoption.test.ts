@@ -55,9 +55,6 @@ const EXEMPT: Record<string, { category: "owed" | "not-a-gate"; why: string }> =
     why: "the reason the shape exists: it passed on 2 of 48 because its guard covered `compared === 0` "
       + "rather than `compared < expected`. Fixed by hand since; migrating replaces that hand-rolled guard "
       + "with one that cannot be written too narrowly" },
-  "check-real-page-findings.ts": { category: "owed",
-    why: "its population is the 86 conformant real pages and it names them, but the verdict is not yet "
-      + "derived from how many were actually scored" },
 };
 
 function discoverGates(): string[] {

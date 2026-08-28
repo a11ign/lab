@@ -35,6 +35,7 @@
  *
  * Needs `runs/`, so it SKIPS HONESTLY where the corpus is absent rather than passing quietly.
  */
+import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -411,6 +412,65 @@ const DOM_CENSUS = new Map<string, { heading?: number }>();
 /** url -> its opening announcements, kept so the summary above can be computed without a second read. */
 const OPENINGS = new Map<string, string[]>();
 
+/**
+ * Report what changed against the baseline, and derive the verdict from what was actually READABLE.
+ *
+ * Split from `main` for the line budget, and it is a real phase rather than a slice taken to satisfy it:
+ * everything above decides WHAT to compare, and everything here decides what that comparison is worth.
+ */
+function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: number }): void {
+  const furniture = furnitureCaptures();
+  if (furniture.consent.length || furniture.shell.length) {
+    process.stdout.write(`\n  ${furniture.consent.length} capture(s) opened on a COOKIE/CONSENT overlay `
+      + `and ${furniture.shell.length} on an unrendered SHELL, and NEVER REACHED A HEADING — those read `
+      + "the site's furniture, not its page, so anything they say is about this tool.\n");
+    for (const url of [...furniture.consent, ...furniture.shell].slice(0, 8)) {
+      process.stdout.write(`    furniture: ${url.replace(/^https:\/\//, "")}\n`);
+      process.stdout.write(`           ${describeEvidence(url)}\n`);
+    }
+  }
+
+  if (added.length) {
+    process.stdout.write(`\n  ${added.length} NEW finding(s) on pages whose publisher declares them `
+      + "conformant:\n");
+  }
+  for (const change of added) {
+    process.stdout.write(`    ${change.criterion}  ${change.url.replace(/^https:\/\//, "")}\n`);
+    // THE EVIDENCE, not just the URL. This told the reader to "read the evidence for each" and then gave
+    // them a list of URLs — so reading it meant an ssh session and ad-hoc JSON, which is the step this
+    // repo removes everywhere else. The census is the whole basis of the two rules most likely to appear
+    // here, and it also settles the question a bare count cannot: a census reading zero for EVERYTHING is
+    // a tree that was never built, which is not the same finding as a page that genuinely has none.
+    process.stdout.write(`           ${describeEvidence(change.url)}\n`);
+  }
+  if (added.length) {
+    process.stdout.write("\n  Read the evidence for each before doing anything else. It is one of three "
+      + "things:\n"
+      + "    - the tool is wrong, and this is the defect class that ran for eleven separate causes;\n"
+      + "    - the PAGE changed, since these are live sites their publishers keep editing;\n"
+      + "    - the finding is right and the publisher's claim is not — which has happened, twice.\n"
+      + "  Only the third takes `--update`.\n");
+  }
+
+  // A FURNITURE CAPTURE IS NOT AN EXAMINED PAGE, and until now it did not reduce anything. This gate
+  // already DETECTS them — captures that opened on a cookie overlay or an unrendered shell and never
+  // reached a heading — and says outright that "anything they say is about this tool". Then it reported
+  // `PASS — no conformant page gained a finding` regardless of how many there were.
+  //
+  // So a run where most of the sample read a consent banner passed. CLAUDE.md records the same confusion
+  // as a metric that "merged 'has a cookie banner' with 'never got past one'"; this is that merge inside a
+  // gate. They now reduce COVERAGE, so the verdict is INCONCLUSIVE rather than a pass — determinism-plan D6.
+  const unusable = furniture.consent.length + furniture.shell.length;
+  const verdict = gateVerdict({
+    examined: pages - unusable,
+    of: pages,
+    source: "conformant real pages scored against the baseline",
+    failures: added.length,
+  });
+  process.stdout.write(`\n  ${renderVerdict(verdict)}\n`);
+  process.exitCode = exitCodeFor(verdict);
+}
+
 function main(): void {
   // ASKED, not inferred from file age — the same fix `audit-rule-coverage.ts` took, applied here too.
   // It was applied to ONE of the three audits that carry this guard, which is the shape this repo names
@@ -461,37 +521,7 @@ function main(): void {
   // that read the site's furniture instead of its page is a defect regardless: if it matches a baseline
   // entry made from an equally bad capture, the gate says PASS and the corpus quietly holds evidence of
   // a cookie banner. A bad capture that reproduces itself looks exactly like stability.
-  const furniture = furnitureCaptures();
-  if (furniture.consent.length || furniture.shell.length) {
-    process.stdout.write(`\n  ${furniture.consent.length} capture(s) opened on a COOKIE/CONSENT overlay `
-      + `and ${furniture.shell.length} on an unrendered SHELL, and NEVER REACHED A HEADING — those read `
-      + "the site's furniture, not its page, so anything they say is about this tool.\n");
-    for (const url of [...furniture.consent, ...furniture.shell].slice(0, 8)) {
-      process.stdout.write(`    furniture: ${url.replace(/^https:\/\//, "")}\n`);
-      process.stdout.write(`           ${describeEvidence(url)}\n`);
-    }
-  }
-
-  if (!added.length) {
-    process.stdout.write("\n  PASS — no conformant page gained a finding.\n");
-    return;
-  }
-  process.stdout.write(`\n  ${added.length} NEW finding(s) on pages whose publisher declares them conformant:\n`);
-  for (const change of added) {
-    process.stdout.write(`    ${change.criterion}  ${change.url.replace(/^https:\/\//, "")}\n`);
-    // THE EVIDENCE, not just the URL. This told the reader to "read the evidence for each" and then gave
-    // them a list of URLs — so reading it meant an ssh session and ad-hoc JSON, which is the step this
-    // repo removes everywhere else. The census is the whole basis of the two rules most likely to appear
-    // here, and it also settles the question a bare count cannot: a census reading zero for EVERYTHING is
-    // a tree that was never built, which is not the same finding as a page that genuinely has none.
-    process.stdout.write(`           ${describeEvidence(change.url)}\n`);
-  }
-  process.stdout.write("\n  Read the evidence for each before doing anything else. It is one of three things:\n"
-    + "    - the tool is wrong, and this is the defect class that ran for eleven separate causes;\n"
-    + "    - the PAGE changed, since these are live sites their publishers keep editing;\n"
-    + "    - the finding is right and the publisher's claim is not — which has happened, twice.\n"
-    + "  Only the third takes `--update`.\n");
-  process.exitCode = 1;
+  reportAgainstBaseline({ added, pages });
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();
