@@ -64,8 +64,6 @@ const EXEMPT: Record<string, { category: "owed" | "not-a-gate"; why: string }> =
   "check-shipped-provenance.mjs": { category: "owed",
     why: "examines one artefact, so coverage is 1 of 1 and the shape adds little beyond consistency; "
       + "lowest priority" },
-  "stability-gate.mjs": { category: "owed",
-    why: "says 'N/N canaries stable', so the population is stated; the verdict is not derived from it" },
 };
 
 function discoverGates(): string[] {
@@ -88,11 +86,16 @@ test("the gates are DISCOVERED, not trusted from a list", () => {
 for (const name of gates) {
   const exempt = EXEMPT[name];
   test(exempt ? `${name} is exempt (${exempt.category})` : `${name} derives its verdict from coverage`, () => {
+    const source = readFileSync(resolve(ROOT, "packages/lab/scripts", name), "utf8");
     if (exempt) {
       assert.ok(exempt.why.length > 40, `${name}'s exemption needs a real reason, not a word`);
+      // BOTH DIRECTIONS. An exemption outliving its migration is a work list claiming work that is done —
+      // `stability-gate.mjs` sat here for one commit after being migrated, and the test kept announcing it
+      // as owed. A list only stays honest if being ON it wrongly fails too.
+      assert.doesNotMatch(source, /\bgateVerdict\(/,
+        `${name} already derives its verdict — delete its EXEMPT entry`);
       return;
     }
-    const source = readFileSync(resolve(ROOT, "packages/lab/scripts", name), "utf8");
     assert.match(source, /\bgateVerdict\(/,
       `${name} must build its verdict with gateVerdict(), or be listed in EXEMPT with a reason. A gate `
       + "that reports PASS without conditioning on what it examined is the 2-of-48 defect.");

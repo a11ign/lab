@@ -37,6 +37,7 @@ const REPEAT_CAPTURE = fileURLToPath(new URL("../src/training/repeat-capture.mjs
 
 import { leaseWorker, guestReachableUrl } from "@a11y-witness/worker-fleet";
 import { leasePageServer } from "../src/training/page-server.mjs";
+import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { assertWorkerUrl } from "../../worker-fleet/src/worker-http.mjs";
 
@@ -209,10 +210,10 @@ async function judgeCanary(/** @type {any} */ { path, url: absolute, reason, tas
     } else if (Number(usable ?? 0) < 2) {
       // Too few usable captures is not a PASS. A gate that passes when it could not measure is worse
       // than no gate, because it launders "unknown" into "fine".
-      results.push({ path, ok: false, detail: `only ${usable ?? 0} usable capture(s) — could not judge` });
+      results.push({ path: name, ok: false, detail: `only ${usable ?? 0} usable capture(s) — could not judge` });
       process.stdout.write(`  INCONCLUSIVE — only ${usable ?? 0} usable\n`);
     } else {
-      results.push({ path, ok: true, detail: `${usable} usable, all fields identical` });
+      results.push({ path: name, ok: true, detail: `${usable} usable, all fields identical` });
       process.stdout.write(`  STABLE — ${usable} usable, all fields identical\n`);
     }
   } catch (error) {
@@ -304,22 +305,35 @@ async function main() {
 /** The verdict, and the exit code that carries it. Split out to keep `main` inside the complexity gate. */
 function report(/** @type {any} */ results) {
   const failed = results.filter((/** @type {any} */ r) => !r.ok);
-  process.stdout.write(`\n${results.length - failed.length}/${results.length} canaries stable\n`);
   for (const f of failed) process.stdout.write(`  ${f.path}: ${f.detail}\n`);
+  const unjudgeable = failed.filter((/** @type {any} */ f) => !f.unstable);
   const unstable = failed.filter((/** @type {any} */ f) => f.unstable);
-  if (failed.length && !unstable.length) {
-    process.stdout.write("\nNo canary was UNSTABLE, but some could not be judged (errored or empty " +
-      "captures). Re-run the gate; if the same canary keeps failing to complete, that is a worker " +
-      "problem rather than a determinism one.\n");
-    process.exit(2);
+
+  // THE DENOMINATOR IS THE CANARY LIST, not the results. `results.length` counts whatever produced a
+  // result, so a canary that never reported shrank the denominator and the ratio still read N/N — the
+  // vanishing-denominator defect `evidence-check` already fixed by reconciling against what was ASKED FOR.
+  //
+  // An unjudgeable canary (errored, or too few usable captures) reduces COVERAGE rather than counting as a
+  // failure: "we could not measure" and "it varied" need opposite responses, and a gate that passes when it
+  // could not measure launders unknown into fine.
+  const verdict = gateVerdict({
+    examined: results.length - unjudgeable.length,
+    of: CANARIES.length,
+    source: "canaries, each captured " + TIMES + " times and compared by CONTENT",
+    failures: unstable.length,
+  });
+  if (unjudgeable.length) {
+    process.stdout.write(`\n${unjudgeable.length} canary(s) could not be judged — errored or too few `
+      + "usable captures. If the same one keeps failing, that is a worker problem rather than a "
+      + "determinism one.\n");
   }
-  if (failed.length) {
+  if (unstable.length) {
     process.stdout.write("\nDo NOT start a corpus run. Evidence that varies for the same unchanged page " +
       "is indistinguishable from evidence that differs because the page differs, which is the one defect " +
       "this project cannot tolerate.\n");
-    process.exit(1);
   }
-  process.stdout.write("\nStable. Safe to start a corpus run.\n");
+  process.stdout.write(`\n${renderVerdict(verdict)}\n`);
+  process.exit(exitCodeFor(verdict));
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main();
