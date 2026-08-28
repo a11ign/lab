@@ -2061,28 +2061,47 @@ function FOCUS_ORDER_FORM(/** @type {any} */ mode) {
  * covering a strict SUBSET of the page's controls, so a dialog holding most of the page would shrink that
  * difference to nothing. Three of seven leaves it unambiguous, which is what a canary is for.
  */
-/*
- * `MODAL_TRAP_FORM`, `MODAL_FOCUS_GUARD` and `MODAL_RELEASES_ON_ESCAPE` stood here, with the case
- * `keyboard-trap-modal-escape`: two variants byte-identical apart from one `keydown` handler, both
- * confining focus to a three-control dialog, only one closing on Escape.
+/**
+ * A dialog holding four controls, with four form fields behind it.
  *
- * It was built to be the control the corpus never had — a pair where the ring SIZE is constant, so a rule
- * fitted to it could not learn "is there a modal" instead of "is there a trap". It captured, and the
- * measurement retired the whole approach:
- *
- *     bad   ring 3 of 5 swept, confined, Escape changed nothing
- *     good  ring 12, NOT confined, never asked — its dialog was ALREADY CLOSED before Tab was pressed once
- *
- * `anchorToTop` presses Escape as its first action and `probeFocusOrder` calls it before the walk. So the
- * pair discriminated for a reason other than the one it documents, and a confined ring already means
- * "confined AFTER an Escape" — the exact condition of the rule withdrawn the same morning for 7 false
- * positives on conformant real pages. See `markFocusConfinement` in `capture-core.mjs` and A3 in
- * `docs/reliability-plan.md`.
- *
- * Removed rather than left: with no rule that can fire on it, `check-signals` reports it BLIND, and a case
- * whose signal cannot fire is a training record with no discriminating evidence. Recorded here because the
- * page design is right and the reason it cannot be used is not obvious from the outside.
+ * @param {boolean} withCloseButton replaces the dialog's LAST text field with a Close button, so the ring stays the
+ *   same SIZE and differs only in what it offers. That is the whole control: three earlier rules keyed on
+ *   ring size and were refuted by consent banners, whose rings are small too.
  */
+function MODAL_TRAP_FORM(withCloseButton) {
+  const last = withCloseButton
+    ? "<button type=\"button\" id=\"m4\" onclick=\"trapped = false;"
+      + " document.getElementById('confirm').hidden = true;"
+      + " document.getElementById('a').focus();\">Close</button>"
+    : "<label for=\"m4\">County</label><input id=\"m4\" name=\"m4\">";
+  return "<form>"
+    + "<label for=\"a\">Full name</label><input id=\"a\" name=\"a\">"
+    + "<label for=\"b\">Email</label><input id=\"b\" name=\"b\">"
+    + "<label for=\"d\">Phone</label><input id=\"d\" name=\"d\">"
+    + "<label for=\"e\">Delivery notes</label><input id=\"e\" name=\"e\">"
+    + "</form>"
+    + "<div id=\"confirm\" role=\"dialog\" aria-label=\"Confirm address\">"
+    + "<label for=\"m1\">House number</label><input id=\"m1\" name=\"m1\">"
+    + "<label for=\"m2\">Street</label><input id=\"m2\" name=\"m2\">"
+    + "<label for=\"m3\">Town</label><input id=\"m3\" name=\"m3\">"
+    + last
+    + "</div>";
+}
+
+/**
+ * The focus guard BOTH variants carry — the ARIA modal pattern, keeping Tab inside the dialog.
+ *
+ * `focusin` on the document, deferred with a microtask because moving focus during focus-event dispatch is
+ * ignored by Chromium — the same reason `keyboard-trap-blur-revalidate` defers.
+ */
+const MODAL_FOCUS_GUARD = "var trapped = true;"
+  + "document.addEventListener('focusin', (event) => {"
+  + "  if (!trapped) return;"
+  + "  const dialog = document.getElementById('confirm');"
+  + "  if (!dialog.contains(event.target)) {"
+  + "    queueMicrotask(() => document.getElementById('m1').focus());"
+  + "  }"
+  + "});";
 
 /*
  * `MODAL_TRAP_TOTAL_FORM` and its case `keyboard-trap-modal-total` stood here on 2026-08-28: a dialog
@@ -2382,6 +2401,48 @@ cases.push(
         + "    queueMicrotask(() => event.target.focus());"
         + "  }"
         + "});",
+    }),
+    badSignal: { type: "focus-trapped" },
+    probeFocus: true,
+  }),
+);
+
+cases.push(
+  pair({
+    id: "keyboard-trap-modal-cycle",
+    task: "Tab through the page and reach the delivery notes at the end.",
+    source: "WCAG 2.2 SC 2.1.2 No Keyboard Trap; F10; ARIA Authoring Practices, Dialog (Modal) Pattern",
+    mutation: "A focus guard confines Tab to a dialog holding four text fields and NOTHING that can be "
+      + "activated, so a keyboard user can type and cycle and never leave. The conformant variant has the "
+      + "identical guard and an identical-sized ring whose last control is a Close button.",
+    criterion: "2.1.2",
+    // THE PAIR THAT KEYS ON WHAT THE RING OFFERS, NOT HOW BIG IT IS — which is why three earlier versions
+    // of this case were withdrawn on 2026-08-28.
+    //
+    // Each of those had a conformant variant with NO guard, so the pair differed by the ring's SIZE. Size
+    // is exactly what a consent banner also differs by, so every rule fitted to it learned "is there a
+    // modal" and accused real pages: 7 and 9 new findings on 86 conformant ones, and a third attempt that
+    // was inert. Measured on the accusers — tfl ring 5 reads link, link, button, button, button ("Accept
+    // all cookies"); networkrail ring 4 reads link, button, button, button. Every banner offers a way out.
+    //
+    // Here BOTH variants carry the identical guard and both rings hold FOUR controls. The only difference
+    // is that one of the four is a button. So `ring size`, `cycled`, `swept fields` and the tab order are
+    // constant across the pair by construction, and the single feature that varies is the one 2.1.2
+    // actually turns on: is there anything here a keyboard can activate to get out?
+    good: page({
+      title: "Delivery details",
+      heading: "Delivery details",
+      body: MODAL_TRAP_FORM(true),
+      // Confines focus, and offers a Close button inside the ring that dismisses it. WCAG asks that focus
+      // CAN be moved away, not that it is never held — this is the APG modal pattern and it conforms.
+      script: MODAL_FOCUS_GUARD,
+    }),
+    bad: page({
+      title: "Delivery details",
+      heading: "Delivery details",
+      body: MODAL_TRAP_FORM(false),
+      // The same guard, the same ring size, and four text fields. Nothing to activate, so nothing to do.
+      script: MODAL_FOCUS_GUARD,
     }),
     badSignal: { type: "focus-trapped" },
     probeFocus: true,
@@ -3502,13 +3563,31 @@ export function focusIsTrappedIn(stops, onPage) {
   let trailing = 0;
   for (let i = stops.length - 1; i >= 0 && stops[i] === stops[stops.length - 1]; i -= 1) trailing += 1;
   if (trailing >= 2) return true;                       // stalled: Tab stopped moving
-  // A stop recurring without recurring CONSECUTIVELY — a closed cycle over a ring smaller than the page —
-  // used to return true here. Withdrawn 2026-08-28 with its rule-side twin: it produced 7 new 2.1.2
-  // findings on 86 conformant real pages, because a consent banner confines Tab to its own controls while
-  // the sweep walks the whole document. Measured on tfl.gov.uk (ring 5, swept 28, of which three are
-  // "Accept all cookies" and friends) and networkrail.co.uk (ring 4, swept 7). `tabRingCoverage` in
-  // `rules.ts` carries the full argument, and `focus-trap-parity.corpus.test.ts` keeps the two in step.
-  return false;
+  // A closed cycle over a ring smaller than the page, AND nothing in the ring that can be activated.
+  //
+  // The last clause is the whole rule. Three earlier versions asked how MUCH of the page the ring covers
+  // and each was exact here and wrong on the web — size is exactly what a consent banner also differs by,
+  // so a rule fitted to it learns "is there a modal". Measured on the pages that refuted them: tfl ring 5
+  // reads link, link, button, button, button ("Accept all cookies"); networkrail ring 4 reads link,
+  // button, button, button; the corpus trap reads edit, edit, edit. Every banner offers a way out.
+  //
+  // `tabRingCoverage` in `rules.ts` is the twin, and `focus-trap-parity.corpus.test.ts` pins them equal.
+  return reached < stops.length && ringOffersNoWayOut(stops);
+}
+
+/**
+ * Roles whose activation is a keyboard means of LEAVING. Broad on purpose: every role here makes the
+ * signal quieter, and 2.1.2 is non-interference — a wrong one says the page is unusable outright.
+ *
+ * A ROLE test, never the words, so it cannot become the 2.4.4 wordlist shortcut and behaves the same on a
+ * banner in any language.
+ */
+const OFFERS_A_WAY_OUT = /\b(button|link|tab|menu item)\b/;
+
+/** @param {string[]} stops */
+function ringOffersNoWayOut(stops) {
+  return stops.every((stop) => parseAnnouncement(stop, "sweep").objects
+    .every((object) => !OFFERS_A_WAY_OUT.test(object.role)));
 }
 
 /**
