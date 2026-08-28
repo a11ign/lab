@@ -94,14 +94,26 @@ const arg = (/** @type {string} */ name) =>
  * @param {string} worker @param {string} url @param {string | undefined} probeOrder
  */
 async function capture(worker, url, probeOrder) {
-  const { status, json } = await requestJson(`${worker.replace(/\/$/, "")}/capture`, {
-    method: "POST",
-    body: { url, task: "Read the page and reach its controls.", probeFocus: true,
-      probeForms: false, probeNavigation: false, ...(probeOrder ? { probeOrder } : {}) },
-    timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
-  });
-  if (status !== 200) return { error: `${status} ${JSON.stringify(json).slice(0, 160)}` };
-  return { capture: json };
+  try {
+    const { status, json } = await requestJson(`${worker.replace(/\/$/, "")}/capture`, {
+      method: "POST",
+      body: { url, task: "Read the page and reach its controls.", probeFocus: true,
+        probeForms: false, probeNavigation: false, ...(probeOrder ? { probeOrder } : {}) },
+      timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
+    });
+    if (status !== 200) return { error: `${status} ${JSON.stringify(json).slice(0, 160)}` };
+    return { capture: json };
+  } catch (error) {
+    // A NETWORK FAULT IS NOT AN ORDERING FAULT, and letting it throw made this gate say so. It crashed with
+    // `read ETIMEDOUT` on a live site and exited 1 — which in this gate MEANS "the evidence depends on
+    // probe order". One exit code for two unrelated events, which is the defect this whole plan is about,
+    // in the gate written to find it.
+    //
+    // Caught and returned so the page becomes INCONCLUSIVE and the pages that DID capture keep their
+    // verdicts. Live sites are reachable-until-they-are-not, and a gate that loses four good comparisons
+    // because the fifth timed out is one nobody runs.
+    return { error: `capture failed: ${error instanceof Error ? error.message : String(error)}` };
+  }
 }
 
 /**
