@@ -73,11 +73,49 @@ const GRANTS = Object.freeze({
  * entry says which announcement the failure consists of NOT hearing.
  */
 /** @type {Record<string, any>} */
-const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
+export const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
   "3.3.1:validation-error-silent": ["validation_error_announced", "status_update_announced"],
   "4.1.3:form-activation-silent": ["status_update_announced", "validation_error_announced"],
   "4.1.2:state-change-silent": ["state_changed"],
-  "2.4.1:skip-link-inert": ["skip_link_moves_focus"],
+  // `2.4.1:skip-link-inert: ["skip_link_moves_focus"]` was here and named a feature the pipeline has
+  // never computed — the vector has 30 entries and not one of them mentions a skip link. Found 2026-08-28
+  // by `test_unclosable_map_is_current.py` on its first run, which is the same way
+  // `name-normalisation.test.ts` earned its keep.
+  //
+  // It forgave nothing, and that is the harm: a reader scanning this table saw an entry for
+  // `2.4.1:skip-link-inert` and read the subtype as handled. It is not — that head carries
+  // `vague_link_without_context (-4.51)` as its worst veto, and this stale line is a plausible reason
+  // nobody looked. The same shape `audit_grants.py` reports as STALE, in the table meant to prevent it.
+});
+
+/**
+ * Features a subtype cannot carry WITHOUT PERTURBING THE CHANNEL IT IS MEASURED ON.
+ *
+ * A second kind of unclosable veto, and it is not the same as the one above. `IMPOSSIBLE_BY_DEFINITION`
+ * is about MEANING — the subtype IS the absence of that announcement, so no page can carry both. This is
+ * about MEASUREMENT — the page could carry it, and capturing it would destroy the evidence.
+ *
+ * The three focus subtypes are the worked example, measured 2026-08-28. `state_unchanged` is 0 on every
+ * one of their positives because a focus case activates no control, and it can only become 1 by turning
+ * `probeForms` on. That runs at `capture-core.mjs:1834`, BEFORE `probeFocusOrder` at 1840, on a path
+ * whose own comment says "ORDER IS LOAD-BEARING": activating a control changes the page before focus is
+ * walked, so the tab order recorded afterwards is of a different page. `bare-edit-inert`'s trick does not
+ * help either — an inert control is not activated, so it produces no state change to observe.
+ *
+ * Declared rather than chased, for the reason the table above already gives: an item on a work list that
+ * nobody can complete is worse than no item, because it displaces the ones somebody can.
+ *
+ * THE BAR FOR ADDING AN ENTRY HERE IS HIGH, and it is a measurement rather than an opinion: name the call
+ * site whose ORDER makes it unreachable, as the paragraph above does. "We could not think how" is not a
+ * reason; it is the state every entry started in.
+ */
+export const UNREACHABLE_WITHOUT_PERTURBING = Object.freeze({
+  "2.1.1:control-unreachable-by-keyboard": ["state_unchanged", "state_changed", "form_change_present",
+    "form_change_nonempty", "form_change_empty"],
+  "2.1.2:focus-trapped": ["state_unchanged", "state_changed", "form_change_present",
+    "form_change_nonempty", "form_change_empty"],
+  "2.4.3:focus-order-scrambled": ["state_unchanged", "state_changed", "form_change_present",
+    "form_change_nonempty", "form_change_empty"],
 });
 
 /** A feature absent from the positives is only a shortcut if it is COMMON elsewhere — same rule as the

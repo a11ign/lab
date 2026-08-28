@@ -30,6 +30,29 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+UNCLOSABLE_MAP = REPO_ROOT / "runs/unclosable-vetoes.json"
+
+
+def unclosable_vetoes() -> dict[str, dict[str, set[str]]]:
+    """Which (subtype, feature) pairs no corpus work can close, and WHY — read, never restated here.
+
+    `audit-corpus-starvation.mjs` has carried `IMPOSSIBLE_BY_DEFINITION` for months with the cost written
+    beside it: *"Reporting those put items on a work list that nobody can complete, and inflated the two
+    features at the top of the ranking."* This audit never learned it, so it reported 57 veto pairs with
+    no way to say which were worth corpus work. A fact learned at one layer and not carried to the next.
+
+    Emitted by `npm run corpus:unclosable-map` rather than duplicated, because neither language can import
+    the other — the same route `audit_grants.py` takes for the grants map, and pinned equal by
+    `test_unclosable_map_is_current.py`.
+
+    An ABSENT map is not an empty one: forgiving nothing is the honest fallback, since this audit's whole
+    job is to report vetoes, and it says so on the report rather than quietly reverting.
+    """
+    if not UNCLOSABLE_MAP.exists():
+        return {}
+    raw = json.loads(UNCLOSABLE_MAP.read_text(encoding="utf-8"))
+    return {kind: {subtype: set(features) for subtype, features in group.items()}
+            for kind, group in raw.items()}
 SCORER_PACKAGE = Path(__file__).resolve().parents[2] / "scorer"
 sys.path.insert(0, str(SCORER_PACKAGE / "python"))
 
@@ -127,6 +150,7 @@ def audit(records: list[tuple[dict[str, float], set[str]]], model_root: Path) ->
     occurrences = {name: sum(1 for values, _ in records if values[name]) for name in names}
 
     rows = []
+    unclosable = unclosable_vetoes()
     for criterion_report in report["criteria"].values():
         for subtype, subtype_report in criterion_report["subtypes"].items():
             positives = [values for values, subtypes in records if subtype in subtypes]
@@ -143,10 +167,17 @@ def audit(records: list[tuple[dict[str, float], set[str]]], model_root: Path) ->
                     continue
                 logits = float(effective[names.index(name)])
                 if logits <= -VETO_LOGITS:
-                    vetoes.append({"feature": name, "logits": round(logits, 4)})
+                    # WHY it cannot be closed, or None. Kept on the veto rather than filtered out here:
+                    # an unclosable veto is still a real negative weight on a real page, and hiding it
+                    # would make the model look better than it is. What changes is the WORK LIST.
+                    kinds = [kind for kind, group in unclosable.items() if name in group.get(subtype, ())]
+                    vetoes.append({"feature": name, "logits": round(logits, 4),
+                                   "unclosable": kinds[0] if kinds else None})
             vetoes.sort(key=lambda veto: veto["logits"])
+            closable = [veto for veto in vetoes if veto["unclosable"] is None]
             rows.append({"subtype": subtype, "positives": len(positives), "vetoes": vetoes,
-                         "sumLogits": round(sum(veto["logits"] for veto in vetoes), 2)})
+                         "closable": closable,
+                         "sumLogits": round(sum(veto["logits"] for veto in closable), 2)})
     return rows
 
 
@@ -154,19 +185,64 @@ def render(rows: list[dict[str, Any]]) -> None:
     print("\n  A VETO is a feature that is 0 on every training positive of a subtype, common elsewhere in")
     print("  the corpus, and given a negative weight. The head has never seen a positive carrying it, so")
     print("  the penalty cost nothing to learn — and it silently suppresses a real page that has both.\n")
-    print(f"  {'subtype':32} {'positives':>9} {'vetoes':>7} {'sum logits':>11}  worst")
-    print("  " + "-" * 88)
+    # `closable` is the COLUMN AND THE HEADLINE, because it is the number somebody can act on. The
+    # unclosable ones are still counted and still named — they are real negative weights on real pages —
+    # but a work list that includes them displaces the items nobody is stopping you from doing.
+    print(f"  {'subtype':32} {'positives':>9} {'closable':>8} {'total':>6} {'sum logits':>11}  worst closable")
+    print("  " + "-" * 96)
     for row in rows:
-        worst = f"{row['vetoes'][0]['feature']} ({row['vetoes'][0]['logits']:+.2f})" if row["vetoes"] else "-"
-        print(f"  {row['subtype']:32} {row['positives']:9} {len(row['vetoes']):7} "
-              f"{row['sumLogits']:11.2f}  {worst}")
+        first = row["closable"][0] if row["closable"] else None
+        worst = f"{first['feature']} ({first['logits']:+.2f})" if first else "-"
+        print(f"  {row['subtype']:32} {row['positives']:9} {len(row['closable']):8} "
+              f"{len(row['vetoes']):6} {row['sumLogits']:11.2f}  {worst}")
+    closable = sum(len(row["closable"]) for row in rows)
     total = sum(len(row["vetoes"]) for row in rows)
-    print(f"\n  {total} veto pairs across {len(rows)} heads.")
-    print("  The remedy is the CORPUS — see ADR 0015. A retrain on unchanged data reproduces them.\n")
+    print(f"\n  {closable} CLOSABLE veto pairs across {len(rows)} heads ({total} in total).")
+    print("  The remedy is the CORPUS — see ADR 0015. A retrain on unchanged data reproduces them.")
+    render_unclosable(rows, total - closable)
+    print()
+
+
+def render_unclosable(rows: list[dict[str, Any]], count: int) -> None:
+    """The vetoes no corpus work can close, grouped by WHY — because the two reasons differ in kind.
+
+    `by-definition` means the subtype IS the absence of that announcement, so no page can carry both:
+    nothing to build, ever. `perturbs-measurement` means the page could carry it and capturing it would
+    destroy the evidence — a statement about THIS probe, which could change if the probe did.
+
+    Printed rather than silently forgiven. A count that quietly shrank would be indistinguishable from
+    progress, which is the failure this whole audit exists to prevent one level up.
+    """
+    if count == 0:
+        return
+    reasons = {
+        "by-definition": "the subtype IS the absence of that announcement, so no page can carry both",
+        "perturbs-measurement": "capturing it would destroy the channel the subtype is measured on",
+    }
+    print(f"\n  {count} further veto pair(s) are UNCLOSABLE and excluded from the counts above:")
+    for kind, why in reasons.items():
+        pairs = [(row["subtype"], veto["feature"]) for row in rows for veto in row["vetoes"]
+                 if veto["unclosable"] == kind]
+        if not pairs:
+            continue
+        print(f"    {kind} — {why}")
+        for subtype, feature in pairs[:8]:
+            print(f"      {subtype:38} {feature}")
+        if len(pairs) > 8:
+            print(f"      ... and {len(pairs) - 8} more")
 
 
 def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path, stream: Any) -> int:
     """Fail on a WORSE result, per subtype. Silent on an improvement, which is the direction we want.
+
+    COMPARES TOTAL VETOES, not the closable ones the report now leads with, and deliberately. The baseline
+    is a TRACKED file recorded before the closable/unclosable split existed; switching the gate to a
+    different quantity would make every stored number incomparable while the file still looked current —
+    a stale baseline that reads as a live one, which is the shape this repo pays most for.
+
+    It is also the conservative direction: an unclosable veto is still a negative weight on a real page,
+    so counting it cannot let a genuine regression through. Moving the gate to `closable` is a deliberate
+    change that must rewrite the baseline in the same commit.
 
     `stream` is stderr under `--json`, so a caller parsing the output is never handed prose mixed into it.
     """
