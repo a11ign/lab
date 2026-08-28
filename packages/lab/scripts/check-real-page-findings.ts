@@ -41,7 +41,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ruleFindings } from "@a11y-witness/judge/rules";
 import { corpusState } from "../src/training/corpus-settled.mjs";
-import { pageCensus, domCensus } from "@a11y-witness/evidence/verify";
+import { domCensus, oracleCounts, pageCensus } from "@a11y-witness/evidence/verify";
 import { realPageFor, REAL_PAGES } from "../src/training/real-page-corpus.mjs";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
@@ -169,7 +169,7 @@ function compare(current: Findings, baseline: Findings): { added: Change[]; remo
  * `score-rules.ts` hours earlier and did not reach this path — the shape this repo names most often.
  */
 function withCensus(capture: unknown): never {
-  return { ...(capture as object), census: pageCensus(capture as never) ?? undefined } as never;
+  return { ...(capture as object), ...oracleCounts(capture as never) } as never;
 }
 
 /**

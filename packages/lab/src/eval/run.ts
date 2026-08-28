@@ -15,7 +15,7 @@
 import { pathToFileURL } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
 import { judge } from "@a11y-witness/judge";
-import { pageCensus } from "@a11y-witness/evidence/verify";
+import { oracleCounts } from "@a11y-witness/evidence/verify";
 import { EVAL_CASES, type EvalCase } from "./cases.js";
 import { evaluateFitness, persistentFalsePositives, thresholdsFromEnv } from "./fitness.js";
 
@@ -79,7 +79,7 @@ async function scoreOnce(c: EvalCase): Promise<RunScore> {
     // The accessibility-tree oracle, which two deterministic rules need: 1.3.1 will not claim "no
     // headings" without it, and 1.1.1 uses it to see images that expose no name at all — ones quick
     // navigation walks past, so the announcements alone cannot reach them.
-    census: pageCensus(data as never) ?? undefined,
+    ...oracleCounts(data as never),
   });
   const found = Array.from(new Set(verdict.findings.map((f) => criterion(f.wcag))));
   // WHICH LAYER reported it, keyed on whether `mapping` is PRESENT rather than on its value.

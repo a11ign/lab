@@ -41,6 +41,7 @@ import { sweepOutcomes, truncatedSweeps } from "@a11y-witness/evidence/conforman
 import { criterionOutcomes } from "@a11y-witness/judge/outcomes";
 import { findingsFromScores } from "@a11y-witness/judge/internal";
 import { ruleFindings } from "@a11y-witness/judge/rules";
+import { oracleCounts } from "@a11y-witness/evidence/verify";
 
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
@@ -184,7 +185,12 @@ function scoreOne(/** @type {any} */ entry) {
  */
 function productOutcomes(/** @type {any} */ record, /** @type {any} */ capture) {
   const { findings } = findingsFromScores(record, capture);
-  const rules = ruleFindings(capture);
+  // `oracleCounts`, NOT the bare capture. A raw capture records both censuses as DIAGNOSTICS, so every
+  // census-reading rule (1.3.1's no-headings, 1.1.1's unnamed-graphics) returned on its first line here —
+  // in the one sweep that scores REAL pages through the product path, which is the number this project
+  // steers by. Fixed in the two audits on 2026-08-26 and this caller was not among them: the shape this
+  // repo names most often, found only by making the extraction one named step and asking who skips it.
+  const rules = ruleFindings({ ...capture, ...oracleCounts(capture) });
   const outcomes = criterionOutcomes({
     capture,
     findings: [...findings, ...rules],

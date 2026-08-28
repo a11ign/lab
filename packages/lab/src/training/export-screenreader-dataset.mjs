@@ -3,7 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { modelInput } from "@a11y-witness/scorer/evidence-units";
-import { pageCensus, domCensus } from "@a11y-witness/evidence/verify";
+import { oracleCounts } from "@a11y-witness/evidence/verify";
 
 import {
   CASES,
@@ -168,12 +168,10 @@ function record(/** @type {any} */ testCase, /** @type {any} */ variant, /** @ty
     //
     // 1.3.1 at least reported it (`NEVER FIRED ANYWHERE — the claim rests on nothing`). The 1.1.1 one
     // was invisible, because sibling 1.1.1 rules DO fire and the criterion therefore read as validated.
-    ruleEvidence: {
-      census: pageCensus(capture) ?? null,
-      // The DOM count beside the tree count. Rule-only for the same reason the census is: the model reads
-      // what a screen reader ANNOUNCED, and markup it never announced is not the model's evidence.
-      dom: domCensus(capture) ?? null,
-    },
+    // The DOM count travels beside the tree count, and both come from `oracleCounts` so that this
+    // export and the CLI can never disagree about what a rule may read. `dom` used to be built ONLY here,
+    // which made it exercisable by the gate and invisible in the product.
+    ruleEvidence: oracleCounts(capture),
     target: {
       label: isBad ? "violation" : "clean",
       // `alsoFails` names a criterion AND the subtype whose head carries it ("4.1.2:missing-role"),

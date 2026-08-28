@@ -8,6 +8,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { ruleFindings, type RuleInput } from "@a11y-witness/judge/rules";
+import { oracleCounts } from "@a11y-witness/evidence/verify";
 import { EVAL_CASES } from "./cases.js";
 
 const crit = (w: string): string => w.match(/(\d+\.\d+\.\d+)/)?.[1] ?? w;
@@ -26,7 +27,9 @@ function main(): void {
       continue;
     }
     const data = JSON.parse(readFileSync(c.fixture, "utf8")) as RuleInput;
-    const crits = [...new Set(ruleFindings(data).map((f) => crit(f.wcag)))];
+    // A fixture on disk is a raw capture, so the oracle counts have to be extracted here exactly as the
+    // CLI extracts them — otherwise this check inside `eval:gate` cannot reach a census-reading rule.
+    const crits = [...new Set(ruleFindings({ ...data, ...oracleCounts(data as never) }).map((f) => crit(f.wcag)))];
     const absence = c.expect.filter((x) => x === "1.1.1" || x === "4.1.2");
     if (c.expect.length === 0) cleanFP += crits.length;
     if (absence.length) {

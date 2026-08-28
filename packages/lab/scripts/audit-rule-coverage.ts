@@ -43,7 +43,7 @@ import { resolve, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ruleFindings } from "@a11y-witness/judge/rules";
-import { pageCensus } from "@a11y-witness/evidence/verify";
+import { oracleCounts } from "@a11y-witness/evidence/verify";
 // RULE_CRITERIA lives in coverage.ts and is imported by rules.ts, not re-exported from it. Taken from the
 // source rather than the convenient neighbour: locally tsx resolves TypeScript and the mistake is silent,
 // while the lab resolves `dist` and it is a hard failure — the stale-dist hazard, one door along.
@@ -356,7 +356,7 @@ function report(verdicts: Verdict[], scanned: Tally): number {
  * `score-rules.ts` hours earlier and did not reach this path — the shape this repo names most often.
  */
 function withCensus(capture: unknown): never {
-  return { ...(capture as object), census: pageCensus(capture as never) ?? undefined } as never;
+  return { ...(capture as object), ...oracleCounts(capture as never) } as never;
 }
 
 function main(): void {
