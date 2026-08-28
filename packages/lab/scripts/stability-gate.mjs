@@ -206,6 +206,13 @@ async function judgeCanary(/** @type {any} */ { path, url: absolute, reason, tas
     const { stdout } = await run("npx", ["tsx", ...args], { maxBuffer: 1 << 24 });
     const varies = stdout.split("\n").filter((l) => l.includes("VARIES"));
     const usable = /(\d+)\/\d+ usable/.exec(stdout)?.[1];
+    // SURFACED, not swallowed. A canary that passed only because a lost socket was recovered is a
+    // different fact from one that never lost a socket, and the fleet is bare metal on real Ethernet.
+    const recovered = Number(/sockets recovered: (\d+)/.exec(stdout)?.[1] ?? 0);
+    if (recovered > 0) {
+      process.stdout.write(`    ${recovered} socket(s) recovered — the transport dropped a response the `
+        + "worker had already completed\n");
+    }
     if (varies.length) {
       results.push({ path: name, ok: false, detail: varies.map((v) => v.trim()).join("; ") });
       process.stdout.write(varies.map((v) => `  ${v.trim()}\n`).join(""));

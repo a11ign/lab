@@ -122,6 +122,8 @@ function comparable(/** @type {any} */ capture) {
   };
 }
 
+let recoveries = 0;
+
 async function captureOnce() {
   // TOLERANT OF A LOST SOCKET. This posted straight to `/capture` and treated `ETIMEDOUT` as a failed
   // capture -- so a dropped response discarded 12-520 s of screen-reader work the worker had already
@@ -141,6 +143,10 @@ async function captureOnce() {
     },
     timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
   });
+  // COUNTED AND REPORTED, because "the recovery worked" and "the transport was quiet" produce the same
+  // clean result -- and crediting a remedy for a result it had no part in producing is the
+  // `refreshBrowseBuffer` defect this repo has now paid for three times in one day.
+  if (response.recovered) recoveries += 1;
   const body = response.json ?? {};
   if (!response.ok || body.error) {
     // Carry the worker's fault CODE, not just its prose. `isTransient` matches on codes; matching on
@@ -304,6 +310,10 @@ function report(/** @type {any} */ { runs, raw, errors }) {
     console.log(`  EMPTY     ${empty.length} capture(s) heard nothing at all — the foreground flake, ` +
       "excluded from the comparison above because it would mark every field unstable");
   }
+  // ALWAYS PRINTED, including the zero. A line that appears only when something happened cannot tell
+  // "nothing happened" from "nobody looked" -- the distinction every diagnostic mark in this repo exists
+  // to preserve.
+  console.log(`sockets recovered: ${recoveries} (a capture the worker had finished and we nearly re-paid for)`);
   console.log(`\nraw captures kept in ${OUT_DIR} (diagnostics included)`);
   console.log(`${unstable === 0 ? "All compared fields are stable." : `${unstable} field(s) vary on an unchanged page.`}`);
   // A varying field is a failure: evidence that depends on timing rather than on the page. An empty
