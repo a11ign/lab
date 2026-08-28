@@ -242,13 +242,18 @@ async function compareOrders(worker, base) {
   const inconclusive = results.filter((r) => r.verdict === "INCONCLUSIVE");
   const differing = results.filter((r) => r.verdict === "CHANGED" || r.verdict === "DRIFT");
   const moved = results.filter((r) => r.verdict === "PAGE-MOVED");
-  // A PAGE THAT MOVED UNDER ITS OWN PROBES WAS EXAMINED, and the answer is known — a control the sweep
-  // activated altered what the next probe could see. It is reported, not counted as a failure and not as a
-  // coverage gap: unfixable by restoring the screen reader's state, and the disclosure probe it comes from
-  // is how 4.1.3 and half of 3.3.1 are reachable at all.
+  // A PAGE THAT MOVED UNDER ITS OWN PROBES IS NOT EXAMINED, and my first version counted it as examined —
+  // which produced `PASS — all 5 of 5 … examined and clean` on a run where two pages gave two different
+  // answers. A better LABEL reading as a fix, which is the move this whole plan exists to stop.
+  //
+  // The correction is not that PAGE-MOVED is a failure; it is not an ordering fault, and treating it as one
+  // would fail this gate on any page with a menu. It is that the ordering question CANNOT BE ANSWERED for a
+  // page whose content changed underneath: we know why the evidence differs, and we still do not know
+  // whether order ALSO mattered. That is inconclusive for the property under test, so it reduces coverage.
   if (moved.length) {
-    process.stdout.write(`\n${moved.length} page(s) CHANGED UNDER THEIR OWN PROBES — see D7. Not an `
-      + "ordering fault: the page the second probe read was not the page the first one did.\n");
+    process.stdout.write(`\n${moved.length} page(s) CHANGED UNDER THEIR OWN PROBES — see D7. A control the `
+      + "sweep activated altered what the next probe could see, so whether ORDER also matters is "
+      + "unanswerable for them, and they are counted as unexamined rather than as passes.\n");
   }
   // A PASS THAT DID NOT EXERCISE THE REMEDY IS NOT EVIDENCE FOR IT. Agreement while `establishBrowseMode`
   // never ran means the two orders happened to match — a weaker claim than "the state is restored between
@@ -256,7 +261,7 @@ async function compareOrders(worker, base) {
   // EXAMINED, which is what makes `gateVerdict` refuse to call it a pass.
   const unexercised = results.filter((r) => r.remedied === false);
   const verdict = gateVerdict({
-    examined: results.length - inconclusive.length - unexercised.length,
+    examined: results.length - inconclusive.length - unexercised.length - moved.length,
     of: PAGES.length,
     source: "corpus pages and live sites, each captured in both probe orders",
     failures: differing.length,

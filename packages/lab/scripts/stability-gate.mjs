@@ -130,6 +130,23 @@ const CANARIES = [
       "behind it. `gate:probe-order` measured headings 5->0, links 6->1 and graphics 1->0 on this page " +
       "when the probes were permuted; nothing in this list could have seen that",
   },
+  {
+    // THE PLAN'S OWN SUCCESS MEASURE — determinism-plan D5, and the row that made the plan exist:
+    //
+    //     nls.uk/join/   one run: 7 distinct stops of 7 tabbable, SILENT
+    //                    another run, same commit: ACCUSED
+    //
+    // Same page, same code, two answers. Every other canary is a static page on localhost, so the single
+    // observation that started all of this could not be reproduced by the gate that exists to catch it.
+    //
+    // A live site can also change on its own, and that would read as instability. The repeats run back to
+    // back, and `repeat-capture` reports WHICH FIELD varies — a page edit moves content, our fault empties
+    // a channel. A confounder to read for, not a reason to test only pages that cannot surprise us.
+    url: "https://www.nls.uk/join/",
+    probeFocus: true,
+    reason: "the page the determinism plan is named for: it gave two different verdicts at the same " +
+      "commit, and until it repeats identically the plan's headline claim is unmet",
+  },
 ];
 
 /**
