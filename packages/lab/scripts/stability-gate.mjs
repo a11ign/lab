@@ -114,6 +114,22 @@ const CANARIES = [
     reason: "the only canary that activates a control and measures what the page says back; the " +
       "interaction criteria (3.3.1, 4.1.3) are unreachable without it, and a contaminant lived here",
   },
+  {
+    // determinism-plan D5. Every canary above is a single-state page, and this gate exists to prove the
+    // tool is deterministic — so until 2026-08-28 it could not observe the non-determinism that actually
+    // cost this project four withdrawn 2.1.2 rules and a 2.1.1 false positive. That is this gate's own rule
+    // pointed at itself: "a canary that cannot express the fault is worthless".
+    //
+    // A CONFORMANT page behind a focus-confining consent banner. The sweep walks the page behind it while
+    // Tab is held in a ring of link-and-buttons, which is the state disagreement everything else missed;
+    // `probeFocus` is what makes the two channels both present, and without it this is just another static
+    // page.
+    path: "image-missing-alt-behind-consent/good",
+    probeFocus: true,
+    reason: "the only canary whose page has TWO STATES — an overlay confining Tab while the sweep walks " +
+      "behind it. `gate:probe-order` measured headings 5->0, links 6->1 and graphics 1->0 on this page " +
+      "when the probes were permuted; nothing in this list could have seen that",
+  },
 ];
 
 /**
@@ -123,7 +139,8 @@ const CANARIES = [
  * to four levels of nesting -- the lint gate's limit is three, and the honest fix for depth is a named
  * function rather than a suppression.
  */
-async function judgeCanary(/** @type {any} */ { path, reason, task, probeForms }, /** @type {any} */ { base, worker, results }) {
+async function judgeCanary(/** @type {any} */ { path, reason, task, probeForms, probeFocus },
+  /** @type {any} */ { base, worker, results }) {
   const url = `${base}/${path}`;
   process.stdout.write(`\n=== ${path} (${TIMES}x) ===\n    why: ${reason}\n`);
   // tsx, not node: repeat-capture imports isTransient from capture-decisions.mjs, which imports the
@@ -135,6 +152,12 @@ async function judgeCanary(/** @type {any} */ { path, reason, task, probeForms }
   // Opt-in per canary: a capture must never pay for evidence nobody asked for, and a probe that does not
   // run is cheaper than one that does.
   if (probeForms) args.push("--probe-forms", `--task=${task}`);
+  // FORWARDED, because it was not. `probeFocus` on a canary was read by nobody: `judgeCanary` destructured
+  // four fields and this was not among them, so the flag would have been discarded, the canary would have
+  // run without the focus probe, and it would have reported STABLE having compared an empty `focusOrder`
+  // against an empty `focusOrder`. That is this repo's own "a flag nobody reads" defect, and the reason the
+  // fix is to name the field here rather than to remember to pass it.
+  if (probeFocus) args.push("--probe-focus");
   try {
     const { stdout } = await run("npx", ["tsx", ...args], { maxBuffer: 1 << 24 });
     const varies = stdout.split("\n").filter((l) => l.includes("VARIES"));

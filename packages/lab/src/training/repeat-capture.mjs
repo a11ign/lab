@@ -35,7 +35,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  * knows — so it runs the default and reports success. See `cli-flags.mjs`.
  */
 refuseUnknownFlags(["--url=", "--worker=", "--times=", "--steps=", "--task=", "--browser=", "--out=",
-   "--probe-forms", "--probe-tables", "--reuse"],
+   "--probe-forms", "--probe-tables", "--probe-focus", "--reuse"],
   { entry: import.meta.url, command: "npm run training:repeat" });
 
 /**
@@ -68,6 +68,12 @@ const PROBE_TABLES = process.argv.includes("--probe-tables");
 // announcement credited to an activation, on a page whose finding is silence — reached the corpus with
 // `gate:stability` reporting every canary stable, because no canary could reach the code path.
 const PROBE_FORMS = process.argv.includes("--probe-forms");
+// `focusOrder` has been in the compared fields below since they were widened, and it has been EMPTY on
+// every canary ever run, because nothing could ask for the probe. A field that is compared and can never
+// hold anything compares equal every time — the mirror of the defect recorded beside those fields, where
+// ten were watched and the two carrying interaction evidence were not among them. Named literally rather
+// than only through `arg()`, so the discovery test that requires flags to be guarded can see it.
+const PROBE_FOCUS = process.argv.includes("--probe-focus");
 const TASK = arg("task");
 const REUSE = process.argv.includes("--reuse");
 // A new browser preset needs its own stability answer before it is trusted: "Chrome captures" and "Chrome
@@ -125,6 +131,7 @@ async function captureOnce() {
       // shares a meaningful word with it -- so a probe-forms run without one activates nothing and
       // reports a stable empty field, which looks exactly like a pass.
       ...(PROBE_FORMS ? { probeForms: true } : {}),
+      ...(PROBE_FOCUS ? { probeFocus: true } : {}),
       ...(TASK ? { task: TASK } : {}),
     },
     timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
