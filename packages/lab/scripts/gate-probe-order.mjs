@@ -35,7 +35,9 @@ import { leasePageServer } from "../src/training/page-server.mjs";
 import { guestReachableUrl } from "@a11y-witness/worker-fleet";
 import { assertWorkerUrl, CAPTURE_CLIENT_TIMEOUT_MS }
   from "../../worker-fleet/src/worker-http.mjs";
-import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
+import { renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
+import { gateWorkers, shardAcrossWorkers, acrossFleet, fleetVerdict, renderShards }
+  from "../src/gates/fleet.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { captureTolerantly } from "../src/capture/capture-client.mjs";
 
@@ -152,15 +154,14 @@ function pageChangedUnderProbes(capture) {
 }
 
 async function main() {
-  const worker = arg("--worker");
-  if (!worker) {
-    process.stderr.write("gate:probe-order needs --worker=<url>. It captures each page twice, so it cannot "
-      + "run without one.\n");
-    process.exit(2);
-  }
+  // EVERY WORKER BY DEFAULT, work SHARDED across them. This demanded `--worker` and refused without one,
+  // so it captured 10 times on one box while the rest of the fleet idled -- and at twenty boxes that is
+  // nineteen idle. Naming one stays available as the escape hatch.
+  const named = arg("--worker");
   // VALIDATED, not merely truthy. `http://:8765` is a truthy string that `new URL` rejects, and the cost of
   // accepting it was measured at 29 minutes of readiness timeout recorded as a failure of the PAGE.
-  assertWorkerUrl(worker);
+  if (named) assertWorkerUrl(named);
+  const { workers, scope } = gateWorkers(named);
 
   // LEASED, NOT ASSUMED, and this is not housekeeping — it is the difference between a gate and a false
   // pass. Edge serves its OWN error page when the port is dead, so two probe orders against nothing would
@@ -180,8 +181,15 @@ async function main() {
     // it is reused rather than re-derived here, because deriving it independently is how "every capture
     // fetched the GUEST's localhost" happened once already. The worker is named rather than leased, so the
     // lease is stated as `explicit` with a release that does nothing: there is nothing here to put back.
-    const named = /** @type {const} */ ({ worker, source: "explicit", release: async () => {} });
-    return await compareOrders(worker, arg("--pages") ?? guestReachableUrl(pages.url, named));
+    // BOTH ORDERS OF A PAGE STAY ON ONE BOX. Splitting them would make a difference between orders
+    // indistinguishable from a difference between machines -- which is the exact conflation this gate
+    // exists to detect, arriving through the scheduler instead of through the probes. So the shard unit
+    // is a PAGE, carrying both its captures.
+    const shards = shardAcrossWorkers(PAGES, workers);
+    process.stdout.write(`${scope}\n${renderShards(shards)}\n`);
+    const outcomes = await acrossFleet(shards, (page, worker) =>
+      comparePage(page, worker, arg("--pages") ?? baseFor(pages, worker)));
+    return report_(outcomes, workers.length);
   } finally {
     await pages.release();
   }
@@ -205,75 +213,90 @@ function report(/** @type {any[]} */ results) {
   }
 }
 
+/** The page-server base URL as THIS box can reach it. Derived per worker; localhost is not shared. */
+function baseFor(/** @type {any} */ pages, /** @type {string} */ worker) {
+  // The GUEST fetches these pages and its localhost is not ours. `guestReachableUrl` owns that rewrite --
+  // reused rather than re-derived, because deriving it independently is how "every capture fetched the
+  // GUEST's localhost" happened once already. The worker is named rather than leased, so the lease is
+  // stated as `explicit` with a release that does nothing: there is nothing here to put back.
+  return guestReachableUrl(pages.url, { worker, source: "explicit", release: async () => {} });
+}
+
 /**
- * @param {string} worker
- * @param {string} base the guest-reachable page root — the guest's localhost is not ours
+ * ONE page, in BOTH probe orders, on ONE box.
+ *
+ * The two captures must share a machine: a difference between orders and a difference between machines
+ * would otherwise be indistinguishable, which is the conflation this gate exists to detect arriving
+ * through the scheduler rather than through the probes.
  */
-async function compareOrders(worker, base) {
-  const results = [];
-  for (const page of PAGES) {
-    // A corpus path is served from the leased page server; a real page is fetched from the live web and
-    // needs no base. Named `url` vs `path` rather than inferred, so an absolute URL cannot be silently
-    // concatenated onto localhost — which is the failure that returns Edge's own error page and compares
-    // identical under both orders.
-    const url = page.url ?? `${base}/${page.path}.html`;
-    const taken = [];
-    for (const order of ORDERS) taken.push(await capture(worker, url, order));
-    const failed = taken.find((t) => t.error);
-    if (failed) {
-      // INCONCLUSIVE, never a pass. A page that could not be captured in both orders was not compared, and
-      // "not compared" reading as "agrees" is the defect this whole plan is about, one layer out.
-      results.push({ page: page.url ?? page.path, verdict: "INCONCLUSIVE", detail: failed.error });
-      continue;
-    }
-    const diff = compareCapture(/** @type {never} */ (taken[0].capture), /** @type {never} */ (taken[1].capture));
-    // The SECOND capture is the permuted one, and it is the only one with a preceding probe, so it is the
-    // only one where the remedy can have run. Reported beside the verdict rather than assumed.
-    const remedied = establishedBrowseMode(taken[1].capture);
-    // A page that moved under its own probes is reported as PAGE-MOVED, never as an ordering fault: the two
-    // need opposite responses, and conflating them makes this gate unactionable on any page with a menu.
-    const pageMoved = taken.some((/** @type {any} */ c) => pageChangedUnderProbes(c.capture));
-    const verdict = diff.verdict !== "SAME" && pageMoved ? "PAGE-MOVED" : diff.verdict;
-    results.push({ page: page.url ?? page.path, verdict, changes: diff.changes,
-      phrases: diff.phrases, remedied, pageMoved });
+async function comparePage(/** @type {any} */ page, /** @type {string} */ worker, /** @type {string} */ base) {
+  // A corpus path is served from the leased page server; a real page is fetched from the live web and
+  // needs no base. Named `url` vs `path` rather than inferred, so an absolute URL cannot be silently
+  // concatenated onto localhost -- which is the failure that returns Edge's own error page and compares
+  // identical under both orders.
+  const url = page.url ?? `${base}/${page.path}.html`;
+  const taken = [];
+  for (const order of ORDERS) taken.push(await capture(worker, url, order));
+  const failed = taken.find((/** @type {any} */ t) => t.error);
+  // INCONCLUSIVE, never a pass. A page that could not be captured in both orders was not compared, and
+  // "not compared" reading as "agrees" is the defect this whole plan is about, one layer out. THROWN so it
+  // reduces the fleet's coverage, rather than returned as a result that looks judged.
+  if (failed) throw new Error(failed.error);
+  const diff = compareCapture(/** @type {never} */ (taken[0].capture), /** @type {never} */ (taken[1].capture));
+  // The SECOND capture is the permuted one, and it is the only one with a preceding probe, so it is the
+  // only one where the remedy can have run. Reported beside the verdict rather than assumed.
+  const remedied = establishedBrowseMode(taken[1].capture);
+  // A page that moved under its own probes is reported as PAGE-MOVED, never as an ordering fault: the two
+  // need opposite responses, and conflating them makes this gate unactionable on any page with a menu.
+  const pageMoved = taken.some((/** @type {any} */ c) => pageChangedUnderProbes(c.capture));
+  const verdict = diff.verdict !== "SAME" && pageMoved ? "PAGE-MOVED" : diff.verdict;
+  return { page: page.url ?? page.path, worker, verdict, changes: diff.changes,
+    phrases: diff.phrases, remedied, pageMoved };
+}
+
+/**
+ * The fleet's verdict over the PAGES — the boxes are how the work was spread, not what was examined.
+ *
+ * Three separate things reduce COVERAGE rather than counting as failures, and each was learned the hard
+ * way. A page that could not be captured in both orders was not compared. A page that MOVED under its own
+ * probes has an unanswerable ordering question — we know why the evidence differs and still not whether
+ * order also mattered; my first version counted those as examined and produced `PASS — all 5 of 5` on a
+ * run where two pages gave two answers. And a pass where `establishBrowseMode` never ran is agreement by
+ * luck, not evidence for the remedy — the shape that let an inert `refreshBrowseBuffer` collect three
+ * green runs.
+ */
+function report_(/** @type {any[]} */ outcomes, /** @type {number} */ workerCount) {
+  const judged = outcomes.filter((o) => o.result).map((o) => o.result);
+  report(judged);
+  for (const o of outcomes.filter((x) => !x.result)) {
+    process.stdout.write(`  INCONCLUSIVE ${o.item.url ?? o.item.path} on ${o.worker}: ${o.error}\n`);
   }
 
-  report(results);
-
-  const inconclusive = results.filter((r) => r.verdict === "INCONCLUSIVE");
-  const differing = results.filter((r) => r.verdict === "CHANGED" || r.verdict === "DRIFT");
-  const moved = results.filter((r) => r.verdict === "PAGE-MOVED");
-  // A PAGE THAT MOVED UNDER ITS OWN PROBES IS NOT EXAMINED, and my first version counted it as examined —
-  // which produced `PASS — all 5 of 5 … examined and clean` on a run where two pages gave two different
-  // answers. A better LABEL reading as a fix, which is the move this whole plan exists to stop.
-  //
-  // The correction is not that PAGE-MOVED is a failure; it is not an ordering fault, and treating it as one
-  // would fail this gate on any page with a menu. It is that the ordering question CANNOT BE ANSWERED for a
-  // page whose content changed underneath: we know why the evidence differs, and we still do not know
-  // whether order ALSO mattered. That is inconclusive for the property under test, so it reduces coverage.
+  const differing = judged.filter((r) => r.verdict === "CHANGED" || r.verdict === "DRIFT");
+  const moved = judged.filter((r) => r.verdict === "PAGE-MOVED");
+  const unexercised = judged.filter((r) => r.remedied === false);
   if (moved.length) {
     process.stdout.write(`\n${moved.length} page(s) CHANGED UNDER THEIR OWN PROBES — see D7. A control the `
       + "sweep activated altered what the next probe could see, so whether ORDER also matters is "
       + "unanswerable for them, and they are counted as unexamined rather than as passes.\n");
   }
-  // A PASS THAT DID NOT EXERCISE THE REMEDY IS NOT EVIDENCE FOR IT. Agreement while `establishBrowseMode`
-  // never ran means the two orders happened to match — a weaker claim than "the state is restored between
-  // probes", and the shape that let an inert `refreshBrowseBuffer` collect three green runs. Counted as NOT
-  // EXAMINED, which is what makes `gateVerdict` refuse to call it a pass.
-  const unexercised = results.filter((r) => r.remedied === false);
-  const verdict = gateVerdict({
-    examined: results.length - inconclusive.length - unexercised.length - moved.length,
-    of: PAGES.length,
-    source: "corpus pages and live sites, each captured in both probe orders",
-    failures: differing.length,
-  });
   if (unexercised.length) {
-    process.stdout.write(`\n${unexercised.length} page(s) agreed without D3's browse-mode remedy running, `
-      + "so they are counted as unexamined rather than as passes.\n");
+    process.stdout.write(`\n${unexercised.length} page(s) agreed WITHOUT the browse-mode remedy running. `
+      + "That is agreement by luck, not evidence the state is restored, so it is not counted as examined.\n");
   }
+  const verdict = fleetVerdict(
+    outcomes.map((o) => ({
+      // A judged-but-unexaminable page is `result: null` to the fleet verdict for the same reason an
+      // errored one is: coverage counts what was ANSWERED, and these three cases have no answer.
+      result: o.result && !moved.includes(o.result) && !unexercised.includes(o.result) ? o.result : null,
+      error: o.error,
+    })),
+    { of: PAGES.length, what: "corpus pages and live sites, each captured in both probe orders",
+      workers: workerCount, failed: differing.length });
   process.stdout.write(`\n${renderVerdict(verdict)}\n`);
   process.exit(exitCodeFor(verdict));
 }
+
 
 // Refuses to run when imported. Every npm entry point here does this, and a test discovers the ones that
 // do not: a module that captures on import turns `import()` — which is how the tests check a file loads at
