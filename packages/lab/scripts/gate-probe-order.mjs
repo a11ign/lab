@@ -35,6 +35,7 @@ import { leasePageServer } from "../src/training/page-server.mjs";
 import { guestReachableUrl } from "@a11y-witness/worker-fleet";
 import { requestJson, assertWorkerUrl, CAPTURE_CLIENT_TIMEOUT_MS }
   from "../../worker-fleet/src/worker-http.mjs";
+import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 
 refuseUnknownFlags(["--worker=", "--pages=", "--json"],
@@ -229,35 +230,31 @@ async function compareOrders(worker, base) {
   const inconclusive = results.filter((r) => r.verdict === "INCONCLUSIVE");
   const differing = results.filter((r) => r.verdict === "CHANGED" || r.verdict === "DRIFT");
   const moved = results.filter((r) => r.verdict === "PAGE-MOVED");
+  // A PAGE THAT MOVED UNDER ITS OWN PROBES WAS EXAMINED, and the answer is known — a control the sweep
+  // activated altered what the next probe could see. It is reported, not counted as a failure and not as a
+  // coverage gap: unfixable by restoring the screen reader's state, and the disclosure probe it comes from
+  // is how 4.1.3 and half of 3.3.1 are reachable at all.
   if (moved.length) {
-    process.stdout.write(`\n${moved.length} page(s) CHANGED UNDER THEIR OWN PROBES — a control the sweep `
-      + "activated altered what the next probe could see. Not an ordering fault, and not fixable by "
-      + "restoring the screen reader's state; see docs/determinism-plan.md D7.\n");
-  }
-  if (inconclusive.length) {
-    process.stdout.write(`\nINCONCLUSIVE — ${inconclusive.length} page(s) were not captured in both orders, `
-      + "so nothing was compared for them. This is not a pass.\n");
-    process.exit(2);
-  }
-  if (differing.length) {
-    process.stdout.write(`\nFAIL — the evidence depends on PROBE ORDER for ${differing.length} of `
-      + `${results.length} page(s). A capture is meant to describe the page, not the sequence used to read `
-      + "it; see docs/determinism-plan.md D3.\n");
-    process.exit(1);
+    process.stdout.write(`\n${moved.length} page(s) CHANGED UNDER THEIR OWN PROBES — see D7. Not an `
+      + "ordering fault: the page the second probe read was not the page the first one did.\n");
   }
   // A PASS THAT DID NOT EXERCISE THE REMEDY IS NOT EVIDENCE FOR IT. Agreement while `establishBrowseMode`
-  // never ran means the two orders happened to match — a different and much weaker claim than "the state is
-  // restored between probes", and exactly the shape that let an inert `refreshBrowseBuffer` collect three
-  // green runs.
+  // never ran means the two orders happened to match — a weaker claim than "the state is restored between
+  // probes", and the shape that let an inert `refreshBrowseBuffer` collect three green runs. Counted as NOT
+  // EXAMINED, which is what makes `gateVerdict` refuse to call it a pass.
   const unexercised = results.filter((r) => r.remedied === false);
+  const verdict = gateVerdict({
+    examined: results.length - inconclusive.length - unexercised.length,
+    of: PAGES.length,
+    source: "corpus pages and live sites, each captured in both probe orders",
+    failures: differing.length,
+  });
   if (unexercised.length) {
-    process.stdout.write(`\nINCONCLUSIVE — the orders agree, but D3's browse-mode remedy did not run on `
-      + `${unexercised.length} of ${results.length} page(s), so this says nothing about whether restoring `
-      + "the state is what makes them agree.\n");
-    process.exit(2);
+    process.stdout.write(`\n${unexercised.length} page(s) agreed without D3's browse-mode remedy running, `
+      + "so they are counted as unexamined rather than as passes.\n");
   }
-  process.stdout.write(`\nPASS — all ${results.length} page(s) give the same evidence under both probe `
-    + "orders, with the browse-mode remedy exercised on every one.\n");
+  process.stdout.write(`\n${renderVerdict(verdict)}\n`);
+  process.exit(exitCodeFor(verdict));
 }
 
 // Refuses to run when imported. Every npm entry point here does this, and a test discovers the ones that
