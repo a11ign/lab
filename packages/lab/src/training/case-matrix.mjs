@@ -3180,6 +3180,114 @@ function everyConformantPiece(/** @type {any} */ template) {
 // so no subtype can miss a bucket by chance (see `bucketFor`). Appending a case to the end of its
 // subtype leaves the earlier ones alone; inserting one re-buckets everything after it in that subtype,
 // and those pages recapture. That is the price of the ADR 0015 guarantee.
+/**
+ * A CONSENT BANNER that confines Tab to itself — the exact shape that refuted three 2.1.2 rules.
+ *
+ * Measured on the pages that did the refuting: tfl.gov.uk's ring reads `link, link, button, button, button`
+ * ("Manage cookies", "Accept only essential cookies", "Accept all cookies"); networkrail's reads
+ * `link, button, button, button` ("Allow all cookies"). This reproduces that: a link and two buttons, with a
+ * focus guard, dismissible by either button.
+ *
+ * IT IS FURNITURE, NOT THE DEFECT. It sits on BOTH variants of the pair, identically, so nothing about it
+ * is the signal — and a rule that fires on it therefore fires on the CONFORMANT page too, where
+ * `rules:gate` counts it as a false positive. That is the whole job: the corpus had no page that could
+ * express this failure, so four consecutive wrong rules scored 4/4 EXACT on it.
+ *
+ * NO EDITABLE inside the banner, deliberately. Focus landing in a text field switches NVDA to focus mode,
+ * and quick-nav keys then type themselves into the page — the defect that ran for 353 captures. A link and
+ * buttons cannot trigger it, so this page tests one thing.
+ */
+function CONSENT_BANNER() {
+  return "<div id=\"consent\" role=\"dialog\" aria-label=\"Cookie choices\">"
+    + "<p>We use cookies to remember your settings and to understand how the site is used.</p>"
+    + "<a href=\"/cookie-policy\">Read our cookie policy</a>"
+    + "<button type=\"button\" id=\"consent-accept\">Accept all cookies</button>"
+    + "<button type=\"button\" id=\"consent-reject\">Reject all cookies</button>"
+    + "</div>";
+}
+
+/**
+ * Keeps Tab inside the banner until a choice is made, then releases the page — what a real consent wall
+ * does, and CONFORMANT: focus can be moved away using only a keyboard, by activating a button in the ring.
+ */
+const CONSENT_FOCUS_GUARD = "var consenting = true;"
+  + "function dismissConsent() {"
+  + "  consenting = false;"
+  + "  document.getElementById('consent').hidden = true;"
+  + "  document.getElementById('contact-name').focus();"
+  + "}"
+  + "document.getElementById('consent-accept').addEventListener('click', dismissConsent);"
+  + "document.getElementById('consent-reject').addEventListener('click', dismissConsent);"
+  + "document.addEventListener('focusin', (event) => {"
+  + "  if (!consenting) return;"
+  + "  const banner = document.getElementById('consent');"
+  + "  if (!banner.contains(event.target)) {"
+  + "    queueMicrotask(() => document.getElementById('consent-accept').focus());"
+  + "  }"
+  + "});";
+
+/**
+ * @param {boolean} withAlt whether the illustration carries alternative text — the ONLY difference between
+ *   the two variants of this pair. Everything else, banner included, is byte-identical.
+ */
+function CONSENT_WALLED_PAGE(withAlt) {
+  const alt = withAlt ? " alt=\"A shaded seating area beside the community garden\"" : "";
+  return "<form>"
+    + "<label for=\"contact-name\">Your name</label><input id=\"contact-name\" name=\"contact-name\">"
+    + "<label for=\"contact-email\">Email</label><input id=\"contact-email\" name=\"contact-email\">"
+    + "<label for=\"contact-phone\">Telephone</label><input id=\"contact-phone\" name=\"contact-phone\">"
+    + "<label for=\"contact-notes\">Anything else</label><input id=\"contact-notes\" name=\"contact-notes\">"
+    + "</form>"
+    + "<p>The garden project added a shaded seating area.</p>"
+    + "<img src=\"/missing-garden.png\"" + alt + ">"
+    + CONSENT_BANNER();
+}
+
+cases.push(
+  pair({
+    id: "image-missing-alt-behind-consent",
+    criterion: "1.1.1",
+    task: "Read the project update and understand what the illustration shows.",
+    source: "Practical Web Accessibility, chapter 22; WCAG 1.1.1 Understanding",
+    mutation: "The informative illustration has no alternative text. A consent banner confines Tab to its "
+      + "own three controls on BOTH variants, which is conformant and is not the defect under test.",
+    // THE PAGE THE CORPUS COULD NOT EXPRESS, and the reason four consecutive 2.1.2 rules scored 4/4 EXACT
+    // here and were withdrawn on real pages. See `docs/determinism-plan.md` D1.
+    //
+    // The defect is a missing alt — nothing to do with focus. The banner is FURNITURE, identical on both
+    // variants, and it reproduces what tfl.gov.uk and networkrail.co.uk do: Tab is held in a ring of
+    // `link, button, button` while the sweep walks the four form fields BEHIND it.
+    //
+    // That makes this page a FALSE-POSITIVE DETECTOR for the whole focus family:
+    //
+    //   - ring 3 distinct, swept 4 form fields, so the withdrawn tab-stop and form-field rules both FIRE —
+    //     on a page whose only defect is an image. `rules:gate` counts that on the good variant.
+    //   - the sweep and the tab walk return DISJOINT sets, which is what made 2.1.1 report all four fields
+    //     as keyboard-unreachable on a conformant page.
+    //
+    // Every rule that reads focus is now scored against a conformant page carrying an overlay, which is the
+    // condition none of them had ever been tested under.
+    badSignal: { type: "regex", pattern: "graphic[, ]+" + UNNAMED_GRAPHIC, flags: "i" },
+    probeFocus: true,
+    // ONE TITLE, not the corpus's usual "…with an informative/unlabelled illustration" pair. Most cases
+    // describe their defect in the title, which is a second difference between the variants and therefore a
+    // second thing a head could key on. On a page whose entire job is "exactly one difference", that
+    // difference has to be the alt and nothing else.
+    good: page({
+      title: "Project update",
+      heading: "Project update",
+      body: CONSENT_WALLED_PAGE(true),
+      script: CONSENT_FOCUS_GUARD,
+    }),
+    bad: page({
+      title: "Project update",
+      heading: "Project update",
+      body: CONSENT_WALLED_PAGE(false),
+      script: CONSENT_FOCUS_GUARD,
+    }),
+  }),
+);
+
 export const CASES = Object.freeze(withRealisticScale(
   [...cases, ...multiDefectCases(cases), ...conformantBehaviourCases(cases)],
 ));
