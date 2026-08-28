@@ -117,6 +117,26 @@ function establishedBrowseMode(capture) {
   return (capture?.diagnostics ?? []).some((/** @type {any} */ m) => m?.event === "establishBrowseMode");
 }
 
+/**
+ * Did THE PAGE change under the probes, as opposed to the probes disagreeing about one page? — D7.
+ *
+ * `pageState` is fingerprinted before each probe. Two probes seeing different counts means the page moved:
+ * the sweep's disclosure probe activates a control, and on `nls.uk/join/` that opened a search panel and
+ * confined the next probe to 10 tab stops where an untouched page gave 150.
+ *
+ * That is a DIFFERENT FAULT from order-dependence and needs a different answer — you cannot un-click a
+ * disclosure, so the remedy is to see it rather than to prevent it. Reporting both as FAIL would make the
+ * gate unactionable on any page with a menu.
+ *
+ * @param {any} capture
+ */
+function pageChangedUnderProbes(capture) {
+  const states = (capture?.diagnostics ?? []).filter((/** @type {any} */ m) => m?.event === "pageState");
+  if (states.length < 2) return false;
+  const shape = (/** @type {any} */ s) => JSON.stringify([s.tabbable, s.formField, s.link, s.heading]);
+  return states.some((/** @type {any} */ s) => shape(s) !== shape(states[0]));
+}
+
 async function main() {
   const worker = arg("--worker");
   if (!worker) {
@@ -196,15 +216,24 @@ async function compareOrders(worker, base) {
     // The SECOND capture is the permuted one, and it is the only one with a preceding probe, so it is the
     // only one where the remedy can have run. Reported beside the verdict rather than assumed.
     const remedied = establishedBrowseMode(taken[1].capture);
-    results.push({ page: page.url ?? page.path, verdict: diff.verdict, changes: diff.changes,
-      phrases: diff.phrases,
-      remedied });
+    // A page that moved under its own probes is reported as PAGE-MOVED, never as an ordering fault: the two
+    // need opposite responses, and conflating them makes this gate unactionable on any page with a menu.
+    const pageMoved = taken.some((/** @type {any} */ c) => pageChangedUnderProbes(c.capture));
+    const verdict = diff.verdict !== "SAME" && pageMoved ? "PAGE-MOVED" : diff.verdict;
+    results.push({ page: page.url ?? page.path, verdict, changes: diff.changes,
+      phrases: diff.phrases, remedied, pageMoved });
   }
 
   report(results);
 
   const inconclusive = results.filter((r) => r.verdict === "INCONCLUSIVE");
   const differing = results.filter((r) => r.verdict === "CHANGED" || r.verdict === "DRIFT");
+  const moved = results.filter((r) => r.verdict === "PAGE-MOVED");
+  if (moved.length) {
+    process.stdout.write(`\n${moved.length} page(s) CHANGED UNDER THEIR OWN PROBES — a control the sweep `
+      + "activated altered what the next probe could see. Not an ordering fault, and not fixable by "
+      + "restoring the screen reader's state; see docs/determinism-plan.md D7.\n");
+  }
   if (inconclusive.length) {
     process.stdout.write(`\nINCONCLUSIVE — ${inconclusive.length} page(s) were not captured in both orders, `
       + "so nothing was compared for them. This is not a pass.\n");
