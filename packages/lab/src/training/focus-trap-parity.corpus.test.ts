@@ -25,8 +25,8 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { signalMatches, TAB_RING_FLOOR as SIGNAL_FLOOR } from "./case-matrix.mjs";
-import { ruleFindings, TAB_RING_FLOOR as RULE_FLOOR } from "@a11y-witness/judge/rules";
+import { signalMatches } from "./case-matrix.mjs";
+import { ruleFindings } from "@a11y-witness/judge/rules";
 import { oracleCounts } from "@a11y-witness/evidence/verify";
 
 const CAPTURES = resolve(process.cwd(), process.env.DATASET_ROOT ?? "runs/screenreader-dataset", "captures");
@@ -78,15 +78,11 @@ test("the comparison examined a real corpus, rather than agreeing about nothing"
     "no capture on disk reports a trap, so agreement here proves only that both sides can say no");
 });
 
-test("both sides use the SAME floor, asserted on the value rather than on agreeing verdicts", () => {
-  // The verdict comparison above cannot see this on a thin corpus. Measured while mutation-checking it:
-  // moving the signal's floor from 0.5 to 0.95 changed NO verdict, because the captures on disk sit at
-  // 1.00, 0.21, 1.00 and 0.19 — nothing lies between the two floors, so the mutation was equivalent and
-  // the drift would have shipped. A corpus that happens to contain no counter-example is not a check.
-  //
-  // Read as EXPORTED VALUES, never scraped from source text: a regex over the source is how a test comes
-  // to assert over an empty set and pass having examined nothing.
-  assert.equal(SIGNAL_FLOOR, RULE_FLOOR,
-    `the corpus signal and the rule disagree about how generous the tab-ring floor is `
-      + `(signal ${SIGNAL_FLOOR}, rule ${RULE_FLOOR}); they decide the same question and must use one number`);
-});
+/*
+ * A third test pinned the two TAB_RING_FLOOR constants equal. Both are gone: the tab-stop denominator they
+ * belonged to was withdrawn after `rules-real-pages` measured 9 new 2.1.2 findings on 86 conformant real
+ * pages. Recorded rather than silently deleted, because the reason it existed still stands and will apply
+ * again the moment the two sides share a tuned number: mutation-checking showed the VERDICT comparison
+ * above could not see a floor moved 0.5 -> 0.95, since no capture on disk sat between the two. A corpus
+ * that happens to contain no counter-example is not a check, so a shared constant needs pinning by VALUE.
+ */
