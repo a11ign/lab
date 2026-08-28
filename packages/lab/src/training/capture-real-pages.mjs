@@ -17,6 +17,7 @@
  * is what a normal run uses; mixing a live-web fetch into it would make a routine run depend on w3.org
  * being up. This is a separate, explicit act.
  */
+import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
 import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -462,6 +463,10 @@ async function main() {
   // would make those lines describe a set that no longer exists.
   const toCapture = plan.skip.size ? pages.filter((page) => !plan.skip.has(page.url)) : pages;
 
+  // Real pages are fetched from the live web, so this host serves nothing — but it still DRIVES the run,
+  // and a sleeping driver stops it while the workers stay healthy.
+  const hostNotice = nonAuthoritativeHostNotice({ cwd: process.cwd(), servesPages: false });
+  if (hostNotice) process.stdout.write(hostNotice);
   await assertOneBrowserAcross(workers, "before the run");
   // AND that they are running the code this checkout expects. The browser check asks whether the guests
   // agree with EACH OTHER; this asks whether they agree with the commit that will be stamped on the

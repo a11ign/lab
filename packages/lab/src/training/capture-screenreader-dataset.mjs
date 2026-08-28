@@ -23,6 +23,7 @@ import { previouslyCaptured } from "./capture-resume.mjs";
 import { leasePageServer } from "./page-server.mjs";
 import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
 
 /**
  * a typo here costs a full corpus run: `--resmue` silently means a fresh capture of 1,061 pairs.
@@ -695,6 +696,11 @@ async function checkDatasetWorkers(/** @type {any} */ pool, /** @type {any} */ l
   // worker's evidence there is at least overwritten next run. Here it is CACHED, and `workerCode` is
   // deliberately outside the cache key — so one stale guest's capture is reused for ever with nothing
   // recording which code produced it.
+  // Said BEFORE the run, not after it fails. This host serves the pages and drives the dispatch, and the
+  // only place that dependency was ever mentioned is a battery guard's refusal — which is how it came to be
+  // met with `--allow-battery` rather than understood.
+  const hostNotice = nonAuthoritativeHostNotice({ cwd: process.cwd(), servesPages: true });
+  if (hostNotice) process.stdout.write(hostNotice);
   await assertFleetRunsThisCheckout(pool ?? [lease.worker],
     { when: "before the run", allow: ALLOW_STALE, bareMetalUrls: inventoryWorkerUrls() });
 }
