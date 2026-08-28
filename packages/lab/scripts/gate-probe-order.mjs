@@ -61,6 +61,25 @@ const PAGES = [
     reason: "auto-focuses its input, so the sweep leaves NVDA in focus mode. The control: an ordinary page "
       + "with no overlay must agree across orders, or the gate is reporting something other than state.",
   },
+  // THE REAL PAGES, and the plan's own success measure. Everything above is a page built for this gate, so
+  // a green result on them alone demonstrates the property on the pages I chose — not on the one that
+  // produced the problem. `nls.uk/join/` read 7 distinct stops of 7 tabbable and stayed SILENT in one run,
+  // and was ACCUSED in another at the same commit; that row is why `docs/determinism-plan.md` exists.
+  //
+  // A live site can change between the two captures and that would read as order-dependence. The window is
+  // the two captures back to back, about a minute, and the verdict names the field — a real edit shows up
+  // as content moving, an ordering fault as a channel emptying. It is a confounder to read for, not a
+  // reason to test only pages that cannot surprise us.
+  {
+    url: "https://www.nls.uk/join/",
+    reason: "THE page the plan names: same commit, same page, two different verdicts. If the property holds "
+      + "anywhere it has to hold here.",
+  },
+  {
+    url: "https://tfl.gov.uk/modes/tube/",
+    reason: "a consent banner confining Tab to link-and-buttons over a page with 4,107 DOM links — the "
+      + "shape that refuted three 2.1.2 rules, at a scale no corpus page reaches.",
+  },
 ];
 
 const arg = (/** @type {string} */ name) =>
@@ -134,6 +153,24 @@ async function main() {
   }
 }
 
+/** Presentation only — extracted because the comparison and the rendering are different jobs. */
+function report(/** @type {any[]} */ results) {
+  if (process.argv.includes("--json")) {
+    process.stdout.write(`${JSON.stringify({ results }, null, 2)}\n`);
+    return;
+  }
+  for (const r of results) {
+    process.stdout.write(`  ${String(r.verdict).padEnd(12)} ${r.page}`
+      + `${r.remedied === false ? "   [browse-mode remedy did NOT run]" : ""}\n`);
+    for (const c of r.changes ?? []) {
+      process.stdout.write(`      ${c.field}: ${c.before} -> ${c.after}`
+        + `${c.lost.length ? `  lost ${JSON.stringify(c.lost.slice(0, 2))}` : ""}`
+        + `${c.gained.length ? `  gained ${JSON.stringify(c.gained.slice(0, 2))}` : ""}\n`);
+    }
+    if (r.detail) process.stdout.write(`      ${r.detail}\n`);
+  }
+}
+
 /**
  * @param {string} worker
  * @param {string} base the guest-reachable page root — the guest's localhost is not ours
@@ -141,38 +178,30 @@ async function main() {
 async function compareOrders(worker, base) {
   const results = [];
   for (const page of PAGES) {
-    const url = `${base}/${page.path}.html`;
+    // A corpus path is served from the leased page server; a real page is fetched from the live web and
+    // needs no base. Named `url` vs `path` rather than inferred, so an absolute URL cannot be silently
+    // concatenated onto localhost — which is the failure that returns Edge's own error page and compares
+    // identical under both orders.
+    const url = page.url ?? `${base}/${page.path}.html`;
     const taken = [];
     for (const order of ORDERS) taken.push(await capture(worker, url, order));
     const failed = taken.find((t) => t.error);
     if (failed) {
       // INCONCLUSIVE, never a pass. A page that could not be captured in both orders was not compared, and
       // "not compared" reading as "agrees" is the defect this whole plan is about, one layer out.
-      results.push({ page: page.path, verdict: "INCONCLUSIVE", detail: failed.error });
+      results.push({ page: page.url ?? page.path, verdict: "INCONCLUSIVE", detail: failed.error });
       continue;
     }
     const diff = compareCapture(/** @type {never} */ (taken[0].capture), /** @type {never} */ (taken[1].capture));
     // The SECOND capture is the permuted one, and it is the only one with a preceding probe, so it is the
     // only one where the remedy can have run. Reported beside the verdict rather than assumed.
     const remedied = establishedBrowseMode(taken[1].capture);
-    results.push({ page: page.path, verdict: diff.verdict, changes: diff.changes, phrases: diff.phrases,
+    results.push({ page: page.url ?? page.path, verdict: diff.verdict, changes: diff.changes,
+      phrases: diff.phrases,
       remedied });
   }
 
-  if (process.argv.includes("--json")) {
-    process.stdout.write(`${JSON.stringify({ results }, null, 2)}\n`);
-  } else {
-    for (const r of results) {
-      process.stdout.write(`  ${String(r.verdict).padEnd(12)} ${r.page}`
-        + `${r.remedied === false ? "   [browse-mode remedy did NOT run]" : ""}\n`);
-      for (const c of r.changes ?? []) {
-        process.stdout.write(`      ${c.field}: ${c.before} -> ${c.after}`
-          + `${c.lost.length ? `  lost ${JSON.stringify(c.lost.slice(0, 2))}` : ""}`
-          + `${c.gained.length ? `  gained ${JSON.stringify(c.gained.slice(0, 2))}` : ""}\n`);
-      }
-      if (r.detail) process.stdout.write(`      ${r.detail}\n`);
-    }
-  }
+  report(results);
 
   const inconclusive = results.filter((r) => r.verdict === "INCONCLUSIVE");
   const differing = results.filter((r) => r.verdict === "CHANGED" || r.verdict === "DRIFT");
