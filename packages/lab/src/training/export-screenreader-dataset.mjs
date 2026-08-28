@@ -68,7 +68,15 @@ const FORBIDDEN_INPUT_KEYS = ["url", "task", "html", "dom", "css", "axe", "diagn
 // and it had learned the corpus's placeholder WORDING — firing on 4 of the 6 clean pages containing
 // "Example value" and 0 of the 34 without. The corpus could express the property because it KNOWS what it
 // wrote; the screen reader cannot hear it. That asymmetry is the whole finding.
-const MODEL_EXCLUDED_SUBTYPES = new Set([
+/**
+ * EXPORTED, so a reader of the export can tell "absent by design" from "absent because stale".
+ *
+ * `corpus:starvation` reported all 218 of these as `have NO record here, so this export predates them
+ * ... re-export`, which is a different fault with a different fix and sends the reader to re-run
+ * something that was never wrong. Two different faults must not print the same word — the rule
+ * `audit_grants.py` already applies where it separates STALE from FAIL.
+ */
+export const MODEL_EXCLUDED_SUBTYPES = new Set([
   "1.3.1:missing-landmark", "4.1.2:missing-role", "3.3.2:placeholder-only",
 ]);
 

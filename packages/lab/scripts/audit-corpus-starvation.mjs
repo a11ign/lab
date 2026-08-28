@@ -29,6 +29,7 @@ import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { CASES } from "../src/training/case-matrix.mjs";
+import { MODEL_EXCLUDED_SUBTYPES } from "../src/training/export-screenreader-dataset.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 
 /**
@@ -175,7 +176,7 @@ function starvation() {
   // working copy is only ever as fresh as its last sync — the same trap that had `check-signals` reporting
   // 860 stale locally and 0 on the lab.
   const represented = new Set(records.map((r) => r.provenance.caseId));
-  const missing = [...furniture.keys()].filter((id) => !represented.has(id)).length;
+  const { missing, excludedByDesign } = absentCases(furniture, represented);
   const names = Object.keys(values[0]);
   const occurrences = Object.fromEntries(
     names.map((name) => [name, rows.filter((row) => row.values[name]).length]));
@@ -237,19 +238,51 @@ function starvation() {
     .sort((a, b) => b.onFailing - a.onFailing);
 
   return { starved, rare, monopoly, conformantRecords: conformant.length,
-    unmatched, missing, defined: furniture.size, records: rows.length };
+    unmatched, missing, excludedByDesign, defined: furniture.size, records: rows.length };
 }
 
-function render(/** @type {any} */ { starved, rare, monopoly, conformantRecords, unmatched, missing, defined, records }) {
+/**
+ * Cases with no record, SPLIT BY CAUSE — because the two need opposite responses and this reported one
+ * message for both.
+ *
+ * A case whose subtype is in `MODEL_EXCLUDED_SUBTYPES` has no record BY DESIGN; the exporter says so on
+ * its own summary line, `218 excluded from model`. Telling a reader that the export "predates them" and
+ * to re-export sends them to re-run something that was never wrong. Measured 2026-08-28: ALL 218 of the
+ * cases this audit called missing were the excluded three subtypes, and it recommended a re-export that
+ * had just been run.
+ *
+ * Two different faults must not print the same word — the rule `audit_grants.py` already applies where it
+ * separates STALE from FAIL, and this is the same shape one audit along.
+ *
+ * @param {Map<string, unknown>} furniture   every defined case
+ * @param {Set<string>} represented          the case ids this export actually carries
+ */
+function absentCases(furniture, represented) {
+  const absent = [...furniture.keys()].filter((id) => !represented.has(id));
+  const excludedByDesign = absent.filter((id) => {
+    const testCase = CASES.find((/** @type {any} */ c) => c.id === id);
+    const subtype = testCase && `${testCase.criterion}:${testCase.subtype}`;
+    return Boolean(subtype && MODEL_EXCLUDED_SUBTYPES.has(subtype));
+  }).length;
+  return { missing: absent.length - excludedByDesign, excludedByDesign };
+}
+
+function render(/** @type {any} */ { starved, rare, monopoly, conformantRecords, unmatched, missing,
+  excludedByDesign, defined, records }) {
   const total = starved.reduce((/** @type {any} */ sum, /** @type {any} */ row) => sum + row.features.length, 0);
   process.stdout.write(`\n  ${records} exported records; ${unmatched} whose case is no longer defined.\n`);
   if (unmatched > 0) {
     process.stdout.write("  Those get NO furniture applied, so their subtypes may read as starved when they "
       + "are merely stale — re-export.\n");
   }
+  if (excludedByDesign > 0) {
+    process.stdout.write(`  ${excludedByDesign} defined case(s) have no record because their subtype is `
+      + "EXCLUDED FROM THE MODEL by the exporter, which is by design and not staleness:\n"
+      + `    ${[...MODEL_EXCLUDED_SUBTYPES].sort().join(", ")}\n`);
+  }
   if (missing > 0) {
-    process.stdout.write(`  ${missing} of ${defined} defined case(s) have NO record here, so this export `
-      + "predates them and every count below is computed on part of the corpus.\n"
+    process.stdout.write(`  ${missing} of ${defined} defined case(s) have NO record here and are NOT `
+      + "excluded, so this export predates them and every count below is computed on part of the corpus.\n"
       + "  Re-export, or ask the box that owns it:  npm run lab:job -- -e job=export\n");
   }
   if (rare.length) {
