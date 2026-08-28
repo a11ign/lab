@@ -181,6 +181,7 @@ function starvation() {
   const occurrences = Object.fromEntries(
     names.map((name) => [name, rows.filter((row) => row.values[name]).length]));
   const subtypes = [...new Set(rows.flatMap((row) => [...row.subtypes]))].sort();
+  const tooFew = unjudgeableSubtypes(subtypes, rows);
   const starved = subtypes.map((subtype) => {
     const positives = rows.filter((row) => row.subtypes.has(subtype));
     if (positives.length < MIN_POSITIVES) return null;
@@ -237,7 +238,7 @@ function starvation() {
     .map((name) => ({ name, onFailing: occurrences[name], onConformant: 0 }))
     .sort((a, b) => b.onFailing - a.onFailing);
 
-  return { starved, rare, monopoly, conformantRecords: conformant.length,
+  return { starved, rare, monopoly, tooFew, conformantRecords: conformant.length,
     unmatched, missing, excludedByDesign, defined: furniture.size, records: rows.length };
 }
 
@@ -267,8 +268,48 @@ function absentCases(furniture, represented) {
   return { missing: absent.length - excludedByDesign, excludedByDesign };
 }
 
-function render(/** @type {any} */ { starved, rare, monopoly, conformantRecords, unmatched, missing,
-  excludedByDesign, defined, records }) {
+/**
+ * The subtypes this audit cannot judge — too few positives for "none of them carry it" to mean anything.
+ *
+ * Collected rather than dropped, so `renderUnjudgeable` can say what was left out. Its docstring records
+ * why that matters.
+ *
+ * @param {string[]} subtypes
+ * @param {{ subtypes: Set<string> }[]} rows
+ */
+function unjudgeableSubtypes(subtypes, rows) {
+  return subtypes.map((subtype) => ({
+    subtype, positives: rows.filter((row) => row.subtypes.has(subtype)).length,
+  })).filter((entry) => entry.positives > 0 && entry.positives < MIN_POSITIVES)
+    .sort((a, b) => b.positives - a.positives);
+}
+
+/**
+ * NO SILENT CAP. A subtype below `MIN_POSITIVES` is dropped from the starvation table because "none of
+ * its positives carry X" cannot mean much over a handful — a defensible bound, and one that said nothing.
+ *
+ * Measured 2026-08-28: `2.1.1:control-unreachable-by-keyboard` (8 positives), `2.1.2:focus-trapped` (12)
+ * and `2.4.3:focus-order-scrambled` (8) are the three heads the WEIGHTS-side audit reports the worst free
+ * vetoes on, and this audit — the one CLAUDE.md calls the design tool, the only one you can act on before
+ * paying for a capture — could not see any of them and did not say so. A table that omits exactly where
+ * the problem lives reads as "nothing to do here".
+ *
+ * @param {{ subtype: string, positives: number }[]} tooFew
+ */
+function renderUnjudgeable(tooFew) {
+  if (!tooFew.length) return;
+  process.stdout.write(`\n  ${tooFew.length} subtype(s) have FEWER THAN ${MIN_POSITIVES} positives, so `
+    + "this audit cannot judge them and they are absent from the table above.\n"
+    + "  That is a bound, not a clean bill: `npm run scorer:shortcuts` measures the trained weights and\n"
+    + "  has no such floor, so it is where these are answered.\n");
+  for (const { subtype, positives } of tooFew.slice(0, 10)) {
+    process.stdout.write(`    ${subtype.padEnd(38)} ${String(positives).padStart(4)} positive(s)\n`);
+  }
+  if (tooFew.length > 10) process.stdout.write(`    ... and ${tooFew.length - 10} more\n`);
+}
+
+function render(/** @type {any} */ { starved, rare, monopoly, tooFew, conformantRecords, unmatched,
+  missing, excludedByDesign, defined, records }) {
   const total = starved.reduce((/** @type {any} */ sum, /** @type {any} */ row) => sum + row.features.length, 0);
   process.stdout.write(`\n  ${records} exported records; ${unmatched} whose case is no longer defined.\n`);
   if (unmatched > 0) {
@@ -317,6 +358,7 @@ function render(/** @type {any} */ { starved, rare, monopoly, conformantRecords,
   const byFeature = {};
   for (const row of starved) for (const name of row.features) byFeature[name] = (byFeature[name] ?? 0) + 1;
   process.stdout.write(`\n  ${total} starved feature/subtype pairs across ${starved.length} subtypes.\n`);
+  renderUnjudgeable(tooFew);
   process.stdout.write("\n  The work list — features by how many subtypes they starve:\n\n");
   for (const [name, count] of Object.entries(byFeature).sort((a, z) => z[1] - a[1]).slice(0, 14)) {
     process.stdout.write(`    ${name.padEnd(34)} ${count}\n`);
