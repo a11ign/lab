@@ -1767,6 +1767,65 @@ cases.push(
   }),
 );
 
+// A SECOND ROUTE-CHANGE PAGE: a library catalogue, switched with `replaceState`.
+//
+// The EVIDENCE SHAPE is the same by construction and that is not a shortcoming to fix.
+// `routeTitleIsStale` reads `headingBefore !== headingAfter && titleBefore === titleAfter`, and any
+// mechanism that changes the view without the title produces exactly that. A "different" route technique
+// producing different evidence would be a different subtype.
+//
+// So what this case adds is what the corpus was actually short of, measured 2026-08-28:
+// `2.4.2:route-title-stale` had SEVEN positives and ONE page. A head that has only ever seen
+// "Riverside Centre" become "Bookings" has learned that vocabulary as much as the failure — the same
+// word-sense trap `corpus:starvation`'s monopoly report exists to catch, arrived at through repetition
+// rather than through a wordlist. Different domain, different view names, different route call.
+const CATALOGUE_NAV =
+  "<nav><ul>"
+  // The navigating link first, for the reason `NAV_MARKUP` gives: `probeRouteChange` activates the first
+  // link it reaches, and a case whose conformant variant cannot pass is as broken as one whose bad
+  // variant cannot fail.
+  + "<li><a href=\"#loans\" id=\"nav-loans\">My loans</a></li>"
+  + "<li><a href=\"#search\">Search the catalogue</a></li>"
+  + "</ul></nav>"
+  + "<div id=\"view\"><p>Opening hours and branch addresses for the county library.</p></div>";
+
+const CATALOGUE_SWAP =
+  "var view = document.getElementById('view');"
+  + "document.getElementById('nav-loans').addEventListener('click', function (event) {"
+  + "event.preventDefault();"
+  // `replaceState`, not `pushState` — a router that treats a view switch as a correction rather than a
+  // new entry. Same evidence, different call, so the probe is exercised against both.
+  + "history.replaceState({}, '', '#loans');";
+
+const CATALOGUE_GOOD = CATALOGUE_SWAP
+  + "view.innerHTML = '<h1 id=\"landed\" tabindex=\"-1\">My loans</h1>"
+  + "<p>Four items on loan, one due back on Friday.</p>';"
+  + "document.title = 'My loans - County Library';"
+  + "document.getElementById('landed').focus();"
+  + "});";
+
+const CATALOGUE_BAD = CATALOGUE_SWAP
+  + "view.innerHTML = '<h1>My loans</h1>"
+  + "<p>Four items on loan, one due back on Friday.</p>';"
+  + "});";
+
+cases.push(
+  pair({
+    id: "route-title-stale-catalogue",
+    task: "Open your loans and confirm where you are.",
+    source: "WCAG 2.4.2 Understanding; W3C WAI single-page-application patterns",
+    mutation: "The route changes with `replaceState` and the document title does not, so the page still "
+      + "announces the catalogue's landing title.",
+    criterion: "2.4.2",
+    good: page({ title: "County Library", heading: "County Library", body: CATALOGUE_NAV,
+      script: CATALOGUE_GOOD }),
+    bad: page({ title: "County Library", heading: "County Library", body: CATALOGUE_NAV,
+      script: CATALOGUE_BAD }),
+    badSignal: { type: "route-title-stale" },
+    probeNavigation: true,
+  }),
+);
+
 // A single targeted case rather than a family: 2.1.2 needs exactly one pair to become validatable, and
 // it is pushed here beside the other explicit pushes rather than buried in a generated block.
 cases.push(
