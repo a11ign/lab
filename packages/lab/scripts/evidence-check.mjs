@@ -29,6 +29,7 @@ import { compareCapture, readCapture, summarise } from "../src/capture/evidence-
 import { isEvidence } from "../src/training/capture-decisions.mjs";
 import { titleOf } from "@a11y-witness/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";
+import { nonAuthoritativeHostNotice } from "../src/training/capture-host.mjs";
 import { hasUsableCaptureFiles } from "../src/training/capture-resume.mjs";
 import { hostPagesBase } from "../../worker-fleet/src/host-address.mjs";
 import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mjs";
@@ -367,6 +368,14 @@ async function main() {
   // Lease the pages the same way a real run does, instead of assuming somebody left a server up. What
   // had been serving them here was a manual `npx serve` from eight days earlier; when it was cleared,
   // this tool silently began capturing Edge's error page.
+  // SAY WHOSE BASELINE THIS IS. The comparison is "the captures on THIS disk" against "what the fleet
+  // produces now", and on a laptop the first half is whatever was last synced — so the verdict is about the
+  // COPY, not about the change you just made. Measured 2026-08-28: this reported CHANGED on 2 of 48, and
+  // the difference was NVDA's own wording (`unlabeled` -> `unlabelled`) between a stored capture from
+  // 2026-08-07 taken on a UTM VM and today's bare-metal fleet. Nothing to do with the change under test,
+  // and it was read as a verdict on it for several minutes.
+  const hostNotice = nonAuthoritativeHostNotice({ cwd: process.cwd(), servesPages: true });
+  if (hostNotice) process.stdout.write(hostNotice);
   const pagesLease = await leasePageServer({
     root: resolve(DATASET, "pages"),
     port: Number(process.env.DATASET_PAGES_PORT || 5050),
