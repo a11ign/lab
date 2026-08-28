@@ -76,7 +76,10 @@ interface Record_ {
    * model boundary and the featurizer, which both read `input`, cannot reach it. Optional because an
    * export predating it must still score rather than the gate refusing every record.
    */
-  ruleEvidence?: { census?: { heading?: number; graphicUnnamed?: number } };
+  ruleEvidence?: {
+    census?: { heading?: number; graphicUnnamed?: number };
+    dom?: { tabbable?: number };
+  };
   target: { label: string; criteria: string[]; subtypes?: string[] };
   provenance: { caseId: string; variant: string; subtype: string };
 }
@@ -157,6 +160,35 @@ function reportRuleOnlyEvidence(records: Record_[]): void {
   // coverage gap you fix in the corpus and one you fix in the exporter.
   console.log(`  census.heading === 0 on ${headings.filter((n) => n === 0).length} record(s); `
     + `census.graphicUnnamed > 0 on ${unnamed.filter((n) => n > 0).length}`);
+  for (const line of tabStopEvidenceLines(records)) console.log(line);
+}
+
+/**
+ * Whether the TAB-STOP denominator reached this export, stated as a number rather than assumed.
+ *
+ * 2.1.2's tab-ring branch makes no claim without `dom.tabbable`, deliberately — every capture taken before
+ * the census counted tab stops omits it, and absence must not read as "the page has none". The cost of that
+ * correctness is that the branch is SILENT on an old corpus and a silent branch scores exactly like a clean
+ * one. So a green `2.1.2:focus-trapped` here can mean "no conformant page trips it" or "not one record could
+ * have tripped it", and those need opposite responses: ship, versus recapture.
+ *
+ * This is the same fix `reportRuleOnlyEvidence` exists for, applied to the next piece of evidence rather
+ * than re-learned after it costs an investigation. The census took two: once to find, and once again when a
+ * re-export left every number unchanged and the report could not say whether the evidence had arrived and
+ * found nothing, or had not arrived at all.
+ */
+export function tabStopEvidenceLines(
+  records: { ruleEvidence?: { dom?: { tabbable?: number } } }[],
+): string[] {
+  const withTabbable = records.filter((r) => typeof r.ruleEvidence?.dom?.tabbable === "number");
+  if (withTabbable.length === 0) {
+    return [
+      "  dom.tabbable on 0 record(s) — 2.1.2's tab-ring branch is UNEXERCISED here, so a clean",
+      "  2.1.2 says nothing about it. Captures predating the tab-stop census cannot carry it.",
+    ];
+  }
+  return [`  dom.tabbable on ${withTabbable.length} of ${records.length} record(s) `
+    + "— 2.1.2's tab-ring branch is exercised"];
 }
 
 export function tally(records: Record_[]): Map<string, Coverage> {
