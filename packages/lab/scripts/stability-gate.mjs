@@ -269,6 +269,10 @@ function interpretFailure(/** @type {any} */ error, /** @type {any} */ path, /**
  * the one the rules said to import.
  */
 async function main() {
+  // Declared without a value on purpose: it is assigned inside the `try` and read only after it, so any
+  // placeholder here would be dead — and a dead default is one a future edit can start relying on.
+  /** @type {string} */
+  let ranOn;
   // Leased before the first canary and released in the `finally` below, so a gate that throws half way
   // through still leaves the host as it found it.
   const pages = await leasePageServer({
@@ -294,16 +298,19 @@ async function main() {
   const results = [];
   try {
     for (const canary of CANARIES) await judgeCanary(canary, { base: BASE, worker: lease.worker, results });
+    // Read BEFORE the `finally` releases the lease, because the verdict names it and a released lease may
+    // not still know which box it held.
+    ranOn = lease.worker;
   } finally {
     // Release in the reverse order they were taken, and never let a release failure mask the verdict.
     await lease.release().catch((e) => process.stderr.write(`worker release failed: ${e.message}\n`));
     await pages.release().catch((e) => process.stderr.write(`page server release failed: ${e.message}\n`));
   }
-  report(results);
+  report(results, ranOn);
 }
 
 /** The verdict, and the exit code that carries it. Split out to keep `main` inside the complexity gate. */
-function report(/** @type {any} */ results) {
+function report(/** @type {any} */ results, /** @type {string} */ ranOn) {
   const failed = results.filter((/** @type {any} */ r) => !r.ok);
   for (const f of failed) process.stdout.write(`  ${f.path}: ${f.detail}\n`);
   const unjudgeable = failed.filter((/** @type {any} */ f) => !f.unstable);
@@ -319,7 +326,11 @@ function report(/** @type {any} */ results) {
   const verdict = gateVerdict({
     examined: results.length - unjudgeable.length,
     of: CANARIES.length,
-    source: "canaries, each captured " + TIMES + " times and compared by CONTENT",
+    // THE MACHINE IS PART OF THE POPULATION, and leaving it out is this gate's own D6 defect. It takes ONE
+    // worker by design -- spreading a page's repeats across boxes would conflate run-to-run instability
+    // with box-to-box difference, which need opposite remedies -- so a clean verdict is a claim about THIS
+    // box and no other. Stated, because "8 of 8 canaries clean" reads as a claim about the tool.
+    source: `canaries on ${ranOn}, each captured ${TIMES} times and compared by CONTENT`,
     failures: unstable.length,
   });
   if (unjudgeable.length) {
