@@ -50,6 +50,7 @@ refuseUnknownFlags(["--base=", "--times=", "--worker="], { entry: import.meta.ur
 
 const run = promisify(execFile);
 
+
 const arg = (/** @type {any} */ name, /** @type {any} */ fallback) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 
@@ -156,10 +157,33 @@ const CANARIES = [
  * to four levels of nesting -- the lint gate's limit is three, and the honest fix for depth is a named
  * function rather than a suppression.
  */
-async function judgeCanary(/** @type {any} */ { path, reason, task, probeForms, probeFocus },
+/**
+ * EVERY CANARY NAMES EXACTLY ONE SOURCE, checked at load rather than trusted.
+ *
+ * A canary carrying `url` while `judgeCanary` destructured only `path` produced `=== undefined (5x) ===`
+ * and reported STABLE: the URL became `<base>/undefined`, Edge served its own error page, and an error page
+ * repeats identically five times. On a gate whose entire question is "does this repeat identically", that is
+ * the worst possible false pass.
+ *
+ * The comment describing that exact trap was already in this file, above code that did not implement it —
+ * an edit that failed halfway and was not noticed. So this is an assertion rather than a note: a canary with
+ * neither field, or with both, stops the gate before it captures anything.
+ */
+for (const canary of CANARIES) {
+  const named = [canary.path, canary.url].filter(Boolean).length;
+  if (named !== 1) {
+    throw new Error(`canary ${JSON.stringify(canary.reason?.slice(0, 40) ?? "?")} must name exactly one of `
+      + `\`path\` (served from the corpus) or \`url\` (a live page); it names ${named}`);
+  }
+}
+
+async function judgeCanary(/** @type {any} */ { path, url: absolute, reason, task, probeForms, probeFocus },
   /** @type {any} */ { base, worker, results }) {
-  const url = `${base}/${path}`;
-  process.stdout.write(`\n=== ${path} (${TIMES}x) ===\n    why: ${reason}\n`);
+  // A corpus canary is served from the leased page server; a REAL page is fetched from the live web and
+  // takes no base. Explicit fields, never sniffed from the string.
+  const name = absolute ?? path;
+  const url = absolute ?? `${base}/${path}`;
+  process.stdout.write(`\n=== ${name} (${TIMES}x) ===\n    why: ${reason}\n`);
   // tsx, not node: repeat-capture imports isTransient from capture-decisions.mjs, which imports the
   // TypeScript verify.js. Under plain node that is ERR_MODULE_NOT_FOUND before a single line of output
   // -- which is precisely how five canaries came back "Command failed" with nothing to read. The repo
@@ -180,7 +204,7 @@ async function judgeCanary(/** @type {any} */ { path, reason, task, probeForms, 
     const varies = stdout.split("\n").filter((l) => l.includes("VARIES"));
     const usable = /(\d+)\/\d+ usable/.exec(stdout)?.[1];
     if (varies.length) {
-      results.push({ path, ok: false, detail: varies.map((v) => v.trim()).join("; ") });
+      results.push({ path: name, ok: false, detail: varies.map((v) => v.trim()).join("; ") });
       process.stdout.write(varies.map((v) => `  ${v.trim()}\n`).join(""));
     } else if (Number(usable ?? 0) < 2) {
       // Too few usable captures is not a PASS. A gate that passes when it could not measure is worse
