@@ -70,7 +70,7 @@ const GATE = process.argv.includes("--gate");
 const OWNERSHIP = readRuleOwnership();
 
 interface Record_ {
-  input: { transcript?: string[] };
+  input: { transcript?: string[]; interaction?: { focusOrder?: unknown } };
   /**
    * Evidence the RULES may use and the MODEL may not — carried as a sibling of `input` so the exporter's
    * model boundary and the featurizer, which both read `input`, cannot reach it. Optional because an
@@ -164,31 +164,35 @@ function reportRuleOnlyEvidence(records: Record_[]): void {
 }
 
 /**
- * Whether the TAB-STOP denominator reached this export, stated as a number rather than assumed.
+ * Whether the corpus carries a capture that can EXERCISE 2.1.2's cycling branch, stated rather than assumed.
  *
- * 2.1.2's tab-ring branch makes no claim without `dom.tabbable`, deliberately — every capture taken before
- * the census counted tab stops omits it, and absence must not read as "the page has none". The cost of that
- * correctness is that the branch is SILENT on an old corpus and a silent branch scores exactly like a clean
- * one. So a green `2.1.2:focus-trapped` here can mean "no conformant page trips it" or "not one record could
- * have tripped it", and those need opposite responses: ship, versus recapture.
+ * The branch fires on a closed ring, smaller than the swept controls, that offers no actionable role. A
+ * corpus with no such capture scores `2.1.2:focus-trapped EXACT` on the STALLED records alone — and a
+ * branch that was never reached scores exactly like a branch that is right. Those need opposite responses:
+ * ship, versus capture the case.
  *
- * This is the same fix `reportRuleOnlyEvidence` exists for, applied to the next piece of evidence rather
- * than re-learned after it costs an investigation. The census took two: once to find, and once again when a
+ * This reported `dom.tabbable` until 2026-08-28, for a tab-stop denominator that was built and withdrawn
+ * the same day; it kept describing that branch after the branch was gone, which is a stale diagnostic in
+ * the file whose whole job is to say what was examined.
+ *
+ * Same fix `reportRuleOnlyEvidence` exists for, applied to the next piece of evidence rather than
+ * re-learned after it costs an investigation. The census took two: once to find, and once again when a
  * re-export left every number unchanged and the report could not say whether the evidence had arrived and
  * found nothing, or had not arrived at all.
  */
 export function tabStopEvidenceLines(
-  records: { ruleEvidence?: { dom?: { tabbable?: number } } }[],
+  records: { input?: { interaction?: { focusOrder?: unknown } } }[],
 ): string[] {
-  const withTabbable = records.filter((r) => typeof r.ruleEvidence?.dom?.tabbable === "number");
-  if (withTabbable.length === 0) {
+  const walked = records.filter((r) => Array.isArray(r.input?.interaction?.focusOrder)
+    && (r.input.interaction.focusOrder as unknown[]).length > 0);
+  if (walked.length === 0) {
     return [
-      "  dom.tabbable on 0 record(s) — 2.1.2's tab-ring branch is UNEXERCISED here, so a clean",
-      "  2.1.2 says nothing about it. Captures predating the tab-stop census cannot carry it.",
+      "  focusOrder on 0 record(s) — 2.1.2's cycling branch is UNEXERCISED here, so a clean",
+      "  2.1.2 rests on the STALLED records alone. Capture a case with `probeFocus: true`.",
     ];
   }
-  return [`  dom.tabbable on ${withTabbable.length} of ${records.length} record(s) `
-    + "— 2.1.2's tab-ring branch is exercised"];
+  return [`  focusOrder on ${walked.length} of ${records.length} record(s) `
+    + "— 2.1.2's cycling branch can be exercised"];
 }
 
 export function tally(records: Record_[]): Map<string, Coverage> {
