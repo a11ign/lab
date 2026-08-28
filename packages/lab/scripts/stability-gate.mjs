@@ -35,9 +35,10 @@ import { resolve } from "node:path";
 // below warns about.
 const REPEAT_CAPTURE = fileURLToPath(new URL("../src/training/repeat-capture.mjs", import.meta.url));
 
-import { leaseWorker, guestReachableUrl } from "@a11y-witness/worker-fleet";
+import { guestReachableUrl } from "@a11y-witness/worker-fleet";
 import { leasePageServer } from "../src/training/page-server.mjs";
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
+import { gateWorkers, acrossFleet, fleetVerdict, renderPerWorker } from "../src/gates/fleet.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { assertWorkerUrl } from "../../worker-fleet/src/worker-http.mjs";
 
@@ -269,12 +270,9 @@ function interpretFailure(/** @type {any} */ error, /** @type {any} */ path, /**
  * the one the rules said to import.
  */
 async function main() {
-  // Declared without a value on purpose: it is assigned inside the `try` and read only after it, so any
-  // placeholder here would be dead — and a dead default is one a future edit can start relying on.
-  /** @type {string} */
-  let ranOn;
   // Leased before the first canary and released in the `finally` below, so a gate that throws half way
-  // through still leaves the host as it found it.
+  // through still leaves the host as it found it. ONE page server serves every worker -- the lease is
+  // refcounted, and five boxes fetching the same corpus is exactly what it is for.
   const pages = await leasePageServer({
     root: resolve(DATASET_ROOT, "pages"),
     port: PAGES_PORT,
@@ -283,34 +281,47 @@ async function main() {
   // VALIDATED, not merely truthy. `http://:8765` is a truthy string that `new URL` rejects, and a client
   // that took it on trust spent five minutes per page in readiness timeouts recorded as a failure of the
   // PAGE. This read `--worker` through the `arg()` helper, so the discovery test that requires exactly
-  // this could not see it until the flag was named literally in the file — the second time that has
+  // this could not see it until the flag was named literally in the file -- the second time that has
   // happened today, which is the argument for naming flags literally rather than only through a helper.
   const named = arg("worker", process.env.A11Y_WORKER);
   if (named) assertWorkerUrl(named);
-  const lease = await leaseWorker({ worker: named, after: "restore" });
-  // The GUEST fetches these pages, and the guest's localhost is not ours. `guestReachableUrl` rewrites the
-  // host — skipping it is how every capture came to fetch the guest's own localhost, showing Edge
-  // "localhost refused to connect" and burning three attempts per page.
-  const BASE = arg("base", guestReachableUrl(pages.url, lease));
-  process.stdout.write(`worker ${lease.worker} (${lease.source}) · pages ${BASE}\n`);
+  // EVERY WORKER BY DEFAULT. Naming one is the escape hatch, exactly as it is for a capture run.
+  const { workers, scope } = gateWorkers(named);
+  process.stdout.write(`pages ${pages.url} · ${scope}\n`);
 
-  /** @type {any[]} */
-  const results = [];
   try {
-    for (const canary of CANARIES) await judgeCanary(canary, { base: BASE, worker: lease.worker, results });
-    // Read BEFORE the `finally` releases the lease, because the verdict names it and a released lease may
-    // not still know which box it held.
-    ranOn = lease.worker;
+    const outcomes = await acrossFleet(workers, (worker) => judgeOneWorker(worker, pages));
+    reportFleet(outcomes);
   } finally {
-    // Release in the reverse order they were taken, and never let a release failure mask the verdict.
-    await lease.release().catch((e) => process.stderr.write(`worker release failed: ${e.message}\n`));
     await pages.release().catch((e) => process.stderr.write(`page server release failed: ${e.message}\n`));
   }
-  report(results, ranOn);
 }
 
-/** The verdict, and the exit code that carries it. Split out to keep `main` inside the complexity gate. */
-function report(/** @type {any} */ results, /** @type {string} */ ranOn) {
+/**
+ * Every canary, on ONE box. The whole gate runs per worker; see `gates/fleet.mjs` for why the box is the
+ * unit and not the canary.
+ */
+async function judgeOneWorker(/** @type {string} */ worker, /** @type {any} */ pages) {
+  // The GUEST fetches these pages, and the guest's localhost is not ours. `guestReachableUrl` rewrites the
+  // host -- skipping it is how every capture came to fetch the guest's own localhost, showing Edge
+  // "localhost refused to connect" and burning three attempts per page.
+  // A lease-shaped object with no lifecycle: these are bare-metal boxes that are always on, so there is
+  // nothing to start and nothing to restore. `guestReachableUrl` reads `hostAddress ?? derive(worker)`, and
+  // the derivation is the path that matters here -- it is what a NAMED worker has always taken, which is
+  // why `source` is "explicit": every worker in the inventory is one we address directly.
+  const base = arg("base", guestReachableUrl(pages.url,
+    { worker, source: "explicit", release: async () => undefined }));
+  /** @type {any[]} */
+  const results = [];
+  for (const canary of CANARIES) await judgeCanary(canary, { base, worker, results });
+  return verdictForWorker(results, worker);
+}
+
+/**
+ * ONE BOX's verdict. It RETURNS rather than exiting, because the fleet's verdict is a function of five of
+ * these -- and a per-box `process.exit` would have ended the run on the first box to finish.
+ */
+function verdictForWorker(/** @type {any} */ results, /** @type {string} */ ranOn) {
   const failed = results.filter((/** @type {any} */ r) => !r.ok);
   for (const f of failed) process.stdout.write(`  ${f.path}: ${f.detail}\n`);
   const unjudgeable = failed.filter((/** @type {any} */ f) => !f.unstable);
@@ -343,7 +354,20 @@ function report(/** @type {any} */ results, /** @type {string} */ ranOn) {
       "is indistinguishable from evidence that differs because the page differs, which is the one defect " +
       "this project cannot tolerate.\n");
   }
-  process.stdout.write(`\n${renderVerdict(verdict)}\n`);
+  process.stdout.write(`\n${ranOn}: ${renderVerdict(verdict)}\n`);
+  return verdict;
+}
+
+/**
+ * The fleet's verdict, and the exit code that carries it.
+ *
+ * A box that could not be judged reduces COVERAGE; a box reporting instability is a FAILURE. Collapsing
+ * those is how "two workers were unreachable" becomes "the fleet is stable".
+ */
+function reportFleet(/** @type {any[]} */ outcomes) {
+  process.stdout.write(`\nPER WORKER\n${renderPerWorker(outcomes)}\n`);
+  const verdict = fleetVerdict(outcomes, `${CANARIES.length} canaries x ${TIMES} captures`);
+  process.stdout.write(`\nFLEET: ${renderVerdict(verdict)}\n`);
   process.exit(exitCodeFor(verdict));
 }
 
