@@ -58,12 +58,6 @@ const EXEMPT: Record<string, { category: "owed" | "not-a-gate"; why: string }> =
   "check-real-page-findings.ts": { category: "owed",
     why: "its population is the 86 conformant real pages and it names them, but the verdict is not yet "
       + "derived from how many were actually scored" },
-  "check-dataset-distribution.mjs": { category: "owed",
-    why: "answers 'is any field empty on EVERY record', which is already a coverage question — likely the "
-      + "easiest to move" },
-  "check-shipped-provenance.mjs": { category: "owed",
-    why: "examines one artefact, so coverage is 1 of 1 and the shape adds little beyond consistency; "
-      + "lowest priority" },
 };
 
 function discoverGates(): string[] {

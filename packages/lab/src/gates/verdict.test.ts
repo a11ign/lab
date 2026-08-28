@@ -27,6 +27,15 @@ test("a real failure outranks incomplete coverage, because a found defect is a f
   assert.equal(exitCodeFor(v), 1);
 });
 
+test("failures are not a subset of what was examined — one artefact can have several problems", () => {
+  // `release:provenance` reads ONE artefact and found two problems with it, and the first wording rendered
+  // that as "FAIL — 2 of 1 examined failed". Failures COUNT problems; examined counts units looked at.
+  const v = gateVerdict({ examined: 1, of: 1, source: "the shipped weights", failures: 2 });
+  assert.equal(v.verdict, "FAIL");
+  assert.doesNotMatch(renderVerdict(v), /2 of 1/);
+  assert.match(renderVerdict(v), /2 problem\(s\) across 1 of 1/);
+});
+
 test("PASS requires full coverage AND no failures", () => {
   const v = gateVerdict({ examined: 48, of: 48, source: "a stratified sample" });
   assert.equal(v.verdict, "PASS");

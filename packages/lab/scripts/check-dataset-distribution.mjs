@@ -15,6 +15,7 @@
  * record count and the path are printed on every run, pass or fail — `rules:coverage` earns its keep the
  * same way.
  */
+import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -48,17 +49,24 @@ function main() {
   }
   const records = readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l));
   const problems = distributionProblems(records);
-  // NAMED AND COUNTED, always. See the header: "no problems" is only meaningful beside what was examined.
-  process.stdout.write(`\n  ${records.length} record(s) from ${path.replace(REPO, "")}\n`);
-  if (!problems.length) {
-    process.stdout.write("  DISTRIBUTION OK — every field is populated somewhere, and both classes are present.\n");
-    return;
-  }
   for (const problem of problems) process.stdout.write(`\n  PROBLEM  ${problem}\n`);
-  process.stdout.write(`\n  ${problems.length} problem(s). A model fitted to this export would train, `
-    + "score, and mean nothing — which is the failure mode that distinguishes an ML pipeline from\n"
-    + "  ordinary software: the data stays the right shape all the way through.\n");
-  process.exitCode = 1;
+  if (problems.length) {
+    process.stdout.write("\n  A model fitted to this export would train, score, and mean nothing — the "
+      + "failure mode that distinguishes an\n  ML pipeline from ordinary software: the data stays the "
+      + "right shape all the way through.\n");
+  }
+  // THROUGH `gateVerdict`, so "no problems" cannot be reported without what was examined — see the header,
+  // and determinism-plan D6. This question IS a coverage question ("is any field empty on EVERY record"),
+  // so every record read is a record examined and the two numbers are the same. Stating them anyway is the
+  // point: a distribution check over an export of 3 records and one over 2,484 look identical otherwise.
+  const verdict = gateVerdict({
+    examined: records.length,
+    of: records.length,
+    source: path.replace(REPO, ""),
+    failures: problems.length,
+  });
+  process.stdout.write(`\n  ${renderVerdict(verdict)}\n`);
+  process.exitCode = exitCodeFor(verdict);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();

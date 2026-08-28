@@ -37,8 +37,13 @@
 export function gateVerdict({ examined, of, source, failures = 0 }) {
   const base = { examined, of, source, failures };
   if (failures > 0) {
+    // "N problem(s) across M examined", never "N of M failed". Failures are NOT a subset of the units
+    // examined: `release:provenance` reads ONE artefact and can find two problems with it, and the first
+    // wording rendered that as "FAIL — 2 of 1 examined failed". Found by the second gate to adopt this,
+    // which is the argument for a shared shape — a bespoke message would have been wrong in one place and
+    // right in six, and nobody would have compared them.
     return { ...base, verdict: "FAIL",
-      why: `${failures} of ${examined} examined failed` };
+      why: `${failures} problem(s) across ${examined} of ${of} from ${source}` };
   }
   // COVERAGE FIRST, and this ordering is the whole point. A gate that fell short did not pass; it did not
   // finish. Reversing these two lines reproduces the 2-of-48 defect exactly.

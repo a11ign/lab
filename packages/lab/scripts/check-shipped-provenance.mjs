@@ -13,6 +13,7 @@
  * mid-promotion is not. Putting it in the unit suite would make it fail for everyone the moment somebody
  * started a promotion, which is how a check gets deleted.
  */
+import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -56,14 +57,26 @@ function main() {
   // having examined nothing.
   process.stdout.write(`  ${changesets.length} pending promotion changeset(s); `
     + `CHANGELOG ${changelog ? "present" : "absent (never published)"}\n`);
-  if (problems.length === 0) {
-    process.stdout.write("  PASS — the shipped weights' provenance is stated.\n");
-    return 0;
-  }
   for (const problem of problems) process.stdout.write(`\n  ${problem}\n`);
-  process.stdout.write(`\n  ${problems.length} problem(s). The weights ARE the API (ADR 0007), so a `
-    + "release that cannot say which model it ships is one nobody can trace a finding back to.\n");
-  return 1;
+  if (problems.length) {
+    process.stdout.write("\n  The weights ARE the API (ADR 0007), so a release that cannot say which model "
+      + "it ships is one nobody can trace a finding back to.\n");
+  }
+  // COVERAGE IS TRIVIALLY 1 HERE, and saying so is the honest version rather than manufacturing a
+  // denominator. There is one shipped model; the question is whether its provenance is stated. A missing
+  // shipped report or an absent changeset is a PROBLEM that `provenanceProblems` names, not a coverage gap.
+  //
+  // The value of the shape here is consistency and the SOURCE string: every gate in this repo now reports
+  // in the same shape, so a reader does not have to learn each one's dialect to know what was examined —
+  // determinism-plan D6.
+  const verdict = gateVerdict({
+    examined: 1,
+    of: 1,
+    source: `the shipped weights, ${changesets.length} pending changeset(s) and the CHANGELOG`,
+    failures: problems.length,
+  });
+  process.stdout.write(`\n  ${renderVerdict(verdict)}\n`);
+  return exitCodeFor(verdict);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
