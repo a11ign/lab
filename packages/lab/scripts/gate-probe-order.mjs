@@ -31,6 +31,7 @@
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { compareCapture } from "../src/capture/evidence-diff.mjs";
+import { probeStates } from "@a11y-witness/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";
 import { guestReachableUrl } from "@a11y-witness/worker-fleet";
 import { assertWorkerUrl, CAPTURE_CLIENT_TIMEOUT_MS }
@@ -134,23 +135,19 @@ function establishedBrowseMode(capture) {
 }
 
 /**
- * Did THE PAGE change under the probes, as opposed to the probes disagreeing about one page? — D7.
+ * Did the PAGE move under its own probes, rather than the evidence differing by order?
  *
- * `pageState` is fingerprinted before each probe. Two probes seeing different counts means the page moved:
- * the sweep's disclosure probe activates a control, and on `nls.uk/join/` that opened a search panel and
- * confined the next probe to 10 tab stops where an untouched page gave 150.
- *
- * That is a DIFFERENT FAULT from order-dependence and needs a different answer — you cannot un-click a
- * disclosure, so the remedy is to see it rather than to prevent it. Reporting both as FAIL would make the
- * gate unactionable on any page with a menu.
- *
- * @param {any} capture
+ * READ FROM `probeStates`, WHICH OWNS THIS QUESTION. This hand-rolled the same comparison — the per-probe
+ * fingerprint, compared field by field — and the two were written hours apart on the same day, this one
+ * first. That is the fact-stated-twice shape in a change made to close a different instance of it, and it
+ * would have drifted the moment either side learned a new field: this copy compares four counts, and
+ * `FINGERPRINT_KEYS` has six.
  */
-function pageChangedUnderProbes(capture) {
-  const states = (capture?.diagnostics ?? []).filter((/** @type {any} */ m) => m?.event === "pageState");
-  if (states.length < 2) return false;
-  const shape = (/** @type {any} */ s) => JSON.stringify([s.tabbable, s.formField, s.link, s.heading]);
-  return states.some((/** @type {any} */ s) => shape(s) !== shape(states[0]));
+function pageChangedUnderProbes(/** @type {any} */ capture) {
+  // `sameState === false` is the statement that the shape moved. `undefined` means fewer than two usable
+  // fingerprints — nobody asked — and must NOT read as "the page held still", which is why this tests
+  // for false rather than for falsiness.
+  return probeStates(/** @type {never} */ (capture ?? {}))?.sameState === false;
 }
 
 async function main() {
