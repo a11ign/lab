@@ -2062,18 +2062,26 @@ function FOCUS_ORDER_FORM(/** @type {any} */ mode) {
  * difference to nothing. Three of seven leaves it unambiguous, which is what a canary is for.
  */
 /*
- * `MODAL_TRAP_FORM` and its case `keyboard-trap-modal-cycle` stood here: a dialog holding three controls
- * with four form fields behind it, and a `focusin` guard cycling focus among the three.
+ * `MODAL_TRAP_FORM`, `MODAL_FOCUS_GUARD` and `MODAL_RELEASES_ON_ESCAPE` stood here, with the case
+ * `keyboard-trap-modal-escape`: two variants byte-identical apart from one `keydown` handler, both
+ * confining focus to a three-control dialog, only one closing on Escape.
  *
- * REMOVED 2026-08-28 with the rule branch that read it. Both were exact on this corpus and wrong on the
- * web — 7 new 2.1.2 findings on 86 conformant real pages — because the page this builds and a cookie
- * consent banner are THE SAME EVIDENCE: a ring smaller than the swept form fields. Compare
- * networkrail.co.uk/careers/ (ring 4, swept 7) against this case (ring 3, swept 5). With the branch gone
- * the case has no signal that can fire, and `check-signals` correctly calls that BLIND.
+ * It was built to be the control the corpus never had — a pair where the ring SIZE is constant, so a rule
+ * fitted to it could not learn "is there a modal" instead of "is there a trap". It captured, and the
+ * measurement retired the whole approach:
  *
- * Recorded here rather than only in git because the page shape is right and will be needed again: what it
- * lacks is a CONFORMANT sibling whose dialog releases focus on Escape. Without that control the corpus
- * cannot express the distinction the rule has to turn on, which is exactly why it read as clean.
+ *     bad   ring 3 of 5 swept, confined, Escape changed nothing
+ *     good  ring 12, NOT confined, never asked — its dialog was ALREADY CLOSED before Tab was pressed once
+ *
+ * `anchorToTop` presses Escape as its first action and `probeFocusOrder` calls it before the walk. So the
+ * pair discriminated for a reason other than the one it documents, and a confined ring already means
+ * "confined AFTER an Escape" — the exact condition of the rule withdrawn the same morning for 7 false
+ * positives on conformant real pages. See `markFocusConfinement` in `capture-core.mjs` and A3 in
+ * `docs/reliability-plan.md`.
+ *
+ * Removed rather than left: with no rule that can fire on it, `check-signals` reports it BLIND, and a case
+ * whose signal cannot fire is a training record with no discriminating evidence. Recorded here because the
+ * page design is right and the reason it cannot be used is not obvious from the outside.
  */
 
 /*
