@@ -37,8 +37,9 @@ const REPEAT_CAPTURE = fileURLToPath(new URL("../src/training/repeat-capture.mjs
 
 import { guestReachableUrl } from "@a11y-witness/worker-fleet";
 import { leasePageServer } from "../src/training/page-server.mjs";
-import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
-import { gateWorkers, acrossFleet, fleetVerdict, renderPerWorker } from "../src/gates/fleet.mjs";
+import { renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
+import { gateWorkers, shardAcrossWorkers, acrossFleet, fleetVerdict, renderShards }
+  from "../src/gates/fleet.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { assertWorkerUrl } from "../../worker-fleet/src/worker-http.mjs";
 
@@ -289,85 +290,80 @@ async function main() {
   const { workers, scope } = gateWorkers(named);
   process.stdout.write(`pages ${pages.url} · ${scope}\n`);
 
+  // ONE CANARY PER MACHINE, dealt round-robin. Eight canaries over five boxes is two rounds, not eight --
+  // and over twenty boxes it is one. The repeats of a single canary stay on its own box; see
+  // `gates/fleet.mjs` for why that boundary is where it is.
+  const shards = shardAcrossWorkers(CANARIES, workers);
+  process.stdout.write(`${renderShards(shards)}\n`);
+
   try {
-    const outcomes = await acrossFleet(workers, (worker) => judgeOneWorker(worker, pages));
-    reportFleet(outcomes);
+    const outcomes = await acrossFleet(shards, (canary, worker) => judgeOne(canary, worker, pages));
+    reportFleet(outcomes, workers.length);
   } finally {
     await pages.release().catch((e) => process.stderr.write(`page server release failed: ${e.message}\n`));
   }
 }
 
 /**
- * Every canary, on ONE box. The whole gate runs per worker; see `gates/fleet.mjs` for why the box is the
- * unit and not the canary.
+ * ONE canary, on the box it was dealt to -- all `TIMES` of its captures.
+ *
+ * The repeats stay together deliberately: this gate compares a page against ITSELF, so splitting its
+ * captures across machines would answer a different question (are the boxes interchangeable?) while
+ * looking like an answer to this one. `fleet-consistency` owns that question.
  */
-async function judgeOneWorker(/** @type {string} */ worker, /** @type {any} */ pages) {
+async function judgeOne(/** @type {any} */ canary, /** @type {string} */ worker, /** @type {any} */ pages) {
   // The GUEST fetches these pages, and the guest's localhost is not ours. `guestReachableUrl` rewrites the
   // host -- skipping it is how every capture came to fetch the guest's own localhost, showing Edge
   // "localhost refused to connect" and burning three attempts per page.
+  //
   // A lease-shaped object with no lifecycle: these are bare-metal boxes that are always on, so there is
   // nothing to start and nothing to restore. `guestReachableUrl` reads `hostAddress ?? derive(worker)`, and
-  // the derivation is the path that matters here -- it is what a NAMED worker has always taken, which is
-  // why `source` is "explicit": every worker in the inventory is one we address directly.
+  // the derivation is what a NAMED worker has always taken -- hence `source: "explicit"`.
   const base = arg("base", guestReachableUrl(pages.url,
     { worker, source: "explicit", release: async () => undefined }));
   /** @type {any[]} */
   const results = [];
-  for (const canary of CANARIES) await judgeCanary(canary, { base, worker, results });
-  return verdictForWorker(results, worker);
+  await judgeCanary(canary, { base, worker, results });
+  const result = results[0];
+  // UNJUDGEABLE THROWS, so it reduces coverage rather than counting as a clean page. "Two captures errored"
+  // and "the page was stable" must never reach the verdict as the same thing.
+  if (result && !result.ok && !result.unstable) throw new Error(result.detail);
+  return result;
 }
 
 /**
- * ONE BOX's verdict. It RETURNS rather than exiting, because the fleet's verdict is a function of five of
- * these -- and a per-box `process.exit` would have ended the run on the first box to finish.
+ * The fleet's verdict over the CANARIES.
+ *
+ * The boxes are how the work was spread, not what was examined, so the denominator stays the canary list
+ * exactly as it was when this ran on one machine. An unstable canary is a FAILURE; one that could not be
+ * judged reduces COVERAGE -- "we could not measure" and "it varied" need opposite responses, and a gate
+ * that passes when it could not measure launders unknown into fine.
  */
-function verdictForWorker(/** @type {any} */ results, /** @type {string} */ ranOn) {
-  const failed = results.filter((/** @type {any} */ r) => !r.ok);
-  for (const f of failed) process.stdout.write(`  ${f.path}: ${f.detail}\n`);
-  const unjudgeable = failed.filter((/** @type {any} */ f) => !f.unstable);
-  const unstable = failed.filter((/** @type {any} */ f) => f.unstable);
+function reportFleet(/** @type {any[]} */ outcomes, /** @type {number} */ workerCount) {
+  const judged = outcomes.filter((o) => o.result);
+  const unstable = judged.filter((o) => o.result.unstable);
+  const unjudgeable = outcomes.filter((o) => !o.result);
 
-  // THE DENOMINATOR IS THE CANARY LIST, not the results. `results.length` counts whatever produced a
-  // result, so a canary that never reported shrank the denominator and the ratio still read N/N — the
-  // vanishing-denominator defect `evidence-check` already fixed by reconciling against what was ASKED FOR.
-  //
-  // An unjudgeable canary (errored, or too few usable captures) reduces COVERAGE rather than counting as a
-  // failure: "we could not measure" and "it varied" need opposite responses, and a gate that passes when it
-  // could not measure launders unknown into fine.
-  const verdict = gateVerdict({
-    examined: results.length - unjudgeable.length,
-    of: CANARIES.length,
-    // THE MACHINE IS PART OF THE POPULATION, and leaving it out is this gate's own D6 defect. It takes ONE
-    // worker by design -- spreading a page's repeats across boxes would conflate run-to-run instability
-    // with box-to-box difference, which need opposite remedies -- so a clean verdict is a claim about THIS
-    // box and no other. Stated, because "8 of 8 canaries clean" reads as a claim about the tool.
-    source: `canaries on ${ranOn}, each captured ${TIMES} times and compared by CONTENT`,
-    failures: unstable.length,
-  });
+  for (const o of unstable) process.stdout.write(`  UNSTABLE ${o.item.path ?? o.item.url} on ${o.worker}: ${o.result.detail}\n`);
+  for (const o of unjudgeable) process.stdout.write(`  UNJUDGEABLE ${o.item.path ?? o.item.url} on ${o.worker}: ${o.error}\n`);
+
   if (unjudgeable.length) {
     process.stdout.write(`\n${unjudgeable.length} canary(s) could not be judged — errored or too few `
       + "usable captures. If the same one keeps failing, that is a worker problem rather than a "
-      + "determinism one.\n");
+      + "determinism one, and the box is named above.\n");
   }
   if (unstable.length) {
-    process.stdout.write("\nDo NOT start a corpus run. Evidence that varies for the same unchanged page " +
-      "is indistinguishable from evidence that differs because the page differs, which is the one defect " +
-      "this project cannot tolerate.\n");
+    process.stdout.write("\nDo NOT start a corpus run. Evidence that varies for the same unchanged page "
+      + "is indistinguishable from evidence that differs because the page differs, which is the one defect "
+      + "this project cannot tolerate.\n");
   }
-  process.stdout.write(`\n${ranOn}: ${renderVerdict(verdict)}\n`);
-  return verdict;
-}
-
-/**
- * The fleet's verdict, and the exit code that carries it.
- *
- * A box that could not be judged reduces COVERAGE; a box reporting instability is a FAILURE. Collapsing
- * those is how "two workers were unreachable" becomes "the fleet is stable".
- */
-function reportFleet(/** @type {any[]} */ outcomes) {
-  process.stdout.write(`\nPER WORKER\n${renderPerWorker(outcomes)}\n`);
-  const verdict = fleetVerdict(outcomes, `${CANARIES.length} canaries x ${TIMES} captures`);
-  process.stdout.write(`\nFLEET: ${renderVerdict(verdict)}\n`);
+  const verdict = fleetVerdict(outcomes, {
+    of: CANARIES.length,
+    what: `${CANARIES.length} canaries x ${TIMES} captures compared by CONTENT`,
+    workers: workerCount,
+    failed: unstable.length,
+  });
+  process.stdout.write(`\n${renderVerdict(verdict)}\n`);
   process.exit(exitCodeFor(verdict));
 }
 

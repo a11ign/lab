@@ -5,6 +5,25 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 
 /**
+ * The functions a gate may build its verdict with.
+ *
+ * `fleetVerdict` is here because a gate that shards its work across the fleet aggregates one level up, and
+ * it is coverage-derived for the same reason `gateVerdict` is — it IS `gateVerdict`, over the boxes'
+ * results. Widening this list on that say-so alone would be the hole it exists to close, so the next test
+ * PROVES the delegation rather than trusting this comment.
+ */
+const DERIVED_VERDICT = /\b(gateVerdict|fleetVerdict)\(/;
+
+test("fleetVerdict is only allowed here because it DELEGATES — proved, not asserted in a comment", () => {
+  const source = readFileSync(resolve(ROOT, "packages/lab/src/gates/fleet.mjs"), "utf8");
+  assert.match(source, /export function fleetVerdict[\s\S]*?\breturn gateVerdict\(/,
+    "fleetVerdict must build its result with gateVerdict(). If it ever computes a verdict itself, every "
+    + "gate that uses it silently loses the coverage guarantee, and this list would still be waving them "
+    + "through.");
+});
+
+
+/**
  * EVERY GATE SCRIPT EITHER DERIVES ITS VERDICT FROM COVERAGE, OR SAYS WHY NOT — determinism-plan D6.
  *
  * A DISCOVERY test, not a list, for the reason `cli-flags.test.ts` gives: a list records the scripts that
@@ -83,13 +102,13 @@ for (const name of gates) {
       // BOTH DIRECTIONS. An exemption outliving its migration is a work list claiming work that is done —
       // `stability-gate.mjs` sat here for one commit after being migrated, and the test kept announcing it
       // as owed. A list only stays honest if being ON it wrongly fails too.
-      assert.doesNotMatch(source, /\bgateVerdict\(/,
+      assert.doesNotMatch(source, DERIVED_VERDICT,
         `${name} already derives its verdict — delete its EXEMPT entry`);
       return;
     }
-    assert.match(source, /\bgateVerdict\(/,
-      `${name} must build its verdict with gateVerdict(), or be listed in EXEMPT with a reason. A gate `
-      + "that reports PASS without conditioning on what it examined is the 2-of-48 defect.");
+    assert.match(source, DERIVED_VERDICT,
+      `${name} must build its verdict with gateVerdict() or fleetVerdict(), or be listed in EXEMPT with a `
+      + "reason. A gate that reports PASS without conditioning on what it examined is the 2-of-48 defect.");
   });
 }
 
