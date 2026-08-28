@@ -84,6 +84,20 @@ async function capture(worker, url, probeOrder) {
   return { capture: json };
 }
 
+/**
+ * Did the remedy this gate is meant to prove actually RUN on that capture?
+ *
+ * A green gate is not evidence on its own. `refreshBrowseBuffer` guarded on a flag nothing ever assigned,
+ * returned early on every capture ever taken, and three `capture:check` runs passed — results it had no
+ * part in producing would have vouched for it. So D3's `establishBrowseMode` marks itself, and this reads
+ * the mark: agreement WITHOUT it means the orders happened to match, which is a different claim.
+ *
+ * @param {any} capture
+ */
+function establishedBrowseMode(capture) {
+  return (capture?.diagnostics ?? []).some((/** @type {any} */ m) => m?.event === "establishBrowseMode");
+}
+
 async function main() {
   const worker = arg("--worker");
   if (!worker) {
@@ -138,14 +152,19 @@ async function compareOrders(worker, base) {
       continue;
     }
     const diff = compareCapture(/** @type {never} */ (taken[0].capture), /** @type {never} */ (taken[1].capture));
-    results.push({ page: page.path, verdict: diff.verdict, changes: diff.changes, phrases: diff.phrases });
+    // The SECOND capture is the permuted one, and it is the only one with a preceding probe, so it is the
+    // only one where the remedy can have run. Reported beside the verdict rather than assumed.
+    const remedied = establishedBrowseMode(taken[1].capture);
+    results.push({ page: page.path, verdict: diff.verdict, changes: diff.changes, phrases: diff.phrases,
+      remedied });
   }
 
   if (process.argv.includes("--json")) {
     process.stdout.write(`${JSON.stringify({ results }, null, 2)}\n`);
   } else {
     for (const r of results) {
-      process.stdout.write(`  ${String(r.verdict).padEnd(12)} ${r.page}\n`);
+      process.stdout.write(`  ${String(r.verdict).padEnd(12)} ${r.page}`
+        + `${r.remedied === false ? "   [browse-mode remedy did NOT run]" : ""}\n`);
       for (const c of r.changes ?? []) {
         process.stdout.write(`      ${c.field}: ${c.before} -> ${c.after}`
           + `${c.lost.length ? `  lost ${JSON.stringify(c.lost.slice(0, 2))}` : ""}`
@@ -168,8 +187,19 @@ async function compareOrders(worker, base) {
       + "it; see docs/determinism-plan.md D3.\n");
     process.exit(1);
   }
+  // A PASS THAT DID NOT EXERCISE THE REMEDY IS NOT EVIDENCE FOR IT. Agreement while `establishBrowseMode`
+  // never ran means the two orders happened to match — a different and much weaker claim than "the state is
+  // restored between probes", and exactly the shape that let an inert `refreshBrowseBuffer` collect three
+  // green runs.
+  const unexercised = results.filter((r) => r.remedied === false);
+  if (unexercised.length) {
+    process.stdout.write(`\nINCONCLUSIVE — the orders agree, but D3's browse-mode remedy did not run on `
+      + `${unexercised.length} of ${results.length} page(s), so this says nothing about whether restoring `
+      + "the state is what makes them agree.\n");
+    process.exit(2);
+  }
   process.stdout.write(`\nPASS — all ${results.length} page(s) give the same evidence under both probe `
-    + "orders.\n");
+    + "orders, with the browse-mode remedy exercised on every one.\n");
 }
 
 // Refuses to run when imported. Every npm entry point here does this, and a test discovers the ones that
