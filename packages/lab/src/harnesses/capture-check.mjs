@@ -14,8 +14,9 @@ import { dirname, join } from "node:path";
 import { captureWithNvda } from "@a11y-witness/nvda-worker";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
-import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
+import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { captureTolerantly } from "../capture/capture-client.mjs";
 
 /**
  * the capture-layer regression check. `--worker=` mistyped falls back to in-process mode, which
@@ -201,8 +202,8 @@ async function captureOnce(/** @type {any} */ check) {
     return captureWithNvda(pathToFileURL(join(pagesDir, check.page)).href,
       { steps: STEPS, probeForms: !!check.probeForms });
   }
-  const response = await requestJson(`${WORKER}/capture`, {
-    method: "POST",
+  const response = await captureTolerantly({
+    worker: String(WORKER),
     body: { url: `${pagesBase}/${check.page}`, steps: STEPS, probeForms: !!check.probeForms },
     timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
   });

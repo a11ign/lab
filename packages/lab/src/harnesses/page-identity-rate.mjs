@@ -36,8 +36,9 @@ import { dirname, join } from "node:path";
 
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
-import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
+import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { captureTolerantly } from "../capture/capture-client.mjs";
 
 /**
  * asks whether a capture ever reads the WRONG page. `--rounds=` mistyped silently uses the default,
@@ -116,8 +117,8 @@ function selfTest() {
 async function captureOnce(/** @type {any} */ base, /** @type {any} */ page) {
   let body;
   try {
-    const response = await requestJson(`${WORKER}/capture`, {
-      method: "POST",
+    const response = await captureTolerantly({
+      worker: String(WORKER),
       body: { url: `${base}/${page}`, steps: STEPS },
       timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
     });

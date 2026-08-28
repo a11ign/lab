@@ -33,10 +33,11 @@ import { resolve } from "node:path";
 import { compareCapture } from "../src/capture/evidence-diff.mjs";
 import { leasePageServer } from "../src/training/page-server.mjs";
 import { guestReachableUrl } from "@a11y-witness/worker-fleet";
-import { requestJson, assertWorkerUrl, CAPTURE_CLIENT_TIMEOUT_MS }
+import { assertWorkerUrl, CAPTURE_CLIENT_TIMEOUT_MS }
   from "../../worker-fleet/src/worker-http.mjs";
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { captureTolerantly } from "../src/capture/capture-client.mjs";
 
 refuseUnknownFlags(["--worker=", "--pages=", "--json"],
   { entry: import.meta.url, command: "npm run gate:probe-order" });
@@ -95,8 +96,8 @@ const arg = (/** @type {string} */ name) =>
  */
 async function capture(worker, url, probeOrder) {
   try {
-    const { status, json } = await requestJson(`${worker.replace(/\/$/, "")}/capture`, {
-      method: "POST",
+    const { status, json } = await captureTolerantly({
+      worker,
       body: { url, task: "Read the page and reach its controls.", probeFocus: true,
         probeForms: false, probeNavigation: false, ...(probeOrder ? { probeOrder } : {}) },
       timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,

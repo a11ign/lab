@@ -36,6 +36,7 @@ import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/w
 import { workerIsUsable } from "../../worker-fleet/src/worker-health.mjs";
 import { drainAcrossPool } from "../src/training/worker-pool.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { captureTolerantly } from "../src/capture/capture-client.mjs";
 
 /**
  * the check that decides whether 2,122 cached captures survive a change. It also takes worker URLs
@@ -150,8 +151,8 @@ function stratify(/** @type {any} */ cases, /** @type {any} */ limit) {
 
 async function capture(/** @type {any} */ testCase, /** @type {any} */ variant, /** @type {any} */ worker) {
   const pageUrl = `${pagesBase()}/${testCase.id}/${variant}.html`;
-  const response = await requestJson(`${worker.replace(/\/$/, "")}/capture`, {
-    method: "POST",
+  const response = await captureTolerantly({
+    worker,
     body: {
       url: pageUrl,
       task: testCase.task ?? null,

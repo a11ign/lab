@@ -84,7 +84,8 @@ export async function recoverCapture(worker, captureId) {
  * tolerance for a box gone for minutes; a gate wants an answer quickly. So this asks once, immediately,
  * and a caller that wants to wait first passes `beforeRecovery`.
  *
- * @param {{ worker: string, body: object, timeoutMs?: number, beforeRecovery?: () => Promise<void> }} request
+ * @param {{ worker: string, body: object, timeoutMs?: number,
+ *           beforeRecovery?: (error: unknown) => Promise<void> }} request
  */
 export async function captureTolerantly({ worker, body, timeoutMs = CAPTURE_CLIENT_TIMEOUT_MS, beforeRecovery }) {
   const captureId = randomUUID();
@@ -92,7 +93,10 @@ export async function captureTolerantly({ worker, body, timeoutMs = CAPTURE_CLIE
     return { ...await post(worker, { ...body, captureId }, timeoutMs), recovered: false };
   } catch (error) {
     if (!isTransient(error)) throw error;
-    if (beforeRecovery) await beforeRecovery();
+    // The error is handed over so a caller can SAY why it is waiting. The dataset runner prints
+    // "worker unreachable (<message>)" before a multi-minute wait, and a wait with no stated cause is
+    // one an operator kills.
+    if (beforeRecovery) await beforeRecovery(error);
     const recovered = await recoverCapture(worker, captureId);
     // A recovered capture is the ORIGINAL response, returned rather than re-requested. `recovered` travels
     // with it because a caller measuring the transport needs to know this one cost a round trip and not a

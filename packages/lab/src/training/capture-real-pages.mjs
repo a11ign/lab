@@ -37,6 +37,7 @@ import { writeJsonAtomic } from "./write-atomic.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { beginRun } from "./capture-progress.mjs";
 import { resumePlan, describeResume } from "./real-page-resume.mjs";
+import { captureTolerantly } from "../capture/capture-client.mjs";
 
 /**
  * THE script that ran four shards against `--worker=http://:8765` for 29 minutes. `--shard=` arrives
@@ -189,8 +190,8 @@ async function waitUntilReady(/** @type {any} */ workerUrl) {
 }
 
 async function capture(/** @type {any} */ page, /** @type {any} */ workerUrl) {
-  const response = await requestJson(`${workerUrl}/capture`, {
-    method: "POST",
+  const response = await captureTolerantly({
+    worker: workerUrl,
     // `probeForms` is OFF. These are somebody else's live pages, and the same rule the CLI follows applies
     // with more force here: pressing *Book* on a page we do not own is not a review. `probeFocus` is on —
     // Tab activates nothing.

@@ -44,11 +44,12 @@ import { mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl }
+import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl }
   from "../../../worker-fleet/src/worker-http.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
 import { leasePageServer } from "../training/page-server.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { captureTolerantly } from "../capture/capture-client.mjs";
 
 /**
  * recaptures the eval fixtures. `--ff-only` appears in this file because it is passed to GIT, not
@@ -87,8 +88,8 @@ function pagesIn(/** @type {any} */ set) {
 
 /** One capture, over the worker's own HTTP interface — the path production uses. */
 async function captureOverWorker(/** @type {any} */ url, /** @type {any} */ worker, /** @type {any} */ steps) {
-  const response = await requestJson(`${worker}/capture`, {
-    method: "POST",
+  const response = await captureTolerantly({
+    worker,
     // `probeForms` ON: these are OUR pages, written to be activated, and the interaction criteria
     // (3.3.1, 4.1.3) are structurally unreachable without it. That is the same rule the Action follows
     // and the opposite of the real-page corpus, where the page belongs to somebody else.

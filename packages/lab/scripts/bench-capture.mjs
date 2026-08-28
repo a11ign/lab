@@ -12,10 +12,11 @@
 // reading less is not an improvement, and a suite that only asserts "it ran" stays green
 // while the evidence turns to garbage (see CLAUDE.md).
 import { setTimeout as sleep } from "node:timers/promises";
-import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mjs";
+import { CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mjs";
 
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { captureTolerantly } from "../src/capture/capture-client.mjs";
 
 /**
  * `--from-disk` decides whether it measures a live capture or replays one; mistyped, it silently
@@ -26,6 +27,39 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 refuseUnknownFlags(["--dir=", "--from-disk"], { entry: import.meta.url, command: "npm run bench:capture" });
 
 const [worker, page, countArg] = process.argv.slice(2);
+
+/**
+ * The timing samples, and how many were thrown away.
+ *
+ * A RECOVERED SAMPLE IS NOT A TIMING SAMPLE: its wall clock is a capture plus a socket timeout plus a
+ * recovery round trip. Keeping it would make this tool report the transport as capture cost, which is the
+ * misattribution that once sent an afternoon after the wrong subsystem.
+ *
+ * @param {string} page
+ */
+async function collectSamples(page) {
+  const runs = [];
+  let recovered = 0;
+  for (let i = 1; i <= COUNT; i++) {
+    const { wallMs, body, recovered: wasRecovered } = await capture(page);
+    if (wasRecovered) {
+      recovered += 1;
+      console.log(`capture ${i}/${COUNT}: EXCLUDED — response recovered after a lost socket, so its `
+        + "wall clock is not a capture cost");
+    } else {
+      const start = (body.diagnostics ?? []).find((/** @type {any} */ e) => e.event === "nvdaStart");
+      runs.push({
+        wallMs,
+        costs: phaseCosts(body.diagnostics),
+        phrases: (body.transcript ?? []).length,
+        reused: !!start?.reused,
+      });
+      console.log(`capture ${i}/${COUNT}: ${(wallMs / 1000).toFixed(1)}s, ${runs.at(-1)?.phrases} phrases${runs.at(-1)?.reused ? " (NVDA reused)" : ""}`);
+    }
+    if (i < COUNT) await sleep(BETWEEN_MS);
+  }
+  return { runs, recovered };
+}
 
 /**
  * Was this file RUN, or merely imported?
@@ -50,14 +84,21 @@ const BETWEEN_MS = 1_000;
 
 async function capture(/** @type {any} */ url) {
   const startedAt = Date.now();
-  const response = await requestJson(worker.replace(/\/$/, "") + "/capture", {
-    method: "POST",
+  const response = await captureTolerantly({
+    worker,
     body: { url, task: "Benchmark the capture cost" },
     timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
   });
   const body = response.json ?? {};
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(body)}`);
-  return { wallMs: Date.now() - startedAt, body };
+  // A RECOVERED SAMPLE IS NOT A TIMING SAMPLE, and this is the one client where that matters. Its wall
+  // clock includes a socket timeout plus a recovery round trip, so counting it would inflate the very
+  // number this tool exists to measure -- and a p95 quietly poisoned by the transport is exactly the
+  // "timing number with no foundation underneath it" this repo has already chased down the wrong path.
+  //
+  // Kept rather than dropped silently: the caller reports how many were excluded, because a benchmark
+  // that discards a fifth of its samples without saying so is worse than one that fails.
+  return { wallMs: Date.now() - startedAt, body, recovered: response.recovered };
 }
 
 // Diagnostics carry cumulative atMs, so each phase's own cost is the gap from the last one.
@@ -191,18 +232,18 @@ async function main() {
     process.exit(0);
   }
 
-  const runs = [];
-  for (let i = 1; i <= COUNT; i++) {
-      const { wallMs, body } = await capture(page);
-      const start = (body.diagnostics ?? []).find((/** @type {any} */ e) => e.event === "nvdaStart");
-      runs.push({
-        wallMs,
-        costs: phaseCosts(body.diagnostics),
-        phrases: (body.transcript ?? []).length,
-        reused: !!start?.reused,
-      });
-      console.log(`capture ${i}/${COUNT}: ${(wallMs / 1000).toFixed(1)}s, ${runs.at(-1)?.phrases} phrases${runs.at(-1)?.reused ? " (NVDA reused)" : ""}`);
-    if (i < COUNT) await sleep(BETWEEN_MS);
+  const { runs, recovered } = await collectSamples(page);
+  // NEVER a silent truncation: this repo's own rule is that a bounded sample must say what it dropped, or
+  // it reads as "covered everything".
+  if (recovered) {
+    console.log(`\n${recovered} of ${COUNT} sample(s) excluded: the transport dropped a response the `
+      + `worker had completed. ${runs.length} sample(s) remain.`);
+  }
+  if (runs.length === 0) {
+    console.log("NO USABLE SAMPLES — every capture lost its socket. This is a network finding, not a "
+      + "timing one, and no median is reported rather than one computed from nothing.");
+    process.exitCode = 2;
+    return;
   }
   report(runs);
 }

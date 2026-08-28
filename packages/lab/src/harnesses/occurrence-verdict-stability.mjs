@@ -21,8 +21,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
-import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { captureTolerantly } from "../capture/capture-client.mjs";
 
 /**
  * takes its worker POSITIONALLY and no flags at all, so any flag passed to it is discarded.
@@ -70,8 +70,8 @@ function verdict(capture) {
 
 /** @param {string} base @param {string} variant */
 async function capture(base, variant) {
-  const response = await requestJson(`${WORKER}/capture`, {
-    method: "POST",
+  const response = await captureTolerantly({
+    worker: String(WORKER),
     body: {
       url: `${base}/form-error-silent/${variant}.html`,
       task: TASK,

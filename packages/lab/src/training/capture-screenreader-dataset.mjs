@@ -7,14 +7,14 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
-import { randomUUID } from "node:crypto";
 import { leaseWorker, leaseWorkerPool, guestReachableUrl, isAfterRun } from "@a11y-witness/worker-fleet";
 import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
 import { configuredWorkers, inventoryWorkerUrls } from "../../../worker-fleet/src/fleet-env.mjs";
+import { captureTolerantly as tolerantCapture } from "../capture/capture-client.mjs";
 import { assertFleetRunsThisCheckout } from "../../../worker-fleet/src/worker-code-check.mjs";
 import { titleOf } from "@a11y-witness/evidence/verify";
 import {
-  isEvidence, isTransient, rejectionReason, runOutcome, shouldRetireWorker,
+  isEvidence, rejectionReason, runOutcome, shouldRetireWorker,
 } from "./capture-decisions.mjs";
 import { beginRun, readProgress } from "./capture-progress.mjs";
 import { cacheDecision, cacheKey, hashPageDir, stampProvenance } from "./capture-cache.mjs";
@@ -109,24 +109,36 @@ export function selectCases(/** @type {any} */ cases, /** @type {any} */ only) {
 // `requestJson`, not `fetch`: a capture can hold the connection well past undici's 300 s headers cap,
 // which no AbortSignal lifts. See worker-http.mjs — this call site declared 560 s and got 300 s.
 async function fetchJson(/** @type {any} */ url, options = {}, timeoutMs = 30000) {
-  const response = await requestJson(url, { ...options, timeoutMs });
-  const text = response.text;
-  const body = response.json ?? { raw: text };
-  if (!response.ok) {
-    // Typed at construction, because the two fields attached below are the ENTIRE point of this error:
-    // recovery keys on the status and on the worker's fault CODE, never on the message text.
-    const failed = /** @type {Error & { status?: number, code?: string }} */ (
-      new Error("HTTP " + response.status + " from " + url + ": " + JSON.stringify(body)));
-    // The status as a NUMBER, so callers branch on it instead of matching the message they just built.
-    // Recovery needs exactly this: 404 means re-capture, 500 means the worker has a diagnosis for us.
-    failed.status = response.status;
-    // Carry the worker's fault code across the wire so retry decisions can key on it instead of on the
-    // wording of a message that crossed two processes. Absent from older workers, which is why
-    // isTransient still falls back to matching the text.
-    if (body?.fault) failed.code = body.fault;
-    throw failed;
-  }
-  return body;
+  return raiseForStatus(url, await requestJson(url, { ...options, timeoutMs }));
+}
+
+/**
+ * The body, or a typed throw — ONE construction, used by both the plain fetch and the tolerant capture.
+ *
+ * Split out when the recovery moved to the shared client, because the alternative was raising this error
+ * in two places and hoping they stayed identical. The fields are the entire point: every retry decision in
+ * this file keys on the status and on the worker's fault CODE, never on the message text.
+ *
+ * The body is typed `any` deliberately: it is whatever the worker sent, and every caller in this file
+ * already reads it that way (`health.busy`, `capture.transcript`). Narrowing it here would only push the
+ * casts outward to a dozen call sites.
+ *
+ * @param {string} url @param {{ok: boolean, status: number, text: string, json: unknown}} response
+ * @returns {any}
+ */
+function raiseForStatus(url, response) {
+  const body = /** @type {any} */ (response.json ?? { raw: response.text });
+  if (response.ok) return body;
+  const failed = /** @type {Error & { status?: number, code?: string }} */ (
+    new Error("HTTP " + response.status + " from " + url + ": " + JSON.stringify(body)));
+  // The status as a NUMBER, so callers branch on it instead of matching the message they just built.
+  // Recovery needs exactly this: 404 means re-capture, 500 means the worker has a diagnosis for us.
+  failed.status = response.status;
+  // Carry the worker's fault code across the wire so retry decisions can key on it instead of on the
+  // wording of a message that crossed two processes. Absent from older workers, which is why
+  // isTransient still falls back to matching the text.
+  if (body?.fault) failed.code = body.fault;
+  throw failed;
 }
 
 function readManifest() {
@@ -206,11 +218,6 @@ function captureOptions(/** @type {any} */ testCase) {
   };
 }
 
-async function captureOne(/** @type {any} */ ctx, /** @type {any} */ testCase, /** @type {any} */ url, /** @type {any} */ captureId) {
-  const body = { url, ...captureOptions(testCase), captureId };
-  return fetchJson(ctx.worker + "/capture", { method: "POST", body }, CAPTURE_TIMEOUT_MS);
-}
-
 function writeCapture(/** @type {any} */ testCase, /** @type {any} */ variant, /** @type {any} */ capture, /** @type {any} */ provenance) {
   mkdirSync(CAPTURE_ROOT, { recursive: true });
   if (provenance) capture = stampProvenance(capture, provenance);
@@ -242,13 +249,6 @@ async function pageTitle(/** @type {any} */ url) {
   }
   return titleOf(await response.text());
 }
-
-/**
- * Recovery is a cheap read of something already computed, so it gets a short budget -- not the capture's.
- * If the worker cannot answer this in 30 s it is in no state to be asked, and capturing again is the
- * better move.
- */
-const RECOVERY_TIMEOUT_MS = 30000;
 
 const CAPTURE_ATTEMPTS = 3;
 const WORKER_WAIT_MS = Number(process.env.DATASET_WORKER_WAIT_MS || 600000);
@@ -342,54 +342,32 @@ async function waitForWorker(/** @type {any} */ worker) {
 }
 
 /**
- * Ask the worker for a capture we already paid for but may not have received.
+ * One capture, tolerant of the worker disappearing underneath it.
  *
- * Called only after `waitForWorker` has returned, which is what makes one request enough: that function
- * waits for `busy` to clear, so the capture we lost the socket to has necessarily finished by now and its
- * outcome is in the worker's store. No polling loop is needed and none is written.
+ * THE RECOVERY LIVES IN `capture/capture-client.mjs` NOW. This file held the only implementation for
+ * months while nine other modules POSTed to `/capture` with none -- the remedy-at-one-call-site shape this
+ * repo pays for most often. Two copies of a subtle protocol (404 means re-capture, 202 does not, a 500
+ * carries the worker's diagnosis) is the fact-stated-twice shape on top of it.
  *
- * Returns null when there is nothing to recover -- a worker predating the endpoint (404 from the router's
- * fallback), one that restarted and lost its memory, or a capture still somehow running. Null means
- * "capture again", which is exactly what this code did before the endpoint existed.
- *
- * A recovered FAILURE is rethrown rather than swallowed, so a replay is indistinguishable from the original
- * response. That keeps the worker's `fault` code -- the thing it worked out and we would otherwise replace
- * with "no answer" -- and lets the run's own classification decide, as it would have done all along.
+ * What stays here is what is genuinely this runner's: `waitForWorker`, because a corpus run can afford to
+ * wait minutes for a box to come back where a gate wants an answer now, and the THROW contract below,
+ * which every retry decision in this file keys on.
  */
-async function recoverCapture(/** @type {any} */ worker, /** @type {any} */ captureId) {
-  try {
-    const body = await fetchJson(worker + "/capture/" + captureId, {}, RECOVERY_TIMEOUT_MS);
-    if (body?.state === "running") return null;
-    console.log("    recovered the completed capture " + captureId + " — no re-capture needed");
-    return body;
-  } catch (error) {
-    // 500 is the worker's own account of a failed capture, and it is the answer, not an obstacle.
-    if (/** @type {any} */ (error).status === 500) throw error;
-    // 404 from the endpoint, or from an older worker's router fallback: nothing kept, so capture again.
-    if (/** @type {any} */ (error).status === 404) return null;
-    // Anything else (the worker went away again mid-question) is not worth a second round trip here;
-    // the caller falls back to capturing, which is what it would have done anyway.
-    return null;
-  }
-}
-
-// One capture, tolerant of the worker disappearing underneath it.
 async function captureTolerantly(/** @type {any} */ ctx, /** @type {any} */ testCase, /** @type {any} */ url) {
-  const captureId = randomUUID();
-  try {
-    return await captureOne(ctx, testCase, url, captureId);
-  } catch (error) {
-    if (!isTransient(error)) throw error;
-    console.log("    worker unreachable (" + /** @type {any} */ (error).message + "); waiting for it to come back");
-    await waitForWorker(ctx.worker);
-    // Before paying for a second full capture, ask whether the first one actually finished. A capture is
-    // 12-520 s of real screen-reader work, and a dropped socket after it completed used to discard all of
-    // it -- then charge the same again, which on a bad network is how three failures in a row evict a
-    // worker that was never faulty.
-    const recovered = await recoverCapture(ctx.worker, captureId);
-    if (recovered) return recovered;
-    return captureOne(ctx, testCase, url, randomUUID());
-  }
+  const response = await tolerantCapture({
+    worker: ctx.worker,
+    body: { url, ...captureOptions(testCase) },
+    timeoutMs: CAPTURE_TIMEOUT_MS,
+    beforeRecovery: async (/** @type {any} */ error) => {
+      console.log("    worker unreachable (" + (error?.message ?? error) + "); waiting for it to come back");
+      await waitForWorker(ctx.worker);
+    },
+  });
+  if (response.recovered) console.log("    recovered the completed capture — no re-capture needed");
+  // The shared client RESOLVES a non-2xx where `fetchJson` throws, and this file's retry decisions read
+  // `error.status` and `error.code`. Converting here keeps that contract exactly rather than rewriting
+  // every caller -- and a recovered FAILURE arrives as a 500 and throws identically to the original.
+  return raiseForStatus(ctx.worker + "/capture", response);
 }
 
 function writeRejected(/** @type {any} */ testCase, /** @type {any} */ variant, /** @type {any} */ capture, /** @type {any} */ attempt) {
