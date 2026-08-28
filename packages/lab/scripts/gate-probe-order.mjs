@@ -29,7 +29,10 @@
  *   2  INCONCLUSIVE: a page could not be captured in both orders, so nothing was compared
  */
 import { pathToFileURL } from "node:url";
+import { resolve } from "node:path";
 import { compareCapture } from "../src/capture/evidence-diff.mjs";
+import { leasePageServer } from "../src/training/page-server.mjs";
+import { guestReachableUrl } from "@a11y-witness/worker-fleet";
 import { requestJson, assertWorkerUrl, CAPTURE_CLIENT_TIMEOUT_MS }
   from "../../worker-fleet/src/worker-http.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
@@ -83,7 +86,6 @@ async function capture(worker, url, probeOrder) {
 
 async function main() {
   const worker = arg("--worker");
-  const base = arg("--pages") ?? "http://localhost:5050";
   if (!worker) {
     process.stderr.write("gate:probe-order needs --worker=<url>. It captures each page twice, so it cannot "
       + "run without one.\n");
@@ -93,6 +95,36 @@ async function main() {
   // accepting it was measured at 29 minutes of readiness timeout recorded as a failure of the PAGE.
   assertWorkerUrl(worker);
 
+  // LEASED, NOT ASSUMED, and this is not housekeeping — it is the difference between a gate and a false
+  // pass. Edge serves its OWN error page when the port is dead, so two probe orders against nothing would
+  // compare IDENTICAL and this would report PASS. That exact failure is on record here: a run whose page
+  // server was stopped underneath it read a dead port for 46 captures and every one "succeeded".
+  //
+  // `probePath` names a page that must actually be served, so "serving" means serving THIS dataset rather
+  // than merely holding the port. Released in the `finally`, so a gate that throws leaves the host as it
+  // found it, and the lease is refcounted so a concurrent run is not torn down.
+  const pages = await leasePageServer({
+    root: resolve(process.env.DATASET_ROOT ?? "runs/screenreader-dataset", "pages"),
+    port: 5050,
+    probePath: `${PAGES[0].path}.html`,
+  });
+  try {
+    // The GUEST fetches these pages and its localhost is not ours. `guestReachableUrl` owns that rewrite —
+    // it is reused rather than re-derived here, because deriving it independently is how "every capture
+    // fetched the GUEST's localhost" happened once already. The worker is named rather than leased, so the
+    // lease is stated as `explicit` with a release that does nothing: there is nothing here to put back.
+    const named = /** @type {const} */ ({ worker, source: "explicit", release: async () => {} });
+    return await compareOrders(worker, arg("--pages") ?? guestReachableUrl(pages.url, named));
+  } finally {
+    await pages.release();
+  }
+}
+
+/**
+ * @param {string} worker
+ * @param {string} base the guest-reachable page root — the guest's localhost is not ours
+ */
+async function compareOrders(worker, base) {
   const results = [];
   for (const page of PAGES) {
     const url = `${base}/${page.path}.html`;
