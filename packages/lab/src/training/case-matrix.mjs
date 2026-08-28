@@ -1888,6 +1888,17 @@ function fnv1a(/** @type {any} */ id) {
  * later cases. That is a weaker guarantee than the id hash gave (`insert freely, nothing moves`) and it
  * is the trade the starvation forces; `check-signals` reports what moved, and the pages are regenerated
  * from the definitions anyway.
+ *
+ * **AND "APPENDING IS FREE" IS NOT A COROLLARY, which is how that sentence reads.** A subtype's cases are
+ * ordered base-cases-first, then multi-defect variants, then furniture variants — so EVERY generated
+ * variant is "later" than every base case, and appending a base case re-buckets all of them.
+ *
+ * Measured 2026-08-28, appending two hosts to `2.4.1:skip-link-inert`: 14 cases added and **6 existing
+ * pages moved** — `skip-link-broken`'s three multi-defect and three furniture variants — for 12 captures.
+ * Nothing outside the subtype moved, which is the guarantee above doing its job.
+ *
+ * So the cost of a new mechanism is roughly `2 x (new cases + generated variants of the subtype's
+ * existing hosts)` captures. Small, and worth knowing before rather than after.
  */
 function bucketFor(/** @type {any} */ id, /** @type {any} */ subtype, /** @type {any} */ indexInSubtype) {
   const offset = fnv1a(subtype ?? id);
@@ -2064,14 +2075,14 @@ cases.push(
  * a renamed or typo'd anchor, which is how this breaks in the wild and exactly what a static checker waves
  * through: it sees a link, a plausible fragment href and a page full of content.
  */
-function SKIP_LINK_PAGE(/** @type {any} */ targetId) {
+function SKIP_LINK_PAGE(/** @type {any} */ targetId, /** @type {string} */ targetAttrs = ' tabindex="-1"') {
   return `<a href="#${targetId}">Skip to main content</a>`
     + "<nav><ul>"
     + "<li><a href=\"/news\">News and updates</a></li>"
     + "<li><a href=\"/events\">Events calendar</a></li>"
     + "<li><a href=\"/contact\">Contact the team</a></li>"
     + "</ul></nav>"
-    + "<div id=\"content\" tabindex=\"-1\">"
+    + `<div id="content"${targetAttrs}>`
     + "<label for=\"q\">Search the archive</label><input id=\"q\" name=\"q\">"
     + "</div>";
 }
@@ -2111,6 +2122,40 @@ cases.push(
     probeFocus: true,
     // The navigation probe activates the first link — which here IS the skip link — and records where the
     // next Tab lands. That reading is the entire evidence for this case.
+    probeNavigation: true,
+  }),
+);
+
+cases.push(
+  pair({
+    id: "skip-link-target-hidden",
+    task: "Use the skip link to jump past the navigation to the main content.",
+    source: "WCAG 2.4.1 Understanding; technique G1",
+    mutation: "The skip link's target is focusable and `hidden`, so activating it moves focus nowhere "
+      + "and the content it names is not rendered at all.",
+    criterion: "2.4.1",
+    // A SECOND MECHANISM. A THIRD WAS TRIED AND REFUTED, and the refutation is worth more than the case
+    // would have been: `skip-link-target-not-focusable` pointed at an id that EXISTS and carries no
+    // `tabindex`, on the belief that the browser scrolls without moving focus, leaving a screen-reader
+    // user in the navigation. Captured 2026-08-28, and it is not so — `nextFocusAfter` was
+    // `"Search the archive, edit"`, byte-identical to the CONFORMANT variant. Chromium moves the
+    // sequential-focus navigation starting point even for a non-focusable target, so the next Tab does
+    // enter the content and the block IS bypassed. The page is conformant and the case was deleted.
+    //
+    // Do not re-add it without capturing first. `--pipeline=verify --only=` answered this in minutes, and
+    // a canary that cannot express the fault is worthless — one that expresses a fault that is not there
+    // is worse, because it teaches the model a conformant page is a failing one.
+    //
+    // This one is the one a rewrite introduces: the target keeps its `tabindex="-1"` — somebody
+    // knew the pattern — and a later change hid the wrapper. `hidden` removes the element from the
+    // rendering AND from the accessibility tree, so focus cannot land on it however correct the link is.
+    //
+    // Distinct from the other two in what a reader must check: the id resolves and the tabindex is right,
+    // so both of the obvious checks pass and the link is still inert.
+    good: page({ title: "Archive", heading: "Archive", body: SKIP_LINK_PAGE("content") }),
+    bad: page({ title: "Archive", heading: "Archive", body: SKIP_LINK_PAGE("content", ' tabindex="-1" hidden') }),
+    badSignal: { type: "skip-link-inert" },
+    probeFocus: true,
     probeNavigation: true,
   }),
 );
@@ -3328,9 +3373,16 @@ function skipLinkIsInert(/** @type {any} */ capture) {
   if (!/\b(skip|jump)\b/i.test(String(route.control ?? ""))) return false;
   const landed = route.nextFocusAfter;
   if (typeof landed !== "string" || !landed) return false; // not measured, or silent — no claim
-  const ordinary = namesOf(capture.interaction?.focusOrder)[1];
-  if (!ordinary) return false;
-  return namesOf([landed])[0] === ordinary;
+  // THE FIRST TWO ordinary stops, not just the second. Index 1 is "the link changed nothing"; index 0 is
+  // "the link put you back before you started", which is strictly worse and was uncovered until
+  // 2026-08-28. `skip-link-target-hidden` lands on index 0 — the skip link itself — because its target is
+  // in neither the rendering nor the accessibility tree, so focus resets to the top of the document.
+  //
+  // Kept identical to `addInertSkipLink` in `rules.ts`, and pinned by `skip-link.corpus.test.ts`: a corpus
+  // labelled by one predicate while users are told by another is the defect that pin exists for.
+  const ordinary = namesOf(capture.interaction?.focusOrder).slice(0, 2);
+  if (ordinary.length < 2) return false;
+  return ordinary.includes(namesOf([landed])[0]);
 }
 
 function focusOrderIsScrambled(/** @type {any} */ capture) {
