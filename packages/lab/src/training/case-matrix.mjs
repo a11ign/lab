@@ -2618,19 +2618,32 @@ export const ACCOMPANYING_CONFORMANT = Object.freeze({
     ],
     // No `subtypes`: it adds no failure, so no label changes — the test every accompaniment must pass.
     grants: ["vague_link_present"],
-    // 2.4.4's own cases USE these words as their failing example — `link-vague-market` and
-    // `link-vague-clinic` are both "Details" — so accompanying one would put the word on its good variant
-    // and its badSignal would fire on both. That is CONTAMINATED, the one thing this corpus cannot carry.
-    // Every other criterion is unaffected: a page about an unnamed form field does not care what a link in
-    // an index is called.
     // 2.4.4's own cases USE these words as their failing example -- `link-vague-market` and
     // `link-vague-clinic` are both "Details" -- so accompanying one would put the word on its good variant
     // and its badSignal would fire on both. That is CONTAMINATED, the one thing this corpus cannot carry.
+    // Every other criterion is unaffected: a page about an unnamed form field does not care what a link in
+    // an index is called. (This paragraph was here TWICE, once in each dash style, and the copies had
+    // already drifted apart in wording -- the fact-stated-twice shape inside a comment.)
     //
-    // The rest are criteria whose evidence IS the focus order, and this piece adds four focusable links.
-    // `focusOrder` truncates at 12 stops, so four more push the case's own controls out of the window and
-    // both variants come back looking alike -- measured on `focus-order-tabindex`, which reported
-    // CONTAMINATED for exactly that reason.
+    // THE OTHER THREE ARE EXCLUDED ON A PREMISE THAT IS NO LONGER TRUE, and this is flagged rather than
+    // acted on because settling it costs a capture. The recorded reason is:
+    //
+    //   "The rest are criteria whose evidence IS the focus order, and this piece adds four focusable
+    //    links. `focusOrder` truncates at 12 stops, so four more push the case's own controls out of the
+    //    window and both variants come back looking alike -- measured on `focus-order-tabindex`, which
+    //    reported CONTAMINATED for exactly that reason."
+    //
+    // `MAX_TAB_STOPS` is 150 now, not 12. So the measurement behind the exclusion was taken under a cap
+    // that no longer exists, and four extra links cannot push a case's own controls out of a 150-stop
+    // window. That matters beyond tidiness: `audit_applicability.py` cites THIS exclusion as the reason
+    // the free-veto remedy is "UNAVAILABLE" for 2.1.1, 2.1.2 and 2.4.3 -- the exact three heads whose
+    // worst veto is `state_unchanged` in `not-working.md` §2.
+    //
+    // DO NOT SIMPLY DELETE IT. The premise is stale; whether the exclusion is WRONG is a measurement, and
+    // the cheap way to take it exists: `npm run lab:pipeline -- --pipeline=verify --only=focus-order-tabindex+`
+    // captures just that family and runs the audits that would see it. If `check-signals` still reports
+    // CONTAMINATED, the exclusion stands for a better-stated reason; if it does not, three heads get their
+    // remedy back.
     notFor: ["2.4.4", "2.4.3", "2.1.1", "2.1.2"],
   },
   "status-region": {
