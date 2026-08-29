@@ -657,6 +657,26 @@ async function acquireDatasetWorkers() {
       lease: { worker: explicitPool[0], source: "explicit", hostAddress: undefined, release: async () => {} },
     };
   }
+  // THE BARE-METAL FLEET, before the deprecated local guests. This function went named -> local UTM pool
+  // -> single-VM lease and NEVER READ THE INVENTORY, while `doctor` went named -> inventory and
+  // `check-worker-code` went named -> local -> inventory: three modules, three precedences, and the
+  // comment six lines up claiming they had been unified covered the NAMED half only.
+  //
+  // So a bare `npm run training:capture` on a Mac with a registered guest captured the CORPUS on a
+  // deprecated laptop VM while five bare-metal boxes sat idle. In practice the job always sets
+  // `A11Y_WORKERS` (`lab-job.yml` passes `lab_fleet_workers`), which is why this never bit — a default
+  // that is wrong and always overridden is a trap waiting for the first person who does not override it.
+  //
+  // NO LEASE, exactly like the explicit branch above: these machines are always on and are not ours to
+  // start or stop. Leasing them would be `worker-ctl.sh` reaching for `utmctl` against a physical box.
+  const fleet = inventoryWorkerUrls();
+  if (fleet.length) {
+    return {
+      pool: fleet,
+      lease: { worker: fleet[0], source: "inventory.yml", hostAddress: undefined, release: async () => {} },
+    };
+  }
+
   if (!process.env.A11Y_WORKER) {
     // leaseWorkerPool returns NULL when it finds fewer than two local VMs -- one VM is the
     // single-worker path's job. That contract was documented and unhandled: a resume crashed with
