@@ -129,7 +129,7 @@ function knownOr(/** @type {any} */ value, /** @type {any} */ fallback) {
   return value || fallback;
 }
 
-function captureEnvironment(/** @type {any} */ capture) {
+export function captureEnvironment(/** @type {any} */ capture) {
   const worker = workerEnvironment(capture);
   return {
     profile: lifecycleProfile(capture),
@@ -141,7 +141,22 @@ function captureEnvironment(/** @type {any} */ capture) {
     nodeVersion: knownOr(worker.nodeVersion, null),
     windowsVersion: knownOr(worker.windowsVersion, null),
     workerCode: knownOr(worker.workerCode, null),
-    worker: process.env.A11Y_WORKERS || process.env.A11Y_WORKER || "managed-local-vm",
+    // WHICH BOX TOOK THIS CAPTURE, read from the capture rather than from the exporter's environment.
+    //
+    // Every other field here comes from `capture.environment` -- the machine that did the work. This one
+    // read `process.env.A11Y_WORKERS || A11Y_WORKER || "managed-local-vm"`, which is the EXPORTER's
+    // environment, evaluated on whatever box happens to run the export, long after the captures were
+    // taken. That is a correct value read from the wrong place, and it was wrong in all three of its
+    // cases: run standalone on the lab it stamped every record `"managed-local-vm"`, naming a deprecated
+    // path that took none of them; run through `lab:retrain`, which sets `A11Y_WORKERS` from
+    // `lab_fleet_workers`, it stamped every record with the WHOLE five-box list, identical on all of
+    // them; and it could never name the one box that actually captured.
+    //
+    // The truth was on disk the whole time. `stampProvenance` records `provenance.worker` for exactly
+    // this purpose, and says so: "without it a slow phase cannot be attributed to a machine after the
+    // fact." Attribution is the only thing this field is for, so a value that is the same on every
+    // record cannot do its job -- which is why nothing noticed it was wrong.
+    worker: capture?.provenance?.worker ?? null,
   };
 }
 
