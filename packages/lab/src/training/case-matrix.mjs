@@ -3688,7 +3688,10 @@ export function focusIsTrappedIn(stops, formFields) {
   const reached = new Set(stops).size;
   let trailing = 0;
   for (let i = stops.length - 1; i >= 0 && stops[i] === stops[stops.length - 1]; i -= 1) trailing += 1;
-  if (trailing >= 2) return true;                       // stalled: Tab stopped moving
+  // STALLED, AND WITH NO WAY OUT. The second half was missing, and `rules.ts` had the same gap: a stall
+  // inside a cookie banner whose ring holds "Accept all cookies" is not a trap, because focus CAN be moved
+  // away. Measured on nrscotland.gov.uk, a page its publisher declares conformant.
+  if (trailing >= 2 && ringOffersNoWayOut(stops)) return true;
   // A closed cycle over a ring smaller than the page, AND nothing in the ring that can be activated.
   //
   // The last clause is the whole rule. Three earlier versions asked how MUCH of the page the ring covers
