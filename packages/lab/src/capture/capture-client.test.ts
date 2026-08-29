@@ -8,6 +8,10 @@
  * Measured cost on 2026-08-28: three `gate:stability` canaries lost to `FAILED read ETIMEDOUT` across two
  * runs — three different pages on three different boxes, so it is the transport and not either. Every one
  * of those captures had COMPLETED and was sitting in the worker's store.
+ *
+ * THE TESTS BELOW DRIVE `sync: true` DELIBERATELY. That path is no longer the default — it is the escape
+ * hatch — but it is still reachable, and an escape hatch nobody tests is one that fails at the moment it is
+ * reached for. The async path, which is what ships, is exercised in `capture-async.test.ts`.
  */
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
@@ -43,7 +47,7 @@ test("a clean capture posts once and carries the caller's captureId", async () =
     json(res, 200, { transcript: ["ok"], captureId: JSON.parse(body).captureId });
   });
   try {
-    const result = await captureTolerantly({ worker: w.url, body: { url: "http://x/" } });
+    const result = await captureTolerantly({ worker: w.url, body: { url: "http://x/" }, sync: true });
     assert.equal(result.recovered, false);
     assert.deepEqual(seen, ["/capture"], "no recovery request when nothing was lost");
     assert.ok(body(result).captureId, "the id must reach the worker, or nothing can be recovered");
@@ -59,7 +63,7 @@ test("A DROPPED RESPONSE IS RECOVERED, NOT RE-CAPTURED — the whole point", asy
     json(res, 200, { transcript: ["the original response"] });
   });
   try {
-    const result = await captureTolerantly({ worker: w.url, body: { url: "http://x/" } });
+    const result = await captureTolerantly({ worker: w.url, body: { url: "http://x/" }, sync: true });
     assert.equal(result.recovered, true);
     assert.deepEqual(body(result).transcript, ["the original response"]);
     assert.equal(posts, 1, "recovering must not also re-capture — that would pay for it twice");
@@ -72,7 +76,7 @@ test("`recovered` travels with the result, so a transport fault cannot hide as a
     json(res, 200, { transcript: ["x"] });
   });
   try {
-    const result = await captureTolerantly({ worker: w.url, body: { url: "http://x/" } });
+    const result = await captureTolerantly({ worker: w.url, body: { url: "http://x/" }, sync: true });
     assert.equal(result.recovered, true,
       "a caller measuring the transport needs to know this cost a round trip, not a capture");
   } finally { await w.close(); }
@@ -90,7 +94,7 @@ test("NOTHING KEPT means capture again — a 404 is not an error, it is 'never h
     json(res, 404, { error: "unknown captureId" });
   });
   try {
-    const result = await captureTolerantly({ worker: w.url, body: { url: "http://x/" } });
+    const result = await captureTolerantly({ worker: w.url, body: { url: "http://x/" }, sync: true });
     assert.equal(result.recovered, false);
     assert.equal(posts, 2, "an older worker that kept nothing must fall back to capturing");
     assert.deepEqual(body(result).transcript, ["second attempt"]);
@@ -105,7 +109,7 @@ test("A RECOVERED FAILURE KEEPS ITS FAULT CODE, rather than becoming 'no answer'
     json(res, 500, { error: "NVDA is running but not speaking", fault: "screen-reader-mute" });
   });
   try {
-    const result = await captureTolerantly({ worker: w.url, body: { url: "http://x/" } });
+    const result = await captureTolerantly({ worker: w.url, body: { url: "http://x/" }, sync: true });
     assert.equal(result.status, 500);
     assert.equal(body(result).fault, "screen-reader-mute",
       "the caller's own classification must see the fault, exactly as on the original response");
@@ -129,7 +133,7 @@ test("A NON-TRANSIENT FAILURE IS NOT RETRIED — a real defect must not become '
     json(res, 500, { error: "a capture is already in progress", fault: null });
   });
   try {
-    const result = await captureTolerantly({ worker: w.url, body: { url: "http://x/" } });
+    const result = await captureTolerantly({ worker: w.url, body: { url: "http://x/" }, sync: true });
     assert.equal(result.status, 500);
     assert.equal(posts, 1, "one request: an answered error is an answer");
   } finally { await w.close(); }
@@ -142,7 +146,7 @@ test("beforeRecovery runs BEFORE the question, so a caller may wait for the box 
     json(res, 200, { transcript: ["x"] });
   });
   try {
-    await captureTolerantly({ worker: w.url, body: { url: "http://x/" }, beforeRecovery: waited });
+    await captureTolerantly({ worker: w.url, body: { url: "http://x/" }, beforeRecovery: waited, sync: true });
     assert.equal(waited.mock.callCount(), 1);
   } finally { await w.close(); }
 });

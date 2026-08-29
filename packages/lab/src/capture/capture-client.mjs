@@ -28,6 +28,37 @@ import { isTransient } from "../training/capture-decisions.mjs";
 /** Long enough to survive a worker that is briefly busy, short enough not to double a capture's cost. */
 const RECOVERY_TIMEOUT_MS = 30_000;
 
+/**
+ * THE ESCAPE HATCH BACK TO THE SYNCHRONOUS PATH, and it says so when used.
+ *
+ * Kept because a protocol change wants a way back that does not need a deploy, and removed only once a
+ * corpus run has gone through the async path end to end.
+ */
+/**
+ * READ PER CALL, NOT AT MODULE LOAD, and the difference is not stylistic. A value fixed at import is one
+ * no test can vary and no process can change -- `fileProductVersion` memoised Edge's version that way and
+ * stamped five days of captures with a build they were not taken under. So it is a PARAMETER with an env
+ * default, which also lets both paths be driven from one test file.
+ */
+const syncByEnv = () => process.env.A11Y_SYNC_CAPTURE === "1";
+
+/** Accepting a capture is a handshake, not the work: it either answers in seconds or the box is unwell. */
+const ACCEPT_TIMEOUT_MS = 30_000;
+/** Between polls. Short enough that a 12 s capture is not padded, long enough not to hammer a busy box. */
+const POLL_MS = 2_000;
+/** A read of an array already in memory; if this cannot answer, the guest's event loop is blocked. */
+const PROGRESS_TIMEOUT_MS = 10_000;
+/**
+ * Consecutive failed POLLS before giving up.
+ *
+ * Not one: a single dropped poll is precisely the transport fault this design exists to survive, and
+ * treating it as a failed capture would reintroduce the defect through the new door. Not unbounded either,
+ * or a box that has genuinely gone would be waited on for the whole capture budget.
+ */
+const MAX_POLL_FAILURES = 5;
+
+const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms));
+
 const base = (/** @type {string} */ worker) => String(worker).replace(/\/$/, "");
 
 /**
@@ -85,10 +116,16 @@ export async function recoverCapture(worker, captureId) {
  * and a caller that wants to wait first passes `beforeRecovery`.
  *
  * @param {{ worker: string, body: object, timeoutMs?: number,
- *           beforeRecovery?: (error: unknown) => Promise<void> }} request
+ *           beforeRecovery?: (error: unknown) => Promise<void>,
+ *           onProgress?: (progress: object) => void, sync?: boolean }} request
  */
-export async function captureTolerantly({ worker, body, timeoutMs = CAPTURE_CLIENT_TIMEOUT_MS, beforeRecovery }) {
+export async function captureTolerantly({ worker, body, timeoutMs = CAPTURE_CLIENT_TIMEOUT_MS, beforeRecovery,
+  onProgress, sync = syncByEnv() }) {
   const captureId = randomUUID();
+  if (!sync) return pollForResult({ worker, body, captureId, timeoutMs, onProgress });
+  // Said once, at the moment it applies, rather than at import: the synchronous form holds a connection
+  // open and silent for the whole capture, which is the shape that lost 9 of 40 responses on this fleet.
+  process.stderr.write("A11Y_SYNC_CAPTURE — holding one connection open for this capture\n");
   try {
     return { ...await post(worker, { ...body, captureId }, timeoutMs), recovered: false };
   } catch (error) {
@@ -103,6 +140,95 @@ export async function captureTolerantly({ worker, body, timeoutMs = CAPTURE_CLIE
     // capture -- reporting it as a clean first attempt would hide the very fault this exists for.
     if (recovered) return { ...recovered, recovered: true };
     return { ...await post(worker, { ...body, captureId: randomUUID() }, timeoutMs), recovered: false };
+  }
+}
+
+/**
+ * DISPATCH, THEN POLL — the async path, and the reason this module exists.
+ *
+ * `POST {async:true}` returns 202 in milliseconds, so no connection is held while NVDA reads a page. The
+ * result is collected from the store with `GET /capture/<id>`, which is the endpoint that has existed for
+ * this shape all along and was only ever reached after a failure. **The recovery path is now the normal
+ * path**, which is what stops it rotting: a route that runs only when something breaks is one nobody
+ * notices has broken.
+ *
+ * A dropped poll costs one round trip and is simply retried; the capture is unaffected because nothing is
+ * riding on that socket. That is the whole difference from the synchronous form, where the answer existed
+ * only in the connection that was carrying it.
+ */
+/**
+ * @param {{ worker: string, body: object, captureId: string, timeoutMs: number,
+ *           onProgress?: (progress: object) => void }} request
+ */
+async function pollForResult({ worker, body, captureId, timeoutMs, onProgress }) {
+  const accepted = await post(worker, { ...body, captureId, async: true }, ACCEPT_TIMEOUT_MS);
+  // A worker too old to know `async` runs the capture SYNCHRONOUSLY and answers 200 with the result. That
+  // is not an error and must not be retried -- it is the additive-field contract this project uses for
+  // every wire change, and it means a host can be deployed before the fleet.
+  if (accepted.status !== 202) return { ...accepted, recovered: false };
+
+  const deadline = Date.now() + timeoutMs;
+  let transportFailures = 0;
+  while (Date.now() < deadline) {
+    await sleep(POLL_MS);
+    if (onProgress) await readProgress(worker, onProgress);
+    const poll = await pollOnce(worker, captureId);
+    if (poll.done) return { ...poll.response, recovered: false };
+    if (poll.lost) {
+      throw Object.assign(new Error(`worker forgot capture ${captureId} after accepting it — it restarted `
+        + "mid-capture, so the work is gone and the case must be re-issued"), { code: "CAPTURE_LOST" });
+    }
+    // A FAILED POLL IS NOT A FAILED CAPTURE, and conflating them would give back the defect this design
+    // removes: the worker is still working, we merely could not ask. Retried until a RUN of them says the
+    // box has gone, rather than on the first one -- a single dropped request is the exact fault this exists
+    // to survive.
+    transportFailures = poll.unreachable ? transportFailures + 1 : 0;
+    if (transportFailures >= MAX_POLL_FAILURES) throw poll.error;
+  }
+  throw Object.assign(new Error(`capture ${captureId} did not finish within ${timeoutMs} ms`),
+    { code: "ETIMEDOUT" });
+}
+
+/**
+ * ONE POLL, WITH FOUR DISTINCT ANSWERS — and keeping them apart is the whole job.
+ *
+ *   done        the capture finished (200 or 500); the 500 carries the worker's own fault code
+ *   lost        404 AFTER a 202 acceptance: the worker restarted, the work is gone, re-issue
+ *   running     202; keep waiting
+ *   unreachable we could not ask; the capture is unaffected
+ *
+ * NOT `recoverCapture`, and that is the correction. It SWALLOWS a transport error and returns null, which
+ * is right for its own job — "we already failed, is the result there?" — and wrong here, because it makes
+ * "could not ask" indistinguishable from "still running". Written that way first, and the retry counter
+ * built on it was unreachable: found by mutation, since deleting the retry changed nothing.
+ *
+ * @param {string} worker @param {string} captureId
+ */
+async function pollOnce(worker, captureId) {
+  let response;
+  try {
+    response = await requestJson(`${base(worker)}/capture/${captureId}`, { timeoutMs: RECOVERY_TIMEOUT_MS });
+  } catch (error) {
+    return { unreachable: true, error };
+  }
+  if (response.status === 404) return { lost: true };
+  if (response.status === 202) return { running: true };
+  // 200 and 500 are both ANSWERS: the second is the worker's diagnosis, and losing it would replace a
+  // fault code with silence -- which this project has repeatedly misread as a dead machine.
+  if (response.ok || response.status === 500) return { done: true, response };
+  // Anything else is a worker speaking a protocol we do not know; treat it as unreachable rather than as
+  // an answer, so it is retried and then surfaces with its own status rather than being read as a capture.
+  return { unreachable: true, error: new Error(`unexpected ${response.status} polling ${captureId}`) };
+}
+
+/** The phase the worker is IN, so a caller can tell a slow capture from a wedged one. */
+async function readProgress(/** @type {string} */ worker, /** @type {(p: object) => void} */ onProgress) {
+  try {
+    const { json } = await requestJson(`${base(worker)}/progress`, { timeoutMs: PROGRESS_TIMEOUT_MS });
+    if (json && typeof json === "object") onProgress(json);
+  } catch (error) {
+    // Progress is a convenience; failing to read it must never fail a capture that is going fine.
+    void error;
   }
 }
 
