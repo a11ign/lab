@@ -162,6 +162,40 @@ function reportRuleOnlyEvidence(records: Record_[]): void {
   console.log(`  census.heading === 0 on ${headings.filter((n) => n === 0).length} record(s); `
     + `census.graphicUnnamed > 0 on ${unnamed.filter((n) => n > 0).length}`);
   for (const line of tabStopEvidenceLines(records)) console.log(line);
+  for (const line of completenessLines(records)) console.log(line);
+}
+
+/**
+ * HOW MANY ASSERTIONS REST ON A SWEEP NOTHING COULD VERIFY — capture-integrity-plan C2.
+ *
+ * `assertableSweep` refuses `phantom` and `truncated` and deliberately ALLOWS `unknown`, because every
+ * capture taken before the counter existed reports it and refusing would silence 2.1.1 across the whole
+ * corpus. That is a defensible trade exactly once: while it is COUNTED. An unknown that nothing reports
+ * is `unknown` read as `exact`, which is the defect C1 exists to prevent arriving one layer out.
+ *
+ * A number and not a word, for the reason the function above gives: "some are unverified" cannot tell you
+ * whether it is two records or two thousand.
+ */
+export function completenessLines(records: Record_[]): string[] {
+  const withEvidence = records.filter((record) => record.ruleEvidence !== undefined);
+  if (withEvidence.length === 0) return [];
+  const tally = new Map<string, number>();
+  for (const record of withEvidence) {
+    const completeness = (record.ruleEvidence as { completeness?: Record<string, string> }).completeness;
+    // ABSENT IS ITS OWN ANSWER. A record predating the field is not a record whose sweep agreed, and
+    // folding the two together is the exact collapse this whole plan is about.
+    if (!completeness) { tally.set("no completeness field", (tally.get("no completeness field") ?? 0) + 1); continue; }
+    for (const [type, verdict] of Object.entries(completeness)) {
+      const key = `${type}/${verdict}`;
+      tally.set(key, (tally.get(key) ?? 0) + 1);
+    }
+  }
+  const unknown = [...tally].filter(([k]) => k.endsWith("/unknown") || k === "no completeness field")
+    .reduce((total, [, n]) => total + n, 0);
+  const rows = [...tally].sort((a, b) => b[1] - a[1]).map(([k, n]) => `    ${String(n).padStart(6)}  ${k}`);
+  return ["  sweep completeness, per record per type:", ...rows,
+    `  ${unknown} record-type(s) are UNVERIFIED — an assertion resting on one is allowed and counted here, `
+    + "never refused"];
 }
 
 /**
