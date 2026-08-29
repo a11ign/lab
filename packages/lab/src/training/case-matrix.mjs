@@ -2801,6 +2801,23 @@ export const ACCOMPANYING_DEFECTS = Object.freeze({
     ],
     subtypes: ["1.3.1:unassociated-table"],
     grants: "table_position_only",
+    // THE PROBE ITS RULE-SIDE EVIDENCE NEEDS — known-gaps §19.
+    //
+    // `probeTables` is opt-in, and a host that does not set it produces `structure.tableCells: []` — so
+    // the case carries the label `1.3.1:unassociated-table` while the channel a rule would read was never
+    // captured. Measured over the built case list: 69 cases pair this defect and ALL 69 inherited
+    // `probeTables: false` from their host, because `withAccompanyingDefects` spreads `...template`.
+    //
+    // Nothing fails today and that is exactly why it is worth fixing now rather than later: no rule reads
+    // `tableCells`, and `grants: "table_position_only"` is computed from the TRANSCRIPT, which carries the
+    // table fine — so `corpus:grants-audit` passes, correctly. The moment a deterministic rule for
+    // unassociated tables is written, it finds nothing on all 69 and reads as a rule that never fires:
+    // `rules:coverage`'s "NEVER FIRED ANYWHERE — the claim rests on nothing", pre-arranged.
+    //
+    // Applied with the protocol 8 bump because it changes the capture options and therefore the cache
+    // key. On its own it would have cost 138 recaptures to populate a field nothing reads, which is why
+    // it was written, reverted and recorded in August rather than shipped alone.
+    probes: { probeTables: true },
   },
   // THE FOCUS-SAFE BARE EDIT, and it exists to close a free veto no other pairing can reach.
   //
@@ -2971,8 +2988,20 @@ function withAccompanyingDefects(/** @type {any} */ template, /** @type {any} */
   if (chosen.length === 0) return null;
   const markup = chosen.map((/** @type {any} */ name) => accompanyingMarkup(name, template.id, round)).join("");
   const added = chosen.flatMap((/** @type {any} */ name) => ACCOMPANYING_DEFECTS[name].subtypes);
+  // THE PROBES ITS ADDED DEFECTS NEED, unioned over the host's — known-gaps §19.
+  //
+  // Spreading `...template` alone inherits the HOST's probe settings, so a defect whose evidence needs an
+  // opt-in probe got its LABEL and not its evidence. A UNION and never an override: a host that already
+  // probes keeps doing so, and no accompanying defect can turn a probe OFF.
+  //
+  // `probeForms` is deliberately unreachable this way — no accompanying defect declares it, and one that
+  // did would make this tool PRESS BUTTONS because of a label. That is a decision for the case author,
+  // not a side effect of a pairing, and it is the same line `chooseProbe` draws for the CLI.
+  const probes = Object.assign({}, ...chosen.map((/** @type {any} */ name) =>
+    ACCOMPANYING_DEFECTS[name].probes ?? {}));
   return pair({
     ...template,
+    ...probes,
     id: `${template.id}+also-${chosen.join("-")}`,
     // Its OWN family, not the template's. Sharing one would put a two-defect page in the same train/test
     // split group as the single-defect case it was built from, so a held-out score would be reading a
