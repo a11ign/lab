@@ -384,7 +384,25 @@ async function captureVerified(/** @type {any} */ ctx, /** @type {any} */ testCa
   /** @type {string | null} */
   let wrong = "";
   for (let attempt = 1; attempt <= CAPTURE_ATTEMPTS; attempt++) {
-    const capture = await captureTolerantly(ctx, testCase, url);
+    // A LOST CAPTURE IS A RE-ISSUABLE CASE, and its own error says so: "the work is gone and the case must
+    // be re-issued". Nothing acted on that. `CAPTURE_LOST` is thrown when the worker 404s a captureId it
+    // had accepted — it restarted mid-capture — and it is in neither transient set, so it escaped this
+    // loop, reached the pool as one consecutive failure, and the case was recorded failed WITHOUT being
+    // requeued. Three in a row would evict the worker and hand the work back; a single restart lost
+    // exactly one case, quietly.
+    //
+    // Retried here rather than made "transient", which would have been inert: `isTransient` has one
+    // production caller and it is on the SYNC path, where this is never thrown.
+    let capture;
+    try {
+      capture = await captureTolerantly(ctx, testCase, url);
+    } catch (error) {
+      if (/** @type {{ code?: string }} */ (error)?.code !== "CAPTURE_LOST") throw error;
+      console.log("  attempt " + attempt + "/" + CAPTURE_ATTEMPTS + ": the worker restarted mid-capture "
+        + "and forgot this one; re-issuing");
+      wrong = "the worker restarted mid-capture";
+      continue;
+    }
     // Both questions, because the title check alone cannot answer the second and is in fact
     // SATISFIED by the failure: a degenerate capture's whole transcript is the document title.
     // Measured on a live worker -- 2 of 5 captures returned transcript ["<page title>"] with no

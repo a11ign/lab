@@ -168,3 +168,28 @@ test("the budget bounds the POLLING, so a capture that never finishes is not wai
       });
   } finally { await w.close(); }
 });
+
+/**
+ * A LOST CAPTURE IS A RE-ISSUABLE CASE, and until 2026-08-29 nothing acted on that.
+ *
+ * `CAPTURE_LOST` is thrown when the worker 404s a captureId it had already accepted — it restarted
+ * mid-capture. The error says "the work is gone and the case must be re-issued", and it is in neither
+ * `TRANSIENT_FAULTS` nor `TRANSIENT_NETWORK_CODES`, so it escaped the dataset runner's attempt loop,
+ * reached the worker pool as one consecutive failure, and the case was recorded failed WITHOUT being
+ * requeued. Three in a row would evict the worker and hand the work back; a single restart lost exactly
+ * one case, quietly.
+ *
+ * Pinned here, at the throw site, because that is where the contract is: the code must stay distinguishable
+ * from a transport failure, which is retried, and from a 404 on an UNKNOWN id, which means re-issue too but
+ * arrives by a different route.
+ */
+test("CAPTURE_LOST is distinguishable from a transport failure, because they need opposite handling", async () => {
+  const { isTransient } = await import("../training/capture-decisions.mjs");
+  const lost = Object.assign(new Error("worker forgot capture X — it restarted mid-capture"),
+    { code: "CAPTURE_LOST" });
+  assert.equal(isTransient(lost), false,
+    "a lost capture is NOT a flaky socket — the work is gone, and retrying the same id would 404 forever");
+  const dropped = Object.assign(new Error("socket hang up"), { code: "ECONNRESET" });
+  assert.equal(isTransient(dropped), true,
+    "a dropped connection IS transient — the capture may still be running and recoverable by id");
+});
