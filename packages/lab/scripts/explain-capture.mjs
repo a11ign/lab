@@ -97,10 +97,51 @@ export function reachedThePage(capture) {
   return out;
 }
 
+/**
+ * DOES THE SWEEP AGREE WITH THE TREE — the HOST'S verdict, not the worker's.
+ *
+ * `structureCrossCheck` runs on the worker, which has no announcement grammar (it is plain node, and
+ * `parseAnnouncement` is TypeScript), so it compares the sweep's ENTRY COUNT against the census's distinct
+ * NAMES. Those are different quantities: two links sharing a name are two announcements and one name
+ * (reported `phantom`), and one landmark entry can announce several (reported `truncated`).
+ *
+ * Measured on 675 fresh protocol-7 captures the worker put agreement at 51%, with 191 `link/phantom` and
+ * 139 `landmark/truncated`. Scoring the SAME captures host-side: links 60/60 exact, and 47 of 60 agreeing
+ * on all five types. The worker records the evidence and the host interprets it — the split C1 established,
+ * which this report was still reading from the wrong side of.
+ *
+ * The raw worker number is still printed, because a diagnostic that disagrees with the verdict is worth
+ * seeing rather than hiding.
+ *
+ * @param {any} capture
+ * @returns {string[]}
+ */
+function sweepAgreesWithTheTree(capture) {
+  const cross = mark(capture, "structureCrossCheck");
+  const out = [];
+  const completeness = Object.entries(captureSupports(capture).absence);
+  const off = completeness.filter(([, support]) => !support.ok);
+  if (completeness.length === 0) out.push(absent("whether the sweep agrees with the accessibility tree"));
+  else if (off.length === 0) out.push(`    YES the sweep agrees with the tree on all ${completeness.length} type(s)`);
+  else for (const [type, support] of off) out.push(`    NO  ${type}: ${support.why}`);
+  if (cross && !cross.agrees && off.length === 0) {
+    out.push("    (the worker's own cross-check disagreed; it compares entry COUNTS against distinct"
+      + " NAMES and cannot resolve them — the line above is the authoritative one)");
+  }
+  if (!cross) out.push(absent("the worker's raw cross-check"));
+  else if (cross.agrees) out.push(`    - worker cross-check: agrees on ${cross.compared} type(s)`);
+  else {
+    for (const d of cross.disagreements ?? []) {
+      out.push(`    - worker cross-check: ${d.type} sweep ${d.sweep} vs tree ${d.elementsList}`
+        + `${d.kind ? ` (${d.kind})` : ""} — RAW, and see this function's note on what it compares`);
+    }
+  }
+  return out;
+}
+
 /** Did the screen reader reach the content, or stop short of it? @param {any} capture */
 export function reachedTheContent(capture) {
   const read = mark(capture, "readThrough");
-  const cross = mark(capture, "structureCrossCheck");
   const truncated = mark(capture, "truncatedAnnouncements");
   const out = [];
   const supports = captureSupports(capture);
@@ -113,14 +154,7 @@ export function reachedTheContent(capture) {
     out.push(`    NO  the read stopped at ${JSON.stringify(read.stopReason)} after ${read.count} step(s)`
       + " — anything absent below may simply be past where it stopped");
   }
-  if (!cross) out.push(absent("whether the sweep agrees with the accessibility tree"));
-  else if (cross.agrees) out.push(`    YES the sweep agrees with the tree on all ${cross.compared} type(s)`);
-  else {
-    for (const d of cross.disagreements ?? []) {
-      out.push(`    NO  ${d.type}: the sweep announced ${d.sweep}, the tree exposes ${d.elementsList}`
-        + `${d.kind ? ` (${d.kind})` : ""} — a gap here is a question about this TOOL, not about the page`);
-    }
-  }
+  out.push(...sweepAgreesWithTheTree(capture));
   const cut = truncated?.truncated ?? [];
   if (cut.length) out.push(`    !   ${cut.length} announcement(s) arrived truncated, e.g. ${JSON.stringify(String(cut[0].heard).slice(0, 60))}`);
   // WHAT THIS CAPTURE CAN BEAR A CLAIM ABOUT, from the same function the rules read. The point of C6 is
