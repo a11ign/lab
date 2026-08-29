@@ -1,0 +1,85 @@
+/**
+ * A tool that answers "what actually happened on this page" must never answer "fine" when it does not know.
+ *
+ * Every question about a capture used to be answered by ssh, hand-written Python, a glob and a guess at the
+ * JSON shape — and on 2026-08-29 that produced four wrong answers in one session, each looking like a real
+ * number. The worst was reading the WRAPPER instead of `capture`: a page with 20 tab stops and 14 form
+ * fields reported ZERO of each, because `undefined ?? []` is `[]`.
+ *
+ * So the properties below are the ones that would make this tool worse than nothing: silently unwrapping
+ * wrong, or printing OK for a mark that was never recorded.
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+import { captureOf, reachedThePage, reachedTheContent, wasAnythingInTheWay, heldStill }
+  from "../../scripts/explain-capture.mjs";
+
+const withMarks = (...marks: object[]) => ({ diagnostics: marks, transcript: [] });
+
+test("THE WRAPPER IS UNWRAPPED — the exact mistake that reported 0 of 20 tab stops", () => {
+  const inner = { transcript: ["x"], diagnostics: [] };
+  assert.equal(captureOf({ capture: inner, publishedClaim: "conformant" }), inner);
+  // And a bare capture is returned unchanged, so callers need not know which shape they hold.
+  assert.equal(captureOf(inner), inner);
+});
+
+test("A MARK THAT WAS NEVER RECORDED SAYS SO — it never reads as OK", () => {
+  // This project's most expensive defects are all one shape: absent read as zero, undefined read as false,
+  // an empty probe read as "the page announced nothing". A diagnostic that repeated it would be worse than
+  // none, because it would be believed.
+  for (const rows of [reachedThePage(withMarks()), reachedTheContent(withMarks()), heldStill(withMarks())]) {
+    assert.ok(rows.some((r) => r.includes("NOT RECORDED")),
+      `an absent mark must print NOT RECORDED, got: ${JSON.stringify(rows)}`);
+    assert.ok(!rows.some((r) => /\bYES\b/.test(r)),
+      "nothing may be reported as confirmed when the evidence for it is missing");
+  }
+});
+
+test("a read that ran out of budget is NOT a page with nothing on it", () => {
+  const stopped = reachedTheContent(withMarks({ event: "readThrough", count: 11, stopReason: "maxSteps" }));
+  assert.ok(stopped.some((r) => r.includes("stopped at") && r.includes("past where it stopped")),
+    "a truncated read must say that an absence below it may be an artefact");
+  const finished = reachedTheContent(withMarks({ event: "readThrough", count: 40, stopReason: "exhausted" }));
+  assert.ok(finished.some((r) => r.includes("finished on its own")));
+});
+
+test("THE URL BEING RIGHT AND THE PAGE BEING SERVED ARE DIFFERENT QUESTIONS", () => {
+  // An error page has the address you asked for. That distinction cost four captures-that-looked-valid.
+  const rows = reachedThePage(withMarks(
+    { event: "landedOnRequested", ok: true, actual: "http://x/y", requested: "http://x/y", waitedMs: 3, attempts: 1 },
+    { event: "pageServed", status: 0 }));
+  assert.ok(rows.some((r) => r.includes("YES the browser showed")));
+  assert.ok(rows.some((r) => r.startsWith("    NO ") && r.includes("HTTP 0")),
+    "a page nothing served must be reported even when the URL is right");
+});
+
+test("A CONSENT BANNER IS NAMED, because guessing about it is half the debugging", () => {
+  const banner = wasAnythingInTheWay({ diagnostics: [],
+    transcript: ["heading, level 1, Cookie settings", "We use cookies to collect anonymous data"] });
+  assert.ok(banner.some((r) => r.includes("CONSENT BANNER")),
+    "a page that opens on a banner and a page with nothing to say produce similar evidence; the "
+    + "difference decides whether a finding is about the site or about us");
+  const clean = wasAnythingInTheWay({ diagnostics: [], transcript: ["heading, level 1, Publications"] });
+  assert.ok(clean.some((r) => r.includes("no consent banner")));
+});
+
+test("a page that MOVED between probes is reported, and one fingerprint cannot say", () => {
+  const moved = heldStill(withMarks(
+    { event: "pageState", beforeProbe: "sweep", tabbable: 150 },
+    { event: "pageState", beforeProbe: "focus", tabbable: 10 }));
+  assert.ok(moved.some((r) => r.includes("CHANGED UNDER ITS OWN PROBES") && r.includes("tabbable")));
+
+  const one = heldStill(withMarks({ event: "pageState", beforeProbe: "sweep", tabbable: 150 }));
+  assert.ok(one.some((r) => r.includes("NOT RECORDED") && r.includes("fewer than two")),
+    "one fingerprint is not agreement — the third answer must stay distinct from 'it held still'");
+});
+
+test("A FAILED FINGERPRINT IS NOT A READING OF ZERO", () => {
+  // `markPageState` marks even when the census failed, precisely so the two stay apart.
+  const rows = heldStill(withMarks(
+    { event: "pageState", beforeProbe: "sweep", tabbable: 150 },
+    { event: "pageState", beforeProbe: "focus", error: "not counted" }));
+  assert.ok(rows.some((r) => r.includes("NOT RECORDED")),
+    "a capture with one usable fingerprint cannot report that the page held still");
+});
