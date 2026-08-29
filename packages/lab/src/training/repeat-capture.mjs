@@ -94,21 +94,38 @@ const BETWEEN_MS = 2_000; // let the guest settle, as a real run would between c
 // A probe-forms run with no task cannot activate anything, so it would compare an empty field five times
 // and call it stable. Refuse rather than pass vacuously.
 
+/**
+ * A field as a LIST, whatever it is. One helper rather than `?? []` at every field, because each of those
+ * is a branch and eighteen of them took `comparable` past the complexity limit — for no reading benefit,
+ * since every line was doing the same thing.
+ */
+const list = (/** @type {any} */ value) => (Array.isArray(value) ? value : []);
+
+/**
+ * An object field flattened to `key=value` lines.
+ *
+ * `routeChange` is `{control, titleBefore, titleAfter, ...}`, and comparing it as an opaque object reports
+ * two objects differing wholesale rather than naming the one that moved — and a title that stopped
+ * changing IS the 2.4.2 failure. Same treatment `formChanges` already gets, for the same reason.
+ */
+const flatten = (/** @type {any} */ value) =>
+  (value && typeof value === "object" ? Object.entries(value).map(([key, v]) => `${key}=${v}`) : []);
+
 /** The fields worth comparing: everything a dataset signal can read. */
-function comparable(/** @type {any} */ capture) {
+export function comparable(/** @type {any} */ capture) {
   const s = capture.structure ?? {};
   const i = capture.interaction ?? {};
   return {
-    transcript: capture.transcript ?? [],
-    headings: s.headings ?? [],
-    landmarks: s.landmarks ?? [],
-    formFields: s.formFields ?? [],
-    graphics: s.graphics ?? [],
-    links: s.links ?? [],
-    lists: s.lists ?? [],
-    tableCells: s.tableCells ?? [],
-    stateChanges: i.stateChanges ?? [],
-    focusOrder: i.focusOrder ?? [],
+    transcript: list(capture.transcript),
+    headings: list(s.headings),
+    landmarks: list(s.landmarks),
+    formFields: list(s.formFields),
+    graphics: list(s.graphics),
+    links: list(s.links),
+    lists: list(s.lists),
+    tableCells: list(s.tableCells),
+    stateChanges: list(i.stateChanges),
+    focusOrder: list(i.focusOrder),
     // `formChanges` and `postSubmitFields` are compared because they were NOT, and that is how an
     // intermittent contaminant reached the corpus with the stability gate green. One capture of
     // `filter-status-silent/bad` recorded `after: "Energy results, document"` where every other run
@@ -117,8 +134,26 @@ function comparable(/** @type {any} */ capture) {
     //
     // Flattened to strings so a differing `after` shows up as a VARIES rather than as two objects the
     // comparison treats as opaque.
-    formChanges: (i.formChanges ?? []).map((/** @type {any} */ c) => `${c.control} [${c.kind ?? "?"}] -> ${c.after ?? ""}`),
-    postSubmitFields: i.postSubmitFields ?? [],
+    formChanges: list(i.formChanges).map((/** @type {any} */ c) => `${c.control} [${c.kind ?? "?"}] -> ${c.after ?? ""}`),
+    postSubmitFields: list(i.postSubmitFields),
+    // THREE MORE, ADDED 2026-08-29, and the comment above is why they are worth naming rather than
+    // quietly appending. It records ten fields watched with the two carrying interaction evidence missing
+    // — and the lesson was then applied to those two and not to the rest of the channel.
+    //
+    // `controls` is the plain miss: EVERY capture carries it (5,304 of 5,304) and `evidence-diff.mjs`
+    // compares it, so this gate could not see instability in the one interaction field that is always
+    // populated. `postSubmitNames` is on 281 captures and capture-core's protocol note says criteria read
+    // it. `routeChange` is the whole of 2.4.2's evidence — the transition a static analyser cannot reach.
+    //
+    // Kept in step with `evidence-diff.mjs` by `stability-fields.test.ts`, which fails if either list
+    // gains a field the other lacks. Two hand-written lists of "what a signal can read" is a fact stated
+    // twice, and this is the third tool to have got it wrong.
+    controls: list(i.controls),
+    postSubmitNames: list(i.postSubmitNames),
+    // FLATTENED, like `formChanges` above and for the same reason: `routeChange` is an object
+    // (`{control, titleBefore, titleAfter, ...}`), and a comparison that treats it as opaque reports two
+    // objects rather than the one field that moved. A title that stopped changing IS the 2.4.2 failure.
+    routeChange: flatten(i.routeChange),
   };
 }
 
