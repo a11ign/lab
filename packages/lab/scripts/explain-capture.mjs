@@ -98,6 +98,37 @@ export function reachedThePage(capture) {
 }
 
 /**
+ * The worker's cross-check in ONE shape, whatever age the capture is.
+ *
+ * Since known-gaps §13 the worker records `sameCounts` / `differsOn` / `sweepEntries` /
+ * `oracleDistinctNames` and renders no verdict. Every capture before it spells the same facts
+ * `agrees` / `disagreements` / `sweep` / `elementsList` and adds a `kind` the worker could not justify.
+ *
+ * Normalised here rather than branched at each read: four `??` pairs inline took the caller to a
+ * complexity of 20 against a limit of 15, and none of them was telling the reader anything except that
+ * two vocabularies exist.
+ *
+ * @param {any} cross the `structureCrossCheck` mark, or undefined
+ */
+function crossCheckOf(cross) {
+  if (!cross) return null;
+  const differences = cross.differsOn ?? cross.disagreements ?? [];
+  return {
+    compared: cross.compared,
+    sameCounts: cross.sameCounts ?? cross.agrees,
+    differences: differences.map((/** @type {any} */ d) => ({
+      type: d.type,
+      entries: d.sweepEntries ?? d.sweep,
+      names: d.oracleDistinctNames ?? d.elementsList,
+      // Only a pre-§13 capture has one, and it is shown as recorded rather than hidden: it is what that
+      // capture actually said, and a reader comparing an old report against a new one needs to see why
+      // they differ.
+      recordedVerdict: d.kind ?? null,
+    })),
+  };
+}
+
+/**
  * DOES THE SWEEP AGREE WITH THE TREE — the HOST'S verdict, not the worker's.
  *
  * `structureCrossCheck` runs on the worker, which has no announcement grammar (it is plain node, and
@@ -113,27 +144,34 @@ export function reachedThePage(capture) {
  * The raw worker number is still printed, because a diagnostic that disagrees with the verdict is worth
  * seeing rather than hiding.
  *
+ * SINCE 2026-08-29 THE WORKER RENDERS NO `kind` (known-gaps §13): it records `sweepEntries` and
+ * `oracleDistinctNames` and leaves the verdict to the host, which is the split described above. Both
+ * shapes are read here because this tool is pointed at captures of any age — every capture taken before
+ * that change carries `agrees`/`disagreements`/`kind`, and a reader that could not open them would make
+ * the whole existing corpus unexplainable to fix a naming problem.
+ *
  * @param {any} capture
  * @returns {string[]}
  */
-function sweepAgreesWithTheTree(capture) {
-  const cross = mark(capture, "structureCrossCheck");
+export function sweepAgreesWithTheTree(capture) {
+  const cross = crossCheckOf(mark(capture, "structureCrossCheck"));
   const out = [];
   const completeness = Object.entries(captureSupports(capture).absence);
   const off = completeness.filter(([, support]) => !support.ok);
   if (completeness.length === 0) out.push(absent("whether the sweep agrees with the accessibility tree"));
   else if (off.length === 0) out.push(`    YES the sweep agrees with the tree on all ${completeness.length} type(s)`);
   else for (const [type, support] of off) out.push(`    NO  ${type}: ${support.why}`);
-  if (cross && !cross.agrees && off.length === 0) {
+  if (cross && cross.sameCounts === false && off.length === 0) {
     out.push("    (the worker's own cross-check disagreed; it compares entry COUNTS against distinct"
       + " NAMES and cannot resolve them — the line above is the authoritative one)");
   }
   if (!cross) out.push(absent("the worker's raw cross-check"));
-  else if (cross.agrees) out.push(`    - worker cross-check: agrees on ${cross.compared} type(s)`);
+  else if (cross.sameCounts) out.push(`    - worker cross-check: same counts on ${cross.compared} type(s)`);
   else {
-    for (const d of cross.disagreements ?? []) {
-      out.push(`    - worker cross-check: ${d.type} sweep ${d.sweep} vs tree ${d.elementsList}`
-        + `${d.kind ? ` (${d.kind})` : ""} — RAW, and see this function's note on what it compares`);
+    for (const d of cross.differences) {
+      out.push(`    - worker cross-check: ${d.type} sweep entries ${d.entries} vs tree distinct names ${d.names}`
+        + `${d.recordedVerdict ? ` (recorded "${d.recordedVerdict}" — a verdict the worker cannot compute)` : ""}`
+        + " — RAW, and see this function's note on what it compares");
     }
   }
   return out;

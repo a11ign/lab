@@ -12,7 +12,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { captureOf, reachedThePage, reachedTheContent, wasAnythingInTheWay, heldStill }
+import { captureOf, reachedThePage, reachedTheContent, wasAnythingInTheWay, heldStill,
+  sweepAgreesWithTheTree }
   from "../../scripts/explain-capture.mjs";
 
 const withMarks = (...marks: object[]) => ({ diagnostics: marks, transcript: [] });
@@ -100,3 +101,33 @@ test("A FAILED FINGERPRINT IS NOT A READING OF ZERO", () => {
   assert.ok(rows.some((r) => r.includes("NOT RECORDED")),
     "a capture with one usable fingerprint cannot report that the page held still");
 });
+
+test("a PRE-§13 capture still explains, with its unjustifiable verdict shown as recorded", () => {
+  // `capture:explain` is pointed at captures of any age, and every capture taken before known-gaps §13
+  // spells the cross-check `agrees`/`disagreements`/`kind`. A reader that only understood the new names
+  // would make the entire existing corpus unexplainable to fix a naming problem — and this tool exists
+  // precisely because diagnosing an old capture by hand produced four wrong answers in one session.
+  const lines = sweepAgreesWithTheTree({
+    diagnostics: [{
+      event: "structureCrossCheck", compared: 5, agrees: false,
+      disagreements: [{ type: "link", sweep: 7, elementsList: 6, kind: "phantom" }],
+    }],
+  } as never);
+  const raw = lines.find((l: string) => l.includes("worker cross-check"));
+  assert.ok(raw, `expected a raw worker line, got ${JSON.stringify(lines)}`);
+  assert.match(raw ?? "", /sweep entries 7 vs tree distinct names 6/);
+  assert.match(raw ?? "", /a verdict the worker cannot compute/);
+});
+
+test("a POST-§13 capture explains with no verdict at all", () => {
+  const lines = sweepAgreesWithTheTree({
+    diagnostics: [{
+      event: "structureCrossCheck", compared: 5, sameCounts: false,
+      differsOn: [{ type: "link", sweepEntries: 7, oracleDistinctNames: 6 }],
+    }],
+  } as never);
+  const raw = lines.find((l: string) => l.includes("worker cross-check")) ?? "";
+  assert.match(raw, /sweep entries 7 vs tree distinct names 6/);
+  assert.ok(!raw.includes("cannot compute"), "there is no verdict to report on a post-§13 capture");
+});
+
