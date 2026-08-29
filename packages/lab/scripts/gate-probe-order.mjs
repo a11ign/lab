@@ -45,7 +45,13 @@ import { captureTolerantly } from "../src/capture/capture-client.mjs";
 refuseUnknownFlags(["--worker=", "--pages=", "--json"],
   { entry: import.meta.url, command: "npm run gate:probe-order" });
 
-const ORDERS = /** @type {const} */ ([undefined, "focus-first"]);
+/**
+ * The three captures, in order: control-start, treatment, control-end.
+ *
+ * Named as data so the count is visible at the top of the file -- this gate costs 3 captures per page, not
+ * 2, and that 50% is the price of separating an ordering effect from a page that simply changes.
+ */
+const CAPTURES_PER_PAGE = 3;
 
 /** Pages whose evidence must not depend on probe order, each with what it exists to catch. */
 const PAGES = [
@@ -232,23 +238,57 @@ async function comparePage(/** @type {any} */ page, /** @type {string} */ worker
   // concatenated onto localhost -- which is the failure that returns Edge's own error page and compares
   // identical under both orders.
   const url = page.url ?? `${base}/${page.path}.html`;
-  const taken = [];
-  for (const order of ORDERS) taken.push(await capture(worker, url, order));
-  const failed = taken.find((/** @type {any} */ t) => t.error);
-  // INCONCLUSIVE, never a pass. A page that could not be captured in both orders was not compared, and
+  // THREE CAPTURES: A1, B, A2. The gate used to take two, changing the probe order AND letting time pass,
+  // so a difference could be either -- a textbook confound. On `tfl.gov.uk` the clock ticked 22:43 -> 22:47
+  // and a disruption banner appeared between them, and the gate could not tell that from an ordering fault.
+  //
+  // The remedy for a confound is a CONTROL, and this repo already owns the instrument: `gate:stability`
+  // repeats an identical capture to measure the noise floor. A1 vs A2 is that floor for THIS page, right
+  // now. The control BRACKETS the treatment rather than following it, so it spans a longer window
+  // (t=0->2 against t=0->1) and therefore slightly over-states drift -- conservative in the right
+  // direction for a tool that asserts: it cannot invent an ordering fault, it may miss a marginal one.
+  const a1 = await capture(worker, url, undefined);
+  const b = await capture(worker, url, "focus-first");
+  const a2 = await capture(worker, url, undefined);
+  const failed = [a1, b, a2].find((/** @type {any} */ c) => c.error);
+  // INCONCLUSIVE, never a pass. A page that could not be captured all three ways was not compared, and
   // "not compared" reading as "agrees" is the defect this whole plan is about, one layer out. THROWN so it
   // reduces the fleet's coverage, rather than returned as a result that looks judged.
   if (failed) throw new Error(failed.error);
-  const diff = compareCapture(/** @type {never} */ (taken[0].capture), /** @type {never} */ (taken[1].capture));
-  // The SECOND capture is the permuted one, and it is the only one with a preceding probe, so it is the
-  // only one where the remedy can have run. Reported beside the verdict rather than assumed.
-  const remedied = establishedBrowseMode(taken[1].capture);
-  // A page that moved under its own probes is reported as PAGE-MOVED, never as an ordering fault: the two
-  // need opposite responses, and conflating them makes this gate unactionable on any page with a menu.
-  const pageMoved = taken.some((/** @type {any} */ c) => pageChangedUnderProbes(c.capture));
-  const verdict = diff.verdict !== "SAME" && pageMoved ? "PAGE-MOVED" : diff.verdict;
-  return { page: page.url ?? page.path, worker, verdict, changes: diff.changes,
-    phrases: diff.phrases, remedied, pageMoved };
+
+  const treatment = compareCapture(/** @type {never} */ (a1.capture), /** @type {never} */ (b.capture));
+  const control = compareCapture(/** @type {never} */ (a1.capture), /** @type {never} */ (a2.capture));
+  const ordering = differencesNotExplainedBy(treatment, control);
+
+  // The PERMUTED capture is the only one with a preceding probe, so it is the only one where the remedy
+  // can have run. Reported beside the verdict rather than assumed.
+  const remedied = establishedBrowseMode(b.capture);
+  // The fingerprint's own statement that the page's SHAPE moved, which is a different claim from content
+  // drifting -- and still worth separating, because it says the probes changed the page rather than time.
+  const pageMoved = [a1, b, a2].some((/** @type {any} */ c) => pageChangedUnderProbes(c.capture));
+  const verdict = ordering.length ? (pageMoved ? "PAGE-MOVED" : treatment.verdict) : "SAME";
+  return { page: page.url ?? page.path, worker, verdict, changes: ordering,
+    phrases: treatment.phrases, remedied, pageMoved,
+    // Named so a reader can see the control did its job. A gate that silently subtracts is one nobody can
+    // check, and "explained by time" is exactly the claim that needs to be auditable.
+    explainedByTime: treatment.changes.length - ordering.length };
+}
+
+/**
+ * What the TREATMENT shows and the CONTROL does not — the ordering effect, with time subtracted.
+ *
+ * Compared FIELD BY FIELD rather than as a whole: a page whose clock ticks changes `structure.formFields`
+ * in both, so that field is explained; if the treatment ALSO moved `interaction.focusOrder` and the control
+ * did not, that one is the ordering effect and must survive.
+ *
+ * Matched on the field NAME and not on the exact lost/gained phrases, deliberately. A clock reads 22:43,
+ * 22:47 and 22:51 across three captures, so the phrases differ in every comparison while the field is the
+ * same one drifting. Requiring identical phrases would explain away nothing and the control would be inert
+ * -- which is the failure mode to watch for here, since an inert control looks exactly like a clean gate.
+ */
+export function differencesNotExplainedBy(/** @type {any} */ treatment, /** @type {any} */ control) {
+  const drifting = new Set(control.changes.map((/** @type {any} */ c) => c.field));
+  return treatment.changes.filter((/** @type {any} */ c) => !drifting.has(c.field));
 }
 
 /**
@@ -288,7 +328,7 @@ function report_(/** @type {any[]} */ outcomes, /** @type {number} */ workerCoun
       result: o.result && !moved.includes(o.result) && !unexercised.includes(o.result) ? o.result : null,
       error: o.error,
     })),
-    { of: PAGES.length, what: "corpus pages and live sites, each captured in both probe orders",
+    { of: PAGES.length, what: `corpus pages and live sites, each captured ${CAPTURES_PER_PAGE}x (control, treatment, control)`,
       workers: workerCount, failed: differing.length });
   process.stdout.write(`\n${renderVerdict(verdict)}\n`);
   process.exit(exitCodeFor(verdict));
