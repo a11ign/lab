@@ -37,6 +37,7 @@ import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { captureSupports, consentBanner } from "@a11y-witness/evidence/verify";
 
 refuseUnknownFlags(["--json"], { entry: import.meta.url, command: "npm run capture:explain" });
 
@@ -59,7 +60,13 @@ export function captureOf(/** @type {any} */ parsed) {
  *
  * Read off `phraseAction` in `capture-pure.mjs`, not inferred from the names.
  */
-const REACHED_THE_END = new Set(["exhausted", "repeatBottom", "wrap"]);
+/**
+ * NOT DEFINED HERE ANY MORE. `captureSupports` owns this set, and this tool asks it rather than keeping a
+ * second copy — capture-integrity-plan C6. Two spellings of one fact is the defect this repo has recorded
+ * five times in a day; the probe order lived in six places and they drifted. Kept as a named re-export so
+ * the reasoning above still has something to point at.
+ */
+export { captureSupports };
 
 const mark = (/** @type {any} */ capture, /** @type {string} */ event) =>
   (capture.diagnostics ?? []).find((/** @type {any} */ m) => m && m.event === event) ?? null;
@@ -96,8 +103,9 @@ export function reachedTheContent(capture) {
   const cross = mark(capture, "structureCrossCheck");
   const truncated = mark(capture, "truncatedAnnouncements");
   const out = [];
+  const supports = captureSupports(capture);
   if (!read) out.push(absent("whether the read-through finished"));
-  else if (REACHED_THE_END.has(read.stopReason)) {
+  else if (supports.ordering.ok) {
     out.push(`    YES the read reached the end of the page (${read.stopReason}) after ${read.count} step(s)`);
   } else {
     // A read that ran out of budget did NOT see the whole page, and everything downstream is a claim about
@@ -115,6 +123,14 @@ export function reachedTheContent(capture) {
   }
   const cut = truncated?.truncated ?? [];
   if (cut.length) out.push(`    !   ${cut.length} announcement(s) arrived truncated, e.g. ${JSON.stringify(String(cut[0].heard).slice(0, 60))}`);
+  // WHAT THIS CAPTURE CAN BEAR A CLAIM ABOUT, from the same function the rules read. The point of C6 is
+  // that a reader of a finding and the rule that made it cite ONE answer, not two derivations of it.
+  const cannot = Object.entries(supports.absence).filter(([, s]) => !s.ok);
+  out.push(cannot.length === 0
+    ? "    YES absence is claimable on every type the tree counts"
+    : `    NO  absence is NOT claimable on ${cannot.map(([t]) => t).join(", ")}`
+      + ` — ${cannot[0][1].why}`);
+  out.push(`    ${supports.naming.ok ? "YES" : "NO "} naming: ${supports.naming.why}`);
   return out;
 }
 
@@ -122,16 +138,16 @@ export function reachedTheContent(capture) {
 export function wasAnythingInTheWay(capture) {
   const confinement = mark(capture, "focusConfinement");
   const dialogs = mark(capture, "desktopDialogsDismissed");
-  const opens = (capture.transcript ?? []).slice(0, 3).join(" ").toLowerCase();
   const out = [];
   // THE QUESTION THAT KEEPS BEING GUESSED AT. A page that opens on a consent banner and a page with
   // nothing to say produce similar-looking evidence, and the difference decides whether a finding is
   // about the site or about us.
-  const banner = /cookie|consent|accept all|privacy settings/.test(opens);
-  out.push(banner
-    ? `    !   THE PAGE OPENS ON A CONSENT BANNER — the transcript starts ${JSON.stringify((capture.transcript ?? [])[0] ?? "")}.`
-      + " Everything below describes the page WITH that banner present"
-    : "    no consent banner in the opening announcements");
+  // ONE DEFINITION, in `consentBanner`. This was a regex here and would have drifted from the one the
+  // rules read — the "fact stated twice" defect, which cost five incidents in a day.
+  const banner = consentBanner(capture);
+  out.push(banner.present
+    ? `    ${banner.blocking ? "!!" : "! "}  CONSENT BANNER — ${banner.why}`
+    : `    ${banner.why}`);
   if (confinement) {
     out.push(confinement.confined
       ? `    !   focus was CONFINED to ${confinement.ring} control(s) of ${confinement.controlsOnPage} announced`
