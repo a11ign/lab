@@ -193,6 +193,10 @@ function productOutcomes(/** @type {any} */ record, /** @type {any} */ capture) 
   const rules = ruleFindings({ ...capture, ...oracleCounts(capture) });
   const outcomes = criterionOutcomes({
     capture,
+    // Same second truncation source the CLI reads. This script scores REAL pages through
+    // the product path, so a divergence here would be the calibration measuring something the product
+    // does not do — which is exactly what this file was corrected for once already.
+    completeness: oracleCounts(capture).completeness,
     findings: [...findings, ...rules],
     // `abstained` stays false because THIS script models abstention itself, one floor per row -- passing
     // it here as well would count the same refusal twice.
