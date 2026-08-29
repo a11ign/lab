@@ -310,6 +310,39 @@ function comparabilityNotes(training, shipped) {
     + "expected to be in this state; a second one is not."];
 }
 
+/**
+ * Criteria the shipped model was scored on and this candidate is NOT.
+ *
+ * `regressions()` skips a criterion unless BOTH sides carry `modelEvaluated`, and that one condition
+ * covers two opposite events. New coverage — the candidate evaluates something the shipped model did not
+ * — is correctly not a regression, and the comment there says so. The reverse is LOST coverage, and it
+ * was skipped by the same line, in silence.
+ *
+ * It is reachable and it is intended: `modelEvaluated` goes false when every subtype of a criterion is
+ * decided by the deterministic rules, which is exactly what ADR 0021 did to `4.1.2:state-change-silent`
+ * — moving the flagship finding from the model to the rules so it could be STATED rather than suggested.
+ * A genuine improvement.
+ *
+ * So this is a NOTE, never a blocker. What it must not be is nothing: "the model handed this criterion to
+ * a rule" and "the model quietly stopped covering this criterion" produce the identical skip, and only one
+ * of them is good news. Naming it is this file's own rule — ABSENT and FAILED must never look alike —
+ * applied to the third case, HANDED OVER.
+ *
+ * @param {Record<string, any>|null} acceptance @param {Record<string, any>|null} shippedAcceptance
+ */
+function coverageHandedOver(acceptance, shippedAcceptance) {
+  if (!acceptance || !shippedAcceptance) return [];
+  const dropped = Object.entries(shippedAcceptance.criteria ?? {})
+    .filter(([criterion, was]) => was?.modelEvaluated
+      && (acceptance.criteria ?? {})[criterion]?.modelEvaluated === false)
+    .map(([criterion]) => `${criterion} (${(acceptance.criteria ?? {})[criterion]?.reason ?? "no reason recorded"})`);
+  if (!dropped.length) return [];
+  return [`${dropped.length} criterion/criteria the shipped model was scored on are NOT scored on this `
+    + `candidate, so no regression could be computed for them: ${dropped.join("; ")}. `
+    + "That is what moving a subtype to the deterministic rules looks like and is usually an improvement "
+    + "— check it was deliberate, because a head that silently stopped being evaluated looks the same."];
+}
+
 /** @param {Record<string, any>|null} acceptance @param {Record<string, any>|null} shippedAcceptance @param {number} tolerance */
 function regressions(acceptance, shippedAcceptance, tolerance) {
   if (!acceptance || !shippedAcceptance) return [];
@@ -361,6 +394,7 @@ export function releasability({ training, acceptance, shipped, shippedAcceptance
   notes.push(...calibration.notes);
   blockers.push(...regressions(acceptance, shippedAcceptance ?? null, tolerance));
   notes.push(...comparabilityNotes(training, shipped));
+  notes.push(...coverageHandedOver(acceptance, shippedAcceptance ?? null));
   notes.push(...marginNotes(training));
 
   const ruleOwned = [...heads(training)].filter(({ subtype }) => isRuleDecided(subtype)).map((h) => h.name);

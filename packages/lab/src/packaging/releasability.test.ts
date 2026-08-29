@@ -446,3 +446,45 @@ test("this gate agrees with the shared contract the trainer is held to", () => {
       + `${shared.blocks ? "block" : "pass"}. ${shared.why}`);
   }
 });
+
+test("a criterion the candidate no longer scores is NOTED, not silently skipped", () => {
+  // `regressions()` requires `modelEvaluated` on BOTH sides, and that one condition covers two opposite
+  // events. New coverage is correctly not a regression. LOST coverage was skipped by the same line, in
+  // silence — and it is reachable and intended: `modelEvaluated` goes false when every subtype of a
+  // criterion moves to the deterministic rules, which is what ADR 0021 did to 4.1.2:state-change-silent.
+  //
+  // Usually good news. But "handed to a rule" and "quietly stopped being evaluated" produce the identical
+  // skip, and only one of them is.
+  const verdict = releasability({
+    training: CLEAN,
+    acceptance: { passed: true, criteria: {
+      "4.1.2": { modelEvaluated: false, reason: "every subtype is decided by the rule layer" },
+      "3.3.1": { modelEvaluated: true, precision: 1, recall: 1 },
+    } },
+    shipped: null,
+    shippedAcceptance: { criteria: {
+      "4.1.2": { modelEvaluated: true, precision: 1, recall: 0.9 },
+      "3.3.1": { modelEvaluated: true, precision: 1, recall: 1 },
+    } },
+  });
+  assert.equal(verdict.releasable, true, "handing a criterion to a rule must not block a release");
+  const note = verdict.notes.find((n) => n.includes("4.1.2"));
+  assert.ok(note, `expected a note naming 4.1.2, got ${JSON.stringify(verdict.notes)}`);
+  assert.match(note ?? "", /decided by the rule layer/, "it must carry the reason the report gave");
+  assert.ok(!verdict.notes.some((n) => n.includes("3.3.1")),
+    "a criterion still scored on both sides is not handed over and must not be named");
+});
+
+test("NEW coverage is not reported as coverage lost", () => {
+  // The other direction of the same condition. A candidate scoring something the shipped model did not
+  // is an improvement, and reporting it under a heading about lost coverage would invert it.
+  const verdict = releasability({
+    training: CLEAN,
+    acceptance: { passed: true, criteria: { "2.4.3": { modelEvaluated: true, precision: 1, recall: 1 } } },
+    shipped: null,
+    shippedAcceptance: { criteria: { "2.4.3": { modelEvaluated: false } } },
+  });
+  assert.ok(!verdict.notes.some((n) => n.includes("are NOT scored on this candidate")),
+    `new coverage must not be reported as lost: ${JSON.stringify(verdict.notes)}`);
+});
+
