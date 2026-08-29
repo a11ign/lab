@@ -37,7 +37,7 @@ import { guestReachableUrl } from "@a11y-witness/worker-fleet";
 import { assertWorkerUrl, CAPTURE_CLIENT_TIMEOUT_MS }
   from "../../worker-fleet/src/worker-http.mjs";
 import { renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
-import { gateWorkers, shardAcrossWorkers, acrossFleet, fleetVerdict, renderShards }
+import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
   from "../src/gates/fleet.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { captureTolerantly } from "../src/capture/capture-client.mjs";
@@ -178,14 +178,14 @@ async function main() {
     // it is reused rather than re-derived here, because deriving it independently is how "every capture
     // fetched the GUEST's localhost" happened once already. The worker is named rather than leased, so the
     // lease is stated as `explicit` with a release that does nothing: there is nothing here to put back.
-    // BOTH ORDERS OF A PAGE STAY ON ONE BOX. Splitting them would make a difference between orders
-    // indistinguishable from a difference between machines -- which is the exact conflation this gate
-    // exists to detect, arriving through the scheduler instead of through the probes. So the shard unit
-    // is a PAGE, carrying both its captures.
-    const shards = shardAcrossWorkers(PAGES, workers);
-    process.stdout.write(`${scope}\n${renderShards(shards)}\n`);
-    const outcomes = await acrossFleet(shards, (page, worker) =>
+    // EVERY CAPTURE OF A PAGE STAYS ON ONE BOX. Splitting them would make a difference between orders
+    // indistinguishable from a difference between machines -- the exact conflation this gate exists to
+    // detect, arriving through the scheduler instead of through the probes. So the unit handed to the pool
+    // is a PAGE, carrying all of its captures.
+    process.stdout.write(`${scope}\n`);
+    const outcomes = await acrossFleet(PAGES, workers, (page, worker) =>
       comparePage(page, worker, arg("--pages") ?? baseFor(pages, worker)));
+    process.stdout.write(`\nWHERE THE WORK LANDED\n${renderShards(outcomes)}\n`);
     return report_(outcomes, workers.length);
   } finally {
     await pages.release();

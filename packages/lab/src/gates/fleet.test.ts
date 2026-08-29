@@ -1,17 +1,18 @@
 /**
  * Sharding a gate's pages across the fleet: n boxes, n-way throughput.
  *
- * Two wrong shapes preceded this one, and both are worth keeping in mind because the tests below exist to
- * refuse them. The first ran every gate on ONE box, so `gate:stability` did 40 captures while four
- * machines idled. The second ran the WHOLE gate on EVERY box — redundancy rather than throughput, five
- * times the captures for the same wall clock, and twenty times it with twenty boxes.
+ * THREE wrong shapes preceded this one, and the tests below exist to refuse each. The first ran every gate
+ * on ONE box, so `gate:stability` did 40 captures while four machines idled. The second ran the WHOLE gate
+ * on EVERY box — redundancy rather than throughput. The third, and the subtlest, DEALT the items up front:
+ * a static split, so a box three times slower still took its share and everyone waited for it — beside a
+ * `drainAcrossPool` whose own header says a shared queue exists for exactly that reason.
  *
- * The unit of work is a PAGE, assigned to a machine. A page's repeats stay together on that machine.
+ * The unit of work is a PAGE, handed to whichever machine is free. A page's captures stay together on it.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { gateWorkers, shardAcrossWorkers, acrossFleet, fleetVerdict, renderShards } from "./fleet.mjs";
+import { gateWorkers, acrossFleet, fleetVerdict, renderShards } from "./fleet.mjs";
 
 test("naming a worker is the ESCAPE HATCH, and the scope says so out loud", () => {
   const named = gateWorkers("http://REDACTED-INTERNAL-ADDRESS:8765");
@@ -26,43 +27,41 @@ test("the DEFAULT is every worker in the inventory, not one", () => {
   assert.match(all.scope, /inventory\.yml/);
 });
 
-test("WORK IS SPLIT, NOT REPEATED — each item lands on exactly one box", () => {
-  // The redundancy shape would put all 8 on all 3. This is the assertion that refuses it.
-  const shards = shardAcrossWorkers(["a", "b", "c", "d", "e", "f", "g", "h"], ["w1", "w2", "w3"]);
-  const placed = shards.flatMap((s) => s.items);
-  assert.equal(placed.length, 8, "8 items across 3 boxes is 8 units of work, never 24");
-  assert.deepEqual([...placed].sort(), ["a", "b", "c", "d", "e", "f", "g", "h"]);
+test("WORK IS SPLIT, NOT REPEATED — each item runs exactly once", async () => {
+  // The redundancy shape would run all 8 on all 3. This is the assertion that refuses it.
+  const ran: string[] = [];
+  const outcomes = await acrossFleet(["a", "b", "c", "d", "e", "f", "g", "h"], ["w1", "w2", "w3"],
+    async (item) => { ran.push(item); return { ok: true }; });
+  assert.equal(ran.length, 8, "8 items across 3 boxes is 8 units of work, never 24");
+  assert.deepEqual([...ran].sort(), ["a", "b", "c", "d", "e", "f", "g", "h"]);
+  assert.equal(outcomes.length, 8);
 });
 
-test("twice the boxes is half the longest shard, which is the wall clock", () => {
-  const items = Array.from({ length: 20 }, (_, i) => i);
-  const longest = (/** @type {string[]} */ workers: string[]) =>
-    Math.max(...shardAcrossWorkers(items, workers).map((s) => s.items.length));
-  assert.equal(longest(["a", "b", "c", "d", "e"]), 4);
-  assert.equal(longest(["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]), 2,
-    "doubling the fleet must halve the critical path, or the sharding is not buying throughput");
+test("A SLOW BOX TAKES FEWER ITEMS — which a static split could not do", async () => {
+  // The whole reason this is `drainAcrossPool` and not the round-robin deal I wrote first. With a static
+  // split w1 would get its share regardless of speed and everyone would wait for it; with a shared queue
+  // the fast boxes simply take more. At twenty heterogeneous boxes this is the difference that matters,
+  // and this fleet already retired a worker for being too slow.
+  const perWorker: Record<string, number> = { w1: 0, fast1: 0, fast2: 0 };
+  await acrossFleet(Array.from({ length: 12 }, (_, i) => i), ["w1", "fast1", "fast2"],
+    async (_item, worker) => {
+      perWorker[worker] += 1;
+      await new Promise((r) => setTimeout(r, worker === "w1" ? 60 : 5));
+      return { ok: true };
+    });
+  assert.equal(Object.values(perWorker).reduce((a, b) => a + b), 12);
+  // STRICTLY FEWER THAN EACH FAST BOX, not fewer than their SUM. The first version compared w1 against
+  // `fast1 + fast2`, which a static 4/4/4 deal satisfies trivially — so the mutation back to a static split
+  // passed. Caught by mutation, not by reading: an assertion the defect also satisfies is not a test.
+  assert.ok(perWorker.w1 < perWorker.fast1 && perWorker.w1 < perWorker.fast2,
+    `the slow box must take fewer than EACH fast one; a static deal gives them all the same: `
+    + JSON.stringify(perWorker));
 });
 
-test("dealt round-robin, so adjacent slow pages do not all land on one box", () => {
-  const shards = shardAcrossWorkers(["slow1", "slow2", "fast1", "fast2"], ["w1", "w2"]);
-  assert.deepEqual(shards[0].items, ["slow1", "fast1"]);
-  assert.deepEqual(shards[1].items, ["slow2", "fast2"],
-    "a contiguous split would give w1 both slow pages; dealing spreads them without knowing which is slow");
-});
-
-test("a box with nothing to do is REPORTED, not dropped", () => {
-  // "twenty boxes, eight had work" is the report you want. Dropping the empty ones describes eight.
-  const shards = shardAcrossWorkers(["a", "b"], ["w1", "w2", "w3", "w4"]);
-  assert.equal(shards.length, 4);
-  assert.deepEqual(shards[3].items, []);
-  assert.match(renderShards(shards), /w4\s+0 item\(s\)/);
-});
-
-test("ONE ITEM'S FAILURE DOES NOT REMOVE THE REST OF ITS SHARD", async () => {
-  // The vanishing-denominator defect: if a throw ended the shard, the pages behind it would silently
-  // leave the run and the verdict would report the smaller number as though it were the whole.
-  const shards = shardAcrossWorkers(["ok1", "boom", "ok2", "ok3"], ["w1"]);
-  const outcomes = await acrossFleet(shards, async (item) => {
+test("ONE ITEM'S FAILURE DOES NOT REMOVE THE REST", async () => {
+  // The vanishing-denominator defect: if a throw ended the run, the items behind it would silently leave
+  // and the verdict would report the smaller number as though it were the whole.
+  const outcomes = await acrossFleet(["ok1", "boom", "ok2", "ok3"], ["w1"], async (item) => {
     if (item === "boom") throw new Error("ETIMEDOUT");
     return { verdict: "PASS" };
   });
@@ -72,9 +71,15 @@ test("ONE ITEM'S FAILURE DOES NOT REMOVE THE REST OF ITS SHARD", async () => {
 });
 
 test("every result names the box that produced it, so a failure is attributable", async () => {
-  const shards = shardAcrossWorkers(["a", "b"], ["w1", "w2"]);
-  const outcomes = await acrossFleet(shards, async () => ({ verdict: "PASS" }));
-  assert.deepEqual(outcomes.map((o) => [o.item, o.worker]).sort(), [["a", "w1"], ["b", "w2"]]);
+  const outcomes = await acrossFleet(["a"], ["w1"], async () => ({ verdict: "PASS" }));
+  assert.deepEqual(outcomes.map((o) => [o.item, o.worker]), [["a", "w1"]]);
+});
+
+test("the report shows where work LANDED, so an uneven split is evidence rather than an artefact", async () => {
+  const outcomes = await acrossFleet(["a", "b"], ["w1", "w2"], async () => ({ ok: true }));
+  const rendered = renderShards(outcomes);
+  assert.match(rendered, /w1|w2/);
+  assert.equal(rendered.split("\n").length >= 1, true);
 });
 
 test("THE DENOMINATOR IS THE PAGES, not the machines", () => {

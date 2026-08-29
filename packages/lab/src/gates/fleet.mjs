@@ -22,6 +22,7 @@
 import { inventoryWorkerUrls } from "../../../worker-fleet/src/fleet-env.mjs";
 
 import { gateVerdict } from "./verdict.mjs";
+import { drainAcrossPool } from "../training/worker-pool.mjs";
 
 /**
  * The boxes to spread the work over: the one named, or every worker in `inventory.yml`.
@@ -44,52 +45,56 @@ export function gateWorkers(named) {
 }
 
 /**
- * Deal the items round-robin, so a fleet twice the size halves the wall clock.
+ * Hand each item to whichever worker is FREE — `drainAcrossPool`, wrapped for gates.
  *
- * Round-robin rather than contiguous blocks: the items are ordered by whatever the caller happened to
- * write down, and a contiguous split hands one box every slow page if the slow ones are adjacent. Dealing
- * spreads that without needing to know which are slow.
+ * THIS REPLACED A STATIC SPLIT I WROTE, and the pool's own header says why that was wrong: "a shared queue
+ * rather than a static split, so a slow item does not leave a worker idle while another still has a
+ * backlog." Dealing 8 canaries as 2,2,2,1,1 means a box three times slower still gets 2 and everything
+ * waits for it. That is invisible at five boxes and expensive at twenty — and this fleet already RETIRED
+ * `a11y-worker-1` for being too slow, so heterogeneous hardware is the normal case here, not a hypothetical.
  *
- * A box with nothing to do is returned with an EMPTY list rather than dropped, because the report must be
- * able to say "twenty boxes, eight had work" instead of silently describing eight.
+ * Building it beside the pool rather than on it was this repo's most expensive recurring shape, committed
+ * while fixing other instances of it. *Software Engineering at Google* names the property a corpus run
+ * needs — "work spread into small chunks and ASSIGNED DYNAMICALLY to workers" — and it is also the whole
+ * of what a message broker would have bought, which is why there is no broker here.
  *
- * @template T
- * @param {T[]} items @param {string[]} workers
- * @returns {{ worker: string, items: T[] }[]}
- */
-export function shardAcrossWorkers(items, workers) {
-  const shards = workers.map((worker) => ({ worker, items: /** @type {T[]} */ ([]) }));
-  items.forEach((item, i) => shards[i % shards.length].items.push(item));
-  return shards;
-}
-
-/**
- * Run every shard at once; within a shard, one item after another.
- *
- * A THROW IS THAT ITEM'S RESULT, NEVER THE SHARD'S. A box that fails one page must still attempt the rest,
- * or one flaky capture silently removes every page behind it from the run -- and the verdict would report
- * the smaller number as though it were the whole. That is the vanishing-denominator defect, which this
- * repo has already paid for in `evidence-check`.
+ * THE ITEM IS INDIVISIBLE, which the pool already enforces and gates depend on: a canary's repeats, and
+ * both probe orders of a page, must run on ONE box or a difference between runs becomes indistinguishable
+ * from a difference between machines.
  *
  * @template T, R
- * @param {{ worker: string, items: T[] }[]} shards
+ * @param {T[]} items @param {string[]} workers
  * @param {(item: T, worker: string) => Promise<R>} runOne
  * @returns {Promise<{ item: T, worker: string, result: R | null, error: string | null }[]>}
  */
-export async function acrossFleet(shards, runOne) {
-  const perShard = await Promise.all(shards.map(async ({ worker, items }) => {
-    /** @type {{ item: T, worker: string, result: R | null, error: string | null }[]} */
-    const out = [];
-    for (const item of items) {
+export async function acrossFleet(items, workers, runOne) {
+  /** @type {{ item: T, worker: string, result: R | null, error: string | null }[]} */
+  const outcomes = [];
+  await drainAcrossPool({
+    workers,
+    items,
+    // Nothing to set up per worker: a gate's boxes are bare metal that is always on. The pool calls this
+    // to decide a worker is usable at all, so returning a value rather than throwing says "usable".
+    prepare: async (/** @type {string} */ worker) => ({ worker }),
+    // A THROW IS THAT ITEM'S RESULT, NEVER THE SHARD'S. The pool requeues a failed item onto another
+    // worker, so a gate inherits eviction and requeue that the static split never had — but an item that
+    // fails everywhere must still appear in the report, or the denominator silently shrinks.
+    handle: async (/** @type {any} */ item, /** @type {any} */ { worker }) => {
       try {
-        out.push({ item, worker, result: await runOne(item, worker), error: null });
+        outcomes.push({ item, worker, result: await runOne(item, worker), error: null });
       } catch (error) {
-        out.push({ item, worker, result: null, error: error instanceof Error ? error.message : String(error) });
+        outcomes.push({ item, worker, result: null,
+          error: error instanceof Error ? error.message : String(error) });
       }
-    }
-    return out;
-  }));
-  return perShard.flat();
+    },
+    // Gates do not evict on slowness: a gate is minutes, and a box retired mid-gate would shrink coverage
+    // for a reason unrelated to what is being tested.
+    isDegraded: async () => false,
+    // Items here are pages and canaries, which have no `id`. Keyed on the whole item, which is what the
+    // pool uses only to drop failure records.
+    keyOf: (/** @type {any} */ item) => JSON.stringify(item),
+  });
+  return outcomes;
 }
 
 /**
@@ -114,7 +119,16 @@ export function fleetVerdict(outcomes, { of, what, workers, failed }) {
   });
 }
 
-/** How the work was actually spread, so an idle box or a lopsided shard is visible rather than inferred. */
-export function renderShards(/** @type {{worker: string, items: unknown[]}[]} */ shards) {
-  return shards.map((s) => `  ${s.worker.padEnd(28)} ${s.items.length} item(s)`).join("\n");
+/**
+ * Where the work actually LANDED, counted after the fact.
+ *
+ * A dynamic pool has no shard list to print up front — that is the point of it — so this reports the real
+ * distribution, which is more useful anyway: an uneven split is now EVIDENCE that one box is slower rather
+ * than an artefact of how the work was dealt.
+ */
+export function renderShards(/** @type {{worker: string}[]} */ outcomes) {
+  /** @type {Map<string, number>} */
+  const byWorker = new Map();
+  for (const o of outcomes) byWorker.set(o.worker, (byWorker.get(o.worker) ?? 0) + 1);
+  return [...byWorker].sort().map(([w, n]) => `  ${w.padEnd(28)} ${n} item(s)`).join("\n");
 }

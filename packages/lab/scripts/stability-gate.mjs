@@ -38,7 +38,7 @@ const REPEAT_CAPTURE = fileURLToPath(new URL("../src/training/repeat-capture.mjs
 import { guestReachableUrl } from "@a11y-witness/worker-fleet";
 import { leasePageServer } from "../src/training/page-server.mjs";
 import { renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
-import { gateWorkers, shardAcrossWorkers, acrossFleet, fleetVerdict, renderShards }
+import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
   from "../src/gates/fleet.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { assertWorkerUrl } from "../../worker-fleet/src/worker-http.mjs";
@@ -297,14 +297,12 @@ async function main() {
   const { workers, scope } = gateWorkers(named);
   process.stdout.write(`pages ${pages.url} · ${scope}\n`);
 
-  // ONE CANARY PER MACHINE, dealt round-robin. Eight canaries over five boxes is two rounds, not eight --
-  // and over twenty boxes it is one. The repeats of a single canary stay on its own box; see
-  // `gates/fleet.mjs` for why that boundary is where it is.
-  const shards = shardAcrossWorkers(CANARIES, workers);
-  process.stdout.write(`${renderShards(shards)}\n`);
-
+  // ONE CANARY PER MACHINE, handed to whichever box is FREE. Eight canaries over five boxes is two rounds,
+  // not eight, and over twenty boxes it is one -- and a slow box simply takes fewer. The repeats of a
+  // single canary stay on its own box; see `gates/fleet.mjs` for why that boundary is where it is.
   try {
-    const outcomes = await acrossFleet(shards, (canary, worker) => judgeOne(canary, worker, pages));
+    const outcomes = await acrossFleet(CANARIES, workers, (canary, worker) => judgeOne(canary, worker, pages));
+    process.stdout.write(`\nWHERE THE WORK LANDED\n${renderShards(outcomes)}\n`);
     reportFleet(outcomes, workers.length);
   } finally {
     await pages.release().catch((e) => process.stderr.write(`page server release failed: ${e.message}\n`));
