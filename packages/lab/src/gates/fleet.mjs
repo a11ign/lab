@@ -70,7 +70,7 @@ export function gateWorkers(named) {
 export async function acrossFleet(items, workers, runOne) {
   /** @type {{ item: T, worker: string, result: R | null, error: string | null }[]} */
   const outcomes = [];
-  await drainAcrossPool({
+  const { failures } = await drainAcrossPool({
     workers,
     items,
     // Nothing to set up per worker: a gate's boxes are bare metal that is always on. The pool calls this
@@ -79,13 +79,21 @@ export async function acrossFleet(items, workers, runOne) {
     // A THROW IS THAT ITEM'S RESULT, NEVER THE SHARD'S. The pool requeues a failed item onto another
     // worker, so a gate inherits eviction and requeue that the static split never had — but an item that
     // fails everywhere must still appear in the report, or the denominator silently shrinks.
+    // A THROW IS REQUEUED BY THE POOL, and this must let it through. The comment here used to claim "a
+    // gate inherits eviction and requeue that the static split never had" while the body CAUGHT every
+    // error — so the pool saw nothing but successes, never requeued, never evicted, and a single broken
+    // box turned its share of the pages into gate failures that a healthy neighbour would have passed.
+    // That is precisely the confusion this file's header says must not happen: "flakiness versus a fleet
+    // that is not interchangeable ... need opposite remedies".
+    //
+    // The catch was not gratuitous, though. It preserved the other half — "an item that fails everywhere
+    // must still appear in the report, or the denominator silently shrinks" — because an item the pool
+    // gives up on lands in `pool.failures` and never reaches `outcomes`. Both halves are real and the
+    // comment described both while the code could only deliver one.
+    //
+    // Both, now: throw so the pool requeues, then fold `failures` back in below.
     handle: async (/** @type {any} */ item, /** @type {any} */ { worker }) => {
-      try {
-        outcomes.push({ item, worker, result: await runOne(item, worker), error: null });
-      } catch (error) {
-        outcomes.push({ item, worker, result: null,
-          error: error instanceof Error ? error.message : String(error) });
-      }
+      outcomes.push({ item, worker, result: await runOne(item, worker), error: null });
     },
     // Gates do not evict on slowness: a gate is minutes, and a box retired mid-gate would shrink coverage
     // for a reason unrelated to what is being tested.
@@ -94,6 +102,15 @@ export async function acrossFleet(items, workers, runOne) {
     // pool uses only to drop failure records.
     keyOf: (/** @type {any} */ item) => JSON.stringify(item),
   });
+  // WHAT THE POOL GAVE UP ON, so the denominator is the item list whatever happened to the machines. An
+  // item requeued and then passed is spliced out of `failures` by the pool, so nothing is double-counted;
+  // what is left failed on every worker it was tried on, which is a finding about the ITEM.
+  for (const failure of failures) {
+    outcomes.push({
+      item: failure.item, worker: failure.worker, result: null,
+      error: failure.error instanceof Error ? failure.error.message : String(failure.error),
+    });
+  }
   return outcomes;
 }
 
