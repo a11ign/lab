@@ -36,12 +36,29 @@ test("A MARK THAT WAS NEVER RECORDED SAYS SO — it never reads as OK", () => {
   }
 });
 
+test("REACHING THE END IS NOT FAILING TO FINISH — the tool's own first wrong answer", () => {
+  // The first version treated anything but `exhausted` as incomplete and reported "the read did NOT
+  // finish" on 106 of 106 real captures. `repeatBottom` is arrow-down producing the same phrase at the
+  // bottom of the document; `wrap` is a substantial phrase coming round again. Both are the read finding
+  // the end, and calling them failures made a diagnostic tool the source of a confident wrong answer at
+  // its first use — the exact class it exists to remove.
+  for (const stopReason of ["exhausted", "repeatBottom", "wrap"]) {
+    const rows = reachedTheContent(withMarks({ event: "readThrough", count: 40, stopReason }));
+    assert.ok(rows.some((r) => r.includes("reached the end")), `${stopReason} means the read got there`);
+    assert.ok(!rows.some((r) => r.includes("stopped at")), `${stopReason} must not read as giving up`);
+  }
+  for (const stopReason of ["maxSteps", "deadline", "stepError", "silent"]) {
+    const rows = reachedTheContent(withMarks({ event: "readThrough", count: 11, stopReason }));
+    assert.ok(rows.some((r) => r.includes("stopped at")), `${stopReason} is the read being cut short`);
+  }
+});
+
 test("a read that ran out of budget is NOT a page with nothing on it", () => {
   const stopped = reachedTheContent(withMarks({ event: "readThrough", count: 11, stopReason: "maxSteps" }));
   assert.ok(stopped.some((r) => r.includes("stopped at") && r.includes("past where it stopped")),
     "a truncated read must say that an absence below it may be an artefact");
   const finished = reachedTheContent(withMarks({ event: "readThrough", count: 40, stopReason: "exhausted" }));
-  assert.ok(finished.some((r) => r.includes("finished on its own")));
+  assert.ok(finished.some((r) => r.includes("reached the end")));
 });
 
 test("THE URL BEING RIGHT AND THE PAGE BEING SERVED ARE DIFFERENT QUESTIONS", () => {

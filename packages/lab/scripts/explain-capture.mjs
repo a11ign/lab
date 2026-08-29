@@ -48,6 +48,19 @@ export function captureOf(/** @type {any} */ parsed) {
   return parsed && typeof parsed === "object" && parsed.capture ? parsed.capture : parsed;
 }
 
+/**
+ * The stop reasons that mean the read REACHED THE END, rather than gave up.
+ *
+ * Getting this wrong is not cosmetic and it happened immediately: the first version treated anything but
+ * `exhausted` as incomplete, so it reported "the read did NOT finish" on 106 of 106 real captures — a 100%
+ * failure rate that was entirely the measure. `repeatBottom` is arrow-down producing the same phrase at the
+ * bottom of the document, and `wrap` is a substantial phrase coming round again; both are the read finding
+ * the end. `maxSteps`, `deadline`, `stepError` and `silent` are the read being cut short.
+ *
+ * Read off `phraseAction` in `capture-pure.mjs`, not inferred from the names.
+ */
+const REACHED_THE_END = new Set(["exhausted", "repeatBottom", "wrap"]);
+
 const mark = (/** @type {any} */ capture, /** @type {string} */ event) =>
   (capture.diagnostics ?? []).find((/** @type {any} */ m) => m && m.event === event) ?? null;
 
@@ -84,10 +97,10 @@ export function reachedTheContent(capture) {
   const truncated = mark(capture, "truncatedAnnouncements");
   const out = [];
   if (!read) out.push(absent("whether the read-through finished"));
-  else if (read.stopReason === "exhausted") {
-    out.push(`    YES the read finished on its own after ${read.count} step(s)`);
+  else if (REACHED_THE_END.has(read.stopReason)) {
+    out.push(`    YES the read reached the end of the page (${read.stopReason}) after ${read.count} step(s)`);
   } else {
-    // A read that hit its budget did NOT see the whole page, and everything downstream is a claim about
+    // A read that ran out of budget did NOT see the whole page, and everything downstream is a claim about
     // the part it saw. That is the difference between "this page has no headings" and "we stopped looking".
     out.push(`    NO  the read stopped at ${JSON.stringify(read.stopReason)} after ${read.count} step(s)`
       + " — anything absent below may simply be past where it stopped");
