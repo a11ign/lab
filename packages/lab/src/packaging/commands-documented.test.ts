@@ -65,7 +65,7 @@ function documentation(): string {
   walk(join(REPO, "docs"));
   // The ansible playbooks are where the lab jobs are defined, and their headers are real documentation —
   // `lab-job.yml`'s catalogue explains every job it can run, with the reason each exists.
-  walk(join(REPO, "packages/worker-fleet/ansible"));
+  walk(join(REPO, "packages/control/ansible"));
   return parts.join("\n");
 }
 

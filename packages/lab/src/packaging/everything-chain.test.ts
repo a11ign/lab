@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STEPS, keepingTranscript } from "../../scripts/everything-pipeline.mjs";
 import { STEPS as RETRAIN_STEPS } from "../../scripts/retrain-pipeline.mjs";
-import { PIPELINES } from "../../../worker-fleet/src/lab-pipeline.mjs";
+import { PIPELINES } from "../../../control/src/lab-pipeline.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const SCRIPTS = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).scripts;

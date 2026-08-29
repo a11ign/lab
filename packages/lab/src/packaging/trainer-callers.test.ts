@@ -49,7 +49,7 @@ function trainerInvocations(): Array<{ where: string; command: string }> {
   // trainer does not contain its `--output`. The first version of this test did scan lines and reported
   // the correct half of the codebase as the broken one.
   const jobs = (parseYaml(readFileSync(
-    join(REPO, "packages/worker-fleet/ansible/lab-job.yml"), "utf8")) as
+    join(REPO, "packages/control/ansible/lab-job.yml"), "utf8")) as
     Array<{ vars: { lab_jobs: Record<string, { argv?: string[] | string }> } }>)[0].vars.lab_jobs;
   for (const [name, entry] of Object.entries(jobs)) {
     const command = [entry.argv ?? ""].flat().join(" ");
@@ -89,7 +89,7 @@ test("the npm chain and the Ansible job train into the same scratch directory", 
   assert.match(scripts["lab:everything"], /everything-pipeline\.mjs/,
     "the whole chain must run through the staged pipeline, which names the stage that fails");
   const playbook = readFileSync(
-    join(REPO, "packages/worker-fleet/ansible/lab-job.yml"), "utf8");
+    join(REPO, "packages/control/ansible/lab-job.yml"), "utf8");
   assert.match(playbook, /--output", "runs\/model-\{\{ out \| default\('candidate'\) \}\}"/,
     "the Ansible train job must default to the same scratch directory the npm chain writes");
 });
