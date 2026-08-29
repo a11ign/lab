@@ -39,10 +39,11 @@ import { assertWorkerUrl, CAPTURE_CLIENT_TIMEOUT_MS }
 import { renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
   from "../src/gates/fleet.mjs";
+import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { captureTolerantly } from "../src/capture/capture-client.mjs";
 
-refuseUnknownFlags(["--worker=", "--pages=", "--json"],
+refuseUnknownFlags(["--worker=", "--pages=", "--json", LOCAL_FLAG],
   { entry: import.meta.url, command: "npm run gate:probe-order" });
 
 /**
@@ -157,6 +158,8 @@ function pageChangedUnderProbes(/** @type {any} */ capture) {
 }
 
 async function main() {
+  // THE CONTROL PLANE IS THE DEFAULT; this returns only under `--local`. See gates/dispatch.mjs.
+  const { controlPlane } = await dispatchUnlessLocal({ job: "gate-probe-order", argv: process.argv.slice(2) });
   // EVERY WORKER BY DEFAULT, work SHARDED across them. This demanded `--worker` and refused without one,
   // so it captured 10 times on one box while the rest of the fleet idled -- and at twenty boxes that is
   // nineteen idle. Naming one stays available as the escape hatch.
@@ -192,7 +195,7 @@ async function main() {
     const outcomes = await acrossFleet(PAGES, workers, (page, worker) =>
       comparePage(page, worker, arg("--pages") ?? baseFor(pages, worker)));
     process.stdout.write(`\nWHERE THE WORK LANDED\n${renderShards(outcomes)}\n`);
-    return report_(outcomes, workers.length);
+    return report_(outcomes, workers.length, controlPlane);
   } finally {
     await pages.release();
   }
@@ -309,7 +312,8 @@ export function differencesNotExplainedBy(/** @type {any} */ treatment, /** @typ
  * luck, not evidence for the remedy — the shape that let an inert `refreshBrowseBuffer` collect three
  * green runs.
  */
-function report_(/** @type {any[]} */ outcomes, /** @type {number} */ workerCount) {
+function report_(/** @type {any[]} */ outcomes, /** @type {number} */ workerCount,
+  /** @type {string} */ controlPlane) {
   const judged = outcomes.filter((o) => o.result).map((o) => o.result);
   report(judged);
   for (const o of outcomes.filter((x) => !x.result)) {
@@ -336,7 +340,7 @@ function report_(/** @type {any[]} */ outcomes, /** @type {number} */ workerCoun
       error: o.error,
     })),
     { of: PAGES.length, what: `corpus pages and live sites, each captured ${CAPTURES_PER_PAGE}x (control, treatment, control)`,
-      workers: workerCount, failed: differing.length });
+      workers: workerCount, failed: differing.length, controlPlane });
   process.stdout.write(`\n${renderVerdict(verdict)}\n`);
   process.exit(exitCodeFor(verdict));
 }

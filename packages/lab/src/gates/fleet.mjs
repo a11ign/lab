@@ -108,13 +108,18 @@ export async function acrossFleet(items, workers, runOne) {
  * not measure" and "it varied" need opposite responses.
  *
  * @param {{ result: unknown, error: string | null }[]} outcomes
- * @param {{ of: number, what: string, workers: number, failed: number }} about
+ * @param {{ of: number, what: string, workers: number, failed: number, controlPlane?: string }} about
  */
-export function fleetVerdict(outcomes, { of, what, workers, failed }) {
+export function fleetVerdict(outcomes, { of, what, workers, failed, controlPlane }) {
   return gateVerdict({
     examined: outcomes.filter((o) => o.result !== null).length,
     of,
-    source: `${what}, sharded across ${workers} worker(s) from inventory.yml`,
+    // THE CONTROL PLANE IS PART OF THE POPULATION, for the same reason the machine is. Two verdicts that
+    // look identical were produced from hosts that were not: one lost 9 of 40 responses on a laptop whose
+    // battery fell 18% to 1%, and nothing in the output said so. Absent means an older caller that has not
+    // been given it -- never "it ran somewhere fine".
+    source: `${what}, sharded across ${workers} worker(s) from inventory.yml`
+      + (controlPlane ? `, driven from ${controlPlane}` : ""),
     failures: failed,
   });
 }

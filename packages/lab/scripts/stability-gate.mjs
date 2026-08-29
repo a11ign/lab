@@ -40,6 +40,7 @@ import { leasePageServer } from "../src/training/page-server.mjs";
 import { renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
   from "../src/gates/fleet.mjs";
+import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { assertWorkerUrl } from "../../worker-fleet/src/worker-http.mjs";
 
@@ -49,7 +50,7 @@ import { assertWorkerUrl } from "../../worker-fleet/src/worker-http.mjs";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--base=", "--times=", "--worker="], { entry: import.meta.url, command: "npm run gate:stability" });
+refuseUnknownFlags(["--base=", "--times=", "--worker=", LOCAL_FLAG], { entry: import.meta.url, command: "npm run gate:stability" });
 
 const run = promisify(execFile);
 
@@ -284,6 +285,10 @@ function interpretFailure(/** @type {any} */ error, /** @type {any} */ path, /**
  * the one the rules said to import.
  */
 async function main() {
+  // THE CONTROL PLANE IS THE DEFAULT. This returns only when `--local` was asked for; otherwise it
+  // dispatches to the lab and exits with that job's status. See gates/dispatch.mjs for why a gate in
+  // particular must not be able to produce an unattributable verdict.
+  const { controlPlane } = await dispatchUnlessLocal({ job: "gate-stability", argv: process.argv.slice(2) });
   // Leased before the first canary and released in the `finally` below, so a gate that throws half way
   // through still leaves the host as it found it. ONE page server serves every worker -- the lease is
   // refcounted, and five boxes fetching the same corpus is exactly what it is for.
@@ -309,7 +314,7 @@ async function main() {
   try {
     const outcomes = await acrossFleet(CANARIES, workers, (canary, worker) => judgeOne(canary, worker, pages));
     process.stdout.write(`\nWHERE THE WORK LANDED\n${renderShards(outcomes)}\n`);
-    reportFleet(outcomes, workers.length);
+    reportFleet(outcomes, workers.length, controlPlane);
   } finally {
     await pages.release().catch((e) => process.stderr.write(`page server release failed: ${e.message}\n`));
   }
@@ -350,7 +355,8 @@ async function judgeOne(/** @type {any} */ canary, /** @type {string} */ worker,
  * judged reduces COVERAGE -- "we could not measure" and "it varied" need opposite responses, and a gate
  * that passes when it could not measure launders unknown into fine.
  */
-function reportFleet(/** @type {any[]} */ outcomes, /** @type {number} */ workerCount) {
+function reportFleet(/** @type {any[]} */ outcomes, /** @type {number} */ workerCount,
+  /** @type {string} */ controlPlane) {
   const judged = outcomes.filter((o) => o.result);
   const unstable = judged.filter((o) => o.result.unstable);
   const unjudgeable = outcomes.filter((o) => !o.result);
@@ -373,6 +379,7 @@ function reportFleet(/** @type {any[]} */ outcomes, /** @type {number} */ worker
     what: `${CANARIES.length} canaries x ${TIMES} captures compared by CONTENT`,
     workers: workerCount,
     failed: unstable.length,
+    controlPlane,
   });
   process.stdout.write(`\n${renderVerdict(verdict)}\n`);
   process.exit(exitCodeFor(verdict));
