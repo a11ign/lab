@@ -205,7 +205,14 @@ function report(/** @type {any[]} */ results) {
     return;
   }
   for (const r of results) {
-    process.stdout.write(`  ${String(r.verdict).padEnd(12)} ${r.page}`
+    // THE CONTROL'S WORK IS PRINTED, ALWAYS, INCLUDING ZERO. A page that reads SAME because the control
+    // subtracted a ticking clock and one that reads SAME because nothing drifted are DIFFERENT FACTS, and
+    // only the first is evidence the control is doing anything. An inert control looks exactly like a
+    // clean gate -- this repo's oldest lesson, and `explainedByTime` was computed and never surfaced,
+    // which is the fifth time in two days a remedy has been left unable to report itself.
+    const control = r.explainedByTime === undefined ? "   [control NOT REPORTED]"
+      : `   [${r.explainedByTime} difference(s) explained by time]`;
+    process.stdout.write(`  ${String(r.verdict).padEnd(12)} ${r.page}${control}`
       + `${r.remedied === false ? "   [browse-mode remedy did NOT run]" : ""}\n`);
     for (const c of r.changes ?? []) {
       process.stdout.write(`      ${c.field}: ${c.before} -> ${c.after}`
