@@ -127,7 +127,7 @@ export async function captureTolerantly({ worker, body, timeoutMs = CAPTURE_CLIE
   // open and silent for the whole capture, which is the shape that lost 9 of 40 responses on this fleet.
   process.stderr.write("A11Y_SYNC_CAPTURE — holding one connection open for this capture\n");
   try {
-    return { ...await post(worker, { ...body, captureId }, timeoutMs), recovered: false };
+    return { ...await post(worker, { ...body, captureId }, timeoutMs), recovered: false, pollsSurvived: 0 };
   } catch (error) {
     if (!isTransient(error)) throw error;
     // The error is handed over so a caller can SAY why it is waiting. The dataset runner prints
@@ -138,8 +138,8 @@ export async function captureTolerantly({ worker, body, timeoutMs = CAPTURE_CLIE
     // A recovered capture is the ORIGINAL response, returned rather than re-requested. `recovered` travels
     // with it because a caller measuring the transport needs to know this one cost a round trip and not a
     // capture -- reporting it as a clean first attempt would hide the very fault this exists for.
-    if (recovered) return { ...recovered, recovered: true };
-    return { ...await post(worker, { ...body, captureId: randomUUID() }, timeoutMs), recovered: false };
+    if (recovered) return { ...recovered, recovered: true, pollsSurvived: 0 };
+    return { ...await post(worker, { ...body, captureId: randomUUID() }, timeoutMs), recovered: false, pollsSurvived: 0 };
   }
 }
 
@@ -165,15 +165,22 @@ async function pollForResult({ worker, body, captureId, timeoutMs, onProgress })
   // A worker too old to know `async` runs the capture SYNCHRONOUSLY and answers 200 with the result. That
   // is not an error and must not be retried -- it is the additive-field contract this project uses for
   // every wire change, and it means a host can be deployed before the fleet.
-  if (accepted.status !== 202) return { ...accepted, recovered: false };
+  if (accepted.status !== 202) return { ...accepted, recovered: false, pollsSurvived: 0 };
 
   const deadline = Date.now() + timeoutMs;
   let transportFailures = 0;
+  let survived = 0;
   while (Date.now() < deadline) {
     await sleep(POLL_MS);
     if (onProgress) await readProgress(worker, onProgress);
     const poll = await pollOnce(worker, captureId);
-    if (poll.done) return { ...poll.response, recovered: false };
+    if (poll.done) {
+      // WHAT THE TRANSPORT DID, carried out with the result. Under the synchronous protocol a dropped
+      // response destroyed the capture; here it costs one poll -- but "harmless" and "not happening" are
+      // different facts, and only one of them means the network is healthy. Reporting it keeps the
+      // question answerable after the fix that stopped it mattering.
+      return { ...poll.response, recovered: false, pollsSurvived: survived };
+    }
     if (poll.lost) {
       throw Object.assign(new Error(`worker forgot capture ${captureId} after accepting it — it restarted `
         + "mid-capture, so the work is gone and the case must be re-issued"), { code: "CAPTURE_LOST" });
@@ -182,6 +189,7 @@ async function pollForResult({ worker, body, captureId, timeoutMs, onProgress })
     // removes: the worker is still working, we merely could not ask. Retried until a RUN of them says the
     // box has gone, rather than on the first one -- a single dropped request is the exact fault this exists
     // to survive.
+    if (poll.unreachable) survived += 1;
     transportFailures = poll.unreachable ? transportFailures + 1 : 0;
     if (transportFailures >= MAX_POLL_FAILURES) throw poll.error;
   }

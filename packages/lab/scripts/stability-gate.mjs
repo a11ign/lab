@@ -206,12 +206,18 @@ async function judgeCanary(/** @type {any} */ { path, url: absolute, reason, tas
     const { stdout } = await run("npx", ["tsx", ...args], { maxBuffer: 1 << 24 });
     const varies = stdout.split("\n").filter((l) => l.includes("VARIES"));
     const usable = /(\d+)\/\d+ usable/.exec(stdout)?.[1];
-    // SURFACED, not swallowed. A canary that passed only because a lost socket was recovered is a
-    // different fact from one that never lost a socket, and the fleet is bare metal on real Ethernet.
-    const recovered = Number(/sockets recovered: (\d+)/.exec(stdout)?.[1] ?? 0);
-    if (recovered > 0) {
-      process.stdout.write(`    ${recovered} socket(s) recovered — the transport dropped a response the `
-        + "worker had already completed\n");
+    // SURFACED, not swallowed, and ABSENCE IS NOT ZERO. This read `?? 0`, so a run where the line stopped
+    // being printed was indistinguishable from a clean one -- the "unchecked is not clean" defect, in the
+    // instrumentation written to prevent it, one day later.
+    for (const [label, what] of [["sockets recovered", "a response the worker had already completed"],
+      ["polls survived", "a transport failure the async path absorbed"]]) {
+      const found = new RegExp(`${label}: (\\d+)`).exec(stdout);
+      if (!found) {
+        process.stdout.write(`    "${label}" was NOT REPORTED by this capture — the metric is missing, `
+          + "which is not the same as zero\n");
+      } else if (Number(found[1]) > 0) {
+        process.stdout.write(`    ${found[1]} ${label} — ${what}\n`);
+      }
     }
     if (varies.length) {
       results.push({ path: name, ok: false, detail: varies.map((v) => v.trim()).join("; ") });

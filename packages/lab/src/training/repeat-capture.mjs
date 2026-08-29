@@ -123,6 +123,7 @@ function comparable(/** @type {any} */ capture) {
 }
 
 let recoveries = 0;
+let pollsSurvived = 0;
 
 async function captureOnce() {
   // TOLERANT OF A LOST SOCKET. This posted straight to `/capture` and treated `ETIMEDOUT` as a failed
@@ -147,6 +148,7 @@ async function captureOnce() {
   // clean result -- and crediting a remedy for a result it had no part in producing is the
   // `refreshBrowseBuffer` defect this repo has now paid for three times in one day.
   if (response.recovered) recoveries += 1;
+  pollsSurvived += response.pollsSurvived ?? 0;
   const body = response.json ?? {};
   if (!response.ok || body.error) {
     // Carry the worker's fault CODE, not just its prose. `isTransient` matches on codes; matching on
@@ -314,6 +316,10 @@ function report(/** @type {any} */ { runs, raw, errors }) {
   // "nothing happened" from "nobody looked" -- the distinction every diagnostic mark in this repo exists
   // to preserve.
   console.log(`sockets recovered: ${recoveries} (a capture the worker had finished and we nearly re-paid for)`);
+  // The ASYNC equivalent, and it must be printed by the same rule: always, including the zero. Under the
+  // synchronous protocol a dropped response destroyed a capture; now it costs one poll -- so this is the
+  // number that says whether the network is still dropping things, independently of whether that hurts.
+  console.log(`polls survived: ${pollsSurvived} (transport failures the async path absorbed)`);
   console.log(`\nraw captures kept in ${OUT_DIR} (diagnostics included)`);
   console.log(`${unstable === 0 ? "All compared fields are stable." : `${unstable} field(s) vary on an unchanged page.`}`);
   // A varying field is a failure: evidence that depends on timing rather than on the page. An empty
