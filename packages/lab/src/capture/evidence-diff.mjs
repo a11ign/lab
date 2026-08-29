@@ -32,12 +32,25 @@ import { resolve } from "node:path";
  */
 
 /** @type {[string, string][]} */
-const EVIDENCE_FIELDS = [
+export const EVIDENCE_FIELDS = [
   ["structure", "headings"], ["structure", "landmarks"], ["structure", "formFields"],
   ["structure", "tableCells"], ["structure", "links"], ["structure", "lists"],
   ["structure", "graphics"],
   ["interaction", "controls"], ["interaction", "stateChanges"], ["interaction", "formChanges"],
   ["interaction", "postSubmitFields"], ["interaction", "focusOrder"],
+  // ADDED 2026-08-29, and both were being read by criteria while this gate ignored them.
+  //
+  // `routeChange` is the declared evidence channel for 2.4.1 AND 2.4.2 in `criterion-coverage.ts` and
+  // `outcomes.ts` — the single-page-app transition that "a static analyser cannot reach at all, because
+  // the markup is valid at every instant and the failure is the TRANSITION". `postSubmitNames` is named
+  // in capture-core's own protocol note as something "criteria read". Neither was compared, so a change
+  // that broke `probeNavigation` would have reported SAME and shipped without a recapture — from the one
+  // gate whose entire job is deciding whether 2,122 cached captures may be kept.
+  //
+  // This is the `repeat-capture` defect at a second tool: "compared ten fields and not `formChanges` or
+  // `postSubmitFields` — the two carrying interaction evidence. Ten fields watched, and the ones this
+  // fault lives in were not among them." A remedy that reached one of several tools.
+  ["interaction", "postSubmitNames"], ["interaction", "routeChange"],
 ];
 
 /**
@@ -58,7 +71,16 @@ function normalise(phrase) {
  */
 function fieldValues(capture, [group, name]) {
   const value = capture?.[group]?.[name];
-  return Array.isArray(value) ? value.map(normalise) : [];
+  if (Array.isArray(value)) return value.map(normalise);
+  // AN OBJECT, FLATTENED. `routeChange` is `{control, titleBefore, titleAfter, headingBefore,
+  // headingAfter}` rather than a list, and the array-only version returned [] for it — so adding it to
+  // the table above without this would have compared nothing while appearing to compare something,
+  // which is worse than the omission it fixes. Each entry becomes `key=value`, so a title that stopped
+  // changing shows as a lost `titleafter=...` rather than a bare count.
+  if (value && typeof value === "object") {
+    return Object.entries(value).map(([key, entry]) => `${key}=${normalise(entry)}`);
+  }
+  return [];
 }
 
 /**
