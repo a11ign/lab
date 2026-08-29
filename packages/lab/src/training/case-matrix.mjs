@@ -3670,17 +3670,22 @@ function firstVisitEach(/** @type {any} */ names) {
  * ("Postcode, edit") would need name normalisation, which already exists in two places pinned equal by a
  * test; a third copy is how those come apart.
  *
- * @param {string[]} stops   `interaction.focusOrder`
- * @param {number} onPage    how many form fields the structural sweep found
+ * @param {string[]} stops        `interaction.focusOrder`
+ * @param {string[]} formFields   `structure.formFields` — the ANNOUNCEMENTS, not a count, because the
+ *                                corroboration is which of them the ring never reached
  */
 /**
- * @param {string[]} stops  `interaction.focusOrder`
- * @param {number} onPage   form fields the structural sweep found
+ * @param {string[]} stops        `interaction.focusOrder`
+ * @param {string[]} formFields   `structure.formFields`, as announcements
  */
-export function focusIsTrappedIn(stops, onPage) {
+export function focusIsTrappedIn(stops, formFields) {
   if (!Array.isArray(stops) || stops.length < 3) return false;
+  // THE CORROBORATION: announced controls the ring never reached. Empty means focus covered everything
+  // the page announced, which is a short document rather than a trap -- and it is why a conformant wrap,
+  // which visits every control, never fires.
+  const unreached = announcedControlsTheRingNeverReached(stops, formFields);
+  if (unreached.length === 0) return false;
   const reached = new Set(stops).size;
-  if (!fellShortOfThePage(reached, onPage)) return false;
   let trailing = 0;
   for (let i = stops.length - 1; i >= 0 && stops[i] === stops[stops.length - 1]; i -= 1) trailing += 1;
   if (trailing >= 2) return true;                       // stalled: Tab stopped moving
@@ -3712,27 +3717,41 @@ function ringOffersNoWayOut(stops) {
 }
 
 /**
- * Did the tab ring fall short of the page? The mirror of `tabRingCoverage` in `rules.ts`, and the two are
- * pinned equal by `focus-trap-parity.corpus.test.ts` because they decide the same question in two languages.
+ * WHICH announced controls the tab ring never reached. The mirror of `tabRingCoverage` in `rules.ts`, and
+ * the two are pinned equal by `focus-trap-parity.corpus.test.ts` because they decide the same question in
+ * two languages.
  *
- * @param {number} reached  distinct focus stops
- * @param {number} onPage   form fields the structural sweep found
+ * @param {string[]} stops       `interaction.focusOrder`
+ * @param {string[]} formFields  `structure.formFields`
+ * @returns {string[]} the announced control names focus never visited — empty means the ring covered them
  */
-function fellShortOfThePage(reached, onPage) {
-  // Focus reached at least as many distinct things as the page has controls: no trap by this measure.
-  // This is the corroboration that separates a trap from the end of a short document, and it is why a
-  // conformant wrap — which also visits links, so `reached` exceeds `onPage` — never fires.
+function announcedControlsTheRingNeverReached(stops, formFields) {
+  // A SET DIFFERENCE, NOT A COUNT — and the difference is the whole defect this replaced.
   //
-  // A TAB-STOP denominator lived here for one afternoon and was withdrawn on measurement: it produced 9
-  // new 2.1.2 findings on 86 conformant real pages, because a consent banner or a date-picker overlay
-  // confines Tab by design and no floor can tell that from a trap. `tabRingCoverage` in `rules.ts` carries
-  // the numbers; the two must stay in step and `focus-trap-parity.corpus.test.ts` enforces it.
-  return onPage > 0 && reached < onPage;
+  // This was `reached < onPage`: the number of distinct tab stops against the number of swept form
+  // fields. That assumes the ring is a SUBSET of the announced controls, and for a MODAL it is disjoint
+  // from them BY CONSTRUCTION — the dialog hides the page, so the sweep announces what is behind it and
+  // Tab visits what is inside it. Two different sets, compared by size.
+  //
+  // Measured on `keyboard-trap-modal-cycle`, which went BLIND on two of its three variants:
+  //
+  //     swept  (onPage 4):  Full name, Email, Phone, Delivery notes    <- outside the dialog
+  //     ring   (reached 4): House number, Street, Town, County         <- inside it
+  //
+  // `4 < 4` is false, so the trap was invisible. The one variant that DID discriminate only did so
+  // because its furniture happened to add a fifth swept field -- the signal was returning the right
+  // answer for a reason unrelated to the page. That is the same shape as `channelRelation.disjoint`:
+  // two channels describing different things, compared as though they described one.
+  //
+  // Named, not counted, so the report can say WHICH controls a keyboard user cannot reach. "Four
+  // unreached" and "Full name, Email, Phone, Delivery notes unreached" are different claims, and only the
+  // second can be checked by a human against the page.
+  const reached = new Set(namesOf(stops));
+  return namesOf(formFields).filter((/** @type {string} */ name) => !reached.has(name));
 }
 
 function focusIsTrapped(/** @type {any} */ capture) {
-  return focusIsTrappedIn(capture.interaction?.focusOrder ?? [],
-    (capture.structure?.formFields ?? []).length);
+  return focusIsTrappedIn(capture.interaction?.focusOrder ?? [], capture.structure?.formFields ?? []);
 }
 
 /**
