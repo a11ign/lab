@@ -14,6 +14,7 @@
  */
 import { pathToFileURL } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
+import { judgeBackend } from "@a11y-witness/judge";
 import { judge } from "@a11y-witness/judge";
 import { oracleCounts } from "@a11y-witness/evidence/verify";
 import { EVAL_CASES, type EvalCase } from "./cases.js";
@@ -131,8 +132,16 @@ interface CaseReport {
 }
 
 // Score a case (RUNS times), print its block, and return what the aggregate needs.
-/** Which judge is being measured — the skip below is per backend, because scope is per backend. */
-const BACKEND = (process.env.JUDGE_BACKEND ?? "local").toLowerCase();
+/**
+ * Which judge is being measured — the skip below is per backend, because scope is per backend.
+ *
+ * FROM THE JUDGE'S OWN RESOLVER. This read `?? "local"`, and `??` only defaults on nullish — so with
+ * `JUDGE_BACKEND=""`, which is how CI passes "unset", this resolved to `""` while the judge itself
+ * resolved `"local"`. `c.notApplicableTo?.includes("")` never matches, so cases the local scorer CANNOT
+ * assess were SCORED rather than excluded, depressing the eval silently. `judge.ts` had already been
+ * bitten by the same `??` and fixed; the fix reached one of four copies.
+ */
+const BACKEND = judgeBackend();
 
 async function reportCase(c: EvalCase): Promise<CaseReport> {
   // A case the active backend cannot assess is NOT APPLICABLE: excluded from recall rather than scored as
