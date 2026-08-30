@@ -211,6 +211,17 @@ function captureOptions(/** @type {any} */ testCase) {
     // above this function asks for: we do not send the flag, so we do not key on it, and `capture-core`
     // reads `!!opts.probeFocus` where absent and false are the same thing.
     ...(testCase.probeFocus ? { probeFocus: true } : {}),
+    // WHICH ORDER the two position-dependent probes run in, forwarded under the same omit-when-absent
+    // rule and for the same cache-key reason: absent means the order that has always run, so adding this
+    // re-keys only the cases that ask for it and leaves every other capture valid.
+    //
+    // It existed in `capture-core` and `server.mjs` and was unreachable from a case, because THIS hop
+    // enumerates by name while the manifest hop forwards `probe*` by prefix. So the one mechanism that
+    // lets a focus case carry form evidence without activating a control before the ring is walked could
+    // not be asked for. `probe-chain.test.ts` could not see it either: it derived its flag list from what
+    // cases ALREADY declare, so an option no case used was never checked -- and therefore no case could
+    // start using it. That circularity is fixed there.
+    ...(testCase.probeOrder ? { probeOrder: testCase.probeOrder } : {}),
     // Same omit-when-false rule, same reason: present only for the cases that ask, so adding the
     // flag re-keys those and nothing else.
     ...(testCase.probeNavigation ? { probeNavigation: true } : {}),
