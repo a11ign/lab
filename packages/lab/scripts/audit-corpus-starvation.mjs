@@ -98,6 +98,20 @@ export const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
   // head's dependence on it. The right response is to fix the FEATURE, never to withdraw the pages."
   // Here there is no feature to fix: the veto cannot be closed by any page, so it belongs in this table.
   "1.3.1:unassociated-table": ["table_header_associated"],
+  // ADDED 2026-08-30, and it is the plainest entry in this table: `1.3.1:no-headings` IS a page with no
+  // headings, so `heading_present` is 0 on every positive by construction. Verified rather than asserted —
+  // 29 of 29 positives carry no heading evidence in either channel, the sweep or the transcript.
+  //
+  // It surfaced on the v16 candidate and not on the shipped v15, which is worth recording because it looks
+  // like a regression and is not one: removing `landmark_present` and `landmark_named` (known-gaps §17)
+  // narrowed the vector, the head re-fit, and the optimiser picked a different free feature to lean on.
+  // Both models had the veto available for nothing; they differ only in which one they took. That is
+  // exactly ADR 0015's point — the penalty costs nothing to learn, so which one appears is arbitrary and
+  // the remedy is never the weights.
+  //
+  // This is also the entry that `candidate:gate` auditing the CANDIDATE (§20) made visible. While the gate
+  // read the shipped weights it could not have seen it.
+  "1.3.1:no-headings": ["heading_present"],
   // `2.4.1:skip-link-inert: ["skip_link_moves_focus"]` was here and named a feature the pipeline has
   // never computed — the vector has 30 entries and not one of them mentions a skip link. Found 2026-08-28
   // by `test_unclosable_map_is_current.py` on its first run, which is the same way

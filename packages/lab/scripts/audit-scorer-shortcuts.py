@@ -232,17 +232,43 @@ def render_unclosable(rows: list[dict[str, Any]], count: int) -> None:
             print(f"      ... and {len(pairs) - 8} more")
 
 
+def closable_count(row: dict[str, Any]) -> int:
+    """Vetoes a corpus change could actually remove.
+
+    A row records every veto with its `unclosable` classification, so both quantities are readable from
+    one file. `None` means closable — the field is absent on a pair no map entry covers.
+    """
+    return sum(1 for veto in row.get("vetoes", []) if not veto.get("unclosable"))
+
+
 def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path, stream: Any) -> int:
     """Fail on a WORSE result, per subtype. Silent on an improvement, which is the direction we want.
 
-    COMPARES TOTAL VETOES, not the closable ones the report now leads with, and deliberately. The baseline
-    is a TRACKED file recorded before the closable/unclosable split existed; switching the gate to a
-    different quantity would make every stored number incomparable while the file still looked current —
-    a stale baseline that reads as a live one, which is the shape this repo pays most for.
+    COMPARES CLOSABLE VETOES since 2026-08-30 — the deliberate change the previous docstring named, made
+    on the condition it set. It read:
 
-    It is also the conservative direction: an unclosable veto is still a negative weight on a real page,
-    so counting it cannot let a genuine regression through. Moving the gate to `closable` is a deliberate
-    change that must rewrite the baseline in the same commit.
+        COMPARES TOTAL VETOES ... The baseline is a TRACKED file recorded before the closable/unclosable
+        split existed; switching the gate to a different quantity would make every stored number
+        incomparable while the file still looked current ... Moving the gate to `closable` is a deliberate
+        change that must rewrite the baseline in the same commit.
+
+    That reason has lapsed: the baseline was re-recorded on the protocol-8 corpus, so every row now carries
+    its `unclosable` classification and the two quantities are both readable from it. The rewrite is in
+    this commit, as required.
+
+    WHY IT HAD TO MOVE. On totals, a veto NOTHING CAN CLOSE blocks a release for ever, and two arrived in
+    one afternoon by the corpus getting BETTER: `table_header_associated` on `1.3.1:unassociated-table`
+    (visible only once §19 gave those cases the table evidence their label claimed) and `heading_present`
+    on `1.3.1:no-headings` (a page with no headings, 29 of 29 positives). Blocking on those is exactly what
+    `IMPOSSIBLE_BY_DEFINITION` exists to prevent — "reporting those put items on a work list that nobody
+    can complete" — and a gate that cannot be satisfied is one that gets bypassed.
+
+    WHAT IS GIVEN UP, stated rather than glossed: an unclosable veto is still a negative weight on a real
+    page, so this can no longer catch a regression that hides inside a misclassified pair. The protection
+    is that the map is small, hand-written, requires a measured justification per entry, and is pinned by
+    `test_unclosable_map_is_current.py` — which caught a stale entry naming a feature the pipeline never
+    computed, on its first run. A wrong entry is now a release-gate hole, which is a real cost and the
+    reason that test matters more than it did yesterday.
 
     `stream` is stderr under `--json`, so a caller parsing the output is never handed prose mixed into it.
     """
@@ -285,8 +311,9 @@ def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path, stream:
             suffix = f" [{'; '.join(context)}]" if context else ""
             unbaselined.append(
                 f"{row['subtype']}: {len(row['vetoes'])} veto(es), never audited{suffix}")
-        elif len(row["vetoes"]) > len(was["vetoes"]):
-            regressions.append(f"{row['subtype']}: {len(was['vetoes'])} -> {len(row['vetoes'])} vetoes")
+        elif closable_count(row) > closable_count(was):
+            regressions.append(
+                f"{row['subtype']}: {closable_count(was)} -> {closable_count(row)} closable veto(es)")
     for line in regressions:
         note(f"  REGRESSION  {line}")
     for line in unbaselined:
