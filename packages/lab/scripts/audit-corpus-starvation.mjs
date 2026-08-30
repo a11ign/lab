@@ -143,14 +143,46 @@ export const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
  * THE BAR FOR ADDING AN ENTRY HERE IS HIGH, and it is a measurement rather than an opinion: name the call
  * site whose ORDER makes it unreachable, as the paragraph above does. "We could not think how" is not a
  * reason; it is the state every entry started in.
+ *
+ * ## Each entry listed FIVE features and the gate reaches TEN -- corrected 2026-08-30
+ *
+ * The paragraph above argues from `probeForms`, and then the lists named only the features reading
+ * `stateChanges` and `formChanges`. The same flag gates `postSubmitFields` at `capture-core.mjs:2061`
+ * (`if (probeForms && interaction.formChanges.length > 0)`), so `post_submit_present`,
+ * `validation_error_announced` and `validation_error_missing` are unreachable for a focus case for the
+ * identical reason -- and `status_update_announced` reads `formChanges` itself, the very channel three
+ * listed features read, so its omission was never principled at all.
+ *
+ * Measured against `scorer-shortcuts.baseline.json`: **50 of the 52 vetoes across 18 heads sit on one of
+ * these ten features**, and 34 of the 35 counted CLOSABLE do. On the three focus subtypes that made four
+ * vetoes each -- twelve items -- read as corpus work, which is precisely the harm the paragraph above
+ * describes: *an item on a work list that nobody can complete displaces the ones somebody can.*
+ *
+ * ## What this does NOT do, and the number will move the wrong way if it is read as progress
+ *
+ * Reclassifying a veto does not remove it. The weight is still negative and still fires on a real page.
+ * The finding underneath is that these are not CORPUS problems in the first place: the zero is not a
+ * fact about any page, it is a fact about which probes a case definition turned on, so no page can fix
+ * it and ADR 0015's "the remedy is the corpus" does not apply to them. See `not-working.md` §11.
+ *
+ * The list is these ten because they are exactly the features whose ONLY source is a form probe --
+ * verified by reading each assignment in `screenreader_features.py`, where all four `table_*` features
+ * fall back to the transcript and these do not.
  */
+/** Every feature whose ONLY source is a form probe. A case that runs none cannot carry any of them. */
+const FORM_PROBE_ONLY = Object.freeze([
+  // read `interaction.stateChanges`
+  "state_change_present", "state_changed", "state_unchanged",
+  // read `interaction.formChanges`
+  "form_change_present", "form_change_nonempty", "form_change_empty", "status_update_announced",
+  // read `interaction.postSubmitFields`, gated on `probeForms` AND a prior activation
+  "post_submit_present", "validation_error_announced", "validation_error_missing",
+]);
+
 export const UNREACHABLE_WITHOUT_PERTURBING = Object.freeze({
-  "2.1.1:control-unreachable-by-keyboard": ["state_unchanged", "state_changed", "form_change_present",
-    "form_change_nonempty", "form_change_empty"],
-  "2.1.2:focus-trapped": ["state_unchanged", "state_changed", "form_change_present",
-    "form_change_nonempty", "form_change_empty"],
-  "2.4.3:focus-order-scrambled": ["state_unchanged", "state_changed", "form_change_present",
-    "form_change_nonempty", "form_change_empty"],
+  "2.1.1:control-unreachable-by-keyboard": FORM_PROBE_ONLY,
+  "2.1.2:focus-trapped": FORM_PROBE_ONLY,
+  "2.4.3:focus-order-scrambled": FORM_PROBE_ONLY,
 });
 
 /** A feature absent from the positives is only a shortcut if it is COMMON elsewhere — same rule as the
