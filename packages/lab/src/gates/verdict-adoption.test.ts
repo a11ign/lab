@@ -57,6 +57,10 @@ const EXEMPT: Record<string, { category: "owed" | "not-a-gate" | "deliberate"; w
     why: "audits whatever URLs the corpus declares; its population IS the corpus and cannot be short" },
   "audit-size-sensitivity.mjs": { category: "not-a-gate",
     why: "a measurement: it reports a curve across sample sizes rather than a verdict" },
+  "audit-observation-ambiguity.mjs": { category: "not-a-gate",
+    why: "reports what fraction of a channel's zeros are capture artefacts. A high number is a fact about "
+      + "the capture path rather than a defect a commit introduced, and it DOES exit 2 on an empty corpus, "
+      + "which is the coverage half this shape exists for" },
   "audit-rule-coverage.ts": { category: "not-a-gate",
     why: "audits which criteria have never fired. Its population is every rule there is and cannot be "
       + "short — `fired 0x` is its finding, not a coverage gap" },
