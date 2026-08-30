@@ -34,13 +34,15 @@ test("a page the census agrees has no headings is SUPPORTED absence", () => {
   const { channels } = observationAmbiguity([capture({ heading: 0 }, { headings: [] })]);
   assert.equal(channels.heading.empty, 1);
   assert.equal(channels.heading.emptySupported, 1, "census says 0 and the sweep found 0 — the page has none");
-  assert.equal(channels.heading.emptyUnsupported, 0);
+  assert.equal(channels.heading.sweepMissed, 0);
+  assert.equal(channels.heading.cannotSay, 0);
 });
 
 test("a sweep that found nothing where the census counts three is UNSUPPORTED — the landmark_present shape", () => {
   const { channels } = observationAmbiguity([capture({ heading: 3 }, { headings: [] })]);
   assert.equal(channels.heading.empty, 1);
-  assert.equal(channels.heading.emptyUnsupported, 1, "the page HAS headings; the sweep missed them");
+  assert.equal(channels.heading.sweepMissed, 1, "the page HAS headings; the sweep missed them");
+  assert.equal(channels.heading.cannotSay, 0, "a truncated sweep is a CAPTURE defect, not a missing census");
   assert.equal(channels.heading.emptySupported, 0);
   assert.equal(channels.heading.verdicts.truncated, 1);
 });
@@ -53,7 +55,7 @@ test("SUPPORTED and UNSUPPORTED are counted separately over a mixed corpus", () 
   ]);
   assert.equal(scanned, 3);
   assert.equal(channels.heading.emptySupported, 2);
-  assert.equal(channels.heading.emptyUnsupported, 1);
+  assert.equal(channels.heading.sweepMissed, 1);
 });
 
 test("a non-empty channel is not counted as an absence at all", () => {
@@ -67,6 +69,10 @@ test("a capture with no census answers `unknown` and never `exact` — absence m
   assert.equal(count, 1);
   assert.equal(channels.heading.verdicts.unknown, 1);
   assert.equal(channels.heading.emptySupported, 0, "`unknown` is a verdict about this tool, not about the page");
+  assert.equal(channels.heading.cannotSay, 1);
+  assert.equal(channels.heading.sweepMissed, 0,
+    "NO CENSUS AND A MISSED SWEEP ARE DIFFERENT ANSWERS. Reporting them as one number is what made this "
+    + "audit's own first run say `heading 94.9% UNSUPPORTED` about a corpus whose sweeps were largely fine.");
 });
 
 test("an empty formChanges is UNASKED without the probe's mark and ASKED with it", () => {

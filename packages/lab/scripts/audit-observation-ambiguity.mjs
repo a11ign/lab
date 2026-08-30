@@ -76,18 +76,21 @@ function main() {
   console.log(result.scanned + " capture(s); " + result.noCensus +
     " carry no usable census, so every channel on them answers `unknown`");
   console.log("");
-  console.log("channel       empty   UNSUPPORTED    supported | exact  trunc phantom unknown");
+  console.log("                   ---- of those empties ----");
+  console.log("channel       empty   SWEEP MISSED   cannot say   page HAS none");
   for (const [channel, row] of Object.entries(result.channels)) {
-    const seen = row.verdicts;
     console.log(
       channel.padEnd(12) +
       String(row.empty).padStart(6) +
-      String(row.emptyUnsupported).padStart(8) + " " + pct(row.emptyUnsupported, row.empty) +
-      String(row.emptySupported).padStart(13) + " |" +
-      String(seen.exact ?? 0).padStart(6) + String(seen.truncated ?? 0).padStart(7) +
-      String(seen.phantom ?? 0).padStart(8) + String(seen.unknown ?? 0).padStart(8),
+      String(row.sweepMissed).padStart(9) + " " + pct(row.sweepMissed, row.empty) +
+      String(row.cannotSay).padStart(9) + " " + pct(row.cannotSay, row.empty) +
+      String(row.emptySupported).padStart(9) + " " + pct(row.emptySupported, row.empty),
     );
   }
+  console.log("");
+  console.log("SWEEP MISSED  the census counted elements the sweep never reached. A capture defect.");
+  console.log("cannot say    no census, or the probe never ran. A statement about this corpus, not a page.");
+  console.log("page HAS none the only column on which a `0` is a fact about the page.");
   console.log("");
   console.log("interaction channels — no census, so read from the probe's own `formProbe` mark");
   for (const [field, row] of Object.entries(result.interaction)) {
@@ -95,8 +98,8 @@ function main() {
       ", of which " + String(row.emptyNotAsked).padStart(5) + " never asked " + pct(row.emptyNotAsked, row.empty));
   }
   console.log("");
-  console.log("UNSUPPORTED is the number that decides this: the channel is empty AND this capture cannot say");
-  console.log("the page has none. Every one is a 0 the featurizer reads as a fact about the page.");
+  console.log("Everything outside the last column is a `0` the featurizer reads as a fact about the page,");
+  console.log("and it is not one. The two middle columns need opposite responses, which is why they are two.");
   console.log("");
   console.log("report written to " + path.resolve(OUT));
 }

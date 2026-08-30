@@ -41,6 +41,25 @@ export const CHANNEL_FIELD = { ...SWEEP_OF, tableCells: "tableCells" };
 const SUPPORTS_ABSENCE = new Set(["exact"]);
 
 /**
+ * WHY THE UNSUPPORTED COUNT IS SPLIT, and it is the first thing this audit got wrong about itself.
+ *
+ * Its first run on the authoritative corpus reported `heading 94.9% UNSUPPORTED`, which reads as a capture
+ * path that misses nine headings in ten. It is not what happened: 3,483 of 6,467 captures predate
+ * `census.distinct` and therefore answer `unknown` for every channel, and those swamped the 37 that were
+ * genuinely `truncated`.
+ *
+ * So the audit built to catch "two states collapsed into one number" collapsed two states into one number.
+ * They need opposite responses and must never share a column:
+ *
+ *   `sweepMissed`  the census counted elements the sweep did not reach. A CAPTURE defect. 583 landmarks.
+ *   `cannotSay`    no census to compare against. A statement about the corpus's AGE, not about any page.
+ *
+ * `unknown` also covers `tableCells` on a capture where `probeTables` never ran, which is the same
+ * category -- nobody asked -- and is why that channel reads 100%.
+ */
+const SWEEP_MISSED = new Set(["truncated", "phantom"]);
+
+/**
  * The interaction channels have no census to compare against, so their ambiguity is read from the probe's
  * OWN MARK: `formProbe` is written only when `probeForms` ran (`capture-core.mjs:1926`). Its absence is
  * therefore "nobody asked" — exactly the distinction `applicability.py:147-152` records as unavailable,
@@ -58,7 +77,7 @@ function emptyTally() {
   /** @type {Record<string, any>} */
   const channels = {};
   for (const channel of Object.keys(CHANNEL_FIELD)) {
-    channels[channel] = { empty: 0, emptySupported: 0, emptyUnsupported: 0, verdicts: {} };
+    channels[channel] = { empty: 0, emptySupported: 0, sweepMissed: 0, cannotSay: 0, verdicts: {} };
   }
   /** @type {Record<string, any>} */
   const interaction = {};
@@ -76,7 +95,8 @@ function tallySweptChannels(capture, completeness, channels) {
     if (!Array.isArray(announced) || announced.length > 0) continue;
     row.empty++;
     if (SUPPORTS_ABSENCE.has(verdict)) row.emptySupported++;
-    else row.emptyUnsupported++;
+    else if (SWEEP_MISSED.has(verdict)) row.sweepMissed++;
+    else row.cannotSay++;
   }
 }
 
