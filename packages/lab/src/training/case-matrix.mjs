@@ -234,6 +234,16 @@ function pair({
   // case asks. It exists for the half of 2.4.2 a screen reader is uniquely placed to prove: a route that
   // changes without the title changing, so the reader still says the previous page's name.
   probeNavigation = false,
+  // WHICH ORDER the two position-dependent probes run in -- `"focus-first"`, or absent for the order that
+  // has always run. It is the only way a case can carry BOTH a walked tab ring and form-probe evidence:
+  // the default sweeps (activating controls) before it walks focus, so the ring is measured on a page an
+  // activation has already changed.
+  //
+  // `capture-core` and `server.mjs` have accepted it since the determinism work and no case could ask,
+  // because the host runner enumerates by name. Adding it here is the last hop -- and this constructor's
+  // own comment on `alsoFails` is the warning: "a constructor that enumerates its fields must be updated
+  // with them", learned when three cases declared `alsoFails` and the count read 0.
+  probeOrder = undefined,
   family = id,
   subtype = null,
   // Criteria this case ALSO breaks. `pair` names every field it forwards, so a case declaring
@@ -256,6 +266,7 @@ function pair({
     probeTables,
     probeFocus,
     probeNavigation,
+    ...(probeOrder ? { probeOrder } : {}),
     good,
     bad,
   };
@@ -1871,6 +1882,22 @@ cases.push(
     // The whole point: without this the capture carries no `focusOrder` and the case labels every capture
     // clean while looking like a passing signal.
     probeFocus: true,
+    // THE TAB RING IS WALKED FIRST, THEN THE FORM IS PROBED -- added 2026-08-30.
+    //
+    // A real user who tabs through a form also SUBMITS it. This case walked the ring and never interacted,
+    // so `stateChanges`, `formChanges` and `postSubmitFields` were empty on every one of its captures --
+    // not because the page was silent, but because nothing asked. Ten of the 28 model features read only
+    // those three channels, and a feature that is 0 on every positive of a subtype is a FREE VETO: measured
+    // on the shipped weights, 50 of 52 vetoes across 18 heads sit on those ten, and this subtype carried 8
+    // of them for a reason that is not a fact about any page.
+    //
+    // `probeOrder: "focus-first"` is what makes it safe here and it is not optional. The default order
+    // sweeps before it walks focus, and the sweep ACTIVATES controls -- so the ring would be measured on a
+    // page an activation had already changed, which is the D7 defect this subtype's evidence is most
+    // exposed to. Focus-first puts the walk on a virgin page. `gate:probe-order` measured focus-first as
+    // evidence-neutral on all three of its corpus pages.
+    probeForms: true,
+    probeOrder: "focus-first",
   }),
 );
 
@@ -2164,6 +2191,8 @@ cases.push(
     }),
     badSignal: { type: "focus-order-scrambled" },
     probeFocus: true,
+    probeForms: true,
+    probeOrder: "focus-first",
   }),
 );
 
@@ -2337,6 +2366,8 @@ cases.push(
     bad: page({ title: "Drafts", heading: "Drafts", body: KEYBOARD_ACTION_PAGE(false) }),
     badSignal: { type: "control-unreachable-by-keyboard" },
     probeFocus: true,
+    probeForms: true,
+    probeOrder: "focus-first",
   }),
 );
 
@@ -2404,6 +2435,8 @@ cases.push(
     }),
     badSignal: { type: "focus-trapped" },
     probeFocus: true,
+    probeForms: true,
+    probeOrder: "focus-first",
   }),
 );
 
@@ -2446,6 +2479,8 @@ cases.push(
     }),
     badSignal: { type: "focus-trapped" },
     probeFocus: true,
+    probeForms: true,
+    probeOrder: "focus-first",
   }),
 );
 
@@ -2485,6 +2520,8 @@ cases.push(
     }),
     badSignal: { type: "focus-order-scrambled" },
     probeFocus: true,
+    probeForms: true,
+    probeOrder: "focus-first",
   }),
 );
 
@@ -2508,6 +2545,8 @@ cases.push(
     bad: page({ title: "Drafts", heading: "Drafts", body: NATIVE_ACTION_PAGE(false) }),
     badSignal: { type: "control-unreachable-by-keyboard" },
     probeFocus: true,
+    probeForms: true,
+    probeOrder: "focus-first",
   }),
 );
 
