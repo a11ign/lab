@@ -75,7 +75,9 @@ const GRANTS = Object.freeze({
 /** @type {Record<string, any>} */
 export const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
   "3.3.1:validation-error-silent": ["validation_error_announced", "status_update_announced"],
-  "4.1.3:form-activation-silent": ["status_update_announced", "validation_error_announced"],
+  "4.1.3:form-activation-silent": ["status_update_announced", "validation_error_announced",
+    // `validation_error_missing` joined them 2026-08-30 -- see the note below the table.
+    "validation_error_missing"],
   "4.1.2:state-change-silent": ["state_changed"],
   // ADDED 2026-08-30, and it appeared because the corpus got MORE correct rather than less.
   //
@@ -97,6 +99,26 @@ export const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
   // that appears to make things worse may have worked — it removed the shortcut's cover and exposed the
   // head's dependence on it. The right response is to fix the FEATURE, never to withdraw the pages."
   // Here there is no feature to fix: the veto cannot be closed by any page, so it belongs in this table.
+  // ADDED 2026-08-30, and it appeared only because a feature got MORE precise.
+  //
+  // `4.1.3:form-activation-silent` is a status message that never arrives after activating a FILTER --
+  // "Filter the catalogue to show only bags and notice how many results remain". `validation_error_missing`
+  // is a form SUBMIT rejected without an error. Measured across both subtypes' cases:
+  //
+  //     4.1.3   143 cases,   0 whose page carries a `type=submit` control
+  //     3.3.1   143 cases, 143
+  //
+  // Not 142 of 143. The two subtypes are defined by different activations, so no positive of one can carry
+  // the other's evidence, and a negative weight there is correct inference rather than a free veto.
+  //
+  // IT WAS INVISIBLE UNTIL SCHEMA v17. `validation_error_missing` used to accept any silent activation, so
+  // a filter button satisfied it and the feature was not constant here. Requiring `kind == "submit"` --
+  // which capture-core has recorded since protocol 8 and nothing read -- made it correctly 0 on all 143,
+  // and the promotion gate reported that as `REGRESSION 4.1.3: 2 -> 3 closable`. The gate was right to
+  // refuse and the veto is right to exist; only its CLASSIFICATION was missing.
+  //
+  // A reminder that this list is not a way of lowering a number: a more precise feature will keep finding
+  // relationships like this, and each one has to be argued rather than assumed.
   "1.3.1:unassociated-table": ["table_header_associated"],
   // ADDED 2026-08-30, and it is the plainest entry in this table: `1.3.1:no-headings` IS a page with no
   // headings, so `heading_present` is 0 on every positive by construction. Verified rather than asserted —
