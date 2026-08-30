@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * HOW MANY FEATURE ZEROS ARE CAPTURE ARTEFACTS RATHER THAN PAGE FACTS?
  *
@@ -69,7 +70,7 @@ const ASKED_MARK = { formChanges: "formProbe", postSubmitFields: "formProbe" };
 
 function probeMarked(/** @type {any} */ capture, /** @type {string} */ event) {
   const marks = Array.isArray(capture.diagnostics) ? capture.diagnostics : [];
-  return marks.some((mark) => mark && typeof mark === "object" && mark.event === event);
+  return marks.some((/** @type {any} */ mark) => mark && typeof mark === "object" && mark.event === event);
 }
 
 /** An empty tally for every channel and interaction field, so a channel with no records still prints. */
@@ -86,6 +87,7 @@ function emptyTally() {
 }
 
 /** One capture's contribution to the swept channels, given the completeness verdicts computed for it. */
+/** @param {any} capture @param {Record<string,string>} completeness @param {Record<string,any>} channels */
 function tallySweptChannels(capture, completeness, channels) {
   for (const [channel, field] of Object.entries(CHANNEL_FIELD)) {
     const verdict = completeness[channel] ?? "unknown";
@@ -101,6 +103,7 @@ function tallySweptChannels(capture, completeness, channels) {
 }
 
 /** The same question for the channels that have no census — answered from the probe's own mark. */
+/** @param {any} capture @param {Record<string,any>} interaction */
 function tallyInteraction(capture, interaction) {
   for (const [field, event] of Object.entries(ASKED_MARK)) {
     const value = capture.interaction?.[field];

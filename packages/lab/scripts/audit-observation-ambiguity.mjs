@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * HOW MANY FEATURE ZEROS ARE CAPTURE ARTEFACTS RATHER THAN PAGE FACTS?
  *
@@ -25,6 +26,7 @@ const arg = (/** @type {string} */ name) =>
   process.argv.slice(2).find((value) => value.startsWith(name))?.slice(name.length);
 
 
+/** @returns {Generator<string>} */
 function* captureFiles(/** @type {string} */ root) {
   if (!fs.existsSync(root)) return;
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
