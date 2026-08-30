@@ -77,6 +77,27 @@ export const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
   "3.3.1:validation-error-silent": ["validation_error_announced", "status_update_announced"],
   "4.1.3:form-activation-silent": ["status_update_announced", "validation_error_announced"],
   "4.1.2:state-change-silent": ["state_changed"],
+  // ADDED 2026-08-30, and it appeared because the corpus got MORE correct rather than less.
+  //
+  // `table_header_associated` fires when a cell announces its header ("row 2, Note, column 1, ..."),
+  // and `1.3.1:unassociated-table` IS a table with no `scope`, whose cells NVDA therefore announces by
+  // position alone ("row 2, column 1, ..."). No page can carry the subtype and the feature at once —
+  // the same shape as `state_changed` on `4.1.2:state-change-silent` directly above.
+  //
+  // Measured on the protocol-8 corpus: of 142 positives, 142 carry a position-only cell and ZERO carry an
+  // associated one. Not 141 of 142 — definitional, not a corpus accident.
+  //
+  // WHY IT SURFACED NOW. Until known-gaps §19, the 69 `+also-position-only-table` cases inherited
+  // `probeTables: false` from their host, so `structure.tableCells` was empty and NEITHER table feature
+  // could be computed on them. Fixing that gave every positive the defect's real evidence, which made
+  // `table_header_associated` a perfect negative separator worth -5.13 logits at no cost — and
+  // `scorer:shortcuts` correctly reported a head gaining a free veto.
+  //
+  // That is ADR 0015's pattern, and the reason this is a map entry rather than a revert: "a corpus fix
+  // that appears to make things worse may have worked — it removed the shortcut's cover and exposed the
+  // head's dependence on it. The right response is to fix the FEATURE, never to withdraw the pages."
+  // Here there is no feature to fix: the veto cannot be closed by any page, so it belongs in this table.
+  "1.3.1:unassociated-table": ["table_header_associated"],
   // `2.4.1:skip-link-inert: ["skip_link_moves_focus"]` was here and named a feature the pipeline has
   // never computed — the vector has 30 entries and not one of them mentions a skip link. Found 2026-08-28
   // by `test_unclosable_map_is_current.py` on its first run, which is the same way
