@@ -86,6 +86,20 @@ const PAGES = [
     url: "https://www.nls.uk/join/",
     reason: "THE page the plan names: same commit, same page, two different verdicts. If the property holds "
       + "anywhere it has to hold here.",
+    // DECLARED to move under its own probes, which is why this gate could never pass.
+    //
+    // Its search panel opens when the sweep activates a control, so `interaction.focusOrder` goes 10 -> 150
+    // between captures of the SAME page in the SAME order. That is D7, and it means the ordering question
+    // is unanswerable here — not that coverage fell short. Undeclared, it reduced coverage on every run,
+    // so the verdict was permanently INCONCLUSIVE and the job permanently exit 2. A gate that cannot pass
+    // is one people stop dispatching, which is how a check comes to be bypassed.
+    //
+    // A DECLARATION, not a suppression, and it is checked in BOTH directions: a declared page that moves
+    // is excluded from coverage and named; a declared page that does NOT move is reported as a STALE
+    // declaration, because the reason for the exemption has then gone and the page should be earning its
+    // keep again. That is the same rule `NOT_FOR_CASES` and the unclosable map follow — an exemption
+    // nobody re-checks is how a work list comes to lie.
+    movesUnderItsOwnProbes: "its search panel opens when a control is activated; focusOrder 10 -> 150",
   },
   {
     url: "https://tfl.gov.uk/modes/tube/",
@@ -302,6 +316,38 @@ export function differencesNotExplainedBy(/** @type {any} */ treatment, /** @typ
 }
 
 /**
+ * Which PAGE-MOVED results were expected, and which declarations have gone stale.
+ *
+ * A page that moves under its own probes cannot answer the ordering question — we know why its evidence
+ * differs and still not whether order also mattered. Counting it as a pass is the defect this gate exists
+ * to prevent, so it is excluded from coverage. But `nls.uk/join/` moves EVERY time (its search panel opens
+ * when a control is activated), so leaving it undeclared kept coverage permanently short and the gate
+ * permanently INCONCLUSIVE. A gate that cannot pass is one people stop dispatching.
+ *
+ * So a page may DECLARE it, and the declaration is checked in both directions:
+ *
+ *   undeclared + moved  reduces coverage, exactly as before — this is the case the rule was written for
+ *   declared + moved    out of scope for the question, named and excluded
+ *   declared + NOT moved  STALE: the reason has gone, and the page should be earning its keep again
+ *
+ * The third is what stops a declaration becoming a permanent excuse — the same rule the unclosable veto
+ * map and `NOT_FOR_CASES` follow, both of which caught a stale entry on their first run.
+ *
+ * @param {Array<{page: string, verdict: string}>} judged
+ * @param {Array<{url?: string, path?: string, movesUnderItsOwnProbes?: string}>} pages
+ */
+export function classifyMovers(judged, pages) {
+  const declared = new Set(pages.filter((page) => page.movesUnderItsOwnProbes)
+    .map((page) => page.url ?? page.path));
+  const movedAll = judged.filter((r) => r.verdict === "PAGE-MOVED");
+  return {
+    undeclared: movedAll.filter((r) => !declared.has(r.page)),
+    expected: movedAll.filter((r) => declared.has(r.page)),
+    stale: judged.filter((r) => declared.has(r.page) && r.verdict !== "PAGE-MOVED"),
+  };
+}
+
+/**
  * The fleet's verdict over the PAGES — the boxes are how the work was spread, not what was examined.
  *
  * Three separate things reduce COVERAGE rather than counting as failures, and each was learned the hard
@@ -321,12 +367,24 @@ function report_(/** @type {any[]} */ outcomes, /** @type {number} */ workerCoun
   }
 
   const differing = judged.filter((r) => r.verdict === "CHANGED" || r.verdict === "DRIFT");
-  const moved = judged.filter((r) => r.verdict === "PAGE-MOVED");
-  const unexercised = judged.filter((r) => r.remedied === false);
+  const unexercised = judged.filter((/** @type {any} */ r) => r.remedied === false);
+  const { undeclared: moved, expected: expectedMovers, stale: staleDeclarations } =
+    classifyMovers(judged, PAGES);
   if (moved.length) {
-    process.stdout.write(`\n${moved.length} page(s) CHANGED UNDER THEIR OWN PROBES — see D7. A control the `
-      + "sweep activated altered what the next probe could see, so whether ORDER also matters is "
-      + "unanswerable for them, and they are counted as unexamined rather than as passes.\n");
+    process.stdout.write(`\n${moved.length} page(s) CHANGED UNDER THEIR OWN PROBES and did not declare it `
+      + "— see D7. A control the sweep activated altered what the next probe could see, so whether ORDER "
+      + "also matters is unanswerable for them, and they are counted as unexamined rather than as passes.\n");
+  }
+  if (expectedMovers.length) {
+    process.stdout.write(`\n${expectedMovers.length} page(s) moved under their own probes AS DECLARED, so `
+      + "the ordering question is out of scope for them rather than unanswered. They are named here and "
+      + "excluded from coverage:\n");
+    for (const r of expectedMovers) process.stdout.write(`    ${r.page}\n`);
+  }
+  if (staleDeclarations.length) {
+    process.stdout.write(`\n${staleDeclarations.length} page(s) are DECLARED to move under their own probes `
+      + "and did not. The declaration has outlived its reason — delete it, and let the page count again:\n");
+    for (const r of staleDeclarations) process.stdout.write(`    ${r.page}\n`);
   }
   if (unexercised.length) {
     process.stdout.write(`\n${unexercised.length} page(s) agreed WITHOUT the browse-mode remedy running. `
@@ -336,10 +394,11 @@ function report_(/** @type {any[]} */ outcomes, /** @type {number} */ workerCoun
     outcomes.map((o) => ({
       // A judged-but-unexaminable page is `result: null` to the fleet verdict for the same reason an
       // errored one is: coverage counts what was ANSWERED, and these three cases have no answer.
-      result: o.result && !moved.includes(o.result) && !unexercised.includes(o.result) ? o.result : null,
+      result: o.result && !moved.includes(o.result) && !unexercised.includes(o.result)
+        && !expectedMovers.includes(o.result) ? o.result : null,
       error: o.error,
     })),
-    { of: PAGES.length, what: `corpus pages and live sites, each captured ${CAPTURES_PER_PAGE}x (control, treatment, control)`,
+    { of: PAGES.length - expectedMovers.length, what: `corpus pages and live sites, each captured ${CAPTURES_PER_PAGE}x (control, treatment, control)`,
       workers: workerCount, failed: differing.length, controlPlane });
   process.stdout.write(`\n${renderVerdict(verdict)}\n`);
   process.exit(exitCodeFor(verdict));
