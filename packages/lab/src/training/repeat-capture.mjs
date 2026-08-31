@@ -124,7 +124,11 @@ export function comparable(/** @type {any} */ capture) {
     links: list(s.links),
     lists: list(s.lists),
     tableCells: list(s.tableCells),
-    stateChanges: list(i.stateChanges),
+    // FLATTENED, not listed. `stateChanges` is a list of OBJECTS, so `list()` alone compared it by COUNT
+    // -- the identical defect this function's `formChanges` comment describes, on the sibling channel,
+    // surviving the fix that named it. Found 2026-09-01 when `evidence-diff.mjs` turned out to have it
+    // too: a `4.1.2:state-change-silent` toggle whose `after` changed would read as stable here.
+    stateChanges: list(i.stateChanges).map(flatten),
     focusOrder: list(i.focusOrder),
     // `formChanges` and `postSubmitFields` are compared because they were NOT, and that is how an
     // intermittent contaminant reached the corpus with the stability gate green. One capture of
@@ -154,6 +158,12 @@ export function comparable(/** @type {any} */ capture) {
     // (`{control, titleBefore, titleAfter, ...}`), and a comparison that treats it as opaque reports two
     // objects rather than the one field that moved. A title that stopped changing IS the 2.4.2 failure.
     routeChange: flatten(i.routeChange),
+    // TWO MORE, with capture-protocol 11. `frames` is the iframe sweep; `dialogEscape` is an object and
+    // so is flattened like `routeChange`. `stability-fields.test.ts` is what required them here -- it
+    // fails the moment `evidence-diff.mjs` gains a field this does not, which is the only reason three
+    // separately-maintained lists of "what a signal can read" have stopped drifting apart.
+    frames: list(s.frames),
+    dialogEscape: flatten(i.dialogEscape),
   };
 }
 

@@ -51,6 +51,11 @@ export const EVIDENCE_FIELDS = [
   // `postSubmitFields` — the two carrying interaction evidence. Ten fields watched, and the ones this
   // fault lives in were not among them." A remedy that reached one of several tools.
   ["interaction", "postSubmitNames"], ["interaction", "routeChange"],
+  // ADDED 2026-09-01 with capture-protocol 11, and `evidence-fields.test.ts` is what required it: both
+  // appeared on captures the moment the fleet ran the new code, and a field on disk that is neither
+  // compared nor excluded is a hole this gate cannot see. `frames` is the iframe sweep; `dialogEscape`
+  // is an object, so it goes through the same flattening as `routeChange`.
+  ["structure", "frames"], ["interaction", "dialogEscape"],
 ];
 
 /**
@@ -65,13 +70,45 @@ function normalise(phrase) {
 }
 
 /**
+ * One list entry's comparable form — a string as itself, an OBJECT as its sorted `key=value` pairs.
+ *
+ * `String({...})` is `"[object Object]"`, so mapping `normalise` over a list of objects made every entry
+ * identical and compared the list BY COUNT. Measured 2026-09-01 on the real function: a `formChanges`
+ * entry whose `after` went from `"Error: name is required"` to `""` reported **SAME**.
+ *
+ * Exactly two compared fields hold objects — `interaction.formChanges` and `interaction.stateChanges` —
+ * and they are the evidence for 3.3.1, 4.1.2 and 4.1.3, including the head that gained 7.4 points of
+ * recall in v17 by reading `formChanges[].kind`. So the one gate that decides whether 2,122 cached
+ * captures may be kept was blind to the content of the channel most likely to move.
+ *
+ * This is the SAME defect the object branch below was written to fix, one shape along: that branch was
+ * added for `routeChange`, a bare object, and objects INSIDE an array went on reading as a count. Its own
+ * comment names the principle — *"comparing nothing while appearing to compare something is worse than
+ * the omission it fixes"* — and the fix reached one of the two places the shape occurs. This repo's most
+ * expensive recurring pattern, in the tool that exists to catch it.
+ *
+ * Keys are SORTED so a field-order change in capture-core cannot read as an evidence change; `undefined`
+ * is written as the literal `undefined` rather than dropped, because a field that stopped being recorded
+ * IS an evidence change and dropping it would hide exactly that.
+ *
+ * @param {unknown} entry @returns {string}
+ */
+function flatten(entry) {
+  if (!entry || typeof entry !== "object") return normalise(entry);
+  return Object.entries(entry)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, value]) => `${key}=${normalise(value)}`)
+    .join(" ");
+}
+
+/**
  * @param {EvidenceCapture | null | undefined} capture
  * @param {[string, string]} field
  * @returns {string[]}
  */
 function fieldValues(capture, [group, name]) {
   const value = capture?.[group]?.[name];
-  if (Array.isArray(value)) return value.map(normalise);
+  if (Array.isArray(value)) return value.map(flatten);
   // AN OBJECT, FLATTENED. `routeChange` is `{control, titleBefore, titleAfter, headingBefore,
   // headingAfter}` rather than a list, and the array-only version returned [] for it — so adding it to
   // the table above without this would have compared nothing while appearing to compare something,

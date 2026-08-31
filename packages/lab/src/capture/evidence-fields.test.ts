@@ -118,3 +118,31 @@ test("an identical routeChange is SAME", () => {
   assert.equal(verdict.verdict, "SAME", JSON.stringify(verdict));
 });
 
+
+test("a formChanges entry whose announcement vanished is CHANGED, not SAME", () => {
+  // The defect this file's object branch was written to fix, one shape along. `String({...})` is
+  // "[object Object]", so mapping over a list of objects made every entry identical and compared the list
+  // BY COUNT -- in the one gate that decides whether 2,122 cached captures may be kept, on the channel
+  // carrying 3.3.1, 4.1.2 and 4.1.3. Measured on the real function before the fix: SAME.
+  const mk = (after: string) =>
+    ({ interaction: { formChanges: [{ control: "Submit", kind: "submit", after }] } });
+  assert.equal(compareCapture(mk("Error: name is required"), mk("")).verdict, "CHANGED");
+  assert.equal(compareCapture(mk("Error: name is required"), mk("Error: name is required")).verdict, "SAME");
+});
+
+test("reordering an entry's KEYS is not an evidence change", () => {
+  // Keys are sorted before joining, so a field-order change in capture-core cannot read as the page
+  // announcing something different. Without the sort this gate would demand a recapture for a refactor,
+  // and a gate that cries wolf is one people pass `--allow` to.
+  const a = { interaction: { stateChanges: [{ control: "Menu", before: "collapsed", after: "expanded" }] } };
+  const b = { interaction: { stateChanges: [{ after: "expanded", control: "Menu", before: "collapsed" }] } };
+  assert.equal(compareCapture(a, b).verdict, "SAME");
+});
+
+test("a field that STOPPED being recorded is an evidence change", () => {
+  // `undefined` is written out rather than dropped. A probe that quietly stopped filling `kind` is
+  // exactly the regression this gate exists to catch, and dropping absent keys would hide it.
+  const withKind = { interaction: { formChanges: [{ control: "Submit", kind: "submit" }] } };
+  const without = { interaction: { formChanges: [{ control: "Submit" }] } };
+  assert.equal(compareCapture(withKind, without).verdict, "CHANGED");
+});

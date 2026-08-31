@@ -27,10 +27,12 @@ function stabilityFields(): Set<string> {
     transcript: ["x"],
     structure: {
       headings: [], landmarks: [], formFields: [], graphics: [], links: [], lists: [], tableCells: [],
+      frames: [],
     },
     interaction: {
       controls: [], stateChanges: [], formChanges: [], postSubmitFields: [], focusOrder: [],
       postSubmitNames: [], routeChange: { titleBefore: "a", titleAfter: "b" },
+      dialogEscape: { focusBefore: "a", announced: "", focusAfter: "a" },
     },
   };
   return new Set(Object.keys(comparable(everyChannel) as Record<string, unknown>));
