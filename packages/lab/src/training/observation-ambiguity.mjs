@@ -83,7 +83,7 @@ function emptyTally() {
   /** @type {Record<string, any>} */
   const interaction = {};
   for (const field of Object.keys(ASKED_MARK)) interaction[field] = { empty: 0, emptyNotAsked: 0 };
-  return { channels, interaction };
+  return { channels, interaction, soundness: { entries: 0, quiet: 0, notQuiet: 0, unstated: 0 } };
 }
 
 /** One capture's contribution to the swept channels, given the completeness verdicts computed for it. */
@@ -114,11 +114,42 @@ function tallyInteraction(capture, interaction) {
 }
 
 /**
+ * Was the measurement behind each recorded activation SOUND?
+ *
+ * `capture-core` attaches `baselineQuiet` to every `formChanges` entry beside `kind`, because *"a consumer
+ * deciding what this activation proves needs to know whether the measurement was sound"*. Nothing reads
+ * it, and `not-working.md` §11 names the reason: a condition on a field whose distribution nobody has
+ * measured could make the feature deaf, and "run `rules:gate` after any change that makes a rule quieter"
+ * applies to a feature as well as to a rule.
+ *
+ * This IS that measurement. `false` means the speech baseline had not settled when the delta was taken, so
+ * `after` is untrustworthy in EITHER direction — and `validation_error_missing` reads an empty `after` as
+ * "nothing was announced", which is the fixed-sleep defect exactly.
+ *
+ * `unstated` is counted separately and is not folded into either: a capture taken before the field existed
+ * has not said the baseline was noisy, and reading absence as `false` here would be this file's own subject
+ * committed by the audit that reports it.
+ *
+ * @param {any} capture @param {Record<string, number>} soundness
+ */
+function tallySoundness(capture, soundness) {
+  const changes = capture.interaction?.formChanges;
+  if (!Array.isArray(changes)) return;
+  for (const change of changes) {
+    soundness.entries++;
+    if (change?.baselineQuiet === true) soundness.quiet++;
+    else if (change?.baselineQuiet === false) soundness.notQuiet++;
+    else soundness.unstated++;
+  }
+}
+
+/**
  * @param {Iterable<any>} captures
- * @returns {{ scanned: number, noCensus: number, channels: Record<string, any>, interaction: Record<string, any> }}
+ * @returns {{ scanned: number, noCensus: number, channels: Record<string, any>,
+ *            interaction: Record<string, any>, soundness: Record<string, number> }}
  */
 export function observationAmbiguity(captures) {
-  const { channels, interaction } = emptyTally();
+  const { channels, interaction, soundness } = emptyTally();
   let scanned = 0;
   let noCensus = 0;
 
@@ -129,7 +160,8 @@ export function observationAmbiguity(captures) {
     if (Object.values(completeness).every((verdict) => verdict === "unknown")) noCensus++;
     tallySweptChannels(capture, completeness, channels);
     tallyInteraction(capture, interaction);
+    tallySoundness(capture, soundness);
   }
 
-  return { scanned, noCensus, channels, interaction };
+  return { scanned, noCensus, channels, interaction, soundness };
 }

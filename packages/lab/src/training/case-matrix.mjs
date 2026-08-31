@@ -233,6 +233,9 @@ function pair({
   // probe that ACTIVATES A LINK -- it can leave the page under measurement, so it runs last and only when a
   // case asks. It exists for the half of 2.4.2 a screen reader is uniquely placed to prove: a route that
   // changes without the title changing, so the reader still says the previous page's name.
+  // The DIALOG probe. Opt-in because it presses Escape after the sweep -- a real interaction with the page,
+  // and worthless once anything has anchored, since `anchorToTop` presses Escape as its first action.
+  probeDialog = false,
   probeNavigation = false,
   // WHICH ORDER the two position-dependent probes run in -- `"focus-first"`, or absent for the order that
   // has always run. It is the only way a case can carry BOTH a walked tab ring and form-probe evidence:
@@ -266,6 +269,7 @@ function pair({
     probeTables,
     probeFocus,
     probeNavigation,
+    probeDialog,
     ...(probeOrder ? { probeOrder } : {}),
     good,
     bad,
@@ -2479,6 +2483,14 @@ cases.push(
     }),
     badSignal: { type: "focus-trapped" },
     probeFocus: true,
+    // THE FIRST CASE TO ASK FOR THE DIALOG PROBE, and it is the natural one: its page opens a modal, which
+    // is what the probe exists to observe. A flag no case sets is decoration -- `probe-chain.test.ts`
+    // refuses one, which is how this line came to be written rather than remembered.
+    //
+    // What it records is deliberately not a verdict: focus before Escape, what Escape announced, and focus
+    // after. Whether "back where it started" means the same control is a judgement about announcements, and
+    // `parseAnnouncement` is the single grammar for that -- so the comparison belongs to a rule, not here.
+    probeDialog: true,
     probeForms: true,
     probeOrder: "focus-first",
   }),

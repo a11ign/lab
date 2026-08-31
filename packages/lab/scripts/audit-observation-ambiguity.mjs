@@ -100,6 +100,17 @@ function main() {
       ", of which " + String(row.emptyNotAsked).padStart(5) + " never asked " + pct(row.emptyNotAsked, row.empty));
   }
   console.log("");
+  console.log("was each recorded activation SOUNDLY measured? (`baselineQuiet`, read by nothing so far)");
+  const snd = result.soundness;
+  console.log("  " + String(snd.entries).padStart(6) + " formChanges entr(ies): " +
+    snd.quiet + " settled " + pct(snd.quiet, snd.entries) +
+    "  " + snd.notQuiet + " NOISY " + pct(snd.notQuiet, snd.entries) +
+    "  " + snd.unstated + " unstated " + pct(snd.unstated, snd.entries));
+  console.log("  NOISY means the speech baseline had not settled, so `after` is untrustworthy in EITHER");
+  console.log("  direction -- and `validation_error_missing` reads an empty `after` as \"nothing was");
+  console.log("  announced\". unstated is a capture taken before the field existed, NOT a noisy one:");
+  console.log("  reading absence as false is the defect this whole report is about.");
+  console.log("");
   console.log("Everything outside the last column is a `0` the featurizer reads as a fact about the page,");
   console.log("and it is not one. The two middle columns need opposite responses, which is why they are two.");
   console.log("");

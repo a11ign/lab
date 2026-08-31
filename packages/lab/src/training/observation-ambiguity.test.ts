@@ -94,3 +94,23 @@ test("the channel list is DERIVED from SWEEP_OF, so a new sweep type cannot be s
   }
   assert.ok("tableCells" in CHANNEL_FIELD, "sweepCompleteness adds tableCells separately and it must be covered");
 });
+
+test("an unstated baseline is counted apart from a noisy one, never folded into it", () => {
+  // The whole report is about absence read as a value. Folding `unstated` into `notQuiet` would commit
+  // that defect inside the audit that exists to measure it -- a capture taken before the field existed
+  // has not said its baseline was noisy. Mutation-checked: `?? false` in `tallySoundness` fails this.
+  const r = observationAmbiguity([
+    { structure: {}, interaction: { formChanges: [{ kind: "submit" }] } },
+    { structure: {}, interaction: { formChanges: [{ kind: "submit", baselineQuiet: false }] } },
+    { structure: {}, interaction: { formChanges: [{ kind: "submit", baselineQuiet: true }] } },
+  ]);
+  assert.deepEqual(r.soundness, { entries: 3, quiet: 1, notQuiet: 1, unstated: 1 });
+});
+
+test("a capture with no form probe contributes no soundness entries at all", () => {
+  // Zero entries and "every entry was sound" must not print the same. A corpus nobody probed reads
+  // `0 formChanges entries`, which is a statement about the corpus; 536 of 536 settled is a statement
+  // about the capture path. `pct(0, 0)` must not turn the first into the second.
+  const r = observationAmbiguity([{ structure: {}, interaction: {} }, { structure: {} }]);
+  assert.equal(r.soundness.entries, 0);
+});

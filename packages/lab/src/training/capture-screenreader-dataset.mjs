@@ -222,6 +222,8 @@ function captureOptions(/** @type {any} */ testCase) {
     // cases ALREADY declare, so an option no case used was never checked -- and therefore no case could
     // start using it. That circularity is fixed there.
     ...(testCase.probeOrder ? { probeOrder: testCase.probeOrder } : {}),
+    // Same omit-when-absent rule and the same cache-key reason: present only for the cases that ask.
+    ...(testCase.probeDialog ? { probeDialog: true } : {}),
     // Same omit-when-false rule, same reason: present only for the cases that ask, so adding the
     // flag re-keys those and nothing else.
     ...(testCase.probeNavigation ? { probeNavigation: true } : {}),
