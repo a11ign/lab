@@ -258,7 +258,47 @@ export function heldStill(capture) {
 }
 
 /** @param {any} capture */
-function report(capture, /** @type {string} */ source) {
+/**
+ * WHAT DID THIS CAPTURE ASK? — read from `observed`, which the capture records for itself since protocol 10.
+ *
+ * Every other section here is archaeology: it reconstructs what happened from a scatter of marks. This one
+ * is not, and that is the point — the capture states it, so a channel nobody asked about says so in its own
+ * words rather than being inferred from a missing mark.
+ *
+ * It also makes this report's closing line TRUE. "What it does not report, the page does not have" was a
+ * claim nothing checked; a channel that was never asked is exactly the case where it is false, and until
+ * now the report had no way to know. Measured across the corpus before this field existed: `formChanges`
+ * empty on 4,830 captures of 6,467 and **3,006 of those never asked**.
+ *
+ * @param {any} capture
+ * @returns {string[]}
+ */
+export function whatItAsked(capture) {
+  const observed = capture?.observed;
+  if (!observed || typeof observed !== "object") {
+    return [absent("which channels it asked about — it predates CAPTURE_PROTOCOL_VERSION 10")];
+  }
+  const rows = [];
+  for (const [channel, seen] of Object.entries(/** @type {Record<string, any>} */ (observed))) {
+    if (!seen?.asked) {
+      // "NOT ASKED" rather than "no": the channel is empty and that is a fact about this run, not the page.
+      rows.push(`    NOT ASKED  ${channel} — ${seen?.why ?? "no reason recorded"}`);
+    } else if (seen.complete === false) {
+      rows.push(`    ! ${channel} asked, and the sweep did NOT run out — stopped `
+        + `${JSON.stringify(seen.stop ?? {})}. An absence here is about the sweep, not the page.`);
+    } else if (seen.complete === true) {
+      rows.push(`    ok ${channel} — asked, and NVDA itself said there were no more`);
+    } else {
+      // A THIRD STATE, and inventing either of the other two would be the defect this field removes.
+      // `tableCells` walks a grid with Ctrl+Alt+Arrow and has no "no next heading" to exhaust, so it can
+      // report that it ran and cannot report that it finished.
+      rows.push(`    ~ ${channel} — asked, but this channel has no exhaustion signal to report`);
+    }
+  }
+  return rows.length ? rows : [absent("which channels it asked about — `observed` is empty")];
+}
+
+function report(/** @type {any} */ capture, /** @type {string} */ source) {
   const url = mark(capture, "landedOnRequested")?.requested ?? capture.url ?? "(unknown page)";
   const lines = [`\n${url}`, `  from ${source}`, ""];
   for (const [heading, rows] of /** @type {[string, string[]][]} */ ([
@@ -266,12 +306,17 @@ function report(capture, /** @type {string} */ source) {
     ["DID THE SCREEN READER REACH THE CONTENT?", reachedTheContent(capture)],
     ["WAS ANYTHING IN THE WAY?", wasAnythingInTheWay(capture)],
     ["DID THE PAGE HOLD STILL?", heldStill(capture)],
+    ["WHAT DID IT ASK?", whatItAsked(capture)],
   ])) {
     lines.push(`  ${heading}`, ...rows, "");
   }
   // The point of the whole report: which claims this capture can carry. A reader who stops here should
   // know whether an absence is evidence or an artefact.
-  const doubts = lines.filter((l) => l.includes("NOT RECORDED") || l.trimStart().startsWith("!") || l.trimStart().startsWith("NO "));
+  // `NOT ASKED` joins the list because it is the plainest qualification there is: the channel is empty
+  // and nobody looked. Leaving it out would let the closing line claim the page lacks something the
+  // capture never asked about — the exact sentence this field was added to stop being said.
+  const doubts = lines.filter((l) => l.includes("NOT RECORDED") || l.includes("NOT ASKED")
+    || l.trimStart().startsWith("!") || l.trimStart().startsWith("NO "));
   lines.push(doubts.length
     ? `  ${doubts.length} thing(s) above qualify what this capture can support. An absence in this evidence`
       + " is not yet evidence of absence."
