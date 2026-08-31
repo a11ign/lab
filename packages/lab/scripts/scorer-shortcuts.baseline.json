@@ -3,28 +3,28 @@
   "rows": [
     {
       "subtype": "1.1.1:filename-alt",
-      "positives": 97,
+      "positives": 90,
       "vetoes": [],
       "closable": [],
       "sumLogits": 0
     },
     {
       "subtype": "1.1.1:generic-alt",
-      "positives": 97,
+      "positives": 91,
       "vetoes": [],
       "closable": [],
       "sumLogits": 0
     },
     {
       "subtype": "1.1.1:missing-alt",
-      "positives": 163,
+      "positives": 157,
       "vetoes": [],
       "closable": [],
       "sumLogits": 0
     },
     {
       "subtype": "1.3.1:fake-heading",
-      "positives": 110,
+      "positives": 103,
       "vetoes": [],
       "closable": [],
       "sumLogits": 0
@@ -41,11 +41,6 @@
         {
           "feature": "generic_heading_present",
           "logits": -2.8019,
-          "unclosable": null
-        },
-        {
-          "feature": "state_unchanged",
-          "logits": -1.7423,
           "unclosable": null
         },
         {
@@ -66,11 +61,6 @@
           "unclosable": null
         },
         {
-          "feature": "state_unchanged",
-          "logits": -1.7423,
-          "unclosable": null
-        },
-        {
           "feature": "validation_error_missing",
           "logits": -1.259,
           "unclosable": null
@@ -81,11 +71,11 @@
           "unclosable": null
         }
       ],
-      "sumLogits": -7.0
+      "sumLogits": -5.26
     },
     {
       "subtype": "1.3.1:unassociated-table",
-      "positives": 142,
+      "positives": 136,
       "vetoes": [
         {
           "feature": "table_header_associated",
@@ -98,7 +88,7 @@
     },
     {
       "subtype": "2.1.1:control-unreachable-by-keyboard",
-      "positives": 8,
+      "positives": 10,
       "vetoes": [
         {
           "feature": "validation_error_missing",
@@ -124,20 +114,26 @@
           "feature": "state_unchanged",
           "logits": -1.4625,
           "unclosable": "perturbs-measurement"
+        },
+        {
+          "feature": "generic_graphic_present",
+          "logits": -1.2375,
+          "unclosable": null
         }
       ],
-      "closable": [],
-      "sumLogits": 0
+      "closable": [
+        {
+          "feature": "generic_graphic_present",
+          "logits": -1.2375,
+          "unclosable": null
+        }
+      ],
+      "sumLogits": -1.24
     },
     {
       "subtype": "2.1.2:focus-trapped",
-      "positives": 12,
+      "positives": 15,
       "vetoes": [
-        {
-          "feature": "state_unchanged",
-          "logits": -3.7261,
-          "unclosable": "perturbs-measurement"
-        },
         {
           "feature": "form_change_present",
           "logits": -2.4745,
@@ -182,29 +178,29 @@
       "positives": 14,
       "vetoes": [
         {
-          "feature": "state_unchanged",
-          "logits": -2.0186,
+          "feature": "validation_error_missing",
+          "logits": -2.006,
           "unclosable": null
         },
         {
-          "feature": "validation_error_missing",
-          "logits": -2.006,
+          "feature": "form_field_unnamed",
+          "logits": -1.3118,
           "unclosable": null
         }
       ],
       "closable": [
         {
-          "feature": "state_unchanged",
-          "logits": -2.0186,
-          "unclosable": null
-        },
-        {
           "feature": "validation_error_missing",
           "logits": -2.006,
           "unclosable": null
+        },
+        {
+          "feature": "form_field_unnamed",
+          "logits": -1.3118,
+          "unclosable": null
         }
       ],
-      "sumLogits": -4.02
+      "sumLogits": -3.32
     },
     {
       "subtype": "2.4.2:route-title-stale",
@@ -214,11 +210,6 @@
           "feature": "validation_error_missing",
           "logits": -2.7876,
           "unclosable": null
-        },
-        {
-          "feature": "state_unchanged",
-          "logits": -1.8392,
-          "unclosable": null
         }
       ],
       "closable": [
@@ -226,18 +217,13 @@
           "feature": "validation_error_missing",
           "logits": -2.7876,
           "unclosable": null
-        },
-        {
-          "feature": "state_unchanged",
-          "logits": -1.8392,
-          "unclosable": null
         }
       ],
-      "sumLogits": -4.63
+      "sumLogits": -2.79
     },
     {
       "subtype": "2.4.3:focus-order-scrambled",
-      "positives": 8,
+      "positives": 10,
       "vetoes": [
         {
           "feature": "state_unchanged",
@@ -285,14 +271,14 @@
     },
     {
       "subtype": "2.4.4:regex",
-      "positives": 176,
+      "positives": 175,
       "vetoes": [],
       "closable": [],
       "sumLogits": 0
     },
     {
       "subtype": "2.4.6:regex",
-      "positives": 176,
+      "positives": 190,
       "vetoes": [],
       "closable": [],
       "sumLogits": 0
@@ -315,25 +301,14 @@
           "feature": "status_update_announced",
           "logits": -2.0768,
           "unclosable": "by-definition"
-        },
-        {
-          "feature": "state_unchanged",
-          "logits": -1.728,
-          "unclosable": null
         }
       ],
-      "closable": [
-        {
-          "feature": "state_unchanged",
-          "logits": -1.728,
-          "unclosable": null
-        }
-      ],
-      "sumLogits": -1.73
+      "closable": [],
+      "sumLogits": 0
     },
     {
       "subtype": "3.3.2:unnamed-form-field",
-      "positives": 184,
+      "positives": 182,
       "vetoes": [
         {
           "feature": "status_update_announced",
@@ -362,36 +337,11 @@
     },
     {
       "subtype": "4.1.2:state-change-silent",
-      "positives": 87,
+      "positives": 106,
       "vetoes": [
-        {
-          "feature": "form_change_present",
-          "logits": -1.6636,
-          "unclosable": null
-        },
-        {
-          "feature": "form_change_nonempty",
-          "logits": -1.5383,
-          "unclosable": null
-        },
         {
           "feature": "status_update_announced",
           "logits": -1.3903,
-          "unclosable": null
-        },
-        {
-          "feature": "post_submit_present",
-          "logits": -1.3895,
-          "unclosable": null
-        },
-        {
-          "feature": "validation_error_missing",
-          "logits": -1.3608,
-          "unclosable": null
-        },
-        {
-          "feature": "form_change_empty",
-          "logits": -1.3607,
           "unclosable": null
         },
         {
@@ -402,33 +352,8 @@
       ],
       "closable": [
         {
-          "feature": "form_change_present",
-          "logits": -1.6636,
-          "unclosable": null
-        },
-        {
-          "feature": "form_change_nonempty",
-          "logits": -1.5383,
-          "unclosable": null
-        },
-        {
           "feature": "status_update_announced",
           "logits": -1.3903,
-          "unclosable": null
-        },
-        {
-          "feature": "post_submit_present",
-          "logits": -1.3895,
-          "unclosable": null
-        },
-        {
-          "feature": "validation_error_missing",
-          "logits": -1.3608,
-          "unclosable": null
-        },
-        {
-          "feature": "form_change_empty",
-          "logits": -1.3607,
           "unclosable": null
         },
         {
@@ -437,11 +362,11 @@
           "unclosable": null
         }
       ],
-      "sumLogits": -9.99
+      "sumLogits": -2.68
     },
     {
       "subtype": "4.1.2:unnamed-control",
-      "positives": 234,
+      "positives": 232,
       "vetoes": [
         {
           "feature": "status_update_announced",
@@ -491,21 +416,10 @@
           "feature": "validation_error_announced",
           "logits": -2.9877,
           "unclosable": "by-definition"
-        },
-        {
-          "feature": "state_unchanged",
-          "logits": -1.965,
-          "unclosable": null
         }
       ],
-      "closable": [
-        {
-          "feature": "state_unchanged",
-          "logits": -1.965,
-          "unclosable": null
-        }
-      ],
-      "sumLogits": -1.97
+      "closable": [],
+      "sumLogits": 0
     }
   ]
 }
