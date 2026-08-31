@@ -45,12 +45,17 @@ test("known multi-defect ids are stable", () => {
   //
   // If a deliberate corpus change moves these, update them: the recapture is the real cost and this test
   // is what makes it a decision rather than a surprise.
+  // UPDATED 2026-08-31, deliberately: a twelfth `ROTATIONS` entry (`silent-toggle-inert`) re-rolled every
+  // multi-defect case. 178 renamed and 178 added, 712 captures — paid to close the last two free vetoes
+  // that can reach a report, `state_unchanged` on `3.3.1` and `4.1.3`.
+  //
+  // This test is what made that a decision rather than a surprise, which is its whole job. It failed
+  // first, the cost was measured, and only then were these pins moved.
   const ids = new Set(CASES.map((testCase) => testCase.id));
   for (const id of [
-    "table-unassociated-headers+also-unnamed-graphic",
-    "table-unassociated-headers+also-bare-edit-vague-link",
-    "table-unassociated-hilltown+also-bare-edit",
-    "headings-none-refunds+also-vague-link",
+    "table-unassociated-headers+also-bare-edit",
+    "table-unassociated-hilltown+also-fake-heading-unnamed-graphic",
+    "headings-none-refunds+also-filename-alt",
   ]) {
     assert.ok(ids.has(id),
       `${id} is gone. If you did not intend to rename it, the accompanying-defect rotation has moved — `

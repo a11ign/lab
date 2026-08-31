@@ -163,6 +163,14 @@ const ACCOMPANYING_SPEECH: Record<string, string[]> = {
     "graphic, trail_entrance-final.jpg", "graphic, site_plan_v2.png", "graphic, DSC_0421.jpg",
   ],
   "generic-alt": ["graphic, image", "graphic, photo", "graphic, graphic"],
+  // A disclosure that never opens. It announces exactly as a working one does BEFORE activation — the
+  // failure is what does NOT change afterwards, so the pair is distinguishable only by
+  // `interaction.stateChanges` and never by the transcript.
+  "silent-toggle-inert": [
+    "Show delivery options, button, collapsed",
+    "Show opening hours, button, collapsed",
+    "Show contact details, button, collapsed",
+  ],
 };
 
 test("no accompanying defect satisfies its HOST case's own badSignal", () => {

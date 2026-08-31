@@ -2765,25 +2765,45 @@ export const ACCOMPANYING_DEFECTS = Object.freeze({
   // question about NVDA; `--pipeline=verify --only=` answers it in minutes, and `corpus:grants-audit`
   // reports it if the answer is no — in which case this grants nothing and must be DELETED rather than
   // left looking useful.
-  // ATTEMPTED AND WITHDRAWN 2026-08-31 — a `silent-toggle-inert` accompanying defect, granting
-  // `state_unchanged`, for the last two free vetoes that can reach a report.
+  // A DISCLOSURE THAT NEVER OPENS — the third `-inert` accompanying defect, and it took two attempts.
   //
-  // It was written, it type-checked, its speech was declared, and `filler-collision` passed. Then
-  // `furniture-spread` refused it: adding a ninth ROTATIONS entry re-rolls all 237 multi-defect cases, and
-  // the re-roll left `2.4.3:focus-order-scrambled` with **8 cases and no table furniture** — a NEW free
-  // veto on `table_present`, created while closing two others.
+  // `state_unchanged` is 0 on every positive of `3.3.1:validation-error-silent` and
+  // `4.1.3:form-activation-silent`, which are the only two closable vetoes on a subtype the model
+  // actually decides. The feature can only be 1 when a toggle is activated and its state does NOT
+  // change — `4.1.2:state-change-silent`'s own defect — and no accompanying defect provided one.
   //
-  // WITHDRAWN RATHER THAN FORCED. The two it would close are real (`state_unchanged` on
-  // `3.3.1:validation-error-silent` and `4.1.3:form-activation-silent`, the only closable vetoes on
-  // model-decided subtypes), but a corpus change whose second-order effects need a guard to discover them
-  // is not one to land in the same commit as a protocol bump — two variables moving at once, and the
-  // recapture cannot then say which caused what.
+  // WITHDRAWN ON THE FIRST ATTEMPT, 2026-08-31: the ninth rotation re-rolled all multi-defect cases and
+  // left `2.4.3:focus-order-scrambled` with 8 cases and no table furniture — a new free veto created
+  // while closing two, caught by `furniture-spread`.
   //
-  // FOR ANYONE PROPOSING IT AGAIN: the markup was `<button aria-expanded="false" tabindex="-1">`, on the
-  // `-inert` pattern its two siblings use, and it does not perturb its hosts' channels because a
-  // disclosure lands in `stateChanges` while 3.3.1 and 4.1.3 are measured on `formChanges`. That part was
-  // sound. What is unresolved is what a ROTATIONS re-roll does to furniture coverage, and that needs
-  // measuring FIRST -- `furniture-spread` is the tool and it already answers it.
+  // WHAT CHANGED IS NOT THIS PIECE. Lifting the stale `component-index` exclusion gave the three focus
+  // subtypes their conformant furniture back, and `2.4.3` went from 8 cases to 35. A subtype with 35
+  // cases sees every furniture shape by construction; one with 8 was near the edge. The starvation was
+  // never a property of re-rolling — measured by adding two unrelated twelfth rotations, both of which
+  // pass `furniture-spread` — it was a property of a subtype that was too thin, for a reason that has
+  // since been refuted.
+  //
+  // WHY IT DOES NOT PERTURB ITS HOSTS. A disclosure activation lands in `interaction.stateChanges`; the
+  // two target subtypes are measured on `formChanges` and `postSubmitFields`. Different channels.
+  //
+  // `tabindex="-1"` for the same reason as its two siblings: a `<button>` is a TAB STOP and this markup
+  // goes into the BAD variant only, so without it the focus-order subtypes would see one half of a
+  // controlled pair grow a stop. NVDA's form-field quick-nav walks the browse-mode buffer rather than the
+  // tab order, so the button is still announced, still says `collapsed`, and still fails to change.
+  //
+  // UNVERIFIED UNTIL CAPTURED, like both siblings. Whether NVDA's `f` reaches a `tabindex="-1"` button and
+  // whether browse-mode Enter activates it are questions about NVDA. `corpus:grants-audit` reports it if
+  // the answer is no — in which case this grants nothing and must be DELETED rather than left looking
+  // useful.
+  "silent-toggle-inert": {
+    markup: [
+      "<p><button type=\"button\" aria-expanded=\"false\" tabindex=\"-1\">Show delivery options</button></p>",
+      "<p><button type=\"button\" aria-expanded=\"false\" tabindex=\"-1\">Show opening hours</button></p>",
+      "<p><button type=\"button\" aria-expanded=\"false\" tabindex=\"-1\">Show contact details</button></p>",
+    ],
+    subtypes: ["4.1.2:state-change-silent"],
+    grants: "state_unchanged",
+  },
   "vague-link-inert": {
     markup: [
       "<p><a href=\"#detail-note\" tabindex=\"-1\">Details</a></p>",
@@ -3137,6 +3157,10 @@ const ROTATIONS = Object.freeze([
   ["fake-heading", "unnamed-graphic"],
   ["filename-alt", "generic-heading"],
   ["generic-alt", "fake-heading"],
+  // ADDED 2026-08-31 on the SECOND attempt. The first re-rolled `2.4.3` into furniture starvation when it
+  // had 8 cases; it now has 35, because the stale `component-index` exclusion was lifted the same day.
+  // `furniture-spread` is the guard that refused it then and passes it now.
+  ["silent-toggle-inert", "generic-heading"],
 ]);
 
 /**
