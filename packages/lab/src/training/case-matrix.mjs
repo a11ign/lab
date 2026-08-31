@@ -2664,25 +2664,34 @@ export const ACCOMPANYING_CONFORMANT = Object.freeze({
     // an index is called. (This paragraph was here TWICE, once in each dash style, and the copies had
     // already drifted apart in wording -- the fact-stated-twice shape inside a comment.)
     //
-    // THE OTHER THREE ARE EXCLUDED ON A PREMISE THAT IS NO LONGER TRUE, and this is flagged rather than
-    // acted on because settling it costs a capture. The recorded reason is:
+    // THE OTHER THREE WERE EXCLUDED ON A STALE PREMISE, and the measurement has now been taken.
     //
-    //   "The rest are criteria whose evidence IS the focus order, and this piece adds four focusable
-    //    links. `focusOrder` truncates at 12 stops, so four more push the case's own controls out of the
-    //    window and both variants come back looking alike -- measured on `focus-order-tabindex`, which
-    //    reported CONTAMINATED for exactly that reason."
+    // The recorded reason was: "The rest are criteria whose evidence IS the focus order, and this piece
+    // adds four focusable links. `focusOrder` truncates at 12 stops, so four more push the case's own
+    // controls out of the window and both variants come back looking alike -- measured on
+    // `focus-order-tabindex`, which reported CONTAMINATED for exactly that reason."
     //
-    // `MAX_TAB_STOPS` is 150 now, not 12. So the measurement behind the exclusion was taken under a cap
-    // that no longer exists, and four extra links cannot push a case's own controls out of a 150-stop
-    // window. That matters beyond tidiness: `audit_applicability.py` cites THIS exclusion as the reason
-    // the free-veto remedy is "UNAVAILABLE" for 2.1.1, 2.1.2 and 2.4.3 -- the exact three heads whose
-    // worst veto is `state_unchanged` in `not-working.md` §2.
+    // `MAX_TAB_STOPS` became 150 on 2026-08-25 and the exclusion was never re-measured. Settled
+    // 2026-08-31 by capturing all seven affected families with the piece applied:
     //
-    // DO NOT SIMPLY DELETE IT. The premise is stale; whether the exclusion is WRONG is a measurement, and
-    // the cheap way to take it exists: `npm run lab:pipeline -- --pipeline=verify --only=focus-order-tabindex+`
-    // captures just that family and runs the audits that would see it. If `check-signals` still reports
-    // CONTAMINATED, the exclusion stands for a better-stated reason; if it does not, three heads get their
-    // remedy back.
+    //     1469 discriminating, 0 blind, 0 CONTAMINATED, 0 uncaptured, 0 stale
+    //     keyboard-unreachable-action+with-component-index          OK
+    //     keyboard-unreachable-native-button+with-component-index   OK
+    //     keyboard-trap-postcode+with-component-index               OK
+    //     keyboard-trap-blur-revalidate+with-component-index        OK
+    //     keyboard-trap-modal-cycle+with-component-index            OK
+    //     focus-order-tabindex+with-component-index                 OK
+    //     focus-order-scripted-advance+with-component-index         OK
+    //
+    // So the exclusion is lifted for those three, and `audit_applicability.py` no longer has grounds to
+    // call the free-veto remedy UNAVAILABLE for `2.1.1`, `2.1.2` and `2.4.3` -- which was the whole cost
+    // of leaving a stale premise in place: it was cited elsewhere as a reason not to try.
+    //
+    // Purely additive when it landed: 7 new cases, 14 captures, and ZERO existing ids renamed.
+    //
+    // 2.4.4 STAYS excluded, on a reason the cap never touched: its own cases use these words as their
+    // failing example -- `link-vague-market` and `link-vague-clinic` are both "Details" -- so
+    // accompanying one would put the word on its good variant and its badSignal would fire on both.
     notFor: ["2.4.4"],
   },
   "status-region": {

@@ -338,21 +338,24 @@ test("conformant accompaniments exist and carry the word, or the check above is 
     + "which is the shortcut this corpus change exists to remove");
   assert.ok(generated.every((c) => c.criterion !== "2.4.4"),
     "a 2.4.4 host received the piece whose word its own case uses as the failure");
-  // THE FOCUS-SUBTYPE EXCLUSION IS UNDER MEASUREMENT ON THIS BRANCH, and this assertion is the static
-  // proxy for it. Its stated reason -- "`focusOrder` truncates at 12 stops" -- is stale: `MAX_TAB_STOPS`
-  // is 150, so four extra links cannot push a case's own controls out of the window.
-  //
-  // The proxy is relaxed rather than deleted, because the risk it stood for is real and simply not
-  // decidable here: perturbing the FOCUS channel is invisible to `signalMatches`, which reads a
-  // transcript. Only a capture can answer it, which is what `--pipeline=verify --only=` is for. The
-  // substantive guard above -- a conformant piece must not satisfy its host's badSignal -- is
-  // mechanism-independent and still runs on every case including these.
-  //
-  // IF check-signals REPORTS CONTAMINATED, this branch is discarded and this assertion returns with a
-  // reason that is true. 2.4.4 stays excluded either way: its cases use the word as their failure, which
-  // has nothing to do with the tab cap.
   assert.ok(generated.every((c) => c.criterion !== "2.4.4"),
     "a 2.4.4 host received the piece whose word its own case uses as the failure");
+  // THE FOCUS SUBTYPES MUST RECEIVE IT, which is the opposite of what this asserted until 2026-08-31.
+  //
+  // It required their ABSENCE, on the grounds that "`focusOrder` truncates at 12 stops, so four more
+  // links push the case's own controls out of the window". `MAX_TAB_STOPS` became 150 on 2026-08-25 and
+  // nobody re-measured. Capturing all seven affected families with the piece applied returned
+  // `1469 discriminating, 0 blind, 0 CONTAMINATED`, every one OK.
+  //
+  // Asserted POSITIVELY rather than deleted: `audit_applicability.py` cited that exclusion as why the
+  // free-veto remedy was unavailable for exactly these three heads, so a silent revert would quietly
+  // restore a claim the corpus has refuted. The substantive guard above — a conformant piece must not
+  // satisfy its host's badSignal — is what actually protects the pair, and it runs on these too.
+  for (const criterion of ["2.4.3", "2.1.1", "2.1.2"]) {
+    assert.ok(generated.some((c) => String(c.criterion) === criterion),
+      `${criterion} lost its component-index furniture. That exclusion was refuted by capture on `
+      + "2026-08-31; restoring it needs a NEW measurement, not the old reason");
+  }
   // Asserted on the piece's own markup, which is a VALUE. Diffing the generated page against its host does
   // not work: the two have different IDs, so `withRealisticScale` gives them different furniture, and the
   // residue contained the HOST's `<nav>` rather than the piece's.
