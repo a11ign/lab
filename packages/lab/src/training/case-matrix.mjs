@@ -2683,7 +2683,7 @@ export const ACCOMPANYING_CONFORMANT = Object.freeze({
     // captures just that family and runs the audits that would see it. If `check-signals` still reports
     // CONTAMINATED, the exclusion stands for a better-stated reason; if it does not, three heads get their
     // remedy back.
-    notFor: ["2.4.4", "2.4.3", "2.1.1", "2.1.2"],
+    notFor: ["2.4.4"],
   },
   "status-region": {
     markup: [
