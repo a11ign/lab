@@ -141,7 +141,7 @@ test("WHAT DID IT ASK: a channel nobody asked about is a QUALIFICATION, not a cl
     observed: {
       headings: { asked: true, complete: true },
       links: { asked: true, complete: false, stop: { prev: "deadline", next: "exhausted" } },
-      tableCells: { asked: true },
+      tableCells: { asked: true, complete: false, stop: { prev: "n/a", next: "n/a" } },
       formChanges: { asked: false, why: "probeForms is off for this capture" },
     },
   });
@@ -149,8 +149,9 @@ test("WHAT DID IT ASK: a channel nobody asked about is a QUALIFICATION, not a cl
   assert.match(text, /NOT ASKED\s+formChanges/, "it must say so in the capture's own words");
   assert.match(text, /! links asked, and the sweep did NOT run out/);
   assert.match(text, /ok headings/);
-  assert.match(text, /~ tableCells .* no exhaustion signal/,
-    "asked-with-no-terminus is a THIRD state; reporting it as either of the others invents a fact");
+  assert.match(text, /! tableCells asked, and the sweep did NOT run out/,
+    "the table probe's count varies with timing — 4,2,4,4,1,4,4 over 18 captures of one page — so an "
+    + "absence there can never be read as the page having none, on any capture");
 });
 
 test("a capture predating the field says so, rather than reading as nothing to ask about", () => {
