@@ -46,6 +46,41 @@ function* captures(/** @type {string} */ root) {
   }
 }
 
+const pct = (/** @type {number} */ part, /** @type {number} */ whole) =>
+    (whole === 0 ? "   n/a" : (100 * part / whole).toFixed(1).padStart(5) + "%");
+
+/**
+ * Was each recorded activation soundly measured, and by how much?
+ *
+ * The verdict alone is now a constant -- `baselineQuiet` reads `true` on 1,117 of 1,117 stated entries on
+ * the authoritative corpus -- so the MARGIN is the half that still carries information. A budget that
+ * always wins by 200ms and one that always wins by 100ms print the same word and are different situations.
+ *
+ * @param {{entries: number, quiet: number, notQuiet: number, unstated: number, waits: number[]}} snd
+ */
+function reportSoundness(snd) {
+  console.log("was each recorded activation SOUNDLY measured? (`baselineQuiet`, read by nothing so far)");
+  console.log("  " + String(snd.entries).padStart(6) + " formChanges entr(ies): " +
+    snd.quiet + " settled " + pct(snd.quiet, snd.entries) +
+    "  " + snd.notQuiet + " NOISY " + pct(snd.notQuiet, snd.entries) +
+    "  " + snd.unstated + " unstated " + pct(snd.unstated, snd.entries));
+  // The MARGIN, so "always settles" and "always settles just in time" cannot print the same. A budget
+  // with no headroom is one record from the cliff, which is the shape `choose_threshold` already taught
+  // this repo: clean on this corpus, unusable on the next.
+  const waits = [...(snd.waits ?? [])].sort((a, b) => a - b);
+  if (waits.length) {
+    const at = (/** @type {number} */ q) => waits[Math.min(waits.length - 1, Math.floor(waits.length * q))];
+    console.log("  waited: p50 " + at(0.5) + "ms  p95 " + at(0.95) + "ms  max " + waits[waits.length - 1] +
+      "ms of a 20000ms budget  (" + waits.length + " stated)");
+  } else {
+    console.log("  waited: NOT RECORDED on any entry -- so headroom is unknown, not comfortable.");
+  }
+  console.log("  NOISY means the speech baseline had not settled, so `after` is untrustworthy in EITHER");
+  console.log("  direction -- and `validation_error_missing` reads an empty `after` as \"nothing was");
+  console.log("  announced\". unstated is a capture taken before the field existed, NOT a noisy one:");
+  console.log("  reading absence as false is the defect this whole report is about.");
+}
+
 function main() {
   refuseUnknownFlags(["--captures=", "--out=", "--json"], {
     entry: import.meta.url,
@@ -64,8 +99,6 @@ function main() {
     process.exit(0);
   }
 
-  const pct = (/** @type {number} */ part, /** @type {number} */ whole) =>
-    (whole === 0 ? "   n/a" : (100 * part / whole).toFixed(1).padStart(5) + "%");
 
   console.log("OBSERVATION AMBIGUITY — how many feature zeros are artefacts?");
   console.log("read from " + path.resolve(CAPTURES));
@@ -100,16 +133,7 @@ function main() {
       ", of which " + String(row.emptyNotAsked).padStart(5) + " never asked " + pct(row.emptyNotAsked, row.empty));
   }
   console.log("");
-  console.log("was each recorded activation SOUNDLY measured? (`baselineQuiet`, read by nothing so far)");
-  const snd = result.soundness;
-  console.log("  " + String(snd.entries).padStart(6) + " formChanges entr(ies): " +
-    snd.quiet + " settled " + pct(snd.quiet, snd.entries) +
-    "  " + snd.notQuiet + " NOISY " + pct(snd.notQuiet, snd.entries) +
-    "  " + snd.unstated + " unstated " + pct(snd.unstated, snd.entries));
-  console.log("  NOISY means the speech baseline had not settled, so `after` is untrustworthy in EITHER");
-  console.log("  direction -- and `validation_error_missing` reads an empty `after` as \"nothing was");
-  console.log("  announced\". unstated is a capture taken before the field existed, NOT a noisy one:");
-  console.log("  reading absence as false is the defect this whole report is about.");
+  reportSoundness(result.soundness);
   console.log("");
   console.log("Everything outside the last column is a `0` the featurizer reads as a fact about the page,");
   console.log("and it is not one. The two middle columns need opposite responses, which is why they are two.");

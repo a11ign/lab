@@ -83,7 +83,10 @@ function emptyTally() {
   /** @type {Record<string, any>} */
   const interaction = {};
   for (const field of Object.keys(ASKED_MARK)) interaction[field] = { empty: 0, emptyNotAsked: 0 };
-  return { channels, interaction, soundness: { entries: 0, quiet: 0, notQuiet: 0, unstated: 0 } };
+  return {
+    channels, interaction,
+    soundness: { entries: 0, quiet: 0, notQuiet: 0, unstated: 0, waits: /** @type {number[]} */ ([]) },
+  };
 }
 
 /** One capture's contribution to the swept channels, given the completeness verdicts computed for it. */
@@ -130,13 +133,15 @@ function tallyInteraction(capture, interaction) {
  * has not said the baseline was noisy, and reading absence as `false` here would be this file's own subject
  * committed by the audit that reports it.
  *
- * @param {any} capture @param {Record<string, number>} soundness
+ * @param {{entries: number, quiet: number, notQuiet: number, unstated: number, waits: number[]}} soundness
+ * @param {any} capture
  */
 function tallySoundness(capture, soundness) {
   const changes = capture.interaction?.formChanges;
   if (!Array.isArray(changes)) return;
   for (const change of changes) {
     soundness.entries++;
+    if (typeof change?.baselineWaitedMs === "number") soundness.waits.push(change.baselineWaitedMs);
     if (change?.baselineQuiet === true) soundness.quiet++;
     else if (change?.baselineQuiet === false) soundness.notQuiet++;
     else soundness.unstated++;
@@ -146,7 +151,8 @@ function tallySoundness(capture, soundness) {
 /**
  * @param {Iterable<any>} captures
  * @returns {{ scanned: number, noCensus: number, channels: Record<string, any>,
- *            interaction: Record<string, any>, soundness: Record<string, number> }}
+ *            interaction: Record<string, any>,
+ *            soundness: {entries: number, quiet: number, notQuiet: number, unstated: number, waits: number[]} }}
  */
 export function observationAmbiguity(captures) {
   const { channels, interaction, soundness } = emptyTally();

@@ -104,7 +104,7 @@ test("an unstated baseline is counted apart from a noisy one, never folded into 
     { structure: {}, interaction: { formChanges: [{ kind: "submit", baselineQuiet: false }] } },
     { structure: {}, interaction: { formChanges: [{ kind: "submit", baselineQuiet: true }] } },
   ]);
-  assert.deepEqual(r.soundness, { entries: 3, quiet: 1, notQuiet: 1, unstated: 1 });
+  assert.deepEqual(r.soundness, { entries: 3, quiet: 1, notQuiet: 1, unstated: 1, waits: [] });
 });
 
 test("a capture with no form probe contributes no soundness entries at all", () => {
@@ -113,4 +113,19 @@ test("a capture with no form probe contributes no soundness entries at all", () 
   // about the capture path. `pct(0, 0)` must not turn the first into the second.
   const r = observationAmbiguity([{ structure: {}, interaction: {} }, { structure: {} }]);
   assert.equal(r.soundness.entries, 0);
+});
+
+test("the settle MARGIN is collected, so a comfortable wait and a near-miss cannot print alike", () => {
+  // `baselineQuiet` reads `true` on 1,117 of 1,117 stated entries, so the verdict alone is now a constant
+  // and says nothing. The margin is what distinguishes a 20s budget with headroom from one record from
+  // the cliff -- the shape `choose_threshold` already cost this repo once.
+  const r = observationAmbiguity([
+    { structure: {}, interaction: { formChanges: [{ baselineQuiet: true, baselineWaitedMs: 412 }] } },
+    { structure: {}, interaction: { formChanges: [{ baselineQuiet: true, baselineWaitedMs: 19_800 }] } },
+    { structure: {}, interaction: { formChanges: [{ baselineQuiet: true }] } },
+  ]);
+  assert.deepEqual(r.soundness.waits, [412, 19_800]);
+  // An entry predating the field contributes NO wait, rather than a zero. A zero here would read as the
+  // most comfortable margin possible, which is absence collapsed into a value -- this report's subject.
+  assert.equal(r.soundness.entries, 3);
 });
