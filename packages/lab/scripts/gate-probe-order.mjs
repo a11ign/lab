@@ -368,8 +368,29 @@ function report_(/** @type {any[]} */ outcomes, /** @type {number} */ workerCoun
 
   const differing = judged.filter((r) => r.verdict === "CHANGED" || r.verdict === "DRIFT");
   const unexercised = judged.filter((/** @type {any} */ r) => r.remedied === false);
-  const { undeclared: moved, expected: expectedMovers, stale: staleDeclarations } =
+  const { undeclared: allUndeclared, expected: expectedMovers, stale: staleDeclarations } =
     classifyMovers(judged, PAGES);
+  // A LIVE SITE THAT MOVED IS REPORTED, NOT COUNTED — and the reason is not leniency.
+  //
+  // The controlled corpus pages are the ones this gate can hold still. A live site cannot be: measured
+  // 2026-08-31, `tfl.gov.uk` was SAME on one run and PAGE-MOVED on the next, and the difference names
+  // itself — `structure.graphics: 25 -> 25 lost ["central, graphic"] gained ["now at 23:25"]`. That is a
+  // CLOCK, not a probe effect, and the control cannot subtract it because the text differs between every
+  // capture rather than between two of them.
+  //
+  // So requiring full coverage over live sites made this gate's verdict a coin flip, on top of the
+  // permanently-short coverage the declaration above fixed. It still FAILS on a live site that reports
+  // CHANGED — an ordering fault is an ordering fault wherever it is found, and `differing` is unchanged.
+  // What it no longer does is call a run inconclusive because a public website ticked.
+  const isLive = (/** @type {any} */ r) => String(r.page).startsWith("http");
+  const moved = allUndeclared.filter((r) => !isLive(r));
+  const liveMovers = allUndeclared.filter(isLive);
+  if (liveMovers.length) {
+    process.stdout.write(`\n${liveMovers.length} LIVE SITE(S) moved between captures, so the ordering `
+      + "question is unanswerable for them this run. Reported, and not counted against coverage — a public "
+      + "page can change under anyone. A live site reporting CHANGED still fails:\n");
+    for (const r of liveMovers) process.stdout.write(`    ${r.page}\n`);
+  }
   if (moved.length) {
     process.stdout.write(`\n${moved.length} page(s) CHANGED UNDER THEIR OWN PROBES and did not declare it `
       + "— see D7. A control the sweep activated altered what the next probe could see, so whether ORDER "
@@ -395,10 +416,10 @@ function report_(/** @type {any[]} */ outcomes, /** @type {number} */ workerCoun
       // A judged-but-unexaminable page is `result: null` to the fleet verdict for the same reason an
       // errored one is: coverage counts what was ANSWERED, and these three cases have no answer.
       result: o.result && !moved.includes(o.result) && !unexercised.includes(o.result)
-        && !expectedMovers.includes(o.result) ? o.result : null,
+        && !expectedMovers.includes(o.result) && !liveMovers.includes(o.result) ? o.result : null,
       error: o.error,
     })),
-    { of: PAGES.length - expectedMovers.length, what: `corpus pages and live sites, each captured ${CAPTURES_PER_PAGE}x (control, treatment, control)`,
+    { of: PAGES.length - expectedMovers.length - liveMovers.length, what: `corpus pages and live sites, each captured ${CAPTURES_PER_PAGE}x (control, treatment, control)`,
       workers: workerCount, failed: differing.length, controlPlane });
   process.stdout.write(`\n${renderVerdict(verdict)}\n`);
   process.exit(exitCodeFor(verdict));
