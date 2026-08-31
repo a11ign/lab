@@ -74,10 +74,10 @@ const GRANTS = Object.freeze({
  */
 /** @type {Record<string, any>} */
 export const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
-  "3.3.1:validation-error-silent": ["validation_error_announced", "status_update_announced"],
+  "3.3.1:validation-error-silent": ["validation_error_announced", "status_update_announced", "form_change_nonempty"],
   "4.1.3:form-activation-silent": ["status_update_announced", "validation_error_announced",
     // `validation_error_missing` joined them 2026-08-30 -- see the note below the table.
-    "validation_error_missing"],
+    "validation_error_missing", "form_change_nonempty"],
   "4.1.2:state-change-silent": ["state_changed"],
   // ADDED 2026-08-30, and it appeared because the corpus got MORE correct rather than less.
   //
@@ -99,6 +99,23 @@ export const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
   // that appears to make things worse may have worked — it removed the shortcut's cover and exposed the
   // head's dependence on it. The right response is to fix the FEATURE, never to withdraw the pages."
   // Here there is no feature to fix: the veto cannot be closed by any page, so it belongs in this table.
+  // `form_change_nonempty` joined BOTH of them 2026-08-31, and it is the first entry here settled by
+  // MEASURING rather than by reasoning about the case definitions. `scorer:explain-feature` on the
+  // authoritative corpus:
+  //
+  //     3.3.1:validation-error-silent   143 positives, 143 read 0, formChanges by kind: submit=142 taskButton=1
+  //     4.1.3:form-activation-silent    143 positives, 143 read 0, formChanges by kind: taskButton=143
+  //
+  // Each positive carries EXACTLY ONE form change -- the activation the subtype is about -- and its
+  // `after` is empty, which IS the finding. So "some form change announced something" cannot be true of a
+  // page whose only activation announced nothing. 143 of 143 on both, not 142.
+  //
+  // THE HYPOTHESIS THIS REFUTED is worth keeping, because it was plausible and wrong: 29 cases in each
+  // subtype carry disclosure FURNITURE, a working disclosure announces something, so the feature should
+  // have been 1 on those. It is not, because a disclosure activation lands in `stateChanges` and never in
+  // `formChanges` -- visible in `form-error-silent`, which has the disclosure in one channel and the
+  // submit in the other. Reasoning from the case definitions gave the wrong answer twice; one command
+  // gave the right one.
   // ADDED 2026-08-30, and it appeared only because a feature got MORE precise.
   //
   // `4.1.3:form-activation-silent` is a status message that never arrives after activating a FILTER --
