@@ -2756,6 +2756,25 @@ export const ACCOMPANYING_DEFECTS = Object.freeze({
   // question about NVDA; `--pipeline=verify --only=` answers it in minutes, and `corpus:grants-audit`
   // reports it if the answer is no — in which case this grants nothing and must be DELETED rather than
   // left looking useful.
+  // ATTEMPTED AND WITHDRAWN 2026-08-31 — a `silent-toggle-inert` accompanying defect, granting
+  // `state_unchanged`, for the last two free vetoes that can reach a report.
+  //
+  // It was written, it type-checked, its speech was declared, and `filler-collision` passed. Then
+  // `furniture-spread` refused it: adding a ninth ROTATIONS entry re-rolls all 237 multi-defect cases, and
+  // the re-roll left `2.4.3:focus-order-scrambled` with **8 cases and no table furniture** — a NEW free
+  // veto on `table_present`, created while closing two others.
+  //
+  // WITHDRAWN RATHER THAN FORCED. The two it would close are real (`state_unchanged` on
+  // `3.3.1:validation-error-silent` and `4.1.3:form-activation-silent`, the only closable vetoes on
+  // model-decided subtypes), but a corpus change whose second-order effects need a guard to discover them
+  // is not one to land in the same commit as a protocol bump — two variables moving at once, and the
+  // recapture cannot then say which caused what.
+  //
+  // FOR ANYONE PROPOSING IT AGAIN: the markup was `<button aria-expanded="false" tabindex="-1">`, on the
+  // `-inert` pattern its two siblings use, and it does not perturb its hosts' channels because a
+  // disclosure lands in `stateChanges` while 3.3.1 and 4.1.3 are measured on `formChanges`. That part was
+  // sound. What is unresolved is what a ROTATIONS re-roll does to furniture coverage, and that needs
+  // measuring FIRST -- `furniture-spread` is the tool and it already answers it.
   "vague-link-inert": {
     markup: [
       "<p><a href=\"#detail-note\" tabindex=\"-1\">Details</a></p>",
