@@ -92,6 +92,13 @@ const NO_FIXTURE: Record<string, string> = {
   //
   // The predicate itself IS unit-tested in `case-matrix.test.ts` against its four states. What is missing
   // is evidence that those states are the ones a real capture produces, which only a capture can supply.
+  // Same reason, same closure condition: capture `validation-live-silent` once the fleet is free. What
+  // NVDA speaks while characters are typed into a field -- how the echo interleaves with a live region's
+  // announcement -- is exactly the kind of claim this session has been wrong about three times.
+  "typed-feedback-silent":
+    "probeTyping has never run: no capture carries typedFeedback, and guessing how NVDA's character echo "
+    + "interleaves with a live region would be my model of the probe rather than the probe. Close by "
+    + "capturing validation-live-silent once the fleet is free.",
   "arrow-keys-inert":
     "probeArrows has never run: the fleet is mid-recapture, so no capture carries arrowNavigation and a "
     + "hand-built fixture would be my model of the probe rather than the probe. Close by capturing "

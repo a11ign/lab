@@ -2534,6 +2534,39 @@ function RADIO_GROUP_PAGE(arrowsWork) {
     + "</div>";
 }
 
+
+/**
+ * Validation that fires WHILE TYPING — the one mechanism this corpus has never contained.
+ *
+ * Measured 2026-09-01 across all 3,948 generated pages: `oninput` appears on **zero** of them, against
+ * `onsubmit` on 346. So every 3.3.1 record in this corpus describes an error surfaced by SUBMITTING, and
+ * the head owning `validation-error-silent` has never seen the other half of the criterion.
+ *
+ * It is a genuinely different mechanism rather than a variation. A submit-time error arrives with a focus
+ * change and a re-read; a live one arrives with the user still typing, focus unmoved, and only a live
+ * region can carry it. A page can pass the first and fail the second.
+ *
+ * The pair differs in the live region and NOTHING else: same field, same handler, same message, same
+ * words. So anything that discriminates them is reading whether the message was ANNOUNCED, which is the
+ * criterion, rather than whether a message exists.
+ *
+ * @param {boolean} announced
+ */
+function LIVE_VALIDATION_PAGE(announced) {
+  const region = announced
+    ? "<p id=\"hint\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"></p>"
+    : "<p id=\"hint\" class=\"error\"></p>";
+  return "<form onsubmit=\"return false\">"
+    + "<label for=\"ref\">Reference number</label><input id=\"ref\" name=\"ref\">"
+    + region
+    + "</form>"
+    // Fires on every keystroke and says the same thing on both variants. `input`, not `change`: `change`
+    // waits for blur, which is the submit-time mechanism this case exists to be different from.
+    + "<script>document.querySelector('#ref').addEventListener('input', (e) => "
+    + "{ document.querySelector('#hint').textContent = e.target.value.length === 6 ? '' : "
+    + "'Reference must be 6 digits.'; });</script>";
+}
+
 // 2.1.1 Keyboard. The detectable failure is a control the screen reader ANNOUNCES as operable that the
 // keyboard cannot reach — a `div role="button"` with a click handler and no `tabindex`, which is the most
 // common way this is failed and the one a screen-reader user meets as "I can hear it and I cannot press it".
@@ -2553,6 +2586,31 @@ cases.push(
     badSignal: { type: "control-unreachable-by-keyboard" },
     probeFocus: true,
     probeForms: true,
+    probeOrder: "focus-first",
+  }),
+);
+
+
+cases.push(
+  pair({
+    id: "validation-live-silent",
+    task: "Enter a reference number and notice whether the form tells you it is wrong.",
+    source: "WCAG 3.3.1 Understanding; Web Accessibility Cookbook, chapter 22",
+    mutation: "Validation fires while typing and writes its message to a plain paragraph, so a sighted "
+      + "user sees it immediately and a screen-reader user hears nothing at all.",
+    criterion: "3.3.1",
+    // JOINS THE EXISTING HEAD WITH A MECHANISM IT HAS NEVER SEEN. `oninput` is on 0 of 3,948 generated
+    // pages against `onsubmit` on 346, so every `validation-error-silent` record describes an error
+    // surfaced by SUBMITTING -- half the criterion, and the half a probe could already reach.
+    subtype: "validation-error-silent",
+    badSignal: { type: "typed-feedback-silent" },
+    good: page({ title: "Reference lookup", heading: "Reference lookup", body: LIVE_VALIDATION_PAGE(true) }),
+    bad: page({ title: "Reference lookup", heading: "Reference lookup", body: LIVE_VALIDATION_PAGE(false) }),
+    // `probeTyping` types into the focused field; `probeFocus` is what puts DOM focus in a field at all,
+    // since a sweep is browse mode and typing there would send quick-nav commands into the document --
+    // the 353-capture defect this repo has already paid for once.
+    probeFocus: true,
+    probeTyping: true,
     probeOrder: "focus-first",
   }),
 );
@@ -4181,6 +4239,27 @@ function announcedControlsTheRingNeverReached(stops, formFields) {
 }
 
 /**
+ * Characters were typed into a field and NOTHING was announced — live validation nobody can hear.
+ *
+ * Reads `interaction.typedFeedback`, which exists only when `probeTyping` AND `probeFocus` both ran: a
+ * sweep is browse mode, where letters are quick-navigation COMMANDS rather than input, and typing there
+ * is the 353-capture contamination this repo has already paid for once.
+ *
+ * `echoed` is separated from `announced` and that separation is the whole predicate. NVDA echoes typed
+ * characters back by default, so a page that says nothing still produces speech — and counting the echo as
+ * feedback would make every page pass. What is asked is whether anything was said BEYOND the echo.
+ *
+ * `null` makes no claim. A capture that never typed cannot say whether the page responds to typing.
+ */
+export function typedFeedbackIsSilent(/** @type {any} */ typedFeedback) {
+  if (!typedFeedback || typeof typedFeedback !== "object") return false;
+  // The probe must have been able to type at all. `typed: false` means focus was not in an editable
+  // control, which is a fact about where the focus probe finished and not about the page.
+  if (typedFeedback.typed !== true) return false;
+  return String(typedFeedback.announced ?? "").trim() === "";
+}
+
+/**
  * Arrows were pressed inside a group and NOTHING moved — the evidence 2.1.1 abstains without.
  *
  * Reads `interaction.arrowNavigation`, which exists only when `probeArrows` AND `probeFocus` both ran:
@@ -4276,6 +4355,8 @@ const SIGNAL_PREDICATES = Object.freeze({
     escapeDoesNotRelease(capture.interaction?.dialogEscape),
   "arrow-keys-inert": (/** @type {any} */ capture) =>
     arrowKeysAreInert(capture.interaction?.arrowNavigation),
+  "typed-feedback-silent": (/** @type {any} */ capture) =>
+    typedFeedbackIsSilent(capture.interaction?.typedFeedback),
   "route-title-stale": (/** @type {any} */ capture) => routeTitleIsStale(capture),
   "focus-order-scrambled": (/** @type {any} */ capture) => focusOrderIsScrambled(capture),
   "skip-link-inert": (/** @type {any} */ capture) => skipLinkIsInert(capture),
