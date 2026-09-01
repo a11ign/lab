@@ -1833,6 +1833,87 @@ const BAD_ROUTE_SCRIPT = ROUTE_SWAP
   + "<p>Book a room for up to twelve people.</p>';"
   + "});";
 
+
+/*
+ * TWO MORE 2.4.2 HOSTS, and the reason is arithmetic rather than appetite.
+ *
+ * Accompanying defects are DEALT: `roundsForHost` takes `ROTATIONS[(rotation + round) % 12]` with three
+ * rounds per host, so a subtype covers `3 x hosts` of the twelve rotations. With two hosts 2.4.2 saw six,
+ * and which six is an offset — `filename-alt` and `generic-alt` were not among them. So no positive of
+ * this subtype could carry `filename_graphic_present` or `generic_graphic_present`, and the promote gate
+ * refused on both as free vetoes. §2 records the identical accident for `2.4.1:skip-link-inert`:
+ * *"none contains `vague-link`, so the substitution never fires. That is chance, not design."*
+ *
+ * FOUR hosts is twelve slots, which covers every rotation by construction rather than by luck — the same
+ * reasoning that moved furniture from an independent hash to a within-subtype deal, where a seven-case
+ * subtype missed a bucket with probability 0.8^7.
+ *
+ * It is bounded: `withAccompanyingDefects` re-rotates "the hosts after it WITHIN THAT SUBTYPE ONLY", so
+ * this recaptures 2.4.2's family and nothing else. The 474-capture figure in §2 is for enlarging
+ * `ROTATIONS` globally, which this deliberately does not do.
+ *
+ * And it is worth doing for its own sake: 2.4.2 had 14 positives, which §2 calls the underlying
+ * constraint — *"the remaining vetoes concentrate in subtypes with few positives"*.
+ *
+ * Each host is a DIFFERENT router mechanism, matching the two above (`pushState`, `replaceState`), because
+ * a fourth copy of one shape teaches a head the shape rather than the failure.
+ */
+const ENROLMENT_NAV =
+  "<nav><ul>"
+  // Navigating link first — `probeRouteChange` activates the first link it reaches. Same constraint the
+  // two hosts above record, and the reason a conformant variant would otherwise be unable to pass.
+  + "<li><a href=\"#modules\" id=\"nav-modules\">My modules</a></li>"
+  + "<li><a href=\"#timetable\">Timetable</a></li>"
+  + "</ul></nav>"
+  + "<div id=\"view\"><p>Term dates and enrolment deadlines for the current year.</p></div>";
+
+const ENROLMENT_SWAP =
+  "var view = document.getElementById('view');"
+  + "document.getElementById('nav-modules').addEventListener('click', function (event) {"
+  + "event.preventDefault();"
+  // A HASH change rather than a History call — the oldest client-side router there is, and still the one
+  // a hand-rolled single-page view most often uses. Same evidence, a third mechanism.
+  + "location.hash = '#modules';";
+
+const ENROLMENT_GOOD = ENROLMENT_SWAP
+  + "view.innerHTML = '<h1 id=\"landed\" tabindex=\"-1\">My modules</h1>"
+  + "<p>Three modules enrolled, one awaiting approval.</p>';"
+  + "document.title = 'My modules - Northgate College';"
+  + "document.getElementById('landed').focus();"
+  + "});";
+
+const ENROLMENT_BAD = ENROLMENT_SWAP
+  + "view.innerHTML = '<h1>My modules</h1>"
+  + "<p>Three modules enrolled, one awaiting approval.</p>';"
+  + "});";
+
+const CLAIM_NAV =
+  "<nav><ul>"
+  + "<li><a href=\"#payments\" id=\"nav-payments\">Payment history</a></li>"
+  + "<li><a href=\"#contact\">Contact us</a></li>"
+  + "</ul></nav>"
+  + "<div id=\"view\"><p>How to report a change of circumstances and what evidence is needed.</p></div>";
+
+const CLAIM_SWAP =
+  "var view = document.getElementById('view');"
+  + "document.getElementById('nav-payments').addEventListener('click', function (event) {"
+  + "event.preventDefault();"
+  // `pushState` with a real PATH rather than a fragment. The address bar changes more visibly than in any
+  // of the three above, which makes the stale title the only thing a screen-reader user has left to go on.
+  + "history.pushState({}, '', '/payments');";
+
+const CLAIM_GOOD = CLAIM_SWAP
+  + "view.innerHTML = '<h1 id=\"landed\" tabindex=\"-1\">Payment history</h1>"
+  + "<p>Your last payment was made on the fourth of the month.</p>';"
+  + "document.title = 'Payment history - Benefit claims';"
+  + "document.getElementById('landed').focus();"
+  + "});";
+
+const CLAIM_BAD = CLAIM_SWAP
+  + "view.innerHTML = '<h1>Payment history</h1>"
+  + "<p>Your last payment was made on the fourth of the month.</p>';"
+  + "});";
+
 // 2.4.2, and deliberately NOT the missing-title case. Measured across 4,895 captures there are ZERO
 // missing or placeholder titles, and WebAIM's million-page survey does not list missing title among the
 // failures covering 96% of errors -- a rule there would add a row to the coverage table and detect nothing.
@@ -1944,6 +2025,37 @@ cases.push(
 
 // A single targeted case rather than a family: 2.1.2 needs exactly one pair to become validatable, and
 // it is pushed here beside the other explicit pushes rather than buried in a generated block.
+cases.push(
+  pair({
+    id: "route-title-stale-enrolment",
+    task: "Open your modules and confirm where you are.",
+    source: "WCAG 2.4.2 Understanding; ADR 0019 — the corpus cannot express what real pages do",
+    mutation: "The view changes on a HASH route and the document title does not, so the page shows modules "
+      + "while the title still names the college and nothing is announced.",
+    criterion: "2.4.2",
+    subtype: "route-title-stale",
+    badSignal: { type: "route-title-stale" },
+    good: page({ title: "Northgate College", heading: "Northgate College", body: ENROLMENT_NAV,
+      script: ENROLMENT_GOOD }),
+    bad: page({ title: "Northgate College", heading: "Northgate College", body: ENROLMENT_NAV,
+      script: ENROLMENT_BAD }),
+    probeNavigation: true,
+  }),
+  pair({
+    id: "route-title-stale-claim",
+    task: "Open your payment history and confirm where you are.",
+    source: "WCAG 2.4.2 Understanding; ADR 0019 — the corpus cannot express what real pages do",
+    mutation: "The route changes to a real PATH and the document title does not, so the address bar moves "
+      + "and the only thing a screen-reader user could have gone on stays put.",
+    criterion: "2.4.2",
+    subtype: "route-title-stale",
+    badSignal: { type: "route-title-stale" },
+    good: page({ title: "Benefit claims", heading: "Benefit claims", body: CLAIM_NAV, script: CLAIM_GOOD }),
+    bad: page({ title: "Benefit claims", heading: "Benefit claims", body: CLAIM_NAV, script: CLAIM_BAD }),
+    probeNavigation: true,
+  }),
+);
+
 cases.push(
   pair({
     id: "keyboard-trap-postcode",
