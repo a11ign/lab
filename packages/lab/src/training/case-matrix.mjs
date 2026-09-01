@@ -2563,6 +2563,91 @@ cases.push(
   }),
 );
 
+/*
+ * TWO MORE 2.4.1 HOSTS, for the arithmetic §2 records and 2.4.2 has already been fixed for.
+ *
+ * Accompanying defects are DEALT — `ROTATIONS[(rotation + round) % 12]`, three rounds per host — so a
+ * subtype covers `3 x hosts` of the twelve. With two hosts 2.4.1 saw six, and `vague-link` was not among
+ * them, which is why §2 records `vague_link_without_context (-4.51)` as its worst free veto: *"none
+ * contains `vague-link`, so the substitution never fires. That is chance, not design."* Four hosts is
+ * twelve slots, and every rotation is drawn by construction.
+ *
+ * Bounded to this subtype: `withAccompanyingDefects` re-rotates "the hosts after it WITHIN THAT SUBTYPE
+ * ONLY". 2.4.1 also had 14 positives, and §2 calls corpus depth the underlying constraint.
+ *
+ * A MECHANISM THAT WAS REFUTED IS DELIBERATELY NOT AMONG THESE. `skip-link-target-not-focusable` — a
+ * target with a real id and no `tabindex` — was captured on 2026-08-28 and the page is CONFORMANT:
+ * Chromium moves the sequential-focus starting point even for a non-focusable target, so the next Tab
+ * does enter the content. Both mechanisms below leave focus somewhere a Tab cannot recover from.
+ */
+
+/** The target exists in the markup and is REMOVED before the user reaches the link. */
+function SKIP_LINK_REPLACED_PAGE(/** @type {boolean} */ removesTarget) {
+  return "<a href=\"#content\">Skip to main content</a>"
+    + "<nav><ul>"
+    + "<li><a href=\"/news\">News and updates</a></li>"
+    + "<li><a href=\"/events\">Events calendar</a></li>"
+    + "<li><a href=\"/contact\">Contact the team</a></li>"
+    + "</ul></nav>"
+    + "<div id=\"content\" tabindex=\"-1\">"
+    + "<label for=\"q\">Search the archive</label><input id=\"q\" name=\"q\">"
+    + "</div>"
+    // A client-side render that replaces the container it was given. The href resolved when the page was
+    // authored and does not when the link is used, which no markup check can see.
+    + (removesTarget
+      ? "<script>var c = document.getElementById('content');"
+        + "var fresh = c.cloneNode(true); fresh.removeAttribute('id');"
+        + "c.parentNode.replaceChild(fresh, c);</script>"
+      : "");
+}
+
+/** Two elements share the id, and the FIRST one sits above the navigation. */
+function SKIP_LINK_DUPLICATE_ID_PAGE(/** @type {boolean} */ duplicated) {
+  return "<a href=\"#content\">Skip to main content</a>"
+    // The decoy carries the same id and no content. `getElementById` and fragment navigation both take
+    // the FIRST match, so the jump lands here — above the nav, which is still ahead of the user.
+    + (duplicated ? "<div id=\"content\" tabindex=\"-1\"></div>" : "")
+    + "<nav><ul>"
+    + "<li><a href=\"/news\">News and updates</a></li>"
+    + "<li><a href=\"/events\">Events calendar</a></li>"
+    + "<li><a href=\"/contact\">Contact the team</a></li>"
+    + "</ul></nav>"
+    + "<div id=\"content\" tabindex=\"-1\">"
+    + "<label for=\"q\">Search the archive</label><input id=\"q\" name=\"q\">"
+    + "</div>";
+}
+
+cases.push(
+  pair({
+    id: "skip-link-target-replaced",
+    task: "Skip past the navigation to the search field.",
+    source: "WCAG 2.4.1 Understanding; ADR 0019 — the corpus cannot express what real pages do",
+    mutation: "A client-side render replaces the container the skip link names, so the href resolved when "
+      + "the page was authored and resolves to nothing when the link is used.",
+    criterion: "2.4.1",
+    subtype: "skip-link-inert",
+    badSignal: { type: "skip-link-inert" },
+    good: page({ title: "Archive", heading: "Archive", body: SKIP_LINK_REPLACED_PAGE(false) }),
+    bad: page({ title: "Archive", heading: "Archive", body: SKIP_LINK_REPLACED_PAGE(true) }),
+    probeFocus: true,
+    probeNavigation: true,
+  }),
+  pair({
+    id: "skip-link-duplicate-id",
+    task: "Skip past the navigation to the search field.",
+    source: "WCAG 2.4.1 Understanding; ADR 0019 — the corpus cannot express what real pages do",
+    mutation: "Two elements share the target id and the first is above the navigation, so the jump lands "
+      + "before the block it was meant to bypass and the nav is still ahead.",
+    criterion: "2.4.1",
+    subtype: "skip-link-inert",
+    badSignal: { type: "skip-link-inert" },
+    good: page({ title: "Archive", heading: "Archive", body: SKIP_LINK_DUPLICATE_ID_PAGE(false) }),
+    bad: page({ title: "Archive", heading: "Archive", body: SKIP_LINK_DUPLICATE_ID_PAGE(true) }),
+    probeFocus: true,
+    probeNavigation: true,
+  }),
+);
+
 /**
  * The 2.1.1 fixture: an action the screen reader announces as a button, which Tab may or may not reach.
  *
