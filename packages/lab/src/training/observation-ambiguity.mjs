@@ -86,6 +86,7 @@ function emptyTally() {
   return {
     channels, interaction,
     soundness: { entries: 0, quiet: 0, notQuiet: 0, unstated: 0, waits: /** @type {number[]} */ ([]) },
+    instrument: { parked: 0, parkFailed: 0, failedIds: /** @type {string[]} */ ([]) },
   };
 }
 
@@ -114,6 +115,31 @@ function tallyInteraction(capture, interaction) {
     interaction[field].empty++;
     if (!probeMarked(capture, event)) interaction[field].emptyNotAsked++;
   }
+}
+
+/**
+ * Was the pointer parked, or did the remedy silently not apply?
+ *
+ * `parkPointer` owns the mouse before any keystroke, because guidepup prefixes every captured action with
+ * Ctrl and Edge turns Ctrl over an image into a MAGNIFIER OVERLAY. When it fails, the failure is marked
+ * and the capture continues -- correctly, since a best-effort remedy should not fail a capture -- and
+ * nothing read that mark. A caught and logged error is not a handled error.
+ *
+ * REPORTED, NEVER BLOCKING, and that placement is the decision rather than a softening. This describes the
+ * capture path and the host's PowerShell, not a defect a commit introduced, which is the same reason the
+ * rest of this audit reports: a gate that fails everyone's push for a transient hiccup on somebody else's
+ * capture is one people learn to bypass.
+ *
+ * The id is recorded so the CALLER can ask the question that matters -- whether a failure split a PAIR.
+ * A park that failed on both halves is symmetric and harms nothing; one that failed on a single half means
+ * the two variants were measured with different instruments, which is the U+FFFC defect exactly.
+ *
+ * @param {any} capture @param {string} id @param {{parked: number, parkFailed: number, failedIds: string[]}} tally
+ */
+function tallyInstrument(capture, id, tally) {
+  const marks = Array.isArray(capture.diagnostics) ? capture.diagnostics : [];
+  const failed = marks.some((/** @type {any} */ m) => m && m.event === "pointerParkFailed");
+  if (failed) { tally.parkFailed++; tally.failedIds.push(id); } else tally.parked++;
 }
 
 /**
@@ -150,12 +176,14 @@ function tallySoundness(capture, soundness) {
 
 /**
  * @param {Iterable<any>} captures
+ * @param {string[]} [ids] capture ids in the same order, so a failure can be attributed to a PAIR
  * @returns {{ scanned: number, noCensus: number, channels: Record<string, any>,
  *            interaction: Record<string, any>,
- *            soundness: {entries: number, quiet: number, notQuiet: number, unstated: number, waits: number[]} }}
+ *            soundness: {entries: number, quiet: number, notQuiet: number, unstated: number, waits: number[]},
+ *            instrument: {parked: number, parkFailed: number, failedIds: string[]} }}
  */
-export function observationAmbiguity(captures) {
-  const { channels, interaction, soundness } = emptyTally();
+export function observationAmbiguity(captures, ids = []) {
+  const { channels, interaction, soundness, instrument } = emptyTally();
   let scanned = 0;
   let noCensus = 0;
 
@@ -167,7 +195,8 @@ export function observationAmbiguity(captures) {
     tallySweptChannels(capture, completeness, channels);
     tallyInteraction(capture, interaction);
     tallySoundness(capture, soundness);
+    tallyInstrument(capture, ids[scanned - 1] ?? "", instrument);
   }
 
-  return { scanned, noCensus, channels, interaction, soundness };
+  return { scanned, noCensus, channels, interaction, soundness, instrument };
 }

@@ -36,14 +36,59 @@ function* captureFiles(/** @type {string} */ root) {
   }
 }
 
-function* captures(/** @type {string} */ root) {
+function* captures(/** @type {string} */ root, /** @type {string[]} */ ids) {
   for (const file of captureFiles(root)) {
     let parsed;
     try { parsed = JSON.parse(fs.readFileSync(file, "utf8")); } catch { continue; }
+    // The id is the FILENAME without `.json`, which is `<case>.<variant>` -- the only thing that can pair
+    // two captures back up. Collected here rather than derived inside the analysis, because the analysis
+    // is given captures and has no idea where any of them came from.
+    ids.push(path.basename(file).replace(/\.json$/, ""));
     // A capture file may BE the capture or carry one. Reading the wrapper as the capture is a recorded
     // defect -- `capture:explain` reported 0 of 20 tab stops that way, and called it a page finding.
     yield parsed?.capture ?? parsed;
   }
+}
+
+/**
+ * Did every PAIR get measured with the same instrument?
+ *
+ * The failure count alone is not the finding. A park that failed on both halves of a pair is symmetric and
+ * harms nothing; one that failed on a single half means the two variants differ by the MEASURING TOOL and
+ * not by accessibility -- the U+FFFC defect, which this project calls the one it cannot tolerate.
+ *
+ * @param {{parked: number, parkFailed: number, failedIds: string[]}} inst
+ */
+function reportInstrument(inst) {
+  const total = inst.parked + inst.parkFailed;
+  console.log("");
+  console.log("was every pair measured with the SAME instrument? (`parkPointer`, read by nothing so far)");
+  console.log("  " + String(inst.parkFailed).padStart(6) + " of " + total +
+    " capture(s) failed to park the pointer " + pct(inst.parkFailed, total));
+  const failed = new Set(inst.failedIds);
+  // An id that is not `<case>.good` or `<case>.bad` has NO pair, so it cannot split one. Returning null
+  // rather than a constructed string is the difference between "no mate" and "a mate we invented" -- the
+  // first version fell back to a running number, and every failure then read as a split because no
+  // number has a mate. A false report inside the report about false readings.
+  const mateOf = (/** @type {string} */ id) => {
+    const dot = id.lastIndexOf(".");
+    const variant = dot === -1 ? "" : id.slice(dot + 1);
+    if (variant !== "good" && variant !== "bad") return null;
+    return id.slice(0, dot) + "." + (variant === "good" ? "bad" : "good");
+  };
+  const unpaired = inst.failedIds.filter((id) => mateOf(id) === null);
+  const split = inst.failedIds
+    .filter((id) => { const m = mateOf(id); return m !== null && !failed.has(m); }).sort();
+  console.log("  " + String(split.length).padStart(6) + " of those SPLIT A PAIR — the half that failed was "
+    + "measured differently from its mate");
+  for (const id of split.slice(0, 8)) console.log("           " + id);
+  if (split.length > 8) console.log("           ... and " + (split.length - 8) + " more");
+  if (unpaired.length) {
+    console.log("  " + String(unpaired.length).padStart(6) + " could not be paired at all (not <case>.<variant>) "
+      + "— counted apart, never as splits");
+  }
+  console.log("  Ctrl over an image is a MAGNIFIER OVERLAY in Edge, which is why the park exists at all —");
+  console.log("  so a split on an `image-*` case is the case where the remedy mattered most.");
 }
 
 const pct = (/** @type {number} */ part, /** @type {number} */ whole) =>
@@ -89,7 +134,9 @@ function main() {
   const CAPTURES = arg("--captures=") ?? "runs/screenreader-dataset/captures";
   const OUT = arg("--out=") ?? "runs/observation-ambiguity.json";
 
-  const result = observationAmbiguity(captures(CAPTURES));
+  /** @type {string[]} */
+  const ids = [];
+  const result = observationAmbiguity(captures(CAPTURES, ids), ids);
   const report = { capturesRoot: path.resolve(CAPTURES), ...result };
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
   fs.writeFileSync(OUT, JSON.stringify(report, null, 2));
@@ -134,6 +181,7 @@ function main() {
   }
   console.log("");
   reportSoundness(result.soundness);
+  reportInstrument(result.instrument);
   console.log("");
   console.log("Everything outside the last column is a `0` the featurizer reads as a fact about the page,");
   console.log("and it is not one. The two middle columns need opposite responses, which is why they are two.");

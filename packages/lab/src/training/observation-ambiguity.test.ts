@@ -129,3 +129,22 @@ test("the settle MARGIN is collected, so a comfortable wait and a near-miss cann
   // most comfortable margin possible, which is absence collapsed into a value -- this report's subject.
   assert.equal(r.soundness.entries, 3);
 });
+
+test("a park failure is attributed to its capture, so a PAIR split can be seen", () => {
+  // The failure count alone is not the finding. A park that failed on BOTH halves is symmetric and harms
+  // nothing; one that failed on a single half means the two variants were measured with different
+  // instruments -- the U+FFFC defect, which this project calls the one it cannot tolerate.
+  const parked = { structure: {}, diagnostics: [{ event: "pointerParked" }] };
+  const failed = { structure: {}, diagnostics: [{ event: "pointerParkFailed" }] };
+  const r = observationAmbiguity([parked, failed, failed], ["a.good", "a.bad", "b.good"]);
+  assert.deepEqual(r.instrument, { parked: 1, parkFailed: 2, failedIds: ["a.bad", "b.good"] });
+});
+
+test("an unidentified capture contributes no id, rather than a made-up one", () => {
+  // The first version fell back to a running COUNT when no id was supplied, and every failure then read
+  // as a pair split because no number has a mate. A false reading produced inside the report about false
+  // readings. An empty id is unpairable and the caller counts it apart.
+  const failed = { structure: {}, diagnostics: [{ event: "pointerParkFailed" }] };
+  const r = observationAmbiguity([failed], []);
+  assert.deepEqual(r.instrument.failedIds, [""]);
+});
