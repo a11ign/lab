@@ -46,7 +46,11 @@ function fieldsOnDisk(): Set<string> {
     }
     for (const entry of entries) {
       const path = join(dir, entry.name);
-      if (entry.isDirectory()) { walk(path); continue; }
+      // `rejected/` holds captures the pipeline REFUSED — self-contradictory ones kept for diagnosis, not
+      // evidence. Counting them here made this file report a field as "arrived" on the strength of a
+      // capture that was thrown away, which is the same class as reading the wrapper as the capture.
+      // Found 2026-09-01 when the PENDING retirement guard fired on three rejected attempts.
+      if (entry.isDirectory()) { if (entry.name !== "rejected") walk(path); continue; }
       if (!entry.name.endsWith(".json")) continue;
       let capture: Record<string, Record<string, unknown>>;
       try {
