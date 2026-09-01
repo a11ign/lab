@@ -459,6 +459,29 @@ def main() -> None:
                 if any(fired[index] and not included_labels[position]
                        for position, index in enumerate(included_indices))
             },
+            # AND THE RAW HEAD SCORE FOR EACH MISS, which is the only number that can settle one.
+            #
+            # `metrics` reports the CRITERION score, and that is binary — the criterion is the OR of its
+            # heads' decisions, so a false negative always reads `0.0` against a `0.5` cut, which merely
+            # restates "false negative". Measured 2026-09-01: a candidate that closed every free veto
+            # missed one case, and the criterion score said `0.000` while the question was whether the
+            # HEAD scored 0.90 against its own 0.9153 cut (threshold variance, ship it) or near zero (the
+            # head genuinely lost it). Those need opposite work and only this number separates them.
+            #
+            # Ungated, deliberately: `applicability.decide` is what turned the score into "did not fire",
+            # so applying it here would hide the case where a head scored well and the gate suppressed it.
+            # Compare against `subtypeThresholds` above, which are the cuts actually applied.
+            #
+            # This is the sibling of `falsePositivesBySubtype` directly above, whose comment records what
+            # not having it cost: "three wrong theories on 2026-08-25 came from not knowing which [head],
+            # and each cost a round trip to the lab to find out by hand."
+            "falseNegativeSubtypeScores": {
+                case_identity(records[index]): {
+                    subtype: round(float(scores[index]), 4) for subtype, scores in subtype_scores.items()
+                }
+                for position, index in enumerate(included_indices)
+                if included_labels[position] and not decided[index]
+            },
             **metrics(decided[included_indices].astype(float), included_labels, DECIDED,
                       identities=[case_identity(records[index]) for index in included_indices]),
         }
@@ -483,7 +506,11 @@ def main() -> None:
             result["failureReasons"].append(
                 f"{criterion}: {block['falseNegative']} acceptance false negative(s)"
                 + (": " + ", ".join(
-                    f"{name} @{block.get('falseNegativeScores', {}).get(name, float('nan')):.3f}"
+                    name + " " + " ".join(
+                        f"[{subtype} {score:.3f} vs cut "
+                        f"{block.get('subtypeThresholds', {}).get(subtype, float('nan')):.3f}]"
+                        for subtype, score in sorted(
+                            block.get("falseNegativeSubtypeScores", {}).get(name, {}).items()))
                     for name in block.get("falseNegativeCases", [])) if block.get("falseNegativeCases") else "")
             )
         stability_records[criterion] = included_records
