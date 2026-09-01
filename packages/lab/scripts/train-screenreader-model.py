@@ -306,7 +306,6 @@ def out_of_fold_scores(
     development_indices: list[int],
     epochs: int,
     offsets: list[int],
-    exempt: set[str] | None = None,
 ) -> Any:
     import torch
 
@@ -327,7 +326,7 @@ def out_of_fold_scores(
         ]
         if not held_out or not training:
             continue
-        weight, bias = train_head(features, offsets, labels, training, epochs, exempt)
+        weight, bias = train_head(features, offsets, labels, training, epochs)
         scores[held_out] = score_bags(features, offsets, weight, bias)[held_out]
     return scores
 
@@ -608,112 +607,7 @@ def bag_logits(unit_logits: Any, offsets: list[int]) -> Any:
     return unit_logits[gather].masked_fill(~mask, float("-inf")).max(dim=1).values
 
 
-UNCLOSABLE_MAP = Path(__file__).resolve().parents[3] / "runs/unclosable-vetoes.json"
-
-
-def by_definition_exemptions(subtype: str) -> set[str]:
-    """Features a subtype CANNOT carry, whose negative weight is a true implication rather than a shortcut.
-
-    The distinction the held-out gate insisted on. `3.3.1:validation-error-silent` IS the absence of an
-    announced error, so `validation_error_announced` is 0 on every one of its positives BY MEANING -- and
-    a head weighing that negatively has learned "announced, therefore not silent", which is correct and
-    generalises. Masking it cost two held-out findings on `acceptance-b2-error-vessel/bad` and bought
-    nothing, because there was no shortcut there to remove.
-
-    Only the `by-definition` group is exempt. `perturbs-measurement` is deliberately NOT: those name a
-    feature the page COULD carry, where capturing it would destroy the evidence -- so on a real page the
-    feature may be 1 while the failure is present, and a negative weight suppresses a true finding. The
-    two groups need opposite treatment, which is why `emit-unclosable-vetoes.mjs` keeps them apart.
-
-    READ, never restated. `audit-corpus-starvation.mjs` owns `IMPOSSIBLE_BY_DEFINITION`; this is the same
-    JSON `audit-scorer-shortcuts.py` reads, by the same route, pinned equal by
-    `test_unclosable_map_is_current.py`. A second copy here would be a third spelling of one fact.
-    """
-    if not UNCLOSABLE_MAP.exists():
-        # REFUSE, rather than mask everything strictly-zero. An absent map is not an empty one: without it
-        # this masks the legitimate complements too, which the gate has already measured as a real loss of
-        # findings. `corpus:unclosable-map` is one command and `lab-job.test.ts` requires the chain to run
-        # it -- so its absence is a broken invocation, not a corpus with no exemptions.
-        raise SystemExit(
-            f"{UNCLOSABLE_MAP} is absent, so the free-veto mask cannot tell a shortcut from a true "
-            "implication and would silence both. Run `npm run corpus:unclosable-map` first.")
-    raw = json.loads(UNCLOSABLE_MAP.read_text(encoding="utf-8"))
-    return set(raw.get("by-definition", {}).get(subtype, []))
-
-
-def uninformative_columns(features: Any, offsets: list[int], labels: Any, indices: list[int],
-                          exempt: set[str] | None = None) -> Any:
-    """Columns that are CONSTANT across this head's training positives.
-
-    ADR 0015's free veto, turned from a report into a constraint. Its definition is a feature that is
-    strictly one value across a subtype's positives while varying over the negatives: the head may then
-    give it a large negative weight at no cost to recall, and no held-out split can punish that, because
-    the split has the same structure. Measured on the shipped weights, `form_field_named` at -4.33 means
-    the scorer reports an unnamed control ONLY on a page where nothing is correctly named -- which
-    describes almost no real site.
-
-    A column constant across the positives CANNOT help separate them. Every gradient it receives comes
-    from negatives, so all it can do is suppress. That is precisely the shortcut the audit reports, and
-    the audit had no way to stop it -- `scorer:shortcuts` names 9 closable vetoes and every remedy it can
-    offer is corpus work somebody has to do.
-
-    MEASURED ON THIS CORPUS, 2026-09-01, and the numbers are why this is a constraint rather than a
-    corpus task: 8 of the 9 closable vetoes are a head penalising a feature that answers a DIFFERENT
-    criterion's question -- `2.4.1:skip-link-inert` vetoing `validation_error_missing` (3.3.1's),
-    `4.1.2:state-change-silent` vetoing `status_update_announced` (4.1.3's). This repo has already
-    measured what removing one such feature does: dropping `vague_link_present` as a model input took
-    `2.4.4:regex` from 27 false positives to 0, precision 0.841 -> 1.000, and recall ROSE 0.979 -> 0.986.
-
-    COMPUTED, NEVER DECLARED. A hand-written feature-to-criterion map would be a second source of truth
-    about which evidence belongs to which criterion, and this file's own history is a list of two such
-    copies drifting. The data answers it directly and cannot go stale.
-
-    Note this is deliberately NOT the plan's proposed remedy, which was to split each ambiguous feature
-    into `asked AND x` / `asked AND not-x`. That was checked against these vetoes first and refuted: for a
-    subtype whose positives never run `probeForms`, BOTH conjunction columns are constant zero across
-    those positives, so the split turns one free veto into two.
-    """
-    import torch
-
-    positive_units = []
-    for index in indices:
-        if labels[index] != 1:
-            continue
-        positive_units.extend(range(offsets[index], offsets[index + 1]))
-    # No positives in this split is not a reason to mask everything -- it is a reason to mask nothing and
-    # let the caller's own guard handle a split that cannot train. Reading "constant across an empty set"
-    # as "constant" is how a vacuous guard comes to silence a whole feature block.
-    if not positive_units:
-        return torch.zeros(features.shape[1], dtype=torch.bool)
-    # STRICTLY ZERO, not merely constant — and the difference is the whole gate.
-    #
-    # The first version read `(rows == rows[0]).all(dim=0)`, masking any column constant across the
-    # positives. That is wrong in one direction and the held-out set said so immediately: 2.4.4 lost 20
-    # findings, 1.3.1 lost 16, 4.1.3 lost 8, and 2.4.6 gained 10 false positives. A feature constant at
-    # 1.0 across a subtype's positives is not a veto, it is that subtype's DEFINING EVIDENCE — masking
-    # `vague_link_present` out of the 2.4.4 head removes the thing 2.4.4 is about.
-    #
-    # The asymmetry is in the arithmetic, and the docstring above already stated it correctly while the
-    # code did not: gradient is proportional to the input, so a column that is ZERO on every positive
-    # receives no gradient from them at all. Its weight is fitted entirely by negatives, and the only
-    # thing it can do to a positive's score is nothing. A column that is ONE on every positive is fitted
-    # by both and separates them from negatives that lack it.
-    #
-    # So this is ADR 0015's definition verbatim — "a feature strictly {0.0} across a subtype's
-    # positives" — rather than a generalisation of it that sounded equivalent.
-    rows = features[torch.tensor(positive_units, dtype=torch.long)]
-    mask = (rows == 0.0).all(dim=0)
-    # The engineered features occupy the LAST `len(FEATURE_NAMES)` columns; the encoder embedding is in
-    # front of them. Indexed from the end so a change to the embedding size cannot silently shift which
-    # column an exemption names -- the alignment is the thing most likely to rot here.
-    for name in (exempt or ()):
-        if name in FEATURE_NAMES:
-            mask[features.shape[1] - len(FEATURE_NAMES) + FEATURE_NAMES.index(name)] = False
-    return mask
-
-
-def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int], epochs: int,
-               exempt: set[str] | None = None) -> tuple[Any, Any]:
+def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int], epochs: int) -> tuple[Any, Any]:
     """Train one subtype head under multiple-instance max pooling.
 
     Takes the FULL feature matrix plus the record indices to train on, rather than a pre-sliced one:
@@ -725,13 +619,6 @@ def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int
     import torch
 
     torch.manual_seed(SEED)
-    # ZEROED BEFORE TRAINING, not merely zeroed afterwards. A column left in place still receives
-    # gradient from the negatives and still shifts the bias and its neighbours to compensate; zeroing the
-    # weight after the fact would leave a head fitted around a feature it is not allowed to use. Zeroing
-    # the INPUT means no gradient reaches the column at all.
-    uninformative = uninformative_columns(features, offsets, labels, indices, exempt)
-    features = features.clone()
-    features[:, uninformative] = 0.0
     head = torch.nn.Linear(features.shape[1], 1)
     selected = torch.tensor(indices, dtype=torch.long)
     split_labels = labels[selected]
@@ -749,14 +636,7 @@ def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int
         loss = loss_fn(record_logits[selected], split_labels.float())
         loss.backward()
         optimizer.step()
-    # AND ZEROED AGAIN ON THE WAY OUT. A constant-zero input receives no gradient, so its weight is
-    # never updated and keeps its RANDOM INITIALISATION -- a small nonzero number that `scorer:shortcuts`
-    # would still read as a veto and that `score.py` would still apply. Training-time masking alone
-    # therefore leaves the defect visible and slightly active, which is the worse outcome of the two:
-    # it looks fixed.
-    weight = head.weight.detach().clone()
-    weight[:, uninformative] = 0.0
-    return weight, head.bias.detach().clone()
+    return head.weight.detach().clone(), head.bias.detach().clone()
 
 def ood_reference_indices(total: int, torch: Any) -> Any:
     """Evenly spaced row indices spanning the WHOLE dataset, capped at OOD_REFERENCE_SAMPLES.
@@ -1023,10 +903,6 @@ def main() -> None:
                     report["calibrationClean"] = False
                 note(report, f"{subtype}: fewer than 20 positive development records",
                      blocking=subtype not in RULE_SUBSTITUTED_SUBTYPES)
-            # Resolved ONCE per subtype and handed to both the folds and the final fit. Out-of-fold
-            # scores set the threshold the shipped head is judged against, so a mask applied to one and
-            # not the other calibrates a cut for a model that does not exist.
-            exempt = by_definition_exemptions(subtype)
             pooling = pooling_for(subtype)
             view_features, view_offsets = views[pooling]
             oof_scores = out_of_fold_scores(
@@ -1036,10 +912,8 @@ def main() -> None:
                 subtype_indices,
                 args.epochs,
                 view_offsets,
-                exempt,
             )
-            weight, bias = train_head(view_features, view_offsets, subtype_labels, subtype_indices,
-                                      args.epochs, exempt)
+            weight, bias = train_head(view_features, view_offsets, subtype_labels, subtype_indices, args.epochs)
             key = head_key(subtype)
             weights[key + ".weight"] = weight
             weights[key + ".bias"] = bias
