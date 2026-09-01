@@ -2542,37 +2542,27 @@ function RADIO_GROUP_PAGE(arrowsWork) {
 }
 
 
-/**
- * Validation that fires WHILE TYPING — the one mechanism this corpus has never contained.
+/*
+ * `LIVE_VALIDATION_PAGE` stood here and is kept as source rather than deleted, because the PAGE is
+ * right and the signal is what is missing -- the same reason `MODAL_TRAP_TOTAL_FORM` was kept in
+ * comment form until a probe could ask its question. Restore it verbatim when a live region can be
+ * heard during typing:
  *
- * Measured 2026-09-01 across all 3,948 generated pages: `oninput` appears on **zero** of them, against
- * `onsubmit` on 346. So every 3.3.1 record in this corpus describes an error surfaced by SUBMITTING, and
- * the head owning `validation-error-silent` has never seen the other half of the criterion.
- *
- * It is a genuinely different mechanism rather than a variation. A submit-time error arrives with a focus
- * change and a re-read; a live one arrives with the user still typing, focus unmoved, and only a live
- * region can carry it. A page can pass the first and fail the second.
- *
- * The pair differs in the live region and NOTHING else: same field, same handler, same message, same
- * words. So anything that discriminates them is reading whether the message was ANNOUNCED, which is the
- * criterion, rather than whether a message exists.
- *
- * @param {boolean} announced
+ *   function LIVE_VALIDATION_PAGE(announced) {
+ *     const region = announced
+ *       ? "<p id=\"hint\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"></p>"
+ *       : "<p id=\"hint\" class=\"error\"></p>";
+ *     return "<form onsubmit=\"return false\">"
+ *       + "<label for=\"ref\">Reference number</label><input id=\"ref\" name=\"ref\">"
+ *       + region
+ *       + "</form>"
+ *       // Fires on every keystroke and says the same thing on both variants. `input`, not `change`: `change`
+ *       // waits for blur, which is the submit-time mechanism this case exists to be different from.
+ *       + "<script>document.querySelector('#ref').addEventListener('input', (e) => "
+ *       + "{ document.querySelector('#hint').textContent = e.target.value.length === 6 ? '' : "
+ *       + "'Reference must be 6 digits.'; });</script>";
+ *   }
  */
-function LIVE_VALIDATION_PAGE(announced) {
-  const region = announced
-    ? "<p id=\"hint\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"></p>"
-    : "<p id=\"hint\" class=\"error\"></p>";
-  return "<form onsubmit=\"return false\">"
-    + "<label for=\"ref\">Reference number</label><input id=\"ref\" name=\"ref\">"
-    + region
-    + "</form>"
-    // Fires on every keystroke and says the same thing on both variants. `input`, not `change`: `change`
-    // waits for blur, which is the submit-time mechanism this case exists to be different from.
-    + "<script>document.querySelector('#ref').addEventListener('input', (e) => "
-    + "{ document.querySelector('#hint').textContent = e.target.value.length === 6 ? '' : "
-    + "'Reference must be 6 digits.'; });</script>";
-}
 
 // 2.1.1 Keyboard. The detectable failure is a control the screen reader ANNOUNCES as operable that the
 // keyboard cannot reach — a `div role="button"` with a click handler and no `tabindex`, which is the most
@@ -2599,31 +2589,38 @@ cases.push(
 
 
 cases.push(
-  pair({
-    id: "validation-live-silent",
-    task: "Enter a reference number and notice whether the form tells you it is wrong.",
-    source: "WCAG 3.3.1 Understanding; Web Accessibility Cookbook, chapter 22",
-    mutation: "Validation fires while typing and writes its message to a plain paragraph, so a sighted "
-      + "user sees it immediately and a screen-reader user hears nothing at all.",
-    criterion: "3.3.1",
-    // JOINS THE EXISTING HEAD WITH A MECHANISM IT HAS NEVER SEEN. `oninput` is on 0 of 3,948 generated
-    // pages against `onsubmit` on 346, so every `validation-error-silent` record describes an error
-    // surfaced by SUBMITTING -- half the criterion, and the half a probe could already reach.
-    subtype: "validation-error-silent",
-    badSignal: { type: "typed-feedback-silent" },
-    good: page({ title: "Reference lookup", heading: "Reference lookup", body: LIVE_VALIDATION_PAGE(true) }),
-    bad: page({ title: "Reference lookup", heading: "Reference lookup", body: LIVE_VALIDATION_PAGE(false) }),
-    // `probeTyping` types into the focused field; `probeFocus` is what puts DOM focus in a field at all,
-    // since a sweep is browse mode and typing there would send quick-nav commands into the document --
-    // the 353-capture defect this repo has already paid for once.
-    probeFocus: true,
-    probeTyping: true,
-    probeOrder: "focus-first",
-  }),
-);
+  /*
+   * `validation-live-silent` STOOD HERE on 2026-09-01 and was withdrawn the same day, CONTAMINATED — and
+   * the finding it produced is worth more than the case would have been.
+   *
+   * THE PROBE WORKS AND IS VERIFIED. `typedFeedback` records
+   * `{typed: true, focusBefore: "Reference number, edit, focused, blank", echoed: "1 2 3 4 5 6"}` — it
+   * lands on the field, enters focus mode, types, and separates NVDA's own character echo from the page's
+   * response. Every part of the mechanism does what it was built to do.
+   *
+   * WHAT DOES NOT HAPPEN IS THE ANNOUNCEMENT. `announced` is empty on BOTH variants, including the one
+   * whose `aria-live="polite"` region is updated on every keystroke. Not a race: the probe waits through
+   * `waitForAnnouncement`, which waits for speech and then for it to settle.
+   *
+   * That is the SECOND independent live-region failure measured today. `filter-status-silent-checkbox` was
+   * withdrawn hours earlier with its live region equally silent after a checkbox toggle. Two mechanisms,
+   * one symptom, and the common factor is that NVDA had something else to say at the time — the control's
+   * own state in one case, six echoed characters in the other.
+   *
+   * The plausible reading, NOT PROVEN and recorded as a hypothesis rather than a fact: `aria-live="polite"`
+   * means "speak when idle", and neither moment is idle. `assertive` would interrupt — and changing the
+   * case to use it would be fitting the page to the tool, which is how a corpus stops describing the web.
+   *
+   * WHAT THIS COSTS AND WHY IT IS RECORDED HERE: 4.1.3 and the live half of 3.3.1 both depend on hearing a
+   * live region, and this pipeline currently cannot hear one that fires while NVDA is speaking. That is a
+   * capability gap of the same kind as the seven in "What It Cannot Hear", found by building two cases
+   * that ought to have worked. It needs its own measurement — does a polite region EVER announce in a
+   * capture, and does an assertive one — before either case can come back.
+   *
+   * REMOVED rather than left contaminated, on this project's rule: a signal that fires on both variants
+   * proves nothing and the pair is worse than absent, because it looks like coverage.
+   */
 
-
-cases.push(
   pair({
     id: "radio-group-arrows-inert",
     task: "Choose express delivery using the keyboard alone.",

@@ -102,10 +102,20 @@ test("every evidence field a capture carries is compared, or explicitly excluded
  * arrived, so this list cannot quietly outlive its reason.
  */
 const PENDING_CAPTURE: Record<string, string> = {
-  "interaction.arrowNavigation":
-    "capture-protocol 13. Closes when radio-group-arrows-inert is captured on a fleet running it.",
+  // `arrowNavigation` was here and the guard below RETIRED IT, which is the design working: it was listed
+  // for the hours between writing the probe and the fleet being free, and the moment
+  // `radio-group-arrows-inert` was captured the retirement test failed and named it.
+  //
+  // `typedFeedback` stays, for a DIFFERENT reason that the entry has to say out loud. The probe is
+  // written and verified — it lands on a field, types, and separates NVDA's echo from the page's
+  // response — but no case asks for it: `validation-live-silent` was withdrawn CONTAMINATED because an
+  // `aria-live="polite"` region does not announce while NVDA is echoing keystrokes. So this is not "the
+  // capture has not happened yet", it is "no page can currently make it fire", and collapsing those two
+  // into one word is the defect this whole file is about.
   "interaction.typedFeedback":
-    "capture-protocol 13. Closes when validation-live-silent is captured on a fleet running it.",
+    "the probe is verified but no case uses it: a polite live region does not announce during typing "
+    + "echo, so validation-live-silent was withdrawn CONTAMINATED. Closes when the live-region "
+    + "measurement in case-matrix.mjs is taken and a case can discriminate again.",
 };
 
 test("nothing is compared that no capture actually carries", () => {
