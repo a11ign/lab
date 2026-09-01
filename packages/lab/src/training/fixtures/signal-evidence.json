@@ -1804,5 +1804,56 @@
     }
    }
   }
+ },
+ "error-remedy-missing": {
+  "caseId": "error-remedy-missing-date",
+  "signal": {
+   "type": "error-remedy-missing",
+   "control": "Book visit"
+  },
+  "fires": {
+   "transcript": [
+    "heading, level 1, Garden booking",
+    "form, Visit date",
+    "edit, , button, Book visit"
+   ],
+   "interaction": {
+    "formChanges": [
+     {
+      "control": "Book visit, button",
+      "kind": "submit",
+      "after": "Visit date, edit, invalid entry, Invalid entry., blank",
+      "baselineQuiet": true,
+      "baselineWaitedMs": 312
+     }
+    ],
+    "postSubmitFields": [
+     "form, Visit date, edit, Invalid entry.",
+     "Book visit, button"
+    ]
+   }
+  },
+  "silent": {
+   "transcript": [
+    "heading, level 1, Garden booking",
+    "form, Visit date",
+    "edit, , button, Book visit"
+   ],
+   "interaction": {
+    "formChanges": [
+     {
+      "control": "Book visit, button",
+      "kind": "submit",
+      "after": "Visit date, edit, invalid entry, Enter the visit date as DD slash MM slash YYYY., blank",
+      "baselineQuiet": true,
+      "baselineWaitedMs": 317
+     }
+    ],
+    "postSubmitFields": [
+     "form, Visit date, edit, Enter the visit date as DD slash MM slash YYYY.",
+     "Book visit, button"
+    ]
+   }
+  }
  }
 }
