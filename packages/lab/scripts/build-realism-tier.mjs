@@ -147,6 +147,26 @@ function claimExcludesFor(/** @type {any} */ entry) {
  */
 const EVIDENCE_BY_CRITERION = Object.freeze({
   "3.3.1": (/** @type {any} */ interaction) => (interaction.formChanges ?? []).length > 0,
+  // 4.1.3 NOW HAS A SECOND CHANNEL, AND IT DELIBERATELY DOES NOT COUNT HERE. Read this before "fixing" it.
+  //
+  // `routeChange.announced` became 4.1.3 evidence on 2026-09-01 (`filter-status-silent-link`): a link
+  // filters a page and the new state is never announced. Real-page captures DO carry it — `probeNavigation`
+  // has been ON since 2026-08-24 — so the obvious reading of this map is that it names one of 4.1.3's two
+  // channels and masks 37 pages that could have been labelled. `4.1.3: 0 of 37` in the realism report is
+  // what that looks like, and it is the only head with no real-page grounding at all.
+  //
+  // It is still right, for a reason this map cannot express and the capture cannot either. `probeNavigation`
+  // follows the FIRST link, and the comment in `capture-real-pages.mjs` says what that is: "on essentially
+  // every real page the first link IS the skip link". A skip link is not a status-message trigger, so
+  // "pressed, and nothing was announced" is the CORRECT behaviour there — labelling it 4.1.3 would teach
+  // the head that silence after any link is a failure, on 37 pages at once. That is the free-veto problem
+  // of ADR 0015 running the other way: a feature that separates perfectly on the training data and means
+  // nothing.
+  //
+  // What would actually close it is a real page where the pressed link is known to be a FILTER rather than
+  // a skip link — which is a fact about the page, not about the capture, so it belongs in
+  // `real-page-corpus.mjs` beside `claimExcludes`, not in this predicate. Until then the mask stays and
+  // 4.1.3's real-page coverage is honestly zero rather than dishonestly 37.
   "4.1.3": (/** @type {any} */ interaction) => (interaction.postSubmitFields ?? []).length > 0,
 });
 
