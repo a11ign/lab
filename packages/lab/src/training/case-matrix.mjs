@@ -2629,6 +2629,20 @@ cases.push(
       + "tabbable, the rest are -1, and no handler moves focus between them. Two of the three options "
       + "cannot be reached by keyboard at all.",
     criterion: "2.1.1",
+    // THE EXISTING SUBTYPE, DECLARED EXPLICITLY, and getting this wrong cost a gate failure worth
+    // recording. Left implicit, `defaultSubtype` derives the subtype from `badSignal.type` and invented
+    // `2.1.1:arrow-keys-inert` -- a subtype no `rule-ownership` entry claims, so it fell to the MODEL.
+    // `acceptance` then refused: "2.1.1: fewer than 3 acceptance positives", because the held-out set
+    // predates the case, plus two false positives from a head trained on a handful of examples.
+    //
+    // It was never a new failure. This case's own mutation says so: two of the three options cannot be
+    // reached by keyboard at all. That IS `control-unreachable-by-keyboard` -- the same failure by a
+    // different MECHANISM, which is the pattern this corpus already uses ("a fifth case for each of the
+    // three focus subtypes, and each one is a different mechanism").
+    //
+    // A new SIGNAL type does not imply a new SUBTYPE. The signal is how a case is checked; the subtype is
+    // what the failure IS, and it is what a head is fitted to and a gate counts.
+    subtype: "control-unreachable-by-keyboard",
     // THE FIRST CASE IN THIS CORPUS WITH AN ARROW-KEY WIDGET OF ANY KIND. Measured 2026-09-01: 0 of 4,926
     // captures carry a radio button, tab, menu item, tree item, option or grid cell, while real pages do
     // -- so `SHARES_ONE_TAB_STOP`, the abstention 2.1.1 makes for exactly this shape, has never been
