@@ -159,10 +159,25 @@ def metrics(scores: Any, labels: Any, threshold: float, identities: list[str] | 
     named: dict[str, Any] = {}
     if identities is not None:
         for key, mask in (("falsePositiveCases", predicted & ~labels), ("falseNegativeCases", ~predicted & labels)):
-            hits = [identities[i] for i in range(len(identities)) if mask[i]]
-            named[key] = sorted(hits)[:MAX_NAMED_FAILURES]
+            # SCORE AND CUT, beside the name. The docstring above says a count is where an investigation
+            # stops; a NAME is where the next one stops. Measured 2026-09-01: a candidate that closed every
+            # free veto failed here on exactly one case, and the report could not say whether it scored
+            # 0.90 against a 0.9153 cut -- threshold variance, and the change should ship -- or 0.30, which
+            # would mean the head had genuinely lost it. Those need opposite responses and the difference
+            # is one float. Answering it meant reverting the change, which is the expensive direction.
+            #
+            # DERIVED IN THE SAME LOOP from the same mask, never as a second list. Two structures naming
+            # one set of records is this repo's most-recorded defect, and the truncation below would have
+            # had to be applied identically to both.
+            hits = sorted((identities[i], float(scores[i])) for i in range(len(identities)) if mask[i])
+            named[key] = [identity for identity, _ in hits][:MAX_NAMED_FAILURES]
+            named[key.replace("Cases", "Scores")] = {
+                identity: round(score, 4) for identity, score in hits[:MAX_NAMED_FAILURES]}
             if len(hits) > MAX_NAMED_FAILURES:
                 named[key + "Truncated"] = len(hits) - MAX_NAMED_FAILURES
+        # The cut those scores are compared against. Without it the numbers above are unanchored, which is
+        # the `phys_footprint` lesson in a report: a value is only as good as what it was measured against.
+        named["threshold"] = round(float(threshold), 4)
     return {
         **named,
         # numpy uses .size where torch uses .numel(); the whole evaluator moved to numpy with the featurizer.
@@ -460,12 +475,16 @@ def main() -> None:
         if block["falsePositive"]:
             result["failureReasons"].append(
                 f"{criterion}: {block['falsePositive']} acceptance false positive(s)"
-                + (": " + ", ".join(block.get("falsePositiveCases", [])) if block.get("falsePositiveCases") else "")
+                + (": " + ", ".join(
+                    f"{name} @{block.get('falsePositiveScores', {}).get(name, float('nan')):.3f}"
+                    for name in block.get("falsePositiveCases", [])) if block.get("falsePositiveCases") else "")
             )
         if block["falseNegative"]:
             result["failureReasons"].append(
                 f"{criterion}: {block['falseNegative']} acceptance false negative(s)"
-                + (": " + ", ".join(block.get("falseNegativeCases", [])) if block.get("falseNegativeCases") else "")
+                + (": " + ", ".join(
+                    f"{name} @{block.get('falseNegativeScores', {}).get(name, float('nan')):.3f}"
+                    for name in block.get("falseNegativeCases", [])) if block.get("falseNegativeCases") else "")
             )
         stability_records[criterion] = included_records
 
