@@ -160,6 +160,37 @@ export function captureEnvironment(/** @type {any} */ capture) {
   };
 }
 
+/**
+ * Say LOUDLY, and LAST, when cases were skipped because nobody captured them.
+ *
+ * The per-case line already said so — `remedy-membership: skipped (capture is missing...)` — and it is
+ * invisible in practice: the pipeline runner tails each stage to six lines, so with 54 cases the reason
+ * never reaches the log. The knowledge existed exactly where nobody would read it.
+ *
+ * What that cost, measured 2026-09-02: five new HELD-OUT cases were written and committed, `everything`
+ * was dispatched twice, and both times it stopped at `acceptance` with `3.3.3: fewer than 3 acceptance
+ * positives`. That message reads as "your corpus is thin" and the truth was "nobody captured it" —
+ * NEITHER `everything` NOR `--pipeline=full` runs `capture-acceptance`, they only export it. Two
+ * different faults printing the same sentence is this repo's most-recorded diagnostic defect.
+ *
+ * Printed after the summary so a six-line tail cannot swallow it, and it names the job rather than
+ * describing the problem: a guard that stops you and explains nothing gets bypassed.
+ */
+export function reportUncapturedCases(/** @type {any} */ summary) {
+  const missing = summary.reasons["capture is missing, empty, or does not match current page/provenance"];
+  if (!missing) return;
+  const acceptance = process.env.DATASET_KIND === "acceptance";
+  console.log("");
+  console.log("  " + missing + " case(s) were skipped because their captures are ABSENT, not because the");
+  console.log("  evidence was unusable. Downstream this reads as a criterion with too few positives.");
+  console.log(acceptance
+    ? "  Capture the held-out set first — neither `everything` nor `--pipeline=full` does it for you:\n"
+      + "    npm run lab:job -- -e job=generate-acceptance\n"
+      + "    npm run lab:job -- -e job=capture-acceptance     # repeat-1\n"
+      + "    npm run lab:job -- -e job=capture-acceptance-2   # repeat-2, the evaluator reads BOTH"
+    : "    npm run training:capture");
+}
+
 function record(/** @type {any} */ testCase, /** @type {any} */ variant, /** @type {any} */ capture) {
   const isBad = variant === "bad";
   const subtype = testCase.subtype || testCase.badSignal.type;
@@ -340,6 +371,7 @@ function main() {
   writeFileSync(summaryPath, JSON.stringify(summary, null, 2) + "\n", "utf8");
   console.log("Exported " + summary.records + " records to " + OUTPUT_PATH);
   console.log("Summary: " + summary.observed + " observed, " + summary.skipped + " skipped, " + summary.invalid + " invalid, " + summary.excluded + " excluded from model.");
+  reportUncapturedCases(summary);
 }
 
 // Only when RUN, never on import. CLAUDE.md makes `node -e "import('./this.mjs')"` the only real check
