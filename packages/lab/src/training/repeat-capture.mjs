@@ -36,7 +36,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  * knows — so it runs the default and reports success. See `cli-flags.mjs`.
  */
 refuseUnknownFlags(["--url=", "--worker=", "--times=", "--steps=", "--task=", "--browser=", "--out=",
-   "--probe-forms", "--probe-tables", "--probe-focus", "--reuse"],
+   "--probe-forms", "--probe-tables", "--probe-focus", "--probe-navigation", "--reuse"],
   { entry: import.meta.url, command: "npm run training:repeat" });
 
 /**
@@ -75,6 +75,7 @@ const PROBE_FORMS = process.argv.includes("--probe-forms");
 // ten were watched and the two carrying interaction evidence were not among them. Named literally rather
 // than only through `arg()`, so the discovery test that requires flags to be guarded can see it.
 const PROBE_FOCUS = process.argv.includes("--probe-focus");
+const PROBE_NAVIGATION = process.argv.includes("--probe-navigation");
 const TASK = arg("task");
 const REUSE = process.argv.includes("--reuse");
 // A new browser preset needs its own stability answer before it is trusted: "Chrome captures" and "Chrome
@@ -187,6 +188,9 @@ async function captureOnce() {
       // reports a stable empty field, which looks exactly like a pass.
       ...(PROBE_FORMS ? { probeForms: true } : {}),
       ...(PROBE_FOCUS ? { probeFocus: true } : {}),
+      // `--probe-navigation`, because a canary that cannot express the fault is worthless and
+      // 2.4.2's evidence — and any live region a LINK fires — exists only when this probe runs.
+      ...(PROBE_NAVIGATION ? { probeNavigation: true } : {}),
       ...(TASK ? { task: TASK } : {}),
     },
     timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,

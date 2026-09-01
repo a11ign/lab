@@ -9,14 +9,25 @@
  *   08:49:37  Entering Sleep      Using Batt (Charge:1%)   821 secs
  *   09:07:09  Wake from Hibernate                          Using AC (Charge:3%)
  *
- * A hibernated host cannot answer for its guests, so every in-flight capture times out and the run
- * marks the worker unreachable. From inside the run that is indistinguishable from a guest that died —
- * which is how it was first misdiagnosed here as host memory over-commitment, a theory built from
- * symptoms observed only AFTER the event.
+ * WHAT THE MECHANISM ACTUALLY IS, because the first version of this comment got it wrong in a way that
+ * outlived the architecture. It said a hibernated host "cannot answer for its guests" — guests being the
+ * UTM VMs that then ran on this Mac. Those are deprecated; the fleet is five bare-metal boxes with their
+ * own power, and this laptop sleeping does nothing to them at all. The dependency is real anyway, and it
+ * is a different one: a laptop-driven run SERVES THE CORPUS PAGES to the fleet on port 5050 and DRIVES
+ * THE DISPATCH, so a sleeping host starves five perfectly healthy workers of both. That is why every
+ * in-flight capture times out and the run marks the worker unreachable — and why it was first
+ * misdiagnosed as host memory over-commitment, a theory built from symptoms observed only AFTER the event.
  *
- * Two preconditions follow, and both are cheap enough that there is no reason to leave them to
- * discipline. This is the same rule the rest of this project applies to worker VMs and the page server:
- * anything a human has to remember is something that does not happen.
+ * Keeping the stale reasoning would have been the cheaper mistake of the two. The guard fires correctly
+ * while explaining a machine that no longer exists, so the next person to read it concludes the guard is
+ * obsolete and overrides it — which is the outcome, not a hypothetical.
+ *
+ * SO THE REFUSAL NAMES THE LAB, NOT JUST THE OVERRIDE FLAG. `--allow-battery` was for months the only exit
+ * this guard offered, and `capture-host.mjs` records what that produced on 2026-08-28: the flag was passed
+ * rather than the dependency understood. A long run belongs on the lab (`lab:job -e job=capture`), where it
+ * is one systemd unit that outlives the ssh connection and this host's battery cannot reach it. An override
+ * is the right answer for a short local run and the wrong one for an overnight corpus, and a guard that
+ * offers only the override cannot tell you which you are doing.
  */
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -44,9 +55,14 @@ export function powerVerdict({ onAcPower, batteryPercent, estimatedHours }) {
   if (estimatedHours >= 1) {
     return {
       ok: false,
-      reason: `on battery (${batteryPercent}%) with an estimated ${estimatedHours}h run. A host that `
-        + "sleeps mid-run reports every in-flight capture as an unreachable worker, which reads as a "
-        + "broken guest. Plug in, or pass --allow-battery for a short run.",
+      reason: `on battery (${batteryPercent}%) with an estimated ${estimatedHours}h run. This host serves `
+        + "the corpus pages and drives the dispatch, so when it sleeps every in-flight capture times out "
+        + "and the run reports an unreachable worker — which reads as a broken guest, and was "
+        + "misdiagnosed here as exactly that. The five fleet boxes are unaffected; it is this machine "
+        + "that goes away.\n"
+        + "  A run this long belongs on the lab, where this host is not in the path at all:\n"
+        + "    npm run lab:job -- -e job=capture\n"
+        + "  Otherwise plug in, or pass --allow-battery if you accept the risk.",
     };
   }
   if (batteryPercent < MIN_BATTERY_PERCENT) {

@@ -99,10 +99,6 @@ const NO_FIXTURE: Record<string, string> = {
     "probeTyping has never run: no capture carries typedFeedback, and guessing how NVDA's character echo "
     + "interleaves with a live region would be my model of the probe rather than the probe. Close by "
     + "capturing validation-live-silent once the fleet is free.",
-  "arrow-keys-inert":
-    "probeArrows has never run: the fleet is mid-recapture, so no capture carries arrowNavigation and a "
-    + "hand-built fixture would be my model of the probe rather than the probe. Close by capturing "
-    + "radio-group-arrows-inert once the fleet is free, exactly as the five focus types were closed.",
   // EMPTY, and it stayed non-empty for the right reason until 2026-08-27.
   //
   // All five entries here were focus-probe types — `focus-trapped`, `focus-order-scrambled`,

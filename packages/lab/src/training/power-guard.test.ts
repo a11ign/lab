@@ -31,6 +31,12 @@ test("a multi-hour run on battery is REFUSED, because its failure would be misle
   assert.ok(typeof verdict.reason === "string", "a refusal must carry a reason");
   assert.match(verdict.reason, /unreachable worker|broken guest/,
     `the refusal must explain what a sleeping host looks like from inside a run; got: ${verdict.reason}`);
+  // AND IT MUST NAME THE ROUTE THAT MAKES THIS HOST IRRELEVANT, not only the override that accepts the
+  // risk. For months `--allow-battery` was the sole exit, and `capture-host.mjs` records the result: the
+  // flag was passed rather than the dependency understood. A guard offering one escape teaches people to
+  // take it. Without this assertion a revert to override-only passes, because the sentence above survives.
+  assert.match(verdict.reason, /lab:job/,
+    `an overnight run belongs on the lab; the refusal must say so, not just offer the override. Got: ${verdict.reason}`);
 });
 
 test("a short run on a healthy battery proceeds", () => {

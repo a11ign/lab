@@ -2031,6 +2031,55 @@ cases.push(
 
 // A single targeted case rather than a family: 2.1.2 needs exactly one pair to become validatable, and
 // it is pushed here beside the other explicit pushes rather than buried in a generated block.
+/**
+ * A status message fired by a LINK — item 3's first-named control, and the one that works.
+ *
+ * `probeNavigation` already activates the first link on the page and `routeChange.announced` already
+ * records what was said, so this needs no new consent and no new field: the press is one this tool already
+ * performs and `SECURITY.md` already sanctions.
+ *
+ * MEASURED, six repeats: the region is heard **6 of 6**. That is the same rate as a BUTTON and unlike a
+ * checkbox's 2 of 6, for the reason §18 records — a link has no state, so NVDA says nothing of its own and
+ * the live region is the only thing in the queue. The checkbox case had to be withdrawn because NVDA drops
+ * a polite region while it is already speaking; a link never puts it in that position.
+ *
+ * The pair differs in the live region and nothing else — same link, same handler, same message.
+ *
+ * @param {boolean} announced
+ */
+function LINK_STATUS_PAGE(announced) {
+  const region = announced
+    ? "<p id=\"count\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\">Showing 8 products.</p>"
+    : "<p id=\"count\">Showing 8 products.</p>";
+  return "<p><a href=\"#bags\" id=\"bags\">Show bags only</a></p>"
+    + region
+    + "<ul id=\"products\"><li>Canvas bag</li><li>Travel bag</li></ul>"
+    // `preventDefault`, so the link filters in place rather than navigating. That is the shape this
+    // criterion is about, and it keeps the probe on the page it is measuring.
+    + "<script>document.querySelector('#bags').addEventListener('click', function (event) {"
+    + "event.preventDefault();"
+    + "document.querySelector('#count').textContent = 'Showing 2 bags.';"
+    + "});</script>";
+}
+
+cases.push(
+  pair({
+    id: "filter-status-silent-link",
+    task: "Filter the catalogue to show only bags and notice how many results remain.",
+    source: "WCAG 4.1.3 Understanding; Web Accessibility Cookbook, chapter 22",
+    mutation: "A LINK filters the catalogue and updates the visible count without exposing it through a "
+      + "live status, so a sighted user sees the new number and a screen-reader user hears nothing.",
+    criterion: "4.1.3",
+    subtype: "form-activation-silent",
+    badSignal: { type: "link-status-silent" },
+    good: page({ title: "Product catalogue", heading: "Product catalogue", body: LINK_STATUS_PAGE(true) }),
+    bad: page({ title: "Product catalogue", heading: "Product catalogue", body: LINK_STATUS_PAGE(false) }),
+    // The probe that presses a link. Already opt-in, already sanctioned, and the only one that can reach
+    // this failure — `probeForms` deliberately never activates a link.
+    probeNavigation: true,
+  }),
+);
+
 cases.push(
   pair({
     id: "route-title-stale-enrolment",
@@ -4102,6 +4151,45 @@ function pageResponseTo(change) {
     .join(" | ");
 }
 
+/**
+ * A LINK's own state, which NVDA announces on activation and which says nothing about the page's response.
+ *
+ * `probeRouteChange`'s own comment records why this has to be stripped rather than counted: the stale-title
+ * page announced `"visited"`, so *"was anything announced?"* is not on its own the question. That is the
+ * same reasoning `TOGGLE_OWN_STATE` applies to a checkbox, in a second alphabet.
+ *
+ * It does not fire on the corpus -- `activateAndCaptureDelta` subtracts the baseline, and a link's state is
+ * already in it, so the corpus pair reads `""` outright. It is here for REAL pages, where a link that
+ * changes to `visited` on click puts exactly that word in the delta, and it is unit-tested directly for
+ * that reason: a guard nothing exercises is a guard nobody has seen fail.
+ */
+const LINK_OWN_STATE = /^(?:visited|link|same page|internal link|clickable)$/i;
+
+/**
+ * (4.1.3) A link filters the page and the new state is never announced.
+ *
+ * The evidence is `routeChange.announced` -- what NVDA said after a press this tool ALREADY performs.
+ * `probeNavigation` is opt-in and sanctioned; recording what that press produced needs no new consent.
+ *
+ * Every early return is `false`, and that is the point rather than an oversight: "the probe did not run",
+ * "there was no link", "the measurement errored" and "the page answered nothing" are four different states,
+ * and only the last is the finding. Reading the first three as silence is the defect that put
+ * `postSubmitFields: []` on 2,122 captures and read 604 logged crashes as pages with nothing to say.
+ *
+ * @param {any} routeChange
+ */
+export function linkStatusIsSilent(routeChange) {
+  if (!routeChange) return false;                       // probeNavigation never ran
+  if (routeChange.error) return false;                  // a failed measurement is not a silent page
+  if (!routeChange.control) return false;               // no link on the page to press
+  if (typeof routeChange.announced !== "string") return false;  // `null` is the error sentinel
+  return String(routeChange.announced)
+    .split("|")
+    .map((/** @type {string} */ part) => part.trim())
+    .filter((/** @type {string} */ part) => part !== "" && !LINK_OWN_STATE.test(part))
+    .join(" | ") === "";
+}
+
 // the bad page carries "".
 function formActivationIsSilent(/** @type {any} */ capture, /** @type {any} */ signal) {
   const changes = capture.interaction?.formChanges || [];
@@ -4608,6 +4696,7 @@ const SIGNAL_PREDICATES = Object.freeze({
   "missing-role": (/** @type {any} */ capture, /** @type {any} */ signal) => hasMissingRole(capture, signal),
   "state-change-silent": (/** @type {any} */ capture, /** @type {any} */ signal) => stateChangeIsSilent(capture, signal),
   "form-activation-silent": (/** @type {any} */ capture, /** @type {any} */ signal) => formActivationIsSilent(capture, signal),
+  "link-status-silent": (/** @type {any} */ capture) => linkStatusIsSilent(capture.interaction?.routeChange),
   "validation-error-silent": (/** @type {any} */ capture, /** @type {any} */ signal) => validationErrorIsSilent(capture, signal),
   "placeholder-only": (/** @type {any} */ capture, /** @type {any} */ signal) => placeholderOnlyIsPresent(capture, signal),
   "table-unassociated": (/** @type {any} */ capture) => tableHeadersAreUnassociated(capture),
