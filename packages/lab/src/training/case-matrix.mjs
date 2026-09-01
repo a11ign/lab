@@ -752,6 +752,50 @@ const cases = [
     probeForms: true,
   }),
   pair({
+    id: "filter-status-silent-checkbox",
+    criterion: "4.1.3",
+    task: "Filter the catalogue to show only bags and notice how many results remain.",
+    source: "Web Accessibility Cookbook, chapter 22; WCAG 4.1.3 Understanding",
+    mutation: "A CHECKBOX filter updates the visible result count without exposing it through a live "
+      + "status. Identical failure to `filter-status-silent`, fired by the control real filters actually "
+      + "use.",
+    // THE FIRST 4.1.3 CASE WHOSE TRIGGER IS NOT A BUTTON, and until capture-protocol 12 there could not
+    // be one: `probeKindFor` only ever reached buttons, so a live region updated by a checkbox was
+    // structurally unreachable and all 143 cases of this criterion used the one control that worked.
+    //
+    // That is a corpus shaped by the PROBE rather than by the web. Real filters, consent toggles and
+    // "show prices including VAT" controls are checkboxes far more often than they are buttons, so the
+    // head owning 4.1.3 has never seen the commonest form of its own failure -- `corpus:starvation`'s
+    // question asked of a control type instead of a feature.
+    //
+    // The safety decision that made this reachable is in `SECURITY.md`: the line is not how destructive a
+    // control might be but whether activating it can NAVIGATE, which a checkbox cannot.
+    badSignal: { type: "form-activation-silent", control: "Show bags only" },
+    good: page({
+      title: "Product catalogue",
+      heading: "Product catalogue",
+      body: "<p><input type=\"checkbox\" id=\"bags\"><label for=\"bags\">Show bags only</label></p>"
+        + "<p id=\"count\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\">Showing 8 products.</p>"
+        + "<ul id=\"products\"><li>Canvas bag</li><li>Travel bag</li></ul>",
+      script: "document.querySelector('#bags').addEventListener('change', () => "
+        + "{ document.querySelector('#count').textContent = 'Showing 2 bags.'; });",
+    }),
+    bad: page({
+      title: "Product catalogue",
+      heading: "Product catalogue",
+      // The same checkbox, the same handler, the same words — only the live region is missing. So nothing
+      // that discriminates the pair can be reading the presence of a checkbox.
+      body: "<p><input type=\"checkbox\" id=\"bags\"><label for=\"bags\">Show bags only</label></p>"
+        + "<p id=\"count\">Showing 8 products.</p>"
+        + "<ul id=\"products\"><li>Canvas bag</li><li>Travel bag</li></ul>",
+      script: "document.querySelector('#bags').addEventListener('change', () => "
+        + "{ document.querySelector('#count').textContent = 'Showing 2 bags.'; });",
+    }),
+    // `change`, not `click`, because that is the event a real filter listens for and the one a screen
+    // reader user fires. They coincide for a mouse and do not for every assistive path.
+    probeForms: true,
+  }),
+  pair({
     id: "filter-status-silent",
     criterion: "4.1.3",
     task: "Filter the catalogue to show only bags and notice how many results remain.",
@@ -2876,7 +2920,17 @@ export const ACCOMPANYING_CONFORMANT = Object.freeze({
 
 /** Hosts with a control of their own cannot take a second one — see the comment above. */
 const CONFORMANT_HOSTS_PER_SUBTYPE = 3;
-const HAS_OWN_CONTROL = /<button|<input[^>]*type=["']?(submit|button)|<select|<textarea|<form[\s>]/i;
+// `checkbox` and `radio` added 2026-09-01 with capture-protocol 12, and the omission was correct until
+// then: this pattern asks "can the capture already activate something here", and until `probeKindFor`
+// learned about toggles the answer for a bare checkbox was genuinely no. Widening what the tool operates
+// means revisiting every place that decides what a CONTROL is, which is this repo's most expensive
+// recurring shape -- a remedy that reaches one of several sites.
+//
+// Found by `case-matrix.test.ts` firing on `filter-status-silent-checkbox+with-status-region`: the new
+// checkbox host read as control-free, so it was given furniture carrying a live region -- onto a case
+// whose entire failure is a MISSING live region. Contamination by construction, and the guard caught it.
+const HAS_OWN_CONTROL =
+  /<button|<input[^>]*type=["']?(submit|button|checkbox|radio)|<select|<textarea|<form[\s>]/i;
 
 // EXPORTED so the `grants` field can be verified rather than merely declared. It was read nowhere: eleven
 // accompanying defects each state the feature their markup is supposed to produce in the captured
