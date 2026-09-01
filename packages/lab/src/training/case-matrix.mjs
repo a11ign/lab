@@ -3905,11 +3905,39 @@ function firstVisitEach(/** @type {any} */ names) {
  *                                corroboration is which of them the ring never reached
  */
 /**
+ * Did the capture OBSERVE Escape leaving the dialog? The twin of `escapeReleasedFocus` in `rules.ts`.
+ *
+ * Two copies because this file runs under plain `node` and cannot import TypeScript -- the same constraint
+ * `namesOf`/`comparableNames` has -- so the remedy is the documented one: pin them equal with a test.
+ * `focus-trap-parity.corpus.test.ts` compares the whole decision on every capture on disk, and
+ * `escape-parity.test.ts` compares these two directly on the cases the corpus does not happen to contain.
+ *
+ * A release is EITHER an announcement or focus moving elsewhere, never both: NVDA re-announces the same
+ * control differently depending on how the caret reached it, so requiring both would make this deaf. The
+ * asymmetry matches which error costs more -- this SILENCES an accusation, and 2.1.2 is non-interference.
+ */
+export function escapeReleasedFocusIn(/** @type {any} */ dialogEscape) {
+  if (!dialogEscape || typeof dialogEscape !== "object") return false;
+  if (String(dialogEscape.announced ?? "").trim() !== "") return true;
+  const settle = (/** @type {unknown} */ v) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const before = settle(dialogEscape.focusBefore);
+  const after = settle(dialogEscape.focusAfter);
+  if (before === "" || after === "") return false;
+  return after !== before && !after.startsWith(before);
+}
+
+/**
  * @param {string[]} stops        `interaction.focusOrder`
  * @param {string[]} formFields   `structure.formFields`, as announcements
+ * @param {any} [dialogEscape]    `interaction.dialogEscape`; ABSENT means the probe never ran, which is
+ *                                not evidence of a trap and not evidence against one
  */
-export function focusIsTrappedIn(stops, formFields) {
+export function focusIsTrappedIn(stops, formFields, dialogEscape) {
   if (!Array.isArray(stops) || stops.length < 3) return false;
+  // AN OBSERVED ESCAPE SILENCES THIS, on both paths below. `rules.ts`'s twin carries the measurement that
+  // required it: the claim that `anchorToTop`'s Escape already tests this is false, because that press
+  // happens in browse mode with focus on the body and a real dialog scopes its handler to itself.
+  if (escapeReleasedFocusIn(dialogEscape)) return false;
   // THE CORROBORATION: announced controls the ring never reached. Empty means focus covered everything
   // the page announced, which is a short document rather than a trap -- and it is why a conformant wrap,
   // which visits every control, never fires.
@@ -4011,7 +4039,11 @@ export function escapeDoesNotRelease(/** @type {any} */ dialogEscape) {
 }
 
 function focusIsTrapped(/** @type {any} */ capture) {
-  return focusIsTrappedIn(capture.interaction?.focusOrder ?? [], capture.structure?.formFields ?? []);
+  return focusIsTrappedIn(
+    capture.interaction?.focusOrder ?? [],
+    capture.structure?.formFields ?? [],
+    capture.interaction?.dialogEscape,
+  );
 }
 
 /**

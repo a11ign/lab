@@ -78,6 +78,10 @@ const EVIDENCE_FIELDS = Object.freeze({
   "structure-empty": ["structure.headings", "structure.formFields"],
   "missing-heading": ["structure.headings", "structure.formFields"],
   "focus-trapped": ["structure.formFields", "interaction.focusOrder", "probe.focusOrder"],
+  // `probe.focusOrder` as well as the dialog probe's own channel, and both are load-bearing: Escape from
+  // the browse caret measures the DOCUMENT, so a dialogEscape taken without a focus probe is not evidence
+  // about a dialog at all. The predicate is gated on the pair for the same reason.
+  "escape-does-not-release": ["interaction.dialogEscape", "probe.focusOrder", "probe.dialogEscape"],
   "focus-order-scrambled": ["structure.formFields", "interaction.focusOrder", "probe.focusOrder"],
   "control-unreachable-by-keyboard": ["structure.formFields", "interaction.focusOrder", "probe.focusOrder"],
 });

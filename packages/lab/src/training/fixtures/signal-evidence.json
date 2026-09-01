@@ -1609,5 +1609,29 @@
         }
       ]
     }
+  },
+  "escape-does-not-release": {
+    "caseId": "keyboard-trap-modal-escape",
+    "signal": {
+      "type": "escape-does-not-release"
+    },
+    "fires": {
+      "interaction": {
+        "dialogEscape": {
+          "focusBefore": "T, o, w, n",
+          "announced": "",
+          "focusAfter": "Town, edit, focused, blank"
+        }
+      }
+    },
+    "silent": {
+      "interaction": {
+        "dialogEscape": {
+          "focusBefore": "T, o, w, n",
+          "announced": "heading, level 1, Delivery details",
+          "focusAfter": "Full name, edit, focused, blank"
+        }
+      }
+    }
   }
 }

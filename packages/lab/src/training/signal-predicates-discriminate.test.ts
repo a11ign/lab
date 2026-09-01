@@ -110,7 +110,7 @@ const NO_FIXTURE: Record<string, string> = {
  */
 test("the types read from real evidence both fire and stay silent", () => {
   const covered = Object.keys(REAL_EVIDENCE);
-  assert.ok(covered.length >= 11, `expected real evidence for eleven types, got ${covered.length}`);
+  assert.ok(covered.length >= 12, `expected real evidence for twelve types, got ${covered.length}`);
   for (const [type, sample] of Object.entries(REAL_EVIDENCE as Record<string, {
     caseId: string; signal: { type: string }; fires: object; silent: object;
   }>)) {

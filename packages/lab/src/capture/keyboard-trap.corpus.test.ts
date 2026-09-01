@@ -56,9 +56,10 @@ const CAPTURES = capturesWithFocus();
 test("the signal and the rule agree about every focus capture on disk", { skip: CAPTURES.length === 0 && "no runs/ here — run this locally" }, () => {
   const disagreements: string[] = [];
   for (const { name, capture } of CAPTURES) {
-    const interaction = capture.interaction as { focusOrder: string[] };
+    const interaction = capture.interaction as { focusOrder: string[]; dialogEscape?: unknown };
     const structure = capture.structure as { formFields?: string[] } | undefined;
-    const signal = focusIsTrappedIn(interaction.focusOrder, structure?.formFields ?? []);
+    const signal = focusIsTrappedIn(interaction.focusOrder, structure?.formFields ?? [],
+      interaction.dialogEscape);
     const rule = ruleFindings(capture as never).some((f) => f.wcag.startsWith("2.1.2"));
     if (signal !== rule) disagreements.push(`${name}: signal=${signal} rule=${rule}`);
   }
@@ -75,9 +76,10 @@ test("both fire on the trapped variant of every trap case, and on neither confor
   // pages: a consent banner confines Tab to its own controls while the sweep walks the whole document, so
   // that page and the corpus trap are the same evidence (tfl ring 5 of 28 swept; the case, 3 of 5).
   const fired = CAPTURES.filter(({ capture }) => {
-    const interaction = capture.interaction as { focusOrder: string[] };
+    const interaction = capture.interaction as { focusOrder: string[]; dialogEscape?: unknown };
     const structure = capture.structure as { formFields?: string[] } | undefined;
-    return focusIsTrappedIn(interaction.focusOrder, structure?.formFields ?? []);
+    return focusIsTrappedIn(interaction.focusOrder, structure?.formFields ?? [],
+      interaction.dialogEscape);
   }).map((c) => c.name);
 
   assert.ok(fired.some((n) => n.startsWith("keyboard-trap-postcode.bad")),
