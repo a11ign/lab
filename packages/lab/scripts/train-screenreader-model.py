@@ -650,8 +650,24 @@ def uninformative_columns(features: Any, offsets: list[int], labels: Any, indice
     # as "constant" is how a vacuous guard comes to silence a whole feature block.
     if not positive_units:
         return torch.zeros(features.shape[1], dtype=torch.bool)
+    # STRICTLY ZERO, not merely constant — and the difference is the whole gate.
+    #
+    # The first version read `(rows == rows[0]).all(dim=0)`, masking any column constant across the
+    # positives. That is wrong in one direction and the held-out set said so immediately: 2.4.4 lost 20
+    # findings, 1.3.1 lost 16, 4.1.3 lost 8, and 2.4.6 gained 10 false positives. A feature constant at
+    # 1.0 across a subtype's positives is not a veto, it is that subtype's DEFINING EVIDENCE — masking
+    # `vague_link_present` out of the 2.4.4 head removes the thing 2.4.4 is about.
+    #
+    # The asymmetry is in the arithmetic, and the docstring above already stated it correctly while the
+    # code did not: gradient is proportional to the input, so a column that is ZERO on every positive
+    # receives no gradient from them at all. Its weight is fitted entirely by negatives, and the only
+    # thing it can do to a positive's score is nothing. A column that is ONE on every positive is fitted
+    # by both and separates them from negatives that lack it.
+    #
+    # So this is ADR 0015's definition verbatim — "a feature strictly {0.0} across a subtype's
+    # positives" — rather than a generalisation of it that sounded equivalent.
     rows = features[torch.tensor(positive_units, dtype=torch.long)]
-    return (rows == rows[0]).all(dim=0)
+    return (rows == 0.0).all(dim=0)
 
 
 def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int], epochs: int) -> tuple[Any, Any]:
