@@ -22,7 +22,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { CASES } from "./case-matrix.mjs";
+import { CASES, pair } from "./case-matrix.mjs";
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 
@@ -148,4 +148,46 @@ test("evidence:check forwards every probe flag, and gates on all of them", () =>
     assert.ok(!new RegExp(`${flag}: !!testCase\\.${flag}`).test(source),
       `${flag} is still enumerated by name in evidence-check; that is how the last two were dropped`);
   }
+});
+
+test("pair() forwards a probe flag it has never heard of", () => {
+  // THE HOP THAT WAS MISSED. "Which probe a case wants" was six hand-written hops; the manifest hop was
+  // fixed to forward `probe*` by PREFIX and `pair()` was not. So `probeArrows` and `probeTyping` were
+  // declared on their cases, plumbed through every hop AFTER this one, passed this suite, and were
+  // dropped here — silently, because a dropped flag and an unasked probe produce the same absent field.
+  //
+  // Asserted with a name that does not exist anywhere in the codebase, because a test naming a real flag
+  // would pass the moment somebody adds that flag by hand, which is the failure mode it exists to stop.
+  const generated = pair({
+    id: "probe-forwarding-fixture",
+    criterion: "4.1.2",
+    task: "t",
+    source: "s",
+    mutation: "m",
+    badSignal: { type: "regex", pattern: "x" },
+    good: "<p>g</p>",
+    bad: "<p>b</p>",
+    probeNeverHeardOf: true,
+  } as never) as unknown as Record<string, unknown>;
+  assert.equal(generated.probeNeverHeardOf, true,
+    "a probe flag the case declares must reach the generated case, or the probe silently never runs");
+});
+
+test("pair() does NOT forward a non-probe key", () => {
+  // The other direction, and it is not symmetry for its own sake: `pair()` takes fields that are about
+  // the CASE rather than the capture, and leaking those into the capture request would put arbitrary
+  // case metadata on the wire and into the cache key.
+  const generated = pair({
+    id: "probe-forwarding-fixture-2",
+    criterion: "4.1.2",
+    task: "t",
+    source: "s",
+    mutation: "m",
+    badSignal: { type: "regex", pattern: "x" },
+    good: "<p>g</p>",
+    bad: "<p>b</p>",
+    somethingElse: true,
+  } as never) as unknown as Record<string, unknown>;
+  assert.equal(generated.somethingElse, undefined,
+    "only `probe*` keys ride through; everything else is case metadata and stays out of the request");
 });

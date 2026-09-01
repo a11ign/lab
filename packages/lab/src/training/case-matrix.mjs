@@ -210,7 +210,10 @@ function defaultSubtype(/** @type {any} */ { id, criterion, badSignal }) {
  *   duplicate of it here would be a second copy of the one thing this function exists to be explicit
  *   about, which is this repo's most expensive shape.
  */
-function pair({
+// EXPORTED so the flag forwarding can be TESTED rather than assumed. `probeArrows` and `probeTyping`
+// were dropped here silently — declared, plumbed through every later hop, and lost at this one — because
+// nothing could reach this function to ask whether an unknown `probe*` key survives it.
+export function pair({
   id,
   criterion,
   task,
@@ -254,6 +257,8 @@ function pair({
   // three case definitions carried it. A constructor that enumerates its fields must be updated
   // with them.
   alsoFails = [],
+  // Everything not named above. Only `probe*` keys are forwarded from it — see below.
+  ...rest
 }) {
   return {
     id,
@@ -270,6 +275,24 @@ function pair({
     probeFocus,
     probeNavigation,
     probeDialog,
+    // EVERY OTHER `probe*` FLAG, BY PREFIX RATHER THAN BY NAME — the remedy CLAUDE.md already records for
+    // this exact defect, applied to the hop it never reached.
+    //
+    // "Which probe a case wants" was SIX hand-written hops, and the recorded symptom is precise: *"the
+    // probe never ran; the field it writes was simply absent, which is what a page with nothing to report
+    // looks like."* The manifest hop was fixed to forward by prefix. This one was not, so `probeArrows`
+    // and `probeTyping` were declared on their cases, plumbed through the four hops after this, tested by
+    // `probe-chain.test.ts`, and dropped HERE — silently, because a dropped flag and an unasked probe are
+    // the same absent field.
+    //
+    // Measured 2026-09-01: both cases captured clean and both probes were inert. What said so was
+    // `observed.arrowNavigation.why` reading "probeArrows is opt-in" — the flag arrived FALSE — rather
+    // than an empty channel that reads as "the page has none of these". That is the protocol-10 work
+    // earning its keep on the first real defect after it shipped.
+    //
+    // The five above stay named because they are the documented interface and a reader should see them.
+    // Anything else beginning `probe` rides through, so the next one cannot be dropped by omission.
+    ...Object.fromEntries(Object.entries(rest).filter(([key]) => key.startsWith("probe"))),
     ...(probeOrder ? { probeOrder } : {}),
     good,
     bad,
