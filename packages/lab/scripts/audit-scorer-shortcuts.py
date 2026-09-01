@@ -347,9 +347,36 @@ def rule_decided_subtypes() -> set[str]:
     return {name for name, entry in ownership.items() if entry.get("decidedBy") == "rules"}
 
 
+def _write_report(rows: list) -> None:
+    """Write the rows to `runs/` so the detail survives the job runner.
+
+    THIS AUDIT REFUSED A PROMOTION AND COULD NOT SHOW ITS WORKING. `render` prints only the worst veto per
+    subtype and the job transcript truncates the rest at "... and 13 more", so when
+    `2.4.2:route-title-stale` went 1 -> 5 closable vetoes on 2026-09-01 there was no way to read WHICH
+    four without an ssh shell. The decision that needed them -- are these closable by corpus work, or do
+    they belong in the unclosable map -- is exactly the decision this audit exists to inform.
+
+    That is the lesson `audit_grants.py` already carries, one report along: *"a report that exists only as
+    stdout is one a job runner can lose. Write the report to `runs/` and make it fetchable."* That one
+    exited 1 with a real finding and its journal read `-- No entries --`.
+
+    Best-effort: a report that cannot be written must never turn a passing audit into a failing one, and
+    the verdict is `compare_to_baseline`'s regardless. The error is printed rather than swallowed.
+    """
+    out = Path("runs") / "scorer-shortcuts.json"
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({"vetoLogits": VETO_LOGITS, "rows": rows}, indent=2) + "\n",
+                       encoding="utf-8")
+        print(f"  report written to {out}")
+    except OSError as error:
+        print(f"  report NOT written to {out}: {error}")
+
+
 def main() -> int:
     args = parse_args()
     rows = audit(read_records(args.data), args.model)
+    _write_report(rows)
     if args.json:
         print(json.dumps({"vetoLogits": VETO_LOGITS, "rows": rows}, indent=2))
     else:
