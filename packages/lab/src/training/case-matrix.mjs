@@ -2135,6 +2135,57 @@ const MODAL_FOCUS_GUARD = "var trapped = true;"
   + "});";
 
 /*
+ * A dialog whose ONLY way out is the Escape key, present on one variant and absent on the other.
+ *
+ * `keyboard-trap-modal-cycle` cannot express this and it took a capture to see why. Its conformant variant
+ * escapes by a Close BUTTON inside the ring -- the APG pattern, correct -- so neither of its pages handles
+ * Escape and `dialogEscape` came back byte-identical on both. A canary that cannot express the fault is
+ * worthless, and the fault this one exists for is the one WCAG 2.1.2 actually names: *"if focus can be
+ * moved away using only a keyboard, the user is told the method"*. Escape IS that method for a dialog.
+ *
+ * The two pages differ in ONE handler and nothing else -- same ring, same fields, same size, same guard --
+ * so anything that discriminates them is reading the escape route rather than the shape of a modal. Three
+ * earlier trap rules were exact on the corpus and wrong on the web precisely because they read the shape.
+ */
+function MODAL_ESCAPE_FORM() {
+  return "<form>"
+    + "<label for=\"a\">Full name</label><input id=\"a\" name=\"a\">"
+    + "<label for=\"b\">Email</label><input id=\"b\" name=\"b\">"
+    + "<label for=\"d\">Phone</label><input id=\"d\" name=\"d\">"
+    + "<label for=\"e\">Delivery notes</label><input id=\"e\" name=\"e\">"
+    + "</form>"
+    + "<div id=\"confirm\" role=\"dialog\" aria-label=\"Confirm address\">"
+    + "<label for=\"m1\">House number</label><input id=\"m1\" name=\"m1\">"
+    + "<label for=\"m2\">Street</label><input id=\"m2\" name=\"m2\">"
+    + "<label for=\"m3\">Town</label><input id=\"m3\" name=\"m3\">"
+    + "<label for=\"m4\">County</label><input id=\"m4\" name=\"m4\">"
+    + "</div>";
+}
+
+// Releases the trap on Escape and moves focus OUT, which is what makes the dialog leaveable.
+//
+// SCOPED TO FOCUS BEING INSIDE THE DIALOG, and that is not decoration -- it is what a real dialog does,
+// and without it this pair proves nothing. `anchorToTop` presses Escape as its FIRST action on every
+// capture, long before any probe observes anything. Measured 2026-09-01 with a document-level handler:
+// the trap was released before the focus probe ran, so the conformant ring walked the whole page (7 stops
+// through the main form and the links) while the failing one cycled the four dialog fields. The pair then
+// differed by RING SHAPE, which is exactly the confound `keyboard-trap-modal-cycle`'s comment records
+// three withdrawn rules for -- a rule fitted to it learns "is there a modal" and accuses consent banners.
+//
+// Scoped, the early Escape is a no-op because focus is still on the body, both rings are confined and
+// identical, and the only thing that differs is what Escape does once you are inside.
+const MODAL_ESCAPE_RELEASES = MODAL_FOCUS_GUARD
+  + "document.addEventListener('keydown', (event) => {"
+  + "  if (event.key !== 'Escape') return;"
+  + "  const dialog = document.getElementById('confirm');"
+  + "  if (!dialog.contains(document.activeElement)) return;"
+  + "  trapped = false;"
+  + "  dialog.hidden = true;"
+  + "  document.getElementById('a').focus();"
+  + "});";
+
+
+/*
  * `MODAL_TRAP_TOTAL_FORM` and its case `keyboard-trap-modal-total` stood here on 2026-08-28: a dialog
  * holding EVERY form field, with six links outside it. It demonstrated the gap `keyboard-trap-modal-cycle`
  * names — the form-field denominator goes silent when the dialog holds them all — and the tab-stop
@@ -2492,6 +2543,53 @@ cases.push(
     // `parseAnnouncement` is the single grammar for that -- so the comparison belongs to a rule, not here.
     probeDialog: true,
     probeForms: true,
+    probeOrder: "focus-first",
+  }),
+);
+
+cases.push(
+  pair({
+    id: "keyboard-trap-modal-escape",
+    task: "Tab through the page and reach the delivery notes at the end.",
+    source: "WCAG 2.1.2 Understanding; ARIA Authoring Practices, dialog pattern",
+    mutation: "A focus guard confines Tab to a dialog holding four text fields. The conformant variant "
+      + "releases it on Escape and moves focus back to the page; the failing one ignores Escape, so the "
+      + "only documented way out of a modal does nothing.",
+    criterion: "2.1.2",
+    subtype: "focus-trapped",
+    // THE SIBLING OF `keyboard-trap-modal-cycle`, AND IT EXISTS BECAUSE THAT CASE CANNOT EXPRESS THIS.
+    //
+    // That one conforms by a Close BUTTON inside the ring, which is correct and is the APG pattern -- so
+    // NEITHER of its pages handles Escape, and `dialogEscape` came back byte-identical on both when the
+    // probe was first pointed at it. Measured on the fleet, not reasoned about. A canary that cannot
+    // express the fault is worthless, and the two cases now cover the two ways out that 2.1.2 accepts.
+    //
+    // `MODAL_TRAP_TOTAL_FORM` stood here until 2026-08-28 and was removed for having no signal that could
+    // fire, with a note saying the page "will be needed the moment a probe can ask whether Escape releases
+    // focus". That moment is capture-protocol 11.
+    //
+    // The pair differs in ONE keydown handler: same ring, same four text fields, same guard, same size.
+    // So nothing that discriminates it can be reading the SHAPE of a modal, which is how three earlier
+    // trap rules came to accuse real consent banners.
+    good: page({
+      title: "Delivery details",
+      heading: "Delivery details",
+      body: MODAL_ESCAPE_FORM(),
+      script: MODAL_ESCAPE_RELEASES,
+    }),
+    bad: page({
+      title: "Delivery details",
+      heading: "Delivery details",
+      body: MODAL_ESCAPE_FORM(),
+      // The identical guard with no Escape handler. Focus is held and the documented way out does nothing.
+      script: MODAL_FOCUS_GUARD,
+    }),
+    badSignal: { type: "escape-does-not-release" },
+    // All three are required and the case is worthless without any one of them. `probeDialog` presses
+    // Escape; `probeFocus` is what puts focus INSIDE the dialog first, since a sweep is browse mode and
+    // never moves DOM focus; `focus-first` runs the pair before the sweep can activate anything.
+    probeFocus: true,
+    probeDialog: true,
     probeOrder: "focus-first",
   }),
 );
@@ -3885,6 +3983,33 @@ function announcedControlsTheRingNeverReached(stops, formFields) {
   return namesOf(formFields).filter((/** @type {string} */ name) => !reached.has(name));
 }
 
+/**
+ * Escape was pressed inside a dialog and NOTHING happened — no announcement, and focus did not move.
+ *
+ * Reads `interaction.dialogEscape`, which only exists when `probeDialog` AND `probeFocus` both ran: Escape
+ * from the browse caret measures the document, not a dialog, and the first version of this probe did
+ * exactly that on every page.
+ *
+ * BOTH halves are required and neither alone is sound. Silence on its own is the ambiguity this repo has
+ * paid for repeatedly -- a probe that gave up early and a page that said nothing are the same observation.
+ * Focus alone is not enough either: NVDA re-announces the SAME control differently depending on how the
+ * caret arrived ("T, o, w, n" then "Town, edit, focused, blank" on one real capture), so raw inequality
+ * reads as movement on a page where nothing moved. Requiring silence AND a stationary focus means each
+ * covers the other's failure mode.
+ *
+ * `null` is NOT a finding. A capture that never ran the probe cannot say whether the dialog can be left,
+ * and reading that absence as a trap is this corpus's oldest defect wearing a new criterion.
+ */
+export function escapeDoesNotRelease(/** @type {any} */ dialogEscape) {
+  if (!dialogEscape || typeof dialogEscape !== "object") return false;
+  const announced = String(dialogEscape.announced ?? "").trim();
+  if (announced !== "") return false;
+  const settle = (/** @type {unknown} */ v) =>
+    String(v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return settle(dialogEscape.focusBefore) === settle(dialogEscape.focusAfter)
+    || settle(dialogEscape.focusAfter).startsWith(settle(dialogEscape.focusBefore));
+}
+
 function focusIsTrapped(/** @type {any} */ capture) {
   return focusIsTrappedIn(capture.interaction?.focusOrder ?? [], capture.structure?.formFields ?? []);
 }
@@ -3914,6 +4039,8 @@ const SIGNAL_PREDICATES = Object.freeze({
   "placeholder-only": (/** @type {any} */ capture, /** @type {any} */ signal) => placeholderOnlyIsPresent(capture, signal),
   "table-unassociated": (/** @type {any} */ capture) => tableHeadersAreUnassociated(capture),
   "focus-trapped": (/** @type {any} */ capture) => focusIsTrapped(capture),
+  "escape-does-not-release": (/** @type {any} */ capture) =>
+    escapeDoesNotRelease(capture.interaction?.dialogEscape),
   "route-title-stale": (/** @type {any} */ capture) => routeTitleIsStale(capture),
   "focus-order-scrambled": (/** @type {any} */ capture) => focusOrderIsScrambled(capture),
   "skip-link-inert": (/** @type {any} */ capture) => skipLinkIsInert(capture),
