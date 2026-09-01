@@ -774,50 +774,34 @@ const cases = [
     }),
     probeForms: true,
   }),
-  pair({
-    id: "filter-status-silent-checkbox",
-    criterion: "4.1.3",
-    task: "Filter the catalogue to show only bags and notice how many results remain.",
-    source: "Web Accessibility Cookbook, chapter 22; WCAG 4.1.3 Understanding",
-    mutation: "A CHECKBOX filter updates the visible result count without exposing it through a live "
-      + "status. Identical failure to `filter-status-silent`, fired by the control real filters actually "
-      + "use.",
-    // THE FIRST 4.1.3 CASE WHOSE TRIGGER IS NOT A BUTTON, and until capture-protocol 12 there could not
-    // be one: `probeKindFor` only ever reached buttons, so a live region updated by a checkbox was
-    // structurally unreachable and all 143 cases of this criterion used the one control that worked.
-    //
-    // That is a corpus shaped by the PROBE rather than by the web. Real filters, consent toggles and
-    // "show prices including VAT" controls are checkboxes far more often than they are buttons, so the
-    // head owning 4.1.3 has never seen the commonest form of its own failure -- `corpus:starvation`'s
-    // question asked of a control type instead of a feature.
-    //
-    // The safety decision that made this reachable is in `SECURITY.md`: the line is not how destructive a
-    // control might be but whether activating it can NAVIGATE, which a checkbox cannot.
-    badSignal: { type: "form-activation-silent", control: "Show bags only" },
-    good: page({
-      title: "Product catalogue",
-      heading: "Product catalogue",
-      body: "<p><input type=\"checkbox\" id=\"bags\"><label for=\"bags\">Show bags only</label></p>"
-        + "<p id=\"count\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\">Showing 8 products.</p>"
-        + "<ul id=\"products\"><li>Canvas bag</li><li>Travel bag</li></ul>",
-      script: "document.querySelector('#bags').addEventListener('change', () => "
-        + "{ document.querySelector('#count').textContent = 'Showing 2 bags.'; });",
-    }),
-    bad: page({
-      title: "Product catalogue",
-      heading: "Product catalogue",
-      // The same checkbox, the same handler, the same words — only the live region is missing. So nothing
-      // that discriminates the pair can be reading the presence of a checkbox.
-      body: "<p><input type=\"checkbox\" id=\"bags\"><label for=\"bags\">Show bags only</label></p>"
-        + "<p id=\"count\">Showing 8 products.</p>"
-        + "<ul id=\"products\"><li>Canvas bag</li><li>Travel bag</li></ul>",
-      script: "document.querySelector('#bags').addEventListener('change', () => "
-        + "{ document.querySelector('#count').textContent = 'Showing 2 bags.'; });",
-    }),
-    // `change`, not `click`, because that is the event a real filter listens for and the one a screen
-    // reader user fires. They coincide for a mouse and do not for every assistive path.
-    probeForms: true,
-  }),
+  /*
+   * `filter-status-silent-checkbox` STOOD HERE on 2026-09-01 and was withdrawn the same day, BLIND.
+   *
+   * The toggle probe itself works and is proven: the capture records
+   * `{control: "Show bags only, check box, not checked", kind: "toggle", after: "checked"}`, so
+   * `probeKindFor`'s new rule reached a checkbox and activated it exactly as designed.
+   *
+   * What does not work is 4.1.3's signal on a checkbox, and the reason generalises. `form-activation-silent`
+   * asks whether the activation delta is EMPTY -- sound for a button, which announces nothing of its own --
+   * but NVDA announces a checkbox's own state change ("checked") whatever the page does. So the delta is
+   * never empty, the signal cannot fire, and `check-signals` correctly reported BLIND on both variants.
+   *
+   * That is the same shape as `probeTypedFeedback`'s echo problem one control along: THE SCREEN READER'S
+   * OWN FEEDBACK MASKS THE PAGE'S. The typing probe solves it by separating `echoed` from `announced`
+   * against the string actually sent; a toggle needs the equivalent -- the control's own state separated
+   * from the page's response -- and `activateAndCaptureDelta` does not do that yet.
+   *
+   * Measured on both variants at protocol 13: `after: "checked"`, identical. Note what that also says --
+   * the GOOD page's live region did not announce inside the delta window at all, which is a second
+   * question (timing, or whether NVDA voices a live region updated from a `change` handler) and needs its
+   * own measurement rather than a guess.
+   *
+   * REMOVED rather than left blind, on this project's own rule: a case whose signal cannot fire is a
+   * training record with no discriminating evidence, which is what that gate exists to refuse. Recorded
+   * here rather than only in git so the shape is re-creatable -- the page is right and the SIGNAL is what
+   * is missing, exactly as `keyboard-trap-modal-total` was right and waiting for a probe.
+   */
+
   pair({
     id: "filter-status-silent",
     criterion: "4.1.3",
