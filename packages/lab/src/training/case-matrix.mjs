@@ -782,50 +782,32 @@ const cases = [
   // A diagnostic pair settled it — same control, one `polite` region and one `assertive` — and BOTH
   // announced "Showing 2 bags.". Politeness was never the cause and neither was the control. The fault was
   // in the predicate, and `pageResponseTo` now separates the control's own state from the page's answer.
-  pair({
-    id: "filter-status-silent-checkbox",
-    criterion: "4.1.3",
-    task: "Filter the catalogue to show only bags and notice how many results remain.",
-    source: "Web Accessibility Cookbook, chapter 22; WCAG 4.1.3 Understanding",
-    mutation: "A CHECKBOX filter updates the visible result count without exposing it through a live "
-      + "status. Identical failure to `filter-status-silent`, fired by the control real filters actually "
-      + "use.",
-    // THE FIRST 4.1.3 CASE WHOSE TRIGGER IS NOT A BUTTON, and until capture-protocol 12 there could not
-    // be one: `probeKindFor` only ever reached buttons, so a live region updated by a checkbox was
-    // structurally unreachable and all 143 cases of this criterion used the one control that worked.
-    //
-    // That is a corpus shaped by the PROBE rather than by the web. Real filters, consent toggles and
-    // "show prices including VAT" controls are checkboxes far more often than they are buttons, so the
-    // head owning 4.1.3 has never seen the commonest form of its own failure -- `corpus:starvation`'s
-    // question asked of a control type instead of a feature.
-    //
-    // The safety decision that made this reachable is in `SECURITY.md`: the line is not how destructive a
-    // control might be but whether activating it can NAVIGATE, which a checkbox cannot.
-    badSignal: { type: "form-activation-silent", control: "Show bags only" },
-    good: page({
-      title: "Product catalogue",
-      heading: "Product catalogue",
-      body: "<p><input type=\"checkbox\" id=\"bags\"><label for=\"bags\">Show bags only</label></p>"
-        + "<p id=\"count\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\">Showing 8 products.</p>"
-        + "<ul id=\"products\"><li>Canvas bag</li><li>Travel bag</li></ul>",
-      script: "document.querySelector('#bags').addEventListener('change', () => "
-        + "{ document.querySelector('#count').textContent = 'Showing 2 bags.'; });",
-    }),
-    bad: page({
-      title: "Product catalogue",
-      heading: "Product catalogue",
-      // The same checkbox, the same handler, the same words — only the live region is missing. So nothing
-      // that discriminates the pair can be reading the presence of a checkbox.
-      body: "<p><input type=\"checkbox\" id=\"bags\"><label for=\"bags\">Show bags only</label></p>"
-        + "<p id=\"count\">Showing 8 products.</p>"
-        + "<ul id=\"products\"><li>Canvas bag</li><li>Travel bag</li></ul>",
-      script: "document.querySelector('#bags').addEventListener('change', () => "
-        + "{ document.querySelector('#count').textContent = 'Showing 2 bags.'; });",
-    }),
-    // `change`, not `click`, because that is the event a real filter listens for and the one a screen
-    // reader user fires. They coincide for a mouse and do not for every assistive path.
-    probeForms: true,
-  }),
+  /*
+   * `filter-status-silent-checkbox` — WITHDRAWN, and this time with a RATE rather than a guess.
+   *
+   * Six repeats of the unchanged good page: the live region reached the activation delta **2 times in 6**.
+   * `gate:stability` calls that `VARIES formChanges counts 1,1,1,1,1,1` — the count never moves, only the
+   * content, which is the rot a count-based check cannot see.
+   *
+   * Three readings of this case today, all from single captures, all different: "checked" on both;
+   * then good "Showing 2 bags." and bad "checked"; then "checked" on both again. Each looked like a
+   * finding. ONE CAPTURE IS NOT A MEASUREMENT — `gate:stability` repeats a page and `identity:rate` prints
+   * a 95% upper bound rather than a zero, and a withdrawal is a conclusion like any other.
+   *
+   * IT IS NOT THE WAIT. `activateAndCaptureDelta` now waits a second time whenever everything heard is the
+   * control's own state, on sound reasoning: a checkbox says "checked" first, that starts the quiet
+   * window, and `aria-live="polite"` means *speak when idle* — so the region waits for the silence that
+   * ends it. Deployed and re-measured: **2 of 6 before, 2 of 6 after.** The announcement is intermittent
+   * AT NVDA, and no wait catches what was never spoken.
+   *
+   * That second wait is kept and INSTRUMENTED (`SECOND-WAIT-AFTER-OWN-STATE caught=…` in `sweepLog`), so
+   * "it never fires" and "it fires and finds nothing" stop being the same silence.
+   *
+   * `pageResponseTo` stays and is correct independently: it separates a toggle's own state from the page's
+   * answer, so a silence test written for BUTTONS can fire on a toggle at all. The evidence underneath is
+   * what is not yet stable enough to train on.
+   */
+
   pair({
     id: "filter-status-silent",
     criterion: "4.1.3",
@@ -2678,6 +2660,9 @@ function RADIO_GROUP_PAGE(arrowsWork) {
 }
 
 
+// KEPT AS SOURCE, not deleted: the page is right and the EVIDENCE is what is not stable — see the
+// withdrawal note on `validation-live-silent`. Referenced by nothing until §18's live-region
+// intermittency has a cause, at which point the case is restored and this is used again.
 /**
  * Validation that fires WHILE TYPING — the one mechanism this corpus has never contained.
  *
@@ -2695,6 +2680,7 @@ function RADIO_GROUP_PAGE(arrowsWork) {
  *
  * @param {boolean} announced
  */
+// eslint-disable-next-line no-unused-vars -- see the note above; restored with the case.
 function LIVE_VALIDATION_PAGE(announced) {
   const region = announced
     ? "<p id=\"hint\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"></p>"
@@ -2741,27 +2727,22 @@ cases.push(
   // What this case has to prove is narrower than the withdrawal assumed: not "can a live region be heard",
   // but "is the page's response separable from NVDA's character echo" — and `probeTypedFeedback` already
   // separates them, comparing each spoken phrase against the string it actually sent.
-  pair({
-    id: "validation-live-silent",
-    task: "Enter a reference number and notice whether the form tells you it is wrong.",
-    source: "WCAG 3.3.1 Understanding; Web Accessibility Cookbook, chapter 22",
-    mutation: "Validation fires while typing and writes its message to a plain paragraph, so a sighted "
-      + "user sees it immediately and a screen-reader user hears nothing at all.",
-    criterion: "3.3.1",
-    // JOINS THE EXISTING HEAD WITH A MECHANISM IT HAS NEVER SEEN. `oninput` is on 0 of 3,948 generated
-    // pages against `onsubmit` on 346, so every `validation-error-silent` record describes an error
-    // surfaced by SUBMITTING -- half the criterion, and the half a probe could already reach.
-    subtype: "validation-error-silent",
-    badSignal: { type: "typed-feedback-silent" },
-    good: page({ title: "Reference lookup", heading: "Reference lookup", body: LIVE_VALIDATION_PAGE(true) }),
-    bad: page({ title: "Reference lookup", heading: "Reference lookup", body: LIVE_VALIDATION_PAGE(false) }),
-    // `probeTyping` types into the focused field; `probeFocus` is what puts DOM focus in a field at all,
-    // since a sweep is browse mode and typing there would send quick-nav commands into the document --
-    // the 353-capture defect this repo has already paid for once.
-    probeFocus: true,
-    probeTyping: true,
-    probeOrder: "focus-first",
-  }),
+  /*
+   * `validation-live-silent` — WITHDRAWN, same cause, less ambiguity.
+   *
+   * `typedFeedback` reads `{typed: true, echoed: "1 2 3 4 5 6", announced: ""}` on BOTH variants, and the
+   * good page's transcript never carries the message either. The probe lands, types, and separates NVDA's
+   * echo from the page's response correctly; what it separates is empty.
+   *
+   * Its sibling above measures the same mechanism at 2 of 6 for ONE activation. Typing fires the handler
+   * six times in a burst, so if a polite region is dropped while NVDA is speaking, this is the shape where
+   * it is dropped every time.
+   *
+   * `LIVE_VALIDATION_PAGE` is kept as source because the page is right. Restore it when §18's
+   * intermittency has a cause — not by switching the region to `assertive`, which would be fitting the
+   * page to the tool.
+   */
+
   pair({
     id: "radio-group-arrows-inert",
     task: "Choose express delivery using the keyboard alone.",
