@@ -56,6 +56,9 @@ export const EVIDENCE_FIELDS = [
   // compared nor excluded is a hole this gate cannot see. `frames` is the iframe sweep; `dialogEscape`
   // is an object, so it goes through the same flattening as `routeChange`.
   ["structure", "frames"], ["interaction", "dialogEscape"],
+  // Capture-protocol 13. Both are OBJECTS, so they go through the same flattening as `routeChange` and
+  // `dialogEscape` — a list-of-objects read as a count is the defect this file was fixed for today.
+  ["interaction", "arrowNavigation"], ["interaction", "typedFeedback"],
 ];
 
 /**

@@ -33,6 +33,8 @@ function stabilityFields(): Set<string> {
       controls: [], stateChanges: [], formChanges: [], postSubmitFields: [], focusOrder: [],
       postSubmitNames: [], routeChange: { titleBefore: "a", titleAfter: "b" },
       dialogEscape: { focusBefore: "a", announced: "", focusAfter: "a" },
+      arrowNavigation: { focusBefore: "a", announced: "", focusAfter: "a" },
+      typedFeedback: { typed: true, echoed: "1", announced: "" },
     },
   };
   return new Set(Object.keys(comparable(everyChannel) as Record<string, unknown>));

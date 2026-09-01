@@ -164,6 +164,8 @@ export function comparable(/** @type {any} */ capture) {
     // separately-maintained lists of "what a signal can read" have stopped drifting apart.
     frames: list(s.frames),
     dialogEscape: flatten(i.dialogEscape),
+    arrowNavigation: flatten(i.arrowNavigation),
+    typedFeedback: flatten(i.typedFeedback),
   };
 }
 

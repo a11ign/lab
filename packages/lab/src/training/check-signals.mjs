@@ -82,6 +82,10 @@ const EVIDENCE_FIELDS = Object.freeze({
   // the browse caret measures the DOCUMENT, so a dialogEscape taken without a focus probe is not evidence
   // about a dialog at all. The predicate is gated on the pair for the same reason.
   "escape-does-not-release": ["interaction.dialogEscape", "probe.focusOrder", "probe.dialogEscape"],
+  // Both need `probe.focusOrder` as well as their own probe: an arrow or a character sent in BROWSE mode
+  // reaches the document, not the control, so a reading taken without it is not evidence about a widget.
+  "arrow-keys-inert": ["interaction.arrowNavigation", "probe.focusOrder", "probe.arrows"],
+  "typed-feedback-silent": ["interaction.typedFeedback", "probe.focusOrder", "probe.typing"],
   "focus-order-scrambled": ["structure.formFields", "interaction.focusOrder", "probe.focusOrder"],
   "control-unreachable-by-keyboard": ["structure.formFields", "interaction.focusOrder", "probe.focusOrder"],
 });

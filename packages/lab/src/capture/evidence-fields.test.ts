@@ -82,15 +82,51 @@ test("every evidence field a capture carries is compared, or explicitly excluded
     + `that altered them would report SAME: ${unaccounted.join(", ")}`);
 });
 
+/**
+ * Fields declared in code whose first capture does not exist yet, each naming what closes it.
+ *
+ * THIS ESCAPE EXISTS BECAUSE THE TWO GUARDS HERE ARE MUTUALLY EXCLUSIVE DURING BOOTSTRAP, which is a real
+ * gap in them rather than an inconvenience. A field is always written in code before any capture carries
+ * it: list it and the phantom check fires, omit it and the sibling check fires the moment the first
+ * capture lands. Between a protocol bump and the recapture that follows, neither state is reachable.
+ *
+ * Deliberately shaped like `NO_FIXTURE` in `signal-predicates-discriminate.test.ts` — a named entry with a
+ * reason that says what closes it — because an exemption with no closure condition is where findings go to
+ * die, which `gate:probe-order`'s `stale` verdict exists to prevent one layer up.
+ *
+ * An entry here is WRONG the moment its captures exist: the guard below fails on a pending field that has
+ * arrived, so this list cannot quietly outlive its reason.
+ */
+const PENDING_CAPTURE: Record<string, string> = {
+  "interaction.arrowNavigation":
+    "capture-protocol 13. Closes when radio-group-arrows-inert is captured on a fleet running it.",
+  "interaction.typedFeedback":
+    "capture-protocol 13. Closes when validation-live-silent is captured on a fleet running it.",
+};
+
 test("nothing is compared that no capture actually carries", () => {
   // The other direction. A field in the list that captures never have compares [] to [] for ever —
   // coverage that looks real and examines nothing, which is how the count in a report becomes a lie.
   const onDisk = fieldsOnDisk();
   if (onDisk.size === 0) return;
   const phantom = (EVIDENCE_FIELDS as [string, string][])
-    .map((f) => f.join(".")).filter((f) => !onDisk.has(f)).sort();
+    .map((f) => f.join(".")).filter((f) => !onDisk.has(f) && !(f in PENDING_CAPTURE)).sort();
   assert.deepEqual(phantom, [],
     `these are compared but appear on no capture, so they contribute nothing: ${phantom.join(", ")}`);
+});
+
+test("a field waiting for its first capture is removed from PENDING once it arrives", () => {
+  // An exemption that outlives its reason is indistinguishable from a bug somebody decided to live with.
+  // This fails the moment the capture exists, which is the only thing that makes the list above safe.
+  const onDisk = fieldsOnDisk();
+  if (onDisk.size === 0) return;
+  const arrived = Object.keys(PENDING_CAPTURE).filter((f) => onDisk.has(f)).sort();
+  assert.deepEqual(arrived, [],
+    "these are listed as awaiting their first capture and captures now carry them — delete the entry, or "
+    + `the exemption hides a real phantom later: ${arrived.join(", ")}`);
+  for (const [field, why] of Object.entries(PENDING_CAPTURE)) {
+    assert.ok(why.includes("Closes when"), `${field}: an exemption must say what closes it`);
+  }
 });
 
 import { compareCapture } from "./evidence-diff.mjs";
