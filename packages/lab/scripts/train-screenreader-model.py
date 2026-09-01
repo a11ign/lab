@@ -306,6 +306,7 @@ def out_of_fold_scores(
     development_indices: list[int],
     epochs: int,
     offsets: list[int],
+    exempt: set[str] | None = None,
 ) -> Any:
     import torch
 
@@ -326,7 +327,7 @@ def out_of_fold_scores(
         ]
         if not held_out or not training:
             continue
-        weight, bias = train_head(features, offsets, labels, training, epochs)
+        weight, bias = train_head(features, offsets, labels, training, epochs, exempt)
         scores[held_out] = score_bags(features, offsets, weight, bias)[held_out]
     return scores
 
@@ -607,7 +608,41 @@ def bag_logits(unit_logits: Any, offsets: list[int]) -> Any:
     return unit_logits[gather].masked_fill(~mask, float("-inf")).max(dim=1).values
 
 
-def uninformative_columns(features: Any, offsets: list[int], labels: Any, indices: list[int]) -> Any:
+UNCLOSABLE_MAP = Path(__file__).resolve().parents[3] / "runs/unclosable-vetoes.json"
+
+
+def by_definition_exemptions(subtype: str) -> set[str]:
+    """Features a subtype CANNOT carry, whose negative weight is a true implication rather than a shortcut.
+
+    The distinction the held-out gate insisted on. `3.3.1:validation-error-silent` IS the absence of an
+    announced error, so `validation_error_announced` is 0 on every one of its positives BY MEANING -- and
+    a head weighing that negatively has learned "announced, therefore not silent", which is correct and
+    generalises. Masking it cost two held-out findings on `acceptance-b2-error-vessel/bad` and bought
+    nothing, because there was no shortcut there to remove.
+
+    Only the `by-definition` group is exempt. `perturbs-measurement` is deliberately NOT: those name a
+    feature the page COULD carry, where capturing it would destroy the evidence -- so on a real page the
+    feature may be 1 while the failure is present, and a negative weight suppresses a true finding. The
+    two groups need opposite treatment, which is why `emit-unclosable-vetoes.mjs` keeps them apart.
+
+    READ, never restated. `audit-corpus-starvation.mjs` owns `IMPOSSIBLE_BY_DEFINITION`; this is the same
+    JSON `audit-scorer-shortcuts.py` reads, by the same route, pinned equal by
+    `test_unclosable_map_is_current.py`. A second copy here would be a third spelling of one fact.
+    """
+    if not UNCLOSABLE_MAP.exists():
+        # REFUSE, rather than mask everything strictly-zero. An absent map is not an empty one: without it
+        # this masks the legitimate complements too, which the gate has already measured as a real loss of
+        # findings. `corpus:unclosable-map` is one command and `lab-job.test.ts` requires the chain to run
+        # it -- so its absence is a broken invocation, not a corpus with no exemptions.
+        raise SystemExit(
+            f"{UNCLOSABLE_MAP} is absent, so the free-veto mask cannot tell a shortcut from a true "
+            "implication and would silence both. Run `npm run corpus:unclosable-map` first.")
+    raw = json.loads(UNCLOSABLE_MAP.read_text(encoding="utf-8"))
+    return set(raw.get("by-definition", {}).get(subtype, []))
+
+
+def uninformative_columns(features: Any, offsets: list[int], labels: Any, indices: list[int],
+                          exempt: set[str] | None = None) -> Any:
     """Columns that are CONSTANT across this head's training positives.
 
     ADR 0015's free veto, turned from a report into a constraint. Its definition is a feature that is
@@ -667,10 +702,18 @@ def uninformative_columns(features: Any, offsets: list[int], labels: Any, indice
     # So this is ADR 0015's definition verbatim — "a feature strictly {0.0} across a subtype's
     # positives" — rather than a generalisation of it that sounded equivalent.
     rows = features[torch.tensor(positive_units, dtype=torch.long)]
-    return (rows == 0.0).all(dim=0)
+    mask = (rows == 0.0).all(dim=0)
+    # The engineered features occupy the LAST `len(FEATURE_NAMES)` columns; the encoder embedding is in
+    # front of them. Indexed from the end so a change to the embedding size cannot silently shift which
+    # column an exemption names -- the alignment is the thing most likely to rot here.
+    for name in (exempt or ()):
+        if name in FEATURE_NAMES:
+            mask[features.shape[1] - len(FEATURE_NAMES) + FEATURE_NAMES.index(name)] = False
+    return mask
 
 
-def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int], epochs: int) -> tuple[Any, Any]:
+def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int], epochs: int,
+               exempt: set[str] | None = None) -> tuple[Any, Any]:
     """Train one subtype head under multiple-instance max pooling.
 
     Takes the FULL feature matrix plus the record indices to train on, rather than a pre-sliced one:
@@ -686,7 +729,7 @@ def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int
     # gradient from the negatives and still shifts the bias and its neighbours to compensate; zeroing the
     # weight after the fact would leave a head fitted around a feature it is not allowed to use. Zeroing
     # the INPUT means no gradient reaches the column at all.
-    uninformative = uninformative_columns(features, offsets, labels, indices)
+    uninformative = uninformative_columns(features, offsets, labels, indices, exempt)
     features = features.clone()
     features[:, uninformative] = 0.0
     head = torch.nn.Linear(features.shape[1], 1)
@@ -980,6 +1023,10 @@ def main() -> None:
                     report["calibrationClean"] = False
                 note(report, f"{subtype}: fewer than 20 positive development records",
                      blocking=subtype not in RULE_SUBSTITUTED_SUBTYPES)
+            # Resolved ONCE per subtype and handed to both the folds and the final fit. Out-of-fold
+            # scores set the threshold the shipped head is judged against, so a mask applied to one and
+            # not the other calibrates a cut for a model that does not exist.
+            exempt = by_definition_exemptions(subtype)
             pooling = pooling_for(subtype)
             view_features, view_offsets = views[pooling]
             oof_scores = out_of_fold_scores(
@@ -989,8 +1036,10 @@ def main() -> None:
                 subtype_indices,
                 args.epochs,
                 view_offsets,
+                exempt,
             )
-            weight, bias = train_head(view_features, view_offsets, subtype_labels, subtype_indices, args.epochs)
+            weight, bias = train_head(view_features, view_offsets, subtype_labels, subtype_indices,
+                                      args.epochs, exempt)
             key = head_key(subtype)
             weights[key + ".weight"] = weight
             weights[key + ".bias"] = bias
