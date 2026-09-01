@@ -59,12 +59,33 @@ type Capture = {
 /** One nullish fallback, named once — spelling `?? []` at every field is what took this past `complexity`. */
 const merge = <T>(existing: readonly T[] | undefined, added: readonly T[]): T[] => [...(existing ?? []), ...added];
 
-const furnished = (capture: Capture): Capture => ({
+/**
+ * Does this case actually RECEIVE heading furniture? `withRealisticScale` says not, for one family.
+ *
+ * A case whose signal is `structure-empty` on `headings` asserts the page has NONE, and the generator
+ * gives exactly those cases `sections: 0` — its own comment: *"four of every five `no-headings` cases
+ * would silently be given headings and stop testing anything."* So furnishing one here models furniture it
+ * can never be given, and flags a case that is already correctly protected.
+ *
+ * MIRRORED RATHER THAN DERIVED, because this file cannot import the generator's bucket logic without
+ * importing the generator. That makes it a fact stated twice, and the two drifted: the guard has been in
+ * `withRealisticScale` since the no-headings work and this test never learned about it. It surfaced the
+ * moment a `no-headings` case first had a firing capture on this machine — before that the family was
+ * simply absent from the sweep, which is why a real disagreement sat here looking like nothing.
+ *
+ * If the generator's rule changes, this must change with it. There is no third place to check.
+ */
+const receivesHeadingFurniture = (signal: Case["badSignal"]): boolean =>
+  !(signal?.type === "structure-empty" && signal.field === "headings");
+
+const furnished = (capture: Capture, signal?: Case["badSignal"]): Capture => ({
   ...capture,
   transcript: merge(capture.transcript, FURNITURE.transcript),
   structure: {
     ...(capture.structure ?? {}),
-    headings: merge(capture.structure?.headings, FURNITURE.headings),
+    headings: receivesHeadingFurniture(signal)
+      ? merge(capture.structure?.headings, FURNITURE.headings)
+      : (capture.structure?.headings ?? []),
     formFields: merge(capture.structure?.formFields, FURNITURE.formFields),
     links: merge(capture.structure?.links, FURNITURE.links),
     tableCells: merge(capture.structure?.tableCells, FURNITURE.tableCells),
@@ -76,10 +97,10 @@ const furnished = (capture: Capture): Capture => ({
   },
 });
 
-type Case = { id: string; badSignal?: { type?: string } };
+type Case = { id: string; badSignal?: { type?: string; field?: string } };
 
 /** Bad captures whose signal actually fires — the only ones on which silencing is observable. */
-function firing(): { id: string; capture: Capture; signal: { type?: string } }[] {
+function firing(): { id: string; capture: Capture; signal: NonNullable<Case["badSignal"]> }[] {
   const found = [];
   for (const testCase of CASES as Case[]) {
     const path = resolve(CAPTURES, `${testCase.id}.bad.json`);
@@ -105,7 +126,7 @@ test("the corpus is present and its signals fire, or this test is honestly skipp
 test("adding page furniture silences no badSignal that was firing", () => {
   if (cases.length === 0) return;
   const blinded = cases
-    .filter(({ capture, signal }) => !signalMatches(furnished(capture), signal))
+    .filter(({ capture, signal }) => !signalMatches(furnished(capture, signal), signal))
     .map(({ id, signal }) => `${id} (${signal.type})`);
   assert.deepEqual(blinded.slice(0, 12), [],
     `${blinded.length} of ${cases.length} cases stop discriminating once page furniture is added. A `
