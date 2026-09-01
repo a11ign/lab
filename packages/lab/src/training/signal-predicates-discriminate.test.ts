@@ -80,6 +80,22 @@ const DISCRIMINATES: Record<string, { signal: object; fires: object; silent: obj
  * the probe, which is worse than an admitted gap: it would read as coverage.
  */
 const NO_FIXTURE: Record<string, string> = {
+  // RE-OPENED 2026-09-01 for one type, on the exact reason this list was emptied for the other five, and
+  // it must close the same way they did: by capturing, not by relaxing the bar.
+  //
+  // `probeArrows` ships in source and has never run — the fleet is mid-recapture and deploying would
+  // destroy unresumable work. So no capture on disk carries `interaction.arrowNavigation`, and a
+  // hand-built fixture here would be MY MODEL of what NVDA announces when an arrow moves inside a radio
+  // group rather than what it announces. This session has been wrong three times about exactly that kind
+  // of claim — the dialog probe took three captures, and each correction was something no amount of
+  // reading NVDA's source would have produced.
+  //
+  // The predicate itself IS unit-tested in `case-matrix.test.ts` against its four states. What is missing
+  // is evidence that those states are the ones a real capture produces, which only a capture can supply.
+  "arrow-keys-inert":
+    "probeArrows has never run: the fleet is mid-recapture, so no capture carries arrowNavigation and a "
+    + "hand-built fixture would be my model of the probe rather than the probe. Close by capturing "
+    + "radio-group-arrows-inert once the fleet is free, exactly as the five focus types were closed.",
   // EMPTY, and it stayed non-empty for the right reason until 2026-08-27.
   //
   // All five entries here were focus-probe types — `focus-trapped`, `focus-order-scrambled`,

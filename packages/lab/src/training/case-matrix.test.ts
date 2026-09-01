@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { CASES, evidenceUnits, signalMatches } from "./case-matrix.mjs";
+import { CASES, evidenceUnits, signalMatches, arrowKeysAreInert } from "./case-matrix.mjs";
 
 /**
  * The fields of a generated case that these tests read.
@@ -85,4 +85,28 @@ test("the seed validation fixture changes only error announcement, not field nam
   assert.match(testCase.good, /<label for="reference">Reference number<\/label>/);
   assert.match(testCase.bad, /<label for="reference">Reference number<\/label>/);
   assert.doesNotMatch(testCase.bad, /<span>Reference number<\/span>/);
+});
+
+test("arrow-keys-inert fires only when the page said nothing AND focus did not move", () => {
+  // The observation 2.1.1 abstains without. `SHARES_ONE_TAB_STOP` refuses to decide on a radio group
+  // because a native one and a broken one both present ONE tab stop — the tab ring cannot separate them,
+  // and that refusal is correct. Pressing the arrow is the only thing that can.
+  const inert = { focusBefore: "Standard delivery, radio button", announced: "",
+    focusAfter: "Standard delivery, radio button, 1 of 3" };
+  assert.equal(arrowKeysAreInert(inert), true);
+  // EITHER signal of movement clears it, never both required. NVDA re-announces the same option
+  // differently depending on how the caret arrived, so demanding both would call a working group broken.
+  assert.equal(arrowKeysAreInert({ ...inert, announced: "Express delivery, radio button, 2 of 3" }), false);
+  assert.equal(arrowKeysAreInert({ ...inert, focusAfter: "Express delivery, radio button" }), false);
+});
+
+test("an unprobed or unreadable capture makes NO arrow claim", () => {
+  // A capture that never pressed an arrow cannot say whether one works, and reading that absence as
+  // inertness is this corpus's oldest defect wearing a new criterion. An unreadable focus on either side
+  // means the probe could not observe, which is equally not evidence of inertness.
+  assert.equal(arrowKeysAreInert(null), false);
+  assert.equal(arrowKeysAreInert(undefined), false);
+  assert.equal(arrowKeysAreInert({ focusBefore: "", announced: "", focusAfter: "" }), false);
+  assert.equal(arrowKeysAreInert({ focusBefore: "Standard, radio button", announced: "", focusAfter: "" }),
+    false);
 });

@@ -2497,6 +2497,43 @@ function NATIVE_ACTION_PAGE(/** @type {any} */ focusable) {
     + "</form>";
 }
 
+
+/**
+ * A radio group reached by Tab and traversed by ARROWS — the widget class this corpus has none of.
+ *
+ * Measured 2026-09-01: across 4,926 captures there is not one radio button, tab, menu item, tree item,
+ * option or grid cell. Real pages have them (13 radio buttons on 2 of 26, both W3C's own WAI tutorials),
+ * and `SHARES_ONE_TAB_STOP` abstains from 2.1.1 on exactly this shape — so the rule's abstention has never
+ * once been exercised by the corpus that is supposed to validate it.
+ *
+ * THE PAIR IS ABOUT REACHABILITY, NOT ABOUT ARIA CORRECTNESS. The failing variant is roving tabindex with
+ * the roving half missing: one option carries `tabindex="0"`, the rest `-1`, and no key handler moves it.
+ * Tab reaches exactly one option and arrows do nothing, so **two of the three options cannot be reached by
+ * keyboard at all** — which is 2.1.1 read literally rather than a style objection.
+ *
+ * The conformant variant is native `<input type="radio">`, where the browser provides arrow traversal. Both
+ * announce three options with the same labels and both are one tab stop, so nothing that discriminates them
+ * can be reading the group's SIZE or its role — the confound three withdrawn 2.1.2 rules died of.
+ *
+ * @param {boolean} arrowsWork
+ */
+function RADIO_GROUP_PAGE(arrowsWork) {
+  const options = ["Standard delivery", "Express delivery", "Collect in store"];
+  if (arrowsWork) {
+    return "<form><fieldset><legend>Delivery method</legend>"
+      + options.map((label, i) =>
+        "<label><input type=\"radio\" name=\"delivery\" value=\"" + i + "\""
+        + (i === 0 ? " checked" : "") + "> " + label + "</label>").join("")
+      + "</fieldset></form>";
+  }
+  // Roving tabindex with nothing that roves. No keydown handler anywhere on the page, deliberately.
+  return "<div role=\"radiogroup\" aria-label=\"Delivery method\">"
+    + options.map((label, i) =>
+      "<div role=\"radio\" tabindex=\"" + (i === 0 ? "0" : "-1") + "\" aria-checked=\""
+      + (i === 0 ? "true" : "false") + "\">" + label + "</div>").join("")
+    + "</div>";
+}
+
 // 2.1.1 Keyboard. The detectable failure is a control the screen reader ANNOUNCES as operable that the
 // keyboard cannot reach — a `div role="button"` with a click handler and no `tabindex`, which is the most
 // common way this is failed and the one a screen-reader user meets as "I can hear it and I cannot press it".
@@ -2516,6 +2553,34 @@ cases.push(
     badSignal: { type: "control-unreachable-by-keyboard" },
     probeFocus: true,
     probeForms: true,
+    probeOrder: "focus-first",
+  }),
+);
+
+
+cases.push(
+  pair({
+    id: "radio-group-arrows-inert",
+    task: "Choose express delivery using the keyboard alone.",
+    source: "WCAG 2.1.1 Understanding; ARIA Authoring Practices, radio group pattern",
+    mutation: "A div-based radio group uses roving tabindex with nothing that roves: one option is "
+      + "tabbable, the rest are -1, and no handler moves focus between them. Two of the three options "
+      + "cannot be reached by keyboard at all.",
+    criterion: "2.1.1",
+    // THE FIRST CASE IN THIS CORPUS WITH AN ARROW-KEY WIDGET OF ANY KIND. Measured 2026-09-01: 0 of 4,926
+    // captures carry a radio button, tab, menu item, tree item, option or grid cell, while real pages do
+    // -- so `SHARES_ONE_TAB_STOP`, the abstention 2.1.1 makes for exactly this shape, has never been
+    // exercised by the corpus that validates it. `docs/not-working.md` §17 records the measurement and why
+    // it means the CASE comes before the probe: a probe built first has no positive to be right about.
+    good: page({ title: "Delivery method", heading: "Delivery method", body: RADIO_GROUP_PAGE(true) }),
+    bad: page({ title: "Delivery method", heading: "Delivery method", body: RADIO_GROUP_PAGE(false) }),
+    badSignal: { type: "arrow-keys-inert" },
+    // All three, and the case is worthless without any one. `probeArrows` presses the arrows; `probeFocus`
+    // is what puts DOM focus INTO the group first, since a sweep is browse mode and never moves focus --
+    // the lesson the dialog probe cost three captures to learn; `focus-first` runs the pair before the
+    // sweep activates anything.
+    probeFocus: true,
+    probeArrows: true,
     probeOrder: "focus-first",
   }),
 );
@@ -4116,6 +4181,38 @@ function announcedControlsTheRingNeverReached(stops, formFields) {
 }
 
 /**
+ * Arrows were pressed inside a group and NOTHING moved — the evidence 2.1.1 abstains without.
+ *
+ * Reads `interaction.arrowNavigation`, which exists only when `probeArrows` AND `probeFocus` both ran:
+ * arrows in BROWSE mode navigate the document, not the widget, so a reading taken without DOM focus inside
+ * the group is a measurement of the page. That is the same precondition the dialog probe needed, and the
+ * same one it cost three captures to discover.
+ *
+ * `SHARES_ONE_TAB_STOP` exists because a capture could not tell *reachable by arrows* from *unreachable*:
+ * a native radio group and a broken one both present ONE tab stop, so the tab ring cannot separate them.
+ * This is the observation that can — press the arrow and see whether the screen reader says anything new.
+ *
+ * A MOVE IS EITHER AN ANNOUNCEMENT OR A CHANGED FOCUS, never both required. NVDA re-announces the same
+ * option differently depending on how the caret arrived, so demanding both would call a working group
+ * broken. The asymmetry is deliberate and matches which error costs more: this ACCUSES, so it must be hard
+ * to satisfy -- it fires only when the page said nothing AND focus did not move.
+ *
+ * `null` is not a finding. A capture that never pressed an arrow cannot say whether one works, and reading
+ * that absence as inert is this corpus's oldest defect wearing a new criterion.
+ */
+export function arrowKeysAreInert(/** @type {any} */ arrowNavigation) {
+  if (!arrowNavigation || typeof arrowNavigation !== "object") return false;
+  if (String(arrowNavigation.announced ?? "").trim() !== "") return false;
+  const settle = (/** @type {unknown} */ v) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const before = settle(arrowNavigation.focusBefore);
+  const after = settle(arrowNavigation.focusAfter);
+  // An unreadable focus on either side means the probe could not observe, which is not evidence of
+  // inertness. Same rule as `escapeReleasedFocusIn`, and for the same reason.
+  if (before === "" || after === "") return false;
+  return after === before || after.startsWith(before);
+}
+
+/**
  * Escape was pressed inside a dialog and NOTHING happened — no announcement, and focus did not move.
  *
  * Reads `interaction.dialogEscape`, which only exists when `probeDialog` AND `probeFocus` both ran: Escape
@@ -4177,6 +4274,8 @@ const SIGNAL_PREDICATES = Object.freeze({
   "focus-trapped": (/** @type {any} */ capture) => focusIsTrapped(capture),
   "escape-does-not-release": (/** @type {any} */ capture) =>
     escapeDoesNotRelease(capture.interaction?.dialogEscape),
+  "arrow-keys-inert": (/** @type {any} */ capture) =>
+    arrowKeysAreInert(capture.interaction?.arrowNavigation),
   "route-title-stale": (/** @type {any} */ capture) => routeTitleIsStale(capture),
   "focus-order-scrambled": (/** @type {any} */ capture) => focusOrderIsScrambled(capture),
   "skip-link-inert": (/** @type {any} */ capture) => skipLinkIsInert(capture),
