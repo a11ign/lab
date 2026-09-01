@@ -616,6 +616,56 @@ const cases = [
     probeForms: true,
   }),
   pair({
+    id: "iframe-unnamed",
+    criterion: "4.1.2",
+    subtype: "unnamed-control",
+    task: "Read the booking options.",
+    source: "WCAG H64; W3C WAI Tutorials, Page Structure",
+    mutation: "An iframe carrying the page's real content has no title, so NVDA announces a bare \"frame\" "
+      + "with no name and a user has no way to know what is inside before entering it.",
+    // THE FIRST CASE THIS CORPUS HAS WITH AN IFRAME AT ALL, and CLAUDE.md lists that absence under what
+    // the corpus structurally cannot express: a named iframe ("Radios example, frame") was one of four
+    // real-page failures in one day that no corpus gate could ever have seen. `announcement.ts` has
+    // treated `frame` as a CONTAINER role since it was written, with the GOV.UK Design System as its
+    // worked example -- so the grammar has always been ready for evidence nobody could produce.
+    //
+    // It also earns the protocol-11 frame sweep. Until now that sweep had only ever run on pages with no
+    // frames and correctly found none, which is not proof it works -- it is the "a canary that cannot
+    // express the fault is worthless" rule pointed at a brand-new channel. This is the page that can.
+    //
+    // The two variants differ in the `title` attribute and nothing else, so nothing that discriminates
+    // them can be reading the presence of an iframe.
+    badSignal: {
+      type: "regex",
+      // A frame announced with NO name before it, WRITTEN FROM WHAT NVDA ACTUALLY SAID rather than from
+      // what seemed likely. The first version required end-of-line after `frame` and was BLIND, because
+      // NVDA continues straight into the frame's contents:
+      //
+      //     bad    "frame, heading, level 2, By train"
+      //     good   "Booking options, frame, heading, level 2, By train"
+      //
+      // So the discriminator is a line that BEGINS with the role -- a container announced without the
+      // name that would precede it. Anchored for that reason, and it also keeps "out of frame, list..."
+      // (NVDA's container-EXIT prefix, present on both variants) from matching.
+      pattern: "(?:^|\\n)frame,",
+      flags: "im",
+    },
+    good: page({
+      title: "Booking options",
+      heading: "Booking options",
+      body: "<p>Choose how you would like to travel.</p>"
+        + "<iframe title=\"Booking options\" src=\"data:text/html,"
+        + "%3Ch2%3EBy%20train%3C/h2%3E%3Cp%3EDirect%20services%20run%20hourly.%3C/p%3E\"></iframe>",
+    }),
+    bad: page({
+      title: "Booking options",
+      heading: "Booking options",
+      body: "<p>Choose how you would like to travel.</p>"
+        + "<iframe src=\"data:text/html,"
+        + "%3Ch2%3EBy%20train%3C/h2%3E%3Cp%3EDirect%20services%20run%20hourly.%3C/p%3E\"></iframe>",
+    }),
+  }),
+  pair({
     id: "icon-button-unnamed",
     criterion: "4.1.2",
     // Named for the FAILURE, not for how it is detected. `badSignal.type` is "regex", so without this
