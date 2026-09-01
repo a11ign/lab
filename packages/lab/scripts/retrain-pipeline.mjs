@@ -19,8 +19,8 @@
  * looks exactly like a good one.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { releasability } from "../src/packaging/releasability.mjs";
@@ -123,6 +123,67 @@ function verdict(candidateDirectory) {
  */
 export { STEPS };
 
+/**
+ * Run a stage, and keep everything it said.
+ *
+ * The runner prints a six-line tail per stage, which is what makes a nine-stage chain legible — and it
+ * captures the child's stdout to do that, so the detail no longer reaches the journal AT ALL. Measured
+ * on the first green run: the fetched log went from 400 lines to 63, and `RULES: PASS`, the per-criterion
+ * table and `1183 scored, 0 false positive(s)` were all simply gone. The chain reported a pass with the
+ * evidence FOR that pass discarded, which is worse than the illegibility it replaced — this repo's oldest
+ * rule is that a number is only as good as what it was computed from.
+ *
+ * So the tail is the summary and this is the record. Appended per stage rather than written at the end,
+ * because a chain killed at hour three must still leave behind what it had already done.
+ *
+ * IT LIVES HERE, BESIDE `run`, BECAUSE THE TAIL DOES. It was written in `everything-pipeline.mjs` and
+ * solved the problem only for THAT pipeline's nine stages — while `retrain`, which is one of them, is
+ * itself a pipeline running this same `run` in a child process, tailing its own five stages to six lines
+ * before everything-pipeline ever sees them. So the "full record" nested a tail inside it: measured
+ * 2026-09-01, `build-realism` reports one line PER HEAD and the transcript preserved the last three,
+ * of which `4.1.3: 0 of 37` was legible only because 4.1.3 sorts last. That is this repo's most
+ * expensive recurring shape — a remedy reaching one of several paths — and the fix is one definition
+ * both entry points call, not a second copy in this file.
+ *
+ * The transcript path is now REQUIRED rather than defaulted. Two pipelines writing one default path
+ * would interleave a nested run's stages with its parent's, and 'which run wrote this line' is exactly
+ * the question a transcript exists to answer.
+ */
+/**
+ * Typed by what this wrapper DOES, not by redeclaring what it wraps.
+ *
+ * A first attempt spelled out a guessed signature for `runStep`, and the guess made the CALL SITE fail
+ * to typecheck against the real `run` — which takes `{ dryRun }`. A wrapper that restates its subject's
+ * shape has two copies of that shape, and this is the cheaper half of the same lesson the `Mismatch`
+ * typedef records one package over.
+ *
+ * Both parameters are loose on purpose. A generic that MIRRORS the wrapped function's type was tried and
+ * is too clever: it forces the wrapper to have the wrapped function's exact arity, so a caller passing a
+ * one-argument stub could no longer invoke the two-argument wrapper. The honest description is what this
+ * wrapper guarantees — a step goes in, a result comes out, and the output reaches the transcript.
+ *
+ * @param {(step: any, options?: any) => {ok: boolean, output: string}} runStep
+ * @param {{transcript: string}} where
+ * @returns {(step: any, options?: any) => {ok: boolean, output: string}}
+ */
+export function keepingTranscript(runStep, { transcript }) {
+  return (step, options) => {
+    const result = runStep(step, options);
+    mkdirSync(dirname(transcript), { recursive: true });
+    appendFileSync(transcript,
+      `\n${"=".repeat(78)}\n=== ${step.name}${result.ok ? "" : "  — FAILED"}\n`
+      + `${"=".repeat(78)}\n${result.output ?? ""}\n`, "utf8");
+    return result;
+  };
+}
+
+/**
+ * Where a standalone `lab:retrain` keeps its full record. A DIFFERENT file from the everything chain's,
+ * because when `everything` runs this as a child both exist at once and a shared path would interleave
+ * them — see `keepingTranscript`.
+ */
+export const RETRAIN_TRANSCRIPT = resolve(REPO, "runs", "retrain-transcript.log");
+
 export function pipeline({ dryRun = false, steps = STEPS, runStep = run } = {}) {
   const done = [];
   for (const step of steps) {
@@ -141,7 +202,19 @@ export function pipeline({ dryRun = false, steps = STEPS, runStep = run } = {}) 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const args = process.argv.slice(2);
   const candidate = (args.find((a) => a.startsWith("--candidate=")) ?? "").split("=")[1];
-  const result = pipeline({ dryRun: args.includes("--dry-run") });
+  const dryRun = args.includes("--dry-run");
+  // A DRY RUN KEEPS NO TRANSCRIPT, rather than appending "(dry run)" to the last real one. The `rmSync`
+  // below is skipped on a dry run — correctly, since nothing should be destroyed — but the append was
+  // not, so `--dry-run` silently added stages to the record of the last REAL run. That is precisely the
+  // failure the comment on that `rmSync` describes ("the fixture capture keeps failing", read off a
+  // later unrelated job), reintroduced by the guard written to prevent it.
+  // A fresh transcript per run: appending to the previous one is how "the fixture capture keeps failing"
+  // came to be read off a later, unrelated job.
+  if (!dryRun) rmSync(RETRAIN_TRANSCRIPT, { force: true });
+  const result = pipeline({
+    dryRun,
+    runStep: dryRun ? run : keepingTranscript(run, { transcript: RETRAIN_TRANSCRIPT }),
+  });
   if (!result.ok) process.exit(1);
   if (candidate) {
     const v = verdict(resolve(REPO, "runs", `model-${candidate}`));

@@ -11,8 +11,11 @@ import { readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { STEPS, keepingTranscript } from "../../scripts/everything-pipeline.mjs";
-import { STEPS as RETRAIN_STEPS } from "../../scripts/retrain-pipeline.mjs";
+import { STEPS } from "../../scripts/everything-pipeline.mjs";
+// `keepingTranscript` lives beside `run` in retrain-pipeline, because the six-line tail it compensates
+// for is there and BOTH pipelines need it — see `pipeline-transcript.test.ts` for why a second copy in
+// everything-pipeline left retrain's own five stages tailed inside the "full" record.
+import { STEPS as RETRAIN_STEPS, keepingTranscript } from "../../scripts/retrain-pipeline.mjs";
 import { PIPELINES } from "../../../control/src/lab-pipeline.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));

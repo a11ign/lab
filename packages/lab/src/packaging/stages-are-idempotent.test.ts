@@ -48,6 +48,13 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const MAY_APPEND = new Map([
   ["packages/lab/scripts/everything-pipeline.mjs",
     "the run transcript, truncated by rmSync at the start of each run so it cannot accumulate across runs"],
+  // `keepingTranscript` MOVED here on 2026-09-01, to sit beside the `run` whose six-line tail it exists to
+  // compensate for. It had been solving that for everything-pipeline's nine stages only, while `retrain`
+  // — one of those stages — is itself a pipeline tailing its own five before the parent sees them.
+  // Same truncation, and now a second one: RETRAIN_TRANSCRIPT is rmSync'd at the start of a standalone
+  // retrain, and a DRY RUN bypasses the wrapper entirely rather than appending to the last real record.
+  ["packages/lab/scripts/retrain-pipeline.mjs",
+    "the run transcript, truncated by rmSync at the start of each run so it cannot accumulate across runs"],
 ]);
 
 function sourceFiles(dir: string, found: string[] = []): string[] {

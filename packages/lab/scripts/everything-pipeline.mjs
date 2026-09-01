@@ -21,11 +21,11 @@
  * "print a banner and stop at the first failure" is exactly the duplication that lets two pipelines
  * disagree about what a failure means.
  */
-import { appendFileSync, mkdirSync, rmSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { rmSync } from "node:fs";
+import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { pipeline, run } from "./retrain-pipeline.mjs";
+import { pipeline, run, keepingTranscript } from "./retrain-pipeline.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 
 // This chain is hours long and unattended. A mistyped `--dry-run` would run the REAL thing.
@@ -86,53 +86,18 @@ const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 /** Where the FULL output of every stage lands, whatever the runner chooses to print. */
 export const TRANSCRIPT = resolve(REPO, "runs", "everything-transcript.log");
 
-/**
- * Run a stage, and keep everything it said.
- *
- * The runner prints a six-line tail per stage, which is what makes a nine-stage chain legible — and it
- * captures the child's stdout to do that, so the detail no longer reaches the journal AT ALL. Measured
- * on the first green run: the fetched log went from 400 lines to 63, and `RULES: PASS`, the per-criterion
- * table and `1183 scored, 0 false positive(s)` were all simply gone. The chain reported a pass with the
- * evidence FOR that pass discarded, which is worse than the illegibility it replaced — this repo's oldest
- * rule is that a number is only as good as what it was computed from.
- *
- * So the tail is the summary and this is the record. Appended per stage rather than written at the end,
- * because a chain killed at hour three must still leave behind what it had already done.
- */
-/**
- * Typed by what this wrapper DOES, not by redeclaring what it wraps.
- *
- * A first attempt spelled out a guessed signature for `runStep`, and the guess made the CALL SITE fail
- * to typecheck against the real `run` — which takes `{ dryRun }`. A wrapper that restates its subject's
- * shape has two copies of that shape, and this is the cheaper half of the same lesson the `Mismatch`
- * typedef records one package over.
- *
- * Both parameters are loose on purpose. A generic that MIRRORS the wrapped function's type was tried and
- * is too clever: it forces the wrapper to have the wrapped function's exact arity, so a caller passing a
- * one-argument stub could no longer invoke the two-argument wrapper. The honest description is what this
- * wrapper guarantees — a step goes in, a result comes out, and the output reaches the transcript.
- *
- * @param {(step: any, options?: any) => {ok: boolean, output: string}} runStep
- * @param {{transcript?: string}} [where]
- * @returns {(step: any, options?: any) => {ok: boolean, output: string}}
- */
-export function keepingTranscript(runStep, { transcript = TRANSCRIPT } = {}) {
-  return (step, options) => {
-    const result = runStep(step, options);
-    mkdirSync(dirname(transcript), { recursive: true });
-    appendFileSync(transcript,
-      `\n${"=".repeat(78)}\n=== ${step.name}${result.ok ? "" : "  — FAILED"}\n`
-      + `${"=".repeat(78)}\n${result.output ?? ""}\n`, "utf8");
-    return result;
-  };
-}
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const dryRun = process.argv.includes("--dry-run");
   // A fresh transcript per run: appending to the previous one is how "the fixture capture keeps failing"
   // came to be read off a later, unrelated job.
   if (!dryRun) rmSync(TRANSCRIPT, { force: true });
-  const result = pipeline({ dryRun, steps: STEPS, runStep: keepingTranscript(run) });
+  const result = pipeline({
+    dryRun,
+    steps: STEPS,
+    // Same reason as `retrain-pipeline`: a dry run must not append to the last real record.
+    runStep: dryRun ? run : keepingTranscript(run, { transcript: TRANSCRIPT }),
+  });
   // The stage names, always — on success as well as failure. "It passed" and "it passed these six things"
   // are different claims, and only the second survives being read back a week later.
   process.stdout.write(`\n=== ${result.ok ? "COMPLETE" : `STOPPED at ${result.stoppedAt}`}\n`);
