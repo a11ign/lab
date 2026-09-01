@@ -1497,7 +1497,7 @@ const expandedCases = [
       "Enter an address such as name@example.org.", "Invalid entry.",
       "Join the newsletter with a malformed email address."],
     ["error-remedy-missing-reference", "Allotment request", "Allotment request", "Plot reference", "Request plot",
-      "Plot references start with two letters, e.g. AB14.", "That is wrong.",
+      "Plot references start with two letters, for example AB14.", "That is wrong.",
       "Request an allotment with a badly formed plot reference."],
     ["error-remedy-missing-time", "Ferry booking", "Ferry booking", "Departure time", "Book crossing",
       "Enter a time between 06:00 and 22:00.", "Unacceptable value.",
@@ -4312,8 +4312,18 @@ function formActivationIsSilent(/** @type {any} */ capture, /** @type {any} */ s
  * shortcut in a new costume -- that feature was removed for answering a different criterion's question
  * with a wordlist, and it took 2.4.4 from 27 false positives to 0.
  */
+// PUNCTUATION DOES NOT SURVIVE SPEECH, so no alternative here may depend on it. NVDA announces "e.g."
+// as "e dot g." and "DD/MM/YYYY" as "DD slash MM slash YYYY" -- measured, not assumed. The first version
+// carried `e\.g\.` and `dd\/mm`, and neither could EVER match an announcement: patterns that look like
+// coverage and match nothing. `gate:stability`'s corpus caught it as a CONTAMINATED case, because the
+// good page's remedy went unrecognised and the signal then fired on both variants.
+//
+// The deeper mistake was in the CHECK, not the regex. I validated all 32 messages offline against the
+// SOURCE strings and they passed -- but the predicate reads what NVDA SAID. A check run against a shape
+// you did not verify is this repo's oldest recurring defect, and it passed here having examined the
+// wrong text entirely.
 const REMEDY_PHRASE =
-  /\b(?:enter|use|choose|select|pick|include|must (?:be|start|contain)|for example|e\.g\.|such as|format|as dd|dd\/mm|at least|between \d)/i;
+  /\b(?:enter|use|choose|select|pick|include|must (?:be|start|contain)|for example|such as|format|as dd|at least|between \d)/i;
 
 /**
  * (3.3.3) The error WAS announced and named only the problem.

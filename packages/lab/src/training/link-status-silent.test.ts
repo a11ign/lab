@@ -45,3 +45,40 @@ test("four ways of NOT having asked, none of which is silence", () => {
   assert.equal(linkStatusIsSilent({ control: "x", announced: null }), false,
     "`null` is probeRouteChange's error sentinel and is not an empty string");
 });
+
+/**
+ * PUNCTUATION DOES NOT SURVIVE SPEECH, and the remedy detector must not depend on it.
+ *
+ * Measured 2026-09-01: NVDA announces "e.g." as "e dot g." and "DD/MM/YYYY" as "DD slash MM slash YYYY".
+ * The first version of `REMEDY_PHRASE` carried `e\.g\.` and `dd\/mm`, and neither could EVER match an
+ * announcement — patterns that look like coverage and match nothing.
+ *
+ * The regex was the smaller half of the mistake. I validated all 32 corpus messages offline and they
+ * passed, because I checked the SOURCE strings while the predicate reads what NVDA SAID. `check-signals`
+ * caught it as one CONTAMINATED case: the good page's remedy went unrecognised, so the signal fired on
+ * both variants. A check run against a shape you did not verify is this repo's oldest recurring defect,
+ * and mine examined the wrong text entirely.
+ *
+ * The strings below are VERBATIM from captures, which is the only form of this test that means anything.
+ */
+test("the remedy detector reads what NVDA SAID, not what the page contained", async () => {
+  const { signalMatches } = await import("./case-matrix.mjs");
+  const signal = { type: "error-remedy-missing", control: "Request plot" };
+  const capture = (announced: string) => ({
+    interaction: { formChanges: [{ control: "Request plot, button", kind: "submit", after: announced }] },
+  });
+
+  // Verbatim from the capture that exposed the bug.
+  assert.equal(signalMatches(capture(
+    "Plot reference, edit, invalid entry, Plot references start with two letters, for example AB 14., blank",
+  ), signal), false, "a remedy spoken in WORDS must be recognised");
+  assert.equal(signalMatches(capture(
+    "Plot reference, edit, invalid entry, That is wrong., blank",
+  ), signal), true, "a problem-only message is the 3.3.3 finding");
+
+  // The exact announcement that broke it. Kept so a revert to punctuation-dependent matching fails here
+  // rather than three hours later in a lab chain.
+  assert.equal(signalMatches(capture(
+    "Plot reference, edit, invalid entry, Plot references start with two letters, e dot g. AB 14., blank",
+  ), signal), true, "\"e dot g.\" carries no recognisable instruction — this is why the wording changed");
+});
