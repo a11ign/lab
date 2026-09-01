@@ -774,34 +774,58 @@ const cases = [
     }),
     probeForms: true,
   }),
-  /*
-   * `filter-status-silent-checkbox` STOOD HERE on 2026-09-01 and was withdrawn the same day, BLIND.
-   *
-   * The toggle probe itself works and is proven: the capture records
-   * `{control: "Show bags only, check box, not checked", kind: "toggle", after: "checked"}`, so
-   * `probeKindFor`'s new rule reached a checkbox and activated it exactly as designed.
-   *
-   * What does not work is 4.1.3's signal on a checkbox, and the reason generalises. `form-activation-silent`
-   * asks whether the activation delta is EMPTY -- sound for a button, which announces nothing of its own --
-   * but NVDA announces a checkbox's own state change ("checked") whatever the page does. So the delta is
-   * never empty, the signal cannot fire, and `check-signals` correctly reported BLIND on both variants.
-   *
-   * That is the same shape as `probeTypedFeedback`'s echo problem one control along: THE SCREEN READER'S
-   * OWN FEEDBACK MASKS THE PAGE'S. The typing probe solves it by separating `echoed` from `announced`
-   * against the string actually sent; a toggle needs the equivalent -- the control's own state separated
-   * from the page's response -- and `activateAndCaptureDelta` does not do that yet.
-   *
-   * Measured on both variants at protocol 13: `after: "checked"`, identical. Note what that also says --
-   * the GOOD page's live region did not announce inside the delta window at all, which is a second
-   * question (timing, or whether NVDA voices a live region updated from a `change` handler) and needs its
-   * own measurement rather than a guess.
-   *
-   * REMOVED rather than left blind, on this project's own rule: a case whose signal cannot fire is a
-   * training record with no discriminating evidence, which is what that gate exists to refuse. Recorded
-   * here rather than only in git so the shape is re-creatable -- the page is right and the SIGNAL is what
-   * is missing, exactly as `keyboard-trap-modal-total` was right and waiting for a probe.
-   */
-
+  // RESTORED the same day it was withdrawn, because the withdrawal rested on ONE capture and the reading
+  // was right while the conclusion was wrong. The delta was `{kind: "toggle", after: "checked"}` and I
+  // concluded the live region had not announced. It had not been ASKED properly: `formActivationIsSilent`
+  // tested `after.trim() === ""`, a silence test written for BUTTONS, and a checkbox always says "checked".
+  //
+  // A diagnostic pair settled it — same control, one `polite` region and one `assertive` — and BOTH
+  // announced "Showing 2 bags.". Politeness was never the cause and neither was the control. The fault was
+  // in the predicate, and `pageResponseTo` now separates the control's own state from the page's answer.
+  pair({
+    id: "filter-status-silent-checkbox",
+    criterion: "4.1.3",
+    task: "Filter the catalogue to show only bags and notice how many results remain.",
+    source: "Web Accessibility Cookbook, chapter 22; WCAG 4.1.3 Understanding",
+    mutation: "A CHECKBOX filter updates the visible result count without exposing it through a live "
+      + "status. Identical failure to `filter-status-silent`, fired by the control real filters actually "
+      + "use.",
+    // THE FIRST 4.1.3 CASE WHOSE TRIGGER IS NOT A BUTTON, and until capture-protocol 12 there could not
+    // be one: `probeKindFor` only ever reached buttons, so a live region updated by a checkbox was
+    // structurally unreachable and all 143 cases of this criterion used the one control that worked.
+    //
+    // That is a corpus shaped by the PROBE rather than by the web. Real filters, consent toggles and
+    // "show prices including VAT" controls are checkboxes far more often than they are buttons, so the
+    // head owning 4.1.3 has never seen the commonest form of its own failure -- `corpus:starvation`'s
+    // question asked of a control type instead of a feature.
+    //
+    // The safety decision that made this reachable is in `SECURITY.md`: the line is not how destructive a
+    // control might be but whether activating it can NAVIGATE, which a checkbox cannot.
+    badSignal: { type: "form-activation-silent", control: "Show bags only" },
+    good: page({
+      title: "Product catalogue",
+      heading: "Product catalogue",
+      body: "<p><input type=\"checkbox\" id=\"bags\"><label for=\"bags\">Show bags only</label></p>"
+        + "<p id=\"count\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\">Showing 8 products.</p>"
+        + "<ul id=\"products\"><li>Canvas bag</li><li>Travel bag</li></ul>",
+      script: "document.querySelector('#bags').addEventListener('change', () => "
+        + "{ document.querySelector('#count').textContent = 'Showing 2 bags.'; });",
+    }),
+    bad: page({
+      title: "Product catalogue",
+      heading: "Product catalogue",
+      // The same checkbox, the same handler, the same words — only the live region is missing. So nothing
+      // that discriminates the pair can be reading the presence of a checkbox.
+      body: "<p><input type=\"checkbox\" id=\"bags\"><label for=\"bags\">Show bags only</label></p>"
+        + "<p id=\"count\">Showing 8 products.</p>"
+        + "<ul id=\"products\"><li>Canvas bag</li><li>Travel bag</li></ul>",
+      script: "document.querySelector('#bags').addEventListener('change', () => "
+        + "{ document.querySelector('#count').textContent = 'Showing 2 bags.'; });",
+    }),
+    // `change`, not `click`, because that is the event a real filter listens for and the one a screen
+    // reader user fires. They coincide for a mouse and do not for every assistive path.
+    probeForms: true,
+  }),
   pair({
     id: "filter-status-silent",
     criterion: "4.1.3",
@@ -2654,27 +2678,37 @@ function RADIO_GROUP_PAGE(arrowsWork) {
 }
 
 
-/*
- * `LIVE_VALIDATION_PAGE` stood here and is kept as source rather than deleted, because the PAGE is
- * right and the signal is what is missing -- the same reason `MODAL_TRAP_TOTAL_FORM` was kept in
- * comment form until a probe could ask its question. Restore it verbatim when a live region can be
- * heard during typing:
+/**
+ * Validation that fires WHILE TYPING — the one mechanism this corpus has never contained.
  *
- *   function LIVE_VALIDATION_PAGE(announced) {
- *     const region = announced
- *       ? "<p id=\"hint\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"></p>"
- *       : "<p id=\"hint\" class=\"error\"></p>";
- *     return "<form onsubmit=\"return false\">"
- *       + "<label for=\"ref\">Reference number</label><input id=\"ref\" name=\"ref\">"
- *       + region
- *       + "</form>"
- *       // Fires on every keystroke and says the same thing on both variants. `input`, not `change`: `change`
- *       // waits for blur, which is the submit-time mechanism this case exists to be different from.
- *       + "<script>document.querySelector('#ref').addEventListener('input', (e) => "
- *       + "{ document.querySelector('#hint').textContent = e.target.value.length === 6 ? '' : "
- *       + "'Reference must be 6 digits.'; });</script>";
- *   }
+ * Measured 2026-09-01 across all 3,948 generated pages: `oninput` appears on **zero** of them, against
+ * `onsubmit` on 346. So every 3.3.1 record in this corpus describes an error surfaced by SUBMITTING, and
+ * the head owning `validation-error-silent` has never seen the other half of the criterion.
+ *
+ * It is a genuinely different mechanism rather than a variation. A submit-time error arrives with a focus
+ * change and a re-read; a live one arrives with the user still typing, focus unmoved, and only a live
+ * region can carry it. A page can pass the first and fail the second.
+ *
+ * The pair differs in the live region and NOTHING else: same field, same handler, same message, same
+ * words. So anything that discriminates them is reading whether the message was ANNOUNCED, which is the
+ * criterion, rather than whether a message exists.
+ *
+ * @param {boolean} announced
  */
+function LIVE_VALIDATION_PAGE(announced) {
+  const region = announced
+    ? "<p id=\"hint\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"></p>"
+    : "<p id=\"hint\" class=\"error\"></p>";
+  return "<form onsubmit=\"return false\">"
+    + "<label for=\"ref\">Reference number</label><input id=\"ref\" name=\"ref\">"
+    + region
+    + "</form>"
+    // Fires on every keystroke and says the same thing on both variants. `input`, not `change`: `change`
+    // waits for blur, which is the submit-time mechanism this case exists to be different from.
+    + "<script>document.querySelector('#ref').addEventListener('input', (e) => "
+    + "{ document.querySelector('#hint').textContent = e.target.value.length === 6 ? '' : "
+    + "'Reference must be 6 digits.'; });</script>";
+}
 
 // 2.1.1 Keyboard. The detectable failure is a control the screen reader ANNOUNCES as operable that the
 // keyboard cannot reach — a `div role="button"` with a click handler and no `tabindex`, which is the most
@@ -2701,38 +2735,33 @@ cases.push(
 
 
 cases.push(
-  /*
-   * `validation-live-silent` STOOD HERE on 2026-09-01 and was withdrawn the same day, CONTAMINATED — and
-   * the finding it produced is worth more than the case would have been.
-   *
-   * THE PROBE WORKS AND IS VERIFIED. `typedFeedback` records
-   * `{typed: true, focusBefore: "Reference number, edit, focused, blank", echoed: "1 2 3 4 5 6"}` — it
-   * lands on the field, enters focus mode, types, and separates NVDA's own character echo from the page's
-   * response. Every part of the mechanism does what it was built to do.
-   *
-   * WHAT DOES NOT HAPPEN IS THE ANNOUNCEMENT. `announced` is empty on BOTH variants, including the one
-   * whose `aria-live="polite"` region is updated on every keystroke. Not a race: the probe waits through
-   * `waitForAnnouncement`, which waits for speech and then for it to settle.
-   *
-   * That is the SECOND independent live-region failure measured today. `filter-status-silent-checkbox` was
-   * withdrawn hours earlier with its live region equally silent after a checkbox toggle. Two mechanisms,
-   * one symptom, and the common factor is that NVDA had something else to say at the time — the control's
-   * own state in one case, six echoed characters in the other.
-   *
-   * The plausible reading, NOT PROVEN and recorded as a hypothesis rather than a fact: `aria-live="polite"`
-   * means "speak when idle", and neither moment is idle. `assertive` would interrupt — and changing the
-   * case to use it would be fitting the page to the tool, which is how a corpus stops describing the web.
-   *
-   * WHAT THIS COSTS AND WHY IT IS RECORDED HERE: 4.1.3 and the live half of 3.3.1 both depend on hearing a
-   * live region, and this pipeline currently cannot hear one that fires while NVDA is speaking. That is a
-   * capability gap of the same kind as the seven in "What It Cannot Hear", found by building two cases
-   * that ought to have worked. It needs its own measurement — does a polite region EVER announce in a
-   * capture, and does an assertive one — before either case can come back.
-   *
-   * REMOVED rather than left contaminated, on this project's rule: a signal that fires on both variants
-   * proves nothing and the pair is worse than absent, because it looks like coverage.
-   */
-
+  // RESTORED on the same evidence. The withdrawal read `announced: ""` on both variants and concluded a
+  // live region cannot be heard while NVDA is speaking; a diagnostic pair disproved that outright.
+  //
+  // What this case has to prove is narrower than the withdrawal assumed: not "can a live region be heard",
+  // but "is the page's response separable from NVDA's character echo" — and `probeTypedFeedback` already
+  // separates them, comparing each spoken phrase against the string it actually sent.
+  pair({
+    id: "validation-live-silent",
+    task: "Enter a reference number and notice whether the form tells you it is wrong.",
+    source: "WCAG 3.3.1 Understanding; Web Accessibility Cookbook, chapter 22",
+    mutation: "Validation fires while typing and writes its message to a plain paragraph, so a sighted "
+      + "user sees it immediately and a screen-reader user hears nothing at all.",
+    criterion: "3.3.1",
+    // JOINS THE EXISTING HEAD WITH A MECHANISM IT HAS NEVER SEEN. `oninput` is on 0 of 3,948 generated
+    // pages against `onsubmit` on 346, so every `validation-error-silent` record describes an error
+    // surfaced by SUBMITTING -- half the criterion, and the half a probe could already reach.
+    subtype: "validation-error-silent",
+    badSignal: { type: "typed-feedback-silent" },
+    good: page({ title: "Reference lookup", heading: "Reference lookup", body: LIVE_VALIDATION_PAGE(true) }),
+    bad: page({ title: "Reference lookup", heading: "Reference lookup", body: LIVE_VALIDATION_PAGE(false) }),
+    // `probeTyping` types into the focused field; `probeFocus` is what puts DOM focus in a field at all,
+    // since a sweep is browse mode and typing there would send quick-nav commands into the document --
+    // the 353-capture defect this repo has already paid for once.
+    probeFocus: true,
+    probeTyping: true,
+    probeOrder: "focus-first",
+  }),
   pair({
     id: "radio-group-arrows-inert",
     task: "Choose express delivery using the keyboard alone.",
@@ -3972,12 +4001,48 @@ function stateChangeIsSilent(/** @type {any} */ capture, /** @type {any} */ sign
 //
 // (a) 4.1.3 Status Messages -- a filter updates results and says nothing. The status IS the
 // announcement, so it lands in `formChanges.after`: the good page carries "Showing 2 bags.",
+/**
+ * States NVDA speaks for a control that TOGGLES — the control's own answer, not the page's.
+ *
+ * A button announces nothing of its own, so an empty delta means the page said nothing. A checkbox always
+ * says "checked", so on a page with no live region the delta reads `"checked"` — not empty — and a silence
+ * test written for buttons cannot fire. `filter-status-silent-checkbox` was withdrawn BLIND for exactly
+ * that, and the withdrawal blamed the live region when the fault was here.
+ *
+ * Measured 2026-09-01, the two variants differing only in the region:
+ *
+ *     good  {kind: "toggle", after: "Showing 2 bags."}    <- the page answered
+ *     bad   {kind: "toggle", after: "checked"}            <- only the control did
+ *
+ * The typing probe's echo problem one control along, and the same remedy: separate what the SCREEN READER
+ * said about the control from what the PAGE said, then ask the question of the remainder.
+ */
+const TOGGLE_OWN_STATE = /^(?:not\s+)?(?:checked|pressed|selected|expanded|collapsed)$/i;
+
+/**
+ * What the PAGE announced, with the control's own state removed.
+ *
+ * Only for `kind: "toggle"`, deliberately. A button's delta is the page's answer entire, and stripping a
+ * state word there would silence a real announcement that happened to be one word long.
+ *
+ * @param {{kind?: string, after?: string}} change
+ */
+function pageResponseTo(change) {
+  const after = String(change.after ?? "");
+  if (change.kind !== "toggle") return after;
+  return after.split("|")
+    .map((part) => part.trim())
+    .filter((part) => part !== "" && !TOGGLE_OWN_STATE.test(part))
+    .join(" | ");
+}
+
 // the bad page carries "".
 function formActivationIsSilent(/** @type {any} */ capture, /** @type {any} */ signal) {
   const changes = capture.interaction?.formChanges || [];
   const target = changes.filter((/** @type {any} */ { control }) => control.toLowerCase().includes(signal.control.toLowerCase()));
   if (signal.expected) return target.length === 0 || target.every((/** @type {any} */ { after }) => !after.includes(signal.expected));
-  return target.length === 0 || target.every((/** @type {any} */ { after }) => after.trim() === "");
+  return target.length === 0
+    || target.every((/** @type {any} */ change) => pageResponseTo(change).trim() === "");
 }
 
 // An announced validation error leaves a durable trace on the field: NVDA reports
