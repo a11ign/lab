@@ -607,6 +607,53 @@ def bag_logits(unit_logits: Any, offsets: list[int]) -> Any:
     return unit_logits[gather].masked_fill(~mask, float("-inf")).max(dim=1).values
 
 
+def uninformative_columns(features: Any, offsets: list[int], labels: Any, indices: list[int]) -> Any:
+    """Columns that are CONSTANT across this head's training positives.
+
+    ADR 0015's free veto, turned from a report into a constraint. Its definition is a feature that is
+    strictly one value across a subtype's positives while varying over the negatives: the head may then
+    give it a large negative weight at no cost to recall, and no held-out split can punish that, because
+    the split has the same structure. Measured on the shipped weights, `form_field_named` at -4.33 means
+    the scorer reports an unnamed control ONLY on a page where nothing is correctly named -- which
+    describes almost no real site.
+
+    A column constant across the positives CANNOT help separate them. Every gradient it receives comes
+    from negatives, so all it can do is suppress. That is precisely the shortcut the audit reports, and
+    the audit had no way to stop it -- `scorer:shortcuts` names 9 closable vetoes and every remedy it can
+    offer is corpus work somebody has to do.
+
+    MEASURED ON THIS CORPUS, 2026-09-01, and the numbers are why this is a constraint rather than a
+    corpus task: 8 of the 9 closable vetoes are a head penalising a feature that answers a DIFFERENT
+    criterion's question -- `2.4.1:skip-link-inert` vetoing `validation_error_missing` (3.3.1's),
+    `4.1.2:state-change-silent` vetoing `status_update_announced` (4.1.3's). This repo has already
+    measured what removing one such feature does: dropping `vague_link_present` as a model input took
+    `2.4.4:regex` from 27 false positives to 0, precision 0.841 -> 1.000, and recall ROSE 0.979 -> 0.986.
+
+    COMPUTED, NEVER DECLARED. A hand-written feature-to-criterion map would be a second source of truth
+    about which evidence belongs to which criterion, and this file's own history is a list of two such
+    copies drifting. The data answers it directly and cannot go stale.
+
+    Note this is deliberately NOT the plan's proposed remedy, which was to split each ambiguous feature
+    into `asked AND x` / `asked AND not-x`. That was checked against these vetoes first and refuted: for a
+    subtype whose positives never run `probeForms`, BOTH conjunction columns are constant zero across
+    those positives, so the split turns one free veto into two.
+    """
+    import torch
+
+    positive_units = []
+    for index in indices:
+        if labels[index] != 1:
+            continue
+        positive_units.extend(range(offsets[index], offsets[index + 1]))
+    # No positives in this split is not a reason to mask everything -- it is a reason to mask nothing and
+    # let the caller's own guard handle a split that cannot train. Reading "constant across an empty set"
+    # as "constant" is how a vacuous guard comes to silence a whole feature block.
+    if not positive_units:
+        return torch.zeros(features.shape[1], dtype=torch.bool)
+    rows = features[torch.tensor(positive_units, dtype=torch.long)]
+    return (rows == rows[0]).all(dim=0)
+
+
 def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int], epochs: int) -> tuple[Any, Any]:
     """Train one subtype head under multiple-instance max pooling.
 
@@ -619,6 +666,13 @@ def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int
     import torch
 
     torch.manual_seed(SEED)
+    # ZEROED BEFORE TRAINING, not merely zeroed afterwards. A column left in place still receives
+    # gradient from the negatives and still shifts the bias and its neighbours to compensate; zeroing the
+    # weight after the fact would leave a head fitted around a feature it is not allowed to use. Zeroing
+    # the INPUT means no gradient reaches the column at all.
+    uninformative = uninformative_columns(features, offsets, labels, indices)
+    features = features.clone()
+    features[:, uninformative] = 0.0
     head = torch.nn.Linear(features.shape[1], 1)
     selected = torch.tensor(indices, dtype=torch.long)
     split_labels = labels[selected]
@@ -636,7 +690,14 @@ def train_head(features: Any, offsets: list[int], labels: Any, indices: list[int
         loss = loss_fn(record_logits[selected], split_labels.float())
         loss.backward()
         optimizer.step()
-    return head.weight.detach().clone(), head.bias.detach().clone()
+    # AND ZEROED AGAIN ON THE WAY OUT. A constant-zero input receives no gradient, so its weight is
+    # never updated and keeps its RANDOM INITIALISATION -- a small nonzero number that `scorer:shortcuts`
+    # would still read as a veto and that `score.py` would still apply. Training-time masking alone
+    # therefore leaves the defect visible and slightly active, which is the worse outcome of the two:
+    # it looks fixed.
+    weight = head.weight.detach().clone()
+    weight[:, uninformative] = 0.0
+    return weight, head.bias.detach().clone()
 
 def ood_reference_indices(total: int, torch: Any) -> Any:
     """Evenly spaced row indices spanning the WHOLE dataset, capped at OOD_REFERENCE_SAMPLES.
