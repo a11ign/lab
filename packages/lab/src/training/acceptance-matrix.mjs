@@ -219,6 +219,39 @@ function errorPair({ id, title, field, submit, task }) {
   });
 }
 
+/**
+ * (3.3.3 Error Suggestion) held out. BOTH sides announce; only the message differs.
+ *
+ * The same construction as the training corpus and for the same reason: if the bad variant failed to
+ * announce, every 3.3.3 positive here would also be a 3.3.1 positive and the held-out set could not tell
+ * the two heads apart. So both use `errorPair`'s CONFORMANT markup and differ only in what is said.
+ *
+ * REMEDIES ARE SPOKEN IN WORDS, never punctuation. Measured 2026-09-01 on the training corpus: NVDA says
+ * "e.g." as "e dot g." and "DD/MM/YYYY" as "DD slash MM slash YYYY", so a remedy that leans on a symbol
+ * is not recognisable in the announcement and its own case stops discriminating. That cost a chain.
+ *
+ * @param {TitledPair & { field: string, submit: string, remedy: string, problemOnly: string }} spec
+ */
+function errorRemedyPair({ id, title, field, submit, remedy, problemOnly, task }) {
+  const form = (/** @type {string} */ message) =>
+    "<form id=\"form\" onsubmit=\"event.preventDefault(); document.querySelector('#field').setAttribute('aria-invalid', 'true');"
+    + " document.querySelector('#error').hidden = false; document.querySelector('#field').focus();\">"
+    + "<label for=\"field\">" + field + "</label><input id=\"field\" aria-describedby=\"error\">"
+    + "<button type=\"submit\">" + submit + "</button>"
+    + "<p id=\"error\" role=\"alert\" hidden>" + message + "</p></form>";
+  return pair({
+    id,
+    criterion: "3.3.3",
+    subtype: "error-remedy-missing",
+    task,
+    mutation: "The error is announced correctly but names only the problem, never how to fix it.",
+    badSignal: { type: "error-remedy-missing", control: submit },
+    probeForms: true,
+    good: page({ title, heading: title, body: form(remedy) }),
+    bad: page({ title, heading: title, body: form(problemOnly) }),
+  });
+}
+
 /** @param {TitledPair & { label: string, name: string, placeholderOnly?: boolean }} spec */
 function formPair({ id, title, label, name, task, placeholderOnly = false }) {
   const goodBody = "<form><label for=\"" + name + "\">" + label + "</label><input id=\"" + name + "\" name=\"" + name + "\" placeholder=\"Example value\"></form>";
@@ -370,6 +403,21 @@ export const ACCEPTANCE_CASES = Object.freeze([
   headingPair({ id: "b2-heading-kiln", title: "Kiln guide", vague: "Things", descriptive: "Firing schedule and temperatures", task: "Find the firing schedule." }),
   headingPair({ id: "b2-heading-weir", title: "Weir guide", vague: "Details", descriptive: "Water level and safety notes", task: "Find the water level notes." }),
   errorPair({ id: "b2-error-plot", title: "Allotment request", field: "Plot number", submit: "Request the plot", task: "Submit the allotment request without a plot number." }),
+  errorRemedyPair({ id: "remedy-membership", title: "Membership renewal", field: "Membership number",
+    submit: "Renew membership", remedy: "Membership numbers must be six digits, for example 402117.",
+    problemOnly: "That is wrong.", task: "Renew a membership with a short membership number." }),
+  errorRemedyPair({ id: "remedy-collection", title: "Collection slot", field: "Collection window",
+    submit: "Reserve slot", remedy: "Choose a window between 08:00 and 18:00.",
+    problemOnly: "Unacceptable.", task: "Reserve a collection slot outside the opening hours." }),
+  errorRemedyPair({ id: "remedy-vehicle", title: "Permit renewal", field: "Vehicle registration",
+    submit: "Renew permit", remedy: "Enter the registration without spaces, such as AB12CDE.",
+    problemOnly: "Not valid.", task: "Renew a permit with a spaced vehicle registration." }),
+  errorRemedyPair({ id: "remedy-tenancy", title: "Repair report", field: "Tenancy reference",
+    submit: "Report repair", remedy: "Tenancy references must start with a letter.",
+    problemOnly: "Incorrect.", task: "Report a repair with a numeric tenancy reference." }),
+  errorRemedyPair({ id: "remedy-account", title: "Refund request", field: "Account name",
+    submit: "Request refund", remedy: "Use the name exactly as it appears on the account.",
+    problemOnly: "This is an error.", task: "Request a refund with a shortened account name." }),
   errorPair({ id: "b2-error-vessel", title: "Berth application", field: "Vessel name", submit: "Apply for a berth", task: "Submit the berth application without a vessel name." }),
   formPair({ id: "b2-field-trust", title: "Trust contact form", label: "Trust name", name: "trust", task: "Enter the trust name." }),
   formPair({ id: "b2-field-vessel", title: "Vessel register", label: "Vessel registration", name: "vessel-reg", task: "Enter the vessel registration." }),

@@ -210,6 +210,11 @@
         "emitted an <h1> unconditionally, so across 2,366 records the count with zero headings was 0 and",
         "rules:coverage read 'NEVER FIRED ANYWHERE -- the claim rests on nothing'."
       ]
+    },
+    "3.3.3:error-remedy-missing": {
+      "decidedBy": "rules",
+      "reportsAs": "3.3.3",
+      "note": "3.3.3 since 2026-09-02, and it is rules-owned because a head DEMONSTRABLY could not learn it: recall 0.0 on its own training data under both poolings, with false positives on conformant records (known-gaps.md \u00a722). The distinction is one clause inside a long announcement -- \"Enter the visit date as DD slash MM slash YYYY\" against \"Invalid entry\" -- which a document average dilutes and an instance max did not rescue. It does not need a head: whether the announced error contains an INSTRUCTION is read directly, which is this project's own test for what a rule may assert, and the same basis on which 1.1.1:filename-alt is rules-owned. The signal discriminated 44 captured pairs with no errors while the head could not fit 15. Like 3.3.1 and 4.1.3 it reads probe-gated channels, so it cannot fire on a real page -- probeForms is off for pages we do not own."
     }
   }
 }
