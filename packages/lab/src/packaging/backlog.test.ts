@@ -68,6 +68,18 @@ test("every record entry marked OPEN is on the backlog", () => {
     + "\nit -- two copies of a status is the shape that drifts.");
 });
 
+test("the backlog states an order, and says what the order is FOR", () => {
+  const backlog = read("docs/backlog.md");
+  assert.match(backlog, /^## The order these should be done in$/m,
+    "docs/backlog.md must state an order -- a list of open work with no sequence is a list of open work"
+    + " that gets done in the sequence somebody happens to read it in.");
+  // The house convention, quoted from known-gaps.md. It is load-bearing rather than decorative: three
+  // backlog items change the capture path, and each one landed alone costs a ~8 h recapture. An order
+  // section that does not explain ITSELF gets reordered by the next person on cost or on convenience.
+  assert.match(backlog, /CONSUMES what/,
+    "the order section must state the rule it orders BY, not just the sequence");
+});
+
 test("every document the backlog points at exists", () => {
   const cited = [...read("docs/backlog.md").matchAll(/\]\(\.\/([^)#]+?)(?:#[^)]*)?\)/g)]
     .map(([, path]) => `docs/${path}`);
