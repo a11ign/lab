@@ -40,6 +40,33 @@ test("every workspace on disk is present in package-lock.json", () => {
     + "Fix with: npm install --package-lock-only");
 });
 
+test("every dependency a workspace declares is recorded in the lockfile", () => {
+  // THE SIBLING GAP, and it cost a lab round-trip on 2026-09-02.
+  //
+  // The test above answers "is this workspace in the lock". It cannot see a workspace that GAINED a
+  // dependency: `packages/cli` declared `yaml` for the forms config (ADR 0024), the lockfile was never
+  // refreshed, and every local check passed — because `yaml` was already in `node_modules` as somebody
+  // else's transitive dependency, so `import { parse } from "yaml"` resolved on this machine.
+  //
+  // It failed on the LAB, three stages into a pipeline, as
+  // `error TS2307: Cannot find module 'yaml'`. That is the same shape as the defect this file was written
+  // for and one level down: the thing that was broken was the thing nobody local runs, and the reason it
+  // looked fine locally is that node_modules is not the specification — the lockfile is.
+  const lock = read("package-lock.json");
+  const unlocked: string[] = [];
+  for (const dir of workspaceDirs()) {
+    const declared = read(`${dir}/package.json`).dependencies ?? {};
+    const locked = lock.packages[dir]?.dependencies ?? {};
+    for (const name of Object.keys(declared)) {
+      if (!(name in locked)) unlocked.push(`${dir} declares ${name}, and the lockfile does not record it`);
+    }
+  }
+  assert.deepEqual(unlocked, [],
+    "A dependency in package.json that the lockfile does not carry resolves locally whenever something "
+    + "else already pulled it in, and fails wherever `npm ci` is the install — which is CI and the lab. "
+    + "Fix with: npm install");
+});
+
 test("and the reverse: the lockfile names no workspace that has been deleted", () => {
   // The other direction is quieter and still wrong: `npm ci` will try to link a path that is not there.
   const lock = read("package-lock.json");
