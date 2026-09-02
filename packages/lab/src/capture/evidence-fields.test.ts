@@ -102,20 +102,25 @@ test("every evidence field a capture carries is compared, or explicitly excluded
  * arrived, so this list cannot quietly outlive its reason.
  */
 const PENDING_CAPTURE: Record<string, string> = {
-  // `arrowNavigation` was here and the guard below RETIRED IT, which is the design working: it was listed
-  // for the hours between writing the probe and the fleet being free, and the moment
-  // `radio-group-arrows-inert` was captured the retirement test failed and named it.
+  // `arrowNavigation` was here and this guard RETIRED IT the moment `radio-group-arrows-inert` was
+  // captured, which is the design working rather than anyone remembering.
   //
-  // `typedFeedback` stays, for a DIFFERENT reason that the entry has to say out loud. The probe is
-  // written and verified — it lands on a field, types, and separates NVDA's echo from the page's
-  // response — but no case asks for it: `validation-live-silent` was withdrawn CONTAMINATED because an
-  // `aria-live="polite"` region does not announce while NVDA is echoing keystrokes. So this is not "the
-  // capture has not happened yet", it is "no page can currently make it fire", and collapsing those two
-  // into one word is the defect this whole file is about.
+  // `typedFeedback` is still here and the reason has NARROWED, which is worth the words because the entry
+  // was briefly deleted and put back. It was "no case uses it": `validation-live-silent` was withdrawn
+  // CONTAMINATED, because a polite live region does not announce while NVDA is echoing keystrokes. On
+  // 2026-09-02 a 3.2.2 proof case did use it — the probe now reads the page title either side of the
+  // typing, and one captured pair showed "Archive search" against "Results for 123456", which is that
+  // criterion's failure observed (known-gaps §23). The case was then removed: its signal could never
+  // fire, so `check-signals` correctly called it BLIND, and a corpus case that cannot discriminate is
+  // worse than none.
+  //
+  // So the field is PROVEN and still uncaptured by any shipping case, and those are different from both
+  // "not written" and "cannot fire". It closes when 3.2.2 ships, which needs the protocol bump §23 states.
   "interaction.typedFeedback":
-    "the probe is verified but no case uses it: a polite live region does not announce during typing "
-    + "echo, so validation-live-silent was withdrawn CONTAMINATED. Closes when the live-region "
-    + "measurement in case-matrix.mjs is taken and a case can discriminate again.",
+    "the probe is verified and its 3.2.2 title evidence was proved on a real capture (known-gaps §23), "
+    + "but no shipping case asks for it: the proof case was removed because its signal could not fire, "
+    + "and validation-live-silent stays withdrawn because a polite live region is silent during typing "
+    + "echo. Closes when 3.2.2 ships.",
 };
 
 test("nothing is compared that no capture actually carries", () => {
