@@ -78,14 +78,6 @@ const FORBIDDEN_INPUT_KEYS = ["url", "task", "html", "dom", "css", "axe", "diagn
  */
 export const MODEL_EXCLUDED_SUBTYPES = new Set([
   "1.3.1:missing-landmark", "4.1.2:missing-role", "3.3.2:placeholder-only",
-  // 3.3.3 is decided by a RULE, and unlike the three above the reason is not that the evidence cannot
-  // express it — the evidence expresses it exactly, which is why a rule can assert from it. A head was
-  // trained anyway, first, and had recall 0.0 on its own training data under both poolings with false
-  // positives on conformant records (known-gaps.md §22). Leaving it in the model would keep that head:
-  // it would fail the acceptance gate for ever, and where it did fire it would be a weaker duplicate of
-  // a rule that is exact. `rule-ownership.json` carries the same decision so "nobody decides this" stays
-  // visible, and it is the opposite claim here — the rules decide it completely.
-  "3.3.3:error-remedy-missing",
 ]);
 
 function readJson(/** @type {any} */ path) {
