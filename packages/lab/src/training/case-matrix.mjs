@@ -2183,6 +2183,40 @@ cases.push(
   }),
 );
 
+// PROOF CASE for 3.2.2 On Input — does the capture layer see a change of context caused by TYPING?
+//
+// Not a corpus family yet, deliberately. The criterion needs a `CAPTURE_PROTOCOL_VERSION` bump to ship
+// (known-gaps §23) and this pair exists to make that decision on evidence rather than an estimate: it
+// costs one capture and answers whether the machinery works at all.
+//
+// The pair differs ONLY in whether typing rewrites `document.title`. Both fields are labelled, both
+// accept the same characters, and neither announces anything of its own — so nothing here is a 3.3.x
+// finding in disguise.
+cases.push(
+  pair({
+    id: "input-context-change",
+    task: "Type into the reference field on the archive search page.",
+    source: "WCAG 3.2.2 Understanding",
+    mutation: "Typing into a field silently changes the page title, so a screen-reader user's sense of "
+      + "where they are is altered by an act they did not intend as navigation.",
+    criterion: "3.2.2",
+    subtype: "input-context-change",
+    badSignal: { type: "regex", pattern: "never-matches-this-is-a-proof-case" },
+    good: page({
+      title: "Archive search", heading: "Archive search",
+      body: "<form><label for=\"ref\">Reference</label><input id=\"ref\"></form>",
+    }),
+    bad: page({
+      title: "Archive search", heading: "Archive search",
+      body: "<form><label for=\"ref\">Reference</label><input id=\"ref\"></form>"
+        + "<script>document.querySelector('#ref').addEventListener('input', function () {"
+        + "document.title = 'Results for ' + this.value; });</script>",
+    }),
+    probeTyping: true,
+    probeFocus: true,
+  }),
+);
+
 cases.push(
   pair({
     id: "route-title-stale-enrolment",
