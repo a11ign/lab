@@ -1185,6 +1185,53 @@ function errorRemedyVariant(/** @type {any} */ { id, title, heading, field, subm
   });
 }
 
+/**
+ * (3.2.1 On Focus / 3.2.2 On Input) A change of CONTEXT caused by focus or by typing.
+ *
+ * WCAG's failure is a page that navigates, opens something, or redefines where the user is, from an act
+ * the user did not intend as navigation. The part a screen reader can observe is the page TITLE, which is
+ * why both probes read it — and why `criterion-coverage.ts` recorded these as `reachable` rather than
+ * out of scope: the machinery existed, nothing drove it.
+ *
+ * ONE GENERATOR FOR BOTH, because the pages differ only in which EVENT rewrites the title. Writing them
+ * apart would be the same fact twice, and the two criteria are deliberately the same shape — 3.2.2 is
+ * 3.2.1 "on change rather than focus", in the coverage table's own words.
+ *
+ * The pair differs ONLY in the handler. Same field, same label, same title to begin with, and neither
+ * page announces anything of its own — so nothing here is a 3.3.x finding in disguise, which is the
+ * single-criterion discipline `errorVariant`'s comment records paying for.
+ *
+ * @param {{ id: string, title: string, heading: string, field: string, changedTitle: string,
+ *           task: string, on: "focus" | "input" }} spec
+ */
+function contextChangeVariant({ id, title, heading, field, changedTitle, task, on }) {
+  const body = (/** @type {boolean} */ changes) =>
+    "<form><label for=\"ctl\">" + field + "</label><input id=\"ctl\"></form>"
+    + (changes
+      ? "<script>document.querySelector('#ctl').addEventListener('" + on + "', function () {"
+        + "document.title = " + JSON.stringify(changedTitle) + "; });</script>"
+      : "");
+  const criterion = on === "focus" ? "3.2.1" : "3.2.2";
+  return pair({
+    id,
+    family: "context-change",
+    criterion,
+    subtype: on === "focus" ? "focus-context-change" : "input-context-change",
+    task,
+    source: "WCAG " + criterion + " Understanding",
+    mutation: on === "focus"
+      ? "Focusing the field silently renames the page, so a screen-reader user's sense of where they are "
+        + "changes from an act they did not intend as navigation."
+      : "Typing into the field silently renames the page, changing context on input rather than on a "
+        + "deliberate submit.",
+    badSignal: { type: on === "focus" ? "focus-context-change" : "input-context-change" },
+    good: page({ title, heading, body: body(false) }),
+    bad: page({ title, heading, body: body(true) }),
+    probeFocus: true,
+    ...(on === "focus" ? { probeFocusContext: true } : { probeTyping: true }),
+  });
+}
+
 function statusVariant(/** @type {any} */ { id, title, heading, control, task }) {
   const body = "<button id=\"filter\" type=\"button\">" + control + "</button><p id=\"count\">Showing 8 items.</p><ul><li>First item</li><li>Second item</li></ul>";
   const goodBody = body.replace(
@@ -1528,6 +1575,54 @@ const expandedCases = [
       "Join a sports class with a malformed participant identifier."],
   ].map(([id, title, heading, field, submit, remedy, problemOnly, task]) =>
     independent(errorRemedyVariant({ id, title, heading, field, submit, remedy, problemOnly, task }))),
+  // 3.2.1 On Focus — focusing the field renames the page.
+  ...[
+    ["focus-context-change-archive", "Archive search", "Archive search", "Reference", "Results for the reference you typed",
+      "Move to the reference field on the archive search page."],
+    ["focus-context-change-permit", "Permit lookup", "Permit lookup", "Permit number", "Permits matching your entry",
+      "Move to the permit number field on the permit lookup page."],
+    ["focus-context-change-route", "Route planner", "Route planner", "Departure stop", "Routes from your chosen stop",
+      "Move to the departure stop field on the route planner page."],
+    ["focus-context-change-register", "Species register", "Species register", "Species name", "Register entries for that species",
+      "Move to the species name field on the species register page."],
+    ["focus-context-change-ledger", "Grant ledger", "Grant ledger", "Grant code", "Ledger filtered by grant code",
+      "Move to the grant code field on the grant ledger page."],
+    ["focus-context-change-roster", "Volunteer roster", "Volunteer roster", "Volunteer name", "Roster for the named volunteer",
+      "Move to the volunteer name field on the volunteer roster page."],
+    ["focus-context-change-survey", "Site survey", "Site survey", "Survey plot", "Survey readings for that plot",
+      "Move to the survey plot field on the site survey page."],
+    ["focus-context-change-tender", "Tender notices", "Tender notices", "Tender reference", "Notices for that tender",
+      "Move to the tender reference field on the tender notices page."],
+    ["focus-context-change-harbour", "Harbour bookings", "Harbour bookings", "Berth number", "Bookings for that berth",
+      "Move to the berth number field on the harbour bookings page."],
+    ["focus-context-change-kiln", "Kiln bookings", "Kiln bookings", "Firing slot", "Bookings for that firing slot",
+      "Move to the firing slot field on the kiln bookings page."],
+  ].map(([id, title, heading, field, changedTitle, task]) =>
+    independent(contextChangeVariant({ id, title, heading, field, changedTitle, task, on: "focus" }))),
+  // 3.2.2 On Input — the same failure, on typing rather than focus.
+  ...[
+    ["input-context-change-archive", "Archive search", "Archive search", "Reference", "Results for the reference you typed",
+      "Type into the reference field on the archive search page."],
+    ["input-context-change-permit", "Permit lookup", "Permit lookup", "Permit number", "Permits matching your entry",
+      "Type into the permit number field on the permit lookup page."],
+    ["input-context-change-route", "Route planner", "Route planner", "Departure stop", "Routes from your chosen stop",
+      "Type into the departure stop field on the route planner page."],
+    ["input-context-change-register", "Species register", "Species register", "Species name", "Register entries for that species",
+      "Type into the species name field on the species register page."],
+    ["input-context-change-ledger", "Grant ledger", "Grant ledger", "Grant code", "Ledger filtered by grant code",
+      "Type into the grant code field on the grant ledger page."],
+    ["input-context-change-roster", "Volunteer roster", "Volunteer roster", "Volunteer name", "Roster for the named volunteer",
+      "Type into the volunteer name field on the volunteer roster page."],
+    ["input-context-change-survey", "Site survey", "Site survey", "Survey plot", "Survey readings for that plot",
+      "Type into the survey plot field on the site survey page."],
+    ["input-context-change-tender", "Tender notices", "Tender notices", "Tender reference", "Notices for that tender",
+      "Type into the tender reference field on the tender notices page."],
+    ["input-context-change-harbour", "Harbour bookings", "Harbour bookings", "Berth number", "Bookings for that berth",
+      "Type into the berth number field on the harbour bookings page."],
+    ["input-context-change-kiln", "Kiln bookings", "Kiln bookings", "Firing slot", "Bookings for that firing slot",
+      "Type into the firing slot field on the kiln bookings page."],
+  ].map(([id, title, heading, field, changedTitle, task]) =>
+    independent(contextChangeVariant({ id, title, heading, field, changedTitle, task, on: "input" }))),
   ...[
     ["filter-status-silent-ferry", "Ferry results", "Ferry results", "Show morning ferries", "Show morning ferries and notice the result count."],
     ["filter-status-silent-garden", "Garden results", "Garden results", "Show indoor gardens", "Show indoor gardens and notice the result count."],
@@ -4357,6 +4452,28 @@ function announcedErrorText(/** @type {any} */ capture, /** @type {any} */ signa
   return spoken.length ? spoken.join(" | ") : null;
 }
 
+/**
+ * (3.2.1 / 3.2.2) The page's TITLE changed from focusing a control, or from typing into one.
+ *
+ * One predicate for both criteria because the evidence is the same shape and only the CHANNEL differs —
+ * 3.2.2 is 3.2.1 "on change rather than focus", which is `criterion-coverage.ts`'s own wording.
+ *
+ * Every early return is `false`, and that is the design rather than an oversight: "the probe never ran",
+ * "nothing was focusable", "the measurement errored" and "the title did not change" are four states, and
+ * only the last is conformant while only a real CHANGE is the finding. The probes return `null` titles
+ * rather than `""` for exactly this — an empty title compares equal to another empty title, which would
+ * read as "context did not change" on a capture where nothing was asked.
+ *
+ * @param {any} channel
+ */
+export function contextChangedOn(channel) {
+  if (!channel) return false;                                   // the probe was not asked for
+  if (channel.error) return false;                              // a failed measurement is not a stable page
+  if (typeof channel.titleBefore !== "string") return false;    // null sentinel: nothing was focused/typed
+  if (typeof channel.titleAfter !== "string") return false;
+  return channel.titleBefore !== channel.titleAfter;
+}
+
 // An announced validation error leaves a durable trace on the field: NVDA reports
 // "invalid entry" for aria-invalid, plus the message via the field's description.
 const ANNOUNCED_ERROR = /invalid|\berror\b/i;
@@ -4857,6 +4974,10 @@ const SIGNAL_PREDICATES = Object.freeze({
   "link-status-silent": (/** @type {any} */ capture) => linkStatusIsSilent(capture.interaction?.routeChange),
   "error-remedy-missing": (/** @type {any} */ capture, /** @type {any} */ signal) =>
     errorRemedyIsMissing(capture, signal),
+  "focus-context-change": (/** @type {any} */ capture) =>
+    contextChangedOn(capture.interaction?.focusContext),
+  "input-context-change": (/** @type {any} */ capture) =>
+    contextChangedOn(capture.interaction?.typedFeedback),
   "validation-error-silent": (/** @type {any} */ capture, /** @type {any} */ signal) => validationErrorIsSilent(capture, signal),
   "placeholder-only": (/** @type {any} */ capture, /** @type {any} */ signal) => placeholderOnlyIsPresent(capture, signal),
   "table-unassociated": (/** @type {any} */ capture) => tableHeadersAreUnassociated(capture),
