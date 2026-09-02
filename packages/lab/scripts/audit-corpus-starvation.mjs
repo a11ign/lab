@@ -79,6 +79,20 @@ export const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
     // `validation_error_missing` joined them 2026-08-30 -- see the note below the table.
     "validation_error_missing", "form_change_nonempty"],
   "4.1.2:state-change-silent": ["state_changed"],
+  // ADDED 2026-09-02 with the criterion. 3.3.3 is "the error WAS announced and named only the problem",
+  // so two of its three vetoes name features the subtype cannot carry:
+  //
+  //   `validation_error_missing`  means the error was NOT announced. That is 3.3.1's finding and the
+  //                               precondition 3.3.3 requires to be FALSE. No page can be both.
+  //   `form_change_empty`         means a submit produced an empty announcement. A 3.3.3 positive's
+  //                               submit announces the error — that is what makes it 3.3.3 rather than
+  //                               3.3.1 — so the submit's `after` is non-empty by construction.
+  //
+  // `status_update_announced` is deliberately NOT here: it is 0 on every positive because no case in this
+  // corpus pairs a remedy-less error with a live status region, which is the CORPUS's shape and closable
+  // by corpus work. Classifying it as definitional would put a real gap beyond reach, which is the exact
+  // harm this map's own header warns about pointed the other way.
+  "3.3.3:error-remedy-missing": ["validation_error_missing", "form_change_empty"],
   // ADDED 2026-08-30, and it appeared because the corpus got MORE correct rather than less.
   //
   // `table_header_associated` fires when a cell announces its header ("row 2, Note, column 1, ..."),
