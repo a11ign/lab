@@ -226,6 +226,7 @@ function captureOptions(/** @type {any} */ testCase) {
     ...(testCase.probeDialog ? { probeDialog: true } : {}),
     ...(testCase.probeArrows ? { probeArrows: true } : {}),
     ...(testCase.probeTyping ? { probeTyping: true } : {}),
+    ...(testCase.probeFocusContext ? { probeFocusContext: true } : {}),
     // Same omit-when-false rule, same reason: present only for the cases that ask, so adding the
     // flag re-keys those and nothing else.
     ...(testCase.probeNavigation ? { probeNavigation: true } : {}),
