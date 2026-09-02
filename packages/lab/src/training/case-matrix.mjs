@@ -1466,7 +1466,7 @@ const expandedCases = [
     ["form-error-silent-flood", "Flood alert", "Flood alert", "Alert postcode", "Join alerts", "Enter the postcode before joining alerts.", "Submit the flood alert form without a postcode."],
     ["form-error-silent-wildlife", "Wildlife visit", "Wildlife visit", "Group leader", "Book visit", "Enter the group leader before booking.", "Submit the wildlife visit without a group leader."],
     ["form-error-silent-solar", "Energy tour", "Energy tour", "Organisation", "Book tour", "Enter the organisation before booking.", "Submit the energy tour without an organisation."],
-    ["form-error-silent-clinic", "Clinic booking", "Clinic booking", "Patient identifier", "Confirm booking", "Enter the patient identifier before confirming.", "Submit the clinic booking without an identifier."],
+    ["form-error-silent-clinic", "Clinic booking", "Clinic booking", "Patient identifier", "Save booking", "Enter the patient identifier before confirming.", "Submit the clinic booking without an identifier."],
   ].map(([id, title, heading, field, submit, message, task]) => independent(errorVariant({ id, title, heading, field, submit, message, task }))),
   // 3.3.3 Error Suggestion. Both variants announce correctly; only the MESSAGE differs, so a case can
   // never be a 3.3.1 positive in disguise.
@@ -1487,10 +1487,10 @@ const expandedCases = [
     ["error-remedy-missing-group", "Coastal permit", "Coastal permit", "Group size", "Request permit",
       "Choose a group size between 1 and 12.", "This value is not allowed.",
       "Request a coastal permit with an out-of-range group size."],
-    ["error-remedy-missing-phone", "Clinic booking", "Clinic booking", "Contact number", "Confirm booking",
+    ["error-remedy-missing-phone", "Clinic booking", "Clinic booking", "Contact number", "Save booking",
       "Include the area code, for example 0161.", "Incorrect value.",
       "Confirm a clinic booking with an incomplete contact number."],
-    ["error-remedy-missing-password", "Volunteer account", "Volunteer account", "Passphrase", "Create account",
+    ["error-remedy-missing-password", "Volunteer account", "Volunteer account", "Passphrase", "Register account",
       "Passphrase must be at least 12 characters.", "Not valid.",
       "Create a volunteer account with a short passphrase."],
     ["error-remedy-missing-email", "Newsletter signup", "Newsletter signup", "Contact email", "Join newsletter",
