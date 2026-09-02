@@ -80,23 +80,6 @@ const DISCRIMINATES: Record<string, { signal: object; fires: object; silent: obj
  * the probe, which is worse than an admitted gap: it would read as coverage.
  */
 const NO_FIXTURE: Record<string, string> = {
-  // The 3.2.1 / 3.2.2 pair, added with capture-protocol 14. Neither probe has produced a capture yet: the
-  // bump forces a full recapture and this test runs before it. A hand-built fixture would be my model of
-  // the probe rather than the probe — the exact wording `arrow-keys-inert` carried here until
-  // `radio-group-arrows-inert` was captured and this guard retired it, which is how these entries are
-  // meant to end.
-  //
-  // Close by capturing `focus-context-change-archive` and `input-context-change-archive` and moving both
-  // into REAL_EVIDENCE, as every focus type before them was closed.
-  "focus-context-change":
-    "probeFocusContext has never run: it ships with the protocol-14 bump, so no capture carries "
-    + "`focusContext` yet and a hand-built fixture would be my model of the probe rather than the probe. "
-    + "Close by capturing focus-context-change-archive once the recapture has run.",
-  "input-context-change":
-    "the title evidence on probeTypedFeedback ships with the same bump, so no corpus capture carries "
-    + "titleBefore/titleAfter yet. Proved on one throwaway capture (known-gaps §23) but that pair was "
-    + "removed for being BLIND, so there is no fixture to point at. Close by capturing "
-    + "input-context-change-archive once the recapture has run.",
   // RE-OPENED 2026-09-01 for one type, on the exact reason this list was emptied for the other five, and
   // it must close the same way they did: by capturing, not by relaxing the bar.
   //

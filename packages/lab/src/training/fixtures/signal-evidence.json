@@ -1891,5 +1891,117 @@
     ]
    }
   }
+ },
+ "focus-context-change": {
+  "caseId": "focus-context-change-archive",
+  "signal": {
+   "type": "focus-context-change"
+  },
+  "fires": {
+   "transcript": [
+    "heading, level 1, Archive search",
+    "form, Reference",
+    "edit",
+    "out of form, list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
+    "bullet, same page, link, Annual review 2019 02",
+    "bullet, same page, link, Accessibility statement 03",
+    "bullet, same page, link, Travel and parking 04",
+    "bullet, same page, link, Volunteering enquiries 05",
+    "bullet, same page, link, Room hire rates 06",
+    "out of list, heading, level 2, Reference note 01",
+    "Background detail for reference note 01, retained for records and reviewed each year by the site",
+    "team.",
+    "heading, level 2, Reference note 02",
+    "Background detail for reference note 02, retained for records and reviewed each year by the site",
+    "team.",
+    "heading, level 2, Reference note 03",
+    "Background detail for reference note 03, retained for records and reviewed each year by the site",
+    "team.",
+    "heading, level 2, Reference note 04",
+    "Background detail for reference note 04, retained for records and reviewed each year by the site",
+    "team."
+   ],
+   "interaction": {
+    "focusContext": {
+     "focused": true,
+     "control": "Reference, edit, focused, blank",
+     "titleBefore": "Archive search",
+     "titleAfter": "Results for the reference you typed"
+    }
+   }
+  },
+  "silent": {
+   "transcript": [
+    "heading, level 1, Archive search",
+    "form, Reference",
+    "edit",
+    "out of form, list, with 6 items, bullet, same page, link, Opening times for the north entrance 01",
+    "bullet, same page, link, Annual review 2019 02",
+    "bullet, same page, link, Accessibility statement 03",
+    "bullet, same page, link, Travel and parking 04",
+    "bullet, same page, link, Volunteering enquiries 05",
+    "bullet, same page, link, Room hire rates 06",
+    "out of list, heading, level 2, Reference note 01",
+    "Background detail for reference note 01, retained for records and reviewed each year by the site",
+    "team.",
+    "heading, level 2, Reference note 02",
+    "Background detail for reference note 02, retained for records and reviewed each year by the site",
+    "team.",
+    "heading, level 2, Reference note 03",
+    "Background detail for reference note 03, retained for records and reviewed each year by the site",
+    "team.",
+    "heading, level 2, Reference note 04",
+    "Background detail for reference note 04, retained for records and reviewed each year by the site",
+    "team."
+   ],
+   "interaction": {
+    "focusContext": {
+     "focused": true,
+     "control": "Reference, edit, focused, blank",
+     "titleBefore": "Archive search",
+     "titleAfter": "Archive search"
+    }
+   }
+  }
+ },
+ "input-context-change": {
+  "caseId": "input-context-change-archive",
+  "signal": {
+   "type": "input-context-change"
+  },
+  "fires": {
+   "transcript": [
+    "heading, level 1, Archive search",
+    "form, Reference",
+    "edit"
+   ],
+   "interaction": {
+    "typedFeedback": {
+     "typed": true,
+     "focusBefore": "Reference, edit, focused, blank",
+     "echoed": "1 2 3 4 5 6",
+     "announced": "",
+     "titleBefore": "Archive search",
+     "titleAfter": "Results for the reference you typed"
+    }
+   }
+  },
+  "silent": {
+   "transcript": [
+    "heading, level 1, Archive search",
+    "form, Reference",
+    "edit"
+   ],
+   "interaction": {
+    "typedFeedback": {
+     "typed": true,
+     "focusBefore": "Reference, edit, focused, blank",
+     "echoed": "1 2 3 4 5 6",
+     "announced": "",
+     "titleBefore": "Archive search",
+     "titleAfter": "Archive search"
+    }
+   }
+  }
  }
 }

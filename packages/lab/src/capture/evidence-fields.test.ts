@@ -102,25 +102,17 @@ test("every evidence field a capture carries is compared, or explicitly excluded
  * arrived, so this list cannot quietly outlive its reason.
  */
 const PENDING_CAPTURE: Record<string, string> = {
-  // `arrowNavigation` was here and this guard RETIRED IT the moment `radio-group-arrows-inert` was
-  // captured, which is the design working rather than anyone remembering.
+  // EMPTY, and every entry that was ever here was retired BY THIS GUARD rather than by anyone remembering.
   //
-  // `typedFeedback` is still here and the reason has NARROWED, which is worth the words because the entry
-  // was briefly deleted and put back. It was "no case uses it": `validation-live-silent` was withdrawn
-  // CONTAMINATED, because a polite live region does not announce while NVDA is echoing keystrokes. On
-  // 2026-09-02 a 3.2.2 proof case did use it — the probe now reads the page title either side of the
-  // typing, and one captured pair showed "Archive search" against "Results for 123456", which is that
-  // criterion's failure observed (known-gaps §23). The case was then removed: its signal could never
-  // fire, so `check-signals` correctly called it BLIND, and a corpus case that cannot discriminate is
-  // worse than none.
+  // `arrowNavigation` went when `radio-group-arrows-inert` was captured. `typedFeedback` took three
+  // attempts across one day, and the sequence is the useful part: it was listed as "no case uses it"
+  // while `validation-live-silent` stayed withdrawn CONTAMINATED; it was briefly deleted when a 3.2.2
+  // PROOF case captured it, then restored when that case was removed for being BLIND; and it is gone for
+  // good now that 28 shipping `input-context-change-*` cases ask for `probeTyping` as their own evidence.
   //
-  // So the field is PROVEN and still uncaptured by any shipping case, and those are different from both
-  // "not written" and "cannot fire". It closes when 3.2.2 ships, which needs the protocol bump §23 states.
-  "interaction.typedFeedback":
-    "the probe is verified and its 3.2.2 title evidence was proved on a real capture (known-gaps §23), "
-    + "but no shipping case asks for it: the proof case was removed because its signal could not fire, "
-    + "and validation-live-silent stays withdrawn because a polite live region is silent during typing "
-    + "echo. Closes when 3.2.2 ships.",
+  // Each of those three states is different — "nothing can make it fire", "one throwaway made it fire",
+  // "a shipping case depends on it" — and the guard distinguished them every time, which is the whole
+  // reason an exemption list is worth having rather than a comment.
 };
 
 test("nothing is compared that no capture actually carries", () => {
