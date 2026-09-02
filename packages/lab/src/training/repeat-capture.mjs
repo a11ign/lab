@@ -167,6 +167,9 @@ export function comparable(/** @type {any} */ capture) {
     dialogEscape: flatten(i.dialogEscape),
     arrowNavigation: flatten(i.arrowNavigation),
     typedFeedback: flatten(i.typedFeedback),
+    // Capture-protocol 14. Flattened like the rest: its verdict is whether two strings are EQUAL, so a
+    // count-based comparison would read SAME on a change that inverts the criterion.
+    focusContext: flatten(i.focusContext),
   };
 }
 

@@ -236,6 +236,16 @@ export const UNREACHABLE_WITHOUT_PERTURBING = Object.freeze({
   "2.1.1:control-unreachable-by-keyboard": FORM_PROBE_ONLY,
   "2.1.2:focus-trapped": FORM_PROBE_ONLY,
   "2.4.3:focus-order-scrambled": FORM_PROBE_ONLY,
+  // ADDED 2026-09-02 with capture-protocol 14, and they are the same shape as the three above: cases
+  // about FOCUS and INPUT that run no form probe, so every form-only feature reads 0 on all 28 positives.
+  //
+  // Not closable by corpus work, and the reason is specific rather than inherited. Turning `probeForms`
+  // on for these pages would submit a form — an activation that can itself change the page's context,
+  // which is precisely what these two criteria measure. The probe would become a second cause of the
+  // effect under test, and the case could no longer say which one moved the user. That is this list's
+  // definition exactly: the page COULD carry the feature, and capturing it would destroy the evidence.
+  "3.2.1:focus-context-change": FORM_PROBE_ONLY,
+  "3.2.2:input-context-change": FORM_PROBE_ONLY,
 });
 
 /** A feature absent from the positives is only a shortcut if it is COMMON elsewhere — same rule as the

@@ -59,6 +59,14 @@ export const EVIDENCE_FIELDS = [
   // Capture-protocol 13. Both are OBJECTS, so they go through the same flattening as `routeChange` and
   // `dialogEscape` — a list-of-objects read as a count is the defect this file was fixed for today.
   ["interaction", "arrowNavigation"], ["interaction", "typedFeedback"],
+  // Capture-protocol 14, for 3.2.1 On Focus. An OBJECT like the four above, so the same flattening
+  // applies — and it matters more here than for most, because the whole finding is a pair of strings
+  // (`titleBefore`, `titleAfter`) whose EQUALITY is the verdict. Compared by count it would read SAME on
+  // a change that inverted the criterion.
+  //
+  // `typedFeedback` gained `titleBefore`/`titleAfter` in the same protocol for 3.2.2 and is already
+  // listed, so the flattening picks those up without a second entry.
+  ["interaction", "focusContext"],
 ];
 
 /**
