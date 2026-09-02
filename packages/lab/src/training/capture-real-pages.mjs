@@ -196,6 +196,16 @@ async function capture(/** @type {any} */ page, /** @type {any} */ workerUrl) {
     // with more force here: pressing *Book* on a page we do not own is not a review. `probeFocus` is on —
     // Tab activates nothing.
     //
+    // `probeFocusContext` is ON as of 2026-09-02, and it sits on the same side of the line for a simpler
+    // reason than `probeNavigation` needed: it presses TAB, which `probeFocus` already presses on every
+    // one of these captures. It asks the page title either side of that, so it observes something we were
+    // doing anyway rather than doing anything new to somebody's site.
+    //
+    // Its sibling `probeTyping` stays OFF, and the difference is the whole of the consent argument here:
+    // typing enters characters into a stranger's field, which is `probeForms`'s problem in another
+    // costume. So 3.2.1 can be demonstrated on a real page and 3.2.2 cannot — recorded as
+    // `realPageEvidence` on 3.2.2 rather than pretended away for both.
+    //
     // `probeNavigation` is ON as of 2026-08-24, and the line it sits on the right side of is worth stating
     // because it is not the same line as `probeForms`. It follows the FIRST LINK, which is ordinary
     // browsing — the thing this tool already did to reach the page — where submitting a form writes to
@@ -223,7 +233,8 @@ async function capture(/** @type {any} */ page, /** @type {any} */ workerUrl) {
       // REWRITTEN FOR THE WORKER, not sent as written. A fixture URL says `localhost`, and a worker's
       // localhost is the worker. See `workerReachable`.
       url: workerReachable(page.url, workerUrl),
-      probeForms: false, probeFocus: true, probeNavigation: true, steps: REAL_PAGE_STEPS,
+      probeForms: false, probeFocus: true, probeNavigation: true, probeFocusContext: true,
+      steps: REAL_PAGE_STEPS,
     },
     timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
   });
