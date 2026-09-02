@@ -1142,49 +1142,6 @@ function errorVariant(/** @type {any} */ { id, title, heading, field, submit, me
   });
 }
 
-/**
- * (3.3.3 Error Suggestion) The error IS announced, and names only the problem.
- *
- * `criterion-coverage.ts` recorded this as `reachable` with the reason spelled out: *"The form probe
- * already submits and re-reads; whether the announced error names a REMEDY rather than only a problem is
- * a judgement a head could learn."* No capture change is needed — this reads exactly the channels 3.3.1
- * already reads, which is why it is the one of the three reachable screen-reader criteria that costs no
- * recapture.
- *
- * BOTH VARIANTS ANNOUNCE, and that is the whole design. The good page and the bad page use the SAME
- * markup as `errorVariant`'s conformant side — `aria-invalid`, `role="alert"`, focus moved to the field —
- * so both satisfy 3.3.1 and the only difference between them is what the message SAYS. Anything else
- * would make every 3.3.3 positive a hidden 3.3.1 positive, which is the exact mistake `errorVariant`'s
- * own comment records: its first bad fixture also dropped the label, "which made every 3.3.1 failure a
- * hidden 3.3.2 failure and taught the 3.3.2 head that an unrelated silent validation message is evidence
- * of an unlabeled control".
- *
- * The remedy is a FORMAT or an ACTION the user can take -- "Enter the date as DD/MM/YYYY" -- against a
- * message that only asserts something is wrong -- "Invalid entry". WCAG's own wording is that the
- * suggestion must be PROVIDED to the user, so a message naming the field and nothing else fails.
- */
-function errorRemedyVariant(/** @type {any} */ { id, title, heading, field, submit, remedy, problemOnly, task }) {
-  const form = (/** @type {string} */ message) =>
-    "<form id=\"form\" onsubmit=\"event.preventDefault(); document.querySelector('#field').setAttribute('aria-invalid', 'true');"
-    + " document.querySelector('#error').hidden = false; document.querySelector('#field').focus();\">"
-    + "<label for=\"field\">" + field + "</label><input id=\"field\" aria-describedby=\"error\">"
-    + "<button type=\"submit\">" + submit + "</button>"
-    + "<p id=\"error\" role=\"alert\" hidden>" + message + "</p></form>";
-  return pair({
-    id,
-    family: "dynamic-feedback",
-    criterion: "3.3.3",
-    task,
-    source: "WCAG 3.3.3 Understanding; Web Accessibility Cookbook, chapter 22",
-    mutation: "The validation error is announced correctly but names only the problem, so a screen-reader "
-      + "user is told the entry is wrong and not how to correct it.",
-    badSignal: { type: "error-remedy-missing", control: submit },
-    good: page({ title, heading, body: form(remedy) }),
-    bad: page({ title, heading, body: form(problemOnly) }),
-    probeForms: true,
-  });
-}
-
 function statusVariant(/** @type {any} */ { id, title, heading, control, task }) {
   const body = "<button id=\"filter\" type=\"button\">" + control + "</button><p id=\"count\">Showing 8 items.</p><ul><li>First item</li><li>Second item</li></ul>";
   const goodBody = body.replace(
@@ -1468,66 +1425,6 @@ const expandedCases = [
     ["form-error-silent-solar", "Energy tour", "Energy tour", "Organisation", "Book tour", "Enter the organisation before booking.", "Submit the energy tour without an organisation."],
     ["form-error-silent-clinic", "Clinic booking", "Clinic booking", "Patient identifier", "Confirm booking", "Enter the patient identifier before confirming.", "Submit the clinic booking without an identifier."],
   ].map(([id, title, heading, field, submit, message, task]) => independent(errorVariant({ id, title, heading, field, submit, message, task }))),
-  // 3.3.3 Error Suggestion. Both variants announce correctly; only the MESSAGE differs, so a case can
-  // never be a 3.3.1 positive in disguise.
-  // 3.3.3 Error Suggestion. Both variants announce correctly; only the MESSAGE differs, so a case can
-  // never be a 3.3.1 positive in disguise.
-  //
-  // The remedies vary in FORM on purpose -- a format, an example, a range, an instruction, a constraint --
-  // so the head cannot separate on one phrase. The problem-only messages deliberately avoid "format" and
-  // "must be", which ARE remedy markers: a bad page carrying one would make its own signal silent, and a
-  // corpus case that cannot express its finding is worse than no case at all.
-  ...[
-    ["error-remedy-missing-date", "Garden booking", "Garden booking", "Visit date", "Book visit",
-      "Enter the visit date as DD/MM/YYYY.", "Invalid entry.",
-      "Submit the garden booking with a badly formatted visit date."],
-    ["error-remedy-missing-postcode", "Parcel booking", "Parcel booking", "Delivery postcode", "Book parcel",
-      "Enter a postcode such as SW1A 1AA.", "That is not accepted.",
-      "Submit the parcel booking with an unrecognised postcode."],
-    ["error-remedy-missing-group", "Coastal permit", "Coastal permit", "Group size", "Request permit",
-      "Choose a group size between 1 and 12.", "This value is not allowed.",
-      "Request a coastal permit with an out-of-range group size."],
-    ["error-remedy-missing-phone", "Clinic booking", "Clinic booking", "Contact number", "Confirm booking",
-      "Include the area code, for example 0161.", "Incorrect value.",
-      "Confirm a clinic booking with an incomplete contact number."],
-    ["error-remedy-missing-password", "Volunteer account", "Volunteer account", "Passphrase", "Create account",
-      "Passphrase must be at least 12 characters.", "Not valid.",
-      "Create a volunteer account with a short passphrase."],
-    ["error-remedy-missing-email", "Newsletter signup", "Newsletter signup", "Contact email", "Join newsletter",
-      "Enter an address such as name@example.org.", "Invalid entry.",
-      "Join the newsletter with a malformed email address."],
-    ["error-remedy-missing-reference", "Allotment request", "Allotment request", "Plot reference", "Request plot",
-      "Plot references start with two letters, for example AB14.", "That is wrong.",
-      "Request an allotment with a badly formed plot reference."],
-    ["error-remedy-missing-time", "Ferry booking", "Ferry booking", "Departure time", "Book crossing",
-      "Enter a time between 06:00 and 22:00.", "Unacceptable value.",
-      "Book a ferry crossing outside the sailing window."],
-    ["error-remedy-missing-count", "Observatory booking", "Observatory booking", "Visitor count", "Submit booking",
-      "Choose a number between 1 and 30.", "This is not permitted.",
-      "Submit an observatory booking with too many visitors."],
-    ["error-remedy-missing-licence", "Cycle hire", "Cycle hire", "Licence number", "Hire cycle",
-      "Licence numbers contain 16 characters, for example AB12CD34EF56GH78.", "Not accepted.",
-      "Hire a cycle with a truncated licence number."],
-    ["error-remedy-missing-name", "Market pitch", "Market pitch", "Trader name", "Request pitch",
-      "Enter the trading name as it appears on your registration.", "Invalid.",
-      "Request a market pitch with a mismatched trader name."],
-    ["error-remedy-missing-year", "Library delivery", "Library delivery", "Year of birth", "Request delivery",
-      "Enter a four-digit year, such as 1978.", "That is not right.",
-      "Request a library delivery with a two-digit year of birth."],
-    ["error-remedy-missing-amount", "Energy tour", "Energy tour", "Group budget", "Book tour",
-      "Enter an amount in pounds, for example 250.", "This entry is wrong.",
-      "Book an energy tour with an unreadable budget."],
-    ["error-remedy-missing-postcode-alert", "Flood alert", "Flood alert", "Alert postcode", "Join alerts",
-      "Enter the outward code only, such as CB1.", "Error in this field.",
-      "Join flood alerts with a full postcode where an outward code is wanted."],
-    ["error-remedy-missing-leader", "Wildlife visit", "Wildlife visit", "Group leader", "Book visit",
-      "Enter the leader's full name as two words.", "Invalid entry.",
-      "Book a wildlife visit with a single-word group leader."],
-    ["error-remedy-missing-identifier", "Sports class", "Sports class", "Participant identifier", "Join class",
-      "Identifiers must start with SC followed by five digits.", "Not acceptable.",
-      "Join a sports class with a malformed participant identifier."],
-  ].map(([id, title, heading, field, submit, remedy, problemOnly, task]) =>
-    independent(errorRemedyVariant({ id, title, heading, field, submit, remedy, problemOnly, task }))),
   ...[
     ["filter-status-silent-ferry", "Ferry results", "Ferry results", "Show morning ferries", "Show morning ferries and notice the result count."],
     ["filter-status-silent-garden", "Garden results", "Garden results", "Show indoor gardens", "Show indoor gardens and notice the result count."],
@@ -4302,61 +4199,6 @@ function formActivationIsSilent(/** @type {any} */ capture, /** @type {any} */ s
     || target.every((/** @type {any} */ change) => pageResponseTo(change).trim() === "");
 }
 
-/**
- * A remedy is a FORMAT or an ACTION -- what to type, or what to do about it.
- *
- * Kept deliberately narrow and structural rather than a vocabulary of "good words". The corpus's remedies
- * name a format ("as DD/MM/YYYY"), give an example, or issue an instruction ("enter", "use", "choose"),
- * and its problem-only messages assert a state ("Invalid entry", "This value is not accepted"). Matching
- * the INSTRUCTION rather than the sentiment is what keeps this from being the `vague_link_present`
- * shortcut in a new costume -- that feature was removed for answering a different criterion's question
- * with a wordlist, and it took 2.4.4 from 27 false positives to 0.
- */
-// PUNCTUATION DOES NOT SURVIVE SPEECH, so no alternative here may depend on it. NVDA announces "e.g."
-// as "e dot g." and "DD/MM/YYYY" as "DD slash MM slash YYYY" -- measured, not assumed. The first version
-// carried `e\.g\.` and `dd\/mm`, and neither could EVER match an announcement: patterns that look like
-// coverage and match nothing. `gate:stability`'s corpus caught it as a CONTAMINATED case, because the
-// good page's remedy went unrecognised and the signal then fired on both variants.
-//
-// The deeper mistake was in the CHECK, not the regex. I validated all 32 messages offline against the
-// SOURCE strings and they passed -- but the predicate reads what NVDA SAID. A check run against a shape
-// you did not verify is this repo's oldest recurring defect, and it passed here having examined the
-// wrong text entirely.
-const REMEDY_PHRASE =
-  /\b(?:enter|use|choose|select|pick|include|must (?:be|start|contain)|for example|such as|format|as dd|at least|between \d)/i;
-
-/**
- * (3.3.3) The error WAS announced and named only the problem.
- *
- * Requires the announcement to have happened: a page that says nothing is a 3.3.1 failure, not this one,
- * and reading silence as "no remedy" would make every 3.3.1 positive a 3.3.3 positive too. That is the
- * same single-criterion discipline `errorVariant`'s comment records paying for once already.
- */
-function errorRemedyIsMissing(/** @type {any} */ capture, /** @type {any} */ signal) {
-  const announced = announcedErrorText(capture, signal);
-  if (announced === null) return false;   // nothing was announced -- 3.3.1's finding, not ours
-  return !REMEDY_PHRASE.test(announced);
-}
-
-/**
- * What the screen reader actually said about the error, or `null` if it said nothing.
- *
- * Reads BOTH channels for the reason `validationErrorIsSilent` documents: NVDA versions place the durable
- * invalid-field announcement in either the post-submit structural sweep or the activation delta.
- */
-function announcedErrorText(/** @type {any} */ capture, /** @type {any} */ signal) {
-  const interaction = capture.interaction || {};
-  const submitted = (interaction.formChanges || [])
-    .filter((/** @type {any} */ { control }) =>
-      String(control).toLowerCase().includes(String(signal.control).toLowerCase()));
-  if (submitted.length === 0) return null;   // the submit never happened -- we could not ask
-  const spoken = [
-    ...submitted.map((/** @type {any} */ change) => String(change.after ?? "")),
-    ...(interaction.postSubmitFields || []).map((/** @type {any} */ value) => String(value)),
-  ].filter((/** @type {string} */ text) => ANNOUNCED_ERROR.test(text));
-  return spoken.length ? spoken.join(" | ") : null;
-}
-
 // An announced validation error leaves a durable trace on the field: NVDA reports
 // "invalid entry" for aria-invalid, plus the message via the field's description.
 const ANNOUNCED_ERROR = /invalid|\berror\b/i;
@@ -4855,8 +4697,6 @@ const SIGNAL_PREDICATES = Object.freeze({
   "state-change-silent": (/** @type {any} */ capture, /** @type {any} */ signal) => stateChangeIsSilent(capture, signal),
   "form-activation-silent": (/** @type {any} */ capture, /** @type {any} */ signal) => formActivationIsSilent(capture, signal),
   "link-status-silent": (/** @type {any} */ capture) => linkStatusIsSilent(capture.interaction?.routeChange),
-  "error-remedy-missing": (/** @type {any} */ capture, /** @type {any} */ signal) =>
-    errorRemedyIsMissing(capture, signal),
   "validation-error-silent": (/** @type {any} */ capture, /** @type {any} */ signal) => validationErrorIsSilent(capture, signal),
   "placeholder-only": (/** @type {any} */ capture, /** @type {any} */ signal) => placeholderOnlyIsPresent(capture, signal),
   "table-unassociated": (/** @type {any} */ capture) => tableHeadersAreUnassociated(capture),
