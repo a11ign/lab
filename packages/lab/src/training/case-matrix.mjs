@@ -1232,6 +1232,43 @@ function contextChangeVariant({ id, title, heading, field, changedTitle, task, o
   });
 }
 
+/**
+ * 3.1.2 Language of Parts — a passage in another language, marked in one variant and not the other.
+ *
+ * **The case that had to exist before a rule could.** `documentFormatting`… no: `[speech] reportLanguage`
+ * went ON across the fleet on 2026-09-03, which is what makes this observable at all — at NVDA's defaults
+ * a language change is announced as a change of VOICE and no text, so a pipeline capturing speech as text
+ * is structurally blind to it. Turning the setting on without a case to exercise it is the mistake §17
+ * names: the capability arriving before anything to observe with it.
+ *
+ * **Both variants carry the SAME foreign passage**, and only the `lang` differs. That is the whole
+ * discipline of a pair here — two pages differing by exactly the property under test, so a model cannot
+ * separate them on anything else. An earlier generation of this corpus put the failing text ONLY on the
+ * failing page and taught the word rather than the defect (`corpus:starvation`'s word-sense monopoly).
+ *
+ * The GOOD page marks it, so NVDA switches language AND says so. The BAD page does not, so NVDA reads
+ * French with an English voice and says nothing about it — which is exactly what a sighted reviewer
+ * cannot see and a static analyser reports only as a missing attribute.
+ */
+function languageVariant(/** @type {any} */ { id, title, heading, lead, passage, lang, langName, task }) {
+  const body = (/** @type {boolean} */ marked) =>
+    "<p>" + lead + "</p><p" + (marked ? " lang=\"" + lang + "\"" : "") + ">" + passage + "</p>";
+  return pair({
+    id,
+    family: "language-of-parts",
+    criterion: "3.1.2",
+    subtype: "language-unmarked",
+    task,
+    source: "WCAG 3.1.2 Understanding",
+    mutation: "The passage is in " + langName + " and carries no `lang`, so a screen reader reads it with "
+      + "the page's own language and announces no change. The words are correct " + langName + "; what is "
+      + "missing is the only thing that tells assistive technology so.",
+    badSignal: { type: "language-unmarked", language: langName },
+    good: page({ title, heading, body: body(true) }),
+    bad: page({ title, heading, body: body(false) }),
+  });
+}
+
 function statusVariant(/** @type {any} */ { id, title, heading, control, task }) {
   const body = "<button id=\"filter\" type=\"button\">" + control + "</button><p id=\"count\">Showing 8 items.</p><ul><li>First item</li><li>Second item</li></ul>";
   const goodBody = body.replace(
@@ -1599,6 +1636,38 @@ const expandedCases = [
       "Move to the firing slot field on the kiln bookings page."],
   ].map(([id, title, heading, field, changedTitle, task]) =>
     independent(contextChangeVariant({ id, title, heading, field, changedTitle, task, on: "focus" }))),
+  // 3.1.2 Language of Parts — observable at all only since `[speech] reportLanguage` went on.
+  //
+  // Five cases, five languages, so no single language name can become the feature. `corpus:starvation`'s
+  // word-sense monopoly is the trap: one language would let a head separate the pair on the WORD rather
+  // than on the announcement, exactly as `vague_link_present` once separated 2.4.4 on the word "Details".
+  //
+  // The passages are ordinary sentences a real page would carry — a quotation, a motto, a name — rather
+  // than lorem, because the failure is about a passage a sighted reader would recognise as foreign and a
+  // screen reader announces without comment.
+  ...[
+    ["language-unmarked-quotation", "Reading room", "Reading room",
+      "The archive holds a first edition, and its dedication reads:",
+      "Le silence éternel de ces espaces infinis m'effraie.", "fr", "French",
+      "Read the dedication quoted on the reading room page."],
+    ["language-unmarked-motto", "City hall", "City hall",
+      "The city motto appears above the door:",
+      "Stadtluft macht frei nach Jahr und Tag.", "de", "German",
+      "Read the motto quoted on the city hall page."],
+    ["language-unmarked-recipe", "Kitchen notes", "Kitchen notes",
+      "The method is given in the original:",
+      "Battete le uova con lo zucchero fino a ottenere un composto chiaro.", "it", "Italian",
+      "Read the method quoted on the kitchen notes page."],
+    ["language-unmarked-inscription", "Museum label", "Museum label",
+      "The inscription on the base reads:",
+      "Aquí descansa un viajero que volvió a casa.", "es", "Spanish",
+      "Read the inscription quoted on the museum label page."],
+    ["language-unmarked-lyric", "Concert notes", "Concert notes",
+      "The refrain is printed as it is sung:",
+      "Sur le pont d'Avignon, on y danse tout en rond.", "fr", "French",
+      "Read the refrain printed on the concert notes page."],
+  ].map(([id, title, heading, lead, passage, lang, langName, task]) =>
+    independent(languageVariant({ id, title, heading, lead, passage, lang, langName, task }))),
   // 3.2.2 On Input — the same failure, on typing rather than focus.
   ...[
     ["input-context-change-archive", "Archive search", "Archive search", "Reference", "Results for the reference you typed",
@@ -4453,6 +4522,32 @@ function announcedErrorText(/** @type {any} */ capture, /** @type {any} */ signa
 }
 
 /**
+ * Did NVDA announce a language change anywhere in what it said?
+ *
+ * NVDA speaks the language name when `[speech] reportLanguage` is on and the document language changes —
+ * "French", not the BCP-47 tag — so the transcript is matched against the NAME the case declares.
+ *
+ * Word-bounded and case-insensitive, for a reason this repo has paid for twice. `SUBMIT_RE` matches
+ * `\bbook\b` and so does NOT match "booking", which was right; and `isImage` once matched the word
+ * *image* inside markup NVDA had read aloud character by character. A bare `includes` here would fire on
+ * any page whose prose happens to contain the language's name — a page ABOUT France, say — and that
+ * finding would be our own substring rather than NVDA's announcement.
+ *
+ * @returns {boolean} true when the language was NOT announced, which is the failure
+ */
+function languageIsUnannounced(/** @type {any} */ capture, /** @type {any} */ signal) {
+  const name = String(signal?.language ?? "").trim();
+  // NO NAME, NO CLAIM. A signal that cannot say which language it expects would otherwise report every
+  // page as failing, which is the "a check that examines nothing still passes" shape.
+  if (name === "") return false;
+  const spoken = [
+    ...(capture?.transcript ?? []),
+    ...Object.values(capture?.structure ?? {}).flatMap((v) => (Array.isArray(v) ? v : [])),
+  ].join(" \n ");
+  return !new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(spoken);
+}
+
+/**
  * (3.2.1 / 3.2.2) The page's TITLE changed from focusing a control, or from typing into one.
  *
  * One predicate for both criteria because the evidence is the same shape and only the CHANNEL differs —
@@ -4974,6 +5069,19 @@ const SIGNAL_PREDICATES = Object.freeze({
   "link-status-silent": (/** @type {any} */ capture) => linkStatusIsSilent(capture.interaction?.routeChange),
   "error-remedy-missing": (/** @type {any} */ capture, /** @type {any} */ signal) =>
     errorRemedyIsMissing(capture, signal),
+  // 3.1.2 — did NVDA ANNOUNCE the language, or only change voice?
+  //
+  // Reads the TRANSCRIPT, never the page source. The whole point of this case is that the markup is the
+  // one thing a static analyser already sees; what only a screen reader can answer is whether the change
+  // was announced. Checking the HTML here would make the signal agree with axe-core and measure nothing
+  // this project exists to measure — the mistake §"a cheap pre-check" records, where 32 corpus messages
+  // were validated against the page SOURCE and NVDA turned out to say something else entirely.
+  //
+  // The BAD page fails by SILENCE: the passage is read in the page's own language with no announcement.
+  // So the predicate fires when the language is ABSENT from the transcript, which is why it must be given
+  // the language name rather than inferring one.
+  "language-unmarked": (/** @type {any} */ capture, /** @type {any} */ signal) =>
+    languageIsUnannounced(capture, signal),
   "focus-context-change": (/** @type {any} */ capture) =>
     contextChangedOn(capture.interaction?.focusContext),
   "input-context-change": (/** @type {any} */ capture) =>

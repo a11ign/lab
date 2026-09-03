@@ -65,6 +65,17 @@ const DISCRIMINATES: Record<string, { signal: object; fires: object; silent: obj
     fires: { structure: { formFields: ["edit"] } },
     silent: { structure: { formFields: ["Full name, edit"] } },
   },
+  "language-unmarked": {
+    signal: { type: "language-unmarked", language: "French" },
+    // FIRES ON SILENCE, which is what makes 3.1.2 a screen-reader question at all. The passage is read
+    // either way; what the BAD page omits is any announcement that the language changed. NVDA speaks the
+    // language NAME when `[speech] reportLanguage` is on, so its absence from the transcript IS the
+    // finding — and the markup, which a static analyser reads, never enters into it.
+    fires: { transcript: ["The archive holds a first edition, and its dedication reads:",
+      "Le silence eternel de ces espaces infinis m'effraie."] },
+    silent: { transcript: ["The archive holds a first edition, and its dedication reads:",
+      "French", "Le silence eternel de ces espaces infinis m'effraie."] },
+  },
   "missing-heading": {
     signal: { type: "missing-heading", text: "Results" },
     fires: { structure: { headings: ["heading, level 1, Home"] } },
