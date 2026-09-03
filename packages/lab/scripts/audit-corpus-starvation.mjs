@@ -240,8 +240,14 @@ const FORM_PROBE_ONLY = Object.freeze([
   // Recorded rather than left to be rediscovered: reading a crossed column as newly closable would put
   // these five subtypes back on a work list nobody can complete, which is exactly what this table exists
   // to prevent. They read the same channels as the six above and are gated identically.
-  "state_change_observed_present", "state_change_observed_absent",
+  //
+  // `stateChanges` IS NOT CROSSED and so is not listed. It was, for about an hour, until the question
+  // "what actually writes this channel?" got asked: `probeKindFor` returns "disclosure" BEFORE the
+  // `probeForms` gate, so no capture carries `observed["stateChanges"]` and the pair was two constant-zero
+  // columns. `test_unclosable_map_is_current.py` caught the leftover declaration here on the same run --
+  // the same way it caught `skip_link_moves_focus` naming a feature the pipeline never computed.
   "form_change_observed_present", "form_change_observed_absent",
+  "post_submit_observed_present", "post_submit_observed_absent",
 ]);
 
 export const UNREACHABLE_WITHOUT_PERTURBING = Object.freeze({
