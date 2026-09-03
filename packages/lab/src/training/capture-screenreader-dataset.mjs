@@ -792,7 +792,22 @@ async function main() {
     resume: RESUME,
     cache: CACHE,
   });
-  if (done.size) console.log("Resuming: " + done.size + " case(s) already captured.");
+  // SAY WHAT --no-cache CANNOT REACH. `previouslyCaptured` returns a non-empty set only under
+  // `--resume --no-cache`, and it skips on the capture FILES rather than on this run's progress -- so a
+  // case that already succeeded is skipped and `--no-cache` never gets to force it. That is exactly right
+  // for the pairing's documented purpose ("retry only what is missing": a FAILED case has no usable files,
+  // so it is not skipped and is recaptured fresh), and it is silently wrong for the other reason somebody
+  // reaches for `--no-cache` -- re-measuring a case that succeeded, to see whether an odd result
+  // reproduces. Measured cost 2026-09-03: an investigation into one split pair read an identical result
+  // from a "recapture" and called it REPRODUCIBLE, when the run had skipped the case and the second
+  // reading was the same bytes. Two readings of one file are not two measurements.
+  //
+  // So the line names the consequence rather than the count. `--no-cache` alone re-measures everything.
+  if (done.size) {
+    console.log("Resuming: " + done.size + " case(s) already captured.");
+    console.log("  --no-cache CANNOT reach those " + done.size + " — they are skipped on the files already "
+      + "on disk, so a re-read of them is not a second measurement. Drop --resume to re-measure.");
+  }
 
   // The pages are leased like the workers are: started if missing, put back as found. Serving them
   // was a manual step nobody owned, which leaked four `serve` processes onto this host and, worse,
