@@ -169,8 +169,24 @@ test("an unreportable environment still keys consistently", () => {
     os: "unknown/unknown",
     driver: "guidepup/unknown",
     captureProtocol: "unknown",
+    // "default", NOT "unknown", and the difference is a real claim rather than a style choice. Every
+    // capture taken before this field existed WAS taken at NVDA's defaults, so the absent value is a fact
+    // about those captures and saying so beats saying we cannot tell. It still differs from the digest a
+    // current guest reports, so nothing blends.
+    screenReaderSettings: "default",
     provisionRevision: "unstamped",
   });
+});
+
+test("a guest capturing under different NVDA settings is a different environment", () => {
+  // The property the field exists for. `reportLanguage` off means NVDA announces a 3.1.2 failure as a
+  // change of VOICE and no text; on, it speaks the language into the transcript. Same page, different
+  // evidence — so the two must never share a cache entry, exactly as two guidepup versions must not.
+  const before = { ...ENV, screenReaderSettings: "default" };
+  const after = { ...ENV, screenReaderSettings: "documentFormatting.reportLanguage=True" };
+  assert.notEqual(
+    JSON.stringify(environmentKey(before)), JSON.stringify(environmentKey(after)),
+    "a capture taken with reportLanguage off must not be reused for one taken with it on");
 });
 
 test("a different Windows build is a different environment", () => {

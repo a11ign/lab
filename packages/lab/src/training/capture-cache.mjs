@@ -84,7 +84,8 @@ export function hashPageDir(pageDir) {
 /**
  * @param {{ screenReader?: string, screenReaderVersion?: string, guidepupVersion?: string,
  *           browser?: string, browserVersion?: string, windowsVersion?: string, architecture?: string,
- *           captureProtocol?: string|number, provisionRevision?: string }} [environment]
+ *           captureProtocol?: string|number, screenReaderSettings?: string,
+ *           provisionRevision?: string }} [environment]
  *
  * EVERY FIELD LISTED, because each is a cache key and an absent one silently becomes `"unknown"` -- which
  * is a value two different guests can share. The comments below record what each costs when it is wrong;
@@ -103,6 +104,19 @@ export function environmentKey(environment = {}) {
     browser: `${environment.browser ?? "unknown"}/${environment.browserVersion ?? "unknown"}`,
     os: `${environment.windowsVersion ?? "unknown"}/${environment.architecture ?? "unknown"}`,
     captureProtocol: environment.captureProtocol ?? "unknown",
+    // WHICH NVDA SETTINGS THE CAPTURE WAS TAKEN UNDER, and it belongs here for the same reason `driver`
+    // does: it changes what NVDA SAYS before this project ever sees it.
+    //
+    // `reportLanguage` is on by decision from 2026-09-03. At NVDA's default a 3.1.2 failure is announced
+    // as a change of VOICE and no text, so a pipeline that captures speech as text is blind to it; with
+    // the setting on NVDA speaks the language and it lands in the transcript. A capture taken before that
+    // and one taken after are therefore different evidence, and reusing the first for the second is the
+    // exact blend this key exists to prevent.
+    //
+    // `"default"` for a guest that predates the field — NOT "unknown". The absent value is a FACT here:
+    // every capture taken before this existed was taken at NVDA's defaults, and saying so is more useful
+    // than saying we cannot tell. It still differs from the new digest, so nothing blends.
+    screenReaderSettings: environment.screenReaderSettings ?? "default",
     provisionRevision: environment.provisionRevision ?? "unstamped",
   };
 }
