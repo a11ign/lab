@@ -94,6 +94,16 @@ for index, record in enumerate(records):
                                                             di.get("postSubmitFields"))},
                   "evidenceUnits": units,
                   "evidenceText": "\n".join(u["text"] for u in units)},
+        # `observation` is a SIBLING of `input`, so a `{**record["input"], ...}` spread cannot carry it and
+        # the composed record would read "never asked" on every crossed column -- which is exactly the free
+        # veto this probe exists to measure, manufactured by the probe itself.
+        #
+        # UNION, matching how every other channel here is merged: this record's evidence is spliced from
+        # both halves, so a channel either donor asked about is one this record has evidence for. Taking
+        # only the base record's would understate it in precisely the direction that fakes the effect.
+        "observation": {channel: bool(record.get("observation", {}).get(channel))
+                                 or bool(donor.get("observation", {}).get(channel))
+                        for channel in {*record.get("observation", {}), *donor.get("observation", {})}},
         # The union, so a composed record claims exactly the defects its two halves had. For a clean
         # donor this is the original's label unchanged; for a failing donor it is a genuinely two-defect
         # page, which is the case the corpus has never contained.

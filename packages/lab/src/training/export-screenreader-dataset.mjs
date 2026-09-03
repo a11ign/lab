@@ -2,7 +2,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { modelInput } from "@a11y-witness/scorer/evidence-units";
+import { modelInput, observationOf } from "@a11y-witness/scorer/evidence-units";
 import { oracleCounts } from "@a11y-witness/evidence/verify";
 
 import {
@@ -93,30 +93,6 @@ function readCapture(/** @type {any} */ testCase, /** @type {any} */ variant) {
   return existsSync(path) ? readJson(path) : null;
 }
 
-/**
- * Which optional probes this capture actually RAN, from its own record of what it asked.
- *
- * `observed` is protocol-10's additive sibling: each channel carries `{asked, ...}` so that "the page has
- * none" and "nothing looked" stop being the same evidence. Everything reading it has been on the RULES
- * side until now; this is the first time it reaches a training record, and it reaches it as a SIBLING of
- * `input` rather than inside it, so `assertModelBoundary` is untouched and `dom`, `html`, `css`, `axe`,
- * `url` and `task` stay forbidden there.
- *
- * Booleans only, deliberately. WHY a probe did not run is a fact about the capture, and a featurizer that
- * could see it would have a second thing to fit on — the risk §14 declined, and the reason this carries
- * `asked` and nothing else.
- *
- * @param {any} capture
- * @returns {Record<string, boolean>}
- */
-function observationOf(capture) {
-  /** @type {Record<string, boolean>} */
-  const asked = {};
-  for (const [channel, entry] of Object.entries(capture?.observed ?? {})) {
-    asked[channel] = Boolean(/** @type {any} */ (entry)?.asked);
-  }
-  return asked;
-}
 
 
 function usableCapture(/** @type {any} */ capture) {
