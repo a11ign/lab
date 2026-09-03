@@ -373,14 +373,83 @@ def _write_report(rows: list) -> None:
         print(f"  report NOT written to {out}: {error}")
 
 
+def constant_columns(records: list[tuple[dict[str, float], set[str]]]) -> list[tuple[str, float]]:
+    """Features with ONE distinct value across the whole corpus — a column no head can learn anything from.
+
+    **Nothing else in this repo can see this, and a change made on 2026-09-03 walked straight into it.**
+    Two crossed columns were added keyed on `observed["stateChanges"]`, which no capture carries, so both
+    read 0.0 on every record: a dead column that looks like coverage. It would have survived a full
+    retrain, because every existing check asks a narrower question --
+
+      - `corpus:starvation` asks whether a feature is constant on a SUBTYPE's positives. A column that is
+        constant EVERYWHERE is constant there too, so it is reported per subtype as one more entry on a
+        work list nobody can complete, rather than once as the one fact that explains all of them.
+      - `scorer:shortcuts` (this file's main job) reads TRAINED WEIGHTS, so it cannot speak until a train
+        has been paid for -- and CLAUDE.md names the half it still cannot see: *"a constant-1 column is
+        invisible to the veto audit, which only flags constancy at zero."*
+      - `corpus:distribution` asks whether an ARRAY FIELD is empty on every record. A computed feature is
+        not a field and is not in the export at all, so that check is structurally blind to this. It was
+        named as the gate for exactly this question in `schema-migration.json`, which is how the gap was
+        found: **a gate named for a fault it cannot express.**
+
+    Computed here because this is where every feature is already calculated over every record -- a second
+    pass would be a second place for the two to disagree about what a feature IS.
+
+    Constant at ONE is reported as loudly as constant at zero. They are different faults with the same
+    consequence: `transcript_present` reads 1.0 everywhere because every capture has a transcript, which
+    is honest and useless, and a head that gives it weight has learned an intercept with extra steps.
+    """
+    # A LOOP RATHER THAN A COMPREHENSION, for two reasons and the second is the honest one.
+    #
+    # It builds each feature's value set ONCE. The comprehension this replaced built it twice per feature
+    # -- once for the condition and once for the value -- which is 32 features x every record, twice, on a
+    # corpus of thousands.
+    #
+    # And the loop cannot half-evaluate: `seen.pop()` runs only inside the branch that proved `seen` has
+    # exactly one element, so no rewrite of the value expression can make empty input raise.
+    #
+    # THAT MATTERS BECAUSE THE COMPREHENSION FORM APPEARED TO RAISE `StopIteration` ON EMPTY INPUT while
+    # the identical shape in isolation returned `[]`. The cause was a STALE `__pycache__` under
+    # `packages/lab/scripts/` -- `importlib.util.spec_from_file_location` honours cached bytecode, so
+    # pytest and a direct `python -c` were both executing an older compile of this file. It is CLAUDE.md's
+    # stale-`dist` defect in Python: *"That reads as 'my test is weak' and is really 'my test is old'."*
+    #
+    # It did real damage before it was found. An `if not records: return []` guard stood here, a mutation
+    # check reported it as never firing, and I deleted it as dead code -- on a verdict computed from
+    # bytecode that predated the guard. `test:python` now runs with `PYTHONDONTWRITEBYTECODE=1` and
+    # `-p no:cacheprovider` so no Python mutation check in this repo can be decided by a stale compile,
+    # which is the technique this project relies on most.
+    constants = []
+    for name in features.FEATURE_NAMES:
+        seen = {values.get(name, 0.0) for values, _ in records}
+        if len(seen) == 1:
+            constants.append((name, seen.pop()))
+    return constants
+
+
 def main() -> int:
     args = parse_args()
-    rows = audit(read_records(args.data), args.model)
+    records = read_records(args.data)
+    rows = audit(records, args.model)
     _write_report(rows)
     if args.json:
         print(json.dumps({"vetoLogits": VETO_LOGITS, "rows": rows}, indent=2))
     else:
         render(rows)
+    # REPORTED BEFORE THE VETO VERDICT, because a constant column makes every veto reported about it
+    # meaningless -- a head cannot lean on a feature that never varies, and reading "free veto on X" for
+    # such an X sends somebody to the corpus when the answer is in the featurizer.
+    constants = constant_columns(records)
+    if constants:
+        out = sys.stderr if args.json else sys.stdout
+        print(f"\n  {len(constants)} feature(s) are CONSTANT across all {len(records)} record(s):", file=out)
+        for name, value in constants:
+            print(f"    {name} = {value} everywhere", file=out)
+        print("  A column with one value teaches nothing and cannot be vetoed for free -- it is already"
+              "\n  free. Either the featurizer reads something no capture carries (a DEAD column, which"
+              "\n  looks like coverage), or the corpus has no example either way. Neither is fixed by"
+              "\n  retraining.\n", file=out)
+
     if args.update_baseline:
         args.baseline.write_text(json.dumps({"vetoLogits": VETO_LOGITS, "rows": rows}, indent=2) + "\n")
         print(f"  baseline written: {args.baseline}")
