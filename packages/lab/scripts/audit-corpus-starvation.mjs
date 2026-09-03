@@ -230,6 +230,18 @@ const FORM_PROBE_ONLY = Object.freeze([
   "form_change_present", "form_change_nonempty", "form_change_empty", "status_update_announced",
   // read `interaction.postSubmitFields`, gated on `probeForms` AND a prior activation
   "post_submit_present", "validation_error_announced", "validation_error_missing",
+  // ADDED 2026-09-03 with the observation FEATURE CROSS (schema v19), and the point of the entry is that
+  // THE CROSS DOES NOT CLOSE THESE. It fixes a CONFLATION -- an empty channel meaning both "the page has
+  // none" and "nothing looked" -- and on a subtype that never runs the form probe there is no conflation
+  // to fix: both crossed columns are 0, correctly, because that is the "never asked" row and the case
+  // genuinely carries no evidence either way. Starvation and ambiguity are two defects, and the cross was
+  // only ever a remedy for the second.
+  //
+  // Recorded rather than left to be rediscovered: reading a crossed column as newly closable would put
+  // these five subtypes back on a work list nobody can complete, which is exactly what this table exists
+  // to prevent. They read the same channels as the six above and are gated identically.
+  "state_change_observed_present", "state_change_observed_absent",
+  "form_change_observed_present", "form_change_observed_absent",
 ]);
 
 export const UNREACHABLE_WITHOUT_PERTURBING = Object.freeze({

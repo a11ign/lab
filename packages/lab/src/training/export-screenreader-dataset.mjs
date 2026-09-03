@@ -93,6 +93,32 @@ function readCapture(/** @type {any} */ testCase, /** @type {any} */ variant) {
   return existsSync(path) ? readJson(path) : null;
 }
 
+/**
+ * Which optional probes this capture actually RAN, from its own record of what it asked.
+ *
+ * `observed` is protocol-10's additive sibling: each channel carries `{asked, ...}` so that "the page has
+ * none" and "nothing looked" stop being the same evidence. Everything reading it has been on the RULES
+ * side until now; this is the first time it reaches a training record, and it reaches it as a SIBLING of
+ * `input` rather than inside it, so `assertModelBoundary` is untouched and `dom`, `html`, `css`, `axe`,
+ * `url` and `task` stay forbidden there.
+ *
+ * Booleans only, deliberately. WHY a probe did not run is a fact about the capture, and a featurizer that
+ * could see it would have a second thing to fit on — the risk §14 declined, and the reason this carries
+ * `asked` and nothing else.
+ *
+ * @param {any} capture
+ * @returns {Record<string, boolean>}
+ */
+function observationOf(capture) {
+  /** @type {Record<string, boolean>} */
+  const asked = {};
+  for (const [channel, entry] of Object.entries(capture?.observed ?? {})) {
+    asked[channel] = Boolean(/** @type {any} */ (entry)?.asked);
+  }
+  return asked;
+}
+
+
 function usableCapture(/** @type {any} */ capture) {
   return capture && Array.isArray(capture.transcript) && capture.transcript.length > 0;
 }
@@ -218,6 +244,18 @@ function record(/** @type {any} */ testCase, /** @type {any} */ variant, /** @ty
     // export and the CLI can never disagree about what a rule may read. `dom` used to be built ONLY here,
     // which made it exercisable by the gate and invisible in the product.
     ruleEvidence: oracleCounts(capture),
+    // WHAT THE CAPTURE ASKED, as a sibling of `input` — never inside it, so the model boundary is
+    // untouched and this adds no route to `dom`, `html`, `css`, `axe`, `url` or `task`.
+    //
+    // §14 decided the model is not given observation metadata, and that decision stands as written: the
+    // featurizer does not read this AS a feature. It reads it to CROSS with an existing one, so "was this
+    // asked" never becomes a separable signal a head can weight on its own. That distinction is the whole
+    // design (known-gaps §35) and the reason this exports the observation rather than the flag.
+    //
+    // Measured 2026-09-03: 61.7% of empty `formChanges`, 56.1% of empty `postSubmitFields` and 65.3% of
+    // the `formControl` sweep are "never asked" rather than "the page has none", and
+    // `float(bool(channel))` cannot tell them apart.
+    observation: observationOf(capture),
     target: {
       label: isBad ? "violation" : "clean",
       // `alsoFails` names a criterion AND the subtype whose head carries it ("4.1.2:missing-role"),
