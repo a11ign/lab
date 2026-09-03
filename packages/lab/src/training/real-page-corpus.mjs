@@ -136,6 +136,21 @@
  * @property {"conformant" | "inaccessible"} publishedClaim  What the SOURCE says, never our assessment.
  * @property {string} source  Where that claim is published, so a reader can check it.
  * @property {string} demonstrates  What the page is an example of, in the source's own terms.
+ * @property {{state: "error"|"success", submit: string,
+ *   fields: {field: string, within?: string, nth?: number,
+ *     value?: string, choose?: string, check?: boolean}[]}} [formState]
+ *   ONE declared form state (ADR 0024), for the pages whose owner's own examples invite submission.
+ *
+ *   **This is what unblocks 4.1.3 on real pages.** `probeForms` is OFF for every real-page capture —
+ *   submitting a form on a site we do not own is not a review — so `formChanges` and `postSubmitFields`
+ *   are absent from all of them, and `build-realism` reports `4.1.3: 0 of 37`. ADR 0024's answer is that
+ *   supplying the values is what makes submitting acceptable, and a state declared HERE is that consent
+ *   recorded in the corpus rather than passed on a command line.
+ *
+ *   **Only for pages published AS form examples**, and only W3C's own demos so far: they exist to be
+ *   submitted, the submission is inert, and the conformant and inaccessible versions are the same form.
+ *   A page that merely HAS a form does not qualify — `SECURITY.md`'s line is about whose system the
+ *   submission writes to, and it does not move because a criterion would be easier to reach.
  * @property {string[]} [witnessableAs]  Which criteria a CAPTURE could witness this page's published
  *   failure as. Required on every `inaccessible` page and meaningless on a conformant one -- see the
  *   WITNESSABILITY note below `RealPage`. Enforced by `real-page-corpus.test.ts`, which refuses a
@@ -308,8 +323,31 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant", source: BAD_AFTER_CLAIM, demonstrates: "ticket listing, fixed — NOT a form: 0 <form>, 0 <input>, one named combo box in the shared chrome" },
   { url: "https://www.w3.org/WAI/demos/bad/after/template.html", role: "calibration",
     publishedClaim: "conformant", source: BAD_AFTER_CLAIM, demonstrates: "page template, fixed" },
+  // THE ONE CONFIGURED FORM IN THE CORPUS, and the page that unblocks 4.1.3 on real evidence.
+  //
+  // W3C publishes this as the FIXED version of its own broken survey — a form that exists to be submitted,
+  // whose submission is inert, and whose owner's purpose in publishing it is that people try it. That is
+  // why it qualifies and a page that merely HAS a form does not.
+  //
+  // Measured 2026-09-03 with exactly this state: three fields filled, submitted, and NVDA announced
+  // "Citylights Survey - Submission Failed" — so 3.3.1 and 4.1.3 both read `passed` from real evidence on
+  // a real site, where `build-realism` had reported `4.1.3: 0 of 37`. The same config against
+  // `before/survey.html` filled ZERO and reported all three `unbound`, because its controls have no
+  // accessible names — the 4.1.2 finding, and ADR 0024's central claim with its own control group.
+  //
+  // The mismatched e-mails are the rejection this form actually performs. `because` records that, so a run
+  // that hears NO error can report what it expected rather than reporting bare silence.
   { url: "https://www.w3.org/WAI/demos/bad/after/survey.html", role: "calibration",
-    publishedClaim: "conformant", source: BAD_AFTER_CLAIM, demonstrates: "survey form, fixed" },
+    publishedClaim: "conformant", source: BAD_AFTER_CLAIM, demonstrates: "survey form, fixed",
+    formState: {
+      state: "error",
+      submit: "submit",
+      fields: [
+        { field: "Name:", value: "" },
+        { field: "e Mail Address:", value: "ada@example.test" },
+        { field: "Retype e Mail:", value: "different@example.test" },
+      ],
+    } },
   { url: "https://www.w3.org/WAI/demos/bad/before/news.html", role: "calibration",
     publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, witnessableAs: ["4.1.2"], demonstrates: "news article layout, broken" },
   { url: "https://www.w3.org/WAI/demos/bad/before/tickets.html", role: "calibration",

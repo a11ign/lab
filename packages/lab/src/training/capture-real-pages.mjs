@@ -234,6 +234,11 @@ async function capture(/** @type {any} */ page, /** @type {any} */ workerUrl) {
       // localhost is the worker. See `workerReachable`.
       url: workerReachable(page.url, workerUrl),
       probeForms: false, probeFocus: true, probeNavigation: true, probeFocusContext: true,
+      // A DECLARED state, or nothing. `probeForms` stays false above and this does not change that: it
+      // activates whatever submit-like control the sweep walks past, on a page we do not own. A
+      // `formState` is the page owner's own example, with values recorded in the corpus beside the URL
+      // (ADR 0024) — so submitting is something the corpus says to do, not something the probe decides.
+      ...(page.formState ? { formState: page.formState } : {}),
       steps: REAL_PAGE_STEPS,
     },
     timeoutMs: CAPTURE_CLIENT_TIMEOUT_MS,
