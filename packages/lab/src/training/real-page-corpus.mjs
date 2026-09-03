@@ -439,10 +439,32 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant",
     source: "Defra Disinfectants Approvals: fully compliant with WCAG 2.2 AA (https://disinfectants.defra.gov.uk/accessibility-statement)",
     demonstrates: "approvals service landing page" },
-  { url: "https://docs.sign-in.service.gov.uk/integrate-with-integration-environment/", role: "calibration",
-    publishedClaim: "conformant",
-    source: "GOV.UK One Login developer docs: fully compliant with WCAG 2.1 AA (https://docs.sign-in.service.gov.uk/accessibility-statement)",
-    demonstrates: "technical integration documentation" },
+  // WITHDRAWN 2026-09-03 — the site now answers 403 to us, so it cannot be captured at all.
+  //
+  //   { url: "https://docs.sign-in.service.gov.uk/integrate-with-integration-environment/",
+  //     role: "calibration", publishedClaim: "conformant",
+  //     source: "GOV.UK One Login developer docs: fully compliant with WCAG 2.1 AA
+  //             (https://docs.sign-in.service.gov.uk/accessibility-statement)",
+  //     demonstrates: "technical integration documentation" },
+  //
+  // Kept as a comment rather than deleted, because "this page was in the corpus and left, for this
+  // reason" is worth more than a shorter list — and because it is re-testable: if the block lifts, the
+  // entry goes straight back.
+  //
+  // MEASURED before removing, from two independent networks: the fleet got 403 mid-capture, and this
+  // laptop got 403 on three requests including the SITE ROOT. So it is the site refusing automated
+  // clients, not the datacentre's IP and not a transient flake — the two readings a single failure
+  // cannot separate, and the reason to check rather than re-dispatch and hope.
+  //
+  // Removing it from REAL_PAGES is the mechanism this repo already has, not a workaround.
+  // `check-real-page-findings.ts` distinguishes two ways a baseline key can go missing: still declared
+  // in the corpus but uncaptured is PARTIAL COVERAGE and is refused, because writing would erase what we
+  // know; no longer declared at all is a deliberate removal and is "reported, never refused". Its
+  // baseline entry is `[]`, so no finding is lost with it.
+  //
+  // The alternative — letting `capture-real-pages` tolerate a few failures — is the one thing not to do
+  // here. A threshold on acceptable failures is how a corpus shrinks silently, which is the defect that
+  // took the baseline from 85 pages to 81 and erased `events.bl.uk`'s known 2.4.3.
   { url: "https://www.gov.scot/publications/", role: "calibration",
     publishedClaim: "conformant",
     source: "Scottish Government: partially compliant with WCAG 2.2 AA; exceptions are PDF documents and a menu button at 200% zoom, neither a criterion we score (https://gov.scot/accessibility/)",
