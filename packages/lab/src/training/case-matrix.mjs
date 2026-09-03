@@ -1269,6 +1269,43 @@ function languageVariant(/** @type {any} */ { id, title, heading, lead, passage,
   });
 }
 
+/**
+ * 1.3.1 Info and Relationships — emphasis carried semantically, or only by looking bold.
+ *
+ * **The distinction no other channel here can make.** To the sweep, to the DOM census and to a sighted
+ * reviewer, `<strong>Do not</strong>` and `<span style="font-weight:bold">Do not</span>` are the same
+ * thing. Only a screen reader with `reportEmphasis` on separates them: it says "emphasised" for the first
+ * and nothing at all for the second, so the information the bold was carrying reaches a sighted reader
+ * and not a screen-reader user.
+ *
+ * **The setting lands WITH this case, not before it.** `reportEmphasis` defaults off, so without it both
+ * variants announce identically and the case is BLIND — which `check-signals` refuses, correctly. That is
+ * a correction to the order this project wrote down yesterday ("case, then rule, then setting"): where the
+ * SIGNAL depends on the setting, the case and the setting are one change.
+ *
+ * Both variants carry the SAME WORDS in the same place. Only the markup carrying the emphasis differs.
+ */
+function emphasisVariant(/** @type {any} */ { id, title, heading, lead, emphasised, tail, task }) {
+  const body = (/** @type {boolean} */ semantic) =>
+    "<p>" + lead + " "
+    + (semantic ? "<strong>" + emphasised + "</strong>"
+      : "<span style=\"font-weight:bold\">" + emphasised + "</span>")
+    + " " + tail + "</p>";
+  return pair({
+    id,
+    family: "semantic-emphasis",
+    criterion: "1.3.1",
+    subtype: "emphasis-visual-only",
+    task,
+    source: "WCAG 1.3.1 Understanding",
+    mutation: "The emphasis is carried by CSS weight alone, so it renders identically and is announced "
+      + "by nothing. A sighted reader is told this phrase matters; a screen-reader user is not.",
+    badSignal: { type: "emphasis-visual-only" },
+    good: page({ title, heading, body: body(true) }),
+    bad: page({ title, heading, body: body(false) }),
+  });
+}
+
 function statusVariant(/** @type {any} */ { id, title, heading, control, task }) {
   const body = "<button id=\"filter\" type=\"button\">" + control + "</button><p id=\"count\">Showing 8 items.</p><ul><li>First item</li><li>Second item</li></ul>";
   const goodBody = body.replace(
@@ -1636,6 +1673,35 @@ const expandedCases = [
       "Move to the firing slot field on the kiln bookings page."],
   ].map(([id, title, heading, field, changedTitle, task]) =>
     independent(contextChangeVariant({ id, title, heading, field, changedTitle, task, on: "focus" }))),
+  // 1.3.1 Info and Relationships — emphasis carried semantically, or only by looking bold.
+  //
+  // Five, and the emphasised phrases are deliberately ORDINARY words rather than a marker vocabulary.
+  // `corpus:starvation`'s word-sense monopoly is the trap: if only the failing pages said "important",
+  // a head would separate the pair on the word instead of on whether it was announced. Both variants
+  // carry the same words in the same place; only the markup around them differs.
+  ...[
+    ["emphasis-visual-only-dosage", "Medicine leaflet", "Medicine leaflet",
+      "Take one tablet with food.", "Do not exceed two in a day.",
+      "Speak to a pharmacist if symptoms continue.",
+      "Read the dosage advice on the medicine leaflet page."],
+    ["emphasis-visual-only-deadline", "Grant guidance", "Grant guidance",
+      "Applications open on the first of the month.", "The deadline cannot be extended.",
+      "Late submissions are returned unopened.",
+      "Read the deadline note on the grant guidance page."],
+    ["emphasis-visual-only-refund", "Booking terms", "Booking terms",
+      "Tickets may be exchanged once.", "Refunds are not available after travel.",
+      "Contact the office to arrange an exchange.",
+      "Read the refund term on the booking terms page."],
+    ["emphasis-visual-only-allergen", "Menu notes", "Menu notes",
+      "Dishes are prepared in a shared kitchen.", "This dish contains nuts.",
+      "Tell your server about any allergy.",
+      "Read the allergen note on the menu notes page."],
+    ["emphasis-visual-only-safety", "Site rules", "Site rules",
+      "Visitors sign in at the gate.", "Hard hats must be worn beyond this point.",
+      "The site manager can supply one.",
+      "Read the safety rule on the site rules page."],
+  ].map(([id, title, heading, lead, emphasised, tail, task]) =>
+    independent(emphasisVariant({ id, title, heading, lead, emphasised, tail, task }))),
   // 3.1.2 Language of Parts — observable at all only since `[speech] reportLanguage` went on.
   //
   // Five cases, five languages, so no single language name can become the feature. `corpus:starvation`'s
@@ -4540,11 +4606,29 @@ function languageIsUnannounced(/** @type {any} */ capture, /** @type {any} */ si
   // NO NAME, NO CLAIM. A signal that cannot say which language it expects would otherwise report every
   // page as failing, which is the "a check that examines nothing still passes" shape.
   if (name === "") return false;
-  const spoken = [
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return !spokenText(capture).some((line) => new RegExp(`\\b${escaped}\\b`, "i").test(line));
+}
+
+/**
+ * EVERYTHING NVDA SAID during a capture — the read-through and every sweep, as lines.
+ *
+ * Extracted when a SECOND predicate needed it, rather than copied. Two signals now ask "did NVDA ever say
+ * X?", and each answering it from its own idea of where speech lives is how the announcement grammar came
+ * to have seven partial regexes across three languages before `announcement.ts` replaced them.
+ *
+ * Both channels, deliberately. A sweep line is speech too: NVDA announced it, this project recorded it,
+ * and a signal reading only `transcript` would miss anything said while walking the page — which for an
+ * emphasis or a language change inside a heading or a link is exactly where it would be said.
+ *
+ * @param {any} capture
+ * @returns {string[]}
+ */
+function spokenText(capture) {
+  return [
     ...(capture?.transcript ?? []),
     ...Object.values(capture?.structure ?? {}).flatMap((v) => (Array.isArray(v) ? v : [])),
-  ].join(" \n ");
-  return !new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(spoken);
+  ].map((line) => String(line));
 }
 
 /**
@@ -5069,6 +5153,13 @@ const SIGNAL_PREDICATES = Object.freeze({
   "link-status-silent": (/** @type {any} */ capture) => linkStatusIsSilent(capture.interaction?.routeChange),
   "error-remedy-missing": (/** @type {any} */ capture, /** @type {any} */ signal) =>
     errorRemedyIsMissing(capture, signal),
+  // 1.3.1 — was the emphasis ANNOUNCED, or only rendered?
+  //
+  // Fires on silence, like the language signal and for the same reason: the BAD page's failure is that
+  // nothing is said. NVDA says "emphasised" (and "out of emphasised" on exit) when `reportEmphasis` is
+  // on and the text is semantically emphasised; CSS weight produces neither.
+  "emphasis-visual-only": (/** @type {any} */ capture) =>
+    !spokenText(capture).some((/** @type {string} */ line) => /\bemphasi[sz]ed\b/i.test(line)),
   // 3.1.2 — did NVDA ANNOUNCE the language, or only change voice?
   //
   // Reads the TRANSCRIPT, never the page source. The whole point of this case is that the markup is the

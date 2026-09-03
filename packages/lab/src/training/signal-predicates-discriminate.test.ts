@@ -65,6 +65,14 @@ const DISCRIMINATES: Record<string, { signal: object; fires: object; silent: obj
     fires: { structure: { formFields: ["edit"] } },
     silent: { structure: { formFields: ["Full name, edit"] } },
   },
+  "emphasis-visual-only": {
+    signal: { type: "emphasis-visual-only" },
+    // Fires on SILENCE. NVDA says "emphasised" only when the text is semantically emphasised AND
+    // `reportEmphasis` is on; CSS weight produces neither, and to every other channel here the two pages
+    // are identical — which is what makes this a screen-reader question rather than a DOM one.
+    fires: { transcript: ["Take one tablet with food. Do not exceed two in a day."] },
+    silent: { transcript: ["Take one tablet with food.", "emphasised", "Do not exceed two in a day."] },
+  },
   "language-unmarked": {
     signal: { type: "language-unmarked", language: "French" },
     // FIRES ON SILENCE, which is what makes 3.1.2 a screen-reader question at all. The passage is read
