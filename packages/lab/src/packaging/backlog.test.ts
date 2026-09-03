@@ -51,10 +51,21 @@ test("every record entry marked OPEN is on the backlog", () => {
   const backlog = normalise(read("docs/backlog.md"));
   const open = openHeadings();
 
-  // Mutation-safety: if the regex above stops matching, this test would pass having found no work to
-  // check. Both records carry at least one explicitly-open entry as of 2026-09-02.
-  assert.ok(open.length > 0,
-    "found no headings marked '— OPEN' in either record -- the heading format changed and this guard went blind");
+  // Mutation-safety, and it must not be `open.length > 0`. That was the first version and it FAILED on
+  // 2026-09-03 for the one reason it should not: §20 was closed, no `— OPEN` heading remained, and the
+  // guard reported the format as broken. Zero open entries is a legitimate state and a good one; a
+  // changed marker format is a broken reader. Asserting on the open COUNT collapses them, which is this
+  // repo's oldest defect -- "nothing found" and "we could not ask" reading the same -- inside the guard
+  // written to stop the backlog drifting.
+  //
+  // So the format is proved INDEPENDENTLY of how many entries are open: a record whose headings carry no
+  // state marker at all has changed shape, whatever the open count is.
+  const marked = RECORDS.flatMap((doc) =>
+    [...read(doc).matchAll(/^## .+$/gm)].map(([heading]) => heading))
+    .filter((heading) => /—\s*OPEN\s*$|\bCLOSED\b/.test(heading));
+  assert.ok(marked.length > 0,
+    "no heading in either record carries a state marker (`— OPEN` or `CLOSED`) -- the heading format "
+    + "changed and this guard went blind. This is about the FORMAT: zero OPEN entries would be fine.");
 
   const missing = open
     .filter(({ title }) => !backlog.includes(normalise(title)))
@@ -66,6 +77,38 @@ test("every record entry marked OPEN is on the backlog", () => {
     + "\n\nOpen work belongs on the backlog. The record holds the DETAIL and the lesson; the backlog is"
     + "\nthe one place that answers 'what is open'. Add a row linking to the entry rather than restating"
     + "\nit -- two copies of a status is the shape that drifts.");
+});
+
+test("a record must not say OPEN and CLOSED under one number", () => {
+  // The converse the comment at the top declines to enforce IN GENERAL, narrowed to the one shape that is
+  // mechanically decidable -- and it went wrong within two days of the backlog existing. §20 was closed on
+  // 2026-09-01 by adding a NEW `## 20. CLOSED ...` section above the old one, and the old one kept its
+  // `— OPEN` marker. So `not-working` asserted both states at once, the guard above dutifully required a
+  // backlog row for finished work, and the backlog carried it until 2026-09-03.
+  //
+  // That is this file's own subject one level in: "closed" spelled fourteen ways, now including "recorded
+  // as a sibling section rather than over the entry it closes". A `### The original entry` line above a
+  // `##` heading does not demote it -- the fix is to demote the heading, and this refuses the state that
+  // makes forgetting to possible.
+  const numbered = (doc: string) =>
+    [...read(doc).matchAll(/^## (\d+)\.\s*(.+)$/gm)].map(([, number, rest]) => ({ number, rest }));
+
+  const offenders = RECORDS.flatMap((doc) => {
+    const byNumber = new Map<string, string[]>();
+    for (const { number, rest } of numbered(doc)) {
+      byNumber.set(number, [...(byNumber.get(number) ?? []), rest]);
+    }
+    return [...byNumber.entries()]
+      .filter(([, headings]) =>
+        headings.some((h) => /—\s*OPEN\s*$/.test(h)) && headings.some((h) => /\bCLOSED\b/.test(h)))
+      .map(([number, headings]) => `${doc} §${number}:\n    ` + headings.join("\n    "));
+  });
+
+  assert.deepEqual(offenders, [],
+    "A record declares the same numbered entry both OPEN and CLOSED. Demote the superseded heading to a\n"
+    + "`###` subsection of the closure rather than leaving it beside it — while both stand, 'what is open'\n"
+    + "has two answers and the backlog will carry a row for work that is done:\n  "
+    + offenders.join("\n  "));
 });
 
 test("the backlog states an order, and says what the order is FOR", () => {
