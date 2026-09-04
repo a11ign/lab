@@ -78,6 +78,18 @@ const FORBIDDEN_INPUT_KEYS = ["url", "task", "html", "dom", "css", "axe", "diagn
  */
 export const MODEL_EXCLUDED_SUBTYPES = new Set([
   "1.3.1:missing-landmark", "4.1.2:missing-role", "3.3.2:placeholder-only",
+  // `3.1.2:language-unmarked` joined 2026-09-04, and the HELD-OUT SET is what established it.
+  //
+  // Same asymmetry as `placeholder-only` above, one criterion along: the corpus can express the property
+  // because it KNOWS what it wrote, and the screen reader cannot hear it. On the failing page NVDA reads
+  // French with an English voice and says nothing about it, so the evidence IS an absence — and a head
+  // detects a positive pattern in an announcement. There is nothing to detect.
+  //
+  // It fitted the corpus's 29 cases and then scored four held-out languages at 0.506, 0.513, 0.536 and
+  // 0.604 against a 0.979 cut. Every one of those pages differs from a training page only in being Dutch,
+  // Portuguese, Polish or Norwegian rather than French, German, Italian or Spanish — so what it learned
+  // was the four language NAMES.
+  "3.1.2:language-unmarked",
 ]);
 
 function readJson(/** @type {any} */ path) {
