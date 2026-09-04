@@ -311,6 +311,47 @@ function controlPair({ id, title, label, task }) {
   });
 }
 
+/**
+ * 3.1.2 Language of Parts — a passage in another language, marked in one variant and not the other.
+ *
+ * ADDED 2026-09-04, and the reason it was missing is worth more than the cases.
+ *
+ * This file is a SEPARATE hand-written list of subtypes from `case-matrix.mjs`, and nothing compared
+ * them. So the 29 language cases entered the corpus, a `3.1.2:language-unmarked` head was trained, and
+ * the held-out set had ZERO examples of it — the gate then refused a model it could not evaluate, twice,
+ * each time after a full capture-and-train. `acceptance-covers-the-corpus.test.ts` now answers that in
+ * milliseconds instead.
+ *
+ * DIFFERENT CONTENT FROM THE CORPUS, deliberately: these measure generalisation, so a passage reused from
+ * `case-matrix.mjs` would measure memorisation and report it as success. Different languages, different
+ * sentences, different page shells.
+ *
+ * BOTH VARIANTS CARRY THE SAME FOREIGN PASSAGE and only the `lang` differs — the pair discipline the
+ * corpus states: two pages differing by exactly the property under test, so nothing can separate them on
+ * anything else. An earlier corpus generation put the foreign text only on the failing page and taught
+ * the WORD rather than the defect.
+ *
+ * Observable only because `[speech] reportLanguage` is ON across the fleet. At NVDA's defaults a language
+ * change is a change of VOICE with no text, and a pipeline capturing speech as text is blind to it.
+ *
+ * @param {TitledPair & { lead: string, passage: string, lang: string, langName: string }} spec
+ */
+function languagePair({ id, title, lead, passage, lang, langName, task }) {
+  const body = (/** @type {boolean} */ marked) =>
+    "<p>" + lead + "</p><p" + (marked ? " lang=\"" + lang + "\"" : "") + ">" + passage + "</p>";
+  return pair({
+    id,
+    criterion: "3.1.2",
+    subtype: "language-unmarked",
+    task,
+    mutation: "The passage is in " + langName + " and carries no `lang`, so a screen reader reads it with "
+      + "the page's own language and announces no change.",
+    badSignal: { type: "language-unmarked", language: langName },
+    good: page({ title, heading: title, body: body(true) }),
+    bad: page({ title, heading: title, body: body(false) }),
+  });
+}
+
 /** @param {TitledPair & { control: string }} spec */
 function disclosurePair({ id, title, control, task }) {
   const body = "<button id=\"toggle\" type=\"button\" aria-expanded=\"false\" aria-controls=\"content\">" + control + "</button><div id=\"content\" hidden>More information.</div>";
@@ -438,6 +479,25 @@ export const ACCEPTANCE_CASES = Object.freeze([
   disclosurePair({ id: "disclosure-refunds", title: "Refund policy", control: "Refund policy", task: "Open the refund policy." }),
   disclosurePair({ id: "disclosure-lockers", title: "Locker hire", control: "Locker hire", task: "Open the locker hire details." }),
   disclosurePair({ id: "disclosure-cycling", title: "Cycle storage", control: "Cycle storage", task: "Open the cycle storage details." }),
+  // FOUR, not three. The gate wants three positives and a capture can fail, so a set sized exactly to the
+  // floor makes one transient fault look like a corpus gap -- which is the reading that cost two pipeline
+  // runs to correct.
+  languagePair({ id: "language-plaque", title: "Harbour plaque",
+    lead: "The plaque beside the steps carries a line from the harbour's founding charter:",
+    passage: "Wie op zee vaart, vertrouwt op de sterren en op elkaar.", lang: "nl", langName: "Dutch",
+    task: "Read the line quoted on the harbour plaque page." }),
+  languagePair({ id: "language-epitaph", title: "Churchyard survey",
+    lead: "The stone is transcribed in the survey exactly as cut:",
+    passage: "Aqui jaz quem viveu sem pressa e partiu sem medo.", lang: "pt", langName: "Portuguese",
+    task: "Read the transcription on the churchyard survey page." }),
+  languagePair({ id: "language-proverb", title: "Weaving notes",
+    lead: "The workshop keeps the proverb its founder taught:",
+    passage: "Kto rano wstaje, temu Pan Bog daje.", lang: "pl", langName: "Polish",
+    task: "Read the proverb printed on the weaving notes page." }),
+  languagePair({ id: "language-toast", title: "Guildhall dinner",
+    lead: "The toast is given in the original before the meal:",
+    passage: "Skal for vennskap som varer lenger enn kvelden.", lang: "no", langName: "Norwegian",
+    task: "Read the toast printed on the guildhall dinner page." }),
   statusPair({ id: "status-red", title: "Colour catalogue", control: "Show red items", task: "Show red items and notice the result count." }),
   statusPair({ id: "status-large", title: "Size catalogue", control: "Show large items", task: "Show large items and notice the result count." }),
   statusPair({ id: "status-new", title: "New items", control: "Show new items", task: "Show new items and notice the result count." }),
