@@ -720,6 +720,52 @@ function staleRouteTitlePair({ id, title, task }) {
   });
 }
 
+/**
+ * 1.4.13 Content on Hover or Focus — the DISMISSABLE bullet, on the trigger this tool can drive.
+ *
+ * The criterion covers "pointer hover OR KEYBOARD FOCUS" and asks, for the bullet this decides, that a
+ * mechanism exist to dismiss the additional content "WITHOUT MOVING pointer hover or keyboard focus".
+ * Both variants reveal a panel on focus and both obscure the content below it, so neither can take the
+ * exception for content that "does not obscure or replace other content" — otherwise the conformant page
+ * would pass for the wrong reason and the pair would measure the exception rather than the mechanism.
+ *
+ * The panel reveals a LINK because the census counts AX-tree nodes by role: new content has to arrive as a
+ * node, not as restyled text, or the count is unchanged and the case is blind.
+ *
+ * THE PANEL WORDING IS A PARAMETER, and every value differs from the corpus's. These pairs measure
+ * GENERALISATION: a passage reused from `case-matrix.mjs` would measure memorisation and report it as
+ * success, which is what the held-out gate's own refusal message warns about.
+ *
+ * @param {{ id: string, title: string, field: string, note: string, linkText: string, task: string }} spec
+ */
+function focusRevealPair({ id, title, field, note, linkText, task }) {
+  const body = "<form>"
+    + "<p><label for=\"first\">Contact name</label><input id=\"first\"></p>"
+    + "<p><label for=\"trigger\">" + field + "</label><input id=\"trigger\"></p>"
+    + "<div id=\"panel\" hidden><p>" + note + "</p>"
+    + "<a href=\"/help\">" + linkText + "</a></div>"
+    + "<p><label for=\"last\">Daytime telephone</label><input id=\"last\"></p>"
+    + "</form>";
+  const reveal = "var p=document.getElementById('panel');"
+    + "document.getElementById('trigger').addEventListener('focus', function(){ p.hidden = false; });";
+  const dismiss = "document.addEventListener('keydown', function(e){"
+    + "  if (e.key === 'Escape') { p.hidden = true; }"
+    + "});";
+  return pair({
+    id,
+    criterion: "1.4.13",
+    subtype: "focus-panel-undismissable",
+    task,
+    mutation: "Focusing the field opens a panel over the content below, and Escape does not close it.",
+    badSignal: { type: "focus-panel-undismissable" },
+    good: page({ title, heading: title, body, script: reveal + dismiss }),
+    bad: page({ title, heading: title, body, script: reveal }),
+    probeFocus: true,
+    probeFocusReveal: true,
+    probeOrder: "focus-first",
+  });
+}
+
 export const ACCEPTANCE_CASES = Object.freeze([
   imagePair({ id: "generic-lantern", title: "Lantern collection", description: "The collection includes hand-painted lanterns.", file: "lantern.jpg", goodAlt: "Hand-painted lantern beside a window", badAlt: "image", subtype: "generic-alt", task: "Understand what the lantern image shows." }),
   imagePair({ id: "generic-rain", title: "Rain garden", description: "The rain garden collects water from the roof.", file: "rain-garden.jpg", goodAlt: "Rain garden beside the visitor centre", badAlt: "photo", subtype: "generic-alt", task: "Understand what the rain garden looks like." }),
@@ -836,6 +882,9 @@ export const ACCEPTANCE_CASES = Object.freeze([
   focusTrapPair({ id: "field-will-not-release-focus", title: "Membership form", task: "Move through the membership form and out the other side with the keyboard." }),
   inertSkipLinkPair({ id: "skip-link-target-hidden", title: "Local collection", task: "Use the skip link to reach the main content." }),
   staleRouteTitlePair({ id: "route-changes-title-does-not", title: "Civic Office", task: "Open the Permits view and confirm where you are." }),
+  focusRevealPair({ id: "focus-panel-stuck", title: "Permit application", field: "Permit reference", note: "Your reference appears on the top right of the letter we sent you.", linkText: "Where to find your reference", task: "Focus the permit reference and try to dismiss the panel it opens." }),
+  focusRevealPair({ id: "focus-panel-stuck-grant", title: "Grant claim", field: "Claim number", note: "Claim numbers begin with two letters and are eight characters long.", linkText: "What a claim number looks like", task: "Focus the claim number and try to dismiss the panel it opens." }),
+  focusRevealPair({ id: "focus-panel-stuck-tenancy", title: "Tenancy check", field: "Tenancy code", note: "The code is printed beneath the barcode on your rent statement.", linkText: "Locating your tenancy code", task: "Focus the tenancy code and try to dismiss the panel it opens." }),
 ]);
 
 /**

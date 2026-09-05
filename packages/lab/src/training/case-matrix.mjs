@@ -4552,18 +4552,26 @@ cases.push(
 // on both variants, `check-signals` reports CONTAMINATED, and the case is withdrawn with the measurement
 // recorded -- as `reportEmphasis` was (§33). Both outcomes are informative and the shape is right either
 // way, which is what the xml:lang version could not claim.
+// THE LEAD MUST NEVER NAME THE LANGUAGE, and the first version of these three did — which is exactly what
+// made them BLIND at the gate. `language-unmarked` fires when the language name is ABSENT from the
+// transcript, so a lead reading "reproduced in the original French" puts "French" there on BOTH variants
+// and the signal cannot fire on either. Measured 2026-09-05: 3 blind, and they were these three.
+//
+// Every existing case in this family already avoided it — "the dedication reads:", "the city motto appears
+// above the door:", "the method is given in the original:" — and the convention was nowhere written down,
+// so it was not inherited. It is now.
 cases.push(
   ...[
     ["language-marked-silent-museum", "Gallery notes", "Gallery notes",
-      "The following note from the curator is reproduced in the original French.",
+      "The following note from the curator is reproduced as it was written:",
       "La salle principale abrite une collection de peintures du dix-neuvieme siecle.",
       "fr", "French", "Read the curator's note and notice which language it is in."],
     ["language-marked-silent-recipe", "Regional cooking", "Regional cooking",
-      "The method below is quoted from the original German edition.",
+      "The method below is quoted from the first edition:",
       "Den Teig eine Stunde ruhen lassen und danach vorsichtig ausrollen.",
       "de", "German", "Read the quoted method and notice which language it is in."],
     ["language-marked-silent-poem", "Anthology notes", "Anthology notes",
-      "The stanza below is printed in the original Spanish.",
+      "The stanza below is printed as it was first set:",
       "La ciudad duerme bajo una luna clara y el rio sigue su camino.",
       "es", "Spanish", "Read the stanza and notice which language it is in."],
   ].map(([id, title, heading, lead, passage, lang, langName, task]) => pair({
@@ -4658,6 +4666,69 @@ cases.push(
       badSignal: { type: "control-unreachable-by-keyboard" },
       probeFocus: true,
       probeForms: true,
+      probeOrder: "focus-first",
+    });
+  }),
+);
+
+// 1.4.13 Content on Hover or Focus — the DISMISSABLE bullet, on the trigger this tool can actually drive.
+//
+// The criterion covers "pointer hover OR KEYBOARD FOCUS", and it was recorded `out-of-scope` until
+// 2026-09-05 on the reasoning "the screen-reader path never hovers" — true of the hover trigger and of the
+// Hoverable bullet, and it settles neither of the other two. We drive keyboard focus.
+//
+// Dismissable, verbatim: "a mechanism is available to dismiss the additional content WITHOUT MOVING
+// pointer hover or keyboard focus, unless the additional content communicates an input error or does not
+// obscure or replace other content". BOTH variants reveal a panel on focus and BOTH obscure the content
+// after it — the exception is deliberately not available to either, or the conformant page would pass for
+// the wrong reason and the pair would be measuring the exception rather than the mechanism.
+//
+// The ONLY difference is whether Escape closes it. That is the mechanism the criterion names, and it is
+// what `probeFocusReveal` presses — twice, because NVDA consumes the first to leave focus mode.
+//
+// FOCUS MUST NOT MOVE on Escape, in either variant. A page whose Escape navigates has not shown the
+// mechanism at all, and `focusRevealVerdict` reports `focusHeld` separately so a rule can tell "Escape did
+// nothing" from "Escape worked by leaving". The conformant page therefore closes the panel and keeps
+// focus on the trigger.
+cases.push(
+  ...[
+    ["focus-panel-undismissable-help", "Account settings", "Account settings", "Security question",
+      "Focus the security question and try to dismiss the help panel it opens."],
+    ["focus-panel-undismissable-fee", "Booking summary", "Booking summary", "Booking reference",
+      "Focus the booking reference and try to dismiss the fee panel it opens."],
+    ["focus-panel-undismissable-terms", "Membership form", "Membership form", "Membership number",
+      "Focus the membership number and try to dismiss the terms panel it opens."],
+  ].map(([id, title, heading, field, task]) => {
+    const body = "<form>"
+      + "<p><label for=\"first\">Contact name</label><input id=\"first\"></p>"
+      + "<p><label for=\"trigger\">" + field + "</label><input id=\"trigger\"></p>"
+      + "<div id=\"panel\" hidden><p>Additional guidance for this field.</p>"
+      + "<a href=\"/help\">Read the full guidance</a></div>"
+      + "<p><label for=\"last\">Daytime telephone</label><input id=\"last\"></p>"
+      + "</form>";
+    // Revealing a LINK is what the census can see: it counts AX-tree nodes by role, so new content has to
+    // arrive as a node rather than as restyled text. A paragraph alone would leave every count unchanged
+    // and the case would read `revealed: false` — blind, which `check-signals` refuses.
+    const reveal = "var p=document.getElementById('panel');"
+      + "document.getElementById('trigger').addEventListener('focus', function(){ p.hidden = false; });";
+    const dismiss = "document.addEventListener('keydown', function(e){"
+      + "  if (e.key === 'Escape') { p.hidden = true; }"
+      + "});";
+    return pair({
+      id,
+      family: "focus-reveal",
+      criterion: "1.4.13",
+      subtype: "focus-panel-undismissable",
+      task,
+      source: "WCAG 1.4.13 Understanding",
+      mutation: "Focusing the field opens a panel over the content below it, and Escape does not close "
+        + "it. The panel is reachable and announced, so nothing is missing from the accessibility tree — "
+        + "what is missing is the mechanism to get rid of it without moving on.",
+      badSignal: { type: "focus-panel-undismissable" },
+      good: page({ title, heading, body, script: reveal + dismiss }),
+      bad: page({ title, heading, body, script: reveal }),
+      probeFocus: true,
+      probeFocusReveal: true,
       probeOrder: "focus-first",
     });
   }),
@@ -5455,7 +5526,28 @@ function focusIsTrapped(/** @type {any} */ capture) {
  * than a crash inside a corpus run, and one that says which case is affected.
  */
 /** @type {Record<string, any>} */
+/**
+ * 1.4.13 — content appeared on focus and Escape did not remove it, with focus never moving.
+ *
+ * Reads `interaction.focusReveal`, which `focusRevealVerdict` produced on the worker. The verdict is
+ * computed there rather than here on purpose: three censuses and two focus reads are the probe's business,
+ * and a signal that re-derived them would be a second copy of the same judgement.
+ *
+ * ABSENT means the probe never ran and the signal makes NO claim -- `asked: false` and a missing field are
+ * both "nobody looked", which is not the same as "nothing appeared". `revealed: null` is the third state,
+ * a census that did not answer, and it is equally not a finding.
+ */
+function focusPanelUndismissable(/** @type {any} */ capture) {
+  const v = capture.interaction?.focusReveal;
+  if (!v || v.revealed !== true) return false;
+  // FOCUS MUST HAVE HELD. If Escape moved focus, the page did not demonstrate the mechanism the criterion
+  // names -- "dismiss ... WITHOUT MOVING pointer hover or keyboard focus" -- and calling that a failure
+  // would accuse a page for the wrong reason.
+  return v.focusHeld === true && v.dismissed === false;
+}
+
 const SIGNAL_PREDICATES = Object.freeze({
+  "focus-panel-undismissable": (/** @type {any} */ capture) => focusPanelUndismissable(capture),
   "unnamed-form-field": (/** @type {any} */ capture) => hasUnnamedFormField(capture),
   regex: (/** @type {any} */ capture, /** @type {any} */ signal) => regexMatches(capture, signal),
   "structure-empty": (/** @type {any} */ capture, /** @type {any} */ signal) => structureIsEmpty(capture, signal),
@@ -5512,7 +5604,12 @@ const SIGNAL_PREDICATES = Object.freeze({
 export const SIGNAL_TYPES = Object.freeze(Object.keys(SIGNAL_PREDICATES));
 
 export function signalMatches(/** @type {any} */ capture, /** @type {any} */ signal) {
-  return SIGNAL_PREDICATES[signal?.type]?.(capture, signal) ?? false;
+  // TYPED AS A LOOKUP AND COERCED TO BOOLEAN. The frozen literal gives `SIGNAL_PREDICATES` an exact
+  // key type, so indexing it with a runtime string is an implicit `any` -- and several predicates
+  // return a truthy value rather than a boolean, which would leak out of a function every caller
+  // treats as a yes/no.
+  const predicates = /** @type {Record<string, (c: any, s: any) => unknown>} */ (SIGNAL_PREDICATES);
+  return Boolean(predicates[signal?.type]?.(capture, signal));
 }
 
 // `evidenceUnits` and `captureEvidenceText` MOVED to `@a11y-witness/scorer/evidence-units`.

@@ -224,6 +224,7 @@ function captureOptions(/** @type {any} */ testCase) {
     ...(testCase.probeOrder ? { probeOrder: testCase.probeOrder } : {}),
     // Same omit-when-absent rule and the same cache-key reason: present only for the cases that ask.
     ...(testCase.probeDialog ? { probeDialog: true } : {}),
+    ...(testCase.probeFocusReveal ? { probeFocusReveal: true } : {}),
     ...(testCase.probeArrows ? { probeArrows: true } : {}),
     ...(testCase.probeTyping ? { probeTyping: true } : {}),
     ...(testCase.probeFocusContext ? { probeFocusContext: true } : {}),

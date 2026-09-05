@@ -229,3 +229,25 @@ test("every acceptance subtype exists in the corpus, so none measures a head tha
   assert.deepEqual(orphans, [],
     `acceptance pairs exist for subtypes the corpus never produces: ${orphans.join(", ")}`);
 });
+
+test("no `language-unmarked` case names its own language in the page text", () => {
+  // THE DEFECT THAT MADE THREE NEW CASES BLIND, 2026-09-05. The predicate fires when the language name is
+  // ABSENT from the transcript — that is what "the passage was not announced" means. So a page that says
+  // "reproduced in the original French" anywhere puts "French" in the transcript on BOTH variants, and the
+  // signal cannot fire on either. `check-signals` reported exactly 3 blind and they were these three.
+  //
+  // Every case written before them already avoided it — "the dedication reads:", "the city motto appears
+  // above the door:" — so the convention existed and was recorded NOWHERE, which is why it was not
+  // inherited. A rule that lives only in the shape of existing examples is one the next author breaks.
+  type LanguageCase = { id: string; good: string; bad: string; badSignal?: { type?: string; language?: string } };
+  const affected = (CASES as unknown as LanguageCase[])
+    .filter((c) => c.badSignal?.type === "language-unmarked");
+  assert.ok(affected.length > 0, "no language-unmarked cases found; this test would assert nothing");
+
+  const offenders = affected
+    .filter((c) => new RegExp(`\\b${c.badSignal?.language}\\b`, "i").test(String(c.good) + String(c.bad)))
+    .map((c) => `${c.id} (${c.badSignal?.language})`);
+  assert.deepEqual(offenders, [],
+    `these pages name their own language, so "the language was not announced" can never be true of them `
+    + `and the case is BLIND: ${offenders.join(", ")}`);
+});

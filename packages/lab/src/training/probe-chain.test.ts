@@ -23,6 +23,10 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { CASES, pair } from "./case-matrix.mjs";
+// NAMED `WORKER_ACCEPTED_FLAGS`, because this file already has a `PROBE_FLAGS` meaning the opposite
+// thing: flags the CASES use. The worker's list and the corpus's list are the two halves this suite
+// exists to compare, and giving them one name is how they would stop being compared.
+import { PROBE_FLAGS as WORKER_ACCEPTED_FLAGS } from "@a11y-witness/nvda-worker/capture-pure";
 import { pair as acceptancePair } from "./acceptance-matrix.mjs";
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
@@ -57,11 +61,15 @@ test("some case asks for each probe flag, or this suite proves nothing", () => {
  * So this list runs the other way: the worker defines what is supported, and everything supported must be
  * REACHABLE. A capability nothing can ask for is the same defect as a flag nothing forwards.
  */
-const WORKER_PROBE_OPTIONS = [...new Set(
-  [...read("packages/nvda-worker/src/server.mjs")
-    .slice(read("packages/nvda-worker/src/server.mjs").indexOf("function captureOptions("))
-    .matchAll(/^\s{4}(probe[A-Za-z]+):/gm)].map((m) => m[1]),
-)].sort();
+// READ AS A VALUE, NOT SCRAPED. This regexed `server.mjs` for `^    probeX:` lines inside
+// `captureOptions`, and on 2026-09-05 extracting those flags into a list — to get that function back under
+// the complexity gate — reduced the scan to ONE match. The suite caught it, and its own message named the
+// diagnosis: "the scan is broken, not the code clean". A test that derives its expectations from source
+// TEXT is this repo's anti-pattern and it was one here; the export cannot be defeated by a refactor.
+//
+// `probeOrder` is deliberately absent: it is a NAME ("focus-first"), not a boolean, so it is not in
+// `PROBE_FLAGS` and is asserted separately below.
+const WORKER_PROBE_OPTIONS = [...new Set([...WORKER_ACCEPTED_FLAGS, "probeOrder"])].sort();
 
 /**
  * Probe options the worker accepts that a CASE deliberately may not ask for, each with the reason.
@@ -113,11 +121,16 @@ test("the WORKER accepts every probe flag at the request boundary", () => {
   // The hop that dropped `probeNavigation`. It is a whitelist on purpose — an unknown field must be ignored
   // rather than obeyed, which is what lets an older worker take a newer host's request and not do the new
   // thing. That deliberate choice is exactly why it needs a test: the safe default is silence.
-  const server = read("packages/nvda-worker/src/server.mjs");
-  for (const flag of PROBE_FLAGS) {
-    assert.ok(new RegExp(`${flag}:\\s*parsed\\.${flag}`).test(server),
-      `${flag} is dropped at the request boundary: server.mjs captureOptions does not read parsed.${flag}`);
-  }
+  // ASSERTED AGAINST THE WORKER'S OWN LIST, not by regexing its source. This scanned `server.mjs` for
+  // `probeX: parsed.probeX` and broke the moment those reads were folded into one `PROBE_FLAGS.map(...)`
+  // — the boundary got MORE reliable and the test read it as a regression. The property that matters is
+  // that every flag a case uses is one the boundary accepts, and both sides are values.
+  const accepted = new Set<string>(WORKER_ACCEPTED_FLAGS as readonly string[]);
+  const missing = (PROBE_FLAGS as readonly string[])
+    .filter((flag) => !accepted.has(flag) && flag !== "probeOrder");
+  assert.deepEqual(missing, [],
+    `these flags are declared on cases and the worker's request boundary does not accept them, so they are `
+    + `dropped between the manifest and the capture: ${missing.join(", ")}`);
 });
 
 test("the capture itself reads every probe flag", () => {

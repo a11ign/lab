@@ -49,6 +49,16 @@ import REAL_EVIDENCE from "./fixtures/signal-evidence.json" with { type: "json" 
  * wrong reason, which is how a proof comes to vouch for something it never exercised.
  */
 const DISCRIMINATES: Record<string, { signal: object; fires: object; silent: object }> = {
+  // 1.4.13's Dismissable bullet. The verdict is computed on the WORKER by `focusRevealVerdict`, so the
+  // fixture is that verdict rather than a page: content appeared on focus, focus never moved, and Escape
+  // did not remove it. `focusHeld` is what separates the failure from a page whose Escape merely navigated
+  // away -- the criterion asks for a mechanism to dismiss "WITHOUT MOVING pointer hover or keyboard
+  // focus", so a dismissal that moves focus has not demonstrated one.
+  "focus-panel-undismissable": {
+    signal: { type: "focus-panel-undismissable" },
+    fires: { interaction: { focusReveal: { asked: true, revealed: true, focusHeld: true, dismissed: false } } },
+    silent: { interaction: { focusReveal: { asked: true, revealed: true, focusHeld: true, dismissed: true } } },
+  },
   regex: {
     signal: { type: "regex", pattern: "click here" },
     fires: { transcript: ["Click here, link"] },
