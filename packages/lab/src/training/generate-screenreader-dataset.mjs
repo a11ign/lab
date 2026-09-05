@@ -45,6 +45,12 @@ function buildManifest() {
       // without a word. It vanished twice while three case definitions declared it.
       alsoFails: testCase.alsoFails ?? [],
       subtype: testCase.subtype,
+      // Read by `check-signals.mjs`, which runs from the MANIFEST rather than `CASES` — the same reason
+      // every other field here is hand-copied and the same trap: an entry missing from this list arrives
+      // as `undefined` downstream regardless of what the case declares. Kept `null` rather than omitted
+      // when unset, so a stale manifest predating this field reads as "not provisional" rather than as a
+      // dropped one — `provisional-cases.test.ts` checks the round trip.
+      provisional: testCase.provisional ?? null,
       task: testCase.task,
       // Every `probe*` flag, forwarded by NAME rather than enumerated, because enumerating them is how this
       // exact defect happened three times in one feature. `probeFocus` was added to `pair()` and to the

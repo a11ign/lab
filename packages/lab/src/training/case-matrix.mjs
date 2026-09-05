@@ -257,6 +257,10 @@ export function pair({
   // three case definitions carried it. A constructor that enumerates its fields must be updated
   // with them.
   alsoFails = [],
+  // A case that CANNOT have discriminated yet: you cannot validate a signal without capturing it. A REASON
+  // string, not a bare `true` (`PENDING_CAPTURE`'s discipline, `evidence-fields.test.ts`) -- see
+  // `provisional-cases.test.ts` for how `check-signals.mjs` reads it, and why it is self-retiring.
+  provisional = null,
   // Everything not named above. Only `probe*` keys are forwarded from it — see below.
   ...rest
 }) {
@@ -265,6 +269,7 @@ export function pair({
     family,
     criterion,
     alsoFails,
+    provisional,
     subtype: subtype || defaultSubtype({ id, criterion, badSignal }),
     task,
     source,
