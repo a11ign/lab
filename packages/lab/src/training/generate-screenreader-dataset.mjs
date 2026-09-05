@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 import { relative, resolve } from "node:path";
 import { CASES } from "./case-matrix.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { datasetRoot } from "../dataset-paths.mjs";
 
 /**
  * takes no flags: it regenerates every page from the case definitions.
@@ -12,7 +13,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  */
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run training:generate" });
 
-const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
+const ROOT = datasetRoot();
 const PAGE_ROOT = resolve(ROOT, "pages");
 
 /**

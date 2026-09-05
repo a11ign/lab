@@ -26,6 +26,7 @@ import { CASES, signalMatches } from "./case-matrix.mjs";
 import { hasUsableCaptureFiles } from "./capture-resume.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { readCapture as readCaptureFile } from "../capture/evidence-diff.mjs";
+import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
 
 /**
  * a mistyped `--require-complete` scores whatever happens to be on disk and passes — a check that
@@ -37,9 +38,9 @@ import { readCapture as readCaptureFile } from "../capture/evidence-diff.mjs";
 refuseUnknownFlags(["--only=", "--require-complete"],
   { entry: import.meta.url, command: "npm run training:check-signals" });
 
-const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
+const ROOT = datasetRoot();
 const MANIFEST_PATH = resolve(ROOT, "manifest.json");
-const CAPTURE_ROOT = resolve(ROOT, process.env.DATASET_CAPTURE_ROOT || "captures");
+const CAPTURE_ROOT = captureRoot(ROOT);
 const PAGE_ROOT = resolve(ROOT, "pages");
 const REQUIRE_COMPLETE = process.argv.includes("--require-complete");
 const ONLY = process.argv.find((a) => a.startsWith("--only="))?.slice("--only=".length);

@@ -24,6 +24,8 @@ import { leasePageServer } from "./page-server.mjs";
 import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
+import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { captureFilePath, rejectedCaptureFilePath } from "../capture/evidence-diff.mjs";
 
 /**
  * a typo here costs a full corpus run: `--resmue` silently means a fresh capture of 1,061 pairs.
@@ -34,9 +36,9 @@ import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
 refuseUnknownFlags(["--only=", "--resume", "--no-cache", "--allow-stale-workers", "--allow-battery"],
   { entry: import.meta.url, command: "npm run training:capture" });
 
-const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
+const ROOT = datasetRoot();
 const MANIFEST_PATH = resolve(ROOT, "manifest.json");
-const CAPTURE_ROOT = resolve(ROOT, process.env.DATASET_CAPTURE_ROOT || "captures");
+const CAPTURE_ROOT = captureRoot(ROOT);
 const PAGE_ROOT = resolve(ROOT, "pages");
 const REJECTED_ROOT = resolve(CAPTURE_ROOT, "rejected");
 const DEFAULT_BASE_URL = "http://localhost:5050";
@@ -242,7 +244,7 @@ function captureOptions(/** @type {any} */ testCase) {
 function writeCapture(/** @type {any} */ testCase, /** @type {any} */ variant, /** @type {any} */ capture, /** @type {any} */ provenance) {
   mkdirSync(CAPTURE_ROOT, { recursive: true });
   if (provenance) capture = stampProvenance(capture, provenance);
-  const path = resolve(CAPTURE_ROOT, testCase.id + "." + variant + ".json");
+  const path = captureFilePath(CAPTURE_ROOT, testCase.id, variant);
   writeFileSync(path, JSON.stringify(capture, null, 2) + "\n", "utf8");
   return path;
 }
@@ -395,7 +397,7 @@ async function captureTolerantly(/** @type {any} */ ctx, /** @type {any} */ test
 
 function writeRejected(/** @type {any} */ testCase, /** @type {any} */ variant, /** @type {any} */ capture, /** @type {any} */ attempt) {
   mkdirSync(REJECTED_ROOT, { recursive: true });
-  const path = resolve(REJECTED_ROOT, testCase.id + "." + variant + ".attempt" + attempt + ".json");
+  const path = rejectedCaptureFilePath(REJECTED_ROOT, testCase.id, variant, attempt);
   writeFileSync(path, JSON.stringify(capture, null, 2) + "\n", "utf8");
   return path;
 }

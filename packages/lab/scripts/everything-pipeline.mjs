@@ -23,10 +23,11 @@
  */
 import { rmSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import { pipeline, run, keepingTranscript } from "./retrain-pipeline.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
 
 // This chain is hours long and unattended. A mistyped `--dry-run` would run the REAL thing.
 refuseUnknownFlags(["--dry-run"], { entry: import.meta.url, command: "npm run lab:everything" });
@@ -106,10 +107,10 @@ const STEPS = [
 
 export { STEPS };
 
-const REPO = fileURLToPath(new URL("../../../", import.meta.url));
+const REPO = REPO_ROOT;
 
 /** Where the FULL output of every stage lands, whatever the runner chooses to print. */
-export const TRANSCRIPT = resolve(REPO, "runs", "everything-transcript.log");
+export const TRANSCRIPT = resolve(runsRoot(), "everything-transcript.log");
 
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

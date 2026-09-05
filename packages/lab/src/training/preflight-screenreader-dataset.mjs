@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { CASES, SIGNAL_TYPES } from "./case-matrix.mjs";
 import { ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { datasetRoot } from "../dataset-paths.mjs";
 
 /**
  * takes no flags: it checks every case is ready for capture.
@@ -13,7 +14,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  */
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run training:preflight" });
 
-const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
+const ROOT = datasetRoot();
 const EXPECTED_CASES = process.env.DATASET_KIND === "acceptance" ? ACCEPTANCE_CASES : CASES;
 const MANIFEST_PATH = resolve(ROOT, "manifest.json");
 const REPORT_PATH = resolve(ROOT, "preflight.json");

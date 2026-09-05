@@ -18,9 +18,9 @@
 //   3  wedged, gave up waiting       -> the worker stopped updating
 import { watch } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { resolve } from "node:path";
 import { isStale, readProgress, tally } from "./capture-progress.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { datasetRoot } from "../dataset-paths.mjs";
 
 /**
  * its EXIT CODE is the contract — 0 clean, 1 failures, 2 no run, 3 wedged — so a caller reading it has
@@ -30,7 +30,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  */
 refuseUnknownFlags(["--json"], { entry: import.meta.url, command: "npm run training:wait" });
 
-const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
+const ROOT = datasetRoot();
 const JSON_OUT = process.argv.includes("--json");
 
 // A backstop, not the mechanism. fs.watch is the thing that wakes us; this only guards

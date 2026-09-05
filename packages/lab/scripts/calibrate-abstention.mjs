@@ -34,7 +34,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import { annotateCapture } from "@a11y-witness/evidence";
 import { sweepOutcomes, truncatedSweeps } from "@a11y-witness/evidence/conformance";
@@ -45,6 +45,7 @@ import { oracleCounts } from "@a11y-witness/evidence/verify";
 
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { REPO_ROOT, realCorpusRoot, runsRoot } from "../src/dataset-paths.mjs";
 
 /**
  * takes NO flags — it is configured entirely by environment, so any flag passed to it today is
@@ -59,10 +60,10 @@ refuseUnknownFlags([], { entry: import.meta.url, command: "npm run lab:job -- -e
 // right only when you happen to run from the repo root, and `spawned-paths.test.ts` fails the build for
 // it — because `gate:stability` once spawned a moved script and died with "Command failed" and nothing
 // to read.
-const REPO = fileURLToPath(new URL("../../../", import.meta.url));
-const ROOT = resolve(REPO, process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
+const REPO = REPO_ROOT;
+const ROOT = realCorpusRoot();
 /** Where this script's own OUTPUT goes. Separate from `ROOT`, which is its input. */
-const OUT_DIR = resolve(REPO, process.env.ABSTENTION_OUT || "runs/abstention");
+const OUT_DIR = resolve(REPO_ROOT, process.env.ABSTENTION_OUT || resolve(runsRoot(), "abstention"));
 const PYTHON = process.env.A11Y_PYTHON || resolve(REPO, ".venv/bin/python");
 const SCORER = resolve(REPO, "packages/scorer/python/score.py");
 /**

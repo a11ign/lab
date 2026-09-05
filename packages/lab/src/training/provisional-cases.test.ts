@@ -41,6 +41,8 @@ import { resolve } from "node:path";
 
 import { CASES, pair } from "./case-matrix.mjs";
 import { checkCase, effectiveVerdict, signalVerdict } from "./check-signals.mjs";
+import { datasetRoot, captureRoot as buildCaptureRoot } from "../dataset-paths.mjs";
+import { captureFilePath } from "../capture/evidence-diff.mjs";
 
 /**
  * How many cases may be provisional AT ONCE.
@@ -157,8 +159,7 @@ test("a provisional case whose signal now discriminates must have the flag remov
   const provisional = provisionalCases();
   if (!provisional.length) return; // nothing to check, and that is a fine state for this test to see
 
-  const captureRoot = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset",
-    process.env.DATASET_CAPTURE_ROOT || "captures");
+  const captureRoot = buildCaptureRoot(datasetRoot());
   if (!existsSync(captureRoot)) {
     console.log(`  SKIPPED: no captures at ${captureRoot} (runs/ is gitignored; local-only gate)`);
     return;
@@ -167,8 +168,8 @@ test("a provisional case whose signal now discriminates must have the flag remov
   const stillProvisional: string[] = [];
   const checked: string[] = [];
   for (const testCase of provisional) {
-    const good = resolve(captureRoot, `${testCase.id}.good.json`);
-    const bad = resolve(captureRoot, `${testCase.id}.bad.json`);
+    const good = captureFilePath(captureRoot, testCase.id as string, "good");
+    const bad = captureFilePath(captureRoot, testCase.id as string, "bad");
     if (!existsSync(good) || !existsSync(bad)) continue; // not captured here yet -- a different question
     const verdict = checkCase(testCase as never).verdict;
     checked.push(`${testCase.id}: ${verdict}`);
@@ -186,8 +187,7 @@ test("the JSON manifest, once generated, carries provisional through the round t
   // check-signals.mjs runs from the MANIFEST, not from CASES directly — the same trap
   // manifest-probes.test.ts exists for. Proven against the real file when one exists, skipped honestly
   // otherwise, because a stale manifest predating this field is a fact about the copy, not about the code.
-  const manifestPath = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset",
-    "manifest.json");
+  const manifestPath = resolve(datasetRoot(), "manifest.json");
   if (!existsSync(manifestPath)) {
     console.log(`  SKIPPED: no manifest at ${manifestPath} — run \`npm run training:generate\` to cover this`);
     return;

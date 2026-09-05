@@ -43,6 +43,7 @@ import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
 import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { assertWorkerUrl } from "../../worker-fleet/src/worker-http.mjs";
+import { datasetRoot } from "../src/dataset-paths.mjs";
 
 /**
  * the canaries that must pass before a corpus run. `--probe-forms`, `--task` and `--url` appear in
@@ -73,7 +74,7 @@ const TIMES = Number(arg("times", "5"));
  * Both leases put things back as they found them — a worker somebody had already started is left
  * running, and a page server somebody else is serving is left alone.
  */
-const DATASET_ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
+const DATASET_ROOT = datasetRoot();
 const PAGES_PORT = Number(process.env.DATASET_PAGES_PORT || 5050);
 
 /**

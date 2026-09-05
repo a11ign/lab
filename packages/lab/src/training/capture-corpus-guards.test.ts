@@ -1,16 +1,17 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
 import { hashPageDir } from "./capture-cache.mjs";
+import { REPO_ROOT } from "../dataset-paths.mjs";
+import { captureFilePath } from "../capture/evidence-diff.mjs";
 
 // The repo root, resolved from THIS FILE rather than from the cwd. It was `process.cwd()`, which is the repo
 // root for `npm test` and nothing else — and it broke outright when M8 moved this file into a package, because
 // the programs it spawns are now four levels away rather than two.
-const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+const ROOT = REPO_ROOT;
 const CHECK_SIGNALS = resolve(ROOT, "packages/lab/src/training/check-signals.mjs");
 const EXPORT = resolve(ROOT, "packages/lab/src/training/export-screenreader-dataset.mjs");
 
@@ -24,7 +25,7 @@ function createCorpus(stale: boolean) {
   writeFileSync(resolve(pageDir, "bad.html"), "<main>bad</main>\n");
   const pageHash = stale ? "stale-page-hash" : hashPageDir(pageDir);
   for (const variant of ["good", "bad"]) {
-    writeFileSync(resolve(captureDir, `case-1.${variant}.json`), JSON.stringify({
+    writeFileSync(captureFilePath(captureDir, "case-1", variant), JSON.stringify({
       screenReader: "NVDA",
       transcript: [variant],
       provenance: { pageHash },

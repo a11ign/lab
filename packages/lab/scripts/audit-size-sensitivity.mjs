@@ -48,11 +48,12 @@
  */
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { resolve, join } from "node:path";
 
 import { annotateCapture } from "@a11y-witness/evidence";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { REPO_ROOT, datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
 
 /**
  * `--evaluating` and `--stdin` appear in this file because it PASSES them to the Python scorer.
@@ -61,8 +62,11 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  */
 refuseUnknownFlags(["--model="], { entry: import.meta.url, command: "npm run scorer:size-sensitivity" });
 
-const REPO = fileURLToPath(new URL("../../../", import.meta.url));
-const CAPTURES = resolve(REPO, process.env.CAPTURE_ROOT || "runs/screenreader-dataset/captures");
+const REPO = REPO_ROOT;
+// `CAPTURE_ROOT` used to be its own env-var name for this, honoured only here and in
+// `audit-rule-coverage.ts` -- a second spelling of `DATASET_CAPTURE_ROOT`/`DATASET_ROOT` for the same
+// concept. Both now compose through the shared functions instead.
+const CAPTURES = captureRoot(datasetRoot());
 const PYTHON = process.env.A11Y_PYTHON || resolve(REPO, ".venv/bin/python");
 const SCORER = resolve(REPO, "packages/scorer/python/score.py");
 const MODEL = process.argv.find((a) => a.startsWith("--model="))?.slice("--model=".length);

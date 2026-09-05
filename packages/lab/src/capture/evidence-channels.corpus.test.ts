@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { CHANNEL_LOCATION, channelsPresent } from "@a11y-witness/judge/internal";
+import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
 
 /**
  * EVERY CHANNEL A CAPTURE CARRIES MUST BE CLASSIFIED, and `tsc` cannot ask this.
@@ -29,7 +30,7 @@ import { CHANNEL_LOCATION, channelsPresent } from "@a11y-witness/judge/internal"
  *
  * Needs `runs/`, so it SKIPS in CI and says what went unchecked — a test that skips vouches for nothing.
  */
-const ROOT = resolve("runs/screenreader-dataset/captures");
+const ROOT = captureRoot(datasetRoot());
 
 interface Corpus {
   /** Every `structure.*`/`interaction.*` key any capture carries, whether or not it holds anything. */

@@ -24,9 +24,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { CASES, signalMatches } from "./case-matrix.mjs";
+import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
 
-const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT ?? "runs/screenreader-dataset");
-const CAPTURES = resolve(ROOT, "captures");
+const ROOT = datasetRoot();
+const CAPTURES = captureRoot(ROOT);
 
 /** Kept in step with `filler()`, `namedField()` and `dataTable()` — the announcements furniture adds. */
 const FURNITURE = {

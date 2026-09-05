@@ -12,6 +12,7 @@ import {
 import { hasUsableCaptureFiles, TEST_GRADE } from "./capture-resume.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { readCapture as readCaptureFile, isUsableCapture } from "../capture/evidence-diff.mjs";
+import { REPO_ROOT, datasetRoot, captureRoot } from "../dataset-paths.mjs";
 
 /**
  * a mistyped `--out=` exports to a path nothing downstream reads, and the trainer then fits on the
@@ -21,13 +22,15 @@ import { readCapture as readCaptureFile, isUsableCapture } from "../capture/evid
  */
 refuseUnknownFlags(["--out="], { entry: import.meta.url, command: "npm run training:export" });
 
-const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
+const ROOT = datasetRoot();
 const MANIFEST_PATH = resolve(ROOT, "manifest.json");
-const CAPTURE_ROOT = resolve(ROOT, process.env.DATASET_CAPTURE_ROOT || "captures");
+const CAPTURE_ROOT = captureRoot(ROOT);
 const PAGE_ROOT = resolve(ROOT, "pages");
 const DEFAULT_OUTPUT = resolve(ROOT, "screenreader-evidence.jsonl");
 const outputArg = process.argv.find((arg) => arg.startsWith("--out="));
-const OUTPUT_PATH = resolve(process.cwd(), outputArg?.slice("--out=".length) || DEFAULT_OUTPUT);
+// Anchored on REPO_ROOT, not process.cwd() -- `--out=` used to resolve relative to the invoking shell's
+// directory, so the same flag wrote to two different places depending on where the script was run from.
+const OUTPUT_PATH = outputArg ? resolve(REPO_ROOT, outputArg.slice("--out=".length)) : DEFAULT_OUTPUT;
 const FORBIDDEN_INPUT_KEYS = ["url", "task", "html", "dom", "css", "axe", "diagnostics"];
 // Subtypes the model must not be trained on, because the evidence it is allowed to see cannot express
 // them. Both entries are excluded for the reason the summary prints: "not inferable from screen-reader

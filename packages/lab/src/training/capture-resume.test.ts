@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { cacheKey, hashPageDir } from "./capture-cache.mjs";
 import { previouslyCaptured } from "./capture-resume.mjs";
+import { captureFilePath } from "../capture/evidence-diff.mjs";
 import test from "node:test";
 
 const ENV = {
@@ -54,7 +55,7 @@ test("resume does not trust pre-cache captures with no provenance", () => {
   writeFileSync(resolve(pageDir, "good.html"), "<h1>good</h1>");
   writeFileSync(resolve(pageDir, "bad.html"), "<h1>bad</h1>");
   for (const variant of ["good", "bad"]) {
-    writeFileSync(resolve(captureRoot, `case-1.${variant}.json`), JSON.stringify({
+    writeFileSync(captureFilePath(captureRoot, "case-1", variant), JSON.stringify({
       screenReader: "NVDA",
       transcript: [variant],
     }));

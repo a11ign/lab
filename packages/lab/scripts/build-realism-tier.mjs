@@ -38,12 +38,13 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve, relative } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import { modelInput, observationOf, producerFeedsModel } from "@a11y-witness/scorer/evidence-units";
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 import { captureWasTruncated } from "@a11y-witness/evidence/verify";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { REPO_ROOT, realCorpusRoot, datasetExportPath, datasetRoot } from "../src/dataset-paths.mjs";
 
 /**
  * run by the `build-realism` job and by `training:train`; a mistyped `--out=` writes the realism tier
@@ -55,12 +56,14 @@ refuseUnknownFlags(["--out="], { entry: import.meta.url, command: "npm run train
 
 // Resolved from this module, so the script works from any directory. `--out=` is still taken relative to
 // the repo root rather than the cwd, so two runs from different shells cannot write to two places.
-const REPO = fileURLToPath(new URL("../../../", import.meta.url));
-const CORPUS = resolve(REPO, process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
-const BASE = resolve(REPO, "runs/screenreader-dataset/screenreader-evidence.jsonl");
-const OUT = resolve(REPO,
-  process.argv.find((a) => a.startsWith("--out="))?.slice("--out=".length)
-  ?? "runs/screenreader-dataset/with-realism.jsonl");
+const REPO = REPO_ROOT;
+const CORPUS = realCorpusRoot();
+// Previously hardcoded to the same path `datasetExportPath()` builds, but without honouring
+// `DATASET_EXPORT` -- one of four spellings of this default, and the only one that could not follow the
+// override the other three do.
+const BASE = datasetExportPath();
+const outArg = process.argv.find((a) => a.startsWith("--out="))?.slice("--out=".length);
+const OUT = outArg ? resolve(REPO, outArg) : resolve(datasetRoot(), "with-realism.jsonl");
 
 // Channels come from `@a11y-witness/scorer/evidence-units` -- imported at the top -- and are NOT redefined
 // here. This file used to carry its own table, and the two disagreed in three separate ways at once:

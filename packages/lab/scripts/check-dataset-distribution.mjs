@@ -18,17 +18,17 @@
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { distributionProblems } from "../src/training/dataset-distribution.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { REPO_ROOT, datasetExportPath } from "../src/dataset-paths.mjs";
 
-const REPO = fileURLToPath(new URL("../../../", import.meta.url));
-const DEFAULT_DATA = "runs/screenreader-dataset/screenreader-evidence.jsonl";
+const REPO = REPO_ROOT;
 
 /** @param {string[]} argv */
 export function dataPathFrom(argv) {
   const named = argv.find((a) => a.startsWith("--data="));
-  return resolve(REPO, named ? named.slice("--data=".length) : process.env.DATASET_EXPORT || DEFAULT_DATA);
+  return named ? resolve(REPO, named.slice("--data=".length)) : datasetExportPath();
 }
 
 function main() {

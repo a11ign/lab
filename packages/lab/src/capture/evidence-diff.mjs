@@ -317,6 +317,31 @@ export function summarise(results) {
 const WIDESPREAD_DRIFT_SHARE = 0.5;
 
 /**
+ * The capture filename shape — `<id>.<variant>.json` — spelled out at seven call sites before this one
+ * became the shared one (three of them built the string with `+` rather than a template literal, which
+ * is why a plain substring search for the pattern missed them). Anything that reads or writes a dataset
+ * capture by id and variant should go through this rather than re-spelling the shape.
+ *
+ * @param {string} dir @param {string} id @param {string} variant
+ * @returns {string}
+ */
+export function captureFilePath(dir, id, variant) {
+  return resolve(dir, `${id}.${variant}.json`);
+}
+
+/**
+ * The sibling shape for a REJECTED capture attempt, which carries the attempt number too
+ * (`capture-screenreader-dataset.mjs` writes these when a captured pair fails validation and is kept
+ * for diagnosis rather than overwriting the last good one).
+ *
+ * @param {string} dir @param {string} id @param {string} variant @param {number} attempt
+ * @returns {string}
+ */
+export function rejectedCaptureFilePath(dir, id, variant, attempt) {
+  return resolve(dir, `${id}.${variant}.attempt${attempt}.json`);
+}
+
+/**
  * Read a capture, or null when the baseline has no such case.
  *
  * ABSENT and UNREADABLE are different findings and must stay that way — audit §9. A file that does not
@@ -331,7 +356,7 @@ const WIDESPREAD_DRIFT_SHARE = 0.5;
  * @param {string} dir @param {string} id @param {string} variant
  */
 export function readCapture(dir, id, variant) {
-  const path = resolve(dir, `${id}.${variant}.json`);
+  const path = captureFilePath(dir, id, variant);
   if (!existsSync(path)) return null;
   try {
     return JSON.parse(readFileSync(path, "utf8"));

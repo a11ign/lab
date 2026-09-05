@@ -20,6 +20,7 @@ import { promisify } from "node:util";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { datasetRoot } from "../src/dataset-paths.mjs";
 
 /**
  * a mistyped `--out=` writes the snapshot somewhere you will not look for it.
@@ -29,7 +30,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 refuseUnknownFlags(["--out="], { entry: import.meta.url, command: "npm run corpus:snapshot" });
 
 const run = promisify(execFile);
-const DATASET = resolve(process.cwd(), process.env.DATASET_ROOT ?? "runs/screenreader-dataset");
+const DATASET = datasetRoot();
 /** @param {string} name @param {string} fallback @returns {string} */
 const flag = (name, fallback) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;

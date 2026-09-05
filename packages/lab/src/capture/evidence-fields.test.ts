@@ -4,6 +4,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import { EVIDENCE_FIELDS } from "./evidence-diff.mjs";
+import { runsRoot } from "../dataset-paths.mjs";
 
 /**
  * `evidence:check` DECIDES WHETHER 2,122 CACHED CAPTURES SURVIVE, and it compares a hand-written list of
@@ -20,8 +21,6 @@ import { EVIDENCE_FIELDS } from "./evidence-diff.mjs";
  *
  * So the list is checked against what captures ACTUALLY carry, rather than against anyone's memory.
  */
-const ROOT = join(import.meta.dirname, "../../../..");
-
 /**
  * Fields deliberately not compared, each with the reason. Anything else new must be classified, which is
  * the point: a field arriving with no decision attached fails this test rather than being ignored.
@@ -34,7 +33,7 @@ const NOT_EVIDENCE: Record<string, string> = {
 
 /** Every `structure.*` / `interaction.*` key present across the captures on disk. */
 function fieldsOnDisk(): Set<string> {
-  const runs = join(ROOT, "runs");
+  const runs = runsRoot();
   const found = new Set<string>();
   if (!existsSync(runs)) return found;
   const walk = (dir: string) => {
