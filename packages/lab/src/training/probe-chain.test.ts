@@ -21,6 +21,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { stripComments } from "@a11y-witness/evidence/source-text";
 
 import { CASES, pair } from "./case-matrix.mjs";
 // NAMED `WORKER_ACCEPTED_FLAGS`, because this file already has a `PROBE_FLAGS` meaning the opposite
@@ -29,7 +30,10 @@ import { CASES, pair } from "./case-matrix.mjs";
 import { PROBE_FLAGS as WORKER_ACCEPTED_FLAGS } from "@a11y-witness/nvda-worker/capture-pure";
 import { pair as acceptancePair } from "./acceptance-matrix.mjs";
 
-const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
+// Comments stripped: every caller below checks whether a flag/option is MENTIONED in this source, and a
+// comment naming one in prose (this file discusses probe flags extensively) would satisfy the check
+// without the flag actually being read. See `@a11y-witness/evidence/source-text`.
+const read = (path: string) => stripComments(readFileSync(resolve(process.cwd(), path), "utf8"));
 
 /** Every probe flag any case actually asks for. Derived, never listed — a list is the defect. */
 const PROBE_FLAGS = [...new Set(
