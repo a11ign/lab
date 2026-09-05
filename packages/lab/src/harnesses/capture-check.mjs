@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import { captureWithNvda } from "@a11y-witness/nvda-worker";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "@a11y-witness/worker-fleet/host-address";
-import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11y-witness/worker-fleet/worker-http";
+import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl, requestJson } from "@a11y-witness/worker-fleet/worker-http";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { captureTolerantly } from "@a11y-witness/worker-fleet/capture-client";
 
@@ -297,7 +297,10 @@ async function runCheck(/** @type {any} */ check) {
 async function workerIsServing() {
   const port = Number(process.env.A11Y_PORT || 8765);
   try {
-    const response = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(2000) });
+    // `requestJson`, not `fetch` -- audit §9's "the HTTP client" row. Still a local, 2 s probe with no
+    // exposure to undici's 300 s cap, but a second hand-rolled client for the same worker API is the
+    // duplication this eliminates.
+    const response = await requestJson(`http://127.0.0.1:${port}/health`, { timeoutMs: 2000 });
     return response.ok;
   } catch {
     return false; // nothing listening is exactly what we want

@@ -258,6 +258,14 @@ const SERVE_HINT =
   "The capture command normally leases the page server automatically; check that no other " +
   `process owns port ${PAGES_PORT} (a stray server can answer 404 for every page).`;
 
+// EXEMPT from audit §9's "the HTTP client" row, deliberately, unlike the other three raw-`fetch` sites
+// this row named (doctor.mjs, capture-status.mjs, capture-check.mjs -- all converted to `requestJson`).
+// This one talks to the DATASET PAGE SERVER, not a capture worker: it fetches an arbitrary page's raw
+// HTML for `titleOf()` to read, where `requestJson` is documented as, and shaped for, "HTTP to a capture
+// worker" returning pre-parsed JSON. Converting would misuse that abstraction for an unrelated service. It
+// is also outside the failure mode `requestJson` exists to prevent -- a 15 s timeout, far under undici's
+// 300 s headers cap -- so nothing is gained functionally either. Left as `fetch`, following the same
+// "read each site before converting it" rule `fleet-env.mjs` used to stay outside the `control` move.
 async function pageTitle(/** @type {any} */ url) {
   let response;
   try {

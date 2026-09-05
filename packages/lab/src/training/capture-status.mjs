@@ -15,6 +15,7 @@
 import { pathToFileURL } from "node:url";
 import { inFlight, isStale, readProgress, stalenessMs, tally } from "./capture-progress.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { requestJson } from "@a11y-witness/worker-fleet/worker-http";
 import { datasetRoot } from "../dataset-paths.mjs";
 
 /**
@@ -124,10 +125,14 @@ function minutes(ms) {
 async function workerState(worker) {
   if (!worker) return "not recorded";
   try {
-    const response = await fetch(worker + "/health", { signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS) });
+    // `requestJson`, not `fetch` -- audit §9's "the HTTP client" row. This is a 5 s /health probe, well
+    // under undici's 300 s headers cap that motivated `requestJson`, but a second hand-rolled JSON client
+    // for the same worker API is the duplication itself; `requestJson` also carries a CODE
+    // (`ECONNREFUSED`, `EHOSTUNREACH`) in the message rather than fetch's bare "fetch failed".
+    const response = await requestJson(worker + "/health", { timeoutMs: HEALTH_TIMEOUT_MS });
     if (!response.ok) return "HTTP " + response.status;
-    const health = await response.json();
-    return health.busy ? "capturing now" : "idle";
+    if (response.json === undefined) return "unreachable (invalid JSON)";
+    return response.json.busy ? "capturing now" : "idle";
   } catch (error) {
     return "unreachable (" + /** @type {Error} */ (error).message + ")";
   }
