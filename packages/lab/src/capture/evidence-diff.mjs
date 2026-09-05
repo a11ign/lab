@@ -64,11 +64,16 @@ export const EVIDENCE_FIELDS = [
   // evidence would have reported SAME and shipped without a recapture, from the one gate whose job
   // is deciding whether cached captures may be kept. An OBJECT, so it flattens like `routeChange`.
   ["interaction", "focusReveal"],
-  // 2.4.7, and the guard caught this one within MINUTES of the field first reaching a capture rather
-  // than after it had shipped — which is the whole return on `evidence-fields.test.ts`. An OBJECT, so it
-  // flattens like `routeChange` and `focusReveal`: its verdict is `{checked, events, scriptRemovedFocus}`
-  // and a count-based comparison would read SAME on a change that empties `scriptRemovedFocus`, which IS
-  // the finding.
+  // F55's focus-event log (2.4.7). The guard caught this within MINUTES of the field first reaching a
+  // capture rather than after it had shipped -- the exact mechanism this list exists for, working as
+  // designed: `evidence-fields.test.ts` flagged it the moment a real capture of
+  // `focus-removed-on-receipt-coupon` landed in `runs/`, before the entry below existed. An OBJECT holding
+  // `scriptRemovedFocus`, an ARRAY of findings, so it needs the same flattening as `routeChange` and
+  // `focusReveal` -- counting it would repeat the `formChanges`/`stateChanges` defect this file's own
+  // history is full of. LISTED HERE ONCE ONLY: this entry was duplicated below for a while, which
+  // `evidence-fields.test.ts` could not see because it compares through a `Set` -- a duplicate collapses
+  // before the comparison runs, so the guard built to watch this exact list was blind to a defect inside
+  // it. That file now has a test dedicated to exactly this, so it cannot recur unnoticed.
   ["interaction", "focusEvents"],
   // Capture-protocol 13. Both are OBJECTS, so they go through the same flattening as `routeChange` and
   // `dialogEscape` — a list-of-objects read as a count is the defect this file was fixed for today.
@@ -81,14 +86,6 @@ export const EVIDENCE_FIELDS = [
   // `typedFeedback` gained `titleBefore`/`titleAfter` in the same protocol for 3.2.2 and is already
   // listed, so the flattening picks those up without a second entry.
   ["interaction", "focusContext"],
-  // F55's focus-event log (2.4.7). Found by `evidence-fields.test.ts` the moment a real capture of
-  // `focus-removed-on-receipt-coupon` landed in `runs/` -- the exact mechanism this list exists for,
-  // working as designed: a field arrived on disk that this gate neither compared nor excluded, which
-  // means a change to the mechanism would have reported SAME and shipped uncompared. An OBJECT holding
-  // `scriptRemovedFocus`, an ARRAY of findings, so it needs the same flattening as `routeChange` and
-  // `focusReveal` -- counting it would repeat the `formChanges`/`stateChanges` defect this file's own
-  // history is full of.
-  ["interaction", "focusEvents"],
 ];
 
 /**
