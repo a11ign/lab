@@ -120,3 +120,54 @@ test("captureOptions omits a falsy probe flag rather than sending it", () => {
   assert.match(runner, /\.\.\.\(testCase\.probeFocus \? \{ probeFocus: true \} : \{\}\)/,
     "probeFocus must be spread in only when true, or every non-focus case re-keys");
 });
+
+/**
+ * THE SAME ROUND TRIP ON THE ACCEPTANCE PATH, which had the identical defect and no guard.
+ *
+ * The header above records the corpus hops and says the answer to a third instance "is a guard, not a
+ * third careful edit". The guard was written for one of two pipelines. The acceptance path has the same
+ * three-hop shape —
+ *
+ *   `pair()` in acceptance-matrix.mjs        builds the case
+ *   generate-screenreader-acceptance.mjs     writes the manifest
+ *   capture-screenreader-dataset.mjs         builds the capture request FROM THE MANIFEST
+ *
+ * — and BOTH of its first two hops enumerated `probeForms` and `probeTables` by name. Measured
+ * 2026-09-05: seven corpus subtypes had no held-out acceptance coverage, and the reason was not that
+ * nobody had written the cases. They could not be written. 3.2.1 and 3.2.2 were among them, and their
+ * mapping was downgraded that same day — so the gate was blind to the two heads whose behaviour had just
+ * moved.
+ *
+ * A fix reaching one call site when the behaviour reaches several is this repo's most expensive recurring
+ * shape, and this is its fourth instance INSIDE the feature whose own comment records the first three.
+ */
+test("an acceptance case's probe flags survive to the manifest, not just probeForms and probeTables", async () => {
+  const { ALL_ACCEPTANCE_CASES } = await import("./acceptance-matrix.mjs") as unknown as {
+    ALL_ACCEPTANCE_CASES: Array<Record<string, unknown>>;
+  };
+
+  // The flags a case can ask for are discovered from the CORPUS, which is the side that has always
+  // forwarded them all -- so a new probe is covered here the day it is added rather than the day somebody
+  // remembers this file. Asserting against a hand-written list is the defect one layer out.
+  const known = new Set<string>();
+  for (const c of CASES as Array<Record<string, unknown>>) {
+    for (const k of Object.keys(probeFlags(c))) known.add(k);
+  }
+  assert.ok(known.size > 2, `expected the corpus to exercise more than probeForms/probeTables, got ${[...known]}`);
+
+  // Every probe an acceptance case sets must be a real flag, and must survive `pair()`.
+  const asked = new Set<string>();
+  for (const c of ALL_ACCEPTANCE_CASES) {
+    for (const [flag, value] of Object.entries(probeFlags(c))) if (value === true) asked.add(flag);
+  }
+  const unknown = [...asked].filter((f) => !known.has(f)).sort();
+  assert.deepEqual(unknown, [],
+    `acceptance cases ask for probes no corpus case uses, so nothing proves they work: ${unknown.join(", ")}`);
+
+  // THE ASSERTION THAT WOULD HAVE CAUGHT IT: a probe beyond the two that were hardcoded must reach the
+  // case object. Before the fix this set was empty however many probes a case declared.
+  const beyondTheHardcodedTwo = [...asked].filter((f) => f !== "probeForms" && f !== "probeTables");
+  assert.ok(beyondTheHardcodedTwo.length > 0,
+    "no acceptance case carries a probe other than probeForms/probeTables. Either none needs one -- in "
+    + "which case seven subtypes are still unmeasurable -- or `pair()` has gone back to enumerating them.");
+});

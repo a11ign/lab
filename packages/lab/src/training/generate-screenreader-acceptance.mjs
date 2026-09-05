@@ -52,6 +52,12 @@ function main() {
     criterion: testCase.criterion,
     subtype: testCase.subtype,
     task: testCase.task,
+    // BY PREFIX, exactly as generate-screenreader-dataset.mjs does it, and for the reason its comment
+    // gives: "enumerating them is how this exact defect happened three times in one feature". This hop
+    // enumerated two, so an acceptance case asking for `probeFocus` had the flag silently dropped between
+    // the case and the manifest -- and the runner reads the MANIFEST, so the probe never ran and the
+    // capture came back with no evidence, which is indistinguishable from a page that had none.
+    ...Object.fromEntries(Object.entries(testCase).filter(([key]) => key.startsWith("probe"))),
     probeForms: testCase.probeForms,
     probeTables: testCase.probeTables,
     source: testCase.source,

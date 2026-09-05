@@ -24,10 +24,15 @@ function spokenForm(text) {
  *   What the twelve page generators take. Named once because there are twelve of them and twelve inline
  *   shapes is twelve chances for one to drift from the rest.
  *
- * @param {{ title: string, heading: string, body: string, script?: string, landmark?: boolean }} spec
+ * `heading` is OPTIONAL, and omitting it emits NO `<h1>` rather than an empty one. That distinction is the
+ * whole of `1.3.1:no-headings`: the rule requires the census to CONFIRM zero headings, and `<h1></h1>` is
+ * a heading with no name — a different failure, and one that would make the case measure 4.1.2 instead.
+ * Absence read as a value, in the one place where absence IS the finding.
+ *
+ * @param {{ title: string, heading?: string, body: string, script?: string, landmark?: boolean }} spec
  */
 function page({ title, heading, body, script = "", landmark = true }) {
-  const content = "<h1>" + heading + "</h1>" + body;
+  const content = (heading === undefined ? "" : "<h1>" + heading + "</h1>") + body;
   const container = landmark ? "<main>" + content + "</main>" : content;
   return "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><title>"
     + title + "</title><style>" + STYLE + "</style></head><body>" + container
@@ -35,13 +40,41 @@ function page({ title, heading, body, script = "", landmark = true }) {
 }
 
 /**
+ * EVERY `probe*` FLAG IS FORWARDED BY PREFIX, and enumerating two of them was why seven corpus subtypes
+ * had no held-out coverage at all.
+ *
+ * This took `probeForms` and `probeTables` by name and dropped everything else on the floor. So an
+ * acceptance case could not ask for `probeFocus`, `probeFocusContext`, `probeTyping`, `probeNavigation`
+ * or `probeOrder` — and the eight subtypes needing them (3.2.1, 3.2.2, 2.1.1, 2.1.2, 2.4.1, 2.4.2, 2.4.3
+ * and, for a different reason, 1.3.1:no-headings) were not unwritten. **They were inexpressible.** A gate
+ * that cannot represent a case cannot fail on it, which is the argument `alsoFails` is here for, one
+ * field along.
+ *
+ * THE REMEDY ALREADY EXISTED AND HAD BEEN APPLIED TO ONE OF TWO PATHS. `generate-screenreader-dataset.mjs`
+ * forwards `Object.entries(testCase).filter(([key]) => key.startsWith("probe"))` and its comment explains
+ * why: "enumerating them is how this exact defect happened three times in one feature". The corpus hop was
+ * fixed and the acceptance hop was not — this repo's most expensive recurring shape, a fix reaching one
+ * call site when the behaviour reaches several, occurring inside the feature whose own comment records
+ * the first three instances.
+ *
+ * `probeForms` and `probeTables` keep explicit `false` defaults because the manifest schema and
+ * `chooseProbe` both read them as booleans; the rest pass through only when a case sets them.
+ *
+ * The type carries an INDEX SIGNATURE for the probe flags rather than naming them, for the same reason the
+ * code forwards them by prefix: naming them here would reintroduce exactly the enumeration this fix
+ * removed, one layer up, and `tsc` would then reject the case that the runtime happily forwards.
+ *
  * @param {PairBase & { criterion: string, subtype: string, mutation: string,
  *   badSignal: Record<string, any>, good: string, bad: string, probeForms?: boolean,
- *   probeTables?: boolean, alsoFails?: string[] }} spec
+ *   probeTables?: boolean, alsoFails?: string[] } & Record<string, any>} spec
  */
 function pair({ id, criterion, subtype, task, mutation, badSignal, good, bad, probeForms = false,
-  probeTables = false, alsoFails = [] }) {
+  probeTables = false, alsoFails = [], ...rest }) {
+  const probes = Object.fromEntries(
+    Object.entries(rest).filter(([key]) => key.startsWith("probe")),
+  );
   return {
+    ...probes,
     id: "acceptance-" + id,
     family: "acceptance-" + id,
     criterion,
@@ -395,6 +428,76 @@ function statusPair({ id, title, control, task }) {
   });
 }
 
+/**
+ * 3.2.1 / 3.2.2 — the page renames itself when a field is focused, or when it is typed into.
+ *
+ * NEWLY EXPRESSIBLE 2026-09-05: `pair()` enumerated `probeForms` and `probeTables` and dropped every other
+ * probe flag, so these two subtypes could not be written at all. Their mapping was downgraded to
+ * `secondary` the same day after the criterion audit found the rule asserting a change of CONTEXT on any
+ * change of CONTENT — and the held-out set could not see that change, because it had no case to see it
+ * with. A gate blind to the head whose behaviour just moved.
+ *
+ * One generator for both, as the corpus has, because 3.2.2 is 3.2.1 "on change rather than focus" and
+ * writing them apart would be the same fact twice.
+ *
+ * @param {{ id: string, title: string, field: string, changedTitle: string, task: string,
+ *           on: "focus" | "input" }} spec
+ */
+function contextChangePair({ id, title, field, changedTitle, task, on }) {
+  const body = (/** @type {boolean} */ changes) =>
+    "<form><label for=\"ctl\">" + field + "</label><input id=\"ctl\"></form>"
+    + (changes
+      ? "<script>document.querySelector('#ctl').addEventListener('" + on + "', function () {"
+        + "document.title = " + JSON.stringify(changedTitle) + "; });</script>"
+      : "");
+  const criterion = on === "focus" ? "3.2.1" : "3.2.2";
+  return pair({
+    id,
+    criterion,
+    subtype: on === "focus" ? "focus-context-change" : "input-context-change",
+    task,
+    mutation: on === "focus"
+      ? "Focusing the field silently renames the page."
+      : "Typing into the field silently renames the page.",
+    badSignal: { type: on === "focus" ? "focus-context-change" : "input-context-change" },
+    good: page({ title, heading: title, body: body(false) }),
+    bad: page({ title, heading: title, body: body(true) }),
+    probeFocus: true,
+    ...(on === "focus" ? { probeFocusContext: true } : { probeTyping: true }),
+  });
+}
+
+/**
+ * 1.3.1 — a page whose sections are styled to look like headings and carry no heading role at all.
+ *
+ * THE ONE OF THE EIGHT THAT WAS NEVER BLOCKED. It needs no probe: the signal is `structure-empty` on
+ * `headings`, which the unconditional sweep already answers. So unlike its seven neighbours this could
+ * have been written at any time and simply was not — worth distinguishing, because "nobody could" and
+ * "nobody did" need different fixes and the ledger in the test file now says which is which.
+ *
+ * The rule requires the census to CONFIRM zero headings rather than inferring it from an empty sweep,
+ * which is why the bad page must have none at all rather than merely failing to announce them.
+ *
+ * @param {{ id: string, title: string, sections: string[], task: string }} spec
+ */
+function noHeadingsPair({ id, title, sections, task }) {
+  const withHeadings = sections.map((t) => "<h2>" + t + "</h2><p>Guidance for this section follows.</p>").join("");
+  const withoutHeadings = sections
+    .map((t) => "<p><b>" + t + "</b></p><p>Guidance for this section follows.</p>").join("");
+  return pair({
+    id,
+    criterion: "1.3.1",
+    subtype: "no-headings",
+    task,
+    mutation: "Section titles are bold paragraphs rather than headings, so the page exposes no heading "
+      + "structure and quick navigation has nothing to move between.",
+    badSignal: { type: "structure-empty", field: "headings" },
+    good: page({ title, heading: title, body: withHeadings }),
+    // No `heading` argument, so this page carries no `<h1>` either -- the census must read ZERO.
+    bad: page({ title, body: withoutHeadings }),
+  });
+}
+
 export const ACCEPTANCE_CASES = Object.freeze([
   imagePair({ id: "generic-lantern", title: "Lantern collection", description: "The collection includes hand-painted lanterns.", file: "lantern.jpg", goodAlt: "Hand-painted lantern beside a window", badAlt: "image", subtype: "generic-alt", task: "Understand what the lantern image shows." }),
   imagePair({ id: "generic-rain", title: "Rain garden", description: "The rain garden collects water from the roof.", file: "rain-garden.jpg", goodAlt: "Rain garden beside the visitor centre", badAlt: "photo", subtype: "generic-alt", task: "Understand what the rain garden looks like." }),
@@ -502,6 +605,10 @@ export const ACCEPTANCE_CASES = Object.freeze([
   statusPair({ id: "status-large", title: "Size catalogue", control: "Show large items", task: "Show large items and notice the result count." }),
   statusPair({ id: "status-new", title: "New items", control: "Show new items", task: "Show new items and notice the result count." }),
   statusPair({ id: "status-local", title: "Local items", control: "Show local items", task: "Show local items and notice the result count." }),
+  // ---- subtypes the held-out set could not previously express (2026-09-05) ----
+  contextChangePair({ id: "focus-renames-page", title: "Grant enquiry", field: "Grant reference", changedTitle: "Results for the grant reference you typed", task: "Enter the grant reference and notice whether the page stays where you were.", on: "focus" }),
+  contextChangePair({ id: "input-renames-page", title: "Licence enquiry", field: "Licence number", changedTitle: "Licences matching your entry", task: "Enter the licence number and notice whether the page stays where you were.", on: "input" }),
+  noHeadingsPair({ id: "sections-not-headings", title: "Allotment rules", sections: ["Waiting list", "Plot sizes", "Water use"], task: "Move between the sections of the allotment rules." }),
 ]);
 
 /**
