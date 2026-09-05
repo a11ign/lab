@@ -49,7 +49,7 @@ import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl }
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
 import { leasePageServer } from "../training/page-server.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { captureTolerantly } from "../capture/capture-client.mjs";
+import { captureTolerantly } from "../../../worker-fleet/src/capture-client.mjs";
 
 /**
  * recaptures the eval fixtures. `--ff-only` appears in this file because it is passed to GIT, not

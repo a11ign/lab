@@ -14,6 +14,15 @@
 import { captureHasSubstance, captureIsSelfConsistent, captureMentionsTitle } from "@a11y-witness/evidence/verify";
 import { assessWorker } from "@a11y-witness/worker-fleet/health";
 
+/**
+ * MOVED to `@a11y-witness/worker-fleet/transient-fault` — architecture-audit.md §5, item 3. `isTransient`
+ * classifies a worker/network fault, which has nothing lab-specific about it, and `packages/cli` needs it
+ * too (to gain the same lost-response recovery this file's sibling `capture-client.mjs` already had) but
+ * must never depend on this private, unpublished package. Re-exported here so every existing importer of
+ * `capture-decisions.mjs` is unchanged.
+ */
+export { isTransient } from "@a11y-witness/worker-fleet/transient-fault";
+
 /** How much of a rejected transcript to quote back. Enough to recognise the wrong page, not a dump. */
 const REJECTED_PREVIEW_PHRASES = 2;
 
@@ -28,71 +37,6 @@ export const MAX_CONSECUTIVE_WORKER_FAILURES = 3;
  * CPU answered nothing for twelve minutes, so it would have been caught on the second probe.
  */
 export const UNREACHABLE_PROBES_BEFORE_RETIRE = 2;
-
-/**
- * Recoverable, or the end of this case?
- *
- * Everything here heals on its own, which is why waiting beats failing. The connection errors are
- * here because the first full dataset run lost its last four cases to one guest bugchecking — it came
- * back by itself, but the run had already recorded four permanent failures.
- *
- * `running but not speaking` and `hard timeout` are the subtle ones: both make the worker STOP its
- * screen reader, so the next capture cold-starts a fresh one. They are self-healing by construction,
- * and classifying them fatal cost a case in the run that proved it.
- */
-const TRANSIENT = new RegExp([
-  "fetch failed", "ECONNREFUSED", "ECONNRESET", "socket hang up", "timed out", "aborted",
-  "HTTP 429.*capture is already in progress",
-  "running but not speaking",
-  "hard timeout",
-].join("|"), "i");
-
-/**
- * Faults the WORKER named for us, which never need matching against prose.
- *
- * Both self-heal: the worker stops NVDA on any failed capture, so the next attempt cold-starts a clean
- * one. The worker now retries these itself before answering, so seeing one here means even its retry
- * did not clear it — still worth reissuing the case rather than recording a permanent failure.
- */
-const TRANSIENT_FAULTS = new Set(["screen-reader-mute", "screen-reader-start-failed"]);
-
-/**
- * Network failures that heal on their own, by CODE rather than by wording.
- *
- * These became visible when the capture clients moved off `fetch` to `node:http` (see
- * `worker-fleet/src/worker-http.mjs` for why they had to). `fetch` collapsed every network failure into
- * `TypeError: fetch failed`, which the regex above matched — so the whole class was transient by accident,
- * through a wrapper's wording rather than through anything we had decided.
- *
- * `EHOSTUNREACH` is the one that would have bitten. It is how a bare-metal worker presents while its NIC
- * wakes from selective suspend, recorded in provision-nvda-worker.ps1: 48 instant failures in one
- * evidence-check run, and the box answered a curl thirty seconds later. Under the real code, and without
- * this set, that would now be classified FATAL and fail 48 cases permanently.
- *
- * `ETIMEDOUT` covers both a dead peer and our own deadline in `requestJson`, which is deliberate: a
- * capture that outran its budget is exactly the case the worker recovers from by cold-starting NVDA.
- */
-const TRANSIENT_NETWORK_CODES = new Set([
-  "ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH", "ENETDOWN",
-  "EPIPE", "ETIMEDOUT", "EAI_AGAIN", "UND_ERR_HEADERS_TIMEOUT", "UND_ERR_BODY_TIMEOUT",
-]);
-
-/**
- * @param {unknown} error  anything a failed request threw — a node:http Error, an undici one, a string
- * @returns {boolean}
- */
-export function isTransient(error) {
-  const failure = /** @type {{ code?: string, cause?: { code?: string }, message?: string }} */ (error);
-  // Prefer the code. The regex below is the fallback for older workers and for host-side failures
-  // (a dropped socket has no fault code), but a message is prose and prose gets reworded — see
-  // packages/nvda-worker/src/capture-faults.mjs for what that cost.
-  if (TRANSIENT_FAULTS.has(failure?.code ?? "")) return true;
-  if (TRANSIENT_NETWORK_CODES.has(failure?.code ?? "")) return true;
-  // A node:http error carries its code on the error itself; an undici one hides it on `cause`. Checking
-  // both means the classification does not depend on which client the caller happened to use.
-  if (TRANSIENT_NETWORK_CODES.has(failure?.cause?.code ?? "")) return true;
-  return TRANSIENT.test(String(failure?.message ?? error ?? ""));
-}
 
 /**
  * Is this capture usable as evidence?

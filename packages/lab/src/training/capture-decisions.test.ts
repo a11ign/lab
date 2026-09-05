@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import {
   isEvidence, isTransient, rejectionReason, runOutcome, shouldEvictWorker, shouldRetireWorker,
 } from "./capture-decisions.mjs";
+import { captureFault, FAULT } from "@a11y-witness/nvda-worker/capture-faults";
 
 const TITLE = "Aquarium 001 schedule";
 const URL = "http://host:5050/aquarium/good";
@@ -86,6 +87,21 @@ test("a programming error is not transient", () => {
 test("a missing error object is not transient", () => {
   // Defensive: isTransient is called on whatever a catch block caught.
   assert.equal(isTransient(undefined), false);
+});
+
+/**
+ * TRANSIENT FAULTS ARE MATCHED BY THE SAME CODES `capture-faults.mjs` DEFINES, not by a copied literal —
+ * architecture-audit.md §5, item 4. Built through `captureFault()` (the worker's own constructor), so this
+ * proves the classification reads the ACTUAL fault code the worker sends, not a string that happens to
+ * match it today.
+ */
+test("a worker fault classifies as transient by its REAL code, from capture-faults.mjs", () => {
+  assert.equal(isTransient(captureFault(FAULT.SCREEN_READER_MUTE, "NVDA is running but not speaking")),
+    true, "screen-reader-mute self-heals on the next capture's cold-started NVDA");
+  assert.equal(isTransient(captureFault(FAULT.SCREEN_READER_START_FAILED, "NVDA would not start")),
+    true, "screen-reader-start-failed self-heals the same way");
+  assert.equal(isTransient(captureFault(FAULT.WRONG_PAGE, "the browser is showing a different page")),
+    false, "a wrong page is a corpus/site problem, not a worker fault a retry can fix");
 });
 
 test("three consecutive failures evicts a worker from a healthy pool", () => {

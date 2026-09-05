@@ -10,7 +10,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { leaseWorker, leaseWorkerPool, guestReachableUrl, isAfterRun } from "@a11y-witness/worker-fleet";
 import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
 import { configuredWorkers, inventoryWorkerUrls } from "../../../worker-fleet/src/fleet-env.mjs";
-import { captureTolerantly as tolerantCapture } from "../capture/capture-client.mjs";
+import { captureTolerantly as tolerantCapture } from "../../../worker-fleet/src/capture-client.mjs";
 import { assertFleetRunsThisCheckout } from "../../../worker-fleet/src/worker-code-check.mjs";
 import { titleOf } from "@a11y-witness/evidence/verify";
 import {
@@ -365,10 +365,12 @@ async function waitForWorker(/** @type {any} */ worker) {
 /**
  * One capture, tolerant of the worker disappearing underneath it.
  *
- * THE RECOVERY LIVES IN `capture/capture-client.mjs` NOW. This file held the only implementation for
- * months while nine other modules POSTed to `/capture` with none -- the remedy-at-one-call-site shape this
- * repo pays for most often. Two copies of a subtle protocol (404 means re-capture, 202 does not, a 500
- * carries the worker's diagnosis) is the fact-stated-twice shape on top of it.
+ * THE RECOVERY LIVES IN `@a11y-witness/worker-fleet`'s `capture-client.mjs` NOW (moved there from
+ * `packages/lab` on architecture-audit.md §5, item 6, so `packages/cli` could reach it too). This file
+ * held the only implementation for months while nine other modules POSTed to `/capture` with none -- the
+ * remedy-at-one-call-site shape this repo pays for most often. Two copies of a subtle protocol (404 means
+ * re-capture, 202 does not, a 500 carries the worker's diagnosis) is the fact-stated-twice shape on top
+ * of it.
  *
  * What stays here is what is genuinely this runner's: `waitForWorker`, because a corpus run can afford to
  * wait minutes for a box to come back where a gate wants an answer now, and the THROW contract below,

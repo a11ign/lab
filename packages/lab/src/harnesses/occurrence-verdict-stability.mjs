@@ -22,7 +22,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { captureTolerantly } from "../capture/capture-client.mjs";
+import { captureTolerantly } from "../../../worker-fleet/src/capture-client.mjs";
 import { CAPTURE_CLIENT_TIMEOUT_MS } from "../../../worker-fleet/src/worker-http.mjs";
 
 /**

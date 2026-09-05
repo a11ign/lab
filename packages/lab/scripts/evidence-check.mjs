@@ -36,7 +36,7 @@ import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/w
 import { workerIsUsable } from "../../worker-fleet/src/worker-health.mjs";
 import { drainAcrossPool } from "../src/training/worker-pool.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { captureTolerantly } from "../src/capture/capture-client.mjs";
+import { captureTolerantly } from "../../worker-fleet/src/capture-client.mjs";
 
 /**
  * the check that decides whether 2,122 cached captures survive a change. It also takes worker URLs

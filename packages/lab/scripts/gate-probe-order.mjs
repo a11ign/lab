@@ -41,7 +41,7 @@ import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
   from "../src/gates/fleet.mjs";
 import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { captureTolerantly } from "../src/capture/capture-client.mjs";
+import { captureTolerantly } from "../../worker-fleet/src/capture-client.mjs";
 
 refuseUnknownFlags(["--worker=", "--pages=", "--json", LOCAL_FLAG],
   { entry: import.meta.url, command: "npm run gate:probe-order" });
