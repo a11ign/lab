@@ -4552,48 +4552,36 @@ cases.push(
 // on both variants, `check-signals` reports CONTAMINATED, and the case is withdrawn with the measurement
 // recorded -- as `reportEmphasis` was (§33). Both outcomes are informative and the shape is right either
 // way, which is what the xml:lang version could not claim.
-// THE LEAD MUST NEVER NAME THE LANGUAGE, and the first version of these three did — which is exactly what
-// made them BLIND at the gate. `language-unmarked` fires when the language name is ABSENT from the
-// transcript, so a lead reading "reproduced in the original French" puts "French" there on BOTH variants
-// and the signal cannot fire on either. Measured 2026-09-05: 3 blind, and they were these three.
+// **REFUTED AND WITHDRAWN 2026-09-05. NVDA HEARS A `lang` APPLIED BY SCRIPT.** The three
+// `language-marked-silent-*` cases that stood here are gone, and this note is what they bought.
 //
-// Every existing case in this family already avoided it — "the dedication reads:", "the city motto appears
-// above the door:", "the method is given in the original:" — and the convention was nowhere written down,
-// so it was not inherited. It is now.
-cases.push(
-  ...[
-    ["language-marked-silent-museum", "Gallery notes", "Gallery notes",
-      "The following note from the curator is reproduced as it was written:",
-      "La salle principale abrite une collection de peintures du dix-neuvieme siecle.",
-      "fr", "French", "Read the curator's note and notice which language it is in."],
-    ["language-marked-silent-recipe", "Regional cooking", "Regional cooking",
-      "The method below is quoted from the first edition:",
-      "Den Teig eine Stunde ruhen lassen und danach vorsichtig ausrollen.",
-      "de", "German", "Read the quoted method and notice which language it is in."],
-    ["language-marked-silent-poem", "Anthology notes", "Anthology notes",
-      "The stanza below is printed as it was first set:",
-      "La ciudad duerme bajo una luna clara y el rio sigue su camino.",
-      "es", "Spanish", "Read the stanza and notice which language it is in."],
-  ].map(([id, title, heading, lead, passage, lang, langName, task]) => pair({
-    id,
-    family: "language-of-parts",
-    criterion: "3.1.2",
-    subtype: "language-unmarked",
-    task,
-    source: "WCAG 3.1.2 Understanding",
-    mutation: "The passage is in " + langName + " and its `lang` is applied by script after load rather "
-      + "than written in the markup. The final DOM is identical to the conformant page's, so a static "
-      + "check passes it and the census counts the marking -- and the screen reader, whose browse buffer "
-      + "was built before the attribute existed, reads " + langName + " in the page's own voice and "
-      + "announces no change.",
-    badSignal: { type: "language-unmarked", language: langName },
-    good: page({ title, heading,
-      body: "<p>" + lead + "</p><p id=\"quote\" lang=\"" + lang + "\">" + passage + "</p>" }),
-    bad: page({ title, heading,
-      body: "<p>" + lead + "</p><p id=\"quote\">" + passage + "</p>",
-      script: "document.getElementById('quote').setAttribute('lang', '" + lang + "');" }),
-  })),
-);
+// The experiment the comment above set out was decidable and it was decided against. Both variants ended
+// with the same `lang` on the same element and differed only in WHEN it was applied — statically, or by
+// script after load. The bet was that NVDA builds its browse-mode buffer at load and would therefore be
+// silent on the scripted one. It is not. Measured on `language-marked-silent-poem.bad`, transcript line 3:
+//
+//     "Spanish (not supported), La ciudad duerme bajo una luna clara y el rio sigue su camino."
+//     "list, with 6 items, English, bullet, same page, link, Opening times…"
+//
+// NVDA announces the language on the SCRIPTED page and announces the return to English after it. So
+// `refreshBrowseBuffer` picks the change up, exactly as the comment allowed for, and the two variants are
+// indistinguishable in speech.
+//
+// It surfaced as BLIND rather than the CONTAMINATED the comment predicted, and the difference is worth
+// keeping: `language-unmarked` fires when the language name is ABSENT, so a signal that fires on NEITHER
+// variant reads as blind. Predicting the right refutation and the wrong LABEL for it is a reminder that a
+// gate's verdicts are not interchangeable.
+//
+// Withdrawn rather than kept, on `reportEmphasis`'s precedent (known-gaps §33): a case that cannot
+// discriminate is not evidence, and leaving it in place fails `check-signals` for ever. The residual
+// 3.1.2 question — a MARKED passage that NVDA does not announce — has no known trigger left, since the
+// one mechanism that seemed able to produce it does not.
+//
+// The lead-naming rule these cases also taught is kept and enforced, because it outlives them:
+// `acceptance-matrix.test.ts` and `case-matrix.test.ts` both guard it now. A lead reading "reproduced in
+// the original French" puts the language name in the transcript on BOTH variants and blinds the signal
+// by a completely different route — which is how these three failed the FIRST time, before the mechanism
+// above was ever tested.
 
 // F55 — "using script to remove focus when focus is received" — WHICH THREE CRITERIA LIST AND THE CORPUS
 // HAD NEVER CARRIED.
