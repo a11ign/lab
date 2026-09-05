@@ -27,7 +27,7 @@
  * costume — the first version of `verify.corpus.test.ts` read a field that did not exist and passed
  * against the very corpus carrying 604 crashes.
  */
-import { SWEEP_OF, sweepCompleteness } from "@a11y-witness/evidence/verify";
+import { SWEEP_OF, sweepCompleteness, observationOf } from "@a11y-witness/evidence/verify";
 
 /**
  * The channels a completeness verdict exists for, derived from `SWEEP_OF` rather than restated beside it.
@@ -61,16 +61,44 @@ const SUPPORTS_ABSENCE = new Set(["exact"]);
 const SWEEP_MISSED = new Set(["truncated", "phantom"]);
 
 /**
- * The interaction channels have no census to compare against, so their ambiguity is read from the probe's
- * OWN MARK: `formProbe` is written only when `probeForms` ran (`capture-core.mjs:1926`). Its absence is
- * therefore "nobody asked" — exactly the distinction `applicability.py:147-152` records as unavailable,
- * *"the record does not currently carry which probes ran"*.
+ * The interaction channels have no census to compare against, so their ambiguity used to be read from the
+ * probe's own MARK: `formProbe` is written whenever `probeForms` (or a configured `formState`) RAN, whether
+ * or not it activated anything. That is a different question from "was this channel asked about", and the
+ * two definitions drifted: the capture's own protocol-9 record (`capture-pure.mjs`'s `recordWhatWasAsked`)
+ * answers `observed.formChanges.asked` / `observed.postSubmitFields.asked` from whether a control was
+ * ACTIVATED, not merely from whether the probe ran — a formState configured but matching no field, or an
+ * opportunistic probe finding no submit-like control, marks `formProbe` and asked nothing. Measured on the
+ * 40 local captures carrying the field: 18 "asked" by the mark against 8 by the record, disagreeing on
+ * exactly the 10 where the probe ran and activated nothing.
+ *
+ * FIXED 2026-09-06, per the house order on a duplicated definition ("delete a copy" beats "pin them
+ * equal" when one copy can simply be removed): `observationOf` (`packages/evidence/src/verify.ts`) already
+ * states the rule this file was restating with a weaker instrument, so this now asks the capture directly
+ * and falls back to the mark ONLY where `observationOf` returns `undefined` — a capture older than
+ * protocol 9, which genuinely has no `observed` block to ask. `sweepCompleteness` in the same source file
+ * already does exactly this fallback shape for `tableCells`; this mirrors it rather than inventing a
+ * second one.
  */
-const ASKED_MARK = { formChanges: "formProbe", postSubmitFields: "formProbe" };
+const CHANNEL_TO_OBSERVED = { formChanges: "formChanges", postSubmitFields: "postSubmitFields" };
+const FALLBACK_MARK = { formChanges: "formProbe", postSubmitFields: "formProbe" };
 
 function probeMarked(/** @type {any} */ capture, /** @type {string} */ event) {
   const marks = Array.isArray(capture.diagnostics) ? capture.diagnostics : [];
   return marks.some((/** @type {any} */ mark) => mark && typeof mark === "object" && mark.event === event);
+}
+
+/**
+ * Was this interaction channel asked about, and could the capture actually say?
+ *
+ * @param {any} capture @param {string} channel @param {string} fallbackEvent
+ * @returns {{ asked: boolean, byRecord: boolean }}
+ */
+function channelWasAsked(capture, channel, fallbackEvent) {
+  const recorded = observationOf(capture, channel);
+  if (recorded) return { asked: recorded.asked === true, byRecord: true };
+  // Pre-protocol-9: no `observed` block for this channel at all. The mark is a real fallback here, not a
+  // decorative one — absent must not silently read as "not asked" when the probe demonstrably ran.
+  return { asked: probeMarked(capture, fallbackEvent), byRecord: false };
 }
 
 /** An empty tally for every channel and interaction field, so a channel with no records still prints. */
@@ -82,7 +110,12 @@ function emptyTally() {
   }
   /** @type {Record<string, any>} */
   const interaction = {};
-  for (const field of Object.keys(ASKED_MARK)) interaction[field] = { empty: 0, emptyNotAsked: 0 };
+  // `emptyByFallback` is read the denominator's own rule applied to this channel: it counts how many of
+  // `emptyNotAsked` rest on the pre-protocol-9 mark rather than the capture's own record, so a reader can
+  // tell "the corpus says so" from "an old capture's best guess" without re-deriving it.
+  for (const field of Object.keys(CHANNEL_TO_OBSERVED)) {
+    interaction[field] = { empty: 0, emptyNotAsked: 0, emptyByFallback: 0 };
+  }
   return {
     channels, interaction,
     soundness: { entries: 0, quiet: 0, notQuiet: 0, unstated: 0, waits: /** @type {number[]} */ ([]) },
@@ -106,14 +139,18 @@ function tallySweptChannels(capture, completeness, channels) {
   }
 }
 
-/** The same question for the channels that have no census — answered from the probe's own mark. */
+/** The same question for the channels that have no census — answered from the capture's own record first. */
 /** @param {any} capture @param {Record<string,any>} interaction */
 function tallyInteraction(capture, interaction) {
-  for (const [field, event] of Object.entries(ASKED_MARK)) {
+  for (const [field, observedChannel] of Object.entries(CHANNEL_TO_OBSERVED)) {
     const value = capture.interaction?.[field];
     if (!Array.isArray(value) || value.length > 0) continue;
     interaction[field].empty++;
-    if (!probeMarked(capture, event)) interaction[field].emptyNotAsked++;
+    const { asked, byRecord } = channelWasAsked(capture, observedChannel,
+      /** @type {Record<string, string>} */ (FALLBACK_MARK)[field]);
+    if (asked) continue;
+    interaction[field].emptyNotAsked++;
+    if (!byRecord) interaction[field].emptyByFallback++;
   }
 }
 

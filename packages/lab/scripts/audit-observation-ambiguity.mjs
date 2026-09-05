@@ -174,10 +174,12 @@ function main() {
   console.log("cannot say    no census, or the probe never ran. A statement about this corpus, not a page.");
   console.log("page HAS none the only column on which a `0` is a fact about the page.");
   console.log("");
-  console.log("interaction channels — no census, so read from the probe's own `formProbe` mark");
+  console.log("interaction channels — no census, so read from the capture's own protocol-9 record");
+  console.log("  (observed.<channel>.asked); pre-protocol-9 captures fall back to the `formProbe` mark)");
   for (const [field, row] of Object.entries(result.interaction)) {
     console.log("  " + field.padEnd(18) + "empty on " + String(row.empty).padStart(5) +
-      ", of which " + String(row.emptyNotAsked).padStart(5) + " never asked " + pct(row.emptyNotAsked, row.empty));
+      ", of which " + String(row.emptyNotAsked).padStart(5) + " never asked " + pct(row.emptyNotAsked, row.empty) +
+      " (" + String(row.emptyByFallback).padStart(4) + " of those by the pre-9 fallback, not the record)");
   }
   console.log("");
   reportSoundness(result.soundness);

@@ -75,16 +75,61 @@ test("a capture with no census answers `unknown` and never `exact` — absence m
     + "audit's own first run say `heading 94.9% UNSUPPORTED` about a corpus whose sweeps were largely fine.");
 });
 
-test("an empty formChanges is UNASKED without the probe's mark and ASKED with it", () => {
+test("PRE-PROTOCOL-9 (no `observed` block): an empty formChanges falls back to the probe's mark", () => {
+  // Neither fixture below carries `observed` at all -- the shape of a capture older than protocol 9 -- so
+  // this exercises the FALLBACK path only, which must still behave the way the whole mark-based audit
+  // always did for captures that predate the real record.
   const unasked = observationAmbiguity([capture({ heading: 0 }, {})]);
   assert.equal(unasked.interaction.formChanges.empty, 1);
   assert.equal(unasked.interaction.formChanges.emptyNotAsked, 1, "no formProbe mark — probeForms never ran");
+  assert.equal(unasked.interaction.formChanges.emptyByFallback, 1, "answered by the mark, not the record");
 
   const asked = capture({ heading: 0 }, {});
   asked.diagnostics.push({ event: "formProbe", activated: 0 });
   const marked = observationAmbiguity([asked]);
   assert.equal(marked.interaction.formChanges.empty, 1);
-  assert.equal(marked.interaction.formChanges.emptyNotAsked, 0, "the probe ran and the page said nothing");
+  assert.equal(marked.interaction.formChanges.emptyNotAsked, 0, "the mark says the probe ran");
+  assert.equal(marked.interaction.formChanges.emptyByFallback, 0, "not asked=false, so not counted as a fallback miss");
+});
+
+test("PROTOCOL 9 (the bug this fix closes): the RECORD wins over the mark when they disagree", () => {
+  // The exact shape measured in production: `formProbe` is written whenever the probe RAN, whether or not
+  // it activated anything, so a formState configured but matching no field marks `formProbe` and asked
+  // nothing. The old `ASKED_MARK` read the mark alone and called this "asked" — 18 of 40 real captures,
+  // against 8 by the capture's own record, disagreeing on exactly the 10 where the probe ran and activated
+  // nothing. This capture is one of those ten.
+  const ranButActivatedNothing = capture({ heading: 0 }, {}, {
+    observed: { formChanges: { asked: false, why: "activated nothing" } },
+  });
+  ranButActivatedNothing.diagnostics.push({ event: "formProbe", activated: 0 });
+  const r = observationAmbiguity([ranButActivatedNothing]);
+  assert.equal(r.interaction.formChanges.empty, 1);
+  assert.equal(r.interaction.formChanges.emptyNotAsked, 1,
+    "the RECORD says asked:false -- the mark being present must not overrule it");
+  assert.equal(r.interaction.formChanges.emptyByFallback, 0,
+    "answered definitively by the record; the mark was never consulted");
+});
+
+test("PROTOCOL 9: an empty formChanges the record says WAS asked is a real zero, not an absence", () => {
+  const askedAndEmpty = capture({ heading: 0 }, {}, {
+    observed: { formChanges: { asked: true, activated: 0, configured: true } },
+  });
+  const r = observationAmbiguity([askedAndEmpty]);
+  assert.equal(r.interaction.formChanges.empty, 1);
+  assert.equal(r.interaction.formChanges.emptyNotAsked, 0, "the record says this genuinely asked and found nothing");
+});
+
+test("postSubmitFields is read from its OWN observed channel, not formChanges'", () => {
+  const capturePostSubmit = capture({ heading: 0 }, {}, {
+    observed: {
+      formChanges: { asked: true, activated: 1 },
+      postSubmitFields: { asked: false, why: "activated nothing to re-read" },
+    },
+  });
+  capturePostSubmit.diagnostics.push({ event: "formProbe", activated: 1 });
+  const r = observationAmbiguity([capturePostSubmit]);
+  assert.equal(r.interaction.postSubmitFields.emptyNotAsked, 1,
+    "postSubmitFields has its own record and must not inherit formChanges' verdict");
 });
 
 test("the channel list is DERIVED from SWEEP_OF, so a new sweep type cannot be silently unaudited", () => {
