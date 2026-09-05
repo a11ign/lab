@@ -36,14 +36,40 @@ const DOC = "docs/gate-exit-codes.md";
  * `examined: 1, of: 1`, so `examined < of` can never be true and it can never actually return 2 — adopting
  * the type does not guarantee exercising every state it defines.
  */
-const ADOPTS_VERDICT = new Set<string>([
-  "packages/lab/scripts/check-dataset-distribution.mjs",
-  "packages/lab/scripts/score-rules.ts",
-  "packages/lab/scripts/check-shipped-provenance.mjs",
-  "packages/lab/scripts/gate-probe-order.mjs",
-  "packages/lab/scripts/stability-gate.mjs",
-  "packages/lab/scripts/check-real-page-findings.ts",
-]);
+/**
+ * DERIVED, not listed — and it was a hand-written set of six until 2026-09-05.
+ *
+ * `verdict-adoption.test.ts` predates this file and already answers "does this gate adopt the verdict
+ * helpers", by matching `gateVerdict(`/`fleetVerdict(` in the source. Maintaining a second list of the
+ * same six scripts is this repo's most-repeated defect — a fact stated twice with nothing comparing the
+ * copies — and the two could have disagreed silently: a script listed here as ADOPTING while the other
+ * test carries it as `owed` would leave both green and the contradiction invisible.
+ *
+ * Deriving is CLAUDE.md's second remedy and is available here, so the list is gone. The regex is
+ * deliberately the same one, for the same reason `name-normalisation.test.ts` drives both implementations
+ * over one input: the point is that the two tests cannot form different opinions, not that they happen to
+ * agree today.
+ *
+ * Found by the peer who wrote this file, self-reported after noticing the older test on a later pass.
+ */
+const DERIVED_VERDICT = /\b(gateVerdict|fleetVerdict)\(/;
+
+/** The derived set, for the tests that need to iterate rather than ask about one path. */
+function adoptingScripts(): string[] {
+  return exitCodeModules().filter(adoptsVerdict);
+}
+
+function adoptsVerdict(path: string): boolean {
+  // NOT a bare `catch { return false }`, and the first version of this was — which turned a typo (`ROOT`
+  // for `REPO`) into "no script adopts the contract" and made all six read as unclassified. That is the
+  // swallow-to-null shape this repo fixed in `readCapture` the same day: an unreadable file and a file
+  // that genuinely does not adopt became the same answer, and the wrong one was the loud one.
+  //
+  // A MISSING file is the next test's finding, so it is the one case answered quietly. Anything else
+  // rethrows, because a derivation that cannot read its own input must not report a verdict about it.
+  if (!existsSync(join(REPO, path))) return false;
+  return DERIVED_VERDICT.test(readFileSync(join(REPO, path), "utf8"));
+}
 
 /**
  * Shared machinery whose `process.exit` is inherited by whatever calls it — the exit code belongs to the
@@ -254,16 +280,16 @@ function exitCodeModules(): string[] {
   return found;
 }
 
-test("every discovered script is in exactly one of ADOPTS_VERDICT, DOCUMENTED, INFRASTRUCTURE", () => {
+test("every discovered script either ADOPTS the verdict helpers, or is DOCUMENTED / INFRASTRUCTURE", () => {
   const all = exitCodeModules();
   const missing = all.filter((path) =>
-    !ADOPTS_VERDICT.has(path) && !(path in DOCUMENTED) && !(path in INFRASTRUCTURE));
+    !adoptsVerdict(path) && !(path in DOCUMENTED) && !(path in INFRASTRUCTURE));
   assert.deepEqual(missing, [],
     `these call process.exit/set process.exitCode and are classified nowhere — read what each code means `
     + `from the source and add a line to ${DOC}, then classify here (never infer from the name)`);
 
   const inTwoPlaces = all.filter((path) => {
-    const buckets = [ADOPTS_VERDICT.has(path), path in DOCUMENTED, path in INFRASTRUCTURE]
+    const buckets = [adoptsVerdict(path), path in DOCUMENTED, path in INFRASTRUCTURE]
       .filter(Boolean).length;
     return buckets > 1;
   });
@@ -274,7 +300,7 @@ test("every classified path still exists and still has an exit contract", () => 
   // A stale entry hides a rename or deletion the same way a stale UNGUARDED entry does in
   // cli-flags.test.ts: it would silently exempt nothing while making the covered set look larger than it
   // is, and the renamed file would fail the discovery test above as a surprise instead of as a diff here.
-  for (const path of [...ADOPTS_VERDICT, ...Object.keys(DOCUMENTED), ...Object.keys(INFRASTRUCTURE)]) {
+  for (const path of [...adoptingScripts(), ...Object.keys(DOCUMENTED), ...Object.keys(INFRASTRUCTURE)]) {
     assert.ok(existsSync(join(REPO, path)), `${path} is classified but no longer exists`);
     assert.ok(hasExitContract(path),
       `${path} is classified as having an exit-code contract but no longer calls process.exit / sets `
@@ -282,8 +308,8 @@ test("every classified path still exists and still has an exit contract", () => 
   }
 });
 
-test("every ADOPTS_VERDICT script actually imports the shared contract", () => {
-  for (const path of ADOPTS_VERDICT) {
+test("every script that adopts the verdict helpers actually imports the shared contract", () => {
+  for (const path of adoptingScripts()) {
     const source = readFileSync(join(REPO, path), "utf8");
     assert.match(source, /exitCodeFor\(/,
       `${path} is listed as adopting verdict.mjs's contract but does not call exitCodeFor(...)`);
