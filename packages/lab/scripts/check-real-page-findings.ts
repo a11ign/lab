@@ -42,7 +42,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ruleFindings } from "@a11y-witness/judge/rules";
 import { corpusState } from "../src/training/corpus-settled.mjs";
-import { domCensus, oracleCounts, pageCensus } from "@a11y-witness/evidence/verify";
+import { domCensus, oracleCounts, pageCensus, censusTargetIsSuspect } from "@a11y-witness/evidence/verify";
 import { realPageFor, REAL_PAGES } from "../src/training/real-page-corpus.mjs";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
@@ -202,9 +202,60 @@ function unnamedGraphicLine(dom: { unnamedGraphics?: unknown; unnamedGraphicCoun
   return `\n           unnamed graphics: ${names.join(", ")}${more}`;
 }
 
-function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
+/**
+ * The pair verdict: either count alone is ambiguous, together they say whether a zero-heading tree is the
+ * page rendering nothing, exposing nothing, or the two agreeing that neither happened.
+ */
+function domCensusVerdict(
+  census: { heading?: number } | null, dom: { heading?: number } | null,
+): string {
+  if (!census || !dom || typeof dom.heading !== "number") return "";
+  if (dom.heading > 0 && census.heading === 0) {
+    return "  <- " + dom.heading + " headings in the DOM, 0 in the tree: the page EXPOSES nothing, which "
+      + "is a finding about it, not about this tool";
+  }
+  if (dom.heading === 0 && census.heading === 0) {
+    return "  <- no headings in the DOM either, so the page did not render — OUR defect, not theirs";
+  }
+  return "";
+}
+
+/**
+ * The census half of the evidence line. Split out of `noteEvidence` purely to keep that function's
+ * complexity under gate -- it is not a second concept, it is the same one written out.
+ *
+ * A SUSPECT CENSUS PRINTS AS SUSPECT, never as "no census recorded" — the two need opposite responses.
+ * "not recorded" means an old capture predating the field; a suspect census is one this run actively
+ * distrusts, and a report that cannot tell them apart is the "no census recorded" line lying by omission
+ * about which of the two it is.
+ */
+function censusLine(
+  census: { heading?: number; link?: number; graphic?: number; graphicUnnamed?: number } | null,
+  dom: ReturnType<typeof domCensus>, target: { targetMatch?: string; candidates?: number } | null,
+  lines: number,
+): string {
+  if (census) {
+    return `census heading=${census.heading} link=${census.link} graphic=${census.graphic} `
+      + `graphicUnnamed=${census.graphicUnnamed}; ${lines} announcement(s)`
+      + (dom ? ` | DOM heading=${dom.heading} link=${dom.link} graphic=${dom.graphic}` : " | DOM not counted")
+      // WHICH graphics carry no accessible name. `graphicUnnamed=2` sent me to fetch cqc.org.uk by hand
+      // and count <svg> elements without a <title>; this is that step, done once, by the capture.
+      + unnamedGraphicLine(dom)
+      + domCensusVerdict(census, dom);
+  }
+  if (target && censusTargetIsSuspect(target)) {
+    return `census UNUSABLE: targetMatch=${target.targetMatch ?? "?"} candidates=${target.candidates ?? "?"} `
+      + "-- a real second CDP target existed and was never confirmed to be this page; "
+      + `${lines} announcement(s) (the transcript is unaffected)`;
+  }
+  return `no census recorded; ${lines} announcement(s)`;
+}
+
+function noteEvidence(capture: { url?: string; transcript?: unknown; diagnostics?: unknown }): void {
   const census = pageCensus(capture as never);
   const dom = domCensus(capture as never);
+  const target = rawTargetMatch(capture);
+  if (target) TARGET_MATCH.set(String(capture.url), target);
   const lines = Array.isArray(capture.transcript) ? capture.transcript.length : 0;
   // The FIRST few announcements as well as the counts. The counts said `heading=0` on a page whose
   // published HTML carries forty of them, and a count cannot tell you whether the tool read a cookie
@@ -217,26 +268,8 @@ function noteEvidence(capture: { url?: string; transcript?: unknown }): void {
   if (census) CENSUS.set(String(capture.url), census);
   if (dom) DOM_CENSUS.set(String(capture.url), dom);
   const opening = openingLines.map((line) => JSON.stringify(line.slice(0, 60))).join(" ");
-  // THE PAIR, because either alone is ambiguous. A tree census of zero headings means the page did not
-  // render OR the page exposes nothing; the DOM count is the only thing that separates them, and that
-  // ambiguity is what forced a page out of the corpus with its verdict unattributable.
-  const verdict = census && dom && typeof dom.heading === "number"
-    ? (dom.heading > 0 && census.heading === 0
-        ? `  <- ${dom.heading} headings in the DOM, 0 in the tree: the page EXPOSES nothing, which is a `
-          + "finding about it, not about this tool"
-        : (dom.heading === 0 && census.heading === 0
-            ? "  <- no headings in the DOM either, so the page did not render — OUR defect, not theirs"
-            : ""))
-    : "";
-  EVIDENCE.set(String(capture.url), (census
-    ? `census heading=${census.heading} link=${census.link} graphic=${census.graphic} `
-      + `graphicUnnamed=${census.graphicUnnamed}; ${lines} announcement(s)`
-      + (dom ? ` | DOM heading=${dom.heading} link=${dom.link} graphic=${dom.graphic}` : " | DOM not counted")
-      // WHICH graphics carry no accessible name. `graphicUnnamed=2` sent me to fetch cqc.org.uk by hand
-      // and count <svg> elements without a <title>; this is that step, done once, by the capture.
-      + unnamedGraphicLine(dom)
-      + verdict
-    : `no census recorded; ${lines} announcement(s)`) + (opening ? `\n           opens: ${opening}` : ""));
+  EVIDENCE.set(String(capture.url),
+    censusLine(census, dom, target, lines) + (opening ? `\n           opens: ${opening}` : ""));
 }
 
 /**
@@ -402,6 +435,55 @@ function furnitureCaptures(): { consent: string[]; shell: string[] } {
 const CENSUS = new Map<string, { heading?: number }>();
 
 /**
+ * url -> the CDP target diagnostic straight off the RAW mark, never through `pageCensus`/`domCensus`.
+ *
+ * Those two now return `null` for a suspect census — correctly, so no rule is handed a different
+ * document's numbers — which means the very thing this report needs to SHOW is exactly what they hide.
+ * This is the one place that has to see it anyway: a furniture check that cannot say "this census is not
+ * this page's" cannot say anything about it at all, and `docs/backlog.md`'s row is what asked for it.
+ */
+const TARGET_MATCH = new Map<string, { targetMatch?: string; candidates?: number }>();
+
+/** The `structureCensus` mark's target diagnostic, read directly rather than through a nulling reader. */
+function rawTargetMatch(capture: { diagnostics?: unknown }): { targetMatch?: string; candidates?: number } | null {
+  const marks = Array.isArray(capture.diagnostics) ? capture.diagnostics : [];
+  for (const mark of marks) {
+    if (typeof mark !== "object" || mark === null) continue;
+    const record = mark as { event?: unknown; targetMatch?: unknown; candidates?: unknown };
+    if (record.event !== "structureCensus") continue;
+    return {
+      targetMatch: typeof record.targetMatch === "string" ? record.targetMatch : undefined,
+      candidates: typeof record.candidates === "number" ? record.candidates : undefined,
+    };
+  }
+  return null;
+}
+
+/**
+ * Captures whose census could not be vouched for — a real second CDP target existed (or nothing was ever
+ * recorded to compare against) and neither was confirmed to be the page this capture navigated to.
+ *
+ * THE SAME RULE `pageCensus`/`domCensus` APPLY, asked of the raw mark instead of a nulled reader —
+ * `censusTargetIsSuspect` is imported rather than restated, because a second copy of "is this trustworthy"
+ * is exactly the shape that let `3.3.2:unnamed-form-field` survive its own deletion twice.
+ *
+ * Distinct from `furnitureCaptures()`: furniture is a page NVDA never reached at all (zero headings, DOM
+ * agrees), so every criterion on it is blind. A suspect census is narrower and stranger — the TRANSCRIPT is
+ * fine, `bathingwaters.sepa.org.uk` and `lbhf.gov.uk/council-tax` both proved it — only the AX-tree/DOM
+ * counts are alien, so only the census-reading criteria (1.3.1:no-headings, 2.1.2's tabbable denominator,
+ * 3.1.2's partLangCount, 2.4.1) go blind on it. Reported and reduced from coverage anyway, at the PAGE
+ * level, for the same reason `furnitureCaptures()` already makes that simplification: a per-criterion
+ * coverage model is not what this gate needs to solve to stop treating a wrong document as a clean one.
+ */
+function suspectCensusCaptures(): string[] {
+  const suspect: string[] = [];
+  for (const [url, target] of TARGET_MATCH) {
+    if (censusTargetIsSuspect(target)) suspect.push(url);
+  }
+  return suspect;
+}
+
+/**
  * url -> what the DOM actually contained, which is the other half of that question.
  *
  * Recorded separately from `CENSUS` because they answer different things and the difference IS the
@@ -426,6 +508,22 @@ function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: numbe
       + "the site's furniture, not its page, so anything they say is about this tool.\n");
     for (const url of [...furniture.consent, ...furniture.shell].slice(0, 8)) {
       process.stdout.write(`    furniture: ${url.replace(/^https:\/\//, "")}\n`);
+      process.stdout.write(`           ${describeEvidence(url)}\n`);
+    }
+  }
+
+  // THE OTHER SHAPE: not furniture (NVDA reached the page fine), but the CENSUS did not. Named separately
+  // from furniture on purpose -- see `suspectCensusCaptures`'s own comment -- because the two need
+  // different remedies: a furniture capture wants a longer wait or the banner clicked through; a suspect
+  // census wants `choosePageTarget` to see a real second target, which no amount of waiting fixes.
+  const suspectCensus = suspectCensusCaptures();
+  if (suspectCensus.length) {
+    process.stdout.write(`\n  ${suspectCensus.length} capture(s) have a census this run does not trust: a `
+      + "real second CDP target existed and none was confirmed to be the page navigated to. The census "
+      + "reads as ABSENT to every rule rather than as this OTHER document's numbers; the transcript is "
+      + "unaffected.\n");
+    for (const url of suspectCensus.slice(0, 8)) {
+      process.stdout.write(`    suspect census: ${url.replace(/^https:\/\//, "")}\n`);
       process.stdout.write(`           ${describeEvidence(url)}\n`);
     }
   }
@@ -460,7 +558,12 @@ function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: numbe
   // So a run where most of the sample read a consent banner passed. CLAUDE.md records the same confusion
   // as a metric that "merged 'has a cookie banner' with 'never got past one'"; this is that merge inside a
   // gate. They now reduce COVERAGE, so the verdict is INCONCLUSIVE rather than a pass — determinism-plan D6.
-  const unusable = furniture.consent.length + furniture.shell.length;
+  //
+  // A SUSPECT CENSUS REDUCES COVERAGE THE SAME WAY, at the same page-level granularity -- see
+  // `suspectCensusCaptures`'s own comment for why that over-counts slightly (only the census-reading
+  // criteria are actually blind, not the transcript-based ones) and why that is the right simplification
+  // for this gate rather than a defect in it.
+  const unusable = furniture.consent.length + furniture.shell.length + suspectCensus.length;
   const verdict = gateVerdict({
     examined: pages - unusable,
     of: pages,
