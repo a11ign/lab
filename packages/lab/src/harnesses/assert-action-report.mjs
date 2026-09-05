@@ -10,6 +10,7 @@
  *
  *   node packages/lab/src/harnesses/assert-action-report.mjs <r.json> --expect-activation --forbid-wcag=1.1.1
  *   node packages/lab/src/harnesses/assert-action-report.mjs <r.json> --require-wcag=1.1.1
+ *   node packages/lab/src/harnesses/assert-action-report.mjs <r.json> --require-rule-layer
  *
  * In `packages/lab` because that package is private: this is a harness, like `capture-check.mjs` beside
  * it, and it must not ship inside a published package. It also has to sit inside a package's own `src` to
@@ -26,7 +27,8 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--expect-activation", "--require-wcag=", "--forbid-wcag="], { entry: import.meta.url, command: "npm run assert:action-report" });
+refuseUnknownFlags(["--expect-activation", "--require-wcag=", "--forbid-wcag=", "--require-rule-layer"],
+  { entry: import.meta.url, command: "npm run assert:action-report" });
 
 /**
  * The contract fields, checked against what `packages/cli/src/action/run.ts` actually depends on rather
@@ -56,6 +58,35 @@ export function activationCount(report) {
   return (interaction?.formChanges ?? []).length + (interaction?.stateChanges ?? []).length;
 }
 
+/**
+ * Is `ruleBased` populated, the way it must be when the axe layer was asked to run and did?
+ *
+ * FOUND 2026-09-06: `chromium.launch()` needs the bundled browser, `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`
+ * on the Action means it is never present, `launch()` threw on every Action run, and `cli.ts`'s catch
+ * turned that into `ruleBased: null` -- while the progress line still announced "rule-based axe-core +
+ * real screen reader" and NOTHING asserted `ruleBased` at all. This is the assertion that was missing:
+ * `axe: true` is `action.yml`'s default and neither smoke run passes `axe: false`, so a report from either
+ * one must carry a populated `ruleBased`, not the null a silently-failed scan produces.
+ *
+ * `null` and `[]` are deliberately NOT the same failure here, the same distinction `pageContext`
+ * (`cli.ts`) exists to preserve: `null` means the layer never ran or threw, `[]` means it ran and found
+ * nothing. Only `null` is refused -- a page with zero axe violations must never be rejected as evidence
+ * the layer did not run.
+ *
+ * @param {Record<string, any>} report
+ * @returns {string | null} the reason it is unusable, or null
+ */
+export function ruleLayerFailure(report) {
+  if (report?.ruleBased === null) {
+    return "ruleBased is null: the axe-core layer did not run (or threw) despite being requested -- " +
+      "the tool announced a layer it did not produce";
+  }
+  if (!Array.isArray(report?.ruleBased)) {
+    return `ruleBased is ${JSON.stringify(report?.ruleBased)}, neither an array of findings nor null`;
+  }
+  return null;
+}
+
 /** Findings for one criterion, matched on the `wcag` prefix so "1.1.1 Non-text Content" matches "1.1.1". */
 /**
  * @param {Record<string, any>} report
@@ -77,7 +108,7 @@ function main(argv) {
   const [path, ...flags] = argv;
   if (!path) {
     process.stderr.write("usage: assert-action-report.mjs <report.json> " +
-      "[--expect-activation] [--forbid-wcag=X] [--require-wcag=X]\n");
+      "[--expect-activation] [--forbid-wcag=X] [--require-wcag=X] [--require-rule-layer]\n");
     return 1;
   }
   const report = JSON.parse(readFileSync(path, "utf8"));
@@ -88,6 +119,11 @@ function main(argv) {
   if (flags.includes("--expect-activation") && activationCount(report) === 0) {
     return fail("a default run activated no control: probe-forms is no longer on by default, so every " +
       "3.3.1 and 4.1.3 finding is now unreachable while this job stays green");
+  }
+
+  if (flags.includes("--require-rule-layer")) {
+    const ruleLayer = ruleLayerFailure(report);
+    if (ruleLayer) return fail(ruleLayer);
   }
 
   const forbidden = flagValue(flags, "forbid-wcag");

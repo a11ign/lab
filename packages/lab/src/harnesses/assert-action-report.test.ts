@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { activationCount, contractFailure, findingsFor } from "./assert-action-report.mjs";
+import { activationCount, contractFailure, findingsFor, ruleLayerFailure } from "./assert-action-report.mjs";
 
 const CONFORMANT = {
   url: "https://www.w3.org/WAI/demos/bad/after/survey.html",
@@ -77,4 +77,25 @@ test("findings are matched on the criterion PREFIX, not the whole label", () => 
 test("a malformed report yields no findings rather than throwing", () => {
   assert.deepEqual(findingsFor({}, "1.1.1"), []);
   assert.deepEqual(findingsFor({ verdict: {} }, "1.1.1"), []);
+});
+
+test("ruleBased: null is refused -- the axe layer was requested and did not run", () => {
+  // FOUND 2026-09-06: this was the report the Action produced on EVERY run, because
+  // chromium.launch() needs the bundled browser and the Action skips downloading it on purpose.
+  // Nothing here asserted ruleBased at all, so this exact report passed the smoke test silently.
+  assert.match(String(ruleLayerFailure({ ...CONFORMANT, ruleBased: null })), /did not run/);
+});
+
+test("ruleBased: [] is CORRECT -- a scan that ran and found nothing must not be refused", () => {
+  // The same distinction `pageContext` (cli.ts) exists to preserve: null means "did not run", an empty
+  // array means "ran and found nothing". Refusing an empty array here would fail every conformant page.
+  assert.equal(ruleLayerFailure({ ...CONFORMANT, ruleBased: [] }), null);
+});
+
+test("ruleBased holding real findings is correct too", () => {
+  assert.equal(ruleLayerFailure({ ...INACCESSIBLE, ruleBased: [{ rule: "image-alt" }] }), null);
+});
+
+test("ruleBased missing entirely (an older report shape) is named, not confused with null", () => {
+  assert.match(String(ruleLayerFailure({ ...CONFORMANT })), /neither an array of findings nor null/);
 });
