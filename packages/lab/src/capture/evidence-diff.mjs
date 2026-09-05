@@ -56,6 +56,14 @@ export const EVIDENCE_FIELDS = [
   // compared nor excluded is a hole this gate cannot see. `frames` is the iframe sweep; `dialogEscape`
   // is an object, so it goes through the same flattening as `routeChange`.
   ["structure", "frames"], ["interaction", "dialogEscape"],
+  // ADDED 2026-09-05, the day `focusReveal` first reached the channel — and `evidence-fields.test.ts`
+  // is what required it, within minutes, exactly as designed. The field had existed on the worker
+  // since the probe was written; it was dropped at four hops before reaching `interaction`, so no
+  // capture carried it and nothing here was missing. The moment the drop was fixed, a field existed
+  // on disk that this gate neither compared nor excluded — which means a change altering 1.4.13's
+  // evidence would have reported SAME and shipped without a recapture, from the one gate whose job
+  // is deciding whether cached captures may be kept. An OBJECT, so it flattens like `routeChange`.
+  ["interaction", "focusReveal"],
   // Capture-protocol 13. Both are OBJECTS, so they go through the same flattening as `routeChange` and
   // `dialogEscape` — a list-of-objects read as a count is the defect this file was fixed for today.
   ["interaction", "arrowNavigation"], ["interaction", "typedFeedback"],

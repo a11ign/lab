@@ -170,6 +170,10 @@ export function comparable(/** @type {any} */ capture) {
     // Capture-protocol 14. Flattened like the rest: its verdict is whether two strings are EQUAL, so a
     // count-based comparison would read SAME on a change that inverts the criterion.
     focusContext: flatten(i.focusContext),
+    // 1.4.13, added the day `focusReveal` first reached the channel. Flattened, not counted: the
+    // verdict is `{revealed, dismissed, focusHeld, vanished}` and a count-based comparison would read
+    // SAME on a change that flips `dismissed` — which is the whole finding.
+    focusReveal: flatten(i.focusReveal),
   };
 }
 
