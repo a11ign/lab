@@ -62,13 +62,27 @@ function main() {
     process.stdout.write("\n  The weights ARE the API (ADR 0007), so a release that cannot say which model "
       + "it ships is one nobody can trace a finding back to.\n");
   }
-  // COVERAGE IS TRIVIALLY 1 HERE, and saying so is the honest version rather than manufacturing a
-  // denominator. There is one shipped model; the question is whether its provenance is stated. A missing
-  // shipped report or an absent changeset is a PROBLEM that `provenanceProblems` names, not a coverage gap.
+  // examined:1, of:1 IS THE ANSWER, not a placeholder — and INCONCLUSIVE (exit 2) is UNREACHABLE from
+  // this call site as a result. That is a design decision, verified in
+  // `provenance-gate-refuses.test.ts`'s "INCONCLUSIVE is unreachable" test, not an oversight to fix.
   //
-  // The value of the shape here is consistency and the SOURCE string: every gate in this repo now reports
-  // in the same shape, so a reader does not have to learn each one's dialect to know what was examined —
-  // determinism-plan D6.
+  // `verdict.mjs`'s INCONCLUSIVE exists to catch PARTIAL COVERAGE of a POPULATION -- the 2-of-48 defect,
+  // where a gate examined fewer records than it claimed to. This gate has no such population: its subject
+  // is one shipped artefact and one question ("does an entry account for it"), which is either true or
+  // false every time this runs. There is no state where the gate examined "some but not all" of one
+  // artefact's provenance -- `examined` can never fall short of `of` because there is nothing partial to
+  // fall short OF. A missing shipped report or an absent changeset is a PROBLEM `provenanceProblems` names
+  // (and this gate FAILS on), never a coverage gap.
+  //
+  // `failures` is deliberately uncoupled from `examined`/`of` for the reason `gateVerdict`'s own header
+  // comment names THIS gate for: it can find several problems (a stale entry AND a duplicate) about the
+  // one artefact it examined, so "N problem(s) across 1 of 1" is correct where "N of 1 examined failed"
+  // would misreport the shape. Adopting a shared verdict type does not obligate a gate to exercise every
+  // state that type can express -- see `docs/gate-exit-codes.md`.
+  //
+  // The value of using the shape at all, despite the unreachable state, is consistency and the SOURCE
+  // string: every gate in this repo now reports the same way, so a reader does not have to learn each
+  // one's dialect to know what was examined — determinism-plan D6.
   const verdict = gateVerdict({
     examined: 1,
     of: 1,

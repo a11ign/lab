@@ -123,3 +123,73 @@ test("a model directory with no report at all is a REFUSAL, never a quiet pass",
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("TWO simultaneous problems on the one artefact examined still report as one FAIL, correctly counted", () => {
+  // `gateVerdict`'s own header names this gate as the reason `failures` is not read as a subset of
+  // `examined`: it reads ONE artefact and can find several things wrong with it. Two byte-identical entries
+  // that ALSO fail to state the shipped provenance produce a duplicate problem AND a not-stated problem --
+  // `failures` (2) exceeding `of` (1), which must render as "2 problem(s) across 1 of 1", never
+  // "2 of 1 examined failed".
+  const text = entryFor(2403); // wrong records count: does not match the shipped 2487
+  const root = planted(2487, { "promote-candidate-4.md": text, "promote-candidate-6.md": text });
+  try {
+    const { code, out } = runGate(root);
+    assert.equal(code, 1);
+    assert.match(out, /byte-identical/);
+    assert.match(out, /no pending changeset and no published CHANGELOG/);
+    assert.match(out, /FAIL — 2 problem\(s\) across 1 of 1/,
+      "two problems about one artefact must not render as though 2 of 1 examined failed");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("INCONCLUSIVE is unreachable from this gate, by construction", () => {
+  // This gate's population is one artefact and one question -- there is no partial-examination state, so
+  // `examined` (always 1) can never fall short of `of` (always 1) the way `verdict.mjs`'s INCONCLUSIVE
+  // requires. Proven by exhausting every problem-count this gate's wiring can actually produce -- zero,
+  // one (two different causes), two (combined), and three (three mutually-identical wrong entries, the
+  // largest failure count this gate's logic can construct) -- and confirming none of them reaches exit 2
+  // or prints INCONCLUSIVE. A mutation that decoupled `of` from `examined` (see check below) is exactly
+  // what this test exists to catch.
+  const scenarios = [
+    { label: "0 problems (correct entry)", root: planted(2487, { "promote-candidate-a1b2c3d4.md": entryFor(2487) }) },
+    { label: "1 problem (wrong provenance)", root: planted(2487, { "promote-candidate-6.md": entryFor(2403) }) },
+    {
+      label: "1 problem (duplicate of a CORRECT entry)",
+      root: planted(2487, {
+        "promote-candidate-4.md": entryFor(2487),
+        "promote-candidate-6.md": entryFor(2487),
+      }),
+    },
+    {
+      label: "2 problems (duplicate + wrong provenance)",
+      root: planted(2487, {
+        "promote-candidate-4.md": entryFor(2403),
+        "promote-candidate-6.md": entryFor(2403),
+      }),
+    },
+    {
+      label: "3 problems (two duplicates of a third, all wrong)",
+      root: planted(2487, {
+        "promote-candidate-4.md": entryFor(2403),
+        "promote-candidate-6.md": entryFor(2403),
+        "promote-candidate-8.md": entryFor(2403),
+      }),
+    },
+    { label: "no training report at all", root: (() => {
+      const r = mkdtempSync(join(tmpdir(), "a11y-prov-empty2-"));
+      mkdirSync(join(r, ".changeset"), { recursive: true });
+      return r;
+    })() },
+  ];
+  try {
+    for (const { label, root } of scenarios) {
+      const { code, out } = runGate(root);
+      assert.ok(code === 0 || code === 1, `${label}: exit code was ${code}, expected 0 or 1 -- never 2`);
+      assert.doesNotMatch(out, /INCONCLUSIVE/, `${label}: printed INCONCLUSIVE, which this gate must never reach`);
+    }
+  } finally {
+    for (const { root } of scenarios) rmSync(root, { recursive: true, force: true });
+  }
+});
