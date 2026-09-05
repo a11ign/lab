@@ -4407,6 +4407,88 @@ cases.push(
   })),
 );
 
+// 2.4.6 IS "HEADINGS AND LABELS" AND THE CORPUS ONLY EVER HELD HEADINGS.
+//
+// Found by the 2026-09-04 criterion audit. `label` is defined by WCAG as "text or other component with a
+// text alternative that is presented to a user to identify a component within web content", and the
+// criterion asks that it "describe topic or purpose". Nothing here looked at one: all 124 `2.4.6:regex`
+// cases are built from `headings-vague-*`.
+//
+// **NOT a rule for ABSENT labels.** W3C is explicit that 2.4.6 "does not require headings or labels" and
+// points at 3.3.2 for presence, which the corpus already covers with 115 `form-unlabelled` pairs. Both
+// variants here carry a proper `<label for>`; the only difference is whether its text says anything.
+//
+// THE SAME SUBTYPE AS THE HEADINGS, and that was the decision rather than the default. The alternative
+// was `2.4.6:label-vague`, which the backlog suggested and which would have re-bucketed nothing. It is
+// rejected on the evidence SIGNATURE: `4.1.2:missing-role` records what happens when one linear head is
+// asked to learn a disjunction -- 189 positives splitting 74/115 into pages that announce NOTHING and
+// pages that announce something unnamed, which is two signatures wearing one name. A vague heading
+// ("Stuff, heading, level 2") and a vague label ("Field, edit") are not that: both are a generic name
+// announced WITH a role, differing only in which role. One signature, so one subtype -- and 124 + 10
+// beats a second head with ten positives against 412 parameters.
+//
+// What the head cannot yet see is the structured feature: `generic_heading_present` is heading-specific,
+// so on these ten it reads 0 and the label half rests on the encoder. Adding `generic_label_present`
+// moves FEATURE_SCHEMA_VERSION, and a migration is already open for the observation cross -- landing a
+// second feature change inside it would make that verdict uninterpretable. Sequenced deliberately: cases
+// now, feature after the verdict.
+//
+// EVERY VAGUE WORD ALSO APPEARS IN A CONFORMANT SENSE, and that is the 2.4.4 lesson applied at build time
+// rather than discovered by an audit. `corpus:starvation` reports "word-sense monopoly" -- a feature no
+// conformant record carries is a free predictor -- and 2.4.4's wordlist scored 13 of 13 terms with zero
+// conformant occurrences. Here "field" is in both "Field" and "Field of study", so the WORD separates
+// nothing and only the vagueness does.
+//
+// The signal is anchored on the ANNOUNCEMENT, not the word, for the same reason. Real captures show
+// `structure.formFields` as name-first with the role appended -- "Coastal clinic reference, edit" -- so
+// "field, edit" matches the bad page and cannot match "Field of study, edit". A bare \bfield\b would
+// have fired on both and read as CONTAMINATED. Verified against captures on disk, not against the page
+// source, which is the check that failed for 32 remedy patterns.
+cases.push(
+  ...[
+    ["label-vague-field", "Course application", "Course application", "Field", "Field of study",
+      "Enter your field of study."],
+    ["label-vague-box", "Theatre contact", "Theatre contact", "Box", "Box office telephone number",
+      "Enter the box office telephone number."],
+    ["label-vague-value", "Property listing", "Property listing", "Value", "Property value in pounds",
+      "Enter the property value."],
+    ["label-vague-entry", "Exhibition entry", "Exhibition entry", "Entry", "Entry date for the exhibition",
+      "Enter the exhibition entry date."],
+    ["label-vague-input", "Meter reading", "Meter reading", "Input", "Input voltage in volts",
+      "Enter the input voltage."],
+    ["label-vague-detail", "Insurance claim", "Insurance claim", "Detail", "Detail of the incident",
+      "Describe the incident."],
+    ["label-vague-item", "Stock enquiry", "Stock enquiry", "Item", "Item catalogue number",
+      "Enter the item catalogue number."],
+    ["label-vague-reference", "Repair request", "Repair request", "Reference", "Reference number from your receipt",
+      "Enter the reference number from your receipt."],
+    ["label-vague-record", "Patient lookup", "Patient lookup", "Record", "Record number on your appointment letter",
+      "Enter the record number."],
+    ["label-vague-name", "Society register", "Society register", "Name", "Name of the nominating society",
+      "Enter the nominating society name."],
+  ].map(([id, title, heading, vague, descriptive, task]) => pair({
+    id,
+    family: "heading-purpose",
+    criterion: "2.4.6",
+    subtype: "regex",
+    task,
+    source: "WCAG 2.4.6 Understanding (G131); Practical Web Accessibility, chapter 6",
+    mutation: "The field carries a real, programmatically associated label whose text does not identify "
+      + "what to enter -- which is 2.4.6, not 3.3.2: the label is present, it simply describes nothing.",
+    badSignal: { type: "regex", pattern: "\\b" + vague.toLowerCase() + ", edit\\b", flags: "i" },
+    good: page({
+      title,
+      heading,
+      body: "<form><label for=\"entry\">" + descriptive + "</label><input id=\"entry\" name=\"entry\"></form>",
+    }),
+    bad: page({
+      title,
+      heading,
+      body: "<form><label for=\"entry\">" + vague + "</label><input id=\"entry\" name=\"entry\"></form>",
+    }),
+  })),
+);
+
 export const CASES = Object.freeze(withRealisticScale(
   [...cases, ...multiDefectCases(cases), ...conformantBehaviourCases(cases)],
 ));
