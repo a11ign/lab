@@ -135,8 +135,18 @@ function alsoCarrying(base, { suffix, markup, adds, describes }) {
 const ACCEPTANCE_ACCOMPANYING = Object.freeze({
   "vague-link": { markup: "<p><a href=\"#note\">Details</a></p>", adds: ["2.4.4:regex"],
     describes: "a vague link" },
+  // `3.3.2:unnamed-form-field` WAS HERE AND THE SUBTYPE NO LONGER EXISTS. It was deleted on 2026-09-05
+  // and its 133 records moved to `4.1.2:unnamed-control` — W3C does not require a label to be ASSOCIATED
+  // for 3.3.2, that is 1.3.1, and every one of its bad pages carried visible label text, so it had zero
+  // genuine 3.3.2 failures. Five dependents were moved with it and this was the SIXTH, missed.
+  //
+  // It cost the whole acceptance gate. A held-out case labelled with a subtype no head predicts is not an
+  // error anywhere visible — `eligible_records` simply drops it — so the 10 cases carrying it scored
+  // 0.088 against a 0.668 cut and read as false negatives. And `rules:gate` cannot catch it, for the
+  // reason `iconPair` records twenty lines down: that gate reads the TRAINING export and never looks at
+  // the held-out set. The acceptance matrix is the one place a stale subtype survives every other check.
   "bare-edit": { markup: "<p><input name=\"ref-code\" type=\"text\"></p>",
-    adds: ["3.3.2:unnamed-form-field", "4.1.2:unnamed-control"], describes: "an unlabelled field" },
+    adds: ["4.1.2:unnamed-control"], describes: "an unlabelled field" },
   "generic-heading": { markup: "<h2>Details</h2><p>Further notes are held with the records.</p>",
     adds: ["2.4.6:regex"], describes: "a vague heading" },
 });
