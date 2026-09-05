@@ -123,6 +123,12 @@ const EXEMPT: Record<string, string> = {
     + "(the same fix, duplicated for the dependency-direction reason rather than left cwd-anchored).",
   "packages/worker-fleet/src/compare-workers.mjs":
     "Same cycle as doctor.mjs: worker-fleet cannot import @a11y-witness/lab.",
+  "packages/judge/src/channel-tables-4.1.2.test.ts":
+    "@a11y-witness/lab depends on @a11y-witness/judge, so judge cannot import dataset-paths.mjs "
+    + "without a cycle -- the same direction as nvda-worker and worker-fleet. Landed on main the "
+    + "same night as this guard, from a branch that could not have known about it, and the guard "
+    + "caught it at the merge. Re-anchored on its own module location rather than process.cwd(), so "
+    + "only the cycle is duplicated and not the bug.",
   "packages/evidence/src/wire-types-describe-the-wire.test.ts":
     "@a11y-witness/evidence is the zero-dependency package everything else (including lab) depends on; "
     + "it cannot import dataset-paths.mjs without inverting the whole dependency graph.",
