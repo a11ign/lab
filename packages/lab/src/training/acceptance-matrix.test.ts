@@ -187,15 +187,13 @@ test("every case carries the metadata that makes it REVIEWABLE", () => {
 const SUBTYPES_WITHOUT_ACCEPTANCE_COVERAGE = new Set<string>([
   // Each of these is a REAL GAP in held-out measurement. None is a decision that it does not need one.
   //
-  // WAS EIGHT, NOW FIVE. The other three were closed on 2026-09-05 once the cause was found: `pair()` here
+  // WAS EIGHT, NOW THREE. The other three were closed on 2026-09-05 once the cause was found: `pair()` here
   // enumerated `probeForms` and `probeTables` and dropped every other probe flag, so seven of the eight
   // were not unwritten but INEXPRESSIBLE — a gate that cannot represent a case cannot fail on it. The
   // remaining five need pages with real navigation or focus traps and are ordinary work, not blocked.
-  "2.1.1:control-unreachable-by-keyboard",
   "2.1.2:focus-trapped",
   "2.4.1:skip-link-inert",
   "2.4.2:route-title-stale",
-  "2.4.3:focus-order-scrambled",
 ]);
 
 const subtypeKey = (c: { criterion?: string; subtype?: string }) =>

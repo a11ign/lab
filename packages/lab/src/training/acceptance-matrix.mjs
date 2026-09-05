@@ -498,6 +498,78 @@ function noHeadingsPair({ id, title, sections, task }) {
   });
 }
 
+/**
+ * 2.4.3 — positive `tabindex` pulls two fields ahead of the rest, so the tab order contradicts reading
+ * order while the page reads and looks correct.
+ *
+ * Newly expressible 2026-09-05 (see `pair()`): needs `probeFocus` and `probeOrder`, both of which were
+ * being dropped. The pair differs ONLY in the two attributes -- same fields, same labels, same order in
+ * the markup -- because the failure is the DIFFERENCE between two orderings and a page that also reads
+ * differently would let a model separate them on something else.
+ *
+ * @param {{ id: string, title: string, task: string }} spec
+ */
+function focusOrderPair({ id, title, task }) {
+  const form = (/** @type {boolean} */ scrambled) =>
+    "<form>"
+    + "<p><label for=\"nm\">Full name</label><input id=\"nm\"></p>"
+    + "<p><label for=\"ad\">Street address</label><input id=\"ad\"></p>"
+    + "<p><label for=\"pc\">Postcode</label><input id=\"pc\"" + (scrambled ? " tabindex=\"2\"" : "") + "></p>"
+    + "<p><label for=\"ph\">Telephone number</label><input id=\"ph\"" + (scrambled ? " tabindex=\"1\"" : "") + "></p>"
+    + "<button type=\"submit\">Continue</button>"
+    + "</form>";
+  return pair({
+    id,
+    criterion: "2.4.3",
+    subtype: "focus-order-scrambled",
+    task,
+    mutation: "Positive tabindex pulls Telephone and Postcode ahead of every other control, so Tab visits "
+      + "them first while the page still reads in its written order.",
+    badSignal: { type: "focus-order-scrambled" },
+    good: page({ title, heading: title, body: form(false) }),
+    bad: page({ title, heading: title, body: form(true) }),
+    probeFocus: true,
+    probeForms: true,
+    probeOrder: "focus-first",
+  });
+}
+
+/**
+ * 2.1.1 — a NATIVE `<button>` carrying `tabindex="-1"`, which announces exactly as its reachable twin.
+ *
+ * The corpus's own note explains why this shape rather than a `div role="button"`: a checker scanning for
+ * "interactive element without a tabindex" passes this without comment, and `tabindex="-1"` removes it
+ * from the tab order while leaving it in the accessibility tree. So the pair announces IDENTICALLY and
+ * differs only in whether a keyboard can operate it.
+ *
+ * THREE controls, not one, because `controlUnreachableByKeyboard` refuses any claim unless the tab cycle
+ * CLOSED -- Tab wraps to the first control, so a recording that revisits its start has seen every
+ * focusable, and without that the probe's stop cap is indistinguishable from a page trapping the keyboard.
+ *
+ * @param {{ id: string, title: string, action: string, task: string }} spec
+ */
+function unreachableControlPair({ id, title, action, task }) {
+  const body = (/** @type {boolean} */ reachable) =>
+    "<form>"
+    + "<p><label for=\"ref\">Reference number</label><input id=\"ref\"></p>"
+    + "<p><button type=\"button\"" + (reachable ? "" : " tabindex=\"-1\"") + ">" + action + "</button></p>"
+    + "<button type=\"submit\">Save changes</button>"
+    + "</form>";
+  return pair({
+    id,
+    criterion: "2.1.1",
+    subtype: "control-unreachable-by-keyboard",
+    task,
+    mutation: "A real button carries tabindex=\"-1\", so it announces as a button and Tab never reaches it.",
+    badSignal: { type: "control-unreachable-by-keyboard" },
+    good: page({ title, heading: title, body: body(true) }),
+    bad: page({ title, heading: title, body: body(false) }),
+    probeFocus: true,
+    probeForms: true,
+    probeOrder: "focus-first",
+  });
+}
+
 export const ACCEPTANCE_CASES = Object.freeze([
   imagePair({ id: "generic-lantern", title: "Lantern collection", description: "The collection includes hand-painted lanterns.", file: "lantern.jpg", goodAlt: "Hand-painted lantern beside a window", badAlt: "image", subtype: "generic-alt", task: "Understand what the lantern image shows." }),
   imagePair({ id: "generic-rain", title: "Rain garden", description: "The rain garden collects water from the roof.", file: "rain-garden.jpg", goodAlt: "Rain garden beside the visitor centre", badAlt: "photo", subtype: "generic-alt", task: "Understand what the rain garden looks like." }),
@@ -609,6 +681,8 @@ export const ACCEPTANCE_CASES = Object.freeze([
   contextChangePair({ id: "focus-renames-page", title: "Grant enquiry", field: "Grant reference", changedTitle: "Results for the grant reference you typed", task: "Enter the grant reference and notice whether the page stays where you were.", on: "focus" }),
   contextChangePair({ id: "input-renames-page", title: "Licence enquiry", field: "Licence number", changedTitle: "Licences matching your entry", task: "Enter the licence number and notice whether the page stays where you were.", on: "input" }),
   noHeadingsPair({ id: "sections-not-headings", title: "Allotment rules", sections: ["Waiting list", "Plot sizes", "Water use"], task: "Move between the sections of the allotment rules." }),
+  focusOrderPair({ id: "tab-order-contradicts-reading", title: "Delivery details", task: "Move through the delivery form with the keyboard in the order it reads." }),
+  unreachableControlPair({ id: "button-off-the-tab-order", title: "Saved searches", action: "Delete this search", task: "Reach the delete action for a saved search using the keyboard alone." }),
 ]);
 
 /**
