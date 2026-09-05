@@ -241,6 +241,54 @@ def closable_count(row: dict[str, Any]) -> int:
     return sum(1 for veto in row.get("vetoes", []) if not veto.get("unclosable"))
 
 
+def report_what_is_being_accepted(rows: list[dict[str, Any]], baseline_path: Path) -> None:
+    """Say WHICH rows this write changes, because `--update-baseline` rewrites the whole file.
+
+    THE DELIBERATE ACT IS PER-FILE AND THE JUDGEMENT IS PER-ROW, and that gap let two free vetoes in.
+    Writing the baseline is documented here as "a deliberate act with a flag, never a side effect", and
+    that protects against an accidental write -- it does not tell whoever performs it what they are
+    signing. Measured 2026-09-05: the tracked baseline was written to record `1.4.13`'s eight new
+    rules-owned vetoes, and in the same file it silently accepted `form_change_observed_absent` on
+    `3.3.1:validation-error-silent` and `4.1.3:form-activation-silent` -- both MODEL-decided, so both are
+    exactly the ADR 0015 harm this audit exists to catch, and `not-working.md` §2's "ZERO free vetoes can
+    reach a report" stayed marked CLOSED for five days.
+
+    Nothing here blocks. A blocking check would be the audit's own gate, and this runs at the moment
+    somebody has decided to accept. What it removes is the ability to accept something without being shown
+    it -- the same reason `promote:model` prints the provenance it is about to write rather than trusting
+    that the person running it knows.
+
+    MODEL-DECIDED ROWS ARE NAMED SEPARATELY, because that is the distinction the harm turns on: where
+    `rule-ownership.json` says `rules`, the deterministic layer reports the verdict and the veto cannot
+    reach a user. A new closable veto there is a note; one on a model-decided subtype is the thing.
+    """
+    if not baseline_path.is_file():
+        print(f"  no previous baseline at {baseline_path}; recording {len(rows)} row(s) for the first time.")
+        return
+    was = {row["subtype"]: row for row in json.loads(baseline_path.read_text())["rows"]}
+    rule_decided = rule_decided_subtypes()
+    changed, new_rows = [], []
+    for row in rows:
+        before = was.get(row["subtype"])
+        if before is None:
+            new_rows.append(f"{row['subtype']}: {closable_count(row)} closable veto(es), never baselined")
+        elif closable_count(row) != closable_count(before):
+            shielded = " [rule-decided, so it cannot reach a user today]" \
+                if row["subtype"] in rule_decided else "  <- MODEL-DECIDED: this one can reach a report"
+            changed.append(f"{row['subtype']}: {closable_count(before)} -> {closable_count(row)} "
+                           f"closable veto(es){shielded}")
+    if not changed and not new_rows:
+        print("  nothing changed: this write records the same closable vetoes the baseline already held.")
+        return
+    print("\n  ACCEPTING, by writing this baseline:")
+    for line in new_rows:
+        print(f"    NEW      {line}")
+    for line in changed:
+        print(f"    CHANGED  {line}")
+    print("  Every line above is a veto you are asserting is understood. A MODEL-DECIDED row that gained\n"
+          "  one is ADR 0015's harm arriving, not bookkeeping -- see not-working.md section 2.\n")
+
+
 def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path, stream: Any) -> int:
     """Fail on a WORSE result, per subtype. Silent on an improvement, which is the direction we want.
 
@@ -451,6 +499,7 @@ def main() -> int:
               "\n  retraining.\n", file=out)
 
     if args.update_baseline:
+        report_what_is_being_accepted(rows, args.baseline)
         args.baseline.write_text(json.dumps({"vetoLogits": VETO_LOGITS, "rows": rows}, indent=2) + "\n")
         print(f"  baseline written: {args.baseline}")
         return 0
