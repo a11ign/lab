@@ -126,6 +126,19 @@ const PENDING_CAPTURE: Record<string, string> = {
   // Each of those three states is different — "nothing can make it fire", "one throwaway made it fire",
   // "a shipping case depends on it" — and the guard distinguished them every time, which is the whole
   // reason an exemption list is worth having rather than a comment.
+  //
+  // NOT EMPTY ANY MORE, 2026-09-05, and the entry below is this guard catching the same defect a
+  // multi-hour lab chain caught independently — which is worth noting, because this one costs a second.
+  "interaction.focusEvents":
+    "2.4.7's F55 detector shipped today and NO capture carries its evidence, because adding a probe does "
+    + "not invalidate the capture cache: `workerCode` is deliberately outside the cache key, so every case "
+    + "whose PAGE did not change was served its pre-probe capture. The nine `focus-removed-on-receipt-*` "
+    + "cases are OLDER than the probe, so the rule stayed silent on its own positives and `rules:coverage` "
+    + "reported `2.4.7 NEVER FIRED ANYWHERE — the claim rests on nothing`. Fetching "
+    + "`focus-removed-on-receipt-order.bad` settled it in one line: captured 07:01:11Z, `focusOrder` and "
+    + "`focusConfinement` in its marks, no `focusEventLog`, and the OLD `formProbe` mark name. "
+    + "Closes when: the recapture that `CAPTURE_PROTOCOL_VERSION` 14 -> 15 forces — the bump this needed and "
+    + "did not get. This guard retires the entry itself once the field arrives.",
 };
 
 test("nothing is compared that no capture actually carries", () => {
