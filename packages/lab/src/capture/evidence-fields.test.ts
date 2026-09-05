@@ -193,3 +193,25 @@ test("a field that STOPPED being recorded is an evidence change", () => {
   const without = { interaction: { formChanges: [{ control: "Submit" }] } };
   assert.equal(compareCapture(withKind, without).verdict, "CHANGED");
 });
+
+test("focusEvents.scriptRemovedFocus content changing, SAME count, is CHANGED not SAME", () => {
+  // `focusEvents` is an OBJECT (like `routeChange`) whose `scriptRemovedFocus` field is an ARRAY of
+  // findings -- the first object-shaped field to hold one. Before the object branch learned to flatten a
+  // nested array per element, `normalise` would `String()` it whole: `String([{...}])` is
+  // `"[object Object]"` regardless of which control the finding names, so two DIFFERENT findings at the
+  // SAME count would have compared SAME. This is the `formChanges`/`stateChanges` defect arriving through
+  // the shape `fieldValues`'s object branch, not its array branch, has to handle.
+  const before = { interaction: { focusEvents: { asked: true, checked: true, events: 4,
+    scriptRemovedFocus: [{ id: 1, name: "Coupon code", heldMs: 2 }] } } };
+  const after = { interaction: { focusEvents: { asked: true, checked: true, events: 4,
+    scriptRemovedFocus: [{ id: 1, name: "Voucher code", heldMs: 2 }] } } };
+  const verdict = compareCapture(before, after);
+  assert.equal(verdict.verdict, "CHANGED", JSON.stringify(verdict));
+  assert.ok(verdict.changes.some((c: { field: string }) => c.field === "interaction.focusEvents"),
+    "the change must be attributed to focusEvents by name");
+});
+
+test("focusEvents with an EMPTY scriptRemovedFocus on both sides is SAME", () => {
+  const clean = { interaction: { focusEvents: { asked: true, checked: true, events: 4, scriptRemovedFocus: [] } } };
+  assert.equal(compareCapture(clean, { ...clean }).verdict, "SAME");
+});

@@ -108,9 +108,22 @@ const list = (/** @type {any} */ value) => (Array.isArray(value) ? value : []);
  * `routeChange` is `{control, titleBefore, titleAfter, ...}`, and comparing it as an opaque object reports
  * two objects differing wholesale rather than naming the one that moved — and a title that stopped
  * changing IS the 2.4.2 failure. Same treatment `formChanges` already gets, for the same reason.
+ *
+ * A property that is itself an ARRAY OF OBJECTS -- `focusEvents.scriptRemovedFocus` -- is flattened per
+ * element rather than interpolated whole. `${v}` on an array calls `toString()` on each element and joins
+ * with a comma, and an object's `toString()` is `"[object Object]"` regardless of content, so two
+ * DIFFERENT findings at the same array length would have interpolated identically. The exact
+ * `formChanges`/`stateChanges` defect this file's header already names, arriving through a nested shape
+ * that single-level flattening never learned. `evidence-diff.mjs` had the identical gap, fixed the same way.
  */
-const flatten = (/** @type {any} */ value) =>
-  (value && typeof value === "object" ? Object.entries(value).map(([key, v]) => `${key}=${v}`) : []);
+// Return type ANNOTATED, not inferred: `flatten` now calls itself in one of its own branches, and TS
+// cannot infer a recursive arrow function's return type from its own body -- it needs the type stated
+// before it can check the reference. `TS7023`/`TS7024` name exactly this.
+/** @type {(value: any) => string[]} */
+const flatten = (value) =>
+  (value && typeof value === "object"
+    ? Object.entries(value).map(([key, v]) => `${key}=${Array.isArray(v) ? v.map(flatten).join(";") : v}`)
+    : []);
 
 /** The fields worth comparing: everything a dataset signal can read. */
 export function comparable(/** @type {any} */ capture) {
@@ -174,8 +187,12 @@ export function comparable(/** @type {any} */ capture) {
     // verdict is `{revealed, dismissed, focusHeld, vanished}` and a count-based comparison would read
     // SAME on a change that flips `dismissed` — which is the whole finding.
     focusReveal: flatten(i.focusReveal),
-    // 2.4.7. Flattened for the same reason as its neighbours: `scriptRemovedFocus` going from a named
-    // control to empty is the whole signal, and a count would read SAME across it.
+    // F55's focus-event log (2.4.7). Added twice independently — from the orchestrator side when
+    // `evidence-fields.test.ts` demanded it, and from the branch when `stability-fields.test.ts` caught
+    // the same gap — which is the two guards doing their job from opposite directions rather than a
+    // duplication. Flattened like `focusReveal` above: the verdict is `{asked, checked, events,
+    // scriptRemovedFocus}`, and a `scriptRemovedFocus` that changes CONTENT at the same COUNT is exactly
+    // the change a count-based comparison reads as stable.
     focusEvents: flatten(i.focusEvents),
   };
 }

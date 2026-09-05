@@ -35,6 +35,7 @@ function stabilityFields(): Set<string> {
       dialogEscape: { focusBefore: "a", announced: "", focusAfter: "a" },
       arrowNavigation: { focusBefore: "a", announced: "", focusAfter: "a" },
       typedFeedback: { typed: true, echoed: "1", announced: "" },
+      focusEvents: { asked: true, checked: true, events: 0, scriptRemovedFocus: [] },
     },
   };
   return new Set(Object.keys(comparable(everyChannel) as Record<string, unknown>));
@@ -75,4 +76,17 @@ test("an object-shaped field is flattened, not compared as an opaque object", ()
 test("an absent routeChange is an empty list, never a crash or a phantom difference", () => {
   const flattened = (comparable({ interaction: {} }) as Record<string, unknown>).routeChange;
   assert.deepEqual(flattened, []);
+});
+
+test("focusEvents.scriptRemovedFocus content changing at the SAME count is not read as stable", () => {
+  // `focusEvents` is an object whose `scriptRemovedFocus` is an ARRAY of findings -- the same nested
+  // shape `evidence-diff.mjs` had to learn to flatten. Before `flatten()` here recursed into an array
+  // value, `${v}` on `scriptRemovedFocus` called `toString()` on the array of objects, which is
+  // `"[object Object]"` regardless of which control the finding names, so two DIFFERENT findings at the
+  // same count would have compared equal.
+  const withEvents = (name: string) => (comparable({
+    interaction: { focusEvents: { asked: true, checked: true, events: 4,
+      scriptRemovedFocus: [{ id: 1, name, heldMs: 2 }] } },
+  }) as Record<string, unknown>).focusEvents;
+  assert.notDeepEqual(withEvents("Coupon code"), withEvents("Voucher code"));
 });
