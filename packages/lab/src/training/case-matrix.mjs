@@ -3877,18 +3877,28 @@ export const ACCOMPANYING_DEFECTS = Object.freeze({
       "<p><input name=\"ref-code\" type=\"text\" tabindex=\"-1\"></p>",
       "<p><input name=\"visit-note\" type=\"text\" tabindex=\"-1\"></p>",
     ],
-    subtypes: ["3.3.2:unnamed-form-field", "4.1.2:unnamed-control"],
+    subtypes: ["4.1.2:unnamed-control"],
     grants: "bare_edit_present",
   },
   "bare-edit": {
-    // Announced as a bare role with no name. Two heads, for the reason `form-unlabelled` documents at
-    // length: an unnamed field is 3.3.2 and 4.1.2 as squarely as each other.
+    // ONE head, not two — `3.3.2:unnamed-form-field` was here until 2026-09-05 and the subtype no longer
+    // exists. The comment that stood here said "an unnamed field is 3.3.2 and 4.1.2 as squarely as each
+    // other", and that is what the criterion audit refuted: W3C does not require a label to be ASSOCIATED
+    // for 3.3.2 (that is 1.3.1), and a bare `<input>` with no visible text nearby fails 4.1.2's name
+    // requirement, which is what the announcement can actually show.
+    //
+    // MISSED WHEN THE SUBTYPE WAS DELETED, and the acceptance copy of this same map was fixed hours
+    // earlier — two accompanying-defect maps holding one fact, and only one corrected. It cost a full
+    // chain run: the corpus went on minting `3.3.2:unnamed-form-field` labels, the trainer went on
+    // building a head for a subtype nothing else recognises, and that head then fired on held-out cases
+    // no longer labelled 3.3.2 — reported as `4 acceptance false positive(s)`, which reads like a model
+    // regression and is a stale label.
     markup: [
       "<p><input name=\"note-ref\" type=\"text\"></p>",
       "<p><input name=\"ref-code\" type=\"text\"></p>",
       "<p><input name=\"visit-note\" type=\"text\"></p>",
     ],
-    subtypes: ["3.3.2:unnamed-form-field", "4.1.2:unnamed-control"],
+    subtypes: ["4.1.2:unnamed-control"],
     grants: "bare_edit_present",
   },
 });

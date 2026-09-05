@@ -811,6 +811,16 @@ export const ACCEPTANCE_CASES = Object.freeze([
   errorPair({ id: "error-code", title: "Equipment loan", field: "Loan code", submit: "Request equipment", task: "Submit the equipment request without a code." }),
   errorPair({ id: "error-phone", title: "Callback request", field: "Phone number", submit: "Request a callback", task: "Submit the callback request without a phone number." }),
   formPair({ id: "placeholder-email", title: "Event registration", label: "Contact email", name: "contact-email", placeholderOnly: true, task: "Enter the contact email for registration." }),
+  // TWO MORE PLACEHOLDER PAIRS, added 2026-09-05 because deleting a subtype left a criterion under-covered
+  // in a way nothing pointed at. `3.3.2:unnamed-form-field` was removed and `placeholder-only` became
+  // 3.3.2's ONLY subtype — at which point the criterion had two held-out positives against a gate that
+  // requires three, and the gate said so as "3.3.2: fewer than 3 acceptance positives". That reads like a
+  // coverage oversight and is really a consequence of the deletion nobody followed through.
+  //
+  // Field names and themes disjoint from the corpus's 44 `form-placeholder-*` cases, per this file's own
+  // generalisation rule: a held-out case that reuses a training case's vocabulary measures memorisation.
+  formPair({ id: "placeholder-postcode", title: "Delivery details", label: "Delivery postcode", name: "delivery-postcode", placeholderOnly: true, task: "Enter the delivery postcode." }),
+  formPair({ id: "placeholder-reference", title: "Warranty claim", label: "Warranty reference", name: "warranty-reference", placeholderOnly: true, task: "Enter the warranty reference." }),
   formPair({ id: "field-company", title: "Supplier form", label: "Company name", name: "company", task: "Enter the supplier company name." }),
 
   // ---- HOLD-OUT BATCH 2, added 2026-08-23 -------------------------------------------------------------
