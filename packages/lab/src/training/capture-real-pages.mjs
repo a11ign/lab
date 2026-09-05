@@ -37,7 +37,11 @@ import { writeJsonAtomic } from "./write-atomic.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { beginRun } from "./capture-progress.mjs";
 import { resumePlan, describeResume } from "./real-page-resume.mjs";
-import { captureTolerantly } from "../capture/capture-client.mjs";
+import { captureTolerantly } from "../../../worker-fleet/src/capture-client.mjs";
+// BY CODE, not the literal string — architecture-audit.md §5, item 4. `capture-faults.mjs` has no
+// imports of its own, so it is safe from any portable tree; a renamed fault must not be able to make
+// this branch silently stop firing.
+import { FAULT } from "@a11y-witness/nvda-worker/capture-faults";
 
 /**
  * THE script that ran four shards against `--worker=http://:8765` for 29 minutes. `--shard=` arrives
@@ -345,7 +349,7 @@ async function captureAcrossPool(/** @type {any} */ pages, /** @type {any} */ wo
         // turned out to be a redirect the corpus had never been updated for. Saying so turns "14% of
         // captures failed" into one line of maintenance, and stops the next reader chasing the capture
         // path for a fault that is not there.
-        if (error.code === "wrong-page") {
+        if (error.code === FAULT.WRONG_PAGE) {
           process.stdout.write("      ^ the site probably MOVED this page. The message above names what "
             + "it served; if that is the same content at a new address, update this entry's url in "
             + "real-page-corpus.mjs rather than debugging the capture.\n");

@@ -16,7 +16,7 @@ import { CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mj
 
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { captureTolerantly } from "../src/capture/capture-client.mjs";
+import { captureTolerantly } from "../../worker-fleet/src/capture-client.mjs";
 
 /**
  * `--from-disk` decides whether it measures a live capture or replays one; mistyped, it silently

@@ -16,7 +16,7 @@ import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
 import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { captureTolerantly } from "../capture/capture-client.mjs";
+import { captureTolerantly } from "../../../worker-fleet/src/capture-client.mjs";
 
 /**
  * the capture-layer regression check. `--worker=` mistyped falls back to in-process mode, which

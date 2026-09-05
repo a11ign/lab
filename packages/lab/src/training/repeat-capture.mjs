@@ -22,7 +22,7 @@ import { resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { isTransient } from "./capture-decisions.mjs";
 import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../../worker-fleet/src/worker-http.mjs";
-import { captureTolerantly } from "../capture/capture-client.mjs";
+import { captureTolerantly } from "../../../worker-fleet/src/capture-client.mjs";
 import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 import { assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { captureIsSelfConsistent } from "@a11y-witness/evidence/verify";
