@@ -85,3 +85,54 @@ test("no training report at all is a refusal that says so", () => {
   assert.equal(problems.length, 1);
   assert.match(problems[0], /refusal, not a pass/);
 });
+
+// --- SUPERSEDED entries: the duplicate check's neighbour, missed by exactly one line ------------------
+
+/** A promotion note carrying a feature-schema line, which is what `promote:model` writes. */
+const schemaEntry = (records: number, schema: string) =>
+  `---\n"@a11y-witness/scorer": major\n---\n\n- records: \`${records}\`\n`
+  + `- feature schema: \`${schema}\`\n`;
+
+const SCHEMA_REPORT = { dataset: { records: 2487 }, representation: { schema: "v18" } };
+const checkSchema = (changesets: Array<{ name: string; text: string }>) =>
+  provenanceProblems({ shippedReport: SCHEMA_REPORT, changesets, changelog: null, renderProvenance: render });
+
+test("a promotion note for a schema the shipped weights do not carry is refused as superseded", () => {
+  // THE LIVE DEFECT, 2026-09-06. Two `major` promotion notes on the real tree, differing in ONE line —
+  // `screenreader-structured-v17` against `-v18` — with the shipped weights stamped v18. The
+  // byte-identical check above passed them, because they are not byte-identical; they are one line apart.
+  // `changeset version` renders every pending entry, so a first publish would carry two "Retrained scorer
+  // weights" notes under one version, one describing a model no consumer will ever hold.
+  //
+  // Keyed on the FEATURE SCHEMA because that field decides whether the weights can score at all:
+  // `score.py` refuses a representation mismatch outright, so an entry naming another schema describes
+  // weights this tree could not run.
+  const problems = checkSchema([
+    { name: "promote-candidate-current.md", text: schemaEntry(2487, "v18") },
+    { name: "promote-candidate-stale.md", text: schemaEntry(2487, "v17") },
+  ]);
+  assert.equal(problems.length, 1, "the current entry states the provenance, so ONLY the stale one is a problem");
+  assert.match(problems[0], /promote-candidate-stale\.md is a promotion note for feature schema v17/);
+  assert.match(problems[0], /shipped weights are v18/);
+});
+
+test("one entry naming the shipped schema is a pass, so the check does not fire on an ordinary promotion", () => {
+  assert.deepEqual(checkSchema([{ name: "promote-candidate-x.md", text: schemaEntry(2487, "v18") }]), []);
+});
+
+test("a changeset with no feature-schema line at all is not a promotion note and is left alone", () => {
+  // This repo's hand-written changesets carry no schema line. Treating their absence as a mismatch would
+  // refuse every ordinary release note -- a guard firing on the population it was never about.
+  assert.deepEqual(
+    provenanceProblems({
+      shippedReport: SCHEMA_REPORT,
+      changesets: [
+        { name: "promote-candidate-x.md", text: schemaEntry(2487, "v18") },
+        { name: "quiet-melons-smile.md", text: "---\n\"a11y-witness\": patch\n---\n\nA hand-written note.\n" },
+      ],
+      changelog: null,
+      renderProvenance: render,
+    }),
+    [],
+  );
+});

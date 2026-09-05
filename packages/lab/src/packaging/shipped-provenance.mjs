@@ -55,6 +55,37 @@ export function provenanceProblems({ shippedReport, changesets, changelog, rende
     else byText.set(entry.text, entry.name);
   }
 
+  // A SUPERSEDED ENTRY IS THE SAME DEFECT AS A DUPLICATE, ONE SHAPE ALONG — and the byte-identical check
+  // above misses it by exactly one line.
+  //
+  // Found 2026-09-06 on the real tree: `promote-candidate-683ee98e.md` and `promote-candidate-a1ced91b.md`
+  // are two `major` promotion notes differing in ONE line — `screenreader-structured-v17` against `-v18` —
+  // both pending, with the shipped weights stamped v18. `changeset version` renders every pending entry,
+  // so a first publish would carry two "Retrained scorer weights" entries under one version, one of them
+  // describing a model no consumer will ever hold. That is what the duplicate check exists to prevent,
+  // arriving through a near-duplicate instead of an exact one — this repo's most repeated shape, where a
+  // guard written for a value catches the value and not the neighbouring one (`normalise` reading bare
+  // objects but not objects inside an array is the same story).
+  //
+  // Keyed on the FEATURE SCHEMA rather than on hashes, because that is the field that decides whether the
+  // weights can score at all: `score.py` refuses a representation mismatch outright, so an entry naming a
+  // schema other than the shipped one describes weights this tree could not run even if it wanted to.
+  //
+  // NOT a problem when there is exactly one entry, and not a problem for an entry with no schema line at
+  // all — the ordinary hand-written changesets in this repo have none and are not promotion notes.
+  const shippedSchema = shippedReport?.representation?.schema;
+  if (shippedSchema) {
+    for (const entry of changesets) {
+      const named = /^- feature schema: `([^`]+)`/m.exec(entry.text)?.[1];
+      if (named && named !== shippedSchema) {
+        problems.push(`${entry.name} is a promotion note for feature schema ${named}, but the shipped `
+          + `weights are ${shippedSchema} — it describes a model that will never be released, and `
+          + `\`changeset version\` would publish it as a release note anyway. Delete it, or promote the `
+          + `weights it actually describes.`);
+      }
+    }
+  }
+
   // THE WHOLE BLOCK, not a records count. A partial match is the failure mode worth catching: an entry
   // carrying the right corpus size and a stale encoder hash describes a model nobody can rebuild, and is
   // more misleading than no entry at all because it looks answered.
