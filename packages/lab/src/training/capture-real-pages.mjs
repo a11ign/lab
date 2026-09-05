@@ -201,6 +201,22 @@ async function capture(/** @type {any} */ page, /** @type {any} */ workerUrl) {
     // one of these captures. It asks the page title either side of that, so it observes something we were
     // doing anyway rather than doing anything new to somebody's site.
     //
+    // `probeFocusReveal` is ON as of 2026-09-05, and it is the FIRST probe here that presses ESCAPE on a
+    // page we do not own — so it gets its own entry rather than riding on `probeFocus`'s.
+    //
+    // It walks up to 8 tab stops and presses Escape twice. The Tab half is free by this list's own test:
+    // `probeFocus` already walks the entire ring, up to 150 stops, on every one of these captures. Escape
+    // is the new keystroke, and it sits on the same side of the line as Tab rather than with `probeTyping`
+    // — it enters nothing into a field, submits nothing, and writes to nobody's system. The most it can do
+    // is dismiss a dialog or a consent banner, which is a thing a visitor does.
+    //
+    // TURNED ON TO CLOSE A GATE HONESTLY RATHER THAN BY WEAKENING A CLAIM. `promote` refused with
+    // "1.4.13 (assessed) — no real capture carries focusReveal — the evidence this rule reads was never
+    // collected, so it has not been silent, it has been UNASKED". The alternatives were to declare
+    // `realPageEvidence: available: false` (untrue: the evidence can be collected) or to downgrade
+    // 1.4.13's status (untrue: all 18 corpus cases discriminate). Collecting it is the only option that
+    // does not misstate what the tool can do.
+    //
     // Its sibling `probeTyping` stays OFF, and the difference is the whole of the consent argument here:
     // typing enters characters into a stranger's field, which is `probeForms`'s problem in another
     // costume. So 3.2.1 can be demonstrated on a real page and 3.2.2 cannot — recorded as
@@ -234,6 +250,7 @@ async function capture(/** @type {any} */ page, /** @type {any} */ workerUrl) {
       // localhost is the worker. See `workerReachable`.
       url: workerReachable(page.url, workerUrl),
       probeForms: false, probeFocus: true, probeNavigation: true, probeFocusContext: true,
+      probeFocusReveal: true,
       // A DECLARED state, or nothing. `probeForms` stays false above and this does not change that: it
       // activates whatever submit-like control the sweep walks past, on a page we do not own. A
       // `formState` is the page owner's own example, with values recorded in the corpus beside the URL
