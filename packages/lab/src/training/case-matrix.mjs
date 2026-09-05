@@ -1269,21 +1269,61 @@ function languageVariant(/** @type {any} */ { id, title, heading, lead, passage,
   });
 }
 
-function statusVariant(/** @type {any} */ { id, title, heading, control, task }) {
-  const body = "<button id=\"filter\" type=\"button\">" + control + "</button><p id=\"count\">Showing 8 items.</p><ul><li>First item</li><li>Second item</li></ul>";
+/**
+ * A status message that the page updates when a BUTTON is pressed, with and without a live region.
+ *
+ * `initial`/`updated`/`expected`/`mutation` are parameters so the FOUR CATEGORIES of 4.1.3's own
+ * definition can be built from one factory rather than four copies. WCAG defines a status message as
+ * content reporting "the success or results of an action, THE WAITING STATE OF AN APPLICATION, THE
+ * PROGRESS OF A PROCESS, or the existence of errors", and until 2026-09-05 the corpus held only the
+ * first. Defaults reproduce the original result-count case byte for byte, so the eight pairs built
+ * before that date keep their pages and their cache entries.
+ *
+ * **THE TRIGGER AND THE TIMING ARE NOT STYLISTIC — §18 MEASURED THEM AND ONLY ONE COMBINATION WORKS.**
+ * Six repeats per condition, one page shape:
+ *
+ *     button,   synchronous update, polite region   6 of 6
+ *     checkbox, synchronous update, polite region   2 of 6   <- NVDA is already saying "checked"
+ *     checkbox, synchronous update, assertive       5 of 6   <- still flaky, and a count is not an alert
+ *     checkbox, update deferred 400 ms, polite      0 of 6   <- deferring makes it WORSE
+ *     typing,   six characters,       polite        0 of N
+ *
+ * A polite region waits for idle, so anything the control announces of its own displaces it. Hence:
+ * a `<button>`, which says nothing of its own, and a SYNCHRONOUS update with no `setTimeout` anywhere.
+ * `filter-status-silent-checkbox` and `validation-live-silent` were withdrawn over exactly this, and
+ * the reason recorded there is the one that governs here: evidence that appears intermittently teaches
+ * the model noise, and `gate:stability` exists to refuse it.
+ *
+ * A waiting state is genuinely asynchronous in the wild, and this builds it synchronously ON PURPOSE.
+ * The criterion asks whether the message reaches assistive technology WITHOUT RECEIVING FOCUS; it does
+ * not ask that the wait be real. Making it real would buy nothing and cost determinism.
+ *
+ * `expected` carries NO trailing punctuation, and that is deliberate rather than tidy. The predicate is
+ * a substring test against what NVDA SAID, and punctuation does not survive speech -- the corpus once
+ * shipped 32 remedy patterns containing `e\.g\.` and `dd\/mm` that could never match an announcement.
+ * A shorter `expected` still matches if the period is spoken, and matches when it is not.
+ */
+function statusVariant(/** @type {any} */ {
+  id, title, heading, control, task,
+  initial = "Showing 8 items.",
+  updated = "Showing 2 matching items.",
+  expected = "Showing 2 matching items.",
+  mutation = "A result count changes without a live status announcement.",
+}) {
+  const body = "<button id=\"filter\" type=\"button\">" + control + "</button><p id=\"count\">" + initial + "</p><ul><li>First item</li><li>Second item</li></ul>";
   const goodBody = body.replace(
     "id=\"count\"",
     "id=\"count\" role=\"status\" aria-live=\"polite\" aria-atomic=\"true\"",
   );
-  const script = "document.querySelector('#filter').addEventListener('click', () => { document.querySelector('#count').textContent = 'Showing 2 matching items.'; });";
+  const script = "document.querySelector('#filter').addEventListener('click', () => { document.querySelector('#count').textContent = '" + updated + "'; });";
   return pair({
     id,
     family: "dynamic-feedback",
     criterion: "4.1.3",
     task,
     source: "Web Accessibility Cookbook, chapter 22; Practical Web Accessibility, chapter 6",
-    mutation: "A result count changes without a live status announcement.",
-    badSignal: { type: "form-activation-silent", control, expected: "Showing 2 matching items." },
+    mutation,
+    badSignal: { type: "form-activation-silent", control, expected },
     good: page({ title, heading, body: goodBody, script }),
     bad: page({ title, heading, body, script }),
     probeForms: true,
@@ -4297,6 +4337,74 @@ cases.push(
       script: CONSENT_FOCUS_GUARD,
     }),
   }),
+);
+
+// 4.1.3's OTHER TWO STATUS CATEGORIES — the waiting state, and the progress of a process.
+//
+// Opened by the 2026-09-04 criterion audit and built 2026-09-05. WCAG defines a status message as content
+// reporting "the success or results of an action, THE WAITING STATE OF AN APPLICATION, THE PROGRESS OF A
+// PROCESS, or the existence of errors". The corpus covered the first and overlapped the fourth with 3.3.1,
+// so `criterion-coverage.ts` recorded 4.1.3 as covering ONE of four and the audit called it a corpus gap
+// rather than a layer one. These close it: a waiting state and a progress state are as audible as a result
+// count, and reach the same channel by the same route.
+//
+// APPENDED AT THE END OF THE CASE LIST, AND THAT IS STILL NOT FREE -- MEASURED, BECAUSE THE FIRST VERSION
+// OF THIS COMMENT CLAIMED IT WAS. Page furniture is dealt within a subtype (case k gets bucket
+// (offset + k) % 5), so anything sitting after these in SUBTYPE order re-buckets and recaptures.
+// Appending to `cases` is not enough to be last, because the final list is
+// `[...cases, ...multiDefectCases(cases), ...conformantBehaviourCases(cases)]` -- so every DERIVED variant
+// of this subtype still follows a base case that was just inserted ahead of it.
+//
+// Measured by hashing every case's pages before and after: 6 added, 0 removed, **18 changed** -- 15
+// `+also-` multi-defect variants and 3 `+with-component-index` conformant-behaviour variants, all of the
+// `filter-status-silent` family, none of them a base pair. That is 36 captures, well under a minute
+// across the fleet, and it is the documented trade rather than a surprise.
+//
+// The alternative was a subtype per category, which would have re-bucketed nothing. It was rejected on
+// ADR 0015 grounds: two new subtypes with THREE positives each, against heads of 412 parameters, buys a
+// starvation problem the plan already names as larger than the vetoes it would avoid. Fourteen base
+// positives in one subtype is the better shape.
+//
+// The channel is `formChanges[].after`, which is the speech delta taken immediately after the activation
+// and before any navigation -- speech the page produced ON ITS OWN. That is the whole point for this
+// criterion, which requires a status message to be presented "without receiving focus". `postSubmitFields`
+// is a RE-READ reached by navigating to the fields, so text found there proves only that it exists
+// somewhere reachable; a page with no live region at all announces its error on re-read.
+cases.push(
+  ...[
+    ["waiting-status-silent-report", "Sales report", "Sales report", "Generate report",
+      "Ready to generate.", "Loading your report", "Loading your report",
+      "Generate the report and notice that the page says it is working."],
+    ["waiting-status-silent-search", "Archive search", "Archive search", "Search the archive",
+      "Ready to search.", "Searching the archive", "Searching the archive",
+      "Search the archive and notice that the page says it is working."],
+    ["waiting-status-silent-booking", "Room booking", "Room booking", "Check availability",
+      "Ready to check.", "Checking availability", "Checking availability",
+      "Check availability and notice that the page says it is working."],
+  ].map(([id, title, heading, control, initial, updated, expected, task]) => statusVariant({
+    id, title, heading, control, task, initial, updated, expected,
+    mutation: "The page enters a WAITING state and says so on screen, without exposing it through a live "
+      + "status -- so a sighted user sees that something is happening and a screen-reader user hears "
+      + "nothing and cannot tell a slow page from a dead one.",
+  })),
+);
+
+cases.push(
+  ...[
+    ["progress-status-silent-upload", "Document upload", "Document upload", "Upload documents",
+      "No files uploaded yet.", "Step 3 of 10 complete", "Step 3 of 10 complete",
+      "Upload the documents and notice how far the upload has got."],
+    ["progress-status-silent-import", "Contact import", "Contact import", "Import contacts",
+      "No contacts imported yet.", "Step 4 of 12 complete", "Step 4 of 12 complete",
+      "Import the contacts and notice how far the import has got."],
+    ["progress-status-silent-export", "Data export", "Data export", "Export records",
+      "No records exported yet.", "Step 2 of 8 complete", "Step 2 of 8 complete",
+      "Export the records and notice how far the export has got."],
+  ].map(([id, title, heading, control, initial, updated, expected, task]) => statusVariant({
+    id, title, heading, control, task, initial, updated, expected,
+    mutation: "The PROGRESS of a running process is shown on screen and never exposed through a live "
+      + "status, so a screen-reader user has no way to tell whether it is advancing or stalled.",
+  })),
 );
 
 export const CASES = Object.freeze(withRealisticScale(
