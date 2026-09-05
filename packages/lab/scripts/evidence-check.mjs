@@ -32,12 +32,12 @@ import { titleOf } from "@a11y-witness/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";
 import { nonAuthoritativeHostNotice } from "../src/training/capture-host.mjs";
 import { hasUsableCaptureFiles } from "../src/training/capture-resume.mjs";
-import { hostPagesBase } from "../../worker-fleet/src/host-address.mjs";
-import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mjs";
-import { workerIsUsable } from "../../worker-fleet/src/worker-health.mjs";
+import { hostPagesBase } from "@a11y-witness/worker-fleet/host-address";
+import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "@a11y-witness/worker-fleet/worker-http";
+import { workerIsUsable } from "@a11y-witness/worker-fleet/health";
 import { drainAcrossPool } from "../src/training/worker-pool.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { captureTolerantly } from "../../worker-fleet/src/capture-client.mjs";
+import { captureTolerantly } from "@a11y-witness/worker-fleet/capture-client";
 
 /**
  * the check that decides whether 2,122 cached captures survive a change. It also takes worker URLs

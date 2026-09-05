@@ -19,7 +19,7 @@
  * WITHIN a box the work is SEQUENTIAL, because a worker serves one capture at a time and answers
  * `429 a capture is already in progress` to the second. Parallelism is across boxes only.
  */
-import { inventoryWorkerUrls } from "../../../worker-fleet/src/fleet-env.mjs";
+import { inventoryWorkerUrls } from "@a11y-witness/worker-fleet/fleet-env";
 
 import { gateVerdict } from "./verdict.mjs";
 import { drainAcrossPool } from "../training/worker-pool.mjs";

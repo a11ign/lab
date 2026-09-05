@@ -34,17 +34,49 @@ import { fileURLToPath } from "node:url";
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const ENTRY = "packages/lab/src/harnesses/capture-check.mjs";
 
-/** Every local file the harness reaches, transitively. Package-name imports are out of scope: they
- *  resolve through `node_modules` and a filter cannot name them meaningfully. */
+/**
+ * A `@a11y-witness/<pkg>[/<subpath>]` specifier resolves through `node_modules` to that package's
+ * `dist`, built from the SAME source this walk must reach — so it is followed back to its SOURCE file via
+ * the package's own `exports` map, the identical translation
+ * `worker-fleet-does-not-read-control.test.ts`'s `publishedEntryPoints()` already does in the other
+ * direction (source -> dist). Without this, repointing an import from a relative path to its package's
+ * declared export — exactly the §3.3 fix this repo's own architecture audit asked for — would silently
+ * blind this walker, which is the "a remedy in one place breaks a check relying on the old shape"
+ * shape this repo's CLAUDE.md names as its most expensive recurring defect.
+ */
+function internalSourceFile(specifier: string): string | undefined {
+  const match = /^@a11y-witness\/([^/]+)(\/.*)?$/.exec(specifier);
+  if (!match) return undefined;
+  const [, pkgName, subpath] = match;
+  const pkgDir = resolve(ROOT, "packages", pkgName);
+  const pkgJsonFile = resolve(pkgDir, "package.json");
+  if (!existsSync(pkgJsonFile)) return undefined;
+  const pkgJson = JSON.parse(readFileSync(pkgJsonFile, "utf8"));
+  const exportEntry = pkgJson.exports?.[subpath ? `.${subpath}` : "."];
+  const distTarget: string | undefined = exportEntry?.default;
+  if (!distTarget) return undefined;
+  const name = distTarget.replace(/^\.\/dist\//, "");
+  const sourceName = name.endsWith(".js") ? name.replace(/\.js$/, ".ts") : name; // .mjs is copied verbatim
+  const source = resolve(pkgDir, "src", sourceName);
+  return existsSync(source) ? source : undefined;
+}
+
+/** Every local file the harness reaches, transitively — both by relative import and by package name into
+ *  a sibling `@a11y-witness/*` workspace. */
 function importClosure(entry: string): string[] {
   const seen = new Set<string>();
   const walk = (file: string) => {
     if (seen.has(file) || !existsSync(file)) return;
     seen.add(file);
-    for (const found of readFileSync(file, "utf8").matchAll(/from\s+"(\.[^"]+)"/g)) {
+    const source = readFileSync(file, "utf8");
+    for (const found of source.matchAll(/from\s+"(\.[^"]+)"/g)) {
       let target = resolve(dirname(file), found[1]);
       if (!existsSync(target) && existsSync(`${target}.mjs`)) target = `${target}.mjs`;
       walk(target);
+    }
+    for (const found of source.matchAll(/from\s+"(@a11y-witness\/[^"]+)"/g)) {
+      const target = internalSourceFile(found[1]);
+      if (target) walk(target);
     }
   };
   walk(resolve(ROOT, entry));

@@ -8,10 +8,10 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
 import { leaseWorker, leaseWorkerPool, guestReachableUrl, isAfterRun } from "@a11y-witness/worker-fleet";
-import { requestJson } from "../../../worker-fleet/src/worker-http.mjs";
-import { configuredWorkers, inventoryWorkerUrls } from "../../../worker-fleet/src/fleet-env.mjs";
-import { captureTolerantly as tolerantCapture } from "../../../worker-fleet/src/capture-client.mjs";
-import { assertFleetRunsThisCheckout } from "../../../worker-fleet/src/worker-code-check.mjs";
+import { requestJson } from "@a11y-witness/worker-fleet/worker-http";
+import { configuredWorkers, inventoryWorkerUrls } from "@a11y-witness/worker-fleet/fleet-env";
+import { captureTolerantly as tolerantCapture } from "@a11y-witness/worker-fleet/capture-client";
+import { assertFleetRunsThisCheckout } from "@a11y-witness/worker-fleet/worker-code-check";
 import { titleOf } from "@a11y-witness/evidence/verify";
 import {
   isEvidence, rejectionReason, runOutcome, shouldRetireWorker,

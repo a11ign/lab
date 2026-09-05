@@ -24,21 +24,21 @@ import { pathToFileURL } from "node:url";
 
 import { pagesFor, REAL_PAGES } from "./real-page-corpus.mjs";
 import { parseShard, shardOf } from "./shard.mjs";
-import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
-import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
-import { configuredWorkers, inventoryWorkerUrls } from "../../../worker-fleet/src/fleet-env.mjs";
+import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11y-witness/worker-fleet/worker-http";
+import { workerIsUsable } from "@a11y-witness/worker-fleet/health";
+import { configuredWorkers, inventoryWorkerUrls } from "@a11y-witness/worker-fleet/fleet-env";
 import { leasePageServer } from "./page-server.mjs";
 import { realCorpusRoot, datasetRoot } from "../dataset-paths.mjs";
 import { hostAddressForWorker } from "@a11y-witness/worker-fleet";
-import { fleetConsistency, describeMismatches } from "../../../worker-fleet/src/fleet-consistency.mjs";
-import { assertFleetRunsThisCheckout } from "../../../worker-fleet/src/worker-code-check.mjs";
+import { fleetConsistency, describeMismatches } from "@a11y-witness/worker-fleet/fleet-consistency";
+import { assertFleetRunsThisCheckout } from "@a11y-witness/worker-fleet/worker-code-check";
 import { drainAcrossPool } from "./worker-pool.mjs";
 import { createHostThrottle, hostOf } from "./host-throttle.mjs";
 import { writeJsonAtomic } from "./write-atomic.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { beginRun } from "./capture-progress.mjs";
 import { resumePlan, describeResume } from "./real-page-resume.mjs";
-import { captureTolerantly } from "../../../worker-fleet/src/capture-client.mjs";
+import { captureTolerantly } from "@a11y-witness/worker-fleet/capture-client";
 // BY CODE, not the literal string — architecture-audit.md §5, item 4. `capture-faults.mjs` has no
 // imports of its own, so it is safe from any portable tree; a renamed fault must not be able to make
 // this branch silently stop firing.

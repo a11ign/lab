@@ -38,7 +38,7 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { workerNamesFromInventory } from "../../../worker-fleet/src/fleet-env.mjs";
+import { workerNamesFromInventory } from "@a11y-witness/worker-fleet/fleet-env";
 import { WORKER_FILES } from "../../../nvda-worker/src/worker-files.mjs";
 
 const REPO = join(import.meta.dirname, "..", "..", "..", "..");
