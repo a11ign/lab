@@ -64,6 +64,12 @@ export const EVIDENCE_FIELDS = [
   // evidence would have reported SAME and shipped without a recapture, from the one gate whose job
   // is deciding whether cached captures may be kept. An OBJECT, so it flattens like `routeChange`.
   ["interaction", "focusReveal"],
+  // 2.4.7, and the guard caught this one within MINUTES of the field first reaching a capture rather
+  // than after it had shipped — which is the whole return on `evidence-fields.test.ts`. An OBJECT, so it
+  // flattens like `routeChange` and `focusReveal`: its verdict is `{checked, events, scriptRemovedFocus}`
+  // and a count-based comparison would read SAME on a change that empties `scriptRemovedFocus`, which IS
+  // the finding.
+  ["interaction", "focusEvents"],
   // Capture-protocol 13. Both are OBJECTS, so they go through the same flattening as `routeChange` and
   // `dialogEscape` — a list-of-objects read as a count is the defect this file was fixed for today.
   ["interaction", "arrowNavigation"], ["interaction", "typedFeedback"],

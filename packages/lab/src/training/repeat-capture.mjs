@@ -174,6 +174,9 @@ export function comparable(/** @type {any} */ capture) {
     // verdict is `{revealed, dismissed, focusHeld, vanished}` and a count-based comparison would read
     // SAME on a change that flips `dismissed` — which is the whole finding.
     focusReveal: flatten(i.focusReveal),
+    // 2.4.7. Flattened for the same reason as its neighbours: `scriptRemovedFocus` going from a named
+    // control to empty is the whole signal, and a count would read SAME across it.
+    focusEvents: flatten(i.focusEvents),
   };
 }
 
