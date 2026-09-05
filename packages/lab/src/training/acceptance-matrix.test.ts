@@ -239,8 +239,14 @@ test("no `language-unmarked` case names its own language in the page text", () =
   // Every case written before them already avoided it — "the dedication reads:", "the city motto appears
   // above the door:" — so the convention existed and was recorded NOWHERE, which is why it was not
   // inherited. A rule that lives only in the shape of existing examples is one the next author breaks.
+  //
+  // ALL_ACCEPTANCE_CASES, not CASES: this file's own subject is the HELD-OUT set, and this guard was found
+  // checking the CORPUS instead — a copy-paste that never repointed at its own data, which left the four
+  // `acceptance-language-*` pairs (this file's counterpart to the three that went blind) completely
+  // unchecked by a test carrying their exact name. `case-matrix.test.ts` covers `CASES` separately, so this
+  // is not a second copy of that check — it is the first copy of THIS one.
   type LanguageCase = { id: string; good: string; bad: string; badSignal?: { type?: string; language?: string } };
-  const affected = (CASES as unknown as LanguageCase[])
+  const affected = (ALL_ACCEPTANCE_CASES as unknown as LanguageCase[])
     .filter((c) => c.badSignal?.type === "language-unmarked");
   assert.ok(affected.length > 0, "no language-unmarked cases found; this test would assert nothing");
 

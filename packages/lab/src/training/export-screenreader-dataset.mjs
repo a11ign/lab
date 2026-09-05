@@ -105,8 +105,6 @@ function readCapture(/** @type {any} */ testCase, /** @type {any} */ variant) {
   return existsSync(path) ? readJson(path) : null;
 }
 
-
-
 function usableCapture(/** @type {any} */ capture) {
   return capture && Array.isArray(capture.transcript) && capture.transcript.length > 0;
 }

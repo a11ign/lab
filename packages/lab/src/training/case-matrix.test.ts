@@ -14,7 +14,7 @@ interface GeneratedCase {
   id: string;
   good: string;
   bad: string;
-  badSignal: { type: string; control?: string; expected?: string };
+  badSignal: { type: string; control?: string; expected?: string; language?: string };
   probeTables?: boolean;
 }
 
@@ -98,6 +98,27 @@ test("arrow-keys-inert fires only when the page said nothing AND focus did not m
   // differently depending on how the caret arrived, so demanding both would call a working group broken.
   assert.equal(arrowKeysAreInert({ ...inert, announced: "Express delivery, radio button, 2 of 3" }), false);
   assert.equal(arrowKeysAreInert({ ...inert, focusAfter: "Express delivery, radio button" }), false);
+});
+
+test("no language-unmarked case names its own language in the page text", () => {
+  // `languageIsUnannounced` fires when the language NAME (not the ISO code) is absent from everything
+  // NVDA said -- and NVDA reads the page's own visible text too, so a lead or passage that happens to
+  // contain the word ("reproduced in the original French") puts it in spokenText() on BOTH variants
+  // regardless of whether a language change was actually announced. That made three real cases BLIND at
+  // the gate on 2026-09-05 (case-matrix.mjs, the comment above `language-marked-silent-museum`), fixed by
+  // hand-rewriting their lead text -- an unwritten convention until then. This is the guard that convention
+  // never had: it is cheap (no capture, no fleet), runs on every push, and the next case that violates it
+  // fails here instead of surviving until a real capture run reports it blind.
+  const languageCases = cases.filter((c) => c.badSignal.type === "language-unmarked" && c.badSignal.language);
+  assert.ok(languageCases.length >= 5, "the language-of-parts family has shrunk; re-read this test");
+  const violators = languageCases.filter((c) => {
+    const name = c.badSignal.language as string;
+    const pattern = new RegExp(`\\b${name}\\b`, "i");
+    return pattern.test(c.good) || pattern.test(c.bad);
+  });
+  assert.deepEqual(violators.map((c) => c.id), [],
+    "these cases name their own declared language somewhere in the page text, which makes " +
+    "language-unmarked unable to discriminate the pair");
 });
 
 test("an unprobed or unreadable capture makes NO arrow claim", () => {
