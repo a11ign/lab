@@ -206,6 +206,11 @@
         "rules:coverage read 'NEVER FIRED ANYWHERE -- the claim rests on nothing'."
       ]
     },
+    "1.4.13:focus-panel-undismissable": {
+      "decidedBy": "rules",
+      "reportsAs": "1.4.13",
+      "note": "The DISMISSABLE bullet, since 2026-09-05, and moved here on the identical basis as 3.3.3 and 3.2.1/3.2.2 the day before: the evidence is `focusRevealVerdict`'s own verdict -- three censuses and two focus reads, computed on the worker -- so whether content appeared on focus, focus held, and Escape (pressed twice; NVDA eats the first) did not make it go away is READ, not judged. The retrain that surfaced this: the head had 12 positives against 412 parameters and a threshold at the top of the grid (0.971), which blocked both the calibration gate (`fewer than 20 positive development records`) and, as a consequence, the acceptance gate (`fewer than 3 acceptance positives` -- `eligible_records` drops a criterion once every one of its subtypes is rule-decided, which is the honest answer once this entry exists, not a workaround for it). Twenty cases would not have made the head good, only permitted; ADR 0021's own precedent (`4.1.2:state-change-silent`) is to move evidence this direct to the rules rather than wait on a corpus a head this shape can never be well-calibrated from. `secondary`, not `conformance`: Dismissable's own text carves out two exceptions this evidence cannot rule out -- \"unless the additional content communicates an input error or does not obscure or replace other content\" -- and PERSISTENT is separately undecidable here (`focusRevealVerdict`'s own docstring: \"remains visible\" is pixels). NOT in MODEL_EXCLUDED_SUBTYPES: the evidence expresses the failure exactly, so the records stay and RULE_SUBSTITUTED_SUBTYPES makes the head non-blocking -- declaring `rules` while excluding the records is the contradiction `assert_declaration_matches_data` catches by name."
+    },
     "3.3.3:error-remedy-missing": {
       "decidedBy": "rules",
       "reportsAs": "3.3.3",
