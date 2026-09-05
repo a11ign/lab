@@ -232,6 +232,31 @@ test("A LOST 202 IS RECONCILED BY THE SAME ID, not thrown away", async () => {
 });
 
 /**
+ * THE DEADLINE IS NOT A SUGGESTION — architecture-audit.md §14.5. Every wait inside the poll loop used a
+ * fixed constant (a 2 s sleep, a 10 s progress read, a 30 s result read) regardless of how little of
+ * `timeoutMs` was left, so a caller asking for `timeoutMs: 20` against a worker that answers IMMEDIATELY
+ * still measured ~2,012 ms before getting a result back — the audit's own loopback probe, reproduced here
+ * verbatim. This is a deadline-CONTRACT test: the claim is not that captures finish in 20 ms, it is that
+ * the client must not silently pad a tiny requested budget by two orders of magnitude when nothing forced
+ * it to.
+ */
+test("a tiny timeoutMs is not padded by a full unconditional POLL_MS sleep", async () => {
+  const w = await worker((url, res) => {
+    if (url === "/capture") return json(res, 202, { state: "running" });
+    json(res, 200, { transcript: ["done immediately"] }); // answers on the very FIRST poll
+  });
+  try {
+    const start = Date.now();
+    // Either outcome is a compliant answer to a 20 ms budget -- succeeding because the deadline still had
+    // room for one fast local poll, or honestly timing out because it did not. What the OLD code could
+    // never do is take ~2,012 ms to arrive at either one, which is the only thing asserted below.
+    await captureTolerantly({ worker: w.url, body: { url: "http://x/" }, timeoutMs: 20 }).catch(() => {});
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed < 500, `expected well under the old ~2,012 ms for a 20 ms budget; took ${elapsed} ms`);
+  } finally { await w.close(); }
+});
+
+/**
  * A POST THAT NEVER ARRIVES IS DIFFERENT FROM ONE WHOSE ANSWER WAS LOST, and only the first is safe to
  * retry with a fresh id immediately. This is the audit's "never-accepted test", the sibling the
  * accepted-but-lost test above needs.

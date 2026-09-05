@@ -23,6 +23,7 @@ import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { captureTolerantly } from "../capture/capture-client.mjs";
+import { CAPTURE_CLIENT_TIMEOUT_MS } from "../../../worker-fleet/src/worker-http.mjs";
 
 /**
  * takes its worker POSITIONALLY and no flags at all, so any flag passed to it is discarded.
@@ -33,8 +34,10 @@ refuseUnknownFlags([], { entry: import.meta.url, command: "npm run verdict:stabi
 
 // This file is why the guard in budget-ladder.test.ts now DISCOVERS capture clients instead of
 // listing three: it declared 560 s and undici gave it 300 s, which is precisely the defect that
-// was "fixed" the same day -- at three call sites out of ten.
-const CAPTURE_TIMEOUT_MS = 560_000;
+// was "fixed" the same day -- at three call sites out of ten. IMPORTED rather than a second literal
+// now, architecture-audit.md §14.5: a local 560_000 was already below the worker's true worst case
+// once desktop preparation is counted (580 s), so this was the same defect a third time.
+const CAPTURE_TIMEOUT_MS = CAPTURE_CLIENT_TIMEOUT_MS;
 
 const WORKER = process.argv[2];
 const RUNS = 3;
