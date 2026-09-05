@@ -4553,6 +4553,82 @@ cases.push(
   })),
 );
 
+// F55 — "using script to remove focus when focus is received" — WHICH THREE CRITERIA LIST AND THE CORPUS
+// HAD NEVER CARRIED.
+//
+// Found by the 2026-09-05 audit of the out-of-scope reasons, from an unexpected direction. 2.4.7 Focus
+// Visible was recorded as `out-of-scope` because "it is about a rendered focus indicator" -- true of F78
+// (styling the outline away) and NOT of its other listed failure. F55 fails 2.4.7 because nothing holds
+// focus for an indicator to be drawn ON; that is not a pixel question. W3C lists it under 2.1.1 and 3.2.1
+// as well, and `rules.ts` has named it as 3.2.1's unclosed gap -- "focus IS the change of context" --
+// saying outright that `focusOrder` could witness it. THREE criteria naming one failure, no case for it,
+// and no entry mentioning any other.
+//
+// **THE MUTATION MOVES FOCUS ON, IT DOES NOT `blur()`, AND THAT IS A SAFETY DECISION.** `this.blur()`
+// sends focus to the document body, so the next Tab restarts from the top and the probe walks the same
+// prefix forever -- bounded only by MAX_TAB_STOPS, and producing a `focusOrder` whose shape says
+// "trapped" rather than "skipped". Moving focus to a LATER field is still F55 by W3C's own description,
+// and it leaves a clean signature: the second field never appears, the third does.
+//
+// That LATER part is load-bearing, and it is the 2.1.1 lesson rather than a preference: the focus probe
+// truncates, so "absent from focusOrder" almost never means "unreachable" on its own. A control counts as
+// unreachable only when something later in reading order WAS reached, and `controlUnreachableByKeyboard`
+// additionally refuses to claim anything unless the tab cycle closed -- Tab wraps to the first control, so
+// a recording that revisits its start has seen every focusable, and without that the probe's stop cap is
+// indistinguishable from the page trapping the keyboard.
+//
+// Declared under 2.1.1, which is the criterion whose SIGNAL this is and whose rule already decides it.
+// 2.4.7 and 3.2.1 are recorded in `alsoFails` rather than given cases of their own: one page, one defect,
+// three criteria that each list it -- and asserting the same evidence under three subtypes would teach the
+// scorer that one implies the others, which is the contamination the per-case assertion rule exists to
+// stop. What this buys those two is a page their evidence can be validated against when someone builds
+// them, which is §17's precondition and the reason the probe is not being written today.
+cases.push(
+  ...[
+    ["focus-removed-on-receipt-order", "Order details", "Order details",
+      "Delivery instructions", "Reach the delivery instructions field using the keyboard alone."],
+    ["focus-removed-on-receipt-claim", "Claim details", "Claim details",
+      "Incident description", "Reach the incident description field using the keyboard alone."],
+    ["focus-removed-on-receipt-booking", "Booking details", "Booking details",
+      "Access requirements", "Reach the access requirements field using the keyboard alone."],
+  ].map(([id, title, heading, skipped, task]) => {
+    const form = (/** @type {boolean} */ conformant) =>
+      "<form>"
+      + "<p><label for=\"first\">Contact name</label><input id=\"first\" name=\"first\"></p>"
+      + "<p><label for=\"second\">" + skipped + "</label>"
+      + "<input id=\"second\" name=\"second\""
+      + (conformant ? "" : " onfocus=\"document.getElementById('third').focus();\"") + "></p>"
+      + "<p><label for=\"third\">Daytime telephone number</label><input id=\"third\" name=\"third\"></p>"
+      + "<button type=\"submit\">Save details</button>"
+      + "</form>";
+    return pair({
+      id,
+      criterion: "2.1.1",
+      // NO `alsoFails` FOR 2.4.7 OR 3.2.1, DELIBERATELY, AND THE FIRST VERSION OF THIS CASE HAD IT WRONG.
+      //
+      // Every other `alsoFails` in this file names a `criterion:subtype` that something actually decides
+      // ("4.1.2:unnamed-control"). Neither of these has one: 2.4.7 is not assessed at all, and F55 is
+      // precisely the part of 3.2.1 its rule does NOT reach. Labelling a case with a failure no layer
+      // detects does not record a fact, it manufactures FALSE NEGATIVES -- the mirror of the defect
+      // `form-unlabelled` records, where a real second failure went unlabelled and 109 correct detections
+      // scored as false positives. The cross-criterion fact belongs in the comment above, where a person
+      // reads it, not in a label an evaluator will score against.
+      task,
+      source: "WCAG F55; 2.1.1, 2.4.7 and 3.2.1 Understanding",
+      mutation: "Script removes focus from a field the moment it receives it, so Tab passes straight over "
+        + "it. The field is a native input with no tabindex, is in the accessibility tree, and announces "
+        + "exactly as its conformant twin -- a checker looking for an interactive element without a "
+        + "tabindex passes the page, and only walking the tab order shows the field cannot be reached.",
+      good: page({ title, heading, body: form(true) }),
+      bad: page({ title, heading, body: form(false) }),
+      badSignal: { type: "control-unreachable-by-keyboard" },
+      probeFocus: true,
+      probeForms: true,
+      probeOrder: "focus-first",
+    });
+  }),
+);
+
 export const CASES = Object.freeze(withRealisticScale(
   [...cases, ...multiDefectCases(cases), ...conformantBehaviourCases(cases)],
 ));
