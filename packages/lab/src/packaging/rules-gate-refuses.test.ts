@@ -30,9 +30,14 @@ import assert from "node:assert/strict";
 import { tally, verdictOf, falsePositiveFailures } from "../../scripts/score-rules.js";
 
 /** A subtype the rules OWN, so a record labelled with it is theirs to catch. */
-const OWNED = "3.3.2:unnamed-form-field";
+// `4.1.2:unnamed-control` since 2026-09-05. This was `3.3.2:unnamed-form-field`, which no longer
+// exists: its 133 records were re-declared because W3C does not require a label to be ASSOCIATED for
+// 3.3.2 -- that is 1.3.1 -- and every one of their bad pages carried visible label text, so the subtype
+// had ZERO genuine failures. The EVIDENCE is unchanged, which is why the fixtures below still work: a
+// form field announced as its role alone. Only the criterion it is filed under moved.
+const OWNED = "4.1.2:unnamed-control";
 
-/** A form field announced as its ROLE alone — the failure `3.3.2` is about. */
+/** A form field announced as its ROLE alone — the failure `4.1.2` is about: a role with no name. */
 const UNNAMED_FIELD = {
   transcript: ["heading, level 1, Delivery details", "form, edit", "edit"],
   structure: { formFields: ["edit"], headings: ["heading, level 1, Delivery details"] },

@@ -296,8 +296,19 @@ function formPair({ id, title, label, name, task, placeholderOnly = false }) {
     : "<form><span>" + label + "</span><input name=\"" + name + "\"></form>";
   return pair({
     id,
-    criterion: "3.3.2",
-    subtype: placeholderOnly ? "placeholder-only" : "unnamed-form-field",
+    // TWO CRITERIA FROM ONE GENERATOR, and they are genuinely different failures — corrected 2026-09-05.
+    //
+    // The placeholder-only half really does fail 3.3.2: W3C treats a placeholder as an inadequate label
+    // because it disappears the moment the user types, so nothing is presented to them while they enter.
+    //
+    // The other half does NOT. Its bad page is `<span>Company name</span><input>` — text presented to the
+    // user that identifies the control, which is WCAG's definition of a label — and 3.3.2 does not require
+    // a label to be marked up or ASSOCIATED, that being 1.3.1's subject. A label IS provided. All six of
+    // these acceptance pairs carried it, as did all 133 corpus cases, so the count of genuine 3.3.2
+    // failures in that subtype was ZERO. Worse, their `alsoFails` was empty, so they claimed a criterion
+    // the page meets and omitted the one it fails.
+    criterion: placeholderOnly ? "3.3.2" : "4.1.2",
+    subtype: placeholderOnly ? "placeholder-only" : "unnamed-control",
     task,
     mutation: placeholderOnly ? "The field relies on a placeholder instead of a persistent label." : "The field loses its programmatic label.",
     badSignal: placeholderOnly

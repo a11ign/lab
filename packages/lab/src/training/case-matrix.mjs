@@ -544,7 +544,28 @@ const cases = [
   }),
   pair({
     id: "form-unlabelled",
-    criterion: "3.3.2",
+    // RE-DECLARED FROM 3.3.2 TO 4.1.2 ON 2026-09-05, because the page does not fail 3.3.2.
+    //
+    // W3C is explicit that 3.3.2 does NOT require labels or instructions to be marked up, identified, or
+    // ASSOCIATED with their controls -- that is 1.3.1's subject -- and that a field can PASS 3.3.2 while
+    // FAILING 1.3.1. The bad page here is `<span>Recipient name</span><input>`: text presented to the user
+    // that identifies the control, which is WCAG's own definition of a label. A label IS provided. It is
+    // simply not associated.
+    //
+    // Measured across the whole family: 133 of 133 bad pages carry visible label text, so the number of
+    // genuine 3.3.2 failures in `3.3.2:unnamed-form-field` was ZERO. Not most -- all of them.
+    //
+    // WHY 4.1.2 AND NOT 1.3.1, which the page also fails. Labels here are asserted from the EVIDENCE, not
+    // from the criterion: `form-unlabelled`'s own comment says "asserted per case from the captures, never
+    // inferred". A bare "edit" announcement proves the accessible NAME is absent, which is 4.1.2 exactly.
+    // It cannot show whether a visible label exists elsewhere, which is what 1.3.1 turns on -- so labelling
+    // 1.3.1 would record a failure no layer can detect, and that manufactures FALSE NEGATIVES rather than
+    // recording a fact. The same reasoning kept 2.4.7 and 3.2.1 off the F55 cases.
+    //
+    // `alsoFails` loses its 4.1.2 entry because that is now the primary, and a case listing its own subtype
+    // there double-counts one failure -- asserted by `acceptance-matrix.test.ts`.
+    criterion: "4.1.2",
+    subtype: "unnamed-control",
     // An unlabelled field fails TWICE, and single-label ground truth scored the second one as an error.
     // NVDA announces this field as a bare "edit" -- a role with no accessible name -- which is 4.1.2 as
     // squarely as the missing label is 3.3.2. The deterministic rule detects it correctly, and because
@@ -572,7 +593,6 @@ const cases = [
     //
     // Same precedent as `icon-button-unnamed` above: one failure mode belongs in one subtype, and an
     // unnamed field is the same failure as an unnamed icon button.
-    alsoFails: ["4.1.2:unnamed-control"],
     task: "Enter the name of the person receiving the parcel.",
     source: "Practical Web Accessibility, chapter 6; Inclusive Design for Accessibility, chapter 13",
     mutation: "The text field has no programmatic label and relies on nearby visual text.",
@@ -966,7 +986,12 @@ function unlabelledFieldVariant(/** @type {any} */ { id, title, heading, label, 
   return pair({
     id,
     family: "form-labels",
-    criterion: "3.3.2",
+    // 4.1.2, NOT 3.3.2 — see `form-unlabelled` for the full reasoning. In short: W3C does not require a
+    // label to be ASSOCIATED for 3.3.2 (that is 1.3.1's subject), the bad page carries visible label text,
+    // and 133 of 133 in this family did. A bare "edit" proves the accessible NAME is absent and nothing
+    // more, so 4.1.2 is what the evidence supports and 1.3.1 is what it cannot reach.
+    criterion: "4.1.2",
+    subtype: "unnamed-control",
     // Same second failure as the base `form-unlabelled` case: the field announces as a bare "edit", a
     // role with no accessible name. Deliberately NOT on `placeholderOnlyVariant`, which is 3.3.2 only —
     // a placeholder supplies a name and it does not fire 4.1.2, verified against its capture. See the
@@ -987,7 +1012,6 @@ function unlabelledFieldVariant(/** @type {any} */ { id, title, heading, label, 
     //
     // Same precedent as `icon-button-unnamed` above: one failure mode belongs in one subtype, and an
     // unnamed field is the same failure as an unnamed icon button.
-    alsoFails: ["4.1.2:unnamed-control"],
     task,
     source: "Practical Web Accessibility, chapter 6; Inclusive Design for Accessibility, chapter 13",
     mutation: "The field has nearby visible text but no programmatic label.",
@@ -1376,7 +1400,12 @@ function labelledControlVariant(/** @type {any} */ { id, title, heading, label, 
   return pair({
     id,
     family: id,
-    criterion: "3.3.2",
+    // 4.1.2, NOT 3.3.2 — see `form-unlabelled` for the full reasoning. In short: W3C does not require a
+    // label to be ASSOCIATED for 3.3.2 (that is 1.3.1's subject), the bad page carries visible label text,
+    // and 133 of 133 in this family did. A bare "edit" proves the accessible NAME is absent and nothing
+    // more, so 4.1.2 is what the evidence supports and 1.3.1 is what it cannot reach.
+    criterion: "4.1.2",
+    subtype: "unnamed-control",
     // The `field-followup-*` family, and the same second failure: stripping the programmatic label
     // leaves the control announced as a bare role with no accessible name, which is 4.1.2. Confirmed on
     // `field-followup-date.bad`, whose 4.1.2 evidence is the single token "edit". See `form-unlabelled`
@@ -1397,7 +1426,6 @@ function labelledControlVariant(/** @type {any} */ { id, title, heading, label, 
     //
     // Same precedent as `icon-button-unnamed` above: one failure mode belongs in one subtype, and an
     // unnamed field is the same failure as an unnamed icon button.
-    alsoFails: ["4.1.2:unnamed-control"],
     task,
     source: "Practical Web Accessibility, chapter 6; Inclusive Design for Accessibility, chapter 13",
     mutation: "The form control loses its programmatic label while the same visible cue remains nearby.",
