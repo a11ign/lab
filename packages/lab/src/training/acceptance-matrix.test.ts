@@ -185,15 +185,19 @@ test("every case carries the metadata that makes it REVIEWABLE", () => {
  * rather than passing silently.
  */
 const SUBTYPES_WITHOUT_ACCEPTANCE_COVERAGE = new Set<string>([
-  // Each of these is a REAL GAP in held-out measurement. None is a decision that it does not need one.
+  // EMPTY, AND IT STARTED AT EIGHT THIS MORNING. Every corpus subtype now has a held-out pair.
   //
-  // WAS EIGHT, NOW THREE. The other three were closed on 2026-09-05 once the cause was found: `pair()` here
-  // enumerated `probeForms` and `probeTables` and dropped every other probe flag, so seven of the eight
-  // were not unwritten but INEXPRESSIBLE — a gate that cannot represent a case cannot fail on it. The
-  // remaining five need pages with real navigation or focus traps and are ordinary work, not blocked.
-  "2.1.2:focus-trapped",
-  "2.4.1:skip-link-inert",
-  "2.4.2:route-title-stale",
+  // The eight were not eight oversights. Seven were INEXPRESSIBLE: `pair()` enumerated `probeForms` and
+  // `probeTables` and dropped every other probe flag, so a case needing `probeFocus`, `probeFocusContext`,
+  // `probeTyping`, `probeNavigation` or `probeOrder` could not be written at all. A gate that cannot
+  // represent a case cannot fail on it. The eighth, `1.3.1:no-headings`, needed no probe and had simply
+  // never been written -- worth distinguishing, because "nobody could" and "nobody did" have different
+  // fixes, and only one of them was a bug.
+  //
+  // KEEP THIS LIST EMPTY IF YOU CAN. An entry here is a head that ships without held-out measurement,
+  // while `training:evaluate-acceptance` reports `passed: true` and `RELEASE.md` quotes it as a gate.
+  // If you must add one, say WHY in a comment beside it -- the reason is the only thing that makes it a
+  // decision rather than a gap nobody noticed.
 ]);
 
 const subtypeKey = (c: { criterion?: string; subtype?: string }) =>

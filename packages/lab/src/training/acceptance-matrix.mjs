@@ -570,6 +570,142 @@ function unreachableControlPair({ id, title, action, task }) {
   });
 }
 
+/**
+ * 2.1.2 — a field that refuses to give up focus while it is empty.
+ *
+ * THE MECHANISM IS CHOSEN AGAINST THE PROBE, not merely against the criterion, and the corpus paid to
+ * learn this: the canonical modal trap pulls focus back to a container's FIRST control, and
+ * `probeFocusOrder` cannot see that. `stalled` requires the SAME control repeated consecutively; a guard
+ * cycling among several fields moves focus every press and reads as `cycled`, which is what a conformant
+ * tab order does when it wraps. Refocusing ONE field produces the consecutive repeat the probe detects.
+ *
+ * `focusout` rather than a key handler, because it fires whatever takes focus away — Tab, Shift+Tab, a
+ * click, a script. Deferred with a microtask because Chromium ignores a focus move made during focus-event
+ * dispatch.
+ *
+ * The known limitation stays and is not worked around here: a trap that lets you cycle inside a modal for
+ * ever is a real 2.1.2 failure this tool cannot distinguish from a normal tab cycle, because the probe
+ * presses only Tab.
+ *
+ * @param {{ id: string, title: string, task: string }} spec
+ */
+function focusTrapPair({ id, title, task }) {
+  const body = "<form><fieldset><legend>Your details</legend>"
+    + "<label for=\"t1\">Full name</label><input id=\"t1\">"
+    + "<label for=\"t2\">Email address</label><input id=\"t2\">"
+    + "<label for=\"t3\">Postcode</label><input id=\"t3\">"
+    + "<label for=\"t4\">Telephone number</label><input id=\"t4\">"
+    + "<label for=\"t5\">Notes</label><input id=\"t5\">"
+    + "</fieldset></form>";
+  return pair({
+    id,
+    criterion: "2.1.2",
+    subtype: "focus-trapped",
+    task,
+    mutation: "One field refuses to release focus while it is empty, so Tab returns to it every time and "
+      + "the keyboard cannot leave.",
+    badSignal: { type: "focus-trapped" },
+    good: page({ title, heading: title, body }),
+    bad: page({ title, heading: title, body,
+      script: "document.getElementById('t3').addEventListener('focusout', (event) => {"
+        + "  if (!event.target.value) { queueMicrotask(() => event.target.focus()); }"
+        + "});" }),
+    probeFocus: true,
+    probeForms: true,
+    probeOrder: "focus-first",
+  });
+}
+
+/**
+ * 2.4.1 — a skip link whose target is `hidden`, so focus cannot land on it however correct the link is.
+ *
+ * NOT "the page has no skip link", which would be wrong: W3C is explicit that 2.4.1 does not require one
+ * — headings alone satisfy it (H69), landmarks alone satisfy it (ARIA11) — so detecting absence would
+ * fire on conformant pages. What is assessed is a mechanism that is PRESENT AND INERT.
+ *
+ * This is the variant a rewrite introduces, and the reason it is the interesting one: the target keeps
+ * its `tabindex="-1"`, so somebody knew the pattern, and a later change hid the wrapper. Both obvious
+ * checks pass — the id resolves and the tabindex is right — and the link is still inert, because `hidden`
+ * removes the element from the rendering AND from the accessibility tree.
+ *
+ * @param {{ id: string, title: string, task: string }} spec
+ */
+function inertSkipLinkPair({ id, title, task }) {
+  const body = (/** @type {string} */ targetAttrs) =>
+    "<a href=\"#content\">Skip to main content</a>"
+    + "<nav><ul>"
+    + "<li><a href=\"/news\">News and updates</a></li>"
+    + "<li><a href=\"/events\">Events calendar</a></li>"
+    + "<li><a href=\"/contact\">Contact the team</a></li>"
+    + "</ul></nav>"
+    + "<div id=\"content\"" + targetAttrs + ">"
+    + "<label for=\"q\">Search the collection</label><input id=\"q\" name=\"q\">"
+    + "</div>";
+  return pair({
+    id,
+    criterion: "2.4.1",
+    subtype: "skip-link-inert",
+    task,
+    mutation: "The skip link's target is hidden, so it is in neither the rendering nor the accessibility "
+      + "tree and focus cannot land on it. The link and its href are both correct.",
+    badSignal: { type: "skip-link-inert" },
+    good: page({ title, heading: title, body: body(" tabindex=\"-1\"") }),
+    bad: page({ title, heading: title, body: body(" tabindex=\"-1\" hidden") }),
+    probeFocus: true,
+    probeNavigation: true,
+  });
+}
+
+/**
+ * 2.4.2 — a single-page app that swaps the view and leaves the title alone.
+ *
+ * BOTH variants are SPAs, because a real page load cannot express this failure: the browser reads the new
+ * document's title whatever the author did. The conformant one updates the title AND moves focus to the
+ * new heading — they answer different questions, focus being what NVDA announces at the moment of
+ * navigation and the title being what a user hears when they ask where they are.
+ *
+ * THE NAVIGATING LINK IS FIRST IN THE NAV, and that is a constraint of the probe rather than a design
+ * choice: `probeRouteChange` quick-navs to the first link and activates it. Written the natural way round
+ * both variants activated a plain fragment link, nothing changed on either, and the conformant page was
+ * indistinguishable from the failing one — a fixture whose good variant cannot pass is the same defect as
+ * one whose bad variant cannot fail.
+ *
+ * @param {{ id: string, title: string, task: string }} spec
+ */
+function staleRouteTitlePair({ id, title, task }) {
+  const body = "<nav><ul>"
+    + "<li><a href=\"#permits\" id=\"nav-permits\">Permits</a></li>"
+    + "<li><a href=\"#overview\">Overview</a></li>"
+    + "</ul></nav>"
+    + "<div id=\"view\"><p>Opening times and directions for the Civic Office.</p></div>";
+  const swap = "var view = document.getElementById('view');"
+    + "document.getElementById('nav-permits').addEventListener('click', function (event) {"
+    + "event.preventDefault();"
+    + "history.pushState({}, '', '#permits');";
+  return pair({
+    id,
+    criterion: "2.4.2",
+    subtype: "route-title-stale",
+    task,
+    mutation: "The route changes and the document title does not, so the page announces the old title and "
+      + "a screen-reader user has no way to learn they went anywhere.",
+    badSignal: { type: "route-title-stale" },
+    good: page({ title, heading: title, body,
+      script: swap
+        + "view.innerHTML = '<h1 id=\"landed\" tabindex=\"-1\">Permits</h1>"
+        + "<p>Apply for a residents parking permit.</p>';"
+        + "document.title = 'Permits - " + title + "';"
+        + "document.getElementById('landed').focus();"
+        + "});" }),
+    bad: page({ title, heading: title, body,
+      script: swap
+        + "view.innerHTML = '<h1>Permits</h1>"
+        + "<p>Apply for a residents parking permit.</p>';"
+        + "});" }),
+    probeNavigation: true,
+  });
+}
+
 export const ACCEPTANCE_CASES = Object.freeze([
   imagePair({ id: "generic-lantern", title: "Lantern collection", description: "The collection includes hand-painted lanterns.", file: "lantern.jpg", goodAlt: "Hand-painted lantern beside a window", badAlt: "image", subtype: "generic-alt", task: "Understand what the lantern image shows." }),
   imagePair({ id: "generic-rain", title: "Rain garden", description: "The rain garden collects water from the roof.", file: "rain-garden.jpg", goodAlt: "Rain garden beside the visitor centre", badAlt: "photo", subtype: "generic-alt", task: "Understand what the rain garden looks like." }),
@@ -683,6 +819,9 @@ export const ACCEPTANCE_CASES = Object.freeze([
   noHeadingsPair({ id: "sections-not-headings", title: "Allotment rules", sections: ["Waiting list", "Plot sizes", "Water use"], task: "Move between the sections of the allotment rules." }),
   focusOrderPair({ id: "tab-order-contradicts-reading", title: "Delivery details", task: "Move through the delivery form with the keyboard in the order it reads." }),
   unreachableControlPair({ id: "button-off-the-tab-order", title: "Saved searches", action: "Delete this search", task: "Reach the delete action for a saved search using the keyboard alone." }),
+  focusTrapPair({ id: "field-will-not-release-focus", title: "Membership form", task: "Move through the membership form and out the other side with the keyboard." }),
+  inertSkipLinkPair({ id: "skip-link-target-hidden", title: "Local collection", task: "Use the skip link to reach the main content." }),
+  staleRouteTitlePair({ id: "route-changes-title-does-not", title: "Civic Office", task: "Open the Permits view and confirm where you are." }),
 ]);
 
 /**
