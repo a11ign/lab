@@ -2,9 +2,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { cacheKey, hashPageDir } from "./capture-cache.mjs";
-
-const hasTranscript = (/** @type {{ screenReader?: string, transcript?: unknown[] } | null} */ capture) =>
-  capture?.screenReader === "NVDA" && Array.isArray(capture.transcript) && capture.transcript.length > 0;
+import { isUsableCapture } from "../capture/evidence-diff.mjs";
 
 /**
  * A completed pair is eligible for --resume only while it still describes the current page bytes.
@@ -58,11 +56,11 @@ export function hasUsableCaptureFiles({ id, captureRoot, pageRoot, acceptStalePa
   return ["good", "bad"].every((variant) => {
     try {
       const capture = JSON.parse(readFileSync(resolve(captureRoot, id + "." + variant + ".json"), "utf8"));
-      if (!hasTranscript(capture)) return false;
+      if (!isUsableCapture(capture)) return false;
 
       const provenance = capture.provenance ?? {};
       // In test grade the capture must still be REAL — an NVDA transcript for this case — but it need not
-      // describe the current page bytes. The check above (`hasTranscript`) is what stays; only the
+      // describe the current page bytes. The check above (`isUsableCapture`) is what stays; only the
       // page-identity comparison relaxes.
       if (acceptStalePages) return true;
       if (provenance.pageHash) return provenance.pageHash === pageHash;

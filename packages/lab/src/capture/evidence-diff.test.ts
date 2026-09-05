@@ -3,7 +3,10 @@
 // below are mostly about it refusing to say "safe".
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { compareCapture, summarise } from "./evidence-diff.mjs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { compareCapture, summarise, readCapture, isUsableCapture } from "./evidence-diff.mjs";
 
 const capture = (over: Record<string, unknown> = {}) => ({
   transcript: ["heading, level 1, Museum 004 controls", "Print this report"],
@@ -184,4 +187,69 @@ test("a capture that FAILED must count against coverage, not vanish from it", ()
   assert.equal(partial.attempted, 48, "a capture that could not be made was still asked for");
   assert.equal(partial.inconclusive, true, "46 of 48 is not a verdict");
   assert.doesNotMatch(partial.recommendation, /safe to ship/);
+});
+
+/**
+ * `readCapture`/`isUsableCapture` are the shared answer to a question four modules used to answer
+ * differently (audit §9) — check-signals.mjs, export-screenreader-dataset.mjs, capture-cache.mjs and
+ * capture-resume.mjs all import these now instead of keeping their own copy.
+ */
+test("readCapture: a missing file is null, never an error", () => {
+  const dir = mkdtempSync(join(tmpdir(), "evidence-diff-"));
+  try {
+    assert.equal(readCapture(dir, "no-such-case", "good"), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("readCapture: a malformed file THROWS naming the path, never silently reads as absent", () => {
+  // MUTATION TARGET: two of the four original copies had no try/catch at all (a bare, path-less
+  // SyntaxError crashed the whole run); one swallowed this to null (indistinguishable from "never
+  // captured"). Both are wrong for a torn write, which is a real data-integrity fault.
+  const dir = mkdtempSync(join(tmpdir(), "evidence-diff-"));
+  try {
+    const path = join(dir, "broken.bad.json");
+    writeFileSync(path, "{ not json");
+    assert.throws(() => readCapture(dir, "broken", "bad"), (e: unknown) => {
+      assert.ok(e instanceof Error);
+      assert.match(e.message, /broken\.bad\.json/, "the error must name the file, not just the failure");
+      assert.ok((e as Error & { cause?: unknown }).cause instanceof Error, "the parse error survives as `cause`");
+      return true;
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("readCapture: a well-formed file round-trips", () => {
+  const dir = mkdtempSync(join(tmpdir(), "evidence-diff-"));
+  try {
+    writeFileSync(join(dir, "ok.good.json"), JSON.stringify({ screenReader: "NVDA", transcript: ["hi"] }));
+    assert.deepEqual(readCapture(dir, "ok", "good"), { screenReader: "NVDA", transcript: ["hi"] });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("isUsableCapture: NVDA plus a non-empty transcript is the only shape that passes", () => {
+  assert.equal(isUsableCapture({ screenReader: "NVDA", transcript: ["a"] }), true);
+});
+
+test("isUsableCapture: no screenReader field at all is NOT usable", () => {
+  // The exact gap `export-screenreader-dataset.mjs`'s old `usableCapture` had: this alone used to read as
+  // usable there while capture-cache.mjs and capture-resume.mjs both refused it.
+  assert.equal(isUsableCapture({ transcript: ["a"] }), false);
+});
+
+test("isUsableCapture: a non-NVDA screen reader is NOT usable", () => {
+  assert.equal(isUsableCapture({ screenReader: "VoiceOver", transcript: ["a"] }), false);
+});
+
+test("isUsableCapture: an empty transcript is NOT usable, even with NVDA set", () => {
+  assert.equal(isUsableCapture({ screenReader: "NVDA", transcript: [] }), false);
+});
+
+test("isUsableCapture: null (readCapture's own 'absent' answer) is NOT usable", () => {
+  assert.equal(isUsableCapture(null), false);
 });

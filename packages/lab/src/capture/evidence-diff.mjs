@@ -318,6 +318,16 @@ const WIDESPREAD_DRIFT_SHARE = 0.5;
 
 /**
  * Read a capture, or null when the baseline has no such case.
+ *
+ * ABSENT and UNREADABLE are different findings and must stay that way — audit §9. A file that does not
+ * exist means "not captured yet", a normal state for an in-progress corpus; a file that exists and will
+ * not parse means the write was interrupted or the disk lied, which is a data-integrity problem no
+ * consumer should silently read as "nothing to report". So: missing -> null, malformed -> throw, naming
+ * the path and the cause. Four copies of this function existed with three different answers to that
+ * question before this one became the shared one — one swallowed BOTH cases to null (so a torn write
+ * and an uncaptured case were the same "no evidence" to every caller downstream), and two had no
+ * try/catch at all (so a malformed file crashed the whole run with a bare `SyntaxError` naming no path).
+ *
  * @param {string} dir @param {string} id @param {string} variant
  */
 export function readCapture(dir, id, variant) {
@@ -328,4 +338,24 @@ export function readCapture(dir, id, variant) {
   } catch (error) {
     throw new Error(`could not read ${path}: ${/** @type {Error} */ (error).message}`, { cause: error });
   }
+}
+
+/**
+ * Does this capture carry real NVDA evidence — the one question every consumer of `readCapture` asks
+ * next, answered once rather than up to three different ways.
+ *
+ * FOUND 2026-09-06 (audit §9): three copies existed, and one was weaker than the other two — it checked
+ * for a non-empty transcript but never checked WHICH screen reader produced it, so a capture missing
+ * `screenReader` entirely, or carrying a non-NVDA value, would read as usable to that ONE consumer
+ * (`export-screenreader-dataset.mjs` — the training-set builder) while `capture-cache.mjs` and
+ * `capture-resume.mjs` would both correctly refuse to trust it. Measured against the 2,178 real captures
+ * on disk at the time: none currently exercise the gap (every one carries `screenReader: "NVDA"`, present
+ * since this project's first commit) — but a predicate that can silently admit what its siblings reject
+ * is exactly the shape CLAUDE.md warns about for evidence pipelines, whether or not today's corpus happens
+ * to be clean.
+ *
+ * @param {Record<string, any> | null} capture
+ */
+export function isUsableCapture(capture) {
+  return capture?.screenReader === "NVDA" && Array.isArray(capture.transcript) && capture.transcript.length > 0;
 }

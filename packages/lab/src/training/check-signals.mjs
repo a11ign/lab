@@ -19,12 +19,13 @@
 // Run it after any change to a probe's output shape. A probe and its signal are coupled:
 // when the disclosure probe changed to re-read the control, `after` stopped being empty and
 // the signal that tested for emptiness silently stopped working.
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { CASES, signalMatches } from "./case-matrix.mjs";
 import { hasUsableCaptureFiles } from "./capture-resume.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { readCapture as readCaptureFile } from "../capture/evidence-diff.mjs";
 
 /**
  * a mistyped `--require-complete` scores whatever happens to be on disk and passes — a check that
@@ -44,15 +45,12 @@ const REQUIRE_COMPLETE = process.argv.includes("--require-complete");
 const ONLY = process.argv.find((a) => a.startsWith("--only="))?.slice("--only=".length);
 const EVIDENCE_LINES = 4;
 
-/** @param {string} id @param {string} variant */
-function capturePath(id, variant) {
-  return resolve(CAPTURE_ROOT, id + "." + variant + ".json");
-}
-
+// Shared with capture-cache.mjs/export-screenreader-dataset.mjs/capture-resume.mjs (audit §9): absent ->
+// null, malformed -> throws naming the path. This file had NO try/catch around its own JSON.parse before,
+// so a torn capture file crashed the whole signal check with a bare, path-less SyntaxError.
 /** @param {string} id @param {string} variant */
 function readCapture(id, variant) {
-  const path = capturePath(id, variant);
-  return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
+  return readCaptureFile(CAPTURE_ROOT, id, variant);
 }
 
 /**
