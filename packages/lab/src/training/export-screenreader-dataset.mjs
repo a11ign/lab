@@ -11,6 +11,7 @@ import {
 } from "./case-matrix.mjs";
 import { hasUsableCaptureFiles, TEST_GRADE } from "./capture-resume.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { readCapture as readCaptureFile, isUsableCapture } from "../capture/evidence-diff.mjs";
 
 /**
  * a mistyped `--out=` exports to a path nothing downstream reads, and the trainer then fits on the
@@ -96,21 +97,19 @@ function readJson(/** @type {any} */ path) {
   return JSON.parse(readFileSync(path, "utf8"));
 }
 
-function capturePath(/** @type {any} */ testCase, /** @type {any} */ variant) {
-  return resolve(CAPTURE_ROOT, testCase.id + "." + variant + ".json");
-}
-
+// Shared with capture-cache.mjs/check-signals.mjs/capture-resume.mjs (audit §9): absent -> null, malformed
+// -> throws naming the path. `usableCapture` here used to skip the `screenReader === "NVDA"` check the
+// other two usable-capture predicates in this codebase both make -- the WEAKER of the three -- so a
+// capture missing that field, or carrying a non-NVDA value, would have been accepted into the training
+// set as usable evidence while capture-cache.mjs and capture-resume.mjs would both have refused to trust
+// it. Measured against the 2,178 captures on disk: none currently differ, but this is the ONE consumer
+// that builds what the model trains on, which is the reason to close the gap rather than note it.
 function readCapture(/** @type {any} */ testCase, /** @type {any} */ variant) {
-  const path = capturePath(testCase, variant);
-  return existsSync(path) ? readJson(path) : null;
-}
-
-function usableCapture(/** @type {any} */ capture) {
-  return capture && Array.isArray(capture.transcript) && capture.transcript.length > 0;
+  return readCaptureFile(CAPTURE_ROOT, testCase.id, variant);
 }
 
 function validatePair(/** @type {any} */ testCase, /** @type {any} */ good, /** @type {any} */ bad) {
-  if (!usableCapture(good) || !usableCapture(bad)) {
+  if (!isUsableCapture(good) || !isUsableCapture(bad)) {
     return { status: "skipped", reason: "missing or empty screen-reader capture" };
   }
   const badObserved = signalMatches(bad, testCase.badSignal);
