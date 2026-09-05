@@ -41,6 +41,31 @@ refuseUnknownFlags(["--dry-run"], { entry: import.meta.url, command: "npm run la
 const STEPS = [
   { name: "retrain", script: "lab:retrain",
     why: "pages, captures, check-signals, export, realism tier — the corpus the model is fitted to" },
+  // THE HELD-OUT SET IS CAPTURED HERE, and until 2026-09-05 it was not -- by either whole-chain route.
+  //
+  // `export-acceptance` printed its own remedy when it found nothing usable: *"Capture the held-out set
+  // first -- neither `everything` nor `--pipeline=full` does it for you"*, naming these three jobs. That
+  // message is correct and it is the wrong place for the knowledge: a chain that names the step a human
+  // must remember is a chain with the step missing, which is this repo's own rule about anything relying
+  // on somebody to remember. `--pipeline=migration-verdict` had all three the whole time, so the two
+  // spellings of "the whole chain" disagreed about the one stage that gates promotion -- the same defect
+  // `everything-chain.test.ts` was written for, in the half of it nothing compared.
+  //
+  // MEASURED COST OF NOT HAVING THEM: a chain dispatched 2026-09-05 ran `retrain` (13 s, all cache hits)
+  // and `export-acceptance` (unusable), and would have reached the `acceptance` GATE with nothing to score
+  // -- a guaranteed failure at stage 7 of 9, after paying for `train`.
+  //
+  // THEY NEVER CACHE, deliberately (`DATASET_KIND=acceptance` refuses reuse), because these runs exist to
+  // test whether NVDA's output is still stable. So this is a real capture of every acceptance page on
+  // every whole-chain run, twice, and that cost is the point rather than an oversight: scoring a held-out
+  // set against stale captures answers a different question from the one the gate asks.
+  { name: "generate-acceptance", script: "training:generate-acceptance",
+    why: "the held-out PAGES, regenerated -- capturing without regenerating tests the previous commit" },
+  { name: "capture-acceptance", script: "training:capture-acceptance", env: { REPEAT: "repeat-1" },
+    why: "repeat 1 of the held-out set. Never cached: these runs exist to test whether NVDA is stable" },
+  { name: "capture-acceptance-2", script: "training:capture-acceptance", env: { REPEAT: "repeat-2" },
+    why: "repeat 2, and the evaluator reads BOTH -- one repeat is how a held-out score comes to be "
+      + "computed half on each" },
   { name: "export-acceptance", script: "training:export-acceptance:all",
     why: "the held-out set, EVERY repeat — the evaluator reads every repeat, and exporting one is how a "
       + "held-out score comes to be computed half on each" },

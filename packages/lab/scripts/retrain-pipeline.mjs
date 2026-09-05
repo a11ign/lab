@@ -60,7 +60,12 @@ const STEPS = [
  * npm's `--`, for the steps that take one; a step without them is unchanged.
  */
 /**
- * @param {{ name: string, why: string, script: string, args?: string[] }} step
+ * `env` exists because two steps can be the SAME script and differ only by their environment: the held-out
+ * set is captured twice, `REPEAT=repeat-1` and `REPEAT=repeat-2`, and the evaluator reads both. Merged over
+ * `process.env` rather than replacing it -- the lab passes `A11Y_WORKERS` in, and a step that lost it would
+ * fall back to looking for a local worker VM on a machine that has none.
+ *
+ * @param {{ name: string, why: string, script: string, args?: string[], env?: Record<string, string> }} step
  * @param {{ dryRun?: boolean }} options
  * @returns {{ ok: boolean, output: string, error?: unknown }}
  */
@@ -68,9 +73,10 @@ export function run(step, { dryRun }) {
   process.stdout.write(`\n=== ${step.name}\n    ${step.why}\n`);
   if (dryRun) return { ok: true, output: "(dry run)" };
   const argv = ["run", "--silent", step.script, ...(step.args?.length ? ["--", ...step.args] : [])];
+  const env = step.env ? { ...process.env, ...step.env } : process.env;
   try {
     const output = execFileSync("npm", argv,
-      { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
+      { cwd: REPO, encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
     process.stdout.write(output.split("\n").slice(-6).join("\n") + "\n");
     return { ok: true, output };
   } catch (cause) {

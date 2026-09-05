@@ -34,8 +34,17 @@ test("every stage names an npm script that exists", () => {
 test("the chain runs in the only order that works", () => {
   // Each stage consumes what the one before it produced: you cannot train on an export that has not
   // happened, promote a candidate that has not been trained, or gate weights that have not been promoted.
+  //
+  // THE THREE ACCEPTANCE CAPTURES WERE ADDED 2026-09-05 and their position is the whole point: they run
+  // BEFORE `export-acceptance`, which is what reads them. Until then neither whole-chain route captured
+  // the held-out set at all -- `export-acceptance` printed the three job names as a remedy for a human to
+  // run, while `--pipeline=migration-verdict` had had them all along, so the two spellings of "the whole
+  // chain" disagreed about the one stage that gates promotion. Measured: a chain dispatched that day ran
+  // `retrain` in 13 s of cache hits and `export-acceptance` with nothing usable, and would have reached
+  // the `acceptance` GATE with nothing to score, after paying for `train`.
   assert.deepEqual(STEPS.map((step) => step.name),
-    ["retrain", "export-acceptance", "grants-audit", "applicability-audit", "train",
+    ["retrain", "generate-acceptance", "capture-acceptance", "capture-acceptance-2",
+      "export-acceptance", "grants-audit", "applicability-audit", "train",
      "shortcuts", "acceptance", "promote", "release-gate"]);
 });
 
@@ -134,8 +143,13 @@ test("the stages whose failure means the WORK is wrong are marked as gates", () 
     ["grants-audit", "applicability-audit", "shortcuts", "acceptance", "promote", "release-gate"]);
   // The three that are NOT gates produce the material the gates judge. If one of those fails the
   // pipeline still stops — it is required — but you go and look at the corpus, not at a verdict.
+  // The ones that are NOT gates produce the material the gates judge. If one of those fails the pipeline
+  // still stops — it is required — but you go and look at the corpus, not at a verdict. The three
+  // acceptance captures belong here for exactly that reason: a capture that fails is a fleet or a page
+  // problem, never a verdict about the model.
   assert.deepEqual(STEPS.filter((step) => !step.gate).map((step) => step.name),
-    ["retrain", "export-acceptance", "train"]);
+    ["retrain", "generate-acceptance", "capture-acceptance", "capture-acceptance-2",
+      "export-acceptance", "train"]);
 });
 
 test("every stage's full output is kept, not just the tail the runner prints", () => {
@@ -202,4 +216,32 @@ test("every long capture writes a progress file, or lab:status reports another j
       `${script} must record that it FINISHED — corpus-settled.mjs asks that question, and without an `
       + `answer it falls back to a ten-minute clock and refuses audits after a clean run`);
   }
+});
+
+test("the held-out set is CAPTURED by this chain, before the stage that exports it", () => {
+  // The gap this closes, in the chain's own words: `export-acceptance` found nothing usable and printed
+  // *"Capture the held-out set first — neither `everything` nor `--pipeline=full` does it for you"*,
+  // naming three jobs for a human to run. A chain that names the step somebody must remember is a chain
+  // with the step missing — this repo's own rule about anything relying on a human to remember — and
+  // `--pipeline=migration-verdict` had all three the whole time, so the two whole-chain spellings
+  // disagreed about the stage that gates promotion.
+  const at = (name: string) => STEPS.findIndex((step) => step.name === name);
+  for (const capture of ["generate-acceptance", "capture-acceptance", "capture-acceptance-2"]) {
+    assert.ok(at(capture) !== -1, `${capture} must be a stage; the acceptance gate has nothing to score without it`);
+    assert.ok(at(capture) < at("export-acceptance"),
+      `${capture} runs after the export that reads it, so the export would read the PREVIOUS run's captures`);
+  }
+});
+
+test("the two repeats differ by their ENVIRONMENT, and both reach the evaluator", () => {
+  // They are the same script twice. `REPEAT` is the only thing that separates them, and the evaluator
+  // reads BOTH — `training:evaluate-acceptance` passes `--data repeat-1.jsonl --data repeat-2.jsonl`.
+  // Capturing one and exporting both is how a held-out score comes to be computed half on each.
+  const one = STEPS.find((step) => step.name === "capture-acceptance");
+  const two = STEPS.find((step) => step.name === "capture-acceptance-2");
+  assert.equal(one?.script, two?.script, "both repeats run the same capture script");
+  assert.equal(one?.env?.REPEAT, "repeat-1");
+  assert.equal(two?.env?.REPEAT, "repeat-2");
+  assert.match(SCRIPTS["training:evaluate-acceptance"], /repeat-1\.jsonl/);
+  assert.match(SCRIPTS["training:evaluate-acceptance"], /repeat-2\.jsonl/);
 });
