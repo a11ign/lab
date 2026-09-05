@@ -22,10 +22,11 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import { IMPOSSIBLE_BY_DEFINITION, UNREACHABLE_WITHOUT_PERTURBING } from "./audit-corpus-starvation.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { runsRoot } from "../src/dataset-paths.mjs";
 
 /**
  * Takes no flags: it emits the JS-side declarations for the Python audit to read.
@@ -35,7 +36,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  */
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run corpus:unclosable-map" });
 
-const OUT = resolve(fileURLToPath(new URL("../../../", import.meta.url)), "runs/unclosable-vetoes.json");
+const OUT = resolve(runsRoot(), "unclosable-vetoes.json");
 
 /**
  * The two kinds, kept SEPARATE rather than merged into one list of forgiven pairs.

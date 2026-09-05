@@ -49,6 +49,7 @@ import { ruleFindings } from "@a11y-witness/judge/rules";
 import { readRuleOwnership } from "../src/training/rule-ownership.js";
 import { CASES } from "../src/training/case-matrix.mjs";
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
+import { REPO_ROOT, datasetExportPath } from "../src/dataset-paths.mjs";
 
 /**
  * Subtypes the CASE DEFINITIONS carry, which is a different question from what the export contains.
@@ -65,7 +66,7 @@ const DEFINED_SUBTYPES: Set<string> = new Set(
 const arg = (name: string, fallback: string): string =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 
-const DATA = resolve(process.cwd(), arg("data", "runs/screenreader-dataset/screenreader-evidence.jsonl"));
+const DATA = resolve(REPO_ROOT, arg("data", datasetExportPath()));
 const GATE = process.argv.includes("--gate");
 
 const OWNERSHIP = readRuleOwnership();

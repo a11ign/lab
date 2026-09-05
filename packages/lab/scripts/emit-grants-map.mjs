@@ -13,10 +13,11 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import { ACCOMPANYING_DEFECTS } from "../src/training/case-matrix.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { runsRoot } from "../src/dataset-paths.mjs";
 
 /**
  * takes no flags: it emits the JS-side declarations for the Python audit to read.
@@ -25,7 +26,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  */
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run corpus:grants-map" });
 
-const OUT = resolve(fileURLToPath(new URL("../../../", import.meta.url)), "runs/accompanying-grants.json");
+const OUT = resolve(runsRoot(), "accompanying-grants.json");
 
 /** `grants` is a string on most defects and an array on three; the audit wants one feature per defect. */
 /**

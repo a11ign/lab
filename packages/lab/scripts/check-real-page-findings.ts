@@ -38,15 +38,16 @@
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import { ruleFindings } from "@a11y-witness/judge/rules";
 import { corpusState } from "../src/training/corpus-settled.mjs";
 import { domCensus, oracleCounts, pageCensus, censusTargetIsSuspect } from "@a11y-witness/evidence/verify";
 import { realPageFor, REAL_PAGES } from "../src/training/real-page-corpus.mjs";
+import { REPO_ROOT, realCorpusRoot } from "../src/dataset-paths.mjs";
 
-const REPO = fileURLToPath(new URL("../../../", import.meta.url));
-const REAL = resolve(REPO, process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
+const REPO = REPO_ROOT;
+const REAL = realCorpusRoot();
 const BASELINE = resolve(REPO, "packages/lab/baselines/real-page-findings.json");
 const UPDATE = process.argv.includes("--update");
 const ALLOW_PARTIAL = process.argv.includes("--allow-partial");

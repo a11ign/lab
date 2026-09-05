@@ -28,6 +28,7 @@ import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../.
 import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 import { configuredWorkers, inventoryWorkerUrls } from "../../../worker-fleet/src/fleet-env.mjs";
 import { leasePageServer } from "./page-server.mjs";
+import { realCorpusRoot, datasetRoot } from "../dataset-paths.mjs";
 import { hostAddressForWorker } from "@a11y-witness/worker-fleet";
 import { fleetConsistency, describeMismatches } from "../../../worker-fleet/src/fleet-consistency.mjs";
 import { assertFleetRunsThisCheckout } from "../../../worker-fleet/src/worker-code-check.mjs";
@@ -59,7 +60,7 @@ const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--wor
 const ALLOW_MIXED = process.argv.includes("--allow-mixed-browsers");
 /** Capture with a fleet that is not running this checkout. Says so in the output; never the default. */
 const ALLOW_STALE = process.argv.includes("--allow-stale-workers");
-const OUT = resolve(process.cwd(), process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
+const OUT = realCorpusRoot();
 
 /**
  * The captures already on disk, as `{ url, capturedAt }` — the only two fields resume reasons about.
@@ -452,7 +453,7 @@ async function leaseFixtureServer(/** @type {any} */ pages) {
   if (!local.length) return null;
   const first = new URL(local[0].url);
   return leasePageServer({
-    root: resolve(process.cwd(), "runs/screenreader-dataset/pages"),
+    root: resolve(datasetRoot(), "pages"),
     port: Number(first.port),
     // A page this very run intends to capture, so a server answering the WRONG directory is caught here
     // rather than as an empty transcript later.

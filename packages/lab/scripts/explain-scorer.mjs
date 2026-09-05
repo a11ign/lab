@@ -19,6 +19,7 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { runsRoot } from "../src/dataset-paths.mjs";
 
 /**
  * `--name`, `--case` and `--weights` appear in this file's prose, not in its argv.
@@ -27,7 +28,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  */
 refuseUnknownFlags(["--model=", "--criterion=", "--compare="], { entry: import.meta.url, command: "npm run scorer:explain" });
 
-const RUNS = resolve(process.cwd(), process.env.RUNS_ROOT || "runs");
+const RUNS = runsRoot();
 /**
  * `--name=value` or `--name value`, because both are what people type.
  *

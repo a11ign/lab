@@ -37,6 +37,7 @@ import { guestReachableUrl } from "@a11y-witness/worker-fleet";
 import { assertWorkerUrl, CAPTURE_CLIENT_TIMEOUT_MS }
   from "../../worker-fleet/src/worker-http.mjs";
 import { renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
+import { datasetRoot } from "../src/dataset-paths.mjs";
 import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
   from "../src/gates/fleet.mjs";
 import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.mjs";
@@ -192,7 +193,7 @@ async function main() {
   // than merely holding the port. Released in the `finally`, so a gate that throws leaves the host as it
   // found it, and the lease is refcounted so a concurrent run is not torn down.
   const pages = await leasePageServer({
-    root: resolve(process.env.DATASET_ROOT ?? "runs/screenreader-dataset", "pages"),
+    root: resolve(datasetRoot(), "pages"),
     port: 5050,
     probePath: `${PAGES[0].path}.html`,
   });

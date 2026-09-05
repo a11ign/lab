@@ -33,11 +33,12 @@
  * the fault is in the capture.
  */
 import { readFileSync, existsSync, readdirSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { captureSupports, consentBanner } from "@a11y-witness/evidence/verify";
+import { datasetRoot, captureRoot, realCorpusRoot, repeatCapturesRoot } from "../src/dataset-paths.mjs";
 
 refuseUnknownFlags(["--json"], { entry: import.meta.url, command: "npm run capture:explain" });
 
@@ -444,8 +445,8 @@ function report(/** @type {any} */ capture, /** @type {string} */ source) {
 /** Resolve an argument to capture files: a path, a directory, or a substring of an id. */
 function findCaptures(/** @type {string} */ needle) {
   if (existsSync(needle) && !needle.endsWith("/")) return [needle];
-  const roots = ["runs/real-page-corpus", "runs/screenreader-dataset/captures", "runs/repeat-captures"]
-    .map((r) => resolve(process.cwd(), r)).filter((r) => existsSync(r));
+  const roots = [realCorpusRoot(), captureRoot(datasetRoot()), repeatCapturesRoot()]
+    .filter((r) => existsSync(r));
   const hits = [];
   for (const root of roots) {
     for (const f of readdirSync(root)) {

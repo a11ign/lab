@@ -17,10 +17,7 @@
  * for, and it says so in the verdict rather than being indistinguishable.
  */
 import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
-
-const REPO_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "..", "..", "..", "..");
+import { REPO_ROOT } from "../dataset-paths.mjs";
 
 /**
  * The flag that keeps a gate here. EXPORTED so a caller's `refuseUnknownFlags` list and this check cannot

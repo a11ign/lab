@@ -24,13 +24,14 @@
  * Read it as a work list, not a gate. It says what the next corpus change has to reach.
  */
 import { readFileSync, existsSync } from "node:fs";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
 import { CASES } from "../src/training/case-matrix.mjs";
 import { MODEL_EXCLUDED_SUBTYPES } from "../src/training/export-screenreader-dataset.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { REPO_ROOT, datasetExportPath } from "../src/dataset-paths.mjs";
 
 /**
  * takes no flags: it reads the corpus on disk and reports which features are constant across a
@@ -40,9 +41,8 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  */
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run corpus:starvation" });
 
-const REPO = fileURLToPath(new URL("../../../", import.meta.url));
-const RECORDS = resolve(REPO, process.env.DATASET_EXPORT
-  ?? "runs/screenreader-dataset/screenreader-evidence.jsonl");
+const REPO = REPO_ROOT;
+const RECORDS = datasetExportPath();
 const PYTHON = process.env.A11Y_PYTHON || resolve(REPO, ".venv/bin/python");
 
 /**

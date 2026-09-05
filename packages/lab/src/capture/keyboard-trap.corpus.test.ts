@@ -30,8 +30,9 @@ import { ruleFindings } from "@a11y-witness/judge/rules";
 // carries `// @ts-check` as of today, so its exports are typed and `tsc` refuses a suppression that
 // suppresses nothing.
 import { focusIsTrappedIn } from "../training/case-matrix.mjs";
+import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
 
-const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT ?? "runs/screenreader-dataset", "captures");
+const ROOT = captureRoot(datasetRoot());
 
 /** Every capture on disk that carries a focus probe — the only ones either side has an opinion about. */
 function capturesWithFocus(): { name: string; capture: Record<string, unknown> }[] {

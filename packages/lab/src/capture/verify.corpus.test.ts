@@ -18,10 +18,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { CapturedAnnouncements } from "@a11y-witness/evidence/verify";
 import { captureHasSubstance, captureIsSelfConsistent, captureMentionsTitle, titleOf } from "@a11y-witness/evidence/verify";
+import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { captureFilePath } from "./evidence-diff.mjs";
 
-const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT ?? "runs/screenreader-dataset");
+const ROOT = datasetRoot();
 const MANIFEST = resolve(ROOT, "manifest.json");
-const CAPTURES = resolve(ROOT, "captures");
+const CAPTURES = captureRoot(ROOT);
 const PAGES = resolve(ROOT, "pages");
 
 /** Only the predicates that GATE a capture. A diagnostic that rejects nothing cannot cost evidence. */
@@ -45,7 +47,7 @@ function corpus(): Sample[] {
   const samples: Sample[] = [];
   for (const { id } of manifest.cases) {
     for (const variant of ["good", "bad"]) {
-      const capturePath = resolve(CAPTURES, `${id}.${variant}.json`);
+      const capturePath = captureFilePath(CAPTURES, id, variant);
       const pagePath = resolve(PAGES, id, `${variant}.html`);
       if (!existsSync(capturePath) || !existsSync(pagePath)) continue;
       const capture = JSON.parse(readFileSync(capturePath, "utf8")) as CapturedAnnouncements;

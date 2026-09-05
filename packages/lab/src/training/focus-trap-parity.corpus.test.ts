@@ -28,8 +28,9 @@ import { resolve } from "node:path";
 import { signalMatches } from "./case-matrix.mjs";
 import { ruleFindings } from "@a11y-witness/judge/rules";
 import { oracleCounts } from "@a11y-witness/evidence/verify";
+import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
 
-const CAPTURES = resolve(process.cwd(), process.env.DATASET_ROOT ?? "runs/screenreader-dataset", "captures");
+const CAPTURES = captureRoot(datasetRoot());
 
 /** Every capture that walked the focus ring — the only ones either side can have an opinion about. */
 function capturesWithAFocusOrder(): { name: string; capture: Record<string, unknown> }[] {

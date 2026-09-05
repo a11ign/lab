@@ -35,8 +35,9 @@ import { resolve } from "node:path";
 import { ruleFindings } from "@a11y-witness/judge/rules";
 // The plain-node corpus module. `case-matrix.mjs` carries `// @ts-check`, so its exports are typed.
 import { signalMatches } from "../training/case-matrix.mjs";
+import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
 
-const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT ?? "runs/screenreader-dataset", "captures");
+const ROOT = captureRoot(datasetRoot());
 const SIGNAL = { type: "skip-link-inert" };
 
 /** Every capture carrying a route probe — the only ones either side has an opinion about. */

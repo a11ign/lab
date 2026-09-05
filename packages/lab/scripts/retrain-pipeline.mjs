@@ -21,10 +21,11 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import { releasability } from "../src/packaging/releasability.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
 
 /**
  * a mistyped `--dry-run` runs the REAL retrain; `--silent` in this file is npm's, passed to each step.
@@ -33,7 +34,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  */
 refuseUnknownFlags(["--candidate=", "--dry-run"], { entry: import.meta.url, command: "npm run lab:retrain" });
 
-const REPO = fileURLToPath(new URL("../../../", import.meta.url));
+const REPO = REPO_ROOT;
 
 /**
  * Every step, in order, with what it is for.
@@ -188,7 +189,7 @@ export function keepingTranscript(runStep, { transcript }) {
  * because when `everything` runs this as a child both exist at once and a shared path would interleave
  * them — see `keepingTranscript`.
  */
-export const RETRAIN_TRANSCRIPT = resolve(REPO, "runs", "retrain-transcript.log");
+export const RETRAIN_TRANSCRIPT = resolve(runsRoot(), "retrain-transcript.log");
 
 export function pipeline({ dryRun = false, steps = STEPS, runStep = run } = {}) {
   const done = [];
@@ -223,7 +224,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   });
   if (!result.ok) process.exit(1);
   if (candidate) {
-    const v = verdict(resolve(REPO, "runs", `model-${candidate}`));
+    const v = verdict(resolve(runsRoot(), `model-${candidate}`));
     process.stdout.write(`\n=== verdict\nRELEASABLE: ${v.releasable}\n`);
     for (const blocker of v.blockers) process.stdout.write(`  blocked: ${blocker}\n`);
     for (const note of v.notes) process.stdout.write(`  note:    ${note}\n`);

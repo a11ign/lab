@@ -12,10 +12,10 @@
  *   2  no run recorded
  *   3  in progress but wedged (no update within one capture timeout plus slack)
  */
-import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { inFlight, isStale, readProgress, stalenessMs, tally } from "./capture-progress.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { datasetRoot } from "../dataset-paths.mjs";
 
 /**
  * as `doctor`.
@@ -24,7 +24,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  */
 refuseUnknownFlags(["--json", "--since"], { entry: import.meta.url, command: "npm run training:status" });
 
-const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
+const ROOT = datasetRoot();
 const HEALTH_TIMEOUT_MS = 5_000;
 const MS_PER_SECOND = 1000;
 const SECONDS_PER_MINUTE = 60;

@@ -21,6 +21,7 @@ import { pathToFileURL } from "node:url";
 
 import { observationAmbiguity } from "../src/training/observation-ambiguity.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { datasetRoot, captureRoot, runsRoot } from "../src/dataset-paths.mjs";
 
 const arg = (/** @type {string} */ name) =>
   process.argv.slice(2).find((value) => value.startsWith(name))?.slice(name.length);
@@ -131,8 +132,10 @@ function main() {
     entry: import.meta.url,
     command: "npm run corpus:observation-ambiguity",
   });
-  const CAPTURES = arg("--captures=") ?? "runs/screenreader-dataset/captures";
-  const OUT = arg("--out=") ?? "runs/observation-ambiguity.json";
+  const capturesArg = arg("--captures=");
+  const CAPTURES = capturesArg ? path.resolve(capturesArg) : captureRoot(datasetRoot());
+  const outArg = arg("--out=");
+  const OUT = outArg ? path.resolve(outArg) : path.resolve(runsRoot(), "observation-ambiguity.json");
 
   /** @type {string[]} */
   const ids = [];

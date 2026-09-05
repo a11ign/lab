@@ -6,6 +6,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { cacheDecision, cacheKey, environmentKey, hashPageDir, stampProvenance } from "./capture-cache.mjs";
+import { captureFilePath } from "../capture/evidence-diff.mjs";
 
 const ENV = {
   screenReader: "NVDA",
@@ -43,7 +44,7 @@ function writePair(captures: string, key: string | undefined, over: Record<strin
       { key: key!, options: {}, environment: ENV },
     );
     if (key === undefined) delete (capture as { provenance?: unknown }).provenance;
-    writeFileSync(resolve(captures, `case-1.${variant}.json`), JSON.stringify({ ...capture, ...over }));
+    writeFileSync(captureFilePath(captures, "case-1", variant), JSON.stringify({ ...capture, ...over }));
   }
 }
 

@@ -27,6 +27,7 @@ import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 import { assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { captureIsSelfConsistent } from "@a11y-witness/evidence/verify";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { repeatCapturesRoot } from "../dataset-paths.mjs";
 
 /**
  * `--probe-forms` and `--probe-tables` are how a canary reaches the fields that carry interaction
@@ -89,7 +90,8 @@ const BROWSER = arg("browser");
 // captures and I could not say WHY, because the diagnostics -- stopReason, documentReady,
 // readThroughRetry -- had been thrown away with the response. A harness that reports instability
 // without keeping the evidence makes you run it twice.
-const OUT_DIR = resolve(String(arg("out", "runs/repeat-captures")));
+const outArg = arg("out");
+const OUT_DIR = outArg ? resolve(String(outArg)) : repeatCapturesRoot();
 const BETWEEN_MS = 2_000; // let the guest settle, as a real run would between cases
 
 // A probe-forms run with no task cannot activate anything, so it would compare an empty field five times

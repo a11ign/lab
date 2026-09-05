@@ -26,6 +26,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { compareCapture, readCapture, summarise } from "../src/capture/evidence-diff.mjs";
+import { datasetRoot } from "../src/dataset-paths.mjs";
 import { isEvidence } from "../src/training/capture-decisions.mjs";
 import { titleOf } from "@a11y-witness/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";
@@ -46,7 +47,9 @@ import { captureTolerantly } from "../../worker-fleet/src/capture-client.mjs";
  */
 refuseUnknownFlags(["--sample=", "--only=", "--browser="], { entry: import.meta.url, command: "npm run evidence:check" });
 
-const DATASET = resolve(process.cwd(), "runs/screenreader-dataset");
+// Was hardcoded to "runs/screenreader-dataset" ignoring DATASET_ROOT entirely -- the fourth spelling of
+// this default, and the only one that could not be redirected the way every other dataset tool can.
+const DATASET = datasetRoot();
 const BASELINE = resolve(DATASET, "captures");
 const OUT = resolve(DATASET, "evidence-check");
 // `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
@@ -118,8 +121,7 @@ const pageIsUnchanged = (/** @type {any} */ testCase) => hasUsableCaptureFiles({
 function optionsUnchanged(/** @type {any} */ testCase) {
   return ["good", "bad"].every((variant) => {
     try {
-      const recorded = JSON.parse(readFileSync(resolve(DATASET, "captures", `${testCase.id}.${variant}.json`), "utf8"))
-        .provenance?.options;
+      const recorded = readCapture(resolve(DATASET, "captures"), testCase.id, variant)?.provenance?.options;
       // No recorded options at all is a capture from before provenance existed; the page check already refuses
       // those, so this must not turn "cannot tell" into "comparable".
       if (!recorded) return false;

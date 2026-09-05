@@ -40,7 +40,7 @@
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import { ruleFindings } from "@a11y-witness/judge/rules";
 import { oracleCounts } from "@a11y-witness/evidence/verify";
@@ -50,10 +50,13 @@ import { oracleCounts } from "@a11y-witness/evidence/verify";
 import { RULE_CRITERIA, SCORED_CRITERIA } from "@a11y-witness/judge/coverage";
 import { corpusState } from "../src/training/corpus-settled.mjs";
 import { CRITERION_COVERAGE, channelsPresent } from "@a11y-witness/judge/internal";
+import { REPO_ROOT, datasetRoot, captureRoot, realCorpusRoot } from "../src/dataset-paths.mjs";
 
-const REPO = fileURLToPath(new URL("../../../", import.meta.url));
-const CORPUS = resolve(REPO, process.env.CAPTURE_ROOT || "runs/screenreader-dataset/captures");
-const REAL = resolve(REPO, process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
+const REPO = REPO_ROOT;
+// `CAPTURE_ROOT` was a second env-var name for the same thing `DATASET_CAPTURE_ROOT`/`DATASET_ROOT`
+// already cover -- see `audit-size-sensitivity.mjs`, which read the identical line.
+const CORPUS = captureRoot(datasetRoot());
+const REAL = realCorpusRoot();
 /**
  * The eval fixtures, which hold captures of REAL websites and were never counted as such.
  *

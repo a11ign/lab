@@ -26,10 +26,11 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve, dirname } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
 
-const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const REPO = REPO_ROOT;
 const MODEL_DIR = resolve(REPO, "packages/scorer/models/screenreader-scorer");
 
 refuseUnknownFlags(["--dry-run"], { entry: import.meta.url, command: "npm run lab:collect-promotion" });
@@ -82,7 +83,7 @@ function main() {
   const collected = [];
   for (const entry of ARTEFACTS) {
     const source = fetchArtefact(entry.artifact);
-    const local = resolve(REPO, "runs/fetched", entry.local);
+    const local = resolve(runsRoot(), "fetched", entry.local);
     if (!existsSync(local)) throw new Error(`${entry.artifact} fetched but ${local} is absent`);
     // The changeset's destination is the lab's own basename — never a name of our choosing.
     const dest = entry.dest ?? resolve(REPO, ".changeset", source.split("/").pop() ?? "");

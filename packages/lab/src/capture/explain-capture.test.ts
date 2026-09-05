@@ -16,6 +16,7 @@ import { captureOf, reachedThePage, reachedTheContent, wasAnythingInTheWay, held
   sweepAgreesWithTheTree, whichProbesRan, INTERACTION_PROBES }
   from "../../scripts/explain-capture.mjs";
 import { readdirSync, readFileSync } from "node:fs";
+import { datasetRoot, captureRoot, realCorpusRoot } from "../dataset-paths.mjs";
 
 const withMarks = (...marks: object[]) => ({ diagnostics: marks, transcript: [] });
 
@@ -215,8 +216,8 @@ test("every probe mark real captures carry is NAMED, and every name is carried â
   // named and 1,182 captures carry `formProbe` instead â€” one probe with two names across a protocol
   // version, so keying on either alone reports NOT ASKED for half the corpus. And `dialogEscape` was on
   // disk and named nowhere.
-  const dirs = ["runs/real-page-corpus", "runs/screenreader-dataset/captures",
-    "runs/screenreader-acceptance/captures"];
+  const dirs = [realCorpusRoot(), captureRoot(datasetRoot()),
+    captureRoot(datasetRoot("screenreader-acceptance"))];
   const seen = new Set<string>();
   let read = 0;
   /** One capture file's mark names, folded into `seen`. Extracted for `max-depth`, which four levels of

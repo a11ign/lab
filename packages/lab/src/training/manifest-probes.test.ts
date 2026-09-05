@@ -27,8 +27,9 @@ import { resolve } from "node:path";
 
 import { CASES } from "./case-matrix.mjs";
 import { cacheKey } from "./capture-cache.mjs";
+import { datasetRoot } from "../dataset-paths.mjs";
 
-const MANIFEST = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset", "manifest.json");
+const MANIFEST = resolve(datasetRoot(), "manifest.json");
 const probeFlags = (o: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(o).filter(([k]) => k.startsWith("probe")));
 

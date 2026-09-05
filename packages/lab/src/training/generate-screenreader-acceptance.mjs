@@ -6,6 +6,7 @@ import { relative, resolve } from "node:path";
 // acceptance blind to the case the trained heads actually fail on — see `alsoCarrying` for the measurement.
 import { ALL_ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { datasetRoot } from "../dataset-paths.mjs";
 
 /**
  * takes no flags: the held-out set is generated whole or not at all.
@@ -14,7 +15,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  */
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run training:generate-acceptance" });
 
-const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-acceptance");
+const ROOT = datasetRoot("screenreader-acceptance");
 const PAGE_ROOT = resolve(ROOT, "pages");
 
 /**

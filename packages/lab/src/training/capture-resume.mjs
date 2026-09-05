@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { cacheKey, hashPageDir } from "./capture-cache.mjs";
-import { isUsableCapture } from "../capture/evidence-diff.mjs";
+import { isUsableCapture, captureFilePath } from "../capture/evidence-diff.mjs";
 
 /**
  * A completed pair is eligible for --resume only while it still describes the current page bytes.
@@ -55,7 +55,7 @@ export function hasUsableCaptureFiles({ id, captureRoot, pageRoot, acceptStalePa
 
   return ["good", "bad"].every((variant) => {
     try {
-      const capture = JSON.parse(readFileSync(resolve(captureRoot, id + "." + variant + ".json"), "utf8"));
+      const capture = JSON.parse(readFileSync(captureFilePath(captureRoot, id, variant), "utf8"));
       if (!isUsableCapture(capture)) return false;
 
       const provenance = capture.provenance ?? {};

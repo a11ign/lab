@@ -17,6 +17,7 @@ import { CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mj
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { captureTolerantly } from "../../worker-fleet/src/capture-client.mjs";
+import { datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
 
 /**
  * `--from-disk` decides whether it measures a live capture or replays one; mistyped, it silently
@@ -221,8 +222,8 @@ if (IS_MAIN) await main();
 
 async function main() {
   if (process.argv.includes("--from-disk")) {
-    const dir = process.argv.find((a) => a.startsWith("--dir="))?.slice("--dir=".length)
-      ?? "runs/screenreader-dataset/captures";
+    const dirArg = process.argv.find((a) => a.startsWith("--dir="))?.slice("--dir=".length);
+    const dir = dirArg ?? captureRoot(datasetRoot());
     const fromDiskRuns = await fromDisk(dir);
     if (!fromDiskRuns.length) {
       console.error(`No captures with diagnostics under ${dir}`);

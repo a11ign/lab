@@ -41,8 +41,8 @@ test("keepingTranscript has one home, and everything-pipeline imports it", () =>
 test("each pipeline writes its OWN transcript, so a nested run cannot interleave", () => {
   const retrain = read("packages/lab/scripts/retrain-pipeline.mjs");
   const everything = read("packages/lab/scripts/everything-pipeline.mjs");
-  assert.match(retrain, /RETRAIN_TRANSCRIPT = resolve\(REPO, "runs", "retrain-transcript\.log"\)/);
-  assert.match(everything, /TRANSCRIPT = resolve\(REPO, "runs", "everything-transcript\.log"\)/);
+  assert.match(retrain, /RETRAIN_TRANSCRIPT = resolve\(runsRoot\(\), "retrain-transcript\.log"\)/);
+  assert.match(everything, /TRANSCRIPT = resolve\(runsRoot\(\), "everything-transcript\.log"\)/);
   // The path is required rather than defaulted, so neither can silently inherit the other's file while
   // `everything` has `retrain` running inside it.
   assert.match(retrain, /keepingTranscript\(runStep, \{ transcript \}\)/,
