@@ -86,6 +86,19 @@ test("every evidence field a capture carries is compared, or explicitly excluded
     + `that altered them would report SAME: ${unaccounted.join(", ")}`);
 });
 
+test("EVIDENCE_FIELDS names each field ONCE — a duplicate is invisible to the test above", () => {
+  // `["interaction", "focusEvents"]` was listed twice for a while, harmlessly in itself (`compared` above
+  // is built through a `Set`, so a duplicate collapses before that test ever runs and it examines nothing
+  // it did not already examine once). That is exactly backwards: the ONE test built to watch this list
+  // could not see a defect inside it. A duplicate costs nothing today and is a real risk the moment two
+  // entries for the same field are given DIFFERENT flattening comments describing different behaviour —
+  // which one a reader trusts becomes luck.
+  const fields = (EVIDENCE_FIELDS as [string, string][]).map((f) => f.join("."));
+  const seen = new Set<string>();
+  const duplicated = [...new Set(fields.filter((f) => (seen.has(f) ? true : (seen.add(f), false))))].sort();
+  assert.deepEqual(duplicated, [], `listed more than once in EVIDENCE_FIELDS: ${duplicated.join(", ")}`);
+});
+
 /**
  * Fields declared in code whose first capture does not exist yet, each naming what closes it.
  *
