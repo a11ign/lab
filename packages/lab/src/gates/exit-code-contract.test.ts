@@ -199,13 +199,18 @@ const DOCUMENTED: Record<string, string> = {
     + "deployed",
   "packages/worker-fleet/src/doctor.mjs":
     "1 ready is false, any check failed; 0 all checks pass",
-  "packages/worker-fleet/src/fleet-discover.mjs":
+  // MOVED 2026-09-05 from `packages/worker-fleet/src/`. The published package read the PRIVATE `control`
+  // package's `inventory.yml`, and these three had no cross-package dependents in either direction, so
+  // they belonged where their consumers already live. This test caught the collision between that move and
+  // this catalogue landing on the same day — in BOTH directions at once: a phantom (classified, no longer
+  // there) and a hole (present, unclassified). Neither alone would have been visible in either diff.
+  "packages/control/src/fleet-discover.mjs":
     "2 usage error, could not determine a subnet to scan; 1 a declared worker moved, or an unenrolled "
     + "worker remains after --enroll; 0 no mismatch — absence is explicitly not a fault",
-  "packages/worker-fleet/src/fleet-status.mjs":
+  "packages/control/src/fleet-status.mjs":
     "1 zero workers reachable; 0 otherwise, INCLUDING when the fleet is reported SPLIT/inconsistent code — a "
     + "real operational problem invisible in the exit code entirely, not merely under-coded",
-  "packages/worker-fleet/src/fleet-wake.mjs":
+  "packages/control/src/fleet-wake.mjs":
     "2 no workers matched, or an empty inventory; 1 a requested worker timed out waking (does not "
     + "distinguish never-woke from woke-too-slowly — a softer version of 'gave up observing') OR has no MAC "
     + "on file; 0 every requested worker answered",
