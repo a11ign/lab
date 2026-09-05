@@ -30,7 +30,12 @@
 
 /**
  * @param {object} input
- * @param {object|null} input.shippedReport  the shipped model's training-report.json, parsed
+ * @param {{representation?: {schema?: string}, [k: string]: unknown}|null} input.shippedReport  the
+ *   shipped model's
+ *   training-report.json, parsed. Typed only as far as this function READS it -- `representation.schema`
+ *   is what decides whether a promotion note describes weights this tree could actually score with.
+ *   Widening it to `object` is what let `.representation` past review here: the tests pass a typed
+ *   fixture, so only `tsc` under checkJs could see it, and only if somebody runs `tsc`.
  * @param {Changeset[]} input.changesets     the PENDING `promote-*.md` entries
  * @param {string|null} input.changelog      the package's published CHANGELOG.md, or null if never released
  * @param {(training: object) => string} input.renderProvenance  `provenanceLines`, injected so the check
