@@ -59,6 +59,15 @@ const DISCRIMINATES: Record<string, { signal: object; fires: object; silent: obj
     fires: { interaction: { focusReveal: { asked: true, revealed: true, focusHeld: true, dismissed: false } } },
     silent: { interaction: { focusReveal: { asked: true, revealed: true, focusHeld: true, dismissed: true } } },
   },
+  // F55. The verdict is computed on the WORKER by `focusEventVerdict` from a `focusin`/`focusout` timing
+  // log, so the fixture is that verdict rather than a page -- same reasoning as `focus-panel-undismissable`
+  // just above. `checked: true` with an EMPTY `scriptRemovedFocus` is the silent case, not an absent field:
+  // the oracle ran and genuinely saw an ordinary control, which is a different fact from "nobody asked".
+  "focus-removed-on-receipt": {
+    signal: { type: "focus-removed-on-receipt" },
+    fires: { interaction: { focusEvents: { checked: true, scriptRemovedFocus: [{ id: 1, name: "Coupon code", heldMs: 2 }] } } },
+    silent: { interaction: { focusEvents: { checked: true, scriptRemovedFocus: [] } } },
+  },
   regex: {
     signal: { type: "regex", pattern: "click here" },
     fires: { transcript: ["Click here, link"] },

@@ -4722,6 +4722,73 @@ cases.push(
   }),
 );
 
+// F55 -- "using script to remove focus when focus is received" -- W3C's own Failure listing names it
+// under 2.1.1, 2.4.7, 2.4.13 AND 3.2.1 together. `probeFocusOrder`'s tab-stop list looks IDENTICAL whether
+// this field was never focusable at all or was focused and immediately blurred by script -- the whole
+// reason this needed a NEW evidence channel (`installFocusEventLog`, browser-session.mjs) rather than a
+// rule reading `focusOrder` more cleverly. `focusEventVerdict` decides it from the DOM's own
+// `focusin`/`focusout` timing, and `focusRemovedOnReceipt` below is the SIGNAL_PREDICATES entry that lets
+// `check-signals` ask the question this pair exists to answer.
+//
+// THE GOOD VARIANT DIFFERS FROM THE BAD ONE IN EXACTLY ONE LINE: the blur() call. Not tabindex, not a
+// removed label, not a different DOM shape -- so a rule that fired on some OTHER structural difference
+// between the two would be measuring something unrelated to this mechanism, and `check-signals` would
+// report CONTAMINATED rather than a clean discrimination.
+//
+// THIS IS NOT "A 2.1.1 CASE WEARING A HAT". A control with `tabindex="-1"` or removed from the DOM never
+// receives a `focusin` event at all -- that IS 2.1.1, already decided by `focusOrder` -- and this case is
+// not that shape. The field here is a completely ordinary, reachable `<input>`; the browser DOES focus it
+// (a `focusin` fires, proving it is reachable), and script immediately un-focuses it. Both 2.1.1 AND 2.4.7
+// are correctly implicated per W3C's own F55 listing -- this pair is not choosing between the two, it is
+// producing the evidence that lets the SECOND one be stated at all, which nothing in this pipeline could
+// do before.
+//
+// THE TASK PROSE NAMES NEITHER "focus" NOR "script" NOR "blur", on the same principle that cost three
+// language cases their signal: a lead line reading "reproduced in the original French" put the language's
+// own name where the ABSENCE of a marker was the finding, defeating a REGEX signal built to detect that
+// absence. `focusRemovedOnReceipt` is not a regex over the transcript or the task text at all -- it reads
+// `interaction.focusEvents.scriptRemovedFocus` directly, a structural field no amount of task-prose wording
+// can influence, so that specific defect class cannot recur here. The prose stays plain regardless: a task
+// that gives away the mechanism is bad practice independent of whether this particular signal is immune.
+//
+// NO NEW PROBE FLAG. `probeFocus: true` alone is what triggers `installFocusEventLog`/`collectFocusEventLog`
+// in `capture-core.mjs` -- the mechanism rides the EXISTING flag every focus-probing case already declares,
+// so there is nothing new to check survives `pair()`'s prefix-forwarding hop.
+cases.push(
+  ...[
+    ["focus-removed-on-receipt-coupon", "Checkout", "Checkout", "Coupon code",
+      "Focus the coupon code field and continue to the next one."],
+    ["focus-removed-on-receipt-reference", "Claim a refund", "Claim a refund", "Order reference",
+      "Focus the order reference field and continue to the next one."],
+    ["focus-removed-on-receipt-extension", "Support request", "Support request", "Extension number",
+      "Focus the extension number field and continue to the next one."],
+  ].map(([id, title, heading, field, task]) => {
+    const body = "<form>"
+      + "<p><label for=\"first\">Contact name</label><input id=\"first\"></p>"
+      + "<p><label for=\"trigger\">" + field + "</label><input id=\"trigger\"></p>"
+      + "<p><label for=\"last\">Daytime telephone</label><input id=\"last\"></p>"
+      + "</form>";
+    const removeOnFocus = "document.getElementById('trigger')"
+      + ".addEventListener('focus', function(){ this.blur(); });";
+    return pair({
+      id,
+      family: "focus-removed-on-receipt",
+      criterion: "2.4.7",
+      subtype: "focus-removed-on-receipt",
+      task,
+      source: "WCAG 2.4.7 Understanding, Failure F55",
+      mutation: "The field is an ordinary, reachable input -- Tab moves the browser's focus to it, so this "
+        + "is not a 2.1.1 case of a control that was never focusable. Its own focus handler calls blur() "
+        + "synchronously, so focus never rests there and no indicator, however well designed, could ever be "
+        + "seen. The good variant is identical except for that one listener.",
+      badSignal: { type: "focus-removed-on-receipt" },
+      good: page({ title, heading, body }),
+      bad: page({ title, heading, body, script: removeOnFocus }),
+      probeFocus: true,
+    });
+  }),
+);
+
 export const CASES = Object.freeze(withRealisticScale(
   [...cases, ...multiDefectCases(cases), ...conformantBehaviourCases(cases)],
 ));
@@ -5534,8 +5601,27 @@ function focusPanelUndismissable(/** @type {any} */ capture) {
   return v.focusHeld === true && v.dismissed === false;
 }
 
+/**
+ * F55 -- a control that received focus and had it removed by script before anything else happened.
+ *
+ * Reads `interaction.focusEvents`, which `focusEventVerdict` produced on the worker from the DOM's own
+ * `focusin`/`focusout` log -- computed there rather than here for the same reason `focusPanelUndismissable`
+ * above reads `focusReveal` rather than re-deriving it: the timing judgement belongs with the probe that
+ * took the measurement, not with a second copy of it in the corpus layer.
+ *
+ * `checked !== true` means the oracle never ran (the field is absent) or could not be read (`checked:
+ * false`, distinct from the finding array itself being empty) -- ABSENT, not a reading of zero, the same
+ * distinction `focusRevealVerdict`'s own `revealed: null` exists to preserve one probe over.
+ */
+function focusRemovedOnReceipt(/** @type {any} */ capture) {
+  const v = capture.interaction?.focusEvents;
+  if (!v || v.checked !== true) return false;
+  return Array.isArray(v.scriptRemovedFocus) && v.scriptRemovedFocus.length > 0;
+}
+
 const SIGNAL_PREDICATES = Object.freeze({
   "focus-panel-undismissable": (/** @type {any} */ capture) => focusPanelUndismissable(capture),
+  "focus-removed-on-receipt": (/** @type {any} */ capture) => focusRemovedOnReceipt(capture),
   "unnamed-form-field": (/** @type {any} */ capture) => hasUnnamedFormField(capture),
   regex: (/** @type {any} */ capture, /** @type {any} */ signal) => regexMatches(capture, signal),
   "structure-empty": (/** @type {any} */ capture, /** @type {any} */ signal) => structureIsEmpty(capture, signal),
