@@ -25,9 +25,16 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { stripComments } from "@a11y-witness/evidence/source-text";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
-const EXPORTER = readFileSync(resolve(REPO, "packages/lab/src/training/export-screenreader-dataset.mjs"), "utf8");
+const EXPORTER = stripComments(
+  readFileSync(resolve(REPO, "packages/lab/src/training/export-screenreader-dataset.mjs"), "utf8"));
+// Python source, deliberately NOT run through `stripComments` -- that function strips `//` and `/* */`,
+// which is JS/TS syntax and does nothing for Python's `#`. A comment naming a key in a `#` remark could
+// still manufacture a false match here; the same risk this file exists to close on the JS side, unclosed
+// on the Python side because nothing in this repo strips Python comments yet. Recorded rather than
+// silently assumed safe.
 const FEATURIZER = readFileSync(resolve(REPO, "packages/scorer/python/screenreader_features.py"), "utf8");
 
 function quotedStrings(source: string): string[] {

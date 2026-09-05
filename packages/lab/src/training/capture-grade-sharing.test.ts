@@ -21,9 +21,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { stripComments } from "@a11y-witness/evidence/source-text";
 
+// Comments stripped for every caller: every test below checks presence or absence of a specific token
+// against raw or sliced source, and a comment mentioning that token in prose would satisfy or defeat the
+// check exactly as it did for `mapping-parity.test.ts` and `cli.test.ts`. See
+// `@a11y-witness/evidence/source-text`.
 const read = (name: string) =>
-  readFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url)), "utf8");
+  stripComments(readFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url)), "utf8"));
 
 test("the dataset grade never reaches the capture writer", () => {
   // A capture must record the page it actually read, whatever question is being asked of it later. If the
