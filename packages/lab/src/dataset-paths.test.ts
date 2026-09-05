@@ -132,11 +132,6 @@ const EXEMPT: Record<string, string> = {
   "packages/evidence/src/wire-types-describe-the-wire.test.ts":
     "@a11y-witness/evidence is the zero-dependency package everything else (including lab) depends on; "
     + "it cannot import dataset-paths.mjs without inverting the whole dependency graph.",
-  "packages/cli/src/cli.test.ts":
-    "Found by this audit; a11y-witness (the published CLI) has no dependency edge to @a11y-witness/lab in "
-    + "either direction, so this IS fixable by adding @a11y-witness/lab as a devDependency for this one "
-    + "test file — deliberately left as a known gap rather than done here, to keep this change scoped to "
-    + "the lab package. Still cwd-anchored: resolve(process.cwd(), \"runs/screenreader-dataset/captures\").",
   "packages/lab/src/packaging/promotion-refuses-dirty.test.ts":
     "Tests promote-model.mjs's A11Y_PROMOTE_ROOT override directly; the runs/model-candidate literal is "
     + "a fixture path under a temp root this test plants, not a read of the real corpus. (promote-model.mjs "
