@@ -298,6 +298,122 @@ export function whatItAsked(capture) {
   return rows.length ? rows : [absent("which channels it asked about — `observed` is empty")];
 }
 
+/**
+ * THE INTERACTION PROBES: which ones RAN, and what each one concluded.
+ *
+ * `whatItAsked` above reads `observed`, which covers the SWEEP channels. The interaction probes are not in
+ * it — `stateChanges` deliberately has no `observed` entry, and `focusReveal`, `focusEvents`,
+ * `focusContext` and `routeChange` post-date it — so their verdicts live only in diagnostic marks, and
+ * nothing read them. That is the hole this section fills, and it is a hole with a measured cost.
+ *
+ * MEASURED 2026-09-05: a real-page capture was fetched to confirm the 1.4.13 probe had run. `capture`
+ * carries no top-level `focusReveal` — it lives under `interaction` — so reading `cap.focusReveal` returned
+ * `undefined` and the conclusion drawn was "the probe never ran", which would have cost a whole recapture
+ * round. The probe HAD run, and its mark said so in full: `asked: true, revealed: false, why: "nothing
+ * appeared on focus", tabs: 8`. That is this repo's *"a guess at the JSON shape"* defect, and
+ * `capture:explain`'s own header names it — *"every question was answered by ssh, hand-written Python and
+ * a guess at the JSON shape, which produced four wrong answers in one session"*. The remedy is not to
+ * remember the path; it is for the tool to read the mark so nobody has to.
+ *
+ * THREE STATES, never two. A probe that never ran, a probe that ran and could not ask, and a probe that ran
+ * and found nothing are three different facts, and only the third says anything about the page. This is the
+ * same distinction `observed` draws for sweeps and `404` vs `202` draws for a lost capture result.
+ *
+ * @param {any} capture
+ * @returns {string[]}
+ */
+export function whichProbesRan(capture) {
+  return INTERACTION_PROBES.map(({ events, what }) => {
+    // The FIRST name that is present. A probe renamed between protocol versions is one probe, and keying
+    // on either name alone reports NOT ASKED for every capture on the other side of the rename.
+    const event = events.find((name) => mark(capture, name)) ?? events[0];
+    const m = mark(capture, event);
+    // NO MARK IS THE INTERESTING CASE and it must not read as "found nothing". A probe writes its mark on
+    // every path it takes, including the ones it abandons, so an absent mark means it was never reached --
+    // the flag was off, or something earlier threw.
+    if (!m) return `    NOT ASKED  ${what} — no ${event} mark, so this probe never ran`;
+    if (m.skipped) return `    NOT ASKED  ${what} — ${event} stopped: ${JSON.stringify(m.skipped)}`;
+    if (m.error) return `    !  ${what} — ${event} ERRORED: ${JSON.stringify(String(m.error).slice(0, 120))}`;
+    // `asked: false` is the probe's own way of saying its precondition was missing -- `observed.<ch>.why`
+    // names WHICH precondition, because "nobody asked" and "asked without the probe that makes it
+    // meaningful" need opposite fixes.
+    if (m.asked === false) return `    NOT ASKED  ${what} — ${m.why ?? "no reason recorded"}`;
+    return `    ok ${what} — ${summariseProbeMark(m)}`;
+  });
+}
+
+/**
+ * One probe mark in one line, WITHOUT choosing which fields matter.
+ *
+ * Naming the fields per probe would be a second spelling of each probe's own output, and this repo has
+ * paid for that shape repeatedly -- a hand-written field list that silently examined nothing for the one
+ * member with a different shape. So this prints what the mark actually carries, minus the bookkeeping
+ * every mark has, and a probe that grows a field shows it here without anyone editing this function.
+ *
+ * @param {Record<string, any>} m
+ * @returns {string}
+ */
+function summariseProbeMark(m) {
+  const skip = new Set(["event", "atMs", "asked"]);
+  const parts = Object.entries(m)
+    .filter(([k, v]) => !skip.has(k) && v !== undefined && v !== null && v !== "")
+    .map(([k, v]) => `${k}=${oneLine(v)}`);
+  return parts.length ? parts.join(" ") : "ran, and recorded nothing beyond having run";
+}
+
+/**
+ * One mark FIELD, short enough to read beside seven others.
+ *
+ * A COUNT AND A SAMPLE for a list, never the list. `focusEventLog` carries 116 focus events and printing
+ * them whole buried the other seven probes' verdicts in a wall of JSON -- which is the failure this whole
+ * report exists to fix, arriving through the fix itself. The count is the part that discriminates (*"a
+ * number beats a word"*: "examination was INCOMPLETE" cannot tell you whether two links were missed or two
+ * hundred), and one element says what the list is MADE of. The full field is on the mark for anyone who
+ * wants it; this is the reading view.
+ *
+ * @param {unknown} v
+ * @returns {string}
+ */
+function oneLine(v) {
+  if (typeof v === "string") return JSON.stringify(v.length > 60 ? `${v.slice(0, 60)}…` : v);
+  if (!Array.isArray(v)) return JSON.stringify(v);
+  if (v.length === 0) return "[]";
+  const first = JSON.stringify(v[0]);
+  const sample = first.length > 80 ? `${first.slice(0, 80)}…` : first;
+  return v.length === 1 ? `[${sample}]` : `[${v.length} entries, e.g. ${sample}]`;
+}
+
+/**
+ * The interaction probes this report accounts for, each with the QUESTION it answers rather than its
+ * function name -- a reader asking "was 1.4.13 assessed" does not know the probe is called `focusReveal`.
+ *
+ * Declared here and pinned by `explain-capture.test.ts` against the marks real captures carry, in BOTH
+ * directions: a probe on disk that this list does not name is a hole, and a name here that no capture
+ * carries is a phantom contributing nothing. That is `evidence-fields.test.ts`'s rule, applied to a report
+ * rather than to a comparison, and it is here because the SAME defect has now been found in four tools.
+ */
+export const INTERACTION_PROBES = Object.freeze([
+  { events: ["focusOrder"], what: "the tab order (2.4.3, 2.1.1)" },
+  { events: ["focusContext"], what: "whether focus alone changed the page's context (3.2.1)" },
+  { events: ["focusReveal"], what: "whether focus REVEALED content, and whether it can be dismissed (1.4.13)" },
+  { events: ["focusConfinement"], what: "whether focus could leave (2.1.2)" },
+  { events: ["dialogEscape"], what: "whether Escape closed a dialog (2.1.2)" },
+  { events: ["focusEventLog"], what: "whether a script removed focus when it was received (2.4.7)" },
+  { events: ["routeChange"], what: "whether the title followed the route (2.4.2)" },
+  // THE TYPING PROBE'S ONLY MARK, and it names where it landed rather than what it concluded — which is
+  // still the answer to "did this probe run", the question this section asks. Naming it as the typing
+  // probe rather than excluding it as bookkeeping is the difference between 3.2.2 being accounted for
+  // and being invisible.
+  { events: ["typingLanding"], what: "the typing probe: whether typing changed the context (3.2.2)" },
+  { events: ["arrowNavigation", "arrowNavLanding"], what: "whether arrows moved inside the widget (2.1.1)" },
+  // TWO NAMES FOR ONE PROBE, and finding that out is why the both-directions test exists. The mark is
+  // `formFill` on current captures and `formProbe` on 1,182 older ones -- so a report keyed on either name
+  // alone says NOT ASKED for half the corpus, which is the *"a probe never ran"* reading of a rename.
+  // Newest first; the first name found is the one reported.
+  { events: ["formFill", "formProbe"], what: "the form probe: validation and status announcements (3.3.1, 4.1.3)" },
+  { events: ["interaction"], what: "the disclosure probe: state changes (4.1.2)" },
+]);
+
 function report(/** @type {any} */ capture, /** @type {string} */ source) {
   const url = mark(capture, "landedOnRequested")?.requested ?? capture.url ?? "(unknown page)";
   const lines = [`\n${url}`, `  from ${source}`, ""];
@@ -307,6 +423,7 @@ function report(/** @type {any} */ capture, /** @type {string} */ source) {
     ["WAS ANYTHING IN THE WAY?", wasAnythingInTheWay(capture)],
     ["DID THE PAGE HOLD STILL?", heldStill(capture)],
     ["WHAT DID IT ASK?", whatItAsked(capture)],
+    ["WHICH INTERACTION PROBES RAN?", whichProbesRan(capture)],
   ])) {
     lines.push(`  ${heading}`, ...rows, "");
   }

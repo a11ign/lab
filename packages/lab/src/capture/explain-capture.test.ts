@@ -13,8 +13,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { captureOf, reachedThePage, reachedTheContent, wasAnythingInTheWay, heldStill, whatItAsked,
-  sweepAgreesWithTheTree }
+  sweepAgreesWithTheTree, whichProbesRan, INTERACTION_PROBES }
   from "../../scripts/explain-capture.mjs";
+import { readdirSync, readFileSync } from "node:fs";
 
 const withMarks = (...marks: object[]) => ({ diagnostics: marks, transcript: [] });
 
@@ -160,4 +161,107 @@ test("a capture predating the field says so, rather than reading as nothing to a
   const rows = whatItAsked({ url: "https://example.test/" });
   assert.match(rows.join("\n"), /NOT RECORDED/);
   assert.match(rows.join("\n"), /CAPTURE_PROTOCOL_VERSION 10/);
+});
+
+/**
+ * WHICH INTERACTION PROBES RAN — the section added after this tool's own lesson was learned again.
+ *
+ * `whatItAsked` reads `observed`, which covers the SWEEP channels. The interaction probes are not in it,
+ * so their verdicts lived only in diagnostic marks and nothing read them. On 2026-09-05 a real-page
+ * capture was fetched to confirm the 1.4.13 probe had run; `cap.focusReveal` is `undefined` because it
+ * lives under `interaction`, and "the probe never ran" was concluded from a guessed JSON path. It HAD run
+ * — `asked: true, revealed: false, tabs: 8` — and the wrong conclusion would have cost a recapture round.
+ */
+test("A PROBE THAT NEVER RAN AND ONE THAT FOUND NOTHING ARE DIFFERENT ANSWERS", () => {
+  const never = whichProbesRan(withMarks({ event: "focusOrder", stops: 3 }));
+  const reveal = never.find((l) => l.includes("1.4.13")) ?? "";
+  assert.match(reveal, /NOT ASKED/, "no mark must read as NOT ASKED, never as a clean result");
+  assert.match(reveal, /never ran/);
+
+  const ran = whichProbesRan(withMarks(
+    { event: "focusReveal", asked: true, revealed: false, why: "nothing appeared on focus", tabs: 8 }));
+  const found = ran.find((l) => l.includes("1.4.13")) ?? "";
+  assert.match(found, /^\s+ok /, "a probe that ran and found nothing is a RESULT about the page");
+  assert.match(found, /revealed=false/);
+  assert.match(found, /tabs=8/, "the mark's own fields survive, so nobody has to guess a JSON path");
+});
+
+test("a probe that could not ask says WHICH precondition was missing", () => {
+  // `observed.<channel>.why` names which precondition, "because 'nobody asked' and 'asked without the
+  // probe that makes it meaningful' need opposite fixes".
+  const rows = whichProbesRan(withMarks(
+    { event: "focusReveal", asked: false, why: "probeFocusOrder did not run" },
+    { event: "focusOrder", skipped: "deadline" }));
+  assert.match(rows.find((l) => l.includes("1.4.13")) ?? "", /NOT ASKED.*probeFocusOrder did not run/);
+  assert.match(rows.find((l) => l.includes("2.4.3")) ?? "", /NOT ASKED.*deadline/);
+});
+
+test("a 116-entry event list is a COUNT and a sample, not 116 lines of JSON", () => {
+  // The first version printed `focusEventLog`'s events whole and buried the other seven probes' verdicts —
+  // the failure this whole section exists to fix, arriving through the fix itself.
+  const events = Array.from({ length: 116 }, (_, i) => ({ type: "focusin", id: i, name: "A" }));
+  const row = whichProbesRan(withMarks({ event: "focusEventLog", asked: true, eventCount: 116, events }))
+    .find((l) => l.includes("2.4.7")) ?? "";
+  assert.match(row, /\[116 entries, e\.g\. /, "the count discriminates and one element says what they are");
+  assert.ok(row.length < 400, `one probe must fit on one line, got ${row.length} characters`);
+});
+
+test("every probe mark real captures carry is NAMED, and every name is carried — both directions", () => {
+  // `evidence-fields.test.ts`'s rule, applied to a report: a mark on disk this list does not name is a
+  // hole, and a name here no capture carries is a phantom contributing nothing to a coverage claim. The
+  // same defect has now been found in four tools, so this one is DISCOVERED rather than trusted.
+  //
+  // IT FOUND TWO THINGS ON ITS FIRST RUN, which is why it is here rather than a comment. `formFill` was
+  // named and 1,182 captures carry `formProbe` instead — one probe with two names across a protocol
+  // version, so keying on either alone reports NOT ASKED for half the corpus. And `dialogEscape` was on
+  // disk and named nowhere.
+  const dirs = ["runs/real-page-corpus", "runs/screenreader-dataset/captures",
+    "runs/screenreader-acceptance/captures"];
+  const seen = new Set<string>();
+  let read = 0;
+  /** One capture file's mark names, folded into `seen`. Extracted for `max-depth`, which four levels of
+   *  directory/file/mark iteration exceeds — the nesting is real, not incidental. */
+  const foldMarks = (path: string) => {
+    let capture: { diagnostics?: unknown[] };
+    try { capture = captureOf(JSON.parse(readFileSync(path, "utf8"))); } catch { return; }
+    if (!Array.isArray(capture.diagnostics)) return;
+    read += 1;
+    for (const m of capture.diagnostics) {
+      const event = (m as { event?: unknown })?.event;
+      if (typeof event === "string") seen.add(event);
+    }
+  };
+  for (const dir of dirs) {
+    let files: string[];
+    try { files = readdirSync(dir).filter((f) => f.endsWith(".json")); } catch { continue; }
+    for (const f of files) foldMarks(`${dir}/${f}`);
+  }
+  if (read === 0) {
+    // AN HONEST SKIP. `runs/` is gitignored, so CI cannot see it — and a test that reports success having
+    // examined nothing is how "verified" comes to mean "unexamined".
+    assert.ok(true, "SKIPPED: no captures on disk; this check needs runs/");
+    return;
+  }
+
+  // THE HOLE DIRECTION, and it is the one that catches a new probe. Any mark whose name looks like a
+  // probe verdict — the shape every one of them has — must be accounted for by name.
+  const named = new Set(INTERACTION_PROBES.flatMap((p) => p.events));
+  const probeLike = [...seen].filter((e) => /^(focus|dialog|form|route|arrow|typing)/i.test(e))
+    // The BROWSE-MODE bookkeeping that rides with a probe rather than being one: `<probe>BrowseRestored`
+    // records that the sweep's mode was put back, and `formStateUnbound` is a warning inside the form
+    // probe. Neither is a verdict about the page, which is what this section reports.
+    .filter((e) => !/BrowseRestored$|^formState/.test(e));
+  for (const e of probeLike) {
+    assert.ok(named.has(e), `the mark "${e}" is on disk and INTERACTION_PROBES does not name it — either `
+      + `add it with the QUESTION it answers, or exclude it here with the reason it is not a verdict`);
+  }
+
+  // THE PHANTOM DIRECTION, and it is bounded by what a LOCAL corpus can know. A probe added after this
+  // copy of `runs/` was last synced is legitimately absent here and is not a phantom — so this reports
+  // rather than fails, and names them, because a silent pass is what the whole test exists against.
+  const unseen = [...named].filter((n) => !seen.has(n));
+  if (unseen.length) {
+    process.stdout.write(`    (not carried by any of ${read} local captures: ${unseen.join(", ")} — new `
+      + "probes look identical to phantoms from a copy of runs/; the authoritative corpus is on the lab)\n");
+  }
 });
