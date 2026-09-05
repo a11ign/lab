@@ -138,13 +138,17 @@ test("the WORKER accepts every probe flag at the request boundary", () => {
 });
 
 test("the capture itself reads every probe flag", () => {
+  // Split since the 2026-09-05 capture-core.mjs split: `runCapturePhases` (still in capture-core.mjs)
+  // reads `opts.*` and passes it on; `navigateByStructure`, which actually gates a probe on it, moved to
+  // capture-probes.mjs along with the rest of the structural-navigation/probe machinery.
   const core = read("packages/nvda-worker/src/capture-core.mjs");
+  const probes = read("packages/nvda-worker/src/capture-probes.mjs");
   for (const flag of PROBE_FLAGS) {
     // `!!opts.X` for a switch, `opts.X === "name"` for a validated NAME. Both are reads; requiring the
     // boolean form only would refuse the shape `probeOrder` has deliberately had from the start.
     assert.ok(new RegExp(`${flag}:\\s*(!!opts\\.${flag}|opts\\.${flag}\\s*===)`).test(core),
       `${flag} reaches the guest and is never read: capture-core.mjs does not take opts.${flag}`);
-    assert.ok(new RegExp(`\\b${flag}\\b`).test(core.slice(core.indexOf("async function navigateByStructure("))),
+    assert.ok(new RegExp(`\\b${flag}\\b`).test(probes.slice(probes.indexOf("async function navigateByStructure("))),
       `${flag} is read from opts but never used to gate a probe`);
   }
 });
