@@ -4489,6 +4489,70 @@ cases.push(
   })),
 );
 
+// 3.1.2's MARKED-BUT-SILENT case — the one of its four states only this tool can witness.
+//
+// known-gaps §36 splits the criterion into four, and they need completely different work:
+//
+//   marked and ANNOUNCED    -- SATISFIED, and demonstrable only here (the existing pair's good page)
+//   marked and SILENT       -- a FAILURE only a screen reader can see              <- THIS
+//   an INVALID `lang` value -- axe's, a static attribute check
+//   UNMARKED foreign text   -- needs language DETECTION, which is the DOM's territory
+//
+// The existing `language-unmarked` pair is the fourth. It works as a corpus signal because we authored
+// the passage and therefore know it is French; on a REAL page, silence is equally what a correct
+// monolingual page produces, so nothing can accuse. That is why `criterion-coverage.ts` reads
+// `status: "reachable"` rather than `assessed`, and why closing it needs a different case rather than
+// more of the same one.
+//
+// **`xml:lang` WITHOUT `lang` IS THE FAILURE, and it is a real one rather than a contrivance.** In an
+// HTML document served as text/html, `xml:lang` has no effect -- it applies in XML. An author who writes
+// it has marked the passage as far as they know, review sees an attribute naming the right language, and
+// a static checker looking for "is this passage marked" can pass the page. Nothing reaches the
+// accessibility tree, so NVDA reads French in an English voice and says nothing. A sighted reviewer
+// cannot see that, and it is precisely the gap between "the author supplied data" and WCAG's actual
+// requirement that it be supplied "in a way that ... assistive technologies can extract".
+//
+// **WHETHER NVDA IS SILENT ON IT IS AN EMPIRICAL QUESTION AND THIS CASE EXISTS TO ASK IT.** If a browser
+// or NVDA maps `xml:lang` after all, the signal fires on BOTH variants, `check-signals` reports
+// CONTAMINATED, and the case is withdrawn with the measurement recorded -- which is exactly what happened
+// to `reportEmphasis` (built, captured, refuted, withdrawn, known-gaps §33). Stating the uncertainty here
+// rather than discovering it as a surprise is the difference between an experiment and a defect.
+//
+// Both variants carry the SAME French passage and differ only in which attribute spells the language, so
+// nothing but the property under test separates them.
+cases.push(
+  ...[
+    ["language-marked-silent-museum", "Gallery notes", "Gallery notes",
+      "The following note from the curator is reproduced in the original French.",
+      "La salle principale abrite une collection de peintures du dix-neuvieme siecle.",
+      "fr", "French", "Read the curator's note and notice which language it is in."],
+    ["language-marked-silent-recipe", "Regional cooking", "Regional cooking",
+      "The method below is quoted from the original German edition.",
+      "Den Teig eine Stunde ruhen lassen und danach vorsichtig ausrollen.",
+      "de", "German", "Read the quoted method and notice which language it is in."],
+    ["language-marked-silent-poem", "Anthology notes", "Anthology notes",
+      "The stanza below is printed in the original Spanish.",
+      "La ciudad duerme bajo una luna clara y el rio sigue su camino.",
+      "es", "Spanish", "Read the stanza and notice which language it is in."],
+  ].map(([id, title, heading, lead, passage, lang, langName, task]) => pair({
+    id,
+    family: "language-of-parts",
+    criterion: "3.1.2",
+    subtype: "language-unmarked",
+    task,
+    source: "WCAG 3.1.2 Understanding; HTML spec, xml:lang in text/html",
+    mutation: "The passage is in " + langName + " and the author marked it with `xml:lang`, which has no "
+      + "effect in an HTML document. The attribute is present and names the right language, so review and "
+      + "a static attribute check both pass it; nothing reaches the accessibility tree, so a screen reader "
+      + "reads " + langName + " in the page's own voice and announces no change.",
+    badSignal: { type: "language-unmarked", language: langName },
+    good: page({ title, heading,
+      body: "<p>" + lead + "</p><p lang=\"" + lang + "\">" + passage + "</p>" }),
+    bad: page({ title, heading,
+      body: "<p>" + lead + "</p><p xml:lang=\"" + lang + "\">" + passage + "</p>" }),
+  })),
+);
+
 export const CASES = Object.freeze(withRealisticScale(
   [...cases, ...multiDefectCases(cases), ...conformantBehaviourCases(cases)],
 ));
