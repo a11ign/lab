@@ -139,8 +139,9 @@ function describeSignal(signal) {
   return signal.type + (detail ? ` (${detail})` : "");
 }
 
+/** Exported for `provisional-cases.test.ts`, which needs the RAW per-case verdict against real captures. */
 /** @param {Record<string, any>} testCase */
-function checkCase(testCase) {
+export function checkCase(testCase) {
   const good = readCapture(testCase.id, "good");
   const bad = readCapture(testCase.id, "bad");
   if (!good || !bad) return { id: testCase.id, verdict: "NO CAPTURES" };
@@ -155,6 +156,29 @@ function checkCase(testCase) {
   if (firesOnGood) return { id: testCase.id, verdict: "CONTAMINATED", good, bad, firesOnBad };
   if (!firesOnBad) return { id: testCase.id, verdict: "BLIND", good, bad };
   return { id: testCase.id, verdict: "OK" };
+}
+
+/**
+ * Fold a case's `provisional` declaration into its raw verdict. PURE, so it can be asserted on without a
+ * corpus — `provisional-cases.test.ts` does exactly that.
+ *
+ * A brand-new case cannot have discriminated yet: you cannot validate a signal without capturing it, and
+ * its first capture is what this gate runs against. So a `provisional` case's BLIND verdict is reported
+ * SEPARATELY rather than counted as the defect it would otherwise be — the gate still SAYS so, it just
+ * does not fail the run on a case that was never expected to be proven yet.
+ *
+ * CONTAMINATED is deliberately untouched. The good page's capture already exists when this runs, so a
+ * signal firing on it is wrong NOW — there is no "hasn't been observed yet" story for it the way there is
+ * for BLIND, and provisional buys no grace there.
+ *
+ * @param {{id: string, verdict: string} & Record<string, any>} result
+ * @param {{provisional?: string | null}} testCase
+ */
+export function effectiveVerdict(result, testCase) {
+  if (result.verdict === "BLIND" && testCase.provisional) {
+    return { ...result, verdict: "PROVISIONAL BLIND" };
+  }
+  return result;
 }
 
 /** @param {Record<string, any>} result @param {Record<string, any>} testCase */
@@ -172,18 +196,23 @@ function report(result, testCase) {
     return 0;
   }
   console.log(`  ${result.verdict.padEnd(13)} ${result.id}  [${describeSignal(testCase.badSignal)}]`);
-  if (result.verdict === "CONTAMINATED") {
+  if (result.verdict === "PROVISIONAL BLIND") {
+    console.log(`    provisional: ${testCase.provisional}`);
+    console.log("    still BLIND, not yet proven -- reported, not blocking. What NVDA actually produced:");
+  } else if (result.verdict === "CONTAMINATED") {
     console.log("    the signal fires on the GOOD page, so it cannot discriminate" +
       (result.firesOnBad ? " (it fires on both)" : " and misses the bad one"));
     console.log("    good page evidence:");
     for (const line of evidenceFor(result.good, testCase.badSignal)) console.log(line);
   } else {
     console.log("    the signal never fired on the BAD page. What NVDA actually produced:");
+  }
+  if (result.verdict === "PROVISIONAL BLIND" || result.verdict === "BLIND") {
     for (const line of evidenceFor(result.bad, testCase.badSignal)) console.log(line);
     console.log("    for comparison, the good page:");
     for (const line of evidenceFor(result.good, testCase.badSignal)) console.log(line);
   }
-  return 1;
+  return result.verdict === "PROVISIONAL BLIND" ? 0 : 1;
 }
 
 /**
@@ -235,10 +264,11 @@ function main() {
   }
 
   console.log(`Checking ${cases.length} signal(s) against captures in ${CAPTURE_ROOT}\n`);
-  const counts = { OK: 0, BLIND: 0, CONTAMINATED: 0, "NO CAPTURES": 0, "STALE CAPTURES": 0 };
+  const counts = { OK: 0, BLIND: 0, CONTAMINATED: 0, "NO CAPTURES": 0, "STALE CAPTURES": 0,
+    "PROVISIONAL BLIND": 0 };
   for (const testCase of cases) {
-    const result = checkCase(testCase);
-    // The literal type is kept -- `signalVerdict` takes exactly these five keys and widening the
+    const result = effectiveVerdict(checkCase(testCase), testCase);
+    // The literal type is kept -- `signalVerdict` takes exactly these six keys and widening the
     // variable would push the loss of precision into it. Only the dynamic write is cast, which is the
     // one place a verdict name arrives as data.
     /** @type {Record<string, number>} */ (counts)[result.verdict] += 1;
@@ -247,7 +277,8 @@ function main() {
 
   console.log(
     `\n${counts.OK} discriminating, ${counts.BLIND} blind, ${counts.CONTAMINATED} contaminated, ` +
-      `${counts["NO CAPTURES"]} uncaptured, ${counts["STALE CAPTURES"]} stale`
+      `${counts["NO CAPTURES"]} uncaptured, ${counts["STALE CAPTURES"]} stale, ` +
+      `${counts["PROVISIONAL BLIND"]} provisional (not yet proven, not blocking)`
   );
   const { exitCode, summary } = signalVerdict(counts, { requireComplete: REQUIRE_COMPLETE });
   console.log(summary);
@@ -300,14 +331,27 @@ export const MIN_EXAMINED = 25;
  * `--require-complete` is how the authoritative paths keep the old strictness: on the lab, before a corpus
  * run, and in `release:gate`, "the corpus has holes" IS the answer and must block.
  *
- * @param {{OK: number, BLIND: number, CONTAMINATED: number, "NO CAPTURES": number, "STALE CAPTURES": number}} counts
+ * ## A THIRD kind of count, neither a defect nor a gap
+ *
+ * `PROVISIONAL BLIND` is a case declared `provisional` in `case-matrix.mjs` whose signal has not fired on
+ * the bad page yet — expected of a case that has never been captured against before, since you cannot
+ * validate a signal without capturing it. It is not a gap (there IS usable evidence, and it says BLIND);
+ * counting it as a defect would recreate the exact all-or-nothing block `provisional-cases.test.ts` exists
+ * to relieve. So it is excluded from both `defects` and `examined`, the same treatment `gaps` gets, and
+ * named in the summary so a pass is never silently riding on an unproven case.
+ *
+ * @param {{OK: number, BLIND: number, CONTAMINATED: number, "NO CAPTURES": number, "STALE CAPTURES": number,
+ *           "PROVISIONAL BLIND"?: number}} counts
  * @param {{requireComplete?: boolean}} [options]
  * @returns {{exitCode: 0 | 1 | 2, summary: string}}
  */
 export function signalVerdict(counts, { requireComplete = false } = {}) {
+  const provisional = counts["PROVISIONAL BLIND"] ?? 0;
   const defects = counts.BLIND + counts.CONTAMINATED;
   const gaps = counts["NO CAPTURES"] + counts["STALE CAPTURES"];
   const examined = counts.OK + defects;
+  const provisionalNote = provisional > 0
+    ? ` (${provisional} provisional case(s) still BLIND, not counted either way)` : "";
 
   if (defects > 0) {
     return { exitCode: 1, summary:
@@ -322,12 +366,12 @@ export function signalVerdict(counts, { requireComplete = false } = {}) {
   if (examined < MIN_EXAMINED) {
     return { exitCode: 2, summary:
       `INCONCLUSIVE — only ${examined} case(s) had usable evidence, below the floor of ${MIN_EXAMINED}. `
-      + "Nothing here is wrong; there is simply not enough to verify the signal layer. This is not a pass." };
+      + `Nothing here is wrong; there is simply not enough to verify the signal layer. This is not a pass.${provisionalNote}` };
   }
   return { exitCode: 0, summary: gaps === 0
-    ? `PASS — all ${examined} case(s) discriminate, and the corpus is complete.`
+    ? `PASS — all ${examined} case(s) discriminate, and the corpus is complete.${provisionalNote}`
     : `PASS — all ${examined} case(s) with usable evidence discriminate. ${gaps} case(s) could not be `
-      + "checked here; that is a question about this corpus copy, not about the signal layer." };
+      + `checked here; that is a question about this corpus copy, not about the signal layer.${provisionalNote}` };
 }
 
 /**
