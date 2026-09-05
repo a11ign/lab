@@ -22,7 +22,7 @@ import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--json"], { entry: import.meta.url, command: "npm run training:status" });
+refuseUnknownFlags(["--json", "--since"], { entry: import.meta.url, command: "npm run training:status" });
 
 const ROOT = resolve(process.cwd(), process.env.DATASET_ROOT || "runs/screenreader-dataset");
 const HEALTH_TIMEOUT_MS = 5_000;
@@ -31,6 +31,76 @@ const SECONDS_PER_MINUTE = 60;
 
 const EXIT = { ok: 0, failures: 1, noRun: 2, stale: 3 };
 const JSON_OUT = process.argv.includes("--json");
+
+/**
+ * `--since=<instant>`: report the run on disk ONLY if it started at or after that instant.
+ *
+ * WHY THIS EXISTS, and it is the third instance of one defect in the block that consumes it. The
+ * progress file is keyed on a CORPUS, never on a RUN, so it answers "what did this corpus last do"
+ * where the caller asked "what is the job I named doing". `lab-status.yml` has been fixed for this
+ * twice already — once for acceptance reading the training corpus's numbers, once for jobs that do not
+ * capture at all reading the dataset's — and its own comment names the root cause: "the ASSUMPTION that
+ * every job captures". The complement went unnoticed: a COMPOSITE job (`everything`, `retrain`) captures
+ * for part of its life and then exports, trains and runs gates for the rest. Its progress file is
+ * correct during the capture and describes a FINISHED run for every hour after it.
+ *
+ * That is not a cosmetic wrong number. It is the exact misread that destroyed 12 in-flight captures on
+ * 2026-09-05: a progress file reading `running: false, 49 of 49` was the FINISHED run's, a second run
+ * had started a minute earlier and not yet written its own, and a deploy went out underneath it.
+ * CLAUDE.md records it as "ask the authoritative source, and let it tell you what it is BOUNDED to" —
+ * so this is the `_SYSTEMD_INVOCATION_ID` remedy applied to the progress file instead of the journal:
+ * bound the answer to the invocation the caller asked about, and refuse to answer outside it.
+ *
+ * A PREDATING FILE IS EXIT 2 (no run), deliberately, rather than a fifth exit code. "There is no
+ * progress for the run you named" is what `noRun` already means, and the four codes are a contract
+ * `training:wait` and `lab-status.yml` both consume — adding a fifth to express a shade of the same
+ * answer would break every existing caller to say something none of them asks.
+ */
+function sinceFromArgv() {
+  const flag = process.argv.find((a) => a.startsWith("--since="));
+  if (flag === undefined) return null;
+  const raw = flag.slice("--since=".length).trim();
+  // systemd's own two spellings of "this unit has never been active". A job that never ran has no run to
+  // bound, so these mean "no constraint" rather than "a value I could not read" -- and letting the caller
+  // pass the field through unconditionally is what keeps the date handling out of Jinja, where this repo
+  // has twice paid for escaping decided by reading rather than by running.
+  if (raw === "" || raw === "n/a") return null;
+  const parsed = Date.parse(raw);
+  if (Number.isNaN(parsed)) {
+    // REFUSED, never ignored. An unparseable instant that silently became "no constraint" would report a
+    // stale run as live -- reintroducing, through the remedy, the exact fault the remedy exists to stop.
+    // Note the live case this catches: systemd renders ActiveEnterTimestamp in the machine's local zone,
+    // and Date.parse accepts "... UTC" but NOT "... BST", so a lab whose clock leaves UTC fails loudly
+    // here instead of quietly answering about the wrong run.
+    console.error("training:status: --since=" + JSON.stringify(raw) + " is not a readable instant.\n"
+      + "  Pass an ISO 8601 instant (2026-09-05T18:10:51Z) or a systemd UTC timestamp\n"
+      + "  (\"Sat 2026-09-05 18:10:51 UTC\"). An empty value or \"n/a\" means no constraint.");
+    process.exitCode = EXIT.noRun;
+    return { invalid: true };
+  }
+  return { at: parsed, raw };
+}
+
+const SINCE = sinceFromArgv();
+
+/**
+ * Did the run on disk begin before the instant the caller bounded us to?
+ *
+ * `startedAt` and not `updatedAt`: a finished run's file keeps getting no updates, so `updatedAt` would
+ * read as old for a live run that has merely been quiet, and as recent for a stale one that crashed
+ * mid-write. The question is which RUN this is, and only its start answers that.
+ *
+ * @param {Record<string, any>} progress
+ */
+function predatesRequestedRun(progress) {
+  if (!SINCE || SINCE.invalid || !progress.startedAt) return false;
+  const started = Date.parse(progress.startedAt);
+  // An unreadable `startedAt` cannot be shown to belong to this run, and cannot be shown not to. Treat it
+  // as NOT predating -- the numbers are then shown with their own timestamps beside them, which is the
+  // weaker but honest answer, rather than suppressed on a comparison that did not happen.
+  return !Number.isNaN(started) && started < SINCE.at;
+}
+
 
 /** @param {number} ms */
 function minutes(ms) {
@@ -105,35 +175,80 @@ function outcomeExit(progress, counts, now) {
   return EXIT.ok;
 }
 
-async function main() {
-  const progress = readProgress(ROOT);
-  if (!progress) {
-    // `--json` must ALWAYS emit JSON, including here. This branch printed two English lines whatever the
-    // caller asked for, so `JSON.parse(stdout)` threw precisely when there was no run — the one case an
-    // automated caller most needs to handle, and the reason this command was recorded as returning
-    // "nothing parseable". The exit code was right the whole time; the payload was not.
-    if (JSON_OUT) {
-      console.log(JSON.stringify({
-        running: false,
-        stale: false,
-        total: 0,
-        captured: 0,
-        failed: 0,
-        skipped: 0,
-        // Null rather than absent: a consumer reading `progress_file` learns WHERE we looked, which is
-        // the first thing anyone asks when told there is no run.
-        progress_file: ROOT + "/capture-progress.json",
-        verdict: EXIT.noRun,
-        next_command: "npm run training:capture",
-      }, null, 2));
-      process.exitCode = EXIT.noRun;
-      return;
-    }
-    console.log("No capture run recorded (" + ROOT + "/capture-progress.json is absent).");
-    console.log("Start one with: npm run training:capture");
+/**
+ * No progress file at all.
+ *
+ * `--json` must ALWAYS emit JSON, including here. This branch printed two English lines whatever the
+ * caller asked for, so `JSON.parse(stdout)` threw precisely when there was no run — the one case an
+ * automated caller most needs to handle, and the reason this command was recorded as returning "nothing
+ * parseable". The exit code was right the whole time; the payload was not.
+ */
+function reportNoRun() {
+  if (JSON_OUT) {
+    console.log(JSON.stringify({
+      running: false,
+      stale: false,
+      total: 0,
+      captured: 0,
+      failed: 0,
+      skipped: 0,
+      // Null rather than absent: a consumer reading `progress_file` learns WHERE we looked, which is
+      // the first thing anyone asks when told there is no run.
+      progress_file: ROOT + "/capture-progress.json",
+      verdict: EXIT.noRun,
+      next_command: "npm run training:capture",
+    }, null, 2));
     process.exitCode = EXIT.noRun;
     return;
   }
+  console.log("No capture run recorded (" + ROOT + "/capture-progress.json is absent).");
+  console.log("Start one with: npm run training:capture");
+  process.exitCode = EXIT.noRun;
+}
+
+/**
+ * Report that the file on disk belongs to an EARLIER run than the one asked about.
+ *
+ * "There is nothing here" and "there is something here and it is not yours" send a reader to different
+ * places, so both instants are named. This file's own no-run branch already makes the same point by
+ * saying WHERE it looked rather than only that it found nothing.
+ *
+ * @param {Record<string, any>} progress
+ */
+function reportPredatingRun(progress) {
+  if (JSON_OUT) {
+    console.log(JSON.stringify({
+      running: false,
+      stale: false,
+      total: 0,
+      captured: 0,
+      failed: 0,
+      skipped: 0,
+      progress_file: ROOT + "/capture-progress.json",
+      // The two instants that decided it, so a caller can tell a bounding mistake from a real absence
+      // without re-reading the file itself.
+      predates_requested_run: true,
+      run_started_at: progress.startedAt ?? null,
+      requested_since: SINCE?.raw ?? null,
+      verdict: EXIT.noRun,
+      next_command: "npm run lab:log -- -e job=<name>",
+    }, null, 2));
+    process.exitCode = EXIT.noRun;
+    return;
+  }
+  console.log("No progress for the run you asked about.");
+  console.log("  " + ROOT + "/capture-progress.json describes a run that started " + progress.startedAt);
+  console.log("  which is BEFORE " + SINCE?.raw + ", the run you asked about.");
+  console.log("A job that captures and then does other work leaves this file behind; it is the earlier");
+  console.log("capture's, not this one's. Read the job's own output: npm run lab:log -- -e job=<name>");
+  process.exitCode = EXIT.noRun;
+}
+
+async function main() {
+  if (SINCE?.invalid) return;
+  const progress = readProgress(ROOT);
+  if (progress && predatesRequestedRun(progress)) return reportPredatingRun(progress);
+  if (!progress) return reportNoRun();
   const now = Date.now();
   const counts = tally(progress);
   const stale = isStale(progress, now);
