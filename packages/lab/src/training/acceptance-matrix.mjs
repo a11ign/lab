@@ -68,7 +68,10 @@ function page({ title, heading, body, script = "", landmark = true }) {
  *   badSignal: Record<string, any>, good: string, bad: string, probeForms?: boolean,
  *   probeTables?: boolean, alsoFails?: string[] } & Record<string, any>} spec
  */
-function pair({ id, criterion, subtype, task, mutation, badSignal, good, bad, probeForms = false,
+// EXPORTED for `probe-chain.test.ts` only. That file owns the question "which probe a case wants, across
+// every hop", and it imported only case-matrix's `pair` -- so the corpus builder was guarded against
+// dropping a probe flag and this one, which was actually dropping them, was not.
+export function pair({ id, criterion, subtype, task, mutation, badSignal, good, bad, probeForms = false,
   probeTables = false, alsoFails = [], ...rest }) {
   const probes = Object.fromEntries(
     Object.entries(rest).filter(([key]) => key.startsWith("probe")),

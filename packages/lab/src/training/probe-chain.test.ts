@@ -23,6 +23,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { CASES, pair } from "./case-matrix.mjs";
+import { pair as acceptancePair } from "./acceptance-matrix.mjs";
 
 const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 
@@ -171,6 +172,31 @@ test("pair() forwards a probe flag it has never heard of", () => {
   } as never) as unknown as Record<string, unknown>;
   assert.equal(generated.probeNeverHeardOf, true,
     "a probe flag the case declares must reach the generated case, or the probe silently never runs");
+});
+
+test("the ACCEPTANCE pair() forwards a probe flag it has never heard of, too", () => {
+  // THE SAME HOP, ON THE OTHER PIPELINE, AND IT WAS UNGUARDED FOR THE WHOLE LIFE OF THIS FILE. The header
+  // above names three corpus hops; the acceptance path has the same three, and this suite imported only
+  // case-matrix. So the builder that was CORRECT got a guard and the builder that was dropping flags did
+  // not — which is the shape this whole file exists to catch, applied to the file itself.
+  //
+  // Measured 2026-09-05: acceptance `pair()` enumerated `probeForms` and `probeTables`, so seven corpus
+  // subtypes had no held-out coverage. Not because nobody wrote the cases — because a case needing
+  // `probeFocus` or `probeNavigation` could not be expressed at all.
+  const generated = acceptancePair({
+    id: "acceptance-probe-forwarding-fixture",
+    criterion: "4.1.2",
+    subtype: "unnamed-control",
+    task: "t",
+    mutation: "m",
+    badSignal: { type: "regex", pattern: "x" },
+    good: "<p>g</p>",
+    bad: "<p>b</p>",
+    probeNeverHeardOf: true,
+  } as never) as unknown as Record<string, unknown>;
+  assert.equal(generated.probeNeverHeardOf, true,
+    "a probe flag an acceptance case declares must reach the generated case, or the probe silently never "
+    + "runs and the subtype cannot be measured at all");
 });
 
 test("pair() does NOT forward a non-probe key", () => {
