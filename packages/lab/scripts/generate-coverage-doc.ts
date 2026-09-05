@@ -15,9 +15,9 @@
 import { writeFileSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { CRITERION_COVERAGE } from "../../judge/src/criterion-coverage.js";
+import { CRITERION_COVERAGE } from "@a11y-witness/judge/internal";
 import { WCAG_22_AA } from "@a11y-witness/evidence/wcag";
-import { SCORED_CRITERIA } from "../../judge/src/coverage.js";
+import { SCORED_CRITERIA } from "@a11y-witness/judge/coverage";
 
 const REPO = resolve(import.meta.dirname, "../../..");
 const OUT = resolve(REPO, "docs/coverage.md");

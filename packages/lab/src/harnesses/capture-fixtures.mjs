@@ -44,12 +44,11 @@ import { mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl }
-  from "../../../worker-fleet/src/worker-http.mjs";
-import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
+import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11y-witness/worker-fleet/worker-http";
+import { hostPagesBase } from "@a11y-witness/worker-fleet/host-address";
 import { leasePageServer } from "../training/page-server.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { captureTolerantly } from "../../../worker-fleet/src/capture-client.mjs";
+import { captureTolerantly } from "@a11y-witness/worker-fleet/capture-client";
 
 /**
  * recaptures the eval fixtures. `--ff-only` appears in this file because it is passed to GIT, not

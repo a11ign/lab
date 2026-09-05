@@ -20,10 +20,10 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { leasePageServer } from "../training/page-server.mjs";
-import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
+import { hostPagesBase } from "@a11y-witness/worker-fleet/host-address";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { captureTolerantly } from "../../../worker-fleet/src/capture-client.mjs";
-import { CAPTURE_CLIENT_TIMEOUT_MS } from "../../../worker-fleet/src/worker-http.mjs";
+import { captureTolerantly } from "@a11y-witness/worker-fleet/capture-client";
+import { CAPTURE_CLIENT_TIMEOUT_MS } from "@a11y-witness/worker-fleet/worker-http";
 
 /**
  * takes its worker POSITIONALLY and no flags at all, so any flag passed to it is discarded.

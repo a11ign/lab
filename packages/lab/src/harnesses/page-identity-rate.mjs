@@ -35,10 +35,10 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 
 import { leasePageServer } from "../training/page-server.mjs";
-import { hostPagesBase } from "../../../worker-fleet/src/host-address.mjs";
-import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
+import { hostPagesBase } from "@a11y-witness/worker-fleet/host-address";
+import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11y-witness/worker-fleet/worker-http";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { captureTolerantly } from "../../../worker-fleet/src/capture-client.mjs";
+import { captureTolerantly } from "@a11y-witness/worker-fleet/capture-client";
 
 /**
  * asks whether a capture ever reads the WRONG page. `--rounds=` mistyped silently uses the default,
