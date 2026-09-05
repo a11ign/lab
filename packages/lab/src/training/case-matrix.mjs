@@ -4994,9 +4994,24 @@ function placeholderOnlyIsPresent(/** @type {any} */ capture, /** @type {any} */
   // A NAMED field carrying the placeholder as its value ("Booking reference, edit, Example value") is the
   // conformant announcement, so it must not satisfy this. Only a field whose announcement STARTS with the
   // placeholder — nothing said before it — is the failure.
+  // THROUGH THE GRAMMAR, NOT A HAND-ROLLED PREFIX STRIP — corrected 2026-09-05 after a browser upgrade
+  // broke it. This read `value.replace(/^form,\s*/, "")`, which knew exactly ONE container prefix by name.
+  // `w3c/html-aria#423` made the `form` role conditional on an accessible name, Edge 152 implemented it,
+  // and an unnamed `<form>` began announcing as "section" — so the strip missed, the placeholder was no
+  // longer at the start, and 18 cases went BLIND at the gate.
+  //
+  // `announcement.ts`'s own header lists this failure among the four it was written to end: "signal regexes
+  // broke whenever a container prefix appeared in front of the text they matched". The grammar already
+  // separates containers from the object; asking it is what stops the next container word doing this again.
+  //
+  // The DISCRIMINATION is unchanged and is the point of the case: a NAMED field carrying the placeholder as
+  // its VALUE ("Booking reference, edit, name at example dot com") parses to name "Booking reference", so
+  // it does not match — only a field whose NAME is the placeholder does.
   return captureTextParts(capture).some((value) => {
-    const text = value.toLowerCase().replace(/^form,\s*/, "").trim();
-    return text.startsWith(placeholder) && /\bedit(?: text)?\b/i.test(text);
+    const [object] = parseAnnouncement(String(value), "sweep").objects;
+    if (!object) return false;
+    const name = String(object.name || "").toLowerCase().replace(/[\s,]+/g, " ").trim();
+    return name.startsWith(placeholder) && /\bedit(?: text)?\b/i.test(String(object.role || ""));
   });
 }
 
