@@ -911,7 +911,21 @@ export const ACCEPTANCE_CASES = Object.freeze([
   contextChangePair({ id: "input-renames-page", title: "Licence enquiry", field: "Licence number", changedTitle: "Licences matching your entry", task: "Enter the licence number and notice whether the page stays where you were.", on: "input" }),
   noHeadingsPair({ id: "sections-not-headings", title: "Allotment rules", sections: ["Waiting list", "Plot sizes", "Water use"], task: "Move between the sections of the allotment rules." }),
   focusOrderPair({ id: "tab-order-contradicts-reading", title: "Delivery details", task: "Move through the delivery form with the keyboard in the order it reads." }),
-  unreachableControlPair({ id: "button-off-the-tab-order", title: "Saved searches", action: "Delete this search", task: "Reach the delete action for a saved search using the keyboard alone." }),
+  // "Delete this entry", NOT "Delete this search" — the old wording matched SUBMIT_RE on the word
+  // "search" and cost a release. `probeKindFor` classifies a control's `kind` by testing its ANNOUNCED
+  // NAME against that regex, so this inert `<button type="button">` — no script, no behaviour, present
+  // only to test keyboard reachability — was labelled `kind: "submit"`. `validation_error_missing` then
+  // read its empty `after` as a submit that announced no error and scored 1.000 on BOTH variants, which
+  // the held-out gate correctly reported as two 3.3.1 false positives.
+  //
+  // Its own training-corpus sibling `NATIVE_ACTION_PAGE` already says "Delete draft" and collides with
+  // nothing, so the model had never seen this shape and had no benign reading to fall back on.
+  //
+  // The FIXTURE is renamed rather than SUBMIT_RE narrowed, deliberately. Narrowing "search" to head a
+  // phrase would change how every capture ever taken classifies a control, for one wording collision —
+  // an evidence change to fix a test fixture. The regex matching by NAME rather than by BEHAVIOUR is a
+  // real and general weakness and belongs on the backlog, not in this commit.
+  unreachableControlPair({ id: "button-off-the-tab-order", title: "Saved searches", action: "Delete this entry", task: "Reach the delete action for a saved entry using the keyboard alone." }),
   focusTrapPair({ id: "field-will-not-release-focus", title: "Membership form", task: "Move through the membership form and out the other side with the keyboard." }),
   inertSkipLinkPair({ id: "skip-link-target-hidden", title: "Local collection", task: "Use the skip link to reach the main content." }),
   staleRouteTitlePair({ id: "route-changes-title-does-not", title: "Civic Office", task: "Open the Permits view and confirm where you are." }),
