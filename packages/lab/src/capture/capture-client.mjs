@@ -62,6 +62,19 @@ const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms)
 const base = (/** @type {string} */ worker) => String(worker).replace(/\/$/, "");
 
 /**
+ * What is left of the OPERATION'S budget, never negative — architecture-audit.md §14.5.
+ *
+ * Every wait inside the poll loop used its own fixed constant regardless of how little of `timeoutMs`
+ * remained: a two-second sleep, a ten-second progress read and a thirty-second result read, none clipped
+ * to what was actually left. A caller asking for `timeoutMs: 20` measured 2,012 ms before an answer,
+ * because the unconditional sleep ran to completion first regardless of the deadline it was about to blow
+ * past. This is the one place that number is computed, so every wait below shares one clock.
+ *
+ * @param {number} deadline
+ */
+const remaining = (deadline) => Math.max(0, deadline - Date.now());
+
+/**
  * Ask the worker for a capture we already paid for but may not have received.
  *
  * Returns null when there is nothing to recover — a worker predating the endpoint (404 from the router's
@@ -161,19 +174,94 @@ export async function captureTolerantly({ worker, body, timeoutMs = CAPTURE_CLIE
  *           onProgress?: (progress: object) => void }} request
  */
 async function pollForResult({ worker, body, captureId, timeoutMs, onProgress }) {
-  const accepted = await post(worker, { ...body, captureId, async: true }, ACCEPT_TIMEOUT_MS);
+  const deadline = Date.now() + timeoutMs;
+  let accepted;
+  try {
+    accepted = await post(worker, { ...body, captureId, async: true }, ACCEPT_TIMEOUT_MS);
+  } catch (error) {
+    if (!isTransient(error)) throw error;
+    const reconciled = await reconcileLostAcceptance(worker, captureId, deadline);
+    if (reconciled.state === "done") return { ...reconciled.response, recovered: true, pollsSurvived: 0 };
+    if (reconciled.state === "unknown") {
+      // CONFIRMED nothing is running under this id -- only now is a fresh one safe, exactly as the
+      // synchronous escape hatch already does for the identical failure. Minting one on the first sign
+      // of trouble, before asking, is what the audit's remedy forbids: it would risk a second real
+      // capture running under a worker that already accepted the first.
+      return pollForResult({
+        worker, body, captureId: randomUUID(), timeoutMs: Math.max(0, deadline - Date.now()), onProgress,
+      });
+    }
+    // reconciled.state === "running": the worker DID accept it under the id we already hold -- the 202
+    // was lost, not the acceptance. Fall through to the ordinary poll loop below exactly as a received
+    // 202 would have.
+  }
   // A worker too old to know `async` runs the capture SYNCHRONOUSLY and answers 200 with the result. That
   // is not an error and must not be retried -- it is the additive-field contract this project uses for
   // every wire change, and it means a host can be deployed before the fleet.
-  if (accepted.status !== 202) return { ...accepted, recovered: false, pollsSurvived: 0 };
+  if (accepted && accepted.status !== 202) return { ...accepted, recovered: false, pollsSurvived: 0 };
+  return awaitCompletion({ worker, captureId, deadline, timeoutMs, onProgress });
+}
 
-  const deadline = Date.now() + timeoutMs;
+/**
+ * ASKING ABOUT A CAPTURE WE MAY OR MAY NOT HAVE STARTED, using the SAME three-way discrimination a
+ * dropped poll already relies on (`pollOnce`) rather than `recoverCapture`, which collapses "running"
+ * and "unknown" into one null and cannot tell them apart -- the exact distinction this exists to make.
+ *
+ * A 404 here is not quite `pollOnce`'s documented "worker restarted mid-capture": no 202 was ever
+ * received, so there is nothing to have restarted AWAY FROM. It means the POST itself never reached the
+ * worker, which is what makes minting a fresh id safe once this returns "unknown" and not before.
+ *
+ * The audit's own caveat applies in principle: "unknown does not prove execution never occurred" if the
+ * result were evicted (§14.4) before this ever asks — but that needs seven OTHER captures to finish on
+ * this worker in the seconds between the lost 202 and this reconciliation, which the worker's own `busy`
+ * gate (one capture at a time) makes impossible while nothing else is running under this id.
+ *
+ * @param {string} worker @param {string} captureId @param {number} deadline
+ * @returns {Promise<{ state: "running" } | { state: "unknown" } | { state: "done", response: any }>}
+ */
+async function reconcileLostAcceptance(worker, captureId, deadline) {
+  let lastError;
+  while (Date.now() < deadline) {
+    const poll = await pollOnce(worker, captureId, Math.min(RECOVERY_TIMEOUT_MS, remaining(deadline)));
+    if (poll.running) return { state: "running" };
+    if (poll.done) return { state: "done", response: poll.response };
+    if (poll.lost) return { state: "unknown" };
+    lastError = poll.error;
+    await sleep(Math.min(POLL_MS, remaining(deadline)));
+  }
+  // Never resolved within the budget: neither confirmed running nor confirmed absent. The ORIGINAL
+  // acceptance failure is the fault that actually occurred, so it is what surfaces -- not a generic
+  // timeout that would hide which of the two things went wrong.
+  throw lastError ?? Object.assign(
+    new Error(`could not confirm capture ${captureId} was accepted, within its remaining budget`),
+    { code: "ETIMEDOUT" });
+}
+
+/**
+ * DISPATCH, THEN POLL — the async path, and the reason this module exists.
+ *
+ * `POST {async:true}` returns 202 in milliseconds, so no connection is held while NVDA reads a page. The
+ * result is collected from the store with `GET /capture/<id>`, which is the endpoint that has existed for
+ * this shape all along and was only ever reached after a failure. **The recovery path is now the normal
+ * path**, which is what stops it rotting: a route that runs only when something breaks is one nobody
+ * notices has broken.
+ *
+ * A dropped poll costs one round trip and is simply retried; the capture is unaffected because nothing is
+ * riding on that socket. That is the whole difference from the synchronous form, where the answer existed
+ * only in the connection that was carrying it.
+ *
+ * @param {{ worker: string, captureId: string, deadline: number, timeoutMs: number,
+ *           onProgress?: (progress: object) => void }} request
+ */
+async function awaitCompletion({ worker, captureId, deadline, timeoutMs, onProgress }) {
   let transportFailures = 0;
   let survived = 0;
   while (Date.now() < deadline) {
-    await sleep(POLL_MS);
-    if (onProgress) await readProgress(worker, onProgress);
-    const poll = await pollOnce(worker, captureId);
+    // CLIPPED, EACH TIME, TO WHAT IS LEFT — architecture-audit.md §14.5. A budget of 20 ms must not spend
+    // a full 2 s sleeping before it is even allowed to check the clock again.
+    await sleep(Math.min(POLL_MS, remaining(deadline)));
+    if (onProgress) await readProgress(worker, onProgress, Math.min(PROGRESS_TIMEOUT_MS, remaining(deadline)));
+    const poll = await pollOnce(worker, captureId, Math.min(RECOVERY_TIMEOUT_MS, remaining(deadline)));
     if (poll.done) {
       // WHAT THE TRANSPORT DID, carried out with the result. Under the synchronous protocol a dropped
       // response destroyed the capture; here it costs one poll -- but "harmless" and "not happening" are
@@ -210,12 +298,14 @@ async function pollForResult({ worker, body, captureId, timeoutMs, onProgress })
  * "could not ask" indistinguishable from "still running". Written that way first, and the retry counter
  * built on it was unreachable: found by mutation, since deleting the retry changed nothing.
  *
- * @param {string} worker @param {string} captureId
+ * @param {string} worker @param {string} captureId @param {number} [timeoutMs] clipped to the operation's
+ *   remaining budget by the caller — see `remaining()` — so this read cannot outlive the deadline it is
+ *   answering to on its own.
  */
-async function pollOnce(worker, captureId) {
+async function pollOnce(worker, captureId, timeoutMs = RECOVERY_TIMEOUT_MS) {
   let response;
   try {
-    response = await requestJson(`${base(worker)}/capture/${captureId}`, { timeoutMs: RECOVERY_TIMEOUT_MS });
+    response = await requestJson(`${base(worker)}/capture/${captureId}`, { timeoutMs });
   } catch (error) {
     return { unreachable: true, error };
   }
@@ -230,9 +320,10 @@ async function pollOnce(worker, captureId) {
 }
 
 /** The phase the worker is IN, so a caller can tell a slow capture from a wedged one. */
-async function readProgress(/** @type {string} */ worker, /** @type {(p: object) => void} */ onProgress) {
+async function readProgress(/** @type {string} */ worker, /** @type {(p: object) => void} */ onProgress,
+  /** @type {number} */ timeoutMs = PROGRESS_TIMEOUT_MS) {
   try {
-    const { json } = await requestJson(`${base(worker)}/progress`, { timeoutMs: PROGRESS_TIMEOUT_MS });
+    const { json } = await requestJson(`${base(worker)}/progress`, { timeoutMs });
     if (json && typeof json === "object") onProgress(json);
   } catch (error) {
     // Progress is a convenience; failing to read it must never fail a capture that is going fine.

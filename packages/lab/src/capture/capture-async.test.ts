@@ -193,3 +193,67 @@ test("CAPTURE_LOST is distinguishable from a transport failure, because they nee
   assert.equal(isTransient(dropped), true,
     "a dropped connection IS transient — the capture may still be running and recoverable by id");
 });
+
+/**
+ * LOSING THE 202 IS NOT LOSING THE CAPTURE — architecture-audit.md §14.3.
+ *
+ * The initial `POST {async:true}` was awaited OUTSIDE any recovery block: a lost acknowledgement threw
+ * `ECONNRESET` straight at the caller, with the client-minted `captureId` — the only handle able to ask
+ * the worker whether it actually started — thrown away with it. Reproduced with a loopback server that
+ * accepts the POST, destroys the response socket before the client reads it, and would answer a completed
+ * capture on `GET /capture/<id>`: before the fix this threw with ZERO GETs ever attempted.
+ */
+test("A LOST 202 IS RECONCILED BY THE SAME ID, not thrown away", async () => {
+  const recorded = new Map<string, { state: "running" } | { state: "done"; status: number; body: unknown }>();
+  let posts = 0;
+  let gets = 0;
+  const w = await worker((url, res, raw) => {
+    if (url === "/capture") {
+      posts += 1;
+      const id = JSON.parse(raw).captureId as string;
+      recorded.set(id, { state: "running" });
+      // The worker DID accept it and will finish shortly -- only the ACKNOWLEDGEMENT dies here.
+      setTimeout(() => recorded.set(id, { state: "done", status: 200, body: { transcript: ["recovered"] } }), 20);
+      return res.destroy();
+    }
+    gets += 1;
+    const id = url.split("/").pop() ?? "";
+    const entry = recorded.get(id);
+    if (!entry) return json(res, 404, { error: "no such capture" });
+    if (entry.state === "running") return json(res, 202, { state: "running", captureId: id });
+    json(res, entry.status, entry.body);
+  });
+  try {
+    const result = await captureTolerantly({ worker: w.url, body: { url: "http://x/" }, timeoutMs: 5_000 });
+    assert.deepEqual(body(result).transcript, ["recovered"]);
+    assert.equal(posts, 1, "reconciling a lost acknowledgement must not pay for a second capture");
+    assert.ok(gets >= 1, "recovering must ask the worker, or this test cannot tell recovery from luck");
+  } finally { await w.close(); }
+});
+
+/**
+ * A POST THAT NEVER ARRIVES IS DIFFERENT FROM ONE WHOSE ANSWER WAS LOST, and only the first is safe to
+ * retry with a fresh id immediately. This is the audit's "never-accepted test", the sibling the
+ * accepted-but-lost test above needs.
+ */
+test("a POST THAT NEVER REACHED THE WORKER is retried with a fresh id, confirmed via the SAME one first",
+  async () => {
+    let posts = 0;
+    let gets = 0;
+    const w = await worker((url, res, raw) => {
+      if (url === "/capture") {
+        posts += 1;
+        // The first POST never reaches the handler's own bookkeeping at all -- nothing is ever `begin()`.
+        if (posts === 1) return res.destroy();
+        return json(res, 200, { transcript: ["second attempt"], captureId: JSON.parse(raw).captureId });
+      }
+      gets += 1;
+      json(res, 404, { error: "no such capture" }); // never heard of it: nothing was ever accepted
+    });
+    try {
+      const result = await captureTolerantly({ worker: w.url, body: { url: "http://x/" }, timeoutMs: 5_000 });
+      assert.deepEqual(body(result).transcript, ["second attempt"]);
+      assert.equal(posts, 2, "a confirmed-absent id must fall back to a fresh POST, exactly like the sync path");
+      assert.ok(gets >= 1, "the fallback must ask FIRST — minting a new id immediately is what the audit forbids");
+    } finally { await w.close(); }
+  });
