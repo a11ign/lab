@@ -76,11 +76,22 @@ function sinceFromArgv() {
       + "  Pass an ISO 8601 instant (2026-09-05T18:10:51Z) or a systemd UTC timestamp\n"
       + "  (\"Sat 2026-09-05 18:10:51 UTC\"). An empty value or \"n/a\" means no constraint.");
     process.exitCode = EXIT.noRun;
-    return { invalid: true };
+    SINCE_UNREADABLE = true;
+    return null;
   }
   return { at: parsed, raw };
 }
 
+/**
+ * Set by `sinceFromArgv` when the flag was given and could not be read.
+ *
+ * SEPARATE from `SINCE` rather than a variant of it, because they are different facts and merging them
+ * made the type unnarrowable: a single value meaning either "no constraint" or "a constraint I could not
+ * read" forces every reader to re-test which it holds, and `tsc` correctly refused to believe the test.
+ * "Nobody asked" and "somebody asked and I could not answer" needing separate representation is this
+ * repo's oldest rule, arriving here as a type error.
+ */
+let SINCE_UNREADABLE = false;
 const SINCE = sinceFromArgv();
 
 /**
@@ -93,7 +104,7 @@ const SINCE = sinceFromArgv();
  * @param {Record<string, any>} progress
  */
 function predatesRequestedRun(progress) {
-  if (!SINCE || SINCE.invalid || !progress.startedAt) return false;
+  if (!SINCE || !progress.startedAt) return false;
   const started = Date.parse(progress.startedAt);
   // An unreadable `startedAt` cannot be shown to belong to this run, and cannot be shown not to. Treat it
   // as NOT predating -- the numbers are then shown with their own timestamps beside them, which is the
@@ -245,7 +256,7 @@ function reportPredatingRun(progress) {
 }
 
 async function main() {
-  if (SINCE?.invalid) return;
+  if (SINCE_UNREADABLE) return;
   const progress = readProgress(ROOT);
   if (progress && predatesRequestedRun(progress)) return reportPredatingRun(progress);
   if (!progress) return reportNoRun();
