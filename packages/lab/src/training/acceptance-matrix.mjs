@@ -776,34 +776,18 @@ function focusRevealPair({ id, title, field, note, linkText, task }) {
   });
 }
 
-/**
- * 2.4.7's F55 held-out pair. GENERALISATION, same reason as `focusRevealPair` above: the field name and
- * page theme differ from every training variant (coupon code / order reference / extension number), so a
- * model that only memorised those strings is exercised, not credited.
- *
- * @param {{ id: string, title: string, field: string, task: string }} spec
- */
-function focusRemovedOnReceiptPair({ id, title, field, task }) {
-  const body = "<form>"
-    + "<p><label for=\"first\">Contact name</label><input id=\"first\"></p>"
-    + "<p><label for=\"trigger\">" + field + "</label><input id=\"trigger\"></p>"
-    + "<p><label for=\"last\">Daytime telephone</label><input id=\"last\"></p>"
-    + "</form>";
-  const removeOnFocus = "document.getElementById('trigger')"
-    + ".addEventListener('focus', function(){ this.blur(); });";
-  return pair({
-    id,
-    criterion: "2.4.7",
-    subtype: "focus-removed-on-receipt",
-    task,
-    mutation: "The field is an ordinary, reachable input whose own focus handler calls blur() "
-      + "synchronously, so focus never rests there.",
-    badSignal: { type: "focus-removed-on-receipt" },
-    good: page({ title, heading: title, body }),
-    bad: page({ title, heading: title, body, script: removeOnFocus }),
-    probeFocus: true,
-  });
-}
+// `focusRemovedOnReceiptPair` WAS HERE and went with its corpus cases — withdrawn 2026-09-05 pending the
+// 2.4.7 probe, which ran but did not discriminate on its first capture. The diagnosis and the leading
+// hypothesis are in `case-matrix.mjs`, beside the cases.
+//
+// WITHDRAWING BOTH HALVES TOGETHER IS THE POINT. Removing only the corpus cases left three held-out pairs
+// for `2.4.7:focus-removed-on-receipt`, and `acceptance-matrix.test.ts` refused at once: "acceptance pairs
+// exist for subtypes the corpus never produces". That is the same defect that stopped the model chain at
+// its ninth stage hours earlier — a held-out case labelled with a subtype no head predicts raises no error
+// anywhere, because `eligible_records` drops it, and it surfaces as a false negative instead.
+//
+// The ledger caught it in one `npm test` rather than in a four-hour run, which is what the ledger is for.
+
 
 export const ACCEPTANCE_CASES = Object.freeze([
   imagePair({ id: "generic-lantern", title: "Lantern collection", description: "The collection includes hand-painted lanterns.", file: "lantern.jpg", goodAlt: "Hand-painted lantern beside a window", badAlt: "image", subtype: "generic-alt", task: "Understand what the lantern image shows." }),
@@ -924,9 +908,6 @@ export const ACCEPTANCE_CASES = Object.freeze([
   focusRevealPair({ id: "focus-panel-stuck", title: "Permit application", field: "Permit reference", note: "Your reference appears on the top right of the letter we sent you.", linkText: "Where to find your reference", task: "Focus the permit reference and try to dismiss the panel it opens." }),
   focusRevealPair({ id: "focus-panel-stuck-grant", title: "Grant claim", field: "Claim number", note: "Claim numbers begin with two letters and are eight characters long.", linkText: "What a claim number looks like", task: "Focus the claim number and try to dismiss the panel it opens." }),
   focusRevealPair({ id: "focus-panel-stuck-tenancy", title: "Tenancy check", field: "Tenancy code", note: "The code is printed beneath the barcode on your rent statement.", linkText: "Locating your tenancy code", task: "Focus the tenancy code and try to dismiss the panel it opens." }),
-  focusRemovedOnReceiptPair({ id: "focus-removed-membership", title: "Join the library", field: "Membership tier", task: "Focus the membership tier field and continue to the next one." }),
-  focusRemovedOnReceiptPair({ id: "focus-removed-voucher", title: "Gift shop", field: "Voucher code", task: "Focus the voucher code field and continue to the next one." }),
-  focusRemovedOnReceiptPair({ id: "focus-removed-booking-ref", title: "Theatre tickets", field: "Booking confirmation number", task: "Focus the booking confirmation number field and continue to the next one." }),
 ]);
 
 /**

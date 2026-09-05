@@ -4721,73 +4721,35 @@ cases.push(
     });
   }),
 );
+// **WITHDRAWN 2026-09-05, PENDING ITS PROBE — the case was merged before the probe had ever captured.**
+//
+// Fifteen `focus-removed-on-receipt-*` cases for 2.4.7 stood here and came back BLIND on their first
+// capture, stopping `check-signals` and with it the whole model-and-gates chain. The probe RAN:
+// `focusEventLog` reports `installed: true` with 24 events on the bad page and 26 on the good. But
+// `scriptRemovedFocus` was empty on BOTH, so nothing discriminated.
+//
+// **The sequencing error was mine.** The backlog's own rule, written for 3.3.7 the same morning, is that
+// a case and its probe validate TOGETHER — a case alone is BLIND because no channel can witness it, and a
+// probe alone produces evidence nothing validates. I merged the case half while the probe had never taken
+// a capture, so the first thing it did was stop the critical path.
+//
+// Withdrawing costs nothing, which is why it beat waiting: furniture buckets are dealt WITHIN a subtype,
+// so removing an entire NEW subtype re-buckets no existing case. Re-adding is a revert of this commit.
+//
+// THE LEADING HYPOTHESIS, unverified, for whoever picks it up. `focusEventVerdict` looks for `focusin(X)`
+// followed ADJACENTLY by `focusout(X)`. The UI Events order on gaining focus is `focus` then `focusin`, so
+// a handler bound to `focus` that calls `blur()` SYNCHRONOUSLY runs BEFORE `focusin` is dispatched and the
+// pair may reach the log REVERSED — `focusout(X), focusin(X)` — which matches nothing. It fits the bad
+// page having FEWER events than the good one. It cannot be settled from the captures taken, because the
+// mark records the event COUNT and not the events: "a count is where an investigation stops", landing on
+// a diagnostic built for exactly that reason.
+//
+// RULED OUT, checked rather than assumed: `installTargetMatch: "fallback"` on both variants looks like the
+// culprit and is not. The CENSUS on the same capture also reads `fallback`, because a synthetic page is
+// requested as `/bad.html` and lands on `/bad`, so `choosePageTarget`'s path comparison misses on EVERY
+// synthetic capture. With one page target present, falling back still picks the right document. That is a
+// real defect of its own and it is on the backlog; it is not this one.
 
-// F55 -- "using script to remove focus when focus is received" -- W3C's own Failure listing names it
-// under 2.1.1, 2.4.7, 2.4.13 AND 3.2.1 together. `probeFocusOrder`'s tab-stop list looks IDENTICAL whether
-// this field was never focusable at all or was focused and immediately blurred by script -- the whole
-// reason this needed a NEW evidence channel (`installFocusEventLog`, browser-session.mjs) rather than a
-// rule reading `focusOrder` more cleverly. `focusEventVerdict` decides it from the DOM's own
-// `focusin`/`focusout` timing, and `focusRemovedOnReceipt` below is the SIGNAL_PREDICATES entry that lets
-// `check-signals` ask the question this pair exists to answer.
-//
-// THE GOOD VARIANT DIFFERS FROM THE BAD ONE IN EXACTLY ONE LINE: the blur() call. Not tabindex, not a
-// removed label, not a different DOM shape -- so a rule that fired on some OTHER structural difference
-// between the two would be measuring something unrelated to this mechanism, and `check-signals` would
-// report CONTAMINATED rather than a clean discrimination.
-//
-// THIS IS NOT "A 2.1.1 CASE WEARING A HAT". A control with `tabindex="-1"` or removed from the DOM never
-// receives a `focusin` event at all -- that IS 2.1.1, already decided by `focusOrder` -- and this case is
-// not that shape. The field here is a completely ordinary, reachable `<input>`; the browser DOES focus it
-// (a `focusin` fires, proving it is reachable), and script immediately un-focuses it. Both 2.1.1 AND 2.4.7
-// are correctly implicated per W3C's own F55 listing -- this pair is not choosing between the two, it is
-// producing the evidence that lets the SECOND one be stated at all, which nothing in this pipeline could
-// do before.
-//
-// THE TASK PROSE NAMES NEITHER "focus" NOR "script" NOR "blur", on the same principle that cost three
-// language cases their signal: a lead line reading "reproduced in the original French" put the language's
-// own name where the ABSENCE of a marker was the finding, defeating a REGEX signal built to detect that
-// absence. `focusRemovedOnReceipt` is not a regex over the transcript or the task text at all -- it reads
-// `interaction.focusEvents.scriptRemovedFocus` directly, a structural field no amount of task-prose wording
-// can influence, so that specific defect class cannot recur here. The prose stays plain regardless: a task
-// that gives away the mechanism is bad practice independent of whether this particular signal is immune.
-//
-// NO NEW PROBE FLAG. `probeFocus: true` alone is what triggers `installFocusEventLog`/`collectFocusEventLog`
-// in `capture-core.mjs` -- the mechanism rides the EXISTING flag every focus-probing case already declares,
-// so there is nothing new to check survives `pair()`'s prefix-forwarding hop.
-cases.push(
-  ...[
-    ["focus-removed-on-receipt-coupon", "Checkout", "Checkout", "Coupon code",
-      "Focus the coupon code field and continue to the next one."],
-    ["focus-removed-on-receipt-reference", "Claim a refund", "Claim a refund", "Order reference",
-      "Focus the order reference field and continue to the next one."],
-    ["focus-removed-on-receipt-extension", "Support request", "Support request", "Extension number",
-      "Focus the extension number field and continue to the next one."],
-  ].map(([id, title, heading, field, task]) => {
-    const body = "<form>"
-      + "<p><label for=\"first\">Contact name</label><input id=\"first\"></p>"
-      + "<p><label for=\"trigger\">" + field + "</label><input id=\"trigger\"></p>"
-      + "<p><label for=\"last\">Daytime telephone</label><input id=\"last\"></p>"
-      + "</form>";
-    const removeOnFocus = "document.getElementById('trigger')"
-      + ".addEventListener('focus', function(){ this.blur(); });";
-    return pair({
-      id,
-      family: "focus-removed-on-receipt",
-      criterion: "2.4.7",
-      subtype: "focus-removed-on-receipt",
-      task,
-      source: "WCAG 2.4.7 Understanding, Failure F55",
-      mutation: "The field is an ordinary, reachable input -- Tab moves the browser's focus to it, so this "
-        + "is not a 2.1.1 case of a control that was never focusable. Its own focus handler calls blur() "
-        + "synchronously, so focus never rests there and no indicator, however well designed, could ever be "
-        + "seen. The good variant is identical except for that one listener.",
-      badSignal: { type: "focus-removed-on-receipt" },
-      good: page({ title, heading, body }),
-      bad: page({ title, heading, body, script: removeOnFocus }),
-      probeFocus: true,
-    });
-  }),
-);
 
 export const CASES = Object.freeze(withRealisticScale(
   [...cases, ...multiDefectCases(cases), ...conformantBehaviourCases(cases)],
