@@ -163,3 +163,65 @@ test("every case carries the metadata that makes it REVIEWABLE", () => {
     "these cases cannot be reviewed: a label with no task, source or mutation is a claim with no way to "
     + "check it. `npm run training:preflight` refuses them too, but only after generating 1401 pages.");
 });
+
+/**
+ * WHICH CORPUS SUBTYPES THE HELD-OUT SET CAN ACTUALLY MEASURE — pinned, because nothing compared them.
+ *
+ * `CLAUDE.md` names this exact shape: "acceptance-matrix.mjs declares subtypes BY HAND, separate from the
+ * corpus, with nothing comparing them — the cause of two identical pipeline failures". Both halves are
+ * hand-maintained lists of the same fact, which is this repo's most expensive recurring defect, and the
+ * remedy it prescribes when a duplication is forced is to pin them equal with a test.
+ *
+ * They cannot simply BE equal: acceptance pairs are written by hand and deliberately never trained on, so
+ * the set grows more slowly than the corpus. What must not happen is a subtype quietly acquiring no
+ * held-out coverage — because `training:evaluate-acceptance` then reports `passed: true` having never
+ * examined that head, and `RELEASE.md` quotes it as a gate. A gate that does not exercise what ships is
+ * not a gate, for the fifth time in this repo.
+ *
+ * So the list below is a LEDGER OF WHAT IS UNMEASURED, not a set of justified exemptions. Measured
+ * 2026-09-05: 8 of 25 corpus subtypes have no acceptance pair at all, and among them are the two whose
+ * mapping was downgraded that same day (3.2.1, 3.2.2) — heads whose behaviour changed and which the
+ * held-out set cannot see. Adding a subtype without an acceptance pair now costs one deliberate line here
+ * rather than passing silently.
+ */
+const SUBTYPES_WITHOUT_ACCEPTANCE_COVERAGE = new Set<string>([
+  // Each of these is a REAL GAP in held-out measurement. None is a decision that it does not need one.
+  "1.3.1:no-headings",
+  "2.1.1:control-unreachable-by-keyboard",
+  "2.1.2:focus-trapped",
+  "2.4.1:skip-link-inert",
+  "2.4.2:route-title-stale",
+  "2.4.3:focus-order-scrambled",
+  "3.2.1:focus-context-change",
+  "3.2.2:input-context-change",
+]);
+
+const subtypeKey = (c: { criterion?: string; subtype?: string }) =>
+  `${c.criterion ?? "?"}:${c.subtype ?? "(default)"}`;
+
+test("no corpus subtype loses held-out coverage without someone deciding to let it", () => {
+  const covered = new Set<string>(ALL_ACCEPTANCE_CASES.map(subtypeKey));
+  const uncovered = [...new Set<string>(CASES.map(subtypeKey))].filter((k) => !covered.has(k)).sort();
+
+  const surprises = uncovered.filter((k) => !SUBTYPES_WITHOUT_ACCEPTANCE_COVERAGE.has(k));
+  assert.deepEqual(surprises, [],
+    `these corpus subtypes have no acceptance pair and are not on the ledger, so `
+    + `training:evaluate-acceptance would report passed:true having never examined them: ${surprises.join(", ")}. `
+    + `Add an acceptance pair, or add the subtype to SUBTYPES_WITHOUT_ACCEPTANCE_COVERAGE with the reason.`);
+
+  // BOTH DIRECTIONS, for the reason `evidence-fields.test.ts` gives: an entry on the list that is no
+  // longer uncovered is a phantom, and a ledger nobody prunes stops describing anything.
+  const stale = [...SUBTYPES_WITHOUT_ACCEPTANCE_COVERAGE].filter((k) => covered.has(k)).sort();
+  assert.deepEqual(stale, [],
+    `these subtypes now HAVE acceptance coverage and should come off the ledger: ${stale.join(", ")}`);
+});
+
+test("every acceptance subtype exists in the corpus, so none measures a head that is not trained", () => {
+  // The other direction, and it fails differently: an acceptance pair for a subtype the corpus does not
+  // produce scores a head with no training positives, which reads as a model defect rather than a
+  // bookkeeping one. Empty today and asserted so it stays that way.
+  const inCorpus = new Set<string>(CASES.map(subtypeKey));
+  const orphans = [...new Set<string>(ALL_ACCEPTANCE_CASES.map(subtypeKey))].filter((k) => !inCorpus.has(k)).sort();
+  assert.deepEqual(orphans, [],
+    `acceptance pairs exist for subtypes the corpus never produces: ${orphans.join(", ")}`);
+});
