@@ -74,10 +74,12 @@ const GRANTS = Object.freeze({
  */
 /** @type {Record<string, any>} */
 export const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
-  "3.3.1:validation-error-silent": ["validation_error_announced", "status_update_announced", "form_change_nonempty"],
+  // `form_change_observed_absent` joined both 2026-09-05 -- see the note below the table.
+  "3.3.1:validation-error-silent": ["validation_error_announced", "status_update_announced",
+    "form_change_nonempty", "form_change_observed_absent"],
   "4.1.3:form-activation-silent": ["status_update_announced", "validation_error_announced",
     // `validation_error_missing` joined them 2026-08-30 -- see the note below the table.
-    "validation_error_missing", "form_change_nonempty"],
+    "validation_error_missing", "form_change_nonempty", "form_change_observed_absent"],
   "4.1.2:state-change-silent": ["state_changed"],
   // ADDED 2026-09-02 with the criterion. 3.3.3 is "the error WAS announced and named only the problem",
   // so two of its three vetoes name features the subtype cannot carry:
@@ -174,6 +176,38 @@ export const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
   // `2.4.1:skip-link-inert` and read the subtype as handled. It is not — that head carries
   // `vague_link_without_context (-4.51)` as its worst veto, and this stale line is a plausible reason
   // nobody looked. The same shape `audit_grants.py` reports as STALE, in the table meant to prevent it.
+  //
+  // ADDED 2026-09-05, and it is the reopened `not-working.md` §2 finding resolved: `form_change_observed_absent`
+  // is the schema-v19 feature cross built for §11 (ten features whose `0` conflated "the page has none" with
+  // "nobody asked"), and two of its columns were flagged as free vetoes on subtypes never audited for it.
+  //
+  // `cross_with_observation` (screenreader_features.py) computes it as `asked AND NOT bool(formChanges)` --
+  // the probe ran and found NO CONTROL TO PRESS -- never "the probe ran and the page said nothing". The
+  // activation function (`capture-core.mjs`, the control-press-and-read helper) pushes a `formChanges` entry
+  // on every completed press, a silent one included (`after: ""` is still an entry); the array only stays
+  // empty if nothing was found to activate at all, or the press threw before recording. So `form_change_empty`
+  // -- not this feature -- is what 3.3.1/4.1.3's silence should read 1 on, and does.
+  //
+  // 3.3.1 and 4.1.3 are the two subtypes whose whole point is a submission that gets rejected or ignored, so
+  // a control to press is guaranteed by the case definition rather than incidental to it. Census against
+  // `case-matrix.mjs`'s `CASES` (no capture needed): 143/143 positives of 3.3.1 carry `probeForms: true`;
+  // 149/150 of 4.1.3, the one exception being `filter-status-silent-link`, which activates through
+  // `probeNavigation` instead -- its own comment says why: "probeForms deliberately never activates a link."
+  // That case's `observed.formChanges.asked` is FALSE (no `probeForms`, no `formState`), so it lands in the
+  // all-zeros "never asked" row rather than "asked-and-absent" -- a different mechanism, same value 0.
+  //
+  // MEASURED ON THE CAPTURES, not an export, because `interaction.formChanges` is a capture field that
+  // predates the schema and a stale export's missing `observed` block cannot touch it:
+  //
+  //     captures of 3.3.1 + 4.1.3                                   : 502
+  //     observed.formChanges.asked === false                       :   2   (both filter-status-silent-link)
+  //     formChanges EMPTY while asked (the veto's constant-1 shape) :   0
+  //
+  // Zero of 500 asked-and-found-nothing. The feature cannot be 1 on either subtype for a reason about what a
+  // positive of the subtype IS, which is `IMPOSSIBLE_BY_DEFINITION`'s test -- and neither existing entry
+  // covers it: `4.1.2:state-change-silent`/`1.3.1:unassociated-table` above are absence-IS-the-finding
+  // subtypes, and the five focus/context subtypes under `UNREACHABLE_WITHOUT_PERTURBING` below never run the
+  // probe at all, which is a different fact that happens to share the value 0.
 });
 
 /**
