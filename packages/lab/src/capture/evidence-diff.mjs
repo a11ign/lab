@@ -75,6 +75,14 @@ export const EVIDENCE_FIELDS = [
   // `typedFeedback` gained `titleBefore`/`titleAfter` in the same protocol for 3.2.2 and is already
   // listed, so the flattening picks those up without a second entry.
   ["interaction", "focusContext"],
+  // F55's focus-event log (2.4.7). Found by `evidence-fields.test.ts` the moment a real capture of
+  // `focus-removed-on-receipt-coupon` landed in `runs/` -- the exact mechanism this list exists for,
+  // working as designed: a field arrived on disk that this gate neither compared nor excluded, which
+  // means a change to the mechanism would have reported SAME and shipped uncompared. An OBJECT holding
+  // `scriptRemovedFocus`, an ARRAY of findings, so it needs the same flattening as `routeChange` and
+  // `focusReveal` -- counting it would repeat the `formChanges`/`stateChanges` defect this file's own
+  // history is full of.
+  ["interaction", "focusEvents"],
 ];
 
 /**
@@ -133,8 +141,17 @@ function fieldValues(capture, [group, name]) {
   // the table above without this would have compared nothing while appearing to compare something,
   // which is worse than the omission it fixes. Each entry becomes `key=value`, so a title that stopped
   // changing shows as a lost `titleafter=...` rather than a bare count.
+  //
+  // A VALUE THAT IS ITSELF AN ARRAY OF OBJECTS is flattened per element, not stringified whole — found
+  // adding `focusEvents` (`{asked, checked, events, scriptRemovedFocus}`, where `scriptRemovedFocus` is
+  // an array of findings), the first object-shaped field to hold one. Without this, `normalise` would
+  // `String()` the array, and `String({...})` is `"[object Object]"` -- the EXACT `formChanges`/
+  // `stateChanges` defect this file's own history is about, arriving through the OTHER shape it can take:
+  // that fix flattened an array of objects at the TOP level; this is an array of objects NESTED inside
+  // an object field, which the object branch never learned.
   if (value && typeof value === "object") {
-    return Object.entries(value).map(([key, entry]) => `${key}=${normalise(entry)}`);
+    return Object.entries(value).map(([key, entry]) =>
+      `${key}=${Array.isArray(entry) ? entry.map(flatten).join(";") : normalise(entry)}`);
   }
   return [];
 }
