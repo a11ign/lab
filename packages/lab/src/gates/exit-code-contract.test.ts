@@ -53,6 +53,15 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11y-witness/evidence/source-text";
 
+/**
+ * THE REPOSITORY ROOT, NOT A CORPUS ROOT — and the distinction is load-bearing enough to state.
+ *
+ * Every read in this file resolves against `REPO` and opens a script, a `.py` file, or
+ * `docs/gate-exit-codes.md`. This file reads SOURCE; it never opens a capture, so
+ * `corpus-readers-are-guarded.test.ts` classifies it `not-a-corpus-read` rather than requiring
+ * `labCorpusReadable`. It became a candidate for that scan only because one INFRASTRUCTURE reason below
+ * mentions `runsRoot()` in prose — a string about the corpus, not a read of it.
+ */
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const DOC = "docs/gate-exit-codes.md";
 

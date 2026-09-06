@@ -34,6 +34,7 @@ import { channelsPresent, CRITERION_COVERAGE } from "@a11y-witness/judge/interna
 import { oracleCounts } from "@a11y-witness/evidence/verify";
 import { REAL_PAGES } from "./real-page-corpus.mjs";
 import { realCorpusRoot } from "../dataset-paths.mjs";
+import { labCorpusReadable, skipLine } from "./corpus-settled.mjs";
 
 /** Same derivation `real-page-corpus.test.ts` uses to pair a fixture with its sibling. */
 function caseOf(url: string): string {
@@ -156,15 +157,39 @@ export function pairProblems(
   return { problems, skipped, checked };
 }
 
+/**
+ * ASK WHETHER THE CORPUS IS MOVING, not only whether it is there — `corpus-readers-are-guarded.test.ts`
+ * is the guard that requires this, and this file is a genuine corpus reader: `capturesByUrl` opens every
+ * capture under `realCorpusRoot()`.
+ *
+ * THERE ARE NOW THREE SKIP STATES HERE AND NONE SUBSUMES ANOTHER, which is why the `checked === 0` path
+ * below survives rather than being replaced:
+ *
+ *   - `absent`    — nothing under `runs/real-page-corpus` at all (gitignored; normal in CI and a fresh
+ *                   worktree). Caught here, by `present`.
+ *   - `in-flight` — captures ARE there and a run is rewriting them. Caught here, and ONLY here: it is
+ *                   invisible to any check that only asks whether files exist. This is the state
+ *                   `evidence-fields.test.ts` was green under and then failed on byte-identical code.
+ *   - present, settled, but holding none of the five pairs — caught by `checked === 0` below. A real
+ *                   corpus that simply predates the fixture work, which is neither absent nor moving.
+ *
+ * Collapsing any two of those makes a skip that cannot say which it was, and a skip that does not say
+ * why is the silent skip this guard exists to replace.
+ */
+const CAPTURES = capturesByUrl();
+const GUARD = labCorpusReadable({ present: CAPTURES.size > 0 });
+const SKIP = !GUARD.read && skipLine(GUARD);
+
 test("fixture pairs are derived and there are at least five, or the discovery is broken", () => {
   const pairs = fixturePairs();
   assert.ok(pairs.length >= 5, `found ${pairs.length} fixture pair(s); expected at least 5 — the `
     + "derivation from REAL_PAGES is broken, not the corpus thin");
 });
 
-test("every fixture pair's evidence channel reached both captures, the bad half still fires, the good half does not", () => {
+test("every fixture pair's evidence channel reached both captures, the bad half still fires, the good half does not",
+  { skip: SKIP }, () => {
   const pairs = fixturePairs();
-  const captures = capturesByUrl();
+  const captures = CAPTURES;
   const { problems, skipped, checked } = pairProblems(pairs, captures);
 
   if (skipped.length) {

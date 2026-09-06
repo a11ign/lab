@@ -22,6 +22,12 @@
  * owns, or contains a `runs/<subdir>` literal) AND calls a write function
  * (`writeFileSync`/`appendFileSync`/`writeJsonAtomic`/`rmSync`). Every discovered file must call
  * `refuseIfRunsReadonly`, or be named in EXEMPT with a reason.
+ *
+ * THIS FILE READS SOURCE, NEVER THE CORPUS, which is why `corpus-readers-are-guarded.test.ts` classifies
+ * it `not-a-corpus-read` instead of requiring `labCorpusReadable`. Its walk is `packages/*\/src` and
+ * `packages/*\/scripts`, and every read resolves against `REPO_ROOT`; the corpus accessors that made it
+ * match that scan (`datasetRoot()`, `realCorpusRoot()`, `runsRoot()`) occur only inside EXEMPT reason
+ * strings and inside the synthetic source text of the MUTATION test at the foot of this file.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
