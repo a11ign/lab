@@ -25,7 +25,7 @@ import { datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--dir=", "--from-disk"], { entry: import.meta.url, command: "npm run bench:capture" });
+refuseUnknownFlags(["--dir=", "--from-disk", "--protocol="], { entry: import.meta.url, command: "npm run bench:capture" });
 
 const [worker, page, countArg] = process.argv.slice(2);
 
@@ -175,9 +175,107 @@ async function fromDisk(/** @type {any} */ root) {
       phrases: (capture.transcript ?? []).length,
       reused: !!start?.reused,
       worker: capture.provenance?.worker ?? "unrecorded",
+      // The population this capture belongs to. ABSENT is a value, not a gap: the cache reads a
+      // missing protocol as `unknown`, so those captures match no live guest either.
+      protocol: capture.provenance?.captureProtocol ?? "absent",
     });
   }
   return runs;
+}
+
+// --- WHICH POPULATION IS THIS? -------------------------------------------
+//
+// A capture directory is not one experiment. This repo's corpus has held five
+// `captureProtocol` values at once, and the protocol is a CACHE KEY -- so captures either side
+// of a bump ran different code, on different guests, and mean different things. Averaging
+// across them produces a p50 that describes no fleet that ever existed.
+//
+// That is not hypothetical. Measured 2026-09-06 on this checkout's own copy: 2,122 of 2,178
+// captures are protocol 5 taken on `192.168.64.x` -- the RETIRED local UTM guests -- and the
+// remaining 56 are the bare-metal fleet. A `--from-disk` run here reported the retired pool's
+// numbers as the fleet's, silently, which is the wrong-population defect this repo has now
+// recorded thirteen times.
+//
+// So the population is STATED before any statistic, and a mixed one is REFUSED rather than
+// averaged. `--protocol=all` is how you ask for the mix deliberately; there is no way to get
+// it by accident.
+
+/**
+ * Counts by value.
+ *
+ * ABSENT IS A VALUE, and the defaulting lives HERE rather than at the one call site that reads a
+ * capture off disk. Put it there and a caller reaching this any other way renders `undefined` as a
+ * protocol -- which is a mixed corpus describing itself as homogeneous, the defect wearing the
+ * remedy's clothes. This repo's own rule: one fact, one place.
+ *
+ * @param {any[]} runs @param {(r: any) => any} key
+ */
+function tally(runs, key) {
+  /** @type {Record<string, number>} */
+  const counts = {};
+  for (const run of runs) {
+    const raw = key(run);
+    const value = raw === undefined || raw === null || raw === "" ? "absent" : String(raw);
+    counts[value] = (counts[value] ?? 0) + 1;
+  }
+  return counts;
+}
+
+/** Counts by value, biggest first, as `16=3304 6=580`. An ABSENT field counts as the value
+ * `absent`, because the cache reads it as `unknown` and those captures match no live guest. */
+export function populationOf(/** @type {any[]} */ runs) {
+  return {
+    protocols: tally(runs, (r) => r.protocol),
+    workers: tally(runs, (r) => r.worker),
+  };
+}
+
+/** @param {Record<string, number>} counts */
+function describe(counts) {
+  return Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([value, n]) => `${value}=${n}`)
+    .join(" ");
+}
+
+/**
+ * Choose the captures to report on, or refuse and say why.
+ *
+ * Returns `{ runs, scope }` when the answer is about ONE population, and `{ refusal }` when it
+ * would otherwise be about several. A refusal names the mix, so the next command is obvious --
+ * the rule this repo applies to every guard: replace a plausible wrong answer with a refusal
+ * that names the cause.
+ *
+ * @param {any[]} runs
+ * @param {string | undefined} wanted `--protocol=` as given: a value, `all`, or absent
+ */
+export function selectPopulation(runs, wanted) {
+  const protocols = tally(runs, (r) => r.protocol);
+  const mix = describe(protocols);
+  if (wanted === "all") {
+    return { runs, scope: `${runs.length} capture(s) across ALL protocols (${mix}) -- asked for explicitly` };
+  }
+  if (wanted !== undefined) {
+    // Normalised the same way `tally` does, so `--protocol=absent` names the same set the mix does.
+    const chosen = runs.filter((r) => (r.protocol === undefined || r.protocol === null || r.protocol === ""
+      ? "absent" : String(r.protocol)) === wanted);
+    if (!chosen.length) {
+      return { refusal: `No capture on disk has captureProtocol ${wanted}. Present: ${mix}` };
+    }
+    return { runs: chosen, scope: `${chosen.length} capture(s) at captureProtocol ${wanted}` };
+  }
+  const present = Object.keys(protocols);
+  if (present.length > 1) {
+    return {
+      refusal:
+        `These captures span ${present.length} capture protocols (${mix}), and the protocol is a CACHE ` +
+        `KEY -- they ran different code on different guests. A p50 across them describes no fleet that ` +
+        `ever existed.\n` +
+        `  --protocol=${Object.entries(protocols).sort((a, b) => b[1] - a[1])[0][0]}  the largest population\n` +
+        `  --protocol=all      average them anyway, deliberately`,
+    };
+  }
+  return { runs, scope: `${runs.length} capture(s) at captureProtocol ${present[0]}` };
 }
 
 function percentile(/** @type {any} */ values, /** @type {any} */ p) {
@@ -185,7 +283,11 @@ function percentile(/** @type {any} */ values, /** @type {any} */ p) {
   return sorted[Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length))];
 }
 
-function reportFromDisk(/** @type {any} */ runs) {
+function reportFromDisk(/** @type {any} */ runs, /** @type {string} */ scope) {
+  // The population FIRST. A statistic whose population is not stated is the defect this repo has
+  // recorded thirteen times, and printing it above the numbers is what makes it unmissable.
+  console.log(`\npopulation: ${scope}`);
+  console.log(`  workers:  ${describe(populationOf(runs).workers)}`);
   /** @type {Record<string, any>} */
   const phases = {};
   for (const run of runs) {
@@ -229,7 +331,16 @@ async function main() {
       console.error(`No captures with diagnostics under ${dir}`);
       process.exit(1);
     }
-    reportFromDisk(fromDiskRuns);
+    const wanted = process.argv.find((a) => a.startsWith("--protocol="))?.slice("--protocol=".length);
+    const chosen = selectPopulation(fromDiskRuns, wanted);
+    // Both halves tested, because "no runs" and "a refusal" must never be able to come apart: a
+    // selection that returned neither would otherwise fall through and report on `undefined`.
+    if (chosen.refusal || !chosen.runs || !chosen.scope) {
+      console.error(`\nREFUSING to average across populations, under ${dir}:\n` +
+        `${chosen.refusal ?? "the selection returned no captures and no reason, which is a bug here"}`);
+      process.exit(2);
+    }
+    reportFromDisk(chosen.runs, chosen.scope);
     process.exit(0);
   }
 
