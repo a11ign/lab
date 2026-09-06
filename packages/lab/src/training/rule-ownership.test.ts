@@ -104,3 +104,40 @@ test("a file with no subtypes object is a malformed declaration, not an empty on
   const path = withDeclaration({ note: ["all argument, no content"] });
   assert.throws(() => readRuleOwnership(path), /has no "subtypes" object/);
 });
+
+test("modelHead: false is accepted when it carries a why", () => {
+  const path = withDeclaration({
+    subtypes: {
+      "1.4.2:autoplay-uncontrollable": {
+        decidedBy: "rules", reportsAs: "1.4.2", modelHead: false, why: "no corpus case yet",
+      },
+    },
+  });
+  const entry = readRuleOwnership(path).get("1.4.2:autoplay-uncontrollable");
+  assert.equal(entry?.modelHead, false);
+  assert.equal(entry?.why, "no corpus case yet");
+});
+
+test("modelHead: false with no why is rejected -- two entries need opposite reasons, neither is optional", () => {
+  const path = withDeclaration({
+    subtypes: {
+      "2.4.7:focus-removed-on-receipt": { decidedBy: "rules", reportsAs: "2.4.7", modelHead: false },
+    },
+  });
+  assert.throws(() => readRuleOwnership(path), /modelHead: false with no "why"/);
+});
+
+test("modelHead: true is rejected -- absence is the only spelling of \"a head is fitted\"", () => {
+  const path = withDeclaration({
+    subtypes: {
+      "4.1.2:regex": { decidedBy: "rules", reportsAs: "4.1.2", modelHead: true, why: "not applicable" },
+    },
+  });
+  assert.throws(() => readRuleOwnership(path), /the only value this ever takes is `false`/);
+});
+
+test("an entry with no modelHead field at all is unaffected -- the ordinary, overwhelmingly common case", () => {
+  const path = withDeclaration({ subtypes: { "4.1.2:regex": { decidedBy: "rules", reportsAs: "4.1.2" } } });
+  const entry = readRuleOwnership(path).get("4.1.2:regex");
+  assert.equal(entry?.modelHead, undefined);
+});
