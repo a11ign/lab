@@ -257,7 +257,7 @@ export function captureOptions(/** @type {any} */ testCase) {
     // PROVEN not to move a single existing cache key: every `probe*` identifier this package's case
     // definitions actually use is one of the ten named above (checked by grep across
     // `packages/lab/src/training` and `packages/lab/src/harnesses`), so this line forwards nothing today
-    // — `probe-chain-forwards-by-prefix.test.ts` pins that emptiness so a future name added ABOVE without
+    // — `probe-forward-by-prefix.test.ts` pins that emptiness so a future name added ABOVE without
     // being excluded here cannot double it into the body accidentally.
     ...Object.fromEntries(Object.entries(testCase).filter(([key, value]) => key.startsWith("probe")
       && !NAMED_PROBE_FLAGS.has(key) && value)),
