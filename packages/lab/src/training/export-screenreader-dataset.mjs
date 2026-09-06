@@ -342,7 +342,8 @@ function assertManifestMatchesCases(/** @type {any} */ manifest) {
     + "would label captures using the old ones.\n  "
     + drifted.slice(0, NAMED).join("\n  ")
     + (drifted.length > NAMED ? `\n  ... and ${drifted.length - NAMED} more` : "")
-    + "\nRegenerate it: node packages/lab/src/training/generate-screenreader-dataset.mjs"
+    + "\nRegenerate it, on the box that owns the corpus:  npm run lab:job -- -e job=generate"
+    + "\n  (locally, against a copy: npm run training:generate)"
     + "\n(Page files are rewritten byte-identically unless a page actually changed, so this does not "
     + "invalidate captures on its own.)");
 }
