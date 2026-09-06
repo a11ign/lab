@@ -29,6 +29,26 @@
  * with no `§`) — `GENERAL_CITATIONS` below is that confirmation, and it is intentionally the harder path:
  * every entry states WHY no section number, so a future citation that quietly drops its own `§9` does not
  * get grandfathered into "general" by a copy-paste.
+ *
+ * ## A CLASS, not three coincidences
+ *
+ * The line-by-line citation miss above, a mutation that silently no-opped against a `* `-wrapped target in
+ * `audit-findings-dispositioned.test.ts`, and that same file's backlog-substring check failing on text
+ * wrapped the same way, are the SAME defect found three times in one day: in this repo, a citation, a
+ * search target or a mutation target is as likely to be split across a `* `-prefixed comment line as not.
+ * Match against collapsed full text, never a line — this file's `citedSections` and
+ * `audit-findings-dispositioned.test.ts`'s `collapsed()` are the two working examples.
+ *
+ * ## Search the TITLE, not only the label — corrected 2026-09-06, same day as found
+ *
+ * `docs/backlog.md` refers to a finding by its TITLE ("A published export the tarball cannot satisfy"),
+ * essentially never by the audit's own `§N` label. Two entries below (`adr-status.test.ts`,
+ * `exports-are-shipped.test.ts`) were first reported as test-only closures invisible to `docs/backlog.md`
+ * on the strength of a literal `"§3.1"`/`"§10.3"` search finding nothing there — which is true and means
+ * nothing, because that page was never going to contain that string. Both are dual-channel; see their own
+ * entries below for the corrected reading. The lesson is the same shape as the citation-format one above,
+ * one level up: a search answered correctly about the wrong population (the LABEL) rather than the real
+ * one (the TITLE).
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -86,13 +106,25 @@ const GENERAL_CITATIONS: Record<string, string> = {
     + "not prove HTTP idempotency), not a numbered row",
   // The next six cite a SPECIFIC finding by quoted phrase rather than by `§N` -- read individually rather
   // than assumed, because "no § token" and "no specific finding" are different claims and this file exists
-  // to stop conflating them. Each closes a row `audit-findings-dispositioned.test.ts` already tracks by
-  // number; recorded here as the corroborating third-channel evidence, not a new open question.
+  // to stop conflating them.
+  //
+  // TWO OF THESE WERE FIRST MISCLASSIFIED AS TEST-ONLY CLOSURES INVISIBLE TO docs/backlog.md, and they are
+  // not -- CORRECTED 2026-09-06, same day. `docs/backlog.md` refers to findings by TITLE ("A published
+  // export the tarball cannot satisfy", "Seven ADRs said Proposed while the index called them accepted"),
+  // never by the audit's `§N` label -- so a search for the literal string "§3.1" or "§10.3" finds nothing,
+  // and reads as "not tracked" when it is. That is this exact file's own lesson, one turn later: a search
+  // answered correctly about the wrong population (the LABEL) when the real population is the TITLE.
+  // `grep -c "3\.1\b" docs/backlog.md` alone returns 11 hits -- even a loose numeric search would have
+  // caught it. Both are dual-channel, exactly like the other four below; the near-miss is recorded because
+  // it is more useful than a silent fix would have been.
   "packages/lab/src/packaging/adr-status.test.ts":
-    "closes §10.3 (\"seven status mismatches\") by quoted content -- ADRs 0001, 0003-0008 -- never by `§10.3` itself",
+    "closes §10.3 (\"seven status mismatches\") by quoted content -- ADRs 0001, 0003-0008 -- never by "
+    + "`§10.3` itself. ALSO in docs/backlog.md:393 (\"Seven ADRs said `Proposed` while the index called "
+    + "them accepted\" -- CLOSED, with the index as the authority) -- dual-channel, not test-only",
   "packages/lab/src/packaging/exports-are-shipped.test.ts":
     "closes §3.1 (\"a published export the tarball cannot satisfy\") by quoting the exact cli-flags/files "
-    + "mismatch, never by `§3.1` itself",
+    + "mismatch, never by `§3.1` itself. ALSO in docs/backlog.md:407 (struck through, \"FIXED `5374691`\", "
+    + "naming this exact test by filename) -- dual-channel, not test-only",
   "packages/lab/src/packaging/git-hooks-installed.test.ts":
     "closes §7.2's hooks row by quoting its heading (\"gates that exist and run nowhere automated\") and its "
     + "exact wording (\"no prepare, no postinstall\"), never by `§7.2` itself",
