@@ -113,6 +113,10 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
     guard: "callers.length >= 8",
     note: "guarded — `git grep -l ruleFindings` across packages",
   },
+  "packages/lab/src/packaging/tracked-prose-leak-guard.test.ts": {
+    guard: "files.length >= MIN_TRACKED_MARKDOWN_FILES",
+    note: "guarded — `git ls-files '*.md'` for the repo-wide leak sweep, floored at 50 tracked files",
+  },
 };
 
 test("MUTATION: without the SELF exclusion, this file would discover itself", () => {
