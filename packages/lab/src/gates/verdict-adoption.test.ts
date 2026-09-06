@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
 /**
  * The functions a gate may build its verdict with.
@@ -81,7 +82,7 @@ const EXEMPT: Record<string, { category: "owed" | "not-a-gate" | "deliberate"; w
 };
 
 function discoverGates(): string[] {
-  const out = execFileSync("git", ["ls-files", "packages/lab/scripts"], { cwd: ROOT, encoding: "utf8" });
+  const out = execFileSync("git", ["ls-files", "packages/lab/scripts"], { cwd: ROOT, env: sandboxGitEnv(), encoding: "utf8" });
   return out.split("\n")
     .filter((f) => /\.(mjs|ts)$/.test(f) && !f.includes(".test."))
     .map((f) => f.split("/").pop()!)

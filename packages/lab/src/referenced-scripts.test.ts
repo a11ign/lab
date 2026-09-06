@@ -33,6 +33,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
+import { sandboxGitEnv } from "../../../scripts/git-env.mjs";
 
 /**
  * Anything shaped like a program path, wherever it appears in the file.
@@ -72,7 +73,8 @@ function referencedScripts(): Map<string, string[]> {
  */
 function insideGitRepo(): boolean {
   try {
-    return execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { encoding: "utf8" }).trim() === "true";
+    return execFileSync("git", ["rev-parse", "--is-inside-work-tree"],
+      { env: sandboxGitEnv(), encoding: "utf8" }).trim() === "true";
   } catch {
     return false;
   }
@@ -80,7 +82,7 @@ function insideGitRepo(): boolean {
 
 const isTracked = (path: string): boolean => {
   try {
-    execFileSync("git", ["ls-files", "--error-unmatch", path], { stdio: "ignore" });
+    execFileSync("git", ["ls-files", "--error-unmatch", path], { env: sandboxGitEnv(), stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -108,7 +110,7 @@ test("every scripts/ program referenced by package.json or action.yml is tracked
 
 /** `extends` targets of every tracked tsconfig, resolved to repo-relative paths. */
 function extendedConfigs(): Array<{ from: string; target: string }> {
-  const configs = execFileSync("git", ["ls-files", "*tsconfig*.json"], { encoding: "utf8" })
+  const configs = execFileSync("git", ["ls-files", "*tsconfig*.json"], { env: sandboxGitEnv(), encoding: "utf8" })
     .split("\n").filter(Boolean);
   const found: Array<{ from: string; target: string }> = [];
   for (const from of configs) {

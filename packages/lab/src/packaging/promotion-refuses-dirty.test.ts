@@ -70,17 +70,22 @@ test("the refusal NAMES the files and says where the originals are", () => {
  *
  * `docs/proving-a-gate.md` step 1 is to disbelieve "this needs the lab". It needs `git init` and four
  * small files.
+ *
+ * GIT-SANDBOXED via `withGitSandbox` (`scripts/test-support/git-sandbox.ts`): a throwaway repo, identity
+ * set PER COMMAND rather than via `git config user.name` (which writes to whatever GIT_DIR names), and
+ * every spawn -- including the REAL `promote-model.mjs` process this test launches -- with GIT_* scrubbed.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, realpathSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
+import type { GitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
 /**
- * A tree with a committed shipped model and a candidate ready to promote.
+ * Plants a committed shipped model and a candidate ready to promote, into an already-created sandbox.
  *
  * NOTHING IS COPIED INTO IT but four small JSON files. The first version of this planted the real script
  * here and `cpSync`-ed the whole of `node_modules` alongside it, so the copy could resolve its imports —
@@ -91,15 +96,8 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
  * which is `docs/proving-a-gate.md` step 2 — separate the DECISION from the DATA — and is what makes the
  * tier-2 proof cheap enough to keep.
  */
-function plantedRepo(): string {
-  // REALPATH, and this is not tidiness. On macOS `/var` is a symlink to `/private/var`, and `git status`
-  // reports paths against the resolved root; comparing the two forms makes a clean tree look dirty.
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "a11y-promote-")));
-  const git = (...args: string[]) => execFileSync("git", args, { cwd: root, stdio: "ignore" });
-  git("init", "-q");
-  git("config", "user.email", "t@example.com");
-  git("config", "user.name", "t");
-
+function plantRepo(sandbox: GitSandbox): void {
+  const root = sandbox.dir;
   const model = join(root, "packages/scorer/models/screenreader-scorer");
   mkdirSync(model, { recursive: true });
   mkdirSync(join(root, "runs/model-candidate"), { recursive: true });
@@ -126,9 +124,8 @@ function plantedRepo(): string {
       dir.startsWith("runs/") ? "candidate weights" : "shipped weights");
   }
   writeFileSync(join(root, ".changeset/config.json"), "{}");
-  git("add", "-A", "--", "packages", ".changeset");
-  git("commit", "-qm", "base");
-  return root;
+  sandbox.run(["add", "-A", "--", "packages", ".changeset"]);
+  sandbox.commit("base");
 }
 
 const SCRIPT = join(REPO, "packages/lab/scripts/promote-model.mjs");
@@ -138,11 +135,10 @@ const runPromote = (root: string) => {
   try {
     const out = execFileSync(process.execPath, [SCRIPT, "--from=candidate"], {
       cwd: root, encoding: "utf8",
-      env: {
-        ...process.env,
+      env: sandboxGitEnv({
         A11Y_PROMOTE_ROOT: root,
         A11Y_CANDIDATE_ROOT: join(root, "runs"),
-      },
+      }),
     });
     return { code: 0, out };
   } catch (error) {
@@ -152,33 +148,29 @@ const runPromote = (root: string) => {
 };
 
 test("the COMMAND refuses when a previous promotion is still uncommitted", () => {
-  const root = plantedRepo();
-  try {
+  withGitSandbox((sandbox) => {
+    plantRepo(sandbox);
     // Exactly the state the lab was found in: promoted weights, uncommitted.
-    writeFileSync(join(root, "packages/scorer/models/screenreader-scorer/model.safetensors"), "newer");
-    const { code, out } = runPromote(root);
+    writeFileSync(join(sandbox.dir, "packages/scorer/models/screenreader-scorer/model.safetensors"), "newer");
+    const { code, out } = runPromote(sandbox.dir);
     assert.equal(code, 3, `expected the dirty-tree refusal; got ${code}: ${out}`);
     assert.match(out, /previous promotion is still uncommitted/);
     assert.match(out, /model\.safetensors/, "and it must name what is in the way");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 });
 
 test("THE CONTROL: a clean tree promotes, writing the weights and the changeset", () => {
   // Without this the refusal above is satisfied by a command that refuses everything — and it also proves
   // the other half of the wiring the register called unproven: that the weights are actually COPIED.
-  const root = plantedRepo();
-  try {
-    const { code, out } = runPromote(root);
+  withGitSandbox((sandbox) => {
+    plantRepo(sandbox);
+    const { code, out } = runPromote(sandbox.dir);
     assert.equal(code, 0, `a clean tree must promote; got ${code}: ${out}`);
     assert.match(out, /Promoted candidate/);
-    const status = execFileSync("git", ["status", "--porcelain"], { cwd: root, encoding: "utf8" });
+    const status = sandbox.run(["status", "--porcelain"]);
     assert.match(status, /\.changeset\/promote-candidate-[0-9a-f]{8}\.md/,
       "the changeset must land, under the content-derived name");
     assert.match(status, /packages\/scorer\/models\/screenreader-scorer\//,
       "and the weights must actually be copied, which is the wiring half nothing had watched");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 });

@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
 const PATH = "docs/backlog-ready.md";
 const read = () => readFileSync(resolve(process.cwd(), PATH), "utf8");
@@ -174,7 +175,8 @@ test("the claim-check instructions use region-diff, never a bare branch-name loo
  */
 test("the local agent/* branch population the claim check depends on is non-empty, proven by running it", () => {
   const repoRoot = resolve(process.cwd());
-  const output = execFileSync("git", ["branch", "--list", "agent/*"], { cwd: repoRoot, encoding: "utf8" });
+  const output = execFileSync("git", ["branch", "--list", "agent/*"],
+    { cwd: repoRoot, env: sandboxGitEnv(), encoding: "utf8" });
   const branches = output.split("\n").map((l) => l.replace(/^\*?\s*/, "").trim()).filter(Boolean);
   assert.ok(branches.length > 0,
     "git branch --list 'agent/*' returned no branches from this checkout -- either the pattern is wrong, "
