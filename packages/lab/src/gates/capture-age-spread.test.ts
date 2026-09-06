@@ -1,10 +1,12 @@
 /**
- * `rules:real-pages` SCORES 85 PAGES DRAWN FROM TWO CAPTURE RUNS, and until 2026-09-06 said nothing.
+ * `rules:real-pages` SCORES PAGES DRAWN FROM SEVERAL CAPTURE RUNS, and until 2026-09-06 said nothing.
  *
- * `capture-real-pages` DEFAULTS to `--role=training`, which is 39 of the 85; the other 46 are
- * `calibration`. So the ordinary way to refresh the corpus refreshes HALF of it, and the gate then compares
- * a mixed population against one baseline. It already refuses when a role is MISSING — the harder case is
- * every page present and half of them old, which looks exactly like a healthy corpus.
+ * `capture-real-pages` DEFAULTS to `--role=training`, which is well under half the declared corpus (the
+ * exact counts are in `real-page-corpus.mjs`'s own `REAL_PAGES`, not restated here — see
+ * `real-page-freshness.mjs`'s header for why). So the ordinary way to refresh the corpus refreshes a
+ * minority of it, and the gate then compares a mixed population against one baseline. It already refuses
+ * when a role is MISSING — the harder case is every page present and some of them old, which looks exactly
+ * like a healthy corpus.
  *
  * MEASURED the night this was added. A run reported 42 new findings over captures spanning 01:54 to 03:55,
  * and reading one of the OLDER ones produced a confident wrong conclusion: that two diagnostic fields were
@@ -22,7 +24,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { captureAgeLines } from "../../scripts/check-real-page-findings.js";
+import { captureAgeLines } from "../training/real-page-freshness.mjs";
+import { REAL_PAGES, pagesFor } from "../training/real-page-corpus.mjs";
 
 const HOUR = "2026-09-06T0";
 
@@ -46,7 +49,12 @@ test("a half-refreshed corpus WARNS, and names the command that refreshes every 
   const warnings = lines.filter((l) => l.includes("***")).join("\n");
   assert.match(warnings, /MIXED population/,
     "the whole point is that every page is present and half of them are old");
-  assert.match(warnings, /--role=training, which refreshes 39 of the 85/,
+  // DERIVED, not hardcoded: this assertion itself used to read "39 of the 85" and went quietly wrong when
+  // the corpus grew a third role (fixture 4 -> 10, total 85 -> 98) -- see real-page-freshness.mjs's own
+  // header. Reading REAL_PAGES here means the corpus can grow again without this test lying about it.
+  const trainingCount = pagesFor("training").length;
+  const totalCount = REAL_PAGES.length;
+  assert.match(warnings, new RegExp(`--role=training, which refreshes ${trainingCount} of the ${totalCount}`),
     "it must name the CAUSE — the default role — not just the symptom");
   assert.match(warnings, /pipeline=real-pages/,
     "and the command that settles it, as check-signals and the starvation audit already do");
@@ -100,10 +108,9 @@ test("a page unusable for TWO reasons is one page, not two", () => {
 
 test("the role LEFT BEHIND is named, with the command that refreshes just it", () => {
   // `--role` is a free string filter, so every role is technically reachable; what nothing said is which
-  // one the last refresh MISSED. Measured 2026-09-06: the corpus holds training (39), calibration (49) and
-  // `fixture` (4), `capture-real-pages`'s usage line documents only the first two, and the four fixture
-  // captures had not been retaken in twelve days. Nobody was ignoring them — there was no line that named
-  // them.
+  // one the last refresh MISSED. Measured 2026-09-06: the corpus held three roles, `capture-real-pages`'s
+  // usage line documented only two of them, and the smallest role's captures had not been retaken in
+  // twelve days. Nobody was ignoring them — there was no line that named them.
   const lines = captureAgeLines([
     { at: "2026-09-06T04:43:00.000Z", role: "training" },
     { at: "2026-09-06T05:14:00.000Z", role: "calibration" },

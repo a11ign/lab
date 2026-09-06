@@ -48,81 +48,24 @@ import {
 } from "@a11y-witness/evidence/verify";
 import { realPageFor, REAL_PAGES } from "../src/training/real-page-corpus.mjs";
 import { REPO_ROOT, realCorpusRoot } from "../src/dataset-paths.mjs";
+import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 
 const REPO = REPO_ROOT;
 const REAL = realCorpusRoot();
 const BASELINE = resolve(REPO, "packages/lab/baselines/real-page-findings.json");
 
 /**
- * WHEN each scored capture was taken, and under which role — collected while loading, reported once.
+ * WHEN each scored capture was taken, and under which role — collected while loading, reported once via
+ * `captureAgeLines` (`../src/training/real-page-freshness.mjs`, moved there so a `node`-run reader like
+ * `lab-inventory.mjs`, `calibrate-abstention.mjs` or `build-realism-tier.mjs` can import it too — see
+ * that module's own header for why, and for the "39 of the 85" number it used to hardcode here going
+ * stale the moment a third role was added).
  *
- * THIS GATE SCORES 85 PAGES DRAWN FROM TWO CAPTURE RUNS, and until 2026-09-06 it said nothing about that.
- * `capture-real-pages` DEFAULTS to `--role=training` (39 pages); the other 46 are `calibration`. So the
- * ordinary way to refresh the corpus refreshes HALF of it, and this gate then compares a mixed population
- * against one baseline. It already refuses when a role is MISSING entirely — the harder case is when every
- * page is present and half of them are old.
- *
- * Measured the night it was added: the run reported 42 new findings over captures spanning 01:54 to 03:55,
- * and reading one of the older ones produced a confident wrong conclusion about a diagnostic field being
- * absent on fallback pages. It was absent because that capture predated the field. One timestamp settled
- * what a mechanism argument had got wrong — which is this repo's own rule, and the reason a number must
- * carry what it was computed from.
- *
- * It REPORTS rather than refuses. A spread is not automatically wrong: nothing here can tell "captured an
- * hour apart by one pipeline" from "captured a week apart across a worker change", because a real-page
- * capture records `capturedAt` and `role` and no `codeVersion` at all. Saying so is the honest form, and
- * the missing provenance is itself worth recording rather than papering over.
+ * THIS GATE SCORES PAGES DRAWN FROM SEVERAL CAPTURE RUNS, and until 2026-09-06 it said nothing about
+ * that. It already refuses when a role is MISSING entirely — the harder case is when every page is
+ * present and some of them are old.
  */
 const CAPTURE_AGES: { at: string; role: string }[] = [];
-
-/**
- * One line per role: how many, and the window they were captured in. PURE, so it can be tested against
- * the two cases that matter without a corpus — the mixed population must WARN and the single run must NOT.
- */
-export function captureAgeLines(ages: { at: string; role: string }[]): string[] {
-  if (ages.length === 0) {
-    // Absent prints as NOT RECORDED, never as OK — `capture:explain`'s rule. A corpus of captures too old
-    // to carry `capturedAt` must not read as a corpus captured just now.
-    return ["  capture ages: NOT RECORDED — no scored capture carries `capturedAt`"];
-  }
-  const byRole = new Map<string, string[]>();
-  for (const { at, role } of ages) byRole.set(role, [...(byRole.get(role) ?? []), at]);
-  const lines = ["  the captures this scored were taken:"];
-  for (const [role, times] of [...byRole].sort()) {
-    const sorted = [...times].sort();
-    const [oldest, newest] = [sorted[0], sorted[sorted.length - 1]];
-    lines.push(`    ${role}: ${times.length} capture(s), `
-      + (oldest === newest ? oldest : `${oldest} .. ${newest}`));
-  }
-  const all = ages.map((c) => c.at).sort();
-  const newestOverall = Date.parse(all[all.length - 1]);
-  const spreadMs = newestOverall - Date.parse(all[0]);
-  // WHICH ROLE WAS LEFT BEHIND, BY NAME, not just that the ages differ.
-  //
-  // `--role` is a free string filter, so every role is technically reachable; what nothing said is which
-  // one the last refresh MISSED. The corpus holds `training` (39), `calibration` (49) and `fixture` (4),
-  // `capture-real-pages`'s own usage line documents only the first two, and the four `fixture` captures
-  // had not been retaken in twelve days when this was written. Nobody was ignoring them; there was simply
-  // no line anywhere that named them.
-  //
-  // DERIVED from the timestamps rather than from a list of roles, deliberately: a hand-written "roles that
-  // matter" list is the fact-stated-twice shape, and it would go stale the first time a role is added --
-  // which is exactly the event this is here to make visible.
-  const behind = [...byRole]
-    .filter(([, times]) => newestOverall - Date.parse([...times].sort().pop() ?? "") > ROLE_SPREAD_WARN_MS)
-    .map(([role]) => role);
-  if (spreadMs > ROLE_SPREAD_WARN_MS) {
-    lines.push(`  *** ${Math.round(spreadMs / 3600000)} hour(s) between the oldest and newest, so this `
-      + "compares a MIXED population against one baseline.");
-    lines.push("  *** `capture-real-pages` defaults to --role=training, which refreshes 39 of the 85. "
-      + "To refresh every role:  npm run lab:pipeline -- --pipeline=real-pages");
-  }
-  for (const role of behind) {
-    lines.push(`  *** role '${role}' was LEFT BEHIND by the last refresh — every one of its captures `
-      + `predates the newest. Refresh it:  npm run lab:job -- -e job=capture-real-pages -e role=${role}`);
-  }
-  return lines;
-}
 
 /**
  * The pages declared unexaminable, with their reasons. Empty when the file is absent, deliberately: a
@@ -208,15 +151,6 @@ function reportDeclaredExclusions(unusablePages: string[]): string[] {
 function reportCaptureAges(): void {
   process.stdout.write(`${captureAgeLines(CAPTURE_AGES).join("\n")}\n`);
 }
-
-/**
- * How far apart two captures may be before the spread is worth saying out loud.
- *
- * Six hours: comfortably longer than a full two-role capture of the corpus (~1.6 h across the fleet, twice)
- * and far shorter than the gap a half-refreshed corpus produces. A threshold rather than any difference,
- * because one pipeline capturing both roles back to back is the NORMAL case and must not warn.
- */
-const ROLE_SPREAD_WARN_MS = 6 * 60 * 60 * 1000;
 
 const UPDATE = process.argv.includes("--update");
 const ALLOW_PARTIAL = process.argv.includes("--allow-partial");

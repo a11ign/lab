@@ -46,7 +46,8 @@ import { readdirSync, readFileSync, statSync, existsSync, openSync, readSync, cl
 import { resolve, join, basename } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, runsRoot, realCorpusRoot } from "../src/dataset-paths.mjs";
+import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 
 /**
  * as `doctor`.
@@ -160,21 +161,33 @@ export function splitFields(/** @type {any} */ spread) {
     .sort((a, b) => b.populations - a.populations);
 }
 
+/**
+ * `ages` is read from `parsed` BEFORE the `parsed.capture ?? parsed` unwrap below, because that unwrap is
+ * what makes real-page captures a hazard here: a real-page file is `{capture, capturedAt, role, ...}`, so
+ * unwrapping to `.capture` silently drops the two fields freshness depends on. The dataset corpus has no
+ * such wrapper, so this is a no-op for it -- `entries.filter(...)` finds nothing to collect there.
+ */
 function readCorpus(/** @type {any} */ dir) {
   /** @type {any[]} */
   const captures = [];
+  /** @type {{ at: string, role: string }[]} */
+  const ages = [];
   let files;
   try {
     files = readdirSync(dir).filter((f) => f.endsWith(".json"));
   } catch {
     // No such directory is the ordinary case off the lab, not an error worth a diagnostic.
-    return { captures, files: 0 };
+    return { captures, files: 0, ages };
   }
   for (const file of files) {
     const parsed = readJson(join(dir, file));
-    if (parsed) captures.push(parsed.capture ?? parsed);
+    if (!parsed) continue;
+    if (typeof parsed.capturedAt === "string") {
+      ages.push({ at: parsed.capturedAt, role: parsed.role ?? "no role recorded" });
+    }
+    captures.push(parsed.capture ?? parsed);
   }
-  return { captures, files: files.length };
+  return { captures, files: files.length, ages };
 }
 
 /** An export is STALE when the newest capture is younger than it — the parse baked in predates them. */
@@ -237,7 +250,7 @@ export function migrationVerdict(/** @type {any} */ migration, /** @type {any} *
 
 function collect() {
   const datasetCaptures = join(RUNS, "screenreader-dataset/captures");
-  const realPages = join(RUNS, "real-page-corpus");
+  const realPages = realCorpusRoot();
   const newestDataset = newestWrite(datasetCaptures);
 
   const dataset = readCorpus(datasetCaptures);
@@ -251,7 +264,7 @@ function collect() {
         newestWrittenMinutesAgo: newestDataset ? Math.round(minutesSince(newestDataset)) : null,
         spread: environmentSpread(dataset.captures),
       },
-      realPages: { captures: real.files, spread: environmentSpread(real.captures) },
+      realPages: { captures: real.files, spread: environmentSpread(real.captures), ages: real.ages },
     },
     exports: [
       exportState(join(RUNS, "screenreader-dataset/screenreader-evidence.jsonl"), newestDataset),
@@ -349,6 +362,34 @@ function refusal(/** @type {any} */ state) {
   return null;
 }
 
+function reportMigration(/** @type {any} */ state) {
+  line("\nSCHEMA MIGRATION");
+  if (!state.migration.open) {
+    line("  none open — nothing here blocks release:gate.");
+    return;
+  }
+  line(`  OPEN since ${state.migration.openedAt}: ${state.migration.shippedSchema} -> `
+    + `${state.migration.pendingSchema}`);
+  line("  release:gate refuses while this is open, and closing it means promoting weights stamped");
+  line(`  ${state.migration.pendingSchema} and deleting schema-migration.json in the same commit.`);
+  const ready = state.migration.candidatesWithPendingSchema;
+  if (ready.length) {
+    line(`  Candidate(s) already carrying it: ${ready.join(", ")}`);
+  } else if (onTheLab()) {
+    line("  NO candidate carries it yet — train one first.");
+  } else {
+    // The distinction that made this tool wrong on its first run. "None here" and "none anywhere" are
+    // different answers, and reporting the first as the second is this repo's most-named defect.
+    line("  No candidate HERE carries it — but this machine has no `runs/model-*` to speak of, so that");
+    line("  says nothing about the lab. Ask it: npm run lab:job -- -e job=inventory");
+  }
+  if (ready.length) {
+    line("  A matching schema is NECESSARY, not sufficient: it is a version string, so it cannot tell a");
+    line("  candidate trained on the current parse from one trained before the grammar moved underneath it.");
+    line("  Check the exports above are current before trusting any candidate.");
+  }
+}
+
 function main() {
   const state = collect();
 
@@ -364,6 +405,9 @@ function main() {
   line("\nCORPUS");
   reportSpread("dataset", state.corpus.dataset.captures, state.corpus.dataset.spread);
   reportSpread("real pages", state.corpus.realPages.captures, state.corpus.realPages.spread);
+  if (state.corpus.realPages.captures) {
+    for (const l of captureAgeLines(state.corpus.realPages.ages)) line(l);
+  }
   if (state.corpus.dataset.captures && state.corpus.dataset.captures < PARTIAL_CORPUS) {
     line("    NOTE: too few captures to be the authoritative corpus — this looks like a partial copy.");
   }
@@ -381,31 +425,7 @@ function main() {
       + `${m.acceptanceReport ? "acceptance ✓" : "no acceptance report"}`);
   }
 
-  line("\nSCHEMA MIGRATION");
-  if (!state.migration.open) {
-    line("  none open — nothing here blocks release:gate.");
-  } else {
-    line(`  OPEN since ${state.migration.openedAt}: ${state.migration.shippedSchema} -> `
-      + `${state.migration.pendingSchema}`);
-    line("  release:gate refuses while this is open, and closing it means promoting weights stamped");
-    line(`  ${state.migration.pendingSchema} and deleting schema-migration.json in the same commit.`);
-    const ready = state.migration.candidatesWithPendingSchema;
-    if (ready.length) {
-      line(`  Candidate(s) already carrying it: ${ready.join(", ")}`);
-    } else if (onTheLab()) {
-      line("  NO candidate carries it yet — train one first.");
-    } else {
-      // The distinction that made this tool wrong on its first run. "None here" and "none anywhere" are
-      // different answers, and reporting the first as the second is this repo's most-named defect.
-      line("  No candidate HERE carries it — but this machine has no `runs/model-*` to speak of, so that");
-      line("  says nothing about the lab. Ask it: npm run lab:job -- -e job=inventory");
-    }
-    if (ready.length) {
-      line("  A matching schema is NECESSARY, not sufficient: it is a version string, so it cannot tell a");
-      line("  candidate trained on the current parse from one trained before the grammar moved underneath it.");
-      line("  Check the exports above are current before trusting any candidate.");
-    }
-  }
+  reportMigration(state);
   line("");
 }
 

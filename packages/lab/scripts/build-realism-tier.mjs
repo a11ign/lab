@@ -42,6 +42,7 @@ import { pathToFileURL } from "node:url";
 
 import { modelInput, observationOf, producerFeedsModel } from "@a11y-witness/scorer/evidence-units";
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
+import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { captureWasTruncated } from "@a11y-witness/evidence/verify";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { REPO_ROOT, realCorpusRoot, datasetExportPath, datasetRoot } from "../src/dataset-paths.mjs";
@@ -305,10 +306,25 @@ function writeProvenance(/** @type {any} */ baseText, /** @type {any} */ records
   return path;
 }
 
+/**
+ * `entries` are the SAME parsed `{capture, capturedAt, role, ...}` wrappers `readdirSync` already yields
+ * below, before the `training`-role filter narrows them -- reporting age on the training slice is the
+ * question this file's own output actually depends on, the same choice calibrate-abstention.mjs makes for
+ * its calibration slice.
+ * @param {any[]} entries
+ */
+function reportCaptureAges(entries) {
+  const ages = entries
+    .filter((e) => typeof e.capturedAt === "string")
+    .map((e) => ({ at: e.capturedAt, role: e.role ?? "no role recorded" }));
+  process.stdout.write(`${captureAgeLines(ages).join("\n")}\n`);
+}
+
 function main() {
-  const entries = readdirSync(CORPUS)
+  const allEntries = readdirSync(CORPUS)
     .filter((f) => f.endsWith(".json"))
-    .map((f) => JSON.parse(readFileSync(resolve(CORPUS, f), "utf8")))
+    .map((f) => JSON.parse(readFileSync(resolve(CORPUS, f), "utf8")));
+  const entries = allEntries
     // Selected by SHAPE, not by excluding filenames. This carried `f !== "abstention-sweep.json"` — a
     // blacklist that `abstention-sweep.candidate.json` had already outgrown, and which only escaped notice
     // because the role filter below dropped that file for an unrelated reason. A guard that works by
@@ -319,6 +335,7 @@ function main() {
     // cost. `realPageFor` is already imported and already used for `claimExcludes` twelve lines below,
     // which is the same join applied to one field and not the other in one file.
     .filter((e) => e.capture && realPageFor(e.capture.url ?? "")?.role === "training");
+  reportCaptureAges(entries);
 
   // No real-page captures is a legitimate state -- a fresh checkout has none -- so this writes the base
   // dataset through rather than failing. It says so LOUDLY, because a script that silently produced a
