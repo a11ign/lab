@@ -7,10 +7,26 @@
 // by grep, only by reading 2,700 lines and inferring -- and an item nobody can find is an item nobody does,
 // which is this repo's own rule about anything relying on a human to remember.
 //
-// `docs/backlog.md` is now the one place. This keeps it from becoming a THIRD copy that drifts: an entry
-// explicitly marked `— OPEN` in a record must appear on the backlog. Only that direction is enforced,
-// deliberately -- the backlog also holds items with no record entry at all (a defect found today has
-// nowhere else to be), so requiring the converse would refuse exactly the case it is for.
+// `docs/backlog.md` was that one place from 2026-09-02 to 2026-09-06. GITHUB ISSUES IS NOW, and this
+// guard has been repointed rather than retired, because the PROPERTY it protects is unchanged: open work
+// must be findable mechanically, and a record entry that declares itself open must say where it is
+// tracked.
+//
+// WHAT MOVED, AND WHY IT IS THE SAME ARGUMENT. The backlog was written because two records could not be
+// read as a task list. It became 1,049 lines with 51 struck-through closed rows kept deliberately, and
+// "what is open" needed inferring which strikethroughs were current -- measured on 2026-09-06 at five
+// stale dispatches in one day, plus three rows already addressed on unmerged branches, which no reading
+// of a FILE could catch because a file records claims and not branches. The backlog's own header put it
+// best about itself: two copies of a status is exactly the shape that drifts.
+//
+// SO THE TARGET IS AN ISSUE NUMBER, NOT A BACKLOG ROW. `— OPEN` in a record must be followed by the issue
+// tracking it. That is checkable offline with no network and no `gh`, which is what keeps this in
+// `npm test` rather than in a gate somebody dispatches; it does not verify the issue is OPEN, or that it
+// exists, and it says so rather than implying more than it can show.
+//
+// Only that direction is enforced, deliberately and for the original reason: an issue may exist with no
+// record entry at all (a defect found today has nowhere else to be), so requiring the converse would
+// refuse exactly the case the tracker is for.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -20,23 +36,38 @@ const read = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8"
 
 const RECORDS = ["docs/known-gaps.md", "docs/not-working.md"];
 
-/** Compare on MEANING, not on punctuation: a title is re-typed by hand into the backlog, and a curly
- *  quote or a dropped backtick must not read as a missing item. */
-const normalise = (s: string) =>
-  s.toLowerCase().replace(/[`*_]/g, "").replace(/[“”"']/g, "").replace(/\s+/g, " ").trim();
+/**
+ * A heading declares itself open, and names the issue tracking it: `— OPEN #45`, or `— OPEN (#45)`.
+ *
+ * PERMISSIVE ABOUT PUNCTUATION, STRICT ABOUT THE NUMBER. These headings are typed by hand, and a guard
+ * that refuses one over a bracket teaches people to drop the marker rather than to add the issue — which
+ * would disable this check by the one route it cannot see, since a heading with no marker is invisible
+ * to it by design.
+ */
+const OPEN_MARKER = /—\s*OPEN\b\s*\(?(#\d+)?\)?\s*$/;
 
-/** Headings a record has explicitly declared still open. */
-function openHeadings(): { doc: string; title: string }[] {
-  return RECORDS.flatMap((doc) =>
-    [...read(doc).matchAll(/^## (.+)$/gm)]
-      .map(([, heading]) => heading)
-      .filter((heading) => /—\s*OPEN\s*$/.test(heading))
-      .map((heading) => ({
-        doc,
-        // Strip the leading number and the trailing marker, leaving the claim itself.
-        title: heading.replace(/^\d+\.\s*/, "").replace(/—\s*OPEN\s*$/, "").trim(),
-      })));
+/**
+ * Headings a record declares open, and the issue each names — PURE over the heading list, so the rule can
+ * be driven with synthetic headings.
+ *
+ * That is not tidiness here, it is the only way this guard can be shown to work: there are ZERO `— OPEN`
+ * headings in either record today, so every assertion over the real files passes on an empty set. A check
+ * whose population is empty is a check that has never been exercised, and this repo's rule is that a guard
+ * never shown to fail is not a verified guard.
+ */
+export function openHeadings(headings: string[]): { title: string; issue: string | null }[] {
+  return headings
+    .map((heading) => ({ heading, match: heading.match(OPEN_MARKER) }))
+    .filter(({ match }) => match !== null)
+    .map(({ heading, match }) => ({
+      // Strip the leading number and the trailing marker, leaving the claim itself.
+      title: heading.replace(/^\d+\.\s*/, "").replace(OPEN_MARKER, "").trim(),
+      issue: match?.[1] ?? null,
+    }));
 }
+
+/** Every `## ` heading in a record, as text. */
+const headingsOf = (doc: string) => [...read(doc).matchAll(/^## (.+)$/gm)].map(([, heading]) => heading);
 
 test("the backlog exists and says what it is for", () => {
   const backlog = read("docs/backlog.md");
@@ -47,36 +78,55 @@ test("the backlog exists and says what it is for", () => {
     "the backlog has almost no rows -- either everything is genuinely done, or this test is reading the wrong file");
 });
 
-test("every record entry marked OPEN is on the backlog", () => {
-  const backlog = normalise(read("docs/backlog.md"));
-  const open = openHeadings();
-
+test("every record entry marked OPEN names the issue tracking it", () => {
   // Mutation-safety, and it must not be `open.length > 0`. That was the first version and it FAILED on
   // 2026-09-03 for the one reason it should not: §20 was closed, no `— OPEN` heading remained, and the
   // guard reported the format as broken. Zero open entries is a legitimate state and a good one; a
   // changed marker format is a broken reader. Asserting on the open COUNT collapses them, which is this
   // repo's oldest defect -- "nothing found" and "we could not ask" reading the same -- inside the guard
-  // written to stop the backlog drifting.
+  // written to stop the tracker drifting.
   //
   // So the format is proved INDEPENDENTLY of how many entries are open: a record whose headings carry no
   // state marker at all has changed shape, whatever the open count is.
-  const marked = RECORDS.flatMap((doc) =>
-    [...read(doc).matchAll(/^## .+$/gm)].map(([heading]) => heading))
-    .filter((heading) => /—\s*OPEN\s*$|\bCLOSED\b/.test(heading));
+  const marked = RECORDS.flatMap(headingsOf)
+    .filter((heading) => /—\s*OPEN\b|\bCLOSED\b/.test(heading));
   assert.ok(marked.length > 0,
     "no heading in either record carries a state marker (`— OPEN` or `CLOSED`) -- the heading format "
     + "changed and this guard went blind. This is about the FORMAT: zero OPEN entries would be fine.");
 
-  const missing = open
-    .filter(({ title }) => !backlog.includes(normalise(title)))
-    .map(({ doc, title }) => `  ${doc}: ${title}`);
+  const untracked = RECORDS.flatMap((doc) =>
+    openHeadings(headingsOf(doc))
+      .filter(({ issue }) => issue === null)
+      .map(({ title }) => `  ${doc}: ${title}`));
 
-  assert.deepEqual(missing, [],
-    "These entries are marked OPEN in a record but are not on docs/backlog.md:\n"
-    + missing.join("\n")
-    + "\n\nOpen work belongs on the backlog. The record holds the DETAIL and the lesson; the backlog is"
-    + "\nthe one place that answers 'what is open'. Add a row linking to the entry rather than restating"
-    + "\nit -- two copies of a status is the shape that drifts.");
+  assert.deepEqual(untracked, [],
+    "These entries declare themselves OPEN in a record but name no issue:\n"
+    + untracked.join("\n")
+    + "\n\nGitHub Issues is what answers 'what is open'; a record holds the DETAIL and the lesson. Write"
+    + "\nthe heading as `— OPEN #<n>` so the entry points at the thing that carries its state, rather"
+    + "\nthan asserting a status of its own -- two copies of a status is the shape that drifts, and this"
+    + "\nfile's own history is the evidence: docs/backlog.md was created to be that answer and became a"
+    + "\nsecond copy within four days.");
+});
+
+test("PROOF: the rule bites — there are zero OPEN headings today, so the real files cannot show it works", () => {
+  // THE POPULATION IS EMPTY, AND THAT IS EXACTLY WHY THIS IS HERE. Every assertion above passes over an
+  // empty set of open headings, which is indistinguishable from a broken reader -- the shape this repo
+  // has paid for in a signal-type scrape that asserted over nothing and passed. Driven with synthetic
+  // headings, so the rule is exercised whatever the records happen to contain.
+  const tracked = openHeadings(["12. A thing that is not done — OPEN #45"]);
+  assert.deepEqual(tracked, [{ title: "A thing that is not done", issue: "#45" }]);
+
+  assert.deepEqual(openHeadings(["12. A thing that is not done — OPEN"]),
+    [{ title: "A thing that is not done", issue: null }],
+    "a bare `— OPEN` with no issue must be REPORTED, not skipped -- if this ever returns [], the guard "
+    + "has stopped seeing the exact heading it exists to catch");
+
+  assert.deepEqual(openHeadings(["12. A thing that is not done — OPEN (#45)"])[0].issue, "#45",
+    "brackets are punctuation, and refusing over them teaches people to drop the marker instead");
+
+  assert.deepEqual(openHeadings(["12. CLOSED 2026-09-06 — it was the memo all along"]), [],
+    "a CLOSED heading must not be read as open, or the guard demands an issue for finished work");
 });
 
 test("a record must not say OPEN and CLOSED under one number", () => {
@@ -100,7 +150,10 @@ test("a record must not say OPEN and CLOSED under one number", () => {
     }
     return [...byNumber.entries()]
       .filter(([, headings]) =>
-        headings.some((h) => /—\s*OPEN\s*$/.test(h)) && headings.some((h) => /\bCLOSED\b/.test(h)))
+        // OPEN_MARKER, not a second spelling of it. Written as `/—\s*OPEN\s*$/` here until 2026-09-06,
+        // which stopped matching the moment the marker was allowed to carry an issue number -- a fact
+        // stated twice, drifting the same day the first copy moved. The shared constant cannot drift.
+        headings.some((h) => OPEN_MARKER.test(h)) && headings.some((h) => /\bCLOSED\b/.test(h)))
       .map(([number, headings]) => `${doc} §${number}:\n    ` + headings.join("\n    "));
   });
 
