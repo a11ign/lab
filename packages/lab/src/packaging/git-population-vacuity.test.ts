@@ -129,6 +129,12 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
     guard: "files.length >= MIN_TRACKED_MARKDOWN_FILES",
     note: "guarded — `git ls-files '*.md'` for the repo-wide leak sweep, floored at 50 tracked files",
   },
+  "packages/lab/src/packaging/tracked-source-leak-guard.test.ts": {
+    guard: "files.length >= MIN_TRACKED_SOURCE_FILES",
+    note: "guarded — `git ls-files '*.mjs' '*.ts' '*.py' '*.ps1' '*.sh' '*.yml'` for #83's source-comment "
+      + "leak sweep (the sibling `tracked-prose-leak-guard.test.ts` above was scoped to `.md` only), "
+      + "floored at 500 tracked files",
+  },
 };
 
 test("MUTATION: without the SELF exclusion, this file would discover itself", () => {

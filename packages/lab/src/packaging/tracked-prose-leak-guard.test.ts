@@ -47,7 +47,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { LEAK_PATTERNS } from "./leak-patterns.mjs";
+import { LEAK_PATTERNS, allLeaksIn } from "./leak-patterns.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -122,16 +122,7 @@ function collapsedText(file: string): string {
 }
 
 function findLeaks(file: string, text: string) {
-  const found: Array<{ name: string; value: string }> = [];
-  for (const { name, pattern } of LEAK_PATTERNS) {
-    const global = new RegExp(pattern.source, "g");
-    for (const match of text.matchAll(global)) {
-      const value = match[0];
-      const exempt = EXEMPT.some((e) => e.file === file && e.value === value);
-      if (!exempt) found.push({ name, value });
-    }
-  }
-  return found;
+  return allLeaksIn(text).filter(({ value }) => !EXEMPT.some((e) => e.file === file && e.value === value));
 }
 
 test("the tracked-markdown population is real, not an empty or misrooted discovery", () => {
