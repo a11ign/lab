@@ -133,6 +133,12 @@ const DOCUMENTED: Record<string, string> = {
     + "a SECOND, different meaning for 3 from promote-model's; 1 wrong commit OR a passed-through unit "
     + "status; 4 `followUnit` gave up watching a still-running unit — the clearest confirmed instance of "
     + "'stopped observing' read as 'failed' in this repo",
+  "packages/lab/scripts/fleet-hours.mjs":
+    "2 it billed no capture and REFUSES to report a total it did not measure — deliberately not 1, "
+    + "because 1 would read as 'the fleet cost nothing', and a cost report that examined nothing "
+    + "prints the same reassuring small number as a cheap run. 0 is a real total. It does not adopt "
+    + "the verdict helpers because it is a REPORT rather than a gate: there is no pass/fail subject "
+    + "to have partial coverage of, only a sum and the captures it could not bill, which it names",
   "packages/control/src/lab-job.mjs":
     "its one exit call is a direct, unmodified passthrough of ansible-playbook's own raw exit status — "
     + "0/1/2/3/4/5/99/250 are ANSIBLE's documented codes, not this script's own, and a caller reading them "
