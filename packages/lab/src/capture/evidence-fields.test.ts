@@ -116,6 +116,15 @@ test("EVIDENCE_FIELDS names each field ONCE — a duplicate is invisible to the 
 const PENDING_CAPTURE: Record<string, string> = {
   // EMPTY, and every entry that was ever here was retired BY THIS GUARD rather than by anyone remembering.
   //
+  // `interaction.focusEvents` was the last, retired 2026-09-06. Its entry said "Closes when: the
+  // recapture that CAPTURE_PROTOCOL_VERSION 14 -> 15 forces", that recapture ran, and this guard
+  // failed the moment the field appeared on disk — exactly as its own closing sentence promised.
+  // Worth recording HOW it fired: it did not, against a developer copy of `runs/` dating from 22
+  // August, because a stale corpus cannot contain a field newer than itself. It fired on the FIRST
+  // push after three current captures were fetched for an unrelated investigation. A discovery test
+  // is only as current as the disk it discovers from, and this repo's pre-push hook skips the
+  // corpus-dependent checks loudly for that reason.
+  //
   // `arrowNavigation` went when `radio-group-arrows-inert` was captured. `typedFeedback` took three
   // attempts across one day, and the sequence is the useful part: it was listed as "no case uses it"
   // while `validation-live-silent` stayed withdrawn CONTAMINATED; it was briefly deleted when a 3.2.2
@@ -128,16 +137,6 @@ const PENDING_CAPTURE: Record<string, string> = {
   //
   // NOT EMPTY ANY MORE, 2026-09-05, and the entry below is this guard catching the same defect a
   // multi-hour lab chain caught independently — which is worth noting, because this one costs a second.
-  "interaction.focusEvents":
-    "2.4.7's F55 detector shipped today and NO capture carries its evidence, because adding a probe does "
-    + "not invalidate the capture cache: `workerCode` is deliberately outside the cache key, so every case "
-    + "whose PAGE did not change was served its pre-probe capture. The nine `focus-removed-on-receipt-*` "
-    + "cases are OLDER than the probe, so the rule stayed silent on its own positives and `rules:coverage` "
-    + "reported `2.4.7 NEVER FIRED ANYWHERE — the claim rests on nothing`. Fetching "
-    + "`focus-removed-on-receipt-order.bad` settled it in one line: captured 07:01:11Z, `focusOrder` and "
-    + "`focusConfinement` in its marks, no `focusEventLog`, and the OLD `formProbe` mark name. "
-    + "Closes when: the recapture that `CAPTURE_PROTOCOL_VERSION` 14 -> 15 forces — the bump this needed and "
-    + "did not get. This guard retires the entry itself once the field arrives.",
 };
 
 test("nothing is compared that no capture actually carries", () => {
