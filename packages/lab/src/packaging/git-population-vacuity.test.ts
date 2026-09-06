@@ -71,6 +71,14 @@ function discoverGitPopulationTests(): string[] {
  * still literally appear in the file's source below), or `null` with a stated reason no guard applies.
  */
 const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
+  "packages/lab/src/gates/inventory-is-control-plane-only.test.ts": {
+    guard: "reaching.length > 0",
+    note: "guarded — it walks `git ls-files` for readers of `inventoryWorkerUrls` outside packages/control, "
+      + "and the floor asserts the reader is found SOMEWHERE. Without it a rename of that export would "
+      + "make the test pass having examined nothing, which is precisely the defect it was written for: "
+      + "the question 'does anything on the lab read inventory.yml?' was answered correctly about three "
+      + "directories and wrongly about the repository.",
+  },
   "packages/worker-fleet/src/protocol-guard.test.ts": {
     guard: "clients.length >= 2",
     note: "guarded — the two known deploy call sites (check-worker-code.mjs, deploy-worker.mjs)",
