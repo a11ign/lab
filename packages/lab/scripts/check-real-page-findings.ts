@@ -42,7 +42,9 @@ import { pathToFileURL } from "node:url";
 
 import { ruleFindings } from "@a11y-witness/judge/rules";
 import { corpusState } from "../src/training/corpus-settled.mjs";
-import { domCensus, oracleCounts, pageCensus, censusTargetIsSuspect } from "@a11y-witness/evidence/verify";
+import {
+  domCensus, oracleCounts, pageCensus, censusTargetIsSuspect, censusSuspectReason,
+} from "@a11y-witness/evidence/verify";
 import { realPageFor, REAL_PAGES } from "../src/training/real-page-corpus.mjs";
 import { REPO_ROOT, realCorpusRoot } from "../src/dataset-paths.mjs";
 
@@ -232,7 +234,8 @@ function domCensusVerdict(
  */
 function censusLine(
   census: { heading?: number; link?: number; graphic?: number; graphicUnnamed?: number } | null,
-  dom: ReturnType<typeof domCensus>, target: { targetMatch?: string; candidates?: number } | null,
+  dom: ReturnType<typeof domCensus>,
+  target: { targetMatch?: string; candidates?: number; targetUrl?: string; expectedUrl?: string } | null,
   lines: number,
 ): string {
   if (census) {
@@ -245,8 +248,11 @@ function censusLine(
       + domCensusVerdict(census, dom);
   }
   if (target && censusTargetIsSuspect(target)) {
+    // THE ACTUAL REASON, not a hardcoded guess -- this used to always print "a real second CDP target
+    // existed", which was false on a `candidates: 1` capture that never had one. `censusSuspectReason`
+    // reads the same fields `censusTargetIsSuspect` decided on, so the two cannot disagree.
     return `census UNUSABLE: targetMatch=${target.targetMatch ?? "?"} candidates=${target.candidates ?? "?"} `
-      + "-- a real second CDP target existed and was never confirmed to be this page; "
+      + `-- ${censusSuspectReason(target) ?? "the target was not confirmed"}; `
       + `${lines} announcement(s) (the transcript is unaffected)`;
   }
   return `no census recorded; ${lines} announcement(s)`;
@@ -443,18 +449,23 @@ const CENSUS = new Map<string, { heading?: number }>();
  * This is the one place that has to see it anyway: a furniture check that cannot say "this census is not
  * this page's" cannot say anything about it at all, and `docs/backlog.md`'s row is what asked for it.
  */
-const TARGET_MATCH = new Map<string, { targetMatch?: string; candidates?: number }>();
+const TARGET_MATCH = new Map<string, { targetMatch?: string; candidates?: number; targetUrl?: string; expectedUrl?: string }>();
 
 /** The `structureCensus` mark's target diagnostic, read directly rather than through a nulling reader. */
-function rawTargetMatch(capture: { diagnostics?: unknown }): { targetMatch?: string; candidates?: number } | null {
+function rawTargetMatch(capture: { diagnostics?: unknown }):
+  { targetMatch?: string; candidates?: number; targetUrl?: string; expectedUrl?: string } | null {
   const marks = Array.isArray(capture.diagnostics) ? capture.diagnostics : [];
   for (const mark of marks) {
     if (typeof mark !== "object" || mark === null) continue;
-    const record = mark as { event?: unknown; targetMatch?: unknown; candidates?: unknown };
+    const record = mark as {
+      event?: unknown; targetMatch?: unknown; candidates?: unknown; targetUrl?: unknown; expectedUrl?: unknown;
+    };
     if (record.event !== "structureCensus") continue;
     return {
       targetMatch: typeof record.targetMatch === "string" ? record.targetMatch : undefined,
       candidates: typeof record.candidates === "number" ? record.candidates : undefined,
+      targetUrl: typeof record.targetUrl === "string" ? record.targetUrl : undefined,
+      expectedUrl: typeof record.expectedUrl === "string" ? record.expectedUrl : undefined,
     };
   }
   return null;
