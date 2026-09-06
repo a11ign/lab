@@ -40,7 +40,7 @@
 //
 // It now speaks the corpus's own `target.subtypes` vocabulary -- the same one the scorer's heads are
 // named after -- so the two layers are measured in one language instead of two.
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 
@@ -49,7 +49,7 @@ import { ruleFindings } from "@a11y-witness/judge/rules";
 import { readRuleOwnership } from "../src/training/rule-ownership.js";
 import { CASES } from "../src/training/case-matrix.mjs";
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
-import { REPO_ROOT, datasetExportPath } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, datasetExportPath, datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
 
 /**
  * Subtypes the CASE DEFINITIONS carry, which is a different question from what the export contains.
@@ -291,6 +291,77 @@ export const verdictOf = (subtype: string, c: Coverage): string => {
   return "rules: none — the model's heads own this subtype";
 };
 
+/**
+ * THIS GATE READS THE EXPORT, AND `rules:real-pages` READS THE CAPTURES. The two answer the same question
+ * from different sides of a freeze, and until 2026-09-06 nothing said so.
+ *
+ * `export-screenreader-dataset.mjs` bakes `ruleEvidence: oracleCounts(capture)` at EXPORT time, so the
+ * census every census-reading rule consults here is frozen under whatever trust rule was current when the
+ * export ran. `rules:real-pages` recomputes from the capture and sees a capture-layer change immediately;
+ * this gate sees nothing until a re-export.
+ *
+ * MEASURED: after the census trust-rule tightening merged, every rule finding across all 2,796 exported
+ * records was byte-identical -- 1,398 conformant, 10 with a finding, same per-criterion counts -- while
+ * the same change demonstrably alters what a capture-reading rule concludes.
+ *
+ * The freeze is deliberate: a record of what the evidence MEANT when the labels were written, and the
+ * reason this gate can run without the 370 MB of captures beside it. What was wrong is that it was
+ * SILENT, and it presents as THE FIX APPEARING NOT TO WORK -- land a capture-layer fix, run this gate, see
+ * no movement, conclude the fix is wrong, and be wrong. That is the "two gates disagreeing about one
+ * corpus" signal from the 1.3.1 episode, where `rules:gate` said `29/29 EXACT` and `rules:coverage` said
+ * `fired 0x` about the same rule, arriving as a silence rather than a disagreement.
+ *
+ * So it is STATED, and with a NUMBER where one is available -- a count says whether two captures moved or
+ * two thousand, which is the difference between a stale export and a gate reading last week's corpus.
+ */
+function reportWhichPathThisGateRead(dataPath: string): void {
+  console.log("# what this gate read, and what it therefore cannot see");
+  console.log("  the EXPORT. `ruleEvidence` (the census every census-reading rule consults) is frozen at");
+  console.log("  export time, so a CAPTURE-LAYER change is invisible here until `job=export` runs again.");
+  console.log("  `rules:real-pages` reads the captures and sees such a change immediately.");
+  const exported = statMtime(dataPath);
+  const newest = newestCaptureMtime();
+  if (exported === undefined || newest === undefined) {
+    // Absent prints as NOT MEASURED, never as OK: `capture:explain`'s rule, and the reason this whole
+    // divergence went unnoticed is that a silence read as agreement.
+    console.log("  export vs captures: NOT MEASURED (no captures readable from here)\n");
+    return;
+  }
+  const staleBy = Math.round((newest.mtime - exported) / 60000);
+  if (staleBy <= 0) {
+    console.log(`  export is newer than every capture under ${newest.root} — this gate is current\n`);
+    return;
+  }
+  console.log(`  *** ${newest.newerThanExport} capture(s) are NEWER than this export, by up to `
+    + `${staleBy} minute(s) — newest: ${newest.name}`);
+  console.log("  *** Any capture-layer fix in those captures is NOT reflected in the numbers below.");
+  console.log("  *** Re-export first:  npm run lab:job -- -e job=export\n");
+}
+
+function statMtime(path: string): number | undefined {
+  try { return statSync(path).mtimeMs; } catch { return undefined; }
+}
+
+/** The newest capture on disk, and how many are newer than the export. Undefined when there are none. */
+function newestCaptureMtime(): { mtime: number; name: string; root: string; newerThanExport: number }
+  | undefined {
+  const root = captureRoot(datasetRoot());
+  let best: { mtime: number; name: string } | undefined;
+  const times: number[] = [];
+  let names: string[];
+  try { names = readdirSync(root); } catch { return undefined; }
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    const mtime = statMtime(resolve(root, name));
+    if (mtime === undefined) continue;
+    times.push(mtime);
+    if (best === undefined || mtime > best.mtime) best = { mtime, name };
+  }
+  if (best === undefined) return undefined;
+  const exported = statMtime(DATA) ?? 0;
+  return { ...best, root, newerThanExport: times.filter((t) => t > exported).length };
+}
+
 function main(): void {
   const records = load(DATA);
   if (records.length === 0) {
@@ -300,6 +371,7 @@ function main(): void {
 
   const coverage = tally(records);
   console.log(`Rule-layer score over ${records.length} record(s) from ${DATA}\n`);
+  reportWhichPathThisGateRead(DATA);
   console.log("# coverage by subtype (who actually decides what)\n");
   printCoverage(coverage);
 
