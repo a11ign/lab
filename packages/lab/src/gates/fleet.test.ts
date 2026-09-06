@@ -11,8 +11,18 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { fileURLToPath } from "node:url";
 
 import { gateWorkers, acrossFleet, fleetVerdict, renderShards } from "./fleet.mjs";
+import { inventoryWorkerUrls } from "@a11y-witness/worker-fleet/fleet-env";
+
+// The real inventory.yml is gitignored (real addresses, restored from the secrets store at bring-up), so
+// this reads inventory.example.yml instead -- INJECTED through `gateWorkers`'s `inventory` seam rather
+// than a second inventoryWorkerUrls() call this file would have to keep in step by hand. Worker COUNT is
+// what this test needs (more than one), and the example is guaranteed to match the real fleet's count
+// (inventory-example-parity.test.ts).
+const EXAMPLE_INVENTORY = fileURLToPath(new URL("../../../control/ansible/inventory.example.yml", import.meta.url));
+const exampleInventoryWorkers = () => inventoryWorkerUrls({ inventoryPath: EXAMPLE_INVENTORY });
 
 test("naming a worker is the ESCAPE HATCH, and the scope says so out loud", () => {
   const named = gateWorkers("http://REDACTED-INTERNAL-ADDRESS:8765");
@@ -22,7 +32,7 @@ test("naming a worker is the ESCAPE HATCH, and the scope says so out loud", () =
 });
 
 test("the DEFAULT is every worker in the inventory, not one", () => {
-  const all = gateWorkers(undefined);
+  const all = gateWorkers(undefined, { inventory: exampleInventoryWorkers });
   assert.ok(all.workers.length > 1, "a default of one box is how nineteen sit idle");
   assert.match(all.scope, /inventory\.yml/);
 });

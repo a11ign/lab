@@ -59,14 +59,19 @@ test("CLAUDE.md's ADR count matches docs/adr/", () => {
   assert.equal(Number(stated[1]), files.length, "CLAUDE.md's decision-record count is stale");
 });
 
-test("CLAUDE.md's worker count and range match inventory.yml", () => {
+// Reads inventory.example.yml, deliberately -- the real inventory.yml is gitignored (real addresses,
+// restored from the secrets store at bring-up) and does not exist in CI or a fresh clone. Worker NAMES
+// and COUNT are not secrets, and the example is required to keep them identical to the real fleet (see
+// inventory.example.yml's own header and inventory-example-parity.test.ts, which checks that structural
+// equivalence directly). Do not re-point this at inventory.yml: it would pass locally and fail in CI.
+test("CLAUDE.md's worker count and range match inventory.example.yml", () => {
   const stated = doc.match(/\*\* ([A-Z]+) boxes\r?\n> \(`a11y-worker-(\d+)` … `-(\d+)`/);
   assert.ok(stated, "CLAUDE.md must state the fleet as `** WORD boxes` then `(`a11y-worker-N` … `-M`` on the "
     + "following blockquote line");
 
-  const inventoryText = readFileSync(join(REPO, "packages/control/ansible/inventory.yml"), "utf8");
+  const inventoryText = readFileSync(join(REPO, "packages/control/ansible/inventory.example.yml"), "utf8");
   const names = Object.values(workerNamesFromInventory(inventoryText));
-  assert.ok(names.length > 0, "inventory.yml parsed to zero workers — the parser or the path moved");
+  assert.ok(names.length > 0, "inventory.example.yml parsed to zero workers — the parser or the path moved");
 
   const numbers = names.map((n) => Number(n.replace("a11y-worker-", ""))).sort((a, b) => a - b);
   const expectedWord = WORD_FOR_COUNT[numbers.length];

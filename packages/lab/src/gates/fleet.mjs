@@ -32,12 +32,17 @@ import { drainAcrossPool } from "../training/worker-pool.mjs";
  * "one box" is how a fleet-wide claim came to be made from a single machine, and how nineteen boxes would
  * sit idle.
  *
+ * `inventory` is INJECTED, defaulting to the real `inventoryWorkerUrls` — the same seam
+ * `check-worker-code.mjs`'s pool resolver already uses, so a test can point this at a fixture inventory
+ * (e.g. `inventory.example.yml`) rather than needing the real, gitignored `inventory.yml` on disk.
+ *
  * @param {string | undefined} named a `--worker` / `A11Y_WORKER` value, if the caller gave one
+ * @param {{ inventory?: () => string[] }} [deps]
  * @returns {{ workers: string[], scope: string }} `scope` is what the verdict must SAY it covered
  */
-export function gateWorkers(named) {
+export function gateWorkers(named, { inventory = inventoryWorkerUrls } = {}) {
   if (named) return { workers: [named], scope: `${named} ONLY — one box, named explicitly` };
-  const workers = inventoryWorkerUrls();
+  const workers = inventory();
   if (workers.length === 0) {
     throw new Error("no workers in inventory.yml, and none named — a gate cannot examine nothing");
   }
