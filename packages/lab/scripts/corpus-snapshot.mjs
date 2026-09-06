@@ -72,18 +72,19 @@ const WANTED_SIBLINGS = ["real-page-corpus", "screenreader-acceptance"];
  * @param {string} root @param {string[]} members
  */
 function jsonUnder(root, members) {
+  return members.reduce((total, member) => total + jsonBelow(resolve(root, member)), 0);
+}
+
+/** One root, walked iteratively — a deep corpus must not depend on the stack depth. @param {string} start */
+function jsonBelow(start) {
+  if (!existsSync(start)) return 0;
   let total = 0;
-  for (const member of members) {
-    const start = resolve(root, member);
-    if (!existsSync(start)) continue;
-    const stack = [start];
-    while (stack.length) {
-      const here = stack.pop();
-      if (!here) continue;
-      const stat = statSync(here);
-      if (stat.isDirectory()) { for (const e of readdirSync(here)) stack.push(resolve(here, e)); continue; }
-      if (here.endsWith(".json")) total += 1;
-    }
+  const stack = [start];
+  while (stack.length) {
+    const here = stack.pop();
+    if (!here) continue;
+    if (statSync(here).isDirectory()) stack.push(...readdirSync(here).map((e) => resolve(here, e)));
+    else if (here.endsWith(".json")) total += 1;
   }
   return total;
 }
