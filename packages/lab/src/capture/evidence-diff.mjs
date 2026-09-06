@@ -121,6 +121,12 @@ function normalise(phrase) {
  * DENY-LIST, NOT AN ALLOW-LIST, deliberately: a new field on a capture must default to being COMPARED, or
  * this gate goes quietly blind to it -- which is the original defect. Every exclusion is a timing or
  * bookkeeping value with a stated reason, and `evidence-fields.test.ts` requires that.
+ *
+ * EXPORTED as of the `repeat-capture.mjs` unification (2026-09-06): `gate:stability` and `evidence:check`
+ * ask the same question of the same captures and had drifted onto TWO comparison implementations, found
+ * when `atMs` was fixed here and `gate:stability` failed identically two hours later -- it read
+ * `focusEvents` through its own, unaware flatten. `repeat-capture.mjs` now imports `EVIDENCE_FIELDS` and
+ * `fieldValues` directly rather than keeping a second copy of "what to exclude" or "how to flatten".
  */
 export const NOT_EVIDENCE_KEYS = new Set([
   // How long we waited for quiet before acting. A property of this run, not of the page.
@@ -183,11 +189,16 @@ function flatten(entry) {
 }
 
 /**
+ * EXPORTED as of the `repeat-capture.mjs` unification: this is the ONE place a capture is reduced to
+ * comparable strings for a field, so `gate:stability`'s N-way stability check and `evidence:check`'s
+ * pairwise verdict read a field identically -- see `NOT_EVIDENCE_KEYS`'s comment for the incident that
+ * forced this.
+ *
  * @param {EvidenceCapture | null | undefined} capture
  * @param {[string, string]} field
  * @returns {string[]}
  */
-function fieldValues(capture, [group, name]) {
+export function fieldValues(capture, [group, name]) {
   const value = capture?.[group]?.[name];
   if (Array.isArray(value)) return value.map(flatten);
   // AN OBJECT, FLATTENED. `routeChange` is `{control, titleBefore, titleAfter, headingBefore,
