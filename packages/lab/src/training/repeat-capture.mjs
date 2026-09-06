@@ -28,6 +28,7 @@ import { assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { captureIsSelfConsistent } from "@a11y-witness/evidence/verify";
 import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
 import { repeatCapturesRoot } from "../dataset-paths.mjs";
+import { EVIDENCE_FIELDS, fieldValues } from "../capture/evidence-diff.mjs";
 
 /**
  * `--probe-forms` and `--probe-tables` are how a canary reaches the fields that carry interaction
@@ -103,98 +104,32 @@ const BETWEEN_MS = 2_000; // let the guest settle, as a real run would between c
 const list = (/** @type {any} */ value) => (Array.isArray(value) ? value : []);
 
 /**
- * An object field flattened to `key=value` lines.
+ * The fields worth comparing: everything a dataset signal can read — DERIVED from `evidence-diff.mjs`'s
+ * `EVIDENCE_FIELDS`/`fieldValues` rather than a second, hand-maintained list and a second flatten.
  *
- * `routeChange` is `{control, titleBefore, titleAfter, ...}`, and comparing it as an opaque object reports
- * two objects differing wholesale rather than naming the one that moved — and a title that stopped
- * changing IS the 2.4.2 failure. Same treatment `formChanges` already gets, for the same reason.
+ * THE UNIFICATION, and why it replaced two independently-drifting copies: `gate:stability` (this file) and
+ * `evidence:check` (`evidence-diff.mjs`) ask the same question of the same captures -- is the evidence the
+ * SAME -- and each kept its own answer to "what counts as evidence" and "how do I flatten an object field
+ * to compare it". They had already drifted once (`stability-fields.test.ts`'s own header: three separately
+ * maintained lists, three different holes) and were pinned equal by a test rather than merged, which is
+ * this repo's THIRD remedy, chosen only when the first two are unavailable. They were not unavailable here.
  *
- * A property that is itself an ARRAY OF OBJECTS -- `focusEvents.scriptRemovedFocus` -- is flattened per
- * element rather than interpolated whole. `${v}` on an array calls `toString()` on each element and joins
- * with a comma, and an object's `toString()` is `"[object Object]"` regardless of content, so two
- * DIFFERENT findings at the same array length would have interpolated identically. The exact
- * `formChanges`/`stateChanges` defect this file's header already names, arriving through a nested shape
- * that single-level flattening never learned. `evidence-diff.mjs` had the identical gap, fixed the same way.
+ * Found 2026-09-06: `evidence-diff.mjs` gained a `NOT_EVIDENCE_KEYS` deny-list for `atMs` (a wall-clock
+ * key inside `focusEvents.log` entries), fixed there, and `gate:stability` failed on the identical
+ * `focusEvents` canaries two hours later — because `repeat-capture.mjs`'s OWN `flatten()` had no deny-list
+ * at all and this file never learned of the fix. That is the fact-stated-twice shape at its most
+ * expensive: the two gates that decide whether evidence is trustworthy disagreeing about what evidence IS.
+ *
+ * `transcript` stays this file's own concern, unchanged: `evidence-diff.mjs` compares it separately too
+ * (as a SET, with drift named rather than exact-order equality), so it was never part of the shared table.
  */
-// Return type ANNOTATED, not inferred: `flatten` now calls itself in one of its own branches, and TS
-// cannot infer a recursive arrow function's return type from its own body -- it needs the type stated
-// before it can check the reference. `TS7023`/`TS7024` name exactly this.
-/** @type {(value: any) => string[]} */
-const flatten = (value) =>
-  (value && typeof value === "object"
-    ? Object.entries(value).map(([key, v]) => `${key}=${Array.isArray(v) ? v.map(flatten).join(";") : v}`)
-    : []);
-
-/** The fields worth comparing: everything a dataset signal can read. */
 export function comparable(/** @type {any} */ capture) {
-  const s = capture.structure ?? {};
-  const i = capture.interaction ?? {};
-  return {
-    transcript: list(capture.transcript),
-    headings: list(s.headings),
-    landmarks: list(s.landmarks),
-    formFields: list(s.formFields),
-    graphics: list(s.graphics),
-    links: list(s.links),
-    lists: list(s.lists),
-    tableCells: list(s.tableCells),
-    // FLATTENED, not listed. `stateChanges` is a list of OBJECTS, so `list()` alone compared it by COUNT
-    // -- the identical defect this function's `formChanges` comment describes, on the sibling channel,
-    // surviving the fix that named it. Found 2026-09-01 when `evidence-diff.mjs` turned out to have it
-    // too: a `4.1.2:state-change-silent` toggle whose `after` changed would read as stable here.
-    stateChanges: list(i.stateChanges).map(flatten),
-    focusOrder: list(i.focusOrder),
-    // `formChanges` and `postSubmitFields` are compared because they were NOT, and that is how an
-    // intermittent contaminant reached the corpus with the stability gate green. One capture of
-    // `filter-status-silent/bad` recorded `after: "Energy results, document"` where every other run
-    // recorded the empty delta that IS the finding — a late document announcement attributed to the
-    // activation. Ten fields were watched and the two carrying interaction evidence were not among them.
-    //
-    // Flattened to strings so a differing `after` shows up as a VARIES rather than as two objects the
-    // comparison treats as opaque.
-    formChanges: list(i.formChanges).map((/** @type {any} */ c) => `${c.control} [${c.kind ?? "?"}] -> ${c.after ?? ""}`),
-    postSubmitFields: list(i.postSubmitFields),
-    // THREE MORE, ADDED 2026-08-29, and the comment above is why they are worth naming rather than
-    // quietly appending. It records ten fields watched with the two carrying interaction evidence missing
-    // — and the lesson was then applied to those two and not to the rest of the channel.
-    //
-    // `controls` is the plain miss: EVERY capture carries it (5,304 of 5,304) and `evidence-diff.mjs`
-    // compares it, so this gate could not see instability in the one interaction field that is always
-    // populated. `postSubmitNames` is on 281 captures and capture-core's protocol note says criteria read
-    // it. `routeChange` is the whole of 2.4.2's evidence — the transition a static analyser cannot reach.
-    //
-    // Kept in step with `evidence-diff.mjs` by `stability-fields.test.ts`, which fails if either list
-    // gains a field the other lacks. Two hand-written lists of "what a signal can read" is a fact stated
-    // twice, and this is the third tool to have got it wrong.
-    controls: list(i.controls),
-    postSubmitNames: list(i.postSubmitNames),
-    // FLATTENED, like `formChanges` above and for the same reason: `routeChange` is an object
-    // (`{control, titleBefore, titleAfter, ...}`), and a comparison that treats it as opaque reports two
-    // objects rather than the one field that moved. A title that stopped changing IS the 2.4.2 failure.
-    routeChange: flatten(i.routeChange),
-    // TWO MORE, with capture-protocol 11. `frames` is the iframe sweep; `dialogEscape` is an object and
-    // so is flattened like `routeChange`. `stability-fields.test.ts` is what required them here -- it
-    // fails the moment `evidence-diff.mjs` gains a field this does not, which is the only reason three
-    // separately-maintained lists of "what a signal can read" have stopped drifting apart.
-    frames: list(s.frames),
-    dialogEscape: flatten(i.dialogEscape),
-    arrowNavigation: flatten(i.arrowNavigation),
-    typedFeedback: flatten(i.typedFeedback),
-    // Capture-protocol 14. Flattened like the rest: its verdict is whether two strings are EQUAL, so a
-    // count-based comparison would read SAME on a change that inverts the criterion.
-    focusContext: flatten(i.focusContext),
-    // 1.4.13, added the day `focusReveal` first reached the channel. Flattened, not counted: the
-    // verdict is `{revealed, dismissed, focusHeld, vanished}` and a count-based comparison would read
-    // SAME on a change that flips `dismissed` — which is the whole finding.
-    focusReveal: flatten(i.focusReveal),
-    // F55's focus-event log (2.4.7). Added twice independently — from the orchestrator side when
-    // `evidence-fields.test.ts` demanded it, and from the branch when `stability-fields.test.ts` caught
-    // the same gap — which is the two guards doing their job from opposite directions rather than a
-    // duplication. Flattened like `focusReveal` above: the verdict is `{asked, checked, events,
-    // scriptRemovedFocus}`, and a `scriptRemovedFocus` that changes CONTENT at the same COUNT is exactly
-    // the change a count-based comparison reads as stable.
-    focusEvents: flatten(i.focusEvents),
-  };
+  /** @type {Record<string, any[]>} */
+  const out = { transcript: list(capture.transcript) };
+  for (const field of EVIDENCE_FIELDS) {
+    out[field[1]] = fieldValues(capture, field);
+  }
+  return out;
 }
 
 let recoveries = 0;

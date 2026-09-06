@@ -5,20 +5,24 @@ import { comparable } from "./repeat-capture.mjs";
 import { EVIDENCE_FIELDS } from "../capture/evidence-diff.mjs";
 
 /**
- * TWO TOOLS ASK THE SAME QUESTION and each keeps its own list of what to look at.
+ * TWO TOOLS ASK THE SAME QUESTION.
  *
  *   `gate:stability` (repeat-capture)  — does this page capture the SAME evidence twice?
  *   `evidence:check` (evidence-diff)   — did my change alter the evidence?
  *
- * Both mean "every field a dataset signal can read", both say so in a comment, and both had holes.
- * `repeat-capture` compared ten fields and missed `formChanges` and `postSubmitFields` — which let an
- * intermittent contaminant into the corpus with every canary reported stable. That was fixed for those
- * two and `interaction.controls` stayed missing, though every one of 5,304 captures carries it.
- * `evidence-diff` separately missed `routeChange` and `postSubmitNames`.
+ * Both mean "every field a dataset signal can read". Until 2026-09-06 each kept its OWN list and its OWN
+ * flatten, and they drifted repeatedly: `repeat-capture` missed `formChanges`/`postSubmitFields`, then
+ * `controls`, while `evidence-diff` separately missed `routeChange`/`postSubmitNames` — three lists, three
+ * different holes, pinned equal by this file because neither copy could be deleted at the time.
  *
- * Three tools, three different lists, and no two agreed. A fact stated twice with nothing comparing the
- * copies is this repo's most-recorded defect, and the remedy when neither copy can be deleted is to pin
- * them equal.
+ * **That stopped being true.** `atMs` (a wall-clock key inside `focusEvents.log`) was excluded in
+ * `evidence-diff.mjs`'s deny-list, and `gate:stability` failed identically two hours later because
+ * `repeat-capture.mjs`'s own flatten had never heard of the fix. That is what "pin them equal with a
+ * test" costs: the test proves two things AGREE, never that either is CORRECT, and it cannot propagate a
+ * fix from one side to the other. `comparable()` (`repeat-capture.mjs`) now imports `EVIDENCE_FIELDS` and
+ * `fieldValues` from `evidence-diff.mjs` directly — CLAUDE.md's first remedy, "delete a copy" — so there
+ * is one list and one flatten, and this file's two "compares every field" tests are now a regression
+ * guard against reintroducing a second one, not a test that two independent lists happen to agree.
  */
 
 /** The fields `comparable()` produces, from a capture carrying every channel. */
@@ -67,10 +71,14 @@ test("an object-shaped field is flattened, not compared as an opaque object", ()
   // `routeChange` is `{control, titleBefore, titleAfter, ...}`. Listing it without flattening compares
   // two objects and reports them as differing wholesale, so the one field that moved is not named — and
   // a title that stopped changing IS the 2.4.2 failure. The identical trap caught `evidence-diff.mjs`.
+  //
+  // VALUES ARE LOWERCASED as of the `evidence-diff.mjs` unification (2026-09-06) -- `comparable()` now
+  // calls that module's own `fieldValues()`, which runs every value through `normalise()` (its own stated,
+  // deliberately crude choice: lowercase and whitespace-collapse, no more). Keys are untouched.
   const flattened = (comparable({
     interaction: { routeChange: { titleBefore: "Home", titleAfter: "Bookings" } },
   }) as Record<string, unknown>).routeChange;
-  assert.deepEqual(flattened, ["titleBefore=Home", "titleAfter=Bookings"]);
+  assert.deepEqual(flattened, ["titleBefore=home", "titleAfter=bookings"]);
 });
 
 test("an absent routeChange is an empty list, never a crash or a phantom difference", () => {
@@ -89,4 +97,44 @@ test("focusEvents.scriptRemovedFocus content changing at the SAME count is not r
       scriptRemovedFocus: [{ id: 1, name, heldMs: 2 }] } },
   }) as Record<string, unknown>).focusEvents;
   assert.notDeepEqual(withEvents("Coupon code"), withEvents("Voucher code"));
+});
+
+test("a focus log differing ONLY in atMs timestamps is STABLE, not VARIES -- the incident this unit fixes", () => {
+  // MEASURED 2026-09-06: `gate:stability` failed with `VARIES focusEvents counts 5,5,5,5,5` -- identical
+  // counts, differing content -- on both canaries that declare `probeFocus: true`. `evidence-diff.mjs` had
+  // just excluded `atMs` for the identical field and this file never learned of the fix, because it had
+  // its own, unaware flatten. `comparable()` now reads the SAME `NOT_EVIDENCE_KEYS` deny-list via
+  // `fieldValues()`, so this is the direct regression test for the incident, not just for the mechanism --
+  // see `evidence-diff.test.ts`'s "a focus log differing ONLY in timestamps" for the sibling proof.
+  const log = [
+    { type: "focusin", id: 0, name: "Contact name", atMs: 3211 },
+    { type: "focusout", id: 0, name: "Contact name", atMs: 5161 },
+  ];
+  const later = log.map((e) => ({ ...e, atMs: e.atMs + 37 }));
+  const flatten = (l: typeof log) => {
+    const result = comparable({ interaction: { focusEvents: { asked: true, checked: true, log: l } } });
+    return (result as Record<string, unknown>).focusEvents;
+  };
+  assert.deepEqual(flatten(log), flatten(later),
+    "every capture starts its clock afresh, so comparing atMs makes the log unequal to itself on every run");
+});
+
+test("a focus log differing in WHO or ORDER still VARIES, even with atMs excluded", () => {
+  // The half that stops the exclusion becoming the defect it fixes -- `focusLossEvidence` computes
+  // `heldMs` from DIFFERENCES between adjacent entries, never from an absolute value, so excluding `atMs`
+  // must hide nothing a rule actually reads.
+  const log = [
+    { type: "focusin", id: 0, name: "Contact name", atMs: 3211 },
+    { type: "focusout", id: 0, name: "Contact name", atMs: 5161 },
+  ];
+  const flatten = (l: typeof log) => {
+    const result = comparable({ interaction: { focusEvents: { asked: true, checked: true, log: l } } });
+    return (result as Record<string, unknown>).focusEvents;
+  };
+  const renamed = [log[0], { ...log[1], name: "Something else" }];
+  assert.notDeepEqual(flatten(log), flatten(renamed), "a control that stopped receiving focus must still register");
+
+  const reordered = [log[1], log[0]];
+  assert.notDeepEqual(flatten(log), flatten(reordered),
+    "ORDER is the whole of F55's signature, so a reordered log must never read as stable");
 });
