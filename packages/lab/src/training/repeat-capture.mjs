@@ -27,7 +27,7 @@ import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 import { assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { captureIsSelfConsistent } from "@a11y-witness/evidence/verify";
 import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
-import { repeatCapturesRoot } from "../dataset-paths.mjs";
+import { repeatCapturesRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 import { EVIDENCE_FIELDS, fieldValues } from "../capture/evidence-diff.mjs";
 
 /**
@@ -234,6 +234,7 @@ async function captureWithRetry(attempts = 3) {
  * CALLER, and there is no caller when the file is merely imported.
  */
 async function main() {
+  refuseIfRunsReadonly(OUT_DIR);
   if (PROBE_FORMS && !TASK) {
     console.error("--probe-forms needs --task=\"...\": the task selects which control is activated, so " +
       "without one nothing is activated and the run reports a stable empty result.");

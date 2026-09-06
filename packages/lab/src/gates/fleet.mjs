@@ -37,14 +37,37 @@ import { drainAcrossPool } from "../training/worker-pool.mjs";
  * (e.g. `inventory.example.yml`) rather than needing the real, gitignored `inventory.yml` on disk.
  *
  * @param {string | undefined} named a `--worker` / `A11Y_WORKER` value, if the caller gave one
- * @param {{ inventory?: () => string[] }} [deps]
+ * @param {{ inventory?: () => string[], env?: Record<string, string | undefined> }} [deps]
  * @returns {{ workers: string[], scope: string }} `scope` is what the verdict must SAY it covered
  */
-export function gateWorkers(named, { inventory = inventoryWorkerUrls } = {}) {
+export function gateWorkers(named, { inventory = inventoryWorkerUrls, env = process.env } = {}) {
   if (named) return { workers: [named], scope: `${named} ONLY — one box, named explicitly` };
+
+  // `A11Y_WORKERS` FIRST, AND ON THE LAB IT IS THE ONLY THING THERE IS.
+  //
+  // `inventory.yml` is gitignored and untracked (#54, the public-repo address exposure), so a pull DELETES
+  // it from any checkout that has one. The control plane keeps its copy deliberately; the lab's is simply
+  // gone after its next pull, and this gate runs ON THE LAB. Measured 2026-09-06, minutes after that
+  // landed: `gate:stability` died with "no workers in inventory.yml, and none named -- a gate cannot
+  // examine nothing". The guard was right and the input had been removed underneath it.
+  //
+  // Every lab job already RECEIVES the fleet: `lab-job.yml` derives `lab_fleet_workers` from the inventory
+  // on the CONTROL PLANE, where the file lives, and hands the addresses over as `A11Y_WORKERS`. So the
+  // list was always present in the environment and this gate was reading a file to rediscover it.
+  //
+  // Reading the env first makes `inventory.yml` control-plane-only BY CONSTRUCTION rather than by
+  // convention -- which matters because I answered "does anything on the lab read it?" by grepping three
+  // directories, missed this one, and gave a false all-clear an hour before it broke.
+  const fromEnv = String(env.A11Y_WORKERS ?? "").split(",").map((w) => w.trim()).filter(Boolean);
+  if (fromEnv.length) {
+    return { workers: fromEnv, scope: `${fromEnv.length} worker(s) from A11Y_WORKERS` };
+  }
+
   const workers = inventory();
   if (workers.length === 0) {
-    throw new Error("no workers in inventory.yml, and none named — a gate cannot examine nothing");
+    throw new Error("no workers in A11Y_WORKERS and none in inventory.yml, and none named — a gate cannot "
+      + "examine nothing. On the lab the fleet arrives as A11Y_WORKERS; `inventory.yml` is control-plane "
+      + "only and a pull removes it here.");
   }
   return { workers, scope: `${workers.length} worker(s) from inventory.yml` };
 }
