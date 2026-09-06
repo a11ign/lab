@@ -5,12 +5,19 @@
  * findings" section admits that roughly fifty of the audit's findings never reached it at all, discovered
  * only because two peer sessions independently tripped over stale rows the same night.
  *
- * §9 ("Duplication with no owner") and §10.1 ("eleven architectural decisions with no ADR") are the two
- * sections most likely to still read as open to a future reader, because neither uses the audit's own
- * "CLOSED"/"DECIDED" vocabulary consistently — several rows in each are bare descriptions with no verdict
- * at all. This does not ask "are these findings still true" (that is what froze the document in the first
- * place — a snapshot cannot answer that faster than the repo changes). It asks the narrower, MECHANICAL
- * question: can a reader tell a dispositioned finding from an orphaned one, today, without re-deriving it?
+ * §9 ("Duplication with no owner"), §10.1 ("eleven architectural decisions with no ADR") and §7.2 ("Gates
+ * that exist and run nowhere automated") are the sections most likely to still read as open to a future
+ * reader, because none of them use the audit's own "CLOSED"/"DECIDED" vocabulary consistently — several
+ * rows in each are bare descriptions with no verdict at all. This does not ask "are these findings still
+ * true" (that is what froze the document in the first place — a snapshot cannot answer that faster than the
+ * repo changes). It asks the narrower, MECHANICAL question: can a reader tell a dispositioned finding from
+ * an orphaned one, today, without re-deriving it?
+ *
+ * §7.2 ADDED 2026-09-06 after a narrower, single-channel grep on it reported a row as open that a test had
+ * already closed (`git-hooks-installed.test.ts` closes the "no `prepare`/`postinstall`" row, citing this
+ * exact section by name) — the same shape §9's "vocabularies" row was found in. That is the THIRD
+ * disposition channel this file's dispositions recognise (`"test"`, below), alongside the audit's own text
+ * and `docs/backlog.md`: a test that cites the finding and would fail if it recurred.
  *
  * THE FINDINGS ARE DISCOVERED FROM THE DOCUMENT, never hand-listed — a hand-written list cannot see a row
  * added or removed since it was written, which is exactly the shape that let ~38 findings go untracked in
@@ -71,7 +78,7 @@ function findingRows(sectionText: string): Finding[] {
     const cellMatch = /^\|\s*([^|]+?)\s*\|/.exec(line);
     if (!cellMatch) continue;
     const name = cellMatch[1].trim();
-    if (!name || /^-+$/.test(name) || name === "fact" || name === "decision") continue; // header/separator
+    if (!name || /^-+$/.test(name) || name === "fact" || name === "decision" || name === "gate") continue; // header/separator
     rows.push({ name, raw: line });
   }
   return rows;
@@ -83,23 +90,32 @@ const SECTION_10_1 = between(
   "### 10.1 CLAUDE.md carries the architecture, and the ADRs do not",
   "\n### 10.2 Trackers and records disagree about what is open",
 );
+const SECTION_7_2 = between(
+  AUDIT,
+  "### 7.2 Gates that exist and run nowhere automated — verified",
+  "\n### 7.3 Release mechanics — corrected by experiment on 2026-09-05",
+);
 
 const FINDINGS_9 = findingRows(SECTION_9);
 const FINDINGS_10_1 = findingRows(SECTION_10_1);
+const FINDINGS_7_2 = findingRows(SECTION_7_2);
 
-test("VACUITY GUARD -- §9 and §10.1 still contain the number of findings this test was written against", () => {
+test("VACUITY GUARD -- §9, §10.1 and §7.2 still contain the number of findings this test was written against", () => {
   assert.equal(FINDINGS_9.length, 12,
     `§9 discovery found ${FINDINGS_9.length} row(s), expected 12 -- either a row was added/removed (extend `
     + "DISPOSITIONS below to match) or the discovery regex broke (0 would mean every later test in this "
     + "file passes having examined nothing)");
   assert.equal(FINDINGS_10_1.length, 11,
     `§10.1 discovery found ${FINDINGS_10_1.length} row(s), expected 11 -- same two possibilities as above`);
+  assert.equal(FINDINGS_7_2.length, 6,
+    `§7.2 discovery found ${FINDINGS_7_2.length} row(s), expected 6 -- same two possibilities as above`);
 });
 
 type Disposition =
   | { status: "closed-in-place" }
   | { status: "backlog"; find: string }
   | { status: "adr"; file: string }
+  | { status: "test"; file: string; cites: string }
   | { status: "exempt"; reason: string };
 
 /**
@@ -178,9 +194,30 @@ const DISPOSITIONS: Record<string, Disposition> = {
     status: "adr",
     file: "0030-fleet-code-parity-is-a-precondition-not-a-cache-key.md",
   },
+
+  // -------------------------------------------------------------------------------------------- §7.2 ----
+  "pre-commit and pre-push hooks": {
+    status: "test",
+    file: "packages/lab/src/packaging/git-hooks-installed.test.ts",
+    cites: "gates that exist and run nowhere automated",
+  },
+  "the 30 pytest files": { status: "backlog", find: "§7.2 no Python in CI" },
+  "`scorer:verify`, `release:provenance`, `scorer:migration`, `gate:isolation`": {
+    status: "backlog",
+    find: "Two dispatch-only gates also moved into `lint.yml`",
+  },
+  "`capture:check`": {
+    status: "backlog",
+    find: "no lab job runs `capture:check`'s equivalent against the real fleet",
+  },
+  "any Ansible check": { status: "backlog", find: "§7.2 no Ansible check anywhere" },
+  "the published `dist/cli.js` bin": {
+    status: "backlog",
+    find: "the published `dist/cli.js` bin is executed by nothing",
+  },
 };
 
-const ALL_FINDINGS = [...FINDINGS_9, ...FINDINGS_10_1];
+const ALL_FINDINGS = [...FINDINGS_9, ...FINDINGS_10_1, ...FINDINGS_7_2];
 
 test("every discovered §9/§10.1 finding has an entry in DISPOSITIONS", () => {
   const unclassified = ALL_FINDINGS.filter((f) => !(f.name in DISPOSITIONS)).map((f) => f.name);
@@ -216,6 +253,19 @@ for (const finding of ALL_FINDINGS) {
       assert.ok(existsSync(path),
         `"${finding.name}" is classified as closed by ${disposition.file}, which does not exist under `
         + "docs/adr/ -- the ADR may have been renamed or renumbered");
+    } else if (disposition.status === "test") {
+      const path = `${REPO}${disposition.file}`;
+      assert.ok(existsSync(path),
+        `"${finding.name}" is classified as closed by ${disposition.file}, which no longer exists -- the `
+        + "test may have been renamed, moved, or deleted");
+      // Strip block-comment `*` decoration before collapsing whitespace, or a wrapped citation like
+      // "gates that exist\n * and run nowhere automated" collapses to "...exist * and..." with the
+      // asterisk still splitting it, and a real citation reads as absent.
+      const contents = collapsed(readFileSync(path, "utf8").replace(/^\s*\*\s?/gm, " "));
+      assert.ok(contents.toLowerCase().includes(collapsed(disposition.cites).toLowerCase()),
+        `${disposition.file} no longer cites "${disposition.cites}" (checked whitespace-insensitive, since `
+        + "this repo hard-wraps prose) -- it may have been rewritten to close a different finding, in which "
+        + `case "${finding.name}" needs a real disposition again`);
     } else {
       assert.ok(disposition.reason && disposition.reason.length > 20,
         `"${finding.name}" is classified exempt with no real reason recorded -- state why it needs neither `
