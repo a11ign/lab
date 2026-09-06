@@ -90,7 +90,7 @@ test("every row declares a Region, a Branch, bounding CLAUDE.md sections, and an
     if (!field(body, "Region")) missing.push("Region");
     const branch = field(body, "Branch");
     if (!branch) missing.push("Branch");
-    else if (!/^`agent\/[a-z0-9-]+`$/.test(branch)) missing.push(`Branch (does not match the agent/<name> shape: "${branch}")`);
+    else if (!/^`agent\/[a-z0-9-]+`(\s|$)/.test(branch)) missing.push(`Branch (does not match the agent/<name> shape: "${branch}")`);
     if (!field(body, "CLAUDE.md sections")) missing.push("CLAUDE.md sections");
     // Acceptance is prose plus at least one fenced code block naming the real command, never a bare
     // paragraph -- "run the tests" is a judgement, "npx tsx --test <path>" is a command.
@@ -141,11 +141,12 @@ test("the page documents its verification scope as origin/main PLUS unmerged loc
  * preference -- a page that tells a reader to check the wrong git command is actively wrong, worse than
  * one that says nothing, because it looks like a check that was performed.
  */
-test("the claim-check instructions use the local branch/worktree form, never origin/agent/* as a live instruction", () => {
+test("the claim-check instructions use region-diff, never a bare branch-name lookup or origin/agent/*", () => {
   const source = read();
-  assert.match(source, /git branch --list 'agent\//,
-    `${PATH} must instruct checking LOCAL branches (git branch --list 'agent/...') -- this repo's agent `
-    + "branches are never pushed, so origin/agent/* is always empty");
+  assert.match(source, /git log --branches=.agent\/\*. --not origin\/main/,
+    `${PATH} must instruct checking by REGION (git log --branches='agent/*' --not origin/main -- <path>) `
+    + "-- a row's suggested Branch name is not something real work reliably uses, measured directly: only "
+    + "1 of 5 addressed rows landed under its own suggested name");
   // The broken form is allowed to appear ONLY as a named warning ("this always returns empty"), never as
   // a fenced, runnable instruction -- the page explaining why NOT to use it is worth keeping; the page
   // telling a reader to run it is the defect. Checked by requiring every mention to sit inside a sentence
@@ -182,6 +183,108 @@ test("the local agent/* branch population the claim check depends on is non-empt
 });
 
 /**
+ * REGION-DIFF: measured 2026-09-06, only 1 of 5 addressed rows landed under its own suggested `Branch:`
+ * name -- see "The claim mechanism was keyed on a branch NAME..." in the page itself. The replacement
+ * derives a claim from the row's own required `Region:` field instead: does any local `agent/*` branch's
+ * history, absent from `origin/main`, touch that path at all. `parseBranchesFromLog`/`regionPaths` are
+ * PURE (no git), so the PARSING can be proven with a synthetic fixture; `branchesTouchingPath` is the one
+ * function that shells out, kept thin so the git call itself is the only untestable-without-git part.
+ */
+function parseBranchesFromLog(output: string): string[] {
+  const branches = new Set<string>();
+  for (const line of output.split("\n")) {
+    const branch = line.split("\t")[1]?.trim();
+    if (branch) branches.add(branch);
+  }
+  return [...branches];
+}
+
+/**
+ * File-path-like backtick-quoted tokens in a Region field. A Region's prose may ALSO backtick-quote a
+ * function or variable name for context -- row 3's own Region does exactly this
+ * ("`packages/judge/src/rules.ts` (the `contextChanged` predicate...)") -- so only a token containing
+ * both a "/" and a file extension is taken as a path, never a bare identifier.
+ */
+function regionPaths(region: string): string[] {
+  return [...region.matchAll(/`([^`]+)`/g)]
+    .map(([, p]) => p)
+    .filter((p) => /\//.test(p) && /\.[a-zA-Z]+$/.test(p));
+}
+
+function branchesTouchingPath(path: string, repoRoot: string): string[] {
+  const output = execFileSync("git",
+    ["log", "--branches=agent/*", "--not", "origin/main", "--format=%H%x09%S", "--", path],
+    { cwd: repoRoot, encoding: "utf8" });
+  return parseBranchesFromLog(output);
+}
+
+test("MUTATION: parseBranchesFromLog and regionPaths are correct against synthetic input, no git needed", () => {
+  const sample = "abc123\tagent/route-change-order-and-dialog-restore\n"
+    + "def456\tagent/route-change-order-and-dialog-restore\n"
+    + "789xyz\tagent/some-other-branch\n";
+  assert.deepEqual(parseBranchesFromLog(sample),
+    ["agent/route-change-order-and-dialog-restore", "agent/some-other-branch"],
+    "must dedupe repeat branches and preserve first-seen order");
+  assert.deepEqual(parseBranchesFromLog(""), [], "empty git output must mean zero branches, not a crash");
+  assert.deepEqual(parseBranchesFromLog("no tab on this line\n"), [],
+    "a line with no tab (malformed git output) must be skipped, not read as a branch named the whole line");
+
+  const region = "`packages/judge/src/rules.ts` (the `contextChanged` predicate feeding \"3.2.1 On Focus\", "
+    + "around line 552-596)";
+  assert.deepEqual(regionPaths(region), ["packages/judge/src/rules.ts"],
+    "must take the real path and ignore the second backtick-quoted token, which is a function name with "
+    + "no \"/\" and no extension, not a second file");
+});
+
+/**
+ * THE ACCEPTANCE DISPATCHER ASKED FOR: proves region-diff correctly attributes rows 1 and 2 to their real
+ * branch -- found by REGION, with the branch name appearing only as this test's OWN expectation, never
+ * inside `branchesTouchingPath`'s matching logic (which knows nothing about row numbers or suggested
+ * names). Scoped to fire only while a row whose title names this row's own subject still exists on the
+ * page, so it degrades to a no-op rather than a stale failure once rows 1/2 are claimed, merged and
+ * deleted -- the general property below (every branch region-diff finds must actually exist) is what
+ * keeps working after that.
+ */
+test("region-diff finds rows 1 and 2's real branch by region alone, while they are still listed", () => {
+  const repoRoot = resolve(process.cwd());
+  const relevant = rows(read()).filter(({ title }) =>
+    /crossCheckAgainstElementsList|restoreBrowseMode/.test(title));
+  if (relevant.length === 0) return; // both claimed and deleted -- nothing left to demonstrate here
+
+  for (const { title, body } of relevant) {
+    const region = field(body, "Region");
+    assert.ok(region, `"${title}" has no Region to check -- the completeness test above should have caught this`);
+    const paths = regionPaths(region!);
+    const branches = new Set(paths.flatMap((p) => branchesTouchingPath(p, repoRoot)));
+    assert.ok(branches.size > 0,
+      `region-diff found no local branch touching "${title}"'s region (${paths.join(", ")}) -- expected `
+      + "agent/route-change-order-and-dialog-restore to be found by region alone");
+  }
+});
+
+/**
+ * THE GENERAL PROPERTY, and the one that keeps working after rows 1/2 are gone: whatever region-diff
+ * finds must be a branch that actually exists, proven against every row currently on the page rather than
+ * a name pinned to today's rows. Catches `git log --source`'s output being mis-parsed into something that
+ * looks like a branch name but is not.
+ */
+test("region-diff only ever names branches that actually exist, checked against every row on the page today", () => {
+  const repoRoot = resolve(process.cwd());
+  for (const { title, body } of rows(read())) {
+    const region = field(body, "Region");
+    if (!region) continue;
+    for (const path of regionPaths(region)) {
+      for (const branch of branchesTouchingPath(path, repoRoot)) {
+        const exists = execFileSync("git", ["branch", "--list", branch], { cwd: repoRoot, encoding: "utf8" }).trim();
+        assert.ok(exists.length > 0,
+          `region-diff for "${title}" named "${branch}" for ${path}, but no such local branch exists -- `
+          + "the git-log --source parsing produced something that is not a real branch name");
+      }
+    }
+  }
+});
+
+/**
  * THE MUTATION HALF. Fired against synthetic markdown shaped like the real page, independent of the
  * seeded rows above -- proving detection does not depend on which rows happen to be listed today.
  */
@@ -208,7 +311,7 @@ test("MUTATION: a row missing Region, Branch, or Acceptance is caught by name", 
     if (!field(body, "Region")) missing.push("Region");
     const branch = field(body, "Branch");
     if (!branch) missing.push("Branch");
-    else if (!/^`agent\/[a-z0-9-]+`$/.test(branch)) missing.push("Branch shape");
+    else if (!/^`agent\/[a-z0-9-]+`(\s|$)/.test(branch)) missing.push("Branch shape");
     if (!/\*\*Acceptance:?\*\*/.test(body) || !/```[\s\S]*?```/.test(body.split(/\*\*Acceptance:?\*\*/)[1] ?? ""))
       missing.push("Acceptance");
     assert.ok(missing.length > 0, `mutation "${label}" on row "${title}" was not caught by any check`);
