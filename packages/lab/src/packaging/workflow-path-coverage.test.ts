@@ -52,6 +52,9 @@ const NOT_A_GATE: Record<string, string> = {
   "board-liveness.yml": "asks whether the board editions are still arriving. It runs on push precisely "
     + "because a scheduled watchdog is disabled by the inactivity it watches for, and it examines the "
     + "issue tracker rather than the diff.",
+  "npm-token-liveness.yml": "asks whether the first-publish NPM_TOKEN is gone (#73). Same shape as "
+    + "board-liveness.yml and for the identical reason -- it runs on push rather than a schedule, and it "
+    + "examines an org secret and an issue thread, not the diff.",
   "release.yml": "publishes. It is triggered deliberately and its own gate chain is `release:gate:ci`, "
     + "not a path filter over the change that happens to be at HEAD.",
   "changeset-check.yml": "asks whether a change carries a changeset — a question about the PR's "
