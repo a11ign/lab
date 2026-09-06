@@ -479,6 +479,102 @@ test("every discovered Python script is DOCUMENTED or INFRASTRUCTURE", () => {
   assert.deepEqual(inBoth, [], "a script cannot be both a standalone gate and inherited infrastructure");
 });
 
+/**
+ * THE DISPATCH SURFACES, read from their own text — `lab-job.yml`'s argv and `package.json`'s scripts.
+ *
+ * WHY THIS EXISTS, and it is the one thing the Python side above could not answer for itself. Its
+ * discovery walks two DIRECTORIES; the row that asked for it (#12) asked for discovery DERIVED from
+ * `lab-job.yml`, *"never a hand-written list — a forgotten job is the one that slips through"*. Those are
+ * two different mechanisms and swapping one for the other silently is the wrong-mechanism shape
+ * (`not-working.md` §26): a directory walk that happens to cover the catalogue today reads exactly like
+ * one that was designed to.
+ *
+ * So neither replaces the other. The walk stays, because it is strictly the better primary — it finds a
+ * Python gate nobody added to the catalogue, which a catalogue-derived scan structurally cannot — and
+ * this test PROVES the containment the walk's scope silently assumes: every Python script either dispatch
+ * surface names lives under `PY_ROOTS`, so nothing the lab actually runs is outside the walk's reach. The
+ * same shape as `everything-chain.test.ts`, which permits a job to be COVERED by a stage and then
+ * verifies each claimed containment rather than accepting the claim.
+ *
+ * A path here that is NOT under a root is not automatically a defect; it is a question with two answers —
+ * add the root, or state why that script is not a gate — and this test's job is to make it impossible to
+ * answer neither.
+ *
+ * **THE MEASUREMENT, ATTACHED, because a substitution without one is the wrong-mechanism shape.** Counted
+ * 2026-09-06 across both surfaces: **12 distinct `.py` paths, every one inside a root.** So the walk IS a
+ * superset of the catalogue today — and nothing pinned that it stays one, which is the whole reason this
+ * test exists rather than a sentence claiming it.
+ *
+ * A second reader counted the same population by hand and got 11, one fewer. Not reconciled to a cause,
+ * and deliberately not chased: the disagreement IS the argument for deriving the number here rather than
+ * writing it down. Note only that both surfaces are read, not just the catalogue —
+ * `check-screenreader-hardening.py` is reachable through `package.json`'s `training:hardening` and
+ * appears in no `lab-job.yml` argv, so a catalogue-only count is short by construction.
+ */
+const DISPATCH_SURFACES = ["packages/control/ansible/lab-job.yml", "package.json"];
+const PY_PATH = /\bpackages\/[A-Za-z0-9_-]+\/[A-Za-z0-9_./-]*[A-Za-z0-9_-]\.py\b/g;
+
+/** Every `.py` path either surface names, pytest files excluded — they are tests, not gates. */
+function dispatchedPythonScripts(): string[] {
+  const found = new Set<string>();
+  for (const surface of DISPATCH_SURFACES) {
+    for (const match of readFileSync(join(REPO, surface), "utf8").matchAll(PY_PATH)) {
+      const rel = match[0];
+      if (!isPyTestFile(rel.split("/").pop()!)) found.add(rel);
+    }
+  }
+  return [...found].sort();
+}
+
+test("every Python script the lab actually dispatches lives inside the discovery walk's roots", () => {
+  const dispatched = dispatchedPythonScripts();
+  // THE VACUITY GUARD, AND IT COMES FIRST — deliberately, so "the derivation broke" can never be read as
+  // "there are legitimately none". A regex that stops matching returns an empty list, every containment
+  // check then passes trivially, and the test reports coverage having examined nothing. That is the exact
+  // failure this repo has paid for in a signal-type scrape, a Jinja `\b`, and this file's own JS-side
+  // derivation. Sized below the census (12 distinct paths across the two surfaces) rather than at it.
+  //
+  // Note the derived set is NOT the classified set and is not meant to be: `score.py`, `fetch-encoder.py`
+  // and `report-screenreader-errors.py` are dispatched and call neither `sys.exit(` nor `raise
+  // SystemExit`, so they have no exit contract to declare and the walk correctly ignores them. This test
+  // asks only whether the walk could SEE them, which is the assumption its two roots quietly make.
+  assert.ok(dispatched.length >= 8,
+    `only ${dispatched.length} dispatched Python script(s) derived from ${DISPATCH_SURFACES.join(" and ")}. `
+    + "The derivation is probably broken -- if the lab genuinely stopped dispatching Python, lower this "
+    + "floor deliberately rather than letting an empty list read as full coverage");
+
+  // THE OTHER DIRECTION, and it is the one that fails by name. A dispatched script is accounted for when
+  // the walk DISCOVERED it, or when it is inside a root and has no exit contract at all -- in which case
+  // the walk saw it and correctly had nothing to classify. Anything else is a script the lab runs and this
+  // file structurally cannot reach, which is the state that must never be silent.
+  const discovered = new Set(exitCodeModulesPy());
+  const inScope = (rel: string) => PY_ROOTS.some((root) => rel.startsWith(`${root}/`));
+  const unreachable = dispatched.filter((rel) => !discovered.has(rel) && !inScope(rel));
+  assert.deepEqual(unreachable, [],
+    "these Python scripts are dispatched by the lab but sit outside PY_ROOTS, so the discovery above "
+    + "cannot see them and they can never be asked to declare their exit codes. Either add the root, or "
+    + `state at PY_ROOTS why that script is not a gate:\n${unreachable.map((o) => `  ${o}`).join("\n")}`);
+});
+
+test("MUTATION: a dispatched path outside the roots is caught, not silently tolerated", () => {
+  // Fired against a synthetic path rather than the real surfaces, because a clean repo is exactly what a
+  // working guard produces and cannot itself demonstrate the guard works.
+  const planted = "packages/nvda-speech/compose-announcement.py";
+  assert.ok(!PY_ROOTS.some((root) => planted.startsWith(`${root}/`)),
+    "a script outside both roots must fail the containment test above, or that test excuses everything");
+  assert.ok(PY_ROOTS.some((root) => "packages/scorer/python/audit_grants.py".startsWith(`${root}/`)),
+    "and a real in-scope script must still pass it, or the check refuses everything instead");
+});
+
+test("MUTATION: the path regex reads a real dispatch line and ignores a bare filename", () => {
+  // The derivation's own correctness, independent of disk. A bare `test_applicability.py` (pytest's own
+  // argument in lab-job.yml) must not be mistaken for a package-rooted script path.
+  const line = "argv: ['.venv/bin/python', 'packages/scorer/python/audit_grants.py', '--data', 'x.jsonl']";
+  assert.deepEqual([...line.matchAll(PY_PATH)].map((m) => m[0]),
+    ["packages/scorer/python/audit_grants.py"]);
+  assert.deepEqual([..."pytest test_applicability.py -q".matchAll(PY_PATH)].map((m) => m[0]), []);
+});
+
 test("every classified Python path still exists and still has an exit contract", () => {
   for (const path of [...Object.keys(DOCUMENTED_PY), ...Object.keys(INFRASTRUCTURE_PY)]) {
     assert.ok(existsSync(join(REPO, path)), `${path} is classified but no longer exists`);
