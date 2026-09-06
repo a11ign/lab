@@ -117,6 +117,83 @@ test("the checks above FAIL on edition 1, which is what makes them worth running
     `the heading check must reject edition 1's topic headings; it rejected ${bad.length}`);
 });
 
+/** A fact set with distinctive counts, so a HARDCODED number in the prose stands out.
+ *
+ * The board found the defect this catches: section 4 said "Six saved changes carry the wrong author"
+ * while the appendix said 14, because the six was typed from an earlier reading and the fourteen was
+ * computed. Both were true of something -- six was the count over the last 25 changes, fourteen over the
+ * window the report actually states -- which is this project's most-recorded defect, arriving in the
+ * document written to display it.
+ *
+ * Asserting "every number in the body also appears in the appendix" would over-fire on ordinary prose, so
+ * this drives the DATA instead: render with counts nothing would type by accident, and require the prose
+ * to show them. A typed number cannot follow.
+ */
+function documentWith(counts: { strays: number; merges: number; open: number; closed: number }): string {
+  const issue = (n: number, milestone: string | null) => Array.from({ length: n }, (_, k) => ({
+    number: k + 1, title: `item ${k + 1}`, state: "OPEN", url: "", labelNames: [],
+    milestone: milestone ? { title: milestone } : null,
+  }));
+  return document({
+    since: "2026-09-06T00:00:00Z", sinceLabel: "the stated window",
+    all: [], open: issue(counts.open, MILESTONE_TITLE), closed: issue(counts.closed, null),
+    milestones: [], release: { title: MILESTONE_TITLE, due_on: "2026-09-20T00:00:00Z",
+      open_issues: counts.open, closed_issues: counts.closed },
+    merges: Array.from({ length: counts.merges }, () => ({ sha: "x", at: "", subject: "" })),
+    unpushed: 0,
+    strays: Array.from({ length: counts.strays }, () => ({ sha: "x", email: "test@example.com" })),
+    latestGate: null, gateIsFresh: false,
+    fleetHours: { status: "not instrumented", note: "no total exists." },
+    achievements: [],
+  });
+}
+
+const MILESTONE_TITLE = "v0.1.0 — first publish";
+
+test("no count in the prose is typed; each is driven by the data it claims to report", () => {
+  // SCOPED TO THE BODY, and the first version of this check was not.
+  //
+  // It searched every line matching the keyword, and the APPENDIX row matches the same keyword -- so a
+  // hardcoded number in the body passed because the correctly-computed appendix row sat beside it and
+  // satisfied the `some()`. Proved by mutation: reinstating the typed "Six" left this test green. That is
+  // a guard reading the right document in the wrong place, which is this project's defect of record, in
+  // the test written to catch it.
+  const md = decisionSections(documentWith({ strays: 731, merges: 947, open: 613, closed: 829 }));
+  const expectations: [string, number, RegExp][] = [
+    ["changes with the wrong author", 731, /wrong author/i],
+    ["merges in the window", 947, /merges made since|merged in this period|Saved changes merged/i],
+    ["work blocking the release", 613, /pieces of work must finish|blocking that release/i],
+  ];
+  const bad: string[] = [];
+  for (const [what, value, where] of expectations) {
+    const lines = md.split("\n").filter((l) => where.test(l));
+    assert.ok(lines.length > 0, `no line in the document mentions ${what}; this check is vacuous`);
+    if (!lines.some((l) => l.includes(String(value)))) {
+      bad.push(`${what}: the document reports something other than ${value} — `
+        + `${lines[0].trim().slice(0, 120)}`);
+    }
+  }
+  assert.deepEqual(bad, [],
+    "a number typed into the prose cannot follow the data, and will disagree with the appendix the "
+    + "first time the data moves");
+});
+
+test("the body and the appendix report the same count for the same thing", () => {
+  const md = documentWith({ strays: 731, merges: 947, open: 613, closed: 829 });
+  const cut = md.indexOf("## Appendix");
+  const body = md.slice(0, cut);
+  const appendix = md.slice(cut);
+  const bad: string[] = [];
+  for (const [label, value] of [["wrong-author count", 731], ["merge count", 947]] as [string, number][]) {
+    const inBody = body.includes(String(value));
+    const inAppendix = appendix.includes(String(value));
+    if (inBody && !inAppendix) bad.push(`${label}: ${value} appears in the body and not in the appendix`);
+  }
+  assert.deepEqual(bad, [],
+    "every figure the body states must be sourced in the appendix under the same window; the board found "
+    + "one that was not, and the two disagreed");
+});
+
 test("the style guides the document is written to are in the repository", () => {
   // Checked against the FILES, not against memory of them -- which is the whole reason they were copied
   // in. A guide that lives only in a message is a guide the next reader cannot check the document against.
