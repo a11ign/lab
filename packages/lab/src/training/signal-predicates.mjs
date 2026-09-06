@@ -836,7 +836,31 @@ function focusRemovedOnReceipt(/** @type {any} */ capture) {
   return Array.isArray(v.scriptRemovedFocus) && v.scriptRemovedFocus.length > 0;
 }
 
+/**
+ * 1.4.2 -- audio or video that autoplays with neither native controls nor a mute.
+ *
+ * Reads `capture.media`, the DOM-only census `addAutoplayingAudio` (`rules.ts`) also reads -- `autoplay`
+ * and `muted` have no accessibility-tree equivalent, so this is the one signal here that is not about what
+ * NVDA said. DELIBERATELY DUPLICATED rather than imported, on the same basis `contextChanged` and
+ * `focusRevealUndismissable` already are in `rules.ts`: this package does not depend on `packages/judge`,
+ * and the condition is three field reads -- cheaper to state twice, in the two languages the packages are,
+ * than to cross that boundary for.
+ *
+ * ABSENT (`capture.media` missing or empty) is not a finding -- only a probe's silence would be, and this
+ * census runs unconditionally, so an empty array here means the page genuinely has no `<audio>`/`<video>`,
+ * which is correctly not a 1.4.2 case.
+ *
+ * The criterion's own two gaps stay gaps here too, matching `rules.ts`'s stated scope: this cannot tell a
+ * looping soundtrack from a three-second chime (duration is not a DOM attribute), and cannot recognise a
+ * custom volume slider as the criterion's other alternative to native `controls`.
+ */
+function autoplayUncontrollable(/** @type {any} */ capture) {
+  const elements = Array.isArray(capture.media) ? capture.media : [];
+  return elements.some((/** @type {any} */ el) => el?.autoplay && !el?.muted && !el?.controls);
+}
+
 const SIGNAL_PREDICATES = Object.freeze({
+  "autoplay-uncontrollable": (/** @type {any} */ capture) => autoplayUncontrollable(capture),
   "focus-panel-undismissable": (/** @type {any} */ capture) => focusPanelUndismissable(capture),
   "focus-removed-on-receipt": (/** @type {any} */ capture) => focusRemovedOnReceipt(capture),
   "unnamed-form-field": (/** @type {any} */ capture) => hasUnnamedFormField(capture),
