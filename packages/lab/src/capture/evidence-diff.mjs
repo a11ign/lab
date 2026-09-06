@@ -125,6 +125,28 @@ function normalise(phrase) {
 const NOT_EVIDENCE_KEYS = new Set([
   // How long we waited for quiet before acting. A property of this run, not of the page.
   "baselineWaitedMs",
+  // WHEN a focus event fired, in milliseconds since capture start. Every entry of `focusEvents.log`
+  // carries one (`type`, `id`, `name`, `atMs`), and it necessarily differs on every capture -- so the log
+  // compared unequal to itself and `gate:stability` reported the field UNSTABLE on every canary that
+  // produces it.
+  //
+  // MEASURED 2026-09-06, and the arithmetic is what makes it certain rather than likely: exactly TWO
+  // canaries declare `probeFocus: true` (`image-missing-alt-behind-consent/good` and `nls.uk/join/`), and
+  // exactly those two failed on `focusEvents`. **2 of 2.** Real nondeterminism would have to be uncannily
+  // unlucky to hit both and nothing else; a wall-clock field hits every capture by construction.
+  //
+  // THE SAME DEFECT AS `baselineWaitedMs` ABOVE, FOUND TWO HOURS LATER IN A SIBLING. That one was fixed
+  // here without asking what OTHER compared field carries a timestamp -- the fix reached the instance and
+  // not the class, which is this repo's most expensive recurring shape and the one its own record names
+  // most often. `focusEvents` was added to `EVIDENCE_FIELDS` on 2026-09-05, so the two arrived a day
+  // apart and neither review connected them.
+  //
+  // NOT the same as dropping the field: `type`, `id`, `name` and ORDER are all still compared, so a
+  // control that stopped receiving focus, or events arriving in a different sequence, still registers.
+  // What is excluded is only WHEN, and the rule that reads this log -- `focusLossEvidence` -- computes
+  // `heldMs` from DIFFERENCES between adjacent entries, never from an absolute value, so nothing a rule
+  // decides on is being hidden.
+  "atMs",
 ]);
 
 /**

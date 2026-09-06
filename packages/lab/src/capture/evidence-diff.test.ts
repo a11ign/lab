@@ -292,3 +292,43 @@ test("the exclusion list is a DENY-list, so a new field defaults to being compar
     { interaction: { formChanges: [{ ...before, somethingNewNobodyClassified: "b" }] } },
   ).verdict, "CHANGED", "an unclassified new key must register as a change, not be ignored");
 });
+
+test("a focus log differing ONLY in timestamps is not an evidence change", () => {
+  // MEASURED 2026-09-06: `gate:stability` FAILED with `VARIES focusEvents counts 5,5,5,5,5` — identical
+  // counts, differing content — on `image-missing-alt-behind-consent/good` and `nls.uk/join/`. Exactly TWO
+  // canaries declare `probeFocus: true`, and exactly those two failed. 2 of 2, which is what makes it a
+  // wall-clock field rather than page nondeterminism: real flakiness would have to be uncannily unlucky to
+  // hit both and nothing else.
+  const log = [
+    { type: "focusin", id: 0, name: "Contact name", atMs: 3211 },
+    { type: "focusout", id: 0, name: "Contact name", atMs: 5161 },
+  ];
+  const later = log.map((e) => ({ ...e, atMs: e.atMs + 37 }));
+  assert.equal(compareCapture(
+    { interaction: { focusEvents: { asked: true, checked: true, log } } },
+    { interaction: { focusEvents: { asked: true, checked: true, log: later } } },
+  ).verdict, "SAME", "every capture starts its clock afresh, so comparing `atMs` makes the log unequal "
+    + "to itself on every run");
+});
+
+test("a focus log differing in WHO or ORDER is still caught", () => {
+  // The half that stops the exclusion becoming the defect it fixes. `focusLossEvidence` decides 2.4.7 from
+  // this log by pairing adjacent entries — it computes `heldMs` from DIFFERENCES, never from an absolute
+  // value — so excluding `atMs` hides nothing a rule reads, and identity and sequence must still register.
+  const log = [
+    { type: "focusin", id: 0, name: "Contact name", atMs: 3211 },
+    { type: "focusout", id: 0, name: "Contact name", atMs: 5161 },
+  ];
+  const renamed = [log[0], { ...log[1], name: "Something else" }];
+  assert.equal(compareCapture(
+    { interaction: { focusEvents: { asked: true, checked: true, log } } },
+    { interaction: { focusEvents: { asked: true, checked: true, log: renamed } } },
+  ).verdict, "CHANGED", "a control that stopped receiving focus must still register");
+
+  const reordered = [log[1], log[0]];
+  assert.equal(compareCapture(
+    { interaction: { focusEvents: { asked: true, checked: true, log } } },
+    { interaction: { focusEvents: { asked: true, checked: true, log: reordered } } },
+  ).verdict, "CHANGED", "ORDER is the whole of F55's signature — an orphaned focusout is defined by what "
+    + "precedes it — so a reordered log must never read as SAME");
+});
