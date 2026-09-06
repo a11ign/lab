@@ -48,9 +48,16 @@ function trainerInvocations(): Array<{ where: string; command: string }> {
   // PARSED, never scanned line by line: an argv list wraps across lines, so a line containing the
   // trainer does not contain its `--output`. The first version of this test did scan lines and reported
   // the correct half of the codebase as the broken one.
-  const jobs = (parseYaml(readFileSync(
+  // THE PLAY THAT HOLDS THE CATALOGUE, FOUND BY WHAT IT HOLDS. Indexing `[0]` was true while
+  // lab-job.yml had one play and broke when a zero-host inventory guard was added in FRONT of it —
+  // that guard must run first precisely so it can speak when the main play would be skipped. A
+  // POSITION is a convention nobody wrote down; a NAME, or better the SHAPE, is a fact. Same form
+  // `lab-pipeline.test.ts` already uses, copied rather than invented.
+  const plays = parseYaml(readFileSync(
     join(REPO, "packages/control/ansible/lab-job.yml"), "utf8")) as
-    Array<{ vars: { lab_jobs: Record<string, { argv?: string[] | string }> } }>)[0].vars.lab_jobs;
+    Array<{ vars?: { lab_jobs?: Record<string, { argv?: string[] | string }> } }>;
+  const jobs = plays.flatMap((play) => (play?.vars?.lab_jobs ? [play.vars.lab_jobs] : []))[0];
+  if (!jobs) throw new Error("lab_jobs not found in lab-job.yml — this guard is parsing the wrong shape");
   for (const [name, entry] of Object.entries(jobs)) {
     const command = [entry.argv ?? ""].flat().join(" ");
     if (command.includes(TRAINER)) found.push({ where: `lab-job.yml ${name}`, command });
