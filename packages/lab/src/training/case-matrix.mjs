@@ -3954,6 +3954,23 @@ cases.push(
       // order.bad log (used to build the rule and its tests) shows an ORPHANED focusout for the skipped
       // field, not a reversed pair -- settled by evidence, not by the hypothesis above.
       criterion: "2.1.1",
+      // `alsoFails` 2.4.7 ADDED 2026-09-06, once the `modelHead: false` bucket existed to make it safe.
+      //
+      // The blocker was never the label, it was that declaring 2.4.7 armed a `SystemExit` in
+      // `assert_declaration_matches_data` and would have minted a nine-positive head sharing every feature
+      // with 2.1.1's own positives — ADR 0015's free veto by construction. `modelHead: false` with a
+      // required `why` removes both: no head is fitted, and the entry is exempt from the "must be present"
+      // half of the ownership gate.
+      //
+      // 2.1.1 stays PRIMARY, and that is not arbitrary: the `badSignal` is 2.1.1's, and its 24-of-24
+      // measured result is against that shape. Re-parenting these three would move a validated case for no
+      // evidence gain. What the `alsoFails` buys is that the nine records now carry 2.4.7 too, so
+      // `rules:gate` can score the F55 rule against its own positives instead of reporting a criterion with
+      // nothing to check — which is what "0 false positives" meant while the rule was silent everywhere.
+      //
+      // 3.2.1 is still NOT here, and the original reasoning holds for it unchanged: F55 is precisely the
+      // part of 3.2.1 its rule does not reach, so labelling it would record a failure no layer detects.
+      alsoFails: ["2.4.7:focus-removed-on-receipt"],
       task,
       source: "WCAG F55; 2.1.1, 2.4.7 and 3.2.1 Understanding",
       mutation: "Script removes focus from a field the moment it receives it, so Tab passes straight over "

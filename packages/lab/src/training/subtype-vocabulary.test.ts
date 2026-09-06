@@ -85,11 +85,26 @@ const SUBTYPE_PATTERN = /\b\d+\.\d+\.\d+:[a-z][a-z0-9-]*\b/g;
  * Every subtype some case actually produces. DERIVED, never listed -- a hand-written list here would be a
  * SEVENTH place to keep in step with the six this file already names.
  */
-const REAL_SUBTYPES = new Set<string>(
-  [...CASES, ...ALL_ACCEPTANCE_CASES].map(
+const REAL_SUBTYPES = new Set<string>([
+  ...[...CASES, ...ALL_ACCEPTANCE_CASES].map(
     (testCase: Record<string, unknown>) => `${testCase.criterion}:${testCase.subtype}`,
   ),
-);
+  // PLUS the subtypes declared `modelHead: false`, because for those the DECLARATION is the definition.
+  //
+  // That field says a rule decides this criterion and the trainer must not fit a head, and `why` is
+  // REQUIRED alongside it — so an entry cannot take it without stating what it means.
+  // `1.4.2:autoplay-uncontrollable` has no case at all; `2.4.7:focus-removed-on-receipt` has nine whose
+  // PRIMARY criterion is 2.1.1 and which reference it via `alsoFails`. Both are real subtypes that no
+  // case DEFINES, which is a state this vocabulary had no way to express until the bucket existed.
+  //
+  // DERIVED HERE RATHER THAN EXEMPTED AT EACH ASSERTION, and that is the point: this one question —
+  // "is this a real subtype?" — is asked at five sites (`assert_declaration_matches_data`,
+  // `subtypes_by_criterion_for`, `ownershipFailures`, and both assertions below). Four needed the answer
+  // changed. Hand-exempting each is the fact-stated-five-times shape; changing what "real" MEANS, once,
+  // is the fix. The test is not weakened: a typo'd or deleted subtype is still in neither set and still
+  // fails.
+  ...[...readRuleOwnership()].filter(([, entry]) => entry.modelHead === false).map(([key]) => key),
+]);
 
 test("some case defines a real subtype vocabulary, or this suite proves nothing", () => {
   assert.ok(REAL_SUBTYPES.size >= 15,
@@ -151,10 +166,9 @@ test("rule-ownership.json names only subtypes some case actually defines", () =>
   // `rules:coverage` can say "never fired anywhere, the claim rests on nothing" — findable, which a
   // silent omission is not. The exemption is safe precisely because `why` is REQUIRED alongside the
   // field: an entry cannot take it without saying what it means.
-  const ownership = readRuleOwnership();
-  const owned = [...ownership.keys()].filter((key) => ownership.get(key)?.modelHead !== false);
-  assert.ok(ownership.size >= 10,
-    `found ${ownership.size} rule-ownership.json key(s); the scan is broken, not the declaration thin`);
+  const owned = [...readRuleOwnership().keys()];
+  assert.ok(owned.length >= 10,
+    `found ${owned.length} rule-ownership.json key(s); the scan is broken, not the declaration thin`);
   const unresolved = owned.filter((key) => !REAL_SUBTYPES.has(key));
   assert.deepEqual(unresolved, [],
     "rule-ownership.json decides these and no case defines them any more -- a rule mapping surviving its "
