@@ -27,7 +27,14 @@ const scripts = (): Record<string, string> =>
 function chain(): string[] {
   const gate = scripts()["candidate:gate"];
   assert.ok(gate, "candidate:gate is missing; this test cannot be examining anything");
-  return [...gate.matchAll(/npm run (?:--silent )?([\w:.-]+)/g)].map((m) => m[1]);
+  const stages = [...gate.matchAll(/npm run (?:--silent )?([\w:.-]+)/g)].map((m) => m[1]);
+  // All THREE tests below iterate this list, so an empty one is not one silent pass, it is three -- a
+  // restructure to a wrapper script (`"candidate:gate": "node scripts/candidate-gate.mjs"`) would leave
+  // `gate` truthy while this regex matches nothing, and every check here would examine no stage at all.
+  assert.ok(stages.length >= 5,
+    `only found ${stages.length} chained stage(s) in candidate:gate -- the extraction is broken (the `
+    + "script no longer chains via bare `npm run`), not the chain shrinking");
+  return stages;
 }
 
 test("no stage of candidate:gate resolves the SHIPPED model directory", () => {

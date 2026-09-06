@@ -75,7 +75,13 @@ test("every documented ref exists — a tag nobody cut resolves for nobody", () 
   } catch {
     return; // no git metadata; see OWNER_REPO
   }
-  const missing = usesLines().filter((u) => !refs.has(u.ref))
+  const lines = usesLines();
+  // The sibling test above already guards `usesLines()` being non-empty, but this test computes it AGAIN
+  // independently -- relying on a sibling test's guard to have already run and failed is how a test comes
+  // to "pass" a broken scan whenever `node:test` reports both, since neither run stops the other.
+  assert.ok(lines.length >= 3,
+    `only found ${lines.length} documented \`uses:\` line(s) -- this scan is broken, not the docs`);
+  const missing = lines.filter((u) => !refs.has(u.ref))
     .map((u) => `${u.file}: @${u.ref} does not exist (have: ${[...refs].sort().join(", ")})`);
   assert.deepEqual(missing, [],
     "cut the tag in the same change that documents it, or document a ref that resolves today");
