@@ -305,7 +305,8 @@ function domCensusVerdict(
 function censusLine(
   census: { heading?: number; link?: number; graphic?: number; graphicUnnamed?: number } | null,
   dom: ReturnType<typeof domCensus>,
-  target: { targetMatch?: string; candidates?: number; targetUrl?: string; expectedUrl?: string } | null,
+  target: { targetMatch?: string; candidates?: number; targetUrl?: string; expectedUrl?: string;
+    navigatedOnSubmit?: { from: string; to: string } } | null,
   lines: number,
 ): string {
   if (census) {
@@ -317,18 +318,19 @@ function censusLine(
       + unnamedGraphicLine(dom)
       + domCensusVerdict(census, dom);
   }
-  if (target && censusTargetIsSuspect(target)) {
+  if (target && censusTargetIsSuspect(target, target.navigatedOnSubmit)) {
     // THE ACTUAL REASON, not a hardcoded guess -- this used to always print "a real second CDP target
     // existed", which was false on a `candidates: 1` capture that never had one. `censusSuspectReason`
     // reads the same fields `censusTargetIsSuspect` decided on, so the two cannot disagree.
     return `census UNUSABLE: targetMatch=${target.targetMatch ?? "?"} candidates=${target.candidates ?? "?"} `
-      + `-- ${censusSuspectReason(target) ?? "the target was not confirmed"}; `
+      + `-- ${censusSuspectReason(target, target.navigatedOnSubmit) ?? "the target was not confirmed"}; `
       + `${lines} announcement(s) (the transcript is unaffected)`;
   }
   return `no census recorded; ${lines} announcement(s)`;
 }
 
-function noteEvidence(capture: { url?: string; transcript?: unknown; diagnostics?: unknown }): void {
+function noteEvidence(capture: { url?: string; transcript?: unknown; diagnostics?: unknown;
+  interaction?: { navigatedOnSubmit?: unknown } }): void {
   const census = pageCensus(capture as never);
   const dom = domCensus(capture as never);
   const target = rawTargetMatch(capture);
@@ -519,12 +521,21 @@ const CENSUS = new Map<string, { heading?: number }>();
  * This is the one place that has to see it anyway: a furniture check that cannot say "this census is not
  * this page's" cannot say anything about it at all, and `docs/backlog.md`'s row is what asked for it.
  */
-const TARGET_MATCH = new Map<string, { targetMatch?: string; candidates?: number; targetUrl?: string; expectedUrl?: string }>();
+const TARGET_MATCH = new Map<string, { targetMatch?: string; candidates?: number; targetUrl?: string;
+  expectedUrl?: string; navigatedOnSubmit?: { from: string; to: string } }>();
 
-/** The `structureCensus` mark's target diagnostic, read directly rather than through a nulling reader. */
-function rawTargetMatch(capture: { diagnostics?: unknown }):
-  { targetMatch?: string; candidates?: number; targetUrl?: string; expectedUrl?: string } | null {
+/**
+ * The `structureCensus` mark's target diagnostic, read directly rather than through a nulling reader --
+ * plus the SAME capture's `interaction.navigatedOnSubmit`, needed for the identical reason
+ * `censusTargetIsSuspect` needs it (known-gaps.md §41): a fallback caused by our own submit and a
+ * fallback that predates the capture entirely need opposite verdicts, and this is the one other reader
+ * (besides `pageCensus`/`domCensus`) that computes the verdict itself rather than reading it off them.
+ */
+function rawTargetMatch(capture: { diagnostics?: unknown; interaction?: { navigatedOnSubmit?: unknown } }):
+  { targetMatch?: string; candidates?: number; targetUrl?: string; expectedUrl?: string;
+    navigatedOnSubmit?: { from: string; to: string } } | null {
   const marks = Array.isArray(capture.diagnostics) ? capture.diagnostics : [];
+  const navigatedOnSubmit = capture.interaction?.navigatedOnSubmit as { from: string; to: string } | undefined;
   for (const mark of marks) {
     if (typeof mark !== "object" || mark === null) continue;
     const record = mark as {
@@ -536,6 +547,7 @@ function rawTargetMatch(capture: { diagnostics?: unknown }):
       candidates: typeof record.candidates === "number" ? record.candidates : undefined,
       targetUrl: typeof record.targetUrl === "string" ? record.targetUrl : undefined,
       expectedUrl: typeof record.expectedUrl === "string" ? record.expectedUrl : undefined,
+      navigatedOnSubmit,
     };
   }
   return null;
@@ -560,7 +572,7 @@ function rawTargetMatch(capture: { diagnostics?: unknown }):
 function suspectCensusCaptures(): string[] {
   const suspect: string[] = [];
   for (const [url, target] of TARGET_MATCH) {
-    if (censusTargetIsSuspect(target)) suspect.push(url);
+    if (censusTargetIsSuspect(target, target.navigatedOnSubmit)) suspect.push(url);
   }
   return suspect;
 }
