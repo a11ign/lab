@@ -142,9 +142,19 @@ test("rule-ownership.json names only subtypes some case actually defines", () =>
   // Read as a VALUE, never scraped from `rule-ownership.ts`'s source -- the reader's own module has no
   // real declarations to find (see the header), and `readRuleOwnership()` is the one place this question
   // can be asked of the JSON file directly, with its own shape validation already applied.
-  const owned = [...readRuleOwnership().keys()];
-  assert.ok(owned.length >= 10,
-    `found ${owned.length} rule-ownership.json key(s); the scan is broken, not the declaration thin`);
+  //
+  // `modelHead: false` ENTRIES ARE EXEMPT, and this is the fourth site to need that exemption — after
+  // `assert_declaration_matches_data`, `subtypes_by_criterion_for` and `ownershipFailures`. The field
+  // asserts exactly the state this test otherwise forbids: a rule decides this criterion, and the corpus
+  // cannot yet show it. `1.4.2:autoplay-uncontrollable` has no case at all; `2.4.7:focus-removed-on-receipt`
+  // has nine, whose PRIMARY criterion is 2.1.1. Both are declared rather than excepted so that
+  // `rules:coverage` can say "never fired anywhere, the claim rests on nothing" — findable, which a
+  // silent omission is not. The exemption is safe precisely because `why` is REQUIRED alongside the
+  // field: an entry cannot take it without saying what it means.
+  const ownership = readRuleOwnership();
+  const owned = [...ownership.keys()].filter((key) => ownership.get(key)?.modelHead !== false);
+  assert.ok(ownership.size >= 10,
+    `found ${ownership.size} rule-ownership.json key(s); the scan is broken, not the declaration thin`);
   const unresolved = owned.filter((key) => !REAL_SUBTYPES.has(key));
   assert.deepEqual(unresolved, [],
     "rule-ownership.json decides these and no case defines them any more -- a rule mapping surviving its "

@@ -49,41 +49,47 @@
       "reportsAs": "1.1.1",
       "note": "An exact-absence case. NVDA's 'unlabeled' prefix is nondeterministic, and keying on it once cost 3 of 88 -- the defect that made this gate exist."
     },
-    "3.3.2:placeholder-only": {
-      "decidedBy": "unavailable",
-      "reportsAs": "3.3.2",
-      "note": "NOT WITNESSABLE by a screen reader, and this is a property of the criterion rather than a gap in our evidence. When a field has no label the browser uses the placeholder as its accessible name, so NVDA announces it exactly as it announces a real label: `<input placeholder=\"Email address\">` and `<label>Email address</label><input>` both speak \"Email address, edit\". The difference exists only in the DOM, which is axe-core's layer -- this tool runs alongside it, not instead of it. Measured 2026-08-23: the head had no placeholder feature at all, weighted the encoder 598.9 against 9.26 for every document feature combined, and had learned the corpus's placeholder wording -- it fired on 4 of the 6 clean pages containing \"Example value\" and 0 of the 34 without. Eight false accusations on conformant pages. See ADR 0018."
-    },
-    "4.1.2:unnamed-control": {
+    "1.3.1:no-headings": {
       "decidedBy": "rules",
-      "reportsAs": "4.1.2",
-      "note": "An exact-absence case: a control announced with a role and no name -- an icon button or a text input, one failure, one subtype. It was `4.1.2:regex`, a key naming the MATCHER rather than the failure, while the 115 unlabelled-field records sat in `4.1.2:missing-role`, the head for the opposite failure. INHERITED THE 133 `3.3.2:unnamed-form-field` RECORDS ON 2026-09-05. That subtype is gone, and its removal is a correction rather than a consolidation: W3C does not require a label to be ASSOCIATED for 3.3.2 -- that is 1.3.1 -- and every one of its bad pages carried visible label text, so it had ZERO genuine 3.3.2 failures. The evidence those records carry is a bare role with no accessible name, which is this subtype exactly, and its own note already said the rule 'ALSO reports 4.1.2 for this evidence'. 1.3.1 is NOT claimed for them: the announcement cannot show whether a visible label exists, so labelling it would record a failure no layer detects and manufacture false negatives."
-    },
-    "4.1.2:missing-role": {
-      "decidedBy": "unavailable",
-      "reportsAs": "4.1.2",
+      "reportsAs": "1.3.1",
       "note": [
-        "NOBODY decides this one, and saying so out loud is the whole point of the entry.",
+        "Deterministic, and gated on the AX tree CONFIRMING zero headings rather than on the sweep finding",
+        "none -- a sweep alone cannot tell 'this page has none' from 'we could not ask'. That makes it a",
+        "rule and not a judgement, the same move ADR 0021 made for 4.1.2:state-change-silent.",
         "",
-        "A role-less `<div onclick>` styled as a button. The screen reader cannot perceive it -- that IS",
-        "the failure -- so to NVDA a page with a fake button and a page with no button are the same page.",
-        "All 74 records announce `formFields: []` and `controls: []`, and so do 437 of the 1,003",
-        "conformant records, because a page about images or tables has no controls either.",
+        "Added 2026-08-26 with the five `headings-none-*` cases. Before them the rule was UNTESTABLE: page()",
+        "emitted an <h1> unconditionally, so across 2,366 records the count with zero headings was 0 and",
+        "rules:coverage read 'NEVER FIRED ANYWHERE -- the claim rests on nothing'."
+      ]
+    },
+    "1.4.13:focus-panel-undismissable": {
+      "decidedBy": "rules",
+      "reportsAs": "1.4.13",
+      "note": "The DISMISSABLE bullet, since 2026-09-05, and moved here on the identical basis as 3.3.3 and 3.2.1/3.2.2 the day before: the evidence is `focusRevealVerdict`'s own verdict -- three censuses and two focus reads, computed on the worker -- so whether content appeared on focus, focus held, and Escape (pressed twice; NVDA eats the first) did not make it go away is READ, not judged. The retrain that surfaced this: the head had 12 positives against 412 parameters and a threshold at the top of the grid (0.971), which blocked both the calibration gate (`fewer than 20 positive development records`) and, as a consequence, the acceptance gate (`fewer than 3 acceptance positives` -- `eligible_records` drops a criterion once every one of its subtypes is rule-decided, which is the honest answer once this entry exists, not a workaround for it). Twenty cases would not have made the head good, only permitted; ADR 0021's own precedent (`4.1.2:state-change-silent`) is to move evidence this direct to the rules rather than wait on a corpus a head this shape can never be well-calibrated from. `secondary`, not `conformance`: Dismissable's own text carves out two exceptions this evidence cannot rule out -- \"unless the additional content communicates an input error or does not obscure or replace other content\" -- and PERSISTENT is separately undecidable here (`focusRevealVerdict`'s own docstring: \"remains visible\" is pixels). NOT in MODEL_EXCLUDED_SUBTYPES: the evidence expresses the failure exactly, so the records stay and RULE_SUBSTITUTED_SUBTYPES makes the head non-blocking -- declaring `rules` while excluding the records is the contradiction `assert_declaration_matches_data` catches by name."
+    },
+    "1.4.2:autoplay-uncontrollable": {
+      "decidedBy": "rules",
+      "reportsAs": "1.4.2",
+      "modelHead": false,
+      "why": "No corpus case exists that emits this subtype, so there is nothing for a head to be fitted to. Declared anyway rather than excepted: an undeclared emitter is invisible to rules:gate, which is exactly how 2.4.7's F55 detector stayed wrong in both directions unnoticed. With this entry rules:coverage reports the truth -- never fired anywhere, the claim rests on nothing -- which is findable.",
+      "note": [
+        "`addAutoplayingAudio` emits this and no case produces it. Found 2026-09-06 by the completeness test's first run.",
+        "Its only evidence source is `mediaCensus`, which until that same day was read AFTER the route-change probe navigated and carried no `targetMatch` at all -- so this rule has been reading a document that may not have been the page, undetectably, for as long as it has existed (known-gaps.md \u00a740). A corpus case is on the backlog with that as its reason."
+      ]
+    },
+    "2.1.1:control-unreachable-by-keyboard": {
+      "decidedBy": "rules",
+      "reportsAs": "2.1.1",
+      "note": [
+        "A control the page ANNOUNCES as operable that Tab never reaches \u2014 the failure a screen-reader user",
+        "meets as 'I can hear it and I cannot press it'. Deterministic: two captured sequences compared.",
         "",
-        "Measured both ways before giving up on it: instance-max pooling gives precision 1.000 at recall",
-        "0.824 (13 misses), document-mean gives recall 1.000 at precision 0.782 (21 false accusations on",
-        "conformant pages, on a corpus far cleaner than the web). So the records are excluded from the",
-        "model -- see MODEL_EXCLUDED_SUBTYPES, whose reason string is exactly 'not inferable from",
-        "screen-reader output alone'.",
+        "POSITIONAL, because the focus probe truncates. Every corpus page stops at 12 tab stops, so absence",
+        "from `focusOrder` alone usually means the probe stopped and a rule keyed on it would fire almost",
+        "everywhere. A control counts as unreachable only when something LATER in reading order was reached.",
         "",
-        "This is a statement about the EVIDENCE, not a permanent verdict. 'This element responds to",
-        "clicks, exposes no role, and cannot be reached by keyboard' is deterministic and obtainable over",
-        "the CDP socket the capture already opens; once captured it belongs to the rule layer, which is",
-        "exact on 1,003 conformant records. That needs a CAPTURE_PROTOCOL_VERSION bump and a recapture.",
-        "",
-        "Until then 4.1.2 is PARTIALLY covered, and a consumer has to be able to learn that from",
-        "somewhere. `rules:score` asserts these records are absent from the export -- the inverse of the",
-        "check it applies to every other entry -- so the exclusion cannot quietly stop working."
+        "Not the roleless `<div onclick>` of the custom-control family: that one is invisible to the screen",
+        "reader, which is its 4.1.2 finding, and a capture cannot tell it from a page with no button at all."
       ]
     },
     "2.1.2:focus-trapped": {
@@ -105,33 +111,18 @@
         "discriminates, then declare the owner."
       ]
     },
-    "2.1.1:control-unreachable-by-keyboard": {
-      "decidedBy": "rules",
-      "reportsAs": "2.1.1",
-      "note": [
-        "A control the page ANNOUNCES as operable that Tab never reaches — the failure a screen-reader user",
-        "meets as 'I can hear it and I cannot press it'. Deterministic: two captured sequences compared.",
-        "",
-        "POSITIONAL, because the focus probe truncates. Every corpus page stops at 12 tab stops, so absence",
-        "from `focusOrder` alone usually means the probe stopped and a rule keyed on it would fire almost",
-        "everywhere. A control counts as unreachable only when something LATER in reading order was reached.",
-        "",
-        "Not the roleless `<div onclick>` of the custom-control family: that one is invisible to the screen",
-        "reader, which is its 4.1.2 finding, and a capture cannot tell it from a page with no button at all."
-      ]
-    },
     "2.4.1:skip-link-inert": {
       "decidedBy": "rules",
       "reportsAs": "2.4.1",
       "note": [
-        "PARTIAL, and the part is the only one that is ours. A skip link is NOT required — W3C is explicit",
-        "that headings alone (H69) and landmarks alone (ARIA11) satisfy 2.4.1 — so detecting absence would",
+        "PARTIAL, and the part is the only one that is ours. A skip link is NOT required \u2014 W3C is explicit",
+        "that headings alone (H69) and landmarks alone (ARIA11) satisfy 2.4.1 \u2014 so detecting absence would",
         "fire on conformant pages, and whether any mechanism EXISTS is a DOM fact the static layer answers",
         "better than our nondeterministic landmark sweep.",
         "",
         "This rule fires only on a mechanism that is present and inert: activating the skip link left focus",
         "exactly where the next Tab would have gone anyway. Measured on the pair, which differ only in the",
-        "target id — 'Search the archive, edit' against 'News and updates, link'.",
+        "target id \u2014 'Search the archive, edit' against 'News and updates, link'.",
         "",
         "It requires the activated control to BE a skip link by name, because the probe takes the first link",
         "on the page and on a real site that is as likely to be a logo."
@@ -142,12 +133,12 @@
       "reportsAs": "2.4.2",
       "note": [
         "Deterministic because the evidence is a comparison, not a reading: the first heading changed and",
-        "the title did not. Both come from the screen reader — `reportTitle` is the same command that fills",
+        "the title did not. Both come from the screen reader \u2014 `reportTitle` is the same command that fills",
         "`documentReady.title`, so this is what a user hears when they ask where they are.",
         "",
         "It covers ONE of 2.4.2's failure modes and deliberately not the others. A missing title is not",
         "worth a rule (zero across 4,895 captures, and absent from the failures covering 96% of WebAIM's",
-        "million-page survey), and whether a title DESCRIBES its topic is judgement — W3C flags 2.4.2 on a",
+        "million-page survey), and whether a title DESCRIBES its topic is judgement \u2014 W3C flags 2.4.2 on a",
         "page titled 'Welcome to CityLights! [Inaccessible Survey Page]'. So this is partial coverage of the",
         "criterion, and the part a screen reader is uniquely placed to prove: a static analyser cannot see",
         "it at all, because the markup is valid at every instant and the failure is the transition.",
@@ -170,7 +161,7 @@
         "contradicts the reading sequence for the same controls.",
         "",
         "Only a screen reader can make this comparison. A static checker can flag tabindex=\"1\" as a smell,",
-        "but the DOM has no reading order to contradict — that order only exists once something has walked",
+        "but the DOM has no reading order to contradict \u2014 that order only exists once something has walked",
         "the page."
       ]
     },
@@ -188,43 +179,12 @@
         "widening the vocabulary to everything (or breaking the rule to nothing) both fail."
       ]
     },
-    "4.1.2:state-change-silent": {
+    "2.4.7:focus-removed-on-receipt": {
       "decidedBy": "rules",
-      "reportsAs": "4.1.2",
-      "note": "MOVED from the model on 2026-08-24, reversing a decision made on accuracy alone. The model scored 59/0/0 and a deterministic rule had been written and measured at 69/69 EXACT with no false positives across 1,001 conformant records -- so a rule looked redundant. It is not, because the two layers differ in what they may CLAIM, not only in how often they are right: a model finding carries no `mapping`, which means `secondary`, which `criterionOutcomes` reports as `cantTell`. A rule may be conformance-mapped and assert. `compare-layers.mjs` names this exact criterion as the difference between this tool and a static scanner -- axe can see that `aria-expanded` exists and cannot see that it never changes -- so the one finding nothing else can make was being reported as a maybe. Re-measured on the whole corpus after the move: 69 true positives, 0 false positives, 0 false negatives across 144 captures carrying state evidence."
-    },
-    "1.3.1:no-headings": {
-      "decidedBy": "rules",
-      "reportsAs": "1.3.1",
-      "note": [
-        "Deterministic, and gated on the AX tree CONFIRMING zero headings rather than on the sweep finding",
-        "none -- a sweep alone cannot tell 'this page has none' from 'we could not ask'. That makes it a",
-        "rule and not a judgement, the same move ADR 0021 made for 4.1.2:state-change-silent.",
-        "",
-        "Added 2026-08-26 with the five `headings-none-*` cases. Before them the rule was UNTESTABLE: page()",
-        "emitted an <h1> unconditionally, so across 2,366 records the count with zero headings was 0 and",
-        "rules:coverage read 'NEVER FIRED ANYWHERE -- the claim rests on nothing'."
-      ]
-    },
-    "1.4.13:focus-panel-undismissable": {
-      "decidedBy": "rules",
-      "reportsAs": "1.4.13",
-      "note": "The DISMISSABLE bullet, since 2026-09-05, and moved here on the identical basis as 3.3.3 and 3.2.1/3.2.2 the day before: the evidence is `focusRevealVerdict`'s own verdict -- three censuses and two focus reads, computed on the worker -- so whether content appeared on focus, focus held, and Escape (pressed twice; NVDA eats the first) did not make it go away is READ, not judged. The retrain that surfaced this: the head had 12 positives against 412 parameters and a threshold at the top of the grid (0.971), which blocked both the calibration gate (`fewer than 20 positive development records`) and, as a consequence, the acceptance gate (`fewer than 3 acceptance positives` -- `eligible_records` drops a criterion once every one of its subtypes is rule-decided, which is the honest answer once this entry exists, not a workaround for it). Twenty cases would not have made the head good, only permitted; ADR 0021's own precedent (`4.1.2:state-change-silent`) is to move evidence this direct to the rules rather than wait on a corpus a head this shape can never be well-calibrated from. `secondary`, not `conformance`: Dismissable's own text carves out two exceptions this evidence cannot rule out -- \"unless the additional content communicates an input error or does not obscure or replace other content\" -- and PERSISTENT is separately undecidable here (`focusRevealVerdict`'s own docstring: \"remains visible\" is pixels). NOT in MODEL_EXCLUDED_SUBTYPES: the evidence expresses the failure exactly, so the records stay and RULE_SUBSTITUTED_SUBTYPES makes the head non-blocking -- declaring `rules` while excluding the records is the contradiction `assert_declaration_matches_data` catches by name."
-    },
-    "3.3.3:error-remedy-missing": {
-      "decidedBy": "rules",
-      "reportsAs": "3.3.3",
-      "note": "3.3.3 since 2026-09-02, and it is rules-owned because a head DEMONSTRABLY could not learn it: recall 0.0 on its own training data under both poolings, with false positives on conformant records (known-gaps.md §22). The distinction is one clause inside a long announcement -- \"Enter the visit date as DD slash MM slash YYYY\" against \"Invalid entry\" -- which a document average dilutes and an instance max did not rescue. It does not need a head: whether the announced error contains an INSTRUCTION is read directly, which is this project's own test for what a rule may assert, and the same basis on which 1.1.1:filename-alt is rules-owned. The signal discriminated 44 captured pairs with no errors while the head could not fit 15. Like 3.3.1 and 4.1.3 it reads probe-gated channels, so it cannot fire on a real page -- probeForms is off for pages we do not own. NOT in MODEL_EXCLUDED_SUBTYPES, and the distinction cost a chain run to learn: `unavailable` means the records are EXCLUDED from the export because the evidence cannot express the failure, and `assert_declaration_matches_data` fails if a declared subtype has no records. Here the evidence expresses it exactly -- that is why a rule can assert from it -- so the records stay and RULE_SUBSTITUTED_SUBTYPES makes the head non-blocking instead. Declaring `rules` and excluding the records at the same time is a contradiction the trainer catches by name."
-    },
-    "3.2.1:focus-context-change": {
-      "decidedBy": "rules",
-      "reportsAs": "3.2.1",
-      "note": "3.2.1 since 2026-09-02. Rules-owned because whether the page renamed itself between two reads is READ, not judged: focusing a control either changed the title or it did not, with no wording to interpret and no threshold to calibrate. Same basis as 3.3.3 and 1.1.1:filename-alt. NOT in MODEL_EXCLUDED_SUBTYPES: the evidence expresses the failure exactly, so the records stay and RULE_SUBSTITUTED_SUBTYPES makes the head non-blocking — declaring `rules` while excluding the records is the contradiction `assert_declaration_matches_data` catches by name."
-    },
-    "3.2.2:input-context-change": {
-      "decidedBy": "rules",
-      "reportsAs": "3.2.2",
-      "note": "3.2.2 since 2026-09-02. Rules-owned because whether the page renamed itself between two reads is READ, not judged: typing into a control either changed the title or it did not, with no wording to interpret and no threshold to calibrate. Same basis as 3.3.3 and 1.1.1:filename-alt. NOT in MODEL_EXCLUDED_SUBTYPES: the evidence expresses the failure exactly, so the records stay and RULE_SUBSTITUTED_SUBTYPES makes the head non-blocking — declaring `rules` while excluding the records is the contradiction `assert_declaration_matches_data` catches by name."
+      "reportsAs": "2.4.7",
+      "modelHead": false,
+      "why": "Its nine positives are the `focus-removed-on-receipt-*` cases, whose PRIMARY criterion is 2.1.1 and which 2.1.1's own rule already catches 9 of 9. A head fitted here would train on nine records sharing every feature with another subtype's positives -- ADR 0015's free veto by construction, and doubly hidden because scorer:shortcuts SHIELDS rules-owned subtypes from the veto report.",
+      "note": "The rules decide this criterion; the model does not need it. Declared so the gate can score it, `modelHead: false` so no head is fitted."
     },
     "3.1.2:language-unmarked": {
       "decidedBy": "unavailable",
@@ -266,6 +226,63 @@
         "something nobody can do. The 29 corpus cases stay -- ground truth for the DOM join, and what proved",
         "`[speech] reportLanguage` puts the language into the transcript at all."
       ]
+    },
+    "3.2.1:focus-context-change": {
+      "decidedBy": "rules",
+      "reportsAs": "3.2.1",
+      "note": "3.2.1 since 2026-09-02. Rules-owned because whether the page renamed itself between two reads is READ, not judged: focusing a control either changed the title or it did not, with no wording to interpret and no threshold to calibrate. Same basis as 3.3.3 and 1.1.1:filename-alt. NOT in MODEL_EXCLUDED_SUBTYPES: the evidence expresses the failure exactly, so the records stay and RULE_SUBSTITUTED_SUBTYPES makes the head non-blocking \u2014 declaring `rules` while excluding the records is the contradiction `assert_declaration_matches_data` catches by name."
+    },
+    "3.2.2:input-context-change": {
+      "decidedBy": "rules",
+      "reportsAs": "3.2.2",
+      "note": "3.2.2 since 2026-09-02. Rules-owned because whether the page renamed itself between two reads is READ, not judged: typing into a control either changed the title or it did not, with no wording to interpret and no threshold to calibrate. Same basis as 3.3.3 and 1.1.1:filename-alt. NOT in MODEL_EXCLUDED_SUBTYPES: the evidence expresses the failure exactly, so the records stay and RULE_SUBSTITUTED_SUBTYPES makes the head non-blocking \u2014 declaring `rules` while excluding the records is the contradiction `assert_declaration_matches_data` catches by name."
+    },
+    "3.3.2:placeholder-only": {
+      "decidedBy": "unavailable",
+      "reportsAs": "3.3.2",
+      "note": "NOT WITNESSABLE by a screen reader, and this is a property of the criterion rather than a gap in our evidence. When a field has no label the browser uses the placeholder as its accessible name, so NVDA announces it exactly as it announces a real label: `<input placeholder=\"Email address\">` and `<label>Email address</label><input>` both speak \"Email address, edit\". The difference exists only in the DOM, which is axe-core's layer -- this tool runs alongside it, not instead of it. Measured 2026-08-23: the head had no placeholder feature at all, weighted the encoder 598.9 against 9.26 for every document feature combined, and had learned the corpus's placeholder wording -- it fired on 4 of the 6 clean pages containing \"Example value\" and 0 of the 34 without. Eight false accusations on conformant pages. See ADR 0018."
+    },
+    "3.3.3:error-remedy-missing": {
+      "decidedBy": "rules",
+      "reportsAs": "3.3.3",
+      "note": "3.3.3 since 2026-09-02, and it is rules-owned because a head DEMONSTRABLY could not learn it: recall 0.0 on its own training data under both poolings, with false positives on conformant records (known-gaps.md \u00a722). The distinction is one clause inside a long announcement -- \"Enter the visit date as DD slash MM slash YYYY\" against \"Invalid entry\" -- which a document average dilutes and an instance max did not rescue. It does not need a head: whether the announced error contains an INSTRUCTION is read directly, which is this project's own test for what a rule may assert, and the same basis on which 1.1.1:filename-alt is rules-owned. The signal discriminated 44 captured pairs with no errors while the head could not fit 15. Like 3.3.1 and 4.1.3 it reads probe-gated channels, so it cannot fire on a real page -- probeForms is off for pages we do not own. NOT in MODEL_EXCLUDED_SUBTYPES, and the distinction cost a chain run to learn: `unavailable` means the records are EXCLUDED from the export because the evidence cannot express the failure, and `assert_declaration_matches_data` fails if a declared subtype has no records. Here the evidence expresses it exactly -- that is why a rule can assert from it -- so the records stay and RULE_SUBSTITUTED_SUBTYPES makes the head non-blocking instead. Declaring `rules` and excluding the records at the same time is a contradiction the trainer catches by name."
+    },
+    "4.1.2:missing-role": {
+      "decidedBy": "unavailable",
+      "reportsAs": "4.1.2",
+      "note": [
+        "NOBODY decides this one, and saying so out loud is the whole point of the entry.",
+        "",
+        "A role-less `<div onclick>` styled as a button. The screen reader cannot perceive it -- that IS",
+        "the failure -- so to NVDA a page with a fake button and a page with no button are the same page.",
+        "All 74 records announce `formFields: []` and `controls: []`, and so do 437 of the 1,003",
+        "conformant records, because a page about images or tables has no controls either.",
+        "",
+        "Measured both ways before giving up on it: instance-max pooling gives precision 1.000 at recall",
+        "0.824 (13 misses), document-mean gives recall 1.000 at precision 0.782 (21 false accusations on",
+        "conformant pages, on a corpus far cleaner than the web). So the records are excluded from the",
+        "model -- see MODEL_EXCLUDED_SUBTYPES, whose reason string is exactly 'not inferable from",
+        "screen-reader output alone'.",
+        "",
+        "This is a statement about the EVIDENCE, not a permanent verdict. 'This element responds to",
+        "clicks, exposes no role, and cannot be reached by keyboard' is deterministic and obtainable over",
+        "the CDP socket the capture already opens; once captured it belongs to the rule layer, which is",
+        "exact on 1,003 conformant records. That needs a CAPTURE_PROTOCOL_VERSION bump and a recapture.",
+        "",
+        "Until then 4.1.2 is PARTIALLY covered, and a consumer has to be able to learn that from",
+        "somewhere. `rules:score` asserts these records are absent from the export -- the inverse of the",
+        "check it applies to every other entry -- so the exclusion cannot quietly stop working."
+      ]
+    },
+    "4.1.2:state-change-silent": {
+      "decidedBy": "rules",
+      "reportsAs": "4.1.2",
+      "note": "MOVED from the model on 2026-08-24, reversing a decision made on accuracy alone. The model scored 59/0/0 and a deterministic rule had been written and measured at 69/69 EXACT with no false positives across 1,001 conformant records -- so a rule looked redundant. It is not, because the two layers differ in what they may CLAIM, not only in how often they are right: a model finding carries no `mapping`, which means `secondary`, which `criterionOutcomes` reports as `cantTell`. A rule may be conformance-mapped and assert. `compare-layers.mjs` names this exact criterion as the difference between this tool and a static scanner -- axe can see that `aria-expanded` exists and cannot see that it never changes -- so the one finding nothing else can make was being reported as a maybe. Re-measured on the whole corpus after the move: 69 true positives, 0 false positives, 0 false negatives across 144 captures carrying state evidence."
+    },
+    "4.1.2:unnamed-control": {
+      "decidedBy": "rules",
+      "reportsAs": "4.1.2",
+      "note": "An exact-absence case: a control announced with a role and no name -- an icon button or a text input, one failure, one subtype. It was `4.1.2:regex`, a key naming the MATCHER rather than the failure, while the 115 unlabelled-field records sat in `4.1.2:missing-role`, the head for the opposite failure. INHERITED THE 133 `3.3.2:unnamed-form-field` RECORDS ON 2026-09-05. That subtype is gone, and its removal is a correction rather than a consolidation: W3C does not require a label to be ASSOCIATED for 3.3.2 -- that is 1.3.1 -- and every one of its bad pages carried visible label text, so it had ZERO genuine 3.3.2 failures. The evidence those records carry is a bare role with no accessible name, which is this subtype exactly, and its own note already said the rule 'ALSO reports 4.1.2 for this evidence'. 1.3.1 is NOT claimed for them: the announcement cannot show whether a visible label exists, so labelling it would record a failure no layer detects and manufacture false negatives."
     }
   }
 }
