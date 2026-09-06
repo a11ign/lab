@@ -26,9 +26,10 @@ import { runsRoot } from "../dataset-paths.mjs";
  * the point: a field arriving with no decision attached fails this test rather than being ignored.
  */
 const NOT_EVIDENCE: Record<string, string> = {
-  "interaction.navigatedOnSubmit": "a boolean about what the PROBE did, not what NVDA announced; it "
-    + "flips with probe order rather than with the page, so comparing it would report drift for a change "
-    + "in how the capture was driven",
+  "interaction.navigatedOnSubmit": "a record of what the PROBE did (did currentPageUrl() see a move), "
+    + "not what NVDA announced; it flips with probe order and even with transient network conditions "
+    + "rather than with the page, so comparing it would report drift for a change in how the capture "
+    + "was driven, not in what the page says",
 };
 
 /** Every `structure.*` / `interaction.*` key present across the captures on disk. */

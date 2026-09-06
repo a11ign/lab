@@ -44,6 +44,20 @@ refuseUnknownFlags([], { entry: import.meta.url, command: "npm run layers:compar
 // root and pointing at nothing afterwards.
 const CLI = fileURLToPath(new URL("../../cli/src/cli.ts", import.meta.url));
 /**
+ * `navigatedOnSubmit`'s mere PRESENCE stopped meaning "navigated" once it started recording `checked` too
+ * (2026-09-06) -- a capture that was asked and confirmed to have stayed put is now present and truthy,
+ * same as one that navigated. `checked === false` is "could not ask"; a bare `{ from, to }` with no
+ * `checked` key is a pre-fix capture, where presence still means what it always did.
+ * @param {{ checked?: boolean, navigated?: boolean } | undefined} nav
+ */
+function submitNavigatedLabel(nav) {
+  if (nav && typeof nav === "object" && "checked" in nav) {
+    return nav.checked ? (nav.navigated ? "yes" : "no") : "unknown";
+  }
+  return nav ? "yes" : "no";
+}
+
+/**
  * Only when RUN, never on import.
  *
  * Two things were wrong at module scope, and the second is the subtler one. It spawned the CLI once per
@@ -70,7 +84,7 @@ async function main() {
     const onlyOurs = ours.filter((/** @type {string} */ c) => !axe.includes(c));
     const i = d.interaction ?? {};
     console.log(`\n── ${url}`);
-    console.log(`   announcements ${d.transcript?.length ?? 0} · activated ${(i.formChanges ?? []).length} · disclosures ${(i.stateChanges ?? []).length} · navigated ${i.navigatedOnSubmit ? "yes" : "no"}`);
+    console.log(`   announcements ${d.transcript?.length ?? 0} · activated ${(i.formChanges ?? []).length} · disclosures ${(i.stateChanges ?? []).length} · navigated ${submitNavigatedLabel(i.navigatedOnSubmit)}`);
     console.log(`   ours: ${JSON.stringify(ours)}   axe: ${JSON.stringify(axe)}`);
     console.log(`   ONLY the screen reader: ${onlyOurs.length ? JSON.stringify(onlyOurs) : "(none)"}`);
     for (const f of d.verdict.findings) {
