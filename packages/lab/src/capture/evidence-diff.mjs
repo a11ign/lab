@@ -100,6 +100,34 @@ function normalise(phrase) {
 }
 
 /**
+ * Keys that are MEASUREMENTS OF THIS RUN rather than evidence about the page.
+ *
+ * `baselineWaitedMs` is how long `activateAndCaptureDelta` waited for speech to go quiet before pressing.
+ * It is a wall-clock number and it differs on every capture of every page — so including it made a
+ * `formChanges` entry compare unequal to itself, and this gate reported CHANGED on every form-probe case
+ * whatever the code did.
+ *
+ * MEASURED 2026-09-06, on the run that was supposed to decide whether three probe fixes moved the
+ * evidence: `48 compared: 42 same, 0 drift, 6 changed`, and all six were form cases whose ONLY differing
+ * key was this one -- 300->320, 324->308, 316->300, 324->311, 323->300, 313->300. The verdict was CHANGED
+ * and the evidence was identical.
+ *
+ * THE OVER-CORRECTION OF A REAL FIX, and worth naming as such. `flatten` exists because this gate used to
+ * compare object lists BY COUNT and reported SAME when an error message vanished. That fix was right and
+ * went one key too far: it swapped a false SAME (cheap, dangerous -- ship on stale evidence) for a false
+ * CHANGED (safe, expensive -- ~4 h of fleet time, and a gate people stop believing). "Compare everything"
+ * is not the opposite of "compare nothing"; comparing what is EVIDENCE is.
+ *
+ * DENY-LIST, NOT AN ALLOW-LIST, deliberately: a new field on a capture must default to being COMPARED, or
+ * this gate goes quietly blind to it -- which is the original defect. Every exclusion is a timing or
+ * bookkeeping value with a stated reason, and `evidence-fields.test.ts` requires that.
+ */
+const NOT_EVIDENCE_KEYS = new Set([
+  // How long we waited for quiet before acting. A property of this run, not of the page.
+  "baselineWaitedMs",
+]);
+
+/**
  * One list entry's comparable form — a string as itself, an OBJECT as its sorted `key=value` pairs.
  *
  * `String({...})` is `"[object Object]"`, so mapping `normalise` over a list of objects made every entry
@@ -126,6 +154,7 @@ function normalise(phrase) {
 function flatten(entry) {
   if (!entry || typeof entry !== "object") return normalise(entry);
   return Object.entries(entry)
+    .filter(([key]) => !NOT_EVIDENCE_KEYS.has(key))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => `${key}=${normalise(value)}`)
     .join(" ");

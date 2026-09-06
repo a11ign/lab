@@ -253,3 +253,42 @@ test("isUsableCapture: an empty transcript is NOT usable, even with NVDA set", (
 test("isUsableCapture: null (readCapture's own 'absent' answer) is NOT usable", () => {
   assert.equal(isUsableCapture(null), false);
 });
+
+test("a timing-only difference is NOT an evidence change", () => {
+  // MEASURED 2026-09-06 on the run meant to decide whether three probe fixes moved the evidence:
+  // `48 compared: 42 same, 0 drift, 6 changed`, and all six were form cases whose ONLY differing key was
+  // `baselineWaitedMs` — 300->320, 324->308, 316->300, 324->311, 323->300, 313->300. The verdict was
+  // CHANGED and the evidence was identical. Verbatim from `custom-control-role.good`'s stored diff.
+  const before = { control: "save notification settings, button", kind: "submit", after: "",
+    baselineQuiet: true, baselineWaitedMs: 300 };
+  const after = { ...before, baselineWaitedMs: 320 };
+  assert.equal(compareCapture(
+    { interaction: { formChanges: [before] } },
+    { interaction: { formChanges: [after] } },
+  ).verdict, "SAME", "a wall-clock wait differs on every capture of every page; it is a property of the "
+    + "run, not of the page, and comparing it makes an entry unequal to itself");
+});
+
+test("a CONTENT difference in the same entry is still caught", () => {
+  // The half that stops the exclusion becoming the defect it fixes. `flatten` exists because this gate
+  // compared object lists BY COUNT and reported SAME when an error message vanished; narrowing what it
+  // compares must not reopen that. Same entry, same timing, only `after` moves — the exact 2026-09-01
+  // case, whose stored example is an error message becoming empty.
+  const before = { control: "Send, button", kind: "submit", after: "Error: name is required",
+    baselineQuiet: true, baselineWaitedMs: 300 };
+  assert.equal(compareCapture(
+    { interaction: { formChanges: [before] } },
+    { interaction: { formChanges: [{ ...before, after: "" }] } },
+  ).verdict, "CHANGED", "the content of the channel 3.3.1, 4.1.2 and 4.1.3 are decided from must still "
+    + "be compared — this is the defect `flatten` was written for");
+});
+
+test("the exclusion list is a DENY-list, so a new field defaults to being compared", () => {
+  // An allow-list would make this gate go quietly blind to every field added after it was written, which
+  // is the original defect wearing the remedy's clothes. A field nobody has classified must be COMPARED.
+  const before = { control: "x", kind: "submit", after: "", baselineWaitedMs: 300 };
+  assert.equal(compareCapture(
+    { interaction: { formChanges: [before] } },
+    { interaction: { formChanges: [{ ...before, somethingNewNobodyClassified: "b" }] } },
+  ).verdict, "CHANGED", "an unclassified new key must register as a change, not be ignored");
+});
