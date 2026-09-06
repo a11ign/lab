@@ -4,7 +4,8 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { collect } from "../../../../scripts/board-data.mjs";
-import { document, BODY_WORD_CAP, summaryFor } from "../../../../scripts/board-document.mjs";
+import { document, BODY_WORD_CAP, bodyOnly, bodyCapRefusal, summaryFor }
+  from "../../../../scripts/board-document.mjs";
 
 /* THE BOARD'S STYLE, ENFORCED ON THE RENDERED DOCUMENT AND NEVER ON THE TEMPLATE.
  *
@@ -209,13 +210,10 @@ test("the body and the appendix report the same count for the same thing", () =>
     + "one that was not, and the two disagreed");
 });
 
-/** Sections one to five only: not the title, not the summary, not the appendix. */
-function bodyOnly(md: string): string {
-  const start = md.indexOf("\n## ", md.indexOf("## Executive summary") + 1);
-  const from = start === -1 ? md.indexOf("\n## ") : start;
-  const to = md.indexOf("## Appendix");
-  return md.slice(from === -1 ? 0 : from, to === -1 ? undefined : to);
-}
+// `bodyOnly` is IMPORTED, not restated — issue #88 moved it into board-document.mjs so the generator
+// itself could ask "is my own output too long" without a second copy of the boundary logic. This file
+// used to carry its own, which is exactly how the cap could exist as a test here and nowhere the
+// generator itself ever looked.
 
 const wordCount = (s: string) => s.split(/\s+/).filter(Boolean).length;
 
@@ -224,6 +222,38 @@ test(`the body fits two pages: sections one to five stay under ${BODY_WORD_CAP} 
   assert.ok(words <= BODY_WORD_CAP,
     `the body is ${words} words against a cap of ${BODY_WORD_CAP}. Cut repetition and evidence-in-prose `
     + "— evidence belongs in the appendix — never a decision or a number.");
+});
+
+test("bodyCapRefusal is null when the body fits", () => {
+  const fits = `\n## Section\n\n${"word ".repeat(10)}\n\n## Appendix\n\nevidence`;
+  assert.equal(bodyCapRefusal({ achievements: [] }, fits), null);
+});
+
+/**
+ * ISSUE #88: the refusal must name the TRADE, not just the number, or it leaves the same silent
+ * displacement it was written to stop -- whoever is editing under time pressure deletes whatever is
+ * nearest, and that was never the guard's decision to delegate.
+ */
+test("bodyCapRefusal over the cap names the overflow and lists achievements OLDEST FIRST", () => {
+  const over = `\n## Section\n\n${"word ".repeat(BODY_WORD_CAP + 50)}\n\n## Appendix\n\nevidence`;
+  const d = {
+    achievements: [
+      { claim: "Newer claim.", boardClaim: "Newer claim.", at: "2026-09-06T00:00:00Z" },
+      { claim: "Older claim.", boardClaim: "Older claim.", at: "2020-01-01T00:00:00Z" },
+    ],
+  };
+  const refusal = bodyCapRefusal(d, over);
+  assert.ok(refusal, "a body over the cap must produce a refusal message, not a silent pass");
+  assert.match(refusal!, new RegExp(`REFUSES.*${BODY_WORD_CAP}`));
+  assert.match(refusal!, /\[0] "Older claim\."\s+written 2020-01-01/,
+    "the OLDEST achievement (by `at`) must be listed first, not document order");
+  assert.match(refusal!, /\[1] "Newer claim\."\s+written 2026-09-06/);
+});
+
+test("bodyCapRefusal with no achievements names the prose, not a retire target that does not exist", () => {
+  const over = `\n## Section\n\n${"word ".repeat(BODY_WORD_CAP + 20)}\n\n## Appendix\n\nevidence`;
+  const refusal = bodyCapRefusal({ achievements: [] }, over);
+  assert.match(refusal!, /no achievements are recorded to retire/i);
 });
 
 test("the word cap REJECTS edition 2, which is why it exists", () => {
