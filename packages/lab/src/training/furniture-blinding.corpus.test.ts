@@ -25,6 +25,7 @@ import { resolve } from "node:path";
 
 import { CASES, signalMatches } from "./case-matrix.mjs";
 import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { labCorpusReadable, skipLine } from "./corpus-settled.mjs";
 
 const ROOT = datasetRoot();
 const CAPTURES = captureRoot(ROOT);
@@ -116,16 +117,20 @@ function firing(): { id: string; capture: Capture; signal: NonNullable<Case["bad
 }
 
 const cases = firing();
+// Consulted by every test below, so they cannot describe one corpus three ways -- and so that a capture
+// IN FLIGHT, or a runs/ holding only the report the suite emits, is not read as a page whose signals
+// simply do not fire.
+const CORPUS_GUARD = labCorpusReadable({ present: cases.length > 0 });
 
-test("the corpus is present and its signals fire, or this test is honestly skipped", () => {
-  if (cases.length === 0) {
-    console.log("    no corpus under runs/ — skipping the blinding sweep (expected in CI)");
+test("the corpus is present, settled, and its signals fire — or this test is honestly skipped", () => {
+  if (!CORPUS_GUARD.read) {
+    console.log(skipLine(CORPUS_GUARD));
   }
   assert.ok(true);
 });
 
 test("adding page furniture silences no badSignal that was firing", () => {
-  if (cases.length === 0) return;
+  if (!CORPUS_GUARD.read) return;
   const blinded = cases
     .filter(({ capture, signal }) => !signalMatches(furnished(capture, signal), signal))
     .map(({ id, signal }) => `${id} (${signal.type})`);
@@ -137,7 +142,7 @@ test("adding page furniture silences no badSignal that was firing", () => {
 });
 
 test("every signal type with a CAPTURE is swept, and the rest are named as not-yet-captured", () => {
-  if (cases.length === 0) return;
+  if (!CORPUS_GUARD.read) return;
   const covered = new Set(cases.map(({ signal }) => signal.type));
   const uncaptured = new Set<string>();
   const notFiring: string[] = [];

@@ -42,6 +42,7 @@ import { resolve } from "node:path";
 import { CASES, pair } from "./case-matrix.mjs";
 import { checkCase, effectiveVerdict, signalVerdict } from "./check-signals.mjs";
 import { datasetRoot, captureRoot as buildCaptureRoot } from "../dataset-paths.mjs";
+import { labCorpusReadable, skipLine } from "./corpus-settled.mjs";
 import { captureFilePath } from "../capture/evidence-diff.mjs";
 
 /**
@@ -160,8 +161,11 @@ test("a provisional case whose signal now discriminates must have the flag remov
   if (!provisional.length) return; // nothing to check, and that is a fine state for this test to see
 
   const captureRoot = buildCaptureRoot(datasetRoot());
-  if (!existsSync(captureRoot)) {
-    console.log(`  SKIPPED: no captures at ${captureRoot} (runs/ is gitignored; local-only gate)`);
+  // Settled as well as present: a capture in flight is writing exactly the good/bad pairs this compares,
+  // so a pair that looks incomplete may simply not have been written yet.
+  const corpus = labCorpusReadable({ present: existsSync(captureRoot) });
+  if (!corpus.read) {
+    console.log(skipLine(corpus));
     return;
   }
 
@@ -188,6 +192,11 @@ test("the JSON manifest, once generated, carries provisional through the round t
   // manifest-probes.test.ts exists for. Proven against the real file when one exists, skipped honestly
   // otherwise, because a stale manifest predating this field is a fact about the copy, not about the code.
   const manifestPath = resolve(datasetRoot(), "manifest.json");
+  const manifestCorpus = labCorpusReadable({ present: existsSync(manifestPath) });
+  if (!manifestCorpus.read) {
+    console.log(skipLine(manifestCorpus));
+    return;
+  }
   if (!existsSync(manifestPath)) {
     console.log(`  SKIPPED: no manifest at ${manifestPath} — run \`npm run training:generate\` to cover this`);
     return;
