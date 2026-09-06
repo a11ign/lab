@@ -51,6 +51,72 @@ import { REPO_ROOT, realCorpusRoot } from "../src/dataset-paths.mjs";
 const REPO = REPO_ROOT;
 const REAL = realCorpusRoot();
 const BASELINE = resolve(REPO, "packages/lab/baselines/real-page-findings.json");
+
+/**
+ * WHEN each scored capture was taken, and under which role — collected while loading, reported once.
+ *
+ * THIS GATE SCORES 85 PAGES DRAWN FROM TWO CAPTURE RUNS, and until 2026-09-06 it said nothing about that.
+ * `capture-real-pages` DEFAULTS to `--role=training` (39 pages); the other 46 are `calibration`. So the
+ * ordinary way to refresh the corpus refreshes HALF of it, and this gate then compares a mixed population
+ * against one baseline. It already refuses when a role is MISSING entirely — the harder case is when every
+ * page is present and half of them are old.
+ *
+ * Measured the night it was added: the run reported 42 new findings over captures spanning 01:54 to 03:55,
+ * and reading one of the older ones produced a confident wrong conclusion about a diagnostic field being
+ * absent on fallback pages. It was absent because that capture predated the field. One timestamp settled
+ * what a mechanism argument had got wrong — which is this repo's own rule, and the reason a number must
+ * carry what it was computed from.
+ *
+ * It REPORTS rather than refuses. A spread is not automatically wrong: nothing here can tell "captured an
+ * hour apart by one pipeline" from "captured a week apart across a worker change", because a real-page
+ * capture records `capturedAt` and `role` and no `codeVersion` at all. Saying so is the honest form, and
+ * the missing provenance is itself worth recording rather than papering over.
+ */
+const CAPTURE_AGES: { at: string; role: string }[] = [];
+
+/**
+ * One line per role: how many, and the window they were captured in. PURE, so it can be tested against
+ * the two cases that matter without a corpus — the mixed population must WARN and the single run must NOT.
+ */
+export function captureAgeLines(ages: { at: string; role: string }[]): string[] {
+  if (ages.length === 0) {
+    // Absent prints as NOT RECORDED, never as OK — `capture:explain`'s rule. A corpus of captures too old
+    // to carry `capturedAt` must not read as a corpus captured just now.
+    return ["  capture ages: NOT RECORDED — no scored capture carries `capturedAt`"];
+  }
+  const byRole = new Map<string, string[]>();
+  for (const { at, role } of ages) byRole.set(role, [...(byRole.get(role) ?? []), at]);
+  const lines = ["  the captures this scored were taken:"];
+  for (const [role, times] of [...byRole].sort()) {
+    const sorted = [...times].sort();
+    const [oldest, newest] = [sorted[0], sorted[sorted.length - 1]];
+    lines.push(`    ${role}: ${times.length} capture(s), `
+      + (oldest === newest ? oldest : `${oldest} .. ${newest}`));
+  }
+  const all = ages.map((c) => c.at).sort();
+  const spreadMs = Date.parse(all[all.length - 1]) - Date.parse(all[0]);
+  if (spreadMs > ROLE_SPREAD_WARN_MS) {
+    lines.push(`  *** ${Math.round(spreadMs / 3600000)} hour(s) between the oldest and newest, so this `
+      + "compares a MIXED population against one baseline.");
+    lines.push("  *** `capture-real-pages` defaults to --role=training, which refreshes 39 of the 85. "
+      + "To refresh every role:  npm run lab:pipeline -- --pipeline=real-pages");
+  }
+  return lines;
+}
+
+function reportCaptureAges(): void {
+  process.stdout.write(`${captureAgeLines(CAPTURE_AGES).join("\n")}\n`);
+}
+
+/**
+ * How far apart two captures may be before the spread is worth saying out loud.
+ *
+ * Six hours: comfortably longer than a full two-role capture of the corpus (~1.6 h across the fleet, twice)
+ * and far shorter than the gap a half-refreshed corpus produces. A threshold rather than any difference,
+ * because one pipeline capturing both roles back to back is the NORMAL case and must not warn.
+ */
+const ROLE_SPREAD_WARN_MS = 6 * 60 * 60 * 1000;
+
 const UPDATE = process.argv.includes("--update");
 const ALLOW_PARTIAL = process.argv.includes("--allow-partial");
 
@@ -85,8 +151,12 @@ function currentFindings(): Findings {
     if (!file.endsWith(".json")) continue;
     let capture: { url?: string; transcript?: unknown };
     try {
-      const parsed = JSON.parse(readFileSync(join(REAL, file), "utf8")) as { capture?: unknown };
+      const parsed = JSON.parse(readFileSync(join(REAL, file), "utf8")) as
+        { capture?: unknown; capturedAt?: string; role?: string };
       capture = (parsed.capture ?? parsed) as { url?: string; transcript?: unknown };
+      if (typeof parsed.capturedAt === "string") {
+        CAPTURE_AGES.push({ at: parsed.capturedAt, role: parsed.role ?? "no role recorded" });
+      }
     } catch {
       continue;
     }
@@ -625,6 +695,7 @@ function main(): void {
 
   const { added, removed } = compare(current, baseline);
   process.stdout.write(`\n  ${pages} conformant real page(s) scored against the baseline.\n`);
+  reportCaptureAges();
   for (const change of removed) {
     process.stdout.write(`  GONE   ${change.criterion} on ${change.url.replace(/^https:\/\//, "")}\n`);
   }
