@@ -14,14 +14,31 @@
  * across three packages): a lab job that generates a dataset or trains a model is not itself a verdict
  * gate, and forcing every one into a binary classification would be noise around the real question.
  *
- * PYTHON GATES ARE OUT OF SCOPE HERE, and that is a finding, not a decision to hide. `exit-code-contract.
- * test.ts`'s own discovery filters to `.mjs`/`.ts` — `gateVerdict`/`fleetVerdict` are JS-only concepts, so
- * a Python script cannot "adopt" them, and asking whether Python's OWN exit codes handle partial coverage
- * is a genuinely separate investigation nobody has done. `train-screenreader-model.py`,
- * `diagnose-false-positives.py`, `audit-scorer-shortcuts.py`, `evaluate-screenreader-acceptance.py`,
- * `audit_grants.py`, `audit_container_exits.py`, `audit_applicability.py` and `explain_feature.py` are all
- * dispatched by `lab-job.yml` and none has ever been examined by any test for this question. Recorded in
- * docs/backlog.md rather than left to be rediscovered.
+ * PYTHON GATES ARE OUT OF SCOPE HERE, and the reason is now NARROWER than it was — this paragraph was
+ * stale and it is worth saying how, because a stale MECHANISM is more expensive than a stale status.
+ *
+ * It used to read: *"`exit-code-contract.test.ts`'s own discovery filters to `.mjs`/`.ts`"*, and then
+ * named eight Python scripts *"none has ever been examined by any test for this question"*. Both
+ * sentences were true when written and neither is true now. That file gained a full Python
+ * discover-and-classify side (`hasExitContractPy`/`DOCUMENTED_PY`/`INFRASTRUCTURE_PY`, twelve scripts,
+ * four mutation tests and a floor) on 2026-09-06, hours after this comment; it has TWO `endsWith` filters
+ * now, one per language.
+ *
+ * **The cost of leaving it was measured, not hypothetical.** Board issue #12's own open-check grepped
+ * `endsWith` in that file, matched the `.mjs`/`.ts` line, read this paragraph agreeing with it, and
+ * concluded *"the filter is still `.mjs`/`.ts` and the sibling test names the gap in a comment"* — a row
+ * dispatched against work that already shipped. Two copies of one fact agreeing with each other and
+ * neither agreeing with the code is `not-working.md` §26 exactly: a stale row reads as DONE, a stale
+ * mechanism reads as UNDERSTOOD, and understood is a closed question that stops investigation.
+ *
+ * What remains true, and is the whole of the exclusion: MEANING and PARTIAL-COVERAGE are different
+ * questions. `exit-code-contract.test.ts` now asks the first of Python and still cannot ask the second,
+ * because `gateVerdict`/`fleetVerdict` are JS-only concepts a Python script cannot "adopt". The audit that
+ * answered the second by hand (docs/backlog.md, "Python gates and the partial-corpus question") found
+ * four scripts with an INCONCLUSIVE code they never reach on coverage grounds and two that can neither
+ * detect nor express a short corpus, and DECIDED against a Python `verdict.py` — *"a second `gateVerdict`
+ * across the language boundary is the fact-stated-twice hazard in its most expensive form."* That ruling
+ * stands, so this scope stays JS-only by decision rather than by another file's filter.
  *
  * CLASSIFICATION SOURCE: `HAS_INCONCLUSIVE` for the six `gateVerdict`/`fleetVerdict` adopters is verified
  * structurally (they call the shared, correct-by-construction helper — `examined < of` is checked before
@@ -276,4 +293,25 @@ test("every exempted or composite name is still a real job -- a rename must not 
 test("a script cannot be classified in two places at once", () => {
   const overlap = Object.keys(HAS_INCONCLUSIVE_DOCUMENTED).filter((p) => p in NO_PARTIAL_POPULATION);
   assert.deepEqual(overlap, [], "a script cannot both have a real INCONCLUSIVE path and lack one");
+});
+
+test("the Python-scope paragraph above still describes the sibling test it cites", () => {
+  // PINNED, BECAUSE THIS PARAGRAPH HAS ALREADY GONE STALE ONCE AND COST A DISPATCHED ROW.
+  //
+  // It used to say `exit-code-contract.test.ts`'s discovery "filters to `.mjs`/`.ts`". That file gained a
+  // Python side hours later; nothing compared the two; and issue #12's open-check then grepped the file,
+  // found the older filter, read this comment agreeing with it, and concluded the gap was still open. Two
+  // copies of one fact, neither compared, is this repo's most-repeated defect -- and CLAUDE.md's own
+  // remedy when a copy cannot be deleted is to pin them equal with a test.
+  //
+  // Deliberately asserts the DIRECTION the comment now claims (a Python side EXISTS), not its absence: if
+  // somebody removes that discovery, this fails and points at the paragraph to rewrite, rather than the
+  // paragraph quietly becoming true again for a reason nobody chose.
+  const sibling = read("packages/lab/src/gates/exit-code-contract.test.ts");
+  assert.match(sibling, /function hasExitContractPy\(/,
+    "this file's Python-scope paragraph says exit-code-contract.test.ts DOES ask the meaning question of "
+    + "Python. If that discovery has been removed, rewrite the paragraph -- do not leave it describing a "
+    + "file it no longer matches, which is exactly what cost issue #12 a wrongly-dispatched row");
+  assert.match(sibling, /DOCUMENTED_PY|INFRASTRUCTURE_PY/,
+    "the same paragraph names DOCUMENTED_PY/INFRASTRUCTURE_PY as where Python exit codes are classified");
 });
