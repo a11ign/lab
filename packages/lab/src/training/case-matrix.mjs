@@ -4100,10 +4100,31 @@ cases.push(
 // A plausible cause from someone with more context is the same hazard as a plausible number from a tool.
 //
 // RULED OUT, checked rather than assumed: `installTargetMatch: "fallback"` on both variants looks like the
-// culprit and is not. The CENSUS on the same capture also reads `fallback`, because a synthetic page is
-// requested as `/bad.html` and lands on `/bad`, so `choosePageTarget`'s path comparison misses on EVERY
-// synthetic capture. With one page target present, falling back still picks the right document. That is a
-// real defect of its own and it is on the backlog; it is not this one.
+// culprit and is not. The CENSUS on the same capture also reads `fallback`. With one page target present,
+// falling back still picks the right document. That part stands.
+//
+// ITS MECHANISM WAS WRONG AND IS CORRECTED HERE, 2026-09-06. This said the fallback was because a
+// synthetic page is "requested as `/bad.html` and lands on `/bad`, so `choosePageTarget`'s path comparison
+// misses on EVERY synthetic capture". It does not miss: `samePath` (capture-pure.mjs) normalises the
+// extension, and its own comment records the 2026-08-25 incident that added it — `serve` resolving
+// `/bad.html` to `/bad` rejected two correct captures and a whole run reported 0/3.
+//
+//     $ node -e "import {samePath} …"
+//       MATCH  /focus-panel/bad.html  vs  /focus-panel/bad
+//       MATCH  /a/  vs  /a          MATCH  /a/index  vs  /a          differ /x.html  vs  /y
+//
+// SO THE REAL CAUSE OF THAT FALLBACK IS UNKNOWN, which is a better row than one carrying a wrong
+// mechanism — a stated cause is what stops anyone looking. `fallback` means exactly one thing: an expected
+// URL was set and NO page target matched it. Settling which of the remaining causes applied needs a
+// capture, so it cannot be closed from source. One measured cause of fallbacks does exist and is a
+// different shape: a GET form submit adds a query string, `sameDocument` compares `search` exactly, and
+// `known-gaps.md` measures the cost at 18 of 2,796 records (0.6%) carrying no census.
+//
+// AND THE OBSERVATION WORTH MORE THAN EITHER: a `fallback` on a capture that was in fact reading the RIGHT
+// document costs real evidence. `censusTargetIsSuspect`/`focusTargetIsSuspect` turn it into "cannot say",
+// so census findings and `focusEvents` are SUPPRESSED on a page nothing was wrong with. The 0.6% above
+// bounds the census half; the focus-event half is unmeasured, and nobody has counted how many captures
+// read `fallback` while showing the requested page.
 
 
 export const CASES = Object.freeze(withRealisticScale(
