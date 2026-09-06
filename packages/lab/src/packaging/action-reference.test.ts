@@ -75,6 +75,14 @@ test("every documented ref exists — a tag nobody cut resolves for nobody", () 
   } catch {
     return; // no git metadata; see OWNER_REPO
   }
+  // A SHALLOW CHECKOUT resolves `remote.origin.url` (OWNER_REPO) fine but fetches no tags and no
+  // remote-tracking branches at all -- `git tag` and `git branch -r` both come back empty, not erroring,
+  // so the try/catch above never fires. `refs` reads as genuinely empty rather than as "the ref is
+  // missing", and every documented ref (including `main`, which certainly exists) would report as
+  // unresolvable. `ci.yml`'s `docs` job runs on exactly this shape: `actions/checkout@v4` with no
+  // `fetch-depth` override, one commit, no remote-tracking refs. Same rule as everywhere else in this
+  // file: an empty population is a reason to skip honestly, never a finding.
+  if (refs.size === 0) return;
   const lines = usesLines();
   // The sibling test above already guards `usesLines()` being non-empty, but this test computes it AGAIN
   // independently -- relying on a sibling test's guard to have already run and failed is how a test comes
