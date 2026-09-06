@@ -19,6 +19,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { LEAK_PATTERNS } from "./leak-patterns.mjs";
 
 const MEMORY_DIR = "docs/roles/memory";
 const INDEX_PATH = `${MEMORY_DIR}/MEMORY.md`;
@@ -94,13 +95,12 @@ test("every fact file on disk is linked from the index, and vice versa", () => {
  * was that it should never appear in a runnable form again) -- rather than for the specific redacted
  * strings, so it also catches a *different* secret dropped into a *different* future memory file, not only
  * a regression of this one migration.
+ *
+ * SHARED with `tracked-prose-leak-guard.test.ts`'s repo-wide sweep, not a second independently-typed copy
+ * of the same three regexes -- extracted by worker-audit from this file's own original array, which is
+ * exactly the "a fact stated twice, and the copies drifted" shape CLAUDE.md names as this repo's most
+ * expensive recurring defect.
  */
-const LEAK_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
-  { name: "private LAN IPv4 address", pattern: /\b(?:10|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b/ },
-  { name: "a named SSH private key file", pattern: /~?\/?\.ssh\/[\w.-]+_ed25519\b|~?\/?\.ssh\/id_\w+\b/ },
-  { name: "a live pct exec container-hop command", pattern: /\bpct exec \d/ },
-];
-
 test("no fact file leaks a host address, a key filename, or the retired container-hop command", () => {
   const findings: string[] = [];
   for (const file of factFiles()) {
