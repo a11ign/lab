@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { collect } from "../../../../scripts/board-data.mjs";
-import { document } from "../../../../scripts/board-document.mjs";
+import { document, BODY_WORD_CAP, summaryFor } from "../../../../scripts/board-document.mjs";
 
 /* THE BOARD'S STYLE, ENFORCED ON THE RENDERED DOCUMENT AND NEVER ON THE TEMPLATE.
  *
@@ -161,7 +161,7 @@ test("no count in the prose is typed; each is driven by the data it claims to re
   const md = decisionSections(documentWith({ strays: 731, merges: 947, open: 613, closed: 829 }));
   const expectations: [string, number, RegExp][] = [
     ["changes with the wrong author", 731, /wrong author/i],
-    ["merges in the window", 947, /merges made since|merged in this period|Saved changes merged/i],
+    ["merges in the window", 947, /changes saved since midnight|merges made since/i],
     ["work blocking the release", 613, /pieces of work must finish|blocking that release/i],
   ];
   const bad: string[] = [];
@@ -192,6 +192,57 @@ test("the body and the appendix report the same count for the same thing", () =>
   assert.deepEqual(bad, [],
     "every figure the body states must be sourced in the appendix under the same window; the board found "
     + "one that was not, and the two disagreed");
+});
+
+/** Sections one to five only: not the title, not the summary, not the appendix. */
+function bodyOnly(md: string): string {
+  const start = md.indexOf("\n## ", md.indexOf("## Executive summary") + 1);
+  const from = start === -1 ? md.indexOf("\n## ") : start;
+  const to = md.indexOf("## Appendix");
+  return md.slice(from === -1 ? 0 : from, to === -1 ? undefined : to);
+}
+
+const wordCount = (s: string) => s.split(/\s+/).filter(Boolean).length;
+
+test(`the body fits two pages: sections one to five stay under ${BODY_WORD_CAP} words`, () => {
+  const words = wordCount(bodyOnly(buildDocument()));
+  assert.ok(words <= BODY_WORD_CAP,
+    `the body is ${words} words against a cap of ${BODY_WORD_CAP}. Cut repetition and evidence-in-prose `
+    + "— evidence belongs in the appendix — never a decision or a number.");
+});
+
+test("the word cap REJECTS edition 2, which is why it exists", () => {
+  // MUTATION AGAINST THE REAL THING. Edition 2 ran to 1,864 words across four pages of body and the
+  // chairman called it too long for a daily. A cap that does not reject the document that caused it is
+  // a cap chosen to be satisfied.
+  const editionTwoBodyWords = 1864;
+  assert.ok(editionTwoBodyWords > BODY_WORD_CAP,
+    `the cap is ${BODY_WORD_CAP} and edition 2's body was ${editionTwoBodyWords} words; a cap that `
+    + "admits the document it was written for is decoration");
+});
+
+test("an edition cannot be published without a hand-written summary for that day", () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const summary = summaryFor(today);
+  assert.ok(summary,
+    `docs/board/summaries/${today}.md is missing. A missing summary is a MISSING EDITION, never a `
+    + "summary-less document — a summary assembled from the sections is the thing the chairman's rules "
+    + "forbid.");
+  assert.ok(summary.words <= 120,
+    `the summary is ${summary.words} words, over the 120-word cap that makes it a summary`);
+  // It must ANSWER the three questions, not merely be short.
+  for (const [what, re] of [
+    ["are we on the date", /\bdate\b|\bSeptember\b|on track|at risk/i],
+    ["what changed since yesterday", /since yesterday|today|now|moved|found/i],
+    ["what the board must decide", /decide|approve|name|confirm/i],
+  ] as [string, RegExp][]) {
+    assert.match(summary.text, re, `the summary does not appear to answer: ${what}`);
+  }
+});
+
+test("the chairman's conditions are in the repository beside the other guides", () => {
+  assert.ok(existsSync(path.join(REPO, "docs/board/style/chairman-guidelines.md")),
+    "the conditions the document is written to must be checkable against the text, not recalled");
 });
 
 test("the style guides the document is written to are in the repository", () => {
