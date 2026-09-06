@@ -46,6 +46,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import { LEAK_PATTERNS } from "./leak-patterns.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -110,7 +111,7 @@ const EXEMPT: Array<{ file: string; value: string; reason: string }> = [
 ];
 
 function trackedMarkdownFiles(): string[] {
-  return execFileSync("git", ["ls-files", "*.md"], { cwd: REPO, encoding: "utf8" })
+  return execFileSync("git", ["ls-files", "*.md"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
     .split("\n")
     .filter(Boolean);
 }
