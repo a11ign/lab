@@ -155,6 +155,14 @@ def audit(records: list[tuple[dict[str, float], set[str]]], model_root: Path) ->
         for subtype, subtype_report in criterion_report["subtypes"].items():
             positives = [values for values, subtypes in records if subtype in subtypes]
             if not positives:
+                # An EXPLICIT row, not a silent skip. A subtype whose head still exists in this training
+                # report but has zero positives in this corpus copy must stay distinguishable from one
+                # whose head was deliberately retired (which never reaches this loop at all, because it is
+                # no longer in `report["criteria"]`) — `compare_to_baseline`'s "LOST COVERAGE" check reads
+                # this row to tell the two apart. Omitting it here was the exact shape this whole file
+                # exists to catch one layer up: a corpus that silently lost a subtype's only evidence would
+                # simply vanish from the report, and neither REGRESSION nor UNAUDITED could ever see it.
+                rows.append({"subtype": subtype, "positives": 0, "vetoes": [], "closable": [], "sumLogits": 0.0})
                 continue
             effective = effective_weights(weights[subtype_report["head"] + ".weight"], names)
             vetoes = []
@@ -329,6 +337,7 @@ def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path, stream:
     baseline = {row["subtype"]: row for row in json.loads(baseline_path.read_text())["rows"]}
     regressions = []
     unbaselined = []
+    lost_coverage = []
     rule_decided = rule_decided_subtypes()
     # UNBASELINED and WORSE are different findings, and calling both a regression sends the reader at the
     # wrong thing. A head absent from the baseline may be genuinely new, or may have existed for months
@@ -340,6 +349,15 @@ def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path, stream:
     # and the wording is what decides whether somebody investigates the corpus or records a baseline.
     for row in rows:
         was = baseline.get(row["subtype"])
+        # LOST COVERAGE, checked BEFORE the regression/unaudited split below -- a subtype that had
+        # positives at baseline and has NONE now cannot be judged on vetoes at all (its `vetoes` list is
+        # necessarily empty), so falling through would read it as a silent improvement -- "closable_count
+        # went from N to 0" -- which is the exact evidence-check-shaped defect this exists to prevent one
+        # layer down: the corpus lost the subtype's only evidence, and a gate reading fewer vetoes as
+        # cleaner reported it as good news.
+        if was is not None and was.get("positives", 0) > 0 and row["positives"] == 0:
+            lost_coverage.append(f"{row['subtype']}: {was['positives']} positive(s) at baseline, 0 now")
+            continue
         if was is None:
             # The two facts that decide whether an unaudited veto is a DEFECT or the corpus's shape, and
             # both were established by hand on 2026-08-26 before this reported them.
@@ -366,6 +384,8 @@ def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path, stream:
         note(f"  REGRESSION  {line}")
     for line in unbaselined:
         note(f"  UNAUDITED   {line}")
+    for line in lost_coverage:
+        note(f"  LOST COVERAGE  {line}")
     if regressions:
         note("\n  A head gained a free veto. That means the corpus separated two things it should not,")
         note("  or a new feature was added that no positive carries. See ADR 0015.\n")
@@ -374,7 +394,12 @@ def compare_to_baseline(rows: list[dict[str, Any]], baseline_path: Path, stream:
         note("  outside this audit's scope until now. Read their vetoes against ADR 0015 and, if they are")
         note("  the corpus's shape rather than a defect, record them:")
         note("    npm run lab:job -- -e job=shortcuts-baseline   # deliberate, and it writes\n")
-    if regressions or unbaselined:
+    if lost_coverage:
+        note("\n  A subtype audited before now has NO positives at all, so its head cannot be judged for a")
+        note("  free veto on evidence it does not have. Either the corpus regressed, or this export is")
+        note("  stale relative to what the baseline was computed from -- re-export before trusting either")
+        note("  a clean or a failing verdict from this run.\n")
+    if regressions or unbaselined or lost_coverage:
         return 1
     return 0
 
