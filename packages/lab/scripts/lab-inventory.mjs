@@ -59,7 +59,8 @@ import { readdirSync, readFileSync, statSync, existsSync, openSync, readSync, cl
 import { resolve, join, basename } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { REPO_ROOT, runsRoot, realCorpusRoot } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, runsRoot, realCorpusRoot, datasetRoot } from "../src/dataset-paths.mjs";
+import { corpusState } from "../src/training/corpus-settled.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 
 /**
@@ -76,7 +77,6 @@ const MIGRATION = resolve(REPO, "packages/scorer/models/schema-migration.json");
 const JSON_OUT = process.argv.includes("--json");
 
 /** Below this the corpus is being rewritten and every count describes a state that is already gone. */
-const SETTLED_AFTER_MINUTES = 10;
 /** Enough captures to be worth describing; fewer is a partial copy, not a corpus. */
 const PARTIAL_CORPUS = 50;
 
@@ -405,11 +405,25 @@ function reportFetched(/** @type {any[]} */ fetched) {
  * "ask again shortly", the second means "you are on the wrong machine".
  */
 function refusal(/** @type {any} */ state) {
-  const idle = state.corpus.dataset.newestWrittenMinutesAgo;
-  if (idle !== null && idle < SETTLED_AFTER_MINUTES) {
-    line(`\n  IN FLUX — a capture was written ${idle} minute(s) ago. Every count below describes a state`);
-    line("  that will have changed by the time you read it. Wait for the run, or watch it with");
-    line("  `npm run lab:status -- -e job=<name>`. This is a refusal to measure a moving target.");
+  // ASK THE RUN, DO NOT GUESS FROM THE CLOCK. This used to compare the newest capture's age against a ten
+  // minute constant, which is the PROXY `corpus-settled.mjs` was written to replace and its header names
+  // the failure exactly: "A capture that finished cleanly thirty seconds ago is settled, and the audit
+  // refuses for another nine and a half minutes."
+  //
+  // Measured 2026-09-06, which is why this changed: a 1,645-case recapture finished with
+  // `Result=success`, `finishedAt` written, 0 failed — and `lab:inventory` refused two minutes later with
+  // IN FLUX. The corpus was not moving; the file was merely young. That refusal blocked the audit the run
+  // had just been completed FOR.
+  //
+  // `corpusState` reads the run's own `finishedAt`/`updatedAt` and falls back to the clock only when a
+  // copy carries no progress file — which is the honest use of the proxy rather than the primary test. It
+  // also distinguishes ABANDONED, which the age comparison could never see: a run that died mid-write
+  // ages past ten minutes and then reads as settled, so a half-written corpus was measured as a whole one.
+  const settle = corpusState({ datasetRoots: [datasetRoot()], evidenceDirs: [runsRoot()] });
+  if (settle.blocking) {
+    line(`\n  ${settle.state === "abandoned" ? "ABANDONED" : "IN FLUX"} — ${settle.why}`);
+    line("  Every count below would describe a state that has already changed, so this refuses to report");
+    line("  one. Watch it with `npm run lab:status -- -e job=<name>`.");
     return 2;
   }
   if (!state.corpus.dataset.captures && !state.corpus.realPages.captures) {
