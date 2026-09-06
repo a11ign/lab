@@ -378,8 +378,17 @@ function exportedExclusions(): string[] | null {
   return Array.isArray(summary.excludedSubtypes) ? summary.excludedSubtypes : null;
 }
 
-/** Every declared key must exist in the data — and every `unavailable` one must NOT. */
-function ownershipFailures(coverage: Map<string, Coverage>): string[] {
+/**
+ * Every declared key must exist in the data — and every `unavailable` one must NOT.
+ *
+ * `ownership` defaults to the real declaration and takes a parameter only so a test can hand it a small
+ * fabricated map instead — `OWNERSHIP` is read from `rule-ownership.json` at import time, and the real
+ * file has no `modelHead: false` entry to exercise this exemption against yet
+ * (`model-head-exclusion.test.ts`).
+ */
+export function ownershipFailures(
+  coverage: Map<string, Coverage>, ownership: Map<string, import("../src/training/rule-ownership.js").Ownership> = OWNERSHIP,
+): string[] {
   const failures: string[] = [];
   // Every declared key must exist in the DATA -- except the `unavailable` ones, where the assertion is
   // exactly inverted and just as necessary.
@@ -390,7 +399,7 @@ function ownershipFailures(coverage: Map<string, Coverage>): string[] {
   // An `unavailable` subtype is excluded from the export on purpose (MODEL_EXCLUDED_SUBTYPES), so its
   // records MUST be absent -- and if they come back, the exclusion has silently stopped working and a head
   // is being trained on evidence that cannot express its failure. Same reasoning, opposite direction.
-  for (const [subtype, entry] of OWNERSHIP) {
+  for (const [subtype, entry] of ownership) {
     const present = coverage.has(subtype);
     if (entry.decidedBy === "unavailable") {
       if (!present) continue;
@@ -424,6 +433,12 @@ function ownershipFailures(coverage: Map<string, Coverage>): string[] {
       continue;
     }
     if (present) continue;
+    // `modelHead: false` is the one declared-but-absent case that is not a defect: it is how
+    // `1.4.2:autoplay-uncontrollable` is declared today with no corpus case at all -- see
+    // `rule-ownership.json`'s own `why`. `assert_declaration_matches_data` (train-screenreader-model.py)
+    // exempts it from the identical check for the identical reason; the two must move together or one
+    // side's gate contradicts the other's.
+    if (entry.modelHead === false) continue;
     // WHICH of the two it is, stated rather than guessed. This said "either the corpus vocabulary moved or
     // the key was never right" and failed hard on both — but there is a third case it never considered and
     // which is the common one locally: the export simply PREDATES the declaration. `runs/` is gitignored,
