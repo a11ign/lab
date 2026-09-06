@@ -932,6 +932,34 @@ export const ACCEPTANCE_CASES = Object.freeze([
   focusRevealPair({ id: "focus-panel-stuck", title: "Permit application", field: "Permit reference", note: "Your reference appears on the top right of the letter we sent you.", linkText: "Where to find your reference", task: "Focus the permit reference and try to dismiss the panel it opens." }),
   focusRevealPair({ id: "focus-panel-stuck-grant", title: "Grant claim", field: "Claim number", note: "Claim numbers begin with two letters and are eight characters long.", linkText: "What a claim number looks like", task: "Focus the claim number and try to dismiss the panel it opens." }),
   focusRevealPair({ id: "focus-panel-stuck-tenancy", title: "Tenancy check", field: "Tenancy code", note: "The code is printed beneath the barcode on your rent statement.", linkText: "Locating your tenancy code", task: "Focus the tenancy code and try to dismiss the panel it opens." }),
+  // 1.4.2:autoplay-uncontrollable's held-out pair -- added the same day as the training case (#9), because
+  // this file's own header says "KEEP THIS LIST EMPTY IF YOU CAN" for SUBTYPES_WITHOUT_ACCEPTANCE_COVERAGE
+  // and a case here costs one entry rather than a permanent exemption. Different subject matter from
+  // `media-autoplay-audio` in case-matrix.mjs, per this file's generalisation rule: a held-out case reusing
+  // a training case's vocabulary measures memorisation, not discrimination.
+  pair({
+    id: "media-autoplay-video",
+    criterion: "1.4.2",
+    subtype: "autoplay-uncontrollable",
+    task: "Notice what starts playing when the page opens.",
+    mutation: "A video autoplays, is not muted, and exposes no controls attribute, so nothing lets a "
+      + "screen-reader user pause or stop it competing with NVDA's own speech.",
+    badSignal: { type: "autoplay-uncontrollable" },
+    good: page({
+      title: "Safety briefing",
+      heading: "Safety briefing",
+      body: "<p>A short safety briefing video plays automatically and can be paused or stopped at any time.</p>"
+        + "<video autoplay controls "
+        + "src=\"data:video/mp4;base64,AAAAHGZ0eXBpc29tAAACAGlzb21pc28yYXZjMQAAAAhmcmVl\"></video>",
+    }),
+    bad: page({
+      title: "Safety briefing",
+      heading: "Safety briefing",
+      body: "<p>A short safety briefing video plays automatically and can be paused or stopped at any time.</p>"
+        + "<video autoplay "
+        + "src=\"data:video/mp4;base64,AAAAHGZ0eXBpc29tAAACAGlzb21pc28yYXZjMQAAAAhmcmVl\"></video>",
+    }),
+  }),
 ]);
 
 /**

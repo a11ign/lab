@@ -718,6 +718,41 @@ const cases = [
       body: "<table><caption>Departures from Central station</caption><tr><td>Destination</td><td>Departs</td><td>Platform</td></tr><tr><td>Riverside</td><td>09:15</td><td>3</td></tr><tr><td>Hilltown</td><td>09:40</td><td>5</td></tr></table>",
     }),
   }),
+  // 1.4.2 Audio Control -- rule-ownership.json has declared this subtype since it was added and no case
+  // has ever emitted it, so `addAutoplayingAudio` (rules.ts) has never been exercised against captured
+  // evidence in either direction. The two variants differ ONLY in the `controls` attribute, which is the
+  // criterion's own native pause/stop mechanism -- `addAutoplayingAudio` reads exactly `autoplay`, `muted`
+  // and `controls` off the element, and nothing else here can move.
+  //
+  // Read against the criterion's own text before writing this: 1.4.2 has two exceptions neither this case
+  // nor the rule can express -- the 3-SECOND threshold (duration is a media-file property, not a DOM
+  // attribute) and the VOLUME alternative (a custom slider satisfies the criterion with no `controls`
+  // attribute at all). Both are why the rule is `mapping: "secondary"` rather than an assertion, stated in
+  // `criterion-coverage.ts`'s 1.4.2 note -- this case demonstrates the one failure mode the DOM census CAN
+  // see, not the whole criterion.
+  pair({
+    id: "media-autoplay-audio",
+    criterion: "1.4.2",
+    task: "Listen for what plays when the page loads.",
+    source: "WCAG 1.4.2 Understanding page",
+    mutation: "Audio starts automatically, is not muted, and has no controls attribute, so a screen-reader "
+      + "user has no way to pause or stop it competing with NVDA's own speech.",
+    badSignal: { type: "autoplay-uncontrollable" },
+    good: page({
+      title: "Welcome message",
+      heading: "Welcome message",
+      body: "<p>A short welcome message plays automatically and can be paused or stopped at any time.</p>"
+        + "<audio autoplay controls "
+        + "src=\"data:audio/wav;base64,UklGRiQAAAAAV0FWRWZtdCAQAAAAAQABAEANDgAgTgAAAgAQAGRhdGEAAAAA\"></audio>",
+    }),
+    bad: page({
+      title: "Welcome message",
+      heading: "Welcome message",
+      body: "<p>A short welcome message plays automatically and can be paused or stopped at any time.</p>"
+        + "<audio autoplay "
+        + "src=\"data:audio/wav;base64,UklGRiQAAAAAV0FWRWZtdCAQAAAAAQABAEANDgAgTgAAAgAQAGRhdGEAAAAA\"></audio>",
+    }),
+  }),
 ];
 
 function imageVariant(/** @type {any} */ { id, title, heading, description, file, goodAlt, badAlt, task }) {
