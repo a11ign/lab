@@ -7,8 +7,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync, rmSync, utimesSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { environmentSpread, splitFields, migrationVerdict } from "../../scripts/lab-inventory.mjs";
+import {
+  environmentSpread, splitFields, migrationVerdict, fetchedArtifacts,
+} from "../../scripts/lab-inventory.mjs";
 
 const capture = (env: Record<string, unknown>, prov: Record<string, unknown> = {}) =>
   ({ environment: env, provenance: prov });
@@ -73,6 +78,35 @@ test("an open migration names which candidates could close it", () => {
   assert.equal(verdict.open, true);
   assert.equal(verdict.shippedSchema, "v7");
   assert.deepEqual(verdict.candidatesWithPendingSchema, ["model-candidate"]);
+});
+
+// `runs/fetched/` was invisible to this tool entirely until a fetched export (`candidate.dataset-export
+// .jsonl`) and a same-day `rules-gate.log` disagreed about a census count, with nothing here even saying
+// the fetched copy existed. These pin that it now does, without needing a real `runs/fetched/` on disk.
+
+test("no runs/fetched/ directory is ordinary, not an error -- reports empty", () => {
+  assert.deepEqual(fetchedArtifacts(join(tmpdir(), "no-such-dir-at-all")), []);
+});
+
+test("every file present is reported, oldest first", () => {
+  const dir = mkdtempSync(join(tmpdir(), "lab-inventory-test-"));
+  try {
+    const older = join(dir, "candidate.dataset-export.jsonl");
+    const newer = join(dir, "rules-gate.log");
+    writeFileSync(older, "x".repeat(1000));
+    writeFileSync(newer, "y");
+    const anHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const now = new Date();
+    utimesSync(older, anHourAgo, anHourAgo);
+    utimesSync(newer, now, now);
+    const found = fetchedArtifacts(dir);
+    assert.deepEqual(found.map((f) => f.name), ["candidate.dataset-export.jsonl", "rules-gate.log"],
+      "the OLDER fetch (the one most likely to be silently stale-and-trusted) is reported first");
+    assert.equal(found[0].bytes, 1000);
+    assert.ok(found[0].minutesAgo >= 59, "an hour-old file must not read as fresh");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("a matching schema is NECESSARY and not sufficient, and the report must not imply otherwise", () => {

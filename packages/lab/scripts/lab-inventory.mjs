@@ -35,6 +35,19 @@
  *     `training-report.json`, which is why it was unreadable without a script.
  *   - **Is a schema migration open?** That is what `release:gate` refuses on, and knowing which candidate
  *     could close it is the difference between a retrain and a promote.
+ *   - **What has `lab:fetch` left lying around, and how old is it?** Added 2026-09-06, after
+ *     `runs/fetched/candidate.dataset-export.jsonl` (a point-in-time snapshot of the SAME canonical
+ *     `screenreader-evidence.jsonl` this file already tracks under EXPORTS, fetched once and never
+ *     refreshed) disagreed with a same-day `rules-gate.log` about whether 18 records carried a census —
+ *     and nothing said which to believe, or that a second, older copy even existed. `runs/fetched/` was
+ *     invisible to this tool entirely: a reader got the corpus and export state above, and had no way to
+ *     learn that a THIRD copy of related evidence was sitting one directory over, unlabelled as to age or
+ *     authority. This does not try to match a fetched file back to the export it came from — `lab-fetch
+ *     .yml`'s naming (`<out>.<artifact><ext>`) does not carry that mapping in a form worth re-deriving here
+ *     (the destination name is generic; recovering which lab path it names means re-reading the playbook,
+ *     which is the two-copies-of-one-fact shape this repo keeps paying for). It reports existence and age,
+ *     which is the part that was silently missing, and leaves "is this the same as that export" to the
+ *     reader with both ages in front of them instead of neither.
  *
  * ## It refuses to measure a moving target
  *
@@ -248,6 +261,29 @@ export function migrationVerdict(/** @type {any} */ migration, /** @type {any} *
   };
 }
 
+/**
+ * Everything sitting under `runs/fetched/` — every point-in-time pull `lab:fetch`/`lab:collect-promotion`
+ * has ever made, named `<out>.<artifact><ext>` by `lab-fetch.yml`. Reports existence and age ONLY; see this
+ * file's header for why it does not attempt to map a name back to the lab path it came from.
+ *
+ * SORTED OLDEST FIRST, so the file most likely to be silently stale-and-trusted is the one printed first.
+ */
+export function fetchedArtifacts(/** @type {string} */ dir) {
+  let entries;
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return []; // no such directory is ordinary -- nothing has been fetched here yet
+  }
+  return entries
+    .map((name) => {
+      const stat = statSync(join(dir, name));
+      return stat.isFile() ? { name, minutesAgo: Math.round(minutesSince(stat.mtimeMs)), bytes: stat.size } : null;
+    })
+    .filter((entry) => entry !== null)
+    .sort((a, b) => b.minutesAgo - a.minutesAgo);
+}
+
 function collect() {
   const datasetCaptures = join(RUNS, "screenreader-dataset/captures");
   const realPages = realCorpusRoot();
@@ -274,6 +310,7 @@ function collect() {
     ],
     models: modelList,
     migration: migrationVerdict(readJson(MIGRATION), modelList),
+    fetched: fetchedArtifacts(join(RUNS, "fetched")),
   };
 }
 
@@ -338,6 +375,27 @@ function reportProvenance(/** @type {any} */ state) {
     line(`  Its newest capture is ${(oldest / 60).toFixed(1)} h old.`);
   }
   line("  The authoritative answer:  npm run lab:job -- -e job=inventory");
+}
+
+/**
+ * `runs/fetched/` printed by NAME and AGE only — this file's header says why it stops there. NONE of
+ * these is authoritative, and none of them refreshes itself: a fetch made hours ago and an export made
+ * since sit side by side with nothing to tell them apart except the timestamp this prints. That is the gap
+ * this section exists to close — see EXPORTS above and `lab:job -e job=inventory` for what to trust
+ * instead of guessing from a filename.
+ */
+function reportFetched(/** @type {any[]} */ fetched) {
+  line("\nFETCHED  (runs/fetched/ — point-in-time pulls from `lab:fetch`/`lab:collect-promotion`, never "
+    + "refreshed after)");
+  if (!fetched.length) {
+    line("  (nothing fetched here)");
+    return;
+  }
+  line("  NONE of these is authoritative, and a name here does not say which lab path or which export it");
+  line("  came from — compare its age against EXPORTS above, or ask the lab: npm run lab:job -- -e job=inventory");
+  for (const f of fetched) {
+    line(`  ${f.name.padEnd(40)} ${(f.bytes / 1e6).toFixed(1)} MB, fetched ${f.minutesAgo} min ago`);
+  }
 }
 
 /**
@@ -424,6 +482,8 @@ function main() {
     line(`  ${m.name.padEnd(26)} ${String(m.schema).padEnd(30)}`
       + `${m.acceptanceReport ? "acceptance ✓" : "no acceptance report"}`);
   }
+
+  reportFetched(state.fetched);
 
   reportMigration(state);
   line("");
