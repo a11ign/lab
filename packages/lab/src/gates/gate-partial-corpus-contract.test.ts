@@ -71,6 +71,15 @@ function adoptsVerdict(scriptFile: string | undefined): boolean {
  * they are derived, immediately below, so the two cannot silently disagree about a seventh adopter.
  */
 const HAS_INCONCLUSIVE_DOCUMENTED: Record<string, string> = {
+  "packages/lab/scripts/fleet-hours.mjs":
+    "DOCUMENTED exit 2: it billed no capture and REFUSES to report a total it did not measure, and its "
+    + "two silences are told apart — 'no JSON found' versus 'walked N and billed none' need opposite "
+    + "fixes. That refusal covers ZERO and not PARTIAL, which would be the gap this file exists to name "
+    + "were it not for the mitigation: the report STATES ITS OWN DENOMINATOR on every run — "
+    + "capturesBilled, capturesFound, jsonFilesWalked, and the counts it could not bill. A reader sees "
+    + "5,395 of 5,396 and knows what the total covers, so a short corpus is visible in the output rather "
+    + "than hidden behind a plausible number. Naming what you examined is the general remedy for this "
+    + "whole shape; here it is built in rather than gated on.",
   "packages/lab/scripts/audit-rule-coverage.ts":
     "DOCUMENTED: \"2 the corpus is mid-run — a refusal to measure a moving target\" — a genuine "
     + "population-in-flux detection, distinct from a stale-export or usage-error code",
