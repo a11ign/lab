@@ -20,10 +20,13 @@
 // working step is gated. If launchd jobs ever return, restore the floor below and delete this note.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { claimedJobs, checkScheduledJobs, orphanJobs } from "./scheduled-jobs.mjs";
+
+const CLI = resolve(process.cwd(), "scripts/check-scheduled-jobs.mjs");
 
 /** A throwaway repo with two claimed jobs, for the tests that exercise the REPORTING logic.
  *
@@ -138,4 +141,19 @@ test("MUTATION: zero claimed jobs is caught by the vacuity guard, and a malforme
     "a missing docs/board directory must report zero claimed jobs, not throw");
 
   rmSync(dir, { recursive: true, force: true });
+});
+
+/**
+ * THE CLI ITSELF, run as a real process against a REAL zero-job checkout (this repository, since the
+ * plists were retired 2026-09-06) -- not the pure module. The zero-population case in `checkScheduledJobs`
+ * changed from a "not applicable" style report to the module's happy path when the launchd retirement
+ * landed, but `scripts/check-scheduled-jobs.mjs` had its OWN separate zero-check (`REFUSING: found zero
+ * claimed jobs ... the discovery itself is broken`, exit 2) that nobody updated -- the fix reaching one
+ * call site and not the other, this repo's own most-recorded defect shape. Caught by running the actual
+ * CLI, which no test here had done before.
+ */
+test("the CLI itself exits 0 on zero claimed jobs, rather than refusing", () => {
+  const out = execFileSync("node", [CLI], { encoding: "utf8", cwd: process.cwd() });
+  assert.match(out, /No jobs are claimed/,
+    "the CLI must report the empty population as expected, not as a broken discovery");
 });
