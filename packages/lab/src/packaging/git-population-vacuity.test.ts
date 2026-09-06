@@ -41,6 +41,16 @@ import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
 
+/**
+ * This file itself spawns `git ls-files` to build `tracked()`, which matches `SPAWNS_GIT_POPULATION` --
+ * so once committed it discovers ITSELF. Excluded here, in code, rather than by adding a `CLASSIFICATION`
+ * entry for it: the honest classification would be true (it IS guarded, by the vacuity-guard test above
+ * it) and also a file writing its own exemption into the list it maintains, which a reader has no way to
+ * tell apart from an ordinary row. Same device `real-page-corpus-freshness.test.ts` uses for the
+ * identical reason.
+ */
+const SELF = "packages/lab/src/packaging/git-population-vacuity.test.ts";
+
 /** `git branch -r`, `git tag`, `git log`, `git grep`, `git ls-files`, `git show`, `git for-each-ref` --
  * every git subcommand that ENUMERATES a population, comments stripped first so a docstring mentioning
  * one (this file's own header, or the sibling divergence test's) cannot be mistaken for a real call. */
@@ -53,7 +63,7 @@ function tracked(): string[] {
 }
 
 function discoverGitPopulationTests(): string[] {
-  return tracked().filter((f) => SPAWNS_GIT_POPULATION.test(stripComments(read(f))));
+  return tracked().filter((f) => f !== SELF && SPAWNS_GIT_POPULATION.test(stripComments(read(f))));
 }
 
 /**
@@ -104,6 +114,16 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
     note: "guarded — `git grep -l ruleFindings` across packages",
   },
 };
+
+test("MUTATION: without the SELF exclusion, this file would discover itself", () => {
+  // This file's own `tracked()` calls `execFileSync("git", ["ls-files", ...])`, which matches
+  // SPAWNS_GIT_POPULATION -- so once committed, the unfiltered walk finds itself. Proven directly against
+  // this file's own source, not asserted from memory.
+  assert.ok(SPAWNS_GIT_POPULATION.test(stripComments(read(SELF))),
+    "this file's own source must still match its own discovery pattern, or the SELF exclusion guards nothing");
+  assert.ok(!discoverGitPopulationTests().includes(SELF),
+    "the SELF exclusion must keep this file out of its own discovered population");
+});
 
 test("the discovery finds a non-trivial population -- vacuity guard for the walk itself", () => {
   const files = tracked();
