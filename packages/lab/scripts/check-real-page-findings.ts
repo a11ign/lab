@@ -152,6 +152,30 @@ function reportCaptureAges(): void {
   process.stdout.write(`${captureAgeLines(CAPTURE_AGES).join("\n")}\n`);
 }
 
+/**
+ * THIS GATE READS THE CAPTURES, AND `rules:gate` READS THE EXPORT. The two answer the same question from
+ * different sides of a freeze, and until 2026-09-06 only `rules:gate`'s own side said so
+ * (`score-rules.ts`'s `reportWhichPathThisGateRead` — read that function's header for the full history and
+ * the measurement).
+ *
+ * `export-screenreader-dataset.mjs` bakes `ruleEvidence: oracleCounts(capture)` at EXPORT time, so
+ * `rules:gate` scores a census frozen under whatever trust rule was current when the export ran. This
+ * gate calls `currentFindings()` straight over the captures under `runs/real-page-corpus`, so a
+ * capture-layer change reaches it immediately -- with nothing to re-run.
+ *
+ * Stated HERE too, not only at the other gate, because the failure mode is symmetric: someone running
+ * ONLY this gate after a capture-layer fix sees the fix working and has no reason to suspect `rules:gate`
+ * is still reading a stale export -- the "two gates disagreeing about one corpus" signal from the 1.3.1
+ * episode arrives as a SILENCE on whichever side you did not run, not as a visible disagreement.
+ */
+function reportWhichPathThisGateRead(): void {
+  process.stdout.write("\n# what this gate read, and what it therefore CAN see\n");
+  process.stdout.write("  the CAPTURES, live, under runs/real-page-corpus. A capture-layer fix is visible\n");
+  process.stdout.write("  here immediately, with no re-export needed.\n");
+  process.stdout.write("  `rules:gate` reads the EXPORT (`ruleEvidence` frozen at export time) and will NOT\n");
+  process.stdout.write("  see the same fix until `npm run lab:job -- -e job=export` runs again.\n");
+}
+
 const UPDATE = process.argv.includes("--update");
 const ALLOW_PARTIAL = process.argv.includes("--allow-partial");
 
@@ -742,6 +766,7 @@ function main(): void {
 
   const { added, removed } = compare(current, baseline);
   process.stdout.write(`\n  ${pages} conformant real page(s) scored against the baseline.\n`);
+  reportWhichPathThisGateRead();
   reportCaptureAges();
   for (const change of removed) {
     process.stdout.write(`  GONE   ${change.criterion} on ${change.url.replace(/^https:\/\//, "")}\n`);
