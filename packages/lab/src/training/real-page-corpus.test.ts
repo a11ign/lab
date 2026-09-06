@@ -331,7 +331,15 @@ test("the real-page gate honours claimExcludes, and only on exact criteria", () 
 
 test("every claimExcludes entry names a criterion we actually score", () => {
   // An entry naming something we do not score masks nothing and quietly overstates how excused a page is.
-  const scored = new Set(["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"]);
+  //
+  // FIXED 2026-09-06 (#33): this was a SECOND, independently-hardcoded copy of SCORED_CRITERIA -- already
+  // imported above and already used at this exact name (`scored`) in two other tests in this file -- and
+  // it had drifted: it still read the original eight criteria while SCORED_CRITERIA had grown to
+  // seventeen. `claimExcludes` masks TRAINING data for a HEAD, so SCORED_CRITERIA (criteria a head is
+  // fitted for) is the right set, never the full rule+scorer union `assessedCriteria()` returns --
+  // 1.4.2 and 2.4.7 are rule-only with no head at all, and masking training input for a head that does not
+  // exist would guard nothing.
+  const scored = new Set<string>(SCORED_CRITERIA);
   const stray: string[] = [];
   for (const page of REAL_PAGES) {
     for (const entry of page.claimExcludes ?? []) {
