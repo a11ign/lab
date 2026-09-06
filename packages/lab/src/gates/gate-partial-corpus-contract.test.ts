@@ -91,6 +91,13 @@ const HAS_INCONCLUSIVE_DOCUMENTED: Record<string, string> = {
  * either always-true-by-construction or not-the-right-question for that script.
  */
 const NO_PARTIAL_POPULATION: Record<string, string> = {
+  "packages/lab/src/harnesses/capture-check.mjs":
+    "NO EXTERNAL POPULATION: `CHECKS` is a fixed literal list in `capture-check.mjs` and the run iterates "
+    + "ALL of it (`for (const check of CHECKS)`), so there is nothing it could examine fewer of. A check "
+    + "that throws is counted as a FAILURE by `runCheck` rather than skipped, and a run that cannot start "
+    + "at all exits 2 — so the two states a partial-corpus gate exists to separate are already separate "
+    + "here. Same reasoning as `isolation-gate.mjs` above: a gate that enumerates its own targets has no "
+    + "denominator to fall short of.",
   "packages/lab/scripts/build-realism-tier.mjs":
     "DOCUMENTED: \"0 success, including the legitimate 'no training captures, base dataset only' state\" "
     + "— zero training captures is an accepted PASS by design, not flagged as a coverage shortfall; "
@@ -166,6 +173,11 @@ const COMPOSITE_JOBS: Record<string, string> = {
  */
 const JOB_SCRIPT_OVERRIDE: Record<string, string> = {
   "evidence-check": "packages/lab/scripts/evidence-check.mjs",
+  // Its argv resolves the worker address through `hostvars[]`, so the whole thing is one multi-line Jinja
+  // expression rather than a list of literals and `resolvedScriptFile` cannot read a path out of it. The
+  // override is the designed answer to exactly that, and naming it here keeps "cannot be resolved" and
+  // "nobody classified it" different states -- which is this file's own thesis.
+  "capture-check": "packages/lab/src/harnesses/capture-check.mjs",
 };
 
 /**
