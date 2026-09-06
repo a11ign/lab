@@ -62,6 +62,33 @@ const WANTED = ["captures", "manifest.json"];
  */
 const WANTED_SIBLINGS = ["real-page-corpus", "screenreader-acceptance"];
 
+/**
+ * Every `.json` under these roots, recursively — the number the archive has to match.
+ *
+ * Recursive because the corpus is not flat: `screenreader-dataset/captures/` holds the dataset captures
+ * while `real-page-corpus/` and `screenreader-acceptance/` have their own layouts, and a count that only
+ * saw the top level would agree with a short archive.
+ *
+ * @param {string} root @param {string[]} members
+ */
+function jsonUnder(root, members) {
+  return members.reduce((total, member) => total + jsonBelow(resolve(root, member)), 0);
+}
+
+/** One root, walked iteratively — a deep corpus must not depend on the stack depth. @param {string} start */
+function jsonBelow(start) {
+  if (!existsSync(start)) return 0;
+  let total = 0;
+  const stack = [start];
+  while (stack.length) {
+    const here = stack.pop();
+    if (!here) continue;
+    if (statSync(here).isDirectory()) stack.push(...readdirSync(here).map((e) => resolve(here, e)));
+    else if (here.endsWith(".json")) total += 1;
+  }
+  return total;
+}
+
 function describe() {
   const present = WANTED.filter((name) => existsSync(resolve(DATASET, name)));
   const missing = WANTED.filter((name) => !present.includes(name));
@@ -94,7 +121,38 @@ async function main() {
   await run("tar", ["-czf", archive, "-C", DATASET, ...present,
     ...(siblings.length ? ["-C", RUNS, ...siblings] : [])], { maxBuffer: 1 << 26 });
   const size = statSync(archive).size;
+
+  // READ THE ARCHIVE BACK, because `tar` exiting 0 is not the archive holding the corpus.
+  //
+  // This file's own header records the incident: a snapshot of a 417 MB `runs/` extracted to 4,959 of
+  // 5,445 JSON files, and *"found by running the restore rather than reading the script"*. `tar` had
+  // succeeded. The 486 missing were two sibling roots nobody had listed, and the fix was to list them --
+  // which repairs THAT omission and leaves the class wide open: any future member absent from `WANTED`,
+  // any path `tar` skips with a warning, produces a short archive and a cheerful line.
+  //
+  // Counting on disk and counting in the archive is the same argument as verifying a deploy through
+  // `/health.code` over HTTP rather than through the channel that did the deploying: a check sharing a
+  // failure mode with the action verifies nothing. `tar -tzf` reads the file that was written.
+  // `.stdout`, never `String(result)`. `promisify(execFile)` resolves an OBJECT, so stringifying it gives
+  // "[object Object]" — zero lines ending `.json`, a count of 0, and a refusal on every healthy archive.
+  // That is `normalise = String(entry)` from `evidence-diff.mjs`, which made every object compare equal
+  // and reported SAME for a changed validation message. Caught here by reading `promisify`'s contract
+  // rather than by running it, which is the only reason it is not in the commit.
+  const { stdout: listed } = await run("tar", ["-tzf", archive], { maxBuffer: 1 << 28 });
+  const archivedJson = String(listed).split("\n").filter((line) => line.endsWith(".json")).length;
+  const onDisk = jsonUnder(DATASET, present) + siblings.reduce((n, name) => n + jsonUnder(RUNS, [name]), 0);
+  if (archivedJson < onDisk) {
+    process.stderr.write(
+      `REFUSING: the archive holds ${archivedJson} JSON file(s) and ${onDisk} were on disk — ${onDisk - archivedJson} `
+      + "did not make it in.\n"
+      + `  ${archive}\n`
+      + "A short archive restores as a corpus that looks complete and is not, which is worse than an\n"
+      + "absent one because nothing downstream can tell. The archive is LEFT IN PLACE so it can be\n"
+      + "inspected; delete it once you know why it is short.\n");
+    process.exit(2);
+  }
   process.stdout.write(`Wrote ${archive} (${(size / (1024 * 1024)).toFixed(1)} MB)\n`);
+  process.stdout.write(`Read back ${archivedJson} JSON file(s), matching the ${onDisk} on disk.\n`);
   process.stdout.write(
     "This is on the SAME DISK as the corpus, so it is not yet a backup — it defends against\n" +
     "`rm -rf runs/` and a bad recapture, not against losing the machine.\n\n" +

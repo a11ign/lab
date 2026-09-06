@@ -108,6 +108,13 @@ const HAS_INCONCLUSIVE_DOCUMENTED: Record<string, string> = {
     + "— this is the FOUNDING incident this whole file generalises: it once exited 0 on 2 of 48 captures "
     + "compared, and `docs/gate-exit-codes.md`/`verdict.mjs`'s own header both name it explicitly. Reaches "
     + "the wire via `evidence-diff.mjs`'s `inconclusive = compared === 0 || compared < attempted`.",
+  "packages/lab/scripts/corpus-snapshot.mjs":
+    "DOCUMENTED: \"2 the archive holds fewer JSON files than were on disk\" — a real population check, and "
+    + "the one place in this repo where a partial population is the WHOLE risk rather than a caveat. It "
+    + "counts `.json` under every archived root, lists the archive back with `tar -tzf`, and refuses on a "
+    + "shortfall naming both numbers. Added 2026-09-06 after this file's own header recorded a 417 MB "
+    + "snapshot extracting to 4,959 of 5,445 files with `tar` exiting 0 — mutation-checked by removing the "
+    + "sibling roots again, which reproduces 4,959 against 5,397 and exits 2.",
 };
 
 /**
@@ -117,6 +124,12 @@ const HAS_INCONCLUSIVE_DOCUMENTED: Record<string, string> = {
  * either always-true-by-construction or not-the-right-question for that script.
  */
 const NO_PARTIAL_POPULATION: Record<string, string> = {
+  "packages/lab/scripts/corpus-backup.mjs":
+    "NO POPULATION OF EVIDENCE: it copies ONE archive — the newest file `corpus-snapshot` wrote — to a "
+    + "destination and reads its size back. Its population is a single artifact, so 'did it see "
+    + "everything' is not the right question; 'did the one thing arrive intact' is, and that is what it "
+    + "asks. The corpus-completeness question belongs one step earlier, to `corpus-snapshot.mjs` above, "
+    + "which is where it is now guarded. Both `corpus-backup` and `corpus-backup-verify` run this file.",
   "packages/lab/src/harnesses/capture-check.mjs":
     "NO EXTERNAL POPULATION: `CHECKS` is a fixed literal list in `capture-check.mjs` and the run iterates "
     + "ALL of it (`for (const check of CHECKS)`), so there is nothing it could examine fewer of. A check "
