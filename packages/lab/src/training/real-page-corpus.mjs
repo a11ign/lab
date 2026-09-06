@@ -759,6 +759,36 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     demonstrates: "the same panel, revealed on focus and dismissed by Escape — the conformant sibling, so "
       + "the rule is shown SILENT on the same evidence channel rather than only shown firing" },
 
+  // THE FOUR ORIGINAL FIXTURES GET THEIR SILENT HALVES — added 2026-09-06, riding a recapture that was
+  // already approved and paid for.
+  //
+  // Each of the four above showed a rule FIRING and never showed it staying silent on a conformant page
+  // reached through the same evidence channel. That is half the property, and the half that would catch a
+  // rule firing on everything: a bad-only fixture cannot tell "this rule detects the defect" from "this
+  // rule fires whenever it is asked". 1.4.13's pair was the first with both halves and the reason it is
+  // the first is timing, not principle — it was added the night a gate demanded real-page evidence.
+  //
+  // COSTS ONE FIXTURE-ROLE CAPTURE, and that run is happening anyway for 1.4.13 and for the twelve-day-old
+  // `fixture` staleness. Batching them is this repo's own rule about corpus changes: pay for one capture
+  // rather than four.
+  //
+  // No `witnessableAs` on any of these, and `real-page-corpus.test.ts` requires that: a silent half
+  // witnesses nothing by design, and claiming a criterion on it would assert it demonstrates the failure
+  // it exists NOT to demonstrate. The pairing itself is DERIVED from the url — same case directory,
+  // `bad.html` against `good.html` — so none of these can drift away from the failing half it belongs to.
+  { url: `${FIXTURE_BASE}/skip-link-broken/good.html`, role: "fixture",
+    publishedClaim: "conformant", source: OWN_FIXTURE_CLAIM,
+    demonstrates: "a skip link that actually moves focus — 2.4.1's silent half" },
+  { url: `${FIXTURE_BASE}/route-title-stale/good.html`, role: "fixture",
+    publishedClaim: "conformant", source: OWN_FIXTURE_CLAIM,
+    demonstrates: "a view change that updates the title — 2.4.2's silent half" },
+  { url: `${FIXTURE_BASE}/keyboard-unreachable-action/good.html`, role: "fixture",
+    publishedClaim: "conformant", source: OWN_FIXTURE_CLAIM,
+    demonstrates: "the same action as a real button, reachable by keyboard — 2.1.1's silent half" },
+  { url: `${FIXTURE_BASE}/focus-order-tabindex/good.html`, role: "fixture",
+    publishedClaim: "conformant", source: OWN_FIXTURE_CLAIM,
+    demonstrates: "the same fields in reading order, no positive tabindex — 2.4.3's silent half" },
+
 ]);
 
 /** Pages for one role. @param {CorpusRole} role @returns {RealPage[]} */
