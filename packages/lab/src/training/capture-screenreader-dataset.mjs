@@ -106,10 +106,51 @@ export function selectCases(/** @type {any} */ cases, /** @type {any} */ only) {
   //
   // `route-title-stale+` is unambiguous because `+` is the variant separator, so it cannot collide with
   // an id: no case is named `X+` and every variant of X begins `X+`.
-  return cases.filter((/** @type {any} */ { id }) => wanted.some((/** @type {any} */ want) => {
-    if (want.endsWith("+")) return id === want.slice(0, -1) || id.startsWith(want);
-    return ids.has(want) ? id === want : id.includes(want);
-  }));
+  return cases.filter((/** @type {any} */ { id }) => wanted.some(
+    (/** @type {any} */ want) => selectorMatches(want, id, ids)));
+}
+
+/** One selector against one id, so the filter and the unmatched check cannot drift apart. */
+function selectorMatches(/** @type {any} */ want, /** @type {any} */ id, /** @type {Set<any>} */ ids) {
+  if (want.endsWith("+")) return id === want.slice(0, -1) || id.startsWith(want);
+  return ids.has(want) ? id === want : id.includes(want);
+}
+
+/**
+ * WHICH SELECTORS MATCHED NOTHING — because "all of them matched nothing" was the only case guarded.
+ *
+ * `main` refuses on `!cases.length`, which fires only when EVERY entry is a miss — and even then it can
+ * only print the whole string back, never which entry is wrong. Ask for `label-vague,status-waiting+`
+ * where the second names nothing: the first matches ten cases, the run captures them, reports success,
+ * and never mentions that half of what you asked for does not exist.
+ *
+ * That is this repo's `examinedNothing` shape for the third time — a guard covering the extreme case and
+ * calling it the general one. `evidence:check` had it (`compared === 0` guarded, 2-of-48 not), and the
+ * comment directly above `selectCases` records its own version: *"`--only=route-title-stale` to prove a
+ * furniture fix captured 1 case of 7, and the four uncaptured ones stayed stale while the run reported
+ * success."* The trailing `+` closed "asked for a family, got one". This closes "asked for something that
+ * does not exist, got told nothing" — the adjacent door, found 2026-09-06 checking issue #34's acceptance
+ * before paying for its capture. That selector, `label-vague+,status-waiting+,status-progress+`, matches
+ * 0 of 1,657 cases: two families were never built, and the third misses because `+` means "this case and
+ * its variants" while the ten real ones are `label-vague-field`, `label-vague-box` and so on.
+ *
+ * NEAR MISSES ARE OFFERED, not just the miss. A selector that matched nothing is nearly always a typo or a
+ * renamed case, and a refusal that cannot suggest the right spelling gets worked around rather than read.
+ */
+export function unmatchedSelectors(/** @type {any} */ cases, /** @type {any} */ only) {
+  if (!only) return [];
+  const wanted = only.split(",").map((/** @type {any} */ s) => s.trim()).filter(Boolean);
+  const ids = new Set(cases.map((/** @type {any} */ { id }) => id));
+  const all = [...ids];
+  return wanted
+    .filter((/** @type {any} */ want) => !all.some((/** @type {any} */ id) => selectorMatches(want, id, ids)))
+    .map((/** @type {any} */ want) => ({ want, near: nearestIds(want, all) }));
+}
+
+/** Up to three ids sharing the selector's leading word — enough to spot a typo, short enough to read. */
+function nearestIds(/** @type {any} */ want, /** @type {any[]} */ all) {
+  const stem = String(want).replace(/\+$/, "").split("-")[0];
+  return stem ? all.filter((/** @type {any} */ id) => id.startsWith(stem)).slice(0, 3) : [];
 }
 
 // `requestJson`, not `fetch`: a capture can hold the connection well past undici's 300 s headers cap,
@@ -824,6 +865,16 @@ async function main() {
   refuseIfRunsReadonly(ROOT);
   const manifest = readManifest();
   const cases = selectCases(manifest.cases, ONLY);
+  // EVERY selector must match something, not merely one of them. See `unmatchedSelectors`.
+  const missed = unmatchedSelectors(manifest.cases, ONLY);
+  if (missed.length) {
+    throw new Error(`--only= names ${missed.length} selector(s) that match no generated case:\n`
+      + missed.map((/** @type {any} */ { want, near }) => `  ${want}`
+        + (near.length ? `   did you mean: ${near.join(", ")}` : "   nothing on this page begins like it"))
+        .join("\n")
+      + `\nOf ${manifest.cases.length} generated case(s), ${cases.length} matched the rest. Refusing rather `
+      + "than capturing a subset and reporting success.");
+  }
   if (!cases.length) throw new Error("No generated case matches --only=" + ONLY);
 
   const done = previouslyCaptured({
