@@ -115,10 +115,27 @@ function quantile(values, q) {
   return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))];
 }
 
+/**
+ * How the total was computed, EMITTED rather than described anywhere a human retypes it.
+ *
+ * The board's `docs/board/reported.json` records a `method` string beside every fleet-hours total, and it
+ * had to: a total whose method is unstated cannot be checked or compared with the next edition. But a
+ * method string typed into that file is the same fact as this file's implementation, in a second place,
+ * with nothing comparing them — and the first version of that string described summing per-case times from
+ * `capture-progress.json`, a field that does not exist. It was written from inference and stood until
+ * somebody measured.
+ *
+ * So the tool says how it computed, and a recorder copies that rather than paraphrasing it. Delete a copy
+ * rather than pin two equal — this repo's own order of preference.
+ */
+export const METHOD =
+  "sum of each capture's last cumulative diagnostics.atMs — never wall clock x worker count";
+
 /** @param {ReturnType<typeof scan>} found */
 export function report(found) {
   const totalMs = found.billed.reduce((a, b) => a + b, 0);
   return {
+    method: METHOD,
     workerHours: Number((totalMs / 3_600_000).toFixed(2)),
     capturesBilled: found.billed.length,
     capturesFound: found.captures,
