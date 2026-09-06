@@ -100,6 +100,16 @@ const DISCRIMINATES: Record<string, { signal: object; fires: object; silent: obj
     fires: { structure: { headings: ["heading, level 1, Home"] } },
     silent: { structure: { headings: ["heading, level 2, Results"] } },
   },
+  // 1.4.2. `media` is a DOM-only census (`autoplay`/`muted` have no accessibility-tree equivalent), so a
+  // hand-built fixture here is honest in a way one for an NVDA-announcement signal is not -- these are
+  // exactly the booleans `querySelectorAll("audio,video")` reads off the element, not a model of what a
+  // screen reader would say. `controls: true` is the criterion's native pause/stop alternative; `muted:
+  // true` means nothing to control.
+  "autoplay-uncontrollable": {
+    signal: { type: "autoplay-uncontrollable" },
+    fires: { media: [{ tag: "audio", autoplay: true, muted: false, controls: false, loop: false }] },
+    silent: { media: [{ tag: "audio", autoplay: true, muted: false, controls: true, loop: false }] },
+  },
 };
 
 /**
