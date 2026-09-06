@@ -38,22 +38,48 @@ function field(body: string, label: string): string | null {
   return body.match(re)?.[1]?.trim() ?? null;
 }
 
-test("the ready queue exists and uses the row format this test can read", () => {
+test("the ready queue exists and states what it is for", () => {
   const source = read();
   assert.match(source, /^# Ready queue/m, `${PATH} must open with its own heading`);
-  // Independent of row COUNT (an empty queue is a legitimate state — everything claimed, nothing new
-  // found yet) the same way backlog.test.ts's marker check is: this proves the FORMAT is still the one
-  // being parsed below, not that any particular number of rows exist.
-  assert.match(source, /^- \*\*Region:\*\*/m,
-    `${PATH}'s row format has changed -- no "- **Region:**" bullet found anywhere, so the parser below `
-    + "would silently examine nothing");
+  assert.match(source, /^## How to use this page/m, `${PATH} must keep its own usage instructions`);
 });
 
-test("the discovery finds a realistic slice of the seeded queue", () => {
-  const found = rows(read());
-  // A floor, not a target: this page was seeded with six rows tonight. Zero would mean the split on
-  // "### " broke; the number shrinking over time as rows are claimed and deleted is the queue working.
-  assert.ok(found.length >= 1, `expected to find ready-queue rows in ${PATH}, found ${found.length}`);
+/**
+ * THE VACUITY GUARD, REDONE 2026-09-06 -- the previous version was `found.length >= 1`, a FLOOR on the
+ * REAL file's row count. That is exactly the shape `backlog.test.ts`'s own sibling guard was rewritten to
+ * avoid, and this page walked into it within a day of shipping: the queue emptying to zero rows is this
+ * page's OWN documented happy path (see "How to use this page" step 5, "delete the row"), not a broken
+ * scanner. Proven by simulating the state directly -- took the real file with all its rows, demoted every
+ * `### ` row heading to `#### ` (the literal shape after every row is deleted, since the split character
+ * disappears with them) -- `found.length >= 1` failed with "found 0" on a file that was never broken, only
+ * empty. A guard that cannot tell those apart teaches everyone to stop trusting it, which is worse than no
+ * guard.
+ *
+ * So the vacuity proof now runs against a SYNTHETIC fixture instead of the real file's row count: it shows
+ * the discovery mechanism finds a row when a row is genuinely there, decoupled from how many rows the real
+ * page happens to have on any given day. The real page's row count is asserted nowhere -- zero, one, or a
+ * hundred are all fine, and the next test down (field completeness) is only trustworthy at zero BECAUSE
+ * this one already proved the scanner itself is not blind.
+ */
+test("MUTATION: the row-discovery mechanism finds a real row, proven against a fixture independent of today's queue", () => {
+  const fixture = "# Ready queue\n\n## How to use this page\n\n...\n\n---\n\n"
+    + "### A synthetic row for this proof only\n\n"
+    + "- **Region:** `packages/example/src/thing.ts`\n"
+    + "- **Branch:** `agent/example-branch`\n\n"
+    + "**Acceptance:** ...\n\n---\n\n## What did not make it onto this page, and why\n\n(nothing)\n";
+  const found = rows(fixture);
+  assert.equal(found.length, 1,
+    `expected the discovery to find exactly the one synthetic row, found ${found.length} -- either the `
+    + "\\n### split or the tail-section boundary broke");
+  assert.equal(found[0].title, "A synthetic row for this proof only",
+    "found a row but read the wrong title -- the heading-line split is misaligned");
+
+  // And the BROKEN shape (every row deleted, or the heading level changed) must find nothing, proven on
+  // the same fixture with only the heading level changed -- the literal mutation the real file underwent.
+  const broken = fixture.replace("### A synthetic row", "#### A synthetic row");
+  assert.equal(rows(broken).length, 0,
+    "a row demoted from ### to #### was still found -- the discovery regex is not actually anchored to "
+    + "the heading level, so it cannot tell a genuinely row-free page from one whose format broke");
 });
 
 test("every row declares a Region, a Branch, bounding CLAUDE.md sections, and an Acceptance command", () => {
