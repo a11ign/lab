@@ -13,9 +13,10 @@
     "@a11y-witness/nvda-worker": "0.1.0"
   },
   "devDependencies": {
+    "@a11y-witness/control": "0.1.0",
+    "@guidepup/guidepup": "0.31.0",
     "a11y-witness": "0.1.0",
-    "yaml": "^2.9.0",
     "typescript": "^6.0.3",
-    "@guidepup/guidepup": "0.31.0"
+    "yaml": "^2.9.0"
   }
 }
