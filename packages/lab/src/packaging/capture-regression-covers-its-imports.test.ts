@@ -17,7 +17,12 @@
  * So a change to the code that DISPATCHES a capture never triggered the job that tests capturing. Not
  * hypothetical: `capture-client.mjs` was changed that same day — deadline clipping and lost-acknowledgement
  * recovery, both squarely on the capture path — and the filter would not have fired on any of it. The
- * `pull_request` trigger was worse still: it did not list the harness itself.
+ * (since-retired) `pull_request` trigger was worse still: it did not list the harness itself.
+ *
+ * ONLY `push` REMAINS AS OF 2026-09-06. The `ci.yml` rebuild retired `capture-regression.yml`'s
+ * `pull_request` trigger (25 Windows minutes on every capture-path PR, doubling the identical `push`
+ * run the same commit gets once merged) — this file's own closure walk is what proves the surviving
+ * `push` trigger is still complete now that it is the only one left.
  *
  * ## Why derive rather than list
  *
@@ -91,7 +96,7 @@ const matched = (paths: string[], file: string) => paths.some((pattern) => {
   return glob.endsWith("/**") ? file.startsWith(glob.slice(0, -2)) : file === glob;
 });
 
-function triggerPaths(section: "push" | "pull_request"): string[] {
+function triggerPaths(section: "push"): string[] {
   const yml = readFileSync(resolve(ROOT, ".github/workflows/capture-regression.yml"), "utf8");
   // ANCHORED ON THE INDENT, and the first version was not — which its own mutation check caught.
   //
@@ -107,7 +112,7 @@ function triggerPaths(section: "push" | "pull_request"): string[] {
   return [...block.matchAll(/^\s*-\s*"([^"]+)"/gm)].map((m) => m[1]);
 }
 
-test("both triggers fire on every file the harness imports", () => {
+test("the push trigger fires on every file the harness imports", () => {
   const closure = importClosure(ENTRY);
   // VACUITY GUARD: a walk that resolved nothing would make every assertion below pass having compared
   // one file to itself, which is the exact failure this workflow's own history records.
@@ -115,13 +120,11 @@ test("both triggers fire on every file the harness imports", () => {
     `the import walk found ${closure.length} file(s) from ${ENTRY}; it has stopped resolving imports`);
   assert.ok(closure.includes(ENTRY), "the walk must include its own entry point");
 
-  for (const section of ["push", "pull_request"] as const) {
-    const paths = triggerPaths(section);
-    assert.ok(paths.length >= 5, `${section} declares ${paths.length} path(s); the parser has drifted`);
-    for (const file of closure) {
-      assert.ok(matched(paths, file),
-        `capture-regression.yml's ${section} trigger does not fire on ${file}, which `
-        + `${ENTRY} imports. A change there would not run the only automated check that drives real NVDA.`);
-    }
+  const paths = triggerPaths("push");
+  assert.ok(paths.length >= 5, `push declares ${paths.length} path(s); the parser has drifted`);
+  for (const file of closure) {
+    assert.ok(matched(paths, file),
+      `capture-regression.yml's push trigger does not fire on ${file}, which `
+      + `${ENTRY} imports. A change there would not run the only automated check that drives real NVDA.`);
   }
 });

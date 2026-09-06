@@ -1,8 +1,10 @@
 /**
  * The pre-push hook's FAST/FULL split (2026-09-06): `main` runs the full suite, unchanged;
  * `agent/*`/`lead/*` run lint, typecheck, and tests of only the `packages/<name>` the branch touched
- * against `origin/main` -- CI (`.github/workflows/lint.yml`, widened the same day) is what runs the full
- * suite for a branch now. See the hook's own header and `scripts/changed-packages.mjs`'s header for why.
+ * against `origin/main`. CI (`.github/workflows/ci.yml`) is what runs the full check for a branch now --
+ * not on the push itself (agent/lead pushes stopped triggering CI directly the same day `ci.yml` replaced
+ * `lint.yml`), but on the PR that follows it, which every unit's workflow now opens immediately after
+ * pushing. See the hook's own header and `scripts/changed-packages.mjs`'s header for why.
  *
  * DRIVES THE REAL FILES rather than reimplementing their logic, for the reason `pre-commit-hook.test.ts`
  * and `pre-push-git-scrub.test.ts` already state: a second copy of a decision drifts from the first. The
@@ -125,13 +127,20 @@ test("MUTATION: the real run() function reports FAILED on a genuine lint/typeche
   }
 });
 
-test(".github/workflows/lint.yml runs on agent/** and lead/** pushes, with a cancelling concurrency group", () => {
-  const doc = parseYaml(readFileSync(`${REPO}.github/workflows/lint.yml`, "utf8"));
-  const branches: string[] = doc.on.push.branches;
-  assert.ok(branches.includes("main"));
-  assert.ok(branches.some((b) => b === "agent/**"), "agent/** must be able to trigger CI, or the fast "
-    + "gate has nowhere to hand off the full suite to");
-  assert.ok(branches.some((b) => b === "lead/**"));
+test(".github/workflows/ci.yml runs on the PR and on a push to main, with a cancelling concurrency group", () => {
+  // NOT agent/** or lead/** -- deliberately, since 2026-09-06. A branch push gets only this hook's fast
+  // gate; the full check now runs on the PR that branch's own workflow opens immediately after pushing
+  // (`pull_request`), and again, unconditionally, on the push that lands it on `main`. Asserting the
+  // OPPOSITE of what the retired `lint.yml` test here asserted is deliberate, not a typo: a `push.branches`
+  // list that regained `agent/**` would silently double every PR's checks again.
+  const doc = parseYaml(readFileSync(`${REPO}.github/workflows/ci.yml`, "utf8"));
+  assert.ok(doc.on.pull_request, "ci.yml must trigger on pull_request, or a branch's own PR has no full "
+    + "check to hand off to");
+  const pushBranches: string[] = doc.on.push.branches;
+  assert.deepEqual(pushBranches, ["main"],
+    "ci.yml's push trigger must be main-only -- an agent/** or lead/** branch here means the branch push "
+    + "AND its PR both run the full suite on the same commit, which is the exact duplication ci.yml exists "
+    + "to remove");
   assert.equal(doc.concurrency?.["cancel-in-progress"], true,
     "without cancel-in-progress, every push under push-per-commit queues a stale run behind it");
   assert.match(String(doc.concurrency?.group ?? ""), /github\.ref/,
