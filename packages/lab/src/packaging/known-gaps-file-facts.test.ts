@@ -12,7 +12,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -81,13 +81,27 @@ test("§17's landmark-feature removal and schema advance both still hold", () =>
     "landmark_present is computed again -- §17's removal has been reverted and the doc's CLOSED claim "
     + "is now wrong");
 
-  const migration = JSON.parse(
-    readFileSync(join(REPO, "packages/scorer/models/schema-migration.json"), "utf8"));
-  const shippedVersion = Number(migration.shippedSchema.match(/v(\d+)$/)?.[1]);
-  assert.ok(shippedVersion >= 18,
-    `shipped schema is ${migration.shippedSchema}, which is v16 or earlier -- §17 claims the migration it `
-    + "opened has since closed because the shipped schema advanced past v16; if the schema has moved "
-    + "BACKWARDS this needs a human, not a re-run of this test");
+  // AN ABSENT MIGRATION FILE IS THE CLAIM SATISFIED, NOT AN ERROR — corrected 2026-09-06.
+  //
+  // This read the file unconditionally, so it could only pass while a migration was OPEN: the file
+  // exists for the duration of one and is deleted when it closes (`lab-inventory.mjs` states the close
+  // as "promoting weights stamped <schema> and DELETING schema-migration.json"). So closing a migration
+  // broke a test that asserts a migration has closed. It had never run in the state the project is
+  // trying to reach, and it failed for the first time on the night the v18 -> v19 close landed.
+  //
+  // §17's claim is that the shipped schema has advanced PAST v16. No open migration means the shipped
+  // schema IS the pending one, which is the strongest form of that claim rather than a missing input --
+  // the same rule this file applies everywhere else, that an absence and a negative must not share a
+  // value. When one IS open, the assertion below is the check that was always intended.
+  const migrationPath = join(REPO, "packages/scorer/models/schema-migration.json");
+  if (existsSync(migrationPath)) {
+    const migration = JSON.parse(readFileSync(migrationPath, "utf8"));
+    const shippedVersion = Number(migration.shippedSchema.match(/v(\d+)$/)?.[1]);
+    assert.ok(shippedVersion >= 18,
+      `shipped schema is ${migration.shippedSchema}, which is v16 or earlier -- §17 claims the migration `
+      + "it opened has since closed because the shipped schema advanced past v16; if the schema has moved "
+      + "BACKWARDS this needs a human, not a re-run of this test");
+  }
 });
 
 test("§38 (4.1.2 settability) stays connected to the code comment and test it cites", () => {
