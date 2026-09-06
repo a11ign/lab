@@ -131,12 +131,15 @@ const PENDING_CAPTURE: Record<string, string> = {
   // PROOF case captured it, then restored when that case was removed for being BLIND; and it is gone for
   // good now that 28 shipping `input-context-change-*` cases ask for `probeTyping` as their own evidence.
   //
-  // Each of those three states is different — "nothing can make it fire", "one throwaway made it fire",
-  // "a shipping case depends on it" — and the guard distinguished them every time, which is the whole
-  // reason an exemption list is worth having rather than a comment.
+  // `interaction.focusEvents` (added 2026-09-05, listed here while 2.4.7's F55 detector shipped ahead of
+  // its recapture) was retired 2026-09-06 by this exact guard: the protocol-15 recapture landed and
+  // `runs/` now carries the field, at which point this test failed with the field's own name rather than
+  // needing anyone to remember to delete the entry.
   //
-  // NOT EMPTY ANY MORE, 2026-09-05, and the entry below is this guard catching the same defect a
-  // multi-hour lab chain caught independently — which is worth noting, because this one costs a second.
+  // Each retired state is different — "nothing can make it fire", "one throwaway made it fire", "a
+  // shipping case depends on it", "the recapture that was already scheduled landed" — and the guard
+  // distinguished them every time, which is the whole reason an exemption list is worth having rather than
+  // a comment.
 };
 
 test("nothing is compared that no capture actually carries", () => {

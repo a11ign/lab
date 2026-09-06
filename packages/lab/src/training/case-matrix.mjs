@@ -3914,16 +3914,46 @@ cases.push(
       + "</form>";
     return pair({
       id,
-      criterion: "2.1.1",
-      // NO `alsoFails` FOR 2.4.7 OR 3.2.1, DELIBERATELY, AND THE FIRST VERSION OF THIS CASE HAD IT WRONG.
+      // `criterion` STAYS "2.1.1" -- confirmed by the CEO 2026-09-06, on exactly this case: "a control
+      // that strips focus on receipt is unreachable AND never visibly focused. One defect, two criteria,
+      // both true." 2.1.1 is the criterion whose rule has decided these pages exactly since they were
+      // written; 2.4.7 is the one that just gained the ability to (`addFocusEventFindings`, reading the
+      // whole stored focus-event log -- verified against the real captured `order.bad` log, which shows
+      // an ORPHANED focusout with no preceding focusin, not the reversed pair the withdrawal comment a
+      // few hundred lines below this block once guessed at). Primary stays with the longer-standing,
+      // more direct detection; re-attributing it would move a validated 24-of-24 result for no evidence
+      // gain.
       //
+      // NO `alsoFails` FOR 2.4.7 EITHER, STILL, and for a NEW reason than the one below: `rule-ownership
+      // .json` cannot yet declare `2.4.7:focus-removed-on-receipt` without crashing the next retrain.
+      // `train-screenreader-model.py`'s `assert_declaration_matches_data` recognises only two states --
+      // `decidedBy: "unavailable"` (must be ABSENT from every record) and everything else (must be
+      // PRESENT) -- and this subtype needs a THIRD one that does not exist yet: decided by the rules,
+      // evidenced here, and still excluded from `subtypes_by_criterion`'s head-training loop, because a
+      // nine-positive head sharing every feature with 2.1.1's own is an ADR 0015 free veto by
+      // construction. Adding `alsoFails` here without that bucket mints the string in `CASES` (which
+      // `subtype-vocabulary.test.ts` would then require `rule-ownership.json` to also reference) while
+      // arming the exact crash the missing bucket exists to prevent. Land both together.
+      //
+      // ORIGINAL COMMENT, for the record -- the reasoning above updates it, not replaces its conclusion:
+      // "NO `alsoFails` FOR 2.4.7 OR 3.2.1, DELIBERATELY, AND THE FIRST VERSION OF THIS CASE HAD IT WRONG.
       // Every other `alsoFails` in this file names a `criterion:subtype` that something actually decides
       // ("4.1.2:unnamed-control"). Neither of these has one: 2.4.7 is not assessed at all, and F55 is
       // precisely the part of 3.2.1 its rule does NOT reach. Labelling a case with a failure no layer
       // detects does not record a fact, it manufactures FALSE NEGATIVES -- the mirror of the defect
       // `form-unlabelled` records, where a real second failure went unlabelled and 109 correct detections
       // scored as false positives. The cross-criterion fact belongs in the comment above, where a person
-      // reads it, not in a label an evaluator will score against.
+      // reads it, not in a label an evaluator will score against."
+      //
+      // Note also the WITHDRAWN comment a few hundred lines below this block: an EARLIER, unrelated set of
+      // fifteen `focus-removed-on-receipt-*` cases was pulled 2026-09-05 when the then-current
+      // `focusEventVerdict` (adjacency-only pairing on the CAPTURE side) found nothing to discriminate on,
+      // leaving a "reversed event order" hypothesis it could not settle because only a COUNT was recorded.
+      // These three cases are a different, smaller family that survived that withdrawal under 2.1.1. The
+      // raw log this rule now reads is exactly the fix that hypothesis was waiting on: the real captured
+      // order.bad log (used to build the rule and its tests) shows an ORPHANED focusout for the skipped
+      // field, not a reversed pair -- settled by evidence, not by the hypothesis above.
+      criterion: "2.1.1",
       task,
       source: "WCAG F55; 2.1.1, 2.4.7 and 3.2.1 Understanding",
       mutation: "Script removes focus from a field the moment it receives it, so Tab passes straight over "

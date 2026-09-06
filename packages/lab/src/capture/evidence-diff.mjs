@@ -146,9 +146,11 @@ function fieldValues(capture, [group, name]) {
   // changing shows as a lost `titleafter=...` rather than a bare count.
   //
   // A VALUE THAT IS ITSELF AN ARRAY OF OBJECTS is flattened per element, not stringified whole — found
-  // adding `focusEvents` (`{asked, checked, events, scriptRemovedFocus}`, where `scriptRemovedFocus` is
-  // an array of findings), the first object-shaped field to hold one. Without this, `normalise` would
-  // `String()` the array, and `String({...})` is `"[object Object]"` -- the EXACT `formChanges`/
+  // adding `focusEvents` (`{asked, checked, events, truncated, log}`, where `log` is the raw
+  // `focusin`/`focusout` event array a rule reads directly since 2026-09-06 -- was
+  // `scriptRemovedFocus`, a capture-computed verdict, before ADR 0021's "captures record, rules decide"
+  // moved the analysis to `addFocusEventFindings`), the first object-shaped field to hold one. Without
+  // this, `normalise` would `String()` the array, and `String({...})` is `"[object Object]"` -- the EXACT `formChanges`/
   // `stateChanges` defect this file's own history is about, arriving through the OTHER shape it can take:
   // that fix flattened an array of objects at the TOP level; this is an array of objects NESTED inside
   // an object field, which the object branch never learned.
