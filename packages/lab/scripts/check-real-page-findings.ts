@@ -94,14 +94,114 @@ export function captureAgeLines(ages: { at: string; role: string }[]): string[] 
       + (oldest === newest ? oldest : `${oldest} .. ${newest}`));
   }
   const all = ages.map((c) => c.at).sort();
-  const spreadMs = Date.parse(all[all.length - 1]) - Date.parse(all[0]);
+  const newestOverall = Date.parse(all[all.length - 1]);
+  const spreadMs = newestOverall - Date.parse(all[0]);
+  // WHICH ROLE WAS LEFT BEHIND, BY NAME, not just that the ages differ.
+  //
+  // `--role` is a free string filter, so every role is technically reachable; what nothing said is which
+  // one the last refresh MISSED. The corpus holds `training` (39), `calibration` (49) and `fixture` (4),
+  // `capture-real-pages`'s own usage line documents only the first two, and the four `fixture` captures
+  // had not been retaken in twelve days when this was written. Nobody was ignoring them; there was simply
+  // no line anywhere that named them.
+  //
+  // DERIVED from the timestamps rather than from a list of roles, deliberately: a hand-written "roles that
+  // matter" list is the fact-stated-twice shape, and it would go stale the first time a role is added --
+  // which is exactly the event this is here to make visible.
+  const behind = [...byRole]
+    .filter(([, times]) => newestOverall - Date.parse([...times].sort().pop() ?? "") > ROLE_SPREAD_WARN_MS)
+    .map(([role]) => role);
   if (spreadMs > ROLE_SPREAD_WARN_MS) {
     lines.push(`  *** ${Math.round(spreadMs / 3600000)} hour(s) between the oldest and newest, so this `
       + "compares a MIXED population against one baseline.");
     lines.push("  *** `capture-real-pages` defaults to --role=training, which refreshes 39 of the 85. "
       + "To refresh every role:  npm run lab:pipeline -- --pipeline=real-pages");
   }
+  for (const role of behind) {
+    lines.push(`  *** role '${role}' was LEFT BEHIND by the last refresh — every one of its captures `
+      + `predates the newest. Refresh it:  npm run lab:job -- -e job=capture-real-pages -e role=${role}`);
+  }
   return lines;
+}
+
+/**
+ * The pages declared unexaminable, with their reasons. Empty when the file is absent, deliberately: a
+ * missing declaration file must make the gate STRICTER (every unusable page counts as a shortfall), never
+ * more permissive.
+ */
+function declaredUnexaminable(): Map<string, { reason: string; removedWhen: string }> {
+  const out = new Map<string, { reason: string; removedWhen: string }>();
+  const path = resolve(REPO, "packages/lab/baselines/real-page-unexaminable.json");
+  if (!existsSync(path)) return out;
+  let parsed: { pages?: Record<string, { reason?: string; removedWhen?: string }> };
+  try { parsed = JSON.parse(readFileSync(path, "utf8")) as typeof parsed; } catch { return out; }
+  for (const [url, entry] of Object.entries(parsed.pages ?? {})) {
+    // BOTH fields required. A declaration with no reason is a suppression, and one with no exit condition
+    // is a permanent exclusion wearing a temporary one's clothes.
+    if (typeof entry?.reason === "string" && typeof entry?.removedWhen === "string") {
+      out.set(url, { reason: entry.reason, removedWhen: entry.removedWhen });
+    }
+  }
+  return out;
+}
+
+/**
+ * Report the declared-unexaminable pages that apply to THIS run, and return them.
+ *
+ * DECLARED-UNEXAMINABLE PAGES LEAVE THE DENOMINATOR, and this is what keeps that honest.
+ *
+ * `83 of 85` is INCONCLUSIVE for ever if two of the 85 can never be examined, which tells a reader nothing
+ * and blocks everything downstream on a number that cannot move. `83 of 83, with 2 declared` is a
+ * conclusive statement about what was examined PLUS an honest statement about what was not -- the same
+ * distinction `rule-ownership.json` draws with `decidedBy: "unavailable"`, for the same reason: "nobody"
+ * and "somebody forgot" must never be the same state.
+ *
+ * WHAT STOPS THIS LAUNDERING A FAILURE. The returned set is the INTERSECTION of the declaration with the
+ * pages this run actually found unusable, so an undeclared unusable page still reduces coverage and still
+ * makes the run inconclusive. The declaration removes a page from the denominator; it can never remove a
+ * finding, and it can never apply to a page nobody wrote a reason for. Every entry PRINTS on every run --
+ * including one that no longer applies, which is how a temporary exclusion is stopped from quietly
+ * becoming a permanent one.
+ */
+/**
+ * The coverage verdict, with the two subtractions that decide it.
+ *
+ * COUNTED AS PAGES, never as reasons -- a page can be unusable for MORE THAN ONE of them, and summing the
+ * three lists counts it once per reason. Measured 2026-09-06, the first time the numbers got small enough
+ * to check by eye: `tfl.gov.uk/modes/tube/` appeared in BOTH `furniture.consent` and `suspectCensus`, its
+ * consent banner blocking the read AND the page redirecting so no target could be confirmed. Two distinct
+ * unusable pages were reported as three, and the verdict read `82 of 85` where the truth is `83 of 85`.
+ * Harmless at 54 and misleading at 2, which is exactly when it starts mattering -- this denominator's whole
+ * job is deciding whether a run is CONCLUSIVE, and it also over-states the work remaining, which is how a
+ * list acquires an item nobody can close.
+ *
+ * A DECLARED page is subtracted from BOTH sides: it was not examined, and it is not counted as something
+ * that should have been. An UNDECLARED unusable page comes off `examined` alone, which is what makes it
+ * show as a shortfall -- the asymmetry is the whole guard, see `reportDeclaredExclusions`.
+ */
+function coverageVerdict(
+  { pages, unusablePages, declaredHere, failures }:
+  { pages: number; unusablePages: string[]; declaredHere: string[]; failures: number },
+) {
+  return gateVerdict({
+    examined: pages - unusablePages.length,
+    of: pages - declaredHere.length,
+    source: "conformant real pages scored against the baseline",
+    failures,
+  });
+}
+
+function reportDeclaredExclusions(unusablePages: string[]): string[] {
+  const declared = declaredUnexaminable();
+  const declaredHere = unusablePages.filter((url) => declared.has(url));
+  if (declared.size === 0) return declaredHere;
+  process.stdout.write(`\n  ${declared.size} page(s) DECLARED unexaminable, and therefore not in the `
+    + "denominator below:\n");
+  for (const [url, entry] of declared) {
+    process.stdout.write(`    ${url.replace(/^https:\/\//, "")}`
+      + `${declaredHere.includes(url) ? "" : "   (declared, but examinable in THIS run — remove it)"}\n`
+      + `        why: ${entry.reason}\n        removed when: ${entry.removedWhen}\n`);
+  }
+  return declaredHere;
 }
 
 function reportCaptureAges(): void {
@@ -645,26 +745,9 @@ function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: numbe
   // `suspectCensusCaptures`'s own comment for why that over-counts slightly (only the census-reading
   // criteria are actually blind, not the transcript-based ones) and why that is the right simplification
   // for this gate rather than a defect in it.
-  // COUNTED AS PAGES, never as reasons — a page can be unusable for MORE THAN ONE of them, and summing
-  // the three lists counts it once per reason.
-  //
-  // Measured 2026-09-06 the first time the numbers got small enough to check by eye:
-  // `tfl.gov.uk/modes/tube/` appeared in BOTH `furniture.consent` and `suspectCensus` (its consent banner
-  // blocked the read AND the page redirected to `/tube-dlr-overground/status/#windrush`, so no target could
-  // be confirmed). Two distinct unusable pages were reported as three, and the verdict read `82 of 85`
-  // where the truth is `83 of 85`.
-  //
-  // Harmless at 54 and misleading at 2, which is exactly when it starts mattering: the whole point of this
-  // denominator is deciding whether a run is CONCLUSIVE, and "3 pages we could not examine" versus "2" is
-  // the kind of difference somebody acts on. It also over-states the work remaining, which is how a list
-  // acquires an item nobody can close.
-  const unusable = new Set([...furniture.consent, ...furniture.shell, ...suspectCensus]).size;
-  const verdict = gateVerdict({
-    examined: pages - unusable,
-    of: pages,
-    source: "conformant real pages scored against the baseline",
-    failures: added.length,
-  });
+  const unusablePages = [...new Set([...furniture.consent, ...furniture.shell, ...suspectCensus])];
+  const declaredHere = reportDeclaredExclusions(unusablePages);
+  const verdict = coverageVerdict({ pages, unusablePages, declaredHere, failures: added.length });
   process.stdout.write(`\n  ${renderVerdict(verdict)}\n`);
   process.exitCode = exitCodeFor(verdict);
 }

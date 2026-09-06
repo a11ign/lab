@@ -1,15 +1,12 @@
 {
   "https://bathingwaters.sepa.org.uk/": [],
-  "https://caselaw.nationalarchives.gov.uk/search?query=": [
-    "3.3.2",
-    "4.1.2"
-  ],
+  "https://caselaw.nationalarchives.gov.uk/search?query=": [],
   "https://check-for-flooding.service.gov.uk/river-and-sea-levels": [],
-  "https://data.southwark.gov.uk/data-catalog-explorer/": [
-    "1.4.13"
-  ],
+  "https://data.southwark.gov.uk/data-catalog-explorer/": [],
   "https://design-system.service.gov.uk/components/accordion/": [],
-  "https://design-system.service.gov.uk/components/checkboxes/": [],
+  "https://design-system.service.gov.uk/components/checkboxes/": [
+    "3.2.1"
+  ],
   "https://design-system.service.gov.uk/components/date-input/": [],
   "https://design-system.service.gov.uk/components/details/": [],
   "https://design-system.service.gov.uk/components/error-message/": [],
@@ -32,9 +29,7 @@
   ],
   "https://primary-authority.beis.gov.uk/par": [],
   "https://ratings.food.gov.uk/search-a-local-authority-area": [],
-  "https://reports.ofsted.gov.uk/search?q=school": [
-    "3.3.2"
-  ],
+  "https://reports.ofsted.gov.uk/search?q=school": [],
   "https://service-manual.nhs.uk/design-system/components/table": [],
   "https://service-manual.nhs.uk/design-system/components/text-input": [],
   "https://sheffield.ac.uk/postgraduate/taught/courses/2026": [],
@@ -74,7 +69,9 @@
   "https://www.nls.uk/join/": [],
   "https://www.nrscotland.gov.uk/publications/": [],
   "https://www.nrscotland.gov.uk/statistics-and-data/": [],
-  "https://www.ofgem.gov.uk/information-consumers/energy-advice-households/energy-price-cap-and-standing-charges-explained": [],
+  "https://www.ofgem.gov.uk/information-consumers/energy-advice-households/energy-price-cap-and-standing-charges-explained": [
+    "2.4.3"
+  ],
   "https://www.ons.gov.uk/economy/inflationandpriceindices": [
     "1.1.1"
   ],

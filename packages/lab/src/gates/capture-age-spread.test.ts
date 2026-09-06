@@ -86,8 +86,43 @@ test("a page unusable for TWO reasons is one page, not two", () => {
   // having examined nothing, which is the defect this whole file exists to close.
   const source = readFileSync(
     fileURLToPath(new URL("../../scripts/check-real-page-findings.ts", import.meta.url)), "utf8");
-  assert.match(source, /const unusable = new Set\(\[/,
-    "unusable must be a SET of page urls; summing the three list LENGTHS counts a page once per reason");
+  // Asserted on the SET being built, not on the variable name, because the reporting phase was extracted
+  // after this test was written and the name moved with it. The PROPERTY is what matters: the three lists
+  // are unioned before anything counts them.
+  assert.match(source, /const unusablePages = \[\.\.\.new Set\(\[\.\.\.furniture\.consent/,
+    "the three lists must be UNIONED into a set of page urls; summing their LENGTHS counts a page once "
+    + "per reason");
+  assert.match(source, /examined: pages - unusablePages\.length,/,
+    "and the count must come from that set, not from the lists");
   assert.doesNotMatch(source, /const unusable = .*\.length \+/,
     "the summed form is back, so a page unusable for two reasons is being counted twice again");
+});
+
+test("the role LEFT BEHIND is named, with the command that refreshes just it", () => {
+  // `--role` is a free string filter, so every role is technically reachable; what nothing said is which
+  // one the last refresh MISSED. Measured 2026-09-06: the corpus holds training (39), calibration (49) and
+  // `fixture` (4), `capture-real-pages`'s usage line documents only the first two, and the four fixture
+  // captures had not been retaken in twelve days. Nobody was ignoring them — there was no line that named
+  // them.
+  const lines = captureAgeLines([
+    { at: "2026-09-06T04:43:00.000Z", role: "training" },
+    { at: "2026-09-06T05:14:00.000Z", role: "calibration" },
+    { at: "2026-08-25T10:27:00.000Z", role: "fixture" },
+  ]);
+  const behind = lines.filter((l) => l.includes("LEFT BEHIND")).join("\n");
+  assert.match(behind, /role 'fixture'/, "the role that was missed must be named, not merely implied");
+  assert.match(behind, /-e role=fixture/, "and the command that refreshes just it, not the whole corpus");
+  assert.doesNotMatch(behind, /'training'|'calibration'/,
+    "a role refreshed by the last run must NOT be named — a warning that fires on correct usage is one "
+    + "people learn to scroll past");
+});
+
+test("one pipeline refreshing every role names NO role as left behind", () => {
+  const lines = captureAgeLines([
+    { at: "2026-09-06T03:31:00.000Z", role: "training" },
+    { at: "2026-09-06T04:55:00.000Z", role: "calibration" },
+    { at: "2026-09-06T05:10:00.000Z", role: "fixture" },
+  ]);
+  assert.equal(lines.filter((l) => l.includes("LEFT BEHIND")).length, 0,
+    `all three refreshed within the window, so nothing was left behind:\n${lines.join("\n")}`);
 });
