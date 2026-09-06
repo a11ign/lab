@@ -49,7 +49,7 @@
  * test's own exemption list, with a reason.
  */
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
+import { resolve, relative } from "node:path";
 
 /**
  * Computed from THIS file's own location, once, rather than by every caller re-deriving it from ITS
@@ -148,4 +148,53 @@ export function realCorpusRoot() {
  */
 export function repeatCapturesRoot() {
   return resolve(runsRoot(), "repeat-captures");
+}
+
+/**
+ * `A11Y_RUNS_READONLY=1 <writer>` is how a peer finds out whether a script writes into `runs/` without
+ * reading its source: a genuine writer refuses and NAMES the exact path it would have written, a
+ * read-only audit is unaffected, and with the flag unset every writer works exactly as before.
+ *
+ * Added after `build-realism-tier.mjs` was run directly to test an unrelated change and wrote
+ * `runs/screenreader-dataset/with-realism.jsonl` twice -- disclosed, and low-risk, because `runs/` in a
+ * worktree is a local copy rather than the authoritative corpus (see this repo's own memory of that
+ * correction). But nothing in a script's NAME says whether it writes, so a peer reading `npm run
+ * corpus:grants-map` cannot tell it from `npm run lab:inventory` without opening the file. This makes the
+ * distinction something you can ASK the script rather than something you have to read the source for.
+ *
+ * PURE at the core (`runsWriteRefusal`), for the reason `migrationVerdict` and `captureAgeLines` are pure
+ * elsewhere in this package: `refuseIfRunsReadonly`'s `process.exit` would kill the test runner if called
+ * directly from a unit test, so the decision and the exit are split the way this repo already splits them.
+ *
+ * Scoped to `runsRoot()` and everything under it, not to "any write anywhere" -- a script that writes into
+ * `packages/scorer/models/` (a deliberate promotion) or `packages/lab/baselines/` (a deliberate,
+ * already-reviewed baseline update) is answering a different question, and `test_no_writes_into_source_tree.py`
+ * already refuses THAT unconditionally rather than behind a flag. This guard is opt-in because writing into
+ * `runs/` is normally correct; the flag exists to ask "would this have touched it" without letting it.
+ *
+ * @param {string} targetPath
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {{ path: string } | null}
+ */
+export function runsWriteRefusal(targetPath, env = process.env) {
+  if (env.A11Y_RUNS_READONLY !== "1") return null;
+  const resolved = resolve(targetPath);
+  const root = resolve(runsRoot());
+  if (resolved !== root && !resolved.startsWith(`${root}/`)) return null;
+  return { path: relative(REPO_ROOT, resolved) };
+}
+
+/**
+ * Call this immediately before a write into `runs/` -- at the top of `main()`, once, naming the OUTPUT
+ * PATH or ROOT that write is under (not the exact file for a multi-file writer; the root is still a
+ * concrete, honest answer to "would this have touched runs/").
+ *
+ * @param {string} targetPath
+ */
+export function refuseIfRunsReadonly(targetPath) {
+  const refusal = runsWriteRefusal(targetPath);
+  if (!refusal) return;
+  console.error(`REFUSING to write ${refusal.path} — A11Y_RUNS_READONLY=1 is set.`);
+  console.error("  Unset A11Y_RUNS_READONLY to run this for real.");
+  process.exit(3);
 }

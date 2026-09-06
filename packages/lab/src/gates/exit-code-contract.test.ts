@@ -105,6 +105,10 @@ function adoptsVerdict(path: string): boolean {
  * themselves, they are the thing gates are built from.
  */
 const INFRASTRUCTURE: Record<string, string> = {
+  "packages/lab/src/dataset-paths.mjs":
+    "`refuseIfRunsReadonly` exits 3 when A11Y_RUNS_READONLY=1 is set and the given path resolves under "
+    + "runsRoot() — not a gate and has no main of its own, inherited directly by every one of its 16 "
+    + "callers, the identical shape code-drift.mjs uses for a different meaning of 3",
   "packages/lab/src/gates/dispatch.mjs":
     "dispatches a gate to the lab and exits with whatever it returns, except a killed/errored spawn also "
     + "produces 2 — self-documented as the honest INCONCLUSIVE for a dispatch that died, and the reason a "

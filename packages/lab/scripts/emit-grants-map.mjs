@@ -17,7 +17,7 @@ import { pathToFileURL } from "node:url";
 
 import { ACCOMPANYING_DEFECTS } from "../src/training/case-matrix.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { runsRoot } from "../src/dataset-paths.mjs";
+import { runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
 /**
  * takes no flags: it emits the JS-side declarations for the Python audit to read.
@@ -48,6 +48,7 @@ export function grantsMap(defects) {
 }
 
 function main() {
+  refuseIfRunsReadonly(OUT);
   const map = grantsMap(ACCOMPANYING_DEFECTS);
   mkdirSync(dirname(OUT), { recursive: true });
   writeFileSync(OUT, `${JSON.stringify(map, null, 2)}\n`);
