@@ -53,6 +53,15 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11y-witness/evidence/source-text";
 
+/**
+ * THE REPOSITORY ROOT, NOT A CORPUS ROOT — and the distinction is load-bearing enough to state.
+ *
+ * Every read in this file resolves against `REPO` and opens a script, a `.py` file, or
+ * `docs/gate-exit-codes.md`. This file reads SOURCE; it never opens a capture, so
+ * `corpus-readers-are-guarded.test.ts` classifies it `not-a-corpus-read` rather than requiring
+ * `labCorpusReadable`. It became a candidate for that scan only because one INFRASTRUCTURE reason below
+ * mentions `runsRoot()` in prose — a string about the corpus, not a read of it.
+ */
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const DOC = "docs/gate-exit-codes.md";
 
@@ -105,6 +114,10 @@ function adoptsVerdict(path: string): boolean {
  * themselves, they are the thing gates are built from.
  */
 const INFRASTRUCTURE: Record<string, string> = {
+  "packages/lab/src/dataset-paths.mjs":
+    "`refuseIfRunsReadonly` exits 3 when A11Y_RUNS_READONLY=1 is set and the given path resolves under "
+    + "runsRoot() — not a gate and has no main of its own, inherited directly by every one of its 16 "
+    + "callers, the identical shape code-drift.mjs uses for a different meaning of 3",
   "packages/lab/src/gates/dispatch.mjs":
     "dispatches a gate to the lab and exits with whatever it returns, except a killed/errored spawn also "
     + "produces 2 — self-documented as the honest INCONCLUSIVE for a dispatch that died, and the reason a "

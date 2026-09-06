@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { relative, resolve } from "node:path";
 import { CASES } from "./case-matrix.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { datasetRoot } from "../dataset-paths.mjs";
+import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 
 /**
  * takes no flags: it regenerates every page from the case definitions.
@@ -81,6 +81,7 @@ function buildManifest() {
 }
 
 function main() {
+  refuseIfRunsReadonly(ROOT);
   mkdirSync(PAGE_ROOT, { recursive: true });
   const manifest = buildManifest();
   const manifestPath = resolve(ROOT, "manifest.json");

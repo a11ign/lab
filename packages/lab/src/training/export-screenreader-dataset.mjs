@@ -12,7 +12,7 @@ import {
 import { hasUsableCaptureFiles, TEST_GRADE } from "./capture-resume.mjs";
 import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
 import { readCapture as readCaptureFile, isUsableCapture } from "../capture/evidence-diff.mjs";
-import { REPO_ROOT, datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { REPO_ROOT, datasetRoot, captureRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 
 /**
  * a mistyped `--out=` exports to a path nothing downstream reads, and the trainer then fits on the
@@ -389,6 +389,7 @@ function exportCases(/** @type {any} */ manifest) {
 }
 
 function main() {
+  refuseIfRunsReadonly(OUTPUT_PATH);
   if (!existsSync(MANIFEST_PATH)) {
     throw new Error("Missing " + MANIFEST_PATH + ". Run npm run training:generate first.");
   }

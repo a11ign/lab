@@ -25,7 +25,7 @@ import { pathToFileURL } from "node:url";
 
 import { releasability } from "../src/packaging/releasability.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
 /**
  * a mistyped `--dry-run` runs the REAL retrain; `--silent` in this file is npm's, passed to each step.
@@ -217,7 +217,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   // later unrelated job), reintroduced by the guard written to prevent it.
   // A fresh transcript per run: appending to the previous one is how "the fixture capture keeps failing"
   // came to be read off a later, unrelated job.
-  if (!dryRun) rmSync(RETRAIN_TRANSCRIPT, { force: true });
+  if (!dryRun) {
+    refuseIfRunsReadonly(RETRAIN_TRANSCRIPT);
+    rmSync(RETRAIN_TRANSCRIPT, { force: true });
+  }
   const result = pipeline({
     dryRun,
     runStep: dryRun ? run : keepingTranscript(run, { transcript: RETRAIN_TRANSCRIPT }),

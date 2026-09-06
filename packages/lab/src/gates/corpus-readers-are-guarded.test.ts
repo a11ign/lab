@@ -16,6 +16,15 @@
  * capture. This repo settled that shape once already, about a different scan: *"Static derivation of a
  * CLI's flags CANNOT be trusted here, and that is why the list is pinned rather than derived."*
  *
+ * **A THIRD WAY IN, found 2026-09-06 and not anticipated above: the match came from ANOTHER GUARD'S
+ * EXEMPTION TEXT.** `exit-code-contract.test.ts` matched neither marker on `origin/main`. It became a
+ * candidate the moment `agent/runs-write-guard` added a four-line INFRASTRUCTURE reason explaining that
+ * `refuseIfRunsReadonly` exits 3 for paths under `runsRoot()` — prose about the corpus, inside a string,
+ * in a file that opens nothing but `REPO`-rooted scripts. So the two shapes named above are a literal and
+ * a negative assertion; this one is a REASON, and reasons are exactly what this repo's guards are full of
+ * because every EXEMPT table here demands one. Expect this bucket to keep growing from that direction, and
+ * do not read a listed file as an accusation: the classification is the answer, not the failure.
+ *
  * So the scan finds CANDIDATES and every candidate must be classified into exactly one of three, each
  * with a reason and never a bare name:
  *
@@ -131,6 +140,24 @@ const NOT_A_CORPUS_READ: Record<string, string> = {
   "packages/worker-fleet/src/lab-job.test.ts":
     "Reads the lab-job.yml catalogue and asserts on the argv it declares; the runs/ paths it matches are "
     + "job arguments in that YAML, not a corpus this test opens.",
+  "packages/lab/src/gates/exit-code-contract.test.ts":
+    "Reads SOURCE ONLY: every readFileSync/readdirSync here takes a path under REPO (the repository root, "
+    + "not a corpus root) and opens a script, a .py file, or docs/gate-exit-codes.md, to discover which "
+    + "gates declare an exit contract. It matched this scan on a single occurrence of `runsRoot()` INSIDE "
+    + "A STRING -- the INFRASTRUCTURE reason explaining that `refuseIfRunsReadonly` exits 3 for paths under "
+    + "runsRoot(). Checked rather than assumed: on origin/main this file matched neither CORPUS_PATH nor "
+    + "CORPUS_ACCESSOR at all, and became a candidate only when `agent/runs-write-guard` added that "
+    + "four-line reason. So it is the third bucket's own textbook case -- the scan matching prose about "
+    + "the corpus rather than a read of it, which is exactly why classification exists and a pure "
+    + "discovery test would be wrong to demand a guard here.",
+  "packages/lab/src/runs-write-guard.test.ts":
+    "Reads SOURCE ONLY, and by construction: its walk is `packages/*/src` and `packages/*/scripts` filtered "
+    + "to .mjs/.ts with `.test.` excluded, and every readFileSync takes a path under REPO_ROOT from that "
+    + "walk. It never resolves a corpus root -- `datasetRoot()`, `realCorpusRoot()` and `runsRoot()` appear "
+    + "only inside EXEMPT reason strings and inside the synthetic source text of its own MUTATION test, "
+    + "which is a string literal describing a hypothetical writer and not a call this file makes. It is "
+    + "the guard that discovers runs/ WRITERS; being classified as a non-reader here is consistent with "
+    + "that, not in tension with it.",
 };
 
 /** Every test file whose source, comments stripped, looks like it might read the corpus. */

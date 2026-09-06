@@ -46,7 +46,7 @@ import { oracleCounts } from "@a11y-witness/evidence/verify";
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { REPO_ROOT, realCorpusRoot, runsRoot } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, realCorpusRoot, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
 /**
  * takes NO flags — it is configured entirely by environment, so any flag passed to it today is
@@ -321,6 +321,7 @@ function reportWithheld(scored) {
 }
 
 function main() {
+  refuseIfRunsReadonly(OUT_DIR);
   const pages = calibrationPages();
   if (!pages.length) {
     process.stderr.write(`no calibration captures in ${ROOT}\n`

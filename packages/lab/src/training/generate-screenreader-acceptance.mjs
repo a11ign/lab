@@ -6,7 +6,7 @@ import { relative, resolve } from "node:path";
 // acceptance blind to the case the trained heads actually fail on — see `alsoCarrying` for the measurement.
 import { ALL_ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { datasetRoot } from "../dataset-paths.mjs";
+import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 
 /**
  * takes no flags: the held-out set is generated whole or not at all.
@@ -47,6 +47,7 @@ function writeCasePages(testCase) {
  * is why these were placed by reading each file rather than by a tool.
  */
 function main() {
+  refuseIfRunsReadonly(ROOT);
   const cases = ALL_ACCEPTANCE_CASES.map((testCase) => ({
     id: testCase.id,
     family: testCase.family,
