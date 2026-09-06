@@ -906,6 +906,31 @@ def main() -> None:
         "calibrationBlockers": [],
     }
     for criterion in criteria:
+        # A CRITERION CAN NOW HAVE NO HEADS AT ALL, and it must be reported rather than crashed on.
+        #
+        # `modelHead: false` removes a subtype from `subtypes_by_criterion_for`. When it removes a
+        # criterion's ONLY subtype, this loop reached `torch.stack([])` and died with
+        # `RuntimeError: stack expects a non-empty TensorList` -- a message that says nothing about the
+        # cause and points at torch. Measured 2026-09-06 on the first train after
+        # `1.4.2:autoplay-uncontrollable` and `2.4.7:focus-removed-on-receipt` were declared: both are the
+        # sole subtype of their criterion, so both criteria emptied at once and the whole train failed
+        # after the encoder pass, having already rotated the previous release-eligible model aside.
+        #
+        # SKIPPED AND SAID OUT LOUD, never skipped quietly: "this criterion has no trained head" and "this
+        # criterion was never considered" are different states, and a report that omits the criterion
+        # entirely cannot tell them apart. This is the same rule `printCoverage` follows for
+        # `decidedBy: "unavailable"` -- the map of who decides what, where "nobody" is the answer most
+        # worth seeing.
+        if not subtypes_by_criterion[criterion]:
+            report["criteria"][criterion] = {
+                "subtypes": {},
+                "modelHead": False,
+                "why": "every subtype of this criterion is declared `modelHead: false` in "
+                       "rule-ownership.json, so no head is fitted and the rules decide it alone",
+            }
+            note(report, f"{criterion}: no trained head -- all of its subtypes are rule-decided "
+                 f"(`modelHead: false`). The rules own this criterion outright.", blocking=False)
+            continue
         criterion_labels = torch.tensor(
             [int(criterion in record["target"].get("criteria", [])) for record in records],
             dtype=torch.float32,
