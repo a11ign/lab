@@ -18,6 +18,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { linkState, workspacePackages, packagesImportedByName, distTrapReport } from
   "../../../../scripts/control-plane-hygiene.mjs";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
 test("the real repo's dist-trap check finds every package it claims to check, and none currently exposed", () => {
   const trap = distTrapReport(process.cwd());
@@ -49,7 +50,7 @@ test("linkState distinguishes real, symlink, and missing", () => {
 function fakeRepo(packageSpecs: Array<{ dir: string; name: string; rootExport: string; hasPrepare: boolean }>,
   importers: Array<{ path: string; line: string }>) {
   const dir = mkdtempSync(join(tmpdir(), "hygiene-disttrap-"));
-  execFileSync("git", ["init", "-q"], { cwd: dir });
+  execFileSync("git", ["init", "-q"], { cwd: dir, env: sandboxGitEnv() });
   mkdirSync(join(dir, "packages"), { recursive: true });
   for (const spec of packageSpecs) {
     mkdirSync(join(dir, "packages", spec.dir), { recursive: true });
@@ -63,7 +64,7 @@ function fakeRepo(packageSpecs: Array<{ dir: string; name: string; rootExport: s
     mkdirSync(join(dir, ...imp.path.split("/").slice(0, -1)), { recursive: true });
     writeFileSync(join(dir, imp.path), imp.line);
   }
-  execFileSync("git", ["add", "-A"], { cwd: dir });
+  execFileSync("git", ["add", "-A"], { cwd: dir, env: sandboxGitEnv() });
   return dir;
 }
 
