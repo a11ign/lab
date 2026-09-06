@@ -411,11 +411,6 @@
           "unclosable": "perturbs-measurement"
         },
         {
-          "feature": "post_submit_observed_present",
-          "logits": -1.1046,
-          "unclosable": "perturbs-measurement"
-        },
-        {
           "feature": "status_update_announced",
           "logits": -1.081,
           "unclosable": "perturbs-measurement"
@@ -461,11 +456,6 @@
         {
           "feature": "form_change_observed_present",
           "logits": -1.2384,
-          "unclosable": "perturbs-measurement"
-        },
-        {
-          "feature": "post_submit_observed_present",
-          "logits": -1.1081,
           "unclosable": "perturbs-measurement"
         },
         {
