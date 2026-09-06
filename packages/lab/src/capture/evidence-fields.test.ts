@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { EVIDENCE_FIELDS } from "./evidence-diff.mjs";
 import { runsRoot } from "../dataset-paths.mjs";
+import { corpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
 /**
  * `evidence:check` DECIDES WHETHER 2,122 CACHED CAPTURES SURVIVE, and it compares a hand-written list of
@@ -67,11 +68,28 @@ function fieldsOnDisk(): Set<string> {
   return found;
 }
 
+/** One spelling of "may I read it", so three tests in this file cannot disagree about the same corpus. */
+function corpusOnDisk(present: boolean) {
+  return corpusReadable({
+    datasetRoots: [join(runsRoot(), "screenreader-dataset")],
+    evidenceDirs: [join(runsRoot(), "screenreader-dataset", "captures")],
+    present,
+  });
+}
+
 test("every evidence field a capture carries is compared, or explicitly excluded", () => {
   const onDisk = fieldsOnDisk();
-  if (onDisk.size === 0) {
-    // An honest skip, not a silent pass: `runs/` is gitignored and CI cannot see it.
-    assert.ok(true, "no corpus on disk (runs/ is gitignored; local-only gate)");
+  // ASK WHETHER THE CORPUS IS STILL MOVING, not just whether it is there. This test passed a full
+  // `npm test` and failed 20 minutes later on byte-identical code, because a capture was rewriting the
+  // files it reads. A green result from a moving corpus is exactly as untrustworthy as a red one, and it
+  // is the green one that gets believed -- see `corpusReadable`'s own header.
+  //
+  // ABSENT AND MOVING STAY DIFFERENT ANSWERS. The skip below was already honest about `runs/` being
+  // gitignored; that is a permanent property of CI, while a capture in flight means "ask again shortly".
+  const corpus = corpusOnDisk(onDisk.size > 0);
+  if (!corpus.read) {
+    console.log(skipLine(corpus));
+    assert.ok(true, corpus.why);
     return;
   }
   // ANTI-VACUITY. Without it a corpus of one truncated capture would satisfy this test having checked
@@ -147,7 +165,8 @@ test("nothing is compared that no capture actually carries", () => {
   // The other direction. A field in the list that captures never have compares [] to [] for ever —
   // coverage that looks real and examines nothing, which is how the count in a report becomes a lie.
   const onDisk = fieldsOnDisk();
-  if (onDisk.size === 0) return;
+  const corpus = corpusOnDisk(onDisk.size > 0);
+  if (!corpus.read) { console.log(skipLine(corpus)); return; }
   const phantom = (EVIDENCE_FIELDS as [string, string][])
     .map((f) => f.join(".")).filter((f) => !onDisk.has(f) && !(f in PENDING_CAPTURE)).sort();
   assert.deepEqual(phantom, [],
@@ -158,6 +177,8 @@ test("a field waiting for its first capture is removed from PENDING once it arri
   // An exemption that outlives its reason is indistinguishable from a bug somebody decided to live with.
   // This fails the moment the capture exists, which is the only thing that makes the list above safe.
   const onDisk = fieldsOnDisk();
+  const corpus = corpusOnDisk(onDisk.size > 0);
+  if (!corpus.read) { console.log(skipLine(corpus)); return; }
   if (onDisk.size === 0) return;
   const arrived = Object.keys(PENDING_CAPTURE).filter((f) => onDisk.has(f)).sort();
   assert.deepEqual(arrived, [],

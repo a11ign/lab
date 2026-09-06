@@ -48,7 +48,7 @@ import { oracleCounts } from "@a11y-witness/evidence/verify";
 // source rather than the convenient neighbour: locally tsx resolves TypeScript and the mistake is silent,
 // while the lab resolves `dist` and it is a hard failure — the stale-dist hazard, one door along.
 import { RULE_CRITERIA, SCORED_CRITERIA } from "@a11y-witness/judge/coverage";
-import { corpusState } from "../src/training/corpus-settled.mjs";
+import { corpusState, minutesSinceLastWrite } from "../src/training/corpus-settled.mjs";
 import { CRITERION_COVERAGE, channelsPresent } from "@a11y-witness/judge/internal";
 import { REPO_ROOT, datasetRoot, captureRoot, realCorpusRoot } from "../src/dataset-paths.mjs";
 
@@ -139,26 +139,8 @@ const RULE_ONLY: ReadonlySet<string> = new Set(
  * whether this EVIDENCE is settled, not whether a particular unit happens to be up, and a corpus can be
  * mid-write from a run nobody remembers starting.
  */
-function minutesSinceLastWrite(dirs: string[]): number | null {
-  let newest = 0;
-  for (const dir of dirs) {
-    let entries: string[];
-    try {
-      entries = readdirSync(dir);
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (!entry.endsWith(".json")) continue;
-      try {
-        newest = Math.max(newest, statSync(join(dir, entry)).mtimeMs);
-      } catch {
-        continue;
-      }
-    }
-  }
-  return newest ? (Date.now() - newest) / 60_000 : null;
-}
+// The scanner itself now lives in `corpus-settled.mjs` beside the decision that uses it — this file's
+// copy and `check-real-page-findings.ts`'s had already drifted apart in signature.
 
 // `SETTLED_AFTER_MINUTES` now lives in `corpus-settled.mjs`, with the check that uses it — one copy, and
 // only as the fallback for a corpus carrying no progress file.
