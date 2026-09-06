@@ -62,27 +62,26 @@ test("every documented `uses:` names THIS repository", () => {
 
 test("every documented ref exists — a tag nobody cut resolves for nobody", () => {
   if (!OWNER_REPO) return;
+  // ASK THE REMOTE, not the local checkout's own tags/branches. `git tag` and `git branch -r` answer
+  // "what did THIS CLONE happen to fetch", which depends on checkout depth and scope rather than on
+  // what a consumer following the documented ref would actually get -- and `ci.yml`'s `docs` job runs on
+  // exactly the shape that makes those two disagree: `actions/checkout@v4` for a `pull_request` event
+  // fetches ONE commit and sets up local ref info for the PR's own merge ref (`pull/109/merge`), never
+  // for `main` or any tag. `refs` used to read as "genuinely empty" there and every documented ref,
+  // `main` included, reported as unresolvable; the real shape is worse -- ONE irrelevant ref, so an
+  // empty-population guard alone does not catch it. `git ls-remote` asks the repository itself, which is
+  // the actual question this test needs answered and does not depend on what this checkout fetched.
   const refs = new Set<string>();
   try {
-    for (const t of execFileSync("git", ["tag"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" }).split("\n")) {
-      if (t.trim()) refs.add(t.trim());
-    }
-    for (const b of execFileSync("git", ["branch", "-r", "--format=%(refname:short)"],
+    for (const line of execFileSync("git", ["ls-remote", "--tags", "--heads", "origin"],
       { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" }).split("\n")) {
-      const name = b.trim().replace(/^origin\//, "");
-      if (name && name !== "HEAD") refs.add(name);
+      const match = /refs\/(?:tags|heads)\/(.+)$/.exec(line);
+      if (match) refs.add(match[1]);
     }
   } catch {
-    return; // no git metadata; see OWNER_REPO
+    return; // no network reach to origin; see OWNER_REPO for the "no git metadata" sibling case
   }
-  // A SHALLOW CHECKOUT resolves `remote.origin.url` (OWNER_REPO) fine but fetches no tags and no
-  // remote-tracking branches at all -- `git tag` and `git branch -r` both come back empty, not erroring,
-  // so the try/catch above never fires. `refs` reads as genuinely empty rather than as "the ref is
-  // missing", and every documented ref (including `main`, which certainly exists) would report as
-  // unresolvable. `ci.yml`'s `docs` job runs on exactly this shape: `actions/checkout@v4` with no
-  // `fetch-depth` override, one commit, no remote-tracking refs. Same rule as everywhere else in this
-  // file: an empty population is a reason to skip honestly, never a finding.
-  if (refs.size === 0) return;
+  if (refs.size === 0) return; // ls-remote itself returned nothing -- a check that examined no refs
   const lines = usesLines();
   // The sibling test above already guards `usesLines()` being non-empty, but this test computes it AGAIN
   // independently -- relying on a sibling test's guard to have already run and failed is how a test comes
