@@ -57,9 +57,14 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
 
 const PACKAGE_SCRIPTS = JSON.parse(read("package.json")).scripts as Record<string, string>;
-const LAB_JOBS = (parseYaml(read("packages/control/ansible/lab-job.yml")) as Array<
+// THE PLAY THAT HOLDS THE CATALOGUE, FOUND BY WHAT IT HOLDS — and NOT `?? {}`, which is the worse half
+// of the old form: indexing the wrong play yielded an EMPTY job map, so every check below would have
+// passed having examined nothing. That is this file's own subject, in this file's own reader.
+const LAB_JOB_PLAYS = parseYaml(read("packages/control/ansible/lab-job.yml")) as Array<
   { vars?: { lab_jobs?: Record<string, { argv?: unknown }> } }
->)[0].vars?.lab_jobs ?? {};
+>;
+const LAB_JOBS = LAB_JOB_PLAYS.flatMap((p) => (p?.vars?.lab_jobs ? [p.vars.lab_jobs] : []))[0];
+if (!LAB_JOBS) throw new Error("lab_jobs not found in lab-job.yml — this guard is parsing the wrong shape");
 
 /** Same regex `exit-code-contract.test.ts` and `lab-job.test.ts` use — copied deliberately, not imported. */
 const DERIVED_VERDICT = /\b(gateVerdict|fleetVerdict)\(/;

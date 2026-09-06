@@ -75,16 +75,49 @@ function jsonUnder(root, members) {
   return members.reduce((total, member) => total + jsonBelow(resolve(root, member)), 0);
 }
 
+/** @param {string} root @param {string[]} members */
+function bytesUnder(root, members) {
+  return members.reduce((total, member) => total + bytesBelow(resolve(root, member)), 0);
+}
+
 /** One root, walked iteratively — a deep corpus must not depend on the stack depth. @param {string} start */
-function jsonBelow(start) {
+function jsonBelow(/** @type {string} */ start) {
+  return walkBelow(start, (path) => (path.endsWith(".json") ? 1 : 0));
+}
+
+/**
+ * BYTES, not just names — added 2026-09-06 because the count cannot see the failure that matters most.
+ *
+ * A file count answers "are all the names there". An archive holding 7,694 correctly-named EMPTY files
+ * passes it perfectly, and that is the shape a truncated or mid-write archive actually takes. `ceo` asked
+ * the question the count could not: *"if they do not match, the archive holds the right names with the
+ * wrong contents."*
+ *
+ * Measured on the first real backup: 108.1 MB uncompressed from 8.5 MB compressed, 12.7x, zero empty
+ * files. JSON compresses about that well, so the ratio is not itself evidence — the byte TOTAL is.
+ * @param {string} start
+ */
+function bytesBelow(start) {
+  return walkBelow(start, (path, stat) => stat.size);
+}
+
+/**
+ * One iterative walk, two questions. Iterative rather than recursive because a deep corpus must not
+ * depend on the stack, and shared because two walks that could disagree about which files they visit
+ * would make the count and the byte total answer about different populations — this file's own subject.
+ *
+ * @param {string} start @param {(path: string, stat: import("node:fs").Stats) => number} score
+ */
+function walkBelow(start, score) {
   if (!existsSync(start)) return 0;
   let total = 0;
   const stack = [start];
   while (stack.length) {
     const here = stack.pop();
     if (!here) continue;
-    if (statSync(here).isDirectory()) stack.push(...readdirSync(here).map((e) => resolve(here, e)));
-    else if (here.endsWith(".json")) total += 1;
+    const stat = statSync(here);
+    if (stat.isDirectory()) stack.push(...readdirSync(here).map((e) => resolve(here, e)));
+    else total += score(here, stat);
   }
   return total;
 }
@@ -138,9 +171,28 @@ async function main() {
   // That is `normalise = String(entry)` from `evidence-diff.mjs`, which made every object compare equal
   // and reported SAME for a changed validation message. Caught here by reading `promisify`'s contract
   // rather than by running it, which is the only reason it is not in the commit.
-  const { stdout: listed } = await run("tar", ["-tzf", archive], { maxBuffer: 1 << 28 });
-  const archivedJson = String(listed).split("\n").filter((line) => line.endsWith(".json")).length;
+  const { stdout: listed } = await run("tar", ["-tzvf", archive], { maxBuffer: 1 << 28 });
+  const rows = String(listed).split("\n").filter((line) => line && !line.startsWith("d"));
+  const archivedJson = rows.filter((line) => line.endsWith(".json")).length;
+  // `-tzvf` prints `perms links owner group SIZE date name`, so the byte total is field 5. Read from the
+  // FILE that was written rather than from what tar was asked to write, which is the whole point.
+  const archivedBytes = rows.reduce((n, line) => n + Number(line.trim().split(/\s+/)[4] ?? 0), 0);
   const onDisk = jsonUnder(DATASET, present) + siblings.reduce((n, name) => n + jsonUnder(RUNS, [name]), 0);
+  const onDiskBytes = bytesUnder(DATASET, present)
+    + siblings.reduce((n, name) => n + bytesUnder(RUNS, [name]), 0);
+  // BYTES BEFORE NAMES, because a shortfall in bytes is the failure a count CANNOT see: an archive of
+  // correctly-named EMPTY files passes the count perfectly, and that is the shape a truncated or
+  // mid-write archive actually takes. Its own refusal, so the two causes never share a message —
+  // missing files and hollow files need different investigations.
+  if (archivedBytes < onDiskBytes) {
+    process.stderr.write(
+      `REFUSING: the archive holds ${archivedBytes} byte(s) and ${onDiskBytes} were on disk — `
+      + `${onDiskBytes - archivedBytes} did not make it in, across ${archivedJson} file(s) that ARE named.\n`
+      + `  ${archive}\n`
+      + "The names are right and the contents are not, which a file count cannot see. A restore from this\n"
+      + "would produce a corpus of the correct shape and the wrong evidence. LEFT IN PLACE to inspect.\n");
+    process.exit(2);
+  }
   if (archivedJson < onDisk) {
     process.stderr.write(
       `REFUSING: the archive holds ${archivedJson} JSON file(s) and ${onDisk} were on disk — ${onDisk - archivedJson} `
@@ -152,7 +204,9 @@ async function main() {
     process.exit(2);
   }
   process.stdout.write(`Wrote ${archive} (${(size / (1024 * 1024)).toFixed(1)} MB)\n`);
-  process.stdout.write(`Read back ${archivedJson} JSON file(s), matching the ${onDisk} on disk.\n`);
+  process.stdout.write(`Read back ${archivedJson} JSON file(s), matching the ${onDisk} on disk, `
+    + `and ${(archivedBytes / (1024 * 1024)).toFixed(1)} MB uncompressed against `
+    + `${(onDiskBytes / (1024 * 1024)).toFixed(1)} MB on disk.\n`);
   process.stdout.write(
     "This is on the SAME DISK as the corpus, so it is not yet a backup — it defends against\n" +
     "`rm -rf runs/` and a bad recapture, not against losing the machine.\n\n" +
