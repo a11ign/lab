@@ -21,6 +21,9 @@ import { document } from "../../../../scripts/board-document.mjs";
  * the finding.
  */
 
+/** The shape `reported.json` records for section 3, named so the assertion below is not `any`. */
+type Achievement = { claim?: string; evidence?: string; reportedBy?: string };
+
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 /** Visible words, with markup removed, so the comparison is about CONTENT and not about syntax.
@@ -29,7 +32,7 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.
  * output, and each was added only after seeing it reported as a loss and confirming by eye that the
  * content had in fact survived. Normalising away anything else would be weakening the test to make it
  * pass, which is the failure this whole file exists to catch one layer down. */
-const words = (s) => s
+const words = (s: string): string[] => s
   .replace(/<[^>]+>/g, " ")
   .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
   .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")   // a link renders as its TEXT; the URL is an attribute
@@ -40,7 +43,7 @@ const words = (s) => s
   // Trailing punctuation lands differently either side of a tag boundary -- `[link](url).` is one token
   // in the markdown and `link</a>.` splits into two in the HTML. That is a tokenisation artefact of this
   // comparison, not a loss, so edges are trimmed. The WORD is what must survive.
-  .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+  .map((w: string) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
   .filter(Boolean);
 
 test("no visible text is lost between markdown and HTML", () => {
@@ -62,7 +65,7 @@ test("no visible text is lost between markdown and HTML", () => {
 
   const before = words(md);
   const after = words(toHtml(md));
-  const missing = before.filter((w) => !after.includes(w));
+  const missing = before.filter((w: string) => !after.includes(w));
   assert.deepEqual(missing, [],
     `these words are in the markdown and not in the rendered HTML, so the converter dropped them: `
     + `${missing.join(", ")}`);
@@ -91,7 +94,7 @@ test("the real board document loses no text either, and this cannot pass having 
   });
   assert.ok(md.length > 3000, `the document is only ${md.length} chars; this assertion would be vacuous`);
 
-  const missing = words(md).filter((w) => !words(toHtml(md)).includes(w));
+  const missing = words(md).filter((w: string) => !words(toHtml(md)).includes(w));
   assert.deepEqual(missing, [], `the board document loses these words when rendered: ${missing.join(", ")}`);
 });
 
@@ -101,8 +104,8 @@ test("every achievement in reported.json carries a non-empty evidence line", () 
   // from the data instead of from the renderer, and indistinguishable on the page.
   const raw = JSON.parse(readFileSync(path.join(REPO, "docs/board/reported.json"), "utf8"));
   const bad = (raw.achievements ?? [])
-    .filter((a) => !a.claim?.trim() || !a.evidence?.trim() || !a.reportedBy?.trim());
-  assert.deepEqual(bad.map((a) => a.claim ?? "(no claim)"), [],
+    .filter((a: Achievement) => !a.claim?.trim() || !a.evidence?.trim() || !a.reportedBy?.trim());
+  assert.deepEqual(bad.map((a: Achievement) => a.claim ?? "(no claim)"), [],
     "these achievements would render as a claim with no source on the one page that promises none");
 });
 
