@@ -18,6 +18,33 @@
  * obvious "derive the codes from the source" test cannot be trusted — a script's exit codes are usually
  * behind named constants, ternaries and thrown errors a regex cannot resolve, so a derivation would report
  * zero for most of these and pass having examined nothing.
+ *
+ * ## Python — added 2026-09-06, after this test's own filter was the gap
+ *
+ * `hasExitContract` filtered to `.mjs`/`.ts` from the day this file was written, which was correct then —
+ * `gateVerdict`/`fleetVerdict` are JS-only concepts — and became a defect the moment somebody treated "not
+ * classified here" as "not a gate": the eight Python-driven `lab-job.yml` scripts had never been asked
+ * whether examining fewer records than expected can silently exit 0 (`docs/backlog.md`, "Python gates and
+ * the partial-corpus question"), and that audit found two real gaps and fixed them. **A one-off audit is
+ * not a standing guard** — nothing stopped a ninth Python gate arriving with the same defect, and nothing
+ * would have noticed if either fix were reverted. This section is the guard the audit needed and did not
+ * have: `hasExitContractPy`/`DOCUMENTED_PY`/`INFRASTRUCTURE_PY` are the identical discover-and-classify
+ * shape as the `.mjs`/`.ts` side above, over Python's own syntax.
+ *
+ * Scoped to `packages/lab/scripts` and `packages/scorer/python` — the two directories where every
+ * `lab-job.yml`-dispatched Python script actually lives, matching this document's own existing boundary
+ * statement ("this table covers the `.mjs`/`.ts` layer, not the Ansible playbook layer"). Two other
+ * directories with `sys.exit`-calling `.py` files were deliberately excluded, each for a reason stated
+ * once rather than a silent omission: `packages/control/ansible/**` (Ansible module/playbook tooling —
+ * `check-modules.py` and the collection's custom modules follow Ansible's own module-exit-code contract,
+ * a different domain entirely) and `packages/nvda-speech/**` (a GPL-licensed announcement-composition
+ * port with its own standalone data-generation scripts, no `lab-job.yml` entry or npm script reads any of
+ * their exit codes as a verdict). Both are genuine package-boundary exclusions in the same spirit as this
+ * file's own three-package root list above, not scope creep the walk happens not to reach.
+ *
+ * No shared Python `verdict.py` was built, deliberately — the earlier audit ruled this out explicitly
+ * ("a second `gateVerdict` across the language boundary is the fact-stated-twice hazard in its most
+ * expensive form") and that ruling stands. This is discovery and classification only, exactly as asked.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -314,6 +341,157 @@ test("every script that adopts the verdict helpers actually imports the shared c
     assert.match(source, /exitCodeFor\(/,
       `${path} is listed as adopting verdict.mjs's contract but does not call exitCodeFor(...)`);
   }
+});
+
+// --- Python ---
+
+/** `#` line comments and triple-quoted docstrings stripped -- so a docstring MENTIONING `sys.exit(` in
+ * prose cannot be mistaken for a script that calls it, the identical reason `stripComments` exists above. */
+function stripPyComments(source: string): string {
+  return source
+    .replace(/"""[\s\S]*?"""/g, "")
+    .replace(/'''[\s\S]*?'''/g, "")
+    .replace(/#.*$/gm, "");
+}
+
+/** Deliberately excluded package roots -- see this file's header for why each one is a real boundary. */
+const PY_ROOTS = ["packages/lab/scripts", "packages/scorer/python"];
+
+/** pytest's own naming convention, not a gate shape -- separated out so it is testable without disk I/O. */
+function isPyTestFile(filename: string): boolean {
+  return filename.startsWith("test_") || filename.endsWith("_test.py");
+}
+
+function hasExitContractPy(rel: string): boolean {
+  if (!rel.endsWith(".py")) return false;
+  if (isPyTestFile(rel.split("/").pop()!)) return false;
+  const source = stripPyComments(readFileSync(join(REPO, rel), "utf8"));
+  return source.includes("sys.exit(") || source.includes("raise SystemExit");
+}
+
+/** Every script with an exit-code contract under the Python gate roots — DISCOVERED, same reason as above. */
+function exitCodeModulesPy(): string[] {
+  const found: string[] = [];
+  for (const root of PY_ROOTS) {
+    for (const entry of readdirSync(join(REPO, root), { withFileTypes: true })) {
+      if (entry.isDirectory()) continue;
+      const rel = `${root}/${entry.name}`;
+      if (hasExitContractPy(rel)) found.push(rel);
+    }
+  }
+  return found;
+}
+
+/**
+ * Shared machinery whose `SystemExit` is inherited by every importer, never called as its own script —
+ * neither has an `if __name__ == "__main__":` block. Same role as `INFRASTRUCTURE` above.
+ */
+const INFRASTRUCTURE_PY: Record<string, string> = {
+  "packages/scorer/python/screenreader_features.py":
+    "`assert_input_version` raises SystemExit (a plain string, so exit code 1) when a record was built "
+    + "under a stale model-input contract -- called by every trainer/audit that reads exported records, "
+    + "inherited rather than chosen by each of them",
+};
+
+/**
+ * Every other discovered Python script: a one-line statement of what its non-zero codes mean, read from
+ * the source, never inferred from the name — the identical discipline as `DOCUMENTED` above.
+ */
+const DOCUMENTED_PY: Record<string, string> = {
+  "packages/lab/scripts/audit-scorer-shortcuts.py":
+    "0 --update-baseline written, --no-baseline, no baseline file yet, or compare_to_baseline finds "
+    + "nothing wrong; 1 any of REGRESSION/UNAUDITED/LOST COVERAGE (three distinct findings collapsed) OR "
+    + "the exported corpus is empty (a plain-string SystemExit); 2 no record in the corpus could be "
+    + "featurized at all -- the real 'examined nothing' refusal, distinct from an empty corpus",
+    "packages/lab/scripts/check-screenreader-hardening.py":
+    "0 every adversarial/hardening check passed; 1 any failed -- run via `npm run training:hardening`",
+  "packages/lab/scripts/compose-multi-defect-probe.py":
+    "a module-level ADR 0015 mechanism probe with no `if __name__` guard and no caller anywhere in this "
+    + "repo -- run by hand only. Its one `raise SystemExit(f'...')` (a string, so exit 1) refuses when the "
+    + "corpus has no donor page for a required marker feature",
+  "packages/lab/scripts/diagnose-false-positives.py":
+    "0 always, unconditionally, including on zero records -- NAMED, not fixed, in the earlier audit: no "
+    + "gate or promotion decision reads this script's exit code today, a human runs it deliberately with a "
+    + "record count already in hand",
+  "packages/lab/scripts/evaluate-screenreader-acceptance.py":
+    "0 held-out acceptance passed; 1 the acceptance result failed OR a precondition refusal (stamping a "
+    + "verdict into tracked source) -- two distinct causes share 1; the bare code cannot itself distinguish "
+    + "'could not measure stability' from a real regression, only the JSON/message can",
+  "packages/lab/scripts/train-screenreader-model.py":
+    "0 (implicit, `main() -> None`) trained; 1 three distinct precondition failures share it (a stale "
+    + "realism-tier dataset, an unknown rule-ownership key, a forbidden key present in the export) -- all "
+    + "plain-string SystemExits; 3 refuses to overwrite a RELEASE-ELIGIBLE model directory, a separate code "
+    + "on purpose because the fix is different (train to a scratch --output instead of fixing the corpus)",
+  "packages/scorer/python/audit_applicability.py":
+    "0 no precondition silences a labelled positive; 1 a precondition DELETES real evidence a labelled "
+    + "positive depends on; 2 no corpus found under runs/ -- the real INCONCLUSIVE",
+  "packages/scorer/python/audit_container_exits.py":
+    "0 always when anything could be examined -- report-only by design, a fact about NVDA's own container "
+    + "announcements, never a corpus defect; 2 no corpus found OR no record could be parsed, two causes share it",
+  "packages/scorer/python/audit_grants.py":
+    "0 every accompanying defect grants the feature it declares; 1 a defect declares evidence the corpus "
+    + "does not contain; 2 four distinct refusal causes (no grants map, no corpus, nothing survives the "
+    + "stale-`parsed`-block filter, no multi-defect record matched) collapsed to one INCONCLUSIVE",
+  "packages/scorer/python/explain_feature.py":
+    "0 always when the requested subtype/feature pair has any samples; 2 no exported dataset at --data, OR "
+    + "zero samples for the requested pair -- both real preconditions collapsed",
+  "packages/scorer/python/export-encoder-onnx.py":
+    "0 exported ONNX encoder matches the torch reference within tolerance; 1 embedding drift exceeds "
+    + "tolerance, refuses to ship. Run once, offline, by hand -- CI never runs this",
+};
+
+test("every discovered Python script is DOCUMENTED or INFRASTRUCTURE", () => {
+  const all = exitCodeModulesPy();
+  // Vacuity guard: the known population at the time this was written is 12 (6 in each root). A lower
+  // bound, not a pin -- a legitimate new script raises it; the test below is what catches one arriving
+  // unclassified. This guard exists only to catch the walk itself breaking and finding nothing.
+  assert.ok(all.length >= 10,
+    `only found ${all.length} Python gate script(s) with an exit contract, fewer than the known census of `
+    + "~12 -- the discovery (roots, or the sys.exit/SystemExit pattern) is probably broken, not the "
+    + "population shrinking");
+
+  const missing = all.filter((path) => !(path in DOCUMENTED_PY) && !(path in INFRASTRUCTURE_PY));
+  assert.deepEqual(missing, [],
+    `these Python scripts call sys.exit()/raise SystemExit and are classified nowhere -- read what each `
+    + `code means from the source and add a line to ${DOC} and to DOCUMENTED_PY/INFRASTRUCTURE_PY here `
+    + `(never infer from the name):\n${missing.map((m) => `  ${m}`).join("\n")}`);
+
+  const inBoth = all.filter((path) => path in DOCUMENTED_PY && path in INFRASTRUCTURE_PY);
+  assert.deepEqual(inBoth, [], "a script cannot be both a standalone gate and inherited infrastructure");
+});
+
+test("every classified Python path still exists and still has an exit contract", () => {
+  for (const path of [...Object.keys(DOCUMENTED_PY), ...Object.keys(INFRASTRUCTURE_PY)]) {
+    assert.ok(existsSync(join(REPO, path)), `${path} is classified but no longer exists`);
+    assert.ok(hasExitContractPy(path),
+      `${path} is classified as having an exit-code contract but no longer calls sys.exit()/raises `
+      + `SystemExit -- remove its entry`);
+  }
+});
+
+// --- The guard must be shown to fail, in both directions ---
+
+test("MUTATION: a docstring MENTIONING sys.exit is stripped, not mistaken for a real call", () => {
+  const fixture = '"""This script does not call sys.exit( -- it just talks about it."""\nprint("ok")\n';
+  assert.ok(!stripPyComments(fixture).includes("sys.exit("),
+    "the docstring mention must be stripped, or a file merely TALKING about sys.exit reads as a real gate");
+});
+
+test("MUTATION: a # comment mentioning sys.exit is stripped too", () => {
+  const fixture = "# this used to call sys.exit(1) but no longer does\nprint('ok')\n";
+  assert.ok(!stripPyComments(fixture).includes("sys.exit("));
+});
+
+test("CONTROL: a real sys.exit call survives the strip", () => {
+  // Without this, both mutations above could pass because stripPyComments deletes EVERYTHING.
+  const fixture = "import sys\n# a real gate\nsys.exit(1)\n";
+  assert.ok(stripPyComments(fixture).includes("sys.exit("));
+});
+
+test("MUTATION: a pytest test_*.py / *_test.py file is excluded even with a real call", () => {
+  assert.ok(isPyTestFile("test_something.py"));
+  assert.ok(isPyTestFile("something_test.py"));
+  assert.ok(!isPyTestFile("audit_grants.py"), "a real gate script must not be swept up by the test-file exclusion");
 });
 
 test("docs/gate-exit-codes.md exists and names the dangerous shape", () => {
