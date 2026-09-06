@@ -707,13 +707,28 @@ def assert_declaration_matches_data(records: list[dict[str, Any]]) -> None:
     matters: `4.1.2:unnamed-form-field` sat in the old hardcoded map for as long as it existed, exempting
     a head from blocking release that was never the head it named. `rules:score` asserts the same thing
     from the other side; this one runs at training time, which is when the exemption is actually applied.
+
+    `modelHead: false` entries are exempt from the "must be present" half: `1.4.2:autoplay-uncontrollable`
+    is declared today with no corpus case at all, by design, and a declaration that a head must never
+    exist is not a claim that the corpus already carries evidence for it. `score-rules.ts`'s
+    `ownershipFailures` carries the identical exemption for the identical reason; the two must move
+    together.
     """
     present = {subtype for record in records for subtype in record["target"].get("subtypes", [])}
-    expected = {s for s, e in RULE_OWNERSHIP.items() if e["decidedBy"] != "unavailable"}
+    expected = {
+        s for s, e in RULE_OWNERSHIP.items()
+        if e["decidedBy"] != "unavailable" and e.get("modelHead") is not False
+    }
     # `unavailable` is asserted the other way round: those records are excluded from the export on
     # purpose (MODEL_EXCLUDED_SUBTYPES), so their PRESENCE means the exclusion has stopped working and a
     # head is about to be fitted to evidence that cannot express its failure.
-    forbidden = sorted({s for s in RULE_OWNERSHIP if s not in expected} & present)
+    #
+    # Computed from `decidedBy` DIRECTLY, never from `expected`'s complement -- `expected` now also
+    # excludes `modelHead: false` entries, which (2.4.7's own case) can be `decidedBy: "rules"` AND
+    # present with real records. Deriving `forbidden` from "not in expected" would flag a subtype like
+    # that as a broken `unavailable` exclusion when it is neither unavailable nor broken.
+    unavailable = {s for s, e in RULE_OWNERSHIP.items() if e["decidedBy"] == "unavailable"}
+    forbidden = sorted(unavailable & present)
     unknown = sorted(expected - present)
     if unknown:
         raise SystemExit(
@@ -727,6 +742,34 @@ def assert_declaration_matches_data(records: list[dict[str, Any]]) -> None:
             f"export. The model exclusion has stopped working, so a head would be trained on evidence "
             "that cannot express its failure."
         )
+
+def subtypes_by_criterion_for(records: list[dict[str, Any]], criteria: list[str]) -> dict[str, list[str]]:
+    """Which subtypes get a trained HEAD, per criterion -- the single choke point `main()`'s per-criterion
+    loop iterates, so a subtype absent here can never be fitted, whatever the corpus contains.
+
+    Extracted out of `main()` so this is unit-testable without the encoder, the corpus, or torch: it is a
+    pure function of `records`. `packages/lab/tests/test_model_head_exclusion.py` calls this directly on
+    fabricated records, and separately trains a REAL (tiny, synthetic) head through this exact function's
+    output to prove the excluded subtype's key is absent from a real safetensors artefact -- not merely
+    absent from this dict.
+
+    `rule-ownership.json`'s `modelHead: false` entries are removed here, before the loop ever sees them --
+    the rules decide these subtypes and a head must never be fitted for them, whatever the corpus
+    contains. See `Ownership.modelHead`'s own doc for why two different reasons (no corpus case yet;
+    a head that would be a free veto) share one field: what is true of both is "no head", never
+    "no corpus case".
+    """
+    return {
+        criterion: sorted({
+            subtype for record in records
+            if criterion in record["target"].get("criteria", [])
+            for subtype in record["target"].get("subtypes", [])
+            if subtype.startswith(criterion + ":")
+            and RULE_OWNERSHIP.get(subtype, {}).get("modelHead") is not False
+        })
+        for criterion in criteria
+    }
+
 
 def known_indices(records: list[dict[str, Any]], subtype: str, candidates: list[int]) -> list[int]:
     """`candidates`, minus the records whose status for `subtype` is UNKNOWN.
@@ -800,15 +843,7 @@ def main() -> None:
     from safetensors.torch import save_file
 
     criteria = sorted({criterion for record in records for criterion in record["target"].get("criteria", [])})
-    subtypes_by_criterion = {
-        criterion: sorted({
-            subtype for record in records
-            if criterion in record["target"].get("criteria", [])
-            for subtype in record["target"].get("subtypes", [])
-            if subtype.startswith(criterion + ":")
-        })
-        for criterion in criteria
-    }
+    subtypes_by_criterion = subtypes_by_criterion_for(records, criteria)
     split_indices = {
         split: [index for index, record in enumerate(records) if split_for_family[record["provenance"]["family"]] == split]
         for split in ("train", "validation", "test")
