@@ -280,8 +280,13 @@ const FORM_PROBE_ONLY = Object.freeze([
   // `probeForms` gate, so no capture carries `observed["stateChanges"]` and the pair was two constant-zero
   // columns. `test_unclosable_map_is_current.py` caught the leftover declaration here on the same run --
   // the same way it caught `skip_link_moves_focus` naming a feature the pipeline never computed.
+  // `postSubmitFields` IS NOT CROSSED either, and it was withdrawn for a DIFFERENT reason from
+  // `stateChanges` -- the two look alike and need opposite remedies. There the CHANNEL was missing; here
+  // the channel is real and one of the pair's two OUTCOMES cannot occur: `asked and absent` needs a submit
+  // that navigates to a fieldless confirmation, which needs a `formState`, and `CASES` declares one on ZERO
+  // of 1,645 cases. `test_unclosable_map_is_current.py` caught these two names surviving the withdrawal on
+  // its first run afterwards -- the third time that guard has caught a declaration outliving its feature.
   "form_change_observed_present", "form_change_observed_absent",
-  "post_submit_observed_present", "post_submit_observed_absent",
 ]);
 
 export const UNREACHABLE_WITHOUT_PERTURBING = Object.freeze({
