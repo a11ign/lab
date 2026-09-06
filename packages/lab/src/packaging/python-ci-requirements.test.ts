@@ -3,8 +3,9 @@
  *
  * 195 pytest files ran nowhere until 2026-09-05. `npm test` calls `test:python`, which prints an honest
  * SKIP without `.venv/bin/pytest` and exits 0 — correct behaviour, and it meant the entire Python suite
- * existed only on a laptop that happened to have a venv. `lint.yml` had no Python at all and the lab has
- * no pytest. Found by an external architecture audit under "gates that exist and run nowhere automated".
+ * existed only on a laptop that happened to have a venv. `lint.yml` (retired 2026-09-06, folded into
+ * `ci.yml`'s conditional `python` job) had no Python at all and the lab has no pytest. Found by an
+ * external architecture audit under "gates that exist and run nowhere automated".
  *
  * This repo has its own version of that lesson and it is why the audit's finding was believed immediately:
  * `packages/nvda-speech/tests/test_symbols.py` was written in pytest style, pytest was never installed,
@@ -53,9 +54,9 @@ function requirements(text: string): Map<string, string> {
 }
 
 test("CI runs the Python suite, with the flags a stale compile makes necessary", () => {
-  const workflow = read(".github/workflows/lint.yml");
+  const workflow = read(".github/workflows/ci.yml");
   assert.match(workflow, /setup-python/,
-    "lint.yml must set up Python, or the 195 pytest files run nowhere automated");
+    "ci.yml must set up Python, or the pytest files run nowhere automated");
   assert.match(workflow, /pip install -r requirements-ci\.txt/);
   assert.match(workflow, /pytest -p no:cacheprovider/,
     "`spec_from_file_location` honours __pycache__, and a stale compile has decided a mutation check "

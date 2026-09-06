@@ -3,9 +3,10 @@
  *
  * Measured 2026-08-29: extracting `packages/control` without refreshing `package-lock.json` left
  * `npm ci` failing with `Missing: @a11y-witness/control@0.1.0 from lock file`, and that is the first
- * step of every workflow. `lint.yml` (which gates lint, typecheck and the test suite) and
- * `action-smoke.yml` were both red for hours, and `action-smoke` is release guard 5 — the only check
- * that drives the weights the way a consumer does — so a release could not have passed either.
+ * step of every workflow. `lint.yml` (retired 2026-09-06, folded into `.github/workflows/ci.yml`, which
+ * gates lint, typecheck and the test suite the same way) and `action-smoke.yml` were both red for
+ * hours, and `action-smoke` is release guard 5 — the only check that drives the weights the way a
+ * consumer does — so a release could not have passed either.
  *
  * NOTHING LOCAL COULD SEE IT. The pre-push hook runs lint, typecheck and tests against the
  * `node_modules` already on disk; `npm ci` is the one command that reads the lockfile as a

@@ -135,6 +135,14 @@ def test_no_head_exists_in_a_real_safetensors_artefact_for_the_excluded_subtype(
     """The artefact-level proof. Trains two REAL (tiny, synthetic) heads through `train_head` and
     `save_file` -- the exact functions `main()` calls -- and reads the resulting file back with
     `safetensors`'s own loader, never with this test's memory of what it wrote."""
+    import pytest
+    # LAB ONLY. `requirements-ci.txt` deliberately does not carry torch (the lab's own header explains
+    # why: the test suite needs almost none of the lab's ~torch-and-onnxruntime environment, and pinning
+    # CI to the full requirements.txt costs minutes and a large download). This is the one test in the
+    # 236-strong CI-side suite that genuinely needs it -- `subtypes_by_criterion_for` above proves the
+    # PURE half with no torch at all; this proves the ARTEFACT half, which cannot exist without it. An
+    # honest skip, not a silent pass: CI reports it, the lab's real environment runs it for real.
+    pytest.importorskip("torch")
     import torch
     from safetensors.torch import save_file
     from safetensors import safe_open
