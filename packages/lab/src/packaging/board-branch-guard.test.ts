@@ -5,6 +5,7 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, chmodSync } from "
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
 /* THE SCHEDULED JOB MUST RENDER FROM `main`, AND THE CHECK IS NEEDED IN TWO PLACES.
  *
@@ -21,8 +22,12 @@ const source = (name: string) => readFileSync(path.join(REPO, "scripts", name), 
 /** Run a shell script in a throwaway git repo on a named branch, and report its exit code. */
 function onBranch(script: string, branch: string): { code: number; out: string } {
   const dir = mkdtempSync(path.join(tmpdir(), "branch-guard-"));
-  const env = { ...process.env };
-  for (const key of Object.keys(env)) if (key.startsWith("GIT_")) delete env[key];
+  // THE CANONICAL HELPER, not a hand-rolled strip. This file had its own copy of the GIT_* filter, which
+  // is a defensive filter stated twice -- one copy missing one variable is silent until the day that
+  // variable is the one set. Sharper here than usual: this is the test for the guard whose entire job is
+  // answering "am I on main?", and it runs under the pre-push hook where GIT_DIR IS set, so an unscrubbed
+  // spawn would validate that guard against the real repository instead of the fixture.
+  const env = sandboxGitEnv() as NodeJS.ProcessEnv;
   const git = (...args: string[]) =>
     execFileSync("git", ["-C", dir, ...args], { encoding: "utf8", stdio: "pipe", env });
   git("init", "-q", "-b", branch);
