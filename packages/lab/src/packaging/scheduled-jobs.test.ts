@@ -6,6 +6,18 @@
 //
 // DISCOVERED from every `.plist` under `docs/board/`, never a hand-written list, for the same reason
 // every other discovery test in this repo gives one.
+//
+// THE POPULATION IS NOW EMPTY BY DECISION, 2026-09-06, AND THAT IS NOT THE SAME AS THE DISCOVERY BREAKING.
+// The chairman ruled that everything is pushed and the board report runs from GitHub Actions rather than
+// from one Mac, so both plists were deleted and the launchd path retired -- see `docs/board/README.md`,
+// which keeps the reason the local job existed. This file's machinery is kept intact and its floor is
+// inverted: it now asserts the population is EMPTY and that the replacement is guarded elsewhere, so
+// "the schedule moved" and "the discovery regex broke" remain different states.
+//
+// The question this file was built for did not go away with the plists -- "the job that does not exist
+// reports nothing" is still true of a GitHub workflow -- and `board-schedule.test.ts` is where it is now
+// asked: that the crons exist, that both halves of the London-hour pair are scheduled, and that every
+// working step is gated. If launchd jobs ever return, restore the floor below and delete this note.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -13,7 +25,25 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { claimedJobs, checkScheduledJobs, orphanJobs } from "./scheduled-jobs.mjs";
 
-test("the real repo claims at least the two known jobs, discovered rather than hand-listed", () => {
+/** A throwaway repo with two claimed jobs, for the tests that exercise the REPORTING logic.
+ *
+ * They used `process.cwd()` and so depended on this repository having plists -- which it did until the
+ * schedule moved to GitHub Actions on 2026-09-06, at which point three of them began iterating over an
+ * empty population and one asserted a floor that could no longer be met. This file's own header already
+ * asks for exactly this: *"a unit test's pass/fail must not depend on which machine happened to run
+ * it"*. A fixture is the same rule applied to the repository's own contents.
+ */
+function repoWithTwoJobs(): string {
+  const dir = mkdtempSync(join(tmpdir(), "scheduled-jobs-fixture-"));
+  mkdirSync(join(dir, "docs", "board"), { recursive: true });
+  for (const label of ["com.a11y-witness.board-report", "com.a11y-witness.board-summary-check"]) {
+    writeFileSync(join(dir, "docs", "board", `${label}.plist`),
+      `<plist><dict><key>Label</key><string>${label}</string></dict></plist>\n`);
+  }
+  return dir;
+}
+
+test("no launchd job is claimed, because the schedule moved to GitHub Actions", () => {
   const jobs = claimedJobs(process.cwd());
   // A floor DERIVED from what actually exists today (2: board-report, board-summary-check), not a
   // number handed down -- the brief for this unit originally said "three", and grepping the real repo
@@ -21,19 +51,16 @@ test("the real repo claims at least the two known jobs, discovered rather than h
   // floor from the real discovery and setting it at the current count (rather than >=1, which could not
   // tell "the discovery broke" from "one job was quietly deleted") is the guard that actually matches
   // this repo's premise: something real is claimed here, and it is not nothing.
-  assert.ok(jobs.length >= 2,
-    `expected at least 2 claimed jobs under docs/board/*.plist, found ${jobs.length} -- either the `
-    + "plist-discovery regex broke, or a claimed job was removed without this floor being lowered "
-    + "deliberately");
-  const labels = jobs.map((j) => j.label);
-  assert.ok(labels.includes("com.a11y-witness.board-report"), "the 08:00 publish job must be discovered");
-  assert.ok(labels.includes("com.a11y-witness.board-summary-check"),
-    "the 21:00 summary-check job must be discovered");
+  assert.deepEqual(jobs.map((j) => j.label), [],
+    `${jobs.length} launchd job(s) are claimed under docs/board/*.plist. The launchd path was RETIRED on `
+    + "2026-09-06 when the schedule moved to GitHub Actions, so a claimed job here is either a plist that "
+    + "should have gone with it, or launchd being reintroduced -- in which case restore the floor this "
+    + "assertion replaced, and the note at the top of this file.");
 });
 
 test("a platform with no launchd reports every job as not-applicable, and nothing fails", () => {
   const report = checkScheduledJobs({
-    repoRoot: process.cwd(),
+    repoRoot: repoWithTwoJobs(),
     supportsLaunchd: false,
     isInstalled: () => { throw new Error("must never be called when launchd is unsupported"); },
     assertControlPlane: true, // even asserted, a platform with no launchd cannot be a defect
@@ -44,7 +71,7 @@ test("a platform with no launchd reports every job as not-applicable, and nothin
 
 test("macOS with a job missing and no assertion: reported, never failed", () => {
   const report = checkScheduledJobs({
-    repoRoot: process.cwd(),
+    repoRoot: repoWithTwoJobs(),
     supportsLaunchd: true,
     isInstalled: () => false,
     assertControlPlane: false,
@@ -59,7 +86,7 @@ test("macOS with a job missing and no assertion: reported, never failed", () => 
 
 test("macOS with a job missing AND control-plane asserted: MISSING by name", () => {
   const report = checkScheduledJobs({
-    repoRoot: process.cwd(),
+    repoRoot: repoWithTwoJobs(),
     supportsLaunchd: true,
     isInstalled: (label: string) => label !== "com.a11y-witness.board-report", // one present, one missing
     assertControlPlane: true,
@@ -72,11 +99,11 @@ test("macOS with a job missing AND control-plane asserted: MISSING by name", () 
 
 test("orphanJobs never fires on a platform with no launchd, and reports an unclaimed label otherwise", () => {
   assert.deepEqual(
-    orphanJobs({ repoRoot: process.cwd(), supportsLaunchd: false, listInstalled: () => { throw new Error("must not be called"); } }),
+    orphanJobs({ repoRoot: repoWithTwoJobs(), supportsLaunchd: false, listInstalled: () => { throw new Error("must not be called"); } }),
     []);
 
   const found = orphanJobs({
-    repoRoot: process.cwd(),
+    repoRoot: repoWithTwoJobs(),
     supportsLaunchd: true,
     listInstalled: () => ["com.a11y-witness.board-report", "com.a11y-witness.some-forgotten-job"],
   });
