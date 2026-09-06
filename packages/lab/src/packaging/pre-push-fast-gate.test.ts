@@ -13,7 +13,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 
@@ -63,19 +63,66 @@ test("MUTATION: the touched-package glob-building loop, driven in isolation, bui
   assert.deepEqual(out, ["packages/lab/src/**/*.test.ts", "packages/judge/src/**/*.test.ts"]);
 });
 
+/**
+ * `NODE_TEST_CONTEXT` IS THE `sweepLog` DEFECT ARRIVING IN THE TEST RUNNER ITSELF.
+ *
+ * This repo has already met "a caught-and-logged error is not a handled error" once: `postSubmitFields`
+ * came back `[]` on all 2,122 captures because a crash was caught and written to `sweepLog`, which nothing
+ * ever read -- absence read as a clean, empty result rather than as a failure. This test's first version
+ * hit the identical shape one layer down, in code nobody here wrote: node sets `NODE_TEST_CONTEXT` while a
+ * `--test` run is in progress, and a NESTED `--test` invocation that inherits it is silently refused --
+ * `"node:test run() is being called recursively within a test file. skipping running files"` on stderr,
+ * empty stdout, exit 0. No exception, no non-zero status -- a test spawning a test gets NOTHING, and
+ * nothing reads exactly like "0 tests found, all fine". The assertion below would have passed vacuously
+ * on every run, forever, having executed none of what it claims to prove.
+ *
+ * The next person writing a test that spawns `--test` will hit this with no error message to search for
+ * (the warning goes to the PARENT process's stderr, not the child's captured output) -- which is why this
+ * paragraph exists rather than just the one-line fix.
+ */
 test("a glob matching zero test files does not fail the fast gate -- the nvda-speech shape", () => {
   // nvda-speech has no .test.ts files at all (Python-only). A branch touching only that package must not
   // have its fast gate read as a failure because node's test runner found nothing to run.
-  //
-  // NODE_TEST_CONTEXT is set by THIS process's own parent `--test` run, and node's runner refuses to run
-  // nested if it sees that variable ("run() is being called recursively... skipping running files") --
-  // scrubbed here so the child invocation actually runs instead of silently doing nothing and reporting
-  // empty output, which would make this test pass vacuously.
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   const out = execFileSync("npx", ["tsx", "--test", "packages/nvda-speech/src/**/*.test.ts"],
     { cwd: REPO, encoding: "utf8", env });
   assert.match(out, /tests 0/);
+});
+
+test("MUTATION: without scrubbing NODE_TEST_CONTEXT, the nested run is silently refused -- empty, not an error", () => {
+  // Reproduces the exact failure mode the test above exists to avoid: with the parent's test-runner
+  // context left INTACT, the child process is refused and returns EMPTY output with exit 0 -- not a
+  // thrown error, not a non-zero status. Proves the guard above is guarding something real.
+  const out = execFileSync("npx", ["tsx", "--test", "packages/nvda-speech/src/**/*.test.ts"],
+    { cwd: REPO, encoding: "utf8" }); // process.env inherited, NODE_TEST_CONTEXT included -- deliberately not scrubbed
+  assert.equal(out, "", "expected the nested run to be silently refused when NODE_TEST_CONTEXT survives");
+});
+
+test("MUTATION: the real run() function reports FAILED on a genuine lint/typecheck error, not just on a contrived one", () => {
+  // Extracts the ACTUAL run() from the hook (never re-typed) and drives it against REAL npm run lint /
+  // tsc --noEmit, with a planted violation in a real package file -- proving the fast gate's two
+  // whole-repo checks (which run unconditionally, before the branch/package split) genuinely block a push
+  // on a real error, not merely that they look like they would from reading the code. A gate that only
+  // ever passes is this repo's most-recorded shape, and this is the one guard replacing the full suite on
+  // every branch push, so a false clean here costs the most.
+  const runFn = /^run\(\) \{[\s\S]*?\n\}/m.exec(HOOK);
+  assert.ok(runFn, "could not find run() in the real hook to drive");
+
+  const target = `${REPO}packages/lab/src/packaging/_scratch-run-fn-proof.test.ts`;
+  writeFileSync(target,
+    'import { test } from "node:test";\nconst unused = 1;\ntest("x", () => { const y: string = 5; });\n');
+  try {
+    const script = `set -u\n${runFn[0]}\nfailed=()\n`
+      + `run "lint" npm run --silent lint\n`
+      + `run "typecheck" npx tsc --noEmit\n`
+      + `printf '%s\\n' "\${failed[@]:-}"`;
+    const out = execFileSync("bash", ["-c", script], { cwd: REPO, encoding: "utf8" });
+    assert.match(out, /lint/, "a real lint error in a tracked package file must be reported FAILED");
+    assert.match(out, /typecheck/, "a real type error must be reported FAILED");
+  } finally {
+    rmSync(target, { force: true });
+  }
 });
 
 test(".github/workflows/lint.yml runs on agent/** and lead/** pushes, with a cancelling concurrency group", () => {
