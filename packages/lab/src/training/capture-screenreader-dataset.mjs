@@ -196,10 +196,19 @@ function captureUrl(/** @type {any} */ baseUrl, /** @type {any} */ testCase, /**
   return baseUrl + "/" + testCase.id + "/" + variant + ".html";
 }
 
+// Every `probe*` field this function names explicitly below, kept as ONE list so the catch-all forward
+// at the end of `captureOptions` knows what NOT to re-process, rather than a second hand count of the
+// same ten names drifting from the first. Exported so a test can prove it against the real corpus rather
+// than trust it by reading.
+export const NAMED_PROBE_FLAGS = new Set([
+  "probeForms", "probeTables", "probeFocus", "probeOrder", "probeDialog", "probeFocusReveal",
+  "probeArrows", "probeTyping", "probeFocusContext", "probeNavigation",
+]);
+
 // Exactly what shapes the evidence, defined once. The cache keys on this and the worker receives
 // it, so the two cannot drift -- a key that ignored an option we actually send would reuse evidence
-// captured a different way.
-function captureOptions(/** @type {any} */ testCase) {
+// captured a different way. Exported for the same reason as `NAMED_PROBE_FLAGS`.
+export function captureOptions(/** @type {any} */ testCase) {
   return {
     task: testCase.task,
     steps: STEPS,
@@ -237,6 +246,21 @@ function captureOptions(/** @type {any} */ testCase) {
     // Same omit-when-false rule, same reason: present only for the cases that ask, so adding the
     // flag re-keys those and nothing else.
     ...(testCase.probeNavigation ? { probeNavigation: true } : {}),
+    // EVERY OTHER `probe*` FLAG, BY PREFIX RATHER THAN BY NAME — architecture-audit.md §5's residual item.
+    // `case-matrix.mjs`, `generate-screenreader-dataset.mjs` and `acceptance-matrix.mjs` all forward
+    // `probe*` this way already, each citing the SAME defect this function was still the exception to:
+    // "enumerating them is how this exact defect happened three times in one feature" (case-matrix.mjs).
+    // `probeOrder` lived that defect here directly — built, and unreachable from a case for exactly the
+    // reason stated above it, until it was added to the named list by hand. Adding the NEXT probe by hand
+    // is the same fix arriving a commit late every time; this closes the class instead of the instance.
+    //
+    // PROVEN not to move a single existing cache key: every `probe*` identifier this package's case
+    // definitions actually use is one of the ten named above (checked by grep across
+    // `packages/lab/src/training` and `packages/lab/src/harnesses`), so this line forwards nothing today
+    // — `probe-chain-forwards-by-prefix.test.ts` pins that emptiness so a future name added ABOVE without
+    // being excluded here cannot double it into the body accidentally.
+    ...Object.fromEntries(Object.entries(testCase).filter(([key, value]) => key.startsWith("probe")
+      && !NAMED_PROBE_FLAGS.has(key) && value)),
     reuseScreenReader: REUSE_NVDA,
   };
 }
