@@ -36,6 +36,7 @@ import { ruleFindings } from "@a11y-witness/judge/rules";
 // The plain-node corpus module. `case-matrix.mjs` carries `// @ts-check`, so its exports are typed.
 import { signalMatches } from "../training/case-matrix.mjs";
 import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { labCorpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
 const ROOT = captureRoot(datasetRoot());
 const SIGNAL = { type: "skip-link-inert" };
@@ -60,7 +61,12 @@ function capturesWithRoute(): { name: string; capture: Record<string, unknown> }
 }
 
 const CAPTURES = capturesWithRoute();
-const SKIP = CAPTURES.length === 0 && "no runs/ here — run this locally";
+// ASK WHETHER THE CORPUS IS MOVING, not only whether it is there. A green result from a corpus a
+// capture is rewriting is as untrustworthy as a red one, and it is the green one that gets believed.
+// `labCorpusReadable` also counts CAPTURES rather than trusting the directory to exist -- the suite
+// writes one report into runs/, and existsSync calls that a corpus.
+const GUARD = labCorpusReadable({ present: CAPTURES.length > 0 });
+const SKIP = !GUARD.read && skipLine(GUARD);
 
 test("the signal and the rule agree about every route capture on disk", { skip: SKIP }, () => {
   const disagreements: string[] = [];

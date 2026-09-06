@@ -31,6 +31,7 @@ import { ruleFindings } from "@a11y-witness/judge/rules";
 // suppresses nothing.
 import { focusIsTrappedIn } from "../training/case-matrix.mjs";
 import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { labCorpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
 const ROOT = captureRoot(datasetRoot());
 
@@ -53,8 +54,13 @@ function capturesWithFocus(): { name: string; capture: Record<string, unknown> }
 }
 
 const CAPTURES = capturesWithFocus();
+// One verdict for both tests below, so they cannot describe one corpus two ways. See
+// `labCorpusReadable`: a capture in flight and a runs/ holding only an emitted report are both "do not
+// read", and neither is the absent case these already handled.
+const GUARD = labCorpusReadable({ present: CAPTURES.length > 0 });
+const SKIP = !GUARD.read && skipLine(GUARD);
 
-test("the signal and the rule agree about every focus capture on disk", { skip: CAPTURES.length === 0 && "no runs/ here — run this locally" }, () => {
+test("the signal and the rule agree about every focus capture on disk", { skip: SKIP }, () => {
   const disagreements: string[] = [];
   for (const { name, capture } of CAPTURES) {
     const interaction = capture.interaction as { focusOrder: string[]; dialogEscape?: unknown };
@@ -69,7 +75,7 @@ test("the signal and the rule agree about every focus capture on disk", { skip: 
       + "twice, and a corpus labelled by one while users are told by the other is the defect this pins");
 });
 
-test("both fire on the trapped variant of every trap case, and on neither conformant one", { skip: CAPTURES.length === 0 && "no runs/ here — run this locally" }, () => {
+test("both fire on the trapped variant of every trap case, and on neither conformant one", { skip: SKIP }, () => {
   // THE CONTROL, and this test is worthless without it: two predicates that both answer `false` always
   // agree perfectly. The corpus now holds only the STALLED shape — `keyboard-trap-postcode` and
   // `keyboard-trap-blur-revalidate`. `keyboard-trap-modal-cycle` and the cycling branch that read it were

@@ -168,6 +168,20 @@ export function captureCount(dirs) {
  * `A11Y_SKIP_VERIFY=1` was reached for nine times in one evening by this project's own record. This
  * removes the last legitimate reason to reach for it.
  *
+ * ## WHAT THIS ASSUMES ABOUT ITS OWN ENVIRONMENT, which is where the neighbouring class of bug lives
+ *
+ * It asks about a corpus AT A PATH, and a process can change what that path means: `RUNS_ROOT` and
+ * `A11Y_RUNS_ROOT` both redirect `runsRoot()`, so two callers in one suite can legitimately be asking
+ * about different directories. The verdict is therefore about whatever `runsRoot()` resolves to FOR THIS
+ * PROCESS, not about a fixed location, and a caller that overrides the root gets an answer about its
+ * override — correct, and worth stating because the inverse mistake is subtle.
+ *
+ * The shape is worth naming because it bit this repo one layer along on the same day: a test isolated its
+ * working DIRECTORY and not its ENVIRONMENT (`cwd: mkdtempSync(tmpdir())` with git's own `GIT_DIR` still
+ * exported), so it operated on the real repository while looking perfectly sandboxed. `cwd` loses to the
+ * environment. Anything here that starts trusting a path without asking what the environment has done to
+ * it inherits that defect.
+ *
  * ## ABSENT IS NOT MOVING, and collapsing them would destroy a distinction that already exists
  *
  * Every corpus reader already skips when `runs/` is absent — it is gitignored, so CI genuinely cannot see
