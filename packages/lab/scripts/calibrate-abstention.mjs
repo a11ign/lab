@@ -44,6 +44,7 @@ import { ruleFindings } from "@a11y-witness/judge/rules";
 import { oracleCounts } from "@a11y-witness/evidence/verify";
 
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
+import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { REPO_ROOT, realCorpusRoot, runsRoot } from "../src/dataset-paths.mjs";
 
@@ -296,6 +297,29 @@ export function contradictedFindings(/** @type {any} */ page) {
   return page.predicted.filter((/** @type {any} */ criterion) => !disclosed.has(criterion));
 }
 
+/** @param {any[]} pages */
+function reportCaptureAges(pages) {
+  const ages = pages
+    .filter((entry) => typeof entry.capturedAt === "string")
+    .map((entry) => ({ at: entry.capturedAt, role: entry.role ?? "no role recorded" }));
+  process.stdout.write(`${captureAgeLines(ages).join("\n")}\n`);
+}
+
+/** @param {any[]} scored */
+function reportWithheld(scored) {
+  const withheld = scored.reduce((/** @type {number} */ n, /** @type {any} */ page) =>
+    n + (page.inconclusive?.length ?? 0), 0);
+  if (!withheld) return;
+  process.stdout.write(`\n  ${withheld} finding(s) WITHHELD because the capture did not examine the channel `
+    + "they rest on.\n  Neither an accusation nor a pass: re-run those pages with more capture budget.\n");
+  for (const page of scored) {
+    for (const item of /** @type {any} */ (page).inconclusive ?? []) {
+      process.stdout.write(`    ${item.criterion}  ${item.channel} ${item.seen}/${item.expected ?? "?"}  `
+        + `${String(page.url).replace(/^https?:\/\//, "").slice(0, 52)}\n`);
+    }
+  }
+}
+
 function main() {
   const pages = calibrationPages();
   if (!pages.length) {
@@ -304,6 +328,7 @@ function main() {
     process.exit(2);
   }
   process.stdout.write(`Scoring ${pages.length} calibration page(s) from ${ROOT}\n`);
+  reportCaptureAges(pages);
   process.stdout.write(`Model: ${MODEL ?? "packages/scorer/models/screenreader-scorer (shipped)"}\n\n`);
   const scored = pages.map(scoreOne).sort((a, b) => (b.cosine ?? 0) - (a.cosine ?? 0));
 
@@ -313,18 +338,7 @@ function main() {
       + `${page.url.replace("https://www.w3.org/WAI/demos/bad/", "")}\n`);
   }
 
-  const withheld = scored.reduce((/** @type {number} */ n, /** @type {any} */ page) =>
-  n + (page.inconclusive?.length ?? 0), 0);
-  if (withheld) {
-    process.stdout.write(`\n  ${withheld} finding(s) WITHHELD because the capture did not examine the channel `
-      + "they rest on.\n  Neither an accusation nor a pass: re-run those pages with more capture budget.\n");
-    for (const page of scored) {
-      for (const item of /** @type {any} */ (page).inconclusive ?? []) {
-        process.stdout.write(`    ${item.criterion}  ${item.channel} ${item.seen}/${item.expected ?? "?"}  `
-          + `${String(page.url).replace(/^https?:\/\//, "").slice(0, 52)}\n`);
-      }
-    }
-  }
+  reportWithheld(scored);
   printLegend();
   process.stdout.write("\n  floor   scored  conformant  ASSERTED-WRONGLY  referred  wrong/cells  disclosed  inaccessible caught\n");
   process.stdout.write("  " + "-".repeat(76) + "\n");
