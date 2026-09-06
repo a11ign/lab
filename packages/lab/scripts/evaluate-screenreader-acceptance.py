@@ -241,6 +241,59 @@ def merge_stability(per_subtype: dict[str, dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def stability_failure_reasons(stability_by_criterion: dict[str, dict[str, Any]]) -> tuple[list[str], list[str], list[str]]:
+    """Turn a `{criterion: mergeStability(...)}` mapping into failure-reason lines, split by CAUSE.
+
+    PURE over the already-computed stability dict, so a "no repeated captures" scenario (`measured: False`
+    on every subtype) is testable with a plain fixture -- no model, no encoder, no `runs/screenreader-
+    acceptance/repeat-*.jsonl` files needed to exercise the exact branch `release:gate` hit when it invoked
+    this evaluator with too few repeats to compare.
+
+    NOT MEASURED and UNSTABLE need different responses, so they get different messages. One combined
+    string sent `release:gate` chasing an instability that did not exist: the gate invoked this evaluator
+    with no repeated captures to compare, and stability could not be measured at all -- reported as though
+    a field had varied. A gate whose message cannot distinguish "I could not check" from "the check failed"
+    is the same defect this pipeline keeps finding elsewhere.
+
+    @returns (failure_reason_lines, unmeasured_criteria, unstable_criteria) -- the last two are what
+      `acceptance_exit_code` needs to tell "only unmeasured" from "a real regression", so they travel out
+      rather than being re-derived from the rendered strings.
+    """
+    if all(details["passed"] for details in stability_by_criterion.values()):
+        return [], [], []
+    unmeasured = sorted(c for c, d in stability_by_criterion.items() if not d.get("measured"))
+    unstable = sorted(c for c, d in stability_by_criterion.items() if d.get("measured") and not d.get("passed"))
+    reasons = []
+    if unmeasured:
+        reasons.append(
+            "capture-to-capture stability was NOT MEASURED for "
+            + ", ".join(unmeasured)
+            + " — pass two or more capture runs with repeated --data files (see runs/screenreader-acceptance/repeat-*.jsonl)"
+        )
+    if unstable:
+        reasons.append("capture-to-capture stability FAILED for " + ", ".join(unstable))
+    return reasons, unmeasured, unstable
+
+
+def acceptance_exit_code(passed: bool, real_failures_before_stability: int, unstable: list[str]) -> int:
+    """0 PASS, 1 a real regression, 2 the ONLY reason failed is that stability could not be measured.
+
+    `release:gate` (package.json) is a flat `&&` chain and reads this exit code as its WHOLE verdict on
+    this stage, with nothing in between reading `failureReasons` -- so before this split, "could not
+    measure" and "a real regression" were the identical integer. That is evidence-check's founding
+    incident (`2 compared: 2 same, exit 0 on 2 of 48`) arriving on the promotion path instead of a capture
+    comparison.
+
+    A REAL failure always wins, matching `gateVerdict`'s own FAIL-beats-INCONCLUSIVE ordering: a false
+    positive/negative, too few acceptance records, OR stability that WAS measured and moved (`unstable`
+    non-empty) all force exit 1, whatever else is also true. Only when NEITHER of those fired -- every
+    failure reason is "the stability check could not run at all" -- does the softer code apply.
+    """
+    if passed:
+        return 0
+    return 1 if (real_failures_before_stability > 0 or unstable) else 2
+
+
 def eligible_records(criterion: str, model_subtypes: dict[str, Any], records: list[dict[str, Any]]) -> tuple[list[int], int]:
     """Records this criterion's MODEL heads are answerable for.
 
@@ -515,6 +568,12 @@ def main() -> None:
             )
         stability_records[criterion] = included_records
 
+    # Counted BEFORE the stability block, so a real per-criterion regression (false positive/negative, or
+    # too few acceptance records to judge) is never mistaken for "the only problem is unmeasured stability"
+    # below -- see the exit-code split at the end of this function for why that distinction has to survive
+    # past `passed`, which correctly collapses both into one boolean but must not be the only signal left.
+    real_failures_before_stability = len(result["failureReasons"])
+
     # Stability is measured PER HEAD, on that head's own scores and its own cut. Measuring it on the
     # criterion's OR would hide the thing worth knowing: which head wobbles. It also keeps the reported
     # score range meaningful -- a decided 0/1 array has a min of 0 and a max of 1 and says nothing.
@@ -525,25 +584,8 @@ def main() -> None:
         })
         for criterion, subtypes in stability_inputs.items()
     }
-    if not all(details["passed"] for details in result["stability"].values()):
-        # NOT MEASURED and UNSTABLE need different responses, so they get different messages. One
-        # combined string sent `release:gate` chasing an instability that did not exist: the gate invoked
-        # this evaluator with no --data, so there were no repeated captures to compare and stability could
-        # not be measured at all -- reported as though a field had varied. A gate whose message cannot
-        # distinguish "I could not check" from "the check failed" is the same defect this pipeline keeps
-        # finding elsewhere.
-        unmeasured = [c for c, d in result["stability"].items() if not d.get("measured")]
-        unstable = [c for c, d in result["stability"].items() if d.get("measured") and not d.get("passed")]
-        if unmeasured:
-            result["failureReasons"].append(
-                "capture-to-capture stability was NOT MEASURED for "
-                + ", ".join(sorted(unmeasured))
-                + " — pass two or more capture runs with repeated --data files (see runs/screenreader-acceptance/repeat-*.jsonl)"
-            )
-        if unstable:
-            result["failureReasons"].append(
-                "capture-to-capture stability FAILED for " + ", ".join(sorted(unstable))
-            )
+    stability_reasons, _unmeasured, unstable = stability_failure_reasons(result["stability"])
+    result["failureReasons"].extend(stability_reasons)
     result["passed"] = not result["failureReasons"]
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
@@ -554,8 +596,9 @@ def main() -> None:
     # failed one must not look the same.
     stamp_generalisation(args.training_report, result["passed"], result["failureReasons"], args.allow_ineligible)
     print(json.dumps({"passed": result["passed"], "failureReasons": result["failureReasons"]}, indent=2))
-    if not result["passed"]:
-        raise SystemExit(1)
+    code = acceptance_exit_code(result["passed"], real_failures_before_stability, unstable)
+    if code:
+        raise SystemExit(code)
 
 
 if __name__ == "__main__":
