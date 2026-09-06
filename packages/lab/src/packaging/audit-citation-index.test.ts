@@ -104,6 +104,13 @@ const GENERAL_CITATIONS: Record<string, string> = {
   "packages/judge/src/judge-composition.test.ts":
     "cites \"the architecture audit's own closing sentence\" -- a methodological principle (a Map test does "
     + "not prove HTTP idempotency), not a numbered row",
+  "packages/lab/src/packaging/backlog-lifecycle.test.ts":
+    "mentions `architecture-audit.md` twice, both times as a PRECEDENT for the freeze mechanism itself "
+    + "(\"orchestrator had already decided for the architecture-audit section\", \"the FROZEN "
+    + "architecture-audit.md already do for the identical reason\") -- no `§N` anywhere in the file "
+    + "(checked, not assumed, since this file's own point is that a citation can hide across a line "
+    + "break), because it cites the DECISION to freeze docs/backlog.md's own contents, not any one "
+    + "numbered finding inside the audit",
   // The next six cite a SPECIFIC finding by quoted phrase rather than by `§N` -- read individually rather
   // than assumed, because "no § token" and "no specific finding" are different claims and this file exists
   // to stop conflating them.
