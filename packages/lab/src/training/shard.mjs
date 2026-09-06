@@ -1,4 +1,6 @@
 // @ts-check
+import { flagValue } from "@a11y-witness/worker-fleet/cli-flags";
+
 /**
  * `--shard=i/n` — split a work list across concurrent runs.
  *
@@ -37,7 +39,7 @@ const EVERYTHING = Object.freeze({ index: 0, count: 1 });
  * @returns {{ index: number, count: number }}
  */
 export function parseShard(argv) {
-  const raw = argv.find((a) => a.startsWith("--shard="))?.slice("--shard=".length);
+  const raw = flagValue(argv, "shard");
   if (raw === undefined) return EVERYTHING;
 
   const parts = raw.split("/");

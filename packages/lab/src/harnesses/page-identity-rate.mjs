@@ -37,7 +37,7 @@ import { dirname, join } from "node:path";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "@a11y-witness/worker-fleet/host-address";
 import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11y-witness/worker-fleet/worker-http";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
 import { captureTolerantly } from "@a11y-witness/worker-fleet/capture-client";
 
 /**
@@ -48,8 +48,11 @@ import { captureTolerantly } from "@a11y-witness/worker-fleet/capture-client";
  */
 refuseUnknownFlags(["--worker=", "--rounds="], { entry: import.meta.url, command: "npm run identity:rate" });
 
-const WORKER = (process.argv.find((a) => a.startsWith("--worker=")) ?? "").slice("--worker=".length);
-const ROUNDS = Number((process.argv.find((a) => a.startsWith("--rounds=")) ?? "").slice("--rounds=".length) || 20);
+// audit §9 "argv parsing": both were their own copy of the fifteen-file idiom. `?? ""` on WORKER preserves
+// the original empty-string-when-missing exactly, since it reaches `String(WORKER)` downstream and
+// `String(undefined)` is the literal text "undefined", not "".
+const WORKER = flagValue(process.argv, "worker") ?? "";
+const ROUNDS = Number(flagValue(process.argv, "rounds") || 20);
 const STEPS = 10;
 const pagesDir = join(dirname(fileURLToPath(import.meta.url)), "../eval/pages/tutorials");
 

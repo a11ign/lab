@@ -15,7 +15,7 @@ import { captureWithNvda } from "@a11y-witness/nvda-worker";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "@a11y-witness/worker-fleet/host-address";
 import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl, requestJson } from "@a11y-witness/worker-fleet/worker-http";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
 import { captureTolerantly } from "@a11y-witness/worker-fleet/capture-client";
 
 /**
@@ -40,7 +40,7 @@ refuseUnknownFlags(["--worker="], { entry: import.meta.url, command: "npm run ca
 // structure, interaction -- all of which the worker returns over HTTP. If anything the worker path is
 // the better test, because it is the path production uses. The in-process mode stays the default so
 // capture-regression.yml on a Windows runner, which has no worker, is unaffected.
-const WORKER_ARG = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length);
+const WORKER_ARG = flagValue(process.argv, "worker");
 // Validated only WHEN GIVEN: no `--worker` is a legitimate mode here (in-process NVDA, which is what
 // `capture-regression.yml` runs on a Windows runner). So absence is a mode and a malformed value is an
 // error, and those must not collapse into one check — `undefined` and `http://:8765` are both falsy.

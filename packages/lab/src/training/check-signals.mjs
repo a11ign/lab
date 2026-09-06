@@ -24,7 +24,7 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { CASES, signalMatches } from "./case-matrix.mjs";
 import { hasUsableCaptureFiles } from "./capture-resume.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
 import { readCapture as readCaptureFile } from "../capture/evidence-diff.mjs";
 import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
 
@@ -43,7 +43,7 @@ const MANIFEST_PATH = resolve(ROOT, "manifest.json");
 const CAPTURE_ROOT = captureRoot(ROOT);
 const PAGE_ROOT = resolve(ROOT, "pages");
 const REQUIRE_COMPLETE = process.argv.includes("--require-complete");
-const ONLY = process.argv.find((a) => a.startsWith("--only="))?.slice("--only=".length);
+const ONLY = flagValue(process.argv, "only");
 const EVIDENCE_LINES = 4;
 
 // Shared with capture-cache.mjs/export-screenreader-dataset.mjs/capture-resume.mjs (audit §9): absent ->

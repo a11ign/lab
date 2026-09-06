@@ -35,7 +35,7 @@ import { assertFleetRunsThisCheckout } from "@a11y-witness/worker-fleet/worker-c
 import { drainAcrossPool } from "./worker-pool.mjs";
 import { createHostThrottle, hostOf } from "./host-throttle.mjs";
 import { writeJsonAtomic } from "./write-atomic.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
 import { beginRun } from "./capture-progress.mjs";
 import { resumePlan, describeResume } from "./real-page-resume.mjs";
 import { captureTolerantly } from "@a11y-witness/worker-fleet/capture-client";
@@ -54,8 +54,8 @@ import { FAULT } from "@a11y-witness/nvda-worker/capture-faults";
 refuseUnknownFlags(["--role=", "--worker=", "--shard=", "--allow-mixed-browsers", "--allow-stale-workers",
   "--resume"], { entry: import.meta.url, command: "npm run lab:job -- -e job=capture-real-pages" });
 
-const ROLE = process.argv.find((a) => a.startsWith("--role="))?.slice("--role=".length) ?? null;
-const WORKER = process.argv.find((a) => a.startsWith("--worker="))?.slice("--worker=".length) ?? null;
+const ROLE = flagValue(process.argv, "role") ?? null;
+const WORKER = flagValue(process.argv, "worker") ?? null;
 /** Build one corpus from two browser builds anyway. Says so in the output; never the default. */
 const ALLOW_MIXED = process.argv.includes("--allow-mixed-browsers");
 /** Capture with a fleet that is not running this checkout. Says so in the output; never the default. */

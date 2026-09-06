@@ -14,7 +14,7 @@
  */
 import { pathToFileURL } from "node:url";
 import { inFlight, isStale, readProgress, stalenessMs, tally } from "./capture-progress.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
 import { requestJson } from "@a11y-witness/worker-fleet/worker-http";
 import { datasetRoot } from "../dataset-paths.mjs";
 
@@ -58,9 +58,9 @@ const JSON_OUT = process.argv.includes("--json");
  * answer would break every existing caller to say something none of them asks.
  */
 function sinceFromArgv() {
-  const flag = process.argv.find((a) => a.startsWith("--since="));
-  if (flag === undefined) return null;
-  const raw = flag.slice("--since=".length).trim();
+  const value = flagValue(process.argv, "since");
+  if (value === undefined) return null;
+  const raw = value.trim();
   // systemd's own two spellings of "this unit has never been active". A job that never ran has no run to
   // bound, so these mean "no constraint" rather than "a value I could not read" -- and letting the caller
   // pass the field through unconditionally is what keeps the date handling out of Jinja, where this repo

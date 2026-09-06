@@ -22,7 +22,7 @@ import { drainAcrossPool } from "./worker-pool.mjs";
 import { previouslyCaptured } from "./capture-resume.mjs";
 import { leasePageServer } from "./page-server.mjs";
 import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
 import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
 import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
 import { captureFilePath, rejectedCaptureFilePath } from "../capture/evidence-diff.mjs";
@@ -44,7 +44,7 @@ const REJECTED_ROOT = resolve(CAPTURE_ROOT, "rejected");
 const DEFAULT_BASE_URL = "http://localhost:5050";
 const PAGES_PORT = Number(process.env.DATASET_PAGES_PORT || new URL(DEFAULT_BASE_URL).port);
 const STEPS = Number(process.env.DATASET_CAPTURE_STEPS || 150);
-const ONLY = process.argv.find((arg) => arg.startsWith("--only="))?.slice("--only=".length);
+const ONLY = flagValue(process.argv, "only");
 const RESUME = process.argv.includes("--resume");
 /** Capture with a fleet that is not running this checkout. Says so in the output; never the default. */
 const ALLOW_STALE = process.argv.includes("--allow-stale-workers");

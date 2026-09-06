@@ -47,7 +47,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11y-witness/worker-fleet/worker-http";
 import { hostPagesBase } from "@a11y-witness/worker-fleet/host-address";
 import { leasePageServer } from "../training/page-server.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
 import { captureTolerantly } from "@a11y-witness/worker-fleet/capture-client";
 
 /**
@@ -73,8 +73,8 @@ const DEFAULT_PAGES_PORT = 5050;
  * @param {string} name
  * @param {string | number | null} [fallback]
  */
-const arg = (name, fallback = null) =>
-  process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
+// audit §9 "argv parsing": was its own copy of the fifteen-file idiom, now the shared, tested extractor.
+const arg = (name, fallback = null) => flagValue(process.argv, name) ?? fallback;
 
 /** Every `.html` in a page set, so a page added to the directory is captured without editing a list here. */
 function pagesIn(/** @type {any} */ set) {

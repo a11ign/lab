@@ -26,7 +26,7 @@ import { captureTolerantly } from "../../../worker-fleet/src/capture-client.mjs"
 import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 import { assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { captureIsSelfConsistent } from "@a11y-witness/evidence/verify";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
 import { repeatCapturesRoot } from "../dataset-paths.mjs";
 
 /**
@@ -49,10 +49,8 @@ refuseUnknownFlags(["--url=", "--worker=", "--times=", "--steps=", "--task=", "-
  * @param {string} name
  * @param {string | number | null} [fallback]
  */
-const arg = (name, fallback = null) => {
-  const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
-  return hit ? hit.slice(name.length + 3) : fallback;
-};
+// audit §9 "argv parsing": was its own copy of the fifteen-file idiom, now the shared, tested extractor.
+const arg = (name, fallback = null) => flagValue(process.argv, name) ?? fallback;
 
 const URL_ARG = arg("url");
 // VALIDATED, not merely truthy. `http://:8765` is a truthy string that `new URL` rejects, and every
