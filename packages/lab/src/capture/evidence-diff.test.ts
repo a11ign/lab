@@ -10,6 +10,7 @@ import { readdirSync, readFileSync as readFile, existsSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 
 import { captureRoot, datasetRoot } from "../dataset-paths.mjs";
+import { labCorpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
 import { compareCapture, summarise, readCapture, isUsableCapture, EVIDENCE_FIELDS, NOT_EVIDENCE_KEYS }
   from "./evidence-diff.mjs";
@@ -32,8 +33,12 @@ const CORPUS_SAMPLE = (() => {
   }
   return out;
 })();
-const SKIP_NO_CORPUS = CORPUS_SAMPLE.length === 0
-  && "no runs/ here — the wall-clock-key sweep was NOT run, and this is a skip, not a pass";
+// ASK WHETHER THE CORPUS IS MOVING, not only whether it is there — a green result from a corpus a capture
+// is rewriting is as untrustworthy as a red one, and the green one gets believed. `labCorpusReadable` also
+// counts CAPTURES rather than trusting the directory: the suite writes one report into runs/, which
+// existsSync reports as a corpus.
+const CORPUS_GUARD = labCorpusReadable({ present: CORPUS_SAMPLE.length > 0 });
+const SKIP_NO_CORPUS = !CORPUS_GUARD.read && skipLine(CORPUS_GUARD);
 
 const capture = (over: Record<string, unknown> = {}) => ({
   transcript: ["heading, level 1, Museum 004 controls", "Print this report"],

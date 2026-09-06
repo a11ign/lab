@@ -19,6 +19,7 @@ import { resolve } from "node:path";
 import type { CapturedAnnouncements } from "@a11y-witness/evidence/verify";
 import { captureHasSubstance, captureIsSelfConsistent, captureMentionsTitle, titleOf } from "@a11y-witness/evidence/verify";
 import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { labCorpusReadable, skipLine } from "../training/corpus-settled.mjs";
 import { captureFilePath } from "./evidence-diff.mjs";
 
 const ROOT = datasetRoot();
@@ -60,9 +61,14 @@ function corpus(): Sample[] {
 
 const samples = corpus();
 
-test("the corpus is present, or this test is honestly skipped", () => {
-  if (samples.length === 0) {
-    console.log("    no corpus under runs/ — skipping the gate sweep (expected in CI)");
+// ONE verdict for every sweep below, so they cannot describe one corpus five different ways. It also
+// distinguishes states the `samples.length === 0` checks below cannot: a capture IN FLIGHT (skip and ask
+// again shortly) and a runs/ holding only an emitted report, which existsSync calls a corpus.
+const CORPUS_GUARD = labCorpusReadable({ present: samples.length > 0 });
+
+test("the corpus is present, settled, and readable — or this test is honestly skipped", () => {
+  if (!CORPUS_GUARD.read) {
+    console.log(skipLine(CORPUS_GUARD));
   }
   assert.ok(true);
 });
@@ -83,7 +89,7 @@ test("the corpus is present, or this test is honestly skipped", () => {
  * every check green: absence of evidence reads exactly like evidence of absence.
  */
 test("no capture in the corpus recorded a probe crash", () => {
-  if (samples.length === 0) return;
+  if (!CORPUS_GUARD.read) return;
   // sweepLog reaches the capture file only through the `interaction` diagnostic mark -- it is NOT on
   // `capture.interaction`, which is the shape this test first read, and reading it there made the
   // test pass against the very corpus that carries 604 crashes. Assert against where the data is.
@@ -160,7 +166,7 @@ function announcementsOf(capture: CapturedAnnouncements): string[] {
 
 for (const artefact of TOOL_ARTEFACTS) {
   test(`no capture carries ${artefact.name}`, () => {
-    if (samples.length === 0) return;
+    if (!CORPUS_GUARD.read) return;
     const hits = samples
       .map((s) => ({ id: `${s.id}.${s.variant}`, evidence: artefact.detect(s.capture) }))
       .filter((s) => s.evidence !== null);
@@ -178,7 +184,7 @@ for (const artefact of TOOL_ARTEFACTS) {
 
 for (const gate of GATES) {
   test(`${gate.name} rejects no capture in the corpus`, () => {
-    if (samples.length === 0) return;
+    if (!CORPUS_GUARD.read) return;
     const rejected = samples.filter((s) => gate.rejects(s.capture, s.title)).map((s) => `${s.id}.${s.variant}`);
     assert.deepEqual(
       rejected,
@@ -210,7 +216,7 @@ for (const gate of GATES) {
  * check over the whole corpus can see it, and only if something looks.
  */
 test("no activation delta was contaminated by a document announcement", () => {
-  if (samples.length === 0) return;
+  if (!CORPUS_GUARD.read) return;
   const contaminated = samples.flatMap((s) => {
     const changes = (s.capture as {
       interaction?: { formChanges?: { control?: string; after?: string }[] };

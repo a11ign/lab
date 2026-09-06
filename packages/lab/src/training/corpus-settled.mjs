@@ -29,10 +29,52 @@
  * `abandoned` is now its own answer, because the remedy differs: wait for one, and re-run or clear the
  * other.
  */
+import { readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+
 import { readProgress, isStale } from "./capture-progress.mjs";
+import { datasetRoot, captureRoot, realCorpusRoot } from "../dataset-paths.mjs";
 
 /** Below this a corpus with NO self-report is treated as still being written. The fallback, not the rule. */
 export const SETTLED_AFTER_MINUTES = 10;
+
+/**
+ * How recently a capture file was written, in minutes, or null when nothing was found.
+ *
+ * ONE COPY, and it arrived here as two. `audit-rule-coverage.ts` and `check-real-page-findings.ts` each
+ * carried their own, and they had already begun to drift — `(dirs: string[])` against `(dir: string)`,
+ * with the second call site wrapping itself to fit the first's shape at the point it injected it. That is
+ * the fact-stated-twice shape caught before the third copy rather than after, so both now inject THIS.
+ *
+ * The reasoning is `audit-rule-coverage.ts`'s and is preserved verbatim, because it is what makes this a
+ * FALLBACK rather than the test: *"Deliberately a file-mtime check rather than asking systemd whether a
+ * job is running: the question is whether this EVIDENCE is settled, not whether a particular unit happens
+ * to be up, and a corpus can be mid-write from a run nobody remembers starting."* `corpusState` prefers
+ * the run's own `finishedAt` and reaches for this only when the corpus carries no progress file at all.
+ *
+ * @param {string[]} dirs
+ * @returns {number | null}
+ */
+export function minutesSinceLastWrite(dirs) {
+  let newest = 0;
+  for (const dir of dirs) {
+    let entries;
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (!entry.endsWith(".json")) continue;
+      try {
+        newest = Math.max(newest, statSync(join(dir, entry)).mtimeMs);
+      } catch {
+        continue;
+      }
+    }
+  }
+  return newest ? (Date.now() - newest) / 60_000 : null;
+}
 
 /**
  * @param {{datasetRoots?: string[], evidenceDirs?: string[], now?: number,
@@ -71,4 +113,147 @@ export function corpusState({ datasetRoots = [], evidenceDirs = [], now = Date.n
   }
   return { state: "settled", blocking: false,
     why: idle === null ? "no captures found to date-check" : `nothing written for ${idle.toFixed(0)} minute(s)` };
+}
+
+/**
+ * How many CAPTURES are in these directories — the presence test, and it must not be `existsSync(runs/)`.
+ *
+ * **A `runs/` THAT EXISTS IS NOT A CORPUS, and the test suite creates exactly that.**
+ * `emit-unclosable-vetoes.mjs` writes `resolve(runsRoot(), "unclosable-vetoes.json")`, so running the suite
+ * on a machine with no corpus MAKES a `runs/` containing one report. Every check testing presence with
+ * `existsSync` then sees a corpus, its honest absent-skip never fires, and it measures an empty one.
+ *
+ * Measured 2026-09-06 in a merge worktree with the corpus symlink removed: the suite went green, was run
+ * again unchanged, and gave four failures — because the first run had created `runs/`. Same code, same
+ * tree, two answers, and the cause was the suite rather than the fleet. It reproduces on any machine with
+ * no corpus, which includes a fresh clone and CI.
+ *
+ * Counting captures rather than asking whether the directory exists is what makes the stub indistinguishable
+ * from absent, which is what it should have been all along: a directory holding one emitted report has no
+ * evidence in it, and "no evidence here" is the same answer either way.
+ *
+ * @param {string[]} dirs
+ * @returns {number}
+ */
+export function captureCount(dirs) {
+  let found = 0;
+  for (const dir of dirs) {
+    let entries;
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) if (entry.endsWith(".json")) found += 1;
+  }
+  return found;
+}
+
+/**
+ * MAY A TEST READ THE CORPUS RIGHT NOW? — the question every corpus-reading check has to ask before it
+ * measures anything, and until 2026-09-06 not one of them did.
+ *
+ * `corpusState` above is the decision and it had exactly two callers, both GATES. The tests that read the
+ * same bytes had no idea a capture was rewriting them: `evidence-fields.test.ts` passed a full `npm test`
+ * and failed 20 minutes later on byte-identical code, because protocol-16 captures were landing underneath
+ * it. An hour before that the same shape was seen, recorded as "transient", and not looked into — which is
+ * this repo's diagnostics-lied lesson arriving at the one place that had no guard to lie with.
+ *
+ * **A GREEN RESULT FROM A MOVING CORPUS IS EXACTLY AS UNTRUSTWORTHY AS A RED ONE**, and that is the half
+ * nobody reaches for. A red one gets re-run and looks flaky; a green one is believed. Both describe a
+ * state that no longer exists.
+ *
+ * It matters beyond the tests themselves because the pre-push hook runs `npm test`: during a capture, a
+ * push fails for a reason unrelated to the change, and a guard people cannot trust is a guard they bypass.
+ * `A11Y_SKIP_VERIFY=1` was reached for nine times in one evening by this project's own record. This
+ * removes the last legitimate reason to reach for it.
+ *
+ * ## WHAT THIS ASSUMES ABOUT ITS OWN ENVIRONMENT, which is where the neighbouring class of bug lives
+ *
+ * It asks about a corpus AT A PATH, and a process can change what that path means: `RUNS_ROOT` and
+ * `A11Y_RUNS_ROOT` both redirect `runsRoot()`, so two callers in one suite can legitimately be asking
+ * about different directories. The verdict is therefore about whatever `runsRoot()` resolves to FOR THIS
+ * PROCESS, not about a fixed location, and a caller that overrides the root gets an answer about its
+ * override — correct, and worth stating because the inverse mistake is subtle.
+ *
+ * The shape is worth naming because it bit this repo one layer along on the same day: a test isolated its
+ * working DIRECTORY and not its ENVIRONMENT (`cwd: mkdtempSync(tmpdir())` with git's own `GIT_DIR` still
+ * exported), so it operated on the real repository while looking perfectly sandboxed. `cwd` loses to the
+ * environment. Anything here that starts trusting a path without asking what the environment has done to
+ * it inherits that defect.
+ *
+ * ## ABSENT IS NOT MOVING, and collapsing them would destroy a distinction that already exists
+ *
+ * Every corpus reader already skips when `runs/` is absent — it is gitignored, so CI genuinely cannot see
+ * it, and those skips are deliberate and honest (`verify.corpus.test.ts`: *"the corpus is present, or this
+ * test is honestly skipped"*). That is a permanent property of the environment. A corpus being WRITTEN is
+ * a temporary property of this minute, and it means "ask again shortly" rather than "not here". They need
+ * different words or the second silently inherits the first's shrug, so `absent` is its own state.
+ *
+ * @param {{datasetRoots?: string[], evidenceDirs?: string[], present?: boolean, now?: number,
+ *          minutesSinceLastWrite?: (dirs: string[]) => number | null}} options
+ *   `present` is the caller's own answer to "did I find any corpus to read", because only the caller knows
+ *   what it was looking for — a manifest, a capture directory, a set of fields.
+ * @returns {{read: boolean, state: "settled"|"absent"|"in-flight"|"abandoned", why: string}}
+ *   `read` is what the caller acts on; `why` is what it must PRINT. A skip that does not say which of the
+ *   three reasons it was is the silent skip this guard exists to replace — the remedy wearing the defect's
+ *   clothes.
+ */
+export function corpusReadable({
+  datasetRoots = [], evidenceDirs = [], present = true, now = Date.now(),
+  minutesSinceLastWrite: idleOf = minutesSinceLastWrite,
+} = {}) {
+  // MOVING IS CHECKED FIRST, and the order is load-bearing. A capture writing its first files into an
+  // empty corpus looks ABSENT to a caller that has not found anything yet, and reporting that as "no
+  // corpus here" would be the moving case wearing the permanent one's clothes — the exact collapse the
+  // paragraph above exists to prevent.
+  const settle = corpusState({ datasetRoots, evidenceDirs, now, minutesSinceLastWrite: idleOf });
+  if (settle.blocking) {
+    return { read: false, state: /** @type {"in-flight"|"abandoned"} */ (settle.state), why: settle.why };
+  }
+  if (!present) {
+    return { read: false, state: "absent",
+      why: "no corpus on disk — `runs/` is gitignored, so this is expected in CI and on a fresh worktree" };
+  }
+  return { read: true, state: "settled", why: settle.why };
+}
+
+/**
+ * The sentence a skipping check prints. One spelling, because two callers describing one state differently
+ * is how a reader comes to believe they are two states — the reason `corpusState` returns `why` at all.
+ *
+ * @param {{state: string, why: string}} verdict
+ * @returns {string}
+ */
+export function skipLine({ state, why }) {
+  return `    skipped: ${state === "absent" ? "no corpus to read" : "a capture is writing runs/"} — ${why}`;
+}
+
+/**
+ * `corpusReadable` over the roots a lab check actually reads — so eleven callers cannot spell "the corpus"
+ * eleven ways.
+ *
+ * BOTH CORPORA, deliberately. Some checks read the dataset captures, some the real-page corpus, and a few
+ * read both; but a capture run writes whichever it was pointed at, and a check cannot generally say which
+ * of its inputs a given run is touching. Asking about both is the conservative direction: the cost of a
+ * needless skip is one deferred check, and the cost of the other mistake is a measurement of a moving
+ * target reported as fact.
+ *
+ * Safe to import from `dataset-paths.mjs` here — that module imports only `node:url` and `node:path`, so
+ * there is no cycle, and `capture-progress.mjs` likewise imports neither of us.
+ *
+ * @param {{present?: boolean, now?: number}} options
+ * @returns {{read: boolean, state: "settled"|"absent"|"in-flight"|"abandoned", why: string}}
+ */
+export function labCorpusReadable({ present, now = Date.now() } = {}) {
+  const dataset = datasetRoot();
+  const evidenceDirs = [captureRoot(dataset), realCorpusRoot()];
+  return corpusReadable({
+    datasetRoots: [dataset, realCorpusRoot()],
+    evidenceDirs,
+    // COUNTED, not `existsSync`, when the caller does not already know. See `captureCount`: the suite
+    // writes one report into `runs/` and a directory check then reports a corpus that is not there.
+    present: present ?? captureCount(evidenceDirs) > 0,
+    now,
+  });
 }

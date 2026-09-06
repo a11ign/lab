@@ -36,12 +36,12 @@
  * Needs `runs/`, so it SKIPS HONESTLY where the corpus is absent rather than passing quietly.
  */
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
-import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { ruleFindings } from "@a11y-witness/judge/rules";
-import { corpusState } from "../src/training/corpus-settled.mjs";
+import { corpusState, minutesSinceLastWrite } from "../src/training/corpus-settled.mjs";
 import {
   domCensus, oracleCounts, pageCensus, censusTargetIsSuspect, censusSuspectReason, submitNavigatedTheDocument,
   type CapturedAnnouncements,
@@ -184,18 +184,8 @@ const ALLOW_PARTIAL = process.argv.includes("--allow-partial");
 
 type Findings = Record<string, string[]>;
 
-function minutesSinceLastWrite(dir: string): number | null {
-  let newest = 0;
-  try {
-    for (const entry of readdirSync(dir)) {
-      if (!entry.endsWith(".json")) continue;
-      newest = Math.max(newest, statSync(join(dir, entry)).mtimeMs);
-    }
-  } catch {
-    return null;
-  }
-  return newest ? (Date.now() - newest) / 60_000 : null;
-}
+// The scanner now lives in `corpus-settled.mjs`; this file's copy took a single dir and had to be
+// wrapped at the call site to fit the shared shape, which is drift caught before a third copy.
 
 /** What the rules say about every conformant real page, as `url -> sorted criteria`. */
 function currentFindings(): Findings {
@@ -734,7 +724,7 @@ function main(): void {
   const settle = corpusState({
     datasetRoots: [REAL],
     evidenceDirs: [REAL],
-    minutesSinceLastWrite: (dirs: string[]) => minutesSinceLastWrite(dirs[0]),
+    minutesSinceLastWrite,
   });
   if (settle.blocking) {
     process.stdout.write(`\n  ${settle.state === "abandoned" ? "ABANDONED RUN" : "IN FLUX"} — ${settle.why}.\n`
