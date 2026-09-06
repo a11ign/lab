@@ -645,7 +645,20 @@ function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: numbe
   // `suspectCensusCaptures`'s own comment for why that over-counts slightly (only the census-reading
   // criteria are actually blind, not the transcript-based ones) and why that is the right simplification
   // for this gate rather than a defect in it.
-  const unusable = furniture.consent.length + furniture.shell.length + suspectCensus.length;
+  // COUNTED AS PAGES, never as reasons — a page can be unusable for MORE THAN ONE of them, and summing
+  // the three lists counts it once per reason.
+  //
+  // Measured 2026-09-06 the first time the numbers got small enough to check by eye:
+  // `tfl.gov.uk/modes/tube/` appeared in BOTH `furniture.consent` and `suspectCensus` (its consent banner
+  // blocked the read AND the page redirected to `/tube-dlr-overground/status/#windrush`, so no target could
+  // be confirmed). Two distinct unusable pages were reported as three, and the verdict read `82 of 85`
+  // where the truth is `83 of 85`.
+  //
+  // Harmless at 54 and misleading at 2, which is exactly when it starts mattering: the whole point of this
+  // denominator is deciding whether a run is CONCLUSIVE, and "3 pages we could not examine" versus "2" is
+  // the kind of difference somebody acts on. It also over-states the work remaining, which is how a list
+  // acquires an item nobody can close.
+  const unusable = new Set([...furniture.consent, ...furniture.shell, ...suspectCensus]).size;
   const verdict = gateVerdict({
     examined: pages - unusable,
     of: pages,

@@ -19,6 +19,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { captureAgeLines } from "../../scripts/check-real-page-findings.js";
 
 const HOUR = "2026-09-06T0";
@@ -65,4 +68,26 @@ test("the warning is a THRESHOLD, so it reports hours rather than merely that th
   ]);
   assert.ok(lines.some((l) => /\d{3} hour\(s\) between the oldest and newest/.test(l)),
     `a 28-day spread must be reported in hours, not as a bare flag:\n${lines.join("\n")}`);
+});
+
+test("a page unusable for TWO reasons is one page, not two", () => {
+  // `unusable` used to be `consent.length + shell.length + suspectCensus.length`, three lists that can
+  // each name the SAME page. Measured 2026-09-06, the first run where the numbers were small enough to
+  // check by eye: `tfl.gov.uk/modes/tube/` was in `furniture.consent` AND in `suspectCensus` -- its consent
+  // banner blocked the read and the page redirected, so no CDP target could be confirmed either. Two
+  // distinct unusable pages were reported as three, and the verdict read `82 of 85` where the truth is 83.
+  //
+  // Harmless at 54 and misleading at 2, which is exactly when it starts mattering: this denominator's whole
+  // job is deciding whether a run is CONCLUSIVE, and it also over-states the work remaining -- which is how
+  // a list acquires an item nobody can close.
+  //
+  // Asserted on the SOURCE because the surrounding function needs a corpus, and `runs/` is gitignored, so
+  // an integration test here would skip in CI and in every fresh worktree -- a check that reports clean
+  // having examined nothing, which is the defect this whole file exists to close.
+  const source = readFileSync(
+    fileURLToPath(new URL("../../scripts/check-real-page-findings.ts", import.meta.url)), "utf8");
+  assert.match(source, /const unusable = new Set\(\[/,
+    "unusable must be a SET of page urls; summing the three list LENGTHS counts a page once per reason");
+  assert.doesNotMatch(source, /const unusable = .*\.length \+/,
+    "the summed form is back, so a page unusable for two reasons is being counted twice again");
 });
