@@ -237,9 +237,29 @@ def refuse_to_destroy_release_weights(args: argparse.Namespace) -> None:
         if previous.exists():
             shutil.rmtree(previous)
         shutil.move(str(args.output), str(previous))
+        # "ONE GENERATION IS KEPT" IS TRUE, AND NOT FOR THE REASON IT LOOKS LIKE.
+        #
+        # This rotation happens at STARTUP -- before the train that might justify it. So a train that
+        # CRASHES has already spent the retained generation before doing any work, and the obvious reading
+        # is that two crashes in a row would destroy a release-eligible model.
+        #
+        # They cannot, and the reason is worth stating because it is not visible from here: a crashed train
+        # writes NO model, so `args.output` is absent or partial afterwards, so it is not release-eligible,
+        # so the NEXT run does not reach this branch at all and `.previous` is left alone. The guarantee
+        # holds through the failure path by accident of what a crash leaves behind, not by design.
+        #
+        # Measured 2026-09-06: train #1 rotated a release-eligible v19 aside and died on `torch.stack([])`
+        # after the encoder pass; train #2 ran to completion; `.previous` still held the earlier candidate
+        # with its acceptance report. Verified by `lab:inventory`, not inferred.
+        #
+        # The stronger form -- rotate on SUCCESS rather than at startup -- is a backlog row and deliberately
+        # not done here: it means writing to a temporary directory and moving on success, which restructures
+        # the one path that holds release-eligible weights, for a hazard that measurement says does not
+        # currently bite. If you change WHAT A FAILED TRAIN LEAVES BEHIND, this reasoning expires with it.
         print(f"Rotated the previous release-eligible model to {previous} "
               f"(generalisationVerified={existing.get('generalisationVerified')}, floor={floor}). "
-              "Nothing was lost; one generation is kept.", file=sys.stderr)
+              "Nothing was lost; one generation is kept -- see the note above for why a CRASH here "
+              "cannot spend it twice.", file=sys.stderr)
         return
 
     print(
