@@ -85,9 +85,13 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "is the referenced-scripts one, the stronger of the two",
   },
   "packages/lab/src/packaging/backlog-ready.test.ts": {
-    guard: "branches.length > 0",
-    note: "guarded — this file's own header documents a 2026-09-06 REDO of this exact guard, from a "
-      + "floor that broke on a legitimately-empty-but-not-broken population to a form that does not",
+    guard: null,
+    note: "NO LONGER A GIT POPULATION, 2026-09-06. It used to run the region-diff claim check over "
+      + "unmerged branches, guarded on `branches.length > 0`. The tracker moved to GitHub Issues, "
+      + "`docs/backlog-ready.md` became a signpost, and the file was rewritten to assert that the issue "
+      + "TEMPLATE requires the three fields the page used to carry. It shells no git and has no "
+      + "population to be vacuous over. Kept as an entry rather than deleted so the classification "
+      + "records that the guard was RETIRED WITH ITS SUBJECT rather than quietly dropped.",
   },
   "packages/lab/src/packaging/action-reference.test.ts": {
     guard: "lines.length >= 3",

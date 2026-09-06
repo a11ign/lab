@@ -43,7 +43,7 @@ for (const [file, hour, crons] of CASES) {
       `${file} computes London's hour but does not compare it against ${hour}`);
 
     // Every step after the gate must carry it. A step without it runs twice a day for half the year.
-    const steps = text.split(/\n      - /).slice(1);
+    const steps = text.split(/\n {6}- /).slice(1);
     const working = steps.filter((s) => !s.startsWith("id: hour"));
     assert.ok(working.length >= 3, `only ${working.length} working steps found; this check would be weak`);
     const ungated = working.filter((s) => !s.includes(guard)).map((s) => s.split("\n")[0].slice(0, 60));
