@@ -28,6 +28,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync } from "node:fs";
 import { resolve, join } from "node:path";
+import { sandboxGitEnv } from "../../../scripts/git-env.mjs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { releasability } from "../src/packaging/releasability.mjs";
@@ -207,7 +208,7 @@ function thresholdLines(training) {
 function gitStatusForTargets() {
   try {
     return execFileSync("git", ["status", "--porcelain", "--", SHIPPED, CHANGESETS],
-      { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+      { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   } catch {
     return "";
   }

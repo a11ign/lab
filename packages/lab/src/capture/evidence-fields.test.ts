@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { EVIDENCE_FIELDS } from "./evidence-diff.mjs";
 import { runsRoot } from "../dataset-paths.mjs";
+import { corpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
 /**
  * `evidence:check` DECIDES WHETHER 2,122 CACHED CAPTURES SURVIVE, and it compares a hand-written list of
@@ -32,6 +33,42 @@ const NOT_EVIDENCE: Record<string, string> = {
     + "was driven, not in what the page says",
 };
 
+/**
+ * The evidence fields one capture FILE carries — reading the capture whether or not it is WRAPPED.
+ *
+ * **THE COMMENT TWELVE LINES ABOVE NAMED THIS DEFECT AND THE CODE DID THE OTHER THING.** It calls counting
+ * a rejected capture *"the same class as reading the wrapper as the capture"* — the exact mistake
+ * `capture:explain` had already paid for, *"the wrapper read instead of `capture`, reporting 0 of 20 tab
+ * stops"* — while this walk read `capture.structure` at the top level only, and so could not see inside a
+ * wrapped file at all.
+ *
+ * Measured across `runs/` on 2026-09-06: **5,368 plain, 29 WRAPPED, 48 neither**, and exactly one field
+ * exists only inside the wrapped ones — `interaction.focusEvents`, in
+ * `runs/fetched/candidate.real-page-capture.json`. That field is captured and was retired from
+ * `PENDING_CAPTURE` when the recapture landed, so the guard reported it as a phantom while the evidence
+ * for it sat on disk in a shape the guard could not open.
+ *
+ * IT WEAKENS THE GUARD IN BOTH DIRECTIONS, which is why the fix is the unwrap rather than an exemption. A
+ * field present only in wrapped captures reads as compared-but-never-carried — the half we saw. And a
+ * field a wrapped capture carries that nothing compares is never caught at all — the half nobody would
+ * have noticed, because it fails by staying silent.
+ *
+ * BOTH SHAPES, never either: a wrapper is only unwrapped when the top level has no evidence of its own, so
+ * a plain capture is still read exactly as before and a wrapper cannot mask a top-level field.
+ */
+function fieldsIn(file: Record<string, unknown>): string[] {
+  const groups = ["structure", "interaction"] as const;
+  const hasEvidence = (o: unknown): boolean =>
+    !!o && typeof o === "object" && groups.some((g) => (o as Record<string, unknown>)[g] !== undefined);
+  const capture = hasEvidence(file) ? file : hasEvidence(file?.capture) ? file.capture : file;
+  const out: string[] = [];
+  for (const group of groups) {
+    const section = (capture as Record<string, Record<string, unknown>> | undefined)?.[group];
+    for (const key of Object.keys(section ?? {})) out.push(`${group}.${key}`);
+  }
+  return out;
+}
+
 /** Every `structure.*` / `interaction.*` key present across the captures on disk. */
 function fieldsOnDisk(): Set<string> {
   const runs = runsRoot();
@@ -58,20 +95,35 @@ function fieldsOnDisk(): Set<string> {
       } catch {
         continue;
       }
-      for (const group of ["structure", "interaction"]) {
-        for (const key of Object.keys(capture?.[group] ?? {})) found.add(`${group}.${key}`);
-      }
+      for (const key of fieldsIn(capture)) found.add(key);
     }
   };
   walk(runs);
   return found;
 }
 
+/** One spelling of "may I read it", so three tests in this file cannot disagree about the same corpus. */
+function corpusOnDisk(present: boolean) {
+  return corpusReadable({
+    datasetRoots: [join(runsRoot(), "screenreader-dataset")],
+    evidenceDirs: [join(runsRoot(), "screenreader-dataset", "captures")],
+    present,
+  });
+}
+
 test("every evidence field a capture carries is compared, or explicitly excluded", () => {
   const onDisk = fieldsOnDisk();
-  if (onDisk.size === 0) {
-    // An honest skip, not a silent pass: `runs/` is gitignored and CI cannot see it.
-    assert.ok(true, "no corpus on disk (runs/ is gitignored; local-only gate)");
+  // ASK WHETHER THE CORPUS IS STILL MOVING, not just whether it is there. This test passed a full
+  // `npm test` and failed 20 minutes later on byte-identical code, because a capture was rewriting the
+  // files it reads. A green result from a moving corpus is exactly as untrustworthy as a red one, and it
+  // is the green one that gets believed -- see `corpusReadable`'s own header.
+  //
+  // ABSENT AND MOVING STAY DIFFERENT ANSWERS. The skip below was already honest about `runs/` being
+  // gitignored; that is a permanent property of CI, while a capture in flight means "ask again shortly".
+  const corpus = corpusOnDisk(onDisk.size > 0);
+  if (!corpus.read) {
+    console.log(skipLine(corpus));
+    assert.ok(true, corpus.why);
     return;
   }
   // ANTI-VACUITY. Without it a corpus of one truncated capture would satisfy this test having checked
@@ -147,7 +199,8 @@ test("nothing is compared that no capture actually carries", () => {
   // The other direction. A field in the list that captures never have compares [] to [] for ever —
   // coverage that looks real and examines nothing, which is how the count in a report becomes a lie.
   const onDisk = fieldsOnDisk();
-  if (onDisk.size === 0) return;
+  const corpus = corpusOnDisk(onDisk.size > 0);
+  if (!corpus.read) { console.log(skipLine(corpus)); return; }
   const phantom = (EVIDENCE_FIELDS as [string, string][])
     .map((f) => f.join(".")).filter((f) => !onDisk.has(f) && !(f in PENDING_CAPTURE)).sort();
   assert.deepEqual(phantom, [],
@@ -158,6 +211,8 @@ test("a field waiting for its first capture is removed from PENDING once it arri
   // An exemption that outlives its reason is indistinguishable from a bug somebody decided to live with.
   // This fails the moment the capture exists, which is the only thing that makes the list above safe.
   const onDisk = fieldsOnDisk();
+  const corpus = corpusOnDisk(onDisk.size > 0);
+  if (!corpus.read) { console.log(skipLine(corpus)); return; }
   if (onDisk.size === 0) return;
   const arrived = Object.keys(PENDING_CAPTURE).filter((f) => onDisk.has(f)).sort();
   assert.deepEqual(arrived, [],
@@ -242,4 +297,50 @@ test("focusEvents.scriptRemovedFocus content changing, SAME count, is CHANGED no
 test("focusEvents with an EMPTY scriptRemovedFocus on both sides is SAME", () => {
   const clean = { interaction: { focusEvents: { asked: true, checked: true, events: 4, scriptRemovedFocus: [] } } };
   assert.equal(compareCapture(clean, { ...clean }).verdict, "SAME");
+});
+
+/**
+ * `fieldsIn` reads BOTH capture shapes — the unwrap, tested on synthetic files rather than on whatever
+ * `runs/` happens to hold today.
+ *
+ * Synthetic on purpose. The defect this closes was invisible for as long as it was because the only
+ * evidence of it was ONE file in a corpus that is gitignored, so a test asserting against disk proves
+ * nothing in CI and stops proving anything locally the moment that file is recaptured in the other shape.
+ *
+ * VACUITY GUARDED ON BOTH SHAPES. A walk that read neither would return an empty set and satisfy any
+ * assertion phrased as "does not contain the wrong thing", which is the failure mode this whole file
+ * exists to catch one level up: a check that passes having examined nothing.
+ */
+test("a WRAPPED capture contributes its fields, and a PLAIN one still does", () => {
+  const plain = fieldsIn({
+    structure: { headings: [] },
+    interaction: { formChanges: [] },
+  });
+  assert.ok(plain.includes("structure.headings") && plain.includes("interaction.formChanges"),
+    `the plain shape must still be read exactly as before, got: ${plain.join(", ")}`);
+
+  const wrapped = fieldsIn({
+    role: "candidate", publishedClaim: "…", capturedAt: "2026-09-06T00:00:00.000Z",
+    capture: { structure: { links: [] }, interaction: { focusEvents: {} } },
+  });
+  assert.ok(wrapped.includes("interaction.focusEvents"),
+    "the field that was reported as a phantom lives inside a wrapper, and this is the read that finds it");
+  assert.ok(wrapped.includes("structure.links"), `the wrapper's structure must be read too, got: ${wrapped.join(", ")}`);
+
+  // ANTI-VACUITY, both shapes. Without these, a `fieldsIn` that returned [] for everything would satisfy
+  // every "includes" above by failing them loudly -- but a future rewrite that returns [] for ONE shape
+  // and is asserted only by absence would not be caught at all.
+  assert.ok(plain.length >= 2, "the plain read examined nothing");
+  assert.ok(wrapped.length >= 2, "the wrapped read examined nothing");
+});
+
+test("a wrapper never masks a top-level field — both shapes, not either", () => {
+  // The direction that would have been easy to break while fixing the other one. If the unwrap were
+  // unconditional, a file carrying evidence at BOTH levels would report only the inner one.
+  const both = fieldsIn({
+    structure: { headings: [] },
+    capture: { structure: { links: [] } },
+  });
+  assert.ok(both.includes("structure.headings"),
+    "a top-level capture must be read as itself; the unwrap is only for a file with no evidence of its own");
 });

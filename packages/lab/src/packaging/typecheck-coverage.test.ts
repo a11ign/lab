@@ -1,5 +1,5 @@
 /**
- * The `.mjs` half of this repo is not typechecked, and this is the record of how much of it is.
+ * The `.mjs` half of this repo is not typechecked BY DEFAULT, and this is the record of how much of it is.
  *
  * Measured 2026-08-26: **26,102 lines of `.mjs` against 9,776 of `.ts`** — 73% of source lines outside
  * `tsc` entirely, and that 73% includes the capture path, where this repo has paid most for its defects.
@@ -15,12 +15,35 @@
  *
  * `checkJs` on the whole tree is 1,974 errors, or 131 with `noImplicitAny` off — real work, and mostly
  * type inaccuracies rather than bugs (`log = () => {}` infers zero-arg; an optional field not marked
- * optional). Two things were tried and do not work: a file ALLOWLIST cannot isolate, because TypeScript
- * follows imports and `checkJs` applies program-wide; and turning `allowJs` on in the ROOT config pulls
- * every `.mjs` into the main program through the import graph, where `@ts-check` then fails under strict.
+ * optional). A file ALLOWLIST cannot isolate it, because TypeScript follows imports and `checkJs` applies
+ * program-wide.
  *
  * So: `checkJs` OFF, `@ts-check` per file. Only marked files are checked, imports come along unchecked,
  * and the list can grow one verified file at a time.
+ *
+ * ## ONE PROGRAM, not two — `tsconfig.mjs.json` deleted 2026-09-06
+ *
+ * This used to run `tsc --noEmit` twice: once against the root config, once against a second
+ * `tsconfig.mjs.json` that turned `allowJs`/`checkJs` on and widened `include` to the `.mjs` trees — built
+ * on the theory that turning `allowJs` on in the ROOT config would pull every `.mjs` into the MAIN program
+ * through the import graph, where `@ts-check` then fails under strict, so a second, narrower program was
+ * needed to keep the two apart.
+ *
+ * **That theory stopped being true at some point before 2026-09-06 and nobody re-checked it.** The root
+ * `tsconfig.json` already has `allowJs: true` and already lists every `.mjs` tree in its own `include`
+ * (see that file's own comment: *"AND THE .mjs, or `// @ts-check` is a comment"*) — so the ONE program
+ * already does everything the second one was built to do, and had been doing so for a while. Measured
+ * rather than assumed: `tsc --listFiles -p tsconfig.json` and `tsc --listFiles -p tsconfig.mjs.json`,
+ * `comm -13`'d — **zero files unique to the second config**, out of 880. It was a complete duplicate,
+ * doubling `typecheck`'s wall time (2.68 s -> 2.69 s per pass, measured) inside CI and the pre-push budget
+ * for no additional coverage.
+ *
+ * Checked before deleting, not assumed: `TS5055` ("would overwrite input file") is a real, unrelated
+ * constraint elsewhere in this repo (`worker-code-check.mjs`, `code-drift.mjs` — a PER-PACKAGE build
+ * project colliding on relative imports across a package boundary, worked around with a subpath import).
+ * It has nothing to do with the root-level `tsc --noEmit` typecheck pass this file is about; `git grep`
+ * for `tsconfig.mjs.json` before deleting it found exactly one consumer (`package.json`'s `typecheck`
+ * script) and one test (this file) — nothing else read it or depended on its separate existence.
  *
  * ## The count used to be of MARKERS, which is not the same as coverage
  *
@@ -95,18 +118,23 @@ test("a marker never displaces a shebang", () => {
   }
 });
 
-test("a marked file is one the second pass actually covers", () => {
-  // A marker in a file the config never reads is a comment. `tsconfig.mjs.json` must include the trees
-  // these live in, or `npm run typecheck` reports success having checked none of them.
-  const config = readFileSync(join(REPO, "tsconfig.mjs.json"), "utf8");
+test("a marked file is one the ONE program actually covers, and checkJs stays opt-in", () => {
+  // A marker in a file the config never reads is a comment. `tsconfig.json` must include the `.mjs`
+  // trees these live in, or `npm run typecheck` reports success having checked none of them. No SECOND
+  // config to check any more — see this file's header for why `tsconfig.mjs.json` was deleted.
+  const config = readFileSync(join(REPO, "tsconfig.json"), "utf8");
   for (const pattern of ["packages/*/src/**/*.mjs", "packages/*/scripts/**/*.mjs"]) {
-    assert.ok(config.includes(pattern), `tsconfig.mjs.json must include ${pattern}`);
+    assert.ok(config.includes(pattern), `tsconfig.json must include ${pattern}`);
   }
-  assert.match(config, /"checkJs":\s*false/,
-    "checkJs must stay OFF: with it on, every imported .mjs is checked too and the opt-in means nothing");
+  assert.doesNotMatch(config, /"checkJs":\s*true/,
+    "checkJs must stay OFF (absent, or explicitly false): with it on, every imported .mjs is checked too "
+    + "and the per-file opt-in means nothing");
   const scripts = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).scripts;
-  assert.match(scripts.typecheck, /tsconfig\.mjs\.json/,
-    "npm run typecheck must run the second pass, or none of this is enforced anywhere");
+  assert.doesNotMatch(scripts.typecheck, /tsconfig\.mjs\.json/,
+    "a second tsconfig.mjs.json pass has come back -- confirm it is not a re-introduced duplicate of "
+    + "tsconfig.json's own coverage (this file's header explains how to check) before restoring it");
+  assert.match(scripts.typecheck, /tsc --noEmit/,
+    "npm run typecheck must still actually run tsc, or none of this is enforced anywhere");
 });
 
 /**

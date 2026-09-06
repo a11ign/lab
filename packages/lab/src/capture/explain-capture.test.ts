@@ -17,6 +17,7 @@ import { captureOf, reachedThePage, reachedTheContent, wasAnythingInTheWay, held
   from "../../scripts/explain-capture.mjs";
 import { readdirSync, readFileSync } from "node:fs";
 import { datasetRoot, captureRoot, realCorpusRoot } from "../dataset-paths.mjs";
+import { labCorpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
 const withMarks = (...marks: object[]) => ({ diagnostics: marks, transcript: [] });
 
@@ -236,6 +237,16 @@ test("every probe mark real captures carry is NAMED, and every name is carried â
     let files: string[];
     try { files = readdirSync(dir).filter((f) => f.endsWith(".json")); } catch { continue; }
     for (const f of files) foldMarks(`${dir}/${f}`);
+  }
+  // SETTLED AS WELL AS PRESENT. This folds every mark name across three capture roots and then asserts
+  // that each probe-shaped one is accounted for; a run in flight is writing exactly those marks, so a
+  // name it has not written yet is indistinguishable from one nothing produces. The honest absent-skip
+  // below stays as it was -- absent and moving are different answers.
+  const corpus = labCorpusReadable({ present: read > 0 });
+  if (!corpus.read) {
+    console.log(skipLine(corpus));
+    assert.ok(true, corpus.why);
+    return;
   }
   if (read === 0) {
     // AN HONEST SKIP. `runs/` is gitignored, so CI cannot see it â€” and a test that reports success having

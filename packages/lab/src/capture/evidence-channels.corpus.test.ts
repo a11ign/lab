@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { CHANNEL_LOCATION, channelsPresent } from "@a11y-witness/judge/internal";
 import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { labCorpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
 /**
  * EVERY CHANNEL A CAPTURE CARRIES MUST BE CLASSIFIED, and `tsc` cannot ask this.
@@ -83,7 +84,12 @@ function readCorpus(): Corpus {
 }
 
 const CORPUS = readCorpus();
-const SKIP = CORPUS.scanned === 0 && "no runs/ here — the channel classification was NOT checked";
+// ASK WHETHER THE CORPUS IS MOVING, not only whether it is there. A green result from a corpus a
+// capture is rewriting is as untrustworthy as a red one, and it is the green one that gets believed.
+// `labCorpusReadable` also counts CAPTURES rather than trusting the directory to exist -- the suite
+// writes one report into runs/, and existsSync calls that a corpus.
+const GUARD = labCorpusReadable({ present: CORPUS.scanned > 0 });
+const SKIP = !GUARD.read && skipLine(GUARD);
 
 test("every channel the captures carry is classified in CHANNEL_LOCATION", { skip: SKIP }, () => {
   const known = new Set(Object.keys(CHANNEL_LOCATION));

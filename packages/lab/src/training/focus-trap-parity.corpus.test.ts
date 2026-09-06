@@ -29,6 +29,7 @@ import { signalMatches } from "./case-matrix.mjs";
 import { ruleFindings } from "@a11y-witness/judge/rules";
 import { oracleCounts } from "@a11y-witness/evidence/verify";
 import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { labCorpusReadable, skipLine } from "./corpus-settled.mjs";
 
 const CAPTURES = captureRoot(datasetRoot());
 
@@ -46,6 +47,10 @@ function capturesWithAFocusOrder(): { name: string; capture: Record<string, unkn
   return out;
 }
 
+// ONE verdict for both tests below. Each already handled an EMPTY set; neither could tell that a capture
+// was rewriting the files underneath it, nor a real corpus from the stub the suite writes into runs/.
+const CORPUS_GUARD = labCorpusReadable({ present: capturesWithAFocusOrder().length > 0 });
+
 const saysTrapped = (capture: Record<string, unknown>): boolean =>
   signalMatches(capture as never, { type: "focus-trapped" } as never);
 
@@ -54,6 +59,10 @@ const rulesSayTrapped = (capture: Record<string, unknown>): boolean =>
     .some((f) => f.wcag.startsWith("2.1.2"));
 
 test("the signal and the rule reach the same 2.1.2 verdict on every capture on disk", () => {
+  if (!CORPUS_GUARD.read) {
+    console.log(skipLine(CORPUS_GUARD));
+    return;
+  }
   const captures = capturesWithAFocusOrder();
   if (!captures.length) {
     console.log("      SKIPPED: no captures with a focusOrder under runs/ — nothing to compare");
@@ -72,6 +81,7 @@ test("the signal and the rule reach the same 2.1.2 verdict on every capture on d
 test("the comparison examined a real corpus, rather than agreeing about nothing", () => {
   // Both sides return false for a capture with no focus order, so an empty or filtered-to-nothing set
   // makes the test above pass having compared zero verdicts — the way a source-text scrape passes.
+  if (!CORPUS_GUARD.read) return;
   const captures = capturesWithAFocusOrder();
   if (!captures.length) return;
   assert.ok(captures.length >= 2, `only ${captures.length} capture(s) carry a focus order`);

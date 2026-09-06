@@ -28,6 +28,7 @@ import { resolve } from "node:path";
 import { CASES } from "./case-matrix.mjs";
 import { cacheKey } from "./capture-cache.mjs";
 import { datasetRoot } from "../dataset-paths.mjs";
+import { labCorpusReadable, skipLine } from "./corpus-settled.mjs";
 
 const MANIFEST = resolve(datasetRoot(), "manifest.json");
 const probeFlags = (o: Record<string, unknown>) =>
@@ -45,6 +46,15 @@ test("at least one case asks for each probe, or the flag is decoration", () => {
 });
 
 test("the manifest carries every probe flag its case declares", () => {
+  // THE MANIFEST IS PART OF WHAT A RUN REWRITES. `training:capture:fresh` regenerates it and then
+  // captures, so reading it mid-run compares a manifest to a corpus that may already disagree with it --
+  // and a runs/ holding only the report the suite emits has no manifest at all, which the existsSync
+  // below reads correctly as absent but could not tell from a run in flight.
+  const corpus = labCorpusReadable({ present: existsSync(MANIFEST) });
+  if (!corpus.read) {
+    console.log(skipLine(corpus));
+    return;
+  }
   if (!existsSync(MANIFEST)) {
     // Skips LOUDLY rather than passing quietly, the same rule the pre-push hook follows for `runs/`.
     console.log(`  SKIPPED: no manifest at ${MANIFEST} — run \`npm run training:generate\` to cover this`);

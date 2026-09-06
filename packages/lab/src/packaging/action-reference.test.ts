@@ -20,6 +20,7 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const DOCS = ["README.md", "docs/github-action.md", "examples/workflow.yml"];
@@ -27,7 +28,7 @@ const DOCS = ["README.md", "docs/github-action.md", "examples/workflow.yml"];
 const OWNER_REPO = (() => {
   try {
     const url = execFileSync("git", ["config", "--get", "remote.origin.url"],
-      { cwd: REPO, encoding: "utf8" }).trim();
+      { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" }).trim();
     return /[:/]([^/:]+\/[^/]+?)(?:\.git)?$/.exec(url)?.[1] ?? null;
   } catch {
     return null; // no git remote (a packed tarball); the tests below skip honestly rather than fail
@@ -63,11 +64,11 @@ test("every documented ref exists — a tag nobody cut resolves for nobody", () 
   if (!OWNER_REPO) return;
   const refs = new Set<string>();
   try {
-    for (const t of execFileSync("git", ["tag"], { cwd: REPO, encoding: "utf8" }).split("\n")) {
+    for (const t of execFileSync("git", ["tag"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" }).split("\n")) {
       if (t.trim()) refs.add(t.trim());
     }
     for (const b of execFileSync("git", ["branch", "-r", "--format=%(refname:short)"],
-      { cwd: REPO, encoding: "utf8" }).split("\n")) {
+      { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" }).split("\n")) {
       const name = b.trim().replace(/^origin\//, "");
       if (name && name !== "HEAD") refs.add(name);
     }

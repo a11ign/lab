@@ -4064,13 +4064,40 @@ cases.push(
 // Withdrawing costs nothing, which is why it beat waiting: furniture buckets are dealt WITHIN a subtype,
 // so removing an entire NEW subtype re-buckets no existing case. Re-adding is a revert of this commit.
 //
-// THE LEADING HYPOTHESIS, unverified, for whoever picks it up. `focusEventVerdict` looks for `focusin(X)`
-// followed ADJACENTLY by `focusout(X)`. The UI Events order on gaining focus is `focus` then `focusin`, so
-// a handler bound to `focus` that calls `blur()` SYNCHRONOUSLY runs BEFORE `focusin` is dispatched and the
-// pair may reach the log REVERSED — `focusout(X), focusin(X)` — which matches nothing. It fits the bad
-// page having FEWER events than the good one. It cannot be settled from the captures taken, because the
-// mark records the event COUNT and not the events: "a count is where an investigation stops", landing on
-// a diagnostic built for exactly that reason.
+// THE LEADING HYPOTHESIS — SETTLED 2026-09-06, AND IT WAS WRONG. Kept in full rather than deleted,
+// because it was TRUE WHEN WRITTEN and the way it stopped being true is the more useful lesson.
+//
+// It read: `focusEventVerdict` looks for `focusin(X)` followed ADJACENTLY by `focusout(X)`; the UI Events
+// order on gaining focus is `focus` then `focusin`, so a handler bound to `focus` calling `blur()`
+// SYNCHRONOUSLY runs BEFORE `focusin` is dispatched and the pair may reach the log REVERSED —
+// `focusout(X), focusin(X)` — which matches nothing. It could not be settled from the captures taken,
+// "because the mark records the event COUNT and not the events".
+//
+// THREE CORRECTIONS, each checked rather than reasoned:
+//
+//   1. A REVERSED PAIR FIRES. It does not match nothing. Measured by running the SHIPPED rule against
+//      synthetic logs (`focus-event-order.test.ts`, beside this file): a reversed pair leaves the
+//      `focusout` ORPHANED, and since `known-gaps.md` §42 deleted the `i === 0` exception an orphaned
+//      focusout IS the F55 signature. It reports `"focus was never fully received before it was removed"`
+//      — arguably the truer sentence for a `focus`-handler blur than the ordered path's `"focus held 5ms"`.
+//      An ordinary tab-away held 5000ms stays silent, so this is not the rule firing indiscriminately.
+//
+//   2. THE ADJACENCY TEST IS NOT IN `focusEventVerdict`. That function validates the target, bounds the
+//      log and passes it through; it makes no pair judgement at all. The adjacency logic is
+//      `focusLossEvidence` in `packages/judge/src/rules.ts:716`.
+//
+//   3. THE THRESHOLD IS NEVER CONSULTED ON THE REVERSED PATH. `heldMs` is null without a completed
+//      receipt, and the `FOCUS_SCRIPT_WINDOW_MS` comparison is gated behind `completedReceipt` — so no
+//      case of this shape could ever measure the threshold's positive side. Board issue #14 asked for
+//      exactly such a case; its acceptance was unreachable by two independent routes, this being the
+//      second. The first is the `blur()` safety decision recorded above, which still stands.
+//
+// AND THE PART WORTH KEEPING: the sentence about the mark was true at 14:29 and false by 18:08 THE SAME
+// DAY. `2b73536` wrote this hypothesis; `6f07465` added `events` to the focus-event mark three and a half
+// hours later, bounded at 300, for the very reason quoted here — "a count is where an investigation
+// stops". Nobody was careless; a record simply stopped being current while nobody was looking at it. Two
+// separate agents then briefed work from this comment without checking whether anything had overtaken it.
+// A plausible cause from someone with more context is the same hazard as a plausible number from a tool.
 //
 // RULED OUT, checked rather than assumed: `installTargetMatch: "fallback"` on both variants looks like the
 // culprit and is not. The CENSUS on the same capture also reads `fallback`, because a synthetic page is
