@@ -186,6 +186,13 @@
       "why": "Its nine positives are the `focus-removed-on-receipt-*` cases, whose PRIMARY criterion is 2.1.1 and which 2.1.1's own rule already catches 9 of 9. A head fitted here would train on nine records sharing every feature with another subtype's positives -- ADR 0015's free veto by construction, and doubly hidden because scorer:shortcuts SHIELDS rules-owned subtypes from the veto report.",
       "note": "The rules decide this criterion; the model does not need it. Declared so the gate can score it, `modelHead: false` so no head is fitted."
     },
+    "2.4.7:script-blur-completed": {
+      "decidedBy": "rules",
+      "reportsAs": "2.4.7",
+      "modelHead": false,
+      "why": "Issue #14: its one positive (`focus-script-blur-window`, provisional pending its first capture) is the whole point of the case -- a single record cannot fit a head at all (the smallest existing head has 3 positives), and it exists to measure `FOCUS_SCRIPT_WINDOW_MS`'s unverified fast side, not to train anything.",
+      "note": "The rules decide this criterion via the COMPLETED-pair branch of `addFocusEventFindings`; the model does not need it. Declared so the gate can score it once captured, `modelHead: false` so no head is fitted."
+    },
     "3.1.2:language-unmarked": {
       "decidedBy": "unavailable",
       "reportsAs": "3.1.2",
