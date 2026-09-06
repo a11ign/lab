@@ -44,7 +44,7 @@ import { modelInput, observationOf, producerFeedsModel } from "@a11y-witness/sco
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 import { captureWasTruncated } from "@a11y-witness/evidence/verify";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { REPO_ROOT, realCorpusRoot, datasetExportPath, datasetRoot } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, realCorpusRoot, datasetExportPath, datasetRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
 /**
  * run by the `build-realism` job and by `training:train`; a mistyped `--out=` writes the realism tier
@@ -306,6 +306,7 @@ function writeProvenance(/** @type {any} */ baseText, /** @type {any} */ records
 }
 
 function main() {
+  refuseIfRunsReadonly(OUT);
   const entries = readdirSync(CORPUS)
     .filter((f) => f.endsWith(".json"))
     .map((f) => JSON.parse(readFileSync(resolve(CORPUS, f), "utf8")))

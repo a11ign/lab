@@ -21,7 +21,7 @@ import { pathToFileURL } from "node:url";
 
 import { observationAmbiguity } from "../src/training/observation-ambiguity.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { datasetRoot, captureRoot, runsRoot } from "../src/dataset-paths.mjs";
+import { datasetRoot, captureRoot, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
 const arg = (/** @type {string} */ name) =>
   process.argv.slice(2).find((value) => value.startsWith(name))?.slice(name.length);
@@ -136,6 +136,7 @@ function main() {
   const CAPTURES = capturesArg ? path.resolve(capturesArg) : captureRoot(datasetRoot());
   const outArg = arg("--out=");
   const OUT = outArg ? path.resolve(outArg) : path.resolve(runsRoot(), "observation-ambiguity.json");
+  refuseIfRunsReadonly(OUT);
 
   /** @type {string[]} */
   const ids = [];

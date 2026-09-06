@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { CASES, SIGNAL_TYPES } from "./case-matrix.mjs";
 import { ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { datasetRoot } from "../dataset-paths.mjs";
+import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 
 /**
  * takes no flags: it checks every case is ready for capture.
@@ -106,6 +106,7 @@ function buildReport(/** @type {any} */ manifest) {
 }
 
 function main() {
+  refuseIfRunsReadonly(REPORT_PATH);
   if (!existsSync(MANIFEST_PATH)) {
     throw new Error("Missing " + MANIFEST_PATH + ". Run npm run training:generate first.");
   }

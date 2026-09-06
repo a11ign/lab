@@ -28,7 +28,7 @@ import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11y-w
 import { workerIsUsable } from "@a11y-witness/worker-fleet/health";
 import { configuredWorkers, inventoryWorkerUrls } from "@a11y-witness/worker-fleet/fleet-env";
 import { leasePageServer } from "./page-server.mjs";
-import { realCorpusRoot, datasetRoot } from "../dataset-paths.mjs";
+import { realCorpusRoot, datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 import { hostAddressForWorker } from "@a11y-witness/worker-fleet";
 import { fleetConsistency, describeMismatches } from "@a11y-witness/worker-fleet/fleet-consistency";
 import { assertFleetRunsThisCheckout } from "@a11y-witness/worker-fleet/worker-code-check";
@@ -462,6 +462,7 @@ async function leaseFixtureServer(/** @type {any} */ pages) {
 }
 
 async function main() {
+  refuseIfRunsReadonly(realCorpusRoot());
   let workers;
   try {
     // Validated HERE, at the boundary, before a single page is fetched. This used to be a truthiness check,

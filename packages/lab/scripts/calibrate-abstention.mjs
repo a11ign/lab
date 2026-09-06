@@ -45,7 +45,7 @@ import { oracleCounts } from "@a11y-witness/evidence/verify";
 
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { REPO_ROOT, realCorpusRoot, runsRoot } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, realCorpusRoot, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
 /**
  * takes NO flags — it is configured entirely by environment, so any flag passed to it today is
@@ -296,7 +296,23 @@ export function contradictedFindings(/** @type {any} */ page) {
   return page.predicted.filter((/** @type {any} */ criterion) => !disclosed.has(criterion));
 }
 
+/** @param {any[]} scored */
+function reportWithheld(scored) {
+  const withheld = scored.reduce((/** @type {number} */ n, /** @type {any} */ page) =>
+    n + (page.inconclusive?.length ?? 0), 0);
+  if (!withheld) return;
+  process.stdout.write(`\n  ${withheld} finding(s) WITHHELD because the capture did not examine the channel `
+    + "they rest on.\n  Neither an accusation nor a pass: re-run those pages with more capture budget.\n");
+  for (const page of scored) {
+    for (const item of /** @type {any} */ (page).inconclusive ?? []) {
+      process.stdout.write(`    ${item.criterion}  ${item.channel} ${item.seen}/${item.expected ?? "?"}  `
+        + `${String(page.url).replace(/^https?:\/\//, "").slice(0, 52)}\n`);
+    }
+  }
+}
+
 function main() {
+  refuseIfRunsReadonly(OUT_DIR);
   const pages = calibrationPages();
   if (!pages.length) {
     process.stderr.write(`no calibration captures in ${ROOT}\n`
@@ -313,18 +329,7 @@ function main() {
       + `${page.url.replace("https://www.w3.org/WAI/demos/bad/", "")}\n`);
   }
 
-  const withheld = scored.reduce((/** @type {number} */ n, /** @type {any} */ page) =>
-  n + (page.inconclusive?.length ?? 0), 0);
-  if (withheld) {
-    process.stdout.write(`\n  ${withheld} finding(s) WITHHELD because the capture did not examine the channel `
-      + "they rest on.\n  Neither an accusation nor a pass: re-run those pages with more capture budget.\n");
-    for (const page of scored) {
-      for (const item of /** @type {any} */ (page).inconclusive ?? []) {
-        process.stdout.write(`    ${item.criterion}  ${item.channel} ${item.seen}/${item.expected ?? "?"}  `
-          + `${String(page.url).replace(/^https?:\/\//, "").slice(0, 52)}\n`);
-      }
-    }
-  }
+  reportWithheld(scored);
   printLegend();
   process.stdout.write("\n  floor   scored  conformant  ASSERTED-WRONGLY  referred  wrong/cells  disclosed  inaccessible caught\n");
   process.stdout.write("  " + "-".repeat(76) + "\n");

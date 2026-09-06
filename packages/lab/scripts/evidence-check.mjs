@@ -26,7 +26,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { compareCapture, readCapture, summarise } from "../src/capture/evidence-diff.mjs";
-import { datasetRoot } from "../src/dataset-paths.mjs";
+import { datasetRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 import { isEvidence } from "../src/training/capture-decisions.mjs";
 import { titleOf } from "@a11y-witness/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";
@@ -356,6 +356,7 @@ const pooled = await drainAcrossPool({
 }
 
 async function main() {
+  refuseIfRunsReadonly(OUT);
   if (!worker) {
     process.stderr.write(
       "usage: npm run evidence:check -- <worker-url> [<worker-url>...] [--sample=24] [--only=family] "

@@ -27,7 +27,7 @@ import { pathToFileURL } from "node:url";
 
 import { pipeline, run, keepingTranscript } from "./retrain-pipeline.mjs";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
 // This chain is hours long and unattended. A mistyped `--dry-run` would run the REAL thing.
 refuseUnknownFlags(["--dry-run"], { entry: import.meta.url, command: "npm run lab:everything" });
@@ -117,7 +117,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   const dryRun = process.argv.includes("--dry-run");
   // A fresh transcript per run: appending to the previous one is how "the fixture capture keeps failing"
   // came to be read off a later, unrelated job.
-  if (!dryRun) rmSync(TRANSCRIPT, { force: true });
+  if (!dryRun) {
+    refuseIfRunsReadonly(TRANSCRIPT);
+    rmSync(TRANSCRIPT, { force: true });
+  }
   const result = pipeline({
     dryRun,
     steps: STEPS,

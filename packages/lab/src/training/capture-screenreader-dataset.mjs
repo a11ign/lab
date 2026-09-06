@@ -24,7 +24,7 @@ import { leasePageServer } from "./page-server.mjs";
 import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.mjs";
 import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
 import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
-import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
+import { datasetRoot, captureRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 import { captureFilePath, rejectedCaptureFilePath } from "../capture/evidence-diff.mjs";
 
 /**
@@ -821,6 +821,7 @@ async function captureDataset(/** @type {any} */ cases, /** @type {any} */ done,
 }
 
 async function main() {
+  refuseIfRunsReadonly(ROOT);
   const manifest = readManifest();
   const cases = selectCases(manifest.cases, ONLY);
   if (!cases.length) throw new Error("No generated case matches --only=" + ONLY);
