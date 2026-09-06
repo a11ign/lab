@@ -125,46 +125,50 @@ test("knownPackages finds the real repo's workspace directories, and refuses a s
 // action-smoke") fails here rather than costing real Windows minutes on every PR again.
 // -------------------------------------------------------------------------------------------------------
 
-test("ci.yml triggers on pull_request and on push to main only, never on an agent/lead branch push", () => {
+test("ci.yml triggers on pull_request ONLY -- no push trigger at all, on main or anywhere else", () => {
+  // Chairman's direction, 2026-09-06: the flow is PR then merge, and a check that runs after a merge
+  // cannot stop it -- a `push: branches: [main]` trigger is a gate with the barn door already open.
+  // Branch protection (checks green AND up to date with main) is what makes the tested commit the one
+  // that lands, so NOTHING here may run post-merge.
   const doc = parseYaml(readWorkflow("ci.yml"));
   assert.ok(doc.on.pull_request, "ci.yml must trigger on pull_request -- that is the whole of the rebuild");
-  assert.deepEqual(doc.on.push.branches, ["main"],
-    "ci.yml's push trigger must be main-only, or a branch push and its PR both run the full check on the "
-    + "same commit again");
-  assert.equal(Object.keys(doc.on).length, 2,
-    `ci.yml declares triggers ${Object.keys(doc.on).join(", ")} -- only pull_request and push are expected`);
+  assert.ok(!("push" in doc.on),
+    "ci.yml must not trigger on push at all -- a check that runs after the merge cannot stop it");
+  assert.equal(Object.keys(doc.on).length, 1,
+    `ci.yml declares triggers ${Object.keys(doc.on).join(", ")} -- only pull_request is expected`);
 });
 
-test("action-smoke.yml and capture-regression.yml never trigger on pull_request, and push is main-only", () => {
+test("action-smoke.yml and capture-regression.yml trigger on workflow_call and workflow_dispatch only", () => {
+  // Both left `main` entirely, chairman's direction: they are release-time gates now, called as jobs from
+  // `release.yml` (workflow_call) or run on demand (workflow_dispatch) -- never on a push or a PR, so
+  // Windows/NVDA minutes are spent once, before a release, rather than on every commit.
   for (const file of ["action-smoke.yml", "capture-regression.yml"]) {
     const doc = parseYaml(readWorkflow(file));
-    assert.ok(!("pull_request" in doc.on),
-      `${file} must not trigger on pull_request -- it is a real Windows/NVDA job and doubling it onto `
-      + "every PR is exactly what the CI rebuild removed");
-    assert.ok(doc.on.workflow_dispatch !== undefined || "workflow_dispatch" in doc.on,
-      `${file} must keep workflow_dispatch for an on-demand run`);
-    assert.deepEqual(doc.on.push.branches, ["main"], `${file}'s push trigger must be main-only`);
+    assert.ok(!("pull_request" in doc.on), `${file} must not trigger on pull_request`);
+    assert.ok(!("push" in doc.on), `${file} must not trigger on push`);
+    assert.ok("workflow_call" in doc.on,
+      `${file} must declare workflow_call, or release.yml has no way to run it as a job`);
+    assert.ok("workflow_dispatch" in doc.on, `${file} must keep workflow_dispatch for an on-demand run`);
   }
 });
 
-test("PROOF: the trigger-table guard bites -- a synthetic pull_request block on a push-only workflow fails", () => {
+test("PROOF: the trigger-table guard bites -- a synthetic push block on a pull_request-only workflow fails", () => {
   // Driven directly against a FIXTURE rather than by mutating a real file on disk, for the reason every
   // other MUTATION test in this repo gives when the real check is cheap enough to reproduce inline: the
-  // property under test is "does parsing a `pull_request:` key make `"pull_request" in doc.on` true", and
-  // a fixture proves that without touching a tracked file at all.
-  const withPullRequest = parseYaml([
+  // property under test is "does parsing a `push:` key make `\"push\" in doc.on` true", and a fixture
+  // proves that without touching a tracked file at all.
+  const withPush = parseYaml([
     "on:",
-    "  workflow_dispatch:",
+    "  pull_request:",
+    "    branches: [main]",
     "  push:",
     "    branches: [main]",
-    "  pull_request:",
-    "    paths: [\"x\"]",
     "jobs:",
     "  x:",
     "    runs-on: ubuntu-latest",
   ].join("\n"));
-  assert.ok("pull_request" in withPullRequest.on,
-    "the fixture itself must carry a pull_request trigger, or this proves nothing about the real assertion");
+  assert.ok("push" in withPush.on,
+    "the fixture itself must carry a push trigger, or this proves nothing about the real assertion");
 });
 
 test("lint.yml, ansible-check.yml and changeset-check.yml are retired, not merely unused", () => {

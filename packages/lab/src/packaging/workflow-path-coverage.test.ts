@@ -62,6 +62,11 @@ const NOT_A_GATE: Record<string, string> = {
     + "examines an org secret and an issue thread, not the diff.",
   "release.yml": "publishes. It is triggered deliberately and its own gate chain is `release:gate:ci`, "
     + "not a path filter over the change that happens to be at HEAD.",
+  "action-smoke.yml": "release-time only since 2026-09-06 (chairman's direction) -- `workflow_call`/"
+    + "`workflow_dispatch` only, run as a job from `release.yml` against the exact shipping sha. It does "
+    + "not trigger on a diff at all, so covering a source directory is not a thing it could mean.",
+  "capture-regression.yml": "same change, same reason as action-smoke.yml -- release-time only, called "
+    + "from release.yml, no push or pull_request trigger left to filter.",
 };
 
 const workflowFiles = (): string[] =>
@@ -135,7 +140,11 @@ test("the discovery finds the workflows and the source tree, so this cannot pass
     `found ${workflowFiles().length} workflow file(s); .github/workflows moved or the extension filter is wrong`);
   assert.ok(sourceDirectories().length >= 8,
     `found ${sourceDirectories().length} source director(ies); the packages/*/src walk is broken`);
-  assert.ok(gateFiles().length >= 2,
+  // >= 1, not >= 2 as this floor read before 2026-09-06's trigger-model rebuild: `ci.yml` is now the ONLY
+  // workflow in this repo that judges a change at all -- action-smoke.yml and capture-regression.yml
+  // moved to release-time-only (chairman's direction), which is a real architectural fact, not a
+  // regression in this guard's own strength. `ci.yml` alone still exercises every assertion below.
+  assert.ok(gateFiles().length >= 1,
     "every workflow was classified as not-a-gate -- the guard would then assert nothing at all");
 });
 

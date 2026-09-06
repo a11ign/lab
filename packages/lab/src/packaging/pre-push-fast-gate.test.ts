@@ -127,20 +127,18 @@ test("MUTATION: the real run() function reports FAILED on a genuine lint/typeche
   }
 });
 
-test(".github/workflows/ci.yml runs on the PR and on a push to main, with a cancelling concurrency group", () => {
-  // NOT agent/** or lead/** -- deliberately, since 2026-09-06. A branch push gets only this hook's fast
-  // gate; the full check now runs on the PR that branch's own workflow opens immediately after pushing
-  // (`pull_request`), and again, unconditionally, on the push that lands it on `main`. Asserting the
-  // OPPOSITE of what the retired `lint.yml` test here asserted is deliberate, not a typo: a `push.branches`
-  // list that regained `agent/**` would silently double every PR's checks again.
+test(".github/workflows/ci.yml runs on the PR ONLY, with a cancelling concurrency group", () => {
+  // NOT agent/** or lead/** and NOT main -- deliberately, since 2026-09-06 and sharpened again the same
+  // day (chairman's direction): a check that runs after a merge cannot stop it, so `push` is not merely
+  // scoped to `main`, it is ABSENT altogether now. A branch push gets only this hook's fast gate; the
+  // full check runs on the PR that branch's own workflow opens immediately after pushing, and ONLY there
+  // -- branch protection (checks green AND up to date with main) is what makes the tested commit the one
+  // that lands.
   const doc = parseYaml(readFileSync(`${REPO}.github/workflows/ci.yml`, "utf8"));
   assert.ok(doc.on.pull_request, "ci.yml must trigger on pull_request, or a branch's own PR has no full "
     + "check to hand off to");
-  const pushBranches: string[] = doc.on.push.branches;
-  assert.deepEqual(pushBranches, ["main"],
-    "ci.yml's push trigger must be main-only -- an agent/** or lead/** branch here means the branch push "
-    + "AND its PR both run the full suite on the same commit, which is the exact duplication ci.yml exists "
-    + "to remove");
+  assert.ok(!("push" in doc.on),
+    "ci.yml must not trigger on push at all -- a check that runs after the merge cannot stop it");
   assert.equal(doc.concurrency?.["cancel-in-progress"], true,
     "without cancel-in-progress, every push under push-per-commit queues a stale run behind it");
   assert.match(String(doc.concurrency?.group ?? ""), /github\.ref/,
