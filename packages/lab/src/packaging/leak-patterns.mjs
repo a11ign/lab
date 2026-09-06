@@ -16,3 +16,22 @@ export const LEAK_PATTERNS = [
   { name: "a named SSH private key file", pattern: /~?\/?\.ssh\/[\w.-]+_ed25519\b|~?\/?\.ssh\/id_\w+\b/ },
   { name: "a live pct exec container-hop command", pattern: /\bpct exec \d/ },
 ];
+
+/**
+ * Every match of every pattern in COLLAPSED text, unfiltered by any exemption — the caller applies its
+ * own (file, value) allowlist. Shared so `tracked-prose-leak-guard.test.ts` (`.md`) and
+ * `tracked-source-leak-guard.test.ts` (`.mjs/.ts/.py/.ps1/.sh/.yml`, #83) walk different populations
+ * through the identical matching logic, rather than two copies that can drift.
+ *
+ * @param {string} text already collapsed (`.replace(/\s+/g, " ")`) so a match split across a hard-wrapped
+ *   line is not missed.
+ * @returns {Array<{ name: string; value: string }>}
+ */
+export function allLeaksIn(text) {
+  const found = [];
+  for (const { name, pattern } of LEAK_PATTERNS) {
+    const global = new RegExp(pattern.source, "g");
+    for (const match of text.matchAll(global)) found.push({ name, value: match[0] });
+  }
+  return found;
+}

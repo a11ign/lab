@@ -19,8 +19,8 @@ test("the worker is read from the capture, not from the exporter's environment",
   const previous = process.env.A11Y_WORKERS;
   process.env.A11Y_WORKERS = "http://not-the-capturing-box:8765";
   try {
-    const env = captureEnvironment(capture("http://REDACTED-INTERNAL-ADDRESS:8765"));
-    assert.equal(env.worker, "http://REDACTED-INTERNAL-ADDRESS:8765");
+    const env = captureEnvironment(capture("http://203.0.113.107:8765"));
+    assert.equal(env.worker, "http://203.0.113.107:8765");
   } finally {
     if (previous === undefined) delete process.env.A11Y_WORKERS;
     else process.env.A11Y_WORKERS = previous;
@@ -30,8 +30,8 @@ test("the worker is read from the capture, not from the exporter's environment",
 test("two captures from different boxes keep different workers in one export", () => {
   // The defect's signature: every record carrying the SAME value. Attribution is the only thing this
   // field is for, so a constant cannot do its job -- which is exactly why nothing noticed for months.
-  const a = captureEnvironment(capture("http://REDACTED-INTERNAL-ADDRESS:8765"));
-  const b = captureEnvironment(capture("http://REDACTED-INTERNAL-ADDRESS:8765"));
+  const a = captureEnvironment(capture("http://203.0.113.107:8765"));
+  const b = captureEnvironment(capture("http://203.0.113.224:8765"));
   assert.notEqual(a.worker, b.worker);
 });
 
@@ -51,7 +51,7 @@ test("an unattributable capture exports null, never a plausible guess", () => {
 });
 
 test("the sibling fields still come from the capture's own environment", () => {
-  const env = captureEnvironment(capture("http://REDACTED-INTERNAL-ADDRESS:8765"));
+  const env = captureEnvironment(capture("http://203.0.113.59:8765"));
   assert.equal(env.browserVersion, "151.0.4129.101");
   assert.equal(env.workerCode, "abc123");
 });
