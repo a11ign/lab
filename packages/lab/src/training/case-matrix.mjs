@@ -4022,6 +4022,74 @@ cases.push(
   }),
 );
 
+// 2.4.7's F55, this time as W3C's OWN example rather than the redirect-to-a-later-field shape above --
+// issue #14, and a direct answer to the still-open half of `known-gaps.md` §39: the COMPLETED-pair branch
+// of `addFocusEventFindings` (`FOCUS_SCRIPT_WINDOW_MS = 50`, `packages/judge/src/rules.ts`) has never once
+// been exercised by a real script `blur()`, because every existing 2.4.7-adjacent case (above) redirects
+// focus to a LATER field rather than removing it outright.
+//
+// THAT REDIRECT WAS A DELIBERATE CHOICE, NOT AN OVERSIGHT, AND THIS CASE HAS TO WORK AROUND THE SAME
+// HAZARD RATHER THAN IGNORE IT. The comment above the case family two blocks up is explicit: `this.blur()`
+// sends focus to the document body, so the NEXT Tab restarts the walk from the top -- a persistent
+// destination-less blur would have the probe re-tab through the same prefix until `MAX_TAB_STOPS` (150,
+// `capture-probes.mjs`) cuts it off, which is a real capture-time cost this repo has already paid for once
+// (`training:capture` on a page like that is most of the reason the fleet exists). So this mutation fires
+// EXACTLY ONCE, guarded by a flag the script itself sets: the first Tab that reaches the field blurs it
+// immediately (which is the one measurement this case exists to produce -- a genuine same-id
+// focusin->focusout pair with no redirect), and the second pass through the form (the probe restarts from
+// the top, same as any destination-less blur) finds the guard already tripped and lets Tab proceed
+// normally past it to the field after. The page is NOT a keyboard trap: every field is reached, on the
+// walk's second pass -- so this case fails 2.4.7 alone, and `alsoFails` names nothing.
+//
+// WHY NOT REUSE THE EXISTING FAMILY'S SUBTYPE. `2.4.7:focus-removed-on-receipt`'s nine positives are
+// `criterion: "2.1.1"` cases that also fail 2.4.7 via `alsoFails` -- correct for THAT mechanism (an
+// orphaned focusout, per `known-gaps.md` §39), and not what this case demonstrates. Giving this its own
+// `criterion: "2.4.7"` subtype means 2.4.7 finally has a PRIMARY positive with the completed-pair shape
+// its threshold branch actually reads, rather than only ever seeing the orphan branch secondhand.
+//
+// `provisional`, NOT a normal case: `check-signals` runs against a real capture, and there is not one yet
+// -- this is offline, fleet-free work (issue #14's own acceptance: "then, ORCHESTRATOR: capture it and
+// read the actual measured gap"). Self-retires per `provisional-cases.test.ts` the moment a real capture
+// shows this case discriminates; if it does not, the CASE is wrong, not the flag.
+cases.push(
+  pair({
+    id: "focus-script-blur-window",
+    criterion: "2.4.7",
+    subtype: "script-blur-completed",
+    task: "Reach the reference number field using the keyboard alone.",
+    source: "WCAG F55 Understanding (w3.org/WAI/WCAG22/Techniques/failures/F55); known-gaps.md §39",
+    mutation: "Script blurs a field the instant it receives focus -- a real, destination-less `.blur()`, "
+      + "which is F55's own text verbatim (\"removes focus from the content entirely\"), rather than the "
+      + "redirect-to-a-later-field shape this corpus has used until now. Guarded to fire only once so the "
+      + "probe's second pass through the form completes normally; see the comment above this case for why.",
+    badSignal: { type: "focus-removed-on-receipt" },
+    good: page({
+      title: "Order details", heading: "Order details",
+      body: "<form>"
+        + "<p><label for=\"first\">Contact name</label><input id=\"first\" name=\"first\"></p>"
+        + "<p><label for=\"second\">Reference number</label><input id=\"second\" name=\"second\"></p>"
+        + "<p><label for=\"third\">Daytime telephone number</label><input id=\"third\" name=\"third\"></p>"
+        + "<button type=\"submit\">Save details</button>"
+        + "</form>",
+    }),
+    bad: page({
+      title: "Order details", heading: "Order details",
+      body: "<form>"
+        + "<p><label for=\"first\">Contact name</label><input id=\"first\" name=\"first\"></p>"
+        + "<p><label for=\"second\">Reference number</label>"
+        + "<input id=\"second\" name=\"second\" "
+        + "onfocus=\"if(!window.__blurredOnce){window.__blurredOnce=true;this.blur();}\"></p>"
+        + "<p><label for=\"third\">Daytime telephone number</label><input id=\"third\" name=\"third\"></p>"
+        + "<button type=\"submit\">Save details</button>"
+        + "</form>",
+    }),
+    probeFocus: true,
+    probeOrder: "focus-first",
+    provisional: "added 2026-09-06 for issue #14 -- no capture exists yet; this is the first case built "
+      + "to demonstrate a genuine destination-less script blur() rather than a focus redirect",
+  }),
+);
+
 // 1.4.13 Content on Hover or Focus — the DISMISSABLE bullet, on the trigger this tool can actually drive.
 //
 // The criterion covers "pointer hover OR KEYBOARD FOCUS", and it was recorded `out-of-scope` until

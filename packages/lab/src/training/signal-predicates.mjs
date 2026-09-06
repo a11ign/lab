@@ -819,21 +819,51 @@ function focusPanelUndismissable(/** @type {any} */ capture) {
 }
 
 /**
- * F55 -- a control that received focus and had it removed by script before anything else happened.
+ * F55 -- a control received focus and had it stripped by script, faster than an ordinary Tab transition
+ * could produce, with nothing else claiming focus in between.
  *
- * Reads `interaction.focusEvents`, which `focusEventVerdict` produced on the worker from the DOM's own
- * `focusin`/`focusout` log -- computed there rather than here for the same reason `focusPanelUndismissable`
- * above reads `focusReveal` rather than re-deriving it: the timing judgement belongs with the probe that
- * took the measurement, not with a second copy of it in the corpus layer.
+ * FIXED 2026-09-06 (issue #14): this used to read `v.scriptRemovedFocus`, a field that stopped existing
+ * the same day `focusEventVerdict` (`capture-pure.mjs`) became a passthrough per ADR 0021 ("captures
+ * record, rules decide") -- the judgement moved to `addFocusEventFindings`
+ * (`packages/judge/src/rules.ts`), which `packages/lab` cannot import (no dependency runs that direction,
+ * the same boundary `focusPanelUndismissable` above and `contextChanged` elsewhere already cross by
+ * duplication rather than by import). So unlike that comment's original reasoning, this is now a
+ * NECESSARY second reading rather than merely a cheaper one: `check-signals` examines the raw capture
+ * directly, `interaction.focusEvents.log` is all the raw capture carries, and there is no verdict left on
+ * it for this function to defer to. Nothing had ever exercised this predicate to reveal the drift -- no
+ * case declared `badSignal: { type: "focus-removed-on-receipt" }` until `focus-script-blur-window` did.
+ *
+ * Recognises the ONE mechanism `focus-script-blur-window` demonstrates: a completed same-id
+ * `focusin`->`focusout` pair held under `SCRIPT_BLUR_WINDOW_MS` (mirrors `FOCUS_SCRIPT_WINDOW_MS` in
+ * rules.ts; kept as a literal here rather than imported, for the reason above), with focus not landing on
+ * a different real control immediately after. Deliberately does NOT attempt the ORPHANED-`focusout` shape
+ * `addFocusEventFindings` also covers (`known-gaps.md` §39's own positives, `focus-removed-on-receipt-*`)
+ * -- those cases use `control-unreachable-by-keyboard` as their `badSignal`, not this one, and getting the
+ * orphan shape right needs `focusLossVerdict`'s own index-0 handling, which nothing here has a fixture to
+ * prove against yet. Extend this, with a fixture, before pointing a case at it for that mechanism.
  *
  * `checked !== true` means the oracle never ran (the field is absent) or could not be read (`checked:
- * false`, distinct from the finding array itself being empty) -- ABSENT, not a reading of zero, the same
+ * false`, distinct from the log itself being empty) -- ABSENT, not a reading of zero, the same
  * distinction `focusRevealVerdict`'s own `revealed: null` exists to preserve one probe over.
  */
+const SCRIPT_BLUR_WINDOW_MS = 50;
+
 function focusRemovedOnReceipt(/** @type {any} */ capture) {
   const v = capture.interaction?.focusEvents;
-  if (!v || v.checked !== true) return false;
-  return Array.isArray(v.scriptRemovedFocus) && v.scriptRemovedFocus.length > 0;
+  if (!v || v.checked !== true || !Array.isArray(v.log)) return false;
+  const log = v.log;
+  for (let i = 1; i < log.length; i += 1) {
+    const event = log[i];
+    if (event?.type !== "focusout") continue;
+    const prior = log[i - 1];
+    if (prior?.type !== "focusin" || prior.id !== event.id) continue; // orphaned, or a different control
+    const heldMs = event.atMs - prior.atMs;
+    if (heldMs >= SCRIPT_BLUR_WINDOW_MS) continue; // an ordinary Tab transition, not a script
+    const next = log[i + 1];
+    if (next?.type === "focusin" && next.id !== event.id) continue; // redirected to a real destination
+    return true;
+  }
+  return false;
 }
 
 /**

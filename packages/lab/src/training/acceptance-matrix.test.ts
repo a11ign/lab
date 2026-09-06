@@ -185,7 +185,16 @@ test("every case carries the metadata that makes it REVIEWABLE", () => {
  * rather than passing silently.
  */
 const SUBTYPES_WITHOUT_ACCEPTANCE_COVERAGE = new Set<string>([
-  // EMPTY, AND IT STARTED AT EIGHT THIS MORNING. Every corpus subtype now has a held-out pair.
+  // "2.4.7:script-blur-completed" -- issue #14, added 2026-09-06. Its ONE positive
+  // (`focus-script-blur-window`, `case-matrix.mjs`) is `provisional`: no capture exists yet, and the case
+  // exists to MEASURE `FOCUS_SCRIPT_WINDOW_MS`'s unverified fast side, not to train anything --
+  // `rule-ownership.json` declares it `modelHead: false` for exactly that reason (a single record cannot
+  // fit a head regardless). This ledger's whole point, per the header above, is heads the held-out set
+  // cannot see; a subtype with no head has nothing here for held-out acceptance to measure by
+  // construction, so an acceptance pair would test the RULE, which `rules:gate` already does against the
+  // corpus case once it is captured. Revisit if this subtype ever gains a trained head.
+  "2.4.7:script-blur-completed",
+  // EMPTY OTHERWISE, AND IT STARTED AT EIGHT THIS MORNING. Every corpus subtype now has a held-out pair.
   //
   // The eight were not eight oversights. Seven were INEXPRESSIBLE: `pair()` enumerated `probeForms` and
   // `probeTables` and dropped every other probe flag, so a case needing `probeFocus`, `probeFocusContext`,

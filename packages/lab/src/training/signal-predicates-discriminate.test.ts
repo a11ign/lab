@@ -59,14 +59,24 @@ const DISCRIMINATES: Record<string, { signal: object; fires: object; silent: obj
     fires: { interaction: { focusReveal: { asked: true, revealed: true, focusHeld: true, dismissed: false } } },
     silent: { interaction: { focusReveal: { asked: true, revealed: true, focusHeld: true, dismissed: true } } },
   },
-  // F55. The verdict is computed on the WORKER by `focusEventVerdict` from a `focusin`/`focusout` timing
-  // log, so the fixture is that verdict rather than a page -- same reasoning as `focus-panel-undismissable`
-  // just above. `checked: true` with an EMPTY `scriptRemovedFocus` is the silent case, not an absent field:
-  // the oracle ran and genuinely saw an ordinary control, which is a different fact from "nobody asked".
+  // F55. FIXED 2026-09-06 (issue #14): the worker (`focusEventVerdict`, capture-pure.mjs) stopped
+  // computing a verdict on 2026-09-06 per ADR 0021 -- it now reports the raw bounded `focusin`/`focusout`
+  // log itself (`log`, not `scriptRemovedFocus`, which no capture has carried since), and
+  // `focusRemovedOnReceipt` (signal-predicates.mjs) reads that log directly for the completed-pair
+  // shape `focus-script-blur-window` demonstrates: a same-id receipt held under 50ms with nothing else
+  // claiming focus immediately after. `checked: true` with a log holding only an ordinary (slow) pair is
+  // the silent case, not an absent field -- the oracle ran and genuinely saw an unremarkable Tab
+  // transition, a different fact from "nobody asked".
   "focus-removed-on-receipt": {
     signal: { type: "focus-removed-on-receipt" },
-    fires: { interaction: { focusEvents: { checked: true, scriptRemovedFocus: [{ id: 1, name: "Coupon code", heldMs: 2 }] } } },
-    silent: { interaction: { focusEvents: { checked: true, scriptRemovedFocus: [] } } },
+    fires: { interaction: { focusEvents: { checked: true, log: [
+      { type: "focusin", id: 1, name: "Coupon code", atMs: 100 },
+      { type: "focusout", id: 1, name: "Coupon code", atMs: 102 },
+    ] } } },
+    silent: { interaction: { focusEvents: { checked: true, log: [
+      { type: "focusin", id: 1, name: "Coupon code", atMs: 100 },
+      { type: "focusout", id: 1, name: "Coupon code", atMs: 733 },
+    ] } } },
   },
   regex: {
     signal: { type: "regex", pattern: "click here" },
