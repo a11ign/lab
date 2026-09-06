@@ -728,6 +728,37 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "inaccessible", source: OWN_FIXTURE_CLAIM, witnessableAs: ["2.4.3"],
     demonstrates: "positive tabindex displacing form fields past every link in the tab order" },
 
+  // 1.4.13, AND THE ONLY PAIR IN THIS BLOCK — added 2026-09-06 because `rules:coverage` REFUSED A
+  // PROMOTION over it, which is the best reason a fixture can have.
+  //
+  //     1 RULE-ONLY criterion(a) claimed but never demonstrated on a real page:
+  //       1.4.13 — fired 15x on the corpus and never on a real page. The corpus is built from the same
+  //       assumptions as the rule, so it cannot falsify them.
+  //
+  // 1.4.13 is rule-only, so nothing else covers it, and every real page in this corpus is CONFORMANT and
+  // therefore correctly does not exhibit it — the gate says so in its own words: "it ran and stayed
+  // silent, which on a conformant page is the right answer. What is missing is a real page that exhibits
+  // the failure." Exactly the need the four fixtures above exist for.
+  //
+  // WHAT A FIXTURE PROVES, AND WHAT IT DOES NOT, written here rather than left implied: it demonstrates
+  // the rule FIRES on real capture evidence, through the real pipeline. It does NOT falsify the rule's
+  // assumptions, because a page written here is built from the same ones. That is true of all four above
+  // and is the honest limit of this whole block; the gate asks for a DEMONSTRATION, and this is one.
+  //
+  // A PAIR, which the four above are not. The bad half is what the gate wants; the good half is what the
+  // STANDARD wants — 1.4.13's dismissable bullet is about a panel that CANNOT be dismissed, so a fixture
+  // showing only the failure never shows the rule staying silent on a conformant panel reached through
+  // the same evidence channel. Deliberately a stricter bar than the precedent set: the four above should
+  // grow good siblings too, and that is a backlog row rather than a reason to repeat the omission here.
+  { url: `${FIXTURE_BASE}/focus-panel-undismissable-help/bad.html`, role: "fixture",
+    publishedClaim: "inaccessible", source: OWN_FIXTURE_CLAIM, witnessableAs: ["1.4.13"],
+    demonstrates: "a panel revealed on focus that Escape does not dismiss — the DISMISSABLE bullet, the "
+      + "one of 1.4.13's three this tool can reach" },
+  { url: `${FIXTURE_BASE}/focus-panel-undismissable-help/good.html`, role: "fixture",
+    publishedClaim: "conformant", source: OWN_FIXTURE_CLAIM,
+    demonstrates: "the same panel, revealed on focus and dismissed by Escape — the conformant sibling, so "
+      + "the rule is shown SILENT on the same evidence channel rather than only shown firing" },
+
 ]);
 
 /** Pages for one role. @param {CorpusRole} role @returns {RealPage[]} */

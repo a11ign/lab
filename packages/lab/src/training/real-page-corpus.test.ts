@@ -90,14 +90,42 @@ test("a FIXTURE page says it is ours, and says which criterion it demonstrates",
   // The exemption above is not a hole: a fixture still has to declare what it is for. Without
   // `witnessableAs` it is a broken page with no claim attached, which is worse than not having it —
   // nothing could tell whether a capture of it witnessed the intended failure or a different one.
-  for (const page of REAL_PAGES.filter((p) => p.role === "fixture")) {
-    assert.equal(page.publishedClaim, "inaccessible", `${page.url} is a fixture; it demonstrates a defect`);
+  const fixtures = REAL_PAGES.filter((p) => p.role === "fixture");
+  const failing = fixtures.filter((p) => p.publishedClaim === "inaccessible");
+  for (const page of fixtures) {
     assert.match(page.source, /^Authored by this project/,
       `${page.url} must say the label is ours, so it is never mistaken for a publisher's`);
-    assert.ok((page.witnessableAs ?? []).length === 1,
-      `${page.url} must name exactly ONE criterion — a fixture demonstrating two proves neither`);
     assert.ok(page.demonstrates.length > 5, `${page.url} must say what it is an example of`);
   }
+  for (const page of failing) {
+    assert.ok((page.witnessableAs ?? []).length === 1,
+      `${page.url} must name exactly ONE criterion — a fixture demonstrating two proves neither`);
+  }
+
+  // A CONFORMANT FIXTURE IS ALLOWED, AND ONLY AS THE SIBLING OF A FAILING ONE — widened 2026-09-06.
+  //
+  // This loop required EVERY fixture to be `inaccessible`, which was true of all four and is not the
+  // property that matters. What matters is that a fixture is never a page with no claim attached: a
+  // failing one says which criterion it witnesses, and a conformant one earns its place by being the
+  // SILENT half of a pair, so a rule is shown not firing on the same evidence channel rather than only
+  // shown firing. 1.4.13 is the first criterion added with both halves, because its dismissable bullet is
+  // about a panel that CANNOT be dismissed and a bad-only fixture never exercises the other outcome.
+  //
+  // THE PAIRING IS WHAT STOPS THIS BEING A HOLE. Without it, "conformant fixture" is a way to add any page
+  // at all to the corpus with no claim to check it against. The sibling is DERIVED from the url — same
+  // case directory, `bad.html` against `good.html` — never declared, so a conformant fixture with nothing
+  // to be the sibling OF fails here rather than passing quietly.
+  const caseOf = (url: string) => url.replace(/\/(good|bad)\.html$/, "");
+  const failingCases = new Set(failing.map((p) => caseOf(p.url)));
+  for (const page of fixtures.filter((p) => p.publishedClaim === "conformant")) {
+    assert.ok(failingCases.has(caseOf(page.url)),
+      `${page.url} is a CONFORMANT fixture with no failing sibling in the same case. A conformant fixture `
+      + "earns its place as the silent half of a pair; on its own it is a page in the corpus with no "
+      + "claim anything can check it against.");
+  }
+  assert.ok(failing.length > 0,
+    "no fixture is `inaccessible`, so this test examines nothing — fixtures exist to let a rule-only "
+    + "criterion be validated at all, which needs a page that FAILS");
 });
 
 test("calibration carries BOTH claims, or the threshold is fitted on one side only", () => {
@@ -266,10 +294,14 @@ test("a FIXTURE's declared criterion matches the case it is built from", () => {
   // it before a worker is ever asked.
   const declared = new Map(CASES.map((c: { id: string; criterion: string }) => [c.id, c.criterion]));
   const wrong: string[] = [];
+  // FAILING fixtures only. A CONFORMANT sibling witnesses nothing by design — it is the silent half of a
+  // pair, and `witnessableAs` on it would be a claim that the page demonstrates a failure it exists NOT to
+  // demonstrate. It is still required to point at a real generated case, which the assertion below keeps.
   for (const page of REAL_PAGES.filter((p) => p.role === "fixture")) {
     const caseId = new URL(page.url).pathname.split("/").filter(Boolean)[0];
     const expected = declared.get(caseId);
     assert.ok(expected, `${page.url} names no case in CASES — a fixture must point at a generated page`);
+    if (page.publishedClaim === "conformant") continue;
     const claimed = (page.witnessableAs ?? [])[0];
     if (claimed !== expected) wrong.push(`${caseId}: fixture says ${claimed}, the case says ${expected}`);
   }
