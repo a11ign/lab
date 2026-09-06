@@ -78,6 +78,25 @@ test("the backlog exists and says what it is for", () => {
     "the backlog has almost no rows -- either everything is genuinely done, or this test is reading the wrong file");
 });
 
+// #93's mechanical half: `docs/backlog.md` was still readable as the tracker for four days after the move
+// (§19 above fixed that in prose), and NOTHING pinned the fix -- so the file's own top could drift back to
+// silence with no test noticing, the same way CLAUDE.md's own pointer (#87) drifted for the same reason.
+// `docs/backlog-ready.md` already has this guard (`backlog-ready.test.ts`'s "signpost, not a deletion"
+// test); this is the sibling pin for the file that guard does not cover.
+test("the top of the file says it is a RECORD, not the tracker -- the banner cannot silently drop out", () => {
+  const head = read("docs/backlog.md").split("\n").slice(0, 12).join("\n");
+  // The row's own acceptance command, run as an assertion rather than by hand: `head -12 docs/backlog.md
+  // | grep -qi 'record|retired|not the tracker'`.
+  assert.match(head, /record|retired|not the tracker/i,
+    "the first 12 lines of docs/backlog.md no longer say the file is a RECORD -- this is how it read as "
+    + "the tracker for four days after GitHub Issues took over, and it is exactly this line moving out of "
+    + "the first screen that would let it happen again");
+  assert.match(head, /github\.com\/DanBeckDev\/a11y-witness\/issues/i,
+    "the banner must say WHERE the tracker actually is, not only that this file is not it -- a reader who "
+    + "learns 'not here' with nowhere to go next is back to inferring, which is the defect this file was "
+    + "created to end");
+});
+
 test("every record entry marked OPEN names the issue tracking it", () => {
   // Mutation-safety, and it must not be `open.length > 0`. That was the first version and it FAILED on
   // 2026-09-03 for the one reason it should not: §20 was closed, no `— OPEN` heading remained, and the
