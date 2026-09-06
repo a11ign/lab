@@ -93,6 +93,35 @@ const CANARIES = [
     path: "form-error-silent/bad",
     reason: "submits a form, which is how the profile LEARNS the values that later become suggestions",
   },
+  // THE SAME CASE, ACTUALLY SUBMITTING — added 2026-09-06, and the pair is the point.
+  //
+  // The canary above has no `task` and no `probeForms`, so nothing is activated and `postSubmitNames` is
+  // EMPTY on all five repeats. Comparing an empty field five times and reporting it stable is the trap
+  // this file's own header names, and it is why `form-error-silent` could be a canary while the channel it
+  // is named for went unwatched.
+  //
+  // WHAT THIS IS FOR, measured 2026-09-06 and unexplained: two consecutive `evidence:check` runs disagreed
+  // about whether long post-submit announcements are FRAGMENTED. Run 1 had `form-error-silent` joined
+  // (63->59) and `icon-button-unnamed` unchanged; run 2, one commit later, had `form-error-silent` back to
+  // split and `icon-button-unnamed` joined (53->49) — the same shape moving between cases:
+  //
+  //     split   "...retained for records and reviewed each"  +  "year by the site team."
+  //     joined  "...retained for records and reviewed each year by the site team."
+  //
+  // Either the fragmentation is intermittent, or a change between those runs caused it. One run each way
+  // cannot tell them apart, and `postSubmitFields`/`postSubmitNames` is the evidence 3.3.1 and 4.1.3 are
+  // decided from — so a recapture would bake whichever way each case landed into the corpus that ships.
+  // Content comparison across five repeats is the only thing that can answer it, which is this gate's
+  // whole reason for existing: the corpus once carried a nondeterministic artefact for weeks with every
+  // count-based check green, because the counts never moved.
+  {
+    path: "form-error-silent/good",
+    task: "Submit the request without entering a reference number and understand what needs fixing.",
+    probeForms: true,
+    reason: "the ONLY canary whose post-submit read produces the long announcements that were seen "
+      + "fragmenting; `--task` is mandatory here, since `--probe-forms` alone activates nothing and would "
+      + "compare an empty `postSubmitNames` five times over",
+  },
   {
     path: "table-unassociated-headers/bad",
     reason: "the table walk returned 4, 2, 4, 4, 1, 4, 4 cells across 18 captures once; tables are " +
