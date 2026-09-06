@@ -103,15 +103,27 @@ test("§38 (4.1.2 settability) stays connected to the code comment and test it c
     + "or renamed -- re-verify the underlying note directly in criterion-coverage.ts");
 });
 
-test("§39's F55 threshold constant is quoted correctly and still unaccompanied by a measured positive", () => {
-  assert.match(KNOWN_GAPS, /2\.4\.7's F55 lower bound is unverified/,
-    "§39 is gone -- re-check whether the F55 lower bound has since been measured before deleting this test");
+test("§39 is marked CLOSED, and the threshold constant it quotes lives where the closure says it moved", () => {
+  assert.match(KNOWN_GAPS, /CLOSED 2026-09-06, and the answer was sharper than/,
+    "§39's closure is gone -- if the F55 lower bound question was reopened, update this test to match "
+    + "rather than deleting it, since the underlying question (is the threshold verified against a real "
+    + "positive) is still one worth pinning");
 
+  // §39 records the constant MOVING, not merely renaming: capture-pure.mjs no longer judges anything
+  // (ADR 0021, "captures record, rules decide"), so `FOCUS_SCRIPT_BLUR_WINDOW_MS` has no home there any
+  // more. It now lives in rules.ts as `FOCUS_SCRIPT_WINDOW_MS`, judging a HELD time rather than gating a
+  // capture-time pairing -- same value, different question.
   const capturePure = readFileSync(join(REPO, "packages/nvda-worker/src/capture-pure.mjs"), "utf8");
-  const match = capturePure.match(/const FOCUS_SCRIPT_BLUR_WINDOW_MS = (\d+);/);
-  assert.ok(match, "FOCUS_SCRIPT_BLUR_WINDOW_MS is gone or was renamed in capture-pure.mjs");
+  assert.doesNotMatch(capturePure, /FOCUS_SCRIPT_BLUR_WINDOW_MS/,
+    "§39 says this constant moved OUT of capture-pure.mjs entirely -- if it is back, the closure's account "
+    + "of the architecture is wrong and needs re-checking, not just this test");
+
+  const rules = readFileSync(join(REPO, "packages/judge/src/rules.ts"), "utf8");
+  const match = rules.match(/const FOCUS_SCRIPT_WINDOW_MS = (\d+);/);
+  assert.ok(match, "FOCUS_SCRIPT_WINDOW_MS is gone or was renamed in rules.ts -- §39 says this is where the "
+    + "F55 threshold now lives");
   assert.equal(match[1], "50",
-    `FOCUS_SCRIPT_BLUR_WINDOW_MS is now ${match?.[1]}, not 50 -- §39 quotes the old value. If it moved `
-    + "because someone tuned it to make a test pass rather than because a real blur() was measured, that "
-    + "is exactly the shortcut docs/backlog.md warns against taking");
+    `FOCUS_SCRIPT_WINDOW_MS is now ${match?.[1]}, not 50 -- §39 quotes the old value carrying over `
+    + "unchanged. If it moved because someone tuned it to make a test pass rather than because a real "
+    + "blur() was measured, that is exactly the shortcut docs/backlog.md warns against taking");
 });
