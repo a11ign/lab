@@ -43,7 +43,8 @@ import { pathToFileURL } from "node:url";
 import { ruleFindings } from "@a11y-witness/judge/rules";
 import { corpusState } from "../src/training/corpus-settled.mjs";
 import {
-  domCensus, oracleCounts, pageCensus, censusTargetIsSuspect, censusSuspectReason,
+  domCensus, oracleCounts, pageCensus, censusTargetIsSuspect, censusSuspectReason, submitNavigatedTheDocument,
+  type CapturedAnnouncements,
 } from "@a11y-witness/evidence/verify";
 import { realPageFor, REAL_PAGES } from "../src/training/real-page-corpus.mjs";
 import { REPO_ROOT, realCorpusRoot } from "../src/dataset-paths.mjs";
@@ -265,7 +266,10 @@ function currentFindings(): Findings {
     // Conformant pages only. A page whose publisher declares it INACCESSIBLE is supposed to produce
     // findings, and holding those to a baseline would be measuring the wrong thing entirely.
     if (!page || page.publishedClaim !== "conformant") continue;
-    noteEvidence(capture);
+    // `capture` is read from real JSON on disk, of a shape only checked at runtime (the `Array.isArray`
+    // guard just above) -- the same `as` boundary the rest of this file casts at when handing a parsed
+    // capture to `pageCensus`/`domCensus`.
+    noteEvidence(capture as { url?: string } & CapturedAnnouncements);
     // HONOUR THE PUBLISHER'S OWN EXCEPTIONS, which this gate was ignoring.
     //
     // `publishedClaim: "conformant"` does not mean the publisher claims every criterion. Almost every UK
@@ -405,7 +409,8 @@ function domCensusVerdict(
 function censusLine(
   census: { heading?: number; link?: number; graphic?: number; graphicUnnamed?: number } | null,
   dom: ReturnType<typeof domCensus>,
-  target: { targetMatch?: string; candidates?: number; targetUrl?: string; expectedUrl?: string } | null,
+  target: { targetMatch?: string; candidates?: number; targetUrl?: string; expectedUrl?: string;
+    submitNavigated: boolean } | null,
   lines: number,
 ): string {
   if (census) {
@@ -417,18 +422,18 @@ function censusLine(
       + unnamedGraphicLine(dom)
       + domCensusVerdict(census, dom);
   }
-  if (target && censusTargetIsSuspect(target)) {
+  if (target && censusTargetIsSuspect(target, target.submitNavigated)) {
     // THE ACTUAL REASON, not a hardcoded guess -- this used to always print "a real second CDP target
     // existed", which was false on a `candidates: 1` capture that never had one. `censusSuspectReason`
     // reads the same fields `censusTargetIsSuspect` decided on, so the two cannot disagree.
     return `census UNUSABLE: targetMatch=${target.targetMatch ?? "?"} candidates=${target.candidates ?? "?"} `
-      + `-- ${censusSuspectReason(target) ?? "the target was not confirmed"}; `
+      + `-- ${censusSuspectReason(target, target.submitNavigated) ?? "the target was not confirmed"}; `
       + `${lines} announcement(s) (the transcript is unaffected)`;
   }
   return `no census recorded; ${lines} announcement(s)`;
 }
 
-function noteEvidence(capture: { url?: string; transcript?: unknown; diagnostics?: unknown }): void {
+function noteEvidence(capture: { url?: string } & CapturedAnnouncements): void {
   const census = pageCensus(capture as never);
   const dom = domCensus(capture as never);
   const target = rawTargetMatch(capture);
@@ -619,12 +624,23 @@ const CENSUS = new Map<string, { heading?: number }>();
  * This is the one place that has to see it anyway: a furniture check that cannot say "this census is not
  * this page's" cannot say anything about it at all, and `docs/backlog.md`'s row is what asked for it.
  */
-const TARGET_MATCH = new Map<string, { targetMatch?: string; candidates?: number; targetUrl?: string; expectedUrl?: string }>();
+const TARGET_MATCH = new Map<string, { targetMatch?: string; candidates?: number; targetUrl?: string;
+  expectedUrl?: string; submitNavigated: boolean }>();
 
-/** The `structureCensus` mark's target diagnostic, read directly rather than through a nulling reader. */
-function rawTargetMatch(capture: { diagnostics?: unknown }):
-  { targetMatch?: string; candidates?: number; targetUrl?: string; expectedUrl?: string } | null {
+/**
+ * The `structureCensus` mark's target diagnostic, read directly rather than through a nulling reader --
+ * plus the SAME capture's `submitNavigatedTheDocument` verdict, needed for the identical reason
+ * `censusTargetIsSuspect` needs it (known-gaps.md §41): a fallback caused by our own submit and a
+ * fallback that predates the capture entirely need opposite verdicts, and this is the one other reader
+ * (besides `pageCensus`/`domCensus`) that computes the verdict itself rather than reading it off them.
+ * `submitNavigatedTheDocument` is IMPORTED, not restated, so this reader and those two can never compute
+ * the two signals differently.
+ */
+function rawTargetMatch(capture: CapturedAnnouncements & { diagnostics?: unknown }):
+  { targetMatch?: string; candidates?: number; targetUrl?: string; expectedUrl?: string;
+    submitNavigated: boolean } | null {
   const marks = Array.isArray(capture.diagnostics) ? capture.diagnostics : [];
+  const submitNavigated = submitNavigatedTheDocument(capture);
   for (const mark of marks) {
     if (typeof mark !== "object" || mark === null) continue;
     const record = mark as {
@@ -636,6 +652,7 @@ function rawTargetMatch(capture: { diagnostics?: unknown }):
       candidates: typeof record.candidates === "number" ? record.candidates : undefined,
       targetUrl: typeof record.targetUrl === "string" ? record.targetUrl : undefined,
       expectedUrl: typeof record.expectedUrl === "string" ? record.expectedUrl : undefined,
+      submitNavigated,
     };
   }
   return null;
@@ -660,7 +677,7 @@ function rawTargetMatch(capture: { diagnostics?: unknown }):
 function suspectCensusCaptures(): string[] {
   const suspect: string[] = [];
   for (const [url, target] of TARGET_MATCH) {
-    if (censusTargetIsSuspect(target)) suspect.push(url);
+    if (censusTargetIsSuspect(target, target.submitNavigated)) suspect.push(url);
   }
   return suspect;
 }
