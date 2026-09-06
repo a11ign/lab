@@ -429,9 +429,10 @@ const DOCUMENTED_PY: Record<string, string> = {
     + "repo -- run by hand only. Its one `raise SystemExit(f'...')` (a string, so exit 1) refuses when the "
     + "corpus has no donor page for a required marker feature",
   "packages/lab/scripts/diagnose-false-positives.py":
-    "0 always, unconditionally, including on zero records -- NAMED, not fixed, in the earlier audit: no "
-    + "gate or promotion decision reads this script's exit code today, a human runs it deliberately with a "
-    + "record count already in hand",
+    "0 usable records were examined (possibly with some malformed JSON lines skipped and counted); "
+    + "2 zero usable records in --data -- REFUSES rather than the earlier '0 always, unconditionally' "
+    + "(#11: printing {\"records\": 0} and exiting 0 was indistinguishable from 'examined everything, "
+    + "found nothing'). Still no gate or promotion decision reads this script's exit code",
   "packages/lab/scripts/evaluate-screenreader-acceptance.py":
     "0 held-out acceptance passed; 1 the acceptance result failed OR a precondition refusal (stamping a "
     + "verdict into tracked source) -- two distinct causes share 1; the bare code cannot itself distinguish "
@@ -457,6 +458,15 @@ const DOCUMENTED_PY: Record<string, string> = {
   "packages/scorer/python/export-encoder-onnx.py":
     "0 exported ONNX encoder matches the torch reference within tolerance; 1 embedding drift exceeds "
     + "tolerance, refuses to ship. Run once, offline, by hand -- CI never runs this",
+  "packages/scorer/python/score.py":
+    "0 scored successfully; 1 any unclassified exception (the bare `raise` re-raising what `__main__` "
+    + "caught, Python's own default); 3 ArtifactSchemaMismatch (#81) -- the shipped weights and the "
+    + "running code disagree about the evidence format (schema version, encoder hash, feature order, "
+    + "scale, or multipliers). Deliberately a THIRD code, not folded into 1: this is neither the "
+    + "caller's mistake nor an ordinary tool bug, so `local-judge.ts`/`cli.ts` read it as a named, "
+    + "actionable fault rather than a generic failure a retry might fix. __main__ also prints one "
+    + "parseable JSON line (`{\"fault\": \"artifact-schema-mismatch\", \"error\": ...}`) on stdout for "
+    + "exactly this code, which scoreCapture() reads instead of scraping stderr prose",
 };
 
 test("every discovered Python script is DOCUMENTED or INFRASTRUCTURE", () => {
