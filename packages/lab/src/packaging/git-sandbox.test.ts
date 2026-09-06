@@ -78,7 +78,7 @@ test("the fingerprint guard FIRES when a test bypasses sandboxing and mutates th
     // into every hook. A mutation check that passes with GIT_DIR unset would prove nothing.
     process.env.GIT_DIR = join(decoy, ".git");
     assert.throws(
-      () => withGitSandbox((_sandbox) => {
+      () => withGitSandbox(() => {
         // The ORIGINAL bug, reproduced deliberately: spawn git with the inherited (unscrubbed) env and
         // an unrelated cwd, exactly as pre-commit-hook.test.ts:42 did. GIT_DIR wins over cwd, so this
         // writes into the decoy even though `cwd` points nowhere near it.
