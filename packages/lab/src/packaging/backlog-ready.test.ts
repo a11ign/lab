@@ -14,6 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { execFileSync } from "node:child_process";
 
 const PATH = "docs/backlog-ready.md";
 const read = () => readFileSync(resolve(process.cwd(), PATH), "utf8");
@@ -85,8 +86,73 @@ test("every Verified-open claim names a real command, not just a conclusion", ()
     .map(({ title }) => `  "${title}"`);
   assert.deepEqual(offenders, [],
     "these row(s) have no 'Verified open' evidence -- every row on this page must have been re-checked "
-    + `against HEAD before listing, per the orchestrator's own condition, not carried over from a stale `
-    + `record:\n${offenders.join("\n")}`);
+    + "against origin/main PLUS every unmerged agent/* branch before listing, per the reviewer's own "
+    + `condition, not carried over from a stale record:\n${offenders.join("\n")}`);
+});
+
+/**
+ * "VERIFIED OPEN AT HEAD" CANNOT SEE WORK FINISHED BUT UNMERGED -- the defect this page's first draft
+ * actually walked into: three of six originally-seeded rows were already closed by real, tested work
+ * sitting in unmerged local branches, and looked wide open from `origin/main` alone. The correction is a
+ * scope, not a wording change, so this checks the scope is actually STATED, not merely that some phrase
+ * appears.
+ */
+test("the page documents its verification scope as origin/main PLUS unmerged local branches, not HEAD alone", () => {
+  const source = read();
+  assert.match(source, /unmerged (local )?`?agent\/\*/i,
+    `${PATH} must state that verification covers unmerged local agent/* branches, not just origin/main -- `
+    + "the exact scope that let three already-closed rows through the first time");
+  // The narrow phrasing this page shipped with the first time, and the one thing that must not survive a
+  // read-through: "verified... at HEAD" with no qualification reads as origin/main alone.
+  assert.doesNotMatch(source, /re-verified OPEN at HEAD before being listed/,
+    `${PATH} still carries the narrow "verified at HEAD" claim that missed three closed rows -- the scope `
+    + "must name unmerged branches explicitly, not just the default branch");
+});
+
+/**
+ * THE CLAIM MECHANISM ITSELF: agent branches in this repo are never pushed, so `git branch -r --list
+ * 'origin/agent/*'` returns empty and would report every row unclaimed forever. This is not a wording
+ * preference -- a page that tells a reader to check the wrong git command is actively wrong, worse than
+ * one that says nothing, because it looks like a check that was performed.
+ */
+test("the claim-check instructions use the local branch/worktree form, never origin/agent/* as a live instruction", () => {
+  const source = read();
+  assert.match(source, /git branch --list 'agent\//,
+    `${PATH} must instruct checking LOCAL branches (git branch --list 'agent/...') -- this repo's agent `
+    + "branches are never pushed, so origin/agent/* is always empty");
+  // The broken form is allowed to appear ONLY as a named warning ("this always returns empty"), never as
+  // a fenced, runnable instruction -- the page explaining why NOT to use it is worth keeping; the page
+  // telling a reader to run it is the defect. Checked by requiring every mention to sit inside a sentence
+  // that also says the pattern is empty/wrong, and none of them to appear inside a fenced code block.
+  const mentions = [...source.matchAll(/origin\/agent\/\*/g)];
+  const inFencedBlock = (index: number) => {
+    const before = source.slice(0, index);
+    return (before.match(/```/g) ?? []).length % 2 === 1;
+  };
+  const offenders = mentions.filter((m) => {
+    const around = source.slice(Math.max(0, m.index! - 150), m.index! + 150);
+    return inFencedBlock(m.index!) || !/always returns empty|never|wrong/i.test(around);
+  });
+  assert.deepEqual(offenders.map((m) => source.slice(Math.max(0, m.index! - 40), m.index! + 40)), [],
+    `${PATH} mentions origin/agent/* somewhere that is not clearly marked as a warning against using it `
+    + "(either inside a fenced/runnable block, or with no nearby language saying it's empty/wrong) -- "
+    + "that reads as an instruction, and that pattern always returns empty on this repo");
+});
+
+/**
+ * THE VACUITY GUARD DISPATCHER ASKED FOR: proving the claim mechanism as DOCUMENTED actually returns a
+ * non-empty population when run for real, not just that the doc's wording looks right. A broken pattern,
+ * wrong cwd, or a repo with the branches renamed would make every row read "unclaimed" -- indistinguishable
+ * from a genuinely open queue unless something checks that the underlying git command finds ANYTHING.
+ */
+test("the local agent/* branch population the claim check depends on is non-empty, proven by running it", () => {
+  const repoRoot = resolve(process.cwd());
+  const output = execFileSync("git", ["branch", "--list", "agent/*"], { cwd: repoRoot, encoding: "utf8" });
+  const branches = output.split("\n").map((l) => l.replace(/^\*?\s*/, "").trim()).filter(Boolean);
+  assert.ok(branches.length > 0,
+    "git branch --list 'agent/*' returned no branches from this checkout -- either the pattern is wrong, "
+    + "the cwd is wrong, or this repo genuinely has none right now, and the claim-check instructions this "
+    + "page gives cannot be trusted to mean anything until this returns a real population");
 });
 
 /**
