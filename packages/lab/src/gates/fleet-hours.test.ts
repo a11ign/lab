@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { occupancyMs, scan, report } from "../../scripts/fleet-hours.mjs";
+import { occupancyMs, scan, report, METHOD } from "../../scripts/fleet-hours.mjs";
 
 /** A capture is billed on the LAST cumulative `atMs`, so a fixture needs marks that climb. */
 const marks = (...ms: number[]) => ms.map((atMs, i) => ({ event: `mark${i}`, atMs }));
@@ -102,4 +102,14 @@ test("an empty corpus bills nothing, which is what the CLI refuses on", () => {
   const found = scan(corpus({}));
   assert.equal(found.billed.length, 0);
   assert.equal(report(found).workerHours, 0);
+});
+
+test("the report EMITS its method, so nothing downstream has to retype it", () => {
+  // `docs/board/reported.json` records a method string beside every total. Typed there, it is this file's
+  // implementation stated twice with nothing comparing them — and its first version described summing
+  // per-case times from a progress-file field that does not exist. Emitting it deletes the copy.
+  const summary = report(scan(corpus({ "a.json": { diagnostics: marks(60_000) } })));
+  assert.equal(summary.method, METHOD);
+  assert.match(summary.method, /never wall clock/,
+    "the method must state what it is NOT — that is the half a reader gets wrong");
 });
