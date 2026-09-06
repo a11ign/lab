@@ -186,7 +186,13 @@ const DOCUMENTED: Record<string, string> = {
   "packages/lab/scripts/corpus-backup.mjs":
     "1 any of several precondition refusals, collapsed to one code",
   "packages/lab/scripts/corpus-snapshot.mjs":
-    "0 success; 2 nothing to snapshot",
+    "0 success; 2 nothing to snapshot OR the archive holds fewer JSON files than were on disk — it lists "
+    + "the archive back with `tar -tzf`, because `tar` exits 0 on a short one",
+  "packages/lab/scripts/corpus-release.mjs":
+    "0 the asset uploaded AND downloaded back with a matching JSON count; 1 the ROUND TRIP failed (fewer "
+    + "files = truncated, MORE = the tag names a different snapshot, which restores cleanly as the wrong "
+    + "corpus); 2 a USAGE refusal before anything is uploaded. 1 and 2 are deliberately apart: 2 means "
+    + "nothing was attempted, 1 means a backup exists and cannot be trusted",
   "packages/lab/scripts/everything-pipeline.mjs":
     "0 every stage succeeded; 1 any stage failed OR crashed for an unrelated reason — two causes share one "
     + "code via its own pipeline() helper, not verdict.mjs",
