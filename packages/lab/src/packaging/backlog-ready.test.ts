@@ -216,7 +216,7 @@ function regionPaths(region: string): string[] {
 function branchesTouchingPath(path: string, repoRoot: string): string[] {
   const output = execFileSync("git",
     ["log", "--branches=agent/*", "--not", "origin/main", "--format=%H%x09%S", "--", path],
-    { cwd: repoRoot, encoding: "utf8" });
+    { cwd: repoRoot, env: sandboxGitEnv(), encoding: "utf8" });
   return parseBranchesFromLog(output);
 }
 
@@ -277,7 +277,8 @@ test("region-diff only ever names branches that actually exist, checked against 
     if (!region) continue;
     for (const path of regionPaths(region)) {
       for (const branch of branchesTouchingPath(path, repoRoot)) {
-        const exists = execFileSync("git", ["branch", "--list", branch], { cwd: repoRoot, encoding: "utf8" }).trim();
+        const exists = execFileSync("git", ["branch", "--list", branch],
+          { cwd: repoRoot, env: sandboxGitEnv(), encoding: "utf8" }).trim();
         assert.ok(exists.length > 0,
           `region-diff for "${title}" named "${branch}" for ${path}, but no such local branch exists -- `
           + "the git-log --source parsing produced something that is not a real branch name");
