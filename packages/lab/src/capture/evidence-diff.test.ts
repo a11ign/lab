@@ -6,7 +6,34 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { compareCapture, summarise, readCapture, isUsableCapture } from "./evidence-diff.mjs";
+import { readdirSync, readFileSync as readFile, existsSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
+
+import { captureRoot, datasetRoot } from "../dataset-paths.mjs";
+
+import { compareCapture, summarise, readCapture, isUsableCapture, EVIDENCE_FIELDS, NOT_EVIDENCE_KEYS }
+  from "./evidence-diff.mjs";
+
+/**
+ * A sample of real captures, anchored on THIS FILE rather than `process.cwd()` — a cwd-relative corpus
+ * path reads a different corpus depending on where the runner was invoked from, and NONE when that is not
+ * the repo root, which a skip would then report as "no runs/ here".
+ */
+const CORPUS_DIR = captureRoot(datasetRoot());
+const CORPUS_SAMPLE = (() => {
+  if (!existsSync(CORPUS_DIR)) return [];
+  const out: { name: string; cap: unknown }[] = [];
+  for (const name of readdirSync(CORPUS_DIR).slice(0, 60)) {
+    if (!name.endsWith(".json")) continue;
+    try {
+      const parsed = JSON.parse(readFile(resolvePath(CORPUS_DIR, name), "utf8")) as { capture?: unknown };
+      out.push({ name, cap: parsed.capture ?? parsed });
+    } catch { continue; }
+  }
+  return out;
+})();
+const SKIP_NO_CORPUS = CORPUS_SAMPLE.length === 0
+  && "no runs/ here — the wall-clock-key sweep was NOT run, and this is a skip, not a pass";
 
 const capture = (over: Record<string, unknown> = {}) => ({
   transcript: ["heading, level 1, Museum 004 controls", "Print this report"],
@@ -331,4 +358,98 @@ test("a focus log differing in WHO or ORDER is still caught", () => {
     { interaction: { focusEvents: { asked: true, checked: true, log: reordered } } },
   ).verdict, "CHANGED", "ORDER is the whole of F55's signature — an orphaned focusout is defined by what "
     + "precedes it — so a reordered log must never read as SAME");
+});
+
+/**
+ * THE CLASS, NOT THE INSTANCE — added 2026-09-06 after fixing the same defect twice in one night.
+ *
+ * `baselineWaitedMs` made every form case compare unequal to itself; two hours later `atMs` did the same
+ * to every capture with a focus log, and `gate:stability` FAILED a recapture over it. Both are wall-clock
+ * values inside a COMPARED field. The first fix reached the instance and never asked what other compared
+ * field carries a timestamp — this repo's most expensive recurring shape, committed inside the commit
+ * describing it.
+ *
+ * So this walks REAL captures rather than trusting anyone's memory of the shape, and fails when a
+ * time-like numeric key appears in a compared subtree without being classified. A new probe recording
+ * `waitedMs` or `startedAt` is caught here instead of by a failed gate four hours into a recapture.
+ *
+ * DENY-LIST SEMANTICS ARE PRESERVED: this does not decide that a time-like key is noise, it decides that
+ * somebody must SAY. A key genuinely worth comparing goes in `TIME_LIKE_BUT_EVIDENCE` with its reason.
+ */
+test("every wall-clock key inside a COMPARED field is classified", { skip: SKIP_NO_CORPUS }, () => {
+  // Keys that LOOK like time and ARE evidence. Empty today, and it must stay possible to add one:
+  // a duration the page itself reports (an announced "3 minutes remaining") would belong here.
+  const TIME_LIKE_BUT_EVIDENCE = new Set<string>();
+
+  const suspicious = /(Ms$|At$|Time|Duration|Elapsed|Waited|Seconds)/;
+  const found = new Map<string, Set<string>>();
+  for (const { name, cap } of CORPUS_SAMPLE) {
+    for (const [group, field] of EVIDENCE_FIELDS) {
+      const walk = (node: unknown): void => {
+        if (Array.isArray(node)) { node.forEach(walk); return; }
+        if (!node || typeof node !== "object") return;
+        for (const [key, value] of Object.entries(node)) {
+          if (suspicious.test(key) && typeof value === "number") {
+            found.set(key, (found.get(key) ?? new Set()).add(`${group}.${field}`));
+          }
+          walk(value);
+        }
+      };
+      walk((cap as Record<string, Record<string, unknown>>)[group]?.[field]);
+    }
+    void name;
+  }
+
+  // WHY THIS SKIPS RATHER THAN FAILS ON AN EMPTY RESULT, and why a sibling test carries the proof.
+  //
+  // Finding nothing has two causes and only one is a defect: a corpus that PREDATES the keys (this
+  // laptop's copy is 89 hours old — 60 of 60 captures carry `formChanges` and NONE carries
+  // `baselineWaitedMs`, which was added later, and none carries `focusEvents` at all), or a sweep reading
+  // the wrong subtree. Nothing in the corpus itself separates them.
+  //
+  // So the sweep's own correctness is proved SYNTHETICALLY by the test below, which always runs, and this
+  // one reports honestly when there was nothing to look at. A guard that cannot fire on the input it was
+  // given must say so rather than pass — the distinction this whole file exists to keep.
+  if (found.size === 0) {
+    process.stdout.write("  wall-clock sweep found no time-like key in this corpus; it predates them. "
+      + "NOT a pass — see the synthetic sweep test for whether the sweep itself works.\n");
+    return;
+  }
+  const unclassified = [...found.entries()]
+    .filter(([key]) => !NOT_EVIDENCE_KEYS.has(key) && !TIME_LIKE_BUT_EVIDENCE.has(key))
+    .map(([key, fields]) => `${key} (in ${[...fields].join(", ")})`);
+  assert.deepEqual(unclassified, [],
+    "a wall-clock or duration key is being COMPARED as evidence. It will differ on every capture of every "
+    + "page, so its field compares unequal to itself and any gate reading it reports CHANGED or UNSTABLE "
+    + "whatever the code did. Add it to NOT_EVIDENCE_KEYS, or to TIME_LIKE_BUT_EVIDENCE with the reason "
+    + "it is genuinely worth comparing.");
+});
+
+test("the sweep itself WORKS — proved synthetically, so the corpus pass is meaningful", () => {
+  // The corpus sweep above skips when it finds nothing, because a corpus predating the keys and a sweep
+  // reading the wrong subtree look identical from inside it. This is what makes that skip honest rather
+  // than an excuse: the same walk, over a capture built to contain exactly one unclassified time-like key
+  // inside a compared field, must find it.
+  const suspicious = /(Ms$|At$|Time|Duration|Elapsed|Waited|Seconds)/;
+  const capture = { interaction: { formChanges: [
+    { control: "Send, button", kind: "submit", after: "", someNewProbeWaitedMs: 300 },
+  ] } } as Record<string, Record<string, unknown>>;
+
+  const found = new Set<string>();
+  for (const [group, field] of EVIDENCE_FIELDS) {
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) { node.forEach(walk); return; }
+      if (!node || typeof node !== "object") return;
+      for (const [key, value] of Object.entries(node)) {
+        if (suspicious.test(key) && typeof value === "number") found.add(key);
+        walk(value);
+      }
+    };
+    walk(capture[group]?.[field]);
+  }
+  assert.ok(found.has("someNewProbeWaitedMs"),
+    "the walk did not reach a time-like key inside `interaction.formChanges` — so the corpus sweep above "
+    + "would report a clean result having examined nothing");
+  assert.equal(NOT_EVIDENCE_KEYS.has("someNewProbeWaitedMs"), false,
+    "and it must be UNCLASSIFIED, or this proves only that the deny-list contains what it contains");
 });

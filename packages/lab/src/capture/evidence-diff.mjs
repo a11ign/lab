@@ -122,7 +122,7 @@ function normalise(phrase) {
  * this gate goes quietly blind to it -- which is the original defect. Every exclusion is a timing or
  * bookkeeping value with a stated reason, and `evidence-fields.test.ts` requires that.
  */
-const NOT_EVIDENCE_KEYS = new Set([
+export const NOT_EVIDENCE_KEYS = new Set([
   // How long we waited for quiet before acting. A property of this run, not of the page.
   "baselineWaitedMs",
   // WHEN a focus event fired, in milliseconds since capture start. Every entry of `focusEvents.log`
