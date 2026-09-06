@@ -158,15 +158,30 @@ test("no count in the prose is typed; each is driven by the data it claims to re
   // satisfied the `some()`. Proved by mutation: reinstating the typed "Six" left this test green. That is
   // a guard reading the right document in the wrong place, which is this project's defect of record, in
   // the test written to catch it.
-  const md = decisionSections(documentWith({ strays: 731, merges: 947, open: 613, closed: 829 }));
-  const expectations: [string, number, RegExp][] = [
-    ["changes with the wrong author", 731, /wrong author/i],
-    ["merges in the window", 947, /changes saved since midnight|merges made since/i],
-    ["work blocking the release", 613, /pieces of work must finish|blocking that release/i],
+  const whole = documentWith({ strays: 731, merges: 947, open: 613, closed: 829 });
+  const md = decisionSections(whole);
+  // THE WRONG-AUTHOR EXPECTATION IS GONE, AND ITS ABSENCE IS THE HONEST OUTCOME.
+  //
+  // That count moved to the appendix on 2026-09-06 -- disclosed, but changing no decision, so it left the
+  // risks table -- and in doing so it left PROSE ENTIRELY: it now appears only in the generated numbers
+  // table. First this check went vacuous (its keyword matched nothing in the body, and the vacuity guard
+  // said so). Then, rescoped to the whole document, it PASSED A MUTATION: hardcoding the prose changed
+  // nothing, because the table's own value satisfied the `some()`.
+  //
+  // A check that cannot fail is worse than no check, so it is removed rather than left looking like
+  // cover. There is nothing left to type wrongly for this figure -- which is the better fix and the
+  // reason the coverage loss is acceptable.
+  // ONLY COUNTS THAT APPEAR IN PROSE. The merge count and the wrong-author count both moved to the
+  // appendix's generated table, where the value is `String(d.x.length)` and there is no prose to type
+  // wrongly -- an expectation on them passes whatever the prose says, which is cover rather than a check.
+  // These two are the counts a person could still type by hand, in the two sentences that carry them.
+  const expectations: [string, number, RegExp, string][] = [
+    ["work blocking the release", 613, /pieces of work must finish/i, md],
+    ["work needing no board decision", 613, /needs a board decision/i, md],
   ];
   const bad: string[] = [];
-  for (const [what, value, where] of expectations) {
-    const lines = md.split("\n").filter((l) => where.test(l));
+  for (const [what, value, where, scope] of expectations) {
+    const lines = scope.split("\n").filter((l) => where.test(l));
     assert.ok(lines.length > 0, `no line in the document mentions ${what}; this check is vacuous`);
     if (!lines.some((l) => l.includes(String(value)))) {
       bad.push(`${what}: the document reports something other than ${value} — `
