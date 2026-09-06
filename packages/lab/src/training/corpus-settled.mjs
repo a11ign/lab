@@ -33,6 +33,7 @@ import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import { readProgress, isStale } from "./capture-progress.mjs";
+import { datasetRoot, captureRoot, realCorpusRoot } from "../dataset-paths.mjs";
 
 /** Below this a corpus with NO self-report is treated as still being written. The fallback, not the rule. */
 export const SETTLED_AFTER_MINUTES = 10;
@@ -115,6 +116,40 @@ export function corpusState({ datasetRoots = [], evidenceDirs = [], now = Date.n
 }
 
 /**
+ * How many CAPTURES are in these directories — the presence test, and it must not be `existsSync(runs/)`.
+ *
+ * **A `runs/` THAT EXISTS IS NOT A CORPUS, and the test suite creates exactly that.**
+ * `emit-unclosable-vetoes.mjs` writes `resolve(runsRoot(), "unclosable-vetoes.json")`, so running the suite
+ * on a machine with no corpus MAKES a `runs/` containing one report. Every check testing presence with
+ * `existsSync` then sees a corpus, its honest absent-skip never fires, and it measures an empty one.
+ *
+ * Measured 2026-09-06 in a merge worktree with the corpus symlink removed: the suite went green, was run
+ * again unchanged, and gave four failures — because the first run had created `runs/`. Same code, same
+ * tree, two answers, and the cause was the suite rather than the fleet. It reproduces on any machine with
+ * no corpus, which includes a fresh clone and CI.
+ *
+ * Counting captures rather than asking whether the directory exists is what makes the stub indistinguishable
+ * from absent, which is what it should have been all along: a directory holding one emitted report has no
+ * evidence in it, and "no evidence here" is the same answer either way.
+ *
+ * @param {string[]} dirs
+ * @returns {number}
+ */
+export function captureCount(dirs) {
+  let found = 0;
+  for (const dir of dirs) {
+    let entries;
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const entry of entries) if (entry.endsWith(".json")) found += 1;
+  }
+  return found;
+}
+
+/**
  * MAY A TEST READ THE CORPUS RIGHT NOW? — the question every corpus-reading check has to ask before it
  * measures anything, and until 2026-09-06 not one of them did.
  *
@@ -178,4 +213,33 @@ export function corpusReadable({
  */
 export function skipLine({ state, why }) {
   return `    skipped: ${state === "absent" ? "no corpus to read" : "a capture is writing runs/"} — ${why}`;
+}
+
+/**
+ * `corpusReadable` over the roots a lab check actually reads — so eleven callers cannot spell "the corpus"
+ * eleven ways.
+ *
+ * BOTH CORPORA, deliberately. Some checks read the dataset captures, some the real-page corpus, and a few
+ * read both; but a capture run writes whichever it was pointed at, and a check cannot generally say which
+ * of its inputs a given run is touching. Asking about both is the conservative direction: the cost of a
+ * needless skip is one deferred check, and the cost of the other mistake is a measurement of a moving
+ * target reported as fact.
+ *
+ * Safe to import from `dataset-paths.mjs` here — that module imports only `node:url` and `node:path`, so
+ * there is no cycle, and `capture-progress.mjs` likewise imports neither of us.
+ *
+ * @param {{present?: boolean, now?: number}} options
+ * @returns {{read: boolean, state: "settled"|"absent"|"in-flight"|"abandoned", why: string}}
+ */
+export function labCorpusReadable({ present, now = Date.now() } = {}) {
+  const dataset = datasetRoot();
+  const evidenceDirs = [captureRoot(dataset), realCorpusRoot()];
+  return corpusReadable({
+    datasetRoots: [dataset, realCorpusRoot()],
+    evidenceDirs,
+    // COUNTED, not `existsSync`, when the caller does not already know. See `captureCount`: the suite
+    // writes one report into `runs/` and a directory check then reports a corpus that is not there.
+    present: present ?? captureCount(evidenceDirs) > 0,
+    now,
+  });
 }

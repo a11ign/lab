@@ -86,6 +86,13 @@ const EXEMPT: Record<string, string> = {
     "A single-capture, human-driven diagnostic (`npm run capture:explain -- <id>`) -- a person reading one "
     + "capture's own outcome, not a corpus-wide judgement a mixed population could poison. It does not "
     + "compute anything ACROSS captures the way the other readers do.",
+  "packages/lab/src/training/corpus-settled.mjs":
+    "It reads the directory to answer whether the corpus is SETTLED, never to compute a finding from what "
+    + "is in it: `captureCount` counts .json files to tell an empty runs/ from a real corpus, and "
+    + "`minutesSinceLastWrite` takes the newest mtime. Neither opens a capture or compares one to another, "
+    + "so there is no population to mix ages across -- and this file is the thing that REFUSES a corpus "
+    + "being written underneath a reader, which is the neighbouring failure rather than this one. It was "
+    + "discovered here the moment it started scanning the real-page root, which is this guard working.",
 };
 
 test("the discovery walk finds a realistic slice of packages/lab's own source", () => {

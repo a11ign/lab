@@ -7,10 +7,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { corpusState, SETTLED_AFTER_MINUTES } from "./corpus-settled.mjs";
+import { corpusState, SETTLED_AFTER_MINUTES, corpusReadable, skipLine, captureCount } from "./corpus-settled.mjs";
 import { progressPath } from "./capture-progress.mjs";
 
 const NOW = Date.parse("2026-08-26T12:00:00.000Z");
@@ -97,4 +97,67 @@ test("every audit carrying this guard uses the shared check", () => {
     assert.ok(!/const SETTLED_AFTER_MINUTES\s*=/.test(source),
       `${script} must not keep its own copy of the window — three copies is how they drift`);
   }
+});
+
+/**
+ * `corpusReadable` — the four states a corpus-reading check can meet, and why each needs its own answer.
+ *
+ * 1 absent, 2 in-flight, 3 stale-but-settled (a separate row: the guard must NOT suppress it), and
+ * 4 present-but-a-stub, which the test suite creates itself by writing one report into `runs/`.
+ */
+const MOVING = { startedAt: "2026-09-06T10:00:00.000Z", updatedAt: "2026-09-06T10:00:30.000Z" };
+
+function rootWithProgress(progress: object): string {
+  const root = mkdtempSync(join(tmpdir(), "corpus-readable-"));
+  writeFileSync(join(root, "capture-progress.json"), JSON.stringify(progress));
+  return root;
+}
+
+test("a MOVING corpus is not read, and the skip NAMES the capture as the reason", () => {
+  const root = rootWithProgress(MOVING);
+  const verdict = corpusReadable({
+    datasetRoots: [root], evidenceDirs: [root], present: true,
+    now: Date.parse("2026-09-06T10:00:35.000Z"),
+  });
+  assert.equal(verdict.read, false);
+  assert.equal(verdict.state, "in-flight");
+  assert.match(verdict.why, /capture run is in flight/);
+  // The SENTENCE, not just the boolean. A skip that does not say which of the reasons it was is the
+  // silent skip this guard replaces — the remedy wearing the defect's clothes.
+  assert.match(skipLine(verdict), /skipped: a capture is writing runs\//);
+});
+
+test("a SETTLED corpus is READ — a skip that fires always is a check that never runs", () => {
+  const root = rootWithProgress({ ...MOVING, finishedAt: "2026-09-06T10:05:00.000Z" });
+  const verdict = corpusReadable({ datasetRoots: [root], evidenceDirs: [root], present: true });
+  assert.equal(verdict.read, true, "the whole point is that it still checks when nothing is moving");
+  assert.equal(verdict.state, "settled");
+});
+
+test("ABSENT and MOVING are different skips, with different words", () => {
+  const settled = rootWithProgress({ ...MOVING, finishedAt: "2026-09-06T10:05:00.000Z" });
+  const absent = corpusReadable({ datasetRoots: [settled], evidenceDirs: [settled], present: false });
+  const moving = corpusReadable({
+    datasetRoots: [rootWithProgress(MOVING)], evidenceDirs: [], present: false,
+    now: Date.parse("2026-09-06T10:00:35.000Z"),
+  });
+  assert.equal(absent.state, "absent");
+  assert.equal(moving.state, "in-flight");
+  assert.notEqual(absent.why, moving.why);
+  // MOVING WINS OVER ABSENT when both could apply, and the order is load-bearing: a capture writing its
+  // first files into an empty corpus looks absent to a caller that has not found anything yet, and
+  // reporting that as "no corpus here" is the temporary case wearing the permanent one's clothes.
+  assert.match(skipLine(absent), /no corpus to read/);
+  assert.match(skipLine(moving), /a capture is writing/);
+});
+
+test("a runs/ holding one emitted report is NOT a corpus — the stub the suite writes itself", () => {
+  // `emit-unclosable-vetoes.mjs` writes one file into `runs/`, so running the suite where no corpus exists
+  // CREATES a directory that `existsSync` reports as a corpus. Counting captures is what keeps the stub
+  // indistinguishable from absent, which is what it is.
+  const stub = mkdtempSync(join(tmpdir(), "corpus-stub-"));
+  writeFileSync(join(stub, "unclosable-vetoes.json"), "{}");
+  assert.equal(captureCount([join(stub, "screenreader-dataset", "captures")]), 0,
+    "one report at the root of runs/ is not a capture, and must not be counted as evidence");
+  assert.ok(existsSync(stub), "the directory really does exist -- which is exactly why existsSync fails here");
 });
