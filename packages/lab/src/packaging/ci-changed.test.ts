@@ -9,6 +9,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -176,4 +177,49 @@ test("lint.yml, ansible-check.yml and changeset-check.yml are retired, not merel
     assert.throws(() => readWorkflow(retired), /ENOENT/,
       `${retired} still exists on disk -- it was meant to be folded into ci.yml and removed`);
   }
+});
+
+/**
+ * `gate` IS THE ONE CONTEXT BRANCH PROTECTION MAY REQUIRE, not the five scoped jobs above it -- see
+ * `ci.yml`'s own header. Requiring `ts`/`python`/`ansible`/`docs`/`changeset` directly means a required
+ * check with no run against a docs-only PR's commit, and GitHub treats a job SKIPPED by its own `if:` as
+ * satisfying a required check only because it still posts a real check run concluding `skipped` -- an
+ * implicit platform behaviour, not a fact this repo's own tests can see. `gate` computes the identical
+ * answer explicitly and is what these tests pin.
+ */
+test("ci.yml has a gate job needing every scoped job, running even when one of them failed", () => {
+  const doc = parseYaml(readWorkflow("ci.yml")) as { jobs: Record<string, { needs?: unknown; if?: string }> };
+  const gate = doc.jobs.gate;
+  assert.ok(gate, "ci.yml must declare a job named 'gate' -- branch protection has nothing else it can "
+    + "require that reports on every PR regardless of which path-scoped jobs a diff happened to trigger");
+  assert.deepEqual([...gate.needs as string[]].sort(),
+    ["ansible", "changed", "changeset", "docs", "python", "ts"].sort(),
+    "gate must need every other job in this file, or a job could fail silently with gate still passing");
+  assert.equal(gate.if, "always()",
+    "gate must run with if: always() -- without it, a failing upstream job would SKIP gate too (a job's "
+    + "default if is success() on its dependencies), and the one context branch protection requires would "
+    + "then report nothing on exactly the commit most in need of a red mark");
+});
+
+test("PROOF: gate's own check fails when a needed job's result is neither success nor skipped", () => {
+  // Extracts the real shell loop from ci.yml's gate job (never re-typed) and drives it with each of the
+  // four real GitHub Actions job-result values, proving the loop actually discriminates rather than
+  // merely looking like it does.
+  const workflow = readWorkflow("ci.yml");
+  const loopMatch = /for result in \\[\s\S]*?\n\s*done/.exec(workflow);
+  assert.ok(loopMatch, "could not find gate's result-checking loop in the real workflow to drive");
+
+  const runWith = (results: string[]) => {
+    const script = loopMatch[0]
+      .replace(/"\$\{\{ needs\.\w+\.result \}\}"/g, () => `"${results.shift()}"`)
+      + "\necho LOOP_OK";
+    return execFileSync("bash", ["-c", script], { encoding: "utf8" });
+  };
+
+  assert.equal(runWith(["success", "success", "skipped", "success", "skipped", "success"]).trim(), "LOOP_OK",
+    "all success/skipped must pass -- this is the ordinary shape of a docs-only or single-package PR");
+  assert.throws(() => runWith(["success", "failure", "skipped", "success", "skipped", "success"]),
+    /Command failed/, "a single 'failure' among the six must fail the loop, or gate cannot do its job");
+  assert.throws(() => runWith(["success", "cancelled", "skipped", "success", "skipped", "success"]),
+    /Command failed/, "'cancelled' must also fail the loop -- an aborted run is not a passed one");
 });
