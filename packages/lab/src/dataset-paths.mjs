@@ -1,9 +1,15 @@
 // @ts-check
 /**
- * The one resolution of `runs/` and its dataset artefacts. `lab` has no workspace dependents (nothing in
- * this repo imports `@a11y-witness/lab`), so a change scoped to this file alone is the LEAF case for
- * `ci.yml`'s `testPackages` scoping (#175) -- `testPackages` degrades to exactly `["lab"]`, the narrowest
- * possible run.
+ * The one resolution of `runs/` and its dataset artefacts.
+ *
+ * THIS COMMENT USED TO CLAIM `lab` HAS NO WORKSPACE DEPENDENTS, AND THAT IS WRONG -- #175, corrected
+ * before the PR that measured it had even finished merging, on dispatcher's own read of the actual CI
+ * run. `packages/cli`'s `package.json` depends on `@a11y-witness/lab` (a real, if unusual, workspace
+ * dependency running the OPPOSITE direction from `lab -> cli`, which is also real -- the two packages
+ * depend on EACH OTHER), so a change scoped to this file resolves `testPackages = ["cli", "lab"]`, not
+ * `["lab"]` alone. `nvda-speech` is the only genuinely zero-dependent package in this workspace, and it
+ * has no TypeScript source at all (Python-only), so there is no leaf case with real TS content to measure
+ * here -- `[cli, lab]` is the smallest real `testPackages` fan-out this repo can produce.
  *
  * Before this existed, the repo-root computation `fileURLToPath(new URL("../../../", import.meta.url))`
  * was pasted into roughly a dozen scripts, each counting ".." segments to ITS OWN depth in the tree —
