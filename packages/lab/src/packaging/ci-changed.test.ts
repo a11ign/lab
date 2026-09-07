@@ -591,9 +591,25 @@ test("ci.yml has a gate job needing every scoped job, running even when one of t
   const gate = doc.jobs.gate;
   assert.ok(gate, "ci.yml must declare a job named 'gate' -- branch protection has nothing else it can "
     + "require that reports on every PR regardless of which path-scoped jobs a diff happened to trigger");
-  assert.deepEqual([...gate.needs as string[]].sort(),
-    ["acceptance", "ansible", "board", "changed", "changeset", "docs", "mergeSafety", "python", "rulesFitness", "ts"].sort(),
+  // DERIVED FROM THE FILE, NEVER A LITERAL. This assertion carried a hand-typed job list until #356 added
+  // `ownedPaths`, and a literal answers "does gate need the jobs somebody typed here", which is not the
+  // question -- the question is whether it needs the jobs this workflow ACTUALLY declares.
+  const scopedJobs = Object.keys(doc.jobs).filter((name) => name !== "gate");
+  assert.deepEqual([...gate.needs as string[]].sort(), scopedJobs.sort(),
     "gate must need every other job in this file, or a job could fail silently with gate still passing");
+
+  // AND `needs:` IS ONLY HALF OF IT -- the gap #356 fell into, and the reason this is asserted rather than
+  // read. Naming a job in `needs:` makes gate WAIT for it; it does not make gate FAIL for it. The verdict
+  // is the shell loop below, which reads `needs.<job>.result` one job at a time, so a job present in
+  // `needs:` and absent from the loop is waited for and then ignored -- gate goes green on its failure.
+  // Two lists of the same fact with nothing comparing them, which is this repo's most expensive shape.
+  const loop = /for result in \\[\s\S]*?\n\s*done/.exec(readWorkflow("ci.yml"));
+  assert.ok(loop, "could not find gate's result-checking loop in the real workflow");
+  const checked = [...loop[0].matchAll(/needs\.([\w-]+)\.result/g)].map((m) => m[1]);
+  assert.deepEqual([...checked].sort(), [...gate.needs as string[]].sort(),
+    "every job gate NEEDS must also have its result READ by gate's loop. A job in `needs:` but not in the "
+    + "loop is one gate waits for and never judges, so its failure leaves gate green -- which is exactly "
+    + "the silent pass the whole job exists to prevent.");
   assert.equal(gate.if, "always()",
     "gate must run with if: always() -- without it, a failing upstream job would SKIP gate too (a job's "
     + "default if is success() on its dependencies), and the one context branch protection requires would "
