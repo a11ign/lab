@@ -10,16 +10,54 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync, writeFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { classify, knownPackages } from "../../../../scripts/ci-changed.mjs";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOWS = `${REPO}.github/workflows/`;
 const readWorkflow = (name: string) => readFileSync(`${WORKFLOWS}${name}`, "utf8");
+/**
+ * A disposable two-commit repo, so `--base=<first commit>` has something real to diff against without
+ * depending on THIS repo's own history depth. `HEAD~1` failed exactly this way in CI (#156): the `ts` job's
+ * checkout has no `fetch-depth: 0` (only `changed` needs full history, to diff a real PR), so the runner's
+ * shallow clone has no commit before `HEAD` at all -- `git diff HEAD~1...HEAD` is `fatal: ambiguous
+ * argument`, not an empty diff. A fixture with its own two commits cannot be shallow.
+ */
+function twoCommitRepo() {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "ci-changed-cli-")));
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: dir, env: sandboxGitEnv(), encoding: "utf8" });
+  git("init", "--quiet", "-b", "main");
+  git("config", "user.email", "t@example.invalid");
+  git("config", "user.name", "Fixture");
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x", workspaces: ["packages/*"] }));
+  git("add", "package.json");
+  git("commit", "-q", "-m", "base");
+  const base = git("rev-parse", "HEAD").trim();
+  writeFileSync(join(dir, "README.md"), "changed\n");
+  git("add", "README.md");
+  git("commit", "-q", "-m", "a change to classify");
+  return { dir, base };
+}
+// GITHUB_OUTPUT UNSET, DELIBERATELY -- caught by CI itself running THIS test inside a real Actions job:
+// `writeOutputs()` appends to that file instead of printing to stdout whenever it is set, so a test that
+// merely inherits the ambient environment captures nothing to assert on there while passing everywhere
+// else. Deleted rather than passed as `undefined` through `sandboxGitEnv`'s `extra` (typed
+// `Record<string, string>`) -- `execFileSync` itself treats an `undefined` value as "omit this key"
+// (verified: `"X" in process.env` is false in the child), but the type would not let it in.
+const cliEnv = () => {
+  const env = sandboxGitEnv();
+  delete env.GITHUB_OUTPUT;
+  return env;
+};
+const runCliIn = (dir: string, args: string[]) =>
+  execFileSync("node", [join(REPO, "scripts/ci-changed.mjs"), `--repo=${dir}`, ...args],
+    { cwd: dir, env: cliEnv(), encoding: "utf8" });
 
 test("classify: a docs-only change fires only the docs category", () => {
   const result = classify(["docs/known-gaps.md", "README.md"], ["lab", "judge"]);
@@ -121,22 +159,63 @@ test("knownPackages finds the real repo's workspace directories, and refuses a s
 });
 
 // -------------------------------------------------------------------------------------------------------
+// #156: THE CLI ITSELF, spawned for real. `classify()` above is pure and never sees `--event`/`--base` at
+// all, so the flag validation and the base-shape guard can only be proven by actually running the script.
+// -------------------------------------------------------------------------------------------------------
+
+test("CLI: --event=merge_group classifies, it does not refuse", () => {
+  // Acceptance step 3, verbatim: a merge_group event with a real base must be treated exactly like a
+  // pull_request one, not rejected for using the newer event name.
+  const { dir, base } = twoCommitRepo();
+  try {
+    const out = runCliIn(dir, ["--event=merge_group", `--base=${base}`]);
+    assert.match(out, /^ts=(true|false)$/m, "expected classification output, got: " + out);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("CLI: an empty base (the unhandled merge_group shape) is refused by NAME, not left to crash on git", () => {
+  // The exact trap ci.yml's own `base` step comment documents: an unhandled empty `github.base_ref`
+  // arrives here as a bare "origin/" once the workflow's own string concatenation has run. Proven against
+  // the REAL CLI rather than only against `classify()`, because the guard lives in `main()`, which
+  // `classify()`'s own tests structurally cannot reach.
+  const { dir } = twoCommitRepo();
+  try {
+    assert.throws(() => runCliIn(dir, ["--event=merge_group", "--base=origin/"]),
+      /empty or a bare prefix/, "a bare 'origin/' base must be refused by name, not crash inside git");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("CLI: --event=push is still refused -- widening to merge_group must not silently widen further", () => {
+  const { dir, base } = twoCommitRepo();
+  try {
+    assert.throws(() => runCliIn(dir, ["--event=push", `--base=${base}`]),
+      /--event must be "pull_request" or "merge_group"/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// -------------------------------------------------------------------------------------------------------
 // THE TRIGGER TABLE. `.github/workflows/on:` blocks, pinned so a future accidental trigger addition (the
 // exact shape point 5 of the CI rebuild names: "mutation-checked by adding a pull_request trigger to
 // action-smoke") fails here rather than costing real Windows minutes on every PR again.
 // -------------------------------------------------------------------------------------------------------
 
-test("ci.yml triggers on pull_request ONLY -- no push trigger at all, on main or anywhere else", () => {
+test("ci.yml triggers on pull_request AND merge_group -- no push trigger at all, on main or anywhere else", () => {
   // Chairman's direction, 2026-09-06: the flow is PR then merge, and a check that runs after a merge
   // cannot stop it -- a `push: branches: [main]` trigger is a gate with the barn door already open.
   // Branch protection (checks green AND up to date with main) is what makes the tested commit the one
   // that lands, so NOTHING here may run post-merge.
+  //
+  // #156: merge_group must sit ALONGSIDE pull_request, never in place of it -- a PR still needs its own
+  // run before it can be added to the queue at all, and GitHub's own docs are explicit that a merge queue
+  // whose workflow lacks this trigger times every queued entry out silently, with no error anywhere.
   const doc = parseYaml(readWorkflow("ci.yml"));
   assert.ok(doc.on.pull_request, "ci.yml must trigger on pull_request -- that is the whole of the rebuild");
+  assert.ok(doc.on.merge_group, "ci.yml must ALSO trigger on merge_group, or a merge queue times every "
+    + "entry out silently -- #156");
   assert.ok(!("push" in doc.on),
     "ci.yml must not trigger on push at all -- a check that runs after the merge cannot stop it");
-  assert.equal(Object.keys(doc.on).length, 1,
-    `ci.yml declares triggers ${Object.keys(doc.on).join(", ")} -- only pull_request is expected`);
+  assert.equal(Object.keys(doc.on).length, 2,
+    `ci.yml declares triggers ${Object.keys(doc.on).join(", ")} -- only pull_request and merge_group are expected`);
 });
 
 test("action-smoke.yml and capture-regression.yml trigger on workflow_call and workflow_dispatch only", () => {
