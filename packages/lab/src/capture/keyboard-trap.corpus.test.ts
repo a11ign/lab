@@ -25,7 +25,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { ruleFindings } from "@a11y-witness/judge/rules";
+import { ruleFindings } from "@a11ign/judge/rules";
 // The plain-node corpus module, deliberately not built. No `@ts-expect-error` is needed: `case-matrix.mjs`
 // carries `// @ts-check` as of today, so its exports are typed and `tsc` refuses a suppression that
 // suppresses nothing.

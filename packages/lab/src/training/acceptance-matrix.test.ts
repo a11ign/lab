@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 
 import { ACCEPTANCE_CASES, ALL_ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
 import { CASES, SIGNAL_TYPES } from "./case-matrix.mjs";
-import { WCAG_22_AA } from "@a11y-witness/evidence/wcag";
+import { WCAG_22_AA } from "@a11ign/evidence/wcag";
 
 const criteria = new Set(WCAG_22_AA.map((c) => c.num));
 

@@ -4259,7 +4259,7 @@ export {
   signalMatches,
 } from "./signal-predicates.mjs";
 
-// `evidenceUnits` and `captureEvidenceText` MOVED to `@a11y-witness/scorer/evidence-units`.
+// `evidenceUnits` and `captureEvidenceText` MOVED to `@a11ign/scorer/evidence-units`.
 //
 // They define the model's input contract -- which capture field becomes evidence, under which channel name
 // -- and the featurizer embeds the channel name as tokens in every feature vector, versioned by
@@ -4269,4 +4269,4 @@ export {
 // that needed units for REAL pages wrote its own and the two silently disagreed on seven channel names.
 // Re-exported rather than repointed at every call site, because `signalMatches` and `CASES` come from here
 // too and one import per consumer is the smaller change.
-export { evidenceUnits, captureEvidenceText } from "@a11y-witness/scorer/evidence-units";
+export { evidenceUnits, captureEvidenceText } from "@a11ign/scorer/evidence-units";

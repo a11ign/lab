@@ -13,7 +13,7 @@
 // Neither judge-side function is exported -- both are called only through `ruleFindings`, so this drives
 // the SHIPPED entry point rather than reaching into module internals; same for `signalMatches` on the lab
 // side. Same import shape as `media-signal-parity.test.ts`: `../../../judge/src/rules.js` by RELATIVE
-// PATH, resolving to TypeScript SOURCE, never `@a11y-witness/judge/rules` (which resolves to `dist` and
+// PATH, resolving to TypeScript SOURCE, never `@a11ign/judge/rules` (which resolves to `dist` and
 // would defeat the point of a test that exists to catch drift between two files).
 //
 // DO NOT CHANGE EITHER IMPLEMENTATION HERE. This pins them equal; it does not unify them -- the package

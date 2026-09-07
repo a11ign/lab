@@ -29,7 +29,7 @@
 import { REAL_PAGES } from "../src/training/real-page-corpus.mjs";
 import { createHostThrottle, hostOf } from "../src/training/host-throttle.mjs";
 import { pathToFileURL } from "node:url";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 
 /**
  * `--json` for a machine, `--timeout=` for a slow host.
@@ -72,7 +72,7 @@ async function landsAt(url) {
       signal: controller.signal,
       // A default fetch UA gets a different page from some of these sites, which would report a move
       // the capture does not see. This is the closest honest approximation of the capture's browser.
-      headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) a11y-witness/corpus-urls" },
+      headers: { "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) a11ign/corpus-urls" },
     });
     return { final: response.url, status: response.status };
   } catch (error) {

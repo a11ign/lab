@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# The feature pipeline lives with the WEIGHTS, in `@a11y-witness/scorer`, not here — a change to it
+# The feature pipeline lives with the WEIGHTS, in `@a11ign/scorer`, not here — a change to it
 # invalidates every weight file that does not carry the new `FEATURE_SCHEMA_VERSION`, so the two must version
 # together (ADR 0004). This program is the only consumer that also trains; it is deliberately not published,
 # because distributing a trainer implies a consumer can reproduce training and they cannot: the corpus is not
@@ -871,7 +871,7 @@ def main() -> None:
     development_indices = split_indices["train"] + split_indices["validation"]
     weights = {}
     report: dict[str, Any] = {
-        "schema": "a11y-witness/screenreader-scorer-training",
+        "schema": "a11ign/screenreader-scorer-training",
         "encoder": {"path": str(args.encoder), "hiddenSize": dimension, "modelSha256": sha256(encoder_file)},
         "representation": {
             "schema": FEATURE_SCHEMA_VERSION,

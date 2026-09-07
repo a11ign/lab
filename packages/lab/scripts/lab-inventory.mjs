@@ -58,7 +58,7 @@
 import { readdirSync, readFileSync, statSync, existsSync, openSync, readSync, closeSync } from "node:fs";
 import { resolve, join, basename } from "node:path";
 import { pathToFileURL } from "node:url";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, runsRoot, realCorpusRoot, datasetRoot } from "../src/dataset-paths.mjs";
 import { corpusState } from "../src/training/corpus-settled.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";

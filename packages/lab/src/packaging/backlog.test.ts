@@ -91,6 +91,9 @@ test("the top of the file says it is a RECORD, not the tracker -- the banner can
     "the first 12 lines of docs/backlog.md no longer say the file is a RECORD -- this is how it read as "
     + "the tracker for four days after GitHub Issues took over, and it is exactly this line moving out of "
     + "the first screen that would let it happen again");
+  // NOT `/a11ign\/issues/` -- docs/backlog.md is one of #66's explicit exclusions (it is historical
+  // narrative, never rewritten to match the present), so its banner correctly still points at the repo's
+  // pre-rename location.
   assert.match(head, /github\.com\/DanBeckDev\/a11y-witness\/issues/i,
     "the banner must say WHERE the tracker actually is, not only that this file is not it -- a reader who "
     + "learns 'not here' with nowhere to go next is back to inferring, which is the defect this file was "

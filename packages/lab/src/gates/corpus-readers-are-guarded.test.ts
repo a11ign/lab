@@ -60,7 +60,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 
-import { stripComments } from "@a11y-witness/evidence/source-text";
+import { stripComments } from "@a11ign/evidence/source-text";
 
 import { REPO_ROOT } from "../dataset-paths.mjs";
 
@@ -99,15 +99,15 @@ const SELF = "packages/lab/src/gates/corpus-readers-are-guarded.test.ts";
  */
 const UNGUARDED_BY_CYCLE: Record<string, string> = {
   "packages/evidence/src/announcement.corpus.test.ts":
-    "@a11y-witness/evidence is the zero-dependency package lab itself depends on; importing corpus-settled.mjs "
+    "@a11ign/evidence is the zero-dependency package lab itself depends on; importing corpus-settled.mjs "
     + "would invert the whole dependency graph. Same direction as its dataset-paths EXEMPT entry.",
   "packages/evidence/src/wire-types-describe-the-wire.test.ts":
     "Same cycle as its sibling in evidence, and already EXEMPT in dataset-paths.test.ts for that reason.",
   "packages/judge/src/channel-tables-4.1.2.test.ts":
-    "@a11y-witness/lab depends on @a11y-witness/judge, so judge cannot import corpus-settled.mjs without a "
+    "@a11ign/lab depends on @a11ign/judge, so judge cannot import corpus-settled.mjs without a "
     + "cycle -- the same direction its own dataset-paths EXEMPT entry already records.",
   "packages/nvda-worker/src/capture-pure.corpus.test.ts":
-    "@a11y-witness/lab depends on @a11y-witness/nvda-worker; same cycle, same direction as its existing "
+    "@a11ign/lab depends on @a11ign/nvda-worker; same cycle, same direction as its existing "
     + "dataset-paths EXEMPT entry.",
   "packages/cli/src/cli.test.ts":
     "Reads the corpus through an accessor and skips honestly when it is absent, but sits outside lab, so it "

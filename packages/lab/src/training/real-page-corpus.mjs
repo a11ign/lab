@@ -92,7 +92,7 @@
  * (2016/2102) and US Section 508 have equivalents. Almost all of them say "partially compliant" with an
  * enumerated list of failures, because they are being honest. That reads like a disqualification and is not:
  *
- *   1. Does the exception list name any criterion `SCORED_CRITERIA` (`@a11y-witness/judge/coverage`) lists
+ *   1. Does the exception list name any criterion `SCORED_CRITERIA` (`@a11ign/judge/coverage`) lists
  *      -- a head is actually fitted for it? If not, the page is effectively FULLY claimed for our purposes
  *      and `clean` is the source's assertion across every head. Verified example: gov.scot is "partially
  *      compliant with WCAG 2.2 AA", and its exceptions are PDF documents and a menu button at 200%
@@ -561,7 +561,7 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   // So: one page each, and `family` defaults to the page id so every publisher is its own structure.
   //
   // `claimExcludes` is the intersection of the statement's OWN enumerated failures with `SCORED_CRITERIA`
-  // (@a11y-witness/judge/coverage) -- the criteria a head is fitted for. Those heads see nothing from this
+  // (@a11ign/judge/coverage) -- the criteria a head is fitted for. Those heads see nothing from this
   // page; the rest take it as clean. Where a claim is unclear or unquantified the whole set is excluded --
   // structure only, asserting nothing.
   { url: "https://www.financial-ombudsman.org.uk/businesses/resolving-complaint/ombudsman-decisions", role: "training",

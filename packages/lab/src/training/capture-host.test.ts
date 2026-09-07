@@ -8,7 +8,7 @@ import { nonAuthoritativeHostNotice, LAB_REPO_PATH } from "./capture-host.mjs";
  * ever stated is a battery guard's refusal, which is how it came to be answered with `--allow-battery`
  * rather than understood. A guard that fires without explaining what it protects gets overridden.
  */
-const laptop = { cwd: "/Users/someone/repos/a11y-witness", servesPages: true };
+const laptop = { cwd: "/Users/someone/repos/a11ign", servesPages: true };
 
 test("a driving host is told it is load-bearing, and told what the lab command is", () => {
   const notice = nonAuthoritativeHostNotice(laptop)!;

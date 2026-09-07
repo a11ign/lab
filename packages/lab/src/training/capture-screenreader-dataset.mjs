@@ -7,12 +7,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { setTimeout as sleep } from "node:timers/promises";
-import { leaseWorker, leaseWorkerPool, guestReachableUrl, isAfterRun } from "@a11y-witness/worker-fleet";
-import { requestJson } from "@a11y-witness/worker-fleet/worker-http";
-import { configuredWorkers, inventoryWorkerUrls } from "@a11y-witness/worker-fleet/fleet-env";
-import { captureTolerantly as tolerantCapture } from "@a11y-witness/worker-fleet/capture-client";
-import { assertFleetRunsThisCheckout } from "@a11y-witness/worker-fleet/worker-code-check";
-import { titleOf } from "@a11y-witness/evidence/verify";
+import { leaseWorker, leaseWorkerPool, guestReachableUrl, isAfterRun } from "@a11ign/worker-fleet";
+import { requestJson } from "@a11ign/worker-fleet/worker-http";
+import { configuredWorkers, inventoryWorkerUrls } from "@a11ign/worker-fleet/fleet-env";
+import { captureTolerantly as tolerantCapture } from "@a11ign/worker-fleet/capture-client";
+import { assertFleetRunsThisCheckout } from "@a11ign/worker-fleet/worker-code-check";
+import { titleOf } from "@a11ign/evidence/verify";
 import {
   isEvidence, rejectionReason, runOutcome, shouldRetireWorker,
 } from "./capture-decisions.mjs";
@@ -22,7 +22,7 @@ import { drainAcrossPool } from "./worker-pool.mjs";
 import { previouslyCaptured } from "./capture-resume.mjs";
 import { leasePageServer } from "./page-server.mjs";
 import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.mjs";
-import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
 import { datasetRoot, captureRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 import { captureFilePath, rejectedCaptureFilePath } from "../capture/evidence-diff.mjs";
@@ -440,7 +440,7 @@ async function waitForWorker(/** @type {any} */ worker) {
 /**
  * One capture, tolerant of the worker disappearing underneath it.
  *
- * THE RECOVERY LIVES IN `@a11y-witness/worker-fleet`'s `capture-client.mjs` NOW (moved there from
+ * THE RECOVERY LIVES IN `@a11ign/worker-fleet`'s `capture-client.mjs` NOW (moved there from
  * `packages/lab` on architecture-audit.md §5, item 6, so `packages/cli` could reach it too). This file
  * held the only implementation for months while nine other modules POSTed to `/capture` with none -- the
  * remedy-at-one-call-site shape this repo pays for most often. Two copies of a subtle protocol (404 means

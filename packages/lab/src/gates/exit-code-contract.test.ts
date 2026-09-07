@@ -51,7 +51,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { stripComments } from "@a11y-witness/evidence/source-text";
+import { stripComments } from "@a11ign/evidence/source-text";
 
 /**
  * THE REPOSITORY ROOT, NOT A CORPUS ROOT — and the distinction is load-bearing enough to state.

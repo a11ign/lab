@@ -2,7 +2,7 @@
 /**
  * Promote a trained candidate to the shipped weights — and write the changeset that says so.
  *
- * **Promoting a model IS a release of `@a11y-witness/scorer`.** ADR 0007 is explicit that the weights are
+ * **Promoting a model IS a release of `@a11ign/scorer`.** ADR 0007 is explicit that the weights are
  * that package's API and that any retrain is a MAJOR: a consumer's build goes from passing to failing with
  * no code change. So this is not a file copy that happens to precede a release; it is the release action,
  * and it belongs in the same machinery as every other package rather than beside it.
@@ -33,7 +33,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { releasability } from "../src/packaging/releasability.mjs";
 import { dirtyTargets, promotionBlockedBy } from "../src/packaging/promotion-targets.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 
 /**
  * the most dangerous silent default here: a mistyped `--dry-run` PROMOTES.
@@ -234,7 +234,7 @@ export function promote({ candidate, candidateName, dryRun = false, acceptRegres
   const { training, acceptance } = assertPromotable(candidate, shippedReport, shippedAcceptance,
     acceptRegression);
   const entry = `---
-"@a11y-witness/scorer": major
+"@a11ign/scorer": major
 ---
 
 Retrained scorer weights (\`${candidateName}\`).
@@ -280,7 +280,7 @@ ${acceptRegression ? "\n**Accepted with a known regression against the previousl
   process.stdout.write(`Promoted ${candidateName}.\n`
     + `  weights   -> ${SHIPPED}\n  changeset -> ${target}\n\n`
     + "Nothing is committed and nothing is published. Review both, then commit them together — the\n"
-    + "changeset is what makes this a MAJOR release of @a11y-witness/scorer rather than a silent swap.\n");
+    + "changeset is what makes this a MAJOR release of @a11ign/scorer rather than a silent swap.\n");
   return { target, entry };
 }
 
