@@ -12,6 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -85,6 +86,10 @@ test("README.md does not hardcode docs/coverage.md's generated criterion count",
   assert.doesNotMatch(README, /\d+ of 55 produce findings/,
     "README.md states a hardcoded \"N of 55\" count again -- read it from docs/coverage.md instead, or "
     + "this will silently drift from it exactly as the deleted copy did");
+  // docs/coverage.md is GENERATED and DELIBERATELY UNTRACKED (issue #158) -- regenerated here rather than
+  // read off disk, since a fresh checkout has no committed copy to read.
+  execFileSync("npx", ["tsx", "packages/lab/scripts/generate-coverage-doc.ts"],
+    { cwd: REPO, encoding: "utf8", stdio: "pipe" });
   const coverage = readFileSync(join(REPO, "docs/coverage.md"), "utf8");
   assert.match(coverage, /\d+ of 55 produce findings/,
     "docs/coverage.md no longer states its own count in the expected shape -- the generator or the test "
