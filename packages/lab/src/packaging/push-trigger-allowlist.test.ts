@@ -34,6 +34,10 @@ const PUSH_TO_MAIN_ALLOWLIST: Record<string, string> = {
     + "GitHub's 60-day scheduled-workflow disable, which is the exact failure this checks for",
   "npm-token-liveness.yml": "sibling watchdog for the first-publish NPM_TOKEN (#73); same reasoning as "
     + "board-liveness.yml, same immunity requirement",
+  "workflow-run-liveness.yml": "watchdog asking whether the pull request that produced a commit already "
+    + "on main was actually tested (#118); a push-triggered check about a commit that has ALREADY merged "
+    + "cannot itself run pre-merge on that PR, and needs the same immunity to the 60-day schedule-disable "
+    + "problem board-liveness.yml does",
 };
 
 const triggersOnPushToMain = (doc: unknown): boolean => {
@@ -61,9 +65,9 @@ test("every workflow triggering on push to main is on the closed allowlist, with
     + "same way board-liveness.yml is, add it to the allowlist here with that argument written out.");
 });
 
-test("the allowlist names exactly the two known watchdogs -- a shrinking or silently-growing list is a signal", () => {
+test("the allowlist names exactly the three known watchdogs -- a shrinking or silently-growing list is a signal", () => {
   assert.deepEqual(Object.keys(PUSH_TO_MAIN_ALLOWLIST).sort(),
-    ["board-liveness.yml", "npm-token-liveness.yml"]);
+    ["board-liveness.yml", "npm-token-liveness.yml", "workflow-run-liveness.yml"]);
 });
 
 // STRUCTURAL PROOF that each allowlisted entry is actually a watchdog and not a gate wearing the allowlist

@@ -232,6 +232,30 @@ function claimExcludesFor(/** @type {any} */ entry) {
 }
 
 /**
+ * The criteria this page's publisher actually claims — the unit a false-assertion RATE is over.
+ *
+ * PER CELL, because per PAGE is not comparable across pages that claim different amounts. A publisher
+ * disclosing six of our eight criteria has a quarter of the chances to be counted wrong that a
+ * fully-claiming publisher has, so a per-page rate mixes "how often we are wrong" with "how much was
+ * claimed".
+ *
+ * That non-comparability is why partially-claimed pages were barred from calibration entirely — and the bar
+ * cost the calibration set its diversity: 19 pages from 5 publishers, 12 of them one publisher's design
+ * system, and that was the sample EVERY real-page number in this project rested on. Every false accusation
+ * found on 2026-08-24 was a page from it.
+ *
+ * A cell is one (page, criterion) the publisher actually claims, so a masked page and an unmasked one
+ * contribute on the same terms and the bar can be lifted.
+ */
+export function testedCells(/** @type {any} */ page) {
+  const disclosed = new Set((page.claimExcludes ?? []).map((/** @type {any} */ entry) => entry.split(":")[0]));
+  return SCORED_CRITERIA.filter((criterion) => !disclosed.has(criterion)).length;
+}
+
+/** Read from the report, never hardcoded: a retrain can move which criteria have heads. */
+const SCORED_CRITERIA = ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"];
+
+/**
  * Findings a publisher's own statement CONTRADICTS. Those are the accusations.
  *
  * A finding is only a false positive on a criterion the publisher positively CLAIMS. Three cases, and they
@@ -268,30 +292,6 @@ function claimExcludesFor(/** @type {any} */ entry) {
  *
  * @param {{predicted: string[], claimExcludes?: string[]}} page
  */
-/**
- * The criteria this page's publisher actually claims — the unit a false-assertion RATE is over.
- *
- * PER CELL, because per PAGE is not comparable across pages that claim different amounts. A publisher
- * disclosing six of our eight criteria has a quarter of the chances to be counted wrong that a
- * fully-claiming publisher has, so a per-page rate mixes "how often we are wrong" with "how much was
- * claimed".
- *
- * That non-comparability is why partially-claimed pages were barred from calibration entirely — and the bar
- * cost the calibration set its diversity: 19 pages from 5 publishers, 12 of them one publisher's design
- * system, and that was the sample EVERY real-page number in this project rested on. Every false accusation
- * found on 2026-08-24 was a page from it.
- *
- * A cell is one (page, criterion) the publisher actually claims, so a masked page and an unmasked one
- * contribute on the same terms and the bar can be lifted.
- */
-export function testedCells(/** @type {any} */ page) {
-  const disclosed = new Set((page.claimExcludes ?? []).map((/** @type {any} */ entry) => entry.split(":")[0]));
-  return SCORED_CRITERIA.filter((criterion) => !disclosed.has(criterion)).length;
-}
-
-/** Read from the report, never hardcoded: a retrain can move which criteria have heads. */
-const SCORED_CRITERIA = ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"];
-
 export function contradictedFindings(/** @type {any} */ page) {
   const disclosed = new Set((page.claimExcludes ?? []).map((/** @type {any} */ entry) => entry.split(":")[0]));
   return page.predicted.filter((/** @type {any} */ criterion) => !disclosed.has(criterion));

@@ -10,6 +10,34 @@
  * repo and reused as author on 15 commits, six of them real work already on `origin/main`. **A closed
  * row created the exposure.**
  *
+ * ## IT CAUGHT TWO AUTHORS IN ONE HOUR, 2026-09-07, AND THE TWO CASES ARE DIFFERENT
+ *
+ * A guard that catches two independent authors in an hour has earned the sentence, and the second case is
+ * not the one it looks like.
+ *
+ * The FIRST is the case this test was written for: a new `gitCommonDir()` spawn (#201) that simply did not
+ * route through the helper. Caught, fixed by routing it, done.
+ *
+ * The SECOND (#204) was not a careless author. `sandboxGitEnv` HAD been written on all three of that
+ * change's spawns and verified by a green full suite — **it never reached the commit.** `git add` had run
+ * before those edits, and `git commit` with no path arguments commits the INDEX, so the older staged
+ * version went in while the working tree's fixes stayed behind. **This test caught a commit that did not
+ * contain the fix its author had already written and verified.**
+ *
+ * ## The diagnostic rule underneath it, which generalises well past this test
+ *
+ * **A green local suite and a red CI on the same "commit" is the signal that the thing tested and the
+ * thing committed are not the same object.** `npm test` reads the WORKING TREE; CI reads the COMMIT. When
+ * those two disagree about what is supposedly identical code, the OBJECT is what differs — and nothing in
+ * either output says so. The natural reading is "the guard found something I missed", and on #204 that
+ * reading was wrong and cost a round trip.
+ *
+ * CLAUDE.md records the mirror image — *"`git commit -- <paths>` commits from the WORKING TREE — a staged
+ * path not listed is silently dropped"*. This is the other door: **stage, then edit, then commit without
+ * paths, and the edit is dropped instead.** Both are the index and the working tree disagreeing while every
+ * tool reports success about the half it happens to read. It belongs beside that line in CLAUDE.md and is
+ * recorded here meanwhile, because that file is behind the authority ruling with four other units.
+ *
  * Three test files (`pre-commit-hook`, `promotion-refuses-dirty`, `lab-reset-removal`) were where the
  * corruption left evidence, because they write. But eleven git-shelling tests existed, and read-only
  * ones are not exempt: a redirected `git status`/`git ls-files`/`git branch --list` does not corrupt
