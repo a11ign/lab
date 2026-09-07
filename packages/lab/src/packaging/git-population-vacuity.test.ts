@@ -129,6 +129,31 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
     guard: "files.length >= MIN_TRACKED_MARKDOWN_FILES",
     note: "guarded — `git ls-files '*.md'` for the repo-wide leak sweep, floored at 50 tracked files",
   },
+  "packages/lab/src/packaging/criterion-list-duplication.test.ts": {
+    guard: "candidates(read, sourceFiles()).length >= 3",
+    note: "guarded — #120's census of files holding a criterion list beside the canonical one, walked "
+      + "via `git ls-files packages`. The floor is the three known members (the canonical source, one "
+      + "justified subset, and the tracked stale copy in #136); fewer means the detection patterns have "
+      + "stopped matching real files rather than the duplication being fixed. Its three positive "
+      + "controls drive the detector against sources built in the test, so the shape is pinned even if "
+      + "the repository population were to empty entirely.",
+  },
+  "packages/worker-fleet/src/entry-points.test.ts": {
+    guard: "declared.length >= 85",
+    note: "guarded — #211's FORM population, walked via `git ls-files`: every tracked source declaring "
+      + "`import.meta.url ===`. Floored at 85 against 93 today, and deliberately a DIFFERENT population "
+      + "from the same file's `entryPoints()` discovery, which enumerates invocation sources and is "
+      + "inherently incomplete. Two populations in one file answering two questions: whether a guard has "
+      + "the right FORM (the file declares itself, complete) and whether a file NEEDS one (the sources, "
+      + "not complete). This entry covers the first; the second has no floor because there is no honest "
+      + "number to floor it at.",
+  },
+  "packages/lab/src/packaging/tracked-source-leak-guard.test.ts": {
+    guard: "files.length >= MIN_TRACKED_SOURCE_FILES",
+    note: "guarded — `git ls-files '*.mjs' '*.ts' '*.py' '*.ps1' '*.sh' '*.yml'` for #83's source-comment "
+      + "leak sweep (the sibling `tracked-prose-leak-guard.test.ts` above was scoped to `.md` only), "
+      + "floored at 500 tracked files",
+  },
 };
 
 test("MUTATION: without the SELF exclusion, this file would discover itself", () => {

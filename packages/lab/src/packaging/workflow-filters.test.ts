@@ -1,17 +1,17 @@
 /**
- * A path-filtered workflow must still fire on the code it exists to test.
- *
  * `capture-regression.yml` runs the capture checks on a REAL Windows runner — the only automated place NVDA
- * actually runs. It is path-filtered so doc edits do not spend Windows minutes, and that filter said
- * `src/capture/**`. When M8 rewrote paths mechanically it became `packages/lab/src/capture/**`: a directory
- * holding two lab files and no capture code at all.
+ * actually runs. It used to be path-filtered on a push to `main` so doc edits did not spend Windows minutes,
+ * and this file used to pin that filter against the worker and training packages after M8's mechanical path
+ * rewrite silently narrowed it to a directory holding no capture code at all.
  *
- * Nothing would have failed. The job would simply have stopped firing on worker changes and kept firing on
- * unrelated ones — a check that silently stops running, which is strictly worse than one that fails, and is
- * this repo's most repeated defect in a new costume.
+ * RELEASE-TIME ONLY SINCE 2026-09-06 (chairman's direction): the workflow left `push`/`pull_request` entirely
+ * for `workflow_call`/`workflow_dispatch`, called unconditionally as a job from `release.yml` against the
+ * exact shipping sha. There is no path filter left to pin — it does not trigger on a diff at all, so "does the
+ * filter cover the worker package" is not a question this file could mean any more. See
+ * `workflow-path-coverage.test.ts`'s `NOT_A_GATE` entry for the same fact stated there.
  *
- * So the property is asserted rather than commented: the filter must cover the worker package, and the harness
- * it runs must exist at the path the workflow names.
+ * What survives: a moved harness still makes the job fail with MODULE_NOT_FOUND on the runner, so checking the
+ * referenced paths exist is still worth doing here, cheaply, before spending Windows minutes to find out.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -21,17 +21,6 @@ import { join } from "node:path";
 
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
 const workflow = readFileSync(join(root, ".github/workflows/capture-regression.yml"), "utf8");
-
-test("the Windows capture job fires on changes to the worker package", () => {
-  assert.ok(workflow.includes('"packages/nvda-worker/**"'),
-    "capture-regression.yml must be filtered on the worker package, or it stops testing the capture path "
-    + "without anyone noticing");
-  // And on the training code, because a probe and its signal are coupled: `case-matrix.mjs` decides what each
-  // signal reads, so a change there can blind a probe without touching the worker — which is exactly where the
-  // guard bug lived that failed 44 cases in a live run.
-  assert.ok(workflow.includes('"packages/lab/src/training/**"'),
-    "a probe and its signal are coupled; the filter must cover the training code too");
-});
 
 test("every program the capture workflow runs exists at the path it names", () => {
   // A moved harness makes the job fail on the runner with MODULE_NOT_FOUND — visible, but only after spending

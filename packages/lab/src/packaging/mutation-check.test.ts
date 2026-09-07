@@ -15,6 +15,13 @@ import path from "node:path";
  * The fixture is deliberately trivial: a file holding a number, and a "test" that greps for it. Using a
  * real source file and a real test suite would make this slow and would couple it to whatever that suite
  * happens to assert today.
+ *
+ * `perl -pi -e`, not `sed -i ''` -- this file used the latter until it was the first thing in this repo
+ * to actually run `packages/lab/src/packaging/*.test.ts` on Linux CI (the `ts`/`docs` jobs split out of
+ * one earlier-failing job that had never reached this far). BSD sed's `-i` needs an explicit backup-
+ * suffix argument (`''` for none); GNU sed's does not, so it read the empty string as the sed SCRIPT and
+ * the real script as a FILENAME -- `sed: can't read s/42/99/: No such file or directory`. perl's `-i` has
+ * no such split between platforms.
  */
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const SCRIPT = path.join(REPO, "scripts/mutation-check.mjs");
@@ -39,7 +46,7 @@ function fixture(): string {
 test("exit 0 when the guard bites: clean passes, mutated fails, restored passes", () => {
   const file = fixture();
   const { code, out } = check([`--file=${file}`,
-    `--mutate=sed -i '' 's/42/99/' ${file}`, `--test=grep -q 'is 42' ${file}`]);
+    `--mutate=perl -pi -e 's/42/99/' ${file}`, `--test=grep -q 'is 42' ${file}`]);
   assert.equal(code, 0, out);
   assert.match(out, /THE GUARD BITES/);
   assert.equal(readFileSync(file, "utf8"), "the answer is 42\n",
@@ -50,7 +57,7 @@ test("exit 1 when the guard does NOT bite, and it says to suspect the guard firs
   const file = fixture();
   // The mutation changes a part the test does not look at.
   const { code, out } = check([`--file=${file}`,
-    `--mutate=sed -i '' 's/answer/question/' ${file}`, `--test=grep -q 'is 42' ${file}`]);
+    `--mutate=perl -pi -e 's/answer/question/' ${file}`, `--test=grep -q 'is 42' ${file}`]);
   assert.equal(code, 1, out);
   assert.match(out, /THE GUARD DID NOT BITE/);
   assert.match(out, /SUSPECT THE GUARD BEFORE THE CODE/);
@@ -67,7 +74,7 @@ test("exit 2 when the mutation changes nothing, because a no-op pass reads as a 
 
 test("exit 2 when the test is already failing, and nothing is touched", () => {
   const file = fixture();
-  const { code, out } = check([`--file=${file}`, `--mutate=sed -i '' 's/42/99/' ${file}`,
+  const { code, out } = check([`--file=${file}`, `--mutate=perl -pi -e 's/42/99/' ${file}`,
     "--test=false"]);
   assert.equal(code, 2, out);
   assert.match(out, /ALREADY FAILING/);

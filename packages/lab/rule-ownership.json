@@ -145,7 +145,19 @@
         "",
         "The corroborating signal was chosen against a measurement rather than by reasoning. 'Nothing was",
         "announced' is the obvious one and would never have fired: the failing page announced 'visited',",
-        "NVDA reporting the link's own state."
+        "NVDA reporting the link's own state.",
+        "",
+        "#253: 'decidedBy: rules' answers OWNERSHIP (which layer decides this subtype), and is independent",
+        "of conformance MAPPING (whether it asserts or refers) -- act-rules.ts already maps this ACT rule",
+        "'secondary', so it reports cantTell, never an assertion, and always has. A row opened against this",
+        "entry read the two as the same fact and concluded the tool was asserting from a proxy; it was not.",
+        "The real, remaining cost is a false REFERRAL: a consent overlay switching panels, a link opening a",
+        "new tab, or a modal opening all read identically to a route change under the 'first heading",
+        "changed' proxy, spending a person's attention on page furniture. `addStaleRouteTitle` now declines",
+        "on two of those three shapes using evidence NVDA itself provides -- a link announced as opening",
+        "elsewhere, or a heading inside a `dialog` container (CONTAINER_ROLES) -- never on inferring a page",
+        "shape from its content. #142 (open, unscheduled) is the only path to a general fix; this reduces",
+        "false referrals without claiming to close the class."
       ]
     },
     "2.4.3:focus-order-scrambled": {

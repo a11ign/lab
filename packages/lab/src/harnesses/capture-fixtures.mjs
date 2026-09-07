@@ -2,8 +2,8 @@
 /**
  * Recapture eval fixtures — over a live worker, or in-process on the capture guest.
  *
- *     npm run eval:capture -- --worker=http://REDACTED-INTERNAL-ADDRESS:8765 --set=tutorials
- *     npm run eval:capture -- --worker=http://REDACTED-INTERNAL-ADDRESS:8765 --only=menus
+ *     npm run eval:capture -- --worker=http://192.0.2.10:8765 --set=tutorials
+ *     npm run eval:capture -- --worker=http://192.0.2.10:8765 --only=menus
  *     npm run eval:capture -- --set=books            # in-process; guest only, interactive session
  *
  * ## Why a worker mode exists

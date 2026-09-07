@@ -57,9 +57,14 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
 
 const PACKAGE_SCRIPTS = JSON.parse(read("package.json")).scripts as Record<string, string>;
-const LAB_JOBS = (parseYaml(read("packages/control/ansible/lab-job.yml")) as Array<
+// THE PLAY THAT HOLDS THE CATALOGUE, FOUND BY WHAT IT HOLDS — and NOT `?? {}`, which is the worse half
+// of the old form: indexing the wrong play yielded an EMPTY job map, so every check below would have
+// passed having examined nothing. That is this file's own subject, in this file's own reader.
+const LAB_JOB_PLAYS = parseYaml(read("packages/control/ansible/lab-job.yml")) as Array<
   { vars?: { lab_jobs?: Record<string, { argv?: unknown }> } }
->)[0].vars?.lab_jobs ?? {};
+>;
+const LAB_JOBS = LAB_JOB_PLAYS.flatMap((p) => (p?.vars?.lab_jobs ? [p.vars.lab_jobs] : []))[0];
+if (!LAB_JOBS) throw new Error("lab_jobs not found in lab-job.yml — this guard is parsing the wrong shape");
 
 /** Same regex `exit-code-contract.test.ts` and `lab-job.test.ts` use — copied deliberately, not imported. */
 const DERIVED_VERDICT = /\b(gateVerdict|fleetVerdict)\(/;
@@ -108,6 +113,13 @@ const HAS_INCONCLUSIVE_DOCUMENTED: Record<string, string> = {
     + "— this is the FOUNDING incident this whole file generalises: it once exited 0 on 2 of 48 captures "
     + "compared, and `docs/gate-exit-codes.md`/`verdict.mjs`'s own header both name it explicitly. Reaches "
     + "the wire via `evidence-diff.mjs`'s `inconclusive = compared === 0 || compared < attempted`.",
+  "packages/lab/scripts/corpus-snapshot.mjs":
+    "DOCUMENTED: \"2 the archive holds fewer JSON files than were on disk\" — a real population check, and "
+    + "the one place in this repo where a partial population is the WHOLE risk rather than a caveat. It "
+    + "counts `.json` under every archived root, lists the archive back with `tar -tzf`, and refuses on a "
+    + "shortfall naming both numbers. Added 2026-09-06 after this file's own header recorded a 417 MB "
+    + "snapshot extracting to 4,959 of 5,445 files with `tar` exiting 0 — mutation-checked by removing the "
+    + "sibling roots again, which reproduces 4,959 against 5,397 and exits 2.",
 };
 
 /**
@@ -117,6 +129,12 @@ const HAS_INCONCLUSIVE_DOCUMENTED: Record<string, string> = {
  * either always-true-by-construction or not-the-right-question for that script.
  */
 const NO_PARTIAL_POPULATION: Record<string, string> = {
+  "packages/lab/scripts/corpus-backup.mjs":
+    "NO POPULATION OF EVIDENCE: it copies ONE archive — the newest file `corpus-snapshot` wrote — to a "
+    + "destination and reads its size back. Its population is a single artifact, so 'did it see "
+    + "everything' is not the right question; 'did the one thing arrive intact' is, and that is what it "
+    + "asks. The corpus-completeness question belongs one step earlier, to `corpus-snapshot.mjs` above, "
+    + "which is where it is now guarded. Both `corpus-backup` and `corpus-backup-verify` run this file.",
   "packages/lab/src/harnesses/capture-check.mjs":
     "NO EXTERNAL POPULATION: `CHECKS` is a fixed literal list in `capture-check.mjs` and the run iterates "
     + "ALL of it (`for (const check of CHECKS)`), so there is nothing it could examine fewer of. A check "

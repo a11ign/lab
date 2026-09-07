@@ -1,11 +1,6 @@
 {
   "why": "Pages this gate CANNOT examine, each with the reason and the condition that removes it. A page listed here leaves the DENOMINATOR, so the run can be conclusive about what it did examine instead of INCONCLUSIVE for ever about what it could not. It is a stated exclusion, never a permanent one: `unexaminable.test.ts` requires every entry to carry both `reason` and `removedWhen`, and `check-real-page-findings.ts` PRINTS every entry on every run, so an exclusion cannot sit here unread. An unusable page that is NOT listed here still makes the run inconclusive -- which is what stops this file becoming a way to launder a failure into a pass.",
   "pages": {
-    "https://tfl.gov.uk/modes/tube/": {
-      "reason": "The site redirects: the capture landed on https://tfl.gov.uk/tube-dlr-overground/status/#windrush, not the requested URL, so no CDP target could be confirmed as the page and the census reads as ABSENT to every rule. Its consent banner also blocks the read-through, which is a second, independent reason and the only page where that is still true.",
-      "removedWhen": "`sameDocument` can tell a REDIRECT from a genuinely different document -- see the agent/same-document-redirect design. Scheduled to ride the next capture-path change rather than costing its own recapture.",
-      "declaredAt": "2026-09-06"
-    },
     "https://www.w3.org/WAI/demos/bad/after/survey.html": {
       "reason": "The site rewrites its own extension: the capture landed on survey.php, not the requested survey.html. It IS the requested page, under a URL `sameDocument` cannot recognise as the same document, so the census is refused.",
       "removedWhen": "The same `sameDocument` fix. This page is the cheapest possible test of it: same document, different extension, no redirect chain.",

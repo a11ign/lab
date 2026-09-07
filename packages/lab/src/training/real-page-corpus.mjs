@@ -41,11 +41,17 @@
  *
  *   - The tutorial pages are DOCUMENTATION about accessibility, not applications. They are real pages with
  *     real structure, which is what the scorer has never seen — but nobody checks out of a tutorial.
- *   - It began as W3C's own and now spans 41 publishers, but they are overwhelmingly UK public sector and
+ *   - It began as W3C's own and now spans 42 publishers, but they are overwhelmingly UK public sector and
  *     design-system pages, which share a house style: measured, the GOV.UK Design System components all
  *     land within 0.005 of each other on the novelty score (~0.79). One legacy ASP.NET page sits at 0.4633,
  *     far outside everything else — that is the shape of structure the corpus still has never seen.
- *   - 77 pages across 41 publishers, of which **74 are claimed conformant and 3 inaccessible**. That
+ *   - CORRECTED 2026-09-06 (#33): this said "W3C or UK government" for long enough that the real count —
+ *     41 publishers — went unnoticed as evidence against its own premise. The substantive concern survives
+ *     the correction: every one of those 41 was still UK public sector, a UK university, or W3C, because
+ *     the methodology's own "EU (2016/2102) and US Section 508 have equivalents" line had never actually
+ *     been used. First non-UK entry added the same day: european-union.europa.eu, under the EU's own
+ *     Web Accessibility Directive mandate — the identical legal-obligation mechanism, one jurisdiction over.
+ *   - 78 pages across 42 publishers, of which **75 are claimed conformant and 3 inaccessible**. That
  *     imbalance is the real limit, and it is worse than it looks — see the note below on what the three
  *     actually contain. It is enough to calibrate a threshold; it is not enough to demonstrate that the
  *     scorer detects real-world failures.
@@ -86,13 +92,17 @@
  * (2016/2102) and US Section 508 have equivalents. Almost all of them say "partially compliant" with an
  * enumerated list of failures, because they are being honest. That reads like a disqualification and is not:
  *
- *   1. Does the exception list name any criterion WE score (1.1.1, 1.3.1, 2.4.4, 2.4.6, 3.3.1, 3.3.2,
- *      4.1.2, 4.1.3)? If not, the page is effectively FULLY claimed for our purposes and `clean` is the
- *      source's assertion across every head. Verified example: gov.scot is "partially compliant with WCAG
- *      2.2 AA", and its exceptions are PDF documents and a menu button at 200% magnification -- neither is
- *      a criterion we assess, so the intersection is EMPTY.
+ *   1. Does the exception list name any criterion `SCORED_CRITERIA` (`@a11y-witness/judge/coverage`) lists
+ *      -- a head is actually fitted for it? If not, the page is effectively FULLY claimed for our purposes
+ *      and `clean` is the source's assertion across every head. Verified example: gov.scot is "partially
+ *      compliant with WCAG 2.2 AA", and its exceptions are PDF documents and a menu button at 200%
+ *      magnification -- neither is a criterion we assess, so the intersection is EMPTY.
  *   2. Otherwise, put the intersection in `claimExcludes`. Verified example: the ONS statement names 1.3.1,
- *      2.4.4, 2.4.6, 3.3.1, 3.3.2 and 4.1.2 -- six of our eight -- so an ONS page is masked for six heads.
+ *      2.4.4, 2.4.6, 3.3.1, 3.3.2 and 4.1.2 -- six of `SCORED_CRITERIA` -- so an ONS page is masked for six
+ *      heads. **Deliberately not a fixed count here** -- this said "eight" long enough to go stale by more
+ *      than double (`SCORED_CRITERIA` grew to seventeen; #33 corrected the count and the corpus test that
+ *      had independently hardcoded the same stale eight, `real-page-corpus.test.ts`'s own history of this
+ *      exact defect shape, one file over) -- the count lives in `SCORED_CRITERIA.length`, never restated.
  *
  * **A heavily masked page is still fully useful**, and that is what makes the pool large. Its evidence
  * enters the OOD reference, which is what buys structural familiarity and is the entire point of the
@@ -102,9 +112,9 @@
  * That inverts the search. It is not "find publishers claiming full compliance" -- those turn out to be
  * almost entirely accessibility-led DOCUMENTATION sites (W3C's tutorials, the GOV.UK Design System, the
  * NHS service manual: all verified, all real, all sharing the homogeneity this tier exists to break). It is
- * "any public sector body", masked honestly. And our eight are all SCREEN-READER criteria while the typical
- * public-sector failure list is dominated by contrast, PDFs, resize and target size -- so the intersection
- * is frequently empty anyway.
+ * "any public sector body", masked honestly. And `SCORED_CRITERIA` is all SCREEN-READER criteria while the
+ * typical public-sector failure list is dominated by contrast, PDFs, resize and target size -- so the
+ * intersection is frequently empty anyway.
  *
  * Mask at SITE level, conservatively. A statement usually scopes its failures to specific features ("the
  * interactive polls", "the NSDP data links") and we cannot attribute those per page, so a page without the
@@ -550,23 +560,24 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   // 14 extra pages inside six existing families bought +0.004; the +0.11 came from the structures.
   // So: one page each, and `family` defaults to the page id so every publisher is its own structure.
   //
-  // `claimExcludes` is the intersection of the statement's OWN enumerated failures with the eight
-  // criteria we score. Those heads see nothing from this page; the rest take it as clean. Where a
-  // claim is unclear or unquantified the whole set is excluded -- structure only, asserting nothing.
+  // `claimExcludes` is the intersection of the statement's OWN enumerated failures with `SCORED_CRITERIA`
+  // (@a11y-witness/judge/coverage) -- the criteria a head is fitted for. Those heads see nothing from this
+  // page; the rest take it as clean. Where a claim is unclear or unquantified the whole set is excluded --
+  // structure only, asserting nothing.
   { url: "https://www.financial-ombudsman.org.uk/businesses/resolving-complaint/ombudsman-decisions", role: "training",
-    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"],
+    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "4.1.2", "4.1.3"],
     source: "Financial Ombudsman Service: partially compliant, own statement (https://financial-ombudsman.org.uk/accessibility-statement)",
     demonstrates: "ombudsman decision search" },
   { url: "https://www.nls.uk/join/", role: "training",
-    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2"],
+    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "4.1.2"],
     source: "National Library of Scotland: partially compliant, own statement (https://nls.uk/web-accessibility-statement/)",
     demonstrates: "library membership form" },
   { url: "https://www.leeds.ac.uk/undergraduate", role: "training",
-    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2"],
+    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "4.1.2"],
     source: "University of Leeds: partially compliant, own statement (https://leeds.ac.uk/accessibility)",
     demonstrates: "undergraduate course prospectus" },
   { url: "https://tfl.gov.uk/plan-a-journey/", role: "training",
-    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "3.3.1", "3.3.2", "4.1.2", "4.1.3"],
+    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "3.3.1", "4.1.2", "4.1.3"],
     source: "Transport for London: partially compliant, own statement (https://tfl.gov.uk/corporate/website-accessibility/accessibility-statement)",
     demonstrates: "journey planner form" },
   { url: "https://www.british-history.ac.uk/catalogue", role: "training",
@@ -577,8 +588,26 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "4.1.2"],
     source: "The National Archives: partially compliant, own statement (https://nationalarchives.gov.uk/accessibility-statement/)",
     demonstrates: "research guide index" },
+  // A publisher outside UK public sector, which is the point (#33) -- every entry above this line is UK
+  // public sector or a university, and the EU's own accessibility mandate (Directive 2016/2102) is the
+  // methodology's stated "equivalent" that had never actually been used. Verified 2026-09-06 against the
+  // statement itself: "This website is partially compliant with technical standard EN 301 549 v.3.2.1 and
+  // the Web Content Accessibility Guidelines (WCAG) 2.1 Level AA." Its enumerated issues are missing video
+  // captions/audio description (1.2.x), a footer-link colour-contrast issue (1.4.1), unpausable animations
+  // (2.2.2), and language-of-parts (3.1.2) -- none in SCORED_CRITERIA -- plus "some headings do not follow
+  // the correct heading hierarchy", which is 1.3.1. That is the only CLEAR intersection; the rest of the
+  // page is clean for our purposes. The statement's video-player keyboard issue (arrow keys do not move a
+  // caption-language submenu; TAB does) plausibly reads as 2.1.1, which SCORED_CRITERIA does now include
+  // -- but it is scoped to one embedded widget's own quirk, not a site-wide keyboard failure, and this
+  // page carries no video. Left unmasked rather than guessed at a criterion the statement did not clearly
+  // name for THIS page; a wrong mask costs a label, a missing one costs nothing this page could not
+  // demonstrate anyway.
+  { url: "https://european-union.europa.eu/index_en", role: "training",
+    publishedClaim: "conformant", claimExcludes: ["1.3.1"],
+    source: "European Union: partially compliant, own statement (https://european-union.europa.eu/accessibility-statement_en)",
+    demonstrates: "supranational institutional homepage — multilingual nav, sitewide search, mixed news/topic cards" },
   { url: "https://forms.charitycommission.gov.uk/raising-concerns/", role: "training",
-    publishedClaim: "conformant", claimExcludes: ["1.3.1", "2.4.6", "3.3.2", "4.1.2", "4.1.3"],
+    publishedClaim: "conformant", claimExcludes: ["1.3.1", "2.4.6", "4.1.2", "4.1.3"],
     source: "Charity Commission online forms: partially compliant, own statement (https://forms.charitycommission.gov.uk/Accessibility-Statement/)",
     demonstrates: "multi-step concern-reporting form" },
   { url: "https://www.lbhf.gov.uk/council-tax", role: "training",
@@ -590,7 +619,7 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     source: "NHS website: partially compliant, own statement (https://nhs.uk/accessibility-statement/)",
     demonstrates: "GP finder search" },
   { url: "https://primary-authority.beis.gov.uk/par", role: "training",
-    publishedClaim: "conformant", claimExcludes: ["1.3.1", "3.3.2", "4.1.2", "4.1.3"],
+    publishedClaim: "conformant", claimExcludes: ["1.3.1", "4.1.2", "4.1.3"],
     source: "Primary Authority Register: partially compliant, own statement (https://gov.uk/guidance/primary-authority-register-accessibility-statement)",
     demonstrates: "regulatory register search" },
   { url: "https://www.historicenvironment.scot/visit/all/edinburgh-castle/", role: "training",
@@ -614,7 +643,7 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     source: "University of Sheffield: partially compliant, own statement (https://sheffield.ac.uk/accessibility)",
     demonstrates: "postgraduate course search" },
   { url: "https://find-and-update.company-information.service.gov.uk/company/00000006", role: "training",
-    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "3.3.2", "4.1.2"],
+    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "4.1.2"],
     source: "Companies House: partially compliant, own statement (https://find-and-update.company-information.service.gov.uk/help/accessibility-statement)",
     demonstrates: "company record" },
   { url: "https://ico.org.uk/action-weve-taken/enforcement/", role: "calibration",
@@ -678,7 +707,7 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     source: "Southwark Council data portal: partially compliant, own statement (https://data.southwark.gov.uk/accessibility-statement/)",
     demonstrates: "open data catalogue" },
   { url: "https://www.ons.gov.uk/economy/inflationandpriceindices", role: "training",
-    publishedClaim: "conformant", claimExcludes: ["1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2"],
+    publishedClaim: "conformant", claimExcludes: ["1.3.1", "2.4.4", "2.4.6", "3.3.1", "4.1.2"],
     source: "Office for National Statistics: partially compliant, own statement (https://ons.gov.uk/help/accessibility)",
     demonstrates: "inflation statistics with data tables" },
   { url: "https://www.gov.wales/statistics-and-research", role: "calibration",
@@ -686,19 +715,19 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     source: "Welsh Government: partially compliant, own statement (https://gov.wales/accessibility-statement-govwales)",
     demonstrates: "statistics and research index" },
   { url: "https://service-manual.nhs.uk/design-system/components/text-input", role: "training",
-    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"],
+    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "4.1.2", "4.1.3"],
     source: "NHS digital service manual: partially compliant, own statement (https://service-manual.nhs.uk/accessibility-statement)",
     demonstrates: "design system component documentation" },
   { url: "https://weather.metoffice.gov.uk/forecast/gcpvj0v07", role: "training",
-    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"],
+    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "4.1.2", "4.1.3"],
     source: "Met Office: partially compliant, own statement (https://metoffice.gov.uk/policies/accessibility-met-office-website)",
     demonstrates: "weather forecast with 85 data tables" },
   { url: "https://www.nidirect.gov.uk/information-and-services/motoring/mot-and-vehicle-testing", role: "training",
-    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"],
+    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "4.1.2", "4.1.3"],
     source: "nidirect: partially compliant, own statement (https://nidirect.gov.uk/articles/accessibility-statement-nidirect)",
     demonstrates: "motoring service index" },
   { url: "https://events.bl.uk/", role: "training",
-    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"],
+    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "4.1.2", "4.1.3"],
     source: "British Library: partially compliant, own statement (https://bl.uk/accessibility-statement)",
     demonstrates: "events listing" },
   // ---- OUR OWN FIXTURES, for the three criteria no published source demonstrates ------------------

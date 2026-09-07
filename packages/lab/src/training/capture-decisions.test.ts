@@ -65,7 +65,7 @@ test("a bare-metal worker waking its NIC is transient, by CODE not by wording", 
   // Under `fetch` this was transient only by ACCIDENT -- undici wrapped every network failure as
   // "TypeError: fetch failed", which the prose regex matched. `node:http` reports the real code, so nothing
   // matched the prose any more and 48 recoverable failures would have become 48 permanent ones.
-  const unreachable = Object.assign(new Error("connect EHOSTUNREACH REDACTED-INTERNAL-ADDRESS:8765"), { code: "EHOSTUNREACH" });
+  const unreachable = Object.assign(new Error("connect EHOSTUNREACH 203.0.113.83:8765"), { code: "EHOSTUNREACH" });
   assert.equal(isTransient(unreachable), true);
   // And the wording alone must not be what saves it.
   assert.equal(isTransient(Object.assign(new Error("worker gone"), { code: "EHOSTUNREACH" })), true);

@@ -83,7 +83,7 @@ const EVAL_FIXTURES = resolve(REPO, "packages/lab/src/eval/fixtures/nvda");
  * beside the real ones and are authored pages and local files — same class as the corpus, and counting
  * them as real evidence would be the opposite error to the one this fixes.
  *
- * The local page server is excluded by the same test: `REDACTED-INTERNAL-ADDRESS:5050` serves OUR pages over http, so
+ * The local page server is excluded by the same test: `<the lab's address>:5050` serves OUR pages over http, so
  * a scheme check alone would admit them.
  */
 function isRealPage(capture: unknown): boolean {
