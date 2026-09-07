@@ -36,7 +36,13 @@ import { stripComments } from "@a11y-witness/evidence/source-text";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const ENTRY = "scripts/build-packages.mjs";
-const ALSO_CONSTRAINED = ["scripts/ci-changed.mjs"];
+const ALSO_CONSTRAINED = [
+  "scripts/ci-changed.mjs",
+  // The `prepare` script -- runs on every plain `npm install` in a fresh checkout, before any package's
+  // `dist/` exists. Not reachable via build-packages.mjs's own import graph; carries the identical
+  // constraint by npm lifecycle timing rather than by being imported from the same entry point.
+  "scripts/install-git-hooks.mjs",
+];
 
 const IMPORT_RE = /\bimport\s+(?:[\s\S]*?\s+from\s+)?["']([^"']+)["']/g;
 // AN IMPORT SPECIFIER, not any string mentioning the scope. `isolation-gate.mjs` legitimately checks
