@@ -71,6 +71,9 @@ const NOT_A_GATE: Record<string, string> = {
     + "direction, 2026-09-06 -- 154s of a measured 269s). Runs on a nightly schedule plus workflow_dispatch, "
     + "same shape as board-report.yml: it judges the repository as a whole against a fixed threshold, not "
     + "a diff, and its trigger is the clock rather than a change landing.",
+  "ready-label-audit.yml": "audits live GitHub label state on an hourly clock (#246), same shape as "
+    + "coverage.yml and board-report.yml -- it examines the issue tracker's current labels, not a diff, "
+    + "so covering a source directory is not a thing it could mean.",
 };
 
 const workflowFiles = (): string[] =>
