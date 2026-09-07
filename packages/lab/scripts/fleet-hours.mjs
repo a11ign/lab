@@ -142,6 +142,14 @@ export function report(found) {
     jsonFilesWalked: found.files,
     unbillable: { noAtMs: found.noAtMs, implausibleDuration: found.implausible },
     medianSeconds: Number((quantile(found.billed, 0.5) / 1000).toFixed(1)),
+    // THE IQR, because a median alone cannot answer a SCALING question. #22 pre-registers "per-capture
+    // median and IQR at each arm" and the instrument emitted median and p95 — so the row's own statistic
+    // could not be produced by the tool the row's acceptance points at, and the first run reported a
+    // wall-clock proxy instead. p95 describes the tail (a wedged guest); the IQR describes the SPREAD,
+    // which is what says whether two arms differ or merely overlap.
+    q1Seconds: Number((quantile(found.billed, 0.25) / 1000).toFixed(1)),
+    q3Seconds: Number((quantile(found.billed, 0.75) / 1000).toFixed(1)),
+    iqrSeconds: Number(((quantile(found.billed, 0.75) - quantile(found.billed, 0.25)) / 1000).toFixed(1)),
     p95Seconds: Number((quantile(found.billed, 0.95) / 1000).toFixed(1)),
   };
 }
