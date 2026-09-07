@@ -143,3 +143,46 @@ test("A11Y_COMMIT_ALL=1 bypasses both checks entirely", () => {
     assert.equal(result.status, 0, `expected the override to allow everything, got: ${result.stderr}`);
   });
 });
+
+// --- issue #180: a newly staged line piping into head/tail/grep and then reading $? ---
+
+test("a new .sh line piping into head then reading $? is REFUSED, and #180 is named", () => {
+  withGitSandbox((sandbox) => {
+    writeFileSync(join(sandbox.dir, "deploy.sh"),
+      "node scripts/merge-guard.mjs 148 | head -4; echo EXIT=$?\n");
+    sandbox.run(["add", "deploy.sh"]);
+    const result = runHook(sandbox);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /#180/);
+    assert.match(result.stderr, /deploy\.sh/);
+  });
+});
+
+test("a legitimate `| head` with nothing reading $? is allowed", () => {
+  withGitSandbox((sandbox) => {
+    writeFileSync(join(sandbox.dir, "deploy.sh"), "cat README.md | head -5\n");
+    sandbox.run(["add", "deploy.sh"]);
+    const result = runHook(sandbox);
+    assert.equal(result.status, 0, `expected success, got status ${result.status}: ${result.stderr}`);
+  });
+});
+
+test("the same hazardous line in a .md file is NOT flagged -- it is usually the rule being documented", () => {
+  withGitSandbox((sandbox) => {
+    writeFileSync(join(sandbox.dir, "NOTES.md"),
+      "Don't do this: `node scripts/merge-guard.mjs 148 | head -4; echo EXIT=$?`\n");
+    sandbox.run(["add", "NOTES.md"]);
+    const result = runHook(sandbox);
+    assert.equal(result.status, 0, `expected success (docs are exempt), got: ${result.stderr}`);
+  });
+});
+
+test("A11Y_ALLOW_PIPED_EXIT_STATUS=1 overrides the piped-exit-status refusal specifically", () => {
+  withGitSandbox((sandbox) => {
+    writeFileSync(join(sandbox.dir, "deploy.sh"),
+      "node scripts/merge-guard.mjs 148 | head -4; echo EXIT=$?\n");
+    sandbox.run(["add", "deploy.sh"]);
+    const result = runHook(sandbox, { A11Y_ALLOW_PIPED_EXIT_STATUS: "1" });
+    assert.equal(result.status, 0, `expected the override to allow it, got: ${result.stderr}`);
+  });
+});
