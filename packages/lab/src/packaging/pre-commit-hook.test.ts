@@ -49,10 +49,23 @@ function stage(sandbox: GitSandbox, names: string[]): void {
 
 type Verdict = { status: number; stderr: string };
 
-/** Runs the REAL hook script, unmodified — see this file's header for why. */
+/**
+ * Runs the REAL hook script, unmodified — see this file's header for why.
+ *
+ * `A11Y_PRIMARY_COMMIT_REASON` is always set: issue #126 added a check ahead of everything this file
+ * tests, refusing any commit where `.git` is a real directory (never a branch name or a path) — which a
+ * fresh `withGitSandbox` repository always is, by construction, whether or not it is standing in for the
+ * real project's primary checkout. That guard has its OWN file, `primary-checkout-guard.test.ts`; without
+ * bypassing it here, every test below would fail on the new check before ever reaching the staleness or
+ * file-count logic this file exists to prove.
+ */
 function runHook(sandbox: GitSandbox, env: Record<string, string> = {}): Verdict {
   try {
-    execFileSync("bash", [HOOK], { cwd: sandbox.dir, env: sandboxGitEnv(env), encoding: "utf8" });
+    execFileSync("bash", [HOOK], {
+      cwd: sandbox.dir,
+      env: sandboxGitEnv({ A11Y_PRIMARY_COMMIT_REASON: "pre-commit-hook.test.ts — not the real primary", ...env }),
+      encoding: "utf8",
+    });
     return { status: 0, stderr: "" };
   } catch (error) {
     const e = error as { status?: number; stderr?: string };

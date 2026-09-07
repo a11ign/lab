@@ -29,6 +29,7 @@ import { resolve, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
+import { isPrimaryWorktree } from "../../../scripts/prune-worktrees.mjs";
 
 const REPO = REPO_ROOT;
 const MODEL_DIR = resolve(REPO, "packages/scorer/models/screenreader-scorer");
@@ -118,10 +119,28 @@ function main() {
   }
 
   const changeset = collected.find((c) => c.artifact === "promoted-changeset");
-  process.stdout.write("\nInstalled. Two deliberate steps remain, and they are yours:\n\n"
-    + `  git add ${MODEL_DIR.replace(`${REPO}/`, "")} ${changeset?.dest.replace(`${REPO}/`, "")}\n`
-    + "  git commit && git push\n\n"
-    + "then clear the lab, which can only discard what origin already carries:\n\n"
+  const paths = `${MODEL_DIR.replace(`${REPO}/`, "")} ${changeset?.dest.replace(`${REPO}/`, "")}`;
+
+  // ISSUE #126: this just wrote artefacts INTO `REPO`, and that WAS the primary the day `orchestrator`
+  // committed a branch here -- nothing marked the boundary between producing an artefact and committing
+  // it, so the copy from "produced" to "committed" happened in the one checkout it must never happen in.
+  // `pre-commit` now refuses a commit here outright, so telling the operator to `git commit` in place
+  // would just hand them that refusal with no idea why. Printed only when it is actually true, so a run
+  // already inside a worktree keeps the plain instructions it always had.
+  process.stdout.write("\nInstalled.");
+  if (isPrimaryWorktree(REPO)) {
+    process.stdout.write(" This IS the primary checkout, which commits nothing -- copy what changed into "
+      + "a worktree first:\n\n"
+      + `  rsync -a ${paths} <path-to-your-worktree>/\n\n`
+      + "Then, in that worktree, two deliberate steps remain and they are yours:\n\n"
+      + `  git add ${paths}\n`
+      + "  git commit && git push\n\n");
+  } else {
+    process.stdout.write(" Two deliberate steps remain, and they are yours:\n\n"
+      + `  git add ${paths}\n`
+      + "  git commit && git push\n\n");
+  }
+  process.stdout.write("then clear the lab, which can only discard what origin already carries:\n\n"
     + `  npm run lab:reset -- -e apply=true -e remove=${changeset?.source}\n`);
 }
 
