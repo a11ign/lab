@@ -888,6 +888,55 @@ export function partitionByExaminability(
   };
 }
 
+/**
+ * WHAT THE NEW FINDINGS ARE, AND WHAT THEY ARE WORTH — the phase that decides whether a batch is a release
+ * blocker or a risk line. Extracted from `reportAgainstBaseline` when #363's withholding took that function
+ * past the 90-line physical budget; it is a real phase rather than a slice taken to satisfy one, because
+ * everything above it decides WHICH findings are examinable and this decides what the examinable ones mean.
+ */
+function reportNewFindings(reportable: Change[]): void {
+  if (reportable.length) {
+    process.stdout.write(`\n  ${reportable.length} NEW finding(s) on pages whose publisher declares them `
+      + "conformant:\n");
+  }
+  for (const change of reportable) {
+    process.stdout.write(`    ${change.criterion}  ${change.url.replace(/^https:\/\//, "")}\n`);
+    // THE EVIDENCE, not just the URL. This told the reader to "read the evidence for each" and then gave
+    // them a list of URLs — so reading it meant an ssh session and ad-hoc JSON, which is the step this
+    // repo removes everywhere else. The census is the whole basis of the two rules most likely to appear
+    // here, and it also settles the question a bare count cannot: a census reading zero for EVERYTHING is
+    // a tree that was never built, which is not the same finding as a page that genuinely has none.
+    process.stdout.write(`           ${describeEvidence(change.url)}\n`);
+  }
+  if (reportable.length) {
+    // THE HEADLINE SENTENCE, STATED BY THE GATE RATHER THAN COMPUTED BY WHOEVER READS IT. This is the one
+    // line that decides whether a batch of new findings is a release blocker or a risk line, and until
+    // 2026-09-06 it was worked out by hand, from the captures, by whoever happened to be asked.
+    const assertions = reportable.filter((c) => OUTCOMES.get(`${c.url}|${c.criterion}`)?.asserted);
+    const unrecorded = reportable.filter((c) => !OUTCOMES.has(`${c.url}|${c.criterion}`));
+    process.stdout.write(`\n  OF THOSE ${reportable.length}: ${assertions.length} ASSERTED, `
+      + `${reportable.length - assertions.length - unrecorded.length} REFERRED`
+      + `${unrecorded.length ? `, ${unrecorded.length} with no outcome recorded` : ""}.\n`);
+    process.stdout.write(assertions.length
+      ? "  AT LEAST ONE ASSERTION ON A CONFORMANT PAGE. That is this project's central claim -- nothing\n"
+        + "  asserted wrongly on conformant real pages -- and it does not hold while this stands.\n"
+      : "  NOTHING WAS ASSERTED. Every new finding reaches a user as `cantTell`, so this is referral noise\n"
+        + "  on conformant pages rather than a broken conformance claim. Still worth the investigation\n"
+        + "  below, and not a publish blocker.\n");
+    if (unrecorded.length) {
+      // NOT A REFERRAL, and saying so matters: it means the baseline holds a finding this run's captures
+      // did not reproduce, so nothing was scored for it and the silence is about the corpus, not the page.
+      process.stdout.write("  An unrecorded outcome is NOT a referral -- nothing was scored for it.\n");
+    }
+    process.stdout.write("\n  Read the evidence for each before doing anything else. It is one of three "
+      + "things:\n"
+      + "    - the tool is wrong, and this is the defect class that ran for eleven separate causes;\n"
+      + "    - the PAGE changed, since these are live sites their publishers keep editing;\n"
+      + "    - the finding is right and the publisher's claim is not — which has happened, twice.\n"
+      + "  Only the third takes `--update`.\n");
+  }
+}
+
 function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: number }): void {
   const furniture = furnitureCaptures();
   if (furniture.consent.length || furniture.shell.length) {
@@ -931,46 +980,7 @@ function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: numbe
     }
   }
 
-  if (reportable.length) {
-    process.stdout.write(`\n  ${reportable.length} NEW finding(s) on pages whose publisher declares them `
-      + "conformant:\n");
-  }
-  for (const change of reportable) {
-    process.stdout.write(`    ${change.criterion}  ${change.url.replace(/^https:\/\//, "")}\n`);
-    // THE EVIDENCE, not just the URL. This told the reader to "read the evidence for each" and then gave
-    // them a list of URLs — so reading it meant an ssh session and ad-hoc JSON, which is the step this
-    // repo removes everywhere else. The census is the whole basis of the two rules most likely to appear
-    // here, and it also settles the question a bare count cannot: a census reading zero for EVERYTHING is
-    // a tree that was never built, which is not the same finding as a page that genuinely has none.
-    process.stdout.write(`           ${describeEvidence(change.url)}\n`);
-  }
-  if (reportable.length) {
-    // THE HEADLINE SENTENCE, STATED BY THE GATE RATHER THAN COMPUTED BY WHOEVER READS IT. This is the one
-    // line that decides whether a batch of new findings is a release blocker or a risk line, and until
-    // 2026-09-06 it was worked out by hand, from the captures, by whoever happened to be asked.
-    const assertions = reportable.filter((c) => OUTCOMES.get(`${c.url}|${c.criterion}`)?.asserted);
-    const unrecorded = reportable.filter((c) => !OUTCOMES.has(`${c.url}|${c.criterion}`));
-    process.stdout.write(`\n  OF THOSE ${reportable.length}: ${assertions.length} ASSERTED, `
-      + `${reportable.length - assertions.length - unrecorded.length} REFERRED`
-      + `${unrecorded.length ? `, ${unrecorded.length} with no outcome recorded` : ""}.\n`);
-    process.stdout.write(assertions.length
-      ? "  AT LEAST ONE ASSERTION ON A CONFORMANT PAGE. That is this project's central claim -- nothing\n"
-        + "  asserted wrongly on conformant real pages -- and it does not hold while this stands.\n"
-      : "  NOTHING WAS ASSERTED. Every new finding reaches a user as `cantTell`, so this is referral noise\n"
-        + "  on conformant pages rather than a broken conformance claim. Still worth the investigation\n"
-        + "  below, and not a publish blocker.\n");
-    if (unrecorded.length) {
-      // NOT A REFERRAL, and saying so matters: it means the baseline holds a finding this run's captures
-      // did not reproduce, so nothing was scored for it and the silence is about the corpus, not the page.
-      process.stdout.write("  An unrecorded outcome is NOT a referral -- nothing was scored for it.\n");
-    }
-    process.stdout.write("\n  Read the evidence for each before doing anything else. It is one of three "
-      + "things:\n"
-      + "    - the tool is wrong, and this is the defect class that ran for eleven separate causes;\n"
-      + "    - the PAGE changed, since these are live sites their publishers keep editing;\n"
-      + "    - the finding is right and the publisher's claim is not — which has happened, twice.\n"
-      + "  Only the third takes `--update`.\n");
-  }
+  reportNewFindings(reportable);
 
   // A FURNITURE CAPTURE IS NOT AN EXAMINED PAGE, and until now it did not reduce anything. This gate
   // already DETECTS them — captures that opened on a cookie overlay or an unrendered shell and never
