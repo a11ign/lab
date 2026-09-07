@@ -19,7 +19,7 @@ import { pathToFileURL } from "node:url";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { voiceOver } from "@guidepup/guidepup";
-import { judge } from "@a11y-witness/judge";
+import { judge } from "@a11ign/judge";
 
 const sh = promisify(exec);
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

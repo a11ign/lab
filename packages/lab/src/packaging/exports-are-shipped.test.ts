@@ -9,7 +9,7 @@
  *
  * ## The defect that prompted it, found by an outside architecture audit and confirmed here
  *
- * `@a11y-witness/worker-fleet` mapped `./cli-flags` to `./src/cli-flags.mjs` while its `files` shipped
+ * `@a11ign/worker-fleet` mapped `./cli-flags` to `./src/cli-flags.mjs` while its `files` shipped
  * `dist`, `src/local-worker` and `src/provisioning` — no top-level `src/*.mjs`. `npm pack --dry-run`
  * produced 133 files including `dist/cli-flags.mjs` and not the exported path. **It is the most-imported
  * subpath in the repo: 42 sites**, every one of them in the private `lab`, which is why nothing noticed.
@@ -79,7 +79,7 @@ function shipped(files: string[] | undefined, target: string): boolean {
   if (!files?.length) return true;
   const path = target.replace(/^\.\//, "");
   // npm ALWAYS includes these regardless of `files`, so an export naming one is shipped even though the
-  // list does not mention it. `a11y-witness` exports `./package.json`, which is legitimate and common —
+  // list does not mention it. `a11ign` exports `./package.json`, which is legitimate and common —
   // treating it as a defect would be this check crying wolf on its first run, which is how a new gate
   // gets switched off. Only these five, matched exactly: npm's own always-included set.
   if (["package.json", "README.md", "LICENSE", "LICENCE", "CHANGELOG.md"].includes(path)) return true;
@@ -121,7 +121,7 @@ test("the most-imported subpath in the repo is one a consumer could actually imp
   const manifest = JSON.parse(
     readFileSync(join(PACKAGES, "worker-fleet", "package.json"), "utf8")) as Manifest;
   const target = exportTargets(manifest.exports).find((e) => e.subpath === "./cli-flags")?.target;
-  assert.ok(target, "@a11y-witness/worker-fleet must still export ./cli-flags");
+  assert.ok(target, "@a11ign/worker-fleet must still export ./cli-flags");
   assert.ok(shipped(manifest.files, target!), `./cli-flags points at ${target}, which is not shipped`);
   assert.match(target!, /^\.\/dist\//,
     "every other subpath in this package resolves through `dist`; an export reaching into `src` is the "

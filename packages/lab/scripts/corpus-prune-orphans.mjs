@@ -39,7 +39,7 @@
 import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REAL_PAGES, realPageFor, normaliseUrl } from "../src/training/real-page-corpus.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { realCorpusRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";

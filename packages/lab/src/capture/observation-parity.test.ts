@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { arrowKeysAreInert, escapeReleasedFocusIn } from "../training/case-matrix.mjs";
-import { ruleFindings } from "@a11y-witness/judge/rules";
+import { ruleFindings } from "@a11ign/judge/rules";
 
 /**
  * TWO OBSERVATIONS, EACH DECIDED IN TWO PLACES, and nothing compared the copies.

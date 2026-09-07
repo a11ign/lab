@@ -36,16 +36,16 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { annotateCapture } from "@a11y-witness/evidence";
-import { sweepOutcomes, truncatedSweeps } from "@a11y-witness/evidence/conformance";
-import { criterionOutcomes } from "@a11y-witness/judge/outcomes";
-import { findingsFromScores } from "@a11y-witness/judge/internal";
-import { ruleFindings } from "@a11y-witness/judge/rules";
-import { oracleCounts } from "@a11y-witness/evidence/verify";
+import { annotateCapture } from "@a11ign/evidence";
+import { sweepOutcomes, truncatedSweeps } from "@a11ign/evidence/conformance";
+import { criterionOutcomes } from "@a11ign/judge/outcomes";
+import { findingsFromScores } from "@a11ign/judge/internal";
+import { ruleFindings } from "@a11ign/judge/rules";
+import { oracleCounts } from "@a11ign/evidence/verify";
 
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, realCorpusRoot, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
 /**

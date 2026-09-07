@@ -25,8 +25,8 @@ import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "../../../worker-fleet/sr
 import { captureTolerantly } from "../../../worker-fleet/src/capture-client.mjs";
 import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 import { assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
-import { captureIsSelfConsistent } from "@a11y-witness/evidence/verify";
-import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
+import { captureIsSelfConsistent } from "@a11ign/evidence/verify";
+import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { repeatCapturesRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 import { EVIDENCE_FIELDS, fieldValues } from "../capture/evidence-diff.mjs";
 

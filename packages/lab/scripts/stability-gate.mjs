@@ -35,13 +35,13 @@ import { resolve } from "node:path";
 // below warns about.
 const REPEAT_CAPTURE = fileURLToPath(new URL("../src/training/repeat-capture.mjs", import.meta.url));
 
-import { guestReachableUrl } from "@a11y-witness/worker-fleet";
+import { guestReachableUrl } from "@a11ign/worker-fleet";
 import { leasePageServer } from "../src/training/page-server.mjs";
 import { renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
   from "../src/gates/fleet.mjs";
 import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { assertWorkerUrl } from "../../worker-fleet/src/worker-http.mjs";
 import { datasetRoot } from "../src/dataset-paths.mjs";
 

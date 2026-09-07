@@ -44,7 +44,7 @@ import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 
-import { ruleFindings } from "@a11y-witness/judge/rules";
+import { ruleFindings } from "@a11ign/judge/rules";
 
 import { readRuleOwnership } from "../src/training/rule-ownership.js";
 import { CASES } from "../src/training/case-matrix.mjs";

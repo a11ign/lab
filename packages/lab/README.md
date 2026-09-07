@@ -1,8 +1,8 @@
-# `@a11y-witness/lab`
+# `@a11ign/lab`
 
 **Private, and it stays private.** This is the workshop: the corpus generator, the training pipeline, the
 evaluation harnesses and the gates. Nothing here ships to a consumer — what ships is the *output*, which is
-the weights in `@a11y-witness/scorer` and the rules in `@a11y-witness/judge`.
+the weights in `@a11ign/scorer` and the rules in `@a11ign/judge`.
 
 It is the only package with no public API, and that is the point. A consumer needs the trained model; they
 do not need the machinery that produced it, and coupling them would make every corpus experiment a

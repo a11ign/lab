@@ -21,18 +21,18 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { stripComments } from "@a11y-witness/evidence/source-text";
+import { stripComments } from "@a11ign/evidence/source-text";
 
 import { CASES, pair } from "./case-matrix.mjs";
 // NAMED `WORKER_ACCEPTED_FLAGS`, because this file already has a `PROBE_FLAGS` meaning the opposite
 // thing: flags the CASES use. The worker's list and the corpus's list are the two halves this suite
 // exists to compare, and giving them one name is how they would stop being compared.
-import { PROBE_FLAGS as WORKER_ACCEPTED_FLAGS } from "@a11y-witness/nvda-worker/capture-pure";
+import { PROBE_FLAGS as WORKER_ACCEPTED_FLAGS } from "@a11ign/nvda-worker/capture-pure";
 import { pair as acceptancePair } from "./acceptance-matrix.mjs";
 
 // Comments stripped: every caller below checks whether a flag/option is MENTIONED in this source, and a
 // comment naming one in prose (this file discusses probe flags extensively) would satisfy the check
-// without the flag actually being read. See `@a11y-witness/evidence/source-text`.
+// without the flag actually being read. See `@a11ign/evidence/source-text`.
 const read = (path: string) => stripComments(readFileSync(resolve(process.cwd(), path), "utf8"));
 
 /** Every probe flag any case actually asks for. Derived, never listed — a list is the defect. */

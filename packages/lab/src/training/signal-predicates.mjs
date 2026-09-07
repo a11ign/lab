@@ -8,7 +8,7 @@
  * (via `signalMatches`) against real and synthetic captures to prove each case's `badSignal` fires on
  * the bad page and stays silent on the good one.
  */
-import { parseAnnouncement } from "@a11y-witness/evidence";
+import { parseAnnouncement } from "@a11ign/evidence";
 
 function structuralTextParts(/** @type {any} */ capture) {
   return [
@@ -533,7 +533,7 @@ function focusOrderIsScrambled(/** @type {any} */ capture) {
  * **It used to exist TWICE** — here for the dataset signals and as `comparableNames` in `rules.ts` for the
  * findings — on the stated grounds that "the corpus generator runs under plain node and cannot import
  * TypeScript". That premise was false by 2026-08-24: five `.mjs` files in this package already import
- * `@a11y-witness/evidence`, `repeat-capture.mjs` among them, in this very directory.
+ * `@a11ign/evidence`, `repeat-capture.mjs` among them, in this very directory.
  *
  * The duplication cost what duplication costs. The two drifted within an hour of being written, which
  * `check-signals` caught as a CONTAMINATED 2.1.1 case. `name-normalisation.test.ts` then pinned them

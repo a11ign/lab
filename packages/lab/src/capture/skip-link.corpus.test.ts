@@ -32,7 +32,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { ruleFindings } from "@a11y-witness/judge/rules";
+import { ruleFindings } from "@a11ign/judge/rules";
 // The plain-node corpus module. `case-matrix.mjs` carries `// @ts-check`, so its exports are typed.
 import { signalMatches } from "../training/case-matrix.mjs";
 import { datasetRoot, captureRoot } from "../dataset-paths.mjs";

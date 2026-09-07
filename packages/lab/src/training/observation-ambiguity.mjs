@@ -27,7 +27,7 @@
  * costume — the first version of `verify.corpus.test.ts` read a field that did not exist and passed
  * against the very corpus carrying 604 crashes.
  */
-import { SWEEP_OF, sweepCompleteness, observationOf } from "@a11y-witness/evidence/verify";
+import { SWEEP_OF, sweepCompleteness, observationOf } from "@a11ign/evidence/verify";
 
 /**
  * The channels a completeness verdict exists for, derived from `SWEEP_OF` rather than restated beside it.

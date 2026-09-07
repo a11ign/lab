@@ -39,35 +39,35 @@ test("the SOURCE barrels export what the built packages do", async () => {
 
 test("evidence exports the wire types and the pure predicates", async () => {
   // `.` is types only, so at runtime it is an empty module — importing it still proves the subpath resolves.
-  await assert.doesNotReject(() => import("@a11y-witness/evidence"));
-  const verify = await import("@a11y-witness/evidence/verify");
+  await assert.doesNotReject(() => import("@a11ign/evidence"));
+  const verify = await import("@a11ign/evidence/verify");
   for (const name of ["captureReachedThePage", "captureHasSubstance", "captureIsSelfConsistent",
     "captureRanRequestedProbes", "captureMentionsTitle", "pageCensus", "captureDoubt", "titleOf"]) {
     assert.equal(typeof exportsOf(verify)[name], "function", `evidence/verify must export ${name} (ADR 0004)`);
   }
-  const { WCAG_22_AA } = await import("@a11y-witness/evidence/wcag");
+  const { WCAG_22_AA } = await import("@a11ign/evidence/wcag");
   assert.ok(Array.isArray(WCAG_22_AA) && WCAG_22_AA.length > 20, "the criteria list must be populated");
 });
 
 test("judge exports its four documented subpaths", async () => {
-  const root = await import("@a11y-witness/judge");
+  const root = await import("@a11ign/judge");
   assert.equal(typeof root.judge, "function");
   assert.equal(typeof root.validateJudgment, "function");
-  const rules = await import("@a11y-witness/judge/rules");
+  const rules = await import("@a11ign/judge/rules");
   assert.equal(typeof rules.ruleFindings, "function");
-  const layers = await import("@a11y-witness/judge/layers");
+  const layers = await import("@a11ign/judge/layers");
   for (const name of ["layerOf", "orderByLayer"]) assert.equal(typeof exportsOf(layers)[name], "function", name);
   assert.ok(layers.LAYER_LABEL?.perceive, "every layer needs a human label for the report");
   // Exported so a test can drive the REAL gate rather than a copy of it — documented as unstable, which is why
   // it is worth asserting it exists at all rather than assuming.
-  const internal = await import("@a11y-witness/judge/internal");
+  const internal = await import("@a11ign/judge/internal");
   for (const name of ["hasEvidenceFor", "evidenceFor", "findingsFromScores", "scoreCapture", "applyGate"]) {
     assert.equal(typeof exportsOf(internal)[name], "function", `judge/internal must export ${name} (ADR 0004)`);
   }
 });
 
 test("the layer ordering is the waterfall the report depends on", async () => {
-  const { layerOf, orderByLayer } = await import("@a11y-witness/judge/layers");
+  const { layerOf, orderByLayer } = await import("@a11ign/judge/layers");
   assert.equal(layerOf("1.1.1"), "perceive");
   assert.equal(layerOf("2.4.4"), "navigate");
   assert.equal(layerOf("4.1.2"), "interact");
@@ -80,22 +80,22 @@ test("the layer ordering is the waterfall the report depends on", async () => {
 });
 
 test("worker-fleet exports the lease surface and the script paths", async () => {
-  const fleet = await import("@a11y-witness/worker-fleet");
+  const fleet = await import("@a11ign/worker-fleet");
   for (const name of ["leaseWorker", "leaseWorkerPool", "isAfterRun", "guestReachableUrl",
     "hostAddressForWorker", "fleetScriptPaths"]) {
     assert.equal(typeof exportsOf(fleet)[name], "function", `worker-fleet must export ${name} (ADR 0004)`);
   }
   assert.match(fleet.DEFAULT_WORKER, /^https?:\/\//);
-  const health = await import("@a11y-witness/worker-fleet/health");
+  const health = await import("@a11ign/worker-fleet/health");
   assert.equal(typeof health.assessWorker, "function");
-  const capacity = await import("@a11y-witness/worker-fleet/capacity");
+  const capacity = await import("@a11ign/worker-fleet/capacity");
   for (const name of ["availableHostMemoryMb", "workersHostCanRun"]) {
     assert.equal(typeof exportsOf(capacity)[name], "function", name);
   }
 });
 
 test("the CLI exports only the renderer, which is the whole documented surface", async () => {
-  const cli = await import("a11y-witness");
+  const cli = await import("a11ign");
   assert.equal(typeof cli.reportLines, "function", "reportLines is the entire public API (ADR 0004)");
   // Asserting the surface is SMALL matters as much as asserting it exists: a second way to orchestrate a run
   // would be a second API to keep honest, and ADR 0004 deliberately does not offer one.

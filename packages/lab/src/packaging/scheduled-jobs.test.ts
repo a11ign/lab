@@ -39,7 +39,7 @@ const CLI = resolve(process.cwd(), "scripts/check-scheduled-jobs.mjs");
 function repoWithTwoJobs(): string {
   const dir = mkdtempSync(join(tmpdir(), "scheduled-jobs-fixture-"));
   mkdirSync(join(dir, "docs", "board"), { recursive: true });
-  for (const label of ["com.a11y-witness.board-report", "com.a11y-witness.board-summary-check"]) {
+  for (const label of ["com.a11ign.board-report", "com.a11ign.board-summary-check"]) {
     writeFileSync(join(dir, "docs", "board", `${label}.plist`),
       `<plist><dict><key>Label</key><string>${label}</string></dict></plist>\n`);
   }
@@ -91,13 +91,13 @@ test("macOS with a job missing AND control-plane asserted: MISSING by name", () 
   const report = checkScheduledJobs({
     repoRoot: repoWithTwoJobs(),
     supportsLaunchd: true,
-    isInstalled: (label: string) => label !== "com.a11y-witness.board-report", // one present, one missing
+    isInstalled: (label: string) => label !== "com.a11ign.board-report", // one present, one missing
     assertControlPlane: true,
   });
   const missing = report.filter((j) => j.status === "MISSING");
-  assert.deepEqual(missing.map((j) => j.label), ["com.a11y-witness.board-report"]);
+  assert.deepEqual(missing.map((j) => j.label), ["com.a11ign.board-report"]);
   const installed = report.filter((j) => j.status === "installed");
-  assert.ok(installed.some((j) => j.label === "com.a11y-witness.board-summary-check"));
+  assert.ok(installed.some((j) => j.label === "com.a11ign.board-summary-check"));
 });
 
 test("orphanJobs never fires on a platform with no launchd, and reports an unclaimed label otherwise", () => {
@@ -108,9 +108,9 @@ test("orphanJobs never fires on a platform with no launchd, and reports an uncla
   const found = orphanJobs({
     repoRoot: repoWithTwoJobs(),
     supportsLaunchd: true,
-    listInstalled: () => ["com.a11y-witness.board-report", "com.a11y-witness.some-forgotten-job"],
+    listInstalled: () => ["com.a11ign.board-report", "com.a11ign.some-forgotten-job"],
   });
-  assert.deepEqual(found, ["com.a11y-witness.some-forgotten-job"],
+  assert.deepEqual(found, ["com.a11ign.some-forgotten-job"],
     "a claimed job must not be reported as an orphan, and an unclaimed one must be");
 });
 

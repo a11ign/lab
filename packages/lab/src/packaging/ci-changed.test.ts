@@ -384,19 +384,19 @@ test("dependentsOf: two independently changed packages union their dependents", 
 
 test("readWorkspaceDependencyGraph: resolves by each package's REAL declared name, not by directory "
   + "convention", () => {
-  // packages/cli's own package.json name is the UNSCOPED "a11y-witness", not "@a11y-witness/cli" -- and
-  // packages/lab genuinely depends on it. A graph builder that assumed the `@a11y-witness/<dir>` pattern
+  // packages/cli's own package.json name is the UNSCOPED "a11ign", not "@a11ign/cli" -- and
+  // packages/lab genuinely depends on it. A graph builder that assumed the `@a11ign/<dir>` pattern
   // would silently drop this edge.
   const dir = mkdtempSync(join(tmpdir(), "ci-changed-graph-"));
   try {
     writeFileSync(join(dir, "package.json"), JSON.stringify({ workspaces: ["packages/*"] }));
     const pkgs: Record<string, object> = {
-      cli: { name: "a11y-witness", dependencies: {} },
-      lab: { name: "@a11y-witness/lab", dependencies: { "a11y-witness": "0.1.0", "@a11y-witness/evidence": "0.1.0" } },
-      evidence: { name: "@a11y-witness/evidence", dependencies: {} },
+      cli: { name: "a11ign", dependencies: {} },
+      lab: { name: "@a11ign/lab", dependencies: { "a11ign": "0.1.0", "@a11ign/evidence": "0.1.0" } },
+      evidence: { name: "@a11ign/evidence", dependencies: {} },
       // an external, non-workspace dependency must be silently DROPPED, not crash or appear as a phantom
       // package named after an npm package this repo does not own.
-      judge: { name: "@a11y-witness/judge", dependencies: { "@a11y-witness/evidence": "0.1.0", "typescript": "^6.0.0" } },
+      judge: { name: "@a11ign/judge", dependencies: { "@a11ign/evidence": "0.1.0", "typescript": "^6.0.0" } },
     };
     for (const [name, manifest] of Object.entries(pkgs)) {
       const pkgDir = join(dir, "packages", name);
@@ -405,7 +405,7 @@ test("readWorkspaceDependencyGraph: resolves by each package's REAL declared nam
     }
     const graph = readWorkspaceDependencyGraph(dir, ["cli", "lab", "evidence", "judge"]);
     assert.deepEqual([...graph.lab].sort(), ["cli", "evidence"],
-      "lab must resolve BOTH its unscoped 'a11y-witness' dependency (-> cli) and its scoped one (-> "
+      "lab must resolve BOTH its unscoped 'a11ign' dependency (-> cli) and its scoped one (-> "
       + "evidence), by reading each package's real name rather than assuming a naming convention");
     assert.deepEqual(graph.judge, ["evidence"], "typescript is not a workspace package and must be dropped");
     assert.deepEqual(graph.cli, []);
@@ -654,11 +654,11 @@ test("ci.yml's board job runs exactly the board guards and the claim guard, and 
   // A BUILD IS NEEDED, and the first version of this test asserted the opposite on the strength of a grep
   // that checked only these files' own top-level imports. Running the job's real command with no build
   // present (not reading it) found that board-liveness/board-markdown/board-style/board-summary-origin
-  // each drive a scripts/board-*.mjs script that imports @a11y-witness/worker-fleet/cli-flags -- the
+  // each drive a scripts/board-*.mjs script that imports @a11ign/worker-fleet/cli-flags -- the
   // stale-dist trap one hop further than the grep looked.
   assert.match(runLines, /npm run build/,
     "the board job must build -- several of its test files drive a scripts/board-*.mjs script that "
-    + "imports @a11y-witness/worker-fleet, which resolves to dist and does not exist unbuilt");
+    + "imports @a11ign/worker-fleet, which resolves to dist and does not exist unbuilt");
 });
 
 test("coverage.yml reports its own failure on the tracking issue -- a nightly nobody reads fails quietly", () => {
@@ -680,14 +680,14 @@ test("coverage.yml reports its own failure on the tracking issue -- a nightly no
 
 test("PROOF: readWorkspaceDependencyGraph rendered from the REAL repo has no cycle -- cli and lab in "
   + "particular", () => {
-  // #199, chairman's ruling: `a11y-witness` (cli, published) and `@a11y-witness/lab` (private, never
+  // #199, chairman's ruling: `a11ign` (cli, published) and `@a11ign/lab` (private, never
   // published) used to depend on EACH OTHER -- a real boundary defect (ADR 0004), not merely a CI-scoping
   // inconvenience. Closed by making `cli.test.ts` compute its own repo-root/captures-path locally instead
   // of importing from `lab` (the same pattern worker-fleet/nvda-worker/judge already use for the identical
-  // reason) and dropping `@a11y-witness/lab` from `cli`'s `devDependencies` entirely. `lab -> cli` (one
+  // reason) and dropping `@a11ign/lab` from `cli`'s `devDependencies` entirely. `lab -> cli` (one
   // direction, via `public-api.test.ts` testing the published surface) is legitimate and stays -- a single
   // edge is not a cycle. Driven against the REAL manifests, not a synthetic fixture, so a reintroduced
-  // `@a11y-witness/lab` dependency in `packages/cli/package.json` fails this test rather than silently
+  // `@a11ign/lab` dependency in `packages/cli/package.json` fails this test rather than silently
   // widening every scoped CI run back to the pair.
   const packages = knownPackages(REPO);
   const graph = readWorkspaceDependencyGraph(REPO, packages);
