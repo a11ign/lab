@@ -31,6 +31,14 @@
  * a bare list — the same discipline `tracked-prose-leak-guard.test.ts` already established. Reused rather
  * than duplicated: `allLeaksIn` (`leak-patterns.mjs`) is the one matcher both files drive.
  *
+ * ## #119: this file's IPv4-pattern EXEMPT entries are now the ONLY copy
+ *
+ * Every one of `tracked-prose-leak-guard.test.ts`'s ten `.md` EXEMPT entries was already duplicated here
+ * (verified by diffing both tables, not assumed), so #119 narrowed that file to stop checking the IPv4
+ * pattern at all rather than fold anything in — there was nothing left to fold. That file still exists,
+ * scoped to the two patterns this file deliberately excludes (see below); it is not redundant, only
+ * narrower than it used to be.
+ *
  * ## Why the population is EVERY TRACKED FILE, not an extension allowlist (#86)
  *
  * This file used to walk `git ls-files '*.mjs' '*.ts' '*.py' '*.ps1' '*.sh' '*.yml'` — #83's own
@@ -257,10 +265,6 @@ const EXEMPT: Array<{ file: string; value: string; reason: string }> = [
     file: "packages/lab/src/harnesses/page-identity-rate.mjs", value,
     reason: "UTM's own local VM bridge, private to a single Mac",
   })),
-  ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
-    file: "packages/lab/src/packaging/tracked-prose-leak-guard.test.ts", value,
-    reason: "UTM's own local VM bridge, private to a single Mac",
-  })),
   ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
     file: "packages/lab/src/training/README.md", value,
     reason: "UTM's own local VM bridge, private to a single Mac",
@@ -305,10 +309,10 @@ const EXEMPT: Array<{ file: string; value: string; reason: string }> = [
     reason: "this file's OWN leak-guard mutation fixture: a string deliberately shaped like a leak, "
       + "to prove LEAK_PATTERNS fires. Redacting it would break the test that proves the guard works.",
   })),
-  ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
     file: "packages/lab/src/packaging/tracked-prose-leak-guard.test.ts", value,
-    reason: "this file's OWN leak-guard mutation fixture: a string deliberately shaped like a leak, "
-      + "to prove LEAK_PATTERNS fires. Redacting it would break the test that proves the guard works.",
+    reason: "this file's OWN CONTROL case proving the IPv4 pattern is deliberately out of scope there "
+      + "(#119) — a synthetic value shaped like a leak, never a real address.",
   })),
 
   // === Generic test doubles for fleet/worker/enrolment logic, independent of any real address.
@@ -459,6 +463,24 @@ test("MUTATION: the hardcoded control-plane fallback this row removed does not s
     const leaks = findLeaks(file, reintroduced);
     assert.ok(leaks.length >= 1, `expected the reintroduced default to be caught in ${file}: ${JSON.stringify(leaks)}`);
   }
+});
+
+test("MUTATION: removing an EXEMPT entry the #119 fold inherited from the prose guard fails, by name", () => {
+  // #119 narrowed tracked-prose-leak-guard.test.ts to stop checking the IPv4 pattern, on the strength that
+  // every one of its ten EXEMPT entries was already present here — verified by diffing both tables, not
+  // assumed. This proves the inheritance is load-bearing rather than decorative: drop one entry from a
+  // COPY of EXEMPT and confirm the file it names starts reading as an offender again, by that exact name.
+  const file = "CLAUDE.md";
+  const value = "REDACTED-INTERNAL-ADDRESS";
+  assert.ok(EXEMPT.some((e) => e.file === file && e.value === value),
+    `fixture assumption broke: ${file} -> "${value}" is no longer in EXEMPT`);
+  const withoutInheritedEntry = EXEMPT.filter((e) => !(e.file === file && e.value === value));
+  const leaksIfDropped = allLeaksIn(collapsedText(file))
+    .filter((leak) => leak.name === IN_SCOPE)
+    .filter(({ value: v }) => !withoutInheritedEntry.some((e) => e.file === file && e.value === v));
+  assert.ok(leaksIfDropped.some((l) => l.value === value),
+    `dropping ${file} -> "${value}" from EXEMPT did not surface it as an offender -- the guard is not `
+    + "actually reading this entry, or the file no longer contains the value");
 });
 
 test("every LEAK_PATTERNS entry is exercised by at least one EXEMPT or MUTATION case here", () => {
