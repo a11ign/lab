@@ -142,3 +142,101 @@ test("the `blocked` label is read, and STARTABLE says what it did not check", ()
   assert.match(startable.lines.join("\n"), /never "nothing blocks this"/,
     "STARTABLE must name its own limit, or it is read as a wider claim than it makes");
 });
+
+/**
+ * A CLOSED ROW GETS NO VERDICT AT ALL — not a verdict with a caveat (#218).
+ *
+ * Measured 2026-09-07: #83 read `STARTABLE: no unmerged branch is in its region`, and **both sentences
+ * were true** — nothing held the region and every symbol was on `main`, BECAUSE the work was done and
+ * merged twenty-five minutes earlier. `dispatcher` briefed a worker on that reading; it cost nothing only
+ * because that worker checked GitHub themselves before starting.
+ *
+ * This is #208's limit reached one field earlier than the limit it states. STARTABLE was documented as
+ * *"nothing I can see"* — and what it could not see here was not a subtle dependency. **It was the
+ * issue's own `state`, already in the query being made for the labels.**
+ *
+ * IT RETURNS EARLY RATHER THAN APPENDING A NOTE, because a green light with a caveat beside it is still
+ * a green light, and the role file's target for units dispatched at closed rows is zero.
+ */
+test("a CLOSED row is refused outright, and the region check is not even consulted", () => {
+  const v = startability({
+    ...clear, row: 83, state: "CLOSED", closedAt: "2026-09-07T03:17:43Z",
+    subjectsMissing: [], heldRegions: [],
+  });
+  assert.equal(v.code, 1);
+  const text = v.lines.join("\n");
+  assert.match(text, /#83 IS CLOSED \(2026-09-07T03:17:43Z\)/, "it names the state and when");
+  assert.doesNotMatch(text, /STARTABLE/,
+    "a closed row must not print a startable verdict at all -- a caveat beside one is still a green light");
+  assert.match(text, /BECAUSE the work landed/,
+    "and it must say WHY the region being clear is not evidence here, or the next reader re-derives it");
+});
+
+test("an OPEN row's output is unchanged — refusing more is not automatically better", () => {
+  // This check is consulted before every dispatch. A version that refuses more things gets distrusted,
+  // and then it is not consulted at all.
+  const open = startability({ ...clear, state: "OPEN" });
+  const stateless = startability(clear);
+  assert.equal(open.code, 0);
+  assert.deepEqual(open.lines, stateless.lines,
+    "adding the state check must not change what an open row prints");
+});
+
+/**
+ * THE REGION HALF SAYS AS MUCH ABOUT A BRANCH AS THE SUBJECT HALF DOES.
+ *
+ * #208 taught the SUBJECT half to report a blocking ref's PR state — `(PR #89 CLOSED)` means nobody is
+ * coming, `(PR #172 OPEN)` means wait. **The region half never got it**, so one tool said two different
+ * amounts about the same branch, and an undecorated `REGION HELD` reads as *"wait for that to land"*
+ * even when the branch is dead. Found by `dispatcher` using the tool four minutes after #221 merged:
+ * `REGION HELD … origin/agent/identify-input-purpose-79`, whose PR #89 is closed and whose work moved
+ * wholesale to another row.
+ *
+ * `(no PR)` is a THIRD message and deliberately not folded into the other two: a branch nobody has
+ * proposed is not abandoned, it is plausibly somebody's live work, and it is the one case where "wait"
+ * may genuinely be right.
+ */
+test("a held region names each branch's PR state, and `no PR` stays its own answer", () => {
+  const v = startability({
+    ...clear,
+    heldRegions: [{ path: "packages/evidence/src/verify.ts", refs: [
+      "origin/agent/identify-input-purpose-79 (PR #89 CLOSED)",
+      "origin/agent/same-document-resolved-url (no PR)",
+    ] }],
+  });
+  const text = v.lines.join("\n");
+  assert.match(text, /PR #89 CLOSED/, "nobody is coming");
+  assert.match(text, /\(no PR\)/, "unproposed is not abandoned, and must not read as either of the others");
+  assert.equal(v.code, 0, "contention is still a merge cost, not a blocker -- decorating it changes nothing");
+});
+
+/**
+ * "NAMED NOTHING" AND "NAMED PROSE" ARE TWO DIFFERENT SENTENCES (#228).
+ *
+ * The `.md` filter is correct: there is no symbol to verify in a README, and pretending to check one
+ * would be worse than saying nothing. But dropping prose paths SILENTLY made the verdict tell a docs row
+ * it *"names no source path"* — when it named one, `packages/cli/README.md`, in a Region field that was
+ * filled in correctly. That sends its author to fix something that is not broken.
+ *
+ * This is the third time tonight this tool's WALK was right and its SENTENCE was wider: #218 said
+ * STARTABLE for a closed row, #227 said a branch held a region without saying whether it would ever land,
+ * and this. All three are the census's own fourth shape, in the tool its author wrote.
+ */
+test("a row whose Region is PROSE is told so, and NOT told to add a Region it already has", () => {
+  const v = startability({ ...clear, examined: { paths: 0, symbols: 0, prose: 1 } });
+  assert.equal(v.code, 2, "still inconclusive -- this checks code and cannot judge a document");
+  const text = v.lines.join("\n");
+  assert.match(text, /names 1 document\(s\)/);
+  assert.match(text, /NOT a missing Region: do not add one/,
+    "the whole point: its author filled the field in correctly and must not be sent back to it");
+  assert.doesNotMatch(text, /names no source path/,
+    "that is the OTHER sentence, for a row that named nothing at all");
+});
+
+test("a row that named nothing at all still gets the original sentence", () => {
+  const v = startability({ ...clear, examined: { paths: 0, symbols: 0, prose: 0 } });
+  assert.equal(v.code, 2);
+  assert.match(v.lines.join("\n"), /names no source path and no symbol/);
+  assert.doesNotMatch(v.lines.join("\n"), /document\(s\)/,
+    "collapsing the two is what made the docs message wrong; keep them apart in both directions");
+});

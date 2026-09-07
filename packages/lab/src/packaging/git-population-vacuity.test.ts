@@ -138,6 +138,16 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "controls drive the detector against sources built in the test, so the shape is pinned even if "
       + "the repository population were to empty entirely.",
   },
+  "packages/worker-fleet/src/entry-points.test.ts": {
+    guard: "declared.length >= 85",
+    note: "guarded — #211's FORM population, walked via `git ls-files`: every tracked source declaring "
+      + "`import.meta.url ===`. Floored at 85 against 93 today, and deliberately a DIFFERENT population "
+      + "from the same file's `entryPoints()` discovery, which enumerates invocation sources and is "
+      + "inherently incomplete. Two populations in one file answering two questions: whether a guard has "
+      + "the right FORM (the file declares itself, complete) and whether a file NEEDS one (the sources, "
+      + "not complete). This entry covers the first; the second has no floor because there is no honest "
+      + "number to floor it at.",
+  },
   "packages/lab/src/packaging/tracked-source-leak-guard.test.ts": {
     guard: "files.length >= MIN_TRACKED_SOURCE_FILES",
     note: "guarded — `git ls-files '*.mjs' '*.ts' '*.py' '*.ps1' '*.sh' '*.yml'` for #83's source-comment "

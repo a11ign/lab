@@ -29,6 +29,27 @@ test("ready + disputed is caught, exactly tonight's #13", () => {
   assert.deepEqual(violations[0].conflicting, ["disputed"]);
 });
 
+test("#246: ready + in-progress + session:* is caught -- exactly what row-claim.mjs's own comment " +
+  "says this audit exists to catch, and the real state three real rows sat in", () => {
+  const issues = [
+    { number: 230, title: "t", labels: ["backlog", READY_LABEL, "in-progress", "session:worker-judge"] },
+    { number: 223, title: "t", labels: ["backlog", READY_LABEL, "in-progress", "session:worker-capture"] },
+    { number: 222, title: "t", labels: ["backlog", READY_LABEL, "in-progress", "session:worker-audit"] },
+  ];
+  const violations = mutexViolations(issues);
+  assert.equal(violations.length, 3, "all three of #246's real rows must be caught, not a subset");
+  for (const v of violations) assert.deepEqual(v.conflicting, ["in-progress"]);
+});
+
+test("a row carrying ONLY session:* -- dispatched but not started -- is deliberately still pickable-" +
+  "adjacent and must NOT be flagged", () => {
+  // #246's own scope note: session:* alone is dispatchRow's "dispatched, not started" state. Only
+  // in-progress is the contradiction.
+  const issues = [{ number: 5, title: "dispatched, not yet started",
+    labels: ["backlog", READY_LABEL, "session:worker-judge"] }];
+  assert.deepEqual(mutexViolations(issues), []);
+});
+
 test("every MUTEX_LABELS entry is individually caught, not just the first one tested", () => {
   for (const label of MUTEX_LABELS) {
     const issues = [{ number: 99, title: "t", labels: [READY_LABEL, label] }];
@@ -55,6 +76,14 @@ test("only the ready-carrying rows are scanned -- a clean board scans everything
 });
 
 // --- MUTATION: the rule must not silently stop covering a label ---
+
+test("MUTATION: in-progress is genuinely in MUTEX_LABELS, not just described as such", () => {
+  // #246's own shape -- the state row-claim.mjs's own comment says this audit exists to catch. If this
+  // list ever drops `in-progress` again, the rule keeps working for the other six and goes silent for
+  // exactly the case that motivated the row.
+  assert.ok(MUTEX_LABELS.includes("in-progress"),
+    "in-progress must be in MUTEX_LABELS -- claimed and started rows are not pickable, #246");
+});
 
 test("MUTATION: review-only is genuinely in MUTEX_LABELS, not just described as such", () => {
   // #27's own shape -- a row that solicits review and should never be started as work. If this list ever
