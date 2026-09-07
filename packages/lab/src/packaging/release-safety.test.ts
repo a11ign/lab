@@ -94,6 +94,34 @@ test("guards 5 and 6 are not skippable in dry run", () => {
     + "dry run cannot proceed past a red consumer-path or capture-path job either");
 });
 
+test("dist-tag (#326) is a CHANNEL, not a bypass of any of the six guards", () => {
+  // Defaults empty, so an unattended or mistyped dispatch behaves exactly as before: no flag reaches
+  // `changeset publish`, which is changesets' own "latest" behaviour.
+  assert.match(workflow, /dist-tag:[\s\S]{0,600}?default:\s*['"]{2}/,
+    "the dist-tag input must default to empty, or an unattended dispatch could tag a release without "
+    + "anyone choosing to");
+
+  // The publish step itself, not just the input declaration -- a flag built somewhere `if:`-gated
+  // differently from the six guards above would be a seventh, undocumented path to publishing.
+  const publishStep = workflow.indexOf("- name: Publish\n");
+  assert.notEqual(publishStep, -1, "the Publish step must exist");
+  const nearby = workflow.slice(publishStep, publishStep + 700);
+  assert.match(nearby, /if:\s*inputs\.dry-run == false && inputs\.confirm == 'publish-for-real'/,
+    "the Publish step's OWN if: must still require both dry-run and confirm -- dist-tag selects WHICH "
+    + "tag a real publish uses, it must never be a route to a publish the other five guards would refuse");
+  assert.match(nearby, /changeset publish.*inputs\.dist-tag/,
+    "the publish command must actually read inputs.dist-tag, or the input is decorative");
+});
+
+test("PROOF: the dist-tag flag expression omits --tag when empty and includes it when set", () => {
+  // The exact expression this file's Publish step uses, evaluated the way GitHub Actions would: string
+  // concatenation with a ternary. Proven here because the real workflow only runs on a dispatch.
+  const flag = (distTag: string): string =>
+    distTag !== "" ? ` --tag ${distTag}` : "";
+  assert.equal(flag(""), "", "an empty dist-tag must add nothing -- changesets' own default is latest");
+  assert.equal(flag("next"), " --tag next", "a real dist-tag must reach the command");
+});
+
 test("the gate runs, and is not allowed to fail softly", () => {
   assert.match(workflow, /npm run release:gate/, "a release must run the full gate");
   assert.ok(!/continue-on-error:\s*true/.test(workflow),

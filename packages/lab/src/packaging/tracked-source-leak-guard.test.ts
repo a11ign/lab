@@ -352,6 +352,11 @@ const EXEMPT: Array<{ file: string; value: string; reason: string }> = [
     file: "packages/worker-fleet/src/guest-reachable.test.ts", value,
     reason: "generic test double, independent of any real address",
   })),
+  ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/packaging/history-secret-scan.test.ts", value,
+    reason: "generic test double, independent of any real address -- the fixture history-secret-scan.mjs "
+      + "exists to FIND this exact shape, so its own test necessarily embeds one",
+  })),
 
 ];
 
@@ -453,11 +458,15 @@ test("MUTATION: a real leak reintroduced into a currently-clean source file is c
 });
 
 test("MUTATION: the hardcoded control-plane fallback this row removed does not silently come back", () => {
+  // #285: `CONTROL_PLANE` stopped being a bare `= process.env.A11Y_CONTROL_HOST` at import time -- it is
+  // now resolved by `requireControlPlaneHost()` inside `main()`, so a reintroduced fallback would sit on
+  // THAT line instead. The detector this test proves is unchanged (`findLeaks` scans the whole collapsed
+  // file for a private-LAN IPv4 literal, not this one line specifically) -- only the fixture moved with it.
   for (const file of ["packages/control/src/fleet-playbook.mjs", "packages/control/src/lab-pipeline.mjs"]) {
     const clean = collapsedText(file);
     const reintroduced = clean.replace(
-      "const CONTROL_PLANE = process.env.A11Y_CONTROL_HOST;",
-      'const CONTROL_PLANE = process.env.A11Y_CONTROL_HOST || "REDACTED-INTERNAL-ADDRESS";',
+      "CONTROL_PLANE = requireControlPlaneHost();",
+      'CONTROL_PLANE = requireControlPlaneHost() || "REDACTED-INTERNAL-ADDRESS";',
     );
     assert.notEqual(reintroduced, clean, `the replacement did not match in ${file} — the fixture text has drifted`);
     const leaks = findLeaks(file, reintroduced);
