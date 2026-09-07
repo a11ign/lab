@@ -19,14 +19,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { stripComments } from "@a11y-witness/evidence/source-text";
+import { stripComments } from "@a11ign/evidence/source-text";
 import { CASES as RAW_CASES } from "./case-matrix.mjs";
 
 type Case = { id: string; criterion: string; subtype: string };
 const CASES = RAW_CASES as Case[];
 
 // Comments stripped -- unbounded to end of file, over a source file long enough that an unrelated later
-// comment could otherwise satisfy or defeat these checks. See `@a11y-witness/evidence/source-text`.
+// comment could otherwise satisfy or defeat these checks. See `@a11ign/evidence/source-text`.
 const SOURCE = stripComments(readFileSync(fileURLToPath(new URL("./case-matrix.mjs", import.meta.url)), "utf8"));
 
 test("the accompanying-defect rotation is not a global running counter", () => {

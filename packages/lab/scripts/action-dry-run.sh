@@ -74,7 +74,7 @@ if ! curl -sf -m 10 "$WORKER/health" >/dev/null; then
 fi
 
 echo "-- step: Capture and judge --"
-out="$RUNNER_TEMP/a11y-witness-result.json"
+out="$RUNNER_TEMP/a11ign-result.json"
 args=("$URL" --task "$TASK" --json)
 [ "${PROBE_FORMS:-false}" = "true" ] && args+=(--probe-forms)
 [ "${AXE:-false}" = "true" ] || args+=(--no-axe)
@@ -88,7 +88,7 @@ echo "-- step: Report --"
 # would abort before the outputs were written — on exactly the runs where they are wanted.
 status=0
 npx tsx src/action/run.ts --result="$out" --fail-on="$FAIL_ON" \
-  --summary-out="$RUNNER_TEMP/a11y-witness-summary.md" --marker=a11y-witness || status=$?
+  --summary-out="$RUNNER_TEMP/a11ign-summary.md" --marker=a11ign || status=$?
 node -e '
   const r = require(process.argv[1]); const fs = require("fs");
   fs.appendFileSync(process.env.GITHUB_OUTPUT, `findings=${r.verdict.findings.length}\n`);
@@ -100,7 +100,7 @@ echo "-- what the runner would see --"
 echo "   step outputs:"; sed 's/^/     /' "$GITHUB_OUTPUT"
 echo "   job summary: $(wc -l < "$GITHUB_STEP_SUMMARY" | tr -d ' ') lines"
 echo
-sed 's/^/   /' "$RUNNER_TEMP/a11y-witness-summary.md"
+sed 's/^/   /' "$RUNNER_TEMP/a11ign-summary.md"
 echo
 echo "-- exit contract --"
 echo "   report step would exit $status (fail-on=$FAIL_ON)"

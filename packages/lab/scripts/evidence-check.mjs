@@ -10,7 +10,7 @@
 // It is also the only honest way to promote the Chrome preset from "predicted" to "measured".
 //
 // Runs under tsx, not plain node: it applies the pipeline's own verification gates, which live in
-// TypeScript (@a11y-witness/evidence/verify). Same reason capture-screenreader-dataset.mjs does.
+// TypeScript (@a11ign/evidence/verify). Same reason capture-screenreader-dataset.mjs does.
 //
 // Prints a per-case verdict and one recommendation: ship without invalidating the cache, or bump
 // CAPTURE_PROTOCOL_VERSION and recapture. See ../src/capture/evidence-diff.mjs for why this exists --
@@ -28,16 +28,16 @@ import { resolve } from "node:path";
 import { compareCapture, readCapture, summarise } from "../src/capture/evidence-diff.mjs";
 import { datasetRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 import { isEvidence } from "../src/training/capture-decisions.mjs";
-import { titleOf } from "@a11y-witness/evidence/verify";
+import { titleOf } from "@a11ign/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";
 import { nonAuthoritativeHostNotice } from "../src/training/capture-host.mjs";
 import { hasUsableCaptureFiles } from "../src/training/capture-resume.mjs";
-import { hostPagesBase } from "@a11y-witness/worker-fleet/host-address";
-import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "@a11y-witness/worker-fleet/worker-http";
-import { workerIsUsable } from "@a11y-witness/worker-fleet/health";
+import { hostPagesBase } from "@a11ign/worker-fleet/host-address";
+import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "@a11ign/worker-fleet/worker-http";
+import { workerIsUsable } from "@a11ign/worker-fleet/health";
 import { drainAcrossPool } from "../src/training/worker-pool.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { captureTolerantly } from "@a11y-witness/worker-fleet/capture-client";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { captureTolerantly } from "@a11ign/worker-fleet/capture-client";
 
 /**
  * the check that decides whether 2,122 cached captures survive a change. It also takes worker URLs

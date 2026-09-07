@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ruleFindings } from "@a11y-witness/judge/rules";
+import { ruleFindings } from "@a11ign/judge/rules";
 
 const FIXTURES = fileURLToPath(new URL("../eval/fixtures/", import.meta.url));
 

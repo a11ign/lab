@@ -26,8 +26,8 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { signalMatches } from "./case-matrix.mjs";
-import { ruleFindings } from "@a11y-witness/judge/rules";
-import { oracleCounts } from "@a11y-witness/evidence/verify";
+import { ruleFindings } from "@a11ign/judge/rules";
+import { oracleCounts } from "@a11ign/evidence/verify";
 import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
 import { labCorpusReadable, skipLine } from "./corpus-settled.mjs";
 

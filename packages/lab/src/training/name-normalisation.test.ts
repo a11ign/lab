@@ -17,7 +17,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { namesOf } from "./case-matrix.mjs";
-// The SOURCE, by relative path, not `@a11y-witness/judge/rules` — that specifier resolves to `dist`, and a
+// The SOURCE, by relative path, not `@a11ign/judge/rules` — that specifier resolves to `dist`, and a
 // test whose job is to catch drift between two files must not be reading a compiled snapshot of one of them.
 // Earlier today a stale `dist` made `rules:gate` score a rule it did not contain.
 import { comparableNamesForTest } from "../../../judge/src/rules.js";

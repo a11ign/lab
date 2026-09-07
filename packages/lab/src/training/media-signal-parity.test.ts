@@ -18,7 +18,7 @@
 // This file is the third tier for the ONE duplication #9 introduced: delete a copy (not possible, the
 // package boundary is real), derive one from the other (not possible, `packages/lab` cannot depend on a
 // TypeScript build), so pin them equal with a test — imported from the TypeScript SOURCE by relative
-// path, never `@a11y-witness/judge/rules`, which resolves to `dist` and would defeat the point of a test
+// path, never `@a11ign/judge/rules`, which resolves to `dist` and would defeat the point of a test
 // that exists to catch drift between two files.
 import { test } from "node:test";
 import assert from "node:assert/strict";

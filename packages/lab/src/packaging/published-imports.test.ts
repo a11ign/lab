@@ -1,13 +1,13 @@
 /**
  * A PUBLISHED PACKAGE MUST NOT IMPORT A PRIVATE ONE.
  *
- * Not a style rule — a broken publish. `npm install a11y-witness` resolves dependencies from the registry,
+ * Not a style rule — a broken publish. `npm install a11ign` resolves dependencies from the registry,
  * and a private package is not there, so the import fails on a USER'S machine and nowhere else. It works
  * in this workspace, where every package is a symlink, right up until somebody installs it.
  *
  * ## What it is really protecting
  *
- * The product/harness boundary. `a11y-witness` (the CLI) is what ships; `lab` is the corpus generator, the
+ * The product/harness boundary. `a11ign` (the CLI) is what ships; `lab` is the corpus generator, the
  * trainer, the Python calls and the ansible dispatch; `control` holds the fleet credentials. The CLI
  * importing any of that would drag the entire research apparatus into a published artefact.
  *
@@ -19,7 +19,7 @@
  *
  * ## Both spellings, because either would break a publish
  *
- * By package name (`@a11y-witness/lab`) and by relative path (`../../lab/src/...`). The second is how this
+ * By package name (`@a11ign/lab`) and by relative path (`../../lab/src/...`). The second is how this
  * repo legitimately reaches across packages when `node_modules` must not be involved — `packages/control`
  * does it deliberately — so it is a real route, not a hypothetical one.
  */

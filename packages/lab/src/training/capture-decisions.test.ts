@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import {
   isEvidence, isTransient, rejectionReason, runOutcome, shouldEvictWorker, shouldRetireWorker,
 } from "./capture-decisions.mjs";
-import { captureFault, FAULT } from "@a11y-witness/nvda-worker/capture-faults";
+import { captureFault, FAULT } from "@a11ign/nvda-worker/capture-faults";
 
 const TITLE = "Aquarium 001 schedule";
 const URL = "http://host:5050/aquarium/good";

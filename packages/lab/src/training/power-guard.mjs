@@ -31,7 +31,7 @@
  */
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { errorText } from "@a11y-witness/nvda-worker/error-text";
+import { errorText } from "@a11ign/nvda-worker/error-text";
 
 const run = promisify(execFile);
 

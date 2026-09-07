@@ -10,7 +10,7 @@
  * `cli.test.ts` now computes its own repo-root/captures-path locally -- the same pattern
  * `worker-fleet`'s `doctor.mjs`/`compare-workers.mjs`, `nvda-worker`'s `capture-pure.corpus.test.ts` and
  * `judge`'s `channel-tables-4.1.2.test.ts` already used for the identical reason -- and `cli`'s
- * `devDependencies` no longer lists `@a11y-witness/lab` at all. `lab -> cli` (one direction, via
+ * `devDependencies` no longer lists `@a11ign/lab` at all. `lab -> cli` (one direction, via
  * `public-api.test.ts`) is legitimate and stays; it is not a cycle on its own. `lab` genuinely has zero
  * workspace dependents again, so `testPackages` for a change scoped to this file really is `["lab"]` --
  * the FIRST real single-package measurement point this repo has had for a package with actual TypeScript
@@ -39,9 +39,9 @@
  *
  * ## What is deliberately NOT here
  *
- * `@a11y-witness/lab` depends on `@a11y-witness/nvda-worker`, `@a11y-witness/worker-fleet` and
- * `@a11y-witness/judge`, so none of those packages can import this module without a dependency cycle.
- * `a11y-witness` (cli) is the same shape since #199 (see this file's own header): it depends on nothing
+ * `@a11ign/lab` depends on `@a11ign/nvda-worker`, `@a11ign/worker-fleet` and
+ * `@a11ign/judge`, so none of those packages can import this module without a dependency cycle.
+ * `a11ign` (cli) is the same shape since #199 (see this file's own header): it depends on nothing
  * that depends on `lab`, but its own test needed real captures, so it computes its own copy too rather
  * than reintroducing the `cli <-> lab` cycle #199 closed. Four call sites keep their own copy of the
  * repo-root computation for exactly this reason:
@@ -51,7 +51,7 @@
  *   - `packages/judge/src/channel-tables-4.1.2.test.ts`
  *   - `packages/cli/src/cli.test.ts`
  *
- * `@a11y-witness/control` is separately exempt: ADR 0012 keeps it deliberately dependency-free (enforced
+ * `@a11ign/control` is separately exempt: ADR 0012 keeps it deliberately dependency-free (enforced
  * by `control-has-no-dependencies.test.ts`), and its own `REPO` in `lab-job.mjs`/`lab-pipeline.mjs` is
  * used only as a `cwd` for spawning Ansible — it never reads or writes anything under `runs/`.
  *
@@ -76,7 +76,7 @@ import { resolve, relative } from "node:path";
  * Computed from THIS file's own location, once, rather than by every caller re-deriving it from ITS
  * location. `packages/lab/src/dataset-paths.mjs` sits three directories below the repo root
  * (`packages`, `lab`, `src`), so three ".." get there regardless of whether a caller imports the
- * `src` copy directly (scripts do) or the built `dist` copy (a cross-package `@a11y-witness/lab`
+ * `src` copy directly (scripts do) or the built `dist` copy (a cross-package `@a11ign/lab`
  * import would) — `dist/` mirrors `src/`'s depth under the package root.
  */
 export const REPO_ROOT = fileURLToPath(new URL("../../../", import.meta.url));

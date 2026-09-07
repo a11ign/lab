@@ -86,7 +86,7 @@
  * ## Scoped to the IPv4 pattern only — #83's own acceptance command, not all of `LEAK_PATTERNS`
  *
  * Running `allLeaksIn` unfiltered against this population also fires the SSH-key-filename pattern, widely
- * — `~/.ssh/a11y-pve_ed25519`, `~/.ssh/a11y-witness_ed25519` and similar appear as hardcoded fallback
+ * — `~/.ssh/a11y-pve_ed25519`, `~/.ssh/a11ign_ed25519` and similar appear as hardcoded fallback
  * DEFAULTS (`process.env.A11Y_PVE_KEY || "..."`, the identical shape #83's CONTROL_PLANE fix removed) in
  * roughly a dozen files across `packages/control` and `packages/worker-fleet`. That is real and worth
  * fixing, but it is a DIFFERENT class of exposure from a real fleet ADDRESS — #83's own title and

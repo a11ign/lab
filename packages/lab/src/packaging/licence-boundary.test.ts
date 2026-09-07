@@ -90,7 +90,7 @@ test("no permissively-licensed package imports a copyleft one", () => {
   assert.ok(permissive.length > 0, "no permissive package found — has evidence been relicensed?");
 
   // An IMPORT, not a mention. A substring search over whole files flagged
-  // `"dct:title": "a11y-witness"` in `earl.ts` — the tool naming ITSELF in its own EARL output — as a
+  // `"dct:title": "a11ign"` in `earl.ts` — the tool naming ITSELF in its own EARL output — as a
   // licence violation. A check that cannot tell an import from a string literal reports a compliance
   // failure for a product name, which is the "check that cannot discriminate" pattern this repo keeps
   // paying for.

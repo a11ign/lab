@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { assertDisjoint, pagesFor, REAL_PAGES, UNWITNESSABLE_ON_REAL_PAGES } from "./real-page-corpus.mjs";
-import { SCORED_CRITERIA, RULE_CRITERIA } from "@a11y-witness/judge/coverage";
+import { SCORED_CRITERIA, RULE_CRITERIA } from "@a11ign/judge/coverage";
 import { CASES } from "./case-matrix.mjs";
 
 /** Every `url` recorded in an eval fixture — the TEST set, derived rather than copied. */

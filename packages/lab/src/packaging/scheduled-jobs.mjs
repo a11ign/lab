@@ -48,7 +48,7 @@ export function platformSupportsLaunchd() {
   return platform() === "darwin";
 }
 
-/** Real answer for `listInstalled`: every `com.a11y-witness.*` label launchd currently knows about. */
+/** Real answer for `listInstalled`: every `com.a11ign.*` label launchd currently knows about. */
 export function launchctlListA11yWitnessJobs() {
   const uid = typeof process.getuid === "function" ? process.getuid() : 0;
   let out;
@@ -57,7 +57,7 @@ export function launchctlListA11yWitnessJobs() {
   } catch {
     return [];
   }
-  return [...out.matchAll(/com\.a11y-witness\.[a-z-]+/g)].map((m) => m[0])
+  return [...out.matchAll(/com\.a11ign\.[a-z-]+/g)].map((m) => m[0])
     .filter((label, i, all) => all.indexOf(label) === i)
     .sort();
 }

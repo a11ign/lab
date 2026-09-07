@@ -35,7 +35,20 @@ function scrubLines(source: string): string {
   return match[0];
 }
 
-test("the scrub line is present and appears BEFORE `npm test` runs", () => {
+/**
+ * The invocation shapes that actually spawn a child process capable of inheriting `GIT_*` -- not `npm
+ * test` alone. 2026-09-07: the pre-push hook stopped running package unit suites at all (CI's acceptance
+ * job covers them now), so the ONE test-spawning call left locally is `npx tsx --test
+ * packages/worker-fleet/src/mjs-parses.test.ts` (the mjs parse check) -- `npm test` no longer appears
+ * anywhere in the hook's real code, only in its prose. Matching `npm test` alone after that change makes
+ * this test report "the scrub is missing" for a hook that removed the very thing being searched for, not
+ * the scrub -- the same stale-matcher shape the comment below already names once. Both forms stay in the
+ * pattern so a future restoration of `npm test` (main's FULL gate, say) does not silently stop being
+ * checked either.
+ */
+const TEST_INVOCATION_RE = /\bnpm test\b|\bnpx tsx --test\b/;
+
+test("the scrub line is present and appears BEFORE any test-spawning invocation runs", () => {
   // MATCHES THE INVOCATION, NOT ITS EXACT PREFIX. The first version of this looked for the literal
   // substring `run "unit tests" npm test`, and the fast/full pre-push split (2026-09-06) changed that
   // call site to `run "unit tests" env A11Y_TEST_CONCURRENCY=4 npm test` -- correct hook, stale matcher:
@@ -47,20 +60,22 @@ test("the scrub line is present and appears BEFORE `npm test` runs", () => {
   // else tomorrow), because the ORDERING is the property under test, not the surrounding text.
   const source = stripBashComments(hookSource());
   const scrubIndex = source.indexOf(scrubLines(source));
-  const testMatch = /\bnpm test\b/.exec(source);
-  assert.ok(testMatch, "expected to find an `npm test` invocation somewhere in the hook");
+  const testMatch = TEST_INVOCATION_RE.exec(source);
+  assert.ok(testMatch, "expected to find a test-spawning invocation (npm test or npx tsx --test) somewhere in the hook");
   assert.ok(scrubIndex < testMatch.index,
-    "the GIT_* scrub must run BEFORE `npm test`, or the hook's own inherited GIT_DIR reaches the test process");
+    "the GIT_* scrub must run BEFORE any test invocation, or the hook's own inherited GIT_DIR reaches the test process");
 });
 
 test("MUTATION: the ordering check survives the invocation's prefix changing shape again", () => {
   // Proves the matcher above is not merely tolerant of TODAY's prefix by construction -- it must still
-  // find `npm test` correctly when wrapped a SECOND time, differently, from how the real hook wraps it.
+  // find the real invocation correctly when wrapped a SECOND time, differently, from how the real hook
+  // wraps it.
   const source = stripBashComments(hookSource());
-  const rewrapped = source.replace(/\bnpm test\b/, "env A11Y_TEST_CONCURRENCY=4 A11Y_ANOTHER_VAR=x npm test");
+  const rewrapped = source.replace(TEST_INVOCATION_RE,
+    (m) => `env A11Y_TEST_CONCURRENCY=4 A11Y_ANOTHER_VAR=x ${m}`);
   const scrubIndex = rewrapped.indexOf(scrubLines(rewrapped));
-  const testMatch = /\bnpm test\b/.exec(rewrapped);
-  assert.ok(testMatch, "the ordering check must still find npm test after a second re-wrap");
+  const testMatch = TEST_INVOCATION_RE.exec(rewrapped);
+  assert.ok(testMatch, "the ordering check must still find the invocation after a second re-wrap");
   assert.ok(scrubIndex < testMatch.index, "and the ordering must still hold after the re-wrap");
 });
 

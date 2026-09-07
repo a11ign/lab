@@ -20,7 +20,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { distributionProblems } from "../src/training/dataset-distribution.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, datasetExportPath } from "../src/dataset-paths.mjs";
 
 const REPO = REPO_ROOT;

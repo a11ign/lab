@@ -13,7 +13,7 @@
 import { lstat, readdir } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 
 /**
  * `--inference` decides which shape is verified, so a typo checks the wrong contract and passes.
