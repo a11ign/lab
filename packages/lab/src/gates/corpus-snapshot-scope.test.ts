@@ -44,6 +44,58 @@ const REBUILDABLE: Record<string, string> = {
   "runs": "a nested duplicate from a RUNS_ROOT mishap, not a distinct corpus",
 };
 
+/**
+ * #230: a PARTIAL `runs/` — e.g. just `runs/fetched/`, left by `lab:fetch`/`lab:log` in any worktree that
+ * has read a job's output — used to fail the same way a real corpus that lost its layout would. The old
+ * anti-vacuity floor (`dirs.length >= 3`) covered ZERO directories and MANY, and left A FEW uncovered: a
+ * skip and an assertion, with no state in between for "this is not a corpus at all".
+ *
+ * The fix is not to lower the floor to 1 — that would silence a real corpus that lost every unreproducible
+ * root. It is to ask what the guard is actually auditing: whether `runs/` carries anything that CANNOT be
+ * recaptured. A worktree holding only classified-rebuildable directories (`fetched`, `embedding-cache`, …)
+ * has nothing of that kind — it is not a corpus to audit, and skipping is not a pass, it is "not applicable".
+ */
+export function auditCorpusDirs(dirs: string[]): { skip: true } | { skip: false; unclassified: string[] } {
+  if (dirs.length === 0) return { skip: true };
+  const present = MUST_ARCHIVE.filter((d) => dirs.includes(d));
+  if (present.length === 0) return { skip: true };
+  const unclassified = dirs
+    .filter((d) => !MUST_ARCHIVE.includes(d) && !(d in REBUILDABLE))
+    .filter((d) => !d.startsWith("promoted-backup-"))
+    .sort();
+  return { skip: false, unclassified };
+}
+
+test("#230: a partial runs/ carrying only REBUILDABLE directories is not a corpus, and skips rather than fails", () => {
+  const result = auditCorpusDirs(["fetched"]);
+  assert.equal(result.skip, true,
+    "one classified-rebuildable directory is what `lab:fetch` leaves in a worktree, and it is not a "
+    + "corpus to audit -- the old `dirs.length >= 3` floor failed this exact case");
+});
+
+test("#230: several REBUILDABLE directories together are still not a corpus without a MUST_ARCHIVE root", () => {
+  const result = auditCorpusDirs(["fetched", "embedding-cache", "worker-compare"]);
+  assert.equal(result.skip, true);
+});
+
+test("#230: an empty runs/ still skips, as before", () => {
+  assert.deepEqual(auditCorpusDirs([]), { skip: true });
+});
+
+test("#230: a real corpus (carrying a MUST_ARCHIVE root) is audited, and an unclassified root still fails", () => {
+  const result = auditCorpusDirs(["real-page-corpus", "fetched", "a-new-root-nobody-classified"]);
+  assert.equal(result.skip, false);
+  if (result.skip) throw new Error("unreachable");
+  assert.deepEqual(result.unclassified, ["a-new-root-nobody-classified"]);
+});
+
+test("#230: a real corpus with everything classified reports no unclassified roots", () => {
+  const result = auditCorpusDirs(["real-page-corpus", "screenreader-acceptance", "fetched", "embedding-cache"]);
+  assert.equal(result.skip, false);
+  if (result.skip) throw new Error("unreachable");
+  assert.deepEqual(result.unclassified, []);
+});
+
 test("the snapshot archives the roots that cannot be recaptured at any price", () => {
   const src = source();
   for (const name of MUST_ARCHIVE) {
@@ -74,16 +126,13 @@ test("every capture-bearing directory under runs/ is archived or classified as r
   if (!readable.read) return;
   const dirs = readdirSync(runs, { withFileTypes: true })
     .filter((e) => e.isDirectory()).map((e) => e.name);
-  if (dirs.length === 0) return;
-  // ANTI-VACUITY: a corpus with no subdirectories would satisfy this having checked nothing.
-  assert.ok(dirs.length >= 3, `only ${dirs.length} director(ies) under runs/; the layout changed`);
+  // #230: a `runs/` carrying only REBUILDABLE directories (what `lab:fetch`/`lab:log` leave in any
+  // worktree that has read a job's output) is not a corpus to audit -- see auditCorpusDirs above.
+  const result = auditCorpusDirs(dirs);
+  if (result.skip) return;
 
-  const unclassified = dirs
-    .filter((d) => !MUST_ARCHIVE.includes(d) && !(d in REBUILDABLE))
-    .filter((d) => !d.startsWith("promoted-backup-"))
-    .sort();
-  assert.deepEqual(unclassified, [],
+  assert.deepEqual(result.unclassified, [],
     "these live under runs/ and are neither archived by corpus:snapshot nor classified as rebuildable. "
     + "Decide which — an unarchived root that cannot be recaptured is the whole of this gate: "
-    + unclassified.join(", "));
+    + result.unclassified.join(", "));
 });
