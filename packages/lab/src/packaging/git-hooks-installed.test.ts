@@ -44,7 +44,13 @@ function recorder({ get = HOOKS_PATH, throwOnGet = false }: { get?: string; thro
 test("`npm install` installs the hooks — the lifecycle script exists and names the installer", () => {
   // The load-bearing assertion. Everything below tests the installer's behaviour; this tests that anything
   // CALLS it, which is the half that was missing.
-  assert.equal(ROOT.scripts?.prepare, "node scripts/install-git-hooks.mjs",
+  //
+  // `prepare` is one `&&`-joined chain of every plain-`npm install`-time step (#376 added a second one,
+  // `prune-stale-workspace-scope.mjs`), so this checks the installer is A step rather than requiring it to
+  // be THE step — the exact-string form this used to be broke the moment a second step joined it, for a
+  // reason unrelated to whether the hooks themselves still install.
+  const steps = (ROOT.scripts?.prepare ?? "").split("&&").map((step: string) => step.trim());
+  assert.ok(steps.includes("node scripts/install-git-hooks.mjs"),
     "a fresh clone gets hooks only if `prepare` runs the installer — `prepare` fires on `npm install` in a "
     + "git checkout and never for a consumer installing a published package");
   assert.equal(ROOT.private, true,
