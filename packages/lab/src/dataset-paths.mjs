@@ -1,6 +1,9 @@
 // @ts-check
 /**
- * The one resolution of `runs/` and its dataset artefacts.
+ * The one resolution of `runs/` and its dataset artefacts. `lab` has no workspace dependents (nothing in
+ * this repo imports `@a11y-witness/lab`), so a change scoped to this file alone is the LEAF case for
+ * `ci.yml`'s `testPackages` scoping (#175) -- `testPackages` degrades to exactly `["lab"]`, the narrowest
+ * possible run.
  *
  * Before this existed, the repo-root computation `fileURLToPath(new URL("../../../", import.meta.url))`
  * was pasted into roughly a dozen scripts, each counting ".." segments to ITS OWN depth in the tree —
