@@ -8,12 +8,42 @@
  * `whatMerged`'s `unpushed === 0` branch calls the real `git(["rev-parse", "--short", "main"])` against
  * THIS repository — deliberately not mocked, since this checkout genuinely has a `main` branch and the
  * call is read-only; every other branch and every other section is exercised with plain fixture data.
+ *
+ * NEEDS A REAL LOCAL `main` BRANCH, BY DESIGN — same fact `board-style.test.ts`'s `buildDocument` comment
+ * already records for `board-data.mjs`'s `mergeState`: reading LOCAL `main` rather than `origin/main` is
+ * deliberate (a hold must not read as a stall), and correct for this tool's real home. `ci.yml`'s `ts` job
+ * checks out one commit via `actions/checkout@v4`'s default depth, with no branch named `main` locally,
+ * ever — so the two tests below that force this real `git()` call skip honestly there, the identical idiom,
+ * rather than asserting a shape their own environment cannot produce.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   release, blockerTable, issuesClosed, whatMerged, authorship, lastGate, fleetHoursSection, queue, render,
 } from "../../../../scripts/board-report.mjs";
+
+/**
+ * Runs `fn`, and turns "no local `main` branch here" into an honest skip rather than a failure — the same
+ * reasoning `board-style.test.ts`'s `buildDocument` already uses for the identical cause. Anything else
+ * re-throws: this must never quietly swallow a real assertion failure.
+ *
+ * NOT THE SAME REGEX. `board-style.test.ts` matches `git log main --merges`'s error (`fatal: ambiguous
+ * argument 'main': unknown revision ...`); this file calls `git(["rev-parse", "--short", "main"])`, which
+ * on the identical absent-branch condition prints a DIFFERENT, generic message: `fatal: Needed a single
+ * revision` -- no mention of "main", "ambiguous" or "unknown revision" at all. Verified by reproducing
+ * both against a real detached, branchless clone rather than assumed from the first case's wording; a
+ * regex borrowed from the other call site would have matched neither.
+ */
+function skipIfNoLocalMain(fn: () => void): void {
+  try {
+    fn();
+  } catch (error) {
+    const message = String((error as { stderr?: string; message?: string }).stderr ?? error);
+    if (!/unknown revision|ambiguous argument 'main'|needed a single revision/i.test(message)) throw error;
+    console.log("SKIPPED: no local `main` branch in this checkout (an ephemeral CI checkout) — this "
+      + "test's whole point is exercising the real git() call against one. Honest skip, not a pass.");
+  }
+}
 
 /** A minimal, complete fact set — every section reads a subset of this without throwing. */
 function facts(overrides = {}) {
@@ -110,10 +140,12 @@ test("whatMerged: unpushed === 1 is singular", () => {
 });
 
 test("whatMerged: unpushed === 0 reads the real repo's own main sha, read-only", () => {
-  const out = rendered(whatMerged, facts({ merges: [], unpushed: 0 }));
-  assert.match(out, /All work is on GitHub/);
-  // A real, non-empty short sha -- proves the git() call actually ran rather than being skipped.
-  assert.match(out, /\(`[0-9a-f]{7,}`\)/);
+  skipIfNoLocalMain(() => {
+    const out = rendered(whatMerged, facts({ merges: [], unpushed: 0 }));
+    assert.match(out, /All work is on GitHub/);
+    // A real, non-empty short sha -- proves the git() call actually ran rather than being skipped.
+    assert.match(out, /\(`[0-9a-f]{7,}`\)/);
+  });
 });
 
 test("authorship: no strays renders nothing at all -- an absent section, not an empty heading", () => {
@@ -196,18 +228,20 @@ test("queue: a non-empty Ready column prints the counts with no extra caveat lin
 });
 
 test("render: assembles every section in order, once, over a realistic fact set", () => {
-  const d = facts({
-    merges: [{}], unpushed: 0, closed: [{ number: 1, url: "https://x/1", title: "t" }],
-    ready: [{}], awaiting: [], open: [{}],
+  skipIfNoLocalMain(() => {
+    const d = facts({
+      merges: [{}], unpushed: 0, closed: [{ number: 1, url: "https://x/1", title: "t" }],
+      ready: [{}], awaiting: [], open: [{}],
+    });
+    const out = render(d);
+    const order = ["## Release", "## Blockers", "## Issues closed", "## What merged", "## Last gate result",
+      "## Fleet hours", "## Queue"];
+    let cursor = -1;
+    for (const heading of order) {
+      const at = out.indexOf(heading);
+      assert.ok(at > cursor, `expected "${heading}" to appear, in order, after the previous section`);
+      cursor = at;
+    }
+    assert.match(out, /^# Board report — \d{4}-\d{2}-\d{2}/);
   });
-  const out = render(d);
-  const order = ["## Release", "## Blockers", "## Issues closed", "## What merged", "## Last gate result",
-    "## Fleet hours", "## Queue"];
-  let cursor = -1;
-  for (const heading of order) {
-    const at = out.indexOf(heading);
-    assert.ok(at > cursor, `expected "${heading}" to appear, in order, after the previous section`);
-    cursor = at;
-  }
-  assert.match(out, /^# Board report — \d{4}-\d{2}-\d{2}/);
 });
