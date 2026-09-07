@@ -433,7 +433,12 @@ function hasUnnamedFormField(/** @type {any} */ capture) {
  */
 function routeTitleIsStale(/** @type {any} */ capture) {
   const route = (capture.interaction || {}).routeChange;
-  if (!route || route.error || !route.navigated) return false;
+  // `route.control === null` is the applicability gate -- not probed, errored, or quick-nav reached the
+  // end of the links with nothing to activate. `routeChange.navigated` looks like the same check and is
+  // NOT: `probeRouteChange` sets it `true` on every successful activation regardless of whether the view
+  // actually moved, so it is a tautology relative to what this predicate exists to establish (#250). Kept
+  // identical to `addStaleRouteTitle` in `rules.ts`, the same fix applied there.
+  if (!route || route.error || route.control === null) return false;
   const viewMoved = route.headingBefore !== route.headingAfter;
   return viewMoved && route.titleBefore === route.titleAfter;
 }
@@ -492,7 +497,9 @@ function controlUnreachableByKeyboard(/** @type {any} */ capture) {
 
 function skipLinkIsInert(/** @type {any} */ capture) {
   const route = (capture.interaction || {}).routeChange;
-  if (!route || route.error || !route.navigated) return false;
+  // See `routeTitleIsStale`'s comment: `route.control === null` is the correct applicability gate, and
+  // `routeChange.navigated` is a tautology that must not be read as evidence (#250).
+  if (!route || route.error || route.control === null) return false;
   if (!/\b(skip|jump)\b/i.test(String(route.control ?? ""))) return false;
   const landed = route.nextFocusAfter;
   if (typeof landed !== "string" || !landed) return false; // not measured, or silent — no claim
