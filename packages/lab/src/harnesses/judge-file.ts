@@ -8,9 +8,9 @@
  * This closes the end-to-end loop: a real screen-reader capture (e.g. NVDA on
  * the Windows worker) judged by the Codex-backed judge on the control plane.
  */
-import type { CaptureStructure } from "@a11y-witness/evidence";
+import type { CaptureStructure } from "@a11ign/evidence";
 import { readFileSync } from "node:fs";
-import { judge } from "@a11y-witness/judge";
+import { judge } from "@a11ign/judge";
 
 async function main(): Promise<void> {
   const path = process.argv[2];

@@ -157,7 +157,7 @@ test("a tracked stale duplicate names the issue that will close it", () => {
  */
 test("the detector catches #33's shape: a canonical import beside a hand-written Set", () => {
   const stale = `
-    import { SCORED_CRITERIA } from "@a11y-witness/judge/coverage";
+    import { SCORED_CRITERIA } from "@a11ign/judge/coverage";
     const SCORED = new Set(["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"]);
   `;
   assert.deepEqual(candidates(() => stale, ["fake.ts"]), ["fake.ts"],
@@ -173,7 +173,7 @@ test("the detector catches a LOCAL re-declaration of a canonical name, with no i
 test("the detector does NOT fire on a criterion-keyed table, or on a file with no canonical list", () => {
   // Both directions, because a guard that fires on everything is removed within a week.
   const keyed = `
-    import { SCORED_CRITERIA } from "@a11y-witness/judge/coverage";
+    import { SCORED_CRITERIA } from "@a11ign/judge/coverage";
     const SWEEPS: Record<string, string[]> = { "1.1.1": ["graphic"], "2.4.4": ["link"], "1.3.1": ["h"] };
   `;
   assert.deepEqual(candidates(() => keyed, ["keyed.ts"]), [],

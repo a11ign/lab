@@ -42,14 +42,14 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { ruleFindings } from "@a11y-witness/judge/rules";
-import { oracleCounts } from "@a11y-witness/evidence/verify";
+import { ruleFindings } from "@a11ign/judge/rules";
+import { oracleCounts } from "@a11ign/evidence/verify";
 // RULE_CRITERIA lives in coverage.ts and is imported by rules.ts, not re-exported from it. Taken from the
 // source rather than the convenient neighbour: locally tsx resolves TypeScript and the mistake is silent,
 // while the lab resolves `dist` and it is a hard failure — the stale-dist hazard, one door along.
-import { RULE_CRITERIA, SCORED_CRITERIA } from "@a11y-witness/judge/coverage";
+import { RULE_CRITERIA, SCORED_CRITERIA } from "@a11ign/judge/coverage";
 import { corpusState, minutesSinceLastWrite } from "../src/training/corpus-settled.mjs";
-import { CRITERION_COVERAGE, channelsPresent } from "@a11y-witness/judge/internal";
+import { CRITERION_COVERAGE, channelsPresent } from "@a11ign/judge/internal";
 import { REPO_ROOT, datasetRoot, captureRoot, realCorpusRoot } from "../src/dataset-paths.mjs";
 
 const REPO = REPO_ROOT;

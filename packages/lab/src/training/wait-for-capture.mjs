@@ -19,7 +19,7 @@
 import { watch } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { isStale, readProgress, tally } from "./capture-progress.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { datasetRoot } from "../dataset-paths.mjs";
 
 /**

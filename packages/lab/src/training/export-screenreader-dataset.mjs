@@ -2,15 +2,15 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { modelInput, observationOf } from "@a11y-witness/scorer/evidence-units";
-import { oracleCounts } from "@a11y-witness/evidence/verify";
+import { modelInput, observationOf } from "@a11ign/scorer/evidence-units";
+import { oracleCounts } from "@a11ign/evidence/verify";
 
 import {
   CASES,
   signalMatches,
 } from "./case-matrix.mjs";
 import { hasUsableCaptureFiles, TEST_GRADE } from "./capture-resume.mjs";
-import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { readCapture as readCaptureFile, isUsableCapture } from "../capture/evidence-diff.mjs";
 import { REPO_ROOT, datasetRoot, captureRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 

@@ -3,8 +3,8 @@
  *
  * This is the first line a stranger copies, and it was wrong for as long as it has existed:
  * `docs/github-action.md` and `examples/workflow.yml` both said
- * `uses: a11y-witness/a11y-witness@v1` — the wrong owner AND a tag that has never been cut, so a consumer
- * got `Unable to resolve action` before anything ran. `README.md` said `DanBeckDev/a11y-witness@main`, so
+ * `uses: a11ign/a11ign@v1` — the wrong owner AND a tag that has never been cut, so a consumer
+ * got `Unable to resolve action` before anything ran. `README.md` said `a11ign/a11ign@main`, so
  * the three documents disagreed with each other and two of them with reality.
  *
  * `action-smoke.yml` could not catch it. It runs `uses: ./`, which is the right thing for testing the
@@ -41,7 +41,10 @@ const usesLines = (): { file: string; owner: string; ref: string }[] => {
     const path = resolve(REPO, file);
     if (!existsSync(path)) continue;
     for (const m of readFileSync(path, "utf8").matchAll(/uses:\s*([\w.-]+\/[\w.-]+)@([\w.-]+)/g)) {
-      if (!/a11y-witness/i.test(m[1])) continue; // third-party actions are not ours to validate
+      // BOTH names, deliberately, during the #66/#325 transition: the Action reference itself still
+      // says `DanBeckDev/a11y-witness` (kept that way until #325 actually moves the repository), while
+      // everything else in these docs now says `a11ign`.
+      if (!/a11ign|a11y-witness/i.test(m[1])) continue; // third-party actions are not ours to validate
       found.push({ file, owner: m[1], ref: m[2] });
     }
   }

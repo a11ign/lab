@@ -51,8 +51,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve, join } from "node:path";
 
-import { annotateCapture } from "@a11y-witness/evidence";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { annotateCapture } from "@a11ign/evidence";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
 
 /**
