@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { collect } from "../../../../scripts/board-data.mjs";
@@ -323,4 +323,34 @@ test("the style guides the document is written to are in the repository", () => 
     assert.ok(existsSync(path.join(REPO, "docs/board/style", name)),
       `docs/board/style/${name} is missing, so the document is being checked against nothing`);
   }
+});
+
+/* A COUNT THAT SILENTLY DROPS ROWS IS WORSE THAN ONE THAT COUNTS THE WRONG THING.
+ *
+ * `meta` marks a row that is not work -- the daily report's own issue (#20), whose comments ARE the
+ * editions, so it is open for ever and can never be worked. Counted, it inflates the total by one
+ * permanently and the figure stops meaning what a reader thinks it means.
+ *
+ * Excluding it is right. Excluding it WITHOUT SAYING SO is the thing this repo has paid for repeatedly:
+ * a number whose population nobody can reconstruct. So the exclusion is enforced in `countable()` and
+ * STATED in the source column beside the figure, and this test pins both halves together -- a fix that
+ * drops the sentence leaves a count nobody can check.
+ */
+test("meta rows are excluded from the counted set, and the document says so", async () => {
+  const { countable, META_LABEL } = await import("../../../../scripts/board-data.mjs");
+  const rows = [
+    { number: 1, state: "OPEN", labelNames: ["backlog"] },
+    { number: 2, state: "OPEN", labelNames: ["backlog", META_LABEL] },
+  ];
+  // `countable` comes from an untyped .mjs, so the row type is stated here rather than inferred —
+  // `tsx` runs this file happily and `tsc` does not, which is the whole reason the typecheck is a
+  // separate gate from the tests.
+  const counted = countable(rows) as Array<{ number: number }>;
+  assert.deepEqual(counted.map((r) => r.number), [1],
+    "a row labelled meta must not reach the counted set");
+
+  const doc = readFileSync(path.join(REPO, "scripts/board-document.mjs"), "utf8");
+  assert.match(doc, /excluding rows marked as containers rather than work/,
+    "the document must PRINT the exclusion beside the count — an unexplained exclusion is a figure "
+    + "whose population a reader cannot reconstruct, which is the defect this whole file exists for");
 });
