@@ -154,6 +154,15 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "leak sweep (the sibling `tracked-prose-leak-guard.test.ts` above was scoped to `.md` only), "
       + "floored at 500 tracked files",
   },
+  "packages/lab/src/packaging/history-secret-scan.test.ts": {
+    guard: null,
+    note: "NOT A POPULATION -- the one matching call (`git show HEAD:inventory.yml`) reads a SINGLE, "
+      + "named file's content at a known commit, deterministically; there is no listing whose result "
+      + "could silently be empty. It exists to prove the fixture's own premise (the disposable repo's "
+      + "current tree does not carry the address the earlier commit does), not to enumerate anything -- "
+      + "if the file or commit did not exist, `execFileSync` would throw rather than return an empty, "
+      + "silently-accepted result.",
+  },
 };
 
 test("MUTATION: without the SELF exclusion, this file would discover itself", () => {
