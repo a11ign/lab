@@ -36,6 +36,25 @@
  * `continue-on-error: true`. Nobody knew it was in the population. A derived walk finds it without being
  * told it exists.
  *
+ * ## ONE GUARD, NOT TWO — `build-bootstrap-no-workspace-imports.test.ts` is deleted by this change
+ *
+ * Two guards for one class were written independently within an hour, and two guards for one class
+ * DRIFT: the next person adding an entry adds it to whichever they happened to open. That is this
+ * repository's most-recorded shape and neither of us should ship a second instance of it.
+ *
+ * The deleted guard walked `build-packages.mjs`'s own import graph and DECLARED the rest in an
+ * `ALSO_CONSTRAINED` list of `ci-changed.mjs` and `install-git-hooks.mjs`. Measured on `main` before
+ * deleting it: **zero mentions of `workflow-run-liveness.mjs`** — the entry that had been crashing on
+ * this exact import on every run since it was written, reporting SUCCESS each time because its only
+ * step carries `continue-on-error: true`.
+ *
+ * **That is not a criticism of its author.** It is the identical limitation this file's own first
+ * version had, and neither list could have contained a file nobody knew was in the population. It is
+ * the argument for deriving, arrived at twice in one morning by two people independently.
+ *
+ * It did real work while it existed: it is what caught the reintroduced import in a live reproduction
+ * when the build step itself stayed green.
+ *
  * ## The vacuity guard is on the ENTRY COUNT, not just the file count
  *
  * The old version asserted that the WALK found several files — true, and useless, because it was handed
@@ -101,6 +120,14 @@ export function preInstallEntries(): string[] {
   }
   const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")) as
     { scripts: Record<string, string> };
+  // `build` PRODUCES `dist`, so it cannot import from one. `prepare` is npm's own lifecycle hook: it
+  // runs on every plain `npm install` in a fresh checkout, before any package's `dist/` exists.
+  //
+  // THE `prepare` REASON IS PRESERVED FROM `build-bootstrap-no-workspace-imports.test.ts`, the guard this
+  // file replaced, and it is worth keeping verbatim because a derivation cannot express it: that script
+  // is "not reachable via build-packages.mjs's own import graph; carries the identical constraint by npm
+  // lifecycle timing rather than by being imported from the same entry point." The walk finds the file;
+  // only that sentence says WHY it belongs.
   for (const lifecycle of ["build", "prepare"]) {
     const script = scriptBehind(pkg.scripts[lifecycle]);
     if (script) entries.add(script);
