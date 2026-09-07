@@ -163,14 +163,6 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "if the file or commit did not exist, `execFileSync` would throw rather than return an empty, "
       + "silently-accepted result.",
   },
-  "packages/lab/src/packaging/public-claim.test.ts": {
-    guard: null,
-    note: "NOT A POPULATION -- #338's `sourcedByCommit()` calls `git log -1 --format=%B <hash>` for ONE "
-      + "commit hash a doc cites inline, the identical shape `history-secret-scan.test.ts` is classified "
-      + "for above: a single, named lookup by an exact key, never a listing that could silently come back "
-      + "empty. An unresolvable hash makes `execFileSync` throw, which the caller catches and treats as "
-      + "'not sourced' -- never as a silently-accepted empty result standing in for a real answer.",
-  },
 };
 
 test("MUTATION: without the SELF exclusion, this file would discover itself", () => {
@@ -187,10 +179,9 @@ test("the discovery finds a non-trivial population -- vacuity guard for the walk
   const files = tracked();
   assert.ok(files.length > 200, `only found ${files.length} tracked .test.ts files -- the ls-files scan is broken`);
   const discovered = discoverGitPopulationTests();
-  // The known census: 10, since #338 added public-claim.test.ts's git-log lookup. A floor, not a pin -- a
-  // legitimate new git-population test raises it, and the test below is what catches one arriving
-  // unclassified. This guard exists only to catch the discovery pattern itself breaking and matching
-  // nothing.
+  // The known census: 9. A floor, not a pin -- a legitimate new git-population test raises it, and the
+  // test below is what catches one arriving unclassified. This guard exists only to catch the discovery
+  // pattern itself breaking and matching nothing.
   assert.ok(discovered.length >= 8,
     `only found ${discovered.length} git-population test(s), fewer than the known census of 9 -- the `
     + "discovery pattern is probably broken, not the population shrinking");
