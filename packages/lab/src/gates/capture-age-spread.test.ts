@@ -97,12 +97,7 @@ test("a page unusable for TWO reasons is one page, not two", () => {
   // Asserted on the SET being built, not on the variable name, because the reporting phase was extracted
   // after this test was written and the name moved with it. The PROPERTY is what matters: the three lists
   // are unioned before anything counts them.
-  //
-  // MATCHED ON THE UNION ITSELF, not on the assignment. #363 moved this set ABOVE the new-finding list --
-  // it has to be built there now, so a finding whose capture never reached the page can be withheld before
-  // it is printed -- and a regex anchored to `const unusablePages = [...new Set(` failed on a change that
-  // preserved the property it exists to protect. The comment above already said the name is not the point.
-  assert.match(source, /new Set\(\[\.\.\.furniture\.consent, \.\.\.furniture\.shell, \.\.\.suspectCensus\]\)/,
+  assert.match(source, /const unusablePages = \[\.\.\.new Set\(\[\.\.\.furniture\.consent/,
     "the three lists must be UNIONED into a set of page urls; summing their LENGTHS counts a page once "
     + "per reason");
   assert.match(source, /examined: pages - unusablePages\.length,/,

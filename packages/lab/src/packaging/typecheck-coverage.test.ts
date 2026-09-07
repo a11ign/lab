@@ -83,7 +83,10 @@ function everyMjs(dir: string, found: string[] = []): string[] {
   return found;
 }
 
-const MJS = everyMjs("packages");
+// #189: top-level `scripts/` was the third population-boundary gap in two days (#164, #174) -- this
+// test's own population walked `packages/` only, so a `.mjs` under `scripts/` reaching `checkJs` would
+// have been invisible to the guard that exists to stop exactly that kind of gap reopening.
+const MJS = [...everyMjs("packages"), ...everyMjs("scripts")];
 /** A marker anywhere in the first two lines: a SHEBANG must stay line one, and `@ts-check` follows it. */
 const CHECKED = MJS.filter((path) =>
   readFileSync(join(REPO, path), "utf8").split("\n", 2).some((line) => line === "// @ts-check"));
@@ -95,7 +98,7 @@ const CHECKED = MJS.filter((path) =>
  * the same shape as the CLI flag guards' `UNGUARDED` list. Raise this when you mark more files; it should
  * never need lowering, and lowering it is the review conversation.
  */
-const AT_LEAST = 107;
+const AT_LEAST = 168; // #189: top-level scripts/*.mjs joined the count -- 28 files newly marked and checked
 
 test("the typechecked `.mjs` count never falls", () => {
   assert.ok(CHECKED.length >= AT_LEAST,
@@ -123,7 +126,7 @@ test("a marked file is one the ONE program actually covers, and checkJs stays op
   // trees these live in, or `npm run typecheck` reports success having checked none of them. No SECOND
   // config to check any more — see this file's header for why `tsconfig.mjs.json` was deleted.
   const config = readFileSync(join(REPO, "tsconfig.json"), "utf8");
-  for (const pattern of ["packages/*/src/**/*.mjs", "packages/*/scripts/**/*.mjs"]) {
+  for (const pattern of ["packages/*/src/**/*.mjs", "packages/*/scripts/**/*.mjs", "scripts/**/*.mjs"]) {
     assert.ok(config.includes(pattern), `tsconfig.json must include ${pattern}`);
   }
   assert.doesNotMatch(config, /"checkJs":\s*true/,
@@ -140,15 +143,30 @@ test("a marked file is one the ONE program actually covers, and checkJs stays op
 /**
  * The tsconfig `include` patterns, as regexes. Read from the file rather than restated, because a pattern
  * spelled twice is this repo's most expensive shape and this test exists to catch exactly that class.
+ *
+ * A GLOB TERMINATED THIS VERY BLOCK COMMENT ONCE ALREADY -- this file's own header names it: a star
+ * immediately followed by a slash closes a `/**` comment wherever it appears, even mid-sentence in
+ * backticks. So the fix below is described in words rather than by pasting the literal star-slash
+ * sequences that would otherwise cut this comment off nine lines early, the same way it once did before.
+ *
+ * ISSUE #189. The deep-wildcard segment is replaced with a PLACEHOLDER before the single-star pass runs,
+ * not with its final regex text directly. That final text itself contains a star, so running the
+ * single-star replace afterward mangled it into matching exactly ONE path segment rather than any number
+ * of them. That silently worked for every pattern in this file until now, because none of their targets
+ * needed two or more nested directories beneath a deep wildcard -- a top-level `scripts` tree reaching a
+ * file two directories down is the first population deep enough to expose it, and the fix is to shield
+ * the replacement text from the later pass rather than to special-case depth.
  */
 function includePatterns(): RegExp[] {
   const raw = readFileSync(join(REPO, "tsconfig.json"), "utf8")
     .split("\n").filter((line) => !line.trimStart().startsWith("//")).join("\n");
   const include: string[] = JSON.parse(raw).include;
+  const DEEP_WILDCARD = " DEEP "; // contains no `*`, so the next pass cannot touch it
   return include.map((glob) => new RegExp(`^${glob
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
-    .replace(/\*\*\//g, "(?:.*/)?")
-    .replace(/\*/g, "[^/]*")}$`));
+    .replace(/\*\*\//g, DEEP_WILDCARD)
+    .replace(/\*/g, "[^/]*")
+    .replace(new RegExp(DEEP_WILDCARD, "g"), "(?:.*/)?")}$`));
 }
 
 test("every marked file is IN the tsc program, so a marker can never be a comment", () => {
