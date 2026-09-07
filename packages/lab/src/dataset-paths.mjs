@@ -12,7 +12,11 @@
  * `judge`'s `channel-tables-4.1.2.test.ts` already used for the identical reason -- and `cli`'s
  * `devDependencies` no longer lists `@a11y-witness/lab` at all. `lab -> cli` (one direction, via
  * `public-api.test.ts`) is legitimate and stays; it is not a cycle on its own. `lab` genuinely has zero
- * workspace dependents again, so `testPackages` for a change scoped to this file really is `["lab"]`.
+ * workspace dependents again, so `testPackages` for a change scoped to this file really is `["lab"]` --
+ * the FIRST real single-package measurement point this repo has had for a package with actual TypeScript
+ * content, per dispatcher's own read of #206: "the boundary was under strain before tonight", since FOUR
+ * packages (worker-fleet, nvda-worker, judge, and now cli) had already needed their own duplicate of this
+ * exact computation to avoid depending on `lab`.
  *
  * Before this existed, the repo-root computation `fileURLToPath(new URL("../../../", import.meta.url))`
  * was pasted into roughly a dozen scripts, each counting ".." segments to ITS OWN depth in the tree —
