@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { classify, knownPackages, readWorkspaceDependencyGraph, dependentsOf }
+import { classify, knownPackages, readWorkspaceDependencyGraph, dependentsOf, packedFiles, candidatePackedPaths }
   from "../../../../scripts/ci-changed.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
@@ -60,6 +60,10 @@ const runCliIn = (dir: string, args: string[]) =>
   execFileSync("node", [join(REPO, "scripts/ci-changed.mjs"), `--repo=${dir}`, ...args],
     { cwd: dir, env: cliEnv(), encoding: "utf8" });
 
+/** A `getPackedFiles` fake, so `classify`'s own tests never shell out to a real `npm pack`. */
+const fakePacked = (byPackage: Record<string, string[]>) =>
+  (_repoRoot: string, pkgName: string) => new Set(byPackage[pkgName] ?? []);
+
 test("classify: a docs-only change fires only the docs category", () => {
   const result = classify(["docs/known-gaps.md", "README.md"], ["lab", "judge"]);
   assert.deepEqual(result, { ts: false, python: false, ansible: false, docs: true, board: false,
@@ -80,7 +84,8 @@ test("classify: a python file under a package fires python, and (bluntly) ts for
   // file under `packages/scorer/` marks `scorer` touched for the scoped unit-test run too. Harmless --
   // scorer's own TS-side tests simply run alongside the Python ones -- and consistent rather than a
   // second, narrower definition of "touched" living beside the one the pre-push hook already uses.
-  const result = classify(["packages/scorer/python/score.py"], ["lab", "scorer"]);
+  const result = classify(["packages/scorer/python/score.py"], ["lab", "scorer"], {},
+    { getPackedFiles: fakePacked({}) }); // scorer's changeset check runs too; no real npm pack needed here
   assert.equal(result.python, true);
   assert.equal(result.ts, true);
   assert.deepEqual(result.packages, ["scorer"]);
@@ -97,11 +102,72 @@ test("classify: the ansible layer fires ansible, and (bluntly, like changedPacka
   assert.deepEqual(result.packages, ["control"]);
 });
 
-test("classify: a published package's src fires changeset; a private package's does not", () => {
-  const published = classify(["packages/cli/src/cli.ts"], ["cli"]);
-  assert.equal(published.changeset, true);
+test("classify: a private package never demands a changeset, whatever it packs", () => {
+  // Short-circuited on `private: true` before `getPackedFiles` is even consulted -- no fake needed here,
+  // and none supplied, so a call into it would be a genuine bug rather than a passing accident.
   const priv = classify(["packages/lab/src/training/case-matrix.mjs"], ["lab"]);
   assert.equal(priv.changeset, false, "packages/lab is private: true and must never demand a changeset");
+});
+
+/**
+ * ISSUE #132, reproduced directly: a TEST FILE under a published package's `src/` must NOT fire
+ * `changeset`, because `npm pack` never ships it -- measured on the real PR this blocked,
+ * `packages/worker-fleet/src/lab-job.test.ts`. Injected `getPackedFiles`, so this proves `classify`'s OWN
+ * logic (asks the packed manifest, not the path) without needing a real `npm pack` per test.
+ */
+test("classify: a file NOT in the packed manifest does not fire changeset, even under src/", () => {
+  const getPackedFiles = fakePacked({ "worker-fleet": ["dist/index.js", "src/local-worker/build-vm.sh"] });
+  const result = classify(["packages/worker-fleet/src/lab-job.test.ts"], ["worker-fleet"], {}, { getPackedFiles });
+  assert.equal(result.changeset, false,
+    "src/lab-job.test.ts is not in the packed manifest (raw) and its built form (dist/lab-job.test.js) "
+    + "is not either -- npm never ships it, so it cannot reach a consumer");
+});
+
+test("classify: a RAW-shipped file under a published package's own files entry fires changeset", () => {
+  const getPackedFiles = fakePacked({ "worker-fleet": ["dist/index.js", "src/provisioning/deploy.ps1"] });
+  const result = classify(["packages/worker-fleet/src/provisioning/deploy.ps1"], ["worker-fleet"], {}, { getPackedFiles });
+  assert.equal(result.changeset, true, "this exact path is in the packed manifest -- it reaches a consumer");
+});
+
+test("classify: a BUILT (tsc) source file fires changeset via its dist/ counterpart, not its own path", () => {
+  // `src/cli.ts` is never itself in a packed manifest -- only `dist/cli.js` is. If `classify` checked the
+  // changed file's own path literally, this would report `changeset: false` for the single most common
+  // real change a published TS package sees, which is the opposite of this row's intent.
+  const getPackedFiles = fakePacked({ cli: ["dist/cli.js", "dist/cli.d.ts"] });
+  const result = classify(["packages/cli/src/cli.ts"], ["cli"], {}, { getPackedFiles });
+  assert.equal(result.changeset, true);
+});
+
+test("classify: a TEST FILE beside a BUILT source file does not fire changeset — tsconfig excludes it", () => {
+  // Same package, same directory, only the built counterpart differs: cli.ts -> dist/cli.js (packed);
+  // cli.test.ts -> dist/cli.test.js, which tsconfig's own `exclude` never produces, so `npm pack` never
+  // ships it either. `classify` must tell these apart from the packed manifest alone, never by name.
+  const getPackedFiles = fakePacked({ cli: ["dist/cli.js", "dist/cli.d.ts"] }); // note: no dist/cli.test.js
+  const result = classify(["packages/cli/src/cli.test.ts"], ["cli"], {}, { getPackedFiles });
+  assert.equal(result.changeset, false);
+});
+
+test("candidatePackedPaths: raw path always included; .ts additionally maps to its dist/ counterpart", () => {
+  assert.deepEqual(candidatePackedPaths("src/provisioning/deploy.ps1"), ["src/provisioning/deploy.ps1"]);
+  assert.deepEqual(candidatePackedPaths("src/cli.ts"), ["src/cli.ts", "dist/cli.js", "dist/cli.d.ts"]);
+  assert.deepEqual(candidatePackedPaths("src/action/run.tsx"),
+    ["src/action/run.tsx", "dist/action/run.js", "dist/action/run.d.ts"]);
+  // A .ts file OUTSIDE src/ (there are none in this repo, but the mapping must not guess for one) gets no
+  // dist/ candidate at all -- only a package's own rootDir gets built there.
+  assert.deepEqual(candidatePackedPaths("scripts/build.ts"), ["scripts/build.ts"]);
+});
+
+/**
+ * THE REAL THING, ONCE: `packedFiles` against `packages/cli` itself, proving the injected fakes above
+ * describe a shape npm actually produces rather than a convenient guess. Slower (a real `npm pack --dry-
+ * run`, which runs `prepack`/`tsc --build` if `dist` is stale) and deliberately the only test here that
+ * pays that cost.
+ */
+test("packedFiles + candidatePackedPaths against the REAL packages/cli: src/cli.ts reaches a consumer", () => {
+  const packed = packedFiles(REPO.replace(/\/$/, ""), "cli");
+  assert.ok(packed.size > 0, "npm pack --dry-run reported an empty manifest for packages/cli -- broken build?");
+  const hit = candidatePackedPaths("src/cli.ts").some((p) => packed.has(p));
+  assert.ok(hit, `none of src/cli.ts's candidate paths were packed; packed set was: ${[...packed].slice(0, 10).join(", ")}...`);
 });
 
 test("classify: a root config file touches EVERY known package, never just the ones that happened to change", () => {
@@ -125,13 +191,14 @@ test("classify: an unrelated file changes nothing", () => {
 });
 
 test("classify: a multi-package, multi-category diff sets every category it touches, independently", () => {
+  const getPackedFiles = fakePacked({ judge: ["dist/rules.js", "dist/rules.d.ts"] });
   const result = classify([
     "packages/lab/src/training/case-matrix.mjs",
     "packages/judge/src/rules.ts",
     "docs/known-gaps.md",
     "packages/control/ansible/deploy.yml",
     "packages/scorer/tests/test_runtime_versions.py",
-  ], ["lab", "judge", "control", "scorer"]);
+  ], ["lab", "judge", "control", "scorer"], {}, { getPackedFiles });
   assert.equal(result.ts, true);
   // `control` is here too -- the ansible file sits inside `packages/control/`, same as the test above.
   assert.deepEqual(result.packages, ["control", "judge", "lab", "scorer"]);
@@ -298,6 +365,70 @@ test("CLI: --event=push is still refused -- widening to merge_group must not sil
   try {
     assert.throws(() => runCliIn(dir, ["--event=push", `--base=${base}`]),
       /--event must be "pull_request" or "merge_group"/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+// -------------------------------------------------------------------------------------------------------
+// --precise -- the `changed` job (no `npm ci`) must never actually shell out to `npm pack`, because a
+// package with a `prepack` script (`cli` and `judge` both run `tsc --build`) fails without `node_modules`.
+// `orchestrator` reproduced exactly this: `classify()` calling the real `packedFiles()` inside `changed`
+// crashed on every PR touching a published package. Reproduced here with a package whose `prepack` is
+// guaranteed to fail regardless of environment, so the property under test is "never even attempted",
+// not "happened to succeed because this dev machine has node_modules".
+// -------------------------------------------------------------------------------------------------------
+
+/** A workspace with one published package whose `prepack` script cannot succeed anywhere, ever -- the
+ *  sharpest stand-in for "a package needing `npm ci` first" available without actually deleting
+ *  `node_modules` out from under the whole test run. */
+function repoWithCrashingPrepack() {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "ci-changed-prepack-")));
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: dir, env: sandboxGitEnv(), encoding: "utf8" });
+  git("init", "--quiet", "-b", "main");
+  git("config", "user.email", "t@example.invalid");
+  git("config", "user.name", "Fixture");
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x", workspaces: ["packages/*"] }));
+  const pkgDir = join(dir, "packages", "foo");
+  execFileSync("mkdir", ["-p", pkgDir]);
+  writeFileSync(join(pkgDir, "package.json"), JSON.stringify({
+    name: "foo", version: "1.0.0", files: ["dist"],
+    scripts: { prepack: "definitely-not-a-real-command-ci-changed-test-xyz" },
+  }));
+  execFileSync("mkdir", ["-p", join(pkgDir, "dist")]);
+  writeFileSync(join(pkgDir, "dist", "index.js"), "module.exports = 1;\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "base");
+  const base = git("rev-parse", "HEAD").trim();
+  writeFileSync(join(pkgDir, "dist", "index.js"), "module.exports = 2;\n");
+  git("add", "-A");
+  git("commit", "-q", "-m", "touch the package with the crashing prepack");
+  return { dir, base };
+}
+
+test("CLI without --precise: a published package's own prepack script is never run", () => {
+  const { dir, base } = repoWithCrashingPrepack();
+  try {
+    // Must NOT throw. If `classify()` had called the real `packedFiles`, `npm pack --dry-run` would have
+    // run `foo`'s `prepack` and failed on the unresolvable command -- this succeeding is the proof it
+    // never tried.
+    const out = runCliIn(dir, ["--event=pull_request", `--base=${base}`]);
+    assert.match(out, /^changeset=true$/m,
+      "the cheap over-approximation must still say a published package changed, or the `changeset` job "
+      + "would never even run to find out precisely: " + out);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("CLI with --precise: the same package's prepack script DOES run, and its failure surfaces", () => {
+  // The mirror image, proving `--precise` is not a no-op: once `npm ci` has made `npm pack` safe (in the
+  // real `changeset` job, never here), the CLI must actually consult the manifest -- and this fixture's
+  // package cannot ever produce one, so this must fail rather than quietly falling back to the cheap
+  // answer. A `--precise` that silently reused `everythingIsPacked` would pass every test above and this
+  // one both, which is exactly the "guard covers nothing" shape a PROOF test exists to catch.
+  const { dir, base } = repoWithCrashingPrepack();
+  try {
+    assert.throws(() => runCliIn(dir, ["--event=pull_request", `--base=${base}`, "--precise"]),
+      /definitely-not-a-real-command-ci-changed-test-xyz/,
+      "--precise must actually call npm pack, surfacing this package's own prepack failure");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
