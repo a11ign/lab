@@ -6,8 +6,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { claimStatus, decideClaim, fetchLabels, claimRow, CLAIM_LABEL }
+import { claimStatus, decideClaim, fetchLabels, claimRow, dispatchRow, declineRow, CLAIM_LABEL, STARTED_LABEL }
   from "../../../../scripts/row-claim.mjs";
+import { READY_LABEL } from "../../../../scripts/ready-label-audit.mjs";
 
 // --- claimStatus: pure, no I/O ---
 
@@ -20,6 +21,7 @@ test("claimStatus reads a claimed row -- in-progress plus a session label", () =
 test("claimStatus reads an unclaimed row -- no in-progress label at all", () => {
   const status = claimStatus(["backlog", "epic", "ready"]);
   assert.equal(status.claimed, false);
+  assert.equal(status.started, false);
   assert.deepEqual(status.sessions, []);
 });
 
@@ -29,6 +31,22 @@ test("claimed with NO session label yet is still claimed, not conflated with unc
   const status = claimStatus(["in-progress"]);
   assert.equal(status.claimed, true);
   assert.deepEqual(status.sessions, []);
+});
+
+// --- #176: the THIRD state -- dispatched (in-progress + session, no `started`) vs started ---
+
+test("claimStatus reports DISPATCHED-not-started: in-progress + session, no started label", () => {
+  const status = claimStatus(["backlog", "ready", "in-progress", "session:worker-contracts"]);
+  assert.equal(status.claimed, true);
+  assert.equal(status.started, false);
+  assert.deepEqual(status.sessions, ["worker-contracts"]);
+});
+
+test("claimStatus reports STARTED: in-progress + session + started, all three present", () => {
+  const status = claimStatus(["in-progress", "session:worker-contracts", "started"]);
+  assert.equal(status.claimed, true);
+  assert.equal(status.started, true);
+  assert.deepEqual(status.sessions, ["worker-contracts"]);
 });
 
 test("multiple session labels are all reported -- a race leaves both visible until one backs off", () => {
@@ -151,11 +169,151 @@ test("MUTATION: a race detected on the RE-READ is backed off, not reported as a 
   const result = claimRow(55, "worker-contracts", { run });
   assert.equal(result.claimed, false);
   assert.match((result as { reason: string }).reason, /lost a race to worker-judge/);
-  const removeCall = calls.find((a) => a.includes("--remove-label"));
+  // The FIRST edit call is the forward write, which also removes `ready` (see the `ready`-removal test
+  // below) -- and its `--add-label session:worker-contracts` would satisfy a plain `.includes()` check
+  // just as well as the back-off call's `--remove-label session:worker-contracts` does, so identify the
+  // back-off call by the ADJACENT PAIR, never by mere membership.
+  const removedLabels = (args: string[]) => args
+    .map((a, i) => (a === "--remove-label" ? args[i + 1] : null))
+    .filter((l): l is string => l !== null);
+  const removeCall = calls.find((a) => removedLabels(a).includes("session:worker-contracts"));
   assert.ok(removeCall, "must back off by removing its OWN session label");
-  assert.ok(removeCall!.includes("session:worker-contracts"));
-  assert.ok(!removeCall!.includes(CLAIM_LABEL), "must never remove in-progress -- the other session needs it");
-  assert.ok(!removeCall!.includes("session:worker-judge"), "must never remove a label that is not its own");
+  assert.ok(!removedLabels(removeCall!).includes(CLAIM_LABEL),
+    "must never remove in-progress -- the other session needs it");
+  assert.ok(!removedLabels(removeCall!).includes("session:worker-judge"),
+    "must never remove a label that is not its own");
+});
+
+// --- dispatchRow: #176's fix -- mark taken at dispatch, before anyone has started ---
+
+test("dispatchRow marks in-progress + session, but deliberately NOT started", () => {
+  const calls: string[][] = [];
+  let reads = 0;
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      reads += 1;
+      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }];
+      return JSON.stringify({ number: 176, title: "A row", labels });
+    }
+    return "";
+  };
+  const result = dispatchRow(176, "worker-contracts", { run });
+  assert.deepEqual(result, { claimed: true });
+  const editCall = calls.find((a) => a[1] === "edit");
+  assert.ok(editCall!.includes(CLAIM_LABEL) && editCall!.includes("session:worker-contracts"));
+  assert.ok(!editCall!.includes(STARTED_LABEL), "dispatch must not mark started -- that is claim's job");
+});
+
+test("MUTATION: a SECOND dispatch sees the FIRST, and refuses -- the whole point of #176", () => {
+  const run = (cmd: string, args: string[]) => {
+    if (args[1] === "view") {
+      // The board already reflects a prior dispatch to another session -- no `claim` ever ran.
+      return JSON.stringify({ number: 176, title: "A row",
+        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-judge" }] });
+    }
+    return "";
+  };
+  const result = dispatchRow(176, "worker-contracts", { run });
+  assert.equal(result.claimed, false);
+  assert.match((result as { reason: string }).reason, /worker-judge/);
+});
+
+test("claimRow (start) additionally writes STARTED_LABEL, transitioning dispatched -> started", () => {
+  const calls: string[][] = [];
+  let reads = 0;
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      reads += 1;
+      // Row was already dispatched to us; claiming it now should re-add the same two labels harmlessly
+      // and add `started`.
+      const labels = reads === 1
+        ? [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }]
+        : [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }, { name: STARTED_LABEL }];
+      return JSON.stringify({ number: 176, title: "A row", labels });
+    }
+    return "";
+  };
+  const result = claimRow(176, "worker-contracts", { run });
+  assert.deepEqual(result, { claimed: true });
+  const editCall = calls.find((a) => a[1] === "edit");
+  assert.ok(editCall!.includes(STARTED_LABEL), "claim/start must mark started");
+});
+
+test("MUTATION: dispatching a `ready` row removes `ready` -- #197's review finding, caught before merge", () => {
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      return JSON.stringify({ number: 176, title: "A row",
+        labels: [{ name: READY_LABEL }, { name: CLAIM_LABEL }, { name: "session:worker-contracts" }] });
+    }
+    return "";
+  };
+  dispatchRow(176, "worker-contracts", { run });
+  const editCall = calls.find((a) => a[1] === "edit");
+  assert.ok(editCall, "must have written the dispatch");
+  const removeIndex = editCall!.indexOf("--remove-label");
+  assert.ok(removeIndex !== -1 && editCall![removeIndex + 1] === READY_LABEL,
+    `dispatching must remove \`ready\` in the same call, so a row is never both pickable and taken -- `
+    + `got: ${JSON.stringify(editCall)}`);
+});
+
+// --- declineRow: give a row back, #176's second acceptance case ---
+
+test("declineRow returns a dispatched-but-not-started row to genuinely unclaimed", () => {
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      return JSON.stringify({ number: 176, title: "A row",
+        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }] });
+    }
+    return "";
+  };
+  const result = declineRow(176, "worker-contracts", { run });
+  assert.deepEqual(result, { declined: true });
+  const editCall = calls.find((a) => a[1] === "edit");
+  assert.ok(editCall!.includes(CLAIM_LABEL) && editCall!.includes("session:worker-contracts"));
+  assert.ok(!editCall!.includes("--add-label"), "decline must only ever remove labels, never add");
+});
+
+test("declineRow also clears STARTED_LABEL when a started row is declined", () => {
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      return JSON.stringify({ number: 176, title: "A row",
+        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }, { name: STARTED_LABEL }] });
+    }
+    return "";
+  };
+  const result = declineRow(176, "worker-contracts", { run });
+  assert.deepEqual(result, { declined: true });
+  const editCall = calls.find((a) => a[1] === "edit");
+  assert.ok(editCall!.includes(STARTED_LABEL));
+});
+
+test("declineRow refuses to release a row held by someone else", () => {
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    return JSON.stringify({ number: 176, title: "A row",
+      labels: [{ name: CLAIM_LABEL }, { name: "session:worker-judge" }] });
+  };
+  const result = declineRow(176, "worker-contracts", { run });
+  assert.equal(result.declined, false);
+  assert.match((result as { reason: string }).reason, /worker-judge/);
+  assert.ok(!calls.some((a) => a[1] === "edit"), "must not write anything when refusing");
+});
+
+test("declineRow says so, rather than silently no-op'ing, when the row was never claimed", () => {
+  const run = () => JSON.stringify({ number: 176, title: "A row",
+    labels: [{ name: "backlog" }, { name: "ready" }] });
+  const result = declineRow(176, "worker-contracts", { run });
+  assert.equal(result.declined, false);
+  assert.match((result as { reason: string }).reason, /nothing to decline/);
 });
 
 // --- Live, read-only smoke test against the real repo ---
