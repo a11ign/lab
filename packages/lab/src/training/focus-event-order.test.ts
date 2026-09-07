@@ -29,12 +29,12 @@
  *
  * WHY IT LIVES IN `packages/lab` rather than beside `rules.ts`: it is the settlement of a claim made in
  * `case-matrix.mjs`, and it belongs next to the record it corrects. `packages/lab` depends on
- * `@a11y-witness/judge`, so importing the shipped rule from here is the legal direction.
+ * `@a11ign/judge`, so importing the shipped rule from here is the legal direction.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { ruleFindings } from "@a11y-witness/judge/rules";
+import { ruleFindings } from "@a11ign/judge/rules";
 
 type FocusEvent = { type: string; id: number; name: string; atMs: number };
 

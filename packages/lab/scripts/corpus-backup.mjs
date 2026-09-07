@@ -37,7 +37,7 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { resolve, basename } from "node:path";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 
 /**
  * `--verify-only` is the difference between checking a backup and WRITING one.

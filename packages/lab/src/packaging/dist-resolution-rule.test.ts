@@ -1,5 +1,5 @@
 // A worktree whose `node_modules` is a symlink to the primary checkout's resolves every
-// `@a11y-witness/*` import to the PRIMARY's `packages/*/dist`, not the worktree's own — so building in
+// `@a11ign/*` import to the PRIMARY's `packages/*/dist`, not the worktree's own — so building in
 // your own worktree changes nothing a cross-package tool reads there. Measured 2026-09-06: a generator
 // read the primary's two-hour-stale `dist` and a worker was nearly dispatched at a defect that did not
 // exist. CLAUDE.md's stale-`dist` warning never said WHOSE, and `docs/roles/worker-loop-orchestrator.md`

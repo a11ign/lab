@@ -2,10 +2,10 @@
  * A SCRIPT THAT RUNS BEFORE `npm ci` OR BEFORE `dist` EXISTS CANNOT IMPORT A WORKSPACE PACKAGE.
  *
  * `packages/worker-fleet`'s export map is `{"./cli-flags": {"default": "./dist/cli-flags.mjs"}}`, so
- * `@a11y-witness/worker-fleet/cli-flags` needs BOTH `node_modules` and a completed build. Several scripts
+ * `@a11ign/worker-fleet/cli-flags` needs BOTH `node_modules` and a completed build. Several scripts
  * here have neither when they run, and every one of them dies on startup:
  *
- *     Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@a11y-witness/worker-fleet'
+ *     Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@a11ign/worker-fleet'
  *
  * INVISIBLE ON EVERY DEVELOPER MACHINE, which is why it needs a test rather than care: a working tree has
  * `node_modules` and a built `dist`, so lint, typecheck and the pre-push hook are all green while CI dies

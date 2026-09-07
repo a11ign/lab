@@ -57,7 +57,7 @@ test("a package with NO SMOKE TEST is refused — the gate must not decorate", (
   // THE ASSERTION THAT MATTERS. A package the gate cannot exercise passing is indistinguishable from one
   // it exercised and cleared, and this repo has paid for that shape repeatedly: `check-signals` scoring a
   // corpus that was not there, `rules:coverage` reporting a rule validated by a population it never read.
-  const dir = packageDir({ "package.json": JSON.stringify({ name: "@a11y-witness/planted", version: "0.0.0" }) });
+  const dir = packageDir({ "package.json": JSON.stringify({ name: "@a11ign/planted", version: "0.0.0" }) });
   try {
     const result = checkIsolation(dir);
     assert.equal(result.ok, false, "no smoke test means the package CANNOT be gated, which is not a pass");
@@ -87,7 +87,7 @@ test("a package that HAS a smoke test gets past setup", () => {
   // gate still looks for a file at all. If the check were deleted, every refusal above would vanish and
   // only this would notice the gate had stopped gating.
   const dir = packageDir({
-    "package.json": JSON.stringify({ name: "@a11y-witness/planted", version: "0.0.0" }),
+    "package.json": JSON.stringify({ name: "@a11ign/planted", version: "0.0.0" }),
     [SMOKE]: "process.exit(0);\n",
   });
   try {

@@ -3,8 +3,8 @@
 // measurement script that both discovers each accumulator and refuses to report an undecided one.
 //
 // THE MOST VALUABLE THING THIS FILE PROVES IS THE DIST-TRAP DETECTOR'S OWN CORRECTNESS. It went through
-// two false-positive rounds while being built: first it flagged @a11y-witness/control, @a11y-witness/lab
-// and @a11y-witness/nvda-worker as exposed, because it matched any mention of the package name after
+// two false-positive rounds while being built: first it flagged @a11ign/control, @a11ign/lab
+// and @a11ign/nvda-worker as exposed, because it matched any mention of the package name after
 // `from "`, including SUBPATH imports into raw `.mjs` source that this repo deliberately reaches that way
 // (ADR 0031: nvda-worker ships with no build step at all). Narrowing to a BARE root-specifier match still
 // flagged nvda-worker, because nothing checked whether that package's own root export even resolves into

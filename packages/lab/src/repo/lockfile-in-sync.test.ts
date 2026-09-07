@@ -2,7 +2,7 @@
  * EVERY WORKSPACE MUST BE IN THE LOCKFILE, or `npm ci` fails and ALL of CI goes red.
  *
  * Measured 2026-08-29: extracting `packages/control` without refreshing `package-lock.json` left
- * `npm ci` failing with `Missing: @a11y-witness/control@0.1.0 from lock file`, and that is the first
+ * `npm ci` failing with `Missing: @a11ign/control@0.1.0 from lock file`, and that is the first
  * step of every workflow. `lint.yml` (retired 2026-09-06, folded into `.github/workflows/ci.yml`, which
  * gates lint, typecheck and the test suite the same way) and `action-smoke.yml` were both red for
  * hours, and `action-smoke` is release guard 5 — the only check that drives the weights the way a

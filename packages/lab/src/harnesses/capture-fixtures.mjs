@@ -44,11 +44,11 @@ import { mkdirSync, writeFileSync, readdirSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11y-witness/worker-fleet/worker-http";
-import { hostPagesBase } from "@a11y-witness/worker-fleet/host-address";
+import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11ign/worker-fleet/worker-http";
+import { hostPagesBase } from "@a11ign/worker-fleet/host-address";
 import { leasePageServer } from "../training/page-server.mjs";
-import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
-import { captureTolerantly } from "@a11y-witness/worker-fleet/capture-client";
+import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
+import { captureTolerantly } from "@a11ign/worker-fleet/capture-client";
 
 /**
  * recaptures the eval fixtures. `--ff-only` appears in this file because it is passed to GIT, not
@@ -102,7 +102,7 @@ async function captureOverWorker(/** @type {any} */ url, /** @type {any} */ work
 
 /** In-process, for the Windows guest. Imported lazily so this file loads on a Mac or on Linux. */
 async function captureInProcess(/** @type {any} */ url, /** @type {any} */ steps) {
-  const { captureWithNvda } = await import("@a11y-witness/nvda-worker");
+  const { captureWithNvda } = await import("@a11ign/nvda-worker");
   return captureWithNvda(url, { steps, probeForms: true });
 }
 

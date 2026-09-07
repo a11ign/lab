@@ -14,9 +14,9 @@
  */
 import { pathToFileURL } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
-import { judgeBackend } from "@a11y-witness/judge";
-import { judge } from "@a11y-witness/judge";
-import { oracleCounts } from "@a11y-witness/evidence/verify";
+import { judgeBackend } from "@a11ign/judge";
+import { judge } from "@a11ign/judge";
+import { oracleCounts } from "@a11ign/evidence/verify";
 import { EVAL_CASES, type EvalCase } from "./cases.js";
 import { evaluateFitness, persistentFalsePositives, thresholdsFromEnv } from "./fitness.js";
 
@@ -230,7 +230,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  console.log(`a11y-witness judge eval  (${RUNS} run(s) per case)\n`);
+  console.log(`a11ign judge eval  (${RUNS} run(s) per case)\n`);
   const failureRecall: number[] = []; // recall, only on cases with expected failures
   const modelRecall: number[] = [];   // the same, counting only what the TRAINED SCORER reported
   const rulesRecall: number[] = [];   // and only what the deterministic rules reported
