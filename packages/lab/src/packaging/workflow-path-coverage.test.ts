@@ -67,6 +67,10 @@ const NOT_A_GATE: Record<string, string> = {
     + "not trigger on a diff at all, so covering a source directory is not a thing it could mean.",
   "capture-regression.yml": "same change, same reason as action-smoke.yml -- release-time only, called "
     + "from release.yml, no push or pull_request trigger left to filter.",
+  "coverage.yml": "the whole-repo coverage threshold, moved off ci.yml's per-PR job (chairman's "
+    + "direction, 2026-09-06 -- 154s of a measured 269s). Runs on a nightly schedule plus workflow_dispatch, "
+    + "same shape as board-report.yml: it judges the repository as a whole against a fixed threshold, not "
+    + "a diff, and its trigger is the clock rather than a change landing.",
 };
 
 const workflowFiles = (): string[] =>

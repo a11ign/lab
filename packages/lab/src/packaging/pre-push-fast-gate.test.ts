@@ -53,6 +53,18 @@ test("the fast gate calls changed-packages.mjs, never a second, hand-rolled diff
   assert.match(HOOK, /node scripts\/changed-packages\.mjs/);
 });
 
+test("a board-only diff gets its own narrow branch, calling board-only-check.mjs -- never a second copy "
+  + "of the board/docs classification", () => {
+  // chairman's direction, 2026-09-06: docs/board/summaries/*.md and docs/board/reported.json are edited
+  // far more often than anything else under docs/. `board-only-check.mjs` reuses ci-changed.mjs's own
+  // `boardOnly`/`DOC_ROOT_FILES`, the same question ci.yml's `board` job asks -- this only checks the
+  // hook DISPATCHES to it and to the same test glob as that job, not that the classification is correct
+  // (board-only-check.test.ts and ci-changed.test.ts own that).
+  assert.match(HOOK, /node scripts\/board-only-check\.mjs/);
+  assert.match(HOOK, /packages\/lab\/src\/packaging\/board-\*\.test\.ts/);
+  assert.match(HOOK, /packages\/lab\/src\/packaging\/public-claim\.test\.ts/);
+});
+
 test("MUTATION: the touched-package glob-building loop, driven in isolation, builds one glob per package", () => {
   // Extracts the exact loop from the real hook (never re-typed) and runs it in a throwaway shell with a
   // fake `changed`, proving the shell logic around changed-packages.mjs's OUTPUT does what it looks like
