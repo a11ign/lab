@@ -243,8 +243,9 @@ function currentFindings(): Findings {
         + "is subtype-scoped and these findings are criterion-level, so it cannot mask them.\n");
     }
     const excluded = new Set(declared.filter((entry) => !entry.includes(":")));
-    const criteria = [...new Set(ruleFindings(withCensus(capture))
-      .map((finding) => String(finding.wcag).split(" ")[0]))]
+    const found = ruleFindings(withCensus(capture)) as readonly RuleFinding[];
+    noteOutcomes(String(capture.url), found);
+    const criteria = [...new Set(found.map((finding) => String(finding.wcag).split(" ")[0]))]
       .filter((criterion) => !excluded.has(criterion))
       .sort();
     out[String(capture.url)] = criteria;
@@ -311,6 +312,64 @@ function describeEvidence(url: string): string {
 
 /** url -> one line of the evidence behind it, filled while walking the captures rather than re-reading. */
 const EVIDENCE = new Map<string, string>();
+
+/**
+ * `url|criterion` -> how that finding REACHES A USER, and the evidence it was built from.
+ *
+ * ASSERTED OR REFERRED IS THE QUESTION THIS GATE'S HEADLINE TURNS ON, AND IT COULD NOT ANSWER IT.
+ *
+ * Added 2026-09-06, after a refreshed baseline produced four new findings and the only way to learn
+ * whether any of them ACCUSED a conformant page was for an agent to fetch the captures, re-run
+ * `ruleFindings` in a scratch script and read `mapping` by hand. That answer then existed only in a chat
+ * message, which is precisely the state CLAUDE.md's board rule forbids: "nothing in the report comes from
+ * what an agent SAID, it comes from what gates PRINTED".
+ *
+ * The distinction is the whole of this project's public claim. `RequirementMapping` is `conformance` or
+ * `secondary`, absent means `secondary`, and `criterionOutcomes` turns the second into `cantTell` — so a
+ * `secondary` finding is a REFERRAL, a thing offered to a human, while a `conformance` finding is this
+ * tool STATING that a page does not satisfy a criterion. Four referrals on conformant pages is referral
+ * noise worth investigating. One assertion is the central claim broken. The old report printed the two
+ * identically, so a reader had no way to tell which they were looking at, and the gate's own exit code
+ * says "asserted wrongly" for both.
+ *
+ * Only 4 of the 17 rules-owned subtypes assert at all, so `REFERRED` is the common case by design and
+ * printing it is not noise — it is what makes the rare `ASSERTED` line visible.
+ */
+const OUTCOMES = new Map<string, { asserted: boolean; issue: string; evidence: string }>();
+
+/** How a finding reaches a user, from its mapping alone — the same rule `criterionOutcomes` applies. */
+function reachesUserAs(mapping: unknown): "ASSERTED" | "REFERRED" {
+  // ABSENT IS `secondary`, and that default is load-bearing rather than defensive: `findingsFromScores`
+  // sets no mapping at all, which is exactly how every model finding becomes `cantTell`.
+  return mapping === "conformance" ? "ASSERTED" : "REFERRED";
+}
+
+/** What `ruleFindings` returns, as much of it as this file reads. */
+type RuleFinding = { wcag?: unknown; mapping?: unknown; issue?: unknown; evidence?: unknown };
+
+/**
+ * Record how each of one page's findings reaches a user, BEFORE the reduction to criteria throws it away.
+ *
+ * The baseline stays keyed on criteria and this stays out of it: an outcome is a property of the RULE, not
+ * of the page, so putting it in the baseline would let `--update` accept a mapping change — a rule quietly
+ * becoming an assertion — as though it were a new finding on a page.
+ *
+ * A criterion can be reported by more than one rule with different mappings, so **ASSERTED WINS**. Taking
+ * the first, or the last, would let a referral stand in front of an accusation on the same criterion, and
+ * this whole report exists to stop those printing the same.
+ */
+function noteOutcomes(url: string, findings: readonly RuleFinding[]): void {
+  for (const finding of findings) {
+    const key = `${url}|${String(finding.wcag).split(" ")[0]}`;
+    const asserted = reachesUserAs(finding.mapping) === "ASSERTED";
+    if (OUTCOMES.get(key)?.asserted && !asserted) continue;
+    OUTCOMES.set(key, {
+      asserted,
+      issue: String(finding.issue ?? ""),
+      evidence: String(finding.evidence ?? ""),
+    });
+  }
+}
 
 /**
  * The unnamed graphics by name, or nothing if this capture predates them.
@@ -689,6 +748,25 @@ function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: numbe
     process.stdout.write(`           ${describeEvidence(change.url)}\n`);
   }
   if (added.length) {
+    // THE HEADLINE SENTENCE, STATED BY THE GATE RATHER THAN COMPUTED BY WHOEVER READS IT. This is the one
+    // line that decides whether a batch of new findings is a release blocker or a risk line, and until
+    // 2026-09-06 it was worked out by hand, from the captures, by whoever happened to be asked.
+    const assertions = added.filter((change) => OUTCOMES.get(`${change.url}|${change.criterion}`)?.asserted);
+    const unrecorded = added.filter((change) => !OUTCOMES.has(`${change.url}|${change.criterion}`));
+    process.stdout.write(`\n  OF THOSE ${added.length}: ${assertions.length} ASSERTED, `
+      + `${added.length - assertions.length - unrecorded.length} REFERRED`
+      + `${unrecorded.length ? `, ${unrecorded.length} with no outcome recorded` : ""}.\n`);
+    process.stdout.write(assertions.length
+      ? "  AT LEAST ONE ASSERTION ON A CONFORMANT PAGE. That is this project's central claim -- nothing\n"
+        + "  asserted wrongly on conformant real pages -- and it does not hold while this stands.\n"
+      : "  NOTHING WAS ASSERTED. Every new finding reaches a user as `cantTell`, so this is referral noise\n"
+        + "  on conformant pages rather than a broken conformance claim. Still worth the investigation\n"
+        + "  below, and not a publish blocker.\n");
+    if (unrecorded.length) {
+      // NOT A REFERRAL, and saying so matters: it means the baseline holds a finding this run's captures
+      // did not reproduce, so nothing was scored for it and the silence is about the corpus, not the page.
+      process.stdout.write("  An unrecorded outcome is NOT a referral -- nothing was scored for it.\n");
+    }
     process.stdout.write("\n  Read the evidence for each before doing anything else. It is one of three "
       + "things:\n"
       + "    - the tool is wrong, and this is the defect class that ran for eleven separate causes;\n"
