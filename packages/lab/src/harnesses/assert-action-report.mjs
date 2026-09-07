@@ -20,6 +20,7 @@
  * `assert-action-report.test.ts`, because a guard nobody has watched fail is not a guard.
  */
 import { readFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
 
 /**
@@ -154,6 +155,11 @@ function fail(reason) {
 }
 
 // Guarded so the predicates above can be imported by the test without running the CLI.
-if (process.argv[1] && process.argv[1].endsWith("assert-action-report.mjs")) {
+//
+// `pathToFileURL`, not `endsWith`. A suffix match fires for ANY path ending in this filename -- including
+// another checkout's copy, or a test runner invoked with a same-named argv[1] -- and
+// `entry-points.test.ts` forbids it for that reason. It could not see this file, because it discovers
+// entry points from `package.json` and this one is invoked by a workflow.
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   process.exit(main(process.argv.slice(2)));
 }
