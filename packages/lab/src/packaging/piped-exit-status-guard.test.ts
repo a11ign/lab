@@ -19,7 +19,11 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { join } from "node:path";
 import { checkPipedExitStatus } from "../../../../scripts/piped-exit-status-guard.mjs";
+
+const CLI = join(import.meta.dirname, "../../../../scripts/piped-exit-status-guard.mjs");
 
 test("the exact shape that cost `dispatcher` an hour is refused", () => {
   const { hazard } = checkPipedExitStatus(
@@ -76,4 +80,21 @@ test("mentioning `pipefail` in the same text is treated as the mitigation being 
     'set -o pipefail; node scripts/merge-guard.mjs 148 | head -4; echo EXIT=$?',
   );
   assert.equal(hazard, false);
+});
+
+/**
+ * The CLI's OWN `refuseUnknownFlags` call must not misread the positional payload as a flag (#349).
+ * Found the day this guard shipped: pre-commit feeds it a bare `"---"` (a newly-staged YAML doc marker)
+ * as `argv[2]`, and the guard's default `process.argv.slice(2)` scope included that positional in its
+ * own flag census -- `"---".startsWith("--")` is true, so it read as an unknown flag and refused every
+ * commit touching a YAML file. A pure-function test on `checkPipedExitStatus` cannot see this; it is a
+ * property of the CLI entry point's own argv handling, so it has to run the real process.
+ */
+test("the CLI's positional payload is never misread as one of ITS OWN flags, even when it starts with --", () => {
+  const out = execFileSync("node", [CLI, "---"], { encoding: "utf8" });
+  assert.match(out, /^ALLOW:/);
+});
+
+test("the CLI still refuses a genuine unknown flag of its own", () => {
+  assert.throws(() => execFileSync("node", [CLI, "cmd", "--bogus"], { encoding: "utf8", stdio: "pipe" }));
 });
