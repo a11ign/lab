@@ -129,6 +129,15 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
     guard: "files.length >= MIN_TRACKED_MARKDOWN_FILES",
     note: "guarded — `git ls-files '*.md'` for the repo-wide leak sweep, floored at 50 tracked files",
   },
+  "packages/lab/src/packaging/criterion-list-duplication.test.ts": {
+    guard: "candidates(read, sourceFiles()).length >= 3",
+    note: "guarded — #120's census of files holding a criterion list beside the canonical one, walked "
+      + "via `git ls-files packages`. The floor is the three known members (the canonical source, one "
+      + "justified subset, and the tracked stale copy in #136); fewer means the detection patterns have "
+      + "stopped matching real files rather than the duplication being fixed. Its three positive "
+      + "controls drive the detector against sources built in the test, so the shape is pinned even if "
+      + "the repository population were to empty entirely.",
+  },
   "packages/lab/src/packaging/tracked-source-leak-guard.test.ts": {
     guard: "files.length >= MIN_TRACKED_SOURCE_FILES",
     note: "guarded — `git ls-files '*.mjs' '*.ts' '*.py' '*.ps1' '*.sh' '*.yml'` for #83's source-comment "
