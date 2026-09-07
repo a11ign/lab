@@ -26,11 +26,18 @@ import { classifyOrphan, pathOf } from "../../scripts/corpus-prune-orphans.mjs";
 // generic, and a test fixture is a source file like any other. The property under test is that the ORIGIN
 // differs from the declaration — any origin will do, and a fake one proves it more honestly.
 
-/** The fixture pages as `REAL_PAGES` declares them — localhost, which no fleet worker can reach. */
-const DECLARED = new Set([
-  "/route-title-stale/good.html",
-  "/visit/all/edinburgh-castle",
-  "/search?query=",
+/**
+ * Declared pages as `REAL_PAGES` holds them: path -> the page's OWN url.
+ *
+ * Not a bare set of paths, and that is the fix for the defect real data found — see the
+ * `/about` test below. Whether a differing origin is EXPLAINED depends on the declared page's own origin,
+ * so the verdict needs to know which page a path belongs to.
+ */
+const DECLARED = new Map([
+  ["/route-title-stale/good.html", "http://localhost:5050/route-title-stale/good.html"],
+  ["/visit/all/edinburgh-castle", "https://www.historicenvironment.scot/visit/all/edinburgh-castle/"],
+  ["/search?query=", "https://caselaw.nationalarchives.gov.uk/search?query="],
+  ["/about", "https://www.gov.scot/about/"],
 ]);
 
 test("a declared page reached at ANOTHER ORIGIN is RELOCATED, never deletable", () => {
@@ -48,12 +55,34 @@ test("a url no declared page has, by origin OR path, is RETIRED", () => {
   assert.equal(verdict.verdict, "RETIRED");
 });
 
-test("RELOCATED wins over RETIRED — a path match is decisive whatever the host", () => {
-  // If this ever inverted, the prune would delete a declared page's only capture while reporting a tidy-up.
-  // Asserted with a host that shares nothing with the declaration, so only the PATH can be doing the work.
-  const verdict = classifyOrphan("https://some-other-host.example/search?query=", DECLARED);
-  assert.equal(verdict.verdict, "RELOCATED",
-    "a path that a declared page has must never be classified deletable, whatever the origin");
+test("a path shared with an unrelated REAL publisher is RETIRED, not RELOCATED", () => {
+  // THE DEFECT REAL DATA FOUND, and the reason a destructive tool is run in report mode on the real
+  // corpus before any of its verdicts are trusted.
+  //
+  // The first version matched on PATH alone, so it called `www.nationalarchives.gov.uk/about/` RELOCATED
+  // because the declared `www.gov.scot/about/` shares the path `/about`. Two unrelated publishers, one
+  // ordinary path. It failed in the SAFE direction — refusing to delete something it should have offered
+  // — which is exactly why every unit test here passed: they all used paths no other page has. Only 99
+  // real declarations could show it.
+  //
+  // Between two real hosts, the HOST is the identity. An origin difference has to be explained, not
+  // merely present.
+  const verdict = classifyOrphan("https://www.nationalarchives.gov.uk/about/", DECLARED);
+  assert.equal(verdict.verdict, "RETIRED",
+    "gov.scot/about and nationalarchives/about are different pages; a shared path is a coincidence");
+});
+
+test("only a PAGE-SERVER declaration explains a differing origin", () => {
+  // The one case where our own serving arrangement makes the origin differ legitimately: declared
+  // `localhost:5050`, captured at the host's LAN address, same port, because a worker cannot reach
+  // `localhost`. That is #146 and it cannot happen between two real publishers.
+  const served = classifyOrphan("http://192.0.2.10:5050/route-title-stale/good.html", DECLARED);
+  assert.equal(served.verdict, "RELOCATED");
+  // Same path, but the declaration is a real site — so a stranger's host is not an explained origin.
+  const notServed = classifyOrphan("https://some-other-host.example/search?query=", DECLARED);
+  assert.equal(notServed.verdict, "RETIRED",
+    "caselaw.nationalarchives.gov.uk is a real host; another host with the same query path is a "
+    + "different page, not the same one relocated");
 });
 
 test("a capture with no usable url is UNCLASSIFIED and is left alone", () => {

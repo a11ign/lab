@@ -55,18 +55,47 @@ export function pathOf(url) {
 }
 
 /**
+ * A page-server origin — the ONLY case where a differing origin is explained rather than coincidental.
+ *
+ * The dataset page server is declared as `localhost:<port>` and reached by a fleet worker at the host's
+ * LAN address on the same port, because a worker cannot reach `localhost` (that resolves to itself). That
+ * is #146, and it is a fact about OUR serving arrangement — not something that can happen between two
+ * real publishers.
+ *
+ * @param {string} url
+ */
+function servedByThePageServer(url) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[?::1\]?)(:|\/|$)/i.test(String(url));
+}
+
+/**
  * What to do with a capture no declared page claims.
  *
  * RELOCATED WINS over RETIRED, and the asymmetry is the whole safety property: a capture whose PATH
- * matches a declared page is evidence of that page reached by another route, and calling it retired would
- * delete the only capture of a page that is still very much declared.
+ * matches a declared page reached by another route is evidence of a page that is still declared, and
+ * calling it retired would delete its only capture.
+ *
+ * BUT A PATH MATCH ALONE IS NOT THAT EVIDENCE, and the first version of this got it wrong on real data.
+ * Run against the authoritative corpus it called `www.nationalarchives.gov.uk/about/` RELOCATED, because
+ * the declared `www.gov.scot/about/` shares the path `/about`. **Two unrelated publishers, one ordinary
+ * path.** The capture is a genuinely retired nationalarchives URL and the classification said it was a
+ * live page reached another way.
+ *
+ * It failed in the SAFE direction — refusing to delete something it should have offered — which is why it
+ * survived the unit tests: every fixture there used paths no other page has. The defect was only visible
+ * against 99 real declarations, which is the argument for running a destructive tool in report mode on
+ * the real corpus before trusting any of its verdicts.
+ *
+ * So the origin difference must be EXPLAINED, not merely present. It is explained in exactly one case:
+ * the declared page is served by our own page server. Between two real hosts, the host IS the identity.
  *
  * @param {string} url the capture's own url
- * @param {Set<string>} declaredPaths every declared page's path-and-query
+ * @param {Map<string, string>} declaredByPath path-and-query -> the declared page's own url
  */
-export function classifyOrphan(url, declaredPaths) {
-  if (declaredPaths.has(pathOf(url))) {
-    return { verdict: "RELOCATED", why: "a declared page reached at a different origin — see #146; NOT deletable" };
+export function classifyOrphan(url, declaredByPath) {
+  const declared = declaredByPath.get(pathOf(url));
+  if (declared && servedByThePageServer(declared)) {
+    return { verdict: "RELOCATED", why: "a page-server page reached at the host's LAN address — see #146; NOT deletable" };
   }
   if (/^https?:\/\//i.test(url)) {
     return { verdict: "RETIRED", why: "no declared page has this url or its path; the declaration moved and this stayed" };
@@ -83,7 +112,9 @@ const AGES = [];
 
 /** Every capture on disk that `realPageFor` does not match, with its file, url and verdict. */
 export function orphans(root = realCorpusRoot()) {
-  const declaredPaths = new Set(REAL_PAGES.map((page) => pathOf(page.url)));
+  // PATH -> the declared page's own URL, not a bare set: the verdict needs to know WHICH page a path
+  // belongs to, because whether a differing origin is explained depends on that page's own origin.
+  const declaredByPath = new Map(REAL_PAGES.map((page) => [pathOf(page.url), page.url]));
   const out = [];
   for (const file of readdirSync(root).sort()) {
     if (!file.endsWith(".json")) continue;
@@ -97,11 +128,11 @@ export function orphans(root = realCorpusRoot()) {
     } catch {
       // A file that will not parse is not an orphan, it is a damaged capture — a different question, and
       // deleting it on this command's authority would be answering one with the other.
-      out.push({ file, url: "", ...classifyOrphan("", declaredPaths), unreadable: true });
+      out.push({ file, url: "", ...classifyOrphan("", declaredByPath), unreadable: true });
       continue;
     }
     if (realPageFor(url)) continue;
-    out.push({ file, url, ...classifyOrphan(url, declaredPaths) });
+    out.push({ file, url, ...classifyOrphan(url, declaredByPath) });
   }
   return out;
 }
