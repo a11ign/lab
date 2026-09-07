@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { PROTOCOL_VERSION_FILE } from "@a11y-witness/control/fleet-playbook";
-import { CAPTURE_PROTOCOL_VERSION } from "@a11y-witness/nvda-worker/protocol-version";
+import { PROTOCOL_VERSION_FILE } from "@a11ign/control/fleet-playbook";
+import { CAPTURE_PROTOCOL_VERSION } from "@a11ign/nvda-worker/protocol-version";
 
 /**
  * The deploy guard SCRAPES `CAPTURE_PROTOCOL_VERSION` out of a worker file, and the file it scrapes moved.

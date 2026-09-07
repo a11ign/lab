@@ -40,12 +40,12 @@ import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 
 import { resolve, join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { ruleFindings } from "@a11y-witness/judge/rules";
+import { ruleFindings } from "@a11ign/judge/rules";
 import { corpusState, minutesSinceLastWrite } from "../src/training/corpus-settled.mjs";
 import {
   domCensus, oracleCounts, pageCensus, censusTargetIsSuspect, censusSuspectReason, submitNavigatedTheDocument,
   type CapturedAnnouncements,
-} from "@a11y-witness/evidence/verify";
+} from "@a11ign/evidence/verify";
 import { realPageFor, REAL_PAGES } from "../src/training/real-page-corpus.mjs";
 import { REPO_ROOT, realCorpusRoot } from "../src/dataset-paths.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
@@ -64,8 +64,43 @@ const BASELINE = resolve(REPO, "packages/lab/baselines/real-page-findings.json")
  * THIS GATE SCORES PAGES DRAWN FROM SEVERAL CAPTURE RUNS, and until 2026-09-06 it said nothing about
  * that. It already refuses when a role is MISSING entirely — the harder case is when every page is
  * present and some of them are old.
+ *
+ * ## IT COUNTED CAPTURES IT NEVER SCORED, and the header called them "the captures this scored"
+ *
+ * The push sat ABOVE the two filters that reduce the walk to conformant declared pages, so this recorded
+ * every `.json` in the directory: captures with no transcript, captures of pages absent from `REAL_PAGES`,
+ * and captures of pages whose publisher declares them INACCESSIBLE — which this gate deliberately does not
+ * score, because holding a page that is supposed to produce findings to a conformance baseline measures
+ * the wrong thing entirely.
+ *
+ * Measured 2026-09-06: it reported `calibration 57, fixture 10, training 46` — 113 captures — in the same
+ * run whose first line reads `86 conformant real page(s) scored against the baseline`. Twenty-seven of the
+ * 113 were never scored, and `REAL_PAGES` declares 99 pages in total, so the number was not describing the
+ * declared corpus either. Three populations, one number, and the sentence above it naming the one it was
+ * least like.
+ *
+ * The consequence is the one that cost the investigation: BOTH real-page roles were refreshed cleanly and
+ * the reported spread GREW, 288 hours to 304 — because a refresh covering every declared page cannot move
+ * a figure computed over captures that are not declared pages. A freshness warning no refresh can answer
+ * gets read as a corpus problem, then ignored.
+ *
+ * This is the repo's most-recorded defect — a check answering correctly about a population other than the
+ * one the reader thinks — committed in the line whose whole job is to say WHICH captures a verdict rests
+ * on. So the ages are now recorded where the scoring happens, and everything walked and NOT scored is
+ * reported separately with its reason, because "we did not look at it" and "it does not exist" need
+ * opposite work.
  */
 const CAPTURE_AGES: { at: string; role: string }[] = [];
+
+/**
+ * Captures on disk that this gate walked and did NOT score, with why — reported, never silent.
+ *
+ * `undeclared` is the one that needs a human: a capture whose URL no `REAL_PAGES` entry claims is live
+ * evidence filed under nothing. It is aged, it is counted, and until now it was invisible — the mirror of
+ * `reportDeclaredExclusions`, which prints every declared exclusion on every run precisely so a temporary
+ * one cannot become permanent by silence. The asymmetry was only enforced in one direction.
+ */
+const NOT_SCORED: { file: string; url: string; why: "undeclared" | "not conformant" | "no transcript" }[] = [];
 
 /**
  * The pages declared unexaminable, with their reasons. Empty when the file is absent, deliberately: a
@@ -150,6 +185,37 @@ function reportDeclaredExclusions(unusablePages: string[]): string[] {
 
 function reportCaptureAges(): void {
   process.stdout.write(`${captureAgeLines(CAPTURE_AGES).join("\n")}\n`);
+  reportWhatWasNotScored();
+}
+
+/**
+ * The captures on disk this gate walked past, grouped by why — and the undeclared ones by name.
+ *
+ * PRINTED EVEN WHEN THERE ARE NONE, because zero is the answer that makes the ages above trustworthy:
+ * "every capture on disk was scored" and "we did not check" are different statements and the silent
+ * version of this report could only ever make the second look like the first.
+ *
+ * `not conformant` is expected and is not a problem — the corpus deliberately holds pages whose publisher
+ * declares them inaccessible, and this gate deliberately does not hold those to a conformance baseline.
+ * `undeclared` is a real finding and is named per file: a capture no `REAL_PAGES` entry claims is evidence
+ * filed under nothing, and it was previously counted into the freshness spread while being invisible.
+ */
+function reportWhatWasNotScored(): void {
+  const by = (why: string) => NOT_SCORED.filter((entry) => entry.why === why);
+  const undeclared = by("undeclared");
+  process.stdout.write(`  scored ${CAPTURE_AGES.length} capture(s); walked past ${NOT_SCORED.length}`
+    + ` (${by("not conformant").length} on pages the publisher does not declare conformant,`
+    + ` ${undeclared.length} undeclared, ${by("no transcript").length} with no transcript).\n`);
+  if (!undeclared.length) return;
+  // THE ONE THAT NEEDS A HUMAN. Named rather than counted, for this file's own stated reason: "a count is
+  // where an investigation stops", and these three causes -- a retired page, a role that moved without its
+  // capture, and one URL normalising to two filenames -- need opposite work. The third would mean a page
+  // is scored twice, so it has to be excluded before either cheap answer is applied.
+  process.stdout.write(`  *** ${undeclared.length} capture(s) NO DECLARED PAGE CLAIMS. They are aged above `
+    + "and scored by nothing:\n");
+  for (const entry of undeclared) {
+    process.stdout.write(`        ${entry.file}  ${entry.url || "(no url in the capture)"}\n`);
+  }
 }
 
 /**
@@ -187,6 +253,33 @@ type Findings = Record<string, string[]>;
 // The scanner now lives in `corpus-settled.mjs`; this file's copy took a single dir and had to be
 // wrapped at the call site to fit the shared shape, which is drift caught before a third copy.
 
+/**
+ * The declared, conformant page this capture is of — or `null`, with the reason recorded rather than lost.
+ *
+ * Two rejections, and they are not the same kind of thing. A page whose publisher declares it INACCESSIBLE
+ * is supposed to produce findings, so holding it to a conformance baseline would measure the wrong thing:
+ * expected, correct, uninteresting. A capture NO declared page claims is none of those — it is evidence
+ * filed under nothing, and it was previously skipped in silence while still being counted into the
+ * freshness spread above.
+ *
+ * Extracted from `currentFindings` rather than inlined: recording a reason turned two `continue`s into
+ * four branches and put that function over the complexity gate, which is the gate asking for the Stepdown
+ * Rule. The name states the question the two checks jointly answer.
+ */
+function pageThisGateScores(file: string, capture: { url?: string; transcript?: unknown }) {
+  const url = String(capture.url ?? "");
+  if (!Array.isArray(capture.transcript)) {
+    NOT_SCORED.push({ file, url, why: "no transcript" });
+    return null;
+  }
+  const page = realPageFor(capture.url);
+  if (!page || page.publishedClaim !== "conformant") {
+    NOT_SCORED.push({ file, url, why: page ? "not conformant" : "undeclared" });
+    return null;
+  }
+  return page;
+}
+
 /** What the rules say about every conformant real page, as `url -> sorted criteria`. */
 function currentFindings(): Findings {
   const out: Findings = {};
@@ -199,21 +292,22 @@ function currentFindings(): Findings {
   for (const file of entries.sort()) {
     if (!file.endsWith(".json")) continue;
     let capture: { url?: string; transcript?: unknown };
+    let capturedAt: string | null;
+    let role: string;
     try {
       const parsed = JSON.parse(readFileSync(join(REAL, file), "utf8")) as
         { capture?: unknown; capturedAt?: string; role?: string };
       capture = (parsed.capture ?? parsed) as { url?: string; transcript?: unknown };
-      if (typeof parsed.capturedAt === "string") {
-        CAPTURE_AGES.push({ at: parsed.capturedAt, role: parsed.role ?? "no role recorded" });
-      }
+      capturedAt = typeof parsed.capturedAt === "string" ? parsed.capturedAt : null;
+      role = parsed.role ?? "no role recorded";
     } catch {
       continue;
     }
-    if (!Array.isArray(capture.transcript)) continue;
-    const page = realPageFor(capture.url);
-    // Conformant pages only. A page whose publisher declares it INACCESSIBLE is supposed to produce
-    // findings, and holding those to a baseline would be measuring the wrong thing entirely.
-    if (!page || page.publishedClaim !== "conformant") continue;
+    const page = pageThisGateScores(file, capture);
+    if (!page) continue;
+    // RECORDED HERE, past every filter, so the ages describe the captures this gate actually scored. Above
+    // the filters it described the directory listing -- see this constant's own header for the 113-vs-86.
+    if (capturedAt) CAPTURE_AGES.push({ at: capturedAt, role });
     // `capture` is read from real JSON on disk, of a shape only checked at runtime (the `Array.isArray`
     // guard just above) -- the same `as` boundary the rest of this file casts at when handing a parsed
     // capture to `pageCensus`/`domCensus`.

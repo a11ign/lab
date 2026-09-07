@@ -23,7 +23,7 @@ const SCRIPT = join(REPO, "packages/lab/scripts/check-shipped-provenance.mjs");
 
 /** The provenance rows `promote-model.mjs` renders, for a report with this many records. */
 const entryFor = (records: number) => `---
-"@a11y-witness/scorer": major
+"@a11ign/scorer": major
 ---
 
 Retrained scorer weights (\`candidate\`).

@@ -24,7 +24,7 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { CASES, signalMatches } from "./case-matrix.mjs";
 import { hasUsableCaptureFiles } from "./capture-resume.mjs";
-import { refuseUnknownFlags, flagValue } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { readCapture as readCaptureFile } from "../capture/evidence-diff.mjs";
 import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
 
