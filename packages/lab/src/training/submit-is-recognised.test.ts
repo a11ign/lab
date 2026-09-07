@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { CASES } from "./case-matrix.mjs";
-import { probeKindFor } from "@a11y-witness/nvda-worker/capture-pure";
+import { probeKindFor } from "@a11ign/nvda-worker/capture-pure";
 
 /**
  * A case whose finding needs a SUBMIT must carry a button the probe recognises as one.

@@ -11,17 +11,17 @@
 //
 // They are pure functions of their inputs, so they can be tested without a worker, a VM or a
 // network — which is the whole point of moving them out of a 650-line orchestrator.
-import { captureHasSubstance, captureIsSelfConsistent, captureMentionsTitle } from "@a11y-witness/evidence/verify";
-import { assessWorker } from "@a11y-witness/worker-fleet/health";
+import { captureHasSubstance, captureIsSelfConsistent, captureMentionsTitle } from "@a11ign/evidence/verify";
+import { assessWorker } from "@a11ign/worker-fleet/health";
 
 /**
- * MOVED to `@a11y-witness/worker-fleet/transient-fault` — architecture-audit.md §5, item 3. `isTransient`
+ * MOVED to `@a11ign/worker-fleet/transient-fault` — architecture-audit.md §5, item 3. `isTransient`
  * classifies a worker/network fault, which has nothing lab-specific about it, and `packages/cli` needs it
  * too (to gain the same lost-response recovery this file's sibling `capture-client.mjs` already had) but
  * must never depend on this private, unpublished package. Re-exported here so every existing importer of
  * `capture-decisions.mjs` is unchanged.
  */
-export { isTransient } from "@a11y-witness/worker-fleet/transient-fault";
+export { isTransient } from "@a11ign/worker-fleet/transient-fault";
 
 /** How much of a rejected transcript to quote back. Enough to recognise the wrong page, not a dump. */
 const REJECTED_PREVIEW_PHRASES = 2;
@@ -40,7 +40,7 @@ export const UNREACHABLE_PROBES_BEFORE_RETIRE = 2;
 
 /**
  * Is this capture usable as evidence?
- * @param {import("@a11y-witness/evidence/verify").CapturedAnnouncements} capture
+ * @param {import("@a11ign/evidence/verify").CapturedAnnouncements} capture
  * @param {string} title
  */
 export function isEvidence(capture, title) {
@@ -58,7 +58,7 @@ export function isEvidence(capture, title) {
  *
  * Returns null when the capture IS evidence — asking why a good capture failed is a caller bug.
  *
- * @param {import("@a11y-witness/evidence/verify").CapturedAnnouncements} capture
+ * @param {import("@a11ign/evidence/verify").CapturedAnnouncements} capture
  * @param {{ title: string, url: string }} expected
  * @returns {string | null}
  */

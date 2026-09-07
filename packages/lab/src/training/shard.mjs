@@ -1,5 +1,5 @@
 // @ts-check
-import { flagValue } from "@a11y-witness/worker-fleet/cli-flags";
+import { flagValue } from "@a11ign/worker-fleet/cli-flags";
 
 /**
  * `--shard=i/n` — split a work list across concurrent runs.

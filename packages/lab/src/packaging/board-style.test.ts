@@ -121,7 +121,7 @@ test("the checks above FAIL on edition 1, which is what makes them worth running
   // shape -- numbered topic headings, a question, and repository internals in the decision sections. A
   // style guard that has never been shown to reject anything is decoration.
   const editionOne = [
-    "# a11y-witness — board report",
+    "# a11ign — board report",
     "",
     "## 1. Are we on track",
     "",
@@ -356,7 +356,7 @@ test("the heading-similarity check REJECTS the actual defect it was written for"
   // "We are asking for the five machines..." then, further down the same section, "We recommend buying
   // the five machines...". Different verbs, same subject; a substring check would miss it.
   const reproduction = [
-    "# a11y-witness — board report, 7 September 2026",
+    "# a11ign — board report, 7 September 2026",
     "",
     "## We are asking for the five machines.",
     "",

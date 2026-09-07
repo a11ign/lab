@@ -54,10 +54,10 @@ test("the real package count and private/public split", () => {
       + "private -- either it was un-privated, or the doc's table has gone stale again");
   }
   // The published ones must still each have a row in the main migration table -- by PACKAGE NAME, which
-  // for `cli` is the unscoped `a11y-witness`, not the directory name.
+  // for `cli` is the unscoped `a11ign`, not the directory name.
   for (const name of names.filter((n) => !privateOnes.includes(n))) {
     const pkg = JSON.parse(readFileSync(join(REPO, "packages", name, "package.json"), "utf8"));
-    const shortName = String(pkg.name).replace(/^@a11y-witness\//, "");
+    const shortName = String(pkg.name).replace(/^@a11ign\//, "");
     assert.match(PACKAGES_README, new RegExp(`\`${shortName}\``),
       `packages/README.md never mentions the published package "${shortName}" (directory packages/${name})`);
   }

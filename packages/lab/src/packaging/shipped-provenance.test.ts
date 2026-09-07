@@ -16,7 +16,7 @@ const render = (training: { dataset?: { records?: number } }) =>
   `- records: \`${training.dataset?.records}\``;
 
 const REPORT = { dataset: { records: 2487 } };
-const entryFor = (records: number) => `---\n"@a11y-witness/scorer": major\n---\n\n- records: \`${records}\`\n`;
+const entryFor = (records: number) => `---\n"@a11ign/scorer": major\n---\n\n- records: \`${records}\`\n`;
 
 const check = (changesets: Array<{ name: string; text: string }>, changelog: string | null = null) =>
   provenanceProblems({ shippedReport: REPORT, changesets, changelog, renderProvenance: render });
@@ -90,7 +90,7 @@ test("no training report at all is a refusal that says so", () => {
 
 /** A promotion note carrying a feature-schema line, which is what `promote:model` writes. */
 const schemaEntry = (records: number, schema: string) =>
-  `---\n"@a11y-witness/scorer": major\n---\n\n- records: \`${records}\`\n`
+  `---\n"@a11ign/scorer": major\n---\n\n- records: \`${records}\`\n`
   + `- feature schema: \`${schema}\`\n`;
 
 const SCHEMA_REPORT = { dataset: { records: 2487 }, representation: { schema: "v18" } };
@@ -128,7 +128,7 @@ test("a changeset with no feature-schema line at all is not a promotion note and
       shippedReport: SCHEMA_REPORT,
       changesets: [
         { name: "promote-candidate-x.md", text: schemaEntry(2487, "v18") },
-        { name: "quiet-melons-smile.md", text: "---\n\"a11y-witness\": patch\n---\n\nA hand-written note.\n" },
+        { name: "quiet-melons-smile.md", text: "---\n\"a11ign\": patch\n---\n\nA hand-written note.\n" },
       ],
       changelog: null,
       renderProvenance: render,

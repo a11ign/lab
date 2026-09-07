@@ -16,7 +16,7 @@ import { resolve, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { ACCOMPANYING_DEFECTS } from "../src/training/case-matrix.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
 /**

@@ -20,7 +20,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { provenanceLines } from "./promote-model.mjs";
 import { provenanceProblems } from "../src/packaging/shipped-provenance.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run release:provenance" });
 
