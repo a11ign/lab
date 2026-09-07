@@ -2,14 +2,17 @@
 /**
  * The one resolution of `runs/` and its dataset artefacts.
  *
- * THIS COMMENT USED TO CLAIM `lab` HAS NO WORKSPACE DEPENDENTS, AND THAT IS WRONG -- #175, corrected
- * before the PR that measured it had even finished merging, on dispatcher's own read of the actual CI
- * run. `packages/cli`'s `package.json` depends on `@a11y-witness/lab` (a real, if unusual, workspace
- * dependency running the OPPOSITE direction from `lab -> cli`, which is also real -- the two packages
- * depend on EACH OTHER), so a change scoped to this file resolves `testPackages = ["cli", "lab"]`, not
- * `["lab"]` alone. `nvda-speech` is the only genuinely zero-dependent package in this workspace, and it
- * has no TypeScript source at all (Python-only), so there is no leaf case with real TS content to measure
- * here -- `[cli, lab]` is the smallest real `testPackages` fan-out this repo can produce.
+ * THIS COMMENT USED TO CLAIM `lab` HAS NO WORKSPACE DEPENDENTS, WAS WRONG, AND IS NOW TRUE AGAIN --
+ * #175 found `cli` depended on `lab` (this file, imported straight from `cli.test.ts`) while `lab`
+ * depended on `cli` too (`public-api.test.ts`, testing the published package's surface), a real cycle;
+ * #199, chairman's ruling, closed it as the boundary defect it was (ADR 0004: a published, consumer-facing
+ * package must not depend on a private, never-published one) rather than as a CI-scoping inconvenience.
+ * `cli.test.ts` now computes its own repo-root/captures-path locally -- the same pattern
+ * `worker-fleet`'s `doctor.mjs`/`compare-workers.mjs`, `nvda-worker`'s `capture-pure.corpus.test.ts` and
+ * `judge`'s `channel-tables-4.1.2.test.ts` already used for the identical reason -- and `cli`'s
+ * `devDependencies` no longer lists `@a11y-witness/lab` at all. `lab -> cli` (one direction, via
+ * `public-api.test.ts`) is legitimate and stays; it is not a cycle on its own. `lab` genuinely has zero
+ * workspace dependents again, so `testPackages` for a change scoped to this file really is `["lab"]`.
  *
  * Before this existed, the repo-root computation `fileURLToPath(new URL("../../../", import.meta.url))`
  * was pasted into roughly a dozen scripts, each counting ".." segments to ITS OWN depth in the tree —
@@ -32,12 +35,17 @@
  *
  * ## What is deliberately NOT here
  *
- * `@a11y-witness/lab` depends on `@a11y-witness/nvda-worker` and `@a11y-witness/worker-fleet`, so
- * neither of those packages can import this module without a dependency cycle. Three call sites keep
- * their own copy of the repo-root computation for exactly that reason:
+ * `@a11y-witness/lab` depends on `@a11y-witness/nvda-worker`, `@a11y-witness/worker-fleet` and
+ * `@a11y-witness/judge`, so none of those packages can import this module without a dependency cycle.
+ * `a11y-witness` (cli) is the same shape since #199 (see this file's own header): it depends on nothing
+ * that depends on `lab`, but its own test needed real captures, so it computes its own copy too rather
+ * than reintroducing the `cli <-> lab` cycle #199 closed. Four call sites keep their own copy of the
+ * repo-root computation for exactly this reason:
  *
  *   - `packages/nvda-worker/src/capture-pure.corpus.test.ts`
  *   - `packages/worker-fleet/src/doctor.mjs` and `packages/worker-fleet/src/compare-workers.mjs`
+ *   - `packages/judge/src/channel-tables-4.1.2.test.ts`
+ *   - `packages/cli/src/cli.test.ts`
  *
  * `@a11y-witness/control` is separately exempt: ADR 0012 keeps it deliberately dependency-free (enforced
  * by `control-has-no-dependencies.test.ts`), and its own `REPO` in `lab-job.mjs`/`lab-pipeline.mjs` is

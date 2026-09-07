@@ -596,3 +596,22 @@ test("coverage.yml reports its own failure on the tracking issue -- a nightly no
   assert.match(runLines, /gh issue comment 169/,
     "coverage.yml must comment on #169 (the coverage tracking issue) when the nightly run fails");
 });
+
+test("PROOF: readWorkspaceDependencyGraph rendered from the REAL repo has no cycle -- cli and lab in "
+  + "particular", () => {
+  // #199, chairman's ruling: `a11y-witness` (cli, published) and `@a11y-witness/lab` (private, never
+  // published) used to depend on EACH OTHER -- a real boundary defect (ADR 0004), not merely a CI-scoping
+  // inconvenience. Closed by making `cli.test.ts` compute its own repo-root/captures-path locally instead
+  // of importing from `lab` (the same pattern worker-fleet/nvda-worker/judge already use for the identical
+  // reason) and dropping `@a11y-witness/lab` from `cli`'s `devDependencies` entirely. `lab -> cli` (one
+  // direction, via `public-api.test.ts` testing the published surface) is legitimate and stays -- a single
+  // edge is not a cycle. Driven against the REAL manifests, not a synthetic fixture, so a reintroduced
+  // `@a11y-witness/lab` dependency in `packages/cli/package.json` fails this test rather than silently
+  // widening every scoped CI run back to the pair.
+  const packages = knownPackages(REPO);
+  const graph = readWorkspaceDependencyGraph(REPO, packages);
+  assert.ok(!graph.cli.includes("lab"), "cli must not depend on lab -- that is the boundary #199 closed");
+  assert.deepEqual(dependentsOf(["lab"], graph), ["lab"],
+    "lab must have zero workspace dependents -- if this fails, something (most likely cli again) now "
+    + "depends on lab, and testPackages for a lab-only change would widen back to a pair or more");
+});
