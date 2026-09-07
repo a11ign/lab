@@ -15,7 +15,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { classify, knownPackages, readWorkspaceDependencyGraph, dependentsOf, packedFiles, candidatePackedPaths }
+import { classify, knownPackages, readWorkspaceDependencyGraph, dependentsOf, packedFiles, candidatePackedPaths,
+  testDependencyMap, jobsFor }
   from "../../../../scripts/ci-changed.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
@@ -251,6 +252,86 @@ test("classify: board fires, and docs does not, when EVERY doc-touching file is 
   const reported = classify(["docs/board/reported.json"], ["lab"]);
   assert.equal(reported.board, true);
   assert.equal(reported.docs, false);
+});
+
+// -------------------------------------------------------------------------------------------------------
+// #283: a file named by a test declaration in the `file:`-keyed SITES convention must run THAT test's
+// job, even when `board`'s narrower glob (`board-*.test.ts` + `public-claim.test.ts`) would otherwise skip
+// it entirely. `main` went red on exactly this shape: `repo-identity-consolidated.test.ts` named
+// `docs/board/reported.json`, #270 was a board-only diff, and neither `board` nor (since `docs` is false
+// whenever `board` is true) `docs` ran it.
+//
+// THE MECHANISM IS TESTED WITH AN INJECTED MAP, NOT AGAINST THAT REAL EXAMPLE -- deliberately. Fixing
+// #283 also meant asking whether `reported.json` needed to name the repo at all (a separate, sibling
+// finding); the answer was no, so `repo-identity-consolidated.test.ts` no longer names it, and the map
+// this file derives from the real repo no longer contains that entry either. Pinning THESE tests to that
+// specific, now-resolved example would be exactly the fragile coupling the sibling finding warns against
+// -- a real anchor here proves the class fix works today, but any real site can be resolved out from under
+// it the same way `reported.json`'s was. `testDependencyMap`'s own anti-vacuity check below still proves
+// the derivation examines the real repo and finds SOMETHING; the mechanism tests below it prove the FOLD
+// logic against a map built by hand, so they cannot go stale when an unrelated SITES entry changes.
+// -------------------------------------------------------------------------------------------------------
+
+test("testDependencyMap: the ANTI-VACUITY check -- a real minimum, not just non-empty", () => {
+  // A bare `size > 0` would pass on ONE stray match and read as proof this derivation has live input --
+  // exactly the `landmark_present`/`rules:coverage` shape CLAUDE.md warns about, a mechanism correct,
+  // tested and answering about an empty set. Measured 2026-09-07, after #283's part 1 removed
+  // `docs/board/reported.json` from the one SITES list that used to name it: 103 literal->package
+  // entries total, contributed by all four known `file:`-convention guards (repo-identity-consolidated
+  // 26, tracked-source-leak-guard 52, fetch-wrapper-coverage 8, backlog-file-facts 6) plus
+  // audit-findings-dispositioned. 50 is a floor well under that, chosen to fail loudly on a real
+  // regression (one guard's `file:` sites silently stop being read) without being pinned to today's exact
+  // count, which will drift as those guards' own SITES lists grow or shrink.
+  const map = testDependencyMap(REPO);
+  assert.ok(map.size >= 50, `only ${map.size} literal->package entries derived -- expected at least 50 `
+    + "from the known file:-convention guards; either one stopped contributing or the derivation broke");
+  // README.md, not docs/board/reported.json -- see this block's own header comment for why that anchor
+  // moved. README.md is named by repo-identity-consolidated.test.ts's OWN vacuity-guarded SITES list, so
+  // it cannot go stale the way a single retired achievement's incidental mention did.
+  assert.ok(map.get("README.md")?.has("lab"),
+    "repo-identity-consolidated.test.ts lives under packages/lab -- the map must attribute the claim to "
+    + "the package whose ts-job glob actually covers that test file");
+});
+
+/** A fake `getTestDependencyMap`, so the fold's OWN logic is provable without any real SITES entry. */
+const fakeTestDeps = (byFile: Record<string, string[]>) => () =>
+  new Map(Object.entries(byFile).map(([f, pkgs]) => [f, new Set(pkgs)]));
+
+test("classify: a board-only diff also fires ts, because a NON-board test names the file", () => {
+  const getTestDependencyMap = fakeTestDeps({ "docs/board/reported.json": ["lab"] });
+  const result = classify(["docs/board/reported.json"], ["lab"], {}, { getTestDependencyMap });
+  assert.equal(result.board, true, "still routes to board -- this fix adds ts, it does not remove board");
+  assert.equal(result.ts, true, "a non-board test names this file; ts must fire so SOME job actually "
+    + "runs it");
+  assert.ok(result.packages.includes("lab"), "the owning package must be pulled in, or ts=true would run "
+    + "with an empty glob list and crash the ts job's own loud-refusal check");
+});
+
+test("classify: the fold is GATED on board, so an unrelated file's OTHER site does not widen ts for free", () => {
+  // README.md is ALSO named by a real `file:` site (see the anti-vacuity test above), but a README.md-only
+  // diff classifies docs (not board) and is therefore already covered by the wide docs job in full -- the
+  // fold must not fire here, or every README.md edit would pay for both docs AND ts with nothing gained.
+  const result = classify(["docs/known-gaps.md", "README.md"], ["lab", "judge"]);
+  assert.deepEqual(result, { ts: false, python: false, ansible: false, docs: true, board: false,
+    changeset: false, rulesFitness: false, packages: [], testPackages: [] });
+});
+
+test("classify: an injected empty test-dependency map reproduces the pre-#283 bug -- the guard BITES", () => {
+  const result = classify(["docs/board/reported.json"], ["lab"], {}, { getTestDependencyMap: () => new Map() });
+  assert.equal(result.board, true);
+  assert.equal(result.ts, false, "with no test-dependency map, nothing tells classify() this file is "
+    + "named elsewhere -- board fires alone, exactly like the diff that shipped #270");
+});
+
+test("jobsFor: agrees with classify() on the same input, by construction", () => {
+  const files = ["README.md"];
+  const viaJobsFor = new Set(jobsFor(files, REPO));
+  const viaClassify = classify(files, knownPackages(REPO), {}, { repoRoot: REPO });
+  const jobKeys = ["ts", "python", "ansible", "docs", "board", "changeset", "rulesFitness"] as const;
+  for (const job of jobKeys) {
+    assert.equal(viaJobsFor.has(job), Boolean(viaClassify[job]),
+      `jobsFor and classify disagree on "${job}" for the same file list`);
+  }
 });
 
 test("classify: mixing a board file with ANY other doc file falls back to the wider docs job", () => {
