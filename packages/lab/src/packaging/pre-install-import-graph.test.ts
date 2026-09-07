@@ -3,10 +3,10 @@
  *
  * `ci.yml`'s `changed` job is `checkout` + `setup-node` and no install — deliberately, because its whole
  * job is to decide whether anything else installs or builds at all. So every module reachable from
- * `scripts/ci-changed.mjs` must resolve by RELATIVE PATH or `node:` builtin. A `@a11y-witness/...`
+ * `scripts/ci-changed.mjs` must resolve by RELATIVE PATH or `node:` builtin. A `@a11ign/...`
  * specifier there dies before the workflow starts:
  *
- *     Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@a11y-witness/worker-fleet'
+ *     Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@a11ign/worker-fleet'
  *       imported from .../scripts/changed-packages.mjs
  *
  * Measured on #238's first CI run, which is the point: `ci-changed.mjs` itself already carried a comment

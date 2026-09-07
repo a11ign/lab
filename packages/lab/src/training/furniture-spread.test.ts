@@ -22,7 +22,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 import { CASES } from "./case-matrix.mjs";
-import { SCORED_CRITERIA } from "@a11y-witness/judge/coverage";
+import { SCORED_CRITERIA } from "@a11ign/judge/coverage";
 
 type Case = {
   id: string; criterion: string; subtype: string; probeTables?: boolean; good: string; bad: string;

@@ -45,17 +45,19 @@ test("examples/workflow.yml does not contradict action.yml's declared defaults",
 
   const withBlocks = Object.values(example.jobs)
     .flatMap((job) => job.steps)
-    .filter((step) => String(step.uses ?? "").includes("a11y-witness"))
+    // BOTH names, deliberately: the `uses:` line itself still says `DanBeckDev/a11y-witness` (#66 keeps
+    // it pointing at where the Action actually is until #325 moves the repository).
+    .filter((step) => /a11ign|a11y-witness/.test(String(step.uses ?? "")))
     .map((step) => step.with ?? {});
   // Vacuity guard: a renamed action reference, or a restructured example, would leave nothing to compare
   // and this test would pass having read no inputs at all.
   assert.ok(withBlocks.length > 0,
-    "found no a11y-witness step in examples/workflow.yml — the example was restructured and this test is "
-    + "checking nothing");
+    "found no a11ign/a11y-witness step in examples/workflow.yml — the example was restructured and this "
+    + "test is checking nothing");
 
   const contradictions: string[] = [];
   for (const inputs of withBlocks) {
-    assert.ok(Object.keys(inputs).length > 0, "the example's a11y-witness step sets no inputs at all");
+    assert.ok(Object.keys(inputs).length > 0, "the example's a11ign step sets no inputs at all");
     for (const [name, value] of Object.entries(inputs)) {
       if (name in DELIBERATE) continue;
       const declared = action.inputs?.[name]?.default;

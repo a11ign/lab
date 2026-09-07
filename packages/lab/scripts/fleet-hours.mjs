@@ -40,7 +40,7 @@
 import { readdirSync, statSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { runsRoot } from "../src/dataset-paths.mjs";
 
 refuseUnknownFlags(["--dir=", "--json"], {

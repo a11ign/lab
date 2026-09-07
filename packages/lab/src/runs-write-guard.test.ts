@@ -34,7 +34,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { REPO_ROOT } from "./dataset-paths.mjs";
-import { stripComments } from "@a11y-witness/evidence/source-text";
+import { stripComments } from "@a11ign/evidence/source-text";
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 const SELF = "packages/lab/src/runs-write-guard.test.ts";

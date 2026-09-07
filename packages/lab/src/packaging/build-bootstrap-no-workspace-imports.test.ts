@@ -2,7 +2,7 @@
  * A SCRIPT THE BUILD ITSELF DEPENDS ON MAY NOT IMPORT A WORKSPACE PACKAGE SPECIFIER.
  *
  * Measured, not theoretical: `scripts/build-packages.mjs` gained `import { refuseUnknownFlags } from
- * "@a11y-witness/worker-fleet/cli-flags"` (#164), which resolves to `packages/worker-fleet/dist/
+ * "@a11ign/worker-fleet/cli-flags"` (#164), which resolves to `packages/worker-fleet/dist/
  * cli-flags.mjs` — a file that exists only AFTER `build-packages.mjs` has already run successfully.
  * Circular: the build script cannot start because it needs the output of the build it is about to run.
  * `npm ci --ignore-scripts` (CI's own install) then `node scripts/build-packages.mjs` on a genuinely
@@ -32,7 +32,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
-import { stripComments } from "@a11y-witness/evidence/source-text";
+import { stripComments } from "@a11ign/evidence/source-text";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const ENTRY = "scripts/build-packages.mjs";
@@ -46,10 +46,10 @@ const ALSO_CONSTRAINED = [
 
 const IMPORT_RE = /\bimport\s+(?:[\s\S]*?\s+from\s+)?["']([^"']+)["']/g;
 // AN IMPORT SPECIFIER, not any string mentioning the scope. `isolation-gate.mjs` legitimately checks
-// `dependency.startsWith("@a11y-witness/")` against a package.json's own declared dependencies -- real
+// `dependency.startsWith("@a11ign/")` against a package.json's own declared dependencies -- real
 // code, not an import -- and a bare substring match flagged it as an offender having examined nothing
 // about what it actually does.
-const WORKSPACE_SPECIFIER_RE = /\bfrom\s+["']@a11y-witness\//;
+const WORKSPACE_SPECIFIER_RE = /\bfrom\s+["']@a11ign\//;
 
 /** Every file reachable from `entry` via RELATIVE (`./`, `../`) import specifiers, `entry` included. */
 function relativeImportClosure(entry: string): Set<string> {
@@ -94,7 +94,7 @@ test("no script the build depends on imports a workspace package specifier", () 
     if (WORKSPACE_SPECIFIER_RE.test(source)) offenders.push(rel);
   }
   assert.deepEqual(offenders, [],
-    "these run before (or as) the build, so a `@a11y-witness/*` import resolves to a `dist/` that does "
+    "these run before (or as) the build, so a `@a11ign/*` import resolves to a `dist/` that does "
     + "not exist yet on a fresh checkout -- use a relative import instead, the same fix ci-changed.mjs "
     + "and isolation-gate.mjs already use");
 });
@@ -102,6 +102,6 @@ test("no script the build depends on imports a workspace package specifier", () 
 test("MUTATION: reintroducing the workspace specifier is caught", () => {
   // Proves the regex actually fires on the real, historical shape of the defect rather than a contrived
   // string -- the literal line #164 added.
-  const reintroduced = 'import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";';
+  const reintroduced = 'import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";';
   assert.ok(WORKSPACE_SPECIFIER_RE.test(reintroduced));
 });

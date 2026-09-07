@@ -29,9 +29,9 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ruleFindings } from "@a11y-witness/judge/rules";
-import { channelsPresent, CRITERION_COVERAGE } from "@a11y-witness/judge/internal";
-import { oracleCounts } from "@a11y-witness/evidence/verify";
+import { ruleFindings } from "@a11ign/judge/rules";
+import { channelsPresent, CRITERION_COVERAGE } from "@a11ign/judge/internal";
+import { oracleCounts } from "@a11ign/evidence/verify";
 import { REAL_PAGES } from "./real-page-corpus.mjs";
 import { realCorpusRoot } from "../dataset-paths.mjs";
 import { labCorpusReadable, skipLine } from "./corpus-settled.mjs";

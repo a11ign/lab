@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { CASES, SIGNAL_TYPES } from "./case-matrix.mjs";
 import { ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 
 /**
@@ -92,7 +92,7 @@ function buildReport(/** @type {any} */ manifest) {
   }));
   const errors = results.flatMap((/** @type {any} */ { id, errors: caseErrors }) => caseErrors.map((/** @type {any} */ error) => id + ": " + error));
   return {
-    schema: "a11y-witness/screen-reader-dataset-preflight",
+    schema: "a11ign/screen-reader-dataset-preflight",
     generatedAt: new Date().toISOString(),
     status: errors.length ? "failed" : "ready-for-NVDA-capture",
     note: "This report validates page instruments and metadata only; it is not screen-reader evidence.",

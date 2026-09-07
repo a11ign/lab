@@ -29,8 +29,8 @@
 // axe's for the same page so the difference is a fact rather than a claim.
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
-import { errorText } from "@a11y-witness/nvda-worker/error-text";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { errorText } from "@a11ign/nvda-worker/error-text";
 
 /**
  * takes its sites as a POSITIONAL JSON argument and no flags; `--json`, `--probe-forms` and `--task`

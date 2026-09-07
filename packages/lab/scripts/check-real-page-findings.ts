@@ -40,12 +40,12 @@ import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 
 import { resolve, join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { ruleFindings } from "@a11y-witness/judge/rules";
+import { ruleFindings } from "@a11ign/judge/rules";
 import { corpusState, minutesSinceLastWrite } from "../src/training/corpus-settled.mjs";
 import {
   domCensus, oracleCounts, pageCensus, censusTargetIsSuspect, censusSuspectReason, submitNavigatedTheDocument,
   type CapturedAnnouncements,
-} from "@a11y-witness/evidence/verify";
+} from "@a11ign/evidence/verify";
 import { realPageFor, REAL_PAGES } from "../src/training/real-page-corpus.mjs";
 import { REPO_ROOT, realCorpusRoot } from "../src/dataset-paths.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";

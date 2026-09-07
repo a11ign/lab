@@ -23,7 +23,7 @@ from typing import Any
 # `packages/lab/packages/scorer/python/score.py` — a path that does not exist.
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# The weights, the encoder and the scoring program live in `@a11y-witness/scorer` (PLAN.md M3). Anchored on
+# The weights, the encoder and the scoring program live in `@a11ign/scorer` (PLAN.md M3). Anchored on
 # the package directory rather than on `models/` at the repo root, which no longer holds them.
 # `packages/lab/scripts/` -> `packages/` -> `packages/scorer`. It was `parents[1] / "packages" / "scorer"`,
 # which resolved to `packages/lab/packages/scorer` once M8 moved this file into the lab package — a path that
@@ -168,7 +168,7 @@ def main() -> None:
             raise RuntimeError("criteria missing from training report: " + ", ".join(sorted(missing)))
 
     result: dict[str, Any] = {
-        "schema": "a11y-witness/screenreader-scorer-error-analysis",
+        "schema": "a11ign/screenreader-scorer-error-analysis",
         "dataset": {"path": str(args.data), "sha256": training.sha256(args.data), "records": len(records)},
         "encoder": {"path": str(args.encoder), "sha256": training.sha256(encoder_file)},
         "model": {"path": str(args.model), "sha256": training.sha256(args.model)},

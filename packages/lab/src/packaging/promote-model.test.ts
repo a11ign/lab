@@ -1,7 +1,7 @@
 /**
  * Promotion must refuse a candidate that has not passed, and must write a MAJOR changeset when it has.
  *
- * Promoting a model is a release of `@a11y-witness/scorer` — ADR 0007: the weights are that package's API,
+ * Promoting a model is a release of `@a11ign/scorer` — ADR 0007: the weights are that package's API,
  * and any retrain is a major, because a consumer's build goes from passing to failing with no code change.
  * Before 2026-08-22 there was no promotion step at all and this was an undocumented manual copy, so the two
  * gates were whatever the person remembered to check.
@@ -57,7 +57,7 @@ const run = (training: object, acceptance: object) => {
 
 test("a model that passed both gates yields a MAJOR changeset for the scorer", () => {
   const { entry } = run(REPORT, { passed: true });
-  assert.match(entry, /"@a11y-witness\/scorer": major/,
+  assert.match(entry, /"@a11ign\/scorer": major/,
     "any retrain is a major — the weights are the API");
 });
 
@@ -184,7 +184,7 @@ test("the changeset is named for WHAT IS PROMOTED, never for a count of unrelate
   // AN UNRELATED CHANGESET APPEARS. Under the old scheme this alone moved the name; under the new one it
   // cannot, because the name is a function of the release and of nothing else.
   const intruder = join(CHANGESET_DIR, "zz-unrelated-fixture.md");
-  writeFileSync(intruder, '---\n"@a11y-witness/scorer": patch\n---\n\nnot a promotion\n');
+  writeFileSync(intruder, '---\n"@a11ign/scorer": patch\n---\n\nnot a promotion\n');
   try {
     const after = run(REPORT, { passed: true, evaluated: 90, falsePositive: 0, falseNegative: 0 });
     assert.equal(after.target, before.target,

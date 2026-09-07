@@ -40,11 +40,11 @@ import { createHash } from "node:crypto";
 import { resolve, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { modelInput, observationOf, producerFeedsModel } from "@a11y-witness/scorer/evidence-units";
+import { modelInput, observationOf, producerFeedsModel } from "@a11ign/scorer/evidence-units";
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
-import { captureWasTruncated } from "@a11y-witness/evidence/verify";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { captureWasTruncated } from "@a11ign/evidence/verify";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, realCorpusRoot, datasetExportPath, datasetRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
 /**
@@ -66,7 +66,7 @@ const BASE = datasetExportPath();
 const outArg = process.argv.find((a) => a.startsWith("--out="))?.slice("--out=".length);
 const OUT = outArg ? resolve(REPO, outArg) : resolve(datasetRoot(), "with-realism.jsonl");
 
-// Channels come from `@a11y-witness/scorer/evidence-units` -- imported at the top -- and are NOT redefined
+// Channels come from `@a11ign/scorer/evidence-units` -- imported at the top -- and are NOT redefined
 // here. This file used to carry its own table, and the two disagreed in three separate ways at once:
 //
 //   channel names   `read-through` vs `transcript`, `form-field-navigation` vs `form-navigation`,

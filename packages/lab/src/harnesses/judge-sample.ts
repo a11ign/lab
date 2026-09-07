@@ -10,7 +10,7 @@
  * question to evaluate: does it catch the planted issues, cite sensible WCAG
  * criteria, and avoid inventing problems that are not in the transcript?
  */
-import { judge } from "@a11y-witness/judge";
+import { judge } from "@a11ign/judge";
 
 // A realistic VoiceOver-style read-through of a contact form. Planted issues:
 //  - heading order jumps from h1 straight to h4

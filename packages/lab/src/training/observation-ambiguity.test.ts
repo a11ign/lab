@@ -14,7 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { CHANNEL_FIELD, observationAmbiguity } from "./observation-ambiguity.mjs";
-import { SWEEP_OF } from "@a11y-witness/evidence/verify";
+import { SWEEP_OF } from "@a11ign/evidence/verify";
 
 /** A capture carrying an AX-tree census, which is what `sweepCompleteness` compares the sweep against. */
 function capture(distinct: Record<string, number>, structure: Record<string, string[]>,

@@ -19,7 +19,7 @@ import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { promisify } from "node:util";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { datasetRoot, runsRoot } from "../src/dataset-paths.mjs";
 
 /**

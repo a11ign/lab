@@ -39,7 +39,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { REPO_ROOT } from "./dataset-paths.mjs";
-import { stripComments } from "@a11y-witness/evidence/source-text";
+import { stripComments } from "@a11ign/evidence/source-text";
 
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
 const SELF = "packages/lab/src/dataset-paths.test.ts";
@@ -115,22 +115,22 @@ const EXEMPT: Record<string, string> = {
   "packages/lab/src/capture/evidence-diff.mjs":
     "It is the implementation of the capture-filename half (captureFilePath/rejectedCaptureFilePath).",
   "packages/nvda-worker/src/capture-pure.corpus.test.ts":
-    "@a11y-witness/lab depends on @a11y-witness/nvda-worker, so nvda-worker cannot import dataset-paths.mjs "
+    "@a11ign/lab depends on @a11ign/nvda-worker, so nvda-worker cannot import dataset-paths.mjs "
     + "without a dependency cycle. Kept as its own cwd-anchored copy; see dataset-paths.mjs's own header.",
   "packages/worker-fleet/src/doctor.mjs":
-    "@a11y-witness/lab depends on @a11y-witness/worker-fleet, so worker-fleet cannot import "
+    "@a11ign/lab depends on @a11ign/worker-fleet, so worker-fleet cannot import "
     + "dataset-paths.mjs without a cycle. Resolves from its OWN module location instead of process.cwd() "
     + "(the same fix, duplicated for the dependency-direction reason rather than left cwd-anchored).",
   "packages/worker-fleet/src/compare-workers.mjs":
-    "Same cycle as doctor.mjs: worker-fleet cannot import @a11y-witness/lab.",
+    "Same cycle as doctor.mjs: worker-fleet cannot import @a11ign/lab.",
   "packages/judge/src/channel-tables-4.1.2.test.ts":
-    "@a11y-witness/lab depends on @a11y-witness/judge, so judge cannot import dataset-paths.mjs "
+    "@a11ign/lab depends on @a11ign/judge, so judge cannot import dataset-paths.mjs "
     + "without a cycle -- the same direction as nvda-worker and worker-fleet. Landed on main the "
     + "same night as this guard, from a branch that could not have known about it, and the guard "
     + "caught it at the merge. Re-anchored on its own module location rather than process.cwd(), so "
     + "only the cycle is duplicated and not the bug.",
   "packages/evidence/src/wire-types-describe-the-wire.test.ts":
-    "@a11y-witness/evidence is the zero-dependency package everything else (including lab) depends on; "
+    "@a11ign/evidence is the zero-dependency package everything else (including lab) depends on; "
     + "it cannot import dataset-paths.mjs without inverting the whole dependency graph.",
   "packages/lab/src/packaging/promotion-refuses-dirty.test.ts":
     "Tests promote-model.mjs's A11Y_PROMOTE_ROOT override directly; the runs/model-candidate literal is "
@@ -150,7 +150,7 @@ const EXEMPT: Record<string, string> = {
   "packages/worker-fleet/src/lab-job.test.ts":
     "Asserts the ansible job catalogue's DECLARED default roots (lab-job.yml's own DATASET_ROOT/env "
     + "defaults) and a --describe help string naming an output file -- comparing against another file's "
-    + "content, not resolving a path itself. worker-fleet cannot import @a11y-witness/lab regardless (see "
+    + "content, not resolving a path itself. worker-fleet cannot import @a11ign/lab regardless (see "
     + "doctor.mjs's entry).",
   "packages/lab/scripts/explain-capture.mjs":
     "The runs/ literal is inside a human-readable error message naming where the search already looked "
@@ -158,7 +158,7 @@ const EXEMPT: Record<string, string> = {
     + "repeatCapturesRoot() from dataset-paths.mjs) -- the message just cannot print realCorpusRoot()'s "
     + "actual VALUE without becoming machine-specific and useless to read.",
   "packages/cli/src/cli.test.ts":
-    "#199, chairman's ruling: a11y-witness (cli, published) and @a11y-witness/lab (private, never "
+    "#199, chairman's ruling: a11ign (cli, published) and @a11ign/lab (private, never "
     + "published) depended on EACH OTHER -- this file used to import datasetRoot/captureRoot straight "
     + "from lab's source, and lab's own public-api.test.ts imports the published cli package the other "
     + "way. A real boundary defect (ADR 0004), not merely a CI-scoping one. Fixed the same way doctor.mjs "
