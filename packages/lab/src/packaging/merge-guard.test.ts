@@ -27,6 +27,7 @@ import { join } from "node:path";
 
 import {
   mergeReadiness, reasonKind, recordVerdict, latestVerdictFor, realOutcomeFor, reconcile, lookupBranchTip,
+  mergeSafetyVerdict,
 } from "../../../../scripts/merge-guard.mjs";
 
 const REQUIRED = ["changed", "ts", "python", "ansible", "docs", "changeset"];
@@ -597,4 +598,51 @@ test("#249: omitting `session` treats every claimed row it would close as somebo
     closes: CLOSES_CLAIMED,
   });
   assert.equal(v.code, 1, "a check that does not know who is asking cannot vouch for the asker");
+});
+
+/**
+ * #298 (unit 1): `mergeSafetyVerdict` is the narrower, self-reference-safe check a required CI job runs
+ * mid-workflow -- head-vs-tip (#294, `headTipMismatchReason` -- see its own tests above) ONLY.
+ *
+ * Ancestry (#182) and closing-claim (#262) are DELIBERATELY not composed in here, and this is the
+ * regression these tests exist to pin: `dispatcher` drove an earlier version of this function (which did
+ * include both) against the real, moving PR queue and measured it refusing the NORMAL case on both counts
+ * -- almost every open PR is behind `main` most of the time with `strict=false`, and a CI job has no
+ * session identity to tell "closes the row I was built for" apart from "discards a stranger's work". A
+ * required job that refuses the normal case is not a gate. See `mergeSafetyVerdict`'s own comment in
+ * `scripts/merge-guard.mjs` for the measurements.
+ */
+
+test("mergeSafetyVerdict: READY when head-vs-tip is clean", () => {
+  const v = mergeSafetyVerdict({ pr: pr(), branchTip: HEAD });
+  assert.equal(v.code, 0, `expected READY, got: ${v.reasons.join(" | ")}`);
+});
+
+test("mergeSafetyVerdict: refuses on the #294 shape, same reason mergeReadiness would give", () => {
+  const v = mergeSafetyVerdict({ pr: pr({ headRefOid: "ac306fe9" }), branchTip: "7c2e16fc" });
+  assert.equal(v.code, 1);
+  assert.equal(reasonKind(v.reasons[0]), "HEAD_MISMATCH");
+});
+
+test("MUTATION target: mergeSafetyVerdict is CANNOT_ASK, never READY, when branchTip is null", () => {
+  const v = mergeSafetyVerdict({ pr: pr(), branchTip: null });
+  assert.equal(v.code, 2, `expected CANNOT_ASK, got code ${v.code}: ${v.reasons.join(" | ")}`);
+  assert.match(v.reasons[0], /git ls-remote/);
+});
+
+test("mergeSafetyVerdict: THE #182 REGRESSION -- a PR far behind main is still READY, because ancestry is CLI advice, never a CI refusal", () => {
+  // The shape `dispatcher` measured live: 13 of 13 open PRs behind `main` at once, with merges landing
+  // roughly one a minute. `mergeSafetyVerdict` does not even ask for `behindBy` -- there is no argument
+  // here that could smuggle ancestry back in by accident.
+  const v = mergeSafetyVerdict({ pr: pr(), branchTip: HEAD });
+  assert.equal(v.code, 0);
+  assert.deepEqual(Object.keys(v).sort(), ["code", "reasons"].sort());
+});
+
+test("mergeSafetyVerdict: THE #262 REGRESSION -- closing a row THIS PR's own author claimed is still READY, because CI has no session identity", () => {
+  // `dispatcher` measured 10 of 13 open PRs closing a row their own author held -- the ordinary
+  // worker-owned shape. `mergeSafetyVerdict` takes no `closes`/`session` at all, so this cannot regress
+  // by someone quietly wiring the claim check back in with `session: null`.
+  const v = mergeSafetyVerdict({ pr: pr(), branchTip: HEAD });
+  assert.equal(v.code, 0, "a PR closing its own claimed row must never be refused by the CI gate");
 });
