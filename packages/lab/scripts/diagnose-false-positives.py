@@ -37,6 +37,26 @@ def load(path: Path, name: str) -> Any:
     return module
 
 
+def parse_records(text: str) -> tuple[list[dict[str, Any]], int]:
+    """Parses `--data`'s JSONL text into usable records, PURE and independent of the model/encoder so it
+    can be unit-tested without either.
+
+    Returns `(records, malformed_line_count)`. A malformed line -- truncated by an interrupted export, or
+    corrupted in transit -- is counted and skipped rather than crashing the whole run on the first bad
+    line, or being silently absorbed into a record count that no longer means what it claims to.
+    """
+    records: list[dict[str, Any]] = []
+    malformed = 0
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            malformed += 1
+    return records, malformed
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=Path, required=True)
@@ -62,20 +82,37 @@ def furniture_of(record: dict[str, Any]) -> frozenset[str]:
 
 def main() -> int:
     args = parse_args()
+
+    # Parsed and checked BEFORE anything model-related loads, so an empty or corrupted --data file
+    # refuses cheaply and says what it examined -- rather than reaching a numpy broadcast deep inside
+    # scoring and reporting a traceback where a stated verdict belongs. Follows audit_grants.py's form:
+    # refuse on total-zero, continue over what CAN be read on a partial population.
+    raw_text = args.data.read_text()
+    records, malformed = parse_records(raw_text)
+    if not records:
+        print(f"NOTHING TO DIAGNOSE -- 0 usable record(s) in {args.data}"
+              + (f" ({malformed} malformed JSON line(s))" if malformed else " (file is empty)") + ".")
+        print("This is a REFUSAL, not a pass: {\"records\": 0} would read as \"examined everything, "
+              "found nothing\", and it examined nothing at all.")
+        return 2
+    if malformed:
+        print(f"{len(records)} usable record(s), {malformed} malformed JSON line(s) skipped in {args.data}.")
+        print("Continuing over the records that CAN be read; the counts below are of those only.")
+
     import numpy as np
     from safetensors.numpy import load_file
 
     features_mod = load(SCORER / "python/screenreader_features.py", "screenreader_features")
     report = json.loads((args.model / "training-report.json").read_text())
     weights = load_file(str(args.model / "model.safetensors"))
-    records = [json.loads(line) for line in args.data.read_text().splitlines() if line.strip()]
     max_length = int(report["representation"]["maxLength"])
 
     features, _, _ = features_mod.encode_records(records, args.encoder, max_length)
     offsets = features_mod.bag_offsets(records)
     documents = features_mod.encode_documents(records, args.encoder, max_length)
 
-    findings: dict[str, Any] = {"model": str(args.model), "records": len(records), "subtypes": {}}
+    findings: dict[str, Any] = {"model": str(args.model), "records": len(records),
+                                 "malformedLinesSkipped": malformed, "subtypes": {}}
     for criterion in report["criteria"].values():
         for subtype, sub in criterion["subtypes"].items():
             head = sub["head"]

@@ -60,7 +60,7 @@ test("a package with no smoke test is REJECTED rather than silently passed", () 
 
 test("a package's unpublished siblings are resolved, so the gate can install them", () => {
   // The gate only ever handled LEAF packages, and nothing noticed until `judge` arrived with two internal
-  // dependencies. Nothing is published, so npm cannot fetch `@a11y-witness/evidence` from the registry — it
+  // dependencies. Nothing is published, so npm cannot fetch `@a11ign/evidence` from the registry — it
   // fails the install with E404, and the gate would report a broken package that is perfectly fine. npm 7+
   // auto-installs peer dependencies too, so a peer on an unpublished sibling fails the same way.
   const judge = fileURLToPath(new URL("../../../../packages/judge", import.meta.url));

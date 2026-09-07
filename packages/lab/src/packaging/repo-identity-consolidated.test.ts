@@ -7,8 +7,16 @@
  * `scripts/repo-identity.mjs` is the one declared value now. `board-data.mjs` and `row-claim.mjs` import it
  * at runtime and are no longer literals — this file is about the ones that CANNOT import anything:
  * `package.json` `repository` fields, workflow strings, Ansible defaults, and prose. Each is asserted
- * against `REPO`/`REPO_URL`/`REPO_GIT_URL` here, so a rename is one edit to `repo-identity.mjs` plus a
- * single failing test listing every site that still disagrees — never a silent partial rename found later.
+ * against a constant from `repo-identity.mjs`, so a rename is one edit there plus a single failing test
+ * listing every site that still disagrees — never a silent partial rename found later.
+ *
+ * TWO CONSTANTS, NOT ONE, SINCE #66 (2026-09-07). `REPO` is where `gh`/git actually resolve TODAY — it
+ * stays `DanBeckDev/a11y-witness` until #63 really transfers the repository, because every live GitHub
+ * API call (`row-claim.mjs`, `board-data.mjs`) would break the instant it named a repository that does
+ * not exist yet. `PRODUCT_REPO` is what the product calls itself NOW — `a11ign/a11ign` — and almost every
+ * site below checks against it, since #66 renamed the tree's own static prose ahead of the transfer. The
+ * sites that must still resolve on GitHub today (every `uses: <repo>@<ref>` Action reference) are the
+ * one exception and check `REPO` instead; see `repo-identity.mjs`'s own comment on the split.
  *
  * WHY A FLAT LIST RATHER THAN A REPO-WIDE REGEX SWEEP. A sweep would need to tell a genuine reference to
  * THIS repository apart from an unrelated `owner/repo`-shaped string (a different project entirely, an
@@ -22,7 +30,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { REPO, REPO_URL, REPO_GIT_URL } from "../../../../scripts/repo-identity.mjs";
+import { REPO, REPO_URL, PRODUCT_REPO, PRODUCT_REPO_URL, PRODUCT_GIT_URL }
+  from "../../../../scripts/repo-identity.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
 
@@ -32,46 +41,59 @@ const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
  * `uses:` line) and each shape gets its own entry rather than one loosely-matching pattern per file.
  */
 const SITES: Array<{ file: string; expect: string }> = [
-  { file: "README.md", expect: `${REPO_URL}/actions/workflows/lint.yml/badge.svg` },
-  { file: "README.md", expect: `${REPO_URL}/actions/workflows/capture-regression.yml/badge.svg` },
+  { file: "README.md", expect: `${PRODUCT_REPO_URL}/actions/workflows/lint.yml/badge.svg` },
+  { file: "README.md", expect: `${PRODUCT_REPO_URL}/actions/workflows/capture-regression.yml/badge.svg` },
   { file: "README.md", expect: `uses: ${REPO}@main` },
-  { file: "SECURITY.md", expect: `${REPO_URL}/security/advisories/new` },
+  { file: "SECURITY.md", expect: `${PRODUCT_REPO_URL}/security/advisories/new` },
   { file: "docs/control-plane-proxmox.md",
-    expect: `raw.githubusercontent.com/${REPO}/main/packages/worker-fleet/src/provisioning/`
+    expect: `raw.githubusercontent.com/${PRODUCT_REPO}/main/packages/worker-fleet/src/provisioning/`
       + "bootstrap-control-plane.sh" },
-  { file: "docs/backlog-ready.md", expect: `${REPO_URL}/issues` },
+  { file: "docs/backlog-ready.md", expect: `${PRODUCT_REPO_URL}/issues` },
   { file: "docs/try-it.md", expect: `uses: ${REPO}@main` },
-  { file: "docs/getting-started.md", expect: `git clone ${REPO_GIT_URL}` },
+  { file: "docs/getting-started.md", expect: `git clone ${PRODUCT_GIT_URL}` },
   { file: "docs/getting-started.md",
-    expect: `raw.githubusercontent.com/${REPO}/main/packages/worker-fleet/src/provisioning/`
+    expect: `raw.githubusercontent.com/${PRODUCT_REPO}/main/packages/worker-fleet/src/provisioning/`
       + "bootstrap-windows-worker.ps1" },
   { file: "docs/github-action.md", expect: `uses: ${REPO}@main` },
   { file: "docs/github-action.md", expect: `uses: ${REPO}@<sha>` },
+  // REPO, not PRODUCT_REPO -- docs/backlog.md is one of #66's explicit exclusions (historical narrative,
+  // never rewritten to match the present), so this link correctly still points at the pre-rename repo.
   { file: "docs/backlog.md", expect: `${REPO_URL}/issues` },
   { file: "docs/nvda-worker-runbook.md",
-    expect: `raw.githubusercontent.com/${REPO}/main/packages/worker-fleet/src/provisioning/`
+    expect: `raw.githubusercontent.com/${PRODUCT_REPO}/main/packages/worker-fleet/src/provisioning/`
       + "bootstrap-windows-worker.ps1" },
-  { file: "docs/board/README.md", expect: `--repo ${REPO}` },
-  { file: "docs/board/reported.json", expect: `on ${REPO}` },
-  { file: "docs/roles/memory/github-is-the-tracker.md", expect: `GitHub Issues on ${REPO}` },
-  { file: "docs/roles/README.md", expect: `\`${REPO}\`` },
-  { file: "docs/roles/memory/org-shape-second-orchestrator.md", expect: `a Project on ${REPO}` },
+  { file: "docs/board/README.md", expect: `--repo ${PRODUCT_REPO}` },
+  // NOT `docs/board/reported.json` -- DELIBERATELY, issue #283. It carried this literal once, inside one
+  // achievement's evidence prose ("GitHub Issues and milestones on DanBeckDev/a11y-witness" -- quoting
+  // the achievement's actual wording at the time, before #66; not rewritten to match the present), and #270
+  // correctly retired that achievement once its cited issue closed. Unlike every other site in this list,
+  // the mention was INCIDENTAL rather than functional: nothing here is executed, requested or followed --
+  // it is authored, narrative content that turns over daily as achievements are added and retired, and
+  // the repo's name was never load-bearing in it. Re-adding a literal (in a NEW field, purely to satisfy
+  // this test) would be content whose only purpose is to make a grep pass -- a smaller version of exactly
+  // the fabrication `reported.json`'s own header exists to prevent, and it would leave this test *looking*
+  // like it verifies something real about a file that does not depend on the repo's name at all. If a
+  // future field in this file is ever actually CONSUMED under the repo's name (a computed URL, a value fed
+  // to `gh --repo`), add it back as a live site then -- not as a standing anchor with no functional reader.
+  { file: "docs/roles/memory/github-is-the-tracker.md", expect: `GitHub Issues on ${PRODUCT_REPO}` },
+  { file: "docs/roles/README.md", expect: `\`${PRODUCT_REPO}\`` },
+  { file: "docs/roles/memory/org-shape-second-orchestrator.md", expect: `a Project on ${PRODUCT_REPO}` },
   { file: "examples/workflow.yml", expect: `uses: ${REPO}@main` },
-  { file: "packages/nvda-worker/package.json", expect: REPO_GIT_URL },
-  { file: "packages/nvda-worker/src/README.md", expect: `git clone ${REPO_GIT_URL}` },
-  { file: "packages/worker-fleet/package.json", expect: REPO_GIT_URL },
-  { file: "packages/evidence/README.md", expect: `(${REPO_URL})` },
-  { file: "packages/evidence/package.json", expect: REPO_GIT_URL },
-  { file: "packages/cli/package.json", expect: REPO_GIT_URL },
+  { file: "packages/nvda-worker/package.json", expect: PRODUCT_GIT_URL },
+  { file: "packages/nvda-worker/src/README.md", expect: `git clone ${PRODUCT_GIT_URL}` },
+  { file: "packages/worker-fleet/package.json", expect: PRODUCT_GIT_URL },
+  { file: "packages/evidence/README.md", expect: `(${PRODUCT_REPO_URL})` },
+  { file: "packages/evidence/package.json", expect: PRODUCT_GIT_URL },
+  { file: "packages/cli/package.json", expect: PRODUCT_GIT_URL },
   { file: "packages/cli/README.md", expect: `uses: ${REPO}@main` },
-  { file: "packages/scorer/package.json", expect: REPO_GIT_URL },
-  { file: "packages/judge/package.json", expect: REPO_GIT_URL },
+  { file: "packages/scorer/package.json", expect: PRODUCT_GIT_URL },
+  { file: "packages/judge/package.json", expect: PRODUCT_GIT_URL },
   { file: "packages/control/ansible/roles/worker/defaults/main.yml",
-    expect: `worker_repo_url: ${REPO_GIT_URL}` },
+    expect: `worker_repo_url: ${PRODUCT_GIT_URL}` },
   { file: "packages/control/ansible/collections/ansible_collections/a11y/worker/galaxy.yml",
-    expect: `repository: ${REPO_URL}` },
-  { file: ".github/ISSUE_TEMPLATE/config.yml", expect: `${REPO_URL}/security/advisories/new` },
-  { file: ".github/ISSUE_TEMPLATE/config.yml", expect: `${REPO_URL}/blob/main/README.md#licence` },
+    expect: `repository: ${PRODUCT_REPO_URL}` },
+  { file: ".github/ISSUE_TEMPLATE/config.yml", expect: `${PRODUCT_REPO_URL}/security/advisories/new` },
+  { file: ".github/ISSUE_TEMPLATE/config.yml", expect: `${PRODUCT_REPO_URL}/blob/main/README.md#licence` },
 ];
 
 test("every literal site still names this repository, agreeing with repo-identity.mjs", () => {
@@ -86,9 +108,11 @@ test("every literal site still names this repository, agreeing with repo-identit
     if (!text.includes(expect)) bad.push(`${file}: does not contain "${expect}"`);
   }
   assert.deepEqual(bad, [],
-    `these sites disagree with repo-identity.mjs's REPO ("${REPO}") -- either they were not updated when `
-    + "the name last changed, or this list itself has drifted from what the files actually say:\n"
-    + bad.join("\n"));
+    "these sites disagree with repo-identity.mjs -- either they were not updated when the name last "
+    + `changed, or this list itself has drifted from what the files actually say. Most sites check `
+    + `PRODUCT_REPO ("${PRODUCT_REPO}"), the name the product now uses in its own static prose; the `
+    + `\`uses:\` Action-reference sites check REPO ("${REPO}") instead, since #66 deliberately keeps `
+    + "those resolving on GitHub today until #325 moves the repository:\n" + bad.join("\n"));
 });
 
 test("the vacuity guard: this list is not empty and each file it names exists", () => {

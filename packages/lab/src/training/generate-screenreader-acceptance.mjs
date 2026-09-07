@@ -5,7 +5,7 @@ import { relative, resolve } from "node:path";
 // ALL of them, single- and multi-defect. Generating only the single-defect set is what made held-out
 // acceptance blind to the case the trained heads actually fail on — see `alsoCarrying` for the measurement.
 import { ALL_ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 
 /**
@@ -84,7 +84,7 @@ function main() {
 
   mkdirSync(PAGE_ROOT, { recursive: true });
   const manifest = {
-    schema: "a11y-witness/screen-reader-acceptance-manifest",
+    schema: "a11ign/screen-reader-acceptance-manifest",
     version: 1,
     generatedAt: new Date().toISOString(),
     captureBoundary: "NVDA announcements and NVDA-derived navigation/interaction output only",

@@ -15,7 +15,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { classify, knownPackages, readWorkspaceDependencyGraph, dependentsOf, packedFiles, candidatePackedPaths }
+import { classify, knownPackages, readWorkspaceDependencyGraph, dependentsOf, packedFiles, candidatePackedPaths,
+  testDependencyMap, jobsFor }
   from "../../../../scripts/ci-changed.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
@@ -253,6 +254,86 @@ test("classify: board fires, and docs does not, when EVERY doc-touching file is 
   assert.equal(reported.docs, false);
 });
 
+// -------------------------------------------------------------------------------------------------------
+// #283: a file named by a test declaration in the `file:`-keyed SITES convention must run THAT test's
+// job, even when `board`'s narrower glob (`board-*.test.ts` + `public-claim.test.ts`) would otherwise skip
+// it entirely. `main` went red on exactly this shape: `repo-identity-consolidated.test.ts` named
+// `docs/board/reported.json`, #270 was a board-only diff, and neither `board` nor (since `docs` is false
+// whenever `board` is true) `docs` ran it.
+//
+// THE MECHANISM IS TESTED WITH AN INJECTED MAP, NOT AGAINST THAT REAL EXAMPLE -- deliberately. Fixing
+// #283 also meant asking whether `reported.json` needed to name the repo at all (a separate, sibling
+// finding); the answer was no, so `repo-identity-consolidated.test.ts` no longer names it, and the map
+// this file derives from the real repo no longer contains that entry either. Pinning THESE tests to that
+// specific, now-resolved example would be exactly the fragile coupling the sibling finding warns against
+// -- a real anchor here proves the class fix works today, but any real site can be resolved out from under
+// it the same way `reported.json`'s was. `testDependencyMap`'s own anti-vacuity check below still proves
+// the derivation examines the real repo and finds SOMETHING; the mechanism tests below it prove the FOLD
+// logic against a map built by hand, so they cannot go stale when an unrelated SITES entry changes.
+// -------------------------------------------------------------------------------------------------------
+
+test("testDependencyMap: the ANTI-VACUITY check -- a real minimum, not just non-empty", () => {
+  // A bare `size > 0` would pass on ONE stray match and read as proof this derivation has live input --
+  // exactly the `landmark_present`/`rules:coverage` shape CLAUDE.md warns about, a mechanism correct,
+  // tested and answering about an empty set. Measured 2026-09-07, after #283's part 1 removed
+  // `docs/board/reported.json` from the one SITES list that used to name it: 103 literal->package
+  // entries total, contributed by all four known `file:`-convention guards (repo-identity-consolidated
+  // 26, tracked-source-leak-guard 52, fetch-wrapper-coverage 8, backlog-file-facts 6) plus
+  // audit-findings-dispositioned. 50 is a floor well under that, chosen to fail loudly on a real
+  // regression (one guard's `file:` sites silently stop being read) without being pinned to today's exact
+  // count, which will drift as those guards' own SITES lists grow or shrink.
+  const map = testDependencyMap(REPO);
+  assert.ok(map.size >= 50, `only ${map.size} literal->package entries derived -- expected at least 50 `
+    + "from the known file:-convention guards; either one stopped contributing or the derivation broke");
+  // README.md, not docs/board/reported.json -- see this block's own header comment for why that anchor
+  // moved. README.md is named by repo-identity-consolidated.test.ts's OWN vacuity-guarded SITES list, so
+  // it cannot go stale the way a single retired achievement's incidental mention did.
+  assert.ok(map.get("README.md")?.has("lab"),
+    "repo-identity-consolidated.test.ts lives under packages/lab -- the map must attribute the claim to "
+    + "the package whose ts-job glob actually covers that test file");
+});
+
+/** A fake `getTestDependencyMap`, so the fold's OWN logic is provable without any real SITES entry. */
+const fakeTestDeps = (byFile: Record<string, string[]>) => () =>
+  new Map(Object.entries(byFile).map(([f, pkgs]) => [f, new Set(pkgs)]));
+
+test("classify: a board-only diff also fires ts, because a NON-board test names the file", () => {
+  const getTestDependencyMap = fakeTestDeps({ "docs/board/reported.json": ["lab"] });
+  const result = classify(["docs/board/reported.json"], ["lab"], {}, { getTestDependencyMap });
+  assert.equal(result.board, true, "still routes to board -- this fix adds ts, it does not remove board");
+  assert.equal(result.ts, true, "a non-board test names this file; ts must fire so SOME job actually "
+    + "runs it");
+  assert.ok(result.packages.includes("lab"), "the owning package must be pulled in, or ts=true would run "
+    + "with an empty glob list and crash the ts job's own loud-refusal check");
+});
+
+test("classify: the fold is GATED on board, so an unrelated file's OTHER site does not widen ts for free", () => {
+  // README.md is ALSO named by a real `file:` site (see the anti-vacuity test above), but a README.md-only
+  // diff classifies docs (not board) and is therefore already covered by the wide docs job in full -- the
+  // fold must not fire here, or every README.md edit would pay for both docs AND ts with nothing gained.
+  const result = classify(["docs/known-gaps.md", "README.md"], ["lab", "judge"]);
+  assert.deepEqual(result, { ts: false, python: false, ansible: false, docs: true, board: false,
+    changeset: false, rulesFitness: false, packages: [], testPackages: [] });
+});
+
+test("classify: an injected empty test-dependency map reproduces the pre-#283 bug -- the guard BITES", () => {
+  const result = classify(["docs/board/reported.json"], ["lab"], {}, { getTestDependencyMap: () => new Map() });
+  assert.equal(result.board, true);
+  assert.equal(result.ts, false, "with no test-dependency map, nothing tells classify() this file is "
+    + "named elsewhere -- board fires alone, exactly like the diff that shipped #270");
+});
+
+test("jobsFor: agrees with classify() on the same input, by construction", () => {
+  const files = ["README.md"];
+  const viaJobsFor = new Set(jobsFor(files, REPO));
+  const viaClassify = classify(files, knownPackages(REPO), {}, { repoRoot: REPO });
+  const jobKeys = ["ts", "python", "ansible", "docs", "board", "changeset", "rulesFitness"] as const;
+  for (const job of jobKeys) {
+    assert.equal(viaJobsFor.has(job), Boolean(viaClassify[job]),
+      `jobsFor and classify disagree on "${job}" for the same file list`);
+  }
+});
+
 test("classify: mixing a board file with ANY other doc file falls back to the wider docs job", () => {
   // Narrower-than-usual needs its own argument, and a mixed diff has not made it -- the wider docs job
   // covers the guards a non-board doc file could plausibly need.
@@ -303,19 +384,19 @@ test("dependentsOf: two independently changed packages union their dependents", 
 
 test("readWorkspaceDependencyGraph: resolves by each package's REAL declared name, not by directory "
   + "convention", () => {
-  // packages/cli's own package.json name is the UNSCOPED "a11y-witness", not "@a11y-witness/cli" -- and
-  // packages/lab genuinely depends on it. A graph builder that assumed the `@a11y-witness/<dir>` pattern
+  // packages/cli's own package.json name is the UNSCOPED "a11ign", not "@a11ign/cli" -- and
+  // packages/lab genuinely depends on it. A graph builder that assumed the `@a11ign/<dir>` pattern
   // would silently drop this edge.
   const dir = mkdtempSync(join(tmpdir(), "ci-changed-graph-"));
   try {
     writeFileSync(join(dir, "package.json"), JSON.stringify({ workspaces: ["packages/*"] }));
     const pkgs: Record<string, object> = {
-      cli: { name: "a11y-witness", dependencies: {} },
-      lab: { name: "@a11y-witness/lab", dependencies: { "a11y-witness": "0.1.0", "@a11y-witness/evidence": "0.1.0" } },
-      evidence: { name: "@a11y-witness/evidence", dependencies: {} },
+      cli: { name: "a11ign", dependencies: {} },
+      lab: { name: "@a11ign/lab", dependencies: { "a11ign": "0.1.0", "@a11ign/evidence": "0.1.0" } },
+      evidence: { name: "@a11ign/evidence", dependencies: {} },
       // an external, non-workspace dependency must be silently DROPPED, not crash or appear as a phantom
       // package named after an npm package this repo does not own.
-      judge: { name: "@a11y-witness/judge", dependencies: { "@a11y-witness/evidence": "0.1.0", "typescript": "^6.0.0" } },
+      judge: { name: "@a11ign/judge", dependencies: { "@a11ign/evidence": "0.1.0", "typescript": "^6.0.0" } },
     };
     for (const [name, manifest] of Object.entries(pkgs)) {
       const pkgDir = join(dir, "packages", name);
@@ -324,7 +405,7 @@ test("readWorkspaceDependencyGraph: resolves by each package's REAL declared nam
     }
     const graph = readWorkspaceDependencyGraph(dir, ["cli", "lab", "evidence", "judge"]);
     assert.deepEqual([...graph.lab].sort(), ["cli", "evidence"],
-      "lab must resolve BOTH its unscoped 'a11y-witness' dependency (-> cli) and its scoped one (-> "
+      "lab must resolve BOTH its unscoped 'a11ign' dependency (-> cli) and its scoped one (-> "
       + "evidence), by reading each package's real name rather than assuming a naming convention");
     assert.deepEqual(graph.judge, ["evidence"], "typescript is not a workspace package and must be dropped");
     assert.deepEqual(graph.cli, []);
@@ -510,9 +591,25 @@ test("ci.yml has a gate job needing every scoped job, running even when one of t
   const gate = doc.jobs.gate;
   assert.ok(gate, "ci.yml must declare a job named 'gate' -- branch protection has nothing else it can "
     + "require that reports on every PR regardless of which path-scoped jobs a diff happened to trigger");
-  assert.deepEqual([...gate.needs as string[]].sort(),
-    ["ansible", "board", "changed", "changeset", "docs", "python", "rulesFitness", "ts"].sort(),
+  // DERIVED FROM THE FILE, NEVER A LITERAL. This assertion carried a hand-typed job list until #356 added
+  // `ownedPaths`, and a literal answers "does gate need the jobs somebody typed here", which is not the
+  // question -- the question is whether it needs the jobs this workflow ACTUALLY declares.
+  const scopedJobs = Object.keys(doc.jobs).filter((name) => name !== "gate");
+  assert.deepEqual([...gate.needs as string[]].sort(), scopedJobs.sort(),
     "gate must need every other job in this file, or a job could fail silently with gate still passing");
+
+  // AND `needs:` IS ONLY HALF OF IT -- the gap #356 fell into, and the reason this is asserted rather than
+  // read. Naming a job in `needs:` makes gate WAIT for it; it does not make gate FAIL for it. The verdict
+  // is the shell loop below, which reads `needs.<job>.result` one job at a time, so a job present in
+  // `needs:` and absent from the loop is waited for and then ignored -- gate goes green on its failure.
+  // Two lists of the same fact with nothing comparing them, which is this repo's most expensive shape.
+  const loop = /for result in \\[\s\S]*?\n\s*done/.exec(readWorkflow("ci.yml"));
+  assert.ok(loop, "could not find gate's result-checking loop in the real workflow");
+  const checked = [...loop[0].matchAll(/needs\.([\w-]+)\.result/g)].map((m) => m[1]);
+  assert.deepEqual([...checked].sort(), [...gate.needs as string[]].sort(),
+    "every job gate NEEDS must also have its result READ by gate's loop. A job in `needs:` but not in the "
+    + "loop is one gate waits for and never judges, so its failure leaves gate green -- which is exactly "
+    + "the silent pass the whole job exists to prevent.");
   assert.equal(gate.if, "always()",
     "gate must run with if: always() -- without it, a failing upstream job would SKIP gate too (a job's "
     + "default if is success() on its dependencies), and the one context branch protection requires would "
@@ -573,11 +670,11 @@ test("ci.yml's board job runs exactly the board guards and the claim guard, and 
   // A BUILD IS NEEDED, and the first version of this test asserted the opposite on the strength of a grep
   // that checked only these files' own top-level imports. Running the job's real command with no build
   // present (not reading it) found that board-liveness/board-markdown/board-style/board-summary-origin
-  // each drive a scripts/board-*.mjs script that imports @a11y-witness/worker-fleet/cli-flags -- the
+  // each drive a scripts/board-*.mjs script that imports @a11ign/worker-fleet/cli-flags -- the
   // stale-dist trap one hop further than the grep looked.
   assert.match(runLines, /npm run build/,
     "the board job must build -- several of its test files drive a scripts/board-*.mjs script that "
-    + "imports @a11y-witness/worker-fleet, which resolves to dist and does not exist unbuilt");
+    + "imports @a11ign/worker-fleet, which resolves to dist and does not exist unbuilt");
 });
 
 test("coverage.yml reports its own failure on the tracking issue -- a nightly nobody reads fails quietly", () => {
@@ -599,14 +696,14 @@ test("coverage.yml reports its own failure on the tracking issue -- a nightly no
 
 test("PROOF: readWorkspaceDependencyGraph rendered from the REAL repo has no cycle -- cli and lab in "
   + "particular", () => {
-  // #199, chairman's ruling: `a11y-witness` (cli, published) and `@a11y-witness/lab` (private, never
+  // #199, chairman's ruling: `a11ign` (cli, published) and `@a11ign/lab` (private, never
   // published) used to depend on EACH OTHER -- a real boundary defect (ADR 0004), not merely a CI-scoping
   // inconvenience. Closed by making `cli.test.ts` compute its own repo-root/captures-path locally instead
   // of importing from `lab` (the same pattern worker-fleet/nvda-worker/judge already use for the identical
-  // reason) and dropping `@a11y-witness/lab` from `cli`'s `devDependencies` entirely. `lab -> cli` (one
+  // reason) and dropping `@a11ign/lab` from `cli`'s `devDependencies` entirely. `lab -> cli` (one
   // direction, via `public-api.test.ts` testing the published surface) is legitimate and stays -- a single
   // edge is not a cycle. Driven against the REAL manifests, not a synthetic fixture, so a reintroduced
-  // `@a11y-witness/lab` dependency in `packages/cli/package.json` fails this test rather than silently
+  // `@a11ign/lab` dependency in `packages/cli/package.json` fails this test rather than silently
   // widening every scoped CI run back to the pair.
   const packages = knownPackages(REPO);
   const graph = readWorkspaceDependencyGraph(REPO, packages);

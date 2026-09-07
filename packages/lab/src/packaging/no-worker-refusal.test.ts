@@ -19,7 +19,7 @@
  * than a fresh copy is deliberate for a second reason: a REAL isolated install is the only way to prove
  * `source` resolves to `"default"` without touching `packages/control/ansible/inventory.yml` at all --
  * that file is a shared, tracked, currently-in-use production artefact (a live fleet recapture depends on
- * it), and `@a11y-witness/control` is private and never part of any published tarball, so an isolated
+ * it), and `@a11ign/control` is private and never part of any published tarball, so an isolated
  * install structurally cannot see it. `inventoryWorkerUrls()`'s `readFileSync` fails with a real ENOENT,
  * exactly as it would for any real external consumer -- this is not evasion, it is the realistic case.
  *
@@ -70,8 +70,8 @@ function packAndInstall(): string {
 /** The installed bin's real path, read from the installed package's own manifest rather than guessed. */
 function installedBinPath(consumer: string): string {
   const pkg = JSON.parse(readFileSync(
-    join(consumer, "node_modules/a11y-witness/package.json"), "utf8")) as { bin: Record<string, string> };
-  return join(consumer, "node_modules/a11y-witness", pkg.bin["a11y-witness"]);
+    join(consumer, "node_modules/a11ign/package.json"), "utf8")) as { bin: Record<string, string> };
+  return join(consumer, "node_modules/a11ign", pkg.bin["a11ign"]);
 }
 
 /**

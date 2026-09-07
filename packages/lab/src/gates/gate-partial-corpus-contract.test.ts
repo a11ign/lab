@@ -155,6 +155,13 @@ const NO_PARTIAL_POPULATION: Record<string, string> = {
   "packages/lab/scripts/audit-observation-ambiguity.mjs":
     "confirmed by direct read: its own header states it REPORTS AND NEVER BLOCKS. DOCUMENTED's \"2 no "
     + "captures found\" is total-absence only, and it renders no pass/fail verdict a caller could misread",
+  "packages/lab/scripts/corpus-prune-orphans.mjs":
+    "ITERATES ITS WHOLE POPULATION AND RENDERS NO VERDICT: `readdirSync` over the real-page corpus, every "
+    + "`.json` walked, and a file that will not parse is REPORTED as UNCLASSIFIED rather than skipped — so "
+    + "there is no path on which it examines fewer captures than are there and says nothing. It has no "
+    + "pass/fail exit at all; it lists what no declared page claims. The partial-corpus question it COULD "
+    + "get wrong is 'which corpus is this?', and it answers that directly by printing `captureAgeLines` "
+    + "above the list, because its output is a set of files somebody may be about to delete.",
   "packages/lab/scripts/lab-inventory.mjs":
     "DOCUMENTED: \"this script has NO exit-1 path at all, it never reports a hard FAIL\" — a status "
     + "reporter; its \"2\" is a schema/data-shape refusal about the artifact, not a coverage shortfall",
@@ -222,6 +229,11 @@ const JOB_SCRIPT_OVERRIDE: Record<string, string> = {
   // override is the designed answer to exactly that, and naming it here keeps "cannot be resolved" and
   // "nobody classified it" different states -- which is this file's own thesis.
   "capture-check": "packages/lab/src/harnesses/capture-check.mjs",
+  // Same shape: its argv APPENDS `--apply` conditionally, so it is `{{ [...] + ([...] if ... else []) }}`
+  // rather than a list of literals. The flag is built that way deliberately -- passing an empty
+  // placeholder instead would be refused by `refuseUnknownFlags`, and a job whose no-op form is refused
+  // is one nobody runs.
+  "prune-orphan-captures": "packages/lab/scripts/corpus-prune-orphans.mjs",
 };
 
 /**

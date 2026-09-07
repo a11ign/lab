@@ -73,7 +73,7 @@ test("a sound composite project builds and emits declarations", () => {
  * The two tests above verify the MECHANISM: a cycle is a build error, a sound project emits. Neither ever
  * looked at this repo's actual packages, so the mechanism was proven while guarding nothing — the failure
  * this file's own docstring names ("a check that exists and does not run"). It cost a fresh worker's
- * provisioning on 2026-08-25: `scorer` imported `@a11y-witness/evidence` and declared no reference, so
+ * provisioning on 2026-08-25: `scorer` imported `@a11ign/evidence` and declared no reference, so
  * `tsc --build` had no ordering information and read a `.d.ts` one second after it was written.
  *
  * `judge` had suffered the identical fault, been fixed, and carried a comment explaining it. The knowledge
@@ -101,7 +101,7 @@ function importedPackages(pkg: string): Set<string> {
       const full = join(dir, entry.name);
       if (entry.isDirectory()) { walk(full); continue; }
       if (!/\.(ts|mjs)$/.test(entry.name) || entry.name.endsWith(".test.ts")) continue;
-      for (const m of readFileSync(full, "utf8").matchAll(/["']@a11y-witness\/([a-z-]+)/g)) found.add(m[1]);
+      for (const m of readFileSync(full, "utf8").matchAll(/["']@a11ign\/([a-z-]+)/g)) found.add(m[1]);
     }
   };
   walk(join(REPO_ROOT, "packages", pkg, "src"));
@@ -122,7 +122,7 @@ test("every cross-package import is backed by a project reference", () => {
       // Only TS projects can be referenced. `nvda-worker` is `.mjs` with no tsconfig, and worker-fleet
       // reaches it through subpath exports precisely so it never loads the win32 capture driver.
       if (!projects.has(dep) || declared.has(dep)) continue;
-      missing.push(`packages/${pkg} imports @a11y-witness/${dep} and declares no { "path": "../${dep}" }`);
+      missing.push(`packages/${pkg} imports @a11ign/${dep} and declares no { "path": "../${dep}" }`);
     }
   }
   assert.deepEqual(missing, [],

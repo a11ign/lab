@@ -15,7 +15,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mjs";
 
 import { pathToFileURL } from "node:url";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { captureTolerantly } from "../../worker-fleet/src/capture-client.mjs";
 import { datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
 

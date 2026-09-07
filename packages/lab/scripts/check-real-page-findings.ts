@@ -40,12 +40,13 @@ import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from 
 import { resolve, join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { ruleFindings } from "@a11y-witness/judge/rules";
+import { ruleFindings } from "@a11ign/judge/rules";
 import { corpusState, minutesSinceLastWrite } from "../src/training/corpus-settled.mjs";
 import {
   domCensus, oracleCounts, pageCensus, censusTargetIsSuspect, censusSuspectReason, submitNavigatedTheDocument,
   type CapturedAnnouncements,
-} from "@a11y-witness/evidence/verify";
+} from "@a11ign/evidence/verify";
+import { nameOf } from "@a11ign/evidence";
 import { realPageFor, REAL_PAGES } from "../src/training/real-page-corpus.mjs";
 import { REPO_ROOT, realCorpusRoot } from "../src/dataset-paths.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
@@ -548,6 +549,9 @@ function noteEvidence(capture: { url?: string } & CapturedAnnouncements): void {
   const openingLines = (Array.isArray(capture.transcript) ? capture.transcript : [])
     .slice(0, 3).map((line) => String(line));
   OPENINGS.set(String(capture.url), openingLines);
+  // The heading NAMES, not just the count -- #363. A count cannot tell the page's headings from the
+  // consent overlay's, and that is the whole question `furnitureCaptures()` is trying to answer.
+  HEADINGS.set(String(capture.url), headingsAnnouncedIn(capture.transcript));
   if (census) CENSUS.set(String(capture.url), census);
   if (dom) DOM_CENSUS.set(String(capture.url), dom);
   const opening = openingLines.map((line) => JSON.stringify(line.slice(0, 60))).join(" ");
@@ -674,6 +678,57 @@ function refuseToWriteFromPartialCoverage(dropped: Array<{ url: string; findings
     + "  `--allow-partial` says so out loud and names every entry it drops.\n");
 }
 
+/**
+ * The vocabulary of a consent overlay, in ONE place — it now decides two questions (does the capture OPEN
+ * on furniture, and are the headings it reached the furniture's own) and two spellings of it would drift.
+ */
+const FURNITURE_TEXT = /cookie|consent|privacy preference|usercentrics|onetrust/;
+
+/**
+ * DID THIS CAPTURE REACH THE PAGE'S HEADINGS, OR ONLY THE FURNITURE'S? — #363.
+ *
+ * `furnitureCaptures()` asked "did we reach A heading" and treated any heading as proof we reached the
+ * page. **A consent overlay marked up as a heading satisfies that**, so the check written to detect consent
+ * overlays is defeated by a correctly built one — which is to say, on exactly the accessible sites this
+ * project most wants to measure. Measured 2026-09-07 on
+ * `www.historicenvironment.scot/visit/all/edinburgh-castle/`: the whole transcript is seven lines of
+ * consent text, `census heading=1` against `DOM heading=5`, and the one heading reached was the banner's
+ * own — `"heading, level 2, Manage your cookie preferences"`. The guard passed it, and that capture is the
+ * sole evidence behind a 2.4.2 finding on a page whose publisher declares it conformant.
+ *
+ * **THE SIGNAL IS NOT THE DISAGREEMENT BETWEEN THE COUNTS, and getting that wrong would undo the fix this
+ * function sits next to.** `census heading=0` against `DOM heading=55` is the largest disagreement
+ * available and it is a finding about the PAGE — the Met Office warnings page rendered in full and exposed
+ * none of it, and `furnitureCaptures()` used to call that ours. A ratio cannot tell the two apart, because
+ * both are "we reached fewer headings than exist".
+ *
+ * What tells them apart is WHICH headings were reached. Met Office reached none and read 27 lines of the
+ * page's own navigation; historicenvironment reached one and it was the overlay's. So this asks whether
+ * every heading the capture actually announced is furniture, and requires the DOM to show headings the
+ * capture never got to — without that second half, a genuine cookie-policy PAGE (whose real headings are
+ * about cookies, and where the capture reached all of them) would be filed as furniture and its findings
+ * withheld.
+ *
+ * Conservative in the direction this report must be conservative in: an UNCOUNTED DOM cannot show a
+ * heading was missed, so it never triggers this. A capture is only called ours when the evidence says so.
+ */
+export function reachedOnlyFurnitureHeadings(
+  { headingNames, domHeadings }: { headingNames: string[]; domHeadings: number | undefined },
+): boolean {
+  if (headingNames.length === 0) return false;          // a different case, decided by the DOM below
+  if (typeof domHeadings !== "number") return false;    // cannot show anything was missed
+  if (domHeadings <= headingNames.length) return false; // the capture reached every heading there is
+  return headingNames.every((name) => FURNITURE_TEXT.test(name.toLowerCase()));
+}
+
+/** The accessible name of every heading a capture announced, so the check can ask WHICH ones it reached. */
+export function headingsAnnouncedIn(transcript: unknown): string[] {
+  if (!Array.isArray(transcript)) return [];
+  return transcript
+    .map((line) => nameOf(String(line), "heading", "transcript"))
+    .filter((name) => name.length > 0);
+}
+
 function furnitureCaptures(): { consent: string[]; shell: string[] } {
   const consent: string[] = [];
   const shell: string[] = [];
@@ -684,10 +739,15 @@ function furnitureCaptures(): { consent: string[]; shell: string[] } {
     // headings. "Has a banner" and "never got past the banner" are different facts, and a count that
     // merges them is the defect this file exists to report, committed inside the report.
     //
-    // The tree is the discriminator: a capture that reached the page has HEADINGS in its census. One that
-    // did not has the site's chrome — nav, logo, banner — and nothing under it.
-    const reachedThePage = (CENSUS.get(url)?.heading ?? 0) > 0;
-    if (reachedThePage) continue;
+    // THIS USED TO READ "a capture that reached the page has HEADINGS in its census", and that was refuted
+    // on 2026-09-07 (#363): a consent overlay marked up as a heading puts one in the census, so the tree
+    // count alone says the banner and the page are the same event. WHICH HEADINGS, not how many — see `reachedOnlyFurnitureHeadings` for why a count cannot answer this.
+    // A capture that reached the page's own headings is not furniture whatever else it opened on; one whose
+    // every heading is the overlay's never left the overlay, and falls through to be classified below.
+    const headingNames = HEADINGS.get(url) ?? [];
+    const domHeadings = DOM_CENSUS.get(url)?.heading;
+    const stoppedInTheFurniture = reachedOnlyFurnitureHeadings({ headingNames, domHeadings });
+    if (headingNames.length > 0 && !stoppedInTheFurniture) continue;
     // AND THE DOM HAS TO AGREE, or this bucket accuses the tool of the page's defect.
     //
     // The tree alone cannot tell "we read a shell" from "the page exposes nothing", and until the DOM was
@@ -705,10 +765,13 @@ function furnitureCaptures(): { consent: string[]; shell: string[] } {
     // An UNCOUNTED DOM stays furniture. That is the conservative direction: an older capture carrying no
     // DOM census cannot demonstrate the page rendered, and claiming a finding on evidence we do not have
     // is the one error this report must never make.
-    const domHeadings = DOM_CENSUS.get(url)?.heading;
-    if (typeof domHeadings === "number" && domHeadings > 0) continue;
+    // AND THAT SECOND GATE IS FOR THE ZERO-HEADING CASE ONLY. `stoppedInTheFurniture` has already proved
+    // the DOM carries headings this capture never reached, so applying it here would discard exactly the
+    // case above -- the gate written to stop us blaming ourselves for the page's defect, cancelling the
+    // one that stops us blaming the page for ours.
+    if (!stoppedInTheFurniture && typeof domHeadings === "number" && domHeadings > 0) continue;
     const text = opening.join(" ").toLowerCase();
-    if (/cookie|consent|privacy preference|usercentrics|onetrust/.test(text)) consent.push(url);
+    if (FURNITURE_TEXT.test(text)) consent.push(url);
     else if (opening[0]?.trim().toLowerCase() === "blank") shell.push(url);
   }
   return { consent, shell };
@@ -794,18 +857,93 @@ const DOM_CENSUS = new Map<string, { heading?: number }>();
 /** url -> its opening announcements, kept so the summary above can be computed without a second read. */
 const OPENINGS = new Map<string, string[]>();
 
+/** url -> the accessible name of every heading its capture ANNOUNCED. See #363. */
+const HEADINGS = new Map<string, string[]>();
+
 /**
  * Report what changed against the baseline, and derive the verdict from what was actually READABLE.
  *
  * Split from `main` for the line budget, and it is a real phase rather than a slice taken to satisfy it:
  * everything above decides WHAT to compare, and everything here decides what that comparison is worth.
  */
+/**
+ * A FINDING FROM A CAPTURE THAT NEVER REACHED THE PAGE IS ABOUT THIS TOOL, AND MUST NOT BE REPORTED AS A
+ * PAGE FINDING — #363's second half.
+ *
+ * This report already SAYS, of a furniture capture, that "anything they say is about this tool" — and then
+ * listed what they said among the NEW findings on pages whose publisher declares them conformant, and
+ * counted it as a failure. The headline and the list contradicted each other, which is the identical shape
+ * `furnitureCaptures()`'s own comment records from 2026-08-27: the report convicting the page in one
+ * sentence and excusing it in the next.
+ *
+ * WITHHELD IS NAMED, NEVER DROPPED. A finding that vanishes is indistinguishable from one that was never
+ * produced, and the whole reason this capture matters is that somebody has to go and fix the capture.
+ */
+export function partitionByExaminability(
+  added: Change[], unusable: Set<string>,
+): { reportable: Change[]; withheld: Change[] } {
+  return {
+    reportable: added.filter((change) => !unusable.has(change.url)),
+    withheld: added.filter((change) => unusable.has(change.url)),
+  };
+}
+
+/**
+ * WHAT THE NEW FINDINGS ARE, AND WHAT THEY ARE WORTH — the phase that decides whether a batch is a release
+ * blocker or a risk line. Extracted from `reportAgainstBaseline` when #363's withholding took that function
+ * past the 90-line physical budget; it is a real phase rather than a slice taken to satisfy one, because
+ * everything above it decides WHICH findings are examinable and this decides what the examinable ones mean.
+ */
+function reportNewFindings(reportable: Change[]): void {
+  if (reportable.length) {
+    process.stdout.write(`\n  ${reportable.length} NEW finding(s) on pages whose publisher declares them `
+      + "conformant:\n");
+  }
+  for (const change of reportable) {
+    process.stdout.write(`    ${change.criterion}  ${change.url.replace(/^https:\/\//, "")}\n`);
+    // THE EVIDENCE, not just the URL. This told the reader to "read the evidence for each" and then gave
+    // them a list of URLs — so reading it meant an ssh session and ad-hoc JSON, which is the step this
+    // repo removes everywhere else. The census is the whole basis of the two rules most likely to appear
+    // here, and it also settles the question a bare count cannot: a census reading zero for EVERYTHING is
+    // a tree that was never built, which is not the same finding as a page that genuinely has none.
+    process.stdout.write(`           ${describeEvidence(change.url)}\n`);
+  }
+  if (reportable.length) {
+    // THE HEADLINE SENTENCE, STATED BY THE GATE RATHER THAN COMPUTED BY WHOEVER READS IT. This is the one
+    // line that decides whether a batch of new findings is a release blocker or a risk line, and until
+    // 2026-09-06 it was worked out by hand, from the captures, by whoever happened to be asked.
+    const assertions = reportable.filter((c) => OUTCOMES.get(`${c.url}|${c.criterion}`)?.asserted);
+    const unrecorded = reportable.filter((c) => !OUTCOMES.has(`${c.url}|${c.criterion}`));
+    process.stdout.write(`\n  OF THOSE ${reportable.length}: ${assertions.length} ASSERTED, `
+      + `${reportable.length - assertions.length - unrecorded.length} REFERRED`
+      + `${unrecorded.length ? `, ${unrecorded.length} with no outcome recorded` : ""}.\n`);
+    process.stdout.write(assertions.length
+      ? "  AT LEAST ONE ASSERTION ON A CONFORMANT PAGE. That is this project's central claim -- nothing\n"
+        + "  asserted wrongly on conformant real pages -- and it does not hold while this stands.\n"
+      : "  NOTHING WAS ASSERTED. Every new finding reaches a user as `cantTell`, so this is referral noise\n"
+        + "  on conformant pages rather than a broken conformance claim. Still worth the investigation\n"
+        + "  below, and not a publish blocker.\n");
+    if (unrecorded.length) {
+      // NOT A REFERRAL, and saying so matters: it means the baseline holds a finding this run's captures
+      // did not reproduce, so nothing was scored for it and the silence is about the corpus, not the page.
+      process.stdout.write("  An unrecorded outcome is NOT a referral -- nothing was scored for it.\n");
+    }
+    process.stdout.write("\n  Read the evidence for each before doing anything else. It is one of three "
+      + "things:\n"
+      + "    - the tool is wrong, and this is the defect class that ran for eleven separate causes;\n"
+      + "    - the PAGE changed, since these are live sites their publishers keep editing;\n"
+      + "    - the finding is right and the publisher's claim is not — which has happened, twice.\n"
+      + "  Only the third takes `--update`.\n");
+  }
+}
+
 function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: number }): void {
   const furniture = furnitureCaptures();
   if (furniture.consent.length || furniture.shell.length) {
     process.stdout.write(`\n  ${furniture.consent.length} capture(s) opened on a COOKIE/CONSENT overlay `
-      + `and ${furniture.shell.length} on an unrendered SHELL, and NEVER REACHED A HEADING — those read `
-      + "the site's furniture, not its page, so anything they say is about this tool.\n");
+      + `and ${furniture.shell.length} on an unrendered SHELL, and reached NONE OF THE PAGE'S OWN `
+      + "HEADINGS — those read the site's furniture, not its page, so anything they say is about this "
+      + "tool.\n");
     for (const url of [...furniture.consent, ...furniture.shell].slice(0, 8)) {
       process.stdout.write(`    furniture: ${url.replace(/^https:\/\//, "")}\n`);
       process.stdout.write(`           ${describeEvidence(url)}\n`);
@@ -828,46 +966,21 @@ function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: numbe
     }
   }
 
-  if (added.length) {
-    process.stdout.write(`\n  ${added.length} NEW finding(s) on pages whose publisher declares them `
-      + "conformant:\n");
-  }
-  for (const change of added) {
-    process.stdout.write(`    ${change.criterion}  ${change.url.replace(/^https:\/\//, "")}\n`);
-    // THE EVIDENCE, not just the URL. This told the reader to "read the evidence for each" and then gave
-    // them a list of URLs — so reading it meant an ssh session and ad-hoc JSON, which is the step this
-    // repo removes everywhere else. The census is the whole basis of the two rules most likely to appear
-    // here, and it also settles the question a bare count cannot: a census reading zero for EVERYTHING is
-    // a tree that was never built, which is not the same finding as a page that genuinely has none.
-    process.stdout.write(`           ${describeEvidence(change.url)}\n`);
-  }
-  if (added.length) {
-    // THE HEADLINE SENTENCE, STATED BY THE GATE RATHER THAN COMPUTED BY WHOEVER READS IT. This is the one
-    // line that decides whether a batch of new findings is a release blocker or a risk line, and until
-    // 2026-09-06 it was worked out by hand, from the captures, by whoever happened to be asked.
-    const assertions = added.filter((change) => OUTCOMES.get(`${change.url}|${change.criterion}`)?.asserted);
-    const unrecorded = added.filter((change) => !OUTCOMES.has(`${change.url}|${change.criterion}`));
-    process.stdout.write(`\n  OF THOSE ${added.length}: ${assertions.length} ASSERTED, `
-      + `${added.length - assertions.length - unrecorded.length} REFERRED`
-      + `${unrecorded.length ? `, ${unrecorded.length} with no outcome recorded` : ""}.\n`);
-    process.stdout.write(assertions.length
-      ? "  AT LEAST ONE ASSERTION ON A CONFORMANT PAGE. That is this project's central claim -- nothing\n"
-        + "  asserted wrongly on conformant real pages -- and it does not hold while this stands.\n"
-      : "  NOTHING WAS ASSERTED. Every new finding reaches a user as `cantTell`, so this is referral noise\n"
-        + "  on conformant pages rather than a broken conformance claim. Still worth the investigation\n"
-        + "  below, and not a publish blocker.\n");
-    if (unrecorded.length) {
-      // NOT A REFERRAL, and saying so matters: it means the baseline holds a finding this run's captures
-      // did not reproduce, so nothing was scored for it and the silence is about the corpus, not the page.
-      process.stdout.write("  An unrecorded outcome is NOT a referral -- nothing was scored for it.\n");
+  // THE SET IS BUILT HERE, ABOVE THE NEW-FINDING LIST, rather than at the verdict below where it used to
+  // live. It has to be: a finding whose capture is unusable must not reach that list at all, and computing
+  // the set after printing them is what let this report contradict itself.
+  const unusable = new Set([...furniture.consent, ...furniture.shell, ...suspectCensus]);
+  const { reportable, withheld } = partitionByExaminability(added, unusable);
+  if (withheld.length) {
+    process.stdout.write(`\n  ${withheld.length} finding(s) WITHHELD — their capture never reached the `
+      + "page, so they describe this tool rather than the site. Named, not dropped: each is a capture to \n"
+      + "  fix, and a finding that simply vanished would be indistinguishable from one never produced.\n");
+    for (const change of withheld) {
+      process.stdout.write(`    withheld: ${change.criterion}  ${change.url.replace(/^https:\/\//, "")}\n`);
     }
-    process.stdout.write("\n  Read the evidence for each before doing anything else. It is one of three "
-      + "things:\n"
-      + "    - the tool is wrong, and this is the defect class that ran for eleven separate causes;\n"
-      + "    - the PAGE changed, since these are live sites their publishers keep editing;\n"
-      + "    - the finding is right and the publisher's claim is not — which has happened, twice.\n"
-      + "  Only the third takes `--update`.\n");
   }
+
+  reportNewFindings(reportable);
 
   // A FURNITURE CAPTURE IS NOT AN EXAMINED PAGE, and until now it did not reduce anything. This gate
   // already DETECTS them — captures that opened on a cookie overlay or an unrendered shell and never
@@ -882,9 +995,13 @@ function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: numbe
   // `suspectCensusCaptures`'s own comment for why that over-counts slightly (only the census-reading
   // criteria are actually blind, not the transcript-based ones) and why that is the right simplification
   // for this gate rather than a defect in it.
-  const unusablePages = [...new Set([...furniture.consent, ...furniture.shell, ...suspectCensus])];
+  const unusablePages = [...unusable];
   const declaredHere = reportDeclaredExclusions(unusablePages);
-  const verdict = coverageVerdict({ pages, unusablePages, declaredHere, failures: added.length });
+  // `reportable`, NOT `added`: a withheld finding is not a failure of the page, and counting it as one
+  // would make an unreadable capture look like a broken conformance claim. It reduces COVERAGE instead --
+  // which the verdict below already computes from `unusablePages`, so the withholding is accounted for
+  // once, in the place that says the run could not see enough.
+  const verdict = coverageVerdict({ pages, unusablePages, declaredHere, failures: reportable.length });
   process.stdout.write(`\n  ${renderVerdict(verdict)}\n`);
   process.exitCode = exitCodeFor(verdict);
 }

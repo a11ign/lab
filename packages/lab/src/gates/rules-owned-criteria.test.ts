@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { ABSENCE_CRITERIA } from "@a11y-witness/judge/internal";
+import { ABSENCE_CRITERIA } from "@a11ign/judge/internal";
 
 /**
  * THE DISCRIMINATIVE GATE'S RULES-OWNED SET, PINNED TO THE ONE DECLARATION — known-gaps §16.

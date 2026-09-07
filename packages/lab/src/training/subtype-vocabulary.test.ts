@@ -41,7 +41,7 @@
  *
  * ## Which sites are actually checked, and which are not
  *
- * FIVE files are read as source text, comments stripped (`@a11y-witness/evidence/source-text` — a comment
+ * FIVE files are read as source text, comments stripped (`@a11ign/evidence/source-text` — a comment
  * naming a deleted subtype as history, which this file is full of, must not be validated as a live
  * declaration): `case-matrix.mjs`, `acceptance-matrix.mjs`, `export-screenreader-dataset.mjs`,
  * `real-page-corpus.mjs`, `generate-screenreader-acceptance.mjs`. The last two currently contribute NOTHING
@@ -72,7 +72,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { stripComments } from "@a11y-witness/evidence/source-text";
+import { stripComments } from "@a11ign/evidence/source-text";
 
 import { CASES } from "./case-matrix.mjs";
 import { ALL_ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
@@ -114,7 +114,7 @@ test("some case defines a real subtype vocabulary, or this suite proves nothing"
 
 /**
  * Comments stripped, so a subtype named as HISTORY (this file is full of `3.3.2:unnamed-form-field` --
- * see the header) is never mistaken for a live reference. See `@a11y-witness/evidence/source-text`.
+ * see the header) is never mistaken for a live reference. See `@a11ign/evidence/source-text`.
  */
 const read = (path: string) => stripComments(readFileSync(resolve(process.cwd(), path), "utf8"));
 

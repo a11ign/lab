@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 
 import { EVAL_CASES } from "./cases.js";
-import { WCAG_22_AA } from "@a11y-witness/evidence/wcag";
+import { WCAG_22_AA } from "@a11ign/evidence/wcag";
 
 const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 const criteria = new Set(WCAG_22_AA.map((c) => c.num));

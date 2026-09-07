@@ -25,7 +25,7 @@ import { resolve, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { IMPOSSIBLE_BY_DEFINITION, UNREACHABLE_WITHOUT_PERTURBING } from "./audit-corpus-starvation.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
 /**

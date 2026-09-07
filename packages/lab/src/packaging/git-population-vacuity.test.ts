@@ -35,7 +35,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { stripComments } from "@a11y-witness/evidence/source-text";
+import { stripComments } from "@a11ign/evidence/source-text";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -153,6 +153,15 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
     note: "guarded — `git ls-files '*.mjs' '*.ts' '*.py' '*.ps1' '*.sh' '*.yml'` for #83's source-comment "
       + "leak sweep (the sibling `tracked-prose-leak-guard.test.ts` above was scoped to `.md` only), "
       + "floored at 500 tracked files",
+  },
+  "packages/lab/src/packaging/history-secret-scan.test.ts": {
+    guard: null,
+    note: "NOT A POPULATION -- the one matching call (`git show HEAD:inventory.yml`) reads a SINGLE, "
+      + "named file's content at a known commit, deterministically; there is no listing whose result "
+      + "could silently be empty. It exists to prove the fixture's own premise (the disposable repo's "
+      + "current tree does not carry the address the earlier commit does), not to enumerate anything -- "
+      + "if the file or commit did not exist, `execFileSync` would throw rather than return an empty, "
+      + "silently-accepted result.",
   },
 };
 

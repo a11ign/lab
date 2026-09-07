@@ -30,7 +30,7 @@ import { execFileSync } from "node:child_process";
 
 import { CASES } from "../src/training/case-matrix.mjs";
 import { MODEL_EXCLUDED_SUBTYPES } from "../src/training/export-screenreader-dataset.mjs";
-import { refuseUnknownFlags } from "@a11y-witness/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, datasetExportPath } from "../src/dataset-paths.mjs";
 
 /**
