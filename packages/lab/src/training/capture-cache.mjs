@@ -139,8 +139,6 @@ export function cacheKey({ caseId, pageHash, options, environment }) {
 /**
  * Attach the key and the environment that produced this capture, so the next run can compare.
  *
- * @param {object} capture
- * @param {{ key: string, pageHash?: string|null, options: object, environment: object, worker?: string|null }} provenance
  */
 /**
  * @param {{ capturedAt?: string, [key: string]: unknown }} capture
@@ -200,9 +198,11 @@ function readCaptureOrRecapture(captureRoot, caseId, variant) {
  * `good` beside a freshly captured `bad` would compare two NVDA instances and call the difference
  * evidence.
  *
+ */
+/**
+ * @param {{ captureRoot: string, caseId: string, key: string }} request
  * @returns {{reuse: boolean, reason: string, staleCode: string|null}}
  */
-/** @param {{ captureRoot: string, caseId: string, key: string }} request */
 export function cacheDecision({ captureRoot, caseId, key }) {
   const captures = ["good", "bad"].map((v) => readCaptureOrRecapture(captureRoot, caseId, v));
   if (!captures.every(isUsableCapture)) {

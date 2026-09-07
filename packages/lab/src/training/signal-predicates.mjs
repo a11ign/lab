@@ -559,6 +559,28 @@ function firstVisitEach(/** @type {any} */ names) {
 }
 
 /**
+ * Did the capture OBSERVE Escape leaving the dialog? The twin of `escapeReleasedFocus` in `rules.ts`.
+ *
+ * Two copies because this file runs under plain `node` and cannot import TypeScript -- the same constraint
+ * `namesOf`/`comparableNames` has -- so the remedy is the documented one: pin them equal with a test.
+ * `focus-trap-parity.corpus.test.ts` compares the whole decision on every capture on disk, and
+ * `escape-parity.test.ts` compares these two directly on the cases the corpus does not happen to contain.
+ *
+ * A release is EITHER an announcement or focus moving elsewhere, never both: NVDA re-announces the same
+ * control differently depending on how the caret reached it, so requiring both would make this deaf. The
+ * asymmetry matches which error costs more -- this SILENCES an accusation, and 2.1.2 is non-interference.
+ */
+export function escapeReleasedFocusIn(/** @type {any} */ dialogEscape) {
+  if (!dialogEscape || typeof dialogEscape !== "object") return false;
+  if (String(dialogEscape.announced ?? "").trim() !== "") return true;
+  const settle = (/** @type {unknown} */ v) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const before = settle(dialogEscape.focusBefore);
+  const after = settle(dialogEscape.focusAfter);
+  if (before === "" || after === "") return false;
+  return after !== before && !after.startsWith(before);
+}
+
+/**
  * Does this capture show focus TRAPPED — by either shape the probe can express?
  *
  * 1. STALLED: the last control repeats consecutively, which is Tab not moving at all.
@@ -585,33 +607,7 @@ function firstVisitEach(/** @type {any} */ names) {
  * COUNTS, never names. Comparing a focus stop ("Postcode, edit, focused, blank") against a swept field
  * ("Postcode, edit") would need name normalisation, which already exists in two places pinned equal by a
  * test; a third copy is how those come apart.
- *
- * @param {string[]} stops        `interaction.focusOrder`
- * @param {string[]} formFields   `structure.formFields` — the ANNOUNCEMENTS, not a count, because the
- *                                corroboration is which of them the ring never reached
  */
-/**
- * Did the capture OBSERVE Escape leaving the dialog? The twin of `escapeReleasedFocus` in `rules.ts`.
- *
- * Two copies because this file runs under plain `node` and cannot import TypeScript -- the same constraint
- * `namesOf`/`comparableNames` has -- so the remedy is the documented one: pin them equal with a test.
- * `focus-trap-parity.corpus.test.ts` compares the whole decision on every capture on disk, and
- * `escape-parity.test.ts` compares these two directly on the cases the corpus does not happen to contain.
- *
- * A release is EITHER an announcement or focus moving elsewhere, never both: NVDA re-announces the same
- * control differently depending on how the caret reached it, so requiring both would make this deaf. The
- * asymmetry matches which error costs more -- this SILENCES an accusation, and 2.1.2 is non-interference.
- */
-export function escapeReleasedFocusIn(/** @type {any} */ dialogEscape) {
-  if (!dialogEscape || typeof dialogEscape !== "object") return false;
-  if (String(dialogEscape.announced ?? "").trim() !== "") return true;
-  const settle = (/** @type {unknown} */ v) => String(v ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-  const before = settle(dialogEscape.focusBefore);
-  const after = settle(dialogEscape.focusAfter);
-  if (before === "" || after === "") return false;
-  return after !== before && !after.startsWith(before);
-}
-
 /**
  * @param {string[]} stops        `interaction.focusOrder`
  * @param {string[]} formFields   `structure.formFields`, as announcements
