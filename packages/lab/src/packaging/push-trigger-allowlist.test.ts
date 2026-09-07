@@ -40,6 +40,23 @@ const PUSH_TO_MAIN_ALLOWLIST: Record<string, string> = {
     + "problem board-liveness.yml does",
 };
 
+// A SECOND, SEPARATE closed category -- opened 2026-09-07 by board decision (pipeline unit 3, #316).
+// `trunk-guard.yml` is deliberately NOT a watchdog: it DOES build, it DOES run the full suite, and it is
+// NOT continue-on-error, because a red run there is exactly the signal that drives an automatic revert,
+// not something to observe and move past. It exists because unit 1 (#298) made `strict=false` real:
+// GitHub now completes a merge the instant a PR's own head is green, with no requirement that the actual
+// MERGE COMMIT landing on `main` was ever tested -- `ci.yml`'s `pull_request` trigger tests a PR's head,
+// never the commit it produces on merge. That is a genuinely different gap from "did a schedule go
+// silent", and closing it needs the opposite shape from a watchdog: real verification, real action. See
+// `trunk-guard.yml`'s own header for the full reasoning and `scripts/trunk-revert.mjs`'s for the two ways
+// a naive "revert on red" would be worse than nothing.
+const TRUNK_GATE_ALLOWLIST: Record<string, string> = {
+  "trunk-guard.yml": "pipeline unit 3 (#316): the merge commit landing on main after strict=false (#298) "
+    + "has never itself been tested by ci.yml's pull_request-triggered run. This is the one place that gap "
+    + "is closed, and unlike a watchdog, a failure here is meant to be ACTED ON (an automatic revert, "
+    + "bounded to never fire on inherited failure or after main has moved on), not merely observed.",
+};
+
 const triggersOnPushToMain = (doc: unknown): boolean => {
   const on = (doc as { on?: Record<string, unknown> })?.on;
   const push = on?.push;
@@ -52,22 +69,30 @@ const triggersOnPushToMain = (doc: unknown): boolean => {
 
 const allWorkflowFiles = (): string[] => readdirSync(WORKFLOWS_DIR).filter((f) => f.endsWith(".yml"));
 
-test("every workflow triggering on push to main is on the closed allowlist, with a reason", () => {
+test("every workflow triggering on push to main is on one of the two closed allowlists, with a reason", () => {
   const offenders: string[] = [];
   for (const file of allWorkflowFiles()) {
     const doc = parseYaml(readWorkflow(file));
-    if (triggersOnPushToMain(doc) && !(file in PUSH_TO_MAIN_ALLOWLIST)) offenders.push(file);
+    if (triggersOnPushToMain(doc) && !(file in PUSH_TO_MAIN_ALLOWLIST) && !(file in TRUNK_GATE_ALLOWLIST)) {
+      offenders.push(file);
+    }
   }
   assert.deepEqual(offenders, [],
-    `${offenders.join(", ")} trigger(s) on push to main and are not on PUSH_TO_MAIN_ALLOWLIST -- a check `
-    + "that gates code must run on the PR (chairman's direction, 2026-09-06: a check that runs after the "
-    + "merge cannot stop it). If this is a non-gating watchdog immune to the schedule-disable problem the "
-    + "same way board-liveness.yml is, add it to the allowlist here with that argument written out.");
+    `${offenders.join(", ")} trigger(s) on push to main and are not on PUSH_TO_MAIN_ALLOWLIST or `
+    + "TRUNK_GATE_ALLOWLIST -- a check that gates code must run on the PR (chairman's direction, "
+    + "2026-09-06: a check that runs after the merge cannot stop it). If this is a non-gating watchdog "
+    + "immune to the schedule-disable problem the same way board-liveness.yml is, add it to "
+    + "PUSH_TO_MAIN_ALLOWLIST; if it is a reactive trunk check like trunk-guard.yml, argue its case for "
+    + "TRUNK_GATE_ALLOWLIST in writing, the same way #316 did.");
 });
 
-test("the allowlist names exactly the three known watchdogs -- a shrinking or silently-growing list is a signal", () => {
+test("the watchdog allowlist names exactly the three known watchdogs -- a shrinking or silently-growing list is a signal", () => {
   assert.deepEqual(Object.keys(PUSH_TO_MAIN_ALLOWLIST).sort(),
     ["board-liveness.yml", "npm-token-liveness.yml", "workflow-run-liveness.yml"]);
+});
+
+test("the trunk-gate allowlist names exactly the one known trunk check", () => {
+  assert.deepEqual(Object.keys(TRUNK_GATE_ALLOWLIST).sort(), ["trunk-guard.yml"]);
 });
 
 // STRUCTURAL PROOF that each allowlisted entry is actually a watchdog and not a gate wearing the allowlist
@@ -91,6 +116,30 @@ for (const file of Object.keys(PUSH_TO_MAIN_ALLOWLIST)) {
     assert.ok(!/\b(npm test|npm run test|pytest|ansible-playbook|npx tsx --test)\b/.test(runLines),
       `${file} invokes a full test suite -- that is minutes of runtime on every push to main, which is `
       + "exactly the cost the chairman's rule moved off push in the first place");
+  });
+}
+
+// THE INVERSE STRUCTURAL PROOF for the trunk-gate category: it must NOT look like a watchdog, or the
+// split above is decorative. A workflow that builds, tests and is not continue-on-error, wearing the
+// TRUNK_GATE_ALLOWLIST label, is exactly what would let a real gate hide behind this file's own exception.
+for (const file of Object.keys(TRUNK_GATE_ALLOWLIST)) {
+  test(`${file}: structurally the trunk gate, not a watchdog -- builds, runs the full suite, is NOT continue-on-error`, () => {
+    const text = readWorkflow(file);
+    const doc = parseYaml(text) as { jobs: Record<string, { steps: Array<Record<string, unknown>> }> };
+
+    assert.doesNotMatch(text, /continue-on-error:\s*true/,
+      `${file} is continue-on-error -- the trunk gate's whole point is that a failure here is ACTED ON `
+      + "(a revert), so a red run must be able to block/drive something, not be shrugged off");
+
+    const steps = Object.values(doc.jobs).flatMap((job) => job.steps ?? []);
+    const runLines = steps.map((s) => String(s.run ?? "")).join("\n");
+
+    assert.match(runLines, /npm run build\b/,
+      `${file} must build -- it is meant to verify main's real tip, and an unbuilt tree cannot tell you `
+      + "that");
+    assert.match(runLines, /\b(npm test|npm run test|pytest|npx tsx --test)\b/,
+      `${file} must run a real test suite -- a trunk gate that checks nothing cannot be the fact this `
+      + "row exists to establish");
   });
 }
 
