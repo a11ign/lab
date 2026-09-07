@@ -52,7 +52,17 @@ const SITES: Array<{ file: string; expect: string }> = [
     expect: `raw.githubusercontent.com/${REPO}/main/packages/worker-fleet/src/provisioning/`
       + "bootstrap-windows-worker.ps1" },
   { file: "docs/board/README.md", expect: `--repo ${REPO}` },
-  { file: "docs/board/reported.json", expect: `on ${REPO}` },
+  // NOT `docs/board/reported.json` -- DELIBERATELY, issue #283. It carried this literal once, inside one
+  // achievement's evidence prose ("GitHub Issues and milestones on DanBeckDev/a11y-witness"), and #270
+  // correctly retired that achievement once its cited issue closed. Unlike every other site in this list,
+  // the mention was INCIDENTAL rather than functional: nothing here is executed, requested or followed --
+  // it is authored, narrative content that turns over daily as achievements are added and retired, and
+  // the repo's name was never load-bearing in it. Re-adding a literal (in a NEW field, purely to satisfy
+  // this test) would be content whose only purpose is to make a grep pass -- a smaller version of exactly
+  // the fabrication `reported.json`'s own header exists to prevent, and it would leave this test *looking*
+  // like it verifies something real about a file that does not depend on the repo's name at all. If a
+  // future field in this file is ever actually CONSUMED under the repo's name (a computed URL, a value fed
+  // to `gh --repo`), add it back as a live site then -- not as a standing anchor with no functional reader.
   { file: "docs/roles/memory/github-is-the-tracker.md", expect: `GitHub Issues on ${REPO}` },
   { file: "docs/roles/README.md", expect: `\`${REPO}\`` },
   { file: "docs/roles/memory/org-shape-second-orchestrator.md", expect: `a Project on ${REPO}` },
