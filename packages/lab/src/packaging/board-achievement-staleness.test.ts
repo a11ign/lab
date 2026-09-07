@@ -21,6 +21,8 @@ import { achievementsWhoseWorldMoved } from "../../../../scripts/board-data.mjs"
 
 const NOW = Date.parse("2026-09-06T18:00:00Z");
 const FRESH = "2026-09-06T12:00:00Z";
+const CLOSED_BEFORE = { state: "CLOSED", closedAt: "2026-09-06T09:00:00Z" };   // before FRESH
+const CLOSED_AFTER = { state: "CLOSED", closedAt: "2026-09-06T15:00:00Z" };    // after FRESH
 const entry = (over: Record<string, unknown> = {}) =>
   ({ at: FRESH, issue: 21, claim: "a capability that is still true", ...over });
 
@@ -28,19 +30,34 @@ test("an OPEN issue, recently reported, renders — the guard must not refuse ev
   // The half that keeps this usable. A guard that fires on the normal case is one somebody switches off
   // within a week, and the row says so explicitly.
   const moved = achievementsWhoseWorldMoved({
-    achievements: [entry()], issueState: { "21": "OPEN" }, now: NOW,
+    achievements: [entry()], issueState: { "21": { state: "OPEN" } }, now: NOW,
   });
   assert.deepEqual(moved, []);
 });
 
-test("a CLOSED issue is reported, naming the entry, the claim and the issue", () => {
+test("A CLOSED ISSUE IS NOT THE FINDING when the entry was affirmed AFTER the closure", () => {
+  // THE CORRECTION, and it matters more than the original rule. An achievement is by definition something
+  // FINISHED, so the issue that tracked it closes -- refusing every entry citing a closed issue means the
+  // board can only ever be told about UNFINISHED work, and every entry decays into unrenderable the
+  // moment its own row closes. `product-manager` caught that the implementation had taken the row's
+  // wording more literally than it meant.
+  //
+  // What the row asks is weaker and sufficient: the world moved, so somebody look. RE-AFFIRMATION is the
+  // satisfying act, and `at` records it.
   const moved = achievementsWhoseWorldMoved({
-    achievements: [entry({ issue: 2 })], issueState: { "2": "CLOSED" }, now: NOW,
+    achievements: [entry({ issue: 2 })], issueState: { "2": CLOSED_BEFORE }, now: NOW,
+  });
+  assert.deepEqual(moved, [], "affirmed at 12:00, closed at 09:00 -- somebody looked after it moved");
+});
+
+test("a closure the entry has NOT been affirmed since is reported, naming entry, claim and issue", () => {
+  const moved = achievementsWhoseWorldMoved({
+    achievements: [entry({ issue: 2 })], issueState: { "2": CLOSED_AFTER }, now: NOW,
   });
   assert.equal(moved.length, 1);
   assert.equal(moved[0].index, 0, "the INDEX is what makes re-affirming a ten-second act");
-  assert.match(moved[0].why, /#2, which is now CLOSED/);
-  assert.match(moved[0].why, /does not judge that/,
+  assert.match(moved[0].why, /closed at .* -- AFTER this entry was last affirmed/);
+  assert.match(moved[0].why, /does not judge/,
     "it must say it is not calling the claim false -- that is the row's stated scope and the difference "
     + "between a check somebody acts on and one they argue with");
 });
@@ -48,18 +65,18 @@ test("a CLOSED issue is reported, naming the entry, the claim and the issue", ()
 test("`affirmed` clears it, and only a REASON counts as affirming", () => {
   const why = "the fixture landed and the capture confirmed it; the closure was the row, not the claim";
   assert.deepEqual(achievementsWhoseWorldMoved({
-    achievements: [entry({ issue: 2, affirmed: why })], issueState: { "2": "CLOSED" }, now: NOW,
+    achievements: [entry({ issue: 2, affirmed: why })], issueState: { "2": CLOSED_AFTER }, now: NOW,
   }), []);
 
   // A BARE TRUE MUST NOT CLEAR IT. A boolean is a keystroke with no thought behind it, which is how a
   // refusal becomes a formality -- the reason every EXEMPT table in this repo demands a reason.
   const bool = achievementsWhoseWorldMoved({
-    achievements: [entry({ issue: 2, affirmed: true })], issueState: { "2": "CLOSED" }, now: NOW,
+    achievements: [entry({ issue: 2, affirmed: true })], issueState: { "2": CLOSED_AFTER }, now: NOW,
   });
   assert.equal(bool.length, 1, "`affirmed: true` must not silence the guard");
 
   const thin = achievementsWhoseWorldMoved({
-    achievements: [entry({ issue: 2, affirmed: "still true" })], issueState: { "2": "CLOSED" }, now: NOW,
+    achievements: [entry({ issue: 2, affirmed: "still true" })], issueState: { "2": CLOSED_AFTER }, now: NOW,
   });
   assert.equal(thin.length, 1, "nor must a two-word placeholder");
 });
@@ -69,7 +86,7 @@ test("AN ISSUE THE LISTING DID NOT CARRY is its own finding, never silence", () 
   // a paging limit, a transfer, a typo. Reporting it as fine hides it; reporting it as CLOSED would
   // refuse an edition over a listing bound. It gets its own sentence.
   const moved = achievementsWhoseWorldMoved({
-    achievements: [entry({ issue: 9999 })], issueState: { "21": "OPEN" }, now: NOW,
+    achievements: [entry({ issue: 9999 })], issueState: { "21": { state: "OPEN" } }, now: NOW,
   });
   assert.equal(moved.length, 1);
   assert.match(moved[0].why, /COULD NOT BE ASKED/);
@@ -78,7 +95,7 @@ test("AN ISSUE THE LISTING DID NOT CARRY is its own finding, never silence", () 
 
 test("AGE alone is a finding, on the freshness this file already declares for a gate", () => {
   const old = achievementsWhoseWorldMoved({
-    achievements: [entry({ at: "2026-09-01T12:00:00Z" })], issueState: { "21": "OPEN" },
+    achievements: [entry({ at: "2026-09-01T12:00:00Z" })], issueState: { "21": { state: "OPEN" } },
     now: NOW, staleAfterHours: 24,
   });
   assert.equal(old.length, 1);
@@ -99,7 +116,7 @@ test("PROOF: it reports EVERY stale entry, not the first — with its index", ()
   // discovering the next problem. Indexes are what make the fix a single pass.
   const moved = achievementsWhoseWorldMoved({
     achievements: [entry({ issue: 1 }), entry({ issue: 21 }), entry({ issue: 3 })],
-    issueState: { "1": "CLOSED", "21": "OPEN", "3": "CLOSED" }, now: NOW,
+    issueState: { "1": CLOSED_AFTER, "21": { state: "OPEN" }, "3": CLOSED_AFTER }, now: NOW,
   });
   assert.deepEqual(moved.map((m) => m.index), [0, 2]);
 });
