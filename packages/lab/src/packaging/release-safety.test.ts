@@ -5,9 +5,15 @@
  * be unpublished after 72 hours — only deprecated. So a wrong first release is permanent, and the guards
  * that prevent one are worth asserting rather than trusting to review.
  *
- * Four independent guards, and independence is the point: any single one would be a single point of
+ * Six independent guards, and independence is the point: any single one would be a single point of
  * failure, which is this repo's rule about a verification not sharing a failure mode with its action.
  * A change that removes one should be deliberate, and this test is what makes it deliberate.
+ *
+ * Guards 5 and 6 changed shape 2026-09-06 (chairman's direction): `action-smoke`/`capture-regression`
+ * used to run on a push to `main` and this workflow QUERIED whether that separately-triggered run had
+ * passed for the exact sha. Both left `main`/PR entirely and declare `workflow_call`, so this workflow now
+ * runs them as JOBS against the sha it was dispatched at, and `release`'s own `needs:` on both is the
+ * guard — no query, no race between "never ran" and "running right now".
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -64,37 +70,28 @@ test("guard 4: access stays restricted until the name is settled", () => {
     "the workflow must read the access setting back and refuse, rather than assuming it");
 });
 
-test("guard 5: the consumer path must have passed for the exact commit being published", () => {
-  // `action-smoke` drives the published Action the way a user does — `uses: ./`, inputs only, no repo
-  // knowledge — so it is the only check in the release path that exercises the weights through a
-  // consumer's route. It already runs on every push under `packages/scorer/**`, which is where the
-  // weights live; what was missing is that nothing REQUIRED it. Two workflows both passing is not one
-  // gating the other, and a publish could be dispatched while the consumer path was red or never ran.
-  //
-  // Every assertion below reads THE STEP, not the file. Two earlier versions read the file and passed
-  // against mutations that broke the property: an alternation matched a `sha=` assignment that survived
-  // the query losing `--commit`, and a dry-run check looked at the text BEFORE the step, so adding
-  // `if: inputs.dry-run` INSIDE it changed nothing. Both were caught by mutation, never by reading.
-  const from = workflow.indexOf("- name: The consumer path must have passed");
-  assert.notEqual(from, -1, "the consumer-path step must exist at all");
-  const step = workflow.slice(from, workflow.indexOf("- name:", from + 10));
+test("guards 5 and 6: action-smoke and capture-regression run as JOBS, against this exact sha", () => {
+  // `uses: ./.github/workflows/<file>` with no `if:` -- GitHub runs a called reusable workflow at the
+  // ref of the CALLER by default, so this is inherently "the exact sha being published", never a query
+  // that could match some other commit's run.
+  for (const file of ["action-smoke.yml", "capture-regression.yml"]) {
+    assert.match(workflow, new RegExp(`uses:\\s*\\./\\.github/workflows/${file}\\b`),
+      `release.yml must call ${file} as a reusable workflow job, or its own trigger-table change (no `
+      + "more push/pull_request on main) leaves nothing gating a release against it");
+  }
+});
 
-  assert.match(step, /gh run list[\s\S]{0,200}--commit=/,
-    "the QUERY must be pinned to a commit; without it a green run of any other commit satisfies this");
-  assert.match(step, /--commit="\$sha"|--commit="\$\{\{ github\.sha \}\}"/,
-    "and pinned to THIS commit — a check bounded to a population that excludes the thing being asked "
-    + "about is this repo's most-repeated defect");
-
-  const refusesAt = step.search(/!=\s*"success"/);
-  const exitsAt = step.indexOf("exit 1");
-  assert.ok(refusesAt !== -1 && exitsAt > refusesAt,
-    "anything other than success must refuse — a workflow that never ran returns no conclusion, and "
-    + "treating an absent result as a pass is the examined-nothing failure at the last possible moment");
-
-  assert.doesNotMatch(step, /if:\s*inputs\.dry-run/,
-    "the consumer-path check must not be skipped in dry run. A dry run exists to say whether the real "
-    + "one would work, so passing here while the consumer path is red is the one lie this workflow "
-    + "must not tell");
+test("guards 5 and 6 are not skippable in dry run", () => {
+  // The `release` job's OWN `needs:` is what enforces both -- a job with an unsatisfied `needs:` is
+  // skipped/failed by GitHub regardless of any `if:` on its steps, so there is no per-step dry-run
+  // escape hatch to check for here (there was one for the old query-based step; there is none now,
+  // which this test proves by there being no `if:` anywhere near the `needs:` line).
+  const releaseJob = workflow.indexOf("\n  release:\n");
+  assert.notEqual(releaseJob, -1, "the release job must exist");
+  const nearby = workflow.slice(releaseJob, releaseJob + 400);
+  assert.match(nearby, /needs:\s*\[action-smoke,\s*capture-regression\]/,
+    "the release job must declare needs: [action-smoke, capture-regression] -- unconditionally, so a "
+    + "dry run cannot proceed past a red consumer-path or capture-path job either");
 });
 
 test("the gate runs, and is not allowed to fail softly", () => {

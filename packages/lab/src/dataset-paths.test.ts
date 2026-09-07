@@ -157,6 +157,13 @@ const EXEMPT: Record<string, string> = {
     + "(findCaptures, a few lines above, builds those same roots through realCorpusRoot()/captureRoot()/ "
     + "repeatCapturesRoot() from dataset-paths.mjs) -- the message just cannot print realCorpusRoot()'s "
     + "actual VALUE without becoming machine-specific and useless to read.",
+  "packages/cli/src/cli.test.ts":
+    "#199, chairman's ruling: a11y-witness (cli, published) and @a11y-witness/lab (private, never "
+    + "published) depended on EACH OTHER -- this file used to import datasetRoot/captureRoot straight "
+    + "from lab's source, and lab's own public-api.test.ts imports the published cli package the other "
+    + "way. A real boundary defect (ADR 0004), not merely a CI-scoping one. Fixed the same way doctor.mjs "
+    + "and compare-workers.mjs already fix the identical cycle in worker-fleet's direction: a local, "
+    + "duplicated computation rather than an import that would recreate it.",
 };
 
 test("the discovery walk finds a realistic slice of the repo's own source", () => {

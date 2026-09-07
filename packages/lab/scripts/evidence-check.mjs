@@ -244,14 +244,6 @@ async function requirePagesServed(/** @type {any} */ cases) {
  * by a CALLER, and there is no caller when a file is merely imported.
  */
 /**
- * Capture each case fresh across the pool and diff it against the baseline.
- *
- * Split out of `main` because it is a phase with a single job, and because `main` had grown past the
- * point where the lease, the sample, the comparison and the verdict could be read as one narrative.
- *
- * @returns {Promise<{results: object[], evicted: string[]}>}
- */
-/**
  * Account for every capture that was ASKED for, so one that never happened reduces coverage instead of
  * disappearing from it.
  */
@@ -279,6 +271,14 @@ for (const testCase of selected) {
 }
 }
 
+/**
+ * Capture each case fresh across the pool and diff it against the baseline.
+ *
+ * Split out of `main` because it is a phase with a single job, and because `main` had grown past the
+ * point where the lease, the sample, the comparison and the verdict could be read as one narrative.
+ *
+ * @returns {Promise<{results: object[], evicted: string[]}>}
+ */
 async function compareAcrossPool(/** @type {any} */ selected) {
 // ONE CASE PER WORKER AT A TIME, across every worker named. This ran against a single worker while the
 // rest of the fleet sat idle — ~20 minutes for 48 captures where four boxes do it in about five. The

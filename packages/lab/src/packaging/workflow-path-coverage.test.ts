@@ -9,11 +9,16 @@
  *
  * ## What this asserts, and why the order matters
  *
- * **1. An UNFILTERED backstop must exist.** Today `lint.yml` has no `paths:` at all and runs the whole
- * suite on every push to `main`/`agent/**`/`lead/**` and every PR, so every source directory is reachable
- * and no filter below can currently hide anything. That is the load-bearing fact, and it is invisible:
- * nothing said it, so adding `paths:` to `lint.yml` would have looked like an optimisation and would have
- * silently made every other filter's exclusions real.
+ * **1. An UNFILTERED backstop must exist.** `lint.yml` (no `paths:` at all) held that role until
+ * 2026-09-06, when it was retired into `ci.yml`. `ci.yml` still carries no top-level `paths:` — it filters
+ * INSIDE each job, via `if:` conditions reading `scripts/ci-changed.mjs`'s own diff classification, which
+ * this test's YAML-`paths:` scan cannot see and does not need to: GitHub still DISPATCHES the workflow on
+ * every push and PR, so every source directory remains reachable through it exactly as it was through
+ * `lint.yml`, and no filter below can currently hide anything. That is the load-bearing fact, and it is
+ * invisible: nothing said it, so adding `paths:` to `ci.yml`'s own trigger would have looked like an
+ * optimisation and would have silently made every other filter's exclusions real — `ci-changed.test.ts`
+ * covers the INTERNAL job-level conditionals `ci.yml` actually relies on; this file is only ever able to
+ * see the coarser, workflow-dispatches-at-all question.
  *
  * **2. Every FILTERED workflow must say what it excludes and why.** A filter is a claim that the excluded
  * paths cannot affect this gate's verdict, and that claim is exactly what was wrong before. A comment is
@@ -57,8 +62,18 @@ const NOT_A_GATE: Record<string, string> = {
     + "examines an org secret and an issue thread, not the diff.",
   "release.yml": "publishes. It is triggered deliberately and its own gate chain is `release:gate:ci`, "
     + "not a path filter over the change that happens to be at HEAD.",
-  "changeset-check.yml": "asks whether a change carries a changeset — a question about the PR's "
-    + "metadata, not about which source it touched.",
+  "action-smoke.yml": "release-time only since 2026-09-06 (chairman's direction) -- `workflow_call`/"
+    + "`workflow_dispatch` only, run as a job from `release.yml` against the exact shipping sha. It does "
+    + "not trigger on a diff at all, so covering a source directory is not a thing it could mean.",
+  "capture-regression.yml": "same change, same reason as action-smoke.yml -- release-time only, called "
+    + "from release.yml, no push or pull_request trigger left to filter.",
+  "coverage.yml": "the whole-repo coverage threshold, moved off ci.yml's per-PR job (chairman's "
+    + "direction, 2026-09-06 -- 154s of a measured 269s). Runs on a nightly schedule plus workflow_dispatch, "
+    + "same shape as board-report.yml: it judges the repository as a whole against a fixed threshold, not "
+    + "a diff, and its trigger is the clock rather than a change landing.",
+  "ready-label-audit.yml": "audits live GitHub label state on an hourly clock (#246), same shape as "
+    + "coverage.yml and board-report.yml -- it examines the issue tracker's current labels, not a diff, "
+    + "so covering a source directory is not a thing it could mean.",
 };
 
 const workflowFiles = (): string[] =>
@@ -132,15 +147,20 @@ test("the discovery finds the workflows and the source tree, so this cannot pass
     `found ${workflowFiles().length} workflow file(s); .github/workflows moved or the extension filter is wrong`);
   assert.ok(sourceDirectories().length >= 8,
     `found ${sourceDirectories().length} source director(ies); the packages/*/src walk is broken`);
-  assert.ok(gateFiles().length >= 2,
+  // >= 1, not >= 2 as this floor read before 2026-09-06's trigger-model rebuild: `ci.yml` is now the ONLY
+  // workflow in this repo that judges a change at all -- action-smoke.yml and capture-regression.yml
+  // moved to release-time-only (chairman's direction), which is a real architectural fact, not a
+  // regression in this guard's own strength. `ci.yml` alone still exercises every assertion below.
+  assert.ok(gateFiles().length >= 1,
     "every workflow was classified as not-a-gate -- the guard would then assert nothing at all");
 });
 
 test("an UNFILTERED gate exists, and it is what makes every other filter's exclusions harmless", () => {
-  // THE LOAD-BEARING FACT NOBODY HAD WRITTEN DOWN. `lint.yml` carries no `paths:`, so it runs on every
-  // push and PR and no filtered workflow can currently hide a directory. Adding `paths:` to it would look
-  // like an optimisation and would silently make every exclusion below real -- including the one that
-  // already cost this project a guard bug.
+  // THE LOAD-BEARING FACT NOBODY HAD WRITTEN DOWN. `ci.yml` (successor to `lint.yml`, retired 2026-09-06)
+  // carries no top-level `paths:`, so it DISPATCHES on every push and PR and no filtered workflow can
+  // currently hide a directory -- what runs once it dispatches is a separate, job-level question this file
+  // cannot see. Adding `paths:` to its own trigger would look like an optimisation and would silently make
+  // every exclusion below real -- including the one that already cost this project a guard bug.
   const unfiltered = gateFiles().filter((file) => isUnfiltered(read(file)));
   assert.ok(unfiltered.length > 0,
     "no gate workflow runs without a path filter any more. That is a real architectural change and it may "

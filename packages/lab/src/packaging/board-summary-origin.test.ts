@@ -23,7 +23,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { summaryVerdict } from "../../../../scripts/board-summary-check.mjs";
+import { summaryVerdict, reportedVerdict, reportedDifferences }
+  from "../../../../scripts/board-summary-check.mjs";
 
 const DAY = "2026-09-07";
 const OK = "a hand-written summary, well under the cap.";
@@ -86,6 +87,117 @@ test("absent everywhere falls through to the script's own write-one message", ()
 });
 
 /**
+ * THE SAME QUESTION OF `reported.json`, WHICH CARRIES MORE (#131).
+ *
+ * The summary is one hand-written paragraph. `docs/board/reported.json` holds every number the document
+ * quotes that no gate can recompute — the gate outputs, the fleet-hours figure, the capacity note, every
+ * achievement — and it had the identical gap. Three times on 2026-09-06 a correct, complete record sat on
+ * the wrong side of a merge: a corrected achievement replacing one that had become FALSE, #22's
+ * pre-registered median, and the refreshed real-page gate output. Each was found by a person running
+ * `git show origin/main:...` by hand; none by a tool.
+ */
+const REPORTED = "docs/board/reported.json";
+const record = (over: object = {}) => JSON.stringify({
+  staleAfterHours: 24,
+  gates: [{ command: "npm run rules:real-pages", output: "PASS — 84 of 84" }],
+  achievements: [{ issue: 42, claim: "the scorer abstains out of support" }],
+  fleetHours: { status: "reported", note: "54.11 worker-hours" },
+  ...over,
+});
+
+test("an unmodified record reports agreement in ONE line and says nothing else", () => {
+  // Or the line becomes noise everybody scrolls past, and the one night it matters it is scrolled past too.
+  const v = reportedVerdict({ localText: record(), remote: asked(record()) });
+  assert.equal(v.code, 0);
+  assert.equal(v.message, `recorded figures: ${REPORTED} matches origin/main.`);
+  assert.equal(v.message.split("\n").length, 1, "agreement is one line; only a difference earns detail");
+});
+
+test("EDITED LOCALLY AND NOT PUSHED: named by entry, with the command to see what publishes", () => {
+  // The defect this row exists for, and the state an author is actually in at 21:00.
+  const mine = record({ gates: [{ command: "npm run rules:real-pages", output: "PASS — 80 of 84" }] });
+  const v = reportedVerdict({ localText: mine, remote: asked(record()) });
+  assert.equal(v.code, 1, "a figure the edition cannot see must not read as one it can");
+  assert.match(v.message, /gates\[npm run rules:real-pages\] — differs/,
+    "naming the ENTRY is the point; 'the file differs' sends a reader to diff it themselves at 21:00");
+  assert.match(v.message, new RegExp(`git show origin/main:${REPORTED}`),
+    "and it must print the command that shows what will actually publish");
+});
+
+test("an entry added locally, and one only on origin/main, are different sentences", () => {
+  // "I wrote something that will not publish" and "something will publish that I have not got" need
+  // opposite responses, so they must never share a word.
+  const extra = { issue: 99, claim: "a new achievement, unpushed" };
+  const mine = JSON.parse(record()); mine.achievements.push(extra);
+  const v = reportedVerdict({ localText: JSON.stringify(mine), remote: asked(record()) });
+  assert.match(v.message, /achievements\[99\] — in your tree, NOT on origin\/main/);
+
+  const other = reportedVerdict({ localText: record(), remote: asked(JSON.stringify(mine)) });
+  assert.match(other.message, /achievements\[99\] — on origin\/main, NOT in your tree/);
+});
+
+test("INSERTING AN ENTRY DOES NOT RE-LABEL THE ONES AFTER IT", () => {
+  // Position-keyed identity is the defect `withRealisticScale` already paid for: inserting one case
+  // re-keyed every case after it. Here it would report the whole list as changed for one added gate, and
+  // the real difference would be one line in a wall of noise -- a report nobody reads is a report.
+  const remote = record({
+    gates: [{ command: "gate:a", output: "A" }, { command: "gate:b", output: "B" }],
+  });
+  const local = record({
+    gates: [{ command: "gate:new", output: "N" }, { command: "gate:a", output: "A" },
+      { command: "gate:b", output: "B" }],
+  });
+  const differences = reportedDifferences(local, remote);
+  assert.deepEqual(differences, ["gates[gate:new] — in your tree, NOT on origin/main"],
+    "exactly one difference: the entry that was added. `gate:a` and `gate:b` moved position and did not "
+    + "change, so neither is a finding.");
+});
+
+test("a reformat is not a finding: key order and indentation are not values", () => {
+  // The edition reads values. Reporting whitespace would train people to ignore the line, which costs
+  // more than the check is worth.
+  //
+  // NOTE THE TRAP THIS TEST WALKED INTO FIRST, since it is the reason the assertion is written this way:
+  // `JSON.stringify(v, keys, 4)` treats its second argument as a key ALLOWLIST, and it applies at every
+  // depth -- so "reversing the top-level key order" silently emptied every nested object and built a
+  // genuinely different document. The guard correctly reported five differences and the TEST was wrong,
+  // which is the right way round.
+  const remote = record();
+  const parsed = JSON.parse(remote);
+  const reordered = JSON.stringify(
+    Object.fromEntries(Object.keys(parsed).reverse().map((k) => [k, parsed[k]])), null, 4);
+  assert.notEqual(reordered, remote, "the two spellings must really differ as TEXT, or this proves nothing");
+  assert.deepEqual(reportedDifferences(reordered, remote), []);
+});
+
+test("the record missing from origin/main entirely is its own state", () => {
+  // Every figure unpublished at once, and the edition prints `not reported` for each. That is a different
+  // sentence from "one entry differs" and needs a different action.
+  const v = reportedVerdict({ localText: record(), remote: asked(null) });
+  assert.equal(v.code, 1);
+  assert.match(v.message, /NOT on origin\/main at all/);
+  assert.match(v.message, /Push it/);
+});
+
+test("COULD NOT FETCH is inconclusive for the record too, and never reported as fine", () => {
+  const v = reportedVerdict({
+    localText: record(),
+    remote: { text: null, asked: false, why: "could not fetch origin/main: no route to host" },
+  });
+  assert.equal(v.code, 2);
+  assert.match(v.message, /CANNOT SAY/);
+  assert.match(v.message, /could not fetch/, "it must carry WHY it could not ask");
+});
+
+test("unreadable JSON is reported as unreadable, not as every entry differing", () => {
+  // Diffing against a parse failure yields a true statement -- everything differs -- that hides the one
+  // fact worth acting on. A count is where an investigation stops.
+  const differences = reportedDifferences("{ not json", record());
+  assert.equal(differences.length, 1, "one cause, one line -- not one line per entry");
+  assert.match(differences[0], /your tree.*is not valid JSON/);
+});
+
+/**
  * AND THE WIRING, because a correct verdict handed the wrong input is the defect returning by its own
  * front door.
  *
@@ -112,4 +224,26 @@ test("main() feeds the verdict the ORIGIN copy, not the local file", () => {
   assert.match(main, /localText: present \? readFileSync\(file, "utf8"\) : ""/,
     "the LOCAL text is still read, and passed as localText -- it is what makes the two-copies-differ "
     + "state detectable at all. Only its ROLE changed: evidence for a comparison, never the verdict.");
+});
+
+test("main() feeds the RECORD's verdict the origin copy too, and asks whatever the summary said", () => {
+  // The identical substitution, one file along: handing `reportedVerdict` a local read as `remote` makes
+  // it answer confidently about the wrong copy, and every pure test above still passes -- they are handed
+  // a well-formed object either way. #91's own wiring guard exists because that is not hypothetical.
+  const src = readFileSync(new URL("../../../../scripts/board-summary-check.mjs", import.meta.url), "utf8");
+  const main = src.slice(src.indexOf("function main()"));
+
+  assert.match(main, /remote: fileOnOriginMain\(REPORTED\)/,
+    "the record must be read from origin/main, which is the only copy the 08:00 job sees");
+  assert.doesNotMatch(main, /remote:\s*\{[^}]*readFileSync\(reportedFile/,
+    "and must never be constructed from the local file -- the pre-#91 shape, reached by a second door");
+
+  // ASKED ON BOTH PATHS. A missing summary does not make an unpushed gate result any less unpushed, and
+  // an early `process.exit` before the record is reported is exactly how the second fact stays invisible.
+  const beforeNoSummary = main.slice(0, main.indexOf("NO SUMMARY FOR"));
+  assert.ok(/const reported = reportedVerdict\(/.test(beforeNoSummary),
+    "the record's verdict must be computed before either path exits, or the no-summary path reports "
+    + "nothing about the figures -- which is the half of #131 that carries the numbers.");
+  assert.equal((main.match(/reported\.code === EXIT\.WILL_RENDER/g) ?? []).length, 2,
+    "both exit paths print it: the one where a summary exists, and the one where none does");
 });

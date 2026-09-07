@@ -31,11 +31,57 @@
  * a bare list — the same discipline `tracked-prose-leak-guard.test.ts` already established. Reused rather
  * than duplicated: `allLeaksIn` (`leak-patterns.mjs`) is the one matcher both files drive.
  *
- * ## Why the population is DISCOVERED from the acceptance criteria's own extensions
+ * ## #119: this file's IPv4-pattern EXEMPT entries are now the ONLY copy
  *
- * `git ls-files '*.mjs' '*.ts' '*.py' '*.ps1' '*.sh' '*.yml'` — exactly #83's own acceptance command's
- * pathspecs — never a hand-written list of "the source that matters", with the same vacuity floor
- * `tracked-prose-leak-guard.test.ts` uses.
+ * Every one of `tracked-prose-leak-guard.test.ts`'s ten `.md` EXEMPT entries was already duplicated here
+ * (verified by diffing both tables, not assumed), so #119 narrowed that file to stop checking the IPv4
+ * pattern at all rather than fold anything in — there was nothing left to fold. That file still exists,
+ * scoped to the two patterns this file deliberately excludes (see below); it is not redundant, only
+ * narrower than it used to be.
+ *
+ * ## Why the population is EVERY TRACKED FILE, not an extension allowlist (#86)
+ *
+ * This file used to walk `git ls-files '*.mjs' '*.ts' '*.py' '*.ps1' '*.sh' '*.yml'` — #83's own
+ * acceptance command's pathspecs. Two real addresses survived one door along: a control-plane host
+ * hardcoded in `autounattend.xml`'s PXE bootstrap URL, and a lab address baked into two captured
+ * eval fixtures (`.json`). **The SAME shape as #83's own finding, one file type over** — an extension
+ * list is a claim about where the exposure can be, and that claim was wrong twice. Now `git ls-files`
+ * with no pathspec at all — every tracked, non-binary file — with the same vacuity floor as before.
+ * "Binary" is the standard NUL-byte-in-the-first-8000-bytes heuristic (`looksBinary`), the same one
+ * git itself uses, so a genuine asset (this repo has exactly one) is skipped rather than decoded as
+ * garbage text and matched against nothing meaningful.
+ *
+ * ## A regex bug the widened sweep surfaced, unrelated to scope
+ *
+ * `LEAK_PATTERNS`'s private-LAN-IPv4 pattern required only THREE octets for its bare-`10` branch —
+ * `10` plus two `\d{1,3}` groups is `10.x.y`, one short of a real address — because `\b` is satisfied
+ * by any non-word character, `.` included, so the match simply stopped early. Widening the population
+ * exposed it at scale: an Intel driver INF's Windows platform-version decorations
+ * (`NTamd64.10.0.1..17763`) and ordinary npm semver in `package-lock.json` (`"10.0.0"`) both satisfy
+ * three octets and neither is an address — 444 and ~30 false matches respectively, gone entirely once
+ * `leak-patterns.mjs`'s pattern was corrected to spell each branch's own full four-octet shape. Fixed
+ * there rather than here, since every consumer (`tracked-prose-leak-guard.test.ts`,
+ * `roles-memory.test.ts`) shares the one matcher and the bug reached all three.
+ *
+ * ## A redaction choice that broke a DIFFERENT test, found only by running the full suite
+ *
+ * `menus-good.json`/`menus-bad.json` carried a real leaked address (`REDACTED-INTERNAL-ADDRESS`, the lab's own LAN
+ * IP) in the eval fixtures' `url` field. The first fix used an RFC 5737 documentation-range value
+ * (`203.0.113.20`) — correct for a value nobody must ever act on, and wrong here specifically:
+ * `rule-coverage-populations.test.ts` classifies a fixture as "real evidence of a live website" purely
+ * from that URL's host, excluding `192.168.x` by name but not `203.0.113.x`, so the RFC 5737 swap
+ * silently promoted two page-server captures into the population that test exists to keep narrow —
+ * `npm test` failed on a file this row never touched. Replaced instead with `REDACTED-INTERNAL-ADDRESS`, the same
+ * UTM-bridge placeholder every sibling `tutorials/*.json` fixture already carries (both are exempted
+ * below on that basis), which is excluded by that regex and consistent with the other ten files in the
+ * same directory rather than a one-off deviation.
+ *
+ * Separately: the issue that filed this row suggested `git grep -nE '\b(10|192\.168|...)...'` as a
+ * manual verification command. On this git build (`git version 2.50.1`, Apple Git), `-E` does not
+ * support `\b` as a word boundary the way GNU grep or a JS `RegExp` does — the suggested command
+ * matches NOTHING, silently, even against a file containing the exact address it names. `-P` (PCRE)
+ * works. Not this file's mechanism (it uses `allLeaksIn`'s JS `RegExp`, unaffected), but worth knowing
+ * before anyone runs that command by hand and reads a clean sweep as proof.
  *
  * ## Scoped to the IPv4 pattern only — #83's own acceptance command, not all of `LEAK_PATTERNS`
  *
@@ -52,14 +98,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, openSync, readSync, closeSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import { LEAK_PATTERNS, allLeaksIn } from "./leak-patterns.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const EXTENSIONS = ["*.mjs", "*.ts", "*.py", "*.ps1", "*.sh", "*.yml"];
 
 /** Below this, `git ls-files` almost certainly ran from the wrong directory or matched nothing. */
 const MIN_TRACKED_SOURCE_FILES = 500;
@@ -70,130 +115,282 @@ const MIN_TRACKED_SOURCE_FILES = 500;
  * landing in an already-exempted file must still be caught.
  */
 const EXEMPT: Array<{ file: string; value: string; reason: string }> = [
-  {
-    file: "packages/control/ansible/inventory.example.yml",
-    value: "10.0.0",
-    reason: "the committed EXAMPLE inventory's own placeholder scheme, distinct from the real fleet's "
-      + "real subnet — see inventory.yml's own comment on why the two are kept in shape-sync",
-  },
-  {
-    file: "packages/control/src/fleet-discover.mjs",
-    value: "10.0.0",
-    reason: "a hypothetical illustrative example inside a comment about diagnosing a stale MAC/IP pairing, "
-      + "unrelated to the real fleet's actual subnet (every real mention elsewhere is 192.168.1.x)",
-  },
-  ...["10.0.0"].map((value) => ({
-    file: "packages/control/src/fleet-discover.test.ts", value,
-    reason: "generic test double for MAC/host reconciliation logic, independent of any real address",
+  // === UTM's local VM bridge (192.168.64.x), private to a single Mac -- #83's own EXEMPT
+  // table already made this call; reused here across every new file type it now appears in,
+  // rather than re-litigated per file.
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "CLAUDE.md", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "PLAN.md", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
   })),
   ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "docs/capture-phase-breakdown-audit.md", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "docs/local-worker-vm.md", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/cli/README.md", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/scripts/action-dry-run.sh", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/scripts/compare-layers.mjs", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/books/alt-quality-bad.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/books/alt-quality-good.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/books/custom-control-bad.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/books/custom-control-good.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/books/filter-status-bad.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/books/headings-bad.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/books/headings-good.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/books/links-bad.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/books/links-good.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/carousels-bad.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/carousels-good.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/disclosure-bad.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/disclosure-good.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/forms-bad.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/forms-good.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/forms-validation-bad.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/forms-validation-good.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/images-bad.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/images-good.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  // menus-{good,bad} carried a REAL leaked address (REDACTED-INTERNAL-ADDRESS, #86) before this row -- fixed by
+  // replacing it with the same UTM-bridge placeholder every sibling tutorial fixture already uses,
+  // not an RFC 5737 value: rule-coverage-populations.test.ts classifies a fixture as "real evidence of
+  // a live website" from its URL's host alone, and its exclusion regex knows 192.168.x but not
+  // 203.0.113.x -- an RFC 5737 replacement here silently promoted these two page-server captures into
+  // the real-page population the audit exists to keep narrow. Found by running the full suite, not by
+  // inspection.
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/menus-bad.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/menus-good.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/structure-bad.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/structure-good.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/tables-bad.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/eval/fixtures/tutorials/tables-good.json", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/harnesses/capture-check.mjs", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/harnesses/occurrence-verdict-stability.mjs", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/harnesses/page-identity-rate.mjs", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/training/README.md", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/training/repeat-capture.mjs", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/nvda-worker/src/browser-session.test.ts", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/worker-fleet/src/deploy-remedy.test.ts", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/worker-fleet/src/fleet-consistency.mjs", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/worker-fleet/src/fleet-consistency.test.ts", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/worker-fleet/src/guest-reachable.test.ts", value,
+    reason: "UTM's own local VM bridge, private to a single Mac",
+  })),
+
+  // === The committed EXAMPLE inventory's own placeholder scheme (#86 widened the sweep to
+  // .yml's full tracked population; already implicitly safe, now explicit).
+  ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/control/ansible/inventory.example.yml", value,
+    reason: "the committed EXAMPLE inventory's own placeholder scheme, distinct from the real fleet's "
+      + "real subnet — see inventory.yml's own comment on why the two are kept in shape-sync",
+  })),
+
+  // === This file's OWN leak-guard mutation fixtures -- synthetic strings deliberately shaped
+  // like a leak, to prove LEAK_PATTERNS fires. Redacting them would break the proof.
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/packaging/roles-memory.test.ts", value,
+    reason: "this file's OWN leak-guard mutation fixture: a string deliberately shaped like a leak, "
+      + "to prove LEAK_PATTERNS fires. Redacting it would break the test that proves the guard works.",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/packaging/tracked-prose-leak-guard.test.ts", value,
+    reason: "this file's OWN CONTROL case proving the IPv4 pattern is deliberately out of scope there "
+      + "(#119) — a synthetic value shaped like a leak, never a real address.",
+  })),
+
+  // === Generic test doubles for fleet/worker/enrolment logic, independent of any real address.
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/control/src/fleet-discover.mjs", value,
+    reason: "generic test double, independent of any real address",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
     file: "packages/control/src/fleet-discover.test.ts", value,
-    reason: "generic test double for MAC/host reconciliation logic, independent of any real address",
+    reason: "generic test double, independent of any real address",
   })),
   ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
     file: "packages/control/src/fleet-enrol.test.ts", value,
-    reason: "generic test double for inventory-enrolment logic, independent of any real address",
-  })),
-  {
-    file: "packages/control/src/fleet-playbook.test.ts", value: "REDACTED-INTERNAL-ADDRESS",
-    reason: "generic test double for onTheControlPlane's interface-matching logic",
-  },
-  ...["10.0.0", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
-    file: "packages/control/src/fleet-status.test.ts", value,
-    reason: "generic test double for worker-status formatting, independent of any real address",
-  })),
-  {
-    file: "packages/lab/src/gates/fleet.test.ts", value: "10.0.0",
     reason: "generic test double, independent of any real address",
-  },
-  {
-    file: "packages/lab/src/packaging/roles-memory.test.ts", value: "REDACTED-INTERNAL-ADDRESS",
-    reason: "this file's OWN leak-guard mutation fixture: a string deliberately shaped like a leak, to "
-      + "prove LEAK_PATTERNS fires. Redacting it would break the test that proves the guard works.",
-  },
-  ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
-    file: "packages/lab/src/packaging/tracked-prose-leak-guard.test.ts", value,
-    reason: "this file's OWN leak-guard mutation fixtures, for the identical reason as roles-memory.test.ts",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/control/src/fleet-playbook.test.ts", value,
+    reason: "generic test double, independent of any real address",
   })),
   ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
-    file: "packages/lab/src/packaging/tracked-prose-leak-guard.test.ts", value,
-    reason: "the SAME exemption its own EXEMPT table (for .md) already grants these values — UTM's local "
-      + "VM bridge, quoted here inside its own MUTATION sample text",
-  })),
-  {
-    file: "packages/lab/scripts/action-dry-run.sh", value: "REDACTED-INTERNAL-ADDRESS",
-    reason: "UTM's own local VM bridge, private to one Mac — a usage-example address, not a shared/reachable host",
-  },
-  {
-    file: "packages/lab/scripts/compare-layers.mjs", value: "REDACTED-INTERNAL-ADDRESS",
-    reason: "UTM's own local VM bridge, private to one Mac — a usage-example address, not a shared/reachable host",
-  },
-  {
-    file: "packages/lab/src/harnesses/occurrence-verdict-stability.mjs", value: "REDACTED-INTERNAL-ADDRESS",
-    reason: "UTM's own local VM bridge, private to one Mac — a usage-example address, not a shared/reachable host",
-  },
-  {
-    file: "packages/lab/src/harnesses/capture-check.mjs", value: "REDACTED-INTERNAL-ADDRESS",
-    reason: "UTM's own local VM bridge, in a usage-example comment",
-  },
-  {
-    file: "packages/lab/src/harnesses/page-identity-rate.mjs", value: "REDACTED-INTERNAL-ADDRESS",
-    reason: "UTM's own local VM bridge, in a usage-example comment",
-  },
-  ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
-    file: "packages/lab/src/training/repeat-capture.mjs", value,
-    reason: "UTM's own local VM bridge, in usage-example comments",
-  })),
-  {
-    file: "packages/nvda-worker/src/browser-session.test.ts", value: "REDACTED-INTERNAL-ADDRESS",
-    reason: "UTM's own local VM bridge, quoted in a comment about synthetic-fixture host mismatches",
-  },
-  {
-    file: "packages/worker-fleet/src/deploy-remedy.test.ts", value: "REDACTED-INTERNAL-ADDRESS",
-    reason: "UTM's own local VM bridge, used as a generic worker-address test double",
-  },
-  {
-    file: "packages/worker-fleet/src/fleet-consistency.mjs", value: "REDACTED-INTERNAL-ADDRESS",
-    reason: "UTM's own local VM bridge, in a doc-comment example table",
-  },
-  {
-    file: "packages/worker-fleet/src/fleet-consistency.test.ts", value: "REDACTED-INTERNAL-ADDRESS",
-    reason: "generic test double for fleet-consistency comparisons, independent of any real address",
-  },
-  ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
-    file: "packages/worker-fleet/src/fleet-consistency.test.ts", value,
-    reason: "UTM's own local VM bridge, used as generic worker-address test doubles",
-  })),
-  {
-    file: "packages/worker-fleet/src/fleet-env.test.ts", value: "10.0.0",
+    file: "packages/control/src/fleet-status.test.ts", value,
     reason: "generic test double, independent of any real address",
-  },
-  {
-    file: "packages/worker-fleet/src/fleet-env.test.ts", value: "REDACTED-INTERNAL-ADDRESS",
-    reason: "generic test double for fleet-env's worker-URL derivation, independent of any real address",
-  },
-  {
-    file: "packages/worker-fleet/src/guest-reachable.test.ts", value: "10.1.2",
-    reason: "generic test double for reachability logic, independent of any real address",
-  },
-  ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
-    file: "packages/worker-fleet/src/guest-reachable.test.ts", value,
-    reason: "UTM's own local VM bridge, used as generic worker-address test doubles",
   })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/lab/src/gates/fleet.test.ts", value,
+    reason: "generic test double, independent of any real address",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/worker-fleet/src/fleet-consistency.test.ts", value,
+    reason: "generic test double, independent of any real address",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS", "REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/worker-fleet/src/fleet-env.test.ts", value,
+    reason: "generic test double, independent of any real address",
+  })),
+  ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
+    file: "packages/worker-fleet/src/guest-reachable.test.ts", value,
+    reason: "generic test double, independent of any real address",
+  })),
+
 ];
 
 /** This file's own path, relative to REPO -- see `trackedSourceFiles`' SELF exclusion for why. */
 const SELF = "packages/lab/src/packaging/tracked-source-leak-guard.test.ts";
 
+/**
+ * The standard "does this look binary" heuristic -- the first 8000 bytes contain a NUL byte -- which is
+ * the same test git's own `buffer_is_binary` uses internally. Read as raw bytes, never as UTF-8: decoding
+ * a genuinely binary file as text can throw, or worse, silently produce garbage that happens not to throw
+ * and is then scanned for nothing meaningful.
+ */
+function looksBinary(absolutePath: string): boolean {
+  const fd = openSync(absolutePath, "r");
+  try {
+    const buffer = Buffer.alloc(8000);
+    const bytesRead = readSync(fd, buffer, 0, buffer.length, 0);
+    return buffer.subarray(0, bytesRead).includes(0);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 function trackedSourceFiles(): string[] {
+  // EVERY TRACKED FILE, not an extension allowlist (#86). #83 scoped this to `.mjs .ts .py .ps1 .sh .yml`
+  // and two real addresses survived one door along, in `.xml` and `.json` -- the THIRD time this repo's
+  // most-recorded defect (a population narrower than the exposure) has shown up in this one
+  // investigation. The remedy #86 names is to sweep everything and classify by CONTENT, with any
+  // exclusion an explicit, reasoned exemption rather than a list of what to look at.
+  //
   // SELF-EXCLUDED. This is a `.ts` file in the population it walks, and its own EXEMPT table and
   // MUTATION tests necessarily quote every value they classify as literal string data -- so without this
   // exclusion the guard flags itself for containing the exact values it is busy explaining are safe. The
   // same shape `git-spawn-classification.test.ts` already handles for its own git-spawning helper.
-  return execFileSync("git", ["ls-files", ...EXTENSIONS], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
+  return execFileSync("git", ["ls-files"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
     .split("\n")
     .filter(Boolean)
-    .filter((f) => f !== SELF);
+    .filter((f) => f !== SELF)
+    .filter((f) => !looksBinary(`${REPO}${f}`));
 }
 
 /** Collapsed so a match cannot be defeated by a wrapped comment or a multi-line template literal. */
@@ -256,16 +453,38 @@ test("MUTATION: a real leak reintroduced into a currently-clean source file is c
 });
 
 test("MUTATION: the hardcoded control-plane fallback this row removed does not silently come back", () => {
+  // #285: `CONTROL_PLANE` stopped being a bare `= process.env.A11Y_CONTROL_HOST` at import time -- it is
+  // now resolved by `requireControlPlaneHost()` inside `main()`, so a reintroduced fallback would sit on
+  // THAT line instead. The detector this test proves is unchanged (`findLeaks` scans the whole collapsed
+  // file for a private-LAN IPv4 literal, not this one line specifically) -- only the fixture moved with it.
   for (const file of ["packages/control/src/fleet-playbook.mjs", "packages/control/src/lab-pipeline.mjs"]) {
     const clean = collapsedText(file);
     const reintroduced = clean.replace(
-      "const CONTROL_PLANE = process.env.A11Y_CONTROL_HOST;",
-      'const CONTROL_PLANE = process.env.A11Y_CONTROL_HOST || "REDACTED-INTERNAL-ADDRESS";',
+      "CONTROL_PLANE = requireControlPlaneHost();",
+      'CONTROL_PLANE = requireControlPlaneHost() || "REDACTED-INTERNAL-ADDRESS";',
     );
     assert.notEqual(reintroduced, clean, `the replacement did not match in ${file} — the fixture text has drifted`);
     const leaks = findLeaks(file, reintroduced);
     assert.ok(leaks.length >= 1, `expected the reintroduced default to be caught in ${file}: ${JSON.stringify(leaks)}`);
   }
+});
+
+test("MUTATION: removing an EXEMPT entry the #119 fold inherited from the prose guard fails, by name", () => {
+  // #119 narrowed tracked-prose-leak-guard.test.ts to stop checking the IPv4 pattern, on the strength that
+  // every one of its ten EXEMPT entries was already present here — verified by diffing both tables, not
+  // assumed. This proves the inheritance is load-bearing rather than decorative: drop one entry from a
+  // COPY of EXEMPT and confirm the file it names starts reading as an offender again, by that exact name.
+  const file = "CLAUDE.md";
+  const value = "REDACTED-INTERNAL-ADDRESS";
+  assert.ok(EXEMPT.some((e) => e.file === file && e.value === value),
+    `fixture assumption broke: ${file} -> "${value}" is no longer in EXEMPT`);
+  const withoutInheritedEntry = EXEMPT.filter((e) => !(e.file === file && e.value === value));
+  const leaksIfDropped = allLeaksIn(collapsedText(file))
+    .filter((leak) => leak.name === IN_SCOPE)
+    .filter(({ value: v }) => !withoutInheritedEntry.some((e) => e.file === file && e.value === v));
+  assert.ok(leaksIfDropped.some((l) => l.value === value),
+    `dropping ${file} -> "${value}" from EXEMPT did not surface it as an offender -- the guard is not `
+    + "actually reading this entry, or the file no longer contains the value");
 });
 
 test("every LEAK_PATTERNS entry is exercised by at least one EXEMPT or MUTATION case here", () => {

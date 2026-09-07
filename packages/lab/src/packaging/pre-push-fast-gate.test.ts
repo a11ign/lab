@@ -1,8 +1,10 @@
 /**
  * The pre-push hook's FAST/FULL split (2026-09-06): `main` runs the full suite, unchanged;
  * `agent/*`/`lead/*` run lint, typecheck, and tests of only the `packages/<name>` the branch touched
- * against `origin/main` -- CI (`.github/workflows/lint.yml`, widened the same day) is what runs the full
- * suite for a branch now. See the hook's own header and `scripts/changed-packages.mjs`'s header for why.
+ * against `origin/main`. CI (`.github/workflows/ci.yml`) is what runs the full check for a branch now --
+ * not on the push itself (agent/lead pushes stopped triggering CI directly the same day `ci.yml` replaced
+ * `lint.yml`), but on the PR that follows it, which every unit's workflow now opens immediately after
+ * pushing. See the hook's own header and `scripts/changed-packages.mjs`'s header for why.
  *
  * DRIVES THE REAL FILES rather than reimplementing their logic, for the reason `pre-commit-hook.test.ts`
  * and `pre-push-git-scrub.test.ts` already state: a second copy of a decision drifts from the first. The
@@ -49,6 +51,18 @@ test("check-signals and rules:gate are gated to main, not just to the corpus bei
 
 test("the fast gate calls changed-packages.mjs, never a second, hand-rolled diff", () => {
   assert.match(HOOK, /node scripts\/changed-packages\.mjs/);
+});
+
+test("a board-only diff gets its own narrow branch, calling board-only-check.mjs -- never a second copy "
+  + "of the board/docs classification", () => {
+  // chairman's direction, 2026-09-06: docs/board/summaries/*.md and docs/board/reported.json are edited
+  // far more often than anything else under docs/. `board-only-check.mjs` reuses ci-changed.mjs's own
+  // `boardOnly`/`DOC_ROOT_FILES`, the same question ci.yml's `board` job asks -- this only checks the
+  // hook DISPATCHES to it and to the same test glob as that job, not that the classification is correct
+  // (board-only-check.test.ts and ci-changed.test.ts own that).
+  assert.match(HOOK, /node scripts\/board-only-check\.mjs/);
+  assert.match(HOOK, /packages\/lab\/src\/packaging\/board-\*\.test\.ts/);
+  assert.match(HOOK, /packages\/lab\/src\/packaging\/public-claim\.test\.ts/);
 });
 
 test("MUTATION: the touched-package glob-building loop, driven in isolation, builds one glob per package", () => {
@@ -125,13 +139,18 @@ test("MUTATION: the real run() function reports FAILED on a genuine lint/typeche
   }
 });
 
-test(".github/workflows/lint.yml runs on agent/** and lead/** pushes, with a cancelling concurrency group", () => {
-  const doc = parseYaml(readFileSync(`${REPO}.github/workflows/lint.yml`, "utf8"));
-  const branches: string[] = doc.on.push.branches;
-  assert.ok(branches.includes("main"));
-  assert.ok(branches.some((b) => b === "agent/**"), "agent/** must be able to trigger CI, or the fast "
-    + "gate has nowhere to hand off the full suite to");
-  assert.ok(branches.some((b) => b === "lead/**"));
+test(".github/workflows/ci.yml runs on the PR ONLY, with a cancelling concurrency group", () => {
+  // NOT agent/** or lead/** and NOT main -- deliberately, since 2026-09-06 and sharpened again the same
+  // day (chairman's direction): a check that runs after a merge cannot stop it, so `push` is not merely
+  // scoped to `main`, it is ABSENT altogether now. A branch push gets only this hook's fast gate; the
+  // full check runs on the PR that branch's own workflow opens immediately after pushing, and ONLY there
+  // -- branch protection (checks green AND up to date with main) is what makes the tested commit the one
+  // that lands.
+  const doc = parseYaml(readFileSync(`${REPO}.github/workflows/ci.yml`, "utf8"));
+  assert.ok(doc.on.pull_request, "ci.yml must trigger on pull_request, or a branch's own PR has no full "
+    + "check to hand off to");
+  assert.ok(!("push" in doc.on),
+    "ci.yml must not trigger on push at all -- a check that runs after the merge cannot stop it");
   assert.equal(doc.concurrency?.["cancel-in-progress"], true,
     "without cancel-in-progress, every push under push-per-commit queues a stale run behind it");
   assert.match(String(doc.concurrency?.group ?? ""), /github\.ref/,

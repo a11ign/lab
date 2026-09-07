@@ -64,8 +64,43 @@ const BASELINE = resolve(REPO, "packages/lab/baselines/real-page-findings.json")
  * THIS GATE SCORES PAGES DRAWN FROM SEVERAL CAPTURE RUNS, and until 2026-09-06 it said nothing about
  * that. It already refuses when a role is MISSING entirely — the harder case is when every page is
  * present and some of them are old.
+ *
+ * ## IT COUNTED CAPTURES IT NEVER SCORED, and the header called them "the captures this scored"
+ *
+ * The push sat ABOVE the two filters that reduce the walk to conformant declared pages, so this recorded
+ * every `.json` in the directory: captures with no transcript, captures of pages absent from `REAL_PAGES`,
+ * and captures of pages whose publisher declares them INACCESSIBLE — which this gate deliberately does not
+ * score, because holding a page that is supposed to produce findings to a conformance baseline measures
+ * the wrong thing entirely.
+ *
+ * Measured 2026-09-06: it reported `calibration 57, fixture 10, training 46` — 113 captures — in the same
+ * run whose first line reads `86 conformant real page(s) scored against the baseline`. Twenty-seven of the
+ * 113 were never scored, and `REAL_PAGES` declares 99 pages in total, so the number was not describing the
+ * declared corpus either. Three populations, one number, and the sentence above it naming the one it was
+ * least like.
+ *
+ * The consequence is the one that cost the investigation: BOTH real-page roles were refreshed cleanly and
+ * the reported spread GREW, 288 hours to 304 — because a refresh covering every declared page cannot move
+ * a figure computed over captures that are not declared pages. A freshness warning no refresh can answer
+ * gets read as a corpus problem, then ignored.
+ *
+ * This is the repo's most-recorded defect — a check answering correctly about a population other than the
+ * one the reader thinks — committed in the line whose whole job is to say WHICH captures a verdict rests
+ * on. So the ages are now recorded where the scoring happens, and everything walked and NOT scored is
+ * reported separately with its reason, because "we did not look at it" and "it does not exist" need
+ * opposite work.
  */
 const CAPTURE_AGES: { at: string; role: string }[] = [];
+
+/**
+ * Captures on disk that this gate walked and did NOT score, with why — reported, never silent.
+ *
+ * `undeclared` is the one that needs a human: a capture whose URL no `REAL_PAGES` entry claims is live
+ * evidence filed under nothing. It is aged, it is counted, and until now it was invisible — the mirror of
+ * `reportDeclaredExclusions`, which prints every declared exclusion on every run precisely so a temporary
+ * one cannot become permanent by silence. The asymmetry was only enforced in one direction.
+ */
+const NOT_SCORED: { file: string; url: string; why: "undeclared" | "not conformant" | "no transcript" }[] = [];
 
 /**
  * The pages declared unexaminable, with their reasons. Empty when the file is absent, deliberately: a
@@ -150,6 +185,37 @@ function reportDeclaredExclusions(unusablePages: string[]): string[] {
 
 function reportCaptureAges(): void {
   process.stdout.write(`${captureAgeLines(CAPTURE_AGES).join("\n")}\n`);
+  reportWhatWasNotScored();
+}
+
+/**
+ * The captures on disk this gate walked past, grouped by why — and the undeclared ones by name.
+ *
+ * PRINTED EVEN WHEN THERE ARE NONE, because zero is the answer that makes the ages above trustworthy:
+ * "every capture on disk was scored" and "we did not check" are different statements and the silent
+ * version of this report could only ever make the second look like the first.
+ *
+ * `not conformant` is expected and is not a problem — the corpus deliberately holds pages whose publisher
+ * declares them inaccessible, and this gate deliberately does not hold those to a conformance baseline.
+ * `undeclared` is a real finding and is named per file: a capture no `REAL_PAGES` entry claims is evidence
+ * filed under nothing, and it was previously counted into the freshness spread while being invisible.
+ */
+function reportWhatWasNotScored(): void {
+  const by = (why: string) => NOT_SCORED.filter((entry) => entry.why === why);
+  const undeclared = by("undeclared");
+  process.stdout.write(`  scored ${CAPTURE_AGES.length} capture(s); walked past ${NOT_SCORED.length}`
+    + ` (${by("not conformant").length} on pages the publisher does not declare conformant,`
+    + ` ${undeclared.length} undeclared, ${by("no transcript").length} with no transcript).\n`);
+  if (!undeclared.length) return;
+  // THE ONE THAT NEEDS A HUMAN. Named rather than counted, for this file's own stated reason: "a count is
+  // where an investigation stops", and these three causes -- a retired page, a role that moved without its
+  // capture, and one URL normalising to two filenames -- need opposite work. The third would mean a page
+  // is scored twice, so it has to be excluded before either cheap answer is applied.
+  process.stdout.write(`  *** ${undeclared.length} capture(s) NO DECLARED PAGE CLAIMS. They are aged above `
+    + "and scored by nothing:\n");
+  for (const entry of undeclared) {
+    process.stdout.write(`        ${entry.file}  ${entry.url || "(no url in the capture)"}\n`);
+  }
 }
 
 /**
@@ -187,6 +253,33 @@ type Findings = Record<string, string[]>;
 // The scanner now lives in `corpus-settled.mjs`; this file's copy took a single dir and had to be
 // wrapped at the call site to fit the shared shape, which is drift caught before a third copy.
 
+/**
+ * The declared, conformant page this capture is of — or `null`, with the reason recorded rather than lost.
+ *
+ * Two rejections, and they are not the same kind of thing. A page whose publisher declares it INACCESSIBLE
+ * is supposed to produce findings, so holding it to a conformance baseline would measure the wrong thing:
+ * expected, correct, uninteresting. A capture NO declared page claims is none of those — it is evidence
+ * filed under nothing, and it was previously skipped in silence while still being counted into the
+ * freshness spread above.
+ *
+ * Extracted from `currentFindings` rather than inlined: recording a reason turned two `continue`s into
+ * four branches and put that function over the complexity gate, which is the gate asking for the Stepdown
+ * Rule. The name states the question the two checks jointly answer.
+ */
+function pageThisGateScores(file: string, capture: { url?: string; transcript?: unknown }) {
+  const url = String(capture.url ?? "");
+  if (!Array.isArray(capture.transcript)) {
+    NOT_SCORED.push({ file, url, why: "no transcript" });
+    return null;
+  }
+  const page = realPageFor(capture.url);
+  if (!page || page.publishedClaim !== "conformant") {
+    NOT_SCORED.push({ file, url, why: page ? "not conformant" : "undeclared" });
+    return null;
+  }
+  return page;
+}
+
 /** What the rules say about every conformant real page, as `url -> sorted criteria`. */
 function currentFindings(): Findings {
   const out: Findings = {};
@@ -199,21 +292,22 @@ function currentFindings(): Findings {
   for (const file of entries.sort()) {
     if (!file.endsWith(".json")) continue;
     let capture: { url?: string; transcript?: unknown };
+    let capturedAt: string | null;
+    let role: string;
     try {
       const parsed = JSON.parse(readFileSync(join(REAL, file), "utf8")) as
         { capture?: unknown; capturedAt?: string; role?: string };
       capture = (parsed.capture ?? parsed) as { url?: string; transcript?: unknown };
-      if (typeof parsed.capturedAt === "string") {
-        CAPTURE_AGES.push({ at: parsed.capturedAt, role: parsed.role ?? "no role recorded" });
-      }
+      capturedAt = typeof parsed.capturedAt === "string" ? parsed.capturedAt : null;
+      role = parsed.role ?? "no role recorded";
     } catch {
       continue;
     }
-    if (!Array.isArray(capture.transcript)) continue;
-    const page = realPageFor(capture.url);
-    // Conformant pages only. A page whose publisher declares it INACCESSIBLE is supposed to produce
-    // findings, and holding those to a baseline would be measuring the wrong thing entirely.
-    if (!page || page.publishedClaim !== "conformant") continue;
+    const page = pageThisGateScores(file, capture);
+    if (!page) continue;
+    // RECORDED HERE, past every filter, so the ages describe the captures this gate actually scored. Above
+    // the filters it described the directory listing -- see this constant's own header for the 113-vs-86.
+    if (capturedAt) CAPTURE_AGES.push({ at: capturedAt, role });
     // `capture` is read from real JSON on disk, of a shape only checked at runtime (the `Array.isArray`
     // guard just above) -- the same `as` boundary the rest of this file casts at when handing a parsed
     // capture to `pageCensus`/`domCensus`.
@@ -243,8 +337,9 @@ function currentFindings(): Findings {
         + "is subtype-scoped and these findings are criterion-level, so it cannot mask them.\n");
     }
     const excluded = new Set(declared.filter((entry) => !entry.includes(":")));
-    const criteria = [...new Set(ruleFindings(withCensus(capture))
-      .map((finding) => String(finding.wcag).split(" ")[0]))]
+    const found = ruleFindings(withCensus(capture)) as readonly RuleFinding[];
+    noteOutcomes(String(capture.url), found);
+    const criteria = [...new Set(found.map((finding) => String(finding.wcag).split(" ")[0]))]
       .filter((criterion) => !excluded.has(criterion))
       .sort();
     out[String(capture.url)] = criteria;
@@ -311,6 +406,64 @@ function describeEvidence(url: string): string {
 
 /** url -> one line of the evidence behind it, filled while walking the captures rather than re-reading. */
 const EVIDENCE = new Map<string, string>();
+
+/**
+ * `url|criterion` -> how that finding REACHES A USER, and the evidence it was built from.
+ *
+ * ASSERTED OR REFERRED IS THE QUESTION THIS GATE'S HEADLINE TURNS ON, AND IT COULD NOT ANSWER IT.
+ *
+ * Added 2026-09-06, after a refreshed baseline produced four new findings and the only way to learn
+ * whether any of them ACCUSED a conformant page was for an agent to fetch the captures, re-run
+ * `ruleFindings` in a scratch script and read `mapping` by hand. That answer then existed only in a chat
+ * message, which is precisely the state CLAUDE.md's board rule forbids: "nothing in the report comes from
+ * what an agent SAID, it comes from what gates PRINTED".
+ *
+ * The distinction is the whole of this project's public claim. `RequirementMapping` is `conformance` or
+ * `secondary`, absent means `secondary`, and `criterionOutcomes` turns the second into `cantTell` — so a
+ * `secondary` finding is a REFERRAL, a thing offered to a human, while a `conformance` finding is this
+ * tool STATING that a page does not satisfy a criterion. Four referrals on conformant pages is referral
+ * noise worth investigating. One assertion is the central claim broken. The old report printed the two
+ * identically, so a reader had no way to tell which they were looking at, and the gate's own exit code
+ * says "asserted wrongly" for both.
+ *
+ * Only 4 of the 17 rules-owned subtypes assert at all, so `REFERRED` is the common case by design and
+ * printing it is not noise — it is what makes the rare `ASSERTED` line visible.
+ */
+const OUTCOMES = new Map<string, { asserted: boolean; issue: string; evidence: string }>();
+
+/** How a finding reaches a user, from its mapping alone — the same rule `criterionOutcomes` applies. */
+function reachesUserAs(mapping: unknown): "ASSERTED" | "REFERRED" {
+  // ABSENT IS `secondary`, and that default is load-bearing rather than defensive: `findingsFromScores`
+  // sets no mapping at all, which is exactly how every model finding becomes `cantTell`.
+  return mapping === "conformance" ? "ASSERTED" : "REFERRED";
+}
+
+/** What `ruleFindings` returns, as much of it as this file reads. */
+type RuleFinding = { wcag?: unknown; mapping?: unknown; issue?: unknown; evidence?: unknown };
+
+/**
+ * Record how each of one page's findings reaches a user, BEFORE the reduction to criteria throws it away.
+ *
+ * The baseline stays keyed on criteria and this stays out of it: an outcome is a property of the RULE, not
+ * of the page, so putting it in the baseline would let `--update` accept a mapping change — a rule quietly
+ * becoming an assertion — as though it were a new finding on a page.
+ *
+ * A criterion can be reported by more than one rule with different mappings, so **ASSERTED WINS**. Taking
+ * the first, or the last, would let a referral stand in front of an accusation on the same criterion, and
+ * this whole report exists to stop those printing the same.
+ */
+function noteOutcomes(url: string, findings: readonly RuleFinding[]): void {
+  for (const finding of findings) {
+    const key = `${url}|${String(finding.wcag).split(" ")[0]}`;
+    const asserted = reachesUserAs(finding.mapping) === "ASSERTED";
+    if (OUTCOMES.get(key)?.asserted && !asserted) continue;
+    OUTCOMES.set(key, {
+      asserted,
+      issue: String(finding.issue ?? ""),
+      evidence: String(finding.evidence ?? ""),
+    });
+  }
+}
 
 /**
  * The unnamed graphics by name, or nothing if this capture predates them.
@@ -689,6 +842,25 @@ function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: numbe
     process.stdout.write(`           ${describeEvidence(change.url)}\n`);
   }
   if (added.length) {
+    // THE HEADLINE SENTENCE, STATED BY THE GATE RATHER THAN COMPUTED BY WHOEVER READS IT. This is the one
+    // line that decides whether a batch of new findings is a release blocker or a risk line, and until
+    // 2026-09-06 it was worked out by hand, from the captures, by whoever happened to be asked.
+    const assertions = added.filter((change) => OUTCOMES.get(`${change.url}|${change.criterion}`)?.asserted);
+    const unrecorded = added.filter((change) => !OUTCOMES.has(`${change.url}|${change.criterion}`));
+    process.stdout.write(`\n  OF THOSE ${added.length}: ${assertions.length} ASSERTED, `
+      + `${added.length - assertions.length - unrecorded.length} REFERRED`
+      + `${unrecorded.length ? `, ${unrecorded.length} with no outcome recorded` : ""}.\n`);
+    process.stdout.write(assertions.length
+      ? "  AT LEAST ONE ASSERTION ON A CONFORMANT PAGE. That is this project's central claim -- nothing\n"
+        + "  asserted wrongly on conformant real pages -- and it does not hold while this stands.\n"
+      : "  NOTHING WAS ASSERTED. Every new finding reaches a user as `cantTell`, so this is referral noise\n"
+        + "  on conformant pages rather than a broken conformance claim. Still worth the investigation\n"
+        + "  below, and not a publish blocker.\n");
+    if (unrecorded.length) {
+      // NOT A REFERRAL, and saying so matters: it means the baseline holds a finding this run's captures
+      // did not reproduce, so nothing was scored for it and the silence is about the corpus, not the page.
+      process.stdout.write("  An unrecorded outcome is NOT a referral -- nothing was scored for it.\n");
+    }
     process.stdout.write("\n  Read the evidence for each before doing anything else. It is one of three "
       + "things:\n"
       + "    - the tool is wrong, and this is the defect class that ran for eleven separate causes;\n"
