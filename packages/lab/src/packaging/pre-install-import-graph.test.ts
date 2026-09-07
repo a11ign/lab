@@ -54,7 +54,11 @@ const WORKFLOWS = join(REPO, ".github/workflows");
 
 /** Every `import ... from "<spec>"` in a module, in source order. */
 function specifiersOf(source: string): string[] {
-  return [...source.matchAll(/^\s*import\s+[^"']*from\s+["']([^"']+)["']/gm)].map((m) => m[1]);
+  // `from` is OPTIONAL: `import "./side-effect.mjs"` has none, and the first version of this could not
+  // see one. Borrowed from `build-bootstrap-no-workspace-imports.test.ts`, which got it right first --
+  // recorded rather than silently copied, because two guards covering one class is the drift this repo
+  // pays for most and the next reader should know both exist.
+  return [...source.matchAll(/\bimport\s+(?:[\s\S]*?\s+from\s+)?["']([^"']+)["']/g)].map((m) => m[1]);
 }
 
 /**
