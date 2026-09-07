@@ -6,8 +6,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { claimStatus, decideClaim, fetchLabels, claimRow, dispatchRow, declineRow, CLAIM_LABEL, STARTED_LABEL }
-  from "../../../../scripts/row-claim.mjs";
+import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  claimStatus, decideClaim, fetchLabels, claimRow, dispatchRow, declineRow, CLAIM_LABEL, STARTED_LABEL,
+  recordCheck, recordConflict, latestCheckFor,
+} from "../../../../scripts/row-claim.mjs";
 import { READY_LABEL } from "../../../../scripts/ready-label-audit.mjs";
 
 // --- claimStatus: pure, no I/O ---
@@ -314,6 +319,112 @@ test("declineRow says so, rather than silently no-op'ing, when the row was never
   const result = declineRow(176, "worker-contracts", { run });
   assert.equal(result.declined, false);
   assert.match((result as { reason: string }).reason, /nothing to decline/);
+});
+
+// --- #226: recordCheck / recordConflict / latestCheckFor -- the check-log is the denominator, a conflict
+// entry paired with the tool's own prior verdict is the numerator. ---
+
+function withTempLogDir(fn: (dir: string) => void): void {
+  const dir = mkdtempSync(join(tmpdir(), "row-claim-log-"));
+  try {
+    fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("latestCheckFor returns null for an issue nothing ever recorded, never an empty-but-present entry", () => {
+  withTempLogDir((dir) => {
+    assert.equal(latestCheckFor(join(dir, "does-not-exist.jsonl"), 226), null);
+  });
+});
+
+test("recordCheck appends an entry latestCheckFor can then read back, verbatim", () => {
+  withTempLogDir((dir) => {
+    const log = join(dir, "row-claim-check-log.jsonl");
+    recordCheck(log, { issueNumber: 226, claimed: false, started: false, sessions: [],
+      reachability: { code: 0, output: "#226 is STARTABLE" } });
+    const entry = latestCheckFor(log, 226) as { kind: string, issueNumber: number, claimed: boolean,
+      reachability: { code: number, output: string } };
+    assert.equal(entry.kind, "check");
+    assert.equal(entry.issueNumber, 226);
+    assert.equal(entry.claimed, false);
+    assert.equal(entry.reachability.code, 0);
+    assert.match(entry.reachability.output, /STARTABLE/);
+  });
+});
+
+test("latestCheckFor picks the MOST RECENT check when an issue was checked more than once", () => {
+  withTempLogDir((dir) => {
+    const log = join(dir, "row-claim-check-log.jsonl");
+    recordCheck(log, { issueNumber: 226, claimed: false, started: false, sessions: [],
+      reachability: { code: 1, output: "BLOCKED" } });
+    recordCheck(log, { issueNumber: 226, claimed: true, started: true, sessions: ["worker-config"],
+      reachability: null });
+    const entry = latestCheckFor(log, 226) as { claimed: boolean, sessions: string[] };
+    assert.equal(entry.claimed, true);
+    assert.deepEqual(entry.sessions, ["worker-config"]);
+  });
+});
+
+test("latestCheckFor never confuses one issue's checks with another's", () => {
+  withTempLogDir((dir) => {
+    const log = join(dir, "row-claim-check-log.jsonl");
+    recordCheck(log, { issueNumber: 83, claimed: false, started: false, sessions: [],
+      reachability: { code: 0, output: "#83 is STARTABLE" } });
+    recordCheck(log, { issueNumber: 226, claimed: false, started: false, sessions: [],
+      reachability: { code: 0, output: "#226 is STARTABLE" } });
+    const entry = latestCheckFor(log, 83) as { issueNumber: number };
+    assert.equal(entry.issueNumber, 83);
+  });
+});
+
+test("latestCheckFor ignores CONFLICT entries -- only a check entry is a recorded verdict", () => {
+  withTempLogDir((dir) => {
+    const log = join(dir, "row-claim-check-log.jsonl");
+    recordCheck(log, { issueNumber: 226, claimed: false, started: false, sessions: [],
+      reachability: { code: 0, output: "#226 is STARTABLE" } });
+    recordConflict(log, { issueNumber: 226, recordedVerdict: null, found: "actually closed" });
+    const entry = latestCheckFor(log, 226) as { kind: string };
+    assert.equal(entry.kind, "check", "the conflict entry must never be read back as the latest CHECK");
+  });
+});
+
+test("recordConflict pairs the tool's own verbatim verdict with what the worker found -- both sides kept", () => {
+  withTempLogDir((dir) => {
+    const log = join(dir, "row-claim-check-log.jsonl");
+    recordCheck(log, { issueNumber: 83, claimed: false, started: false, sessions: [],
+      reachability: { code: 0, output: "#83 is STARTABLE: every symbol it names is on `main`." } });
+    const recordedVerdict = latestCheckFor(log, 83);
+    recordConflict(log, { issueNumber: 83, recordedVerdict,
+      found: "CLOSED -- the work had merged 25 minutes earlier" });
+
+    const raw = readFileSync(log, "utf8").trim().split("\n").map((l: string) => JSON.parse(l));
+    const conflict = raw.find((e: { kind: string }) => e.kind === "conflict");
+    assert.equal(conflict.issueNumber, 83);
+    assert.match(conflict.found, /CLOSED/);
+    assert.ok(conflict.recordedVerdict, "the tool's own prior verdict must travel WITH the finding");
+    assert.match(conflict.recordedVerdict.reachability.output, /STARTABLE/,
+      "the tool's verbatim answer, not a paraphrase of it");
+  });
+});
+
+test("recordConflict against an issue nothing ever checked records recordedVerdict: null, not a guess", () => {
+  withTempLogDir((dir) => {
+    const log = join(dir, "row-claim-check-log.jsonl");
+    recordConflict(log, { issueNumber: 999, recordedVerdict: latestCheckFor(log, 999),
+      found: "already built, nobody had checked it first" });
+    const raw = readFileSync(log, "utf8").trim().split("\n").map((l: string) => JSON.parse(l));
+    assert.equal(raw[0].recordedVerdict, null);
+  });
+});
+
+test("MUTATION: a write failure is never a silent no-op, matching merge-guard's own log", () => {
+  withTempLogDir((dir) => {
+    // A directory used as a file path makes the write fail deterministically.
+    assert.throws(() => recordCheck(dir, { issueNumber: 226, claimed: false, started: false, sessions: [],
+      reachability: null }), /could not write the log/);
+  });
 });
 
 // --- Live, read-only smoke test against the real repo ---
