@@ -592,7 +592,7 @@ test("ci.yml has a gate job needing every scoped job, running even when one of t
   assert.ok(gate, "ci.yml must declare a job named 'gate' -- branch protection has nothing else it can "
     + "require that reports on every PR regardless of which path-scoped jobs a diff happened to trigger");
   assert.deepEqual([...gate.needs as string[]].sort(),
-    ["ansible", "board", "changed", "changeset", "docs", "mergeSafety", "python", "rulesFitness", "ts"].sort(),
+    ["acceptance", "ansible", "board", "changed", "changeset", "docs", "mergeSafety", "python", "rulesFitness", "ts"].sort(),
     "gate must need every other job in this file, or a job could fail silently with gate still passing");
   assert.equal(gate.if, "always()",
     "gate must run with if: always() -- without it, a failing upstream job would SKIP gate too (a job's "
