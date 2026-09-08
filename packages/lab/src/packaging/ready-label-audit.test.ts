@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  READY_LABEL, MUTEX_LABELS, mutexViolations, fetchOpenIssues,
+  READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, strandedByIncompleteDecline, fetchOpenIssues,
   fetchAllIssues, closedDebris, isClosedDebrisLabel, readyRowsAbsentFromBoard,
   readyRowsAlreadyMerged, fetchClosingPrRefs,
 } from "../../../../scripts/ready-label-audit.mjs";
@@ -93,6 +93,38 @@ test("MUTATION: review-only is genuinely in MUTEX_LABELS, not just described as 
   // for exactly the case that motivated it.
   assert.ok(MUTEX_LABELS.includes("review-only"),
     "review-only must be in MUTEX_LABELS -- it is #27's own shape, the reason this label exists at all");
+});
+
+// --- strandedByIncompleteDecline: #449, the population no other check here can see ---
+
+test("#449 ACCEPTANCE: an open row carrying was-ready, neither ready nor in-progress, is stranded -- "
+  + "the exact #171 shape", () => {
+  const issues = [{ number: 171, title: "declined but not restored",
+    labels: ["backlog", WAS_READY_LABEL] }];
+  const stranded = strandedByIncompleteDecline(issues);
+  assert.equal(stranded.length, 1);
+  assert.equal(stranded[0].number, 171);
+});
+
+test("#449 MUTATION TARGET: a row carrying was-ready AND ready (the restore worked) is NOT stranded", () => {
+  const issues = [{ number: 172, title: "correctly restored", labels: [READY_LABEL, WAS_READY_LABEL] }];
+  assert.deepEqual(strandedByIncompleteDecline(issues), [],
+    "declineRow removes was-ready in the SAME edit it adds ready back -- a row genuinely mid-restore "
+    + "should never be observable carrying both, but this pins the filter's own logic regardless");
+});
+
+test("a row carrying was-ready while still claimed (in-progress) is NOT stranded -- the claim has not "
+  + "been declined yet, there is nothing to have restored", () => {
+  const issues = [{ number: 173, title: "still claimed", labels: [WAS_READY_LABEL, "in-progress"] }];
+  assert.deepEqual(strandedByIncompleteDecline(issues), []);
+});
+
+test("a row with no was-ready marker at all is never flagged, however it is labelled", () => {
+  const issues = [
+    { number: 174, title: "ordinary backlog", labels: ["backlog"] },
+    { number: 175, title: "ordinary blocked", labels: ["blocked"] },
+  ];
+  assert.deepEqual(strandedByIncompleteDecline(issues), []);
 });
 
 // --- fetchOpenIssues: the vacuity guard, same discipline as row-claim.mjs's fetchLabels ---
