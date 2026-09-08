@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import {
   READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, strandedByIncompleteDecline, fetchOpenIssues,
   fetchAllIssues, closedDebris, isClosedDebrisLabel, readyRowsAbsentFromBoard,
-  readyRowsAlreadyMerged, fetchClosingPrRefs,
+  readyRowsAlreadyMerged, fetchClosingPrRefs, CHECKS, runCheck,
 } from "../../../../scripts/ready-label-audit.mjs";
 
 // --- mutexViolations: pure, no I/O ---
@@ -456,4 +456,47 @@ test("claimsNobodyIsWorking: a claim made TEN MINUTES ago with no branch is NOT 
   const flagged = claimsNobodyIsWorking(rows,
     { hasOpenPr: new Map(), lastPushMinutes: new Map(), claimedMinutes: new Map([[478, 10]]) });
   assert.deepEqual(flagged, [], "a fresh claim with no branch yet is a session starting, not a dead claim");
+});
+
+// --- runCheck: a check that could not ASK must not silence the ones after it ---
+//
+// Measured 2026-09-08: `main` ran six checks as six `try` blocks each ending in `return`, and the
+// workflow supplied `github.token`, which cannot resolve a user-owned ProjectV2. So three scheduled
+// runs answered NOTHING about closing PR references or dead claims -- two questions that need no
+// board at all -- because the fourth check could not ask its own.
+
+test("#527-adjacent: a throwing check is recorded as REFUSED, never counted as a clean zero", () => {
+  const refused: string[] = [];
+  const count = runCheck("board membership", () => { throw new Error("no ProjectV2"); }, refused);
+  assert.equal(count, 0, "a refusal contributes no findings");
+  assert.deepEqual(refused, ["board membership"], "and it is named, so the zero cannot read as clean");
+});
+
+test("a check that answers normally is not recorded as refused", () => {
+  const refused: string[] = [];
+  assert.equal(runCheck("open issues", () => 3, refused), 3);
+  assert.deepEqual(refused, []);
+});
+
+test("MUTATION: one refusing check does NOT stop the checks after it -- the whole defect", () => {
+  const ran: string[] = [];
+  const refused: string[] = [];
+  const checks: [string, () => number][] = [
+    ["first", () => { ran.push("first"); return 0; }],
+    ["board membership", () => { throw new Error("Could not resolve to a ProjectV2"); }],
+    ["closing PR references", () => { ran.push("closing PR references"); return 0; }],
+    ["claim activity", () => { ran.push("claim activity"); return 0; }],
+  ];
+  for (const [what, check] of checks) runCheck(what, check, refused);
+  assert.deepEqual(ran, ["first", "closing PR references", "claim activity"],
+    "every askable check still ran");
+  assert.deepEqual(refused, ["board membership"]);
+});
+
+test("CHECKS names all six, so the partial-audit sentence states a true denominator", () => {
+  assert.equal(CHECKS.length, 6);
+  assert.deepEqual(CHECKS.map(([what]) => what), [
+    "open issues", "declined rows", "closed issues",
+    "board membership", "closing PR references", "claim activity",
+  ]);
 });
