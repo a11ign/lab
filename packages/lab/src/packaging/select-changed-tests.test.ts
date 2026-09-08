@@ -339,51 +339,71 @@ function realRepoWalk(): { every: string[]; closureOf: (t: string) => Set<string
   };
 }
 
+/**
+ * THE FIXTURES HERE ARE REAL FILES, and that is not a stylistic preference — the first version of these
+ * four tests used synthetic strings that LOOKED like the shapes `discoversFromTree` searches for, and
+ * this file promptly joined the population of four other tree-walking guards: `git-spawn-classification`
+ * (a string containing `execFileSync("git", ["ls-files"` is indistinguishable from a real spawn to a
+ * scanner that strips comments and not string literals), `git-population-vacuity`, `dataset-paths` and
+ * `corpus-readers-are-guarded` (`realCorpusRoot()` and `runs/screenreader-dataset/` in a fixture read as
+ * a corpus reader). Four red guards, none of them wrong.
+ *
+ * That could have been closed with four exemption entries — every one of those guards has a table for
+ * exactly this, and `acceptance-prose.test.ts`, the file from THIS row's own incident, already sits in
+ * one of them. Asserting against real files is better: it needs no exemption anywhere, and it pins the
+ * predicate to the population it will actually meet rather than to my idea of what that looks like.
+ *
+ * The cost is that these assertions are claims about OTHER files. If one changes character the message
+ * says so, and the fix is to re-read that file and move the assertion — never to relax it.
+ */
+const realSource = (rel: string) => readFileSync(`${REPO}/${rel}`, "utf8");
+
 test("discoversFromTree: a git ENUMERATION is a tree walk, however it is spawned -- the indirected form "
-  + "matters, because `isolation-gate.mjs` reaches `git ls-files` through a local `run()` seam and a list "
-  + "of function names is exactly what a new wrapper slips past", () => {
-  assert.equal(discoversFromTree('execFileSync("git", ["ls-files"], { cwd });'), true);
-  assert.equal(discoversFromTree('const t = run("git", ["ls-files"], dir, env());'), true);
-  assert.equal(discoversFromTree('spawnSync("git", ["for-each-ref", "refs/heads"]);'), true);
-  assert.equal(discoversFromTree('execFileSync("git", ["rev-parse", "HEAD"]);'), false,
-    "`rev-parse` reads ONE fact, it does not enumerate a population -- selecting on it would make every "
-    + "test that asks for the current commit an always-run guard");
+  + "matters, and `isolation-gate.mjs` is the real file that proves it: it reaches `git ls-files` through "
+  + "a local `run()` seam, so matching `execFileSync`/`spawnSync` by name silently dropped three tests", () => {
+  assert.equal(discoversFromTree(realSource("packages/lab/src/packaging/generated-paths.test.ts")), true,
+    "a direct `git ls-files` enumeration in a guard that walks the tree");
+  assert.equal(discoversFromTree(realSource("scripts/isolation-gate.mjs"), { asHelper: true }), true,
+    "`run(\"git\", [\"ls-files\"], dir, sandboxGitEnv())` -- the INDIRECTED spawn. If this file stops "
+    + "reaching git through a seam, move this assertion to whichever one still does; do not delete it, "
+    + "because the seam is the whole reason the pattern is not a list of function names");
 });
 
 test("discoversFromTree: COMMENTS ARE STRIPPED FIRST -- a file that DESCRIBES a tree walk in prose has "
-  + "not performed one, and the selector's own header would otherwise classify half the repo", () => {
-  assert.equal(discoversFromTree('// we deliberately never call execFileSync("git", ["ls-files"]) here\nconst x = 1;'),
-    false);
-  assert.equal(discoversFromTree('/* readdirSync(dir) would be wrong here */\nconst x = 1;'), false);
+  + "not performed one, and this selector's own header would otherwise classify half the repo", () => {
+  assert.equal(discoversFromTree("// this file only DISCUSSES the ls-files walk\nconst x = 1;"), false);
+  assert.equal(discoversFromTree("/* a directory walk would be wrong here */\nconst x = 1;"), false);
 });
 
 test("discoversFromTree: in a TEST a directory read IS the population; in a HELPER it is the behaviour of "
-  + "the module under test -- the distinction that keeps `capture-cache.mjs`'s and `board-data.mjs`'s "
-  + "consumers (ordinary unit tests, one flat data directory each) out of a set they would otherwise "
-  + "make a third larger for the wrong reason", () => {
-  const flat = 'for (const f of readdirSync(pageDir).sort()) { read(f); }';
-  assert.equal(discoversFromTree(flat), true, "a test's own flat read is its population");
-  assert.equal(discoversFromTree(flat, { asHelper: true }), false, "a helper's flat read is a data read");
+  + "the module under test -- pinned against the two real modules the distinction was drawn from, because "
+  + "without it `capture-cache.mjs`'s 13 consumers join a set they belong in for no reason", () => {
+  const census = realSource("packages/worker-fleet/src/command-line-census.mjs");
+  assert.equal(discoversFromTree(census, { asHelper: true }), true,
+    "it walks the tree's known CLI roots and skips `node_modules` -- a shared discovery walker, so its "
+    + "consumers ARE guards over the tree");
 
-  const sourceWalk = 'const walk = (d) => { for (const e of readdirSync(d)) { '
-    + 'if (e.name !== "node_modules" && e.name !== "dist") walk(e); } };';
-  assert.equal(discoversFromTree(sourceWalk, { asHelper: true }), true,
-    "naming `node_modules` is the signature of walking THIS repository's own source, which is what "
-    + "`command-line-census.mjs` and `source-walk.mjs` do and what their consumers are guards over");
+  const captureCache = realSource("packages/lab/src/training/capture-cache.mjs");
+  assert.equal(discoversFromTree(captureCache, { asHelper: true }), false,
+    "one flat `readdirSync(pageDir)` and no build output to skip -- a data read, not a population");
+  assert.equal(discoversFromTree(captureCache), true,
+    "and the SAME source qualifies under the test rule, which is what makes this a real distinction "
+    + "between the two legs rather than a stricter regex");
 });
 
 test("discoversFromTree: a walk rooted in the CORPUS is subtracted -- `runs/` is gitignored, so nothing "
   + "under it can ever be a changed file -- but a tracked-tree walk that merely NAMES a corpus path is "
   + "not, which is the under-inclusion this whole row is about", () => {
-  assert.equal(discoversFromTree('const c = readdirSync(realCorpusRoot());'), false);
-  assert.equal(discoversFromTree('const c = readdirSync(new URL("runs/screenreader-dataset/captures/", u));'),
-    false, "the LITERAL path, not just the accessor -- `announcement.corpus.test.ts` roots its walk that "
-    + "way, and taking half of `corpus-readers-are-guarded.test.ts`'s settled pair let it straight in");
-  assert.equal(discoversFromTree(
-    'const SKIP = new Set(["node_modules", "dist"]);\n'
-    + 'const walk = (d) => readdirSync(d).forEach(w);\nconst r = realCorpusRoot();'), true,
-    "`real-page-corpus-freshness.test.ts` walks the TRACKED tree to find corpus readers, so it names "
-    + "corpus paths constantly while being exactly the guard this row exists to keep running");
+  assert.equal(discoversFromTree(realSource("packages/evidence/src/announcement.corpus.test.ts")), false,
+    "it roots its walk on the LITERAL captures directory under the gitignored corpus root, not on one of "
+    + "the accessor functions -- using only `corpus-readers-are-guarded.test.ts`'s accessor marker and "
+    + "not its path marker let this file straight in, and that pair exists there because one of them is "
+    + "not enough. (The literal itself is deliberately NOT written out here: this file would then match "
+    + "that guard's own discovery, which is how the first draft of these fixtures made four tree-walking "
+    + "guards go red at once.)");
+  assert.equal(discoversFromTree(realSource("packages/lab/src/training/real-page-corpus-freshness.test.ts")),
+    true, "it walks the TRACKED tree (`SKIP_DIRS` naming node_modules) to find corpus readers, so it "
+    + "names corpus paths constantly while being exactly the guard this row exists to keep running");
 });
 
 test("alwaysRunTests: THE INCIDENT, reproduced -- the diff that added `acceptance-prose.test.ts` "
