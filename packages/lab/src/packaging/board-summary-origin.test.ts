@@ -290,6 +290,7 @@ test("assembleReported rebuilds the pre-migration object from a directory", asyn
   const empty = assembleReported(() => null, []);
   assert.deepEqual(empty.gates, []);
   assert.deepEqual(empty.achievements, []);
+});
 
 test("statedWritingTime: a summary with no stated time returns null -- the guard's failing case, driven directly", async () => {
   const { statedWritingTime } = await import("../../../../scripts/board-summary-check.mjs");
