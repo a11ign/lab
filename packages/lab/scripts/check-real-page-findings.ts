@@ -215,16 +215,50 @@ function reportWhatWasNotScored(): void {
   // THE HEADLINE SEPARATES THEM TOO, not just the list below it. A number is what gets quoted into a
   // report and carried around; leaving `undeclared` at 24 while the detail says seven of them are
   // accounted for is the fact-stated-twice shape, with the two copies disagreeing in the same output.
-  const supersededCount = undeclared.filter((entry) => supersededBy(entry.url)).length;
-  const reclassifiedCount = undeclared
-    .filter((entry) => !supersededBy(entry.url) && furnitureUrls.has(entry.url)).length;
+  const answers = classifyUndeclared(undeclared, furnitureUrls);
   process.stdout.write(`  scored ${CAPTURE_AGES.length} capture(s); walked past ${NOT_SCORED.length}`
     + ` (${by("not conformant").length} on pages the publisher does not declare conformant,`
-    + ` ${undeclared.length - supersededCount - reclassifiedCount} undeclared, ${supersededCount} superseded`
-    + ` by a page that moved, ${reclassifiedCount} reclassified as furniture (see below),`
+    + ` ${answers.unclaimed.length} undeclared, ${answers.superseded.length} superseded`
+    + ` by a page that moved, ${answers.furniture.length} reclassified as furniture (see below),`
     + ` ${by("no transcript").length} with no transcript).\n`);
   if (!undeclared.length) return;
-  reportUndeclared(undeclared, furnitureUrls);
+  reportUndeclared(answers);
+}
+
+/**
+ * THE THREE ANSWERS AN UNDECLARED CAPTURE CAN HAVE, computed ONCE — #428, #365.
+ *
+ * A capture no `REAL_PAGES` entry claims is one of three things and they need opposite work: the page
+ * MOVED and this is the older capture (#365), the capture never reached the page at all so its quality is
+ * the finding (#428), or nobody has accounted for it yet. Only the third belongs under "no declared page
+ * claims".
+ *
+ * PURE AND EXPORTED so #428's arithmetic is exercisable without a corpus. It was computed in two places —
+ * the headline count and the list beneath it — with the same predicate written out twice, which is this
+ * repository's most expensive shape and the reason the headline and the detail can disagree in one
+ * output. One computation, both readers.
+ *
+ * ORDER MATTERS AND IS NOT ARBITRARY: superseded is decided first, so a capture that both moved and read
+ * only furniture is reported as MOVED. The move is the actionable fact — the successor capture exists and
+ * is being scored — where "it read a cookie wall" describes a file that is already history.
+ */
+export function classifyUndeclared(
+  undeclared: { file: string; url: string }[], furnitureUrls: Set<string>,
+): {
+  superseded: { entry: { file: string; url: string }; by: NonNullable<ReturnType<typeof supersededBy>> }[];
+  furniture: { file: string; url: string }[];
+  unclaimed: { file: string; url: string }[];
+} {
+  const superseded = undeclared
+    .map((entry) => ({ entry, by: supersededBy(entry.url) }))
+    .filter((row): row is { entry: { file: string; url: string }; by: NonNullable<ReturnType<typeof supersededBy>> } =>
+      row.by !== undefined);
+  const rest = undeclared.filter((entry) => !supersededBy(entry.url));
+  return {
+    superseded,
+    furniture: rest.filter((entry) => furnitureUrls.has(entry.url)),
+    unclaimed: rest.filter((entry) => !furnitureUrls.has(entry.url)),
+  };
 }
 
 /**
@@ -242,14 +276,11 @@ function reportWhatWasNotScored(): void {
  * still on disk — `runs/` is not reproducible, and evidence taken under Edge 151 cannot be recreated now
  * 152 ships. What changes is that it is no longer counted as a capture nobody has accounted for.
  */
-function reportUndeclared(undeclared: { file: string; url: string }[], furnitureUrls: Set<string>): void {
-  const superseded = undeclared
-    .map((entry) => ({ entry, by: supersededBy(entry.url) }))
-    .filter((row): row is { entry: { file: string; url: string }; by: NonNullable<ReturnType<typeof supersededBy>> } =>
-      row.by !== undefined);
-  // FURNITURE IS ITS OWN ANSWER (#428), excluded here the same way `superseded` is: reported once, with
-  // the scored furniture captures below, rather than a second time under "no idea what this is".
-  const unclaimed = undeclared.filter((entry) => !supersededBy(entry.url) && !furnitureUrls.has(entry.url));
+function reportUndeclared(answers: ReturnType<typeof classifyUndeclared>): void {
+  // FURNITURE IS ITS OWN ANSWER (#428) and is excluded here the same way `superseded` is: reported once,
+  // with the scored furniture captures below, rather than a second time under "no idea what this is".
+  // Both sets come from `classifyUndeclared`, so this list and the headline count above it cannot disagree.
+  const { superseded, unclaimed } = answers;
 
   if (superseded.length) {
     process.stdout.write(`\n  ${superseded.length} capture(s) SUPERSEDED — the page moved, this corpus `
