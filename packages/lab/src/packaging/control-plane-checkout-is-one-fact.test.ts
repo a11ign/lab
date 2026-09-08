@@ -86,9 +86,25 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
     + "act #515 was filed against. Held on #526.",
 };
 
+/**
+ * This file, excluded from its own walk — the device `git-population-vacuity.test.ts` and
+ * `fleet-key-name-is-one-fact.test.ts` both use, for the same reason.
+ *
+ * `ENTERS_A_DIRECTORY` contains the literal text `--working-directory=(\S+)`, so the pattern matches its
+ * own definition and this file reports itself as entering `(\S+)/g;`. The honest classification would be
+ * "this is the pattern, not a use of it", which is true and is also a file writing its own exemption
+ * into the list it maintains.
+ *
+ * **AND IT PASSED LOCALLY WHILE FAILING IN CI, for the reason I had documented an hour earlier and then
+ * walked into.** `git ls-files` cannot see an UNTRACKED file, so every local run before `git add`
+ * examined a population that did not contain this file. CI reads a commit. Run a discovery guard again
+ * after committing it — the first run is the one that tells you nothing.
+ */
+const SELF = "packages/lab/src/packaging/control-plane-checkout-is-one-fact.test.ts";
+
 function trackedSource(): string[] {
   return execFileSync("git", ["ls-files", "*.mjs", "*.ts"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
-    .split("\n").filter(Boolean).filter((f) => !f.includes("/dist/"));
+    .split("\n").filter(Boolean).filter((f) => f !== SELF && !f.includes("/dist/"));
 }
 
 /** Every discovered site: `[file, whatItEnters]`, one row per occurrence. */
@@ -120,6 +136,10 @@ test("every site that ENTERS a directory either interpolates the source of truth
   + "keyed on the operation, because every sweep that searched for the NAME missed the literal that "
   + "took the fleet down", () => {
   const sites = entrySites();
+  assert.ok(!sites.some(([file]) => file === SELF), "SELF must not reach the population");
+  assert.ok(read(SELF).includes("--working-directory="),
+    "SELF is excluded because its own pattern contains the text it searches for. If that stops being "
+    + "true, delete the exclusion rather than carrying an exemption nothing needs.");
   assert.ok(sites.length >= 8,
     `only ${sites.length} entry site(s) found across the tree -- the discovery is broken, and a check `
     + "that passes having examined nothing is the defect this file exists to prevent (10 on 2026-09-08)");

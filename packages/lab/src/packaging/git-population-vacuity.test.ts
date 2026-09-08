@@ -107,6 +107,16 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "sibling test that guards it, so a sibling's guard failing did not stop this one reporting a "
       + "false pass on the same empty population",
   },
+  "packages/lab/src/packaging/control-plane-checkout-is-one-fact.test.ts": {
+    guard: "sites.length >= 8",
+    note: "guarded — the outage of 2026-09-08. It walks `git ls-files` for every site that ENTERS a "
+      + "directory (a `cd` in a command string, or `systemd-run --working-directory=`) and requires each "
+      + "to interpolate the one module that knows the control plane's checkout name. Vacuity is the "
+      + "failure with teeth: a broken discovery reports every site classified by examining none, and the "
+      + "floor has already earned its keep once — an unanchored flag pattern dropped `/root` as though "
+      + "it were cmd.exe's `/d`, silently shrinking the population from 8 to 7, and nothing but the "
+      + "floor could have noticed because less checking produces no error.",
+  },
   "packages/lab/src/packaging/fleet-key-name-is-one-fact.test.ts": {
     guard: "all.length >= 8",
     note: "guarded — #515. It walks `git ls-files` for every site naming an SSH private key and asserts "
