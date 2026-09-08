@@ -146,6 +146,13 @@
  * @property {"conformant" | "inaccessible"} publishedClaim  What the SOURCE says, never our assessment.
  * @property {string} source  Where that claim is published, so a reader can check it.
  * @property {string} demonstrates  What the page is an example of, in the source's own terms.
+ * @property {{url: string, when: string, why: string}[]} [movedFrom]  Addresses this page used to live at.
+ *   DECLARED, because it cannot be derived. A capture is written under `slug(page.url)` -- the DECLARED
+ *   address, never the one a server redirected to -- so when a publisher restructures its URLs and this
+ *   entry is edited, the previous capture stays on disk under the old slug and no entry claims it.
+ *   Nothing in a capture records where it was REQUESTED from (`capture.url` is the only address it
+ *   carries), so the link between the two files exists solely in this file's git history. This is that
+ *   link, written where the corpus itself can read it.
  * @property {{state: "error"|"success", submit: string,
  *   fields: {field: string, within?: string, nth?: number,
  *     value?: string, choose?: string, check?: boolean}[]}} [formState]
@@ -448,7 +455,9 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   { url: "https://disinfectants.defra.gov.uk/", role: "calibration",
     publishedClaim: "conformant",
     source: "Defra Disinfectants Approvals: fully compliant with WCAG 2.2 AA (https://disinfectants.defra.gov.uk/accessibility-statement)",
-    demonstrates: "approvals service landing page" },
+    demonstrates: "approvals service landing page",
+    movedFrom: [{ url: "https://disinfectants.defra.gov.uk/DisinfectantsExternal/Default.aspx?Module=ApprovalsList_SI",
+      when: "2026-08-26", why: "the publisher restructured its URLs; the declaration was corrected in b7dff539, \"the 14% wrong-page rate was seven stale URLs, not a capture fault\"" }] },
   // WITHDRAWN 2026-09-03 — the site now answers 403 to us, so it cannot be captured at all.
   //
   //   { url: "https://docs.sign-in.service.gov.uk/integrate-with-integration-environment/",
@@ -502,7 +511,9 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   { url: "https://www.mygov.scot/browse/benefits", role: "calibration",
     publishedClaim: "conformant",
     source: "mygov.scot: partially compliant, own statement (https://www.mygov.scot/accessibility)",
-    demonstrates: "benefit index — a link list with descriptive text under each" },
+    demonstrates: "benefit index — a link list with descriptive text under each",
+    movedFrom: [{ url: "https://www.mygov.scot/benefits",
+      when: "2026-08-26", why: "the publisher restructured its URLs; the declaration was corrected in b7dff539, \"the 14% wrong-page rate was seven stale URLs, not a capture fault\"" }] },
   { url: "https://www.nrscotland.gov.uk/statistics-and-data/", role: "calibration",
     publishedClaim: "conformant",
     source: "National Records of Scotland: partially compliant, own statement (https://www.nrscotland.gov.uk/accessibility/)",
@@ -542,7 +553,9 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   { url: "https://weather.metoffice.gov.uk/warnings-and-advice/uk-warnings", role: "calibration",
     publishedClaim: "conformant",
     source: "Met Office: partially compliant, own statement (https://www.metoffice.gov.uk/about-us/legal/accessibility)",
-    demonstrates: "live status page — content that changes without a route change" },
+    demonstrates: "live status page — content that changes without a route change",
+    movedFrom: [{ url: "https://www.metoffice.gov.uk/weather/warnings-and-advice/uk-warnings",
+      when: "2026-08-26", why: "the publisher restructured its URLs; the declaration was corrected in b7dff539, \"the 14% wrong-page rate was seven stale URLs, not a capture fault\"" }] },
   { url: "https://www.cqc.org.uk/about-us", role: "calibration",
     publishedClaim: "conformant",
     source: "Care Quality Commission: partially compliant, own statement (https://www.cqc.org.uk/about-us/our-website/accessibility-statement)",
@@ -550,7 +563,9 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   { url: "https://www.nationalarchives.gov.uk/about-us/", role: "calibration",
     publishedClaim: "conformant",
     source: "The National Archives: partially compliant, own statement (https://www.nationalarchives.gov.uk/legal/accessibility/)",
-    demonstrates: "institutional landing page with mixed media" },
+    demonstrates: "institutional landing page with mixed media",
+    movedFrom: [{ url: "https://www.nationalarchives.gov.uk/about/",
+      when: "2026-08-26", why: "the publisher restructured its URLs; the declaration was corrected in b7dff539, \"the 14% wrong-page rate was seven stale URLs, not a capture fault\"" }] },
   { url: "https://tfl.gov.uk/modes/tube/", role: "calibration",
     publishedClaim: "conformant",
     source: "Transport for London: partially compliant, own statement (https://tfl.gov.uk/corporate/terms-and-conditions/accessibility)",
@@ -661,7 +676,9 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   { url: "https://www.networkrail.co.uk/careers/", role: "calibration",
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4"],
     source: "Network Rail: partially compliant, own statement (https://networkrail.co.uk/accessibility/)",
-    demonstrates: "careers landing page" },
+    demonstrates: "careers landing page",
+    movedFrom: [{ url: "https://www.networkrail.co.uk/careers/careers-search/",
+      when: "2026-08-26", why: "the publisher restructured its URLs; the declaration was corrected in b7dff539, \"the 14% wrong-page rate was seven stale URLs, not a capture fault\"" }] },
   { url: "https://www.sportengland.org/research-and-data/data/active-lives", role: "calibration",
     publishedClaim: "conformant", claimExcludes: ["1.3.1", "4.1.2", "4.1.3"],
     source: "Sport England: partially compliant, own statement (https://sportengland.org/corporate-information/accessibility-statement)",
@@ -673,7 +690,9 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   { url: "https://caselaw.nationalarchives.gov.uk/search?query=", role: "calibration",
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1"],
     source: "Find Case Law: partially compliant, own statement (https://caselaw.nationalarchives.gov.uk/accessibility-statement)",
-    demonstrates: "case law search results" },
+    demonstrates: "case law search results",
+    movedFrom: [{ url: "https://caselaw.nationalarchives.gov.uk/judgments/search?query=",
+      when: "2026-08-26", why: "the publisher restructured its URLs; the declaration was corrected in b7dff539, \"the 14% wrong-page rate was seven stale URLs, not a capture fault\"" }] },
   { url: "https://www.cqc.org.uk/search/all?query=hospital", role: "calibration",
     publishedClaim: "conformant", claimExcludes: ["4.1.2"],
     source: "Care Quality Commission: partially compliant, own statement (https://cqc.org.uk/about-us/our-policies/accessibility-statement)",
@@ -689,7 +708,9 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   { url: "https://www.ofgem.gov.uk/information-consumers/energy-advice-households/energy-price-cap-and-standing-charges-explained", role: "calibration",
     publishedClaim: "conformant", claimExcludes: ["4.1.3"],
     source: "Ofgem: partially compliant, own statement (https://ofgem.gov.uk/website-accessibility)",
-    demonstrates: "energy price cap explainer" },
+    demonstrates: "energy price cap explainer",
+    movedFrom: [{ url: "https://www.ofgem.gov.uk/energy-price-cap",
+      when: "2026-08-26", why: "the publisher restructured its URLs; the declaration was corrected in b7dff539, \"the 14% wrong-page rate was seven stale URLs, not a capture fault\"" }] },
   { url: "https://www.scotcourts.gov.uk/judgments/", role: "calibration",
     publishedClaim: "conformant", claimExcludes: ["1.1.1"],
     source: "Scottish Courts and Tribunals: partially compliant, own statement (https://scotcourts.gov.uk/accessibility)",
@@ -864,6 +885,61 @@ export function normaliseUrl(url) {
 export function realPageFor(url) {
   const key = normaliseUrl(url);
   return REAL_PAGES.find((page) => normaliseUrl(page.url) === key);
+}
+
+/**
+ * WHICH LIVE ENTRY NOW CLAIMS THIS OLD ADDRESS? — #365.
+ *
+ * A publisher restructures its URLs, this file's entry is edited, and the next run writes its capture
+ * under the NEW slug. The previous capture stays on disk under the old one, claimed by nothing, and
+ * `rules:real-pages` reports it as `NO DECLARED PAGE CLAIMS` — indistinguishable from a page retired on
+ * purpose and from a capture nobody has got to yet. Three states needing opposite work, printed as one
+ * list of 24, which is this repo's own rule about a count being where an investigation stops.
+ *
+ * `runs/` is not reproducible — `browserVersion` is a cache key precisely because Edge announces
+ * differently across releases — so the answer is never to delete an unclaimed capture. It is to say what
+ * it IS.
+ *
+ * @param {unknown} url
+ * @returns {{ page: RealPage, moved: {url: string, when: string, why: string} } | undefined}
+ */
+export function supersededBy(url) {
+  const key = normaliseUrl(url);
+  for (const page of REAL_PAGES) {
+    const moved = (page.movedFrom ?? []).find((entry) => normaliseUrl(entry.url) === key);
+    if (moved) return { page, moved };
+  }
+  return undefined;
+}
+
+/**
+ * Every declared move, and the problems a reader cannot see by eye.
+ *
+ * Returns the offending entries rather than throwing, the same way `assertDisjoint` does and for the same
+ * reason: a check that stops at the first fault makes fixing a corpus an iterative guessing game.
+ *
+ * @returns {string[]}
+ */
+export function movedFromProblems() {
+  const live = new Map(REAL_PAGES.map((page) => [normaliseUrl(page.url), page.url]));
+  const claimed = new Map();
+  const problems = [];
+  for (const page of REAL_PAGES) {
+    for (const moved of page.movedFrom ?? []) {
+      const key = normaliseUrl(moved.url);
+      // A LIVE ADDRESS CANNOT ALSO BE A SUPERSEDED ONE. If it were, the capture under that slug is the
+      // one being scored right now AND is being reported as history -- so the gate would excuse a real
+      // undeclared capture, which is the opposite of what this mechanism is for.
+      if (live.has(key)) problems.push(`${page.url}: movedFrom names ${moved.url}, which is a LIVE entry`);
+      const already = claimed.get(key);
+      if (already) problems.push(`${moved.url} is claimed as movedFrom by BOTH ${already} and ${page.url}`);
+      claimed.set(key, page.url);
+      if (!moved.when || !moved.why) {
+        problems.push(`${page.url}: movedFrom ${moved.url} needs both a \`when\` and a \`why\``);
+      }
+    }
+  }
+  return problems;
 }
 
 /**
