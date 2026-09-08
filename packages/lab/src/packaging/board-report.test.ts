@@ -19,7 +19,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  release, blockerTable, issuesClosed, whatMerged, authorship, lastGate, fleetHoursSection, queue, render,
+  release, blockerTable, issuesClosed, whatMerged, authorship, lastGate, fleetHoursSection,
+  conflictMetricsSection, queue, render,
 } from "../../../../scripts/board-report.mjs";
 
 /**
@@ -62,6 +63,13 @@ function facts(overrides = {}) {
     blockers: [],
     ready: [],
     awaiting: [],
+    conflict: {
+      since: "2026-09-05T00:00:00.000Z", method: "test fixture -- see conflict-metrics.test.ts for the real one",
+      opened: 0, merged: 0, closedUnmerged: 0,
+      lifetimeMinutes: { count: 0, medianMinutes: null, p90Minutes: null },
+      reconciliation: { neededReconciliation: 0, of: 0, unresolvable: 0 },
+      hotspotFiles: [],
+    },
     ...overrides,
   };
 }
@@ -212,6 +220,55 @@ test("fleetHoursSection: a complete entry prints the total, the method, and the 
   assert.match(out, /\*\*54\.11\*\*, computed from \*\*a11y-job-capture\.service\*\*/);
   assert.match(out, /Method: sum of per-case times/);
   assert.match(out, /capture OCCUPANCY/);
+});
+
+test("conflictMetricsSection: states the window and the method, always", () => {
+  const out = rendered(conflictMetricsSection, facts({
+    conflict: { since: "2026-09-05T00:00:00.000Z", method: "opened/merged/closed via `gh pr list ...`",
+      opened: 3, merged: 2, closedUnmerged: 1,
+      lifetimeMinutes: { count: 2, medianMinutes: 45, p90Minutes: 90 },
+      reconciliation: { neededReconciliation: 1, of: 2, unresolvable: 0 }, hotspotFiles: [] },
+  }));
+  assert.match(out, /Since `2026-09-05T00:00:00\.000Z`/);
+  assert.match(out, /Method: opened\/merged\/closed via `gh pr list \.\.\.`/);
+  assert.match(out, /\*\*3\*\* opened · \*\*2\*\* merged · \*\*1\*\* closed unmerged/);
+});
+
+test("conflictMetricsSection: no merges in the window reports 'not measured', never a fabricated zero", () => {
+  const out = rendered(conflictMetricsSection, facts());
+  assert.match(out, /Lifetime to merge: not measured/);
+  assert.match(out, /Conflicts: not measured/);
+});
+
+test("conflictMetricsSection: lifetime prints median and p90 in minutes when merges exist", () => {
+  const out = rendered(conflictMetricsSection, facts({
+    conflict: { since: "x", method: "m", opened: 0, merged: 3, closedUnmerged: 0,
+      lifetimeMinutes: { count: 3, medianMinutes: 30, p90Minutes: 200 },
+      reconciliation: { neededReconciliation: 0, of: 3, unresolvable: 0 }, hotspotFiles: [] },
+  }));
+  assert.match(out, /median 30 min, p90 200 min/);
+});
+
+test("conflictMetricsSection: THE MEASUREMENT -- an unresolvable PR is named, never folded into a clean zero", () => {
+  const out = rendered(conflictMetricsSection, facts({
+    conflict: { since: "x", method: "m", opened: 0, merged: 4, closedUnmerged: 0,
+      lifetimeMinutes: { count: 4, medianMinutes: 10, p90Minutes: 20 },
+      reconciliation: { neededReconciliation: 0, of: 4, unresolvable: 2 }, hotspotFiles: [] },
+  }));
+  assert.match(out, /\*\*0 of 4\*\* merged PRs needed to reconcile/);
+  assert.match(out, /\*\*2\*\* of those merges could not be inspected/);
+  assert.doesNotMatch(out, /\bnot measured\b/i, "0 of 4 is a real, confident count -- never 'not measured'");
+});
+
+test("conflictMetricsSection: a real hotspot table renders file and PR-count columns", () => {
+  const out = rendered(conflictMetricsSection, facts({
+    conflict: { since: "x", method: "m", opened: 5, merged: 5, closedUnmerged: 0,
+      lifetimeMinutes: { count: 5, medianMinutes: 5, p90Minutes: 10 },
+      reconciliation: { neededReconciliation: 0, of: 5, unresolvable: 0 },
+      hotspotFiles: [{ path: "ci.yml", prCount: 6 }, { path: "package.json", prCount: 4 }] },
+  }));
+  assert.match(out, /\| `ci\.yml` \| 6 \|/);
+  assert.match(out, /\| `package\.json` \| 4 \|/);
 });
 
 test("queue: an empty Ready column names the other columns rather than reading as broken", () => {
