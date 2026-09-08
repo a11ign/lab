@@ -376,7 +376,9 @@ test("claimsNobodyIsWorking: an in-progress row with no PR and a cold branch is 
     { number: 3, title: "fresh push", labels: ["in-progress"] },
     { number: 4, title: "not claimed", labels: ["ready"] },
   ];
-  const flagged = claimsNobodyIsWorking(rows, new Map([[2, true]]), new Map([[1, 600], [3, 10]]));
+  const flagged = claimsNobodyIsWorking(rows, { hasOpenPr: new Map([[2, true]]),
+    lastPushMinutes: new Map([[1, 600], [3, 10]]),
+    claimedMinutes: new Map([[1, 600], [2, 600], [3, 600], [4, 600]]) });
   assert.deepEqual(flagged.map((f: { number: number }) => f.number), [1],
     "only the claimed row with neither an open PR nor a recent push is stale");
   assert.deepEqual(flagged[0].sessions, ["session:worker-config"],
@@ -388,7 +390,24 @@ test("claimsNobodyIsWorking: NO BRANCH AT ALL is the strongest case, never read 
   // #143 was claimed THIRTY HOURS before anyone noticed, with no branch ever pushed. An absent age read
   // as zero would have reported that row clean -- the worst case reported as the healthiest.
   const rows = [{ number: 143, title: "never started", labels: ["in-progress", "session:orchestrator"] }];
-  const flagged = claimsNobodyIsWorking(rows, new Map(), new Map());
+  const flagged = claimsNobodyIsWorking(rows,
+    { hasOpenPr: new Map(), lastPushMinutes: new Map(), claimedMinutes: new Map([[143, 1800]]) });
   assert.deepEqual(flagged.map((f: { number: number }) => f.number), [143]);
   assert.equal(flagged[0].minutes, null, "an absent branch reports null, not 0 -- they are different facts");
+});
+
+
+test("claimsNobodyIsWorking: a claim made TEN MINUTES ago with no branch is NOT stale", async () => {
+  const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
+  // THE FIRST LIVE RUN OF THIS CHECK FLAGGED FIVE ROWS CLAIMED WITHIN THE HOUR. "No branch at all" was
+  // treated as the strongest evidence of an unworked claim -- true of a thirty-hour-old claim, false of a
+  // ten-minute-old one, and the evidence is IDENTICAL in both. Only the claim's own age separates "not
+  // started yet" from "never started".
+  //
+  // This is the regression test for that, and it is why the check was wired into a real run before it was
+  // trusted: driven only by fixtures it would have looked correct.
+  const rows = [{ number: 478, title: "just claimed", labels: ["in-progress", "session:worker-contracts"] }];
+  const flagged = claimsNobodyIsWorking(rows,
+    { hasOpenPr: new Map(), lastPushMinutes: new Map(), claimedMinutes: new Map([[478, 10]]) });
+  assert.deepEqual(flagged, [], "a fresh claim with no branch yet is a session starting, not a dead claim");
 });
