@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import {
   READY_LABEL, MUTEX_LABELS, mutexViolations, fetchOpenIssues,
   fetchAllIssues, closedDebris, isClosedDebrisLabel, readyRowsAbsentFromBoard,
+  readyRowsAlreadyMerged, fetchClosingPrRefs,
 } from "../../../../scripts/ready-label-audit.mjs";
 
 // --- mutexViolations: pure, no I/O ---
@@ -275,4 +276,87 @@ test("readyRowsAbsentFromBoard: neither a label check nor a Status check alone w
   const boardNumbers = new Set([12]);
   const missing = readyRowsAbsentFromBoard(issues, boardNumbers);
   assert.deepEqual(missing.map((i) => i.number), [10, 11]);
+});
+
+// --- readyRowsAlreadyMerged: pure, no I/O -- #443's fourth population ---
+
+test("readyRowsAlreadyMerged: a ready row a MERGED PR declares Closes on is flagged", () => {
+  const issues = [{ number: 438, title: "shipped already", labels: [READY_LABEL] }];
+  const refs = new Map([[438, [{ number: 440, state: "MERGED" }]]]);
+  assert.deepEqual(readyRowsAlreadyMerged(issues, refs), [{ number: 438, title: "shipped already", closedBy: 440 }]);
+});
+
+test("readyRowsAlreadyMerged: a ready row whose closing PR is still OPEN is NOT flagged -- the fix has "
+  + "not landed yet, which is worth knowing but is not this row's shape", () => {
+  const issues = [{ number: 1, title: "in flight", labels: [READY_LABEL] }];
+  const refs = new Map([[1, [{ number: 2, state: "OPEN" }]]]);
+  assert.deepEqual(readyRowsAlreadyMerged(issues, refs), []);
+});
+
+test("readyRowsAlreadyMerged: a ready row with no closing reference at all is not flagged", () => {
+  const issues = [{ number: 1, title: "nothing closes this yet", labels: [READY_LABEL] }];
+  assert.deepEqual(readyRowsAlreadyMerged(issues, new Map()), []);
+});
+
+test("readyRowsAlreadyMerged: a row absent from the caller-supplied ready population is never flagged -- "
+  + "this is the pure-function form of #443's own mutation instruction (close the fixture issue, confirm "
+  + "the flag clears): closing it means it never reaches this function as a ready issue in the first place", () => {
+  // Before: the issue is open and ready, and a merged PR closes it -- flagged.
+  const openReady = [{ number: 438, title: "shipped already", labels: [READY_LABEL] }];
+  const refs = new Map([[438, [{ number: 440, state: "MERGED" }]]]);
+  assert.equal(readyRowsAlreadyMerged(openReady, refs).length, 1);
+  // After: the issue is closed, so `fetchOpenIssues` never returns it and it never reaches this function --
+  // the flag clears not because the predicate changed, but because the population the caller builds did.
+  assert.equal(readyRowsAlreadyMerged([], refs).length, 0);
+});
+
+test("readyRowsAlreadyMerged: multiple closing PRs, only one merged, is still flagged by the merged one", () => {
+  const issues = [{ number: 1, title: "row", labels: [READY_LABEL] }];
+  const refs = new Map([[1, [{ number: 2, state: "CLOSED" }, { number: 3, state: "MERGED" }]]]);
+  assert.deepEqual(readyRowsAlreadyMerged(issues, refs), [{ number: 1, title: "row", closedBy: 3 }]);
+});
+
+// --- fetchClosingPrRefs: the gh-calling half, shaped exactly like the live GraphQL schema returns it ---
+
+/** One aliased issue node, shaped like `closedByPullRequestsReferences` really returns it. */
+function closingRefsResponse(byIssue: Record<string, { number: number; refs: Array<{ number: number; state: string }> }>) {
+  const repository: Record<string, unknown> = {};
+  for (const [alias, { number, refs }] of Object.entries(byIssue)) {
+    repository[alias] = { number, closedByPullRequestsReferences: { nodes: refs } };
+  }
+  return JSON.stringify({ data: { repository } });
+}
+
+test("fetchClosingPrRefs: empty input makes no gh call at all", () => {
+  let called = false;
+  const run = () => { called = true; return "{}"; };
+  const map = fetchClosingPrRefs([], { run });
+  assert.deepEqual(map, new Map());
+  assert.equal(called, false, "an empty alias list is not valid GraphQL and needs no round trip");
+});
+
+test("fetchClosingPrRefs: one issue, one merged closing PR", () => {
+  const run = () => closingRefsResponse({ i0: { number: 438, refs: [{ number: 440, state: "MERGED" }] } });
+  const map = fetchClosingPrRefs([438], { run });
+  assert.deepEqual(map.get(438), [{ number: 440, state: "MERGED" }]);
+});
+
+test("fetchClosingPrRefs: several issues resolve by their own alias, never mixed up with a neighbour's", () => {
+  const run = () => closingRefsResponse({
+    i0: { number: 1, refs: [] },
+    i1: { number: 2, refs: [{ number: 20, state: "OPEN" }] },
+  });
+  const map = fetchClosingPrRefs([1, 2], { run });
+  assert.deepEqual(map.get(1), []);
+  assert.deepEqual(map.get(2), [{ number: 20, state: "OPEN" }]);
+});
+
+test("fetchClosingPrRefs throws, rather than returning an empty map, when gh itself fails", () => {
+  const run = () => { throw new Error("gh: not authenticated"); };
+  assert.throws(() => fetchClosingPrRefs([1], { run }), /could not resolve closing PR references/);
+});
+
+test("fetchClosingPrRefs throws on a response missing an expected issue alias, rather than guessing", () => {
+  const run = () => JSON.stringify({ data: { repository: {} } });
+  assert.throws(() => fetchClosingPrRefs([438], { run }), /missing from the closing-references response/);
 });

@@ -200,20 +200,65 @@ function reportCaptureAges(): void {
  * declares them inaccessible, and this gate deliberately does not hold those to a conformance baseline.
  * `undeclared` is a real finding and is named per file: a capture no `REAL_PAGES` entry claims is evidence
  * filed under nothing, and it was previously counted into the freshness spread while being invisible.
+ *
+ * #428: an undeclared capture that reached only FURNITURE (a cookie/consent overlay or an unrendered
+ * shell, never the page's own headings) is a THIRD answer, not folded into either of the above. It is not
+ * "no idea what this is" -- the capture-quality check (below, alongside the scored population) answered
+ * that -- so it is subtracted from the undeclared count here and reported once, with the scored furniture
+ * captures, rather than twice under two different headings.
  */
 function reportWhatWasNotScored(): void {
   const by = (why: string) => NOT_SCORED.filter((entry) => entry.why === why);
   const undeclared = by("undeclared");
+  const furniture = furnitureCaptures();
+  const furnitureUrls = new Set([...furniture.consent, ...furniture.shell]);
   // THE HEADLINE SEPARATES THEM TOO, not just the list below it. A number is what gets quoted into a
   // report and carried around; leaving `undeclared` at 24 while the detail says seven of them are
   // accounted for is the fact-stated-twice shape, with the two copies disagreeing in the same output.
-  const supersededCount = undeclared.filter((entry) => supersededBy(entry.url)).length;
+  const answers = classifyUndeclared(undeclared, furnitureUrls);
   process.stdout.write(`  scored ${CAPTURE_AGES.length} capture(s); walked past ${NOT_SCORED.length}`
     + ` (${by("not conformant").length} on pages the publisher does not declare conformant,`
-    + ` ${undeclared.length - supersededCount} undeclared, ${supersededCount} superseded by a page that`
-    + ` moved, ${by("no transcript").length} with no transcript).\n`);
+    + ` ${answers.unclaimed.length} undeclared, ${answers.superseded.length} superseded`
+    + ` by a page that moved, ${answers.furniture.length} reclassified as furniture (see below),`
+    + ` ${by("no transcript").length} with no transcript).\n`);
   if (!undeclared.length) return;
-  reportUndeclared(undeclared);
+  reportUndeclared(answers);
+}
+
+/**
+ * THE THREE ANSWERS AN UNDECLARED CAPTURE CAN HAVE, computed ONCE — #428, #365.
+ *
+ * A capture no `REAL_PAGES` entry claims is one of three things and they need opposite work: the page
+ * MOVED and this is the older capture (#365), the capture never reached the page at all so its quality is
+ * the finding (#428), or nobody has accounted for it yet. Only the third belongs under "no declared page
+ * claims".
+ *
+ * PURE AND EXPORTED so #428's arithmetic is exercisable without a corpus. It was computed in two places —
+ * the headline count and the list beneath it — with the same predicate written out twice, which is this
+ * repository's most expensive shape and the reason the headline and the detail can disagree in one
+ * output. One computation, both readers.
+ *
+ * ORDER MATTERS AND IS NOT ARBITRARY: superseded is decided first, so a capture that both moved and read
+ * only furniture is reported as MOVED. The move is the actionable fact — the successor capture exists and
+ * is being scored — where "it read a cookie wall" describes a file that is already history.
+ */
+export function classifyUndeclared(
+  undeclared: { file: string; url: string }[], furnitureUrls: Set<string>,
+): {
+  superseded: { entry: { file: string; url: string }; by: NonNullable<ReturnType<typeof supersededBy>> }[];
+  furniture: { file: string; url: string }[];
+  unclaimed: { file: string; url: string }[];
+} {
+  const superseded = undeclared
+    .map((entry) => ({ entry, by: supersededBy(entry.url) }))
+    .filter((row): row is { entry: { file: string; url: string }; by: NonNullable<ReturnType<typeof supersededBy>> } =>
+      row.by !== undefined);
+  const rest = undeclared.filter((entry) => !supersededBy(entry.url));
+  return {
+    superseded,
+    furniture: rest.filter((entry) => furnitureUrls.has(entry.url)),
+    unclaimed: rest.filter((entry) => !furnitureUrls.has(entry.url)),
+  };
 }
 
 /**
@@ -231,12 +276,11 @@ function reportWhatWasNotScored(): void {
  * still on disk — `runs/` is not reproducible, and evidence taken under Edge 151 cannot be recreated now
  * 152 ships. What changes is that it is no longer counted as a capture nobody has accounted for.
  */
-function reportUndeclared(undeclared: { file: string; url: string }[]): void {
-  const superseded = undeclared
-    .map((entry) => ({ entry, by: supersededBy(entry.url) }))
-    .filter((row): row is { entry: { file: string; url: string }; by: NonNullable<ReturnType<typeof supersededBy>> } =>
-      row.by !== undefined);
-  const unclaimed = undeclared.filter((entry) => !supersededBy(entry.url));
+function reportUndeclared(answers: ReturnType<typeof classifyUndeclared>): void {
+  // FURNITURE IS ITS OWN ANSWER (#428) and is excluded here the same way `superseded` is: reported once,
+  // with the scored furniture captures below, rather than a second time under "no idea what this is".
+  // Both sets come from `classifyUndeclared`, so this list and the headline count above it cannot disagree.
+  const { superseded, unclaimed } = answers;
 
   if (superseded.length) {
     process.stdout.write(`\n  ${superseded.length} capture(s) SUPERSEDED — the page moved, this corpus `
@@ -295,6 +339,9 @@ type Findings = Record<string, string[]>;
 
 /**
  * The declared, conformant page this capture is of — or `null`, with the reason recorded rather than lost.
+ * The reason is RETURNED as well as pushed to `NOT_SCORED`, so `currentFindings` can decide what else to do
+ * with an `undeclared` capture (#428: run the furniture check over it) without re-deriving the same
+ * classification a second time.
  *
  * Two rejections, and they are not the same kind of thing. A page whose publisher declares it INACCESSIBLE
  * is supposed to produce findings, so holding it to a conformance baseline would measure the wrong thing:
@@ -306,18 +353,20 @@ type Findings = Record<string, string[]>;
  * four branches and put that function over the complexity gate, which is the gate asking for the Stepdown
  * Rule. The name states the question the two checks jointly answer.
  */
-function pageThisGateScores(file: string, capture: { url?: string; transcript?: unknown }) {
+function pageThisGateScores(file: string, capture: { url?: string; transcript?: unknown }):
+  { page: ReturnType<typeof realPageFor>; why: null } | { page: null; why: "undeclared" | "not conformant" | "no transcript" } {
   const url = String(capture.url ?? "");
   if (!Array.isArray(capture.transcript)) {
     NOT_SCORED.push({ file, url, why: "no transcript" });
-    return null;
+    return { page: null, why: "no transcript" };
   }
   const page = realPageFor(capture.url);
   if (!page || page.publishedClaim !== "conformant") {
-    NOT_SCORED.push({ file, url, why: page ? "not conformant" : "undeclared" });
-    return null;
+    const why = page ? "not conformant" : "undeclared";
+    NOT_SCORED.push({ file, url, why });
+    return { page: null, why };
   }
-  return page;
+  return { page, why: null };
 }
 
 /** What the rules say about every conformant real page, as `url -> sorted criteria`. */
@@ -343,8 +392,20 @@ function currentFindings(): Findings {
     } catch {
       continue;
     }
-    const page = pageThisGateScores(file, capture);
-    if (!page) continue;
+    const scored = pageThisGateScores(file, capture);
+    if (!scored.page) {
+      // #428: AN UNDECLARED CAPTURE STILL GETS THE CAPTURE-QUALITY CHECK, even though it is never scored.
+      // The declaration decides whether a FINDING can be trusted; it says nothing about whether the
+      // capture reached the page at all. `noteEvidence` populates OPENINGS/HEADINGS/DOM_CENSUS, which is
+      // what lets `furnitureCaptures()` see this URL -- without this it structurally cannot, because that
+      // function only ever walks captures the scored loop below fed it. Scoped to `undeclared` only: a
+      // `not conformant` page is EXPECTED to carry findings (that is the whole point of the declaration),
+      // and `no transcript` has nothing for `noteEvidence` to read.
+      if (scored.why === "undeclared") {
+        noteEvidence(capture as { url?: string } & CapturedAnnouncements);
+      }
+      continue;
+    }
     // RECORDED HERE, past every filter, so the ages describe the captures this gate actually scored. Above
     // the filters it described the directory listing -- see this constant's own header for the 113-vs-86.
     if (capturedAt) CAPTURE_AGES.push({ at: capturedAt, role });
@@ -370,7 +431,7 @@ function currentFindings(): Findings {
     // real findings on the subtypes the publisher still claims. All 145 entries are bare criteria today;
     // this refuses to guess if that changes, and `subtypeScoped` makes the skip visible rather than
     // silent, because "we could not attribute it" and "it was not excluded" are different answers.
-    const declared = (page.claimExcludes ?? []).map(String);
+    const declared = (scored.page.claimExcludes ?? []).map(String);
     const subtypeScoped = declared.filter((entry) => entry.includes(":"));
     if (subtypeScoped.length) {
       process.stdout.write(`  NOTE ${capture.url}: ${subtypeScoped.join(", ")} `

@@ -44,9 +44,14 @@ function recorder({ get = HOOKS_PATH, throwOnGet = false }: { get?: string; thro
 test("`npm install` installs the hooks — the lifecycle script exists and names the installer", () => {
   // The load-bearing assertion. Everything below tests the installer's behaviour; this tests that anything
   // CALLS it, which is the half that was missing.
-  assert.equal(ROOT.scripts?.prepare, "node scripts/install-git-hooks.mjs",
-    "a fresh clone gets hooks only if `prepare` runs the installer — `prepare` fires on `npm install` in a "
-    + "git checkout and never for a consumer installing a published package");
+  //
+  // #168: `prepare` also runs `npm run build` now -- the ONE coordinated build that replaced five
+  // packages' own racing `prepare: tsc --build` scripts (see control-plane-hygiene.mjs's
+  // `rootPrepareBuildsEverything` for the full mechanism). The installer must still be the FIRST thing
+  // `prepare` runs, so a hook-install failure is never masked by a build that happened to succeed.
+  assert.match(ROOT.scripts?.prepare ?? "", /^node scripts\/install-git-hooks\.mjs\b/,
+    "a fresh clone gets hooks only if `prepare` runs the installer FIRST — `prepare` fires on `npm "
+    + "install` in a git checkout and never for a consumer installing a published package");
   assert.equal(ROOT.private, true,
     "prepare must not be able to reach a consumer's repository; the root manifest being private is why");
 });

@@ -3,9 +3,12 @@
  * `git checkout -q main && git reset --hard origin/main` silently no-ops past the `&&` when the checkout
  * fails (e.g. `main` is already checked out in another worktree) -- the reset never runs, and a branch
  * built off that stale HEAD is a valid commit on a plausibly-named branch. Measured cost of the real
- * incident: 65 files, 3,281 deletions, caught only by hand -- `c7b1a0a0` (still on disk in this very
- * repository) is the surviving artefact. Twice in one day, by two independent sessions, and `ceo` hit the
- * identical trap with `git checkout -B`.
+ * incident: 65 files, 3,281 deletions, caught only by hand -- `c7b1a0a0` was the surviving artefact.
+ * **It is no longer reachable from any ref**: it lived only on the branch that carried it, and that
+ * branch was deleted when its PR resolved. This header claimed it was "still on disk in this very
+ * repository" and that stopped being true without anyone touching this file -- see the real-artefact test
+ * below, which pinned it and turned the trunk red permanently (A0). Twice in one day, by two independent
+ * sessions, and `ceo` hit the identical trap with `git checkout -B`.
  *
  * DRIVES THE REAL, UNMODIFIED HOOK LOGIC, not a reimplementation -- the same reason
  * `pre-commit-hook.test.ts` and `pre-push-git-scrub.test.ts` give: a second copy of a decision drifts
@@ -150,17 +153,72 @@ test("a large deletion against origin/main is PRINTED, never refused, when ances
 });
 
 /**
- * Proves the reproduction is REAL, not synthetic, against the actual repository this test lives in --
- * read-only (`merge-base --is-ancestor` and `rev-parse` never write anything). `c7b1a0a0` is the commit
- * named in issue #348's own body as the surviving artefact of the incident.
+ * Does `maybeAncestor` lead to `descendant`? — `git merge-base --is-ancestor`, with its exit codes read
+ * rather than its output.
+ *
+ * Exit 0 is yes and exit 1 is no; **anything else is a real git failure and must not be read as "no"**,
+ * which is why this rethrows rather than returning false. A predicate that answers "no" when it means "I
+ * could not ask" is the shape this repository names most often, and here it would report a durable pin as
+ * unreachable, or an unreachable one as fine.
+ *
+ * @param maybeAncestor @param descendant
  */
-test("REAL ARTEFACT: c7b1a0a0 (the actual incident commit) does not contain the current origin/main's tip",
+function isAncestorOf(maybeAncestor: string, descendant: string): boolean {
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", maybeAncestor, descendant],
+      { cwd: REAL_REPO_ROOT, stdio: "pipe" });
+    return true;
+  } catch (error) {
+    const status = (error as { status?: number }).status;
+    if (status !== 1) throw error;
+    return false;
+  }
+}
+
+/**
+ * Proves the reproduction is REAL, not synthetic, against the actual repository this test lives in --
+ * read-only throughout (`merge-base --is-ancestor` and `cat-file -e` never write anything).
+ *
+ * ## THIS PINNED A COMMIT REACHABLE FROM NO REF, AND TURNED THE TRUNK RED PERMANENTLY — A0, 2026-09-08
+ *
+ * It used to name `c7b1a0a0`, the commit issue #348's own body records as the surviving artefact of the
+ * incident. That commit lived only on the branch that carried it, the branch was deleted after its PR
+ * resolved, and **a commit reachable from no ref does not travel**. A clone fetches refs; CI's checkout is
+ * full-depth and still never receives the object. So `cat-file -e` failed and this test's `assert.fail`
+ * fired on `trunk-guard`'s first two runs of the night, on `main` itself, with nothing wrong on `main`.
+ *
+ * **The old comment named the wrong cause**, which is why nobody expected it: it said that branch was
+ * *"reachable only if history is ever rewritten and this object is pruned"*. Nothing was rewritten.
+ * Deleting a branch after its PR merges is routine here and does exactly this, permanently — and a stated
+ * cause that is false is worse than no comment, because the next reader stops looking where the fault is.
+ *
+ * **A pinned commit is a derived artefact**: true in the clone that has it, false in every fresh one. The
+ * shallow-clone branch below is a real and separate concern, and it did NOT catch this — CI reports
+ * `--is-shallow-repository` false while still being unable to see an object no ref reaches. Two causes,
+ * one symptom, and only one of them was guarded.
+ *
+ * ## What is pinned now, and why it is not the incident commit
+ *
+ * `5ebe02e0` — the merge commit of PR #359, which is #348's own fix. It is an ANCESTOR of `main`, so it is
+ * reachable for as long as `main` is, and it satisfies the property under test: it does not contain
+ * `main`'s current tip. It is honestly a different artefact from `c7b1a0a0`: that commit is unrecoverable
+ * and no pin can bring it back. What survives is what the test was for — a REAL commit from this
+ * repository's history standing in the relation the guard refuses, rather than a synthetic shape.
+ *
+ * The durability requirement is now ASSERTED rather than hoped for, so the next commit pinned here cannot
+ * quietly become unreachable the way this one did.
+ */
+
+/** The commit this test stands on: a real, permanently reachable commit that does not contain main's tip. */
+const PINNED_STALE_BASE = "5ebe02e0";
+
+test("REAL ARTEFACT: a permanently reachable commit that does not contain the current origin/main's tip",
   (t) => {
   // A SHALLOW CLONE IS AN HONEST REASON TO SKIP, NOT A FAILURE. `actions/checkout`'s default
   // `fetch-depth: 1` gives CI a checkout with no history at all beyond the tested commit, so a truncated
-  // clone and a rewritten one produce the IDENTICAL symptom -- `cat-file -e c7b1a0a0` failing -- for
-  // completely different reasons. Only the second is this test's business; asking `--is-shallow-repository`
-  // tells them apart before treating either as a finding.
+  // clone and a rewritten one produce the IDENTICAL symptom -- `cat-file -e` failing -- for completely
+  // different reasons. Only the second is this test's business; asking `--is-shallow-repository` tells
+  // them apart before treating either as a finding.
   const shallow = execFileSync("git", ["rev-parse", "--is-shallow-repository"],
     { cwd: REAL_REPO_ROOT, encoding: "utf8" }).trim() === "true";
   if (shallow) {
@@ -168,30 +226,21 @@ test("REAL ARTEFACT: c7b1a0a0 (the actual incident commit) does not contain the 
       + "commit; run this locally or in a full-history checkout");
     return;
   }
-  let staleCommitExists = true;
-  try {
-    execFileSync("git", ["cat-file", "-e", "c7b1a0a0"], { cwd: REAL_REPO_ROOT, encoding: "utf8" });
-  } catch {
-    staleCommitExists = false;
-  }
-  if (!staleCommitExists) {
-    // Reachable only if history is ever rewritten and this object is pruned -- reported, not silently
-    // skipped, since the whole point of this test is proving against the real artefact.
-    assert.fail("c7b1a0a0 is no longer reachable in this repository -- the real-artefact proof cannot run; "
-      + "update this test to a still-reachable stale commit if the object was deliberately pruned");
-  }
-  let isAncestor = true;
-  try {
-    execFileSync("git", ["merge-base", "--is-ancestor", "origin/main", "c7b1a0a0"], { cwd: REAL_REPO_ROOT });
-  } catch (error) {
-    const e = error as { status?: number };
-    if (e.status !== 1) throw error; // 1 = "not an ancestor"; anything else is a real git failure
-    isAncestor = false;
-  }
-  assert.equal(isAncestor, false,
-    "c7b1a0a0 should NOT contain origin/main's current tip -- that gap is exactly what this check refuses "
-    + "a push for, and this proves the reproduction is a real, still-present artefact rather than a "
-    + "synthetic shape");
+
+  // THE DURABILITY ASSERTION, and it is the whole of A0. A pin is only as good as its reachability, and
+  // reachability is not a property of the commit -- it is a property of whether some REF still leads to
+  // it. An ancestor of `main` is reachable exactly as long as `main` is, which is the strongest guarantee
+  // this repository can offer. Asserted here rather than assumed, so a future pin that does not have it
+  // fails on the pin rather than months later on an unrelated trunk run.
+  assert.ok(isAncestorOf(PINNED_STALE_BASE, "origin/main"),
+    `${PINNED_STALE_BASE} is not an ancestor of origin/main, so nothing guarantees it stays reachable -- `
+    + "that is how this test pinned `c7b1a0a0`, a commit on a deleted branch, and turned the trunk red on "
+    + "every run. Pin a commit that IS an ancestor of `main` (a merge commit is the obvious choice).");
+
+  assert.equal(isAncestorOf("origin/main", PINNED_STALE_BASE), false,
+    `${PINNED_STALE_BASE} should NOT contain origin/main's current tip -- that gap is exactly what this `
+    + "check refuses a push for, and this proves the reproduction is a real, still-present artefact rather "
+    + "than a synthetic shape");
 });
 
 test("MUTATION: without the ancestry refusal, the incident shape is silently allowed through", () => {

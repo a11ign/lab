@@ -290,4 +290,14 @@ test("assembleReported rebuilds the pre-migration object from a directory", asyn
   const empty = assembleReported(() => null, []);
   assert.deepEqual(empty.gates, []);
   assert.deepEqual(empty.achievements, []);
+
+test("statedWritingTime: a summary with no stated time returns null -- the guard's failing case, driven directly", async () => {
+  const { statedWritingTime } = await import("../../../../scripts/board-summary-check.mjs");
+  // THE STYLE TEST READS TODAY'S SUMMARY, so before the rule's effective date it returns early and its
+  // assertion is never exercised. This drives the same function with fixtures, which is what makes the
+  // freshness check a verified guard rather than one that has only ever been seen to pass.
+  assert.equal(statedWritingTime("Written overnight, so this is a forecast.", "07:45"), null);
+  assert.deepEqual(statedWritingTime("Written at 07:30 on 8 September.", "07:45"),
+    { stated: "07:30", driftMinutes: 15 });
+  assert.equal(statedWritingTime("Written at 07:30 on 8 September.", "09:00")?.driftMinutes, 90);
 });

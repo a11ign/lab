@@ -10,24 +10,38 @@
 // flagged nvda-worker, because nothing checked whether that package's own root export even resolves into
 // `dist/` -- it resolves straight to `src/index.mjs`. Both rounds are pinned here as fixtures so neither
 // regresses silently.
+//
+// #168 CHANGED WHAT "PROTECTED" MEANS. Per-package `prepare: tsc --build` scripts used to be the
+// guarantee this check verified -- and they RACED each other during `npm ci` (three packages' own
+// `tsconfig.json` reference `evidence`, so npm firing all five workspaces' `prepare` at once could start
+// several CONCURRENT `tsc --build` processes writing to `packages/evidence/dist/*`). The guarantee is now
+// GLOBAL: the repo ROOT's own `prepare` runs the one, coordinated `npm run build` instead. `fakeRepo`
+// below writes a root `package.json` too, so both the protected and unprotected shapes can be driven.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { linkState, workspacePackages, packagesImportedByName, distTrapReport } from
-  "../../../../scripts/control-plane-hygiene.mjs";
+import {
+  linkState, workspacePackages, packagesImportedByName, distTrapReport, rootPrepareBuildsEverything,
+} from "../../../../scripts/control-plane-hygiene.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
-test("the real repo's dist-trap check finds every package it claims to check, and none currently exposed", () => {
+test("the real repo's dist-trap check finds every package it claims to check, protected by the root's "
+  + "own prepare (#168), and none currently exposed", () => {
   const trap = distTrapReport(process.cwd());
   // A floor, not a target -- this repo has 9 workspace packages today; the floor is set below that so
   // adding or retiring a package does not itself break this guard.
   assert.ok(trap.checked >= 5, `expected at least 5 workspace packages checked, found ${trap.checked}`);
-  assert.deepEqual(trap.exposed.map((p) => p.name), [],
-    `these packages are imported by bare specifier, export into dist/, and have no prepare build step: `
-    + `${trap.exposed.map((p) => p.name).join(", ")}`);
+  assert.equal(trap.protectedByRoot, true,
+    "the real repo's root package.json must declare a prepare that builds everything -- if this is false, "
+    + "#168's fix has been reverted or edited into a shape this check no longer recognises");
+  assert.deepEqual(trap.exposed.map((p) => p.name), []);
+});
+
+test("rootPrepareBuildsEverything: true when prepare invokes npm run build", () => {
+  assert.equal(rootPrepareBuildsEverything(process.cwd()), true);
 });
 
 test("linkState distinguishes real, symlink, and missing", () => {
@@ -43,21 +57,29 @@ test("linkState distinguishes real, symlink, and missing", () => {
 });
 
 /**
- * Builds a synthetic repo under `os.tmpdir()` with `packages/<name>/package.json` for each spec, and
+ * Builds a synthetic repo under `os.tmpdir()` with `packages/<name>/package.json` for each spec, a root
+ * `package.json` (whose `prepare` either builds everything or does not, per `rootBuildsEverything`), and
  * (optionally) a source file elsewhere importing it -- never the real `docs/board`-style shared fixture,
  * because this one needs a real `git grep`-able tree, so it is a real (if tiny) git repo.
  */
-function fakeRepo(packageSpecs: Array<{ dir: string; name: string; rootExport: string; hasPrepare: boolean }>,
+function fakeRepo(rootBuildsEverything: boolean,
+  packageSpecs: Array<{ dir: string; name: string; rootExport: string }>,
   importers: Array<{ path: string; line: string }>) {
   const dir = mkdtempSync(join(tmpdir(), "hygiene-disttrap-"));
   execFileSync("git", ["init", "-q"], { cwd: dir, env: sandboxGitEnv() });
+  writeFileSync(join(dir, "package.json"), JSON.stringify({
+    name: "fake-root",
+    scripts: {
+      build: "node scripts/fake-build.mjs",
+      prepare: rootBuildsEverything ? "node scripts/fake-hooks.mjs && npm run build" : "node scripts/fake-hooks.mjs",
+    },
+  }));
   mkdirSync(join(dir, "packages"), { recursive: true });
   for (const spec of packageSpecs) {
     mkdirSync(join(dir, "packages", spec.dir), { recursive: true });
     writeFileSync(join(dir, "packages", spec.dir, "package.json"), JSON.stringify({
       name: spec.name,
       exports: { ".": spec.rootExport },
-      scripts: spec.hasPrepare ? { prepare: "tsc --build" } : {},
     }));
   }
   for (const imp of importers) {
@@ -68,28 +90,32 @@ function fakeRepo(packageSpecs: Array<{ dir: string; name: string; rootExport: s
   return dir;
 }
 
-test("MUTATION-shaped: a bare-imported, dist-exporting package with no prepare is EXPOSED", () => {
-  const dir = fakeRepo(
-    [{ dir: "exposed-pkg", name: "@fake/exposed-pkg", rootExport: "./dist/index.js", hasPrepare: false }],
+test("MUTATION-shaped: a bare-imported, dist-exporting package is EXPOSED when the root's prepare does "
+  + "NOT build everything", () => {
+  const dir = fakeRepo(false,
+    [{ dir: "exposed-pkg", name: "@fake/exposed-pkg", rootExport: "./dist/index.js" }],
     [{ path: "packages/caller/src/use.ts", line: 'import { x } from "@fake/exposed-pkg";\n' }],
   );
   const trap = distTrapReport(dir);
+  assert.equal(trap.protectedByRoot, false);
   assert.deepEqual(trap.exposed.map((p) => p.name), ["@fake/exposed-pkg"]);
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a dist-exporting package WITH a prepare script is not exposed", () => {
-  const dir = fakeRepo(
-    [{ dir: "safe-pkg", name: "@fake/safe-pkg", rootExport: "./dist/index.js", hasPrepare: true }],
+test("the identical package is NOT exposed once the root's prepare builds everything (#168's fix)", () => {
+  const dir = fakeRepo(true,
+    [{ dir: "safe-pkg", name: "@fake/safe-pkg", rootExport: "./dist/index.js" }],
     [{ path: "packages/caller/src/use.ts", line: 'import { x } from "@fake/safe-pkg";\n' }],
   );
-  assert.deepEqual(distTrapReport(dir).exposed, []);
+  const trap = distTrapReport(dir);
+  assert.equal(trap.protectedByRoot, true);
+  assert.deepEqual(trap.exposed, []);
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a SUBPATH import into raw source is never flagged, even with no prepare and no dist export -- ADR 0031's shape", () => {
-  const dir = fakeRepo(
-    [{ dir: "mjs-pkg", name: "@fake/mjs-pkg", rootExport: "./src/index.mjs", hasPrepare: false }],
+test("a SUBPATH import into raw source is never flagged, even unprotected -- ADR 0031's shape", () => {
+  const dir = fakeRepo(false,
+    [{ dir: "mjs-pkg", name: "@fake/mjs-pkg", rootExport: "./src/index.mjs" }],
     [{ path: "packages/caller/src/use.ts", line: 'import { x } from "@fake/mjs-pkg/some-subpath.mjs";\n' }],
   );
   const trap = distTrapReport(dir);
@@ -100,11 +126,11 @@ test("a SUBPATH import into raw source is never flagged, even with no prepare an
 
 test("a SUBPATH-ONLY import of a package whose root DOES export dist/ is not flagged as bare-imported", () => {
   // Isolates the quote-boundary check from rootExportsDist: this package WOULD be exposed if bare-
-  // imported with no prepare, so if the subpath match were sloppy (missing the closing quote) this is
+  // imported while unprotected, so if the subpath match were sloppy (missing the closing quote) this is
   // the fixture that would catch it -- the previous test's fixture could not, because its own
   // rootExportsDist was already false for an unrelated reason.
-  const dir = fakeRepo(
-    [{ dir: "dist-pkg-subpath-only", name: "@fake/dist-pkg-subpath-only", rootExport: "./dist/index.js", hasPrepare: false }],
+  const dir = fakeRepo(false,
+    [{ dir: "dist-pkg-subpath-only", name: "@fake/dist-pkg-subpath-only", rootExport: "./dist/index.js" }],
     [{ path: "packages/caller/src/use.ts", line: 'import { x } from "@fake/dist-pkg-subpath-only/deep.js";\n' }],
   );
   const trap = distTrapReport(dir);
@@ -113,19 +139,20 @@ test("a SUBPATH-ONLY import of a package whose root DOES export dist/ is not fla
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("a package whose root export never resolves into dist/ is never flagged, even bare-imported with no prepare", () => {
-  const dir = fakeRepo(
-    [{ dir: "src-only", name: "@fake/src-only", rootExport: "./src/index.mjs", hasPrepare: false }],
+test("a package whose root export never resolves into dist/ is never flagged, even bare-imported and unprotected", () => {
+  const dir = fakeRepo(false,
+    [{ dir: "src-only", name: "@fake/src-only", rootExport: "./src/index.mjs" }],
     [{ path: "packages/caller/src/use.ts", line: 'import { x } from "@fake/src-only";\n' }],
   );
   assert.deepEqual(distTrapReport(dir).exposed, [],
-    "a package with no dist in its own root export needs no prepare hook -- this was the SECOND false positive found building this check");
+    "a package with no dist in its own root export needs no install-time build guarantee at all -- this "
+    + "was the SECOND false positive found building this check");
   rmSync(dir, { recursive: true, force: true });
 });
 
 test("a package only ever imported from its own directory is not counted as needed by others", () => {
-  const dir = fakeRepo(
-    [{ dir: "self-only", name: "@fake/self-only", rootExport: "./dist/index.js", hasPrepare: false }],
+  const dir = fakeRepo(false,
+    [{ dir: "self-only", name: "@fake/self-only", rootExport: "./dist/index.js" }],
     [{ path: "packages/self-only/src/self-test.ts", line: 'import { x } from "@fake/self-only";\n' }],
   );
   assert.deepEqual(workspacePackages(dir).map((p) => p.name), ["@fake/self-only"]);

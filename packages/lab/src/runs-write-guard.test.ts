@@ -113,6 +113,13 @@ const EXEMPT: Record<string, string> = {
     "Its only write (writeFileSync(BASELINE, ...)) targets packages/lab/baselines/real-page-findings.json "
     + "-- tracked source, a deliberate checked-in baseline update, not a runs/ write. It does resolve "
     + "runs/ paths (realCorpusRoot(), datasetRoot()) to READ the corpus it is scoring.",
+  "packages/cli/src/cli.ts":
+    "Cannot call refuseIfRunsReadonly without importing dataset-paths.mjs, which would recreate the #199 "
+    + "cycle dataset-paths.test.ts's own EXEMPT entry for this file already documents (a11ign/cli is "
+    + "published, @a11ign/lab is private and depends on cli the other way). This env var is this repo's "
+    + "OWN internal dry-run convention for its lab/corpus tooling; the published witness command's own "
+    + "witness subdirectory under runs/ is a user's local artefact, never the shared corpus that guard "
+    + "exists to protect, and no one running the published package would have it set.",
 };
 
 test("the discovery walk finds a realistic slice of the repo's own source", () => {

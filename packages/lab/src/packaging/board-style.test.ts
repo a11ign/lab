@@ -375,6 +375,51 @@ test("the heading-similarity check REJECTS the actual defect it was written for"
     + "five machines under different verbs");
 });
 
+test("the summary states WHEN it was written, and that time is within 60 minutes of the render", async () => {
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
+  const summary = summaryFor(today);
+  if (!summary) return;   // its absence is the previous test's finding, not this one's
+
+  // EFFECTIVE FROM 2026-09-09, NAMED RATHER THAN INFERRED. The board's direction arrived on the morning
+  // of the 8th, after that day's summary had already been written the evening before under the old
+  // convention. A test that fails on a document written correctly under the rule that was in force when
+  // it was written is a test that gets disabled, not obeyed. The 8th's summary is rewritten at 07:30 by
+  // hand; from the 9th this asserts it.
+  const EFFECTIVE_FROM = "2026-09-09";  // mutation probe
+  if (today < EFFECTIVE_FROM) return;
+
+  // THE BOARD ASKED FOR THIS, and the reason is the only reason that matters here: "it should be 30 mins
+  // before as it should be as fresh as possible as a lot happens over night." A summary written the
+  // evening before is a forecast about a night that has not happened yet, and every overnight merge makes
+  // it staler -- on 8 September the queue went from twelve open pull requests to zero between the summary
+  // being written and the edition rendering.
+  //
+  // So the summary NAMES the minute it was written, and this asserts the claim is true rather than
+  // decorative. A stated time nothing checks is the same shape as a gate that reports cleanly having
+  // examined nothing.
+  const { statedWritingTime } = await import("../../../../scripts/board-summary-check.mjs");
+  const londonNow = new Intl.DateTimeFormat("en-GB",
+    { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+  const stated = statedWritingTime(summary.text, londonNow);
+  assert.ok(stated,
+    "the summary must open by naming when it was written -- \"Written at 07:30 on 8 September\" -- "
+    + "because a document the board reads at 08:00 must say how old its one hand-written paragraph is");
+
+  const drift = stated.driftMinutes;
+
+  // 60 MINUTES, NOT 30. The board asked for 30 minutes and the WRITING is scheduled for 07:30, but this
+  // test also runs in CI at arbitrary times of day against a summary written that morning. Sixty minutes
+  // is the window that makes it a real assertion at 08:00 without failing every unrelated PR -- and the
+  // schedule, not this number, is what actually delivers the 30 minutes.
+  const WINDOW_MINUTES = 60;
+  if (drift > WINDOW_MINUTES) {
+    assert.ok(drift <= WINDOW_MINUTES,
+      `the summary says it was written at ${stated.stated} and London now reads ${londonNow} -- ${drift} `
+      + `minutes later. Past ${WINDOW_MINUTES} it is not the fresh paragraph the board asked for; `
+      + "rewrite it from the state at this moment rather than adjusting the time it claims.");
+  }
+});
+
 test("relative time words never appear in the body -- a dated document names the date, or says yesterday", () => {
   const doc = buildDocument();
   if (doc === null) return;
