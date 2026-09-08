@@ -38,11 +38,6 @@
  * narrowed by omission rather than by a stated exception. So the file DOES carry the marker (it is a real
  * generated file) and is named here instead, with the reason, so the guard knows rather than not looking.
  */
-const TRACKED_EXEMPT: Record<string, string> = {
-  "docs/commands.md": "committed and checked deliberately (#478/A6b) -- a reader wants to browse the "
-    + "command list on GitHub; checked against the tree by commands-documented.test.ts rather than left "
-    + "untracked",
-};
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -53,6 +48,12 @@ import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "runs", ".venv", "coverage", "backups"]);
+
+const TRACKED_EXEMPT: Record<string, string> = {
+  "docs/commands.md": "committed and checked deliberately (#478/A6b) -- a reader wants to browse the "
+    + "command list on GitHub; checked against the tree by commands-documented.test.ts rather than left "
+    + "untracked",
+};
 
 // #158's whole point is that `docs/coverage.md` is gitignored and exists ONLY when something has run
 // `npm run docs:coverage` -- so a fresh checkout (a CI runner, a new clone) has no generated files on disk
