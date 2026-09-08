@@ -360,3 +360,35 @@ test("fetchClosingPrRefs throws on a response missing an expected issue alias, r
   const run = () => JSON.stringify({ data: { repository: {} } });
   assert.throws(() => fetchClosingPrRefs([438], { run }), /missing from the closing-references response/);
 });
+
+test("livesStateLabels: `ready` AND `in-progress` both advertise a live state", async () => {
+  const { livesStateLabels } = await import("../../../../scripts/ready-label-audit.mjs");
+  assert.ok(livesStateLabels(["backlog", "ready"]));
+  assert.ok(livesStateLabels(["backlog", "in-progress"]));
+  assert.ok(!livesStateLabels(["backlog", "fleet-gated"]));
+});
+
+test("claimsNobodyIsWorking: an in-progress row with no PR and a cold branch is flagged, with its session named", async () => {
+  const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
+  const rows = [
+    { number: 1, title: "cold", labels: ["in-progress", "session:worker-config"] },
+    { number: 2, title: "has a PR", labels: ["in-progress"] },
+    { number: 3, title: "fresh push", labels: ["in-progress"] },
+    { number: 4, title: "not claimed", labels: ["ready"] },
+  ];
+  const flagged = claimsNobodyIsWorking(rows, new Map([[2, true]]), new Map([[1, 600], [3, 10]]));
+  assert.deepEqual(flagged.map((f: { number: number }) => f.number), [1],
+    "only the claimed row with neither an open PR nor a recent push is stale");
+  assert.deepEqual(flagged[0].sessions, ["session:worker-config"],
+    "the flag must name the session holding it, or nobody knows whose claim to release");
+});
+
+test("claimsNobodyIsWorking: NO BRANCH AT ALL is the strongest case, never read as fresh", async () => {
+  const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
+  // #143 was claimed THIRTY HOURS before anyone noticed, with no branch ever pushed. An absent age read
+  // as zero would have reported that row clean -- the worst case reported as the healthiest.
+  const rows = [{ number: 143, title: "never started", labels: ["in-progress", "session:orchestrator"] }];
+  const flagged = claimsNobodyIsWorking(rows, new Map(), new Map());
+  assert.deepEqual(flagged.map((f: { number: number }) => f.number), [143]);
+  assert.equal(flagged[0].minutes, null, "an absent branch reports null, not 0 -- they are different facts");
+});
