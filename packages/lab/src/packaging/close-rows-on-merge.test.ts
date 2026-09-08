@@ -63,15 +63,19 @@ test("the workflow fires only on a MERGED pull request into main", () => {
     permissions: Record<string, string>;
     jobs: Record<string, { if: string; steps: { uses?: string; run?: string; env?: Record<string, string> }[] }>;
   };
-  assert.deepEqual(doc.on, { pull_request: { types: ["closed"] } },
-    "a `push: main` trigger would need an entry on the watchdog allowlist and would have to re-derive "
-    + "the closing references from a commit range; the closed event already carries them.");
+  // #394: `workflow_dispatch` joined `pull_request: closed` as a manual, on-demand path (a `push: main`
+  // trigger would still need an entry on the watchdog allowlist and would still have to re-derive the
+  // closing references from a commit range; neither is true of a manual dispatch against one named PR).
+  assert.deepEqual(Object.keys(doc.on).sort(), ["pull_request", "workflow_dispatch"]);
+  assert.deepEqual((doc.on as { pull_request: { types: string[] } }).pull_request, { types: ["closed"] });
   const job = doc.jobs.close;
   assert.match(job.if, /merged == true/,
     "without this a PR closed WITHOUT merging would close its rows — the exact 'closed a row whose work "
     + "did not land' failure close-merged-rows.mjs refuses to risk.");
   assert.match(job.if, /base\.ref == 'main'/,
     "a PR into a non-main base has not landed on the trunk and must close nothing.");
+  assert.match(job.if, /workflow_dispatch/,
+    "the manual trigger must be admitted by this job's own `if:`, or #394's dispatch input does nothing.");
 });
 
 test("the workflow can close issues and can do NOTHING else", () => {
