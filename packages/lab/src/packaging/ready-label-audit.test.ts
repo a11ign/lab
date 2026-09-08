@@ -148,6 +148,20 @@ test("isClosedDebrisLabel: ready, in-progress and any session:* label all count"
   assert.ok(isClosedDebrisLabel("session:anything-at-all"));
 });
 
+test("isClosedDebrisLabel: any runner:* label counts too (#444) -- a reservation with nobody left to honour it", () => {
+  assert.ok(isClosedDebrisLabel("runner:worker-audit"));
+  assert.ok(isClosedDebrisLabel("runner:anything-at-all"));
+});
+
+test("#444: runner: must NOT join MUTEX_LABELS -- a reserved-but-ready row is genuinely pickable, by its runner", () => {
+  assert.ok(!MUTEX_LABELS.some((l) => l.startsWith("runner")),
+    "a row reading ready + runner:worker-audit is not a contradiction the way ready + blocked is -- adding "
+    + "runner: here would flag every reservation as a violation nobody can resolve");
+  const issues = [{ number: 324, title: "V1 rehearsal", labels: [READY_LABEL, "runner:worker-audit"] }];
+  assert.deepEqual(mutexViolations(issues), [],
+    "a reserved-but-unclaimed row must not read as a mutex violation");
+});
+
 test("isClosedDebrisLabel: an ordinary label, or a MUTEX_LABELS entry that is not ready/in-progress, does not count", () => {
   assert.ok(!isClosedDebrisLabel("backlog"));
   assert.ok(!isClosedDebrisLabel("disputed"), "disputed on a closed row is not the shape this exists for");
