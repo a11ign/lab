@@ -31,6 +31,21 @@ import { parse } from "yaml";
  * finding nothing is not the same as not having looked: the vacuity guard below requires the walk to find
  * a NON-EMPTY, EXPECTED population, so a change to the search pattern that stopped matching anything
  * would fail loudly rather than reporting a clean scan of nothing.
+ *
+ * COMMENTS ARE STRIPPED BEFORE MATCHING -- fixed after this file fired a false positive on `#530`
+ * within fourteen minutes of merging. `.github/workflows/release.yml` carries a `#` comment describing
+ * `consumer-gate.yml`'s own pinned reference (`# #494. \`consumer-gate.yml\`'s own \`uses:
+ * DanBeckDev/a11y-witness@<sha>\` step is pinned...`), and the unstripped text match read that PROSE as
+ * a real step, then compared its (nonexistent) position against the file's real, correctly-placed
+ * `actions/checkout@v4`, reporting checkout as "too late" for a step that was never actually there. A
+ * comment is not a use -- `git-spawn-classification.test.ts` names the identical shape and the identical
+ * fix (strip first) for the identical reason: "a file that only MENTIONS [the thing] in prose has not
+ * done it." `@a11ign/evidence/source-text`'s `stripComments` is JS/TS-shaped (`//`, `/* *\/`) and does
+ * not touch YAML's `#`, so `stripYamlComments` below is this file's own, deliberately not a parser: a
+ * line's own text past an UNQUOTED, whitespace-or-start-preceded `#` is discarded, which is enough to
+ * tell a real `uses:` step from a comment describing one and is applied only to the TEXT-matching pass,
+ * never to what is handed to the real YAML parser -- `parse()` already understands `#` comments
+ * correctly per spec, and re-implementing that risk corrupting a legitimate multi-line scalar.
  */
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -54,6 +69,40 @@ function walkDocs(root: string): string[] {
 
 /** Matches a real `uses:` line naming this Action under any owner -- the reference itself, not a mention. */
 const USES_PATTERN = /uses:\s*\S*\/a11y-witness@\S+/;
+
+/**
+ * Discard everything from an UNQUOTED `#` onward on each line -- YAML's own comment rule, applied only
+ * to decide whether a line is text worth pattern-matching, never to what gets handed to the real parser.
+ * Not a full YAML string-quoting implementation: single-quoted `''` (an escaped quote) and double-quoted
+ * `\"`/backslash escapes are honoured, which is the one gap that would otherwise let a quoted URL or
+ * password containing `#` truncate a genuine line early.
+ */
+function stripYamlComments(text: string): string {
+  return text.split("\n").map(stripYamlLineComment).join("\n");
+}
+
+/** One line of `stripYamlComments` -- split out so the quote-tracking loop stays under the depth limit. */
+function stripYamlLineComment(line: string): string {
+  let inSingle = false;
+  let inDouble = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const c = line[i];
+    if (inSingle) {
+      if (c === "'" && line[i + 1] === "'") i += 1;
+      else if (c === "'") inSingle = false;
+      continue;
+    }
+    if (inDouble) {
+      if (c === "\\") i += 1;
+      else if (c === "\"") inDouble = false;
+      continue;
+    }
+    if (c === "'") inSingle = true;
+    else if (c === "\"") inDouble = true;
+    else if (c === "#" && (i === 0 || /\s/.test(line[i - 1]))) return line.slice(0, i);
+  }
+  return line;
+}
 
 interface Step {
   uses?: string;
@@ -84,7 +133,10 @@ function stepsOf(parsed: unknown): Step[] | null {
 /** The block, from a file's candidate blocks, that actually references this Action -- and its steps. */
 function actionBlockSteps(file: string, text: string): Step[] | null {
   for (const block of candidateBlocks(file, text)) {
-    if (!USES_PATTERN.test(block)) continue;
+    // Matched against the STRIPPED text, so a comment describing another file's `uses:` line -- #530's
+    // exact shape -- is never mistaken for a real one. `block` itself (unstripped) still goes to the
+    // real YAML parser below, which already understands `#` comments correctly.
+    if (!USES_PATTERN.test(stripYamlComments(block))) continue;
     const steps = stepsOf(parse(block));
     if (steps) return steps;
   }
@@ -94,7 +146,7 @@ function actionBlockSteps(file: string, text: string): Step[] | null {
 /** Every file under the repo carrying a genuine `uses:` reference to this Action, found by walking. */
 function documentsReferencingTheAction(): string[] {
   return walkDocs(REPO)
-    .filter((file) => USES_PATTERN.test(readFileSync(file, "utf8")))
+    .filter((file) => USES_PATTERN.test(stripYamlComments(readFileSync(file, "utf8"))))
     .map((file) => relative(REPO, file))
     .sort();
 }
@@ -147,6 +199,21 @@ test("CONTROL: a snippet with the checkout step first passes the same check", ()
   const actionIndex = steps!.findIndex((s) => /a11y-witness/.test(s.uses ?? ""));
   const checkoutIndex = steps!.findIndex((s) => /^actions\/checkout@/.test(s.uses ?? ""));
   assert.ok(checkoutIndex !== -1 && checkoutIndex < actionIndex);
+});
+
+test("MUTATION: a uses: line inside a # comment is not mistaken for a real step -- #530's exact shape", () => {
+  // The real text from .github/workflows/release.yml on #530's branch: a comment describing a DIFFERENT
+  // file's pinned reference, sitting above this file's own real (and correctly ordered) checkout step.
+  const commentOnly = "jobs:\n  release:\n    steps:\n"
+    + "      # #494. `consumer-gate.yml`'s own `uses: DanBeckDev/a11y-witness@<sha>` step is pinned to a "
+    + "LITERAL sha\n"
+    + "      - uses: actions/checkout@v4\n"
+    + "      - run: npm run build\n";
+  const steps = actionBlockSteps("release.yml", commentOnly);
+  assert.equal(steps, null,
+    "a uses: reference inside a # comment must not register as a real a11y-witness step -- this fixture "
+    + "is not a documented consumer snippet at all, and returning steps here reproduces #530's false "
+    + "positive: a real checkout compared against a step that was never actually there");
 });
 
 test("PROOF: a prose-only mention (no uses: line) is correctly found by no candidate block", () => {
