@@ -118,7 +118,7 @@ function quantile(values, q) {
 /**
  * How the total was computed, EMITTED rather than described anywhere a human retypes it.
  *
- * The board's `docs/board/reported.json` records a `method` string beside every fleet-hours total, and it
+ * The board's `docs/board/reported/` records a `method` string beside every fleet-hours total, and it
  * had to: a total whose method is unstated cannot be checked or compared with the next edition. But a
  * method string typed into that file is the same fact as this file's implementation, in a second place,
  * with nothing comparing them — and the first version of that string described summing per-case times from
