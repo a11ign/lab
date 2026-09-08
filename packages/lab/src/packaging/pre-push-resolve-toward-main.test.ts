@@ -20,6 +20,16 @@
  * A guard whose failure case is invented is one nobody has seen bite; this one has the commit pair that
  * cost four units attached to it.
  */
+// requires: history
+//
+// #510: the acceptance job's checkout is shallow, and this file's own `shallowHere()` guard used to
+// answer that with `t.skip(...)` -- a real, honest skip, and still a silent pass from the OUTSIDE: the
+// PR that most needs this row's own guard is the one that should never be allowed to demonstrate it by
+// skipping. `acceptance-commands.mjs` now reads this header and REFUSES the whole command, named, before
+// running it at all, unless the PR body carries `History: full` (#497) -- at which point the acceptance
+// job's checkout is deepened first, so the skip inside this file never actually fires there. The internal
+// `t.skip()` guards stay, as a real safety net for any OTHER shallow context (a local machine, a future
+// job) this header cannot reach.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
