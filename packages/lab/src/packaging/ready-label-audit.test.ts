@@ -7,6 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   READY_LABEL, MUTEX_LABELS, mutexViolations, fetchOpenIssues,
+  fetchAllIssues, closedDebris, isClosedDebrisLabel, readyRowsAbsentFromBoard,
 } from "../../../../scripts/ready-label-audit.mjs";
 
 // --- mutexViolations: pure, no I/O ---
@@ -134,4 +135,144 @@ test("MUTATION: an entry missing labels is a thrown error, never silently skippe
 test("MUTATION: a label object with no name is a thrown error", () => {
   const run = jsonRun(JSON.stringify([{ number: 1, title: "a", labels: [{}] }]));
   assert.throws(() => fetchOpenIssues({ run }), /has a label with no name/);
+});
+
+// --- #378: a CLOSED row carrying ready/in-progress/session:* is DEBRIS, a separate population from
+// mutexViolations, reported with separate wording, never collapsed with an open-row contradiction ---
+
+test("isClosedDebrisLabel: ready, in-progress and any session:* label all count", () => {
+  assert.ok(isClosedDebrisLabel(READY_LABEL));
+  assert.ok(isClosedDebrisLabel("in-progress"));
+  assert.ok(isClosedDebrisLabel("session:worker-audit"));
+  assert.ok(isClosedDebrisLabel("session:anything-at-all"));
+});
+
+test("isClosedDebrisLabel: an ordinary label, or a MUTEX_LABELS entry that is not ready/in-progress, does not count", () => {
+  assert.ok(!isClosedDebrisLabel("backlog"));
+  assert.ok(!isClosedDebrisLabel("disputed"), "disputed on a closed row is not the shape this exists for");
+  assert.ok(!isClosedDebrisLabel("fleet-gated"));
+});
+
+test("closedDebris: exactly #378's own measured shape -- ready survives on a CLOSED row (#291/#292)", () => {
+  const issues = [
+    { number: 291, title: "t", labels: ["backlog", READY_LABEL], state: "CLOSED" as const },
+  ];
+  const debris = closedDebris(issues);
+  assert.equal(debris.length, 1);
+  assert.equal(debris[0].number, 291);
+  assert.deepEqual(debris[0].debris, [READY_LABEL]);
+});
+
+test("closedDebris: the worker-audit shape -- in-progress + session:* surviving on a merged row (#84/#104/#105)", () => {
+  const issues = [
+    { number: 104, title: "t", labels: ["backlog", "in-progress", "session:worker-audit"], state: "CLOSED" as const },
+  ];
+  const debris = closedDebris(issues);
+  assert.equal(debris.length, 1);
+  assert.deepEqual(debris[0].debris.sort(), ["in-progress", "session:worker-audit"]);
+});
+
+test("closedDebris: an OPEN row carrying the identical labels is NOT debris -- state is the whole test", () => {
+  const issues = [
+    { number: 1, title: "t", labels: ["backlog", READY_LABEL, "in-progress", "session:worker-audit"], state: "OPEN" as const },
+  ];
+  assert.deepEqual(closedDebris(issues), []);
+});
+
+test("closedDebris: a CLOSED row with none of the three labels is not reported -- ordinary closed rows are not debris", () => {
+  const issues = [{ number: 2, title: "t", labels: ["backlog", "disputed"], state: "CLOSED" as const }];
+  assert.deepEqual(closedDebris(issues), []);
+});
+
+test("closedDebris: a row with no `state` at all (the pre-#378 shape) is never reported -- absence is not CLOSED", () => {
+  // fetchOpenIssues's own long-standing fixtures never carried `state`; closedDebris must read that as
+  // "not known to be closed", never as a guess in either direction.
+  const issues = [{ number: 3, title: "t", labels: [READY_LABEL] }];
+  assert.deepEqual(closedDebris(issues), []);
+});
+
+test("closedDebris and mutexViolations disagree on the SAME labels, by design: state is the only thing that changed", () => {
+  const openRow = { number: 4, title: "t", labels: [READY_LABEL, "in-progress"], state: "OPEN" as const };
+  const closedRow = { number: 5, title: "t", labels: [READY_LABEL, "in-progress"], state: "CLOSED" as const };
+  assert.equal(mutexViolations([openRow]).length, 1, "open: a contradiction to resolve");
+  assert.equal(closedDebris([openRow]).length, 0, "open: never reported as debris");
+  assert.equal(closedDebris([closedRow]).length, 1, "closed: debris");
+});
+
+// --- fetchAllIssues: same discipline as fetchOpenIssues, but state IS in the requested shape ---
+
+test("fetchAllIssues parses a well-formed gh response and carries state through", () => {
+  const run = jsonRun(JSON.stringify([
+    { number: 1, title: "a row", labels: [{ name: READY_LABEL }], state: "CLOSED" },
+  ]));
+  const result = fetchAllIssues({ run });
+  assert.deepEqual(result, [{ number: 1, title: "a row", labels: [READY_LABEL], state: "CLOSED" }]);
+});
+
+test("MUTATION: fetchAllIssues throwing gh failure is a thrown error naming the state it asked for", () => {
+  const run = () => { throw new Error("gh: authentication required"); };
+  assert.throws(() => fetchAllIssues({ run }), /could not list all issues/);
+});
+
+test("MUTATION: a listing returned AT the real 500-row limit is refused, not read as complete", async () => {
+  // #378's own header: 51 open + 174 closed already exceeded the audit's OLD 200-row cap once read
+  // together. A result exactly AT the requested limit is indistinguishable from a truncated one.
+  const { fetchIssues } = await import("../../../../scripts/ready-label-audit.mjs");
+  const run = () => JSON.stringify(
+    Array.from({ length: 500 }, (_unused, i) => ({ number: i, title: "t", labels: [], state: "OPEN" })));
+  assert.throws(() => fetchIssues({ run, state: "all" }), /exactly the requested limit \(500\)/);
+});
+
+test("MUTATION: reverting fetchAllIssues to request --state open loses every closed row again", () => {
+  // Reproduces the issue's own acceptance mutation-check, but the `run` here actually RESPONDS to the
+  // requested `--state` the way the real `gh` CLI does -- `open` returns only #291 (the one open fixture
+  // row), `all` returns #291 AND the closed #292 -- so this test is genuinely SENSITIVE to which state
+  // fetchAllIssues asks for, unlike a fixed canned response that would pass whether the mutation landed
+  // or not. If fetchAllIssues's `state: "all"` is ever reverted to `"open"`, this goes from "found #292"
+  // to "found nothing", which is the exact silence #378 was filed to end.
+  const ghLikeRun = (_cmd: string, args: string[]) => {
+    const requestedState = args[args.indexOf("--state") + 1];
+    const allIssues = [
+      { number: 291, title: "open row", labels: [{ name: READY_LABEL }], state: "OPEN" },
+      { number: 292, title: "closed row still carrying ready", labels: [{ name: READY_LABEL }], state: "CLOSED" },
+    ];
+    return JSON.stringify(requestedState === "all" ? allIssues : allIssues.filter((i) => i.state === "OPEN"));
+  };
+  const result = fetchAllIssues({ run: ghLikeRun });
+  const debris = closedDebris(result);
+  assert.equal(debris.length, 1, "fetchAllIssues must request --state all, or #292 (the closed row) never "
+    + "reaches closedDebris at all -- a mutation back to --state open makes this assert 0, not 1");
+  assert.equal(debris[0].number, 292);
+});
+
+// --- readyRowsAbsentFromBoard: pure, no I/O -- #399's third population ---
+
+test("readyRowsAbsentFromBoard: a ready row whose number is on the board is not reported", () => {
+  const issues = [{ number: 1, title: "on the board", labels: [READY_LABEL] }];
+  assert.deepEqual(readyRowsAbsentFromBoard(issues, new Set([1])), []);
+});
+
+test("readyRowsAbsentFromBoard: a ready row absent from the board's item numbers is reported", () => {
+  const issues = [{ number: 1, title: "off the board", labels: [READY_LABEL] }];
+  assert.deepEqual(readyRowsAbsentFromBoard(issues, new Set([2, 3])), issues);
+});
+
+test("readyRowsAbsentFromBoard: a non-ready row absent from the board is not this population's business", () => {
+  const issues = [{ number: 1, title: "no ready label", labels: ["blocked"] }];
+  assert.deepEqual(readyRowsAbsentFromBoard(issues, new Set()), []);
+});
+
+test("readyRowsAbsentFromBoard: neither a label check nor a Status check alone would see this -- only the "
+  + "comparison does", () => {
+  // Two rows both carry `ready` (the label is correct, so a label-only check sees nothing wrong) and
+  // neither has an item on the board at all (so there is no Status to read either) -- #399's own measured
+  // shape, four such rows existing while the Ready lane read empty.
+  const issues = [
+    { number: 10, title: "row A", labels: [READY_LABEL] },
+    { number: 11, title: "row B", labels: [READY_LABEL] },
+    { number: 12, title: "row C, genuinely on the board", labels: [READY_LABEL] },
+  ];
+  const boardNumbers = new Set([12]);
+  const missing = readyRowsAbsentFromBoard(issues, boardNumbers);
+  assert.deepEqual(missing.map((i) => i.number), [10, 11]);
 });

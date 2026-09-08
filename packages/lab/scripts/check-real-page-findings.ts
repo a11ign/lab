@@ -47,7 +47,7 @@ import {
   type CapturedAnnouncements,
 } from "@a11ign/evidence/verify";
 import { nameOf } from "@a11ign/evidence";
-import { realPageFor, REAL_PAGES } from "../src/training/real-page-corpus.mjs";
+import { realPageFor, supersededBy, REAL_PAGES } from "../src/training/real-page-corpus.mjs";
 import { REPO_ROOT, realCorpusRoot } from "../src/dataset-paths.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 
@@ -204,17 +204,56 @@ function reportCaptureAges(): void {
 function reportWhatWasNotScored(): void {
   const by = (why: string) => NOT_SCORED.filter((entry) => entry.why === why);
   const undeclared = by("undeclared");
+  // THE HEADLINE SEPARATES THEM TOO, not just the list below it. A number is what gets quoted into a
+  // report and carried around; leaving `undeclared` at 24 while the detail says seven of them are
+  // accounted for is the fact-stated-twice shape, with the two copies disagreeing in the same output.
+  const supersededCount = undeclared.filter((entry) => supersededBy(entry.url)).length;
   process.stdout.write(`  scored ${CAPTURE_AGES.length} capture(s); walked past ${NOT_SCORED.length}`
     + ` (${by("not conformant").length} on pages the publisher does not declare conformant,`
-    + ` ${undeclared.length} undeclared, ${by("no transcript").length} with no transcript).\n`);
+    + ` ${undeclared.length - supersededCount} undeclared, ${supersededCount} superseded by a page that`
+    + ` moved, ${by("no transcript").length} with no transcript).\n`);
   if (!undeclared.length) return;
+  reportUndeclared(undeclared);
+}
+
+/**
+ * SUPERSEDED AND UNCLAIMED ARE DIFFERENT ANSWERS — #365, and until now they printed as one list of 24.
+ *
+ * A publisher restructures its URLs, `real-page-corpus.mjs` is edited, and the next run writes its capture
+ * under the new slug. The previous capture stays on disk claimed by nothing — and read identically to a
+ * page retired on purpose and to a capture nobody has got to yet. Three states needing opposite work.
+ *
+ * Seven of them came from ONE commit (b7dff539, *"the 14% wrong-page rate was seven stale URLs, not a
+ * capture fault"*), so this is a recurring event rather than an oddity, and the record of which capture
+ * succeeded which existed only in git history until `movedFrom` put it in the corpus.
+ *
+ * NOTHING IS DELETED AND NOTHING IS HIDDEN. A superseded capture is still listed, still aged above, and
+ * still on disk — `runs/` is not reproducible, and evidence taken under Edge 151 cannot be recreated now
+ * 152 ships. What changes is that it is no longer counted as a capture nobody has accounted for.
+ */
+function reportUndeclared(undeclared: { file: string; url: string }[]): void {
+  const superseded = undeclared
+    .map((entry) => ({ entry, by: supersededBy(entry.url) }))
+    .filter((row): row is { entry: { file: string; url: string }; by: NonNullable<ReturnType<typeof supersededBy>> } =>
+      row.by !== undefined);
+  const unclaimed = undeclared.filter((entry) => !supersededBy(entry.url));
+
+  if (superseded.length) {
+    process.stdout.write(`\n  ${superseded.length} capture(s) SUPERSEDED — the page moved, this corpus `
+      + "followed it, and the older capture is kept as history rather than deleted:\n");
+    for (const { entry, by } of superseded) {
+      process.stdout.write(`        SUPERSEDED: ${entry.file}\n`
+        + `                 -> ${by.page.url}  (declared moved ${by.moved.when})\n`);
+    }
+  }
+  if (!unclaimed.length) return;
   // THE ONE THAT NEEDS A HUMAN. Named rather than counted, for this file's own stated reason: "a count is
-  // where an investigation stops", and these three causes -- a retired page, a role that moved without its
-  // capture, and one URL normalising to two filenames -- need opposite work. The third would mean a page
-  // is scored twice, so it has to be excluded before either cheap answer is applied.
-  process.stdout.write(`  *** ${undeclared.length} capture(s) NO DECLARED PAGE CLAIMS. They are aged above `
+  // where an investigation stops", and the remaining causes -- a retired page, a role that moved without
+  // its capture, and one URL normalising to two filenames -- need opposite work. The third would mean a
+  // page is scored twice, so it has to be excluded before either cheap answer is applied.
+  process.stdout.write(`  *** ${unclaimed.length} capture(s) NO DECLARED PAGE CLAIMS. They are aged above `
     + "and scored by nothing:\n");
-  for (const entry of undeclared) {
+  for (const entry of unclaimed) {
     process.stdout.write(`        ${entry.file}  ${entry.url || "(no url in the capture)"}\n`);
   }
 }

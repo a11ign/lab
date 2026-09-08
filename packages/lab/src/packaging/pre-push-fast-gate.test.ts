@@ -15,7 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync, mkdirSync, chmodSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 
@@ -30,15 +30,14 @@ test("the hook branches on $BRANCH before deciding fast vs full", () => {
     "BRANCH must be resolved before the fast/full decision reads it");
 });
 
-test("both the full suite and the fast gate cap tsx worker concurrency, and neither leaks into package.json's shared script unconditionally", () => {
-  const fullSuiteLine = /run "unit tests" env A11Y_TEST_CONCURRENCY=4 npm test/;
-  const fastGateLines = /--test-concurrency=4/g;
-  assert.match(HOOK, fullSuiteLine, "the main-branch full suite must set A11Y_TEST_CONCURRENCY=4");
-  const fastMatches = [...HOOK.matchAll(fastGateLines)];
-  assert.ok(fastMatches.length >= 2,
-    `expected at least 2 --test-concurrency=4 uses in the fast gate (all-packages and touched-packages `
-    + `paths), found ${fastMatches.length}`);
-
+test("package.json's shared test:ts script never leaks concurrency-capping into CI unconditionally", () => {
+  // 2026-09-07: the hook stopped running package suites at all (both the main-branch full run and the
+  // fast gate's touched-package globs are gone -- CI's acceptance job covers them now), so there is no
+  // longer a hook-side `A11Y_TEST_CONCURRENCY`/`--test-concurrency` invocation to assert on: the ONE
+  // test-spawning call left, `npx tsx --test packages/worker-fleet/src/mjs-parses.test.ts`, is one fixed
+  // file, not a variable-sized population that needs capping. What is still real and still worth pinning:
+  // `test:ts` itself must only add the flag when the env var is SET, so a caller that never sets it (CI)
+  // is never capped by a change to this shared script.
   const pkgJson = readFileSync(`${REPO}package.json`, "utf8");
   assert.match(pkgJson, /A11Y_TEST_CONCURRENCY:\+--test-concurrency=\$A11Y_TEST_CONCURRENCY/,
     "test:ts must only add the flag when the env var is set, so CI (which never sets it) is never capped");
@@ -65,16 +64,18 @@ test("a board-only diff gets its own narrow branch, calling board-only-check.mjs
   assert.match(HOOK, /packages\/lab\/src\/packaging\/public-claim\.test\.ts/);
 });
 
-test("MUTATION: the touched-package glob-building loop, driven in isolation, builds one glob per package", () => {
-  // Extracts the exact loop from the real hook (never re-typed) and runs it in a throwaway shell with a
-  // fake `changed`, proving the shell logic around changed-packages.mjs's OUTPUT does what it looks like
-  // it does -- the pure parsing itself is `changed-packages.test.ts`'s job, not this one's.
-  const loopMatch = /globs=\(\)\n\s*for pkg in \$changed; do globs\+=\("([^"]+)"\); done/.exec(HOOK);
-  assert.ok(loopMatch, "could not find the glob-building loop in the real hook to drive");
-  const script = `changed="lab judge"\nglobs=()\nfor pkg in $changed; do globs+=("${loopMatch[1]}"); done\n`
-    + 'printf "%s\\n" "${globs[@]}"';
-  const out = execFileSync("bash", ["-c", script], { encoding: "utf8" }).trim().split("\n");
-  assert.deepEqual(out, ["packages/lab/src/**/*.test.ts", "packages/judge/src/**/*.test.ts"]);
+test("2026-09-07: both main and the fast gate run the SAME mjs parse check, not a package-scoped glob "
+  + "built from `changed`", () => {
+  // The touched-package glob-building loop this test used to drive (`globs=(); for pkg in $changed; do
+  // globs+=(...); done`) is GONE, along with the package suites it fed -- CI's acceptance job (#353) now
+  // covers what those suites checked, on every PR, before this hook could finish. What replaced them is
+  // ONE fixed invocation, present in both branches, that does not read `$changed` at all: `mjs-parses.
+  // test.ts` is CLAUDE.md's own named check for a `.mjs` file that lint and `tsc --noEmit` cannot see fail.
+  assert.ok(!/globs=\(\)/.test(HOOK), "the touched-package glob-building loop should be gone, not merely unused");
+  const mjsParseCheck = /run "mjs parse check"\s+npx tsx --test packages\/worker-fleet\/src\/mjs-parses\.test\.ts/g;
+  const matches = [...HOOK.matchAll(mjsParseCheck)];
+  assert.equal(matches.length, 2, "expected the mjs parse check exactly once in main's gate and once in the "
+    + `fast gate, found ${matches.length}`);
 });
 
 /**
@@ -136,6 +137,89 @@ test("MUTATION: the real run() function reports FAILED on a genuine lint/typeche
     assert.match(out, /typecheck/, "a real type error must be reported FAILED");
   } finally {
     rmSync(target, { force: true });
+  }
+});
+
+/**
+ * #288: THE CHANGESET GATE WAS THE ONLY CHECK IN THIS HOOK THAT BYPASSED `run()`, so it had no way to say
+ * "could not run" -- `[ "$(node scripts/changeset-precise.mjs origin/main)" = "true" ]` discards the
+ * command's own exit status and tests only the STRING it printed. Measured live: an unresolvable base ref
+ * throws inside `changeset-precise.mjs`'s own `execFileSync`, uncaught, so the process exits non-zero
+ * having printed NOTHING -- and empty output reads as `false`, so the hook printed a POSITIVE CLAIM ("no
+ * file this push touches is one npm actually ships for a published package") from a check that examined
+ * nothing at all.
+ *
+ * DRIVES THE REAL BLOCK, via a fake `node` on `PATH` standing in for `changeset-precise.mjs`'s two
+ * distinct real behaviours (a clean exit with `true`/`false`, and a genuine failure) -- the same
+ * discipline the `run()` test above uses, extracting rather than re-typing the hook's own logic.
+ */
+function changesetBlock() {
+  const start = HOOK.indexOf('if [ -n "$changed" ]; then\n    # #288:');
+  const end = HOOK.indexOf('rm -f /tmp/a11y-changeset-precise-err.$$\n  fi', start);
+  assert.ok(start > 0 && end > start, "could not locate the #288 changeset block in the real hook");
+  return HOOK.slice(start, end + 'rm -f /tmp/a11y-changeset-precise-err.$$\n  fi'.length);
+}
+
+function withFakeNode(behaviour: "fail" | "true" | "false") {
+  const dir = `${REPO}packages/lab/src/packaging/.scratch-fake-node-${behaviour}`;
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  const script = behaviour === "fail"
+    ? '#!/bin/bash\necho "fatal: bad revision" >&2\nexit 1\n'
+    : `#!/bin/bash\nprintf '%s' "${behaviour}"\n`;
+  writeFileSync(`${dir}/node`, script);
+  chmodSync(`${dir}/node`, 0o755);
+  return dir;
+}
+
+test("#288: an unresolvable base ref is COULD NOT RUN, not a silent SKIPPED claim", () => {
+  const fakeNodeDir = withFakeNode("fail");
+  try {
+    const script = `set -u\nchanged="lab"\nskipped=()\nfailed=()\n${changesetBlock()}\n`
+      + `printf 'SKIPPED=%s\\n' "\${skipped[@]:-}"\nprintf 'FAILED=%s\\n' "\${failed[@]:-}"`;
+    const out = execFileSync("bash", ["-c", script],
+      { cwd: REPO, encoding: "utf8", env: { ...process.env, PATH: `${fakeNodeDir}:${process.env.PATH}` } });
+    assert.match(out, /COULD NOT RUN {2}changeset/, "a genuine failure to answer must print COULD NOT RUN");
+    assert.doesNotMatch(out, /no file this push touches is one npm actually ships/,
+      "the exact defect this row exists to end: a failure must never be read as the honest SKIPPED claim");
+    assert.match(out, /SKIPPED=changeset \(could not run\)/, "kept out of failed, per run()'s own precedent");
+    assert.doesNotMatch(out, /FAILED=changeset/, "a could-not-run must never fail the push");
+  } finally {
+    rmSync(fakeNodeDir, { recursive: true, force: true });
+  }
+});
+
+test("#288: a real, examined `false` still prints the honest SKIPPED claim, unchanged", () => {
+  const fakeNodeDir = withFakeNode("false");
+  try {
+    const script = `set -u\nchanged="lab"\nskipped=()\nfailed=()\n${changesetBlock()}\n`
+      + `printf 'SKIPPED=%s\\n' "\${skipped[@]:-}"`;
+    const out = execFileSync("bash", ["-c", script],
+      { cwd: REPO, encoding: "utf8", env: { ...process.env, PATH: `${fakeNodeDir}:${process.env.PATH}` } });
+    assert.match(out, /SKIPPED=changeset \(no file this push touches is one npm actually ships/,
+      "a genuine, examined `false` must keep its real claim -- this row narrows WHEN the claim is made, "
+      + "not what it says");
+    assert.doesNotMatch(out, /COULD NOT RUN/, "a real answer must never read as a failure to answer");
+  } finally {
+    rmSync(fakeNodeDir, { recursive: true, force: true });
+  }
+});
+
+test("MUTATION (#288): reverting to the bare string comparison must reproduce the exact live defect -- "
+  + "a failure read as the honest SKIPPED claim", () => {
+  const fakeNodeDir = withFakeNode("fail");
+  try {
+    const naiveScript = `set -u\nchanged="lab"\nskipped=()\nfailed=()\n`
+      + `if [ -n "$changed" ] && [ "$(node scripts/changeset-precise.mjs origin/main)" = "true" ]; then\n`
+      + `  :\nelse\n  skipped+=("changeset (no file this push touches is one npm actually ships for a published package)")\nfi\n`
+      + `printf 'SKIPPED=%s\\n' "\${skipped[@]:-}"`;
+    const out = execFileSync("bash", ["-c", naiveScript],
+      { cwd: REPO, encoding: "utf8", env: { ...process.env, PATH: `${fakeNodeDir}:${process.env.PATH}` } });
+    assert.match(out, /no file this push touches is one npm actually ships/,
+      "documents the exact live defect this row exists to end -- the naive comparison cannot see the "
+      + "command's own exit status, so a genuine failure prints the SAME sentence as an honest false");
+  } finally {
+    rmSync(fakeNodeDir, { recursive: true, force: true });
   }
 });
 
