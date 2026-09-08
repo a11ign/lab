@@ -45,6 +45,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { npmCliExecutable } from "../../../../scripts/npm-cli-executable.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "runs", ".venv", "coverage", "backups"]);
@@ -61,7 +62,7 @@ const TRACKED_EXEMPT: Record<string, string> = {
 // legitimately empty rather than broken. Regenerated once, at module load, the same discipline
 // `coverage-doc.test.ts`'s own `regenerate()` uses -- so the known generated file is guaranteed present
 // before any test in this file runs, in every environment.
-execFileSync("npx", ["tsx", "packages/lab/scripts/generate-coverage-doc.ts"], { cwd: REPO_ROOT, stdio: "pipe" });
+execFileSync(npmCliExecutable("npx"), ["tsx", "packages/lab/scripts/generate-coverage-doc.ts"], { cwd: REPO_ROOT, stdio: "pipe" });
 
 /** `<` `!` `-` `-` optional whitespace `GENERATED`, built from parts so this file's OWN source -- which
  *  necessarily discusses the marker -- can describe it in prose without matching it. See the file header. */

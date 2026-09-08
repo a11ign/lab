@@ -37,6 +37,7 @@ import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { internalDependencies } from "../../../../scripts/isolation-gate.mjs";
+import { npmCliExecutable } from "../../../../scripts/npm-cli-executable.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const CLI_DIR = join(REPO, "packages/cli");
@@ -58,11 +59,11 @@ function packAndInstall(): string {
   const dirs = [CLI_DIR, ...internalDependencies(CLI_DIR)];
   const tarballs = dirs.map((source) =>
     join(consumer, basename(
-      execFileSync("npm", ["pack", "--silent", "--pack-destination", consumer], { cwd: source, encoding: "utf8" })
+      execFileSync(npmCliExecutable("npm"), ["pack", "--silent", "--pack-destination", consumer], { cwd: source, encoding: "utf8" })
         .trim().split("\n").pop()!)));
-  execFileSync("npm", ["init", "-y"], { cwd: consumer, stdio: "ignore" });
+  execFileSync(npmCliExecutable("npm"), ["init", "-y"], { cwd: consumer, stdio: "ignore" });
   // --omit=optional: axe/playwright are never reached before the refusal this test checks for.
-  execFileSync("npm", ["install", "--silent", "--no-workspaces", "--omit=optional", ...tarballs],
+  execFileSync(npmCliExecutable("npm"), ["install", "--silent", "--no-workspaces", "--omit=optional", ...tarballs],
     { cwd: consumer, stdio: "ignore" });
   return consumer;
 }
