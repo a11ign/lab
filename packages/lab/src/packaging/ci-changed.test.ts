@@ -653,13 +653,21 @@ test("PROOF: gate's own check fails when a needed job's result is neither succes
 
 test("ci.yml's board job runs exactly the board guards and the claim guard, and DOES build", () => {
   const doc = parseYaml(readWorkflow("ci.yml")) as {
-    jobs: Record<string, { if?: string; steps: Array<Record<string, unknown>> }>;
+    jobs: Record<string, { if?: string; uses?: string; steps?: Array<Record<string, unknown>> }>;
   };
   const board = doc.jobs.board;
   assert.ok(board, "ci.yml must declare a job named 'board'");
   assert.equal(board.if, "needs.changed.outputs.board == 'true'");
+  // A1 (#452): board is now a CALLER, not a step list of its own -- see reusable-board.yml for the
+  // actual steps this test goes on to check.
+  assert.equal(board.uses, "./.github/workflows/reusable-board.yml",
+    "ci.yml's board job must call the extracted reusable-board.yml, not carry its own steps");
 
-  const runLines = (board.steps ?? []).map((s) => String(s.run ?? "")).join("\n");
+  const reusable = parseYaml(readWorkflow("reusable-board.yml")) as {
+    jobs: Record<string, { steps: Array<Record<string, unknown>> }>;
+  };
+  const runLines = Object.values(reusable.jobs).flatMap((j) => j.steps ?? [])
+    .map((s) => String(s.run ?? "")).join("\n");
   assert.match(runLines, /packages\/lab\/src\/packaging\/board-\*\.test\.ts/,
     "the board job must run the board-*.test.ts glob -- board-liveness, board-schedule, board-markdown, "
     + "board-achievement-staleness, board-style and board-summary-origin, discovered rather than "
