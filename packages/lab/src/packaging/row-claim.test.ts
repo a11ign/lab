@@ -272,6 +272,28 @@ test("MUTATION: dispatching a `ready` row removes `ready` -- #197's review findi
     + `got: ${JSON.stringify(editCall)}`);
 });
 
+test("#444: a runner: label is NEVER removed by a claim -- it survives, unlike ready", () => {
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      return JSON.stringify({ number: 324, title: "V1 rehearsal",
+        labels: [{ name: READY_LABEL }, { name: "runner:worker-audit" }] });
+    }
+    return "[]"; // eligibility lookups (B2/B4) see an empty answer and fail open
+  };
+  const result = claimRow(324, "worker-audit", { run, moveStatus: () => ({ moved: true }) });
+  assert.equal(result.claimed, true, `expected a successful claim by the named runner, got: `
+    + `${JSON.stringify(result)}`);
+  const editCall = calls.find((a) => a[1] === "edit");
+  assert.ok(editCall, "must have written the claim");
+  const removedLabels = editCall!.map((a, i) => (a === "--remove-label" ? editCall![i + 1] : null))
+    .filter((l): l is string => l !== null);
+  assert.ok(!removedLabels.includes("runner:worker-audit"),
+    "runner: records WHO a row was reserved for, and stays true after the reservation is honoured");
+  assert.ok(removedLabels.includes(READY_LABEL), "ready must still be removed as usual");
+});
+
 // --- declineRow: give a row back, #176's second acceptance case ---
 
 test("declineRow returns a dispatched-but-not-started row to genuinely unclaimed", () => {
