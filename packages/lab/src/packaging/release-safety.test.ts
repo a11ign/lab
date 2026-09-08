@@ -5,7 +5,7 @@
  * be unpublished after 72 hours — only deprecated. So a wrong first release is permanent, and the guards
  * that prevent one are worth asserting rather than trusting to review.
  *
- * Six independent guards, and independence is the point: any single one would be a single point of
+ * Seven independent guards, and independence is the point: any single one would be a single point of
  * failure, which is this repo's rule about a verification not sharing a failure mode with its action.
  * A change that removes one should be deliberate, and this test is what makes it deliberate.
  *
@@ -14,6 +14,11 @@
  * passed for the exact sha. Both left `main`/PR entirely and declare `workflow_call`, so this workflow now
  * runs them as JOBS against the sha it was dispatched at, and `release`'s own `needs:` on both is the
  * guard — no query, no race between "never ran" and "running right now".
+ *
+ * Guard 7 (`consumer-gate`) joined 2026-09-08 (#494): `action-smoke` runs `uses: ./` with full repository
+ * knowledge and never reads the public documents, so it could not catch a documented workflow that is
+ * broken for a real reader. `consumer-gate.yml` is generated from README.md's own Quickstart fence and
+ * runs as a JOB the same way guards 5 and 6 do.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -70,31 +75,39 @@ test("guard 4: access stays restricted until the name is settled", () => {
     "the workflow must read the access setting back and refuse, rather than assuming it");
 });
 
-test("guards 5 and 6: action-smoke and capture-regression run as JOBS, against this exact sha", () => {
+test("guards 5, 6 and 7: action-smoke, capture-regression and consumer-gate run as JOBS, against this "
+  + "exact sha", () => {
   // `uses: ./.github/workflows/<file>` with no `if:` -- GitHub runs a called reusable workflow at the
   // ref of the CALLER by default, so this is inherently "the exact sha being published", never a query
   // that could match some other commit's run.
-  for (const file of ["action-smoke.yml", "capture-regression.yml"]) {
+  //
+  // #494: consumer-gate.yml joined action-smoke/capture-regression as a third unconditional guard --
+  // action-smoke has full repository knowledge (`uses: ./`) and never reads the public documents, so it
+  // could not have caught (and did not catch) three publish-blockers the V1 rehearsal (#324) found on a
+  // real windows-2022 runner. consumer-gate.yml is the ONE guard exercising the path a first reader
+  // actually takes.
+  for (const file of ["action-smoke.yml", "capture-regression.yml", "consumer-gate.yml"]) {
     assert.match(workflow, new RegExp(`uses:\\s*\\./\\.github/workflows/${file}\\b`),
       `release.yml must call ${file} as a reusable workflow job, or its own trigger-table change (no `
       + "more push/pull_request on main) leaves nothing gating a release against it");
   }
 });
 
-test("guards 5 and 6 are not skippable in dry run", () => {
-  // The `release` job's OWN `needs:` is what enforces both -- a job with an unsatisfied `needs:` is
+test("guards 5, 6 and 7 are not skippable in dry run", () => {
+  // The `release` job's OWN `needs:` is what enforces all three -- a job with an unsatisfied `needs:` is
   // skipped/failed by GitHub regardless of any `if:` on its steps, so there is no per-step dry-run
   // escape hatch to check for here (there was one for the old query-based step; there is none now,
   // which this test proves by there being no `if:` anywhere near the `needs:` line).
   const releaseJob = workflow.indexOf("\n  release:\n");
   assert.notEqual(releaseJob, -1, "the release job must exist");
   const nearby = workflow.slice(releaseJob, releaseJob + 400);
-  assert.match(nearby, /needs:\s*\[action-smoke,\s*capture-regression\]/,
-    "the release job must declare needs: [action-smoke, capture-regression] -- unconditionally, so a "
-    + "dry run cannot proceed past a red consumer-path or capture-path job either");
+  assert.match(nearby, /needs:\s*\[action-smoke,\s*capture-regression,\s*consumer-gate\]/,
+    "the release job must declare needs: [action-smoke, capture-regression, consumer-gate] -- "
+    + "unconditionally, so a dry run cannot proceed past a red consumer-path, capture-path or "
+    + "consumer-shaped-gate job either");
 });
 
-test("dist-tag (#326) is a CHANNEL, not a bypass of any of the six guards", () => {
+test("dist-tag (#326) is a CHANNEL, not a bypass of any of the seven guards", () => {
   // Defaults empty, so an unattended or mistyped dispatch behaves exactly as before: no flag reaches
   // `changeset publish`, which is changesets' own "latest" behaviour.
   assert.match(workflow, /dist-tag:[\s\S]{0,600}?default:\s*['"]{2}/,
@@ -102,13 +115,13 @@ test("dist-tag (#326) is a CHANNEL, not a bypass of any of the six guards", () =
     + "anyone choosing to");
 
   // The publish step itself, not just the input declaration -- a flag built somewhere `if:`-gated
-  // differently from the six guards above would be a seventh, undocumented path to publishing.
+  // differently from the seven guards above would be an eighth, undocumented path to publishing.
   const publishStep = workflow.indexOf("- name: Publish\n");
   assert.notEqual(publishStep, -1, "the Publish step must exist");
   const nearby = workflow.slice(publishStep, publishStep + 700);
   assert.match(nearby, /if:\s*inputs\.dry-run == false && inputs\.confirm == 'publish-for-real'/,
     "the Publish step's OWN if: must still require both dry-run and confirm -- dist-tag selects WHICH "
-    + "tag a real publish uses, it must never be a route to a publish the other five guards would refuse");
+    + "tag a real publish uses, it must never be a route to a publish the other six guards would refuse");
   assert.match(nearby, /changeset publish.*inputs\.dist-tag/,
     "the publish command must actually read inputs.dist-tag, or the input is decorative");
 });
