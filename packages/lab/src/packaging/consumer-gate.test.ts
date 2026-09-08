@@ -19,6 +19,7 @@ import {
   extractDocumentedJobsBlock, pinActionRef, substituteTarget, extractJobName,
   buildConsumerGateWorkflow, generate, currentHeadSha, README_PATH, OUT,
 } from "../../../../scripts/generate-consumer-gate.mjs";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -179,7 +180,7 @@ test("CONTROL: a documented workflow WITH a checkout step generates a gate that 
 test("currentHeadSha: returns a real, full 40-character commit sha for this checkout", () => {
   const sha = currentHeadSha();
   assert.match(sha, /^[0-9a-f]{40}$/);
-  const real = execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPO, encoding: "utf8" }).trim();
+  const real = execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" }).trim();
   assert.equal(sha, real);
 });
 
