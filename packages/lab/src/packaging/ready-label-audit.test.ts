@@ -7,7 +7,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   READY_LABEL, MUTEX_LABELS, mutexViolations, fetchOpenIssues,
-  fetchAllIssues, closedDebris, isClosedDebrisLabel,
+  fetchAllIssues, closedDebris, isClosedDebrisLabel, readyRowsAbsentFromBoard,
 } from "../../../../scripts/ready-label-audit.mjs";
 
 // --- mutexViolations: pure, no I/O ---
@@ -243,4 +243,36 @@ test("MUTATION: reverting fetchAllIssues to request --state open loses every clo
   assert.equal(debris.length, 1, "fetchAllIssues must request --state all, or #292 (the closed row) never "
     + "reaches closedDebris at all -- a mutation back to --state open makes this assert 0, not 1");
   assert.equal(debris[0].number, 292);
+});
+
+// --- readyRowsAbsentFromBoard: pure, no I/O -- #399's third population ---
+
+test("readyRowsAbsentFromBoard: a ready row whose number is on the board is not reported", () => {
+  const issues = [{ number: 1, title: "on the board", labels: [READY_LABEL] }];
+  assert.deepEqual(readyRowsAbsentFromBoard(issues, new Set([1])), []);
+});
+
+test("readyRowsAbsentFromBoard: a ready row absent from the board's item numbers is reported", () => {
+  const issues = [{ number: 1, title: "off the board", labels: [READY_LABEL] }];
+  assert.deepEqual(readyRowsAbsentFromBoard(issues, new Set([2, 3])), issues);
+});
+
+test("readyRowsAbsentFromBoard: a non-ready row absent from the board is not this population's business", () => {
+  const issues = [{ number: 1, title: "no ready label", labels: ["blocked"] }];
+  assert.deepEqual(readyRowsAbsentFromBoard(issues, new Set()), []);
+});
+
+test("readyRowsAbsentFromBoard: neither a label check nor a Status check alone would see this -- only the "
+  + "comparison does", () => {
+  // Two rows both carry `ready` (the label is correct, so a label-only check sees nothing wrong) and
+  // neither has an item on the board at all (so there is no Status to read either) -- #399's own measured
+  // shape, four such rows existing while the Ready lane read empty.
+  const issues = [
+    { number: 10, title: "row A", labels: [READY_LABEL] },
+    { number: 11, title: "row B", labels: [READY_LABEL] },
+    { number: 12, title: "row C, genuinely on the board", labels: [READY_LABEL] },
+  ];
+  const boardNumbers = new Set([12]);
+  const missing = readyRowsAbsentFromBoard(issues, boardNumbers);
+  assert.deepEqual(missing.map((i) => i.number), [10, 11]);
 });
