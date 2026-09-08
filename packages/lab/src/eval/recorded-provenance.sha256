@@ -1,0 +1,23 @@
+# THE RECORDED PROVENANCE OF THE EVAL FIXTURES -- where each capture came from and what produced it.
+#
+# One SHA-256 per fixture, over that file's `url`/`capturedAt`/`baseUrl`/`cacheKey` values and its
+# whole `environment` block, joined in document order. `recorded-provenance.test.ts` recomputes these
+# and refuses any that has moved; that file's header carries the incident and the reasoning.
+#
+# A hex digest carries no product name, so no rename sweep can edit it into agreement -- which is the
+# whole point, after `e435ac17` rewrote ten recorded capture URLs and every gate stayed green.
+#
+# CHANGING A LINE HERE ASSERTS that the new values describe where the evidence actually came from.
+# It is not the way to quieten a failing test. If nothing was re-captured, restore the values.
+#
+# NOT `shasum -a 256 <file>` -- these hash the extracted provenance fields, not the file.
+93ebd64b6a7527fa36e71dfd96b42752ad0e65709d40a4b86296c6da3adc62fb  packages/lab/src/eval/fixtures/books/alt-quality-bad.json
+f98801649eae44465d38567d8db7e111eca0dc41342a7d4c3ecc74f44ce88d80  packages/lab/src/eval/fixtures/books/alt-quality-good.json
+3602461ae0baf0f1f47658add43d611147b47e0b547b1cc9f01049dc4154727b  packages/lab/src/eval/fixtures/books/custom-control-bad.json
+040442bdcf63ad9109fd6721cba52d2f0e6f7e4b922d9f99578adaa8652c6415  packages/lab/src/eval/fixtures/books/custom-control-good.json
+cd2658cd4ecf9b73f863b44a9b323a9255b00daf8950b5daf5bb03bf84092315  packages/lab/src/eval/fixtures/books/filter-status-bad.json
+f6740339f70e2dabdbb9ad8efcb9daabd58183047b4684c850a299ee01c09766  packages/lab/src/eval/fixtures/books/filter-status-good.json
+360d5c9328947e77a2f012d3af340a5f6899bb6e4948ed41dbccb7a8ba124ed2  packages/lab/src/eval/fixtures/books/headings-bad.json
+8e030f33f94fc54164b8d83a77ec178068f3f978c774e2fcc2bb9874ddaf9ea4  packages/lab/src/eval/fixtures/books/headings-good.json
+c1a737ececafa38f826cc93fa500ecfc0eeefa36c3621e4d05c32506f3f44604  packages/lab/src/eval/fixtures/books/links-bad.json
+a5232735745bdd5e019a07f4b9048991981226bc3d33dd516fe6f79ef06385d6  packages/lab/src/eval/fixtures/books/links-good.json
