@@ -37,7 +37,7 @@ import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { internalDependencies } from "../../../../scripts/isolation-gate.mjs";
-import { npmCliExecutable } from "../../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const CLI_DIR = join(REPO, "packages/cli");
@@ -57,13 +57,16 @@ function somethingIsListening(port: number, timeoutMs = 500): Promise<boolean> {
 function packAndInstall(): string {
   const consumer = mkdtempSync(join(tmpdir(), "a11y-no-worker-refusal-"));
   const dirs = [CLI_DIR, ...internalDependencies(CLI_DIR)];
+  const npmPack = npmCliInvocation("npm", ["pack", "--silent", "--pack-destination", consumer]);
   const tarballs = dirs.map((source) =>
     join(consumer, basename(
-      execFileSync(npmCliExecutable("npm"), ["pack", "--silent", "--pack-destination", consumer], { cwd: source, encoding: "utf8" })
+      execFileSync(npmPack.command, npmPack.args, { cwd: source, encoding: "utf8" })
         .trim().split("\n").pop()!)));
-  execFileSync(npmCliExecutable("npm"), ["init", "-y"], { cwd: consumer, stdio: "ignore" });
+  const npmInit = npmCliInvocation("npm", ["init", "-y"]);
+  execFileSync(npmInit.command, npmInit.args, { cwd: consumer, stdio: "ignore" });
   // --omit=optional: axe/playwright are never reached before the refusal this test checks for.
-  execFileSync(npmCliExecutable("npm"), ["install", "--silent", "--no-workspaces", "--omit=optional", ...tarballs],
+  const npmInstall = npmCliInvocation("npm", ["install", "--silent", "--no-workspaces", "--omit=optional", ...tarballs]);
+  execFileSync(npmInstall.command, npmInstall.args,
     { cwd: consumer, stdio: "ignore" });
   return consumer;
 }
