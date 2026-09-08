@@ -64,10 +64,33 @@ function allDocsMd(dir: string): string[] {
 }
 
 /**
+ * Makes `origin/main` resolvable before diffing against it. `ci.yml`'s `ts` job runs with
+ * `fetch-depth: 0` and this works unconditionally there; the `acceptance` and `docs` jobs check out at
+ * the default depth (1), where `actions/checkout` fetches only the PR ref and `origin/main` does not
+ * exist at all -- the identical trap #489 hit on `ci.yml`'s own base-ref resolution
+ * (`fatal: invalid object name 'origin/main'`). Rather than assuming full history, fetch it on demand;
+ * the vacuity guard below still refuses if this somehow leaves the ref unresolvable, so a fetch that
+ * silently no-ops (offline runner, a mirror with no `main`) cannot make this test pass having examined
+ * nothing.
+ */
+function ensureOriginMain(): void {
+  const env = sandboxGitEnv();
+  const opts = { cwd: REPO_ROOT, env, stdio: "pipe" as const };
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "origin/main"], opts);
+    return;
+  } catch {
+    // origin/main is not resolvable in this checkout -- fetch it before giving up.
+  }
+  execFileSync("git", ["fetch", "origin", "main"], opts);
+}
+
+/**
  * The unified diff of CLAUDE.md between `origin/main` and the working tree. `env: sandboxGitEnv()`
  * strips any inherited `GIT_*` redirect before spawning, per this repo's own standing rule.
  */
 function claudeMdDiff(): string {
+  ensureOriginMain();
   return execFileSync("git", ["diff", "origin/main", "--", "CLAUDE.md"],
     { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8", maxBuffer: 1024 * 1024 * 64 });
 }
