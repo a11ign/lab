@@ -82,6 +82,22 @@ const NPM_CLI_IS_DATA_NOT_A_SPAWN: Record<string, string> = {
     '`onlyResolves("npx")` and `classifyCommand("npm run fleet:deploy", ...)` -- a local test predicate '
     + "standing in for an injected seam, and a string handed to a classifier as DATA to judge, neither of "
     + "which spawns anything (already exempted from git-spawn-classification.test.ts for the identical shape)",
+  // THIS FILE'S OWN MUTATION/CONTROL FIXTURES, caught by its own discovery on the first real run --
+  // exactly the #446 shape (`acceptance-prose.test.ts` above) reproduced one level in. Each fixture is a
+  // STRING containing source text handed to `npmCliCalls`/`callsBareNpmCli` as data to classify, never
+  // code this file itself executes.
+  "packages/lab/src/packaging/npm-cli-windows-spawn.test.ts":
+    'its own MUTATION/CONTROL test fixtures are STRINGS containing `execFileSync("npx", ...)`-shaped '
+    + "source text, fed to npmCliCalls()/callsBareNpmCli() as the DATA under test -- never code this file "
+    + "itself executes. The identical trap #446 hit in acceptance-prose.test.ts, found here by this "
+    + "guard's own first real run rather than by review.",
+  // `npmCliExecutable` imported under ALIASES to compare both canonical copies side by side -- the
+  // identifier at each call site is `rootNpmCliExecutable`/`localNpmCliExecutable`, never the literal
+  // name `callsBareNpmCli` checks for, even though both resolve to the real, safe function.
+  "packages/worker-fleet/src/npm-cli-executable.test.ts":
+    "imports npmCliExecutable under aliases (rootNpmCliExecutable, localNpmCliExecutable) to compare the "
+    + "root and worker-fleet copies side by side -- the call site's identifier is the alias, not the "
+    + "literal name this file's classifier matches, though both resolve to the real, safe function",
 };
 
 /** Every `(identifier, literal)` pair the file's stripped source contains, for `"npx"`/`"npm"` literals. */
