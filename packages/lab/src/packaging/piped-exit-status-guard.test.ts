@@ -177,3 +177,34 @@ test("#375: the CLI still treats a literal command string as before, even one th
     assert.match((err as { stdout: string }).stdout, /^REFUSE:/);
   }
 });
+
+// --- #535: PINNING THE PRODUCER SIDE OF A CONTRACT WRITTEN IN TWO PLACES ---
+//
+// `pre-commit` classifies this CLI's output by checking whether it starts with `ALLOW:` or `REFUSE:`
+// (rather than trusting the exit code alone -- see #535's own PR body for why: an unresolvable import
+// exits 1, identical to a real HAZARD, and no try/catch inside this file's entry point can intercept a
+// failure that happens before that entry point runs). That is deliberately NOT the same class of mistake
+// `capture-faults.mjs`'s "recovery is keyed on fault codes, never on message text" rule was written
+// against -- an unrecognised prefix here falls to `pre-commit`'s own guard-error path and FAILS CLOSED,
+// loud and refusing, rather than silently misclassifying and passing. But the two copies of the prefix
+// (this file's `console.log` and `pre-commit`'s `case` patterns) are still a fact stated twice, and
+// nothing compared them until now -- this pins the PRODUCER side directly, on a real process invocation
+// of each kind, so the two cannot drift apart without something going red here rather than relying on the
+// loud failure at the consumer being noticed.
+
+test("#535: a real ALLOW verdict's stdout starts with exactly `ALLOW:`, which is the literal prefix "
+  + "pre-commit's own classifier matches", () => {
+  const out = execFileSync("node", [CLI, "echo hi"], { encoding: "utf8" });
+  assert.match(out, /^ALLOW:/);
+});
+
+test("#535: a real REFUSE verdict's stdout starts with exactly `REFUSE:`, which is the literal prefix "
+  + "pre-commit's own classifier matches", () => {
+  try {
+    execFileSync("node", [CLI, "node scripts/merge-guard.mjs 148 | head -4; echo EXIT=$?"],
+      { encoding: "utf8", stdio: "pipe" });
+    assert.fail("expected the CLI to exit non-zero on a real hazard");
+  } catch (err) {
+    assert.match((err as { stdout: string }).stdout, /^REFUSE:/);
+  }
+});
