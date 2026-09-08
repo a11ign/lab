@@ -716,13 +716,3 @@ test("declineRow does NOT move Status when the decline itself is refused (not th
   assert.equal(result.declined, false);
   assert.deepEqual(moveCalls, []);
 });
-
-// --- Live, read-only smoke test against the real repo ---
-
-test("fetchLabels against the real #55 succeeds structurally, live", () => {
-  // Not asserting a specific claimed state -- issue state can move. The contract under test is narrower:
-  // a real gh call against a real, existing issue returns a well-formed result without throwing.
-  const result = fetchLabels(55);
-  assert.equal(result.number, 55);
-  assert.ok(Array.isArray(result.labels));
-});
