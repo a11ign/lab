@@ -21,13 +21,16 @@
  * The reviewer's own note: their first pass omitted this and the corrected instrument gave the same
  * 1,337, so it is not an artefact of either choice -- kept here for the same reason.
  *
- * ## Why this needs `origin/main`, and what happens without it
+ * ## Why this needs `origin/main`, and the two different "empty" cases
  *
  * `git diff origin/main -- CLAUDE.md` is meaningless without a real `origin/main` to diff against --
- * a shallow clone or a detached fixture repo would report zero removed lines and this test would pass
- * having examined nothing, the exact "correct about an empty population" shape CLAUDE.md itself names
- * as its most expensive recurring defect. `originMainClaudeMd()` refuses rather than silently reading
- * a stale or absent ref.
+ * a shallow checkout has no such ref at all (`ensureOriginMain()` fetches it on demand, fixing the
+ * trap #505's own CI hit: the `acceptance`/`docs` jobs check out at depth 1, where `actions/checkout`
+ * fetches only the PR ref). But an empty DIFF, once `origin/main` genuinely resolves, is not always a
+ * bug: `trunk-guard.yml` runs this same suite directly against `main`'s own tip, where HEAD legitimately
+ * IS `origin/main` and there is nothing to compare. The two failure shapes look identical from the
+ * diff's own output and must not be conflated -- one is "the ref never resolved", the other is "the ref
+ * resolved and there is nothing new"; only the first is a defect.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -111,18 +114,42 @@ export function haystack(): string {
   return claudeMd + " " + docsFiles.map((f) => norm(readFileSync(f, "utf8"))).join(" ");
 }
 
-test("the diff against origin/main is real -- this test cannot pass having examined nothing", () => {
-  const diff = claudeMdDiff();
-  assert.ok(diff.length > 0,
-    "git diff origin/main -- CLAUDE.md is empty -- either nothing has changed, or origin/main is " +
-    "unreachable in this checkout, and either way the test below would pass vacuously");
+test("origin/main resolves to a real commit -- this test cannot pass having examined nothing", () => {
+  // NOT "the diff is non-empty": trunk-guard runs this SAME test directly against main's own tip, where
+  // HEAD legitimately equals origin/main and the diff is legitimately empty -- that is not vacuity, it
+  // is "nothing to check". The real vacuity risk fixed here is `origin/main` failing to RESOLVE at all
+  // (the shallow-checkout trap the acceptance/docs CI jobs hit, #505's own review): `ensureOriginMain()`
+  // fetches it on demand, and this asserts that succeeded rather than silently leaving an empty diff
+  // whose cause could be either "resolved and identical" or "never resolved".
+  ensureOriginMain();
+  const sha = execFileSync("git", ["rev-parse", "--verify", "origin/main"],
+    { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8" }).trim();
+  assert.match(sha, /^[0-9a-f]{40}$/, `origin/main resolved to "${sha}", not a real commit SHA`);
+});
+
+test("CONTROL/MUTATION: removedSubstantiveLines extracts real removals and drops fragments and additions", () => {
+  const diff = [
+    "diff --git a/CLAUDE.md b/CLAUDE.md",
+    "--- a/CLAUDE.md",
+    "+++ b/CLAUDE.md",
+    "@@ -1,3 +1,3 @@",
+    "-a short fragment",
+    "-a genuinely substantive removed line that is well over the twenty-five character floor",
+    "+an ADDED line must never be read as removed, however long",
+  ].join("\n");
+  const removed = removedSubstantiveLines(diff);
+  assert.deepEqual(removed,
+    [norm("a genuinely substantive removed line that is well over the twenty-five character floor")],
+    "the extraction must drop the ---/+++ file headers, the sub-floor fragment, and the added line, " +
+    "keeping only the one real substantive removal");
 });
 
 test("every substantive line removed from CLAUDE.md survives byte-identical somewhere in docs/", () => {
   const removed = removedSubstantiveLines(claudeMdDiff());
-  assert.ok(removed.length > 0,
-    "found 0 substantive removed lines despite a non-empty diff -- the >25-char filter or the " +
-    "removed-line extraction may be broken");
+  // An empty `removed` here is not a hole in THIS test: on trunk-guard (HEAD is origin/main) or a PR
+  // that never touches CLAUDE.md, there is genuinely nothing to check, and the extraction logic itself
+  // is proven correct above against a synthetic diff rather than depending on this branch's real state.
+  if (removed.length === 0) return;
 
   const hay = haystack();
   const missing = removed.filter((line) => !hay.includes(line));
