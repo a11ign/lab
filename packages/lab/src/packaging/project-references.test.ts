@@ -25,6 +25,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { npmCliExecutable } from "../../../../scripts/npm-cli-executable.mjs";
 
 const root = fileURLToPath(new URL("../../../../", import.meta.url));
 const fixture = (name: string) => join(root, "scripts/tsconfig-fixtures", name);
@@ -33,7 +34,7 @@ const fixture = (name: string) => join(root, "scripts/tsconfig-fixtures", name);
 function buildClean(dir: string): { code: number; output: string } {
   for (const stale of ["dist", "tsconfig.tsbuildinfo"]) rmSync(join(dir, stale), { recursive: true, force: true });
   try {
-    const output = execFileSync("npx", ["tsc", "--build", "--force", dir], { cwd: root, encoding: "utf8" });
+    const output = execFileSync(npmCliExecutable("npx"), ["tsc", "--build", "--force", dir], { cwd: root, encoding: "utf8" });
     return { code: 0, output };
   } catch (error) {
     const e = error as { status?: number; stdout?: string; stderr?: string };
