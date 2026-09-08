@@ -182,6 +182,12 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "pass again -- the evidence a guard here actually bites, not merely that it could not read as "
       + "empty.",
   },
+  "packages/lab/src/packaging/npm-cli-windows-spawn.test.ts": {
+    guard: "touchingNpmCli.length >= 20",
+    note: "guarded — #492's `git ls-files '*.ts' '*.mjs'` walk for every file mentioning npx/npm as a call "
+      + "argument, floored at 20 against the known census of ~26 (23 real spawns plus 3 files carrying "
+      + "documented data-not-a-spawn exemptions)",
+  },
 };
 
 test("MUTATION: without the SELF exclusion, this file would discover itself", () => {

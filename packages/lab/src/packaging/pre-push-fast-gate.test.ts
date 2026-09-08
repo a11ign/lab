@@ -18,6 +18,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, rmSync, mkdirSync, chmodSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
+import { npmCliExecutable } from "../../../../scripts/npm-cli-executable.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const HOOK = readFileSync(`${REPO}scripts/git-hooks/pre-push`, "utf8");
@@ -100,7 +101,7 @@ test("a glob matching zero test files does not fail the fast gate -- the nvda-sp
   // have its fast gate read as a failure because node's test runner found nothing to run.
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
-  const out = execFileSync("npx", ["tsx", "--test", "packages/nvda-speech/src/**/*.test.ts"],
+  const out = execFileSync(npmCliExecutable("npx"), ["tsx", "--test", "packages/nvda-speech/src/**/*.test.ts"],
     { cwd: REPO, encoding: "utf8", env });
   assert.match(out, /tests 0/);
 });
@@ -109,7 +110,7 @@ test("MUTATION: without scrubbing NODE_TEST_CONTEXT, the nested run is silently 
   // Reproduces the exact failure mode the test above exists to avoid: with the parent's test-runner
   // context left INTACT, the child process is refused and returns EMPTY output with exit 0 -- not a
   // thrown error, not a non-zero status. Proves the guard above is guarding something real.
-  const out = execFileSync("npx", ["tsx", "--test", "packages/nvda-speech/src/**/*.test.ts"],
+  const out = execFileSync(npmCliExecutable("npx"), ["tsx", "--test", "packages/nvda-speech/src/**/*.test.ts"],
     { cwd: REPO, encoding: "utf8" }); // process.env inherited, NODE_TEST_CONTEXT included -- deliberately not scrubbed
   assert.equal(out, "", "expected the nested run to be silently refused when NODE_TEST_CONTEXT survives");
 });

@@ -26,6 +26,7 @@ import { pathToFileURL } from "node:url";
 import { releasability } from "../src/packaging/releasability.mjs";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+import { npmCliExecutable } from "../../../scripts/npm-cli-executable.mjs";
 
 /**
  * a mistyped `--dry-run` runs the REAL retrain; `--silent` in this file is npm's, passed to each step.
@@ -76,7 +77,7 @@ export function run(step, { dryRun }) {
   const argv = ["run", "--silent", step.script, ...(step.args?.length ? ["--", ...step.args] : [])];
   const env = step.env ? { ...process.env, ...step.env } : process.env;
   try {
-    const output = execFileSync("npm", argv,
+    const output = execFileSync(npmCliExecutable("npm"), argv,
       { cwd: REPO, encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
     process.stdout.write(output.split("\n").slice(-6).join("\n") + "\n");
     return { ok: true, output };
