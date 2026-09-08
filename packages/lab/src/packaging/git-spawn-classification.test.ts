@@ -111,6 +111,40 @@ function trackedSourceFiles(): string[] {
 const SPAWNS_GIT_DIRECTLY = /\b\w+\(\s*["']git["']/;
 
 /**
+ * FILES WHERE THE LITERAL `"git"` IS DATA, NOT A SPAWN -- classified, never silently skipped.
+ *
+ * `SPAWNS_GIT_DIRECTLY` is deliberately broad: `<identifier>("git", ...)`, so an indirected call site
+ * (`run("git", ...)` through an injected seam) cannot slip past a list of function names. The price of
+ * that breadth is that it also matches a call passing the STRING `"git"` as an argument -- a fixture
+ * asking "would this token resolve to an executable?", which spawns nothing at all.
+ *
+ * That price came due 2026-09-08T08:00:30Z: `acceptance-prose.test.ts` landed via #446 and turned trunk
+ * RED on `onlyResolves("git")`, a two-line local predicate (`(token) => names.includes(token)`) in a file
+ * whose ONLY imports are `node:test`, `node:assert/strict` and the module under test. It cannot spawn
+ * anything; it has no `node:child_process` import to spawn with.
+ *
+ * **The wrong remedy was available and would have looked like a fix**: adding `sandboxGitEnv` to a file
+ * that spawns no git. That satisfies the guard, ships a meaningless import, and teaches the next author
+ * that the helper is a formality rather than a scrub -- which is how a real guard becomes a ritual. The
+ * repository's own rule applies: a check must never demand a remedy for something it has not shown to be
+ * a fault.
+ *
+ * So the exemption is EXPLICIT and carries its reason, the same shape `cli-flags.test.ts` uses for
+ * `check-schema-migration.mjs`. It is not a bypass: every entry is asserted below to name a real tracked
+ * file that genuinely imports no spawning capability, so an entry added to silence a REAL offender fails
+ * on its own terms rather than passing quietly.
+ */
+const GIT_IS_DATA_NOT_A_SPAWN: Record<string, string> = {
+  "packages/lab/src/packaging/acceptance-prose.test.ts":
+    'passes the string "git" to `onlyResolves()`, a local predicate standing in for the injected '
+    + "`commandExists` seam -- the file imports node:test, node:assert/strict and the module under test, "
+    + "and has no node:child_process import at all (#446, trunk red 2026-09-08T08:00:30Z)",
+};
+
+/** The spawning capability a file must import before it can spawn anything, whatever the callee is named. */
+const CAN_SPAWN = /from\s+["']node:child_process["']|require\(\s*["']node:child_process["']/;
+
+/**
  * A file spawns git either directly (matched above) or through `withGitSandbox`, which never appears as
  * a literal `"git"` call at the SITE it is used from -- `pre-commit-hook.test.ts`, `promotion-refuses-
  * dirty.test.ts` and `lab-reset-removal.test.ts` all migrated to it and, correctly, no longer contain the
@@ -143,12 +177,32 @@ test("the discovery finds a non-trivial population -- vacuity guard for the walk
     + `discovery pattern itself is probably broken, not the population shrinking`);
 });
 
+test("every GIT_IS_DATA_NOT_A_SPAWN entry names a real file that genuinely CANNOT spawn -- the exemption "
+  + "is not a bypass", () => {
+  const tracked = new Set(trackedSourceFiles());
+  for (const [file, reason] of Object.entries(GIT_IS_DATA_NOT_A_SPAWN)) {
+    assert.ok(tracked.has(file),
+      `${file} is exempted but is not a tracked source file -- a stale exemption hides the next real one`);
+    const executable = stripComments(read(file));
+    assert.ok(spawnsGit(executable),
+      `${file} is exempted from a rule it no longer trips -- delete the entry rather than carrying it`);
+    assert.ok(!CAN_SPAWN.test(executable),
+      `${file} DOES import node:child_process, so "the literal is data" is false and this exemption is `
+      + "hiding a real unscrubbed spawn -- the exact failure this whole test exists to prevent");
+    assert.ok(reason.trim().length > 40,
+      `${file}'s exemption needs a reason a reader can check, not a placeholder`);
+  }
+});
+
 test("every git-spawning file imports and USES a canonical GIT_* scrubbing helper", () => {
   const files = trackedSourceFiles();
   const unclassified: string[] = [];
   for (const file of files) {
     const executable = stripComments(read(file));
     if (!spawnsGit(executable)) continue;
+    // #446/trunk-red: a declared "the literal is data" file is classified, not skipped -- see
+    // GIT_IS_DATA_NOT_A_SPAWN, and the test below that proves each entry genuinely cannot spawn.
+    if (file in GIT_IS_DATA_NOT_A_SPAWN) continue;
     if (!usesCanonicalHelper(executable)) unclassified.push(file);
   }
   assert.deepEqual(unclassified, [],

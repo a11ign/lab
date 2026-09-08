@@ -96,7 +96,10 @@ for (const [file, hour, crons] of CASES) {
 
     // Every step after the gate must carry it. A step without it runs twice a day for half the year.
     const steps = text.split(/\n {6}- /).slice(1);
-    const working = steps.filter((s) => !s.startsWith("id: hour"));
+    // `id: republish` is DELIBERATELY not hour-gated -- it is the one documented way past the hour, and
+    // its own safety is the release-exists precondition rather than the clock. Excluded by name, with
+    // its own test below asserting both halves of that safety, rather than loosening this check.
+    const working = steps.filter((s) => !s.startsWith("id: hour") && !s.startsWith("id: republish"));
     assert.ok(working.length >= 3, `only ${working.length} working steps found; this check would be weak`);
     const ungated = working.filter((s) => !s.includes(guard)).map((s) => s.split("\n")[0].slice(0, 60));
     assert.deepEqual(ungated, [],
@@ -115,4 +118,34 @@ test("the wrong-half run is a SUCCESS, not a failure", () => {
     assert.match(text, /Doing nothing, successfully/,
       `${file} must SAY that the off-hour run did nothing deliberately, or its empty log reads as a fault`);
   }
+});
+
+test("republish CANNOT be reached from the schedule, and CANNOT create an edition", () => {
+  const text = read("board-report.yml");
+
+  // BOTH HALVES, because either alone is unsafe. Reachable-from-schedule would make the cron able to
+  // trip it; creating-an-edition would make it an off-hour publish route rather than a replacement.
+  assert.match(text, /if: github\.event_name == 'workflow_dispatch' && inputs\.republish/,
+    "the republish step must be gated on the DISPATCH event as well as the input -- `inputs.republish` "
+    + "is empty on a schedule event, and the event check says so explicitly rather than relying on it");
+
+  assert.match(text, /gh release view "board\/\$DAY"/,
+    "republish must check that TODAY'S RELEASE ALREADY EXISTS -- that single precondition is what makes "
+    + "it a replacement rather than an override, since the worst it can then do is replace a document "
+    + "the board already has");
+
+  assert.match(text, /REFUSING: board\/\$DAY does not exist/,
+    "the absent-release case must REFUSE and say why, never fall through to publishing");
+
+  // Every working step must accept EITHER gate, or republish reaches some steps and not others and
+  // produces a half-rendered edition -- worse than refusing.
+  const steps = text.split(/\n {6}- /).slice(1);
+  const working = steps.filter((s) => !s.startsWith("id: hour") && !s.startsWith("id: republish"));
+  assert.ok(working.length >= 3, `only ${working.length} working steps found; this check would be weak`);
+  const ungated = working
+    .filter((s) => !s.includes("steps.republish.outputs.ok == 'true'"))
+    .map((s) => s.split("\n")[0].slice(0, 60));
+  assert.deepEqual(ungated, [],
+    `these steps do not accept the republish gate, so a republish would run some and skip others: `
+    + `${ungated.join(", ")}`);
 });
