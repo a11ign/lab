@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import {
   READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, strandedByIncompleteDecline, fetchOpenIssues,
   fetchAllIssues, closedDebris, isClosedDebrisLabel, readyRowsAbsentFromBoard,
-  readyRowsAlreadyMerged, fetchClosingPrRefs, CHECKS, runCheck,
+  readyRowsAlreadyMerged, fetchClosingPrRefs, fetchLatestReopenedAt, CHECKS, runCheck,
 } from "../../../../scripts/ready-label-audit.mjs";
 
 // --- mutexViolations: pure, no I/O ---
@@ -324,18 +324,19 @@ test("readyRowsAbsentFromBoard: neither a label check nor a Status check alone w
   assert.deepEqual(missing.map((i) => i.number), [10, 11]);
 });
 
-// --- readyRowsAlreadyMerged: pure, no I/O -- #443's fourth population ---
+// --- readyRowsAlreadyMerged: pure, no I/O -- #443's fourth population, refined by #550 ---
 
-test("readyRowsAlreadyMerged: a ready row a MERGED PR declares Closes on is flagged", () => {
+test("readyRowsAlreadyMerged: a ready row a MERGED PR declares Closes on is flagged ALREADY-MERGED", () => {
   const issues = [{ number: 438, title: "shipped already", labels: [READY_LABEL] }];
-  const refs = new Map([[438, [{ number: 440, state: "MERGED" }]]]);
-  assert.deepEqual(readyRowsAlreadyMerged(issues, refs), [{ number: 438, title: "shipped already", closedBy: 440 }]);
+  const refs = new Map([[438, [{ number: 440, state: "MERGED", mergedAt: "2026-09-01T00:00:00Z" }]]]);
+  assert.deepEqual(readyRowsAlreadyMerged(issues, refs), [{ number: 438, title: "shipped already",
+    state: "ALREADY-MERGED", closedBy: 440, mergedAt: "2026-09-01T00:00:00Z" }]);
 });
 
 test("readyRowsAlreadyMerged: a ready row whose closing PR is still OPEN is NOT flagged -- the fix has "
   + "not landed yet, which is worth knowing but is not this row's shape", () => {
   const issues = [{ number: 1, title: "in flight", labels: [READY_LABEL] }];
-  const refs = new Map([[1, [{ number: 2, state: "OPEN" }]]]);
+  const refs = new Map([[1, [{ number: 2, state: "OPEN", mergedAt: null }]]]);
   assert.deepEqual(readyRowsAlreadyMerged(issues, refs), []);
 });
 
@@ -349,7 +350,7 @@ test("readyRowsAlreadyMerged: a row absent from the caller-supplied ready popula
   + "the flag clears): closing it means it never reaches this function as a ready issue in the first place", () => {
   // Before: the issue is open and ready, and a merged PR closes it -- flagged.
   const openReady = [{ number: 438, title: "shipped already", labels: [READY_LABEL] }];
-  const refs = new Map([[438, [{ number: 440, state: "MERGED" }]]]);
+  const refs = new Map([[438, [{ number: 440, state: "MERGED", mergedAt: "2026-09-01T00:00:00Z" }]]]);
   assert.equal(readyRowsAlreadyMerged(openReady, refs).length, 1);
   // After: the issue is closed, so `fetchOpenIssues` never returns it and it never reaches this function --
   // the flag clears not because the predicate changed, but because the population the caller builds did.
@@ -358,14 +359,110 @@ test("readyRowsAlreadyMerged: a row absent from the caller-supplied ready popula
 
 test("readyRowsAlreadyMerged: multiple closing PRs, only one merged, is still flagged by the merged one", () => {
   const issues = [{ number: 1, title: "row", labels: [READY_LABEL] }];
-  const refs = new Map([[1, [{ number: 2, state: "CLOSED" }, { number: 3, state: "MERGED" }]]]);
-  assert.deepEqual(readyRowsAlreadyMerged(issues, refs), [{ number: 1, title: "row", closedBy: 3 }]);
+  const refs = new Map([[1, [{ number: 2, state: "CLOSED", mergedAt: null },
+    { number: 3, state: "MERGED", mergedAt: "2026-09-01T00:00:00Z" }]]]);
+  assert.deepEqual(readyRowsAlreadyMerged(issues, refs), [{ number: 1, title: "row",
+    state: "ALREADY-MERGED", closedBy: 3, mergedAt: "2026-09-01T00:00:00Z" }]);
+});
+
+// --- #550: REOPENED-AFTER-MERGE, distinguished from ALREADY-MERGED by comparing timestamps ---
+
+test("#550 MUTATION (failing direction 1): a reopen BEFORE the merge is still ALREADY-MERGED, not "
+  + "REOPENED-AFTER-MERGE -- the row was reopened for some earlier, unrelated reason and the merge is "
+  + "the last word", () => {
+  const issues = [{ number: 492, title: "the real #492 shape, reopen first", labels: [READY_LABEL] }];
+  const refs = new Map([[492, [{ number: 529, state: "MERGED", mergedAt: "2026-09-08T18:37:31Z" }]]]);
+  const reopens = new Map([[492, "2026-09-08T10:00:00Z"]]); // reopened HOURS before the merge
+  assert.deepEqual(readyRowsAlreadyMerged(issues, refs, reopens), [{ number: 492,
+    title: "the real #492 shape, reopen first", state: "ALREADY-MERGED", closedBy: 529,
+    mergedAt: "2026-09-08T18:37:31Z" }]);
+});
+
+test("#550 MUTATION (failing direction 2): a reopen AFTER the merge is REOPENED-AFTER-MERGE, never "
+  + "the ALREADY-MERGED sentence -- #492's own real shape: closed by #529 at 18:37:31Z, reopened at "
+  + "19:06:33Z", () => {
+  const issues = [{ number: 492, title: "The build cannot run on windows-2022", labels: [READY_LABEL] }];
+  const refs = new Map([[492, [{ number: 529, state: "MERGED", mergedAt: "2026-09-08T18:37:31Z" }]]]);
+  const reopens = new Map([[492, "2026-09-08T19:06:33Z"]]);
+  assert.deepEqual(readyRowsAlreadyMerged(issues, refs, reopens), [{ number: 492,
+    title: "The build cannot run on windows-2022", state: "REOPENED-AFTER-MERGE", closedBy: 529,
+    mergedAt: "2026-09-08T18:37:31Z", reopenedAt: "2026-09-08T19:06:33Z" }]);
+});
+
+test("#550: the MOST RECENT qualifying merge is compared, never the first one found -- #492's real "
+  + "shape has TWO merged closing PRs (#529, then #545), and only the later one is the one actually "
+  + "racing the reopen", () => {
+  const issues = [{ number: 492, title: "two merges, one reopen", labels: [READY_LABEL] }];
+  const refs = new Map([[492, [
+    { number: 529, state: "MERGED", mergedAt: "2026-09-08T18:37:31Z" },
+    { number: 545, state: "MERGED", mergedAt: "2026-09-08T19:00:41Z" },
+  ]]]);
+  // Reopened BETWEEN the two merges -- comparing against the FIRST merge (#529) would wrongly read this
+  // as REOPENED-AFTER-MERGE; comparing against the LATEST (#545, which is later than this reopen) is the
+  // true ALREADY-MERGED, because #545 is main's actual last word and it postdates the reopen.
+  const reopens = new Map([[492, "2026-09-08T18:51:57Z"]]);
+  assert.deepEqual(readyRowsAlreadyMerged(issues, refs, reopens), [{ number: 492,
+    title: "two merges, one reopen", state: "ALREADY-MERGED", closedBy: 545, mergedAt: "2026-09-08T19:00:41Z" }]);
+});
+
+test("#550: a row never reopened at all (no entry in the map) is ALREADY-MERGED, not a crash on a missing key", () => {
+  const issues = [{ number: 1, title: "never reopened", labels: [READY_LABEL] }];
+  const refs = new Map([[1, [{ number: 2, state: "MERGED", mergedAt: "2026-09-01T00:00:00Z" }]]]);
+  assert.deepEqual(readyRowsAlreadyMerged(issues, refs, new Map()), [{ number: 1, title: "never reopened",
+    state: "ALREADY-MERGED", closedBy: 2, mergedAt: "2026-09-01T00:00:00Z" }]);
+  // and the caller's default (omitting the third argument entirely) behaves identically
+  assert.deepEqual(readyRowsAlreadyMerged(issues, refs), [{ number: 1, title: "never reopened",
+    state: "ALREADY-MERGED", closedBy: 2, mergedAt: "2026-09-01T00:00:00Z" }]);
+});
+
+// --- fetchLatestReopenedAt: the gh-calling half for #550's reopen timestamp ---
+
+/** One aliased issue node, shaped like `timelineItems(itemTypes: [REOPENED_EVENT])` really returns it. */
+function reopenTimelineResponse(byIssue: Record<string, { number: number; reopens: string[] }>) {
+  const repository: Record<string, unknown> = {};
+  for (const [alias, { number, reopens }] of Object.entries(byIssue)) {
+    repository[alias] = { number, timelineItems: { nodes: reopens.map((createdAt) => ({ createdAt })) } };
+  }
+  return JSON.stringify({ data: { repository } });
+}
+
+test("fetchLatestReopenedAt: empty input makes no gh call at all", () => {
+  let called = false;
+  const run = () => { called = true; return "{}"; };
+  const map = fetchLatestReopenedAt([], { run });
+  assert.deepEqual(map, new Map());
+  assert.equal(called, false);
+});
+
+test("fetchLatestReopenedAt: an issue reopened twice returns the LATEST event, not the first", () => {
+  const run = () => reopenTimelineResponse({
+    i0: { number: 492, reopens: ["2026-09-08T18:51:57Z", "2026-09-08T19:06:33Z"] },
+  });
+  const map = fetchLatestReopenedAt([492], { run });
+  assert.equal(map.get(492), "2026-09-08T19:06:33Z");
+});
+
+test("fetchLatestReopenedAt: an issue never reopened returns null, not undefined or a crash", () => {
+  const run = () => reopenTimelineResponse({ i0: { number: 1, reopens: [] } });
+  const map = fetchLatestReopenedAt([1], { run });
+  assert.equal(map.get(1), null);
+});
+
+test("fetchLatestReopenedAt throws, rather than returning an empty map, when gh itself fails", () => {
+  const run = () => { throw new Error("gh: not authenticated"); };
+  assert.throws(() => fetchLatestReopenedAt([1], { run }), /could not resolve reopen history/);
+});
+
+test("fetchLatestReopenedAt throws on a response missing an expected issue alias, rather than guessing", () => {
+  const run = () => JSON.stringify({ data: { repository: {} } });
+  assert.throws(() => fetchLatestReopenedAt([492], { run }), /missing from the reopen-history response/);
 });
 
 // --- fetchClosingPrRefs: the gh-calling half, shaped exactly like the live GraphQL schema returns it ---
 
 /** One aliased issue node, shaped like `closedByPullRequestsReferences` really returns it. */
-function closingRefsResponse(byIssue: Record<string, { number: number; refs: Array<{ number: number; state: string }> }>) {
+function closingRefsResponse(byIssue: Record<string, { number: number;
+  refs: Array<{ number: number; state: string; mergedAt?: string | null }> }>) {
   const repository: Record<string, unknown> = {};
   for (const [alias, { number, refs }] of Object.entries(byIssue)) {
     repository[alias] = { number, closedByPullRequestsReferences: { nodes: refs } };
@@ -381,20 +478,22 @@ test("fetchClosingPrRefs: empty input makes no gh call at all", () => {
   assert.equal(called, false, "an empty alias list is not valid GraphQL and needs no round trip");
 });
 
-test("fetchClosingPrRefs: one issue, one merged closing PR", () => {
-  const run = () => closingRefsResponse({ i0: { number: 438, refs: [{ number: 440, state: "MERGED" }] } });
+test("fetchClosingPrRefs: one issue, one merged closing PR, carrying its mergedAt (#550)", () => {
+  const run = () => closingRefsResponse({
+    i0: { number: 438, refs: [{ number: 440, state: "MERGED", mergedAt: "2026-09-01T00:00:00Z" }] },
+  });
   const map = fetchClosingPrRefs([438], { run });
-  assert.deepEqual(map.get(438), [{ number: 440, state: "MERGED" }]);
+  assert.deepEqual(map.get(438), [{ number: 440, state: "MERGED", mergedAt: "2026-09-01T00:00:00Z" }]);
 });
 
-test("fetchClosingPrRefs: several issues resolve by their own alias, never mixed up with a neighbour's", () => {
+test("fetchClosingPrRefs: a ref with no mergedAt (an OPEN PR) reads null, not undefined", () => {
   const run = () => closingRefsResponse({
     i0: { number: 1, refs: [] },
     i1: { number: 2, refs: [{ number: 20, state: "OPEN" }] },
   });
   const map = fetchClosingPrRefs([1, 2], { run });
   assert.deepEqual(map.get(1), []);
-  assert.deepEqual(map.get(2), [{ number: 20, state: "OPEN" }]);
+  assert.deepEqual(map.get(2), [{ number: 20, state: "OPEN", mergedAt: null }]);
 });
 
 test("fetchClosingPrRefs throws, rather than returning an empty map, when gh itself fails", () => {
