@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { toHtml, inline } from "../../../../scripts/board-markdown.mjs";
@@ -102,7 +102,10 @@ test("every achievement in reported.json carries a non-empty evidence line", () 
   // The board document promises that every claim carries its evidence. An entry with an empty or missing
   // `evidence` would render as a heading with no body -- the same SHAPE as the converter bug, arriving
   // from the data instead of from the renderer, and indistinguishable on the page.
-  const raw = JSON.parse(readFileSync(path.join(REPO, "docs/board/reported.json"), "utf8"));
+  // One file per achievement since #159; the property is unchanged -- every one carries evidence.
+  const dir = path.join(REPO, "docs/board/reported/achievements");
+  const raw = { achievements: readdirSync(dir).filter((f) => f.endsWith(".json"))
+    .map((f) => JSON.parse(readFileSync(path.join(dir, f), "utf8"))) };
   const bad = (raw.achievements ?? [])
     .filter((a: Achievement) => !a.claim?.trim() || !a.evidence?.trim() || !a.reportedBy?.trim());
   assert.deepEqual(bad.map((a: Achievement) => a.claim ?? "(no claim)"), [],
