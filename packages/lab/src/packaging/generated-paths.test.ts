@@ -36,6 +36,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "runs", ".venv", "coverage", "backups"]);
@@ -105,9 +106,14 @@ export function generatedPaths(): string[] {
   return paths.sort();
 }
 
-/** The repo-relative paths git currently tracks -- one call, not one `git ls-files <path>` per candidate. */
+/**
+ * The repo-relative paths git currently tracks -- one call, not one `git ls-files <path>` per candidate.
+ * `env: sandboxGitEnv()` strips any inherited `GIT_*` redirect (`GIT_DIR` foremost) before spawning, per
+ * this repo's own standing rule: a spawned `git` trusting an inherited environment once redirected a real
+ * commit onto the primary checkout from inside a throwaway-repo test (`git-env.mjs`'s own header).
+ */
 function trackedPaths(): Set<string> {
-  const raw = execFileSync("git", ["ls-files"], { cwd: REPO_ROOT, encoding: "utf8" });
+  const raw = execFileSync("git", ["ls-files"], { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8" });
   return new Set(raw.split("\n").filter(Boolean));
 }
 
@@ -135,6 +141,11 @@ test("no generated file is tracked in git", () => {
     + "make this test pass having verified nothing");
 
   const tracked = trackedPaths();
+  // A SECOND floor, on the OTHER population this test enumerates: `git ls-files` failing or returning
+  // nothing would make `offenders` trivially empty too, and this test would pass having verified nothing
+  // about tracking at all -- the exact vacuity shape named at this file's own top, pointed at the
+  // population `trackedPaths()` walks rather than the one `generatedPaths()` walks.
+  assert.ok(tracked.size > 200, `only found ${tracked.size} tracked file(s) -- the ls-files scan is broken`);
   const offenders = paths.filter((p) => tracked.has(p));
   assert.deepEqual(offenders, [],
     "these generated file(s) are tracked in git and must not be -- untrack with `git rm --cached <path>` "

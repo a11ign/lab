@@ -163,6 +163,17 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "if the file or commit did not exist, `execFileSync` would throw rather than return an empty, "
       + "silently-accepted result.",
   },
+  "packages/lab/src/packaging/generated-paths.test.ts": {
+    guard: "tracked.size > 200",
+    note: "guarded — #459's `git ls-files` walk (every tracked path, checked against the generated-file "
+      + "population for offenders). Floored independently of the generated-file floor a few lines above "
+      + "it: `git ls-files` returning empty would make every generated path read as untracked and the "
+      + "offenders list trivially empty, which is this exact vacuity shape pointed at the OTHER "
+      + "population this file enumerates. Live-mutation-checked rather than only floor-guarded: `git add "
+      + "-f docs/coverage.md` on a real checkout made this test fail, naming the file; restoring made it "
+      + "pass again -- the evidence a guard here actually bites, not merely that it could not read as "
+      + "empty.",
+  },
 };
 
 test("MUTATION: without the SELF exclusion, this file would discover itself", () => {
@@ -179,9 +190,9 @@ test("the discovery finds a non-trivial population -- vacuity guard for the walk
   const files = tracked();
   assert.ok(files.length > 200, `only found ${files.length} tracked .test.ts files -- the ls-files scan is broken`);
   const discovered = discoverGitPopulationTests();
-  // The known census: 9. A floor, not a pin -- a legitimate new git-population test raises it, and the
-  // test below is what catches one arriving unclassified. This guard exists only to catch the discovery
-  // pattern itself breaking and matching nothing.
+  // The known census: 10 (#459 added generated-paths.test.ts). A floor, not a pin -- a legitimate new
+  // git-population test raises it, and the test below is what catches one arriving unclassified. This
+  // guard exists only to catch the discovery pattern itself breaking and matching nothing.
   assert.ok(discovered.length >= 8,
     `only found ${discovered.length} git-population test(s), fewer than the known census of 9 -- the `
     + "discovery pattern is probably broken, not the population shrinking");
