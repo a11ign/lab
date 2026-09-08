@@ -30,7 +30,7 @@ import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
 import { isPrimaryWorktree } from "../../../scripts/prune-worktrees.mjs";
-import { npmCliExecutable } from "../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
 
 const REPO = REPO_ROOT;
 const MODEL_DIR = resolve(REPO, "packages/scorer/models/screenreader-scorer");
@@ -67,7 +67,8 @@ const sha = (/** @type {string} */ file) =>
  * @returns {string} the lab-relative source path
  */
 function fetchArtefact(artifact) {
-  const output = execFileSync(npmCliExecutable("npm"), ["run", "--silent", "lab:fetch", "--", "-e", `artifact=${artifact}`],
+  const npm = npmCliInvocation("npm", ["run", "--silent", "lab:fetch", "--", "-e", `artifact=${artifact}`]);
+  const output = execFileSync(npm.command, npm.args,
     { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 32 * 1024 * 1024 });
   const source = output.match(/from (\S+) on the lab/);
   if (!source) {
@@ -116,7 +117,8 @@ function main() {
   for (const [script, why] of [["scorer:verify", "the artefact is safetensors, not an executable format"],
                                ["release:provenance", "the changeset accounts for the weights beside it"]]) {
     process.stdout.write(`=== ${script}\n    ${why}\n`);
-    execFileSync(npmCliExecutable("npm"), ["run", "--silent", script], { cwd: REPO, stdio: "inherit" });
+    const npm = npmCliInvocation("npm", ["run", "--silent", script]);
+    execFileSync(npm.command, npm.args, { cwd: REPO, stdio: "inherit" });
   }
 
   const changeset = collected.find((c) => c.artifact === "promoted-changeset");
