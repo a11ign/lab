@@ -15,6 +15,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { npmCliExecutable } from "../../../../scripts/npm-cli-executable.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const README = readFileSync(join(REPO, "README.md"), "utf8");
@@ -88,7 +89,7 @@ test("README.md does not hardcode docs/coverage.md's generated criterion count",
     + "this will silently drift from it exactly as the deleted copy did");
   // docs/coverage.md is GENERATED and DELIBERATELY UNTRACKED (issue #158) -- regenerated here rather than
   // read off disk, since a fresh checkout has no committed copy to read.
-  execFileSync("npx", ["tsx", "packages/lab/scripts/generate-coverage-doc.ts"],
+  execFileSync(npmCliExecutable("npx"), ["tsx", "packages/lab/scripts/generate-coverage-doc.ts"],
     { cwd: REPO, encoding: "utf8", stdio: "pipe" });
   const coverage = readFileSync(join(REPO, "docs/coverage.md"), "utf8");
   assert.match(coverage, /\d+ of 55 produce findings/,

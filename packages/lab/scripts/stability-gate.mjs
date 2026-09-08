@@ -44,6 +44,7 @@ import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.mjs";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { assertWorkerUrl } from "../../worker-fleet/src/worker-http.mjs";
 import { datasetRoot } from "../src/dataset-paths.mjs";
+import { npmCliExecutable } from "../../../scripts/npm-cli-executable.mjs";
 
 /**
  * the canaries that must pass before a corpus run. `--probe-forms`, `--task` and `--url` appear in
@@ -234,7 +235,7 @@ async function judgeCanary(/** @type {any} */ { path, url: absolute, reason, tas
   // fix is to name the field here rather than to remember to pass it.
   if (probeFocus) args.push("--probe-focus");
   try {
-    const { stdout } = await run("npx", ["tsx", ...args], { maxBuffer: 1 << 24 });
+    const { stdout } = await run(npmCliExecutable("npx"), ["tsx", ...args], { maxBuffer: 1 << 24 });
     const varies = stdout.split("\n").filter((l) => l.includes("VARIES"));
     const usable = /(\d+)\/\d+ usable/.exec(stdout)?.[1];
     // SURFACED, not swallowed, and ABSENCE IS NOT ZERO. This read `?? 0`, so a run where the line stopped
