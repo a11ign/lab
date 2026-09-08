@@ -86,10 +86,26 @@ const OTHER_KEYS: Record<string, string> = {
     + "not a key anybody holds. It exists to be found, which is the opposite of the others here.",
 };
 
+/**
+ * This file, excluded from its own walk — the device `git-population-vacuity.test.ts` and
+ * `real-page-corpus-freshness.test.ts` both use, for the same reason and with the same care.
+ *
+ * Its header quotes the renamed spelling verbatim, because the incident is unreadable without it, and it
+ * matches raw source by design — so once committed it discovers ITSELF. The honest classification would
+ * be "this names the old spelling in prose ABOUT the old spelling", which is true and is also a file
+ * writing its own exemption into the list it maintains: a reader cannot tell that apart from an ordinary
+ * row. Excluded in code instead, so the decision is visible here rather than buried in `OTHER_KEYS`.
+ *
+ * What that costs, stated: a future rename that touched only this file's prose would be invisible to it.
+ * That is a stale comment, not a broken authentication — this file dereferences nothing — and the second
+ * test below still holds every site that does.
+ */
+const SELF = "packages/lab/src/packaging/fleet-key-name-is-one-fact.test.ts";
+
 function trackedTextFiles(): string[] {
   return execFileSync("git", ["ls-files"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
     .split("\n").filter(Boolean)
-    .filter((f) => !f.includes("/dist/") && !f.startsWith("runs/"))
+    .filter((f) => f !== SELF && !f.includes("/dist/") && !f.startsWith("runs/"))
     .filter((f) => /\.(ts|mjs|js|yml|yaml|sh|md|service|cmd|ps1|json)$/.test(f) || !f.includes("."));
 }
 
@@ -121,6 +137,11 @@ test("every site naming an SSH key names the fleet key or a DECLARED other one �
   assert.ok(all.length >= 8,
     `only ${all.length} key mention(s) found across the tree — the discovery is broken, and a check that `
     + "passes having examined nothing is the defect this file exists to prevent (11 on 2026-09-08)");
+
+  assert.ok(!all.some(([file]) => file === SELF), "SELF must not reach the population");
+  assert.ok(read(SELF).includes("a11ign_ed25519"),
+    "SELF is excluded because it quotes the renamed spelling in prose about the rename. If it no longer "
+    + "does, delete the exclusion rather than carrying an exemption nothing needs.");
 
   const unclassified = all.filter(([, key]) => key !== fleetKey && !(key in OTHER_KEYS));
   assert.deepEqual(unclassified, [],
