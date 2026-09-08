@@ -107,6 +107,14 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "sibling test that guards it, so a sibling's guard failing did not stop this one reporting a "
       + "false pass on the same empty population",
   },
+  "packages/lab/src/packaging/fleet-key-name-is-one-fact.test.ts": {
+    guard: "all.length >= 8",
+    note: "guarded — #515. It walks `git ls-files` for every site naming an SSH private key and asserts "
+      + "they all name the one `group_vars/a11y_workers.yml` decides, so a rename sweep cannot split "
+      + "them again. Vacuity is the failure with teeth here for the usual reason: a broken discovery "
+      + "reports every site consistent by examining none, and the rename it exists to catch is exactly "
+      + "the change that would look like a clean sweep.",
+  },
   "packages/lab/src/packaging/git-spawn-classification.test.ts": {
     guard: "spawningGit.length >= 18",
     note: "guarded — this file's own discovery, over a different population (files spawning git at all, "
