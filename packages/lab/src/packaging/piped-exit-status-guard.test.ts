@@ -21,9 +21,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { checkPipedExitStatus } from "../../../../scripts/piped-exit-status-guard.mjs";
+import { checkPipedExitStatus, checkPipedExitStatusInText } from "../../../../scripts/piped-exit-status-guard.mjs";
 
 const CLI = join(import.meta.dirname, "../../../../scripts/piped-exit-status-guard.mjs");
+const REPO_ROOT = join(import.meta.dirname, "../../../../");
 
 test("the exact shape that cost `dispatcher` an hour is refused", () => {
   const { hazard } = checkPipedExitStatus(
@@ -97,4 +98,82 @@ test("the CLI's positional payload is never misread as one of ITS OWN flags, eve
 
 test("the CLI still refuses a genuine unknown flag of its own", () => {
   assert.throws(() => execFileSync("node", [CLI, "cmd", "--bogus"], { encoding: "utf8", stdio: "pipe" }));
+});
+
+/**
+ * #375: `checkPipedExitStatus` alone is whole-TEXT with no notion of function boundaries, so checking an
+ * entire multi-function file (rather than the single diff LINE pre-commit actually checks) lets a `$?`
+ * read in one function answer a piped-into-grep statement in a completely different one.
+ * `checkPipedExitStatusInText` scopes each hazard determination to its own function.
+ */
+test("#375: a piped-into-grep statement in one function and an unrelated $? read in another do not combine", () => {
+  const text = `
+note_if_untouched() {
+  local out
+  out="$(git diff | grep foo)"
+}
+
+run() {
+  cmd > /tmp/log 2>&1
+  echo "EXIT=$?"
+}
+`;
+  const { hazard } = checkPipedExitStatusInText(text);
+  assert.equal(hazard, false);
+});
+
+test("#375: a genuine hazard WITHIN one function is still caught in a multi-function file", () => {
+  const text = `
+harmless() {
+  echo "nothing to see here"
+}
+
+risky() {
+  foo | head -1
+  echo "EXIT=$?"
+}
+`;
+  const { hazard, reason } = checkPipedExitStatusInText(text);
+  assert.equal(hazard, true);
+  assert.match(reason, /foo \| head -1/);
+});
+
+test("#375: every existing single-block case behaves identically through checkPipedExitStatusInText", () => {
+  assert.equal(
+    checkPipedExitStatusInText('node scripts/merge-guard.mjs 148 | head -4; echo EXIT=$?').hazard,
+    true,
+  );
+  assert.equal(checkPipedExitStatusInText("cat README.md | head -5").hazard, false);
+  assert.equal(
+    checkPipedExitStatusInText('true; echo $?; foo | head -1').hazard,
+    true,
+    "the accepted within-block limitation is unaffected by block-splitting",
+  );
+});
+
+test("#375: splitIntoBlocks never splits mid-function, only at a new function definition", async () => {
+  const { splitIntoBlocks } = await import("../../../../scripts/piped-exit-status-guard.mjs");
+  const blocks = splitIntoBlocks("a() {\n  one\n  two\n}\nb() {\n  three\n}\n");
+  assert.equal(blocks.length, 2);
+  assert.match(blocks[0], /one/);
+  assert.match(blocks[0], /two/);
+  assert.match(blocks[1], /three/);
+});
+
+/**
+ * The issue's own acceptance shape: pass a FILE PATH, not a command string. Everything pre-commit ever
+ * passes is a single staged line, never an existing path, so this branch never touches that call.
+ */
+test("#375: the CLI accepts a FILE PATH and checks it whole-file, function-boundary-aware", () => {
+  const out = execFileSync("node", [CLI, join(REPO_ROOT, "scripts/git-hooks/pre-push")], { encoding: "utf8" });
+  assert.match(out, /^ALLOW:/);
+});
+
+test("#375: the CLI still treats a literal command string as before, even one that looks path-like", () => {
+  try {
+    execFileSync("node", [CLI, "foo | head -1; echo $?"], { encoding: "utf8", stdio: "pipe" });
+    assert.fail("expected the CLI to exit non-zero on a hazard");
+  } catch (err) {
+    assert.match((err as { stdout: string }).stdout, /^REFUSE:/);
+  }
 });
