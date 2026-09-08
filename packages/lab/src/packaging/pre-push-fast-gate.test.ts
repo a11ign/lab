@@ -15,7 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync, mkdirSync, chmodSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 
@@ -137,6 +137,89 @@ test("MUTATION: the real run() function reports FAILED on a genuine lint/typeche
     assert.match(out, /typecheck/, "a real type error must be reported FAILED");
   } finally {
     rmSync(target, { force: true });
+  }
+});
+
+/**
+ * #288: THE CHANGESET GATE WAS THE ONLY CHECK IN THIS HOOK THAT BYPASSED `run()`, so it had no way to say
+ * "could not run" -- `[ "$(node scripts/changeset-precise.mjs origin/main)" = "true" ]` discards the
+ * command's own exit status and tests only the STRING it printed. Measured live: an unresolvable base ref
+ * throws inside `changeset-precise.mjs`'s own `execFileSync`, uncaught, so the process exits non-zero
+ * having printed NOTHING -- and empty output reads as `false`, so the hook printed a POSITIVE CLAIM ("no
+ * file this push touches is one npm actually ships for a published package") from a check that examined
+ * nothing at all.
+ *
+ * DRIVES THE REAL BLOCK, via a fake `node` on `PATH` standing in for `changeset-precise.mjs`'s two
+ * distinct real behaviours (a clean exit with `true`/`false`, and a genuine failure) -- the same
+ * discipline the `run()` test above uses, extracting rather than re-typing the hook's own logic.
+ */
+function changesetBlock() {
+  const start = HOOK.indexOf('if [ -n "$changed" ]; then\n    # #288:');
+  const end = HOOK.indexOf('rm -f /tmp/a11y-changeset-precise-err.$$\n  fi', start);
+  assert.ok(start > 0 && end > start, "could not locate the #288 changeset block in the real hook");
+  return HOOK.slice(start, end + 'rm -f /tmp/a11y-changeset-precise-err.$$\n  fi'.length);
+}
+
+function withFakeNode(behaviour: "fail" | "true" | "false") {
+  const dir = `${REPO}packages/lab/src/packaging/.scratch-fake-node-${behaviour}`;
+  rmSync(dir, { recursive: true, force: true });
+  mkdirSync(dir, { recursive: true });
+  const script = behaviour === "fail"
+    ? '#!/bin/bash\necho "fatal: bad revision" >&2\nexit 1\n'
+    : `#!/bin/bash\nprintf '%s' "${behaviour}"\n`;
+  writeFileSync(`${dir}/node`, script);
+  chmodSync(`${dir}/node`, 0o755);
+  return dir;
+}
+
+test("#288: an unresolvable base ref is COULD NOT RUN, not a silent SKIPPED claim", () => {
+  const fakeNodeDir = withFakeNode("fail");
+  try {
+    const script = `set -u\nchanged="lab"\nskipped=()\nfailed=()\n${changesetBlock()}\n`
+      + `printf 'SKIPPED=%s\\n' "\${skipped[@]:-}"\nprintf 'FAILED=%s\\n' "\${failed[@]:-}"`;
+    const out = execFileSync("bash", ["-c", script],
+      { cwd: REPO, encoding: "utf8", env: { ...process.env, PATH: `${fakeNodeDir}:${process.env.PATH}` } });
+    assert.match(out, /COULD NOT RUN {2}changeset/, "a genuine failure to answer must print COULD NOT RUN");
+    assert.doesNotMatch(out, /no file this push touches is one npm actually ships/,
+      "the exact defect this row exists to end: a failure must never be read as the honest SKIPPED claim");
+    assert.match(out, /SKIPPED=changeset \(could not run\)/, "kept out of failed, per run()'s own precedent");
+    assert.doesNotMatch(out, /FAILED=changeset/, "a could-not-run must never fail the push");
+  } finally {
+    rmSync(fakeNodeDir, { recursive: true, force: true });
+  }
+});
+
+test("#288: a real, examined `false` still prints the honest SKIPPED claim, unchanged", () => {
+  const fakeNodeDir = withFakeNode("false");
+  try {
+    const script = `set -u\nchanged="lab"\nskipped=()\nfailed=()\n${changesetBlock()}\n`
+      + `printf 'SKIPPED=%s\\n' "\${skipped[@]:-}"`;
+    const out = execFileSync("bash", ["-c", script],
+      { cwd: REPO, encoding: "utf8", env: { ...process.env, PATH: `${fakeNodeDir}:${process.env.PATH}` } });
+    assert.match(out, /SKIPPED=changeset \(no file this push touches is one npm actually ships/,
+      "a genuine, examined `false` must keep its real claim -- this row narrows WHEN the claim is made, "
+      + "not what it says");
+    assert.doesNotMatch(out, /COULD NOT RUN/, "a real answer must never read as a failure to answer");
+  } finally {
+    rmSync(fakeNodeDir, { recursive: true, force: true });
+  }
+});
+
+test("MUTATION (#288): reverting to the bare string comparison must reproduce the exact live defect -- "
+  + "a failure read as the honest SKIPPED claim", () => {
+  const fakeNodeDir = withFakeNode("fail");
+  try {
+    const naiveScript = `set -u\nchanged="lab"\nskipped=()\nfailed=()\n`
+      + `if [ -n "$changed" ] && [ "$(node scripts/changeset-precise.mjs origin/main)" = "true" ]; then\n`
+      + `  :\nelse\n  skipped+=("changeset (no file this push touches is one npm actually ships for a published package)")\nfi\n`
+      + `printf 'SKIPPED=%s\\n' "\${skipped[@]:-}"`;
+    const out = execFileSync("bash", ["-c", naiveScript],
+      { cwd: REPO, encoding: "utf8", env: { ...process.env, PATH: `${fakeNodeDir}:${process.env.PATH}` } });
+    assert.match(out, /no file this push touches is one npm actually ships/,
+      "documents the exact live defect this row exists to end -- the naive comparison cannot see the "
+      + "command's own exit status, so a genuine failure prints the SAME sentence as an honest false");
+  } finally {
+    rmSync(fakeNodeDir, { recursive: true, force: true });
   }
 });
 
