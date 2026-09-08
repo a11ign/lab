@@ -146,7 +146,7 @@ test("claimRow claims a genuinely unclaimed row: reads, writes, re-reads, confir
     return ""; // the `edit` call
   };
   const result = claimRow(55, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
-  assert.deepEqual(result, { claimed: true });
+  assert.deepEqual(result, { claimed: true, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall, "must have written the claim");
   assert.ok(editCall!.includes(CLAIM_LABEL) && editCall!.includes("session:worker-contracts"));
@@ -211,7 +211,7 @@ test("dispatchRow marks in-progress + session, but deliberately NOT started", ()
     return "";
   };
   const result = dispatchRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
-  assert.deepEqual(result, { claimed: true });
+  assert.deepEqual(result, { claimed: true, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall!.includes(CLAIM_LABEL) && editCall!.includes("session:worker-contracts"));
   assert.ok(!editCall!.includes(STARTED_LABEL), "dispatch must not mark started -- that is claim's job");
@@ -248,7 +248,7 @@ test("claimRow (start) additionally writes STARTED_LABEL, transitioning dispatch
     return "";
   };
   const result = claimRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
-  assert.deepEqual(result, { claimed: true });
+  assert.deepEqual(result, { claimed: true, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall!.includes(STARTED_LABEL), "claim/start must mark started");
 });
@@ -285,7 +285,7 @@ test("declineRow returns a dispatched-but-not-started row to genuinely unclaimed
     return "";
   };
   const result = declineRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
-  assert.deepEqual(result, { declined: true });
+  assert.deepEqual(result, { declined: true, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall!.includes(CLAIM_LABEL) && editCall!.includes("session:worker-contracts"));
   assert.ok(!editCall!.includes("--add-label"), "decline must only ever remove labels, never add");
@@ -302,7 +302,7 @@ test("declineRow also clears STARTED_LABEL when a started row is declined", () =
     return "";
   };
   const result = declineRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
-  assert.deepEqual(result, { declined: true });
+  assert.deepEqual(result, { declined: true, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall!.includes(STARTED_LABEL));
 });
@@ -469,14 +469,29 @@ test("moveProjectStatus calls gh project item-edit with the real field name and 
   assert.ok(editCall!.some((a) => a.includes("/issues/400")), "must name the real issue by its URL");
 });
 
-test("moveProjectStatus NEVER THROWS -- a row not on the Project is reported, not a claim failure", () => {
+test("moveProjectStatus NEVER THROWS -- an unexpected gh failure is reported, not a claim failure, and is "
+  + "distinguished from the not-on-board case (ceo's ruling: 'could not ask' vs 'asked and wrote' must not "
+  + "look the same)", () => {
   const run = (): string => { throw new Error("resource not found, please check the URL"); };
   const logs: string[] = [];
   const result = moveProjectStatus(400, "In progress",
     { run, snapshot: noopSnapshot, log: (line: string) => { logs.push(line); } });
   assert.equal(result.moved, false);
   assert.match((result as { reason: string }).reason, /resource not found/);
+  assert.equal((result as { notOnBoard: boolean }).notOnBoard, false,
+    "an unrelated gh failure must not be mistaken for the row simply being off the board");
   assert.ok(logs.some((l) => /could not move #400/.test(l)), "the failure must be reported, not swallowed silently");
+});
+
+test("moveProjectStatus recognises gh's real 'not an item in project' wording as notOnBoard, verbatim from "
+  + "a live `gh project item-edit` run against issue #393 (closed, never added to Project 2)", () => {
+  const run = (): string => {
+    throw new Error("https://github.com/DanBeckDev/a11y-witness/issues/393 is not an item in project 2; "
+      + "add it first with `gh project item-add`");
+  };
+  const result = moveProjectStatus(393, "Ready", { run, snapshot: noopSnapshot, log: () => {} });
+  assert.equal(result.moved, false);
+  assert.equal((result as { notOnBoard: boolean }).notOnBoard, true);
 });
 
 test("moveProjectStatus reports (never throws) when the SNAPSHOT itself fails, per #399's own rule", () => {
@@ -504,12 +519,13 @@ test("MUTATION target: claimRow moves Status to 'In progress' on a successful cl
   const moveCalls: [number, string][] = [];
   const result = claimRow(400, "worker-contracts",
     { run, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
-  assert.deepEqual(result, { claimed: true });
+  assert.deepEqual(result, { claimed: true, statusMoved: true });
   assert.deepEqual(moveCalls, [[400, "In progress"]]);
 });
 
 test("claimRow's own claimed:true does not depend on the Status move succeeding -- #400's explicit case: "
-  + "a row not on the Project must not fail the claim", () => {
+  + "a row not on the Project must not fail the claim, and is reported as the permitted gap it is, "
+  + "not as a half-applied failure", () => {
   let reads = 0;
   const run = (cmd: string, args: string[]) => {
     if (args[1] === "view") {
@@ -520,9 +536,27 @@ test("claimRow's own claimed:true does not depend on the Status move succeeding 
     return "";
   };
   const result = claimRow(400, "worker-contracts",
-    { run, moveStatus: () => ({ moved: false, reason: "not on the Project" }) });
-  assert.deepEqual(result, { claimed: true },
-    "the label write is the real claim and must succeed regardless of the Project view");
+    { run, moveStatus: () => ({ moved: false, reason: "not on the Project", notOnBoard: true }) });
+  assert.deepEqual(result, { claimed: true, statusMoved: false, notOnBoard: true, statusReason: "not on the Project" },
+    "the label write is the real claim and must succeed regardless of the Project view, and the row-absent "
+    + "case must be distinguishable from a genuine half-applied failure");
+});
+
+test("claimRow reports a GENUINE Status-write failure as half-applied -- ceo's ruling: 'asked and wrote' "
+  + "must never look like a plain success, even though the label (the record) still stands", () => {
+  let reads = 0;
+  const run = (cmd: string, args: string[]) => {
+    if (args[1] === "view") {
+      reads += 1;
+      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }];
+      return JSON.stringify({ number: 400, title: "A row", labels });
+    }
+    return "";
+  };
+  const result = claimRow(400, "worker-contracts",
+    { run, moveStatus: () => ({ moved: false, reason: "gh: authentication failed", notOnBoard: false }) });
+  assert.deepEqual(result,
+    { claimed: true, statusMoved: false, notOnBoard: false, statusReason: "gh: authentication failed" });
 });
 
 test("claimRow does NOT move Status when the claim itself is refused (already held by another)", () => {
@@ -546,8 +580,23 @@ test("MUTATION target: declineRow moves Status BACK to 'Ready' on a successful d
   const moveCalls: [number, string][] = [];
   const result = declineRow(400, "worker-contracts",
     { run, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
-  assert.deepEqual(result, { declined: true });
+  assert.deepEqual(result, { declined: true, statusMoved: true });
   assert.deepEqual(moveCalls, [[400, "Ready"]]);
+});
+
+test("declineRow's own declined:true does not depend on the Status move succeeding, and distinguishes "
+  + "not-on-board from a genuine half-applied failure the same way claimRow does", () => {
+  const run = () => JSON.stringify({ number: 400, title: "A row",
+    labels: [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }, { name: STARTED_LABEL }] });
+  const notOnBoardResult = declineRow(400, "worker-contracts",
+    { run, moveStatus: () => ({ moved: false, reason: "not on the Project", notOnBoard: true }) });
+  assert.deepEqual(notOnBoardResult,
+    { declined: true, statusMoved: false, notOnBoard: true, statusReason: "not on the Project" });
+
+  const halfAppliedResult = declineRow(400, "worker-contracts",
+    { run, moveStatus: () => ({ moved: false, reason: "gh: rate limited", notOnBoard: false }) });
+  assert.deepEqual(halfAppliedResult,
+    { declined: true, statusMoved: false, notOnBoard: false, statusReason: "gh: rate limited" });
 });
 
 test("declineRow does NOT move Status when the decline itself is refused (not this session's row)", () => {
