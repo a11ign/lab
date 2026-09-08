@@ -31,7 +31,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { errorText } from "@a11ign/nvda-worker/error-text";
-import { npmCliExecutable } from "../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
 
 /**
  * takes its sites as a POSITIONAL JSON argument and no flags; `--json`, `--probe-forms` and `--task`
@@ -72,7 +72,8 @@ async function main() {
   for (const [url, task] of sites) {
     let out;
     try {
-      out = execFileSync(npmCliExecutable("npx"), ["tsx", CLI, url, "--task", task, "--probe-forms", "--json"], {
+      const npx = npmCliInvocation("npx", ["tsx", CLI, url, "--task", task, "--probe-forms", "--json"]);
+      out = execFileSync(npx.command, npx.args, {
         env: { ...process.env, JUDGE_BACKEND: "local", A11Y_WORKER: "http://REDACTED-INTERNAL-ADDRESS:8765", A11Y_PYTHON: ".venv/bin/python" },
         encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "pipe"], timeout: 600_000,
       });
