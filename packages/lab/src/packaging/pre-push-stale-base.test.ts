@@ -59,6 +59,17 @@ function runStaleBaseCheck(sandbox: GitSandbox, env: Record<string, string> = {}
   }
 }
 
+/**
+ * Forces the sandbox's initial branch to be named `main`, regardless of the host's
+ * `init.defaultBranch` -- a real difference measured between this machine (`main`) and a GitHub Actions
+ * runner (`master`), which made `git checkout -q main` fail with "pathspec 'main' did not match any
+ * file(s)" in CI while passing everywhere this was written and run. `symbolic-ref` works on the UNBORN
+ * HEAD a fresh `git init` leaves, before any commit exists to rename.
+ */
+function useMainAsInitialBranch(sandbox: GitSandbox): void {
+  sandbox.run(["symbolic-ref", "HEAD", "refs/heads/main"]);
+}
+
 /** A commit with one file, so `origin/main` and branch histories are trivially distinguishable. */
 function commitFile(sandbox: GitSandbox, name: string, content: string): string {
   writeFileSync(join(sandbox.dir, name), content);
@@ -87,6 +98,7 @@ test("HEAD containing origin/main's tip (the normal case) pushes without the ove
 
 test("the exact incident shape -- a branch built off a point origin/main has moved PAST -- is REFUSED", () => {
   withGitSandbox((sandbox) => {
+    useMainAsInitialBranch(sandbox);
     const staleTip = commitFile(sandbox, "a.txt", "1\n");
     // origin/main moves on; the local branch is a child of the OLD tip, never rebased or merged forward --
     // exactly what a no-op `&&` chain produces: a commit landed on a branch that never picked up the reset.
@@ -106,6 +118,7 @@ test("the exact incident shape -- a branch built off a point origin/main has mov
 
 test("A11Y_STALE_BASE_REASON overrides the refusal, and prints the reason rather than staying silent", () => {
   withGitSandbox((sandbox) => {
+    useMainAsInitialBranch(sandbox);
     const staleTip = commitFile(sandbox, "a.txt", "1\n");
     sandbox.run(["checkout", "-q", "-b", "side", staleTip]);
     commitFile(sandbox, "side-only.txt", "3\n");
@@ -141,7 +154,20 @@ test("a large deletion against origin/main is PRINTED, never refused, when ances
  * read-only (`merge-base --is-ancestor` and `rev-parse` never write anything). `c7b1a0a0` is the commit
  * named in issue #348's own body as the surviving artefact of the incident.
  */
-test("REAL ARTEFACT: c7b1a0a0 (the actual incident commit) does not contain the current origin/main's tip", () => {
+test("REAL ARTEFACT: c7b1a0a0 (the actual incident commit) does not contain the current origin/main's tip",
+  (t) => {
+  // A SHALLOW CLONE IS AN HONEST REASON TO SKIP, NOT A FAILURE. `actions/checkout`'s default
+  // `fetch-depth: 1` gives CI a checkout with no history at all beyond the tested commit, so a truncated
+  // clone and a rewritten one produce the IDENTICAL symptom -- `cat-file -e c7b1a0a0` failing -- for
+  // completely different reasons. Only the second is this test's business; asking `--is-shallow-repository`
+  // tells them apart before treating either as a finding.
+  const shallow = execFileSync("git", ["rev-parse", "--is-shallow-repository"],
+    { cwd: REAL_REPO_ROOT, encoding: "utf8" }).trim() === "true";
+  if (shallow) {
+    t.skip("shallow clone (no full history here) -- cannot prove anything about a specific historical "
+      + "commit; run this locally or in a full-history checkout");
+    return;
+  }
   let staleCommitExists = true;
   try {
     execFileSync("git", ["cat-file", "-e", "c7b1a0a0"], { cwd: REAL_REPO_ROOT, encoding: "utf8" });
@@ -172,6 +198,7 @@ test("MUTATION: without the ancestry refusal, the incident shape is silently all
   // Reproduces the block with its refusal REMOVED, proving the test above can actually fail -- the same
   // discipline `pre-push-git-scrub.test.ts`'s MUTATION tests apply to the scrub line.
   withGitSandbox((sandbox) => {
+    useMainAsInitialBranch(sandbox);
     const staleTip = commitFile(sandbox, "a.txt", "1\n");
     sandbox.run(["checkout", "-q", "-b", "side", staleTip]);
     commitFile(sandbox, "side-only.txt", "3\n");
