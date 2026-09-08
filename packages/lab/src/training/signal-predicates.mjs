@@ -822,8 +822,8 @@ function focusPanelUndismissable(/** @type {any} */ capture) {
 }
 
 /**
- * F55 -- a control received focus and had it stripped by script, faster than an ordinary Tab transition
- * could produce, with nothing else claiming focus in between.
+ * F55 -- a control received focus and had it stripped by script, either a completed same-id receipt held
+ * faster than an ordinary Tab transition could produce, or a focusout with no matching focusin at all.
  *
  * FIXED 2026-09-06 (issue #14): this used to read `v.scriptRemovedFocus`, a field that stopped existing
  * the same day `focusEventVerdict` (`capture-pure.mjs`) became a passthrough per ADR 0021 ("captures
@@ -836,14 +836,29 @@ function focusPanelUndismissable(/** @type {any} */ capture) {
  * it for this function to defer to. Nothing had ever exercised this predicate to reveal the drift -- no
  * case declared `badSignal: { type: "focus-removed-on-receipt" }` until `focus-script-blur-window` did.
  *
- * Recognises the ONE mechanism `focus-script-blur-window` demonstrates: a completed same-id
- * `focusin`->`focusout` pair held under `SCRIPT_BLUR_WINDOW_MS` (mirrors `FOCUS_SCRIPT_WINDOW_MS` in
- * rules.ts; kept as a literal here rather than imported, for the reason above), with focus not landing on
- * a different real control immediately after. Deliberately does NOT attempt the ORPHANED-`focusout` shape
- * `addFocusEventFindings` also covers (`known-gaps.md` §39's own positives, `focus-removed-on-receipt-*`)
- * -- those cases use `control-unreachable-by-keyboard` as their `badSignal`, not this one, and getting the
- * orphan shape right needs `focusLossVerdict`'s own index-0 handling, which nothing here has a fixture to
- * prove against yet. Extend this, with a fixture, before pointing a case at it for that mechanism.
+ * EXTENDED 2026-09-08 (issue #385): the comment here used to say this deliberately did NOT attempt the
+ * orphaned-`focusout` shape, on the reasoning that no case pointed `badSignal` at it for that mechanism
+ * yet -- but `focus-script-blur-window` DOES, and its `bad` page's script
+ * (`onfocus="...this.blur()"`) is exactly the shape `focusLossVerdict`'s own comment names: UI Events
+ * dispatches `focus` before `focusin`, so a handler bound to `focus` that calls `blur()` synchronously
+ * runs before the browser's own `focusin` for that receipt completes, and the pair can reach the log
+ * REVERSED (`focusout(X)` immediately followed by `focusin(X)`) or fully orphaned. `focus-event-order.
+ * test.ts` settled this against the SHIPPED rule with synthetic logs: a reversed pair fires, and the
+ * threshold is never consulted on that path -- "no timing window is involved in the corrected shape" is
+ * the whole of issue #385. This predicate had not been told.
+ *
+ * Mirrors `focusLossVerdict`'s full decision (`packages/judge/src/rules.ts`), duplicated rather than
+ * imported for the reason above:
+ *   - at index 0, a plain orphan is AMBIGUOUS with a pre-existing focus the listener never saw arrive, and
+ *     does not count -- UNLESS the very next event is a same-id `focusin`, the reversed-pair shape, which
+ *     is decidable with no prior context at all.
+ *   - past index 0, ANY focusout not immediately preceded by a same-id `focusin` is unconditionally F55 --
+ *     the missing (or reversed) `focusin` IS the signal, and unlike a completed receipt it is never
+ *     cleared by a redirect: the very next event after an orphaned loss is routinely another real focusin
+ *     the probe reaches next, which must not be read as this control's own destination.
+ *   - a completed receipt (prior IS a matching `focusin`) is F55 only if held under `SCRIPT_BLUR_WINDOW_MS`
+ *     (mirrors `FOCUS_SCRIPT_WINDOW_MS` in rules.ts; kept as a literal here, for the reason above) AND
+ *     focus did not land on a different real control immediately after.
  *
  * `checked !== true` means the oracle never ran (the field is absent) or could not be read (`checked:
  * false`, distinct from the log itself being empty) -- ABSENT, not a reading of zero, the same
@@ -851,19 +866,36 @@ function focusPanelUndismissable(/** @type {any} */ capture) {
  */
 const SCRIPT_BLUR_WINDOW_MS = 50;
 
+/** Index 0 is ambiguous with focus the listener never saw arrive, UNLESS the very next event is a
+ *  same-id `focusin` -- the reversed-pair shape, decidable with no prior context at all. */
+function firstEventIsDecidable(/** @type {any[]} */ log, /** @type {any} */ event) {
+  const next = log[1];
+  return next?.type === "focusin" && next.id === event.id;
+}
+
+/** A completed receipt (prior IS a matching `focusin`) is F55 only if held under the script-blur window
+ *  and focus did not land on a different real control immediately after -- either clears it. */
+function completedReceiptIsClear(
+  /** @type {any[]} */ log, /** @type {number} */ i, /** @type {any} */ event, /** @type {any} */ prior,
+) {
+  const heldMs = event.atMs - prior.atMs;
+  if (heldMs >= SCRIPT_BLUR_WINDOW_MS) return true; // an ordinary Tab transition, not a script
+  const next = log[i + 1];
+  return next?.type === "focusin" && next.id !== event.id; // redirected to a real destination
+}
+
 function focusRemovedOnReceipt(/** @type {any} */ capture) {
   const v = capture.interaction?.focusEvents;
   if (!v || v.checked !== true || !Array.isArray(v.log)) return false;
   const log = v.log;
-  for (let i = 1; i < log.length; i += 1) {
+  for (let i = 0; i < log.length; i += 1) {
     const event = log[i];
     if (event?.type !== "focusout") continue;
+    if (i === 0 && !firstEventIsDecidable(log, event)) continue;
     const prior = log[i - 1];
-    if (prior?.type !== "focusin" || prior.id !== event.id) continue; // orphaned, or a different control
-    const heldMs = event.atMs - prior.atMs;
-    if (heldMs >= SCRIPT_BLUR_WINDOW_MS) continue; // an ordinary Tab transition, not a script
-    const next = log[i + 1];
-    if (next?.type === "focusin" && next.id !== event.id) continue; // redirected to a real destination
+    const completedReceipt = prior?.type === "focusin" && prior.id === event.id;
+    if (completedReceipt && completedReceiptIsClear(log, i, event, prior)) continue;
+    // completed-and-fast, or orphaned/reversed (never cleared by a redirect) -- either is F55
     return true;
   }
   return false;
