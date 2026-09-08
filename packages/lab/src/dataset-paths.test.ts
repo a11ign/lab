@@ -164,6 +164,13 @@ const EXEMPT: Record<string, string> = {
     + "way. A real boundary defect (ADR 0004), not merely a CI-scoping one. Fixed the same way doctor.mjs "
     + "and compare-workers.mjs already fix the identical cycle in worker-fleet's direction: a local, "
     + "duplicated computation rather than an import that would recreate it.",
+  "packages/cli/src/cli.ts":
+    "#431: the SOURCE now has the identical cycle its own test file was already exempted for -- "
+    + "witnessArtifactRoot() resolves runs/witness/ so a `witness` run keeps its capture by default. "
+    + "Same #199 boundary (a11ign/cli published, @a11ign/lab private, and lab's public-api.test.ts "
+    + "imports the published cli package the other way), and anchored on process.cwd() rather than this "
+    + "module's own location on purpose: witness is the one write path meant for someone running the "
+    + "PUBLISHED package outside this repo, whose runs/ is wherever they typed the command.",
 };
 
 test("the discovery walk finds a realistic slice of the repo's own source", () => {
