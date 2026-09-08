@@ -483,8 +483,8 @@ test("moveProjectStatus NEVER THROWS -- an unexpected gh failure is reported, no
   assert.ok(logs.some((l) => /could not move #400/.test(l)), "the failure must be reported, not swallowed silently");
 });
 
-test("moveProjectStatus recognises gh's real 'not an item in project' wording as notOnBoard, verbatim from "
-  + "a live `gh project item-edit` run against issue #393 (closed, never added to Project 2)", () => {
+test("moveProjectStatus recognises gh's real 'not an item in project' wording as notOnBoard, verbatim as "
+  + "observed against the real API on issue #393 (closed, never added to Project 2)", () => {
   const run = (): string => {
     throw new Error("https://github.com/DanBeckDev/a11y-witness/issues/393 is not an item in project 2; "
       + "add it first with `gh project item-add`");
