@@ -20,7 +20,7 @@
 import { spawn } from "node:child_process";
 import { openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { npmCliExecutable } from "../../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 
 // Generous because the first `npx serve` on a busy host has to resolve the package before it binds,
 // and this host has had three VMs on it. A too-short window fails the run for a server that was about
@@ -275,7 +275,8 @@ export async function leasePageServer({ root, port, probePath }) {
   const logPath = resolve(root, "..", "page-server.log");
   const log = openSync(logPath, "a");
   process.stderr.write(`Serving dataset pages on :${port} (log: ${logPath}) ...\n`);
-  const child = spawn(npmCliExecutable("npx"), ["serve", resolve(root), "-l", String(port)], {
+  const npx = npmCliInvocation("npx", ["serve", resolve(root), "-l", String(port)]);
+  const child = spawn(npx.command, npx.args, {
     stdio: ["ignore", log, log],
     detached: true, // its own process group, so release() cannot orphan the child
   });

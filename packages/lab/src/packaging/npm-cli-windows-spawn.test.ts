@@ -1,5 +1,5 @@
 /**
- * EVERY place in this repo that spawns a bare `npx`/`npm` must resolve it through `npmCliExecutable`, or
+ * EVERY place in this repo that spawns a bare `npx`/`npm` must resolve it through `npmCliInvocation`, or
  * be discovered and refused — not just the one call site (`scripts/build-packages.mjs`) #492 was filed
  * against.
  *
@@ -11,14 +11,25 @@
  * rehearsal (#324): three real `windows-2022` Action runs, none of which reached NVDA or the page, because
  * `npm ci`'s own `prepare` step crashed in `build-packages.mjs` before anything else ran.
  *
- * `scripts/npm-cli-executable.mjs`'s `npmCliExecutable(name)` resolves the extension (`.cmd` on `win32`,
- * unchanged elsewhere) rather than adding a shell -- `shell: true` re-interprets the WHOLE command line as
- * one string, reintroducing the quoting hazard this repository has already paid for once (four capture
- * shards dispatched at `--worker=http://:8765` for 29 minutes). A sweep of every tracked `.mjs`/`.ts` file
- * found **23 real call sites** once `build-packages.mjs`'s own instance was fixed and the search widened
- * to the shape rather than the file -- production code, lab/fleet tooling, and eight test files that spawn
- * `npx`/`npm` inside their own bodies. All 23 route through the helper now; this test is what keeps a
- * 24th from slipping past unnoticed.
+ * REWRITTEN when #492 REOPENED. The original fix here was `npmCliExecutable(name)` -- append `.cmd` on
+ * `win32`, unchanged elsewhere -- resolved as an ARGUMENT passed into `execFileSync`/`spawnSync`/`spawn`
+ * (`execFileSync(npmCliExecutable("npx"), ...)`). That premise (Node auto-routes a bare `.cmd` through
+ * `cmd.exe`) stopped being true in April 2024: CVE-2024-27980 ("BatBadBut") permanently made those
+ * functions REFUSE (`EINVAL`) to launch a `.bat`/`.cmd` file directly without `shell: true`, on every Node
+ * release past 18.20.2/20.12.2/21.7.3. `windows-2022`'s Node is well past the patch, so the fix turned an
+ * `ENOENT` into an `EINVAL` on the very platform it targeted -- found live by #494's consumer gate, a real
+ * `windows-2022` run (`34265163648`), not by this file, because the win32 branch had only ever been
+ * verified by overriding `process.platform` in a unit test.
+ *
+ * `ceo`'s ruling: no `shell: true`, anywhere -- the same quoting-hazard class as `--worker=http://:8765`
+ * dispatching four capture shards for 29 minutes. So the call shape changed entirely: `npmCliInvocation`
+ * never spawns `.cmd`/`.bat`, it resolves npm's OWN CLI script (`npx-cli.js`/`npm-cli.js`, tried at both
+ * the Windows-shaped and POSIX-shaped layout relative to `process.execPath`) and returns
+ * `{ command: process.execPath, args: [script, ...originalArgs] }` -- so `argv[0]` is always `node`
+ * itself. See `scripts/npm-cli-executable.mjs`'s own header for the full incident and the two-layout
+ * resolution. **A unit guard pins the call shape; the consumer gate proves it runs** -- a source-text walk
+ * structurally cannot catch a real `EINVAL`, only a real `windows-2022` dispatch can, and this file is the
+ * former, not the latter.
  *
  * TWO CANONICAL COPIES, ONE PUBLISH BOUNDARY. `packages/worker-fleet/src/npm-cli-executable.mjs` is a
  * deliberate, disclosed duplicate of the repo-root file (see its own header): `doctor.mjs` ships inside
@@ -35,7 +46,9 @@
  * being a list of function names a new wrapper could slip past.
  *
  * CLASSIFICATION, not a bare pass/fail: a call is SAFE only when the identifier calling `"npx"`/`"npm"`
- * IS `npmCliExecutable` itself -- so `execFileSync("npx", ...)` is unsafe and `execFileSync(npmCliExecutable("npx"), ...)`
+ * IS `npmCliInvocation` itself -- so `execFileSync("npx", ...)` is unsafe and
+ * `execFileSync(npmCliInvocation("npx", args).command, npmCliInvocation("npx", args).args, ...)`-shaped
+ * code (in practice, `const npx = npmCliInvocation("npx", args); execFileSync(npx.command, npx.args, ...)`)
  * is safe, without needing a separate "imports and uses the helper" check the way the git guard does: the
  * identifier at the call site says everything, because there is no indirection to hide behind here.
  */
@@ -91,13 +104,14 @@ const NPM_CLI_IS_DATA_NOT_A_SPAWN: Record<string, string> = {
     + "source text, fed to npmCliCalls()/callsBareNpmCli() as the DATA under test -- never code this file "
     + "itself executes. The identical trap #446 hit in acceptance-prose.test.ts, found here by this "
     + "guard's own first real run rather than by review.",
-  // `npmCliExecutable` imported under ALIASES to compare both canonical copies side by side -- the
-  // identifier at each call site is `rootNpmCliExecutable`/`localNpmCliExecutable`, never the literal
-  // name `callsBareNpmCli` checks for, even though both resolve to the real, safe function.
+  // `npmCliScriptCandidates`/`resolveNpmCliScript`/`npmCliInvocation` imported under ALIASES to compare
+  // both canonical copies side by side -- the identifier at each call site is `rootCandidates`/
+  // `localCandidates`/`rootResolve`/`localResolve`/`rootInvocation`/`localInvocation`, never the literal
+  // name `callsBareNpmCli` checks for, even though both resolve to the real, safe functions.
   "packages/worker-fleet/src/npm-cli-executable.test.ts":
-    "imports npmCliExecutable under aliases (rootNpmCliExecutable, localNpmCliExecutable) to compare the "
-    + "root and worker-fleet copies side by side -- the call site's identifier is the alias, not the "
-    + "literal name this file's classifier matches, though both resolve to the real, safe function",
+    "imports npmCliScriptCandidates/resolveNpmCliScript/npmCliInvocation under aliases (root*/local*) to "
+    + "compare the root and worker-fleet copies side by side -- the call site's identifier is the alias, "
+    + "not the literal name this file's classifier matches, though both resolve to the real, safe functions",
 };
 
 /** Every `(identifier, literal)` pair the file's stripped source contains, for `"npx"`/`"npm"` literals. */
@@ -105,9 +119,9 @@ function npmCliCalls(executable: string): { identifier: string }[] {
   return [...executable.matchAll(SPAWNS_NPM_CLI)].map(([, identifier]) => ({ identifier }));
 }
 
-/** A call is SAFE only when the identifier invoking the literal IS `npmCliExecutable` itself. */
+/** A call is SAFE only when the identifier invoking the literal IS `npmCliInvocation` itself. */
 function callsBareNpmCli(executable: string): boolean {
-  return npmCliCalls(executable).some(({ identifier }) => identifier !== "npmCliExecutable");
+  return npmCliCalls(executable).some(({ identifier }) => identifier !== "npmCliInvocation");
 }
 
 test("the discovery finds a non-trivial population -- vacuity guard for the walk itself", () => {
@@ -131,7 +145,7 @@ test("every NPM_CLI_IS_DATA_NOT_A_SPAWN entry names a real file that genuinely s
   }
 });
 
-test("every npx/npm call site resolves through npmCliExecutable, or is a documented non-spawn", () => {
+test("every npx/npm call site resolves through npmCliInvocation, or is a documented non-spawn", () => {
   const files = trackedSourceFiles();
   const unclassified: string[] = [];
   for (const file of files) {
@@ -141,7 +155,7 @@ test("every npx/npm call site resolves through npmCliExecutable, or is a documen
     if (callsBareNpmCli(executable)) unclassified.push(file);
   }
   assert.deepEqual(unclassified, [],
-    `${unclassified.length} file(s) spawn a bare "npx"/"npm" without resolving through npmCliExecutable -- `
+    `${unclassified.length} file(s) spawn a bare "npx"/"npm" without resolving through npmCliInvocation -- `
     + "this is the exact shape that made the Action's own build ENOENT on windows-2022 (#492), invisible "
     + "because every CI job here runs on Linux:\n"
     + unclassified.map((f) => `  ${f}`).join("\n"));
@@ -166,13 +180,14 @@ test("MUTATION: an indirected call through a local run() wrapper is still discov
     "the discovery must see through a one-level indirection to the literal npm call");
 });
 
-test("CONTROL: a call resolved through npmCliExecutable passes", () => {
+test("CONTROL: a call resolved through npmCliInvocation passes", () => {
   const fixture = 'import { execFileSync } from "node:child_process";\n'
-    + 'import { npmCliExecutable } from "../../../../scripts/npm-cli-executable.mjs";\n'
-    + 'execFileSync(npmCliExecutable("npx"), ["tsc", "--build"], { cwd: "/tmp" });\n';
+    + 'import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";\n'
+    + 'const npx = npmCliInvocation("npx", ["tsc", "--build"]);\n'
+    + 'execFileSync(npx.command, npx.args, { cwd: "/tmp" });\n';
   assert.equal(npmCliCalls(stripComments(fixture)).length, 1);
   assert.ok(!callsBareNpmCli(stripComments(fixture)),
-    "a call resolved through npmCliExecutable must be classified SAFE, or every real fixed file would fail too");
+    "a call resolved through npmCliInvocation must be classified SAFE, or every real fixed file would fail too");
 });
 
 test("CONTROL: a file that never mentions npx/npm as a call argument is simply not part of the population", () => {
