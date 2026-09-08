@@ -20,6 +20,11 @@ const source = () => readFileSync(SCRIPT, "utf8");
  *   real-page-corpus         captures of OTHER PEOPLE'S WEBSITES. Once w3.org edits a tutorial, the
  *                            capture of the previous version is gone for everyone, permanently.
  *   screenreader-acceptance  the held-out set, which `DATASET_KIND=acceptance` refuses to cache BY DESIGN.
+ *   board-snapshots          the tracker's state on a DATE. #566: the API answers "now" and nothing else,
+ *                            so a snapshot of what was open, claimed and on the board on 8 September
+ *                            cannot be re-derived once a label moves -- and these files are the evidence
+ *                            behind the daily board document's numbers. Losing them does not cost a
+ *                            recapture, it costs the ability to say where a published figure came from.
  *
  * So the backup covered what was reproducible and omitted what was not — backwards, not merely partial.
  *
@@ -28,7 +33,7 @@ const source = () => readFileSync(SCRIPT, "utf8");
  * SIZE back, which a truncated or mis-scoped archive passes cleanly. **A backup nobody has extracted is
  * not a backup** — that is the row's own sentence and this is what it was protecting against.
  */
-const MUST_ARCHIVE = ["real-page-corpus", "screenreader-acceptance"];
+const MUST_ARCHIVE = ["real-page-corpus", "screenreader-acceptance", "board-snapshots"];
 
 /**
  * Directories under `runs/` that are DERIVED and deliberately not archived, each with why. Classified

@@ -53,6 +53,11 @@ const WANTED = ["captures", "manifest.json"];
  *                          2026-09-06 on this disk: 26 captures, and every conformance claim about real
  *                          pages rests on them.
  *   screenreader-acceptance  the held-out set, which `DATASET_KIND=acceptance` REFUSES to cache by design
+ *   board-snapshots        the tracker's state on a DATE (#566). GitHub's API answers "now" and nothing
+ *                          else, so once a label moves there is no way to re-derive what was open,
+ *                          claimed or on the board on a given morning -- and these files are the evidence
+ *                          behind the daily board document's published numbers. Losing them does not cost
+ *                          a recapture; it costs the ability to say where a figure came from.
  *                          — "those runs exist to test whether NVDA's output is still stable". 410 files.
  *                          It is the only evidence that is not the training corpus.
  *
@@ -60,7 +65,7 @@ const WANTED = ["captures", "manifest.json"];
  * 4,959 of 5,445 JSON files, and the 486 missing were these. A backup nobody has extracted is not a backup,
  * and this is what that sentence was protecting against.
  */
-const WANTED_SIBLINGS = ["real-page-corpus", "screenreader-acceptance"];
+const WANTED_SIBLINGS = ["real-page-corpus", "screenreader-acceptance", "board-snapshots"];
 
 /**
  * Every `.json` under these roots, recursively — the number the archive has to match.
