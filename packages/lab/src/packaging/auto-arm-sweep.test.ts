@@ -123,3 +123,20 @@ test("the sweep is NOT scheduled, which is the property it exists for", () => {
     "a manual kick is the escape hatch for the case the sweep exists for: a quiet repo with a stranded "
     + "PR and no incoming event to ride.");
 });
+
+test("ACCEPTANCE (#404): `reopened` is in the trigger's own event types, so the `arm` job sees a "
+  + "REOPENED PR directly rather than waiting on the sweep's next unrelated event", () => {
+  // Found resuming #232 and #281, both closed at a deadline with branches kept and reopened to finish --
+  // neither was armed by `arm`, only eventually by `sweep` on some LATER PR's event. `sweep` bounds the
+  // wait, it does not remove it: a reopened PR is the one case a worker must legitimately arm by hand
+  // under ceo's no-re-arm ruling, an exception nobody but the person who hit it could know exists.
+  // Adding `reopened` removes the exception rather than documenting it.
+  const doc = parseYaml(readFileSync(WORKFLOW, "utf8")) as {
+    on: { pull_request: { types: string[] } },
+  };
+  assert.ok(doc.on.pull_request.types.includes("reopened"),
+    "auto-arm.yml's pull_request trigger must include `reopened`, or a REOPENED PR is invisible to `arm` "
+    + "and only ever picked up by `sweep`, on some later, unrelated PR event.");
+  assert.ok(doc.on.pull_request.types.includes("opened") && doc.on.pull_request.types.includes("ready_for_review"),
+    "the original two types must still be there -- this adds a case, it does not replace one.");
+});
