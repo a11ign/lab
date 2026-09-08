@@ -105,7 +105,7 @@ test("an empty corpus bills nothing, which is what the CLI refuses on", () => {
 });
 
 test("the report EMITS its method, so nothing downstream has to retype it", () => {
-  // `docs/board/reported.json` records a method string beside every total. Typed there, it is this file's
+  // `docs/board/reported/` records a method string beside every total. Typed there, it is this file's
   // implementation stated twice with nothing comparing them — and its first version described summing
   // per-case times from a progress-file field that does not exist. Emitting it deletes the copy.
   const summary = report(scan(corpus({ "a.json": { diagnostics: marks(60_000) } })));
