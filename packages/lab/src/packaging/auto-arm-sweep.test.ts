@@ -130,6 +130,23 @@ test("the sweep is NOT scheduled, which is the property it exists for", () => {
     + "PR and no incoming event to ride.");
 });
 
+test("ACCEPTANCE (#404): `reopened` is in the trigger's own event types, so the `arm` job sees a "
+  + "REOPENED PR directly rather than waiting on the sweep's next unrelated event", () => {
+  // Found resuming #232 and #281, both closed at a deadline with branches kept and reopened to finish --
+  // neither was armed by `arm`, only eventually by `sweep` on some LATER PR's event. `sweep` bounds the
+  // wait, it does not remove it: a reopened PR is the one case a worker must legitimately arm by hand
+  // under ceo's no-re-arm ruling, an exception nobody but the person who hit it could know exists.
+  // Adding `reopened` removes the exception rather than documenting it.
+  const doc = parseYaml(readFileSync(WORKFLOW, "utf8")) as {
+    on: { pull_request: { types: string[] } },
+  };
+  assert.ok(doc.on.pull_request.types.includes("reopened"),
+    "auto-arm.yml's pull_request trigger must include `reopened`, or a REOPENED PR is invisible to `arm` "
+    + "and only ever picked up by `sweep`, on some later, unrelated PR event.");
+  assert.ok(doc.on.pull_request.types.includes("opened") && doc.on.pull_request.types.includes("ready_for_review"),
+    "the original two types must still be there -- this adds a case, it does not replace one.");
+});
+
 test("ACCEPTANCE (#415): `synchronize` is in the trigger's own event types, so `arm` sees the PUSH that "
   + "fixes a conflict directly, rather than waiting on the sweep's next unrelated PR event", () => {
   // #402's own shape: opened while `mergeable: CONFLICTING`, GitHub dispatches neither `opened` nor
@@ -163,12 +180,14 @@ test("ACCEPTANCE (#415): the `arm` job's own condition reads fields present on E
     + "PR against a branch other than main is not armed");
 });
 
-test("MUTATION TARGET (#415): removing `synchronize` from the types array must be exactly what this test "
-  + "catches -- pinning it against a STRING rather than a parsed array would miss a reordering that drops it", () => {
+test("MUTATION TARGET (#404/#415): removing `reopened` or `synchronize` from the types array must be "
+  + "exactly what this test catches -- pinning it against a STRING rather than a parsed array would miss "
+  + "a reordering that drops one", () => {
   const doc = parseYaml(readFileSync(WORKFLOW, "utf8")) as {
     on: { pull_request: { types: string[] } },
   };
-  assert.equal(doc.on.pull_request.types.length, 3,
-    "exactly three trigger types -- if this grows or shrinks without the tests above changing, something "
-    + "was added or removed without being reasoned about here");
+  assert.equal(doc.on.pull_request.types.length, 4,
+    "exactly four trigger types (opened, ready_for_review, reopened, synchronize) -- if this grows or "
+    + "shrinks without the tests above changing, something was added or removed without being reasoned "
+    + "about here");
 });
