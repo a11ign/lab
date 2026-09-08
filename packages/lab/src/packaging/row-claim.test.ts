@@ -10,10 +10,17 @@ import { mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  claimStatus, decideClaim, fetchLabels, claimRow, dispatchRow, declineRow, CLAIM_LABEL, STARTED_LABEL,
-  recordCheck, recordConflict, latestCheckFor,
+  claimStatus, decideClaim, fetchLabels, claimRow, dispatchRow, declineRow, moveProjectStatus,
+  CLAIM_LABEL, STARTED_LABEL, recordCheck, recordConflict, latestCheckFor,
 } from "../../../../scripts/row-claim.mjs";
 import { READY_LABEL } from "../../../../scripts/ready-label-audit.mjs";
+
+// Every claim/dispatch/decline test above the #400 section stubs `moveStatus: () => ({ moved: true })` --
+// #400 is about the Project Status VIEW specifically, and those tests are about the LABEL, the record.
+// Without the stub, the real default `moveProjectStatus` would run against the fake `run` these tests
+// already inject for label calls, which answers `""` for a GraphQL snapshot query it was never built to
+// serve -- caught and reported (never thrown, per `moveProjectStatus`'s own contract), but noisy and
+// beside the point of what each of those tests is actually proving.
 
 // --- claimStatus: pure, no I/O ---
 
@@ -138,7 +145,7 @@ test("claimRow claims a genuinely unclaimed row: reads, writes, re-reads, confir
     }
     return ""; // the `edit` call
   };
-  const result = claimRow(55, "worker-contracts", { run });
+  const result = claimRow(55, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { claimed: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall, "must have written the claim");
@@ -151,7 +158,7 @@ test("claimRow refuses immediately when already claimed by another -- never even
     calls.push(args);
     return JSON.stringify({ number: 55, title: "A row", labels: [{ name: CLAIM_LABEL }, { name: "session:worker-judge" }] });
   };
-  const result = claimRow(55, "worker-contracts", { run });
+  const result = claimRow(55, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.equal(result.claimed, false);
   assert.ok(!calls.some((a) => a[1] === "edit"), "must not write a claim it knows is already someone else's");
 });
@@ -171,7 +178,7 @@ test("MUTATION: a race detected on the RE-READ is backed off, not reported as a 
     }
     return "";
   };
-  const result = claimRow(55, "worker-contracts", { run });
+  const result = claimRow(55, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.equal(result.claimed, false);
   assert.match((result as { reason: string }).reason, /lost a race to worker-judge/);
   // The FIRST edit call is the forward write, which also removes `ready` (see the `ready`-removal test
@@ -203,7 +210,7 @@ test("dispatchRow marks in-progress + session, but deliberately NOT started", ()
     }
     return "";
   };
-  const result = dispatchRow(176, "worker-contracts", { run });
+  const result = dispatchRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { claimed: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall!.includes(CLAIM_LABEL) && editCall!.includes("session:worker-contracts"));
@@ -219,7 +226,7 @@ test("MUTATION: a SECOND dispatch sees the FIRST, and refuses -- the whole point
     }
     return "";
   };
-  const result = dispatchRow(176, "worker-contracts", { run });
+  const result = dispatchRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.equal(result.claimed, false);
   assert.match((result as { reason: string }).reason, /worker-judge/);
 });
@@ -240,7 +247,7 @@ test("claimRow (start) additionally writes STARTED_LABEL, transitioning dispatch
     }
     return "";
   };
-  const result = claimRow(176, "worker-contracts", { run });
+  const result = claimRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { claimed: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall!.includes(STARTED_LABEL), "claim/start must mark started");
@@ -256,7 +263,7 @@ test("MUTATION: dispatching a `ready` row removes `ready` -- #197's review findi
     }
     return "";
   };
-  dispatchRow(176, "worker-contracts", { run });
+  dispatchRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall, "must have written the dispatch");
   const removeIndex = editCall!.indexOf("--remove-label");
@@ -277,7 +284,7 @@ test("declineRow returns a dispatched-but-not-started row to genuinely unclaimed
     }
     return "";
   };
-  const result = declineRow(176, "worker-contracts", { run });
+  const result = declineRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { declined: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall!.includes(CLAIM_LABEL) && editCall!.includes("session:worker-contracts"));
@@ -294,7 +301,7 @@ test("declineRow also clears STARTED_LABEL when a started row is declined", () =
     }
     return "";
   };
-  const result = declineRow(176, "worker-contracts", { run });
+  const result = declineRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { declined: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall!.includes(STARTED_LABEL));
@@ -307,7 +314,7 @@ test("declineRow refuses to release a row held by someone else", () => {
     return JSON.stringify({ number: 176, title: "A row",
       labels: [{ name: CLAIM_LABEL }, { name: "session:worker-judge" }] });
   };
-  const result = declineRow(176, "worker-contracts", { run });
+  const result = declineRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.equal(result.declined, false);
   assert.match((result as { reason: string }).reason, /worker-judge/);
   assert.ok(!calls.some((a) => a[1] === "edit"), "must not write anything when refusing");
@@ -316,7 +323,7 @@ test("declineRow refuses to release a row held by someone else", () => {
 test("declineRow says so, rather than silently no-op'ing, when the row was never claimed", () => {
   const run = () => JSON.stringify({ number: 176, title: "A row",
     labels: [{ name: "backlog" }, { name: "ready" }] });
-  const result = declineRow(176, "worker-contracts", { run });
+  const result = declineRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.equal(result.declined, false);
   assert.match((result as { reason: string }).reason, /nothing to decline/);
 });
@@ -425,6 +432,124 @@ test("MUTATION: a write failure is never a silent no-op, matching merge-guard's 
     assert.throws(() => recordCheck(dir, { issueNumber: 226, claimed: false, started: false, sessions: [],
       reachability: null }), /could not write the log/);
   });
+});
+
+// --- #400: moveProjectStatus and the claim/decline wiring that calls it ---
+
+test("moveProjectStatus snapshots first, then moves the field, in that order", () => {
+  const order: string[] = [];
+  const run = (cmd: string, args: string[]) => { order.push(args[1] ?? args[0]); return ""; };
+  const snapshot = (mutate: () => unknown) => { order.push("SNAPSHOT"); return mutate(); };
+  const result = moveProjectStatus(400, "In progress", { run, snapshot, log: () => {} });
+  assert.deepEqual(result, { moved: true });
+  assert.deepEqual(order, ["SNAPSHOT", "item-edit"],
+    "the snapshot must run, and complete, BEFORE the mutation it protects");
+});
+
+test("moveProjectStatus calls gh project item-edit with the real field name and the given Status option", () => {
+  let editArgs: string[] | null = null;
+  const run = (cmd: string, args: string[]) => {
+    if (args[1] === "item-edit") editArgs = args;
+    return "";
+  };
+  moveProjectStatus(400, "Ready", { run, snapshot: (mutate: () => unknown) => mutate(), log: () => {} });
+  assert.ok(editArgs, "must call gh project item-edit");
+  assert.ok(editArgs!.includes("--field") && editArgs![editArgs!.indexOf("--field") + 1] === "Status");
+  assert.ok(editArgs!.includes("--value") && editArgs![editArgs!.indexOf("--value") + 1] === "Ready");
+  assert.ok(editArgs!.some((a) => a.includes("/issues/400")), "must name the real issue by its URL");
+});
+
+test("moveProjectStatus NEVER THROWS -- a row not on the Project is reported, not a claim failure", () => {
+  const run = (): string => { throw new Error("resource not found, please check the URL"); };
+  let logged = "";
+  const result = moveProjectStatus(400, "In progress",
+    { run, snapshot: (mutate: () => unknown) => mutate(), log: (line: string) => { logged = line; } });
+  assert.equal(result.moved, false);
+  assert.match((result as { reason: string }).reason, /resource not found/);
+  assert.match(logged, /could not move #400/, "the failure must be reported, not swallowed silently");
+});
+
+test("moveProjectStatus reports (never throws) when the SNAPSHOT itself fails, per #399's own rule", () => {
+  // `withBoardSnapshot`'s whole contract is that a failed snapshot means the mutation is never even
+  // attempted -- proven here by a `run` that would throw if the mutation ran, and asserting it did not.
+  let mutationAttempted = false;
+  const run = (cmd: string, args: string[]) => {
+    if (args[1] === "item-edit") mutationAttempted = true;
+    return "";
+  };
+  const snapshot = () => { throw new Error("board-snapshot: could not write the snapshot"); };
+  const result = moveProjectStatus(400, "In progress", { run, snapshot, log: () => {} });
+  assert.equal(result.moved, false);
+  assert.equal(mutationAttempted, false, "the mutation must never run without a snapshot in front of it");
+});
+
+test("MUTATION target: claimRow moves Status to 'In progress' on a successful claim", () => {
+  let reads = 0;
+  const run = (cmd: string, args: string[]) => {
+    if (args[1] === "view") {
+      reads += 1;
+      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }];
+      return JSON.stringify({ number: 400, title: "A row", labels });
+    }
+    return "";
+  };
+  let moveCall: [number, string] | null = null;
+  const result = claimRow(400, "worker-contracts",
+    { run, moveStatus: (n: number, s: string) => { moveCall = [n, s]; return { moved: true }; } });
+  assert.deepEqual(result, { claimed: true });
+  assert.deepEqual(moveCall, [400, "In progress"]);
+});
+
+test("claimRow's own claimed:true does not depend on the Status move succeeding -- #400's explicit case: "
+  + "a row not on the Project must not fail the claim", () => {
+  let reads = 0;
+  const run = (cmd: string, args: string[]) => {
+    if (args[1] === "view") {
+      reads += 1;
+      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }];
+      return JSON.stringify({ number: 400, title: "A row", labels });
+    }
+    return "";
+  };
+  const result = claimRow(400, "worker-contracts",
+    { run, moveStatus: () => ({ moved: false, reason: "not on the Project" }) });
+  assert.deepEqual(result, { claimed: true },
+    "the label write is the real claim and must succeed regardless of the Project view");
+});
+
+test("claimRow does NOT move Status when the claim itself is refused (already held by another)", () => {
+  const run = () => JSON.stringify({ number: 400, title: "A row",
+    labels: [{ name: CLAIM_LABEL }, { name: "session:worker-judge" }] });
+  let moveCalled = false;
+  const result = claimRow(400, "worker-contracts",
+    { run, moveStatus: () => { moveCalled = true; return { moved: true }; } });
+  assert.equal(result.claimed, false);
+  assert.equal(moveCalled, false, "a row this session never actually claimed must not have its view moved");
+});
+
+test("MUTATION target: declineRow moves Status BACK to 'Ready' on a successful decline", () => {
+  const run = (cmd: string, args: string[]) => {
+    if (args[1] === "view") {
+      return JSON.stringify({ number: 400, title: "A row",
+        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }, { name: STARTED_LABEL }] });
+    }
+    return "";
+  };
+  let moveCall: [number, string] | null = null;
+  const result = declineRow(400, "worker-contracts",
+    { run, moveStatus: (n: number, s: string) => { moveCall = [n, s]; return { moved: true }; } });
+  assert.deepEqual(result, { declined: true });
+  assert.deepEqual(moveCall, [400, "Ready"]);
+});
+
+test("declineRow does NOT move Status when the decline itself is refused (not this session's row)", () => {
+  const run = () => JSON.stringify({ number: 400, title: "A row",
+    labels: [{ name: CLAIM_LABEL }, { name: "session:worker-judge" }] });
+  let moveCalled = false;
+  const result = declineRow(400, "worker-contracts",
+    { run, moveStatus: () => { moveCalled = true; return { moved: true }; } });
+  assert.equal(result.declined, false);
+  assert.equal(moveCalled, false);
 });
 
 // --- Live, read-only smoke test against the real repo ---
