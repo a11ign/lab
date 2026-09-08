@@ -21,7 +21,7 @@ import { join } from "node:path";
 // answer confidently about the wrong tree. `git-spawn-classification.test.ts` refuses this file until it
 // goes through the canonical helper, and it refused this very commit.
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { npmCliExecutable } from "../../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 
 const repo = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -85,7 +85,8 @@ const GENERATED_CITATIONS = [
 function ensureGeneratedPagesExist(): void {
   for (const { path, generator } of GENERATED_CITATIONS) {
     if (existsSync(join(repo, path))) continue;
-    execFileSync(npmCliExecutable("npx"), generator, { cwd: repo, stdio: "pipe" });
+    const npx = npmCliInvocation("npx", generator);
+    execFileSync(npx.command, npx.args, { cwd: repo, stdio: "pipe" });
   }
 }
 

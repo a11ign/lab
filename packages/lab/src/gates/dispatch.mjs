@@ -18,7 +18,7 @@
  */
 import { spawn } from "node:child_process";
 import { REPO_ROOT } from "../dataset-paths.mjs";
-import { npmCliExecutable } from "../../../../scripts/npm-cli-executable.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 
 /**
  * The flag that keeps a gate here. EXPORTED so a caller's `refuseUnknownFlags` list and this check cannot
@@ -46,7 +46,8 @@ export async function dispatchUnlessLocal({ job, argv }) {
   }
   process.stdout.write(`dispatching ${job} to the lab — the control plane, not this machine.\n`
     + "  `--local` runs it here instead, and says so in the verdict.\n");
-  const code = await run(npmCliExecutable("npm"), ["run", "--silent", "lab:job", "--", `-e`, `job=${job}`]);
+  const npm = npmCliInvocation("npm", ["run", "--silent", "lab:job", "--", `-e`, `job=${job}`]);
+  const code = await run(npm.command, npm.args);
   // EXITS rather than returning: a dispatcher that fell through would run the gate twice, once remotely
   // and once here, and the second result would overwrite the first in the operator's terminal.
   process.exit(code);
