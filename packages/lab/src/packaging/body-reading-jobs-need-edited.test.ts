@@ -27,20 +27,32 @@ import { parse as parseYaml } from "yaml";
 
 const WORKFLOWS = fileURLToPath(new URL("../../../../.github/workflows/", import.meta.url));
 
-type Job = { steps?: { env?: Record<string, string>; run?: string; with?: Record<string, string> }[] };
+type Job = {
+  steps?: { env?: Record<string, string>; run?: string; with?: Record<string, string> }[];
+  // A1 (#452): a job calling a REUSABLE WORKFLOW has no `steps` of its own -- its `with:` sits at the JOB
+  // level instead, one per `workflow_call` input. `ci.yml#acceptance` reads the body this way now
+  // (`with: { pr-body: ${{ github.event.pull_request.body }} }`), and a discovery that only looked inside
+  // `steps` would find NOTHING here -- the exact "asserting over an empty set" shape this file's own
+  // header already warns about, reached through a door that did not exist when it was written.
+  with?: Record<string, string>;
+};
 type Workflow = { on?: Record<string, { types?: string[] }>; jobs?: Record<string, Job> };
 
 const workflowFiles = () => readdirSync(WORKFLOWS).filter((f) => f.endsWith(".yml"));
 
-/** Every `<file>#<job>` whose steps reference the pull request's body in any position. */
+/** Every `<file>#<job>` whose steps OR job-level `with:` (a reusable-workflow call) reference the pull
+ * request's body in any position. */
 function jobsReadingTheBody(): { file: string; job: string }[] {
   const found: { file: string; job: string }[] = [];
   for (const file of workflowFiles()) {
     const doc = parseYaml(readFileSync(`${WORKFLOWS}${file}`, "utf8")) as Workflow;
     for (const [job, definition] of Object.entries(doc.jobs ?? {})) {
-      const surfaces = (definition.steps ?? []).flatMap((s) => [
-        ...Object.values(s.env ?? {}), ...Object.values(s.with ?? {}), s.run ?? "",
-      ]);
+      const surfaces = [
+        ...Object.values(definition.with ?? {}),
+        ...(definition.steps ?? []).flatMap((s) => [
+          ...Object.values(s.env ?? {}), ...Object.values(s.with ?? {}), s.run ?? "",
+        ]),
+      ];
       // `event.pull_request.body`, and the `body` a `github-script` step would read the same way.
       if (surfaces.some((v) => /pull_request\s*\.\s*body/.test(String(v)))) found.push({ file, job });
     }

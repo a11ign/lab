@@ -41,6 +41,33 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOWS_DIR = `${REPO}.github/workflows/`;
 const readWorkflow = (name: string) => readFileSync(`${WORKFLOWS_DIR}${name}`, "utf8");
 
+/**
+ * Every step this workflow's own jobs run, PLUS every step of any LOCAL reusable workflow one of its jobs
+ * calls via `uses: ./.github/workflows/<file>.yml` -- one hop only, never recursive, because nothing in
+ * this repo's own workflows currently calls a reusable workflow from within another one.
+ *
+ * A1 (#452) split `ci.yml` and `trunk-guard.yml`'s build/test steps into `reusable-build-test.yml`, so a
+ * structural check reading only a caller's OWN `steps:` would see nothing at all -- a caller job has
+ * `uses:`/`with:` instead of `steps:`, and the real `npm run build`/test commands moved to the callee.
+ * This is the discovery-follows-the-real-shape fix, not a special case for one file: any future reusable
+ * split gets the same treatment for free.
+ */
+function allStepsIncludingLocalReusableCalls(file: string): Array<Record<string, unknown>> {
+  const doc = parseYaml(readWorkflow(file)) as {
+    jobs: Record<string, { uses?: string; steps?: Array<Record<string, unknown>> }>;
+  };
+  const steps: Array<Record<string, unknown>> = [];
+  for (const job of Object.values(doc.jobs)) {
+    if (job.steps) steps.push(...job.steps);
+    const match = /^\.\/\.github\/workflows\/([\w-]+\.yml)$/.exec(job.uses ?? "");
+    if (match) {
+      const calleeDoc = parseYaml(readWorkflow(match[1])) as { jobs: Record<string, { steps?: Array<Record<string, unknown>> }> };
+      for (const calleeJob of Object.values(calleeDoc.jobs)) steps.push(...(calleeJob.steps ?? []));
+    }
+  }
+  return steps;
+}
+
 // Every entry needs a reason, and the reason is what a reviewer checks -- not the presence of a key.
 const PUSH_TO_MAIN_ALLOWLIST: Record<string, string> = {
   "board-liveness.yml": "watchdog for board-report.yml's schedule; push is the one trigger immune to "
@@ -172,13 +199,14 @@ for (const file of Object.keys(PUSH_TO_MAIN_ALLOWLIST)) {
 for (const file of Object.keys(TRUNK_GATE_ALLOWLIST)) {
   test(`${file}: structurally the trunk gate, not a watchdog -- builds, runs the full suite, is NOT continue-on-error`, () => {
     const text = readWorkflow(file);
-    const doc = parseYaml(text) as { jobs: Record<string, { steps: Array<Record<string, unknown>> }> };
 
     assert.doesNotMatch(stripYamlComments(text), /continue-on-error:\s*true/,
       `${file} is continue-on-error -- the trunk gate's whole point is that a failure here is ACTED ON `
       + "(a revert), so a red run must be able to block/drive something, not be shrugged off");
 
-    const steps = Object.values(doc.jobs).flatMap((job) => job.steps ?? []);
+    // A1 (#452): follows a local `uses: ./.github/workflows/reusable-build-test.yml` call -- the real
+    // build/test commands checked below now live there, not in this file's own steps.
+    const steps = allStepsIncludingLocalReusableCalls(file);
     const runLines = steps.map((s) => String(s.run ?? "")).join("\n");
 
     assert.match(runLines, /npm run build\b/,
