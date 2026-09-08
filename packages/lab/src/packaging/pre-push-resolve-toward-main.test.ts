@@ -78,7 +78,45 @@ function runAgainst(mainRef: string, headRef: string): { status: number; out: st
   }
 }
 
-test("THE REAL INCIDENT: the #232 resolution is REFUSED, and every lost symbol is named", () => {
+/**
+ * A SHALLOW CLONE IS AN HONEST REASON TO SKIP, AND I MISSED IT — caught by CI on this row's own PR.
+ *
+ * `actions/checkout@v4` defaults to `fetch-depth: 1`, so the runner has no history: the fixture commits
+ * are not present and every test below fails for a reason that is about the CHECKOUT, not the hook.
+ *
+ * **`pre-push-stale-base.test.ts` — the file A0 fixed an hour ago — carries exactly this guard**, and I
+ * read it, described it in A0's PR body, and did not carry it across. A0's own finding was that
+ * *checking for the truncation you thought of does not cover the truncation you did not*: there, a
+ * shallow guard was present and an unreachable object slipped past it. Here the reverse. The two failure
+ * modes look identical from inside — a commit you cannot see — and each needs its own question.
+ *
+ * The durability half is asserted rather than skipped, because that one CAN be answered anywhere.
+ */
+function shallowHere(): boolean {
+  return execFileSync("git", ["rev-parse", "--is-shallow-repository"],
+    { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8" }).trim() === "true";
+}
+
+/** Is `commit` reachable for as long as `main` is? The A0 predicate, so a fixture cannot silently vanish. */
+function isAncestorOfMain(commit: string): boolean {
+  try {
+    execFileSync("git", ["merge-base", "--is-ancestor", commit, "origin/main"],
+      { cwd: REPO_ROOT, env: sandboxGitEnv(), stdio: "pipe" });
+    return true;
+  } catch (error) {
+    const status = (error as { status?: number }).status;
+    if (status !== 1) throw error;   // not "no" -- "could not ask", which must never read as either
+    return false;
+  }
+}
+
+test("THE REAL INCIDENT: the #232 resolution is REFUSED, and every lost symbol is named", (t) => {
+  if (shallowHere()) {
+    t.skip("shallow clone -- the fixture commits are not present, and that is a fact about the checkout "
+      + "rather than about the hook. `fetch-depth: 0` would make this runnable in CI; it is not worth "
+      + "slowing every job for, and the mutation is run locally and recorded in the PR.");
+    return;
+  }
   const result = runAgainst("bb7fa639", "3d38dbf0");
   assert.equal(result.status, 1, `expected a refusal, got ${result.status}:\n${result.out}`);
   // The two files whose exports the resolution discarded. Named individually rather than counted: a
@@ -89,7 +127,13 @@ test("THE REAL INCIDENT: the #232 resolution is REFUSED, and every lost symbol i
   assert.match(result.out, /#232/, "the refusal must name the incident, or it reads as a mystery");
 });
 
-test("IT PRINTS THE SIZE OF THE SET IT EXAMINED, so a clean answer over nothing is visible", () => {
+test("IT PRINTS THE SIZE OF THE SET IT EXAMINED, so a clean answer over nothing is visible", (t) => {
+  if (shallowHere()) {
+    t.skip("shallow clone -- the fixture commits are not present, and that is a fact about the checkout "
+      + "rather than about the hook. `fetch-depth: 0` would make this runnable in CI; it is not worth "
+      + "slowing every job for, and the mutation is run locally and recorded in the PR.");
+    return;
+  }
   const result = runAgainst("bb7fa639", "3d38dbf0");
   // A guard reporting "nothing lost" over an empty population is worse than no guard, because #232 proved
   // the failure is silent. The count is the difference between "I looked and found nothing" and "I did
@@ -102,7 +146,13 @@ test("IT PRINTS THE SIZE OF THE SET IT EXAMINED, so a clean answer over nothing 
     + "nothing, which is how a guard passes while blind");
 });
 
-test("A CLEAN MERGE PASSES — without this the check is a blanket refusal wearing a predicate's clothes", () => {
+test("A CLEAN MERGE PASSES — without this the check is a blanket refusal wearing a predicate's clothes", (t) => {
+  if (shallowHere()) {
+    t.skip("shallow clone -- the fixture commits are not present, and that is a fact about the checkout "
+      + "rather than about the hook. `fetch-depth: 0` would make this runnable in CI; it is not worth "
+      + "slowing every job for, and the mutation is run locally and recorded in the PR.");
+    return;
+  }
   // `main` against itself: every symbol resolves, nothing is lost, and the block must return control
   // rather than exit. The first thing anyone does with a guard that refuses everything is route around it.
   const result = runAgainst("origin/main", "origin/main");
@@ -119,4 +169,16 @@ test("the extraction found the real block, not an empty string", () => {
     + "gained since would read as LOST, which is the false-positive flood this check must never produce");
   assert.ok(block.includes("A11Y_RESOLVE_REASON"), "the block must offer a stated override");
   assert.ok(block.length > 500, `the extracted block is only ${block.length} chars; markers moved`);
+});
+
+test("THE FIXTURES ARE DURABLE, and this is answerable even on a shallow clone", () => {
+  // A0's lesson, carried across deliberately this time: a pinned commit is a derived artefact, true in the
+  // clone that has it. Both fixtures are MERGE commits on `main`, so they are reachable for exactly as
+  // long as `main` is -- unlike `c7b1a0a0`, which lived on a deleted branch and held the trunk red.
+  if (shallowHere()) return;   // nothing to assert about history that is not here
+  for (const commit of ["bb7fa639", "3d38dbf0"]) {
+    assert.ok(isAncestorOfMain(commit),
+      `${commit} is not an ancestor of origin/main, so nothing guarantees it stays reachable -- that is `
+      + "how the stale-base test pinned a commit on a deleted branch and turned the trunk red on every run");
+  }
 });
