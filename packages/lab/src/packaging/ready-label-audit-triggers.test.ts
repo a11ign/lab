@@ -29,11 +29,22 @@ const raw = readFileSync(workflowPath, "utf8");
 const doc = parseYaml(raw) as Record<string, unknown>;
 const triggers = doc.on as Record<string, unknown>;
 
-test("#536: the audit is woken by the six events that can change its answer", () => {
+test("#536: the audit is woken by the five events that can change its answer", () => {
   assert.deepEqual((triggers.issues as { types: string[] }).types,
     ["labeled", "unlabeled", "closed", "reopened"]);
   assert.deepEqual((triggers.pull_request as { types: string[] }).types, ["closed"]);
-  assert.deepEqual((triggers.push as { branches: string[] }).branches, ["main"]);
+});
+
+test("#536: and NOT on push to main -- the allowlist rule is argued with, not around", () => {
+  // `push-trigger-allowlist.test.ts` holds the chairman's rule: only a watchdog, a trunk gate or a
+  // trunk-followup may trigger on a push to main. This audit is none of the three. `close-rows.yml`
+  // already answered the identical question the same way -- the `pull_request` closed event carries the
+  // merge, scoped to one PR, needing no allowlist entry. Adding a fourth category to reach a trigger
+  // another event already covers would be arguing past a guard rather than with it.
+  assert.equal(triggers.push, undefined,
+    "a merge arrives as a merged PR, and a merged PR is a closed one");
+  assert.match(raw, /NO `push: branches: \[main\]`, AND NOT BECAUSE IT WOULD NOT WORK/,
+    "and the file says why, so the next author does not re-add it and re-break the allowlist test");
 });
 
 test("#536: the cron SURVIVES as the backstop -- it is the only thing that fires when nothing happens", () => {
@@ -45,11 +56,11 @@ test("#536: the cron SURVIVES as the backstop -- it is the only thing that fires
 test("#536: every run says which event woke it -- quiet-because-nothing-changed and " +
   "quiet-because-nothing-fired must not read the same", () => {
   assert.match(raw, /github\.event_name/,
-    "the run must name its own trigger; six triggers make silence ambiguous otherwise");
+    "the run must name its own trigger; five triggers make silence ambiguous otherwise");
   assert.match(raw, /::notice::ready-label-audit woken by/);
 });
 
-test("#536: one verdict at a time, newest wins -- six triggers make pile-ups likelier", () => {
+test("#536: one verdict at a time, newest wins -- five triggers make pile-ups likelier", () => {
   const concurrency = doc.concurrency as { group: string; "cancel-in-progress": boolean };
   assert.equal(concurrency.group, "ready-label-audit");
   assert.equal(concurrency["cancel-in-progress"], true,
