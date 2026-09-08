@@ -102,9 +102,15 @@ test("auto-arm.yml actually RUNS the sweep — a correct predicate wired to noth
     + "MODULE_NOT_FOUND — the #331 shape, where a workflow's own missing prerequisite reads as a code bug.");
   const runner = steps.find((s) => s.run?.includes("auto-arm-sweep.mjs"));
   assert.ok(runner, "no step runs scripts/auto-arm-sweep.mjs.");
-  assert.equal(runner?.env?.GH_TOKEN, "${{ github.token }}",
-    "the sweep spawns `gh`, so the job must declare GH_TOKEN — the gh-token-jobs.test.ts finding, here "
-    + "in the one workflow whose only action is a `gh` call.");
+  // #416: GH_TOKEN is no longer a static env: mapping -- it is resolved at runtime (A11IGN_BOT_TOKEN if
+  // set, else github.token, see auto-arm-token.test.ts) and exported inside the step's own `run:` script.
+  // The gh-token-jobs.test.ts finding this pins is unaffected: the sweep still spawns `gh` with SOME
+  // token reaching GH_TOKEN before the node process runs, just no longer via a literal YAML value.
+  assert.match(runner?.run ?? "", /export GH_TOKEN=/,
+    "the sweep spawns `gh`, so the job must resolve and export GH_TOKEN before running the script — the "
+    + "gh-token-jobs.test.ts finding, here in the one workflow whose only action is a `gh` call.");
+  assert.ok(runner?.env?.FALLBACK_TOKEN, "the fallback token (github.token) must be mapped in for the "
+    + "no-secret case -- see auto-arm-token.test.ts for the fallback logic itself.");
   assert.ok(runner?.env?.GITHUB_REPOSITORY,
     "the script exits CANNOT_ASK without GITHUB_REPOSITORY rather than guessing a repo.");
 });
@@ -122,4 +128,47 @@ test("the sweep is NOT scheduled, which is the property it exists for", () => {
   assert.ok("workflow_dispatch" in doc.on,
     "a manual kick is the escape hatch for the case the sweep exists for: a quiet repo with a stranded "
     + "PR and no incoming event to ride.");
+});
+
+test("ACCEPTANCE (#415): `synchronize` is in the trigger's own event types, so `arm` sees the PUSH that "
+  + "fixes a conflict directly, rather than waiting on the sweep's next unrelated PR event", () => {
+  // #402's own shape: opened while `mergeable: CONFLICTING`, GitHub dispatches neither `opened` nor
+  // `ready_for_review` (it cannot compute a merge commit for either), so both of this trigger's original
+  // events are spent before the conflict can even be fixed. Resolving it is a PUSH -- a `synchronize` --
+  // and without this type in the list, `arm` never sees it: the one case a worker had to legitimately
+  // arm by hand, under `ceo`'s no-re-arm ruling, because nothing here ever would.
+  const doc = parseYaml(readFileSync(WORKFLOW, "utf8")) as {
+    on: { pull_request: { types: string[] } },
+  };
+  assert.ok(doc.on.pull_request.types.includes("synchronize"),
+    "auto-arm.yml's pull_request trigger must include `synchronize`, or a PR opened while conflicting is "
+    + "permanently unarmed by `arm` and only ever reached by `sweep`, on some later, unrelated PR event.");
+  assert.ok(doc.on.pull_request.types.includes("opened") && doc.on.pull_request.types.includes("ready_for_review"),
+    "the original two types must still be there -- this adds a case, it does not replace one.");
+});
+
+test("ACCEPTANCE (#415): the `arm` job's own condition reads fields present on EVERY pull_request event "
+  + "type, so adding `synchronize` does not silently change what `arm` decides for `opened`/`ready_for_review`", () => {
+  // `github.event.pull_request.draft` and `.base.ref` are payload fields of the PR itself, not of the
+  // event type -- present and correctly populated on a `synchronize` payload exactly as on `opened`. If
+  // the condition ever grows a field that is event-type-specific (e.g. something only `opened` carries),
+  // this is the test that would need to say so.
+  const doc = parseYaml(readFileSync(WORKFLOW, "utf8")) as {
+    jobs: Record<string, { if?: string }>;
+  };
+  const condition = doc.jobs.arm.if ?? "";
+  assert.match(condition, /pull_request\.draft/, "the draft check must still gate `arm`, so a `synchronize` "
+    + "on a draft PR does not attempt an armed merge that `gh pr merge --auto` would refuse anyway");
+  assert.match(condition, /base\.ref/, "the base-ref check must still gate `arm`, so a `synchronize` on a "
+    + "PR against a branch other than main is not armed");
+});
+
+test("MUTATION TARGET (#415): removing `synchronize` from the types array must be exactly what this test "
+  + "catches -- pinning it against a STRING rather than a parsed array would miss a reordering that drops it", () => {
+  const doc = parseYaml(readFileSync(WORKFLOW, "utf8")) as {
+    on: { pull_request: { types: string[] } },
+  };
+  assert.equal(doc.on.pull_request.types.length, 3,
+    "exactly three trigger types -- if this grows or shrinks without the tests above changing, something "
+    + "was added or removed without being reasoned about here");
 });
