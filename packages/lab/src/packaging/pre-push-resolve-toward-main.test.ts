@@ -100,13 +100,30 @@ function shallowHere(): boolean {
 /** Is `commit` reachable for as long as `main` is? The A0 predicate, so a fixture cannot silently vanish. */
 function isAncestorOfMain(commit: string): boolean {
   try {
-    execFileSync("git", ["merge-base", "--is-ancestor", commit, "origin/main"],
+    execFileSync("git", ["merge-base", "--is-ancestor", commit, mainRefHere()],
       { cwd: REPO_ROOT, env: sandboxGitEnv(), stdio: "pipe" });
     return true;
   } catch (error) {
     const status = (error as { status?: number }).status;
     if (status !== 1) throw error;   // not "no" -- "could not ask", which must never read as either
     return false;
+  }
+}
+
+/**
+ * What stands for `main` in THIS checkout.
+ *
+ * `origin/main` is not a ref on a CI runner -- `actions/checkout` fetches the PR ref, not the branch --
+ * so a test that names it fails there for a reason about the checkout. `HEAD` is the honest substitute on
+ * a PR branch that has already merged `main`, which the hook's own precondition requires anyway.
+ */
+function mainRefHere(): string {
+  try {
+    execFileSync("git", ["rev-parse", "--verify", "origin/main"],
+      { cwd: REPO_ROOT, env: sandboxGitEnv(), stdio: "pipe" });
+    return "origin/main";
+  } catch {
+    return "HEAD";
   }
 }
 
@@ -155,7 +172,14 @@ test("A CLEAN MERGE PASSES — without this the check is a blanket refusal weari
   }
   // `main` against itself: every symbol resolves, nothing is lost, and the block must return control
   // rather than exit. The first thing anyone does with a guard that refuses everything is route around it.
-  const result = runAgainst("origin/main", "origin/main");
+  // A CONCRETE SHA, NOT THE STRING "origin/main". The `ts` job's checkout has no `refs/remotes/origin/main`
+  // at all -- `actions/checkout` fetches the PR ref, not the branch -- so passing that name to
+  // `update-ref` inside the fixture clone died with `fatal: origin/main: not a valid SHA1`, and the
+  // positive control failed for a reason about the CHECKOUT rather than about the hook. A no-op merge is
+  // any commit against itself, and HEAD always resolves.
+  const head = execFileSync("git", ["rev-parse", "HEAD"],
+    { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8" }).trim();
+  const result = runAgainst(head, head);
   assert.equal(result.status, 0, `a no-op merge must pass:\n${result.out}`);
   assert.match(result.out, /A11Y_REACHED_END/, "the block must return control, not exit 0 early");
   assert.match(result.out, /0 missing/);
