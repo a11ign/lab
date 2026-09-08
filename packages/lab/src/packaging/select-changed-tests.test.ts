@@ -21,14 +21,28 @@
  * comment merely MENTIONING a path -- this repo's own `` `scripts/foo.mjs` `` markdown convention -- is
  * never mistaken for a test that exercises it. `BROAD` narrows to exactly `ci.yml` itself and
  * `ci-changed.mjs`'s own `ROOT_TS_FILES`.
+ *
+ * A1D: AND SOME TESTS CANNOT BE SELECTED AT ALL. A guard whose population is the TREE imports nothing
+ * from the file it governs, so every mechanism above -- import closure, path string, package fallback --
+ * is structurally blind to it. `main` went red at `9c20dc99` on exactly that: run `34202041349` printed
+ * `4 test file(s) selected precisely` and `git-spawn-classification.test.ts` was not among them, while
+ * the file it fails on had just landed in a different PR. Both PRs green alone, jointly red, no shared
+ * file for B4's intersection to see.
+ *
+ * THE MUTATION THAT MATTERS HERE IS THE NARROWING ONE. A selector that runs too FEW guards is
+ * indistinguishable from a passing suite, which is how that red reached main; a selector that runs too
+ * many is merely slower and says so in its own output. So the always-run assertions below are a FLOOR
+ * plus named members plus the incident itself, and `npm run mutate` on `discoversFromTree`'s first
+ * `return true` -- the whole git leg -- must turn them red.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   sourceClosure, discoverTestFiles, selectTests, broadReasons, pathStringReferences,
+  discoversFromTree, alwaysRunTests, testFilesToRun,
 } from "../../../../scripts/select-changed-tests.mjs";
 
 type PackageSpec = { dir: string; name: string; exportsMap?: Record<string, unknown>; files: Record<string, string> };
@@ -303,4 +317,146 @@ test("SMOKE, against the real repo: a well-known, widely-imported source file na
   assert.ok(result.selectedTests.length < testFiles.length,
     `selected ${result.selectedTests.length} of ${testFiles.length} candidates -- expected real narrowing`);
   assert.deepEqual(result.fallbackPackages, []);
+});
+
+
+// -- #A1d: the always-run discovery guards -----------------------------------------------------------
+
+const REPO = new URL("../../../../", import.meta.url).pathname.replace(/\/$/, "");
+
+/** The real repo's whole test population and a closure walker over it, built once for the tests below. */
+function realRepoWalk(): { every: string[]; closureOf: (t: string) => Set<string> } {
+  const dirs = readdirSync(`${REPO}/packages`, { withFileTypes: true })
+    .filter((e) => e.isDirectory()).map((e) => e.name);
+  const packages = new Map<string, { dir: string; exportsMap: Record<string, unknown> }>();
+  for (const dir of dirs) {
+    const manifest = JSON.parse(readFileSync(`${REPO}/packages/${dir}/package.json`, "utf8"));
+    packages.set(manifest.name, { dir, exportsMap: manifest.exports ?? {} });
+  }
+  return {
+    every: discoverTestFiles(REPO, dirs),
+    closureOf: (t: string) => sourceClosure(`${REPO}/${t}`, REPO, packages),
+  };
+}
+
+test("discoversFromTree: a git ENUMERATION is a tree walk, however it is spawned -- the indirected form "
+  + "matters, because `isolation-gate.mjs` reaches `git ls-files` through a local `run()` seam and a list "
+  + "of function names is exactly what a new wrapper slips past", () => {
+  assert.equal(discoversFromTree('execFileSync("git", ["ls-files"], { cwd });'), true);
+  assert.equal(discoversFromTree('const t = run("git", ["ls-files"], dir, env());'), true);
+  assert.equal(discoversFromTree('spawnSync("git", ["for-each-ref", "refs/heads"]);'), true);
+  assert.equal(discoversFromTree('execFileSync("git", ["rev-parse", "HEAD"]);'), false,
+    "`rev-parse` reads ONE fact, it does not enumerate a population -- selecting on it would make every "
+    + "test that asks for the current commit an always-run guard");
+});
+
+test("discoversFromTree: COMMENTS ARE STRIPPED FIRST -- a file that DESCRIBES a tree walk in prose has "
+  + "not performed one, and the selector's own header would otherwise classify half the repo", () => {
+  assert.equal(discoversFromTree('// we deliberately never call execFileSync("git", ["ls-files"]) here\nconst x = 1;'),
+    false);
+  assert.equal(discoversFromTree('/* readdirSync(dir) would be wrong here */\nconst x = 1;'), false);
+});
+
+test("discoversFromTree: in a TEST a directory read IS the population; in a HELPER it is the behaviour of "
+  + "the module under test -- the distinction that keeps `capture-cache.mjs`'s and `board-data.mjs`'s "
+  + "consumers (ordinary unit tests, one flat data directory each) out of a set they would otherwise "
+  + "make a third larger for the wrong reason", () => {
+  const flat = 'for (const f of readdirSync(pageDir).sort()) { read(f); }';
+  assert.equal(discoversFromTree(flat), true, "a test's own flat read is its population");
+  assert.equal(discoversFromTree(flat, { asHelper: true }), false, "a helper's flat read is a data read");
+
+  const sourceWalk = 'const walk = (d) => { for (const e of readdirSync(d)) { '
+    + 'if (e.name !== "node_modules" && e.name !== "dist") walk(e); } };';
+  assert.equal(discoversFromTree(sourceWalk, { asHelper: true }), true,
+    "naming `node_modules` is the signature of walking THIS repository's own source, which is what "
+    + "`command-line-census.mjs` and `source-walk.mjs` do and what their consumers are guards over");
+});
+
+test("discoversFromTree: a walk rooted in the CORPUS is subtracted -- `runs/` is gitignored, so nothing "
+  + "under it can ever be a changed file -- but a tracked-tree walk that merely NAMES a corpus path is "
+  + "not, which is the under-inclusion this whole row is about", () => {
+  assert.equal(discoversFromTree('const c = readdirSync(realCorpusRoot());'), false);
+  assert.equal(discoversFromTree('const c = readdirSync(new URL("runs/screenreader-dataset/captures/", u));'),
+    false, "the LITERAL path, not just the accessor -- `announcement.corpus.test.ts` roots its walk that "
+    + "way, and taking half of `corpus-readers-are-guarded.test.ts`'s settled pair let it straight in");
+  assert.equal(discoversFromTree(
+    'const SKIP = new Set(["node_modules", "dist"]);\n'
+    + 'const walk = (d) => readdirSync(d).forEach(w);\nconst r = realCorpusRoot();'), true,
+    "`real-page-corpus-freshness.test.ts` walks the TRACKED tree to find corpus readers, so it names "
+    + "corpus paths constantly while being exactly the guard this row exists to keep running");
+});
+
+test("alwaysRunTests: THE INCIDENT, reproduced -- the diff that added `acceptance-prose.test.ts` "
+  + "(`bb0854da`, two files) selects six tests and NOT `git-spawn-classification.test.ts`, the guard it "
+  + "went on to break; the always-run set is what puts it back", () => {
+  const { every, closureOf } = realRepoWalk();
+  const guard = "packages/lab/src/packaging/git-spawn-classification.test.ts";
+  // The incident's own diff, quoted rather than re-derived from history: a shallow checkout cannot see
+  // `bb0854da`, and a test that skips in CI proves nothing about the job CI runs.
+  const changed = ["packages/lab/src/packaging/acceptance-prose.test.ts", "scripts/acceptance-commands.mjs"];
+  const testFiles = discoverTestFiles(REPO, ["lab"]);
+  const selection = selectTests(changed, { closureOf, testFiles, repoRoot: REPO, testPackages: ["lab"] });
+  assert.ok(!selection.selectedTests.includes(guard),
+    "if selection now reaches this guard by import, the incident has changed shape and this test is "
+    + "asserting about a repository that no longer exists -- read it before relaxing it");
+  assert.deepEqual(selection.fallbackPackages, [], "neither changed file is uncovered, so nothing widens");
+
+  const alwaysRun = alwaysRunTests(every, { closureOf, repoRoot: REPO });
+  assert.ok(alwaysRun.some((g) => g.test === guard), `${guard} is not in the always-run set`);
+  assert.ok(testFilesToRun({ ...selection, alwaysRun }).includes(guard),
+    "the guard must reach what the job actually RUNS, not merely a set the selector computed");
+});
+
+test("alwaysRunTests: a FLOOR against the real repo -- the narrowing mutation is the one with teeth, "
+  + "because a selector that runs too few guards is indistinguishable from a passing suite", () => {
+  const { every, closureOf } = realRepoWalk();
+  const alwaysRun = alwaysRunTests(every, { closureOf, repoRoot: REPO });
+  assert.ok(every.length > 400, `only ${every.length} test files discovered -- the population is wrong`);
+  assert.ok(alwaysRun.length >= 60,
+    `${alwaysRun.length} always-run guard(s) of ${every.length} test files; measured 107 on 2026-09-08, `
+    + "and a floor of 60 is well below every leg being intact but far above the git leg alone (14)");
+  assert.ok(alwaysRun.length < every.length / 2,
+    `${alwaysRun.length} of ${every.length} -- more than half the suite always-running means the `
+    + "predicate has stopped discriminating and A1b's whole narrowing is gone");
+  assert.ok(alwaysRun.every((g) => g.why.length > 0), "every member carries the reason it qualified");
+});
+
+test("alwaysRunTests: the five guards #501 names are all in, and `cli-flags.test.ts` is in BY THE HELPER "
+  + "LEG specifically -- its own source walks nothing, so it can only have arrived through "
+  + "`command-line-census.mjs`, which is the leg a self-only predicate would silently drop", () => {
+  const { every, closureOf } = realRepoWalk();
+  const alwaysRun = alwaysRunTests(every, { closureOf, repoRoot: REPO });
+  const by = new Map(alwaysRun.map((g) => [g.test, g.why]));
+  for (const named of [
+    "packages/lab/src/packaging/git-spawn-classification.test.ts",
+    "packages/lab/src/packaging/generated-paths.test.ts",
+    "packages/lab/src/packaging/tracked-source-leak-guard.test.ts",
+    "packages/lab/src/packaging/pre-install-import-graph.test.ts",
+    "packages/worker-fleet/src/cli-flags.test.ts",
+  ]) assert.ok(by.has(named), `#501 names ${named} and it is not in the always-run set`);
+
+  const viaHelper = by.get("packages/worker-fleet/src/cli-flags.test.ts") ?? "";
+  assert.match(viaHelper, /^imports the tree walker packages\/worker-fleet\/src\/command-line-census\.mjs$/);
+  assert.equal(discoversFromTree(readFileSync(`${REPO}/packages/worker-fleet/src/cli-flags.test.ts`, "utf8")),
+    false, "if this file starts walking the tree itself, the helper leg is no longer pinned by it");
+});
+
+test("alwaysRunTests: a `capture-cache.mjs` consumer is NOT in the set -- the helper leg's strictness, "
+  + "pinned from the other side, because relaxing it adds 13 ordinary unit tests that no changed file "
+  + "can reach through a corpus directory read", () => {
+  const { every, closureOf } = realRepoWalk();
+  const tests = new Set(alwaysRunTests(every, { closureOf, repoRoot: REPO }).map((g) => g.test));
+  assert.ok(!tests.has("packages/lab/src/training/capture-resume.test.ts"));
+  assert.ok(!tests.has("packages/evidence/src/announcement.corpus.test.ts"),
+    "a corpus reader has no tracked population and cannot be broken by a changed file");
+});
+
+test("testFilesToRun: the union is deduplicated and sorted, and the package fallback globs still ride "
+  + "along -- a guard selection already reached must not be handed to `tsx --test` twice", () => {
+  const run = testFilesToRun({
+    selectedTests: ["b.test.ts", "a.test.ts"],
+    alwaysRun: [{ test: "a.test.ts", why: "walks the tree itself" }, { test: "c.test.ts", why: "x" }],
+    fallbackPackages: ["lab"],
+  });
+  assert.deepEqual(run, ["a.test.ts", "b.test.ts", "c.test.ts", "packages/lab/src/**/*.test.ts"]);
 });
