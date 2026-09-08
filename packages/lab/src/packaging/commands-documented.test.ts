@@ -32,6 +32,8 @@ import { fileURLToPath } from "node:url";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
+import { COMMANDS } from "../../../../scripts/commands.mjs";
+
 /**
  * Scripts nobody is expected to type, with the reason each is exempt.
  *
@@ -77,15 +79,53 @@ function npmScripts(): string[] {
   return Object.keys(pkg.scripts).sort();
 }
 
+/**
+ * THE COMMAND CATALOGUE COUNTS TOO — A3, and this is the half that makes A3 safe.
+ *
+ * A3 gives a command a home outside `package.json`, so a new one no longer means editing the file 19 PRs
+ * collided in. **A guard that reads only `package.json` would then stop seeing the commands that move**,
+ * and this row would have bought B4 by putting a hole in the discoverability rule -- trading one of this
+ * repository's guards for another, which is never the deal.
+ *
+ * So the population is the UNION. A command is held to the same standard wherever it is declared.
+ *
+ * Worth stating what this does NOT fix: `scripts/` holds 24 runnable commands with no npm entry, 20 of
+ * them undocumented, and they are invisible here TODAY because this function reads `package.json` alone.
+ * A3 does not close that -- the catalogue is seeded with four that ARE documented, so nothing is exempted
+ * to make this pass -- but every command that moves from now on lands inside the guard rather than outside.
+ */
+function catalogueCommands(): string[] {
+  // IMPORTED, NOT SCRAPED. The first version of this read the keys out of the file's text with a regex,
+  // and CLAUDE.md names that shape by itself: *"a test must not derive its expectations from source
+  // TEXT"* -- the signal-type scrape matched nothing after a refactor and asserted over an empty set, and
+  // passed. Reading the exported VALUE deletes the copy instead of pinning it, which is the remedy that
+  // file puts first. The vacuity guard below stays anyway, because it now catches a different fault: an
+  // emptied catalogue rather than a broken reader.
+  return Object.keys(COMMANDS).sort();
+}
+
+/** Every command a person can type, wherever it is declared. */
+function allCommands(): string[] {
+  return [...new Set([...npmScripts(), ...catalogueCommands()])].sort();
+}
+
 test("the documentation being searched is real, so this cannot pass having read nothing", () => {
   // A guard written against a shape you did not verify is the count-based check all over again.
   assert.ok(DOCS.length > 50_000, `only ${DOCS.length} chars of documentation found; the layout moved`);
   assert.ok(npmScripts().length > 30, "too few npm scripts parsed; package.json shape changed");
+  // The catalogue half of the population, guarded the same way: a regex that stopped matching would make
+  // every catalogued command silently exempt, which is the hole this addition exists to prevent.
+  assert.ok(catalogueCommands().length > 0,
+    "scripts/commands.mjs parsed to ZERO commands -- the catalogue is the other half of this test's "
+    + "population, and reading none of it means every command declared there is silently unguarded");
   assert.match(DOCS, /npm run fleet:status/, "a command known to be documented is not being found");
 });
 
-test("every npm script is documented, or explicitly declared internal", () => {
-  const undocumented = npmScripts()
+test("every command is documented, or explicitly declared internal", () => {
+  // `allCommands()`, NOT `npmScripts()`. Renaming this test to say "command" while its body still read
+  // `package.json` alone would be a title claiming more than the body checks, which is worse than leaving
+  // the old name -- a reader trusts the sentence, not the call.
+  const undocumented = allCommands()
     .filter((name) => !Object.hasOwn(INTERNAL, name))
     .filter((name) => !DOCS.includes(name));
 
@@ -97,9 +137,9 @@ test("every npm script is documented, or explicitly declared internal", () => {
 
 test("the internal list is honest: every entry is a real script", () => {
   // An allowlist that outlives its entries is a hole nobody can see.
-  const scripts = new Set(npmScripts());
+  const scripts = new Set(allCommands());
   for (const [name, why] of Object.entries(INTERNAL)) {
-    assert.ok(scripts.has(name), `${name} is exempted and is not an npm script`);
+    assert.ok(scripts.has(name), `${name} is exempted and is not a command in either population`);
     assert.ok(why.length > 15, `${name} is exempted without a reason`);
   }
 });
