@@ -21,8 +21,60 @@ const read = (f: string) => readFileSync(path.join(REPO, ".github/workflows", f)
 const CASES: [string, string, string][] = [
   // file, London hour it claims, the two UTC crons that bracket it
   ["board-report.yml", "08", "0 7 * * *|0 8 * * *"],
-  ["board-summary-check.yml", "21", "0 20 * * *|0 21 * * *"],
 ];
+
+/* THE SUMMARY CHECK IS MINUTE-GATED, NOT HOUR-GATED, and that is why it is not in CASES above.
+ *
+ * It runs TWICE on the morning of the edition -- 07:15 a reminder that exits 0, 07:45 a refusal that
+ * fails -- so the hour alone cannot tell the two apart. Reading only the hour would make every morning
+ * end in a red mark at 07:15 for a summary that is not yet late, which is the exact failure the
+ * wrong-half-run rule below exists to prevent, arriving through a different door.
+ *
+ * The pair-of-facts hazard is unchanged and is why this test exists: FOUR crons and a gate that must
+ * agree with all four. Someone moving the reminder will move one and not the other, and the failure is
+ * silent -- the step simply never runs.
+ */
+const SUMMARY_CHECK = "board-summary-check.yml";
+const SUMMARY_CRONS = ["15 6 * * *", "15 7 * * *", "45 6 * * *", "45 7 * * *"];
+
+test(`${SUMMARY_CHECK} schedules all FOUR UTC crons for 07:15 and 07:45 London`, () => {
+  const text = read(SUMMARY_CHECK);
+  for (const cron of SUMMARY_CRONS) {
+    assert.ok(text.includes(`cron: "${cron}"`),
+      `${SUMMARY_CHECK} is missing the cron "${cron}". Each of 07:15 and 07:45 needs a BST and a GMT `
+      + "spelling, or that run is an hour out for half the year.");
+  }
+});
+
+test(`${SUMMARY_CHECK} reads the MINUTE and names a mode, because 07:15 and 07:45 differ only in exit code`, () => {
+  const text = read(SUMMARY_CHECK);
+  assert.match(text, /date \+%H:%M/,
+    `${SUMMARY_CHECK} must read London's hour AND minute; the hour alone cannot separate the reminder `
+    + "from the refusal");
+  assert.match(text, /07:1\*\)\s*MODE=reminder/, "no 07:15 -> reminder branch");
+  assert.match(text, /07:4\*\)\s*MODE=refuse/, "no 07:45 -> refuse branch");
+  assert.match(text, /\*\)\s*MODE=none/, "no fall-through to a do-nothing mode");
+
+  // Every working step must be gated on the mode, or it runs on all four crons.
+  const steps = text.split(/\n {6}- /).slice(1);
+  const working = steps.filter((s) => !s.startsWith("id: hour"));
+  assert.ok(working.length >= 3, `only ${working.length} working steps found; this check would be weak`);
+  const ungated = working
+    .filter((s) => !/if: steps\.hour\.outputs\.mode/.test(s))
+    .map((s) => s.split("\n")[0].slice(0, 60));
+  assert.deepEqual(ungated, [],
+    `these steps in ${SUMMARY_CHECK} are not gated on the mode, so they run on all four crons: `
+    + `${ungated.join(", ")}`);
+});
+
+test(`${SUMMARY_CHECK}: the reminder exits 0 and the refusal does not -- they differ ONLY in that`, () => {
+  const text = read(SUMMARY_CHECK);
+  // The whole design is in these two lines: same script, same day, different exit code.
+  assert.match(text, /--post --reminder/,
+    "the 07:15 step must pass --reminder, or a summary that is merely not written yet fails the run");
+  assert.match(text, /run: node scripts\/board-summary-check\.mjs --post\s*$/m,
+    "the 07:45 step must run WITHOUT --reminder, or the refusal never refuses");
+});
 
 for (const [file, hour, crons] of CASES) {
   test(`${file} schedules BOTH UTC hours that can be ${hour}:00 in London`, () => {
