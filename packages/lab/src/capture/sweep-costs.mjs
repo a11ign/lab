@@ -199,10 +199,15 @@ export const RATE_IS_FLAT_WITHIN = 2.5;
  * their median gives a baseline, and the excess of any type over it is that type's non-walk component.
  *
  * This is what turns the table into an answer. Measured 2026-09-09 across six pages, every type without
- * an `onItem` sits at 146-220 ms/trip with a spread of 1.1-1.2 — and `formField` on the two most recent
- * captures reads **190 ms/trip** (271 fields, 951 trips) and **202** (19 fields, 78 trips), which is the
- * same rate. Its high readings elsewhere (1,261 and 463) are the activation firing on controls that stay
- * silent and cost `STATE_WAIT_MS` each, not a walk that got slower.
+ * an `onItem` sits at 146-220 ms/trip with a spread of 1.1-1.2 — and `formField` reads **190 ms/trip**
+ * over 271 fields and 951 trips on a capture taken with `--probe-forms` OFF, where 3 of those 271
+ * controls were eligible to activate. **That is the walk, unmixed**, and it lands on the walk rate.
+ *
+ * IT IS NOT EVIDENCE THAT ACTIVATION IS CHEAP, and the distinction is the whole of why the excess is
+ * attributable. Where controls ANNOUNCE, an activation costs a round trip — 19 of them cost 2.1 s on
+ * hubspot, 111 ms each. Where they stay SILENT it costs `STATE_WAIT_MS`, and those are the population
+ * behind the 1,261 and 463 readings. So a carrier at the walk rate means its probe barely fired, never
+ * that firing is free.
  *
  * So the walk is a constant, and the excess over it is an interaction probe rather than the cost of
  * seeing the page. That is #659's question answered in one number rather than in a paragraph.

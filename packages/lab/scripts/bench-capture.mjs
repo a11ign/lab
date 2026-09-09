@@ -377,7 +377,8 @@ function reportWalkRate(byType) {
   if (carrier.rates.length === 0) return;
   console.log(`  formField: ${Math.min(...carrier.rates).toFixed(0)}-`
     + `${Math.max(...carrier.rates).toFixed(0)} ms/trip — the excess over ${walk.toFixed(0)} is its `
-    + "per-field activation, NOT a slower walk. Where it reads at the walk rate, the probe cost nothing.");
+    + "per-field activation, NOT a slower walk. Where it reads AT the walk rate its probe barely fired — "
+    + "which is not the same as firing being free.");
 }
 
 if (IS_MAIN) await main();

@@ -150,9 +150,11 @@ test("the walk rate is taken from the types that only walk", () => {
 
 test("the carrier's own rate is the walk PLUS its probe, and the two are separable", () => {
   // Measured: IKEA at 14:15Z ran `formField` at 190 ms/trip over 951 trips with 271 fields — the same
-  // rate as every walking-only sweep. Its 1,261 elsewhere is the activation firing on silent controls at
-  // up to STATE_WAIT_MS each, not a walk that got slower. So a high carrier rate is a probe finding, and
-  // a carrier rate AT the walk rate says the probe cost nothing on that page.
+  // rate as every walking-only sweep. That capture ran with `--probe-forms` OFF and 3 of 271 controls
+  // were eligible, so it is the WALK UNMIXED rather than evidence that activation is cheap: where
+  // controls announce an activation costs a round trip (111 ms each on hubspot), and where they stay
+  // silent it costs STATE_WAIT_MS, which is the population behind the 1,261 reading. A carrier at the
+  // walk rate means its probe barely fired.
   const baseline = walkRate([
     { type: "heading", msPerTrip: [180] }, { type: "link", msPerTrip: [184] },
     { type: "formField", msPerTrip: [190] },
