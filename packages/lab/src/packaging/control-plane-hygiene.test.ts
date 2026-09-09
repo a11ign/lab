@@ -25,6 +25,7 @@ import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import {
   linkState, workspacePackages, packagesImportedByName, distTrapReport, rootPrepareBuildsEverything,
+  undecidedRefusal,
 } from "../../../../scripts/control-plane-hygiene.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
@@ -159,4 +160,27 @@ test("a package only ever imported from its own directory is not counted as need
   assert.deepEqual([...packagesImportedByName(dir, workspacePackages(dir))], [],
     "a package importing only ITSELF must not count as needed by another package");
   rmSync(dir, { recursive: true, force: true });
+});
+
+// #655: the refusal must NAME the undecided row(s), not just count them -- a reader who follows the
+// message exactly must be able to find the row without re-reading the whole table above it.
+test("MUTATION TARGET: undecidedRefusal names the undecided row's OWN label, not just a count", () => {
+  const rows: Array<[string, string, string]> = [
+    ["Worktrees registered", "12", "RULE: prune stale/fully-merged trees regularly."],
+    ["Some accumulator", "3 GB", "TODO: we should clean this up at some point"],
+  ];
+  const refusal = undecidedRefusal(rows);
+  assert.ok(refusal, "a row with only an intention must refuse");
+  assert.match(refusal as string, /Some accumulator/,
+    "the refusal must name the specific undecided row, not just say how many");
+  assert.doesNotMatch(refusal as string, /Worktrees registered/,
+    "the refusal must not name a row that HAS a real decision");
+});
+
+test("undecidedRefusal returns null when every row has a real decision", () => {
+  const rows: Array<[string, string, string]> = [
+    ["Worktrees registered", "12", "RULE: prune stale/fully-merged trees regularly."],
+    ["Disk free", "800 GB", "Informational only -- not an accumulator, no rule needed at current scale."],
+  ];
+  assert.equal(undecidedRefusal(rows), null);
 });
