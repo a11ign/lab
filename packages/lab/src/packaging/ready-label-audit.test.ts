@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, handClaims, strandedByIncompleteDecline,
-  fetchOpenIssues, fetchOpenIssuesChecked, fetchReportedOpenIssueCount, fetchAllIssues, closedDebris,
+  fetchOpenIssues, fetchOpenIssuesChecked, fetchReportedOpenIssueNumbers, openIssueSetSummary, fetchAllIssues, closedDebris,
   isClosedDebrisLabel, openRowsAbsentFromBoard, labellessRows,
   readyRowsAlreadyMerged, fetchClosingPrRefs, fetchLatestReopenedAt, CHECKS, runCheck,
 } from "../../../../scripts/ready-label-audit.mjs";
@@ -230,46 +230,109 @@ test("MUTATION: a label object with no name is a thrown error", () => {
   assert.throws(() => fetchOpenIssues({ run }), /has a label with no name/);
 });
 
-// --- #788: fetchReportedOpenIssueCount and fetchOpenIssuesChecked -- every label-keyed audit states
-// what it examined against what GitHub's own search index reports open, and refuses as partial when
-// the two differ, so a population that shrinks (or grows) silently is visible rather than clean-looking ---
+// --- #788/#838: fetchReportedOpenIssueNumbers, openIssueSetSummary and fetchOpenIssuesChecked --
+// every label-keyed audit states what it examined against what GitHub's own search index reports open.
+// #838's own correction: a mismatch RE-READS ONCE before refusing -- measured live, "examined 66,
+// search reports 65" refused five of nine checks on nothing more than a live tracker moving between two
+// reads a second apart, the ORDINARY state, not a shrunk population. ---
 
-test("fetchReportedOpenIssueCount reads GitHub's search-index total via --jq", () => {
-  const run = () => "68\n";
-  assert.equal(fetchReportedOpenIssueCount({ run }), 68);
+test("fetchReportedOpenIssueNumbers reads GitHub's search-index issue numbers via --jq", () => {
+  const run = () => "717\n725\n747\n";
+  assert.deepEqual(fetchReportedOpenIssueNumbers({ run }), [717, 725, 747]);
 });
 
-test("fetchReportedOpenIssueCount throws, never falls back to 0, when gh fails", () => {
+test("fetchReportedOpenIssueNumbers: empty output is an empty list, not a crash on splitting nothing", () => {
+  const run = () => "";
+  assert.deepEqual(fetchReportedOpenIssueNumbers({ run }), []);
+});
+
+test("fetchReportedOpenIssueNumbers throws, never falls back to an empty list, when gh fails", () => {
   const run = throwingRun("gh: not authenticated");
-  assert.throws(() => fetchReportedOpenIssueCount({ run }), /could not read GitHub's reported open-issue count/);
+  assert.throws(() => fetchReportedOpenIssueNumbers({ run }), /could not read GitHub's reported open-issue numbers/);
 });
 
-test("fetchReportedOpenIssueCount throws on an unparseable count rather than guessing", () => {
-  const run = () => "not a number";
-  assert.throws(() => fetchReportedOpenIssueCount({ run }), /was not a number/);
+test("fetchReportedOpenIssueNumbers throws on a non-number line rather than guessing", () => {
+  const run = () => "717\nnot a number\n";
+  assert.throws(() => fetchReportedOpenIssueNumbers({ run }), /non-number line/);
 });
 
-test("fetchOpenIssuesChecked: examined count matches reported count -- returns the issues and the count", () => {
-  const run = jsonRun(JSON.stringify([{ number: 1, title: "a", labels: [{ name: READY_LABEL }] }]));
-  const result = fetchOpenIssuesChecked({ run, fetchReportedCount: () => 1 });
+test("openIssueSetSummary: identical sets agree, regardless of order", () => {
+  assert.deepEqual(openIssueSetSummary([1, 2, 3], [3, 1, 2]),
+    { agree: true, onlyExamined: [], onlyReported: [] });
+});
+
+test("openIssueSetSummary: names exactly which numbers are in one and not the other, on each side "
+  + "separately -- #838's own point: a bare count difference cannot say WHICH row", () => {
+  assert.deepEqual(openIssueSetSummary([1, 2, 3], [2, 3, 4]),
+    { agree: false, onlyExamined: [1], onlyReported: [4] });
+});
+
+test("openIssueSetSummary: equal COUNTS with different MEMBERS still disagree -- the comparison is the "
+  + "set, never the length", () => {
+  assert.deepEqual(openIssueSetSummary([1, 2], [1, 3]),
+    { agree: false, onlyExamined: [2], onlyReported: [3] });
+});
+
+/** A `run` that answers the two calls `fetchOpenIssuesChecked` makes -- `gh issue list` and `gh api
+ * search/issues` -- differently, and can return a DIFFERENT answer on a second call of either kind, for
+ * driving the retry path. */
+function dualCallRun(issuePages: string[], reportedPages: string[]) {
+  let issueCalls = 0;
+  let reportedCalls = 0;
+  return (_cmd: string, args: string[]) => {
+    if (args[0] === "issue" && args[1] === "list") {
+      const page = issuePages[Math.min(issueCalls, issuePages.length - 1)];
+      issueCalls += 1;
+      return page;
+    }
+    const page = reportedPages[Math.min(reportedCalls, reportedPages.length - 1)];
+    reportedCalls += 1;
+    return page;
+  };
+}
+
+test("fetchOpenIssuesChecked: examined numbers match reported numbers on the FIRST read -- returns the "
+  + "issues and the count, no retry needed", () => {
+  const run = dualCallRun(
+    [JSON.stringify([{ number: 1, title: "a", labels: [{ name: READY_LABEL }] }])],
+    ["1\n"]);
+  const result = fetchOpenIssuesChecked({ run });
   assert.deepEqual(result.issues, [{ number: 1, title: "a", labels: [READY_LABEL] }]);
   assert.equal(result.reportedCount, 1);
 });
 
-test("#788 ACCEPTANCE, MUTATION TARGET: examined count LOWER than GitHub's reported open count REFUSES "
-  + "as partial -- the exact shape a silently narrowed query would produce", () => {
-  const run = jsonRun(JSON.stringify([{ number: 1, title: "a", labels: [{ name: READY_LABEL }] }]));
-  assert.throws(() => fetchOpenIssuesChecked({ run, fetchReportedCount: () => 5 }),
-    /examined 1 open issue\(s\) but GitHub's search index reports 5 open/);
+test("#838 ACCEPTANCE: a first-read mismatch that the SECOND read resolves is NOT a refusal -- the "
+  + "ordinary single-row race, named rather than treated as partial", () => {
+  const run = dualCallRun(
+    [
+      JSON.stringify([{ number: 1, title: "a", labels: [] }]),
+      JSON.stringify([{ number: 1, title: "a", labels: [] }, { number: 2, title: "b", labels: [] }]),
+    ],
+    ["1\n2\n", "1\n2\n"],
+  );
+  const result = fetchOpenIssuesChecked({ run });
+  assert.equal(result.issues.length, 2, "the RETRY's issues are what's returned, not the first read's");
+  assert.equal(result.reportedCount, 2);
 });
 
-test("fetchOpenIssuesChecked: examined count HIGHER than reported also refuses -- the comparison is an "
-  + "equality, not a floor", () => {
-  const run = jsonRun(JSON.stringify([
-    { number: 1, title: "a", labels: [] }, { number: 2, title: "b", labels: [] },
-  ]));
-  assert.throws(() => fetchOpenIssuesChecked({ run, fetchReportedCount: () => 1 }),
-    /examined 2 open issue\(s\) but GitHub's search index reports 1 open/);
+test("#838 ACCEPTANCE, MUTATION TARGET: a mismatch that persists on BOTH reads STILL refuses, naming "
+  + "which numbers are in one and not the other on the second (not the first) read", () => {
+  const run = dualCallRun(
+    [JSON.stringify([{ number: 1, title: "a", labels: [] }])],
+    ["1\n5\n"],
+  );
+  assert.throws(() => fetchOpenIssuesChecked({ run }),
+    /Examined but not in search: none\. In search but not examined: 5/);
+});
+
+test("fetchOpenIssuesChecked: examined HIGHER than reported, persisting on both reads, also refuses -- "
+  + "the comparison is a set equality, not a floor", () => {
+  const run = dualCallRun(
+    [JSON.stringify([{ number: 1, title: "a", labels: [] }, { number: 2, title: "b", labels: [] }])],
+    ["1\n"],
+  );
+  assert.throws(() => fetchOpenIssuesChecked({ run }),
+    /Examined but not in search: 2\. In search but not examined: none/);
 });
 
 // --- #378: a CLOSED row carrying ready/in-progress/session:* is DEBRIS, a separate population from
