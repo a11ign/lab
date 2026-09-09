@@ -81,6 +81,38 @@ test("an exception for a DIFFERENT lane does not open this one", () => {
   assert.equal(v.code, EXIT.REFUSED);
 });
 
+test("A GENERATED FILE IS NOT THE LANE'S: consumer-gate.yml passes from any branch", () => {
+  // `consumer-gate.yml` is regenerated from README.md by a script another session owns, so its content is
+  // contract work that happens to land in this directory. The pipeline does not decide what it says, and
+  // the cost of changing it is visible from the generator's seat rather than from the merge queue -- which
+  // is the whole test for whether a path belongs to a lane.
+  //
+  // Added after the flat prefix would have refused #558 and forced its author to write a Lane-exception
+  // for a rule that was mis-stated. Making somebody paper over a wrong rule with a body line is the
+  // guard-people-route-around failure the exception was designed to prevent, one door along.
+  assert.equal(verdict("agent/consumer-gate-pin-selfcheck-558",
+    [".github/workflows/consumer-gate.yml"]).code, EXIT.CLEAR);
+});
+
+test("but a generated file does not launder its NEIGHBOURS -- release.yml in the same PR still refuses", () => {
+  // The except list subtracts one path, never opens the lane. A PR touching both must still be refused,
+  // or the exception becomes a way in.
+  const v = verdict("agent/consumer-gate-pin-selfcheck-558",
+    [".github/workflows/consumer-gate.yml", ".github/workflows/release.yml"]);
+  assert.equal(v.code, EXIT.REFUSED);
+  assert.match(v.reasons[0], /release\.yml/);
+  assert.doesNotMatch(v.reasons[0], /consumer-gate\.yml/,
+    "and the excepted path must not appear in the refusal's own list of touched paths -- one answer to "
+    + "'is this path in the lane at all', not two");
+});
+
+test("the except list states its reason in the data file, like the lane itself", () => {
+  const pipeline = LANES!.lanes.find((l) => l.paths.includes(".github/workflows/"))!;
+  assert.deepEqual(pipeline.except, [".github/workflows/consumer-gate.yml"]);
+  assert.ok((pipeline.exceptWhy ?? "").length > 120,
+    "an exception with no stated reason is a hole; the next reader must be able to argue with it");
+});
+
 test("a PR touching nothing in the lane is clear from any branch", () => {
   assert.equal(verdict("pm/x", ["docs/pipeline.md", "packages/lab/src/x.ts"]).code, EXIT.CLEAR);
 });
