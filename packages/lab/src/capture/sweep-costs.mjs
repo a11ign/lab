@@ -41,6 +41,25 @@ export function captureIn(record) {
   return Array.isArray(record?.capture?.diagnostics) ? record.capture : null;
 }
 
+/**
+ * DID THIS SWEEP NEVER RUN? — the one place that decides it, for every reader.
+ *
+ * A starved sweep records `found: 0`, `ms: 0` and TWO round trips: the baseline speech-log read it makes
+ * before checking the deadline. Every consumer that divides by it gets a number that looks like the
+ * cheapest or the emptiest in the set — `0 ms/trip` here, `ratio 0.00` in `sweep-vs-census.mjs` — and a
+ * second spelling of this predicate is how those two would drift apart.
+ *
+ * READ FROM THE STOP REASON, never inferred from `ms === 0` or `found === 0`: a sweep can legitimately be
+ * quick, and a page can legitimately have none of a type. Only the sweep's own account of why it stopped
+ * can say it never got to look.
+ *
+ * @param {any} mark a `sweep` diagnostic
+ */
+export function sweepNeverRan(mark) {
+  const ms = (mark?.prevMs ?? 0) + (mark?.nextMs ?? 0);
+  return [mark?.prevStop, mark?.nextStop].includes("deadline") && ms === 0;
+}
+
 /** A sweep mark that can be read: it names a type and did not fail. */
 const isReadableSweep = (/** @type {any} */ mark) =>
   mark && typeof mark === "object" && mark.event === "sweep"
@@ -73,7 +92,7 @@ export function sweepCostsOf(diagnostics) {
     // READ FROM THE STOP REASON, not inferred from `ms === 0`. A sweep can legitimately be fast; only its
     // own account of why it stopped can say it never got to look. Both directions, because either can be
     // the one that was starved.
-    const starved = [mark.prevStop, mark.nextStop].includes("deadline") && ms === 0;
+    const starved = sweepNeverRan(mark);
     return {
       type: mark.type,
       found: typeof mark.found === "number" ? mark.found : 0,
