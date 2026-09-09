@@ -131,6 +131,28 @@ test("exceptionFor accepts an em-dash as well as a double hyphen -- both are wri
   assert.ok(exceptionFor("Lane-exception: the pipeline -- assigned by ceo -- because x\n", "the pipeline"));
 });
 
+test("THE WIRING, not just the logic: the job running this check checks out FULL depth", () => {
+  // Measured 2026-09-09, and it cost this check its own first PR. The step diffs `origin/<base>...HEAD`,
+  // and a three-dot diff needs a MERGE BASE. On the default shallow checkout there is none, and git does
+  // not degrade -- reproduced in a `--depth=1` clone:
+  //
+  //     $ git diff --name-only FETCH_HEAD...HEAD
+  //     fatal: FETCH_HEAD...HEAD: no merge base          (exit 128)
+  //
+  // Under `bash -e` that fails the step BEFORE node runs, so the check reported a real-sounding refusal
+  // with nothing to do with lanes. Every assertion above drives the VERDICT and none of them could see
+  // this: a pure function tested exhaustively, wired to an input it never receives. That is this
+  // repository's own rule -- test a check in the direction it will actually run.
+  const ci = readFileSync(path.join(REPO, ".github/workflows/ci.yml"), "utf8");
+  const job = ci.split(/^  mergeSafety:$/m)[1]?.split(/^  \S/m)[0] ?? "";
+  assert.ok(job.includes("workflow-lane-check.mjs"),
+    "this test is pinned to mergeSafety; if the step moved, move this with it rather than deleting it");
+  assert.match(job, /fetch-depth:\s*0/,
+    "the job must check out full depth, or the three-dot diff has no merge base and exits 128");
+  assert.match(job, /git diff --name-only origin\/\$\{\{ github\.base_ref \}\}\.\.\.HEAD/,
+    "and it must diff against the base ref by name -- FETCH_HEAD after a shallow fetch is the fault above");
+});
+
 test("the lane file is DATA with a named owner, so the mechanism cannot quietly decide who owns what", () => {
   const raw = JSON.parse(readFileSync(path.join(REPO, "docs/lane-ownership.json"), "utf8"));
   assert.equal(raw._owner, "ceo", "ceo assigns lanes; dispatcher owns the mechanism only");
