@@ -538,6 +538,59 @@ test("ci.yml triggers on pull_request AND merge_group -- no push trigger at all,
     `ci.yml declares triggers ${Object.keys(doc.on).join(", ")} -- only pull_request and merge_group are expected`);
 });
 
+/**
+ * A CLOSED PR IS NOT A PR TO TEST, and `edited` is how one gets tested anyway.
+ *
+ * #690 merged at 11:12:18Z on a fully green run (`gate` success at 11:12:16Z, two seconds earlier). Its
+ * author then edited the BODY at 11:14:00Z to record how a verification had been run -- no push, no
+ * commit. `edited` fired `ci.yml` against a merged PR whose branch had been deleted, and three checks
+ * went red on the merged head:
+ *
+ *   mergeSafety  "could not read the branch's real tip (`git ls-remote`, #294). This is INCONCLUSIVE"
+ *   changed      "`git diff --name-only origin/main...HEAD` returned nothing"
+ *   gate         "a job reported 'failure'"
+ *
+ * NEITHER GUARD IS WRONG. The branch really was gone, and after the merge HEAD really IS an ancestor of
+ * `origin/main`, so the three-dot diff is `diff(B, B)` -- empty by construction, the shape recorded in
+ * `docs/pipeline.md` under testing a check in the direction it will run. The RUN is what should not
+ * exist.
+ *
+ * It matters because those checks land in the report of non-success checks on merged PR heads -- the view
+ * the chairman reads. A check that CANNOT pass is not a signal, and a section full of permanent red
+ * trains people to skip it, which is exactly how one real red sat on seven merged PRs for ninety minutes.
+ *
+ * `edited` STAYS. The acceptance job reads `github.event.pull_request.body`, so a body edit must re-run
+ * it while the PR is open; the state check narrows only the case where there is no PR left to gate.
+ */
+test("#690: every pull_request job is gated on the PR still being OPEN -- `edited` fires after a merge too", () => {
+  const doc = parseYaml(readWorkflow("ci.yml"));
+  assert.deepEqual(doc.on.pull_request.types, ["opened", "synchronize", "reopened", "edited"],
+    "`edited` is deliberate -- acceptance reads the PR body -- and it is what reaches a closed PR");
+
+  // A REAL CAST, NOT A JSDOC ONE. This file is `.ts`, where `/** @type {...} */ (x)` is a comment and
+  // nothing else -- `tsx --test` and eslint both accept it, and only `tsc` says `'job' is of type
+  // 'unknown'`. Three pushes today were red for exactly this: a verification that does not include the
+  // one tool that checks the thing being got wrong.
+  const jobs = doc.jobs as Record<string, { if?: string; needs?: unknown }>;
+  const reachableOnPullRequest = Object.entries(jobs)
+    .filter(([name]) => name !== "gate")
+    .filter(([, job]) => job.if === undefined || !String(job.if).includes("merge_group"));
+
+  const unguarded = reachableOnPullRequest
+    .filter(([, job]) => !String(job.if ?? "").includes("pull_request.state == 'open'"))
+    .filter(([, job]) => job.needs === undefined || !String(job.needs).includes("changed"))
+    .map(([name]) => name);
+
+  assert.deepEqual(unguarded, [],
+    `these jobs run on a CLOSED pull request: ${unguarded.join(", ")}. Either gate them on `
+    + "`github.event.pull_request.state == 'open'` or make them need `changed`, which is gated.");
+
+  // `gate` is DELIBERATELY not gated: `if: always()`, and with every upstream job skipped it passes on
+  // "success or skipped". A required context that reports SKIPPED and one that reports SUCCESS are not
+  // the same thing to branch protection, and this is the required one.
+  assert.equal(jobs.gate.if, "always()", "gate stays unconditional -- it is the required context");
+});
+
 test("action-smoke.yml and capture-regression.yml trigger on workflow_call and workflow_dispatch only", () => {
   // Both left `main` entirely, chairman's direction: they are release-time gates now, called as jobs from
   // `release.yml` (workflow_call) or run on demand (workflow_dispatch) -- never on a push or a PR, so
