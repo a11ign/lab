@@ -104,6 +104,11 @@ const GATE_PROOFS: Record<string, GateProof> = {
       + "thing, which is how a filename derived from a directory COUNT presents",
     provenBy: "packages/lab/src/packaging/provenance-gate-refuses.test.ts",
   },
+  "release:rehearsal-check": {
+    catches: "a release whose commit is not the one RELEASE.md's own <!-- REHEARSAL:COMMIT --> marker "
+      + "names -- a rehearsal that covered an earlier commit silently read as covering this one",
+    provenBy: "packages/lab/src/packaging/rehearsal-currency-gate.test.ts",
+  },
   "scorer:migration": {
     catches: "a release while a feature-schema migration is open, so the weights and the featurizer "
       + "disagree about what the inputs mean",

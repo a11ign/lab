@@ -39,6 +39,7 @@ import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { beginRun } from "./capture-progress.mjs";
 import { resumePlan, describeResume } from "./real-page-resume.mjs";
 import { discoverRoles, roleCoverageLine } from "./real-page-role-coverage.mjs";
+import { identityChecksFor, servedRequestedPageLine } from "./real-page-identity-summary.mjs";
 import { captureTolerantly } from "@a11ign/worker-fleet/capture-client";
 // BY CODE, not the literal string — architecture-audit.md §5, item 4. `capture-faults.mjs` has no
 // imports of its own, so it is safe from any portable tree; a renamed fault must not be able to make
@@ -64,7 +65,9 @@ const ALLOW_STALE = process.argv.includes("--allow-stale-workers");
 const OUT = realCorpusRoot();
 
 /**
- * The captures already on disk, as `{ url, capturedAt }` — the only two fields resume reasons about.
+ * The captures already on disk, as `{ url, capturedAt, capture }` — `url`/`capturedAt` are the two fields
+ * resume reasons about; `capture` (#780) is the full record, kept so a caller can derive facts (document
+ * identity among them) without re-reading and re-parsing every file a second time.
  *
  * Deliberately tolerant of a file that will not parse: a half-written capture from the kill this resume
  * exists to recover from is exactly what would be there, and treating it as unreadable means it gets
@@ -85,7 +88,8 @@ function existingCaptures() {
           // `audit-rule-coverage.ts` identifies by shape for the same reason and says why: a name
           // convention is a second thing to keep in step.
           const url = parsed?.capture?.url;
-          return typeof url === "string" && url ? { url, capturedAt: parsed.capturedAt } : null;
+          return typeof url === "string" && url
+            ? { url, capturedAt: parsed.capturedAt, capture: parsed.capture } : null;
         } catch {
           return null;
         }
@@ -540,6 +544,13 @@ async function main() {
     + (plan.reused ? ` (${plan.reused} reused by --resume, ${toCapture.length} taken now)` : "") + "\n");
   // Named, not counted. "3 failed" tells you nothing about whether the corpus is usable.
   for (const line of failed) process.stdout.write(`  failed: ${line}\n`);
+  // #780: THE MEASUREMENT #688 MADE BY HAND, MADE DURABLE. Read FRESH, after the run -- a capture just
+  // taken is not yet in the `existing` snapshot resume planning read at the top. Scoped to THIS role's
+  // own `pages`, the same population the captured/failed count above already reports against, so the two
+  // numbers describe the same set rather than two different ones that happen to sit near each other.
+  const wanted = new Set(pages.map((page) => page.url));
+  const afterRun = existingCaptures().filter((entry) => wanted.has(entry.url));
+  process.stdout.write(servedRequestedPageLine(identityChecksFor(afterRun)));
   process.exit(failed.length ? 1 : 0);
 }
 
