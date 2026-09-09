@@ -3,6 +3,12 @@
  * See `scripts/ready-label-audit.mjs`'s own header for the incident: `dispatcher` labelled #13 and #75
  * `ready` to hit a floor, while one was disputed and the other had no Region or Acceptance at all.
  */
+// no-token: defaultRun
+// Every fetcher this file exercises (fetchOpenIssues, fetchReportedOpenIssueNumbers, fetchClosingPrRefs,
+// fetchLatestReopenedAt, fetchClaimActivity, ...) is called only with an injected `{ run }` fixture below
+// -- `defaultRun`, the module-scope const that actually spawns `gh`, is never referenced by name in this
+// file. The #827 closure walk still reaches it because these functions are imported from the shared
+// ready-label-audit.mjs module, whose own real-`gh` fetchers this file's tests never invoke.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -820,6 +826,17 @@ test("claimsNobodyIsWorking: a claim made TEN MINUTES ago with no branch is NOT 
   const flagged = claimsNobodyIsWorking(rows,
     { hasOpenPr: new Map(), lastPushMinutes: new Map(), claimedMinutes: new Map([[478, 10]]) });
   assert.deepEqual(flagged, [], "a fresh claim with no branch yet is a session starting, not a dead claim");
+});
+
+test("#755 formatDeadClaimLine: the line names the criterion (#723), the same way the OK line already did", async () => {
+  const { formatDeadClaimLine } = await import("../../../../scripts/ready-label-audit.mjs");
+  // #755's own complaint: the clean-path line already said "the same three legs as `ceo`'s release rule
+  // (#723)"; the flagged-path line said nothing, so a reader could not tell a criterion change from a
+  // state change just by reading the report. This is the regression test for that gap, on #426's own shape.
+  const line = formatDeadClaimLine({ number: 426, title: "commented, not pushed",
+    sessions: ["session:worker-audit"], minutes: null });
+  assert.match(line, /#723/, "the flagged line must cite the same rule the OK line cites");
+  assert.match(line, /DEAD-CLAIM {2}#426 "commented, not pushed" -- held by session:worker-audit, /);
 });
 
 // --- runCheck: a check that could not ASK must not silence the ones after it ---
