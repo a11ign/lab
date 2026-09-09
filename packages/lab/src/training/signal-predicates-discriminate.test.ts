@@ -120,6 +120,13 @@ const DISCRIMINATES: Record<string, { signal: object; fires: object; silent: obj
     fires: { media: [{ tag: "audio", autoplay: true, muted: false, controls: false, loop: false }] },
     silent: { media: [{ tag: "audio", autoplay: true, muted: false, controls: true, loop: false }] },
   },
+  // 1.3.5. `formInputs` is a DOM-only census like `media` above, for the same reason -- `autocomplete` has
+  // no accessibility-tree equivalent. `fname` is not a real Autofill field name token; `given-name` is.
+  "input-purpose-invalid": {
+    signal: { type: "input-purpose-invalid" },
+    fires: { formInputs: [{ tag: "input", type: "text", autocomplete: "fname" }] },
+    silent: { formInputs: [{ tag: "input", type: "text", autocomplete: "given-name" }] },
+  },
 };
 
 /**

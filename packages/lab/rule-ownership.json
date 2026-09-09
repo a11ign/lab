@@ -191,6 +191,16 @@
         "widening the vocabulary to everything (or breaking the rule to nothing) both fail."
       ]
     },
+    "1.3.5:input-purpose-invalid": {
+      "decidedBy": "rules",
+      "reportsAs": "1.3.5",
+      "modelHead": false,
+      "why": "Issue #79, built by #869 (PR #89 closed unmerged, and never wrote the rule -- see criterion-coverage.ts's 1.3.5 note). Its evidence (`RuleInput.formInputs`, packages/judge/src/rules.ts) has no worker-side census yet -- mirroring `mediaCensus` for a form field's `autocomplete` attribute is issue #170, a separate, fleet-touching unit this one's region excludes. Its one case (`input-purpose-invalid-signup`, provisional) cannot discriminate on a real capture until that census lands, so a head fitted here would train on nothing real.",
+      "note": [
+        "The rules decide this criterion's F107 half via `addUnidentifiedInputPurpose`; the model does not need it. Declared anyway rather than excepted, per the same reasoning `1.4.2:autoplay-uncontrollable` above already carries: an undeclared emitter is invisible to rules:gate, so `rules:coverage` reporting NEVER FIRED ANYWHERE here is the truth, and it is findable rather than silent.",
+        "See criterion-coverage.ts's 1.3.5 note for what this rule does NOT cover (a personal-data field with no autocomplete attribute at all)."
+      ]
+    },
     "2.4.7:focus-removed-on-receipt": {
       "decidedBy": "rules",
       "reportsAs": "2.4.7",

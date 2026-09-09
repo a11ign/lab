@@ -924,8 +924,65 @@ function autoplayUncontrollable(/** @type {any} */ capture) {
   return elements.some((/** @type {any} */ el) => el?.autoplay && !el?.muted && !el?.controls);
 }
 
+/**
+ * F107 -- a form field's `autocomplete` value is not a real input purpose token.
+ *
+ * Reads `capture.formInputs`, the DOM-only census `addUnidentifiedInputPurpose` (`rules.ts`) also reads.
+ * DELIBERATELY DUPLICATED rather than imported, on the same basis `autoplayUncontrollable` just above
+ * already is: this package does not depend on `packages/judge`, and the token list is a fixed vocabulary
+ * -- cheaper to state twice than to cross that boundary for. The two copies are the HTML spec's own
+ * "Autofill field name" table (html.spec.whatwg.org/multipage/form-control-infrastructure.html
+ * #autofill-detail-tokens), not each other's invention, which is what keeps stating it twice safe: neither
+ * side is guessing at what the other meant.
+ *
+ * ABSENT (`capture.formInputs` missing or empty) is not a finding, matching `autoplayUncontrollable`'s own
+ * reasoning -- only a probe's silence would be.
+ *
+ * Only the F107 half, matching `addUnidentifiedInputPurpose`'s own stated scope: a field with NO
+ * `autocomplete` attribute at all is not this signal's claim, because deciding whether it OUGHT to have
+ * one needs a word-sense judgement over the field's label this project has already been burned by once.
+ */
+const AUTOCOMPLETE_NORMAL_TOKENS = new Set([
+  "name", "honorific-prefix", "given-name", "additional-name", "family-name", "honorific-suffix",
+  "nickname", "organization-title", "username", "new-password", "current-password", "one-time-code",
+  "organization", "street-address", "address-line1", "address-line2", "address-line3", "address-level4",
+  "address-level3", "address-level2", "address-level1", "country", "country-name", "postal-code",
+  "cc-name", "cc-given-name", "cc-additional-name", "cc-family-name", "cc-number", "cc-exp",
+  "cc-exp-month", "cc-exp-year", "cc-csc", "cc-type", "transaction-currency", "transaction-amount",
+  "language", "bday", "bday-day", "bday-month", "bday-year", "sex", "url", "photo",
+]);
+const AUTOCOMPLETE_CONTACT_TOKENS = new Set([
+  "tel", "tel-country-code", "tel-national", "tel-area-code", "tel-local", "tel-local-prefix",
+  "tel-local-suffix", "tel-extension", "email", "impp",
+]);
+const AUTOCOMPLETE_CONTACT_PREFIXES = new Set(["home", "work", "mobile", "fax", "pager"]);
+const AUTOCOMPLETE_SHIPPING_PREFIXES = new Set(["shipping", "billing"]);
+
+function isValidAutocompletePurpose(/** @type {string} */ value) {
+  const tokens = value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return false;
+  if (tokens.at(-1) === "webauthn") tokens.pop();
+  if (tokens.length === 0) return false;
+  if (tokens[0]?.startsWith("section-")) tokens.shift();
+  if (tokens.length && AUTOCOMPLETE_SHIPPING_PREFIXES.has(tokens[0])) tokens.shift();
+  if (tokens.length > 1 && AUTOCOMPLETE_CONTACT_PREFIXES.has(tokens[0])) tokens.shift();
+  if (tokens.length !== 1) return false;
+  const token = tokens[0];
+  return AUTOCOMPLETE_NORMAL_TOKENS.has(token) || AUTOCOMPLETE_CONTACT_TOKENS.has(token);
+}
+
+function inputPurposeInvalid(/** @type {any} */ capture) {
+  const elements = Array.isArray(capture.formInputs) ? capture.formInputs : [];
+  return elements.some((/** @type {any} */ el) => {
+    const value = typeof el?.autocomplete === "string" ? el.autocomplete.trim().toLowerCase() : "";
+    if (!value || value === "on" || value === "off") return false;
+    return !isValidAutocompletePurpose(value);
+  });
+}
+
 const SIGNAL_PREDICATES = Object.freeze({
   "autoplay-uncontrollable": (/** @type {any} */ capture) => autoplayUncontrollable(capture),
+  "input-purpose-invalid": (/** @type {any} */ capture) => inputPurposeInvalid(capture),
   "focus-panel-undismissable": (/** @type {any} */ capture) => focusPanelUndismissable(capture),
   "focus-removed-on-receipt": (/** @type {any} */ capture) => focusRemovedOnReceipt(capture),
   "unnamed-form-field": (/** @type {any} */ capture) => hasUnnamedFormField(capture),
