@@ -12,6 +12,7 @@ import { join } from "node:path";
 
 import { identityChecksFor, servedRequestedPageLine } from "./real-page-identity-summary.mjs";
 import { runsRoot } from "../dataset-paths.mjs";
+import { corpusReadable, skipLine } from "./corpus-settled.mjs";
 
 // Real `documentIdentity` input, minimal rather than a full capture -- `targetMatchIn` reads only the
 // census marks' own `targetMatch` field, so this is the smallest real shape that exercises the actual
@@ -130,17 +131,20 @@ test("#780 MUTATION TARGET: a mutation making targetMatch unread must be caught 
 //
 // `runsRoot()` (dataset-paths.mjs), NEVER `process.cwd()` directly -- the canonical resolver every
 // runs/-reading file in this repo must go through (dataset-paths.test.ts's own guard enforces this by
-// walking the source tree). `runs/` is GITIGNORED and this test's own fixture is a LOCAL machine's
-// witness captures, never checked in -- CLAUDE.md's own rule ("a gate that reads runs/ is not yours to
-// report") applies here in its narrowest form: a CI runner's checkout has no `runs/witness/` at all, so
-// this SKIPS HONESTLY (`t.skip`) rather than failing on an absence that says nothing about the fix,
-// exactly like `verify.corpus.test.ts`'s own "present, settled, and readable -- or honestly skipped"
-// pattern. The command to reproduce this locally is in the PR body, for whoever has the fixture.
+// walking the source tree). This file lives in packages/lab, so it CAN and MUST consult `corpusReadable`
+// (corpus-settled.mjs) before reading -- `corpus-readers-are-guarded.test.ts`'s own scan found this file
+// as a candidate and there is no cycle here to plead. `corpusReadable` answers two questions an `existsSync`
+// check cannot: is the corpus here at all, AND is something still writing it (a capture in flight would
+// make this test describe files that are about to change). `runs/` is GITIGNORED, so a CI runner's
+// checkout has no `runs/witness/` -- that is the `state: "absent"` branch below, and this SKIPS HONESTLY
+// (`t.skip`) rather than failing on an absence that says nothing about the fix, exactly like
+// `verify.corpus.test.ts`'s own "present, settled, and readable -- or honestly skipped" pattern. The
+// command to reproduce this locally is in the PR body, for whoever has the fixture.
 test("#780 ACCEPTANCE 4: the four real calendly fallback captures on disk produce K = 0 of 4", (t) => {
   const dir = join(runsRoot(), "witness");
-  if (!existsSync(dir)) {
-    t.skip("runs/witness/ is not on this checkout -- gitignored, local-machine fixture; see the PR body "
-      + "for the command to reproduce this where the captures exist");
+  const guard = corpusReadable({ evidenceDirs: [dir], present: existsSync(dir) });
+  if (!guard.read) {
+    t.skip(skipLine(guard));
     return;
   }
   const files = readdirSync(dir).filter((name) => name.includes("calendly"));
