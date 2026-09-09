@@ -4,6 +4,18 @@
  * (`git log --branches='agent/*' --not origin/main -- <path>`) answers "would I collide in this file",
  * not "is somebody already on this row". See that file's own header for the incident and the reasoning.
  */
+
+// no-token: defaultRun
+//
+// #749/#827: every test in this file passes its OWN `run` mock to `claimRow`/`dispatchRow`/`declineRow`
+// and every other row-claim.mjs export -- never `row-claim.mjs`'s own `defaultRun`, the one function that
+// actually spawns a real `gh`. The closure walk still reaches `run("gh", ...)` inside `ensureLabelsExist`
+// (row-claim.mjs's own #749 addition) via `claimRow`'s import, and charges this file for it -- the same
+// over-refusal #827 fixed for board-markdown.test.ts: a caller reaching a module that CAN spawn `gh` is
+// not the same fact as this file's own tests ever doing so. The two REAL-git tests (`worktreeStatus`/
+// `removeClaimedWorktree`, which need actual filesystem/git state) do fall through to `defaultRun` when
+// they omit `{ run }` -- but that function only ever calls `git`, never `gh` (read its own source: both
+// spawn `"git"` as the literal `cmd`, nothing else), so this declaration is honest even for those two.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
