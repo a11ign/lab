@@ -567,7 +567,11 @@ test("#690: every pull_request job is gated on the PR still being OPEN -- `edite
   assert.deepEqual(doc.on.pull_request.types, ["opened", "synchronize", "reopened", "edited"],
     "`edited` is deliberate -- acceptance reads the PR body -- and it is what reaches a closed PR");
 
-  const jobs = /** @type {Record<string, {if?: string, needs?: unknown}>} */ (doc.jobs);
+  // A REAL CAST, NOT A JSDOC ONE. This file is `.ts`, where `/** @type {...} */ (x)` is a comment and
+  // nothing else -- `tsx --test` and eslint both accept it, and only `tsc` says `'job' is of type
+  // 'unknown'`. Three pushes today were red for exactly this: a verification that does not include the
+  // one tool that checks the thing being got wrong.
+  const jobs = doc.jobs as Record<string, { if?: string; needs?: unknown }>;
   const reachableOnPullRequest = Object.entries(jobs)
     .filter(([name]) => name !== "gate")
     .filter(([, job]) => job.if === undefined || !String(job.if).includes("merge_group"));
