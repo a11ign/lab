@@ -80,14 +80,22 @@ function insideGitRepo(): boolean {
   }
 }
 
-const isTracked = (path: string): boolean => {
-  try {
-    execFileSync("git", ["ls-files", "--error-unmatch", path], { env: sandboxGitEnv(), stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
+/**
+ * #716: every tracked path, asked ONCE and cached -- not one `git ls-files --error-unmatch <path>` spawn
+ * per referenced path. Measured: ~652 distinct paths across this file's two tests at 27.8ms per spawn
+ * (~18s) against 23ms for one `git ls-files` covering all 1,311 tracked paths. Only ever called after
+ * `insideGitRepo()` has confirmed there is a repository to ask, by both callers below.
+ */
+let trackedFilesCache: Set<string> | null = null;
+function trackedFiles(): Set<string> {
+  if (trackedFilesCache === null) {
+    trackedFilesCache = new Set(
+      execFileSync("git", ["ls-files"], { env: sandboxGitEnv(), encoding: "utf8" }).split("\n").filter(Boolean));
   }
-};
+  return trackedFilesCache;
+}
+
+const isTracked = (path: string): boolean => trackedFiles().has(path);
 
 test("every scripts/ program referenced by package.json or action.yml is tracked in git", (t) => {
   if (!insideGitRepo()) {
