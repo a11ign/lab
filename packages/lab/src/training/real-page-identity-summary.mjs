@@ -94,13 +94,15 @@ export function servedRequestedPageLine(checks) {
   if (noIdentity.length > 0) {
     line += ` NO IDENTITY (not counted above): ${noIdentity.map((check) => check.url).join(", ")}.`;
   }
-  // THE RULE-OF-THREE BOUND, ONLY WHEN K IS ZERO — #688's own headline number, and the reason this whole
-  // row exists: "0 of 19" and "0%" render as the same claim, and only the first says how much it rests
-  // on. Printing the bound only at k=0 keeps the ordinary case (some matches) from being crowded by a
-  // statistic that describes the OTHER case.
-  if (k === 0) {
-    line += ` At 95% confidence this bounds the true rate at ${ruleOfThreeUpperBoundPercent(m).toFixed(1)}% `
-      + "(rule of three).";
+  // THE RULE-OF-THREE BOUND, WHEN ZERO MISMATCHES WERE OBSERVED (unmatched.length === 0, i.e. k === m) --
+  // #688's OWN measurement, exactly: "0 of 19 [captures MISMATCHED]" bounds the TRUE mismatch rate at
+  // 15.8% precisely because zero were seen among 19, never because zero MATCHED. Printing it at k=0
+  // (every capture mismatched) would bound the wrong quantity on the wrong population -- caught here
+  // rather than shipped: this is the ordinary case (a run with no fallback captures) and the one this
+  // line will print on MOST runs, not an edge case to crowd out.
+  if (unmatched.length === 0) {
+    line += ` At 95% confidence this bounds the true mismatch rate at `
+      + `${ruleOfThreeUpperBoundPercent(m).toFixed(1)}% (rule of three).`;
   }
   return `${line}\n`;
 }
