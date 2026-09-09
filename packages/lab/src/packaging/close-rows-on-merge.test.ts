@@ -16,7 +16,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
-import { closurePlan, labelsToStrip, EXIT } from "../../../../scripts/close-rows-for-merged-pr.mjs";
+import {
+  closurePlan, labelsToStrip, applyClosurePlan, EXIT,
+} from "../../../../scripts/close-rows-for-merged-pr.mjs";
 // THE AUDIT'S OWN DEBRIS CHECK, imported rather than re-derived -- #754's own mutation target is that
 // THIS function, unchanged, must go quiet once labelsToStrip has done its work, and must report the
 // finding again the moment it has not. Proving that with a re-implemented predicate would prove nothing
@@ -48,7 +50,7 @@ test("a row somebody already closed by hand is reported, never silently skipped"
   // treat them as nothing — "already done" and "nothing to do" send a reader to different places.
   const plan = closurePlan([{ number: 310, state: "CLOSED" }]);
   assert.deepEqual(plan.close, []);
-  assert.deepEqual(plan.already, [310]);
+  assert.deepEqual(plan.already, [{ number: 310, labels: [] }]);
   assert.equal(plan.none, false);
 });
 
@@ -65,7 +67,7 @@ test("a mixed set is split, not decided by its first member", () => {
     { number: 1, state: "CLOSED" }, { number: 2, state: "OPEN" }, { number: 3, state: "OPEN" },
   ]);
   assert.deepEqual(plan.close, [{ number: 2, labels: [] }, { number: 3, labels: [] }]);
-  assert.deepEqual(plan.already, [1]);
+  assert.deepEqual(plan.already, [{ number: 1, labels: [] }]);
 });
 
 test("the exit codes are the contract, and CANNOT_ASK is distinct from a clean run", () => {
@@ -180,4 +182,65 @@ test("#754 ACCEPTANCE: closedDebris (the real audit check) is QUIET once labelsT
   assert.deepEqual(closedDebris(rowsAfterStripping), []);
   // The record survives -- proving the filter above did not simply delete every label.
   assert.ok(rowsAfterStripping.find((r) => r.number === 703)?.labels.includes("was-ready"));
+});
+
+// --- #776/#791: a NATIVELY-closed row (GitHub's own closing-keyword resolution) still gets stripped ---
+
+test("#776/#791 ACCEPTANCE: closurePlan puts a natively-closed row's labels into `already`, not `close` "
+  + "-- confirming the exact shape the real #677/#577/#752 bug had", () => {
+  const plan = closurePlan([
+    { number: 677, state: "CLOSED", labels: ["in-progress", "session:worker-capture"] },
+  ]);
+  assert.deepEqual(plan.close, []);
+  assert.deepEqual(plan.already, [{ number: 677, labels: ["in-progress", "session:worker-capture"] }]);
+});
+
+test("#776/#791 MUTATION TARGET: the real #677 measurement, end to end through closedDebris -- a row "
+  + "already CLOSED by the time closurePlan sees it must still read debris-free once already's labels "
+  + "have been stripped, exactly like a freshly-closed row does", () => {
+  const alreadyClosedByGitHub = { number: 677, state: "CLOSED" as const, title: "row 677",
+    labels: ["backlog", "in-progress", "session:worker-capture", "started"] };
+  const plan = closurePlan([alreadyClosedByGitHub]);
+  assert.equal(plan.close.length, 0, "GitHub closed it before this script ran -- it is in already, not close");
+  const stripped = alreadyClosedByGitHub.labels.filter((l) => !labelsToStrip(alreadyClosedByGitHub.labels).includes(l));
+  assert.deepEqual(closedDebris([{ ...alreadyClosedByGitHub, labels: stripped }]), []);
+});
+
+// --- #776/#791: applyClosurePlan -- the WIRING, proven with injected closeOne/strip ---
+
+test("#776/#791 MUTATION TARGET: applyClosurePlan strips EVERY already-closed row's labels, not just "
+  + "freshly-closed ones -- this is the exact wiring gap the real #677/#577/#752 bug had", () => {
+  const stripped: Array<[number, string[]]> = [];
+  const failed = applyClosurePlan(
+    { close: [], already: [{ number: 677, labels: ["in-progress", "session:worker-capture"] }] },
+    { prNumber: "769", sha: "abc123", repo: "DanBeckDev/a11y-witness" },
+    { strip: (n, labels) => { stripped.push([n, labels]); } },
+  );
+  assert.deepEqual(failed, []);
+  assert.deepEqual(stripped, [[677, ["in-progress", "session:worker-capture"]]]);
+});
+
+test("applyClosurePlan still closes and strips a freshly-closing row, exactly as before", () => {
+  const closedRows: number[] = [];
+  const stripped: number[] = [];
+  const failed = applyClosurePlan(
+    { close: [{ number: 344, labels: ["ready"] }], already: [] },
+    { prNumber: "1", sha: "abc", repo: "DanBeckDev/a11y-witness" },
+    { closeOne: (n) => { closedRows.push(n); return true; }, strip: (n) => { stripped.push(n); } },
+  );
+  assert.deepEqual(failed, []);
+  assert.deepEqual(closedRows, [344]);
+  assert.deepEqual(stripped, [344]);
+});
+
+test("applyClosurePlan does NOT strip a row whose close failed -- a failed close reports failure, and "
+  + "stripping labels on a row still actually open would be wrong", () => {
+  const stripped: number[] = [];
+  const failed = applyClosurePlan(
+    { close: [{ number: 344, labels: ["ready"] }], already: [] },
+    { prNumber: "1", sha: "abc", repo: "DanBeckDev/a11y-witness" },
+    { closeOne: () => false, strip: (n) => { stripped.push(n); } },
+  );
+  assert.deepEqual(failed, [344]);
+  assert.deepEqual(stripped, []);
 });
