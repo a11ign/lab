@@ -10,6 +10,9 @@ import {
   fetchOpenIssues, fetchAllIssues, closedDebris, isClosedDebrisLabel, readyRowsAbsentFromBoard,
   readyRowsAlreadyMerged, fetchClosingPrRefs, fetchLatestReopenedAt, CHECKS, runCheck,
 } from "../../../../scripts/ready-label-audit.mjs";
+// #782: `isClosedDebrisLabel` now DERIVES from this, rather than pinning the two equal with a separate
+// test -- so this import is the proof the derivation actually happened, not a second, parallel check.
+import { labelsToStrip } from "../../../../scripts/close-rows-for-merged-pr.mjs";
 
 // --- mutexViolations: pure, no I/O ---
 
@@ -245,6 +248,33 @@ test("#444: runner: must NOT join MUTEX_LABELS -- a reserved-but-ready row is ge
   const issues = [{ number: 324, title: "V1 rehearsal", labels: [READY_LABEL, "runner:worker-audit"] }];
   assert.deepEqual(mutexViolations(issues), [],
     "a reserved-but-unclaimed row must not read as a mutex violation");
+});
+
+// --- #782: isClosedDebrisLabel DERIVES from labelsToStrip, so the two populations cannot drift again ---
+
+test("#782 ACCEPTANCE, MUTATION TARGET: a closed row carrying ONLY a stale `started` label -- the exact "
+  + "shape 52 real closed rows had 2026-09-09, invisible to the pre-#782 hand-rolled list, which never "
+  + "named `started` at all -- IS now reported as debris", () => {
+  assert.ok(isClosedDebrisLabel("started"),
+    "labelsToStrip has always included `started` (#754); isClosedDebrisLabel's own list never did until "
+    + "it started deriving from labelsToStrip instead");
+  const issues = [{ number: 640, title: "closed with only started left", state: "CLOSED" as const,
+    labels: ["backlog", "started", "was-ready"] }];
+  assert.deepEqual(closedDebris(issues), [{ number: 640, title: "closed with only started left", debris: ["started"] }]);
+});
+
+test("#782: isClosedDebrisLabel agrees with labelsToStrip on every label labelsToStrip itself would strip "
+  + "-- proven by calling THROUGH labelsToStrip, not by asserting a second hand-picked list", () => {
+  for (const label of ["ready", "in-progress", "started", "session:worker-contracts", "session:anything"]) {
+    assert.equal(isClosedDebrisLabel(label), labelsToStrip([label]).length > 0,
+      `isClosedDebrisLabel(${label}) disagreed with labelsToStrip -- the two must never drift independently`);
+  }
+});
+
+test("#782: was-ready is debris-exempt on BOTH sides -- labelsToStrip never touches it, and "
+  + "isClosedDebrisLabel must not either, now that one derives from the other", () => {
+  assert.equal(labelsToStrip([WAS_READY_LABEL]).length, 0);
+  assert.equal(isClosedDebrisLabel(WAS_READY_LABEL), false);
 });
 
 test("isClosedDebrisLabel: an ordinary label, or a MUTEX_LABELS entry that is not ready/in-progress, does not count", () => {
