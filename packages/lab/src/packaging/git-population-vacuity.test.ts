@@ -146,14 +146,19 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "false pass on the same empty population",
   },
   "packages/lab/src/packaging/bounded-window-reads.test.ts": {
-    guard: "readers.length >= 4",
+    guard: "Object.keys(EXPECTED_READERS).filter((file) => !readers.includes(file))",
     note: "guarded — #634. It walks `git ls-files` for every file whose CODE reads `statusCheckRollup` "
       + "off an object and requires each read to narrow the rollup to the newest run per NAME. Vacuity "
       + "is the failure with teeth here and it ALREADY HAPPENED once inside that file: its discovery "
       + "regex carried a lookbehind that excluded the READS instead of the `--json` field list, and it "
-      + "found 3 readers where there are 4. Every other assertion in that file is about the RESULT — "
-      + "are the sites it found classified? — and each is SATISFIED by finding fewer sites. Only this "
-      + "floor asks about the SEARCH.",
+      + "found 3 reader FILES where there were 4. Every other assertion in that file is about the "
+      + "RESULT — are the sites it found classified? — and each is SATISFIED by finding fewer sites. "
+      + "Only this floor asks about the SEARCH. THE FLOOR IS NOW A LIST OF NAMES, not `readers.length "
+      + ">= 4` (2026-09-09): `queue-table.mjs` legitimately stopped reading the rollup when the table "
+      + "moved to REST `check-runs`, and the repair a bare count offers is to write 3 — the same edit "
+      + "that would paper over the predicate shrinking again. A named list makes a departure a deleted "
+      + "line that must say what answers the question now, and makes a broken predicate lose every "
+      + "entry at once. Strictly stronger than the cardinality it replaces: it pins WHICH.",
   },
   "packages/lab/src/packaging/guest-paths-are-measured.test.ts": {
     guard: "named.length >= 15",
