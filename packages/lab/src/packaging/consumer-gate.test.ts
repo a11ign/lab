@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import {
-  extractDocumentedJobsBlock, pinActionRef, substituteTarget, extractJobName,
+  extractDocumentedJobsBlock, pinActionRef, substituteTarget, extractJobName, extractPinnedSha,
   buildConsumerGateWorkflow, generate, currentHeadSha, README_PATH, OUT,
 } from "../../../../scripts/generate-consumer-gate.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
@@ -110,10 +110,24 @@ test("extractJobName: refuses rather than guessing when jobs: has no job key on 
   assert.throws(() => extractJobName("not-jobs: true"), /no job key/);
 });
 
+// --- extractPinnedSha: read back from the already-pinned uses: line ---
+
+test("extractPinnedSha: reads the sha pinActionRef already baked in", () => {
+  const jobsYaml = "jobs:\n  a11y:\n    steps:\n      - uses: DanBeckDev/a11y-witness@deadbeef1234567890deadbeef1234567890dead";
+  assert.equal(extractPinnedSha(jobsYaml), "deadbeef1234567890deadbeef1234567890dead");
+});
+
+test("extractPinnedSha: refuses rather than returning undefined when there is no uses: line to read at all", () => {
+  assert.throws(() => extractPinnedSha("jobs:\n  a11y:\n    steps:\n      - uses: actions/checkout@v4"),
+    /pinActionRef may not have run yet/);
+});
+
 // --- buildConsumerGateWorkflow: no double "jobs:" key, references the REAL job name ---
 
+const PINNED_STEP = "      - uses: DanBeckDev/a11y-witness@deadbeef1234567890deadbeef1234567890dead";
+
 test("buildConsumerGateWorkflow: does not duplicate the jobs: key the extracted block already carries", () => {
-  const jobsYaml = "jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n      - uses: x/y@z";
+  const jobsYaml = `jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`;
   const workflow = buildConsumerGateWorkflow(jobsYaml);
   const jobsKeyCount = (workflow.match(/^jobs:$/gm) ?? []).length;
   assert.equal(jobsKeyCount, 1, "exactly one top-level jobs: key -- MUTATION target for the double-key bug "
@@ -122,15 +136,68 @@ test("buildConsumerGateWorkflow: does not duplicate the jobs: key the extracted 
 
 test("buildConsumerGateWorkflow: the verify job's needs: references the job name that was actually extracted", () => {
   const workflow = buildConsumerGateWorkflow(
-    "jobs:\n  screen-reader:\n    runs-on: windows-2022\n    steps:\n      - uses: x/y@z");
+    `jobs:\n  screen-reader:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`);
   assert.match(workflow, /needs: \[screen-reader\]/);
   assert.match(workflow, /needs\.screen-reader\.result/);
 });
 
 test("buildConsumerGateWorkflow: adds no permissions: block -- README never mentions one, and the report "
   + "lands in the job summary regardless", () => {
-  const workflow = buildConsumerGateWorkflow("jobs:\n  a11y:\n    runs-on: windows-2022\n    steps: []");
+  const workflow = buildConsumerGateWorkflow(`jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`);
   assert.doesNotMatch(workflow, /^permissions:/m);
+});
+
+// --- #558: check-pin gates the extracted job, without touching its own steps ---
+
+test("buildConsumerGateWorkflow: adds a check-pin job that the extracted job needs, "
+  + "without touching the extracted job's own steps", () => {
+  const jobsYaml = `jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`;
+  const workflow = buildConsumerGateWorkflow(jobsYaml);
+  assert.match(workflow, /^ {2}check-pin:$/m);
+  assert.match(workflow, /needs: \[check-pin\]/);
+  // The extracted step itself is untouched -- rule #1's "nothing added the document does not give" is
+  // about what a reader would copy, and check-pin/needs: are job-level orchestration, not a step.
+  assert.match(workflow, new RegExp(PINNED_STEP.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("buildConsumerGateWorkflow: check-pin's ancestor check names the SAME sha pinned in the "
+  + "extracted job's own uses: line -- MUTATION target for the two shas independently drifting", () => {
+  const jobsYaml = `jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`;
+  const workflow = buildConsumerGateWorkflow(jobsYaml);
+  const pinnedInStep = extractPinnedSha(workflow);
+  assert.match(workflow, new RegExp(`merge-base --is-ancestor ${pinnedInStep} "\\$\\{\\{ github\\.sha \\}\\}"`));
+});
+
+test("buildConsumerGateWorkflow: check-pin checks ANCESTRY, not exact equality against github.sha -- "
+  + "exact equality has the identical unsatisfiable shape --check's old sha comparison did (regenerate "
+  + "at commit A, commit that regeneration as B, and github.sha is always B while the pin always names "
+  + "A) -- MUTATION target for someone re-introducing that comparison", () => {
+  const jobsYaml = `jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`;
+  const workflow = buildConsumerGateWorkflow(jobsYaml);
+  assert.doesNotMatch(workflow, /\{\{ github\.sha \}\}"\s*!=/,
+    "check-pin must not compare github.sha for exact equality against the pin");
+  assert.match(workflow, /git merge-base --is-ancestor/,
+    "check-pin must ask whether the pin is an ancestor of github.sha, which a regenerate-then-commit "
+    + "sequence can actually satisfy");
+  assert.match(workflow, /git diff --name-only/,
+    "check-pin must also confirm nothing that would change the generated output has landed since the pin");
+});
+
+test("buildConsumerGateWorkflow: check-pin's refusal names the ref and how the run was triggered, "
+  + "not just the two shas -- a bare mismatch cannot tell a stale pin from a dispatch against an "
+  + "unexpected ref", () => {
+  const jobsYaml = `jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`;
+  const workflow = buildConsumerGateWorkflow(jobsYaml);
+  assert.match(workflow, /github\.ref_name/);
+  assert.match(workflow, /github\.event_name/);
+});
+
+test("buildConsumerGateWorkflow: check-pin runs on ubuntu-latest, not windows-2022 -- "
+  + "a stale pin must fail cheaply, before the Windows job it gates ever starts", () => {
+  const jobsYaml = `jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`;
+  const workflow = buildConsumerGateWorkflow(jobsYaml);
+  const checkPinBlock = workflow.slice(workflow.indexOf("  check-pin:"), workflow.indexOf("  a11y:"));
+  assert.match(checkPinBlock, /runs-on: ubuntu-latest/);
 });
 
 // --- THE CORE PROPERTY: nothing is added the document does not give ---
@@ -150,10 +217,14 @@ test("MUTATION-SHAPED: a documented workflow with NO checkout step generates a g
   ].join("\n");
   const workflow = generate(
     `\`\`\`yaml\n${withoutCheckout}\n\`\`\`\n`, "deadbeef1234567890deadbeef1234567890dead");
-  // A real STEP, not the generator's own header prose (which names "actions/checkout" by name while
-  // explaining why this workflow has none) -- a bare substring match on that prose is exactly the false
-  // positive this assertion tripped on its first run.
-  assert.doesNotMatch(workflow, /- uses: actions\/checkout/,
+  // SCOPED TO THE a11y JOB'S OWN REGION, not the whole file -- #558's check-pin legitimately carries its
+  // own `actions/checkout` (generator-added infrastructure, never something a reader copies), and a
+  // whole-file match on this assertion's first run after #558 landed matched THAT checkout instead of
+  // proving anything about the extracted a11y job. Also not the generator's own header prose (which names
+  // "actions/checkout" by name while explaining why the a11y job has none) -- a bare substring match on
+  // that prose is the false positive this assertion originally tripped on.
+  const a11yBlock = workflow.slice(workflow.indexOf("\n  a11y:\n"), workflow.indexOf("\n  verify-report:\n"));
+  assert.doesNotMatch(a11yBlock, /- uses: actions\/checkout/,
     "the generator must not silently ADD a checkout step the document never showed -- doing so would be "
     + "action-smoke with more steps, exactly what #494 exists to not be");
 });
@@ -191,7 +262,7 @@ test("the committed .github/workflows/consumer-gate.yml matches what README.md g
   const readme = readFileSync(README_PATH, "utf8");
   const generated = generate(readme, currentHeadSha());
   const committed = readFileSync(OUT, "utf8");
-  const stripSha = (t: string) => t.replace(/uses: DanBeckDev\/a11y-witness@\S+/, "uses: DanBeckDev/a11y-witness@<sha>");
+  const stripSha = (t: string) => t.replaceAll(/\b[0-9a-f]{40}\b/g, "<sha>");
   assert.equal(stripSha(committed), stripSha(generated),
     "run `node scripts/run.mjs consumer-gate` and commit the result -- README.md's Quickstart fence has "
     + "changed since this file was last generated");
