@@ -20,6 +20,7 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { compareIdentity, documentIdentity } from "@a11ign/evidence/document-identity";
 
 /** Fields a dataset signal can read. A difference in any of these is a change in evidence. */
 /**
@@ -241,9 +242,23 @@ function missingFrom(a, b) {
  * Compare one capture against its baseline.
  *
  * Verdicts, worst first:
+ *   DIFFERENT_DOCUMENT — the two captures were served different documents, so no field-level
+ *                        comparison between them means anything. #687.
  *   CHANGED    — a field a signal reads differs. The cache MUST be invalidated for this change.
  *   DRIFT      — structure and interaction match; the transcript gained or lost phrases.
  *   SAME       — every field matches and the transcript carries the same phrases.
+ *
+ * DIFFERENT_DOCUMENT SHORT-CIRCUITS, and returns no `changes` and no `phrases`. Two captures of one URL
+ * that were served different documents differ in nearly every field, and every one of those differences
+ * is TRUE and IRRELEVANT — it is the list that sends a reader after the capture path when the cause was
+ * the page. Measured on `https://calendly.com/` eight minutes apart on one worker: one capture was served
+ * `accounts.google.com`'s sign-in wall (the form probe activated "Continue with Google"), the other
+ * `calendly.com/scheduling`. Both records say `url: "https://calendly.com/"`.
+ *
+ * The identity check can only ever ADD a refusal. When the marks it reads are absent — a corpus capture
+ * carries no `targetUrl` and no `titleSource` — `compareIdentity` returns UNCOMPARABLE and this falls
+ * through to exactly the comparison it always did. `identity` is attached to every result either way, so
+ * a caller can always say which document it is talking about.
  *
  * DRIFT is the interesting one: it is what NVDA's normal variance looks like, but it is also what
  * evidence rot looks like, so the phrases are named rather than counted. A readiness gate once
@@ -258,6 +273,12 @@ function missingFrom(a, b) {
  * @param {EvidenceCapture} candidate
  */
 export function compareCapture(baseline, candidate) {
+  const identity = compareIdentity(documentIdentity(baseline), documentIdentity(candidate));
+  if (identity.verdict === "DIFFERENT_DOCUMENT") {
+    // `phrases: null` rather than zeroed counts. A transcript comparison that did not happen must not
+    // render as "nothing drifted" -- the absence of a measurement is not the measurement zero (#677).
+    return { verdict: "DIFFERENT_DOCUMENT", identity, changes: [], phrases: null };
+  }
   const changes = [];
   for (const field of EVIDENCE_FIELDS) {
     const before = fieldValues(baseline, field);
@@ -278,7 +299,7 @@ export function compareCapture(baseline, candidate) {
     : (lostPhrases.length || gainedPhrases.length) ? "DRIFT"
       : "SAME";
   return {
-    verdict, changes,
+    verdict, changes, identity,
     phrases: { before: before.length, after: after.length, lost: lostPhrases, gained: gainedPhrases },
   };
 }
@@ -304,7 +325,7 @@ export function summarise(results) {
   // path unexpressible -- the shape of "a check must never reject evidence whose absence is the finding",
   // applied to a lookup.
   /** @type {Record<string, number>} */
-  const counts = { SAME: 0, DRIFT: 0, CHANGED: 0, REJECTED: 0, SKIPPED: 0 };
+  const counts = { SAME: 0, DRIFT: 0, CHANGED: 0, REJECTED: 0, SKIPPED: 0, DIFFERENT_DOCUMENT: 0 };
   // Count defensively. An unknown verdict used to land as `undefined + 1` -> NaN, which propagates
   // through `compared`, the drift share and the recommendation, so a new verdict silently turned the
   // whole summary into nonsense rather than failing.
@@ -322,6 +343,9 @@ export function summarise(results) {
   // pipeline itself would throw away says nothing about whether the evidence moved -- it says the
   // capture failed, which a real run answers by retrying. Including them would let a flaky worker
   // masquerade as an evidence change, and that is how a good optimisation gets blamed for a bad guest.
+  // DIFFERENT_DOCUMENT IS EXCLUDED FROM THE DENOMINATOR, like REJECTED and SKIPPED and for the same
+  // reason: a capture of a DIFFERENT PAGE says nothing about whether the evidence moved. It is counted
+  // into `attempted` below, so it makes the run inconclusive rather than shrinking the sample silently.
   const compared = counts.SAME + counts.DRIFT + counts.CHANGED;
   const driftShare = counts.DRIFT / (compared || 1);
   const rejectedNote = (counts.REJECTED
@@ -331,6 +355,11 @@ export function summarise(results) {
     // to mean "unexamined", which is the failure this whole verdict exists to prevent.
     + (counts.SKIPPED
       ? ` ${counts.SKIPPED} capture(s) could not be gated (page title unreadable) and were NOT compared.`
+      : "")
+    + (counts.DIFFERENT_DOCUMENT
+      ? ` ${counts.DIFFERENT_DOCUMENT} capture(s) were served a DIFFERENT DOCUMENT from their baseline `
+        + "and were NOT compared -- see each one's `identity.differing` for the two documents. That is a "
+        + "fact about the page, not about the capture pipeline."
       : "");
   // Zero comparisons is NOT "unchanged". `evidenceChanged: counts.CHANGED > 0` is false when
   // nothing was compared at all, so a run in which every capture failed reported "evidence
@@ -354,7 +383,7 @@ export function summarise(results) {
   // capture is not a smaller sample -- it is a family about which this tool now has no opinion, while
   // answering a question ("may I keep 2,122 cached captures?") whose wrong answer is expensive. Full
   // coverage or no verdict; a re-run costs minutes.
-  const attempted = compared + counts.SKIPPED + counts.REJECTED;
+  const attempted = compared + counts.SKIPPED + counts.REJECTED + counts.DIFFERENT_DOCUMENT;
   const coverage = attempted ? compared / attempted : 0;
   const inconclusive = compared === 0 || compared < attempted;
   return {
@@ -362,7 +391,34 @@ export function summarise(results) {
     evidenceChanged: counts.CHANGED > 0,
     // Named threshold rather than a bare number: below this, drift is NVDA being NVDA.
     driftIsWidespread: driftShare > WIDESPREAD_DRIFT_SHARE,
-    recommendation: (examinedNothing
+    // DIFFERENT_DOCUMENT LEADS, ahead of `examinedNothing`. When every capture was served another page
+    // `compared` is 0 and the extreme branch would say "every capture failed or was excluded" -- which is
+    // a true sentence about the wrong thing, and points at the worker rather than at the page.
+    differentDocument: counts.DIFFERENT_DOCUMENT > 0,
+    recommendation: recommendationFor({ counts, compared, attempted, examinedNothing, inconclusive,
+      driftShare }) + rejectedNote,
+  };
+}
+
+/**
+ * The sentence a reader acts on. Split out of `summarise` so that function stays inside the complexity
+ * gate -- the honest fix for a long branch, rather than a suppression.
+ *
+ * ORDER IS THE POINT, and it is the whole reason this is one expression rather than five ifs:
+ * DIFFERENT_DOCUMENT leads, because when every capture was served another page `compared` is 0 and
+ * `examinedNothing` would say "every capture failed or was excluded. Check the worker is reachable" --
+ * a true sentence pointing at the wrong thing.
+ *
+ * @param {{ counts: Record<string, number>, compared: number, attempted: number,
+ *           examinedNothing: boolean, inconclusive: boolean, driftShare: number }} state
+ * @returns {string}
+ */
+function recommendationFor({ counts, compared, attempted, examinedNothing, inconclusive, driftShare }) {
+  return (counts.DIFFERENT_DOCUMENT
+      ? `DIFFERENT DOCUMENT — ${counts.DIFFERENT_DOCUMENT} of ${attempted} capture(s) were served a `
+        + "page other than their baseline's, so this cannot say whether the evidence moved and MUST NOT "
+        + "be read as though it could. Settle which document you meant to capture first."
+      : examinedNothing
       ? "NOTHING WAS COMPARED — this is not a pass. Every capture failed or was excluded, so the "
         + "evidence is UNKNOWN. Check the worker is reachable and the dataset pages are being served."
       : inconclusive
@@ -373,8 +429,7 @@ export function summarise(results) {
         ? "evidence CHANGED — triage each one: a field a signal reads may have moved. If real, bump CAPTURE_PROTOCOL_VERSION and recapture."
         : driftShare > WIDESPREAD_DRIFT_SHARE
           ? "no field changed, but most of the sample drifted — re-run to separate NVDA variance from a real effect before trusting this."
-          : "evidence unchanged — safe to ship WITHOUT invalidating the cache.") + rejectedNote,
-  };
+          : "evidence unchanged — safe to ship WITHOUT invalidating the cache.");
 }
 
 /** Above this share of drifting captures, stop calling it NVDA variance and look again. */

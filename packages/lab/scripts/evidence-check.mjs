@@ -323,13 +323,22 @@ const compareCase = async (/** @type {any} */ testCase, /** @type {any} */ { wor
     }
     const comparison = compareCapture(baseline, candidate);
     results.push({ id: testCase.id, variant, comparison });
-    const detail = comparison.verdict === "CHANGED"
+    const detail = comparison.verdict === "DIFFERENT_DOCUMENT"
+      // THE TWO DOCUMENTS, not the fields. A field list here would be true and would send the reader
+      // after the capture pipeline when the cause is that the server sent another page (#687).
+      ? comparison.identity.differing
+        .map((/** @type {any} */ d) => `${d.component} ${JSON.stringify(d.before)} -> ${JSON.stringify(d.after)}`)
+        .join("; ")
+      : comparison.verdict === "CHANGED"
       ? comparison.changes.map((c) => `${c.field} ${c.before}->${c.after}`).join(", ")
-      : comparison.verdict === "DRIFT"
+      // `&& comparison.phrases` is not belt-and-braces: `compareCapture` returns `phrases: null` for a
+      // DIFFERENT_DOCUMENT, because a transcript comparison that did not happen must not render as
+      // "nothing drifted", and the compiler is right to make every reader say what it does about that.
+      : comparison.verdict === "DRIFT" && comparison.phrases
         ? `phrases ${comparison.phrases.before}->${comparison.phrases.after}` +
           (comparison.phrases.lost.length ? ` lost: ${JSON.stringify(comparison.phrases.lost.slice(0, 2))}` : "")
         : "";
-    process.stdout.write(`  ${comparison.verdict.padEnd(11)} ${testCase.id}.${variant}  ${detail}\n`);
+    process.stdout.write(`  ${comparison.verdict.padEnd(18)} ${testCase.id}.${variant}  ${detail}\n`);
   }
 };
 
