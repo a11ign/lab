@@ -158,6 +158,10 @@ const NOT_A_CORPUS_READ: Record<string, string> = {
     + "which is a string literal describing a hypothetical writer and not a call this file makes. It is "
     + "the guard that discovers runs/ WRITERS; being classified as a non-reader here is consistent with "
     + "that, not in tension with it.",
+  "packages/lab/src/packaging/derived-artifact-sweep.test.ts":
+    "#639: matched on the same two \"runs/...\" descriptive strings as its own dataset-paths.test.ts EXEMPT "
+    + "entry -- what two generators write, quoted for a human reading the sweep's classification table, "
+    + "never a corpus this file opens or reads.",
 };
 
 /** Every test file whose source, comments stripped, looks like it might read the corpus. */

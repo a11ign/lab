@@ -3,8 +3,13 @@
  * ZERO git processes running -- and `syspolicyd`, `trustd` and `diagnosticd` filled the rest of the top
  * five. Spotlight indexing and Gatekeeper scanning 119 worktrees, each a full copy of the source tree.
  *
- * The prune took it to 67. This covers the ones that must STAY: 54 dirty and 9 cherry-picked at the time
- * of writing, none removable, all indexed.
+ * The prune took it to 67. THE MARKER DID NOT HELP WITH THE REST, and that is measured rather than
+ * assumed: placed on all 68 worktrees at 12:47Z and verified present, `mds_stores` read 54.8% at 12:45Z
+ * and 80% at 12:52Z. On current macOS `.metadata_never_index` is honoured at a VOLUME ROOT only.
+ *
+ * So these tests assert what the script DOES -- enumerate worktrees and report which carry the marker,
+ * idempotently, without writing outside them -- and assert nothing about Spotlight's behaviour, which is
+ * not ours to test and was the thing the original comment got wrong.
  *
  * THE `.gitignore` LINE COMES FIRST AND THAT ORDERING IS THE POINT. Without it, placing 67 markers puts
  * 67 untracked files across nine sessions' `git status` -- and `git add -A` sweeping another agent's

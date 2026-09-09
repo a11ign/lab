@@ -648,10 +648,10 @@ test("MUTATION: one refusing check does NOT stop the checks after it -- the whol
   assert.deepEqual(refused, ["board membership"]);
 });
 
-test("CHECKS names all seven, so the partial-audit sentence states a true denominator", () => {
-  assert.equal(CHECKS.length, 7);
+test("CHECKS names all eight, so the partial-audit sentence states a true denominator", () => {
+  assert.equal(CHECKS.length, 8);
   assert.deepEqual(CHECKS.map(([what]) => what), [
     "open issues", "hand claims", "declined rows", "closed issues",
-    "board membership", "closing PR references", "claim activity",
+    "board membership", "closing PR references", "claim activity", "closed-row provenance",
   ]);
 });
