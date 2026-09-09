@@ -1,10 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   findTransferUrls, checkTransferUrls, reportTransferUrls,
 } from "../../../../scripts/check-transfer-urls.mjs";
+import { PRODUCT_REPO } from "../../../../scripts/repo-identity.mjs";
 
 /**
  * #524: every public doc URL naming `a11ign/a11ign` is a 404 today, and nothing tracked the interval
@@ -31,8 +35,16 @@ test("the vacuity guard: the walk finds a real, non-trivial population in the re
   // consistency tests reading PRODUCT_REPO via the imported constant rather than a literal). Both counts
   // are correct answers to different questions; this test's floor is the URL count, the one this script
   // can actually check.
+  //
+  // #569 moved README.md's two badge URLs off this population (they belong with REPO now, not
+  // PRODUCT_REPO -- a badge is fetched live, the same "must resolve today" shape as a `uses:` line, not
+  // the static prose PRODUCT_REPO covers). 26 measured 2026-09-09, after that move. The floor stays a
+  // floor, not a re-pin: a legitimate reclassification should lower this count over time as more sites
+  // are moved to REPO by the same reasoning (#647), and this test's job is catching the discovery pattern
+  // breaking, not catching the population shrinking on purpose.
   assert.ok(found.length >= 20,
-    `found only ${found.length} a11ign/a11ign URL(s) -- 29 were found across 22 files on 2026-09-08; a `
+    `found only ${found.length} a11ign/a11ign URL(s) -- 21 were found across 19 files on 2026-09-09 `
+    + "(#647 moved five more copy-paste-execute bootstrap/clone sites off PRODUCT_REPO, down from 26); a "
     + "shrunk count means the discovery pattern stopped matching, not that the tree needs fewer checked");
 });
 
@@ -44,14 +56,29 @@ test("the population spans more than markdown -- package.json fields are not mis
     + "markdown would miss exactly these, which are published to the npm registry and outlive a doc edit");
 });
 
-test("a README badge line yields TWO separate URLs, not one string spanning both", () => {
-  const found = findTransferUrls(REPO);
-  const readmeHits = found.filter((f) => f.file === "README.md");
-  assert.ok(readmeHits.length >= 2, "README.md should carry at least the two workflow badge URLs");
-  for (const hit of readmeHits) {
-    assert.ok(!hit.url.includes("]("),
-      `${hit.file}:${hit.line} carries markdown syntax inside the extracted URL (${hit.url}) -- the `
-      + "pattern swallowed the gap between two adjacent badge links instead of stopping at the delimiter");
+test("a badge-shaped line yields TWO separate URLs, not one string spanning both", () => {
+  // #569 moved README.md's own two badge URLs off PRODUCT_REPO (they must resolve today, so they now
+  // cite REPO, not the future org name) -- exactly the fix this file's population is built to prove is
+  // safe to make, one site at a time. So the regex property this test guards (a README badge line packs
+  // TWO adjacent URLs with no separator between them, `[![...](URL1)](URL2)`, and a bare `\S+` would
+  // swallow the markdown between them into one unfetchable string) can no longer be demonstrated against
+  // README.md's live content -- the population it depended on is the thing #569 correctly emptied.
+  // A synthetic fixture, in the identical shape, proves the SAME property without depending on any real
+  // file continuing to carry PRODUCT_REPO in this exact adjacency forever.
+  const dir = mkdtempSync(join(tmpdir(), "check-transfer-urls-badge-"));
+  try {
+    const badgeLine = `[![lint](https://github.com/${PRODUCT_REPO}/actions/workflows/lint.yml/badge.svg)]`
+      + `(https://github.com/${PRODUCT_REPO}/actions/workflows/lint.yml)`;
+    writeFileSync(join(dir, "fixture.md"), `${badgeLine}\n`, "utf8");
+    const found = findTransferUrls(dir);
+    assert.ok(found.length >= 2, "the fixture's badge line should yield at least two URLs");
+    for (const hit of found) {
+      assert.ok(!hit.url.includes("]("),
+        `${hit.file}:${hit.line} carries markdown syntax inside the extracted URL (${hit.url}) -- the `
+        + "pattern swallowed the gap between two adjacent badge links instead of stopping at the delimiter");
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
