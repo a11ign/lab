@@ -110,6 +110,28 @@ function trackedSourceFiles(): string[] {
  * four node:child_process names would miss exactly that indirection -- the same "static derivation
  * cannot be trusted" lesson CLAUDE.md already records for CLI flag scraping.
  */
+/**
+ * WHAT THIS POPULATION IS NOT, MEASURED 2026-09-09 AFTER IT MISSED A REAL COLLISION (#890).
+ *
+ * `trunk-revert-guard.test.ts` spawned `node scripts/trunk-revert-guard.mjs` with `cwd` set to the real
+ * checkout. That script runs `git fetch origin` unconditionally, so a `npm test` in any worktree fetched
+ * into the SHARED primary `.git` and could collide with another worktree doing the same on the
+ * remote-tracking refs. A test mutating the checkout that drives the fleet.
+ *
+ * THIS GUARD COULD NOT SEE IT, AND IS NOT WRONG. `SPAWNS_GIT_DIRECTLY` asks whether a file's own text
+ * spawns `git`, because what it classifies is ENV SCRUBBING AT THE CALL SITE -- a question that only has
+ * an answer where the call is. That file's first argument is `"node"`.
+ *
+ * WIDENING IT IS THE WRONG FIX, and the number says so. Following one hop -- a file naming a
+ * `scripts/*.mjs` that itself spawns git -- adds 75 files to a population of 82, and most are false:
+ * naming a script path in prose, a glob or an assertion is not spawning it. A classification everyone has
+ * to argue with is one nobody maintains.
+ *
+ * THE HAZARD IS A DIFFERENT ONE AND NEEDS ITS OWN GUARD: a test that runs REAL code against the REAL
+ * checkout, whatever the code spawns. 16 test files pass `cwd: REPO`-style to a spawn across 29 sites,
+ * and most are harmless because the thing they run only reads. Separating the writers from the readers
+ * is a row of its own, not a regex here.
+ */
 const SPAWNS_GIT_DIRECTLY = /\b\w+\(\s*["']git["']/;
 
 /**
