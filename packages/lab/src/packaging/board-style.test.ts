@@ -375,49 +375,29 @@ test("the heading-similarity check REJECTS the actual defect it was written for"
     + "five machines under different verbs");
 });
 
-test("the summary states WHEN it was written, and that time is within 60 minutes of the render", async () => {
+test("#589: the stated writing time PARSES and its drift arithmetic is right — on fixtures, not the clock", async () => {
+  // THIS TEST NO LONGER ASKS WHAT TIME IT IS. Until 2026-09-09 it compared the real summary's stated time
+  // against the clock at TEST time, in the unscoped `ts` job — so 60 minutes after the summary was
+  // written, every open pull request went red on a document none of them had touched. Measured that
+  // morning: the whole queue failed at 09:05 London against a correct summary written at 08:05.
+  //
+  // The assertion was right and the PLACE was wrong. The freshness refusal now lives in
+  // `board-document.mjs`'s render path, where "now" is the moment the board receives the document.
+  // What stays here is what a unit test can honestly own: the parse, and the arithmetic.
+  const { statedWritingTime } = await import("../../../../scripts/board-summary-check.mjs");
+  assert.equal(statedWritingTime("Written at 07:30 on 9 September.", "07:45")?.driftMinutes, 15);
+  assert.equal(statedWritingTime("Written at 08:05 on 9 September.", "09:06")?.driftMinutes, 61);
+  assert.equal(statedWritingTime("Written at 09:00 on 9 September.", "09:00")?.driftMinutes, 0);
+  assert.equal(statedWritingTime("no time stated here", "09:00"), null,
+    "no stated time is a DIFFERENT state from a stale one, and the render refuses each differently");
+});
+
+test("#589: the real summary still STATES a writing time — a fact about the file, not the clock", () => {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
   const summary = summaryFor(today);
-  if (!summary) return;   // its absence is the previous test's finding, not this one's
-
-  // EFFECTIVE FROM 2026-09-09, NAMED RATHER THAN INFERRED. The board's direction arrived on the morning
-  // of the 8th, after that day's summary had already been written the evening before under the old
-  // convention. A test that fails on a document written correctly under the rule that was in force when
-  // it was written is a test that gets disabled, not obeyed. The 8th's summary is rewritten at 07:30 by
-  // hand; from the 9th this asserts it.
-  const EFFECTIVE_FROM = "2026-09-09";  // mutation probe
-  if (today < EFFECTIVE_FROM) return;
-
-  // THE BOARD ASKED FOR THIS, and the reason is the only reason that matters here: "it should be 30 mins
-  // before as it should be as fresh as possible as a lot happens over night." A summary written the
-  // evening before is a forecast about a night that has not happened yet, and every overnight merge makes
-  // it staler -- on 8 September the queue went from twelve open pull requests to zero between the summary
-  // being written and the edition rendering.
-  //
-  // So the summary NAMES the minute it was written, and this asserts the claim is true rather than
-  // decorative. A stated time nothing checks is the same shape as a gate that reports cleanly having
-  // examined nothing.
-  const { statedWritingTime } = await import("../../../../scripts/board-summary-check.mjs");
-  const londonNow = new Intl.DateTimeFormat("en-GB",
-    { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
-  const stated = statedWritingTime(summary.text, londonNow);
-  assert.ok(stated,
-    "the summary must open by naming when it was written -- \"Written at 07:30 on 8 September\" -- "
-    + "because a document the board reads at 08:00 must say how old its one hand-written paragraph is");
-
-  const drift = stated.driftMinutes;
-
-  // 60 MINUTES, NOT 30. The board asked for 30 minutes and the WRITING is scheduled for 07:30, but this
-  // test also runs in CI at arbitrary times of day against a summary written that morning. Sixty minutes
-  // is the window that makes it a real assertion at 08:00 without failing every unrelated PR -- and the
-  // schedule, not this number, is what actually delivers the 30 minutes.
-  const WINDOW_MINUTES = 60;
-  if (drift > WINDOW_MINUTES) {
-    assert.ok(drift <= WINDOW_MINUTES,
-      `the summary says it was written at ${stated.stated} and London now reads ${londonNow} -- ${drift} `
-      + `minutes later. Past ${WINDOW_MINUTES} it is not the fresh paragraph the board asked for; `
-      + "rewrite it from the state at this moment rather than adjusting the time it claims.");
-  }
+  if (!summary) return;
+  assert.match(summary.text, /written at \d{2}:\d{2}/i,
+    "the summary must name when it was written, so the render can check that claim");
 });
 
 test("relative time words never appear in the body -- a dated document names the date, or says yesterday", () => {
@@ -504,21 +484,23 @@ function namesTodayByDate(text: string, iso: string): boolean {
   return new RegExp(`\\b${day}(st|nd|rd|th)?\\b`, "i").test(text) && new RegExp(`\\b${month}\\b`, "i").test(text);
 }
 
-test("an edition cannot be published without a hand-written summary for that day", () => {
-  const today = new Date().toISOString().slice(0, 10);
+test("#589: a summary that EXISTS answers the three questions and fits its cap", () => {
+  // WHAT LEFT: the assertion that TODAY'S file exists. It ran in the unscoped `ts` job, so from midnight
+  // London until the day's summary landed, main's own tip was red and no PR could go green by any means —
+  // it blocked the repository for about eight hours on 9 September. A unit suite's verdict must not change
+  // at midnight with no commit.
+  //
+  // The refusal is unchanged and lives where the hour is known: `board-document.mjs` exits 5 with
+  // "REFUSING to render: no executive summary for <day>". A missing summary is still a missing edition.
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(new Date());
   const summary = summaryFor(today);
-  assert.ok(summary,
-    `docs/board/summaries/${today}.md is missing. A missing summary is a MISSING EDITION, never a `
-    + "summary-less document — a summary assembled from the sections is the thing the chairman's rules "
-    + "forbid.");
+  if (!summary) return;
   assert.ok(summary.words <= 120,
     `the summary is ${summary.words} words, over the 120-word cap that makes it a summary`);
-  // It must ANSWER the three questions, not merely be short.
   assert.match(summary.text, /\bdate\b|\bSeptember\b|on track|at risk/i,
     "the summary does not appear to answer: are we on the date");
   assert.ok(/since yesterday/i.test(summary.text) || namesTodayByDate(summary.text, today),
-    "the summary does not appear to answer: what changed since yesterday -- it must say \"since "
-    + "yesterday\" or name today's actual date, not merely contain the word \"today\" somewhere unrelated");
+    "the summary does not appear to answer: what changed since yesterday");
   assert.match(summary.text, /decide|approve|name|confirm/i,
     "the summary does not appear to answer: what the board must decide");
 });
