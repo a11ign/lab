@@ -3,6 +3,12 @@
  * See `scripts/ready-label-audit.mjs`'s own header for the incident: `dispatcher` labelled #13 and #75
  * `ready` to hit a floor, while one was disputed and the other had no Region or Acceptance at all.
  */
+// no-token: defaultRun
+// Every fetcher this file exercises (fetchOpenIssues, fetchReportedOpenIssueNumbers, fetchClosingPrRefs,
+// fetchLatestReopenedAt, fetchClaimActivity, ...) is called only with an injected `{ run }` fixture below
+// -- `defaultRun`, the module-scope const that actually spawns `gh`, is never referenced by name in this
+// file. The #827 closure walk still reaches it because these functions are imported from the shared
+// ready-label-audit.mjs module, whose own real-`gh` fetchers this file's tests never invoke.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
