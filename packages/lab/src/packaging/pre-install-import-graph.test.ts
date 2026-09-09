@@ -71,13 +71,35 @@ import { fileURLToPath } from "node:url";
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const WORKFLOWS = join(REPO, ".github/workflows");
 
+// #725: BLANK COMMENTS BEFORE SCANNING -- otherwise the word "import" used as ordinary English inside a
+// `//` comment (this repo writes a great many of them: "import `REPO` from here", "the import closure
+// ... walks") lets the specifier regex's own lazy `from ... quote` clause bridge, unbounded, to the NEXT
+// unrelated quoted string anywhere later in the file, and report THAT as a package specifier. Measured
+// live on #725: adding one real relative import to `arm-pr.mjs` made `acceptance-commands.mjs` and (via
+// a worked-example import shown inside `local-import-closure.mjs`'s own docstring) `board-data.mjs`
+// reachable for the first time, and both produced a bogus offender this way.
+//
+// A SINGLE ALTERNATION, not `local-import-closure.mjs`'s own sequential block-comment-then-line-comment
+// `stripComments` -- that one is a DIFFERENT bug: running the block-comment pass over the whole text
+// first means a `//` line comment that happens to contain a slash-star sequence (this repo's own
+// npm-scope wildcard notation for the `@a11ign` org, written as `@a11ign` followed by a slash and a
+// star, used constantly in comments) is read as a block-comment START, silently swallowing everything
+// up to the next real slash-star closer -- which is exactly how it ate the real
+// `import { changedPackages } from "./changed-packages.mjs"` line whole. Trying BOTH alternatives at
+// every position, in order, and taking whichever matches at that exact spot resolves it correctly: at
+// the position of a `//`, the block alternative requires the very next character to be a star, so a
+// bare `//` never gets misread as a block start regardless of what appears later on the same line.
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (m) => m.replace(/[^\n]/g, " "));
+}
+
 /** Every `import ... from "<spec>"` in a module, in source order. */
 function specifiersOf(source: string): string[] {
   // `from` is OPTIONAL: `import "./side-effect.mjs"` has none, and the first version of this could not
   // see one. Borrowed from `build-bootstrap-no-workspace-imports.test.ts`, which got it right first --
   // recorded rather than silently copied, because two guards covering one class is the drift this repo
   // pays for most and the next reader should know both exist.
-  return [...source.matchAll(/\bimport\s+(?:[\s\S]*?\s+from\s+)?["']([^"']+)["']/g)].map((m) => m[1]);
+  return [...stripComments(source).matchAll(/\bimport\s+(?:[\s\S]*?\s+from\s+)?["']([^"']+)["']/g)].map((m) => m[1]);
 }
 
 /**
@@ -236,6 +258,37 @@ test("the walk follows relative imports — or the guard above passes having exa
   const names = [...importGraph("scripts/ci-changed.mjs").files].map((f) => relative(REPO, f));
   assert.ok(names.includes("scripts/changed-packages.mjs"),
     `the walk did not reach a known dependency; it found: ${names.join(", ")}`);
+});
+
+// --- #725: specifiersOf strips comments before scanning, and does it correctly ---
+
+test("#725: stripComments blanks a `//` comment that contains `@a11ign/*` -- this repo's own npm-scope "
+  + "wildcard notation -- WITHOUT misreading the embedded `/*` as a block-comment start", () => {
+  const source = [
+    "// mentions the real `@a11ign/*` scope in a plain comment",
+    'import { real } from "./real.mjs";',
+  ].join("\n");
+  assert.deepEqual(specifiersOf(source), ["./real.mjs"],
+    "a `//` comment containing `/*`-shaped text must not swallow the real import that follows it");
+});
+
+test("#725 ACCEPTANCE, MUTATION TARGET: a plain-English \"import ... from\" inside a `//` comment, "
+  + "followed much later by an unrelated quoted string, is not reported as a specifier -- exactly what "
+  + "made board-data.mjs and acceptance-commands.mjs false offenders when arm-pr.mjs first reached them", () => {
+  const source = [
+    "// import `REPO` from here, so it stays exported at this one path",
+    "const later = someCall(); // a totally unrelated line reading \"not a specifier\" out loud",
+  ].join("\n");
+  assert.deepEqual(specifiersOf(source), []);
+});
+
+test("#725: specifiersOf still finds a real import sitting right after a comment containing the word "
+  + "\"import\"", () => {
+  const source = [
+    "// this comment mentions import as an ordinary word",
+    'import { real } from "./real.mjs";',
+  ].join("\n");
+  assert.deepEqual(specifiersOf(source), ["./real.mjs"]);
 });
 
 test("preInstallScripts stops at an install step, and resumes at the next job", () => {
