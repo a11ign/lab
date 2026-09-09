@@ -70,6 +70,7 @@ test("a lost transcript phrase is DRIFT, and the phrase is named", () => {
   const shorter = capture({ transcript: ["heading, level 1, Museum 004 controls"] });
   const result = compareCapture(capture(), shorter);
   assert.equal(result.verdict, "DRIFT");
+  assert.ok(result.phrases, "a DRIFT verdict always carries a phrase comparison");
   assert.deepEqual(result.phrases.lost, ["print this report"]);
 });
 
@@ -457,4 +458,78 @@ test("the sweep itself WORKS — proved synthetically, so the corpus pass is mea
     + "would report a clean result having examined nothing");
   assert.equal(NOT_EVIDENCE_KEYS.has("someNewProbeWaitedMs"), false,
     "and it must be UNCLASSIFIED, or this proves only that the deny-list contains what it contains");
+});
+
+/**
+ * #687 — TWO CAPTURES OF ONE URL THAT WERE SERVED DIFFERENT DOCUMENTS.
+ *
+ * The shape these guard is the one measured on `https://calendly.com/`: both records say
+ * `url: "https://calendly.com/"`, both say `landedOnRequested: ok`, and the census marks say one was
+ * served Google's sign-in wall and the other `calendly.com/scheduling`.
+ */
+const served = (targetUrl: string, title: string, headings: string[]) => ({
+  url: "https://calendly.com/",
+  transcript: ["a"],
+  structure: { headings },
+  diagnostics: [
+    { event: "structureCensus", targetUrl, heading: headings.length },
+    { event: "titleSource", title, source: "document" },
+  ],
+});
+
+test("two captures served different documents are DIFFERENT_DOCUMENT, not CHANGED", () => {
+  const result = compareCapture(
+    served("https://accounts.google.com/v3/signin/identifier", "Sign in - Google Accounts", ["Sign in"]) as never,
+    served("https://calendly.com/scheduling", "Automated scheduling software", ["Scheduling", "FAQ"]) as never);
+  assert.equal(result.verdict, "DIFFERENT_DOCUMENT");
+  assert.deepEqual(result.identity.differing.map((d: { component: string }) => d.component).sort(),
+    ["servedPath", "title"]);
+});
+
+test("a DIFFERENT_DOCUMENT result reports no field changes and no phrase comparison", () => {
+  // Both are TRUE of these two captures and both are irrelevant: every field differs because the pages
+  // differ, and a list of them sends the reader after the capture pipeline. `phrases: null` rather than
+  // zeroes, because a transcript comparison that did not happen must not render as "nothing drifted".
+  const result = compareCapture(
+    served("https://example.org/a", "A", ["One"]) as never,
+    served("https://example.org/b", "B", ["Two", "Three"]) as never);
+  assert.deepEqual(result.changes, []);
+  assert.equal(result.phrases, null);
+});
+
+test("a capture with no identity marks compares exactly as it always did", () => {
+  // THE CHECK MAY ONLY EVER ADD A REFUSAL. A corpus capture carries `structureCensus` with no
+  // `targetUrl` and no `titleSource` at all, so identity is UNCOMPARABLE and the field comparison must
+  // run unchanged — otherwise this would turn every corpus comparison into a refusal on the day it shipped.
+  const bare = (headings: string[]) => ({
+    url: "http://localhost:5050/case/good", transcript: ["a"], structure: { headings },
+    diagnostics: [{ event: "structureCensus", heading: headings.length }],
+  });
+  assert.equal(compareCapture(bare(["One"]) as never, bare(["One"]) as never).verdict, "SAME");
+  const changed = compareCapture(bare(["One"]) as never, bare(["Two"]) as never);
+  assert.equal(changed.verdict, "CHANGED");
+  assert.equal(changed.identity.verdict, "UNCOMPARABLE");
+});
+
+test("summarise counts a different document apart from a changed one, and refuses a verdict", () => {
+  const result = summarise([
+    { comparison: { verdict: "SAME" } }, { comparison: { verdict: "SAME" } },
+    { comparison: { verdict: "DIFFERENT_DOCUMENT" } },
+  ]);
+  // EXCLUDED FROM `compared`, counted into `attempted`: a capture of a different page says nothing about
+  // whether the evidence moved, and shrinking the sample silently is the defect `inconclusive` exists for.
+  assert.equal(result.compared, 2);
+  assert.equal(result.attempted, 3);
+  assert.equal(result.inconclusive, true);
+  assert.equal(result.differentDocument, true);
+  assert.match(result.recommendation, /^DIFFERENT DOCUMENT/);
+  assert.equal(result.evidenceChanged, false);
+});
+
+test("every capture served a different document does not read as 'every capture failed'", () => {
+  // `compared` is 0 here, and the `examinedNothing` branch would say "every capture failed or was
+  // excluded. Check the worker is reachable" — a true sentence pointing at the wrong thing.
+  const result = summarise([{ comparison: { verdict: "DIFFERENT_DOCUMENT" } }]);
+  assert.match(result.recommendation, /^DIFFERENT DOCUMENT/);
+  assert.doesNotMatch(result.recommendation, /worker is reachable/);
 });
