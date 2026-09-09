@@ -44,3 +44,69 @@ export function allLeaksIn(text) {
   }
   return found;
 }
+
+/**
+ * #891: THE TRACKER'S OWN value-class exemption -- narrower than, and separate from, the tree's
+ * `(file, value)` EXEMPT table (`tracked-source-leak-guard.test.ts:120-145`), which a tracker body cannot
+ * use at all (it has no file to key on). UTM's local VM host-only bridge, documented TWICE in CLAUDE.md
+ * as the `npm run capture:check -- --worker=http://192.168.64.x:8765` command, and reachable from nowhere
+ * but the single Mac it runs on.
+ *
+ * `ceo`'s ruling, 2026-09-09: this ONE `/24`, and nothing broader. A value-class exemption is weaker than
+ * the tree's key -- the tree can say "this value, in this file" and still catch the SAME value appearing
+ * somewhere new; a tracker body exempts the value everywhere it appears, a real loss of resolution taken
+ * deliberately because the alternative (refusing every row that quotes CLAUDE.md's own documented
+ * command) is a guard people route around. Widening it is a finding for `ceo`, never a local tweak --
+ * #705's own lesson is that a broad `EXEMPT` entry is the failure this class produces, not the fix.
+ */
+const TRACKER_EXEMPT_IPV4_PREFIX = "192.168.64.";
+
+/**
+ * Is `value` inside the tracker's one exempt `/24`? String-prefixed rather than full CIDR arithmetic --
+ * the ruling is exactly one `/24` on a `192.168.` octet pair the pattern already requires, so the third
+ * octet is the only thing left to check, and a literal prefix says so without inventing a general-purpose
+ * subnet calculator this repo has no other use for.
+ * @param {string} value
+ * @returns {boolean}
+ */
+function isTrackerExemptAddress(value) {
+  return value.startsWith(TRACKER_EXEMPT_IPV4_PREFIX);
+}
+
+/**
+ * #891: THE ONE PLACE that decides whether a body may reach GitHub at all. Every writer wrapper
+ * (`row-file`, `pr-open`/`pr-edit`, `tracker-comment`) calls this before its own `gh` call, never a
+ * second hand-rolled pattern -- the argument tonight's redaction sweep made directly: a hand-rolled sweep
+ * for "addresses" found one of `LEAK_PATTERNS`' three categories and missed the other two (named SSH key
+ * files, all four hits) entirely, because the second copy is always narrower than the first.
+ *
+ * Checked LINE BY LINE, not on the whole collapsed body: the refusal has to name a line a filer can find
+ * and fix, and a tracker body is typed prose, not a hard-wrapped Markdown file where a match could
+ * legitimately span a line break (the reason `allLeaksIn`'s own callers collapse a whole FILE first).
+ * Each line is still whitespace-collapsed on its own, so a leak split across incidental double spaces
+ * within one line is not missed.
+ *
+ * `null` means the body is clear to send.
+ *
+ * @param {string} body
+ * @returns {string | null}
+ */
+export function leakRefusalReason(body) {
+  /** @type {Array<{ line: string; leak: { name: string; value: string } }>} */
+  const offenders = [];
+  for (const line of body.split("\n")) {
+    for (const leak of allLeaksIn(line.replace(/\s+/g, " "))) {
+      if (leak.name === "private LAN IPv4 address" && isTrackerExemptAddress(leak.value)) continue;
+      offenders.push({ line, leak });
+    }
+  }
+  if (offenders.length === 0) return null;
+  const named = offenders
+    .map(({ line, leak }) => `  ${leak.name}: "${leak.value}"\n    in: ${line.trim()}`)
+    .join("\n");
+  return "REFUSING -- this body carries what looks like a real internal detail, and nothing has checked "
+    + `the tracker for one before now (#891):\n${named}\n`
+    + "The documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24) and the local VM bridge's "
+    + "own /24 (192.168.64.x, CLAUDE.md's documented `capture:check --worker=` command) are allowed and "
+    + "never flagged. Replace the real value above and try again.";
+}
