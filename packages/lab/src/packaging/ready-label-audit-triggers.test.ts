@@ -29,20 +29,42 @@ const raw = readFileSync(workflowPath, "utf8");
 const doc = parseYaml(raw) as Record<string, unknown>;
 const triggers = doc.on as Record<string, unknown>;
 
-test("#536: the audit is woken by the five events that can change its answer", () => {
+test("#536: the audit is woken by the four issue events that can change its answer", () => {
   assert.deepEqual((triggers.issues as { types: string[] }).types,
     ["labeled", "unlabeled", "closed", "reopened"]);
-  assert.deepEqual((triggers.pull_request as { types: string[] }).types, ["closed"]);
+});
+
+test("#579: and NEVER by `pull_request` -- an audit of the tracker is not a check on a pull request", () => {
+  // THIS ASSERTION IS THE INVERSE OF WHAT IT REPLACED, and the inversion is the point rather than a
+  // relaxation. #536 gave this workflow `pull_request: [closed]` for a real reason: a merge is how a row
+  // becomes debris. But a workflow triggered by `pull_request` attaches its check-run to that PR's head
+  // commit, so the verdict appears on the PR page as a check named `audit` -- reporting live tracker
+  // state that the PR's diff did not touch and cannot affect. Measured 2026-09-08: it failed on the
+  // board-membership call (the bot PAT cannot read Projects v2, #546) and sat RED on the last seven
+  // merged PRs for ninety minutes, which is what the chairman was looking at. `audit` is not in the
+  // required `gate` context, so it blocked nothing -- a permanently red mark that blocks nothing is
+  // precisely the red people stop reading.
+  //
+  // MUTATION TARGET: restore `pull_request: {types: [closed]}` to the workflow and this test must fail.
+  // Re-adding it is the only way this defect comes back, so the guard is pointed at exactly that.
+  assert.equal(triggers.pull_request, undefined,
+    "the merge case is covered by `issues: [closed]` (close-rows closes the row the PR declares); "
+    + "work that ships WITHOUT closing its row is covered by the cron, at the cron's cadence");
+  assert.match(raw, /THERE WAS A FOURTH, `pull_request: \[closed\]`, AND #579 REMOVED IT/,
+    "and the file says why, so the next author does not restore it from the header's own history");
+  assert.match(raw, /WHAT IS ACTUALLY LOST/,
+    "the loss is stated rather than waved away -- #443's shape genuinely loses event-time cadence");
 });
 
 test("#536: and NOT on push to main -- the allowlist rule is argued with, not around", () => {
   // `push-trigger-allowlist.test.ts` holds the chairman's rule: only a watchdog, a trunk gate or a
-  // trunk-followup may trigger on a push to main. This audit is none of the three. `close-rows.yml`
-  // already answered the identical question the same way -- the `pull_request` closed event carries the
-  // merge, scoped to one PR, needing no allowlist entry. Adding a fourth category to reach a trigger
-  // another event already covers would be arguing past a guard rather than with it.
+  // trunk-followup may trigger on a push to main. This audit is none of the three, and that alone
+  // settles it. The comment here USED to add a second reason -- that the `pull_request` closed event
+  // already carried the merge -- and #579 deleted that event, so the second reason is gone with it.
+  // Rewritten rather than left standing, because a reason whose premise has been removed underneath it
+  // reads exactly like a live one.
   assert.equal(triggers.push, undefined,
-    "a merge arrives as a merged PR, and a merged PR is a closed one");
+    "the allowlist rule excludes this workflow on its own terms, with or without another event");
   assert.match(raw, /NO `push: branches: \[main\]`, AND NOT BECAUSE IT WOULD NOT WORK/,
     "and the file says why, so the next author does not re-add it and re-break the allowlist test");
 });
@@ -56,11 +78,11 @@ test("#536: the cron SURVIVES as the backstop -- it is the only thing that fires
 test("#536: every run says which event woke it -- quiet-because-nothing-changed and " +
   "quiet-because-nothing-fired must not read the same", () => {
   assert.match(raw, /github\.event_name/,
-    "the run must name its own trigger; five triggers make silence ambiguous otherwise");
+    "the run must name its own trigger; several triggers make silence ambiguous otherwise");
   assert.match(raw, /::notice::ready-label-audit woken by/);
 });
 
-test("#536: one verdict at a time, newest wins -- five triggers make pile-ups likelier", () => {
+test("#536: one verdict at a time, newest wins -- several triggers make pile-ups likelier", () => {
   const concurrency = doc.concurrency as { group: string; "cancel-in-progress": boolean };
   assert.equal(concurrency.group, "ready-label-audit");
   assert.equal(concurrency["cancel-in-progress"], true,
