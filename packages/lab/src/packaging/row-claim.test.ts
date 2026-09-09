@@ -6,14 +6,17 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, rmSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   claimStatus, decideClaim, fetchLabels, claimRow, dispatchRow, declineRow, moveProjectStatus,
   CLAIM_LABEL, STARTED_LABEL, BLOCKED_LABEL, recordCheck, recordConflict, latestCheckFor,
+  worktreeStatus, removeClaimedWorktree, WORKTREE_LABEL_PREFIX,
 } from "../../../../scripts/row-claim.mjs";
 import { READY_LABEL, WAS_READY_LABEL } from "../../../../scripts/ready-label-audit.mjs";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
 // Every claim/dispatch/decline test above the #400 section stubs `moveStatus: () => ({ moved: true })` --
 // #400 is about the Project Status VIEW specifically, and those tests are about the LABEL, the record.
@@ -79,6 +82,17 @@ test("claimStatus reports branch: null when no branch label is present -- a real
   + "dispatched-not-started row, or a non-code row), never a parse failure", () => {
   const status = claimStatus(["in-progress", "session:worker-config"]);
   assert.equal(status.branch, null);
+});
+
+test("#665: claimStatus reads the recorded worktree off a worktree: label", () => {
+  const status = claimStatus(["in-progress", "session:worker-config", "started",
+    "worktree:/Users/danielbeck/Documents/repos/personal/a11y-wt-worktree-665"]);
+  assert.equal(status.worktree, "/Users/danielbeck/Documents/repos/personal/a11y-wt-worktree-665");
+});
+
+test("#665: claimStatus reports worktree: null when no worktree label is present", () => {
+  const status = claimStatus(["in-progress", "session:worker-config"]);
+  assert.equal(status.worktree, null);
 });
 
 // --- decideClaim: pure ---
@@ -347,6 +361,71 @@ test("#656 ACCEPTANCE: declineRow removes the recorded branch label when releasi
   assert.ok(removedLabels.includes("branch:agent/row-claim-branch-656"),
     "declining must remove the stale branch label -- a released row is nobody's, and a lingering "
     + "branch: label would tell a future escalation \"held\" for a row that is actually free");
+});
+
+// --- #665: claimRow records the worktree, declineRow removes it (and the directory it names) ---
+
+test("#665 ACCEPTANCE: claimRow given a worktree writes worktree:<path> in the SAME edit as the claim", () => {
+  const calls: string[][] = [];
+  let reads = 0;
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      reads += 1;
+      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
+        { name: STARTED_LABEL }, { name: "worktree:/tmp/a11y-wt-665" }];
+      return JSON.stringify({ number: 665, title: "A row", labels });
+    }
+    return "";
+  };
+  const result = claimRow(665, "worker-config",
+    { run, moveStatus: () => ({ moved: true }), worktree: "/tmp/a11y-wt-665" });
+  assert.deepEqual(result, { claimed: true, statusMoved: true });
+  const editCall = calls.find((a) => a[1] === "edit");
+  assert.ok(editCall!.includes(`${WORKTREE_LABEL_PREFIX}/tmp/a11y-wt-665`), "must write the worktree label");
+});
+
+test("#665 ACCEPTANCE: declineRow calls removeWorktree with the recorded path, and removes the label "
+  + "once it succeeds", () => {
+  const calls: string[][] = [];
+  const removeCalls: string[] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      return JSON.stringify({ number: 665, title: "A row", labels: [{ name: CLAIM_LABEL },
+        { name: "session:worker-config" }, { name: STARTED_LABEL },
+        { name: "worktree:/tmp/a11y-wt-665" }] });
+    }
+    return "";
+  };
+  const removeWorktree = (path: string) => { removeCalls.push(path); return { removed: true } as const; };
+  const result = declineRow(665, "worker-config", { run, moveStatus: () => ({ moved: true }), removeWorktree });
+  assert.equal(result.declined, true);
+  assert.deepEqual(removeCalls, ["/tmp/a11y-wt-665"], "must call removeWorktree with the recorded path");
+  const editCall = calls.find((a) => a[1] === "edit")!;
+  const removedLabels = editCall
+    .map((a, i) => (a === "--remove-label" ? editCall[i + 1] : null)).filter((l): l is string => l !== null);
+  assert.ok(removedLabels.includes("worktree:/tmp/a11y-wt-665"), "must remove the stale worktree label too");
+});
+
+test("#665 MUTATION direction 1: a DIRTY worktree refuses the WHOLE decline, named -- the label stays, "
+  + "so a future reader still knows the claim was open, rather than losing the record while the "
+  + "directory (and whatever uncommitted work sits in it) silently survives untracked", () => {
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    return JSON.stringify({ number: 665, title: "A row", labels: [{ name: CLAIM_LABEL },
+      { name: "session:worker-config" }, { name: STARTED_LABEL },
+      { name: "worktree:/tmp/a11y-wt-665" }] });
+  };
+  const removeWorktree = () => ({ removed: false as const,
+    reason: "/tmp/a11y-wt-665 has uncommitted change(s) -- refusing to remove it: M dirty.txt",
+    files: ["M dirty.txt"] });
+  const result = declineRow(665, "worker-config", { run, moveStatus: () => ({ moved: true }), removeWorktree });
+  assert.equal(result.declined, false);
+  assert.match((result as { reason: string }).reason, /uncommitted change/);
+  assert.ok(!calls.some((a) => a[1] === "edit"),
+    "a dirty worktree must refuse BEFORE any label is touched -- the claim record must stay intact");
 });
 
 test("MUTATION: dispatching a `ready` row removes `ready` -- #197's review finding, caught before merge", () => {
@@ -811,4 +890,133 @@ test("declineRow does NOT move Status when the decline itself is refused (not th
     { run, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
   assert.equal(result.declined, false);
   assert.deepEqual(moveCalls, []);
+});
+
+// --- #665: worktreeStatus / removeClaimedWorktree, driven against REAL git worktrees -- the questions
+// these functions answer ("is this directory safe to delete") cannot be honestly proven against a fake
+// `run`, the same reasoning #656's carry-branch.test.ts already applies to its own detached-worktree
+// mechanism. `sandboxGitEnv()` scrubs `GIT_*`, the discipline `test-support/git-sandbox.ts` documents at
+// length: `cwd` is not isolation for a spawned git process, `GIT_DIR` is. ---
+
+function git(cwd: string, args: string[]): string {
+  return execFileSync("git", args, { cwd, encoding: "utf8", env: sandboxGitEnv() });
+}
+
+/** A real primary checkout plus ONE real linked worktree off it -- the shape `declineRow` releases. */
+function withRealWorktree<T>(fn: (t: { primary: string; worktree: string }) => T): T {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "row-claim-worktree-")));
+  const primary = join(root, "primary");
+  const worktree = join(root, "wt");
+  try {
+    execFileSync("git", ["init", "--quiet", primary], { env: sandboxGitEnv() });
+    git(primary, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+    writeFileSync(join(primary, "file.txt"), "committed\n");
+    git(primary, ["add", "file.txt"]);
+    git(primary, ["-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "-m", "initial"]);
+    git(primary, ["worktree", "add", "-q", "-b", "agent/test-branch", worktree]);
+    return fn({ primary, worktree });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("#665: worktreeStatus reads a freshly created worktree as clean", () => {
+  withRealWorktree(({ worktree }) => {
+    assert.deepEqual(worktreeStatus(worktree), { clean: true });
+  });
+});
+
+test("#665: worktreeStatus names every dirty file in a worktree with uncommitted changes", () => {
+  withRealWorktree(({ worktree }) => {
+    writeFileSync(join(worktree, "file.txt"), "uncommitted work\n");
+    writeFileSync(join(worktree, "new-file.txt"), "untracked too\n");
+    const status = worktreeStatus(worktree);
+    assert.equal(status.clean, false);
+    assert.equal((status as { files: string[] }).files.length, 2,
+      `expected 2 dirty entries, got: ${JSON.stringify(status)}`);
+  });
+});
+
+test("#665: worktreeStatus reads a path that no longer exists as clean -- nothing there to lose", () => {
+  assert.deepEqual(worktreeStatus("/tmp/definitely-does-not-exist-row-claim-665"), { clean: true });
+});
+
+test("#665 ACCEPTANCE: removeClaimedWorktree removes a real, clean worktree", () => {
+  withRealWorktree(({ primary, worktree }) => {
+    const result = removeClaimedWorktree(worktree,
+      { run: (cmd: string, args: string[]) => git(primary, args) });
+    assert.deepEqual(result, { removed: true });
+    const remaining = git(primary, ["worktree", "list", "--porcelain"]);
+    assert.ok(!remaining.includes(worktree), "the worktree must actually be gone from git's own list");
+  });
+});
+
+test("#665 ACCEPTANCE / MUTATION direction 1 (the issue's own instruction): a DIRTY worktree is REFUSED "
+  + "by name, and is NOT removed -- git's own worktree list still shows it afterward", () => {
+  withRealWorktree(({ primary, worktree }) => {
+    writeFileSync(join(worktree, "file.txt"), "uncommitted work nobody has anywhere else\n");
+    const result = removeClaimedWorktree(worktree,
+      { run: (cmd: string, args: string[]) => git(primary, args) });
+    assert.equal(result.removed, false);
+    assert.match((result as { reason: string }).reason, /uncommitted change/);
+    assert.ok((result as { files: string[] }).files.some((f) => f.includes("file.txt")),
+      "the refusal must name the dirty file, per the issue's own acceptance");
+    const remaining = git(primary, ["worktree", "list", "--porcelain"]);
+    assert.ok(remaining.includes(worktree), "the worktree must still be registered -- nothing was removed");
+  });
+});
+
+test("removeClaimedWorktree on an already-gone path reports removed:true -- nothing left to lose, and "
+  + "refusing a decline over a directory that is already absent would be the housekeeping failure this "
+  + "row exists to fix, one layer over", () => {
+  assert.deepEqual(removeClaimedWorktree("/tmp/definitely-does-not-exist-row-claim-665"), { removed: true });
+});
+
+// --- #665's own required mutation, the issue's exact words: "drop the removal. The count grows by one
+// per released claim -- assert that, rather than asserting the removal happened, because the defect is
+// cumulative and only shows in the count." Driven against REAL worktrees for the same reason as above. ---
+
+test("#665 MUTATION direction 2 (the issue's own instruction): drop the removal, and released claims "
+  + "accumulate worktrees one per decline; wire it back in, and the count returns to baseline every time", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "row-claim-count-")));
+  const primary = join(root, "primary");
+  try {
+    execFileSync("git", ["init", "--quiet", primary], { env: sandboxGitEnv() });
+    git(primary, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+    writeFileSync(join(primary, "file.txt"), "committed\n");
+    git(primary, ["add", "file.txt"]);
+    git(primary, ["-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "-m", "initial"]);
+    const run = (cmd: string, args: string[]) => git(primary, args);
+    const worktreeCount = () => (git(primary, ["worktree", "list", "--porcelain"]).match(/^worktree /gm) ?? []).length;
+    const baseline = worktreeCount();
+
+    // THE MUTATION: three "claim, do the work, decline" cycles with the removal DROPPED -- the exact
+    // shape `declineRow` had before #665, where the label came off but the directory never did.
+    for (let i = 0; i < 3; i += 1) {
+      const wt = join(root, `dropped-${i}`);
+      git(primary, ["worktree", "add", "-q", "-b", `agent/dropped-${i}`, wt]);
+      // ... claim, work, decline -- but NOTHING removes `wt`, which is the bug this row fixes.
+    }
+    assert.equal(worktreeCount(), baseline + 3,
+      "without the removal, three released claims must leave three worktrees behind -- the count IS the "
+      + "defect, proven directly rather than asserting the removal ran");
+
+    // THE FIX, same three cycles, WITH removeClaimedWorktree wired in -- the count returns to baseline
+    // after every single decline, not just at the end.
+    for (let i = 0; i < 3; i += 1) {
+      const wt = join(root, `fixed-${i}`);
+      git(primary, ["worktree", "add", "-q", "-b", `agent/fixed-${i}`, wt]);
+      const before = worktreeCount();
+      const result = removeClaimedWorktree(wt, { run });
+      assert.equal(result.removed, true);
+      assert.equal(worktreeCount(), before - 1,
+        `decline ${i} must remove exactly the one worktree it recorded, immediately -- not batched, not `
+        + "deferred to a later sweep");
+    }
+    assert.equal(worktreeCount(), baseline + 3,
+      "the fixed cycles must leave the count exactly where the dropped ones left it -- three behind from "
+      + "the mutation above, zero added by the three cycles that correctly cleaned up after themselves");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

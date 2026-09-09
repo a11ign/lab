@@ -297,8 +297,18 @@ function report(verdicts: Verdict[], scanned: Tally): number {
   }
 
   if (!blocking.length) {
-    process.stdout.write("\n  PASS — every RULE-ONLY criterion has fired on a real page, or declares why "
-      + "it cannot. Nothing this project claims rests solely on an untested rule.\n");
+    // NAME THE POPULATION IN THE VERDICT. "every RULE-ONLY criterion has fired" reads identically whether
+    // it examined nineteen or none: `blocking` is empty in both cases, and an empty `RULE_ONLY` set — a
+    // renamed constant, a filter that stopped matching — would print this same reassuring PASS.
+    //
+    // Found by the sweep `docs/backlog.md`'s wrong-population row names as its own next step: every one of
+    // its twelve instances was a check whose SUBJECT was implicit, and naming the subject in the output is
+    // the general remedy rather than a twelfth shape-specific guard. `fleet:hours` refusing a total that
+    // cannot name its run, and `lab:inventory` reporting WHERE it read from, are the same principle.
+    const ruleOnly = verdicts.filter((v) => RULE_ONLY.has(v.criterion));
+    process.stdout.write(`\n  PASS — all ${ruleOnly.length} RULE-ONLY criterion(s) of ${verdicts.length} `
+      + "examined have fired on a real page, or declare why they cannot. Nothing this project claims rests "
+      + "solely on an untested rule.\n");
     return 0;
   }
 
