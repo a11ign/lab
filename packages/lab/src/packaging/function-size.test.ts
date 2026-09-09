@@ -107,12 +107,84 @@ test("no function exceeds the physical-line budget, comments included", () => {
     + `still pass its 70-line budget.`);
 });
 
+/**
+ * #715: A GUARD WHOSE POPULATION IS THE TREE MUST ASSERT ABOUT THE SEARCH, NOT ONLY THE RESULT. #687
+ * fixed the mis-parse (`ScriptKind.JS` on a `.ts` file misreads a generic like `new Set<string>()`, and
+ * the parser recovers by extending the enclosing node to END OF FILE, swallowing every function after
+ * it) -- but a fix with no assertion behind it can regress silently, the exact shape this row exists to
+ * close.
+ *
+ * THE EXACT SIGNAL, MEASURED: a function's own `.end` genuinely equalling the SourceFile's `.end`
+ * (`node.end === src.getEnd()`, i.e. the literal end of the file's text) is the mis-parse signature --
+ * the recovered node consumes every remaining token, including the file's own trailing newline. A
+ * legitimate LAST function, even nested as a call's final argument (`test("x", () => { ... })`, the
+ * overwhelming shape in this tree), never reaches that far: its own closing `}` is still followed by at
+ * least the wrapping call's `)`/`;`/trailing newline. Measured directly: the first draft of this test
+ * compared against the file's own last TOP-LEVEL STATEMENT with 2 characters of slack, and every one of
+ * ~400 real `test(...)`/`describe(...)`-terminated files in this tree false-positived, because the
+ * function argument's own end sits a few characters short of the wrapping statement's end BY DESIGN, not
+ * by defect -- exact equality to the file's own true end has no such false-positive population.
+ */
+test("#715: no measured function node reaches END OF FILE unless it is genuinely the file's own last "
+  + "construct -- the mis-parse signature #687 fixed, asserted directly so it can never silently return", () => {
+  const files = [...sourceFiles(join(root, "packages")), ...sourceFiles(join(root, "scripts"))];
+  const suspicious: string[] = [];
+  for (const file of files) {
+    const kind = extname(file) === ".ts" ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+    const text = readFileSync(file, "utf8");
+    const src = ts.createSourceFile(file, text, ts.ScriptTarget.ESNext, true, kind);
+    const fileEnd = src.getEnd();
+    const visit = (node: ts.Node): void => {
+      const isFunction = ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node)
+        || ts.isArrowFunction(node) || ts.isMethodDeclaration(node);
+      if (isFunction && node.end === fileEnd) {
+        suspicious.push(`${relative(root, file)}: a function's own end (${node.end}) exactly equals the `
+          + `file's own end (${fileEnd}) -- a correctly-parsed function, even the file's true last `
+          + "construct, does not consume its own trailing newline; this is the mis-parse signature");
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(src);
+  }
+  assert.deepEqual(suspicious, [],
+    "the mis-parse signature was found in at least one file -- a function was measured as running to end "
+    + "of file without genuinely being the file's own last construct, meaning everything after it in that "
+    + "file went unmeasured");
+});
+
+test("#715 MUTATION TARGET: forcing ScriptKind.JS reproduces the mis-parse signature on a real .ts file "
+  + "using a generic -- proves the assertion above actually bites, not merely that it reads plausibly", () => {
+  // A real file in this tree that genuinely uses a generic early, with real code after it -- if this ever
+  // stops existing (the file is deleted or rewritten with no generics), pick a different real file rather
+  // than relaxing this to a synthetic fixture; the whole point is proving the assertion against the tree.
+  const target = join(root, "packages/lab/src/packaging/function-size.test.ts");
+  const text = readFileSync(target, "utf8");
+  assert.match(text, /new Set<string>\(\)|Set<string>/, "this file's own generic usage is the fixture -- "
+    + "if it no longer contains one, point this test at a different real file, never a synthetic string");
+  const brokenSrc = ts.createSourceFile(target, text, ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
+  const realEnd = text.replace(/\s+$/, "").length;
+  let sawEofReachingFunction = false;
+  const visit = (node: ts.Node): void => {
+    const isFunction = ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node)
+      || ts.isArrowFunction(node) || ts.isMethodDeclaration(node);
+    if (isFunction && node.end >= realEnd - 2) sawEofReachingFunction = true;
+    ts.forEachChild(node, visit);
+  };
+  visit(brokenSrc);
+  assert.ok(sawEofReachingFunction,
+    "parsing this file with the WRONG ScriptKind must reproduce a function node reaching end of file -- "
+    + "if it does not, this file no longer demonstrates the defect #687 fixed");
+});
+
 test("the budget is close to what the code actually does", () => {
   // A limit far above the real maximum is not a limit — it stops being a decision and becomes decoration, and
   // nobody notices the drift back toward 154. If the true ceiling drops well below this, tighten it.
   const files = [...sourceFiles(join(root, "packages")), ...sourceFiles(join(root, "scripts"))];
   const longest = files.flatMap((file) => {
-    const src = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
+    // #715: this walk is a second copy of oversizedIn's own parse and had NOT picked up #687's fix --
+    // the identical mis-parse risk, unfixed one call site over. Grep for the shape, not just the field.
+    const kind = extname(file) === ".ts" ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+    const src = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.ESNext, true, kind);
     const lengths: number[] = [];
     const visit = (node: ts.Node): void => {
       if (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node) || ts.isArrowFunction(node) || ts.isMethodDeclaration(node)) {

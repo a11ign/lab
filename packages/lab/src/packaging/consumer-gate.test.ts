@@ -52,6 +52,57 @@ test("extractDocumentedJobsBlock: refuses rather than returning nothing when no 
     /no ```yaml fence/);
 });
 
+// --- #796: a fence carrying its OWN on:/name: silently dropped check-pin -- reproduced from the real
+// mistake (README.md briefly carried `on: pull_request` above its own `jobs:` line) rather than invented ---
+
+test("extractDocumentedJobsBlock: REFUSES a fence carrying its own top-level `on:` -- #796's own mistake, "
+  + "used as the fixture", () => {
+  const markdown = [
+    "```yaml",
+    "on: pull_request",
+    "jobs:",
+    "  a11y:",
+    "    runs-on: windows-2022",
+    "    steps:",
+    "      - uses: DanBeckDev/a11y-witness@main",
+    "        with:",
+    "          url: https://example.com/checkout",
+    "          task: Complete the checkout",
+    "```",
+  ].join("\n");
+  assert.throws(() => extractDocumentedJobsBlock(markdown), /top-level "on:" key/);
+});
+
+test("extractDocumentedJobsBlock: REFUSES a fence carrying its own top-level `name:`, the sibling key "
+  + "buildWorkflowHeader also wraps", () => {
+  const markdown = [
+    "```yaml",
+    "name: accessibility",
+    "jobs:",
+    "  a11y:",
+    "    runs-on: windows-2022",
+    "    steps:",
+    "      - uses: DanBeckDev/a11y-witness@main",
+    "        with:",
+    "          url: https://example.com/checkout",
+    "          task: Complete the checkout",
+    "```",
+  ].join("\n");
+  assert.throws(() => extractDocumentedJobsBlock(markdown), /top-level "name:" key/);
+});
+
+test("MUTATION TARGET: without the refusal, the exact #796 shape silently drops check-pin rather than "
+  + "erroring -- proving the guard, not just its message, is load-bearing", () => {
+  // Bypasses extractDocumentedJobsBlock's new check entirely, going straight to the splice it protects --
+  // this is what shipped, unguarded, until #796.
+  const jobsYaml = "on: pull_request\njobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n" + PINNED_STEP;
+  const workflow = buildConsumerGateWorkflow(jobsYaml);
+  assert.doesNotMatch(workflow, /check-pin:/,
+    "this assertion documents the BUG buildConsumerGateWorkflow still has in isolation -- the real "
+    + "protection is extractDocumentedJobsBlock refusing before this function is ever called, verified "
+    + "by the two REFUSES tests above");
+});
+
 // --- pinActionRef: touches ONLY the a11y-witness uses: line ---
 
 test("pinActionRef: pins the a11y-witness ref and leaves other uses: lines (e.g. actions/checkout) untouched", () => {
