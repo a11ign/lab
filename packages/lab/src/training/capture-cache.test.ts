@@ -176,6 +176,12 @@ test("an unreportable environment still keys consistently", () => {
     // current guest reports, so nothing blends.
     screenReaderSettings: "default",
     provisionRevision: "unstamped",
+    // "adopted", NOT "unknown", and for the identical reason one field up (#561). Every capture taken
+    // before this field existed was taken against the profile the guests already had, and the worker
+    // stamps exactly that profile with this literal -- so an old record and a live guest agree, and no
+    // cached capture misses on the day the field ships. It still differs from the id a NEW profile is
+    // stamped with, so a cold profile does not blend with a warm one, which is the point.
+    browserProfile: "adopted",
   });
 });
 
@@ -238,4 +244,28 @@ test("a different guidepup version is a different environment", () => {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+// --- #561: the profile is a key input, and MISSING must not read as CHANGED ---
+
+test("DIRECTION ONE -- an ADOPTED profile keys identically to a capture that predates the field. Getting "
+  + "this backwards invalidates every capture on disk for a field that has told us nothing yet", () => {
+  // On the day #561 shipped, every guest had a profile and no stamp. The worker stamps such a profile
+  // with the literal `adopted` (`browser-profile.mjs`), which is exactly what this key defaults an absent
+  // field to -- so a live guest and an old record agree, and nothing misses. Same device
+  // `screenReaderSettings: "default"` uses: the absent value is a FACT about how those captures were
+  // taken, not an admission that we cannot tell.
+  assert.deepEqual(environmentKey({ browserProfile: "adopted" }), environmentKey({}));
+  assert.equal(environmentKey({}).browserProfile, "adopted");
+});
+
+test("DIRECTION TWO -- a DIFFERENT profile stamp changes the key, which is the whole point. A test "
+  + "asserting only this one passes with the adoption inverted, which is the expensive direction", () => {
+  const adopted = environmentKey({ browserProfile: "adopted" });
+  const fresh = environmentKey({ browserProfile: "9f2c-4d1e" });
+  assert.notDeepEqual(fresh, adopted);
+  assert.notEqual(cacheKey({ caseId: "c", pageHash: "p", environment: { browserProfile: "9f2c-4d1e" } }),
+    cacheKey({ caseId: "c", pageHash: "p", environment: {} }),
+    "the whole cache key must move, not merely the environment fragment -- a field that changes "
+    + "`environmentKey` and not `cacheKey` would be a key nobody consults");
 });
