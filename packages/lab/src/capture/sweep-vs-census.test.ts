@@ -53,12 +53,34 @@ test("heading: found holds at 80 across a census that moves 83 -> 69", () => {
 });
 
 test("a verdict IS available once each capture says when its census was read", () => {
-  // Not a placeholder: the gate opens on `readAtMs`, which no capture carries yet. This is the behaviour
-  // the fix to `structureCensus.atMs` unlocks, pinned now so the gate cannot quietly become permanent.
+  // Not a placeholder: the gate opens on `readAt.startedAtMs` (#854), which no capture on disk carries
+  // yet. This is the behaviour that fix unlocks, pinned now so the gate cannot quietly become permanent.
   assert.equal(populationVerdict([2.17, 2.12], { censusReadAt: [400_000, 402_000] }), "sweep-exceeds");
   assert.equal(populationVerdict([0.96, 1.16], { censusReadAt: [100, 100] }), "agrees");
   assert.equal(populationVerdict([2.17, 2.12], { censusReadAt: [400_000, null] }), "not-simultaneous",
     "one capture without a read time is enough to disqualify the comparison");
+});
+
+test("the read moment is taken from the NESTED field #854 writes, not a flat one", () => {
+  // The two changes have to agree on the field, and nothing else checks that they do. #854 nests it --
+  // `readAt: { startedAtMs, tookMs }` -- because `censusElementCounts` builds the census's element counts
+  // from every numeric field on that mark except `event` and `atMs`, so a flat `readAtMs` would arrive
+  // downstream as an element type with 3,200 of them.
+  const withMoment = { diagnostics: [
+    { event: "structureCensus", atMs: 452_791, formControl: 125, readAt: { startedAtMs: 5_211, tookMs: 47 } },
+    { event: "sweep", type: "formField", found: 265, stop: "exhausted" },
+  ] };
+  const [row] = sweepAgainstCensus(withMoment as never);
+  assert.equal(row.censusReadAt, 5_211, "the read moment comes from `readAt.startedAtMs`");
+
+  // A flat field is NOT read, deliberately: accepting both spellings would make the wrong one work and
+  // the trap survive. And `atMs` is never a fallback -- it is the field that caused this.
+  const flat = { diagnostics: [
+    { event: "structureCensus", atMs: 452_791, formControl: 125, readAtMs: 5_211 },
+    { event: "sweep", type: "formField", found: 265, stop: "exhausted" },
+  ] };
+  assert.equal(sweepAgainstCensus(flat as never)[0].censusReadAt, null,
+    "a capture with no `readAt` has no read moment, whatever else is on the mark");
 });
 
 test("the ratios excluded were sweeps that never ENDED, not sweeps that found little", () => {
