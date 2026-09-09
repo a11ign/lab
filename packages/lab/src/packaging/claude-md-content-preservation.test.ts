@@ -127,6 +127,58 @@ export function haystack(): string {
   return claudeMd + " " + docsFiles.map((f) => norm(readFileSync(f, "utf8"))).join(" ");
 }
 
+/**
+ * #651: CLAUDE.md's own map is not a separate index -- it is this pattern, repeated at almost every
+ * paragraph: `... [Detail/Why/Incident -> ](docs/some-file.md#anchor)`. A paragraph IS a section, and the
+ * link at its end (or, rarely, inside it) already names the sibling doc that section's material belongs
+ * in. So the destination for a removed line is not something this guard has to invent -- it is sitting
+ * in the same paragraph the line was removed from, in the OLD CLAUDE.md (the new one may no longer carry
+ * that paragraph at all).
+ *
+ * @param missingLine  a single normalised (whitespace-collapsed) line, as `removedSubstantiveLines` produces
+ * @param oldClaudeMd  the RAW (not normalised) old CLAUDE.md text, so the markdown link syntax survives
+ * @returns the `docs/....md` path named by that line's own paragraph, or null if the paragraph carries
+ *   none -- a real case (not every paragraph ends in a link) and reported honestly, never guessed
+ */
+export function nearestDocsLink(missingLine: string, oldClaudeMd: string): string | null {
+  const paragraphs = oldClaudeMd.split(/\n\s*\n/);
+  const owner = paragraphs.find((p) => norm(p).includes(missingLine));
+  if (owner === undefined) return null;
+  const match = /docs\/[\w./-]+\.md/.exec(owner);
+  return match ? match[0] : null;
+}
+
+/** `git show origin/main:CLAUDE.md` -- the paragraph a removed line belonged to before it was removed. */
+function oldClaudeMd(): string {
+  ensureOriginMain();
+  return execFileSync("git", ["show", "origin/main:CLAUDE.md"],
+    { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8", maxBuffer: 1024 * 1024 * 64 });
+}
+
+/**
+ * #651's own acceptance, in the refusal itself: name WHICH file under `docs/` each missing line belongs
+ * in, and say plainly that a correction and a deletion get the identical remedy -- this guard has no way
+ * to tell "I fixed this" from "I deleted this" (both are a removed line with nothing replacing it
+ * byte-for-byte), so it does not pretend to, and both are told to do the same thing.
+ *
+ * Pulled out to a pure function, given the OLD CLAUDE.md text rather than reading it itself, so the
+ * per-line target-naming is testable against fixtures rather than this branch's own real prose.
+ */
+export function missingLinesMessage(missing: string[], removedCount: number, oldMd: string): string {
+  const named = missing.slice(0, 20).map((line) => {
+    const target = nearestDocsLink(line, oldMd);
+    const dest = target ?? "no docs/ link in this line's own paragraph -- see docs/README.md's index " +
+      "and pick the sibling file for this section by hand";
+    return `-> ${dest}\n   ${line}`;
+  });
+  return `${missing.length} of ${removedCount} substantive line(s) removed from CLAUDE.md are present in ` +
+    `NEITHER the new CLAUDE.md NOR anywhere under docs/ -- this is #181's own failure mode. This guard ` +
+    "cannot tell a corrected sentence from a deleted one, and does not try to -- both need the exact old " +
+    "text preserved somewhere under docs/, so both get the same remedy. Move each line verbatim into the " +
+    `docs/ file named on the line above it:\n${named.join("\n")}` +
+    (missing.length > 20 ? `\n...and ${missing.length - 20} more` : "");
+}
+
 test("origin/main resolves to a real commit -- this test cannot pass having examined nothing", () => {
   // NOT "the diff is non-empty": trunk-guard runs this SAME test directly against main's own tip, where
   // HEAD legitimately equals origin/main and the diff is legitimately empty -- that is not vacuity, it
@@ -172,11 +224,7 @@ test("every substantive line removed from CLAUDE.md survives byte-identical some
   const claudeMdNow = digitBlind(norm(readFileSync(join(REPO_ROOT, "CLAUDE.md"), "utf8")));
   const missing = removed.filter((line) =>
     !hay.includes(line) && !claudeMdNow.includes(digitBlind(line)));
-  assert.deepEqual(missing, [],
-    `${missing.length} of ${removed.length} substantive line(s) removed from CLAUDE.md are present in ` +
-    `NEITHER the new CLAUDE.md NOR anywhere under docs/ -- this is #181's own failure mode. Move the ` +
-    `missing text verbatim into the appropriate docs/ file:\n${missing.slice(0, 20).join("\n")}` +
-    (missing.length > 20 ? `\n...and ${missing.length - 20} more` : ""));
+  assert.deepEqual(missing, [], missingLinesMessage(missing, removed.length, oldClaudeMd()));
 });
 
 test("the digit exemption is NARROW: a removal differing by a WORD is still caught", () => {
@@ -205,4 +253,102 @@ test("MUTATION: a line genuinely absent from both CLAUDE.md and docs/ is caught"
     "must report it as missing 2026-09-08-fabricated-marker-xyz");
   assert.ok(!hay.includes(fabricated),
     "the fabricated marker unexpectedly appears in docs/ or CLAUDE.md -- pick a different marker");
+});
+
+// --- #651: the refusal must name WHICH docs/ file, derived from the removed line's own paragraph ---
+
+test("#651 nearestDocsLink: finds the sibling doc named at the end of the line's own paragraph", () => {
+  const oldMd = [
+    "Some unrelated earlier paragraph with its own sentence, long enough not to matter here at all.",
+    "",
+    "A cache-key version memoised on process identity lied for five days while Edge auto-updated " +
+      "underneath it; memoise on file identity instead. [Incident ->](docs/capture-cache-incidents.md" +
+      "#a-cache-key-that-was-memoised-and-lied-for-five-days)",
+    "",
+    "A later unrelated paragraph, also long enough, also with nothing to do with the one above it.",
+  ].join("\n");
+  const removedLine = norm("A cache-key version memoised on process identity lied for five days while " +
+    "Edge auto-updated underneath it; memoise on file identity instead. [Incident ->]" +
+    "(docs/capture-cache-incidents.md#a-cache-key-that-was-memoised-and-lied-for-five-days)");
+  assert.equal(nearestDocsLink(removedLine, oldMd), "docs/capture-cache-incidents.md");
+});
+
+test("#651 nearestDocsLink: a paragraph with no docs/ link returns null, not a guess", () => {
+  const oldMd = [
+    "A job of a given name is refused, not killed, while one is running. The unit name is the lock and " +
+      "it holds against the ssh path too, which an in-process flag could not.",
+  ].join("\n");
+  const removedLine = norm("A job of a given name is refused, not killed, while one is running. The " +
+    "unit name is the lock and it holds against the ssh path too, which an in-process flag could not.");
+  assert.equal(nearestDocsLink(removedLine, oldMd), null,
+    "no link in this paragraph -- the function must say so rather than pick a neighbour's");
+});
+
+test("#651 nearestDocsLink: a link in a NEIGHBOURING paragraph is not picked -- only the line's own " +
+  "paragraph counts", () => {
+  const oldMd = [
+    "The removed line's own paragraph, long enough to pass the floor, and it carries no link of its own.",
+    "",
+    "A different paragraph entirely, which happens to end in a link. [Detail ->](docs/wrong-file.md#x)",
+  ].join("\n");
+  const removedLine = norm("The removed line's own paragraph, long enough to pass the floor, and it " +
+    "carries no link of its own.");
+  assert.equal(nearestDocsLink(removedLine, oldMd), null,
+    "docs/wrong-file.md belongs to the NEXT paragraph, not this one -- picking it would name the wrong " +
+    "destination, which is worse than naming none");
+});
+
+test("#651 missingLinesMessage: names the destination file per missing line, not just once for the batch", () => {
+  const oldMd = [
+    "First removed paragraph, long enough on its own to pass the substantive floor by a fair margin. " +
+      "[Why ->](docs/operational-lessons.md#first)",
+    "",
+    "Second removed paragraph, also long enough, entirely unrelated to the first one above it. " +
+      "[Detail ->](docs/nvda-behavior-incidents.md#second)",
+  ].join("\n");
+  const missing = [
+    norm("First removed paragraph, long enough on its own to pass the substantive floor by a fair " +
+      "margin. [Why ->](docs/operational-lessons.md#first)"),
+    norm("Second removed paragraph, also long enough, entirely unrelated to the first one above it. " +
+      "[Detail ->](docs/nvda-behavior-incidents.md#second)"),
+  ];
+  const message = missingLinesMessage(missing, 2, oldMd);
+  assert.match(message, /-> docs\/operational-lessons\.md\n {3}First removed paragraph/);
+  assert.match(message, /-> docs\/nvda-behavior-incidents\.md\n {3}Second removed paragraph/);
+});
+
+test("#651 ACCEPTANCE: the message states plainly that a correction and a deletion get the same remedy", () => {
+  const message = missingLinesMessage([norm("a fabricated line long enough to pass the floor, deliberately")],
+    1, "");
+  assert.match(message, /cannot tell a corrected sentence from a deleted one/,
+    "the guard cannot distinguish the two causes, and #651's acceptance requires it say so rather than " +
+    "silently apply one remedy to a case it never actually diagnosed");
+});
+
+test("#651 ACCEPTANCE: a line whose paragraph has no link gets the honest fallback, never an invented path", () => {
+  const message = missingLinesMessage(
+    [norm("a removed line whose paragraph, in this fixture, has no docs link at all to point to")], 1, "");
+  assert.match(message, /no docs\/ link in this line's own paragraph/);
+});
+
+test("#651 ACCEPTANCE, MUTATION TARGET: following the message exactly -- moving the line into the named " +
+  "docs file -- makes the same check pass", () => {
+  // The full loop #651's mutation instruction describes: a line removed from CLAUDE.md, the message names
+  // a docs/ file, the author moves the line there verbatim, and the SAME missing-line computation this
+  // test file's real check runs must then report nothing missing.
+  const oldMd = "A corrected sentence, long enough to pass the substantive floor on its own merits. " +
+    "[Why ->](docs/operational-lessons.md#the-corrected-sentence)";
+  const removedLine = norm(oldMd);
+  const target = nearestDocsLink(removedLine, oldMd);
+  assert.equal(target, "docs/operational-lessons.md", "the message must name a real destination first");
+
+  // Before following the message: the line is in neither the new CLAUDE.md nor any docs/ file.
+  const hayBefore = norm("the new CLAUDE.md, with the sentence corrected rather than present verbatim");
+  assert.ok(!hayBefore.includes(removedLine));
+
+  // After following the message exactly -- moving the OLD line verbatim into the named file:
+  const hayAfter = hayBefore + " " + removedLine;
+  assert.ok(hayAfter.includes(removedLine),
+    "a reader who followed the message exactly (moved the verbatim line into the named docs/ file) must " +
+    "pass -- this is #651's own acceptance line, checkable against the guard");
 });
