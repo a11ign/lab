@@ -7,7 +7,7 @@
  * `pull_request` trigger creeping back onto a Windows workflow — fails a unit test rather than the PR
  * budget both were rebuilt to protect.
  */
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, realpathSync } from "node:fs";
@@ -452,14 +452,19 @@ test("readWorkspaceDependencyGraph: resolves by each package's REAL declared nam
 // all, so the flag validation and the base-shape guard can only be proven by actually running the script.
 // -------------------------------------------------------------------------------------------------------
 
+// #716: ONE `twoCommitRepo()` fixture, built once and reused by all three tests below. None of them
+// writes to the fixture -- each only runs the CLI (a read of git history) against it, in a DIFFERENT way
+// (a real base, an empty one, a refused event) -- so sharing carries none of `carry-branch.test.ts`'s
+// leak risk, which is what pushes a REMOTE ref and genuinely needs a reset between tests. Was 3
+// constructions (~8 git spawns each) for 3 tests; now 1.
+const sharedTwoCommitRepo = twoCommitRepo();
+
 test("CLI: --event=merge_group classifies, it does not refuse", () => {
   // Acceptance step 3, verbatim: a merge_group event with a real base must be treated exactly like a
   // pull_request one, not rejected for using the newer event name.
-  const { dir, base } = twoCommitRepo();
-  try {
-    const out = runCliIn(dir, ["--event=merge_group", `--base=${base}`]);
-    assert.match(out, /^ts=(true|false)$/m, "expected classification output, got: " + out);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  const { dir, base } = sharedTwoCommitRepo;
+  const out = runCliIn(dir, ["--event=merge_group", `--base=${base}`]);
+  assert.match(out, /^ts=(true|false)$/m, "expected classification output, got: " + out);
 });
 
 test("CLI: an empty base (the unhandled merge_group shape) is refused by NAME, not left to crash on git", () => {
@@ -467,19 +472,15 @@ test("CLI: an empty base (the unhandled merge_group shape) is refused by NAME, n
   // arrives here as a bare "origin/" once the workflow's own string concatenation has run. Proven against
   // the REAL CLI rather than only against `classify()`, because the guard lives in `main()`, which
   // `classify()`'s own tests structurally cannot reach.
-  const { dir } = twoCommitRepo();
-  try {
-    assert.throws(() => runCliIn(dir, ["--event=merge_group", "--base=origin/"]),
-      /empty or a bare prefix/, "a bare 'origin/' base must be refused by name, not crash inside git");
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  const { dir } = sharedTwoCommitRepo;
+  assert.throws(() => runCliIn(dir, ["--event=merge_group", "--base=origin/"]),
+    /empty or a bare prefix/, "a bare 'origin/' base must be refused by name, not crash inside git");
 });
 
 test("CLI: --event=push is still refused -- widening to merge_group must not silently widen further", () => {
-  const { dir, base } = twoCommitRepo();
-  try {
-    assert.throws(() => runCliIn(dir, ["--event=push", `--base=${base}`]),
-      /--event must be "pull_request" or "merge_group"/);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  const { dir, base } = sharedTwoCommitRepo;
+  assert.throws(() => runCliIn(dir, ["--event=push", `--base=${base}`]),
+    /--event must be "pull_request" or "merge_group"/);
 });
 
 // -------------------------------------------------------------------------------------------------------
@@ -519,17 +520,27 @@ function repoWithCrashingPrepack() {
   return { dir, base };
 }
 
+// #716: ONE fixture, reused by both tests below -- neither writes to it, they only differ in which CLI
+// flags they pass. The genuinely expensive part of these two tests is `npm pack` actually invoking the
+// fixture's deliberately-failing `prepack` script, which the fix below does not and must not touch: that
+// cost is inherent to what "CLI with --precise" is proving (`--precise` really calls `npm pack`, never a
+// no-op), so it is reported as irreducible rather than forced away.
+const sharedCrashingPrepackRepo = repoWithCrashingPrepack();
+
+after(() => {
+  rmSync(sharedTwoCommitRepo.dir, { recursive: true, force: true });
+  rmSync(sharedCrashingPrepackRepo.dir, { recursive: true, force: true });
+});
+
 test("CLI without --precise: a published package's own prepack script is never run", () => {
-  const { dir, base } = repoWithCrashingPrepack();
-  try {
-    // Must NOT throw. If `classify()` had called the real `packedFiles`, `npm pack --dry-run` would have
-    // run `foo`'s `prepack` and failed on the unresolvable command -- this succeeding is the proof it
-    // never tried.
-    const out = runCliIn(dir, ["--event=pull_request", `--base=${base}`]);
-    assert.match(out, /^changeset=true$/m,
-      "the cheap over-approximation must still say a published package changed, or the `changeset` job "
-      + "would never even run to find out precisely: " + out);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  const { dir, base } = sharedCrashingPrepackRepo;
+  // Must NOT throw. If `classify()` had called the real `packedFiles`, `npm pack --dry-run` would have
+  // run `foo`'s `prepack` and failed on the unresolvable command -- this succeeding is the proof it
+  // never tried.
+  const out = runCliIn(dir, ["--event=pull_request", `--base=${base}`]);
+  assert.match(out, /^changeset=true$/m,
+    "the cheap over-approximation must still say a published package changed, or the `changeset` job "
+    + "would never even run to find out precisely: " + out);
 });
 
 test("CLI with --precise: the same package's prepack script DOES run, and its failure surfaces", () => {
@@ -538,12 +549,10 @@ test("CLI with --precise: the same package's prepack script DOES run, and its fa
   // package cannot ever produce one, so this must fail rather than quietly falling back to the cheap
   // answer. A `--precise` that silently reused `everythingIsPacked` would pass every test above and this
   // one both, which is exactly the "guard covers nothing" shape a PROOF test exists to catch.
-  const { dir, base } = repoWithCrashingPrepack();
-  try {
-    assert.throws(() => runCliIn(dir, ["--event=pull_request", `--base=${base}`, "--precise"]),
-      /definitely-not-a-real-command-ci-changed-test-xyz/,
-      "--precise must actually call npm pack, surfacing this package's own prepack failure");
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+  const { dir, base } = sharedCrashingPrepackRepo;
+  assert.throws(() => runCliIn(dir, ["--event=pull_request", `--base=${base}`, "--precise"]),
+    /definitely-not-a-real-command-ci-changed-test-xyz/,
+    "--precise must actually call npm pack, surfacing this package's own prepack failure");
 });
 
 // -------------------------------------------------------------------------------------------------------
