@@ -83,10 +83,18 @@ test("#536: every run says which event woke it -- quiet-because-nothing-changed 
 });
 
 test("#536: one verdict at a time, newest wins -- several triggers make pile-ups likelier", () => {
-  const concurrency = doc.concurrency as { group: string; "cancel-in-progress": boolean };
-  assert.equal(concurrency.group, "ready-label-audit");
-  assert.equal(concurrency["cancel-in-progress"], true,
-    "this audit reads live state and accumulates nothing, so a cancelled run loses nothing");
+  // #851 SPLIT THE GROUP AND MADE THE CANCEL CONDITIONAL, so both values are now expressions rather than
+  // literals. The claim this test was written to pin is unchanged and is asserted below on the events
+  // branch: one verdict at a time, newest wins, a cancelled run loses nothing. What changed is that the
+  // SCHEDULED run is exempt -- it is the run a day with no label activity depends on, and sharing a
+  // group with a burst of label events made the hourly audit whatever survived the burst.
+  const concurrency = doc.concurrency as { group: string; "cancel-in-progress": string };
+  assert.match(concurrency.group, /^ready-label-audit-/,
+    "the group still names this workflow -- it is branched, not renamed");
+  assert.match(concurrency.group, /'events'/, "and the event-driven runs still share one queue");
+  assert.match(String(concurrency["cancel-in-progress"]), /event_name != 'schedule'/,
+    "this audit reads live state and accumulates nothing, so a cancelled EVENT run loses nothing -- but "
+    + "a cancelled scheduled run loses the only pass that was going to happen");
 });
 
 test("#536 MUTATION TARGET: the refuted claim survives ONLY as a quoted retraction", () => {
@@ -108,4 +116,35 @@ test("the checks that #532 fixed are still wired -- this change must not undo th
   assert.match(raw, /A11IGN_BOT_TOKEN/, "the board check needs the PAT (#532)");
   assert.match(raw, /fetch-depth: 0/, "branchAges reads refs/remotes/origin (#532)");
   assert.match(raw, /pull-requests: read/, "fetchClaimActivity runs `gh pr list` (#532)");
+});
+
+// --- #851: CONCURRENCY WAS ALREADY HERE AND DID NOTHING ---
+//
+// `cancel-in-progress` cancels a run that is IN PROGRESS when a new one starts. This job takes a minute
+// or two, so it only collapses events arriving closer together than that. Measured 2026-09-09: 80 runs
+// in one hour, 79 on `issues` events, each running to completion because a session's label writes land
+// seconds apart while the runs between them finish. The group was never what was missing.
+
+test("#851 an event-driven run is DEBOUNCED before it costs anything -- the parked run is what makes "
+  + "cancel-in-progress collapse a burst rather than arrive after the cost is paid", () => {
+  const jobs = doc.jobs as { audit: { steps: Record<string, unknown>[] } };
+  const steps = jobs.audit.steps;
+  const first = steps[0];
+  assert.match(String(first.run ?? ""), /^sleep \d+$/,
+    "the debounce must be the FIRST step: everything after it is a checkout, an `npm ci` and an audit "
+    + "that reads the tracker, and a run cancelled while parked has spent none of it");
+  assert.match(String(first.if ?? ""), /event_name == 'issues'/,
+    "and only for label events -- delaying the schedule would delay the run that exists for the day "
+    + "nobody touches a label");
+  assert.ok(Number(/^sleep (\d+)$/.exec(String(first.run))?.[1] ?? 0) >= 60,
+    "a debounce shorter than a session's own label-writing rhythm collapses nothing");
+});
+
+test("#851 the SCHEDULED run has its own concurrency group and is never cancelled -- sharing one with a "
+  + "burst of label events makes the hourly audit whatever survives the burst, which is nothing", () => {
+  const { group, "cancel-in-progress": cancel } = doc.concurrency as Record<string, unknown>;
+  assert.match(String(group), /event_name == 'schedule'/,
+    "the group must BRANCH on the event, or the schedule shares a queue with the events that cancel it");
+  assert.match(String(cancel), /event_name != 'schedule'/,
+    "and the schedule must not be cancellable, whatever else is");
 });

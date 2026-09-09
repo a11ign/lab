@@ -107,6 +107,19 @@ export function removedSubstantiveLines(diff: string): string[] {
     .filter((l) => l.length > MIN_SUBSTANTIVE_LENGTH);
 }
 
+/**
+ * The same line with every run of digits blanked, for ONE narrow exemption below.
+ *
+ * A number in CLAUDE.md that another test PINS to a real count -- `adr-index.test.ts` and
+ * `claude-md-counts.test.ts` both require `for the N decision records` to equal the ADR count -- changes
+ * whenever the counted thing changes. The old wording is then "removed" from CLAUDE.md and must NOT be
+ * preserved anywhere: a stale count kept verbatim in `docs/` is the drift those tests exist to prevent.
+ * Before this exemption, every PR that added an ADR was refused by this test for obeying the other two.
+ */
+function digitBlind(s: string): string {
+  return s.replace(/\d+/g, "#");
+}
+
 /** The new CLAUDE.md plus every `docs/*.md` file, concatenated and whitespace-normalised. */
 export function haystack(): string {
   const claudeMd = norm(readFileSync(join(REPO_ROOT, "CLAUDE.md"), "utf8"));
@@ -152,12 +165,32 @@ test("every substantive line removed from CLAUDE.md survives byte-identical some
   if (removed.length === 0) return;
 
   const hay = haystack();
-  const missing = removed.filter((line) => !hay.includes(line));
+  // NARROW, and deliberately not applied to `docs/`: a removed line also counts as preserved when the NEW
+  // CLAUDE.md still carries the same sentence with different digits -- an edit in place of a pinned count,
+  // never a deletion. Widening this to the whole haystack would let real prose vanish as long as some doc
+  // held a digit-variant of it, which is the hole this test exists to close.
+  const claudeMdNow = digitBlind(norm(readFileSync(join(REPO_ROOT, "CLAUDE.md"), "utf8")));
+  const missing = removed.filter((line) =>
+    !hay.includes(line) && !claudeMdNow.includes(digitBlind(line)));
   assert.deepEqual(missing, [],
     `${missing.length} of ${removed.length} substantive line(s) removed from CLAUDE.md are present in ` +
     `NEITHER the new CLAUDE.md NOR anywhere under docs/ -- this is #181's own failure mode. Move the ` +
     `missing text verbatim into the appropriate docs/ file:\n${missing.slice(0, 20).join("\n")}` +
     (missing.length > 20 ? `\n...and ${missing.length - 20} more` : ""));
+});
+
+test("the digit exemption is NARROW: a removal differing by a WORD is still caught", () => {
+  // The exemption must fire on `36 decision records` -> `37 decision records` and on nothing else.
+  // Same sentence, one word changed rather than one number: not an edit of a pinned count, so the old
+  // text still has to survive somewhere, and this proves the exemption cannot be used to launder a
+  // rewrite past the guard.
+  const before = norm("the index to every guide and runbook, grouped by task, for the 36 decision records");
+  const afterDigits = norm("the index to every guide and runbook, grouped by task, for the 37 decision records");
+  const afterWords = norm("the index to every guide and runbook, grouped by TOPIC, for the 36 decision records");
+  assert.ok(digitBlind(afterDigits).includes(digitBlind(before)),
+    "a digits-only change must be exempt -- this is the case the other two ADR tests force");
+  assert.ok(!digitBlind(afterWords).includes(digitBlind(before)),
+    "a word change must NOT be exempt, however many digits it shares");
 });
 
 test("CONTROL: a line present in the haystack is not reported missing", () => {
