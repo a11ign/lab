@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   missingFields, recordFilename, refusalForDraft, writeRecord, boardWithDraft,
+  nextFreeOrder, collisionRefusal, existingRecords,
 } from "../../../../scripts/board-record.mjs";
 
 const draft = (extra: Record<string, unknown> = {}) => ({
@@ -100,13 +101,22 @@ test("a different claim on the same issue is a different file, and that is visib
 
 // --- the write, once it is reached ---
 
-test("writeRecord writes the draft verbatim, pretty-printed and newline-terminated", () => {
+test("writeRecord writes the draft verbatim but for an ASSIGNED order, pretty-printed and newline-terminated", () => {
+  // #806 changed one thing about "verbatim": a draft with no `order` gains the next free one, because a
+  // writer has no reason to know which values are taken. Every other field is untouched.
   const dir = mkdtempSync(path.join(tmpdir(), "board-record-"));
-  const file = writeRecord(draft(), dir);
+  const { file, order } = writeRecord(draft(), dir, []);
   const written = readFileSync(file, "utf8");
   assert.equal(written.at(-1), "\n");
-  assert.deepEqual(JSON.parse(written), draft());
+  assert.deepEqual(JSON.parse(written), { ...draft(), order });
   assert.deepEqual(readdirSync(dir), [recordFilename(draft())]);
+});
+
+test("#806 an explicitly named order leaves the draft byte-identical", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "board-record-"));
+  const d = draft({ order: 60 });
+  const { file } = writeRecord(d, dir, []);
+  assert.deepEqual(JSON.parse(readFileSync(file, "utf8")), d);
 });
 
 // --- the question asked is "with this draft", not "today" ---
@@ -123,4 +133,71 @@ test("the cap is measured on the board WITH the draft in it, never the board wit
   assert.equal((withDraft as { achievements: unknown[] }).achievements.length, 2);
   assert.deepEqual((withDraft as { achievements: { claim: string }[] }).achievements.at(-1)!.claim,
     "A claim.", "the draft is the last entry, so it is the one the bullet list gains");
+});
+
+// --- #806: order is ASSIGNED, and a collision is refused before anything is written ---
+
+const held = (issue: number, order: number, file = `issue-${issue}.json`) => ({ issue, order, file });
+
+test("#806 the next free order is the highest in use plus a step, and ten when there are none", () => {
+  assert.equal(nextFreeOrder([]), 10);
+  assert.equal(nextFreeOrder([held(1, 10), held(2, 45)]), 55);
+  assert.equal(nextFreeOrder([held(1, 10), held(2, 45), held(3, 20)]), 55,
+    "the highest, not the last — the files are read in directory order, which is not authored order");
+});
+
+test("#806 a record with NO order is written with the next free one, and the value is printed back", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "board-order-"));
+  const { order } = writeRecord(draft(), dir, [held(1, 10), held(2, 40)]);
+  assert.equal(order, 50);
+  assert.equal(JSON.parse(readFileSync(path.join(dir, readdirSync(dir)[0]!), "utf8")).order, 50);
+});
+
+test("#806 an explicit FREE order is honoured — deliberate placement is what the field is for", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "board-order-"));
+  const { order } = writeRecord(draft({ order: 35 }), dir, [held(1, 10), held(2, 40)]);
+  assert.equal(order, 35, "a tool that overrode this would trade one silent wrong for another");
+});
+
+test("#806 THE MUTATION: a taken order REFUSES, names the holder and the free value, writes nothing", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "board-order-"));
+  const records = [held(311, 40, "issue-311-f29021fb.json")];
+  const refusal = refusalForDraft(draft({ order: 40 }), fits, board, records)!;
+  assert.match(refusal, /order 40 is already held by issue-311-f29021fb\.json/);
+  assert.match(refusal, /next free order is 50/, "the reader must not have to go and find what this knows");
+  assert.match(refusal, /Nothing was written/);
+  assert.deepEqual(readdirSync(dir), [], "the write is never reached");
+});
+
+test("#806 a SECOND record for one issue refuses — the same defect one field over", () => {
+  const refusal = refusalForDraft(draft(), fits, board, [held(577, 10, "issue-577-abc.json")])!;
+  assert.match(refusal, /issue 577 already has a record/);
+  assert.match(refusal, /keys achievements on `issue`/);
+});
+
+test("#806 COLLISIONS ARE CHECKED BEFORE THE CAP, so a collision needs no tracker", () => {
+  // The collision check reads files on disk; the cap check reads GitHub. On 2026-09-09 the tracker was
+  // unreachable for fifteen minutes, and a duplicate order should not need a working tracker to detect.
+  const capWouldThrow = () => { throw new Error("the tracker is unreachable"); };
+  const refusal = refusalForDraft(draft({ order: 40 }), capWouldThrow as never, board,
+    [held(311, 40, "issue-311.json")])!;
+  assert.match(refusal, /order 40 is already held/, "it refused without ever calling the cap check");
+});
+
+test("#806 shape is STILL checked before collisions — a missing field is not an order problem", () => {
+  const refusal = refusalForDraft(draft({ evidence: "", order: 40 }), fits, board,
+    [held(311, 40, "issue-311.json")])!;
+  assert.match(refusal, /missing evidence/);
+  assert.doesNotMatch(refusal, /order 40/);
+});
+
+test("#806 existingRecords reads issue and order off disk, and an absent directory is empty", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "board-order-"));
+  writeRecord(draft({ order: 70 }), dir, []);
+  assert.deepEqual(existingRecords(dir).map((r) => [r.issue, r.order]), [[577, 70]]);
+  assert.deepEqual(existingRecords(path.join(dir, "nope")), []);
+});
+
+test("#806 collisionRefusal is silent when the draft names no order at all", () => {
+  assert.equal(collisionRefusal(draft(), [held(311, 40, "x.json")]), null);
 });
