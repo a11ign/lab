@@ -218,14 +218,20 @@ const QUOTED_FIXTURE_FILES = new Set([
  * A record that cannot be parsed is scanned WHOLE. Failing closed is the only safe direction: a malformed
  * record that silently exempted itself would be an escape hatch anybody could open with a typo.
  *
- * ## The line this is the third instance of
+ * ## The line this is the FOURTH instance of
  *
- * **A guard keyed on an OPERATION will find that operation in prose, in records, and on other people's
- * machines, and each of those needs a DIFFERENT answer.** Three today, all of them the guard working:
- * the `.ps1` home roots belonged to the Windows guests and were scoped out (two fleets, two facts); the
- * deprecated local VM's path belongs to a machine nobody has measured, where demanding a value would be
- * the guess #515 forbids arriving through a guard; and this is a quotation, where the only correct edit
- * is none. A guard that answered all three the same way would be wrong three times.
+ * **A guard keyed on an OPERATION will find that operation in prose, in records, on other people's
+ * machines, and in the fixtures that test the guard -- and each needs a DIFFERENT answer.** Four now, all
+ * of them the guard working: the `.ps1` home roots belonged to the Windows guests and were scoped out (two
+ * fleets, two facts); the deprecated local VM's path belongs to a machine nobody has measured, where
+ * demanding a value would be the guess #515 forbids arriving through a guard; a record in
+ * `docs/board/reported/` is a quotation, where the only correct edit is none; and #603's fixtures
+ * (`QUOTED_FIXTURE_FILES` below) quote #584's own outage description verbatim -- home-root and guest-root
+ * literals included, see `guest-paths-are-measured.test.ts` for the sibling guard #584 itself made pass --
+ * the MOST self-defeating of the four, because the fixture exists *precisely* to prove a DIFFERENT guard
+ * works, and finding its literal here is not a violation, it is the evidence. A guard that answered all
+ * four the same way would be wrong four times.
+ * (Deliberately not quoting the literal itself -- doing so trips the sibling guard, as its first draft did.)
  *
  * ## And the finding that outlives the keying
  *
