@@ -6,8 +6,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, strandedByIncompleteDecline, fetchOpenIssues,
-  fetchAllIssues, closedDebris, isClosedDebrisLabel, readyRowsAbsentFromBoard,
+  READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, handClaims, strandedByIncompleteDecline,
+  fetchOpenIssues, fetchAllIssues, closedDebris, isClosedDebrisLabel, readyRowsAbsentFromBoard,
   readyRowsAlreadyMerged, fetchClosingPrRefs, fetchLatestReopenedAt, CHECKS, runCheck,
 } from "../../../../scripts/ready-label-audit.mjs";
 
@@ -31,16 +31,15 @@ test("ready + disputed is caught, exactly tonight's #13", () => {
   assert.deepEqual(violations[0].conflicting, ["disputed"]);
 });
 
-test("#246: ready + in-progress + session:* is caught -- exactly what row-claim.mjs's own comment " +
-  "says this audit exists to catch, and the real state three real rows sat in", () => {
+test("#673: ready + in-progress + session:* is NO LONGER a mutexViolations match -- #246's shape moved " +
+  "to its own check (handClaims, below), since it names a cause row-claim.mjs's own atomicity makes " +
+  "provable rather than a generic pair to remove one of", () => {
   const issues = [
     { number: 230, title: "t", labels: ["backlog", READY_LABEL, "in-progress", "session:worker-judge"] },
     { number: 223, title: "t", labels: ["backlog", READY_LABEL, "in-progress", "session:worker-capture"] },
     { number: 222, title: "t", labels: ["backlog", READY_LABEL, "in-progress", "session:worker-audit"] },
   ];
-  const violations = mutexViolations(issues);
-  assert.equal(violations.length, 3, "all three of #246's real rows must be caught, not a subset");
-  for (const v of violations) assert.deepEqual(v.conflicting, ["in-progress"]);
+  assert.deepEqual(mutexViolations(issues), []);
 });
 
 test("a row carrying ONLY session:* -- dispatched but not started -- is deliberately still pickable-" +
@@ -79,12 +78,12 @@ test("only the ready-carrying rows are scanned -- a clean board scans everything
 
 // --- MUTATION: the rule must not silently stop covering a label ---
 
-test("MUTATION: in-progress is genuinely in MUTEX_LABELS, not just described as such", () => {
-  // #246's own shape -- the state row-claim.mjs's own comment says this audit exists to catch. If this
-  // list ever drops `in-progress` again, the rule keeps working for the other six and goes silent for
-  // exactly the case that motivated the row.
-  assert.ok(MUTEX_LABELS.includes("in-progress"),
-    "in-progress must be in MUTEX_LABELS -- claimed and started rows are not pickable, #246");
+test("MUTATION: in-progress is genuinely OUT of MUTEX_LABELS -- #673 gave it a dedicated check", () => {
+  // If in-progress ever re-enters this list, a hand claim reports as BOTH a generic mutex violation AND
+  // a hand claim, which buries the cause-naming message #673 exists to produce back under the generic
+  // "remove one or the other" wording.
+  assert.ok(!MUTEX_LABELS.includes("in-progress"),
+    "in-progress must NOT be in MUTEX_LABELS -- #673 split it into handClaims/reportHandClaims");
 });
 
 test("MUTATION: review-only is genuinely in MUTEX_LABELS, not just described as such", () => {
@@ -93,6 +92,60 @@ test("MUTATION: review-only is genuinely in MUTEX_LABELS, not just described as 
   // for exactly the case that motivated it.
   assert.ok(MUTEX_LABELS.includes("review-only"),
     "review-only must be in MUTEX_LABELS -- it is #27's own shape, the reason this label exists at all");
+});
+
+// --- handClaims: #673 -- ready + in-progress together, which row-claim.mjs's own atomic label-write
+// can never produce, so this co-occurrence is proof the claim was made some other way ---
+
+test("#673 ACCEPTANCE: a row hand-claimed by applying in-progress + session:x to a ready row is " +
+  "reported as a hand claim", () => {
+  const issues = [
+    { number: 634, title: "sweep row", labels: ["backlog", READY_LABEL, "in-progress", "session:x"] },
+  ];
+  const claims = handClaims(issues);
+  assert.equal(claims.length, 1);
+  assert.equal(claims[0].number, 634);
+  assert.deepEqual(claims[0].sessions, ["session:x"]);
+});
+
+test("#673's own measured rows: all three (#634, #635, #633) are caught, not a subset", () => {
+  const issues = [
+    { number: 634, title: "t", labels: ["backlog", READY_LABEL, "in-progress", "session:worker-a"] },
+    { number: 635, title: "t", labels: ["backlog", READY_LABEL, "in-progress", "session:worker-b"] },
+    { number: 633, title: "t", labels: ["backlog", READY_LABEL, "in-progress", "session:worker-c"] },
+  ];
+  assert.equal(handClaims(issues).length, 3);
+});
+
+test("#673 MUTATION TARGET: a row claimed through row-claim.mjs -- in-progress WITHOUT ready, since " +
+  "writeRowLabels removes ready in the same edit that adds in-progress -- is silent", () => {
+  const issues = [
+    { number: 1, title: "claimed through row-claim", labels: ["backlog", "in-progress", "session:x"] },
+  ];
+  assert.deepEqual(handClaims(issues), [],
+    "row-claim's own mechanism can never leave ready in place, so this must never be flagged");
+});
+
+test("ready alone, not yet claimed, is not a hand claim", () => {
+  const issues = [{ number: 2, title: "genuinely pickable", labels: ["backlog", READY_LABEL] }];
+  assert.deepEqual(handClaims(issues), []);
+});
+
+test("in-progress alone with no ready -- normal claimed-and-started state -- is not a hand claim", () => {
+  const issues = [
+    { number: 3, title: "started normally", labels: ["backlog", "in-progress", "session:x"] },
+  ];
+  assert.deepEqual(handClaims(issues), []);
+});
+
+test("a hand claim with no session:* label yet -- assigned directly, not through session bookkeeping -- " +
+  "is still caught, with sessions reported empty rather than guessed", () => {
+  const issues = [
+    { number: 4, title: "no session label", labels: ["backlog", READY_LABEL, "in-progress"] },
+  ];
+  const claims = handClaims(issues);
+  assert.equal(claims.length, 1);
+  assert.deepEqual(claims[0].sessions, []);
 });
 
 // --- strandedByIncompleteDecline: #449, the population no other check here can see ---
@@ -239,11 +292,14 @@ test("closedDebris: a row with no `state` at all (the pre-#378 shape) is never r
 });
 
 test("closedDebris and mutexViolations disagree on the SAME labels, by design: state is the only thing that changed", () => {
-  const openRow = { number: 4, title: "t", labels: [READY_LABEL, "in-progress"], state: "OPEN" as const };
-  const closedRow = { number: 5, title: "t", labels: [READY_LABEL, "in-progress"], state: "CLOSED" as const };
+  // #673: in-progress moved out of MUTEX_LABELS (see handClaims, above), so this uses `disputed` --
+  // a label that stays in MUTEX_LABELS -- to keep testing the state distinction rather than the
+  // now-moved hand-claim one.
+  const openRow = { number: 4, title: "t", labels: [READY_LABEL, "disputed"], state: "OPEN" as const };
+  const closedRow = { number: 5, title: "t", labels: [READY_LABEL, "disputed"], state: "CLOSED" as const };
   assert.equal(mutexViolations([openRow]).length, 1, "open: a contradiction to resolve");
   assert.equal(closedDebris([openRow]).length, 0, "open: never reported as debris");
-  assert.equal(closedDebris([closedRow]).length, 1, "closed: debris");
+  assert.equal(closedDebris([closedRow]).length, 1, "closed: debris (the READY_LABEL itself qualifies)");
 });
 
 // --- fetchAllIssues: same discipline as fetchOpenIssues, but state IS in the requested shape ---
@@ -592,10 +648,10 @@ test("MUTATION: one refusing check does NOT stop the checks after it -- the whol
   assert.deepEqual(refused, ["board membership"]);
 });
 
-test("CHECKS names all six, so the partial-audit sentence states a true denominator", () => {
-  assert.equal(CHECKS.length, 6);
+test("CHECKS names all seven, so the partial-audit sentence states a true denominator", () => {
+  assert.equal(CHECKS.length, 7);
   assert.deepEqual(CHECKS.map(([what]) => what), [
-    "open issues", "declined rows", "closed issues",
+    "open issues", "hand claims", "declined rows", "closed issues",
     "board membership", "closing PR references", "claim activity",
   ]);
 });
