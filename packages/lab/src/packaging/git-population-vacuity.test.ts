@@ -96,6 +96,13 @@ function discoverGitPopulationTests(): string[] {
  * still literally appear in the file's source below), or `null` with a stated reason no guard applies.
  */
 const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
+  "packages/lab/src/packaging/rescue-hunk.test.ts": {
+    guard: null,
+    note: "NOT a discovery test — it drives `git merge-file` and `git show` on ONE named pair of refs "
+      + "(#705's fixture), so there is no population to be vacuous about. Its end-to-end case skips "
+      + "honestly when either ref is absent rather than passing having examined nothing, which is the "
+      + "same protection a floor gives a discovery test and the reason this needs no guard expression.",
+  },
   "packages/lab/src/gates/inventory-is-control-plane-only.test.ts": {
     guard: "reaching.length > 0",
     note: "guarded — it walks `git ls-files` for readers of `inventoryWorkerUrls` outside packages/control, "
