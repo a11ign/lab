@@ -15,8 +15,9 @@
  * page is incomplete" — `ranOutShortOfTheCensus`'s own header explains why that asymmetry is the safe
  * direction, and a reader who inverts it will overstate what the corpus knows.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { sweepOutcomes, ranOutShortOfTheCensus } from "@a11ign/evidence/conformance";
 
 /** Where the real-page captures live, overridable for a checkout that mounts `runs/` elsewhere. */
@@ -87,4 +88,7 @@ function main() {
   if (!lost.length) console.log("  none — every examined capture's sweeps made at least as many trips as its census");
 }
 
-main();
+// RUN ONLY WHEN INVOKED, never on import -- `entry-points.test.ts` requires it, so that
+// `node -e "import(...)"` can check this file still loads without it doing its work. realpath'd because
+// npm's own .bin symlink would otherwise make the comparison silently false.
+if (import.meta.url === pathToFileURL(process.argv[1] ? realpathSync(process.argv[1]) : "").href) main();
