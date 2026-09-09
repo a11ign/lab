@@ -176,57 +176,99 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
 const SELF = "packages/lab/src/packaging/control-plane-checkout-is-one-fact.test.ts";
 
 /**
- * A RECORD OF THE PAST IS NOT CODE, AND IT IS NOT RENAMED.
+ * Named files, not a directory -- exempted for the identical reason SELF is, and kept exact rather than
+ * a prefix on purpose: "the exemption is the FIELD, not the FILE" above already rejected the broader
+ * directory-wide shape once, and a fixtures/ prefix would be that same trade again, one level up.
  *
- * `docs/board/reported/` holds what an operator actually ran and what it actually printed — the fleet's
- * own evidence trail, quoted. One of those records carries
+ * `owned-path-signoff.test.ts`'s fixtures are real PR bodies fetched verbatim (`gh pr view --json body`,
+ * #603) so that predicate is verified against text nobody wrote for the test. #584's own body quotes a
+ * home-root literal from this file's own subject, one PR before this file existed -- editing the fixture
+ * to dodge this guard would make it describe a body nobody actually posted.
+ */
+const QUOTED_FIXTURE_FILES = new Set([
+  "packages/lab/src/packaging/fixtures/pr-584-body.md",
+  "packages/lab/src/packaging/fixtures/pr-613-body.md",
+]);
+
+/**
+ * A RECORD OF THE PAST IS NOT CODE, AND IT IS NOT RENAMED — BUT THE EXEMPTION IS THE FIELD, NOT THE FILE.
+ *
+ * `docs/board/reported/` holds what an operator actually ran and what it actually printed. One record
+ * carries
  *
  *     "command": "ssh <control-plane> 'cd <the control-plane checkout> && git merge --ff-only origin/main'"
  *
  * which is a real `cd` and cannot interpolate anything: it is a quotation, already redacted to
  * placeholders, and editing it would make the record describe a command **nobody ran**. This repository
  * has produced that defect once already — the rename sweep rewrote ten recorded capture URLs (#534) and
- * an npm error transcript quoted in `packages/scorer/tsconfig.json`, both of which had to be restored to
- * what was recorded.
+ * an npm error transcript quoted in `packages/scorer/tsconfig.json`, both restored to what was recorded.
  *
- * A FILE predicate rather than a target classification, deliberately. Classifying the target would put
- * `<the` in a list of directories, which is nonsense a reader has to decode; and the reason is a property
- * of the FILE — everything in there is a quotation — not of any one path inside it.
+ * ## Why the exemption is keyed on the FIELD and not the directory
+ *
+ * The first version of this skipped the whole of `docs/board/reported/`, and that was wrong in a way
+ * worth writing down because it *looked* narrow. **It is narrow relative to `docs/`; it is not narrow
+ * relative to the record.** A path rule exempts every field a record will ever have — including a future
+ * one that genuinely IS a path a tool reads, an artefact location or an output directory. Under it the
+ * guard would already be silent about that field and nobody would find out.
+ *
+ * So the transcript FIELDS are skipped and everything else in the record is still scanned. The coupling
+ * that objection avoids — the guard knowing the record's schema — is exactly what makes the exemption
+ * narrow: **precision was the thing being traded away, on a guard whose whole value is precision.**
+ *
+ * A record that cannot be parsed is scanned WHOLE. Failing closed is the only safe direction: a malformed
+ * record that silently exempted itself would be an escape hatch anybody could open with a typo.
  *
  * ## The line this is the third instance of
  *
- * **A guard keyed on an operation will find that operation in prose, in records, and on other people's
+ * **A guard keyed on an OPERATION will find that operation in prose, in records, and on other people's
  * machines, and each of those needs a DIFFERENT answer.** Three today, all of them the guard working:
  * the `.ps1` home roots belonged to the Windows guests and were scoped out (two fleets, two facts); the
- * deprecated local VM's path belongs to a machine nobody has measured and demanding a value for it would
- * be the guess #515 forbids; and this is a quotation, where the only correct edit is none. A guard that
- * answered all three the same way would be wrong three times.
+ * deprecated local VM's path belongs to a machine nobody has measured, where demanding a value would be
+ * the guess #515 forbids arriving through a guard; and this is a quotation, where the only correct edit
+ * is none. A guard that answered all three the same way would be wrong three times.
  *
- * NARROW ON PURPOSE. It would be more precise to say "a `command` field inside a reported record is
- * quoted text", and that was rejected: it makes this guard know the record schema, which is more coupling
- * than it buys. The escape-hatch risk is real either way and is pinned by its own test below — a `cd`
- * into an unclassified literal OUTSIDE this directory must still fail, or the boundary has become a way
- * of not being checked.
+ * ## And the finding that outlives the keying
+ *
+ * **A pin asserting the wrong half is indistinguishable from a working one until something breaks the
+ * half it does not watch.** The first escape-hatch test here asserted that the same text in a SOURCE file
+ * is still found — which proves the boundary is not UNLIMITED and says nothing about whether it is
+ * NARROW. `npm run mutate`, widening it, reported `THE GUARD DID NOT BITE`. Only the third assertion
+ * below — a `cd` in ordinary documentation is still a site to classify — makes a widening fail, and it is
+ * needed under either keying.
  */
-const QUOTED_RECORDS = "docs/board/reported/";
+const RECORDS_DIR = "docs/board/reported/";
+
+/** The fields of a reported record that hold QUOTED text rather than anything this repository executes. */
+const TRANSCRIPT_FIELDS = new Set(["command", "stdout", "stderr", "transcript", "output"]);
 
 /**
- * A SECOND quotation directory, for the identical reason: `owned-path-signoff.test.ts`'s fixtures hold
- * real PR bodies (`gh pr view --json body`, verbatim) so that predicate can be verified against text
- * nobody wrote for the test. One of those bodies is #584's own, quoting a home-root literal that is
- * this file's exact subject, one PR earlier -- see `guest-paths-are-measured.test.ts` for the sibling
- * guard #584 itself made pass. Editing the fixture to dodge this guard would make it stop being what
- * #603 asked for: the real thing an author wrote, not a synthesised stand-in shaped to pass. Kept
- * separate from `QUOTED_RECORDS` rather than merged into one array, because the two directories are
- * owned by different rows for different reasons and a shared name would blur that.
+ * A record's source with its transcript field VALUES removed, so every other field is still scanned.
+ * Anything outside `RECORDS_DIR`, and any record that will not parse, is returned untouched.
  *
- * (Deliberately not quoting the literal itself here -- doing so trips exactly the sibling guard this
- * paragraph is about, one file over, as its first draft did.)
+ * @param {string} file @param {string} source
+ * @returns {string}
  */
-const QUOTED_FIXTURES = "packages/lab/src/packaging/fixtures/";
-
-/** Is `file` a quotation of something that already happened, rather than code this repo runs? */
-const isQuotation = (file: string) => file.startsWith(QUOTED_RECORDS) || file.startsWith(QUOTED_FIXTURES);
+export function withoutQuotedTranscripts(file: string, source: string): string {
+  if (!file.startsWith(RECORDS_DIR)) return source;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    return source;   // fail CLOSED: an unparseable record is scanned whole, never exempted
+  }
+  const kept: string[] = [];
+  const walk = (value: unknown, key: string | null): void => {
+    if (key !== null && TRANSCRIPT_FIELDS.has(key)) return;
+    if (Array.isArray(value)) { value.forEach((v) => walk(v, key)); return; }
+    if (value !== null && typeof value === "object") {
+      for (const [k, v] of Object.entries(value)) walk(v, k);
+      return;
+    }
+    kept.push(String(value));
+  };
+  walk(parsed, null);
+  return kept.join("\n");
+}
 
 /**
  * The top-level directories of THIS repository. A relative `cd packages/control/ansible` is a move
@@ -241,7 +283,7 @@ const REPO_SUBDIRECTORIES = new Set(
 function trackedSource(): string[] {
   return execFileSync("git", ["ls-files"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
     .split("\n").filter(Boolean)
-    .filter((f) => f !== SELF && !f.includes("/dist/") && !f.startsWith("runs/"))
+    .filter((f) => f !== SELF && !QUOTED_FIXTURE_FILES.has(f) && !f.includes("/dist/") && !f.startsWith("runs/"))
     // EVERY tracked text file, not a language. The `.mjs`/`.ts` walk is what hid a `.sh`, and narrowing
     // a walk to the languages you expect is the shape this whole file is about.
     .filter((f) => /\.(ts|mjs|js|yml|yaml|sh|ps1|cmd|py|md|json|service|xml)$/.test(f));
@@ -254,10 +296,12 @@ function trackedSource(): string[] {
  * particular text one record happens to contain.
  */
 export function entrySitesIn(file: string, source: string): Array<[string, string]> {
-  if (isQuotation(file)) return [];
   const found: Array<[string, string]> = [];
-  for (const m of stripComments(source).matchAll(ENTERS_A_DIRECTORY)) {
+  for (const m of stripComments(withoutQuotedTranscripts(file, source)).matchAll(ENTERS_A_DIRECTORY)) {
     const target = directoryEntered((m[1] ?? m[2] ?? m[3] ?? m[4]).replace(/[`"'].*$/, ""));
+    // An EMPTY target is `--working-directory=` appearing as a searched-for string rather than as a
+    // built command (`lab-job.test.ts` slices argv between two such markers). Nothing is entered, so
+    // there is nothing to classify -- recorded here rather than silently dropped.
     if (target !== "") found.push([file, target]);
   }
   return found;
@@ -266,15 +310,9 @@ export function entrySitesIn(file: string, source: string): Array<[string, strin
 /** Every discovered site: `[file, whatItEnters]`, one row per occurrence. */
 function entrySites(): Array<[string, string]> {
   const found: Array<[string, string]> = [];
-  for (const file of trackedSource()) {
-    for (const m of stripComments(read(file)).matchAll(ENTERS_A_DIRECTORY)) {
-      const target = directoryEntered((m[1] ?? m[2] ?? m[3] ?? m[4]).replace(/[`"'].*$/, ""));
-      // An EMPTY target is `--working-directory=` appearing as a searched-for string rather than as a
-      // built command (`lab-job.test.ts` slices argv between two such markers). Nothing is entered, so
-      // there is nothing to classify -- recorded here rather than silently dropped.
-      if (target !== "") found.push([file, target]);
-    }
-  }
+  // ONE reader for the real tree and for the tests, so the field exemption cannot be applied in one and
+  // not the other -- the fact-stated-twice shape, which this file would be a poor place to commit.
+  for (const file of trackedSource()) found.push(...entrySitesIn(file, read(file)));
   return found;
 }
 
@@ -301,7 +339,6 @@ test("every site that ENTERS a directory either interpolates the source of truth
     + "that passes having examined nothing is the defect this file exists to prevent (10 on 2026-09-08)");
 
   const unclassified = sites.filter(([file, target]) => {
-    if (isQuotation(file)) return false;   // a quotation, not code -- see above
     // A target that CANNOT be the control plane's checkout, decided by shape rather than by listing
     // every literal. The checkout is `/root/<name>` or the bare `<name>` reached from `/root`; none of
     // these three can be that, and enumerating them one at a time would be a list that drifts.
@@ -348,28 +385,37 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
     + "directory anybody has.",
 };
 
-test("THE BOUNDARY IS NOT AN ESCAPE HATCH -- a `cd` into an unclassified literal outside the quoted-"
-  + "records directory still fails, and the same text inside it does not. A classification that widens "
-  + "into a way of not being checked is worse than the false positive it removed", () => {
-  const quoted = `docs/board/reported/gates/x.json`;
-  const code = `packages/control/src/x.mjs`;
-  // The real record's own text, verbatim: a command an operator ran, redacted to placeholders. It
-  // cannot interpolate the source of truth, because it is a quotation of something that already
-  // happened -- and editing it would make the record describe a command nobody ran.
-  const line = "\"command\": \"ssh <control-plane> 'cd <the control-plane checkout> && git merge'\"";
+test("THE EXEMPTION IS THE FIELD, NOT THE FILE -- a quoted `command` in a reported record is not a use, "
+  + "and the SAME text in any other field of the SAME record still is. That second case is the one that "
+  + "decides path-keying against field-keying, and a path rule cannot see it", () => {
+  const record = "docs/board/reported/gates/x.json";
+  // The real record's own text, verbatim: a command an operator ran on 2026-09-08, redacted to
+  // placeholders. It cannot interpolate the source of truth, because it is a quotation of something that
+  // already happened -- and editing it would make the record describe a command nobody ran.
+  const ran = "ssh <control-plane> 'cd <the control-plane checkout> && git merge --ff-only origin/main'";
 
-  const walked = (file: string) => entrySitesIn(file, line);
-  assert.deepEqual(walked(quoted), [], "a quotation in a reported record is not a use");
-  assert.notDeepEqual(walked(code), [],
-    "the SAME text in a source file must still be found -- if this passes, the boundary has stopped "
-    + "being about records and started being about the string");
-  // AND A DOC THAT IS NOT A RECORD IS STILL CHECKED. Without this line the first two assertions pass
-  // with the boundary widened to `docs/` -- which is precisely what `npm run mutate` reported, and it
-  // was reported as THE GUARD DID NOT BITE rather than as a failure, because a pin asserting the wrong
-  // half is indistinguishable from a working one until something breaks the half it does not watch.
-  assert.notDeepEqual(walked("docs/roles/README.md"), [],
-    "a `cd` in ordinary documentation is still a site to classify -- the boundary is `reported/`, the "
-    + "directory of QUOTATIONS, and not documentation in general");
+  assert.deepEqual(entrySitesIn(record, JSON.stringify({ gate: "g", command: ran })), [],
+    "a transcript field is a quotation, not a use");
+
+  assert.notDeepEqual(entrySitesIn(record, JSON.stringify({ gate: "g", artefactDir: ran })), [],
+    "THE DECIDING CASE. A field that is not a transcript is a path a tool reads, and it must still be "
+    + "classified. Under a path rule the guard is already silent about every future field of every "
+    + "reported record -- narrow relative to `docs/`, not narrow relative to the RECORD, and nobody "
+    + "finds out");
+
+  assert.notDeepEqual(entrySitesIn("packages/control/src/x.mjs", `\`${ran}\``), [],
+    "the same text in a source file is a use, and always was");
+
+  // Without this line the assertions above pass with the exemption widened to every doc: they prove the
+  // boundary is not UNLIMITED and say nothing about whether it is NARROW. `npm run mutate` reported
+  // exactly that, as THE GUARD DID NOT BITE rather than as a failure -- a pin asserting the wrong half
+  // is indistinguishable from a working one until something breaks the half it does not watch.
+  assert.notDeepEqual(entrySitesIn("docs/roles/README.md", `\`${ran}\``), [],
+    "a `cd` in ordinary documentation is still a site to classify");
+
+  assert.notDeepEqual(entrySitesIn(record, `{ not json at all: cd /root/whatever &&`), [],
+    "an unparseable record is scanned WHOLE. Failing closed is the only safe direction: a record that "
+    + "exempted itself by being malformed would be an escape hatch anybody could open with a typo");
 });
 
 test("no file names a directory under a home root that should be the checkout -- the SECOND question, "
@@ -377,7 +423,6 @@ test("no file names a directory under a home root that should be the checkout --
   + "an operation, so no amount of operation-keying finds it", () => {
   const named: string[] = [];
   for (const file of trackedSource()) {
-    if (isQuotation(file)) continue;   // a quotation, not code -- see QUOTED_FIXTURES above
     for (const m of stripComments(read(file)).matchAll(UNDER_A_HOME_ROOT)) {
       const segment = m[1].replace(/\.+$/, "");
       if (segment === "") continue;
