@@ -9,6 +9,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   regionPathsFromBody, extractRegionSection, declaredRegionFiles,
+  extractLabeledSection, hasTemplateField,
 } from "../../../../scripts/region-paths.mjs";
 
 test("extracts a backticked path from a Region section", () => {
@@ -88,4 +89,39 @@ test("a genuine Region-declared file with an extension is still extracted -- the
   const body = "## Region\n\n`scripts/row-claim.mjs` and `packages/lab/src/packaging/row-claim.test.ts`.\n";
   assert.deepEqual(declaredRegionFiles(body),
     ["scripts/row-claim.mjs", "packages/lab/src/packaging/row-claim.test.ts"]);
+});
+
+// --- extractLabeledSection / hasTemplateField: #707's generalisation, any field name ---
+
+test("extractLabeledSection: a heading section's content runs to the next heading, for a field other "
+  + "than Region", () => {
+  const body = "## Acceptance\n\n```\nnpx tsx --test x\n```\n\n## Next\n\nirrelevant\n";
+  assert.equal(extractLabeledSection(body, "Acceptance"), "```\nnpx tsx --test x\n```");
+});
+
+test("extractLabeledSection: a hyphenated, multi-word field (\"Open-check\") matches the real template's "
+  + "own longer heading text (\"Open-check -- the command that shows this row is still open\")", () => {
+  const body = "## Open-check -- the command that shows this row is still open\n\n"
+    + "```\ngh issue view 707 --json state\n```\n";
+  assert.equal(extractLabeledSection(body, "Open-check"), "```\ngh issue view 707 --json state\n```");
+});
+
+test("extractLabeledSection: an inline `Field:` line works exactly like Region's", () => {
+  assert.equal(extractLabeledSection("Acceptance: npm test", "Acceptance"), "npm test");
+});
+
+test("extractLabeledSection: absent entirely returns null", () => {
+  assert.equal(extractLabeledSection("no headings here", "Acceptance"), null);
+});
+
+test("extractLabeledSection: one field's heading does not match a DIFFERENT field's name -- word-bounded, "
+  + "not a bare substring (\"Region\" must not match inside some other word)", () => {
+  const body = "## Regional notes\n\nsomething unrelated\n";
+  assert.equal(extractLabeledSection(body, "Region"), null);
+});
+
+test("hasTemplateField: false for a heading with nothing under it before the next one", () => {
+  const body = "## Region\n\n## Acceptance\n\nreal content\n";
+  assert.equal(hasTemplateField(body, "Region"), false);
+  assert.equal(hasTemplateField(body, "Acceptance"), true);
 });
