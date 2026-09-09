@@ -194,6 +194,11 @@ const SUBTYPES_WITHOUT_ACCEPTANCE_COVERAGE = new Set<string>([
   // construction, so an acceptance pair would test the RULE, which `rules:gate` already does against the
   // corpus case once it is captured. Revisit if this subtype ever gains a trained head.
   "2.4.7:script-blur-completed",
+  // "1.3.5:input-purpose-invalid" -- issue #79, rule built by #869 (2026-09-09). Same reasoning as the
+  // entry just above: its one positive (`input-purpose-invalid-signup`) is `provisional` (no worker
+  // census exists yet -- issue #170) and `modelHead: false` (a single record cannot fit a head
+  // regardless), so held-out acceptance has nothing to measure here by construction.
+  "1.3.5:input-purpose-invalid",
   // EMPTY OTHERWISE, AND IT STARTED AT EIGHT THIS MORNING. Every corpus subtype now has a held-out pair.
   //
   // The eight were not eight oversights. Seven were INEXPRESSIBLE: `pair()` enumerated `probeForms` and
