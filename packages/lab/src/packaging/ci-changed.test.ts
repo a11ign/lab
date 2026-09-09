@@ -606,8 +606,17 @@ test("ci.yml triggers on pull_request AND merge_group -- no push trigger at all,
  */
 test("#690: every pull_request job is gated on the PR still being OPEN -- `edited` fires after a merge too", () => {
   const doc = parseYaml(readWorkflow("ci.yml"));
-  assert.deepEqual(doc.on.pull_request.types, ["opened", "synchronize", "reopened", "edited"],
+  assert.deepEqual(doc.on.pull_request.types,
+    ["opened", "synchronize", "reopened", "edited", "labeled", "unlabeled"],
     "`edited` is deliberate -- acceptance reads the PR body -- and it is what reaches a closed PR");
+
+  // `labeled`/`unlabeled` JOINED THE LIST 2026-09-09 and they reach a closed PR the same way `edited`
+  // does: anything that strips a label after a merge re-triggers this workflow. They are here because
+  // `gate` refuses a `hold:<session>` label, and a hold is placed by adding a label -- which changes no
+  // file and moves no commit, so without these two types a hold on a GREEN PR never re-runs the check
+  // that would refuse it. The state gate below is what keeps them from producing permanent red on merged
+  // heads, and `mergeSafetyVerdict` carries the same rule in code: a closed PR is never refused for a
+  // hold, because a closed PR cannot merge.
 
   // A REAL CAST, NOT A JSDOC ONE. This file is `.ts`, where `/** @type {...} */ (x)` is a comment and
   // nothing else -- `tsx --test` and eslint both accept it, and only `tsc` says `'job' is of type
