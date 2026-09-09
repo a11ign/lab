@@ -144,7 +144,7 @@ test("THE WIRING, not just the logic: the job running this check checks out FULL
   // this: a pure function tested exhaustively, wired to an input it never receives. That is this
   // repository's own rule -- test a check in the direction it will actually run.
   const ci = readFileSync(path.join(REPO, ".github/workflows/ci.yml"), "utf8");
-  const job = ci.split(/^  mergeSafety:$/m)[1]?.split(/^  \S/m)[0] ?? "";
+  const job = ci.split(/^ {2}mergeSafety:$/m)[1]?.split(/^ {2}\S/m)[0] ?? "";
   assert.ok(job.includes("workflow-lane-check.mjs"),
     "this test is pinned to mergeSafety; if the step moved, move this with it rather than deleting it");
   assert.match(job, /fetch-depth:\s*0/,
