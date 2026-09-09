@@ -556,7 +556,7 @@ test("declineRow returns a dispatched-but-not-started row to genuinely unclaimed
     return "";
   };
   const result = declineRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
-  assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, statusMoved: true });
+  assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, closed: false, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall!.includes(CLAIM_LABEL) && editCall!.includes("session:worker-contracts"));
   assert.ok(!editCall!.includes("--add-label"),
@@ -574,7 +574,7 @@ test("declineRow also clears STARTED_LABEL when a started row is declined", () =
     return "";
   };
   const result = declineRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
-  assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, statusMoved: true });
+  assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, closed: false, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall!.includes(STARTED_LABEL));
 });
@@ -596,7 +596,7 @@ test("#449 ACCEPTANCE: a claim-then-decline of a row that WAS `ready` restores `
   const moveCalls: [number, string][] = [];
   const result = declineRow(171, "worker-audit",
     { run, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
-  assert.deepEqual(result, { declined: true, restoredReady: true, blocked: false, statusMoved: true });
+  assert.deepEqual(result, { declined: true, restoredReady: true, blocked: false, closed: false, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit")!;
   assert.ok(editCall.includes(READY_LABEL) && editCall[editCall.indexOf(READY_LABEL) - 1] === "--add-label",
     "ready must be ADDED back, not merely absent from the removal list");
@@ -620,7 +620,7 @@ test("#449 ACCEPTANCE: MUTATION TARGET -- a decline carrying --blocked leaves `b
   const result = declineRow(171, "worker-audit", { run,
     moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; },
     blockedReason: "found it depends on unmerged work" });
-  assert.deepEqual(result, { declined: true, restoredReady: false, blocked: true, statusMoved: true });
+  assert.deepEqual(result, { declined: true, restoredReady: false, blocked: true, closed: false, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit")!;
   assert.ok(editCall.includes(BLOCKED_LABEL), "blocked must be added");
   assert.ok(!editCall.includes(READY_LABEL), "ready must NOT be added -- the decline is itself a finding");
@@ -628,6 +628,69 @@ test("#449 ACCEPTANCE: MUTATION TARGET -- a decline carrying --blocked leaves `b
   assert.ok(commentCall, "the reason must be recorded somewhere a future reader can see it");
   assert.match(commentCall!.join(" "), /found it depends on unmerged work/);
   assert.deepEqual(moveCalls, [], "no Project Status move for a blocked decline -- no verified option to move to");
+});
+
+// --- #752: a CLOSED row has no lane to go back to -- decline must not restore `ready` onto one ---
+
+test("#752 REGRESSION: #721's real shape -- a claimed, was-ready row that has since CLOSED must NOT "
+  + "have `ready` restored, even though WAS_READY_LABEL says it was `ready` before the claim", () => {
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      return JSON.stringify({ number: 721, title: "A row", state: "CLOSED",
+        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }, { name: WAS_READY_LABEL }] });
+    }
+    return "";
+  };
+  const moveCalls: [number, string][] = [];
+  const result = declineRow(721, "worker-contracts",
+    { run, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
+  assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, closed: true, statusMoved: true });
+  const editCall = calls.find((a) => a[1] === "edit")!;
+  assert.ok(!editCall.includes("--add-label"), "nothing is added back onto a closed row");
+  assert.ok(editCall.includes(CLAIM_LABEL) && editCall.includes(WAS_READY_LABEL),
+    "the claim labels still come OFF -- the row genuinely has no claim any more");
+  assert.deepEqual(moveCalls, [], "no Project Status move for a closed row -- there is no board lane to return to");
+});
+
+test("#752: a CLOSED row is unaffected by --blocked -- closed wins over every other reason to add a label", () => {
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      return JSON.stringify({ number: 721, title: "A row", state: "CLOSED",
+        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }, { name: WAS_READY_LABEL }] });
+    }
+    return "";
+  };
+  const result = declineRow(721, "worker-contracts",
+    { run, moveStatus: () => ({ moved: true }), blockedReason: "found it depends on unmerged work" });
+  assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, closed: true, statusMoved: true });
+  const editCall = calls.find((a) => a[1] === "edit")!;
+  assert.ok(!editCall.includes("--add-label"), "blocked is not added either -- a closed row needs nothing next");
+  assert.ok(!calls.some((a) => a[1] === "comment"), "no blocked-reason comment on a row that is already done");
+});
+
+test("#752: an OPEN row's decline is UNCHANGED by the closed check -- `state` present but not CLOSED "
+  + "must behave exactly as the #449 case above", () => {
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      return JSON.stringify({ number: 171, title: "A row", state: "OPEN",
+        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-audit" }, { name: STARTED_LABEL },
+          { name: WAS_READY_LABEL }] });
+    }
+    return "";
+  };
+  const moveCalls: [number, string][] = [];
+  const result = declineRow(171, "worker-audit",
+    { run, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
+  assert.deepEqual(result, { declined: true, restoredReady: true, blocked: false, closed: false, statusMoved: true });
+  const editCall = calls.find((a) => a[1] === "edit")!;
+  assert.ok(editCall.includes(READY_LABEL) && editCall[editCall.indexOf(READY_LABEL) - 1] === "--add-label");
+  assert.deepEqual(moveCalls, [[171, "Ready"]]);
 });
 
 test("declineRow refuses to release a row held by someone else", () => {
@@ -905,7 +968,7 @@ test("MUTATION target: declineRow moves Status BACK to 'Ready' on a successful d
   const moveCalls: [number, string][] = [];
   const result = declineRow(400, "worker-contracts",
     { run, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
-  assert.deepEqual(result, { declined: true, restoredReady: true, blocked: false, statusMoved: true });
+  assert.deepEqual(result, { declined: true, restoredReady: true, blocked: false, closed: false, statusMoved: true });
   assert.deepEqual(moveCalls, [[400, "Ready"]]);
 });
 
@@ -916,12 +979,12 @@ test("declineRow's own declined:true does not depend on the Status move succeedi
       { name: WAS_READY_LABEL }] });
   const notOnBoardResult = declineRow(400, "worker-contracts",
     { run, moveStatus: () => ({ moved: false, reason: "not on the Project", notOnBoard: true }) });
-  assert.deepEqual(notOnBoardResult, { declined: true, restoredReady: true, blocked: false,
+  assert.deepEqual(notOnBoardResult, { declined: true, restoredReady: true, blocked: false, closed: false,
     statusMoved: false, notOnBoard: true, statusReason: "not on the Project" });
 
   const halfAppliedResult = declineRow(400, "worker-contracts",
     { run, moveStatus: () => ({ moved: false, reason: "gh: rate limited", notOnBoard: false }) });
-  assert.deepEqual(halfAppliedResult, { declined: true, restoredReady: true, blocked: false,
+  assert.deepEqual(halfAppliedResult, { declined: true, restoredReady: true, blocked: false, closed: false,
     statusMoved: false, notOnBoard: false, statusReason: "gh: rate limited" });
 });
 
