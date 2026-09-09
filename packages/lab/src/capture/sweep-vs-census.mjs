@@ -78,11 +78,16 @@ export function sweepAgainstCensus(capture) {
   // WHEN THE CENSUS WAS READ, or `null` because the record does not say. `structureCensus.atMs` is stamped
   // at MARK time (`capture-core.mjs`'s `mark` does `Date.now() - startedAt` inside `entries.push`), and the
   // census is READ at the top of `navigateByStructure` and MARKED after it returns -- so that field is off
-  // by the whole capture. `readAtMs` is the field that would say, and no capture carries it yet.
+  // by the whole capture. `readAt.startedAtMs` is the field that says -- added by #854, so a capture taken
+  // before that lands has no `readAt` at all and gets `null` here, which is the state the gate is for.
+  //
+  // NESTED because the census's element counts are read off a DENYLIST (`censusElementCounts` takes every
+  // numeric field except `event` and `atMs`), so a flat `readAtMs` on that mark would arrive downstream as
+  // an element type. Read the nested field, never invent a flat one.
   const censusMark = diagnostics.find((/** @type {any} */ m) =>
     m && typeof m === "object" && m.event === "structureCensus");
-  const censusReadAt = typeof (/** @type {any} */ (censusMark)?.readAtMs) === "number"
-    ? /** @type {any} */ (censusMark).readAtMs : null;
+  const readAt = /** @type {any} */ (censusMark)?.readAt;
+  const censusReadAt = typeof readAt?.startedAtMs === "number" ? readAt.startedAtMs : null;
   return diagnostics
     .filter((/** @type {any} */ m) => m && typeof m === "object" && m.event === "sweep"
       && typeof m.type === "string" && typeof m.error !== "string")
@@ -144,8 +149,8 @@ export const RATIO_IS_AGREEMENT_WITHIN = 1.25;
  *
  * **This is the default today and it is not a placeholder.** No capture records when its census was read
  * — `structureCensus.atMs` is the MARK time and is off by the whole capture — so simultaneity cannot be
- * established from any record on disk. When `readAtMs` ships, captures carrying it get a real verdict and
- * older ones keep this one. `heading` is the nearest thing to a control and shows why it matters: no
+ * established from any record on disk. #854 adds `readAt.startedAtMs`; captures carrying it get a real
+ * verdict and older ones keep this one. `heading` is the nearest thing to a control and shows why it matters: no
  * `onItem`, walks at ~100 s, `found` **80 on all five captures** while the census moved 83 → 69.
  *
  * @param {readonly (number | null)[]} ratios one per capture, `null` where there was no denominator
