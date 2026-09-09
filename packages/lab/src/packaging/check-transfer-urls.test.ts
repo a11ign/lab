@@ -43,7 +43,8 @@ test("the vacuity guard: the walk finds a real, non-trivial population in the re
   // are moved to REPO by the same reasoning (#647), and this test's job is catching the discovery pattern
   // breaking, not catching the population shrinking on purpose.
   assert.ok(found.length >= 20,
-    `found only ${found.length} a11ign/a11ign URL(s) -- 26 were found across 22 files on 2026-09-09; a `
+    `found only ${found.length} a11ign/a11ign URL(s) -- 21 were found across 19 files on 2026-09-09 `
+    + "(#647 moved five more copy-paste-execute bootstrap/clone sites off PRODUCT_REPO, down from 26); a "
     + "shrunk count means the discovery pattern stopped matching, not that the tree needs fewer checked");
 });
 
