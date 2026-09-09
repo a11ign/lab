@@ -291,9 +291,17 @@ async function comparePage(/** @type {any} */ page, /** @type {string} */ worker
   // The fingerprint's own statement that the page's SHAPE moved, which is a different claim from content
   // drifting -- and still worth separating, because it says the probes changed the page rather than time.
   const pageMoved = [a1, b, a2].some((/** @type {any} */ c) => pageChangedUnderProbes(c.capture));
-  const verdict = ordering.length ? (pageMoved ? "PAGE-MOVED" : treatment.verdict) : "SAME";
+  // DIFFERENT_DOCUMENT FIRST, and it is not defensive tidying. `compareCapture` returns no `changes` for
+  // it (#687), so `ordering` is empty and this would otherwise fall to "SAME" -- a gate reporting that two
+  // captures of DIFFERENT PAGES agreed about probe ordering, which is the exact "clean report over an
+  // unexamined tree" shape this file's own control was built to avoid one layer up.
+  const servedDifferently = [treatment, control].find((c) => c.verdict === "DIFFERENT_DOCUMENT");
+  const verdict = servedDifferently ? "DIFFERENT-DOCUMENT"
+    : ordering.length ? (pageMoved ? "PAGE-MOVED" : treatment.verdict) : "SAME";
   return { page: page.url ?? page.path, worker, verdict, changes: ordering,
     phrases: treatment.phrases, remedied, pageMoved,
+    // WHICH documents, when they differed. A verdict naming no page is one nobody can act on.
+    servedDifferently: servedDifferently?.identity.differing ?? null,
     // Named so a reader can see the control did its job. A gate that silently subtracts is one nobody can
     // check, and "explained by time" is exactly the claim that needs to be auditable.
     explainedByTime: treatment.changes.length - ordering.length };
@@ -368,6 +376,10 @@ function report_(/** @type {any[]} */ outcomes, /** @type {number} */ workerCoun
   }
 
   const differing = judged.filter((r) => r.verdict === "CHANGED" || r.verdict === "DRIFT");
+  // UNEXAMINED, not failed, and not a pass either (#687). Three captures of DIFFERENT DOCUMENTS cannot
+  // answer whether ORDER mattered -- the same reasoning this file already applies to a page that moved
+  // under its own probes. Left out of `differing`, it would have counted as an examined PASS.
+  const servedDifferently = judged.filter((/** @type {any} */ r) => r.verdict === "DIFFERENT-DOCUMENT");
   const unexercised = judged.filter((/** @type {any} */ r) => r.remedied === false);
   const { undeclared: allUndeclared, expected: expectedMovers, stale: staleDeclarations } =
     classifyMovers(judged, PAGES);
@@ -408,6 +420,16 @@ function report_(/** @type {any[]} */ outcomes, /** @type {number} */ workerCoun
       + "and did not. The declaration has outlived its reason — delete it, and let the page count again:\n");
     for (const r of staleDeclarations) process.stdout.write(`    ${r.page}\n`);
   }
+  if (servedDifferently.length) {
+    process.stdout.write(`\n${servedDifferently.length} page(s) were SERVED A DIFFERENT DOCUMENT between `
+      + "captures, so the ordering question is unanswerable for them — the three captures are not of one "
+      + "page. Counted as unexamined rather than as passes:\n");
+    for (const r of servedDifferently) {
+      process.stdout.write(`    ${r.page}: ${(r.servedDifferently ?? [])
+        .map((/** @type {any} */ d) => `${d.component} ${JSON.stringify(d.before)} -> ${JSON.stringify(d.after)}`)
+        .join("; ")}\n`);
+    }
+  }
   if (unexercised.length) {
     process.stdout.write(`\n${unexercised.length} page(s) agreed WITHOUT the browse-mode remedy running. `
       + "That is agreement by luck, not evidence the state is restored, so it is not counted as examined.\n");
@@ -417,7 +439,8 @@ function report_(/** @type {any[]} */ outcomes, /** @type {number} */ workerCoun
       // A judged-but-unexaminable page is `result: null` to the fleet verdict for the same reason an
       // errored one is: coverage counts what was ANSWERED, and these three cases have no answer.
       result: o.result && !moved.includes(o.result) && !unexercised.includes(o.result)
-        && !expectedMovers.includes(o.result) && !liveMovers.includes(o.result) ? o.result : null,
+        && !expectedMovers.includes(o.result) && !liveMovers.includes(o.result)
+        && !servedDifferently.includes(o.result) ? o.result : null,
       error: o.error,
     })),
     { of: PAGES.length - expectedMovers.length - liveMovers.length, what: `corpus pages and live sites, each captured ${CAPTURES_PER_PAGE}x (control, treatment, control)`,
