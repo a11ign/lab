@@ -119,13 +119,24 @@ function candidateBlocks(file: string, text: string): string[] {
  * The steps array of a parsed block, wherever it lives -- a full workflow nests it under
  * `jobs.<name>.steps`, while `docs/github-action.md`'s excerpt has a bare top-level `steps:` because it
  * is a job BODY rather than a complete workflow. Both are legitimate shapes for a documented snippet.
+ *
+ * #558: THE JOB THAT ACTUALLY REFERENCES THE ACTION, not just "the first job with any steps array" --
+ * `consumer-gate.yml` gained a `check-pin` job (generator-added infrastructure, ubuntu-latest, its own
+ * `actions/checkout` for ancestry/diff checks) that runs BEFORE the `a11y` job in the file. The old
+ * "first job with a steps array" picked `check-pin` for a multi-job workflow: its checkout step made
+ * `checkoutIndex = 0`, its steps have no `a11y-witness` reference at all so `actionIndex = -1`, and
+ * `0 > -1` false-flagged "checkout appears AFTER the action" on a job that never mentions the action.
+ * Iterating every job and taking the one whose steps actually contain the reference fixes this for any
+ * number of unrelated jobs, in any order, rather than assuming there is exactly one job with steps.
  */
 function stepsOf(parsed: unknown): Step[] | null {
   if (parsed === null || typeof parsed !== "object") return null;
   const doc = parsed as { steps?: Step[]; jobs?: Record<string, { steps?: Step[] }> };
   if (Array.isArray(doc.steps)) return doc.steps;
   for (const job of Object.values(doc.jobs ?? {})) {
-    if (Array.isArray(job.steps)) return job.steps;
+    if (Array.isArray(job.steps) && job.steps.some((s) => /a11y-witness/.test((s as Step).uses ?? ""))) {
+      return job.steps;
+    }
   }
   return null;
 }
@@ -199,6 +210,23 @@ test("CONTROL: a snippet with the checkout step first passes the same check", ()
   const actionIndex = steps!.findIndex((s) => /a11y-witness/.test(s.uses ?? ""));
   const checkoutIndex = steps!.findIndex((s) => /^actions\/checkout@/.test(s.uses ?? ""));
   assert.ok(checkoutIndex !== -1 && checkoutIndex < actionIndex);
+});
+
+test("#558 MUTATION TARGET: a job that runs BEFORE the action-referencing job, and carries its OWN "
+  + "unrelated checkout step, does not get mistaken for the documented workflow -- consumer-gate.yml's "
+  + "own shape, once check-pin was added ahead of a11y in the file", () => {
+  const multiJob = "jobs:\n  check-pin:\n    steps:\n      - uses: actions/checkout@v4\n"
+    + "      - run: echo pin check\n"
+    + "  a11y:\n    steps:\n      - uses: actions/checkout@v4\n"
+    + "      - uses: DanBeckDev/a11y-witness@main\n        with:\n          url: https://example.com\n";
+  const steps = stepsOf(parse(multiJob));
+  assert.ok(steps, "must find a steps array at all");
+  const actionIndex = steps!.findIndex((s) => /a11y-witness/.test(s.uses ?? ""));
+  const checkoutIndex = steps!.findIndex((s) => /^actions\/checkout@/.test(s.uses ?? ""));
+  assert.ok(actionIndex !== -1, "must be the a11y job's steps, which actually reference the action -- "
+    + "not check-pin's, which has a checkout but no a11y-witness reference at all");
+  assert.ok(checkoutIndex !== -1 && checkoutIndex < actionIndex,
+    "a11y's own checkout, correctly ordered before its own action step, must not be reported as late");
 });
 
 test("MUTATION: a uses: line inside a # comment is not mistaken for a real step -- #530's exact shape", () => {
