@@ -21,6 +21,13 @@
  * number, or name a different commit, and this fails. That is the repo's own rule for a reproduction --
  * what you ran, what it said, and as of which commit -- applied to a document.
  *
+ * **AND IT SPLITS IN TWO, BECAUSE CI CANNOT REACH HISTORY.** `actions/checkout@v4` clones at depth 1 and
+ * the `docs` job -- the one that runs this directory whenever a document changes -- does not deepen. So
+ * the count half SKIPS there, loudly, naming the commit it could not reach and the line that would let it
+ * (`History: full` in the PR body); and the half that needs no history at all -- every pinned file still
+ * exists -- runs everywhere. Found by CI rather than by reading: the first version THREW on a shallow
+ * clone, which would have refused every docs change over a question it never asked.
+ *
  * **What was kept, deliberately.** The doc's row defends its pin: two 2026-09-06 bundle branches
  * CONFLICTED on exactly these numbers, and "a pinned number turned a silent drift into a merge conflict"
  * three times. That property is NOT the assertion -- it is two branches editing the same prose line, and
@@ -48,10 +55,11 @@
  * test still pass" — to reading the code, which is what this same audit pass did for the majority of its
  * findings.
  */
+// requires: history
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
@@ -67,22 +75,40 @@ function countLines(text: string): number {
 }
 
 /**
- * THE FILE AS IT WAS AT THE COMMIT THE CLAIM NAMES — the whole point of #703.
- *
- * A shallow clone cannot answer this, and answering it wrongly is worse than not answering: a missing
- * object read as "no such file" would report every claim as broken. So an unresolvable ref THROWS with
- * the command that fixes it, and a reader who runs that command passes.
+ * THE FILE AS IT WAS AT THE COMMIT THE CLAIM NAMES — the whole point of #703. `null` when this checkout
+ * cannot reach that commit, which is a different answer from "the claim is wrong" and must not render as
+ * one: a missing object read as a mismatch reports all six claims broken on every shallow clone.
  */
-function fileAtCommit(sha: string, relativePath: string): string {
+function fileAtCommit(sha: string, relativePath: string): string | null {
   try {
     return execFileSync("git", ["-C", REPO, "show", `${sha}:${relativePath}`],
-      { encoding: "utf8", env: sandboxGitEnv(), maxBuffer: 64 * 1024 * 1024 });
-  } catch (cause) {
-    throw new Error(`could not read ${relativePath} at ${sha} — this checkout does not have that commit. `
-      + `Run \`git fetch --unshallow origin main\` (or, in CI, declare \`requires: history\` in the PR `
-      + `body) and run this test again. The claim is not wrong; it could not be asked.`, { cause });
+      { encoding: "utf8", env: sandboxGitEnv(), maxBuffer: 64 * 1024 * 1024,
+        stdio: ["ignore", "pipe", "ignore"] });
+  } catch {
+    return null;
   }
 }
+
+/**
+ * WHY THIS SKIPS RATHER THAN FAILS, AND WHY IT SAYS SO LOUDLY.
+ *
+ * `actions/checkout@v4` clones at depth 1, so CI's `docs` job — which runs this whole directory — cannot
+ * reach a historical commit, and the acceptance job reaches one only when the PR body carries the bare
+ * line `History: full`. A test that FAILED there would refuse every docs change over a question it never
+ * asked, which is #703's own defect wearing different clothes.
+ *
+ * The repo's precedent, from CLAUDE.md: the pre-push hook "SKIPS corpus-dependent checks LOUDLY when
+ * `runs/` is absent, rather than passing quietly", and `verify.corpus.test.ts` "skips honestly in CI".
+ * A skip naming what it could not ask is honest; a pass is not.
+ *
+ * What runs everywhere regardless is `every pinned file exists` below: a rename or a deletion is a
+ * documented fact changing, and it is caught at depth 1 with no history at all.
+ */
+const NO_HISTORY = (sha: string, file: string) =>
+  `SKIPPED, NOT PASSED: this checkout cannot reach ${sha}, so ${file}'s claim could not be asked. `
+  + "Locally: `git fetch --unshallow origin main`. In CI: put the bare line `History: full` in the PR "
+  + "body — that is what `acceptance-commands.mjs` reads. (`requires: history` is the TEST FILE header "
+  + "convention, not the PR one; this message named the wrong one until CI said so.)";
 
 interface FileFactPin {
   /**
@@ -132,15 +158,17 @@ const PINS: FileFactPin[] = [
 ];
 
 for (const { claim, pattern, file } of PINS) {
-  test(`backlog.md's claim survives: ${claim}`, () => {
+  test(`backlog.md's claim survives: ${claim}`, (t) => {
     const match = BACKLOG.match(pattern);
     // The vacuity guard this file's header promises: a pattern matching nothing means the WORDING moved,
     // which is a reason to fix the pattern, not a reason to skip the check silently.
     assert.ok(match?.groups, `could not find the phrase this pin looks for in docs/backlog.md -- the row's `
       + `wording changed and this pattern needs updating, not removing: ${pattern}`);
     const { count, sha } = match!.groups!;
+    const blob = fileAtCommit(sha!, file);
+    if (blob === null) return t.skip(NO_HISTORY(sha!, file));
     const claimed = Number(count!.replace(/,/g, ""));
-    const actual = countLines(fileAtCommit(sha!, file));
+    const actual = countLines(blob);
     assert.equal(claimed, actual,
       `docs/backlog.md claims ${file} was ${claimed} lines (\`wc -l\`) at ${sha}, and at that commit it `
       + `was actually ${actual}. This is a claim about a FIXED commit, so the file's size today cannot `
@@ -148,6 +176,16 @@ for (const { claim, pattern, file } of PINS) {
       + "at. Do not 'fix' this by re-measuring against HEAD; re-date the claim instead.");
   });
 }
+
+test("every pinned file exists — the half that runs with no history at all", () => {
+  // A rename or a deletion IS a documented fact changing, and it is the half of #703's mutation that
+  // needs no historical commit: catchable on the depth-1 clone CI's `docs` job has.
+  for (const { claim, file } of PINS) {
+    assert.ok(existsSync(`${REPO}${file}`),
+      `docs/backlog.md's claim "${claim}" is about ${file}, which does not exist. Either the file moved `
+      + "and the row should say so, or the row names a path that was never right.");
+  }
+});
 
 test("no pin's claim restates the number, because the copy nobody compares is the one that drifts", () => {
   // 2026-09-09, #703: five of six `claim` strings carried a stale integer -- 4,074 for a 4,272-line file,
