@@ -759,6 +759,17 @@ test("claimsNobodyIsWorking: a claim made TEN MINUTES ago with no branch is NOT 
   assert.deepEqual(flagged, [], "a fresh claim with no branch yet is a session starting, not a dead claim");
 });
 
+test("#755 formatDeadClaimLine: the line names the criterion (#723), the same way the OK line already did", async () => {
+  const { formatDeadClaimLine } = await import("../../../../scripts/ready-label-audit.mjs");
+  // #755's own complaint: the clean-path line already said "the same three legs as `ceo`'s release rule
+  // (#723)"; the flagged-path line said nothing, so a reader could not tell a criterion change from a
+  // state change just by reading the report. This is the regression test for that gap, on #426's own shape.
+  const line = formatDeadClaimLine({ number: 426, title: "commented, not pushed",
+    sessions: ["session:worker-audit"], minutes: null });
+  assert.match(line, /#723/, "the flagged line must cite the same rule the OK line cites");
+  assert.match(line, /DEAD-CLAIM {2}#426 "commented, not pushed" -- held by session:worker-audit, /);
+});
+
 // --- runCheck: a check that could not ASK must not silence the ones after it ---
 //
 // Measured 2026-09-08: `main` ran six checks as six `try` blocks each ending in `return`, and the
