@@ -46,6 +46,12 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+
+// #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
+// rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
+// population must be derived from a real import, never from scanning source text.
+declareTreeWideGuard();
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "runs", ".venv", "coverage", "backups"]);
