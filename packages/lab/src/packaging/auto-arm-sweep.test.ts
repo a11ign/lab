@@ -12,6 +12,11 @@
  * paid for `refreshBrowseBuffer` (a correct remedy whose trigger was never set, inert on every capture
  * ever taken) and for `scorer:verify` (a security check nothing invoked).
  */
+// no-token: gh
+//
+// #827. This file exercises `sweepDecision` (pure, fixtures in and a verdict out) and reads source text
+// with `readFileSync`. `auto-arm-sweep.mjs`'s `gh` helper is in the closure because it is in the module,
+// not because anything here calls it -- `main()` is never invoked.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
