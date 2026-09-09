@@ -11,12 +11,25 @@
  * Rescuing `audit-rule-coverage.ts` from `lead/inventory-bootstrap` (#698) would have taken:
  *
  *     main    * ... `<the lab's address>:5050` serves OUR pages over http, so
- *     branch  * ... `REDACTED-INTERNAL-ADDRESS:5050` serves OUR pages over http, so
+ *     branch  * ... `192.0.2.79:5050` serves OUR pages over http, so
  *
  * — un-redacting the lab's address. **No build breaks, no test fails, no guard fires.** The same take
  * would also have reverted four `@a11ign/*` imports, and that one is NOT silent (`MODULE_NOT_FOUND`, in a
  * `.ts` file, caught by `tsc`). That asymmetry is why these tests must not lean on a build: a rescue's
  * dangerous reverts are exactly the ones a build cannot see.
+ */
+/**
+ * THE FIXTURE USES 192.0.2.79, NOT THE REAL ADDRESS, AND THE GUARD CAUGHT ME PUTTING THE REAL ONE HERE.
+ *
+ * My first version of this file carried the literal from the branch verbatim, on the reasoning that a
+ * fixture should quote its subject exactly. `tracked-source-leak-guard.test.ts` refused it: *no tracked
+ * source file carries a real internal LAN address*. **Writing the tool that stops an un-redaction, I
+ * committed the un-redaction into its own test** — which is the sharpest possible evidence that this
+ * hazard does not announce itself, since I was thinking about nothing else at the time.
+ *
+ * `192.0.2.0/24` is TEST-NET-1 (RFC 5737), reserved for documentation, so the fixture cannot itself become
+ * the leak it tests for. The SHAPE is what the tests need — a literal address on the branch's side and a
+ * placeholder on main's — and the shape is preserved exactly.
  */
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -36,13 +49,13 @@ test("THE REAL PAIR: the un-redaction is NAMED before anything is applied", () =
   // Verbatim from the two blobs, not paraphrased: this is the line a wholesale take would have reverted.
   const base = "const a = 1;\n * uses `<the lab's address>:5050` to serve pages\nconst b = 2;\n";
   const main = "const a = 1;\n * uses `<the lab's address>:5050` to serve pages\nconst b = 2;\n";
-  const branch = "const a = 1;\n * uses `REDACTED-INTERNAL-ADDRESS:5050` to serve pages\nconst b = 2;\n";
+  const branch = "const a = 1;\n * uses `192.0.2.79:5050` to serve pages\nconst b = 2;\n";
 
   // The direction the fixture rests on: the BRANCH is the one carrying the literal address, because it
   // predates the redaction. Asserted rather than assumed — if this ever inverts, every claim below about
   // which side must win inverts with it.
-  assert.ok(branch.includes("REDACTED-INTERNAL-ADDRESS"), "the branch is the side holding the un-redacted address");
-  assert.ok(!main.includes("REDACTED-INTERNAL-ADDRESS"), "and main is the side that replaced it");
+  assert.ok(branch.includes("192.0.2.79"), "the branch is the side holding the un-redacted address");
+  assert.ok(!main.includes("192.0.2.79"), "and main is the side that replaced it");
 
   // What main gained since the base is what a rescue is about to overwrite. Here main and base agree on
   // the redacted form and the BRANCH carries the literal — so the gain is empty and the DANGER is the
@@ -51,11 +64,11 @@ test("THE REAL PAIR: the un-redaction is NAMED before anything is applied", () =
 
   // The branch replacing a line main also holds differently is the conflict this tool exists to refuse.
   const mainRedactedLater = "const a = 1;\n * uses `<the lab's address>:5050` to serve pages\nconst b = 2;\n";
-  const baseWithLiteral = "const a = 1;\n * uses `REDACTED-INTERNAL-ADDRESS:5050` to serve pages\nconst b = 2;\n";
+  const baseWithLiteral = "const a = 1;\n * uses `192.0.2.79:5050` to serve pages\nconst b = 2;\n";
   const gained = linesGained(baseWithLiteral, mainRedactedLater);
   assert.ok(gained.some((l) => l.includes("<the lab's address>")),
     `the redaction main gained must be named:\n${gained.join("\n")}`);
-  assert.ok(!gained.some((l) => l.includes("REDACTED-INTERNAL-ADDRESS")),
+  assert.ok(!gained.some((l) => l.includes("192.0.2.79")),
     "the literal is what main REPLACED; reporting it as a gain would invert the finding");
 });
 
@@ -130,7 +143,7 @@ test("END TO END on the repository itself: main's redaction survives and the bra
     assert.equal(conflicts, 0, "the real pair's edits are disjoint and must merge cleanly");
     assert.ok(merged.includes("<the lab's address>"),
       "MAIN'S REDACTION MUST SURVIVE — a wholesale take reverts it, and nothing else would notice");
-    assert.ok(!merged.includes("REDACTED-INTERNAL-ADDRESS"),
+    assert.ok(!merged.includes("192.0.2.79"),
       "the literal address must NOT come back: that is the silent revert this whole row is about");
     assert.ok(merged.includes("@a11ign/judge/rules"),
       "main's renamed imports must survive too");
