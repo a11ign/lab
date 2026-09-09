@@ -63,13 +63,11 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import { newestPerName, newestConclusionOf } from "../../../../scripts/newest-check-run.mjs";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -106,10 +104,8 @@ const WIDER_WINDOW_IS_HARMLESS: Record<string, string> = {
 };
 
 function trackedCode(): string[] {
-  return execFileSync("git", ["ls-files", "scripts", "packages", ".github"],
-    { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
-    .split("\n").filter(Boolean)
-    .filter((f) => /\.(mjs|ts)$/.test(f) && !f.includes("/dist/") && !f.endsWith(".test.ts"));
+  return walkTree({ kind: "both", roots: ["scripts", "packages", ".github"] }).map((f) => f.path)
+    .filter((f) => !f.includes("/dist/") && !f.endsWith(".test.ts"));
 }
 
 /**

@@ -97,13 +97,11 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFileSync, openSync, readSync, closeSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import { LEAK_PATTERNS, allLeaksIn } from "./leak-patterns.mjs";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -397,9 +395,7 @@ function trackedSourceFiles(): string[] {
   // MUTATION tests necessarily quote every value they classify as literal string data -- so without this
   // exclusion the guard flags itself for containing the exact values it is busy explaining are safe. The
   // same shape `git-spawn-classification.test.ts` already handles for its own git-spawning helper.
-  return execFileSync("git", ["ls-files"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
-    .split("\n")
-    .filter(Boolean)
+  return walkTree({ kind: "all", roots: [], selfPath: SELF }).map((f) => f.path)
     .filter((f) => f !== SELF)
     .filter((f) => !looksBinary(`${REPO}${f}`));
 }

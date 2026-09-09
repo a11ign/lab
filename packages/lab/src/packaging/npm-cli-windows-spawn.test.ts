@@ -54,12 +54,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -71,9 +69,7 @@ const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
 
 /** Every tracked `.ts`/`.mjs` file, GIT_* scrubbed even for this housekeeping call. */
 function trackedSourceFiles(): string[] {
-  return execFileSync("git", ["ls-files", "*.ts", "*.mjs"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
-    .split("\n")
-    .filter(Boolean)
+  return walkTree({ kind: "both", roots: [] }).map((f) => f.path)
     .filter((f) => !f.includes("/dist/") && !f.includes("/node_modules/"));
 }
 

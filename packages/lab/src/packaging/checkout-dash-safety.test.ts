@@ -40,7 +40,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -70,9 +70,8 @@ function stripFor(path: string, text: string): string {
  * the whole thing that makes this guard usable rather than switched off within a week.
  */
 function tracked(): string[] {
-  return execFileSync("git", ["ls-files", "*.mjs", "*.sh", "*.yml", "*.yaml"],
-    { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
-    .split("\n").filter(Boolean).filter((f) => !f.includes("/dist/") && !f.includes("/node_modules/"));
+  return walkTree({ kind: "all", roots: [] }).map((f) => f.path)
+    .filter((f) => /\.(mjs|sh|ya?ml)$/.test(f) && !f.includes("/dist/") && !f.includes("/node_modules/"));
 }
 
 /**

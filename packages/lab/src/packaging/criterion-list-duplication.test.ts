@@ -33,12 +33,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -99,17 +97,14 @@ const CLASSIFIED: Record<string, { why: string; issue?: number }> = {
 /**
  * Every tracked source file, discovered — never a hand-written list, which is the defect one level up.
  *
- * `sandboxGitEnv` is not decoration. The pre-push hook runs the suite with `GIT_DIR` exported, so a `git
- * ls-files` with an inherited environment lists ANOTHER repository's files and this guard would then
- * report confidently on a population it never looked at — a reader examining less than it believes,
- * which is the failure `git-spawn-classification.test.ts` exists to prevent and which caught this file
- * on its way in.
+ * The `sandboxGitEnv`-scrubbed `git ls-files` call (a leaked `GIT_DIR` lists ANOTHER repository's files,
+ * and this guard would then report confidently on a population it never looked at -- the failure
+ * `git-spawn-classification.test.ts` exists to prevent, and which caught this file on its way in) now
+ * lives in `walkTree` (#795), shared with every other tree-wide guard rather than re-derived here.
  */
 function sourceFiles(): string[] {
-  return execFileSync("git", ["ls-files", "packages"],
-    { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() })
-    .split("\n")
-    .filter((f) => /\.(ts|mjs)$/.test(f) && !f.includes("/dist/"));
+  return walkTree({ kind: "both", roots: ["packages"] }).map((f) => f.path)
+    .filter((f) => !f.includes("/dist/"));
 }
 
 /** @returns the files holding a criterion list beside, or instead of, the canonical one. */

@@ -1,10 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -88,9 +86,9 @@ const EXEMPT: Record<string, { category: "owed" | "not-a-gate" | "deliberate"; w
 };
 
 function discoverGates(): string[] {
-  const out = execFileSync("git", ["ls-files", "packages/lab/scripts"], { cwd: ROOT, env: sandboxGitEnv(), encoding: "utf8" });
-  return out.split("\n")
-    .filter((f) => /\.(mjs|ts)$/.test(f) && !f.includes(".test."))
+  const out = walkTree({ kind: "both", roots: ["packages/lab/scripts"] }).map((f) => f.path);
+  return out
+    .filter((f) => !f.includes(".test."))
     .map((f) => f.split("/").pop()!)
     .filter((name) => /^(gate|check|audit|score|evidence|stability|emit)/.test(name))
     .sort();

@@ -43,11 +43,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -109,8 +107,7 @@ const OTHER_KEYS: Record<string, string> = {
 const SELF = "packages/lab/src/packaging/fleet-key-name-is-one-fact.test.ts";
 
 function trackedTextFiles(): string[] {
-  return execFileSync("git", ["ls-files"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
-    .split("\n").filter(Boolean)
+  return walkTree({ kind: "all", roots: [] }).map((f) => f.path)
     .filter((f) => f !== SELF && !f.includes("/dist/") && !f.startsWith("runs/"))
     .filter((f) => /\.(ts|mjs|js|yml|yaml|sh|md|service|cmd|ps1|json)$/.test(f) || !f.includes("."));
 }

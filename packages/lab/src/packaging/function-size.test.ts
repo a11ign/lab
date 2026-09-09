@@ -22,6 +22,14 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { extname, join, relative } from "node:path";
 import ts from "typescript";
+import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+
+// #716/#704/#795: this file's own population is the whole tracked tree, not one file -- joins the other
+// 21 tree-wide guards here, since it is the guard #715 started from. Its own walk stays `readdirSync`
+// rather than `walkTree` deliberately: it measures the WORKING TREE (untracked files included, so a
+// function that grows past budget is caught before `git add` too), not `git ls-files`'s tracked-only
+// population -- a genuinely different source, not a re-derivation of the one `walkTree` consolidates.
+declareTreeWideGuard();
 
 /** Above this, a function is no longer readable in one screenful even generously scrolled. */
 const MAX_PHYSICAL_LINES = 90;
