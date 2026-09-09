@@ -33,7 +33,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -173,6 +173,43 @@ test("IT PRINTS THE SIZE OF THE SET IT EXAMINED, so a clean answer over nothing 
     + "nothing, which is how a guard passes while blind");
 });
 
+/**
+ * A REPOSITORY BUILT HERE, because the fault below is about a file's SIZE and this repo's fixtures cannot
+ * vary it. Two commits, one `.mjs` file, and the second commit only ADDS a line — the shape of an
+ * ordinary push, which is what makes the refusal it once produced a false one.
+ *
+ * `core.hooksPath=a11y-no-hooks` is a deliberately non-existent path: an EMPTY value resolves relative to
+ * the working directory, which is this repo's own recorded gotcha, and a fixture repo must not run the
+ * hooks of the checkout that spawned it.
+ */
+function runInSyntheticRepo(fillerBytes: number): { status: number; out: string } {
+  const dir = mkdtempSync(join(tmpdir(), "b5-pipe-"));
+  try {
+    const git = (...args: string[]) =>
+      execFileSync("git", ["-c", "core.hooksPath=a11y-no-hooks", "-c", "user.name=fixture",
+        "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", ...args],
+        { cwd: dir, env: sandboxGitEnv(), encoding: "utf8", stdio: "pipe" });
+    git("init", "-q", "-b", "main");
+    // POSITION IS THE WHOLE POINT: `earlySymbol` is at byte 0 and `lateSymbol` past the end of the pipe
+    // buffer. Only a match the reader reaches EARLY can kill the writer, so a fixture whose exports sit
+    // at the bottom of the file would pass against the defect and prove nothing.
+    const filler = `// ${"x".repeat(96)}\n`.repeat(Math.ceil(fillerBytes / 100));
+    const onMain = `export function earlySymbol() { return 1; }\n${filler}export const lateSymbol = 2;\n`;
+    writeFileSync(join(dir, "big.mjs"), onMain);
+    git("add", "big.mjs");
+    git("commit", "-qm", "the file as main has it");
+    git("update-ref", "refs/remotes/origin/main", git("rev-parse", "HEAD").trim());
+    writeFileSync(join(dir, "big.mjs"), `${onMain}export const addedByThisBranch = 3;\n`);
+    git("commit", "-qam", "one line added, nothing removed");
+    const script = `set -euo pipefail\nskipped=()\n${resolveBlock()}\necho A11Y_REACHED_END`;
+    const run = spawnSync("bash", ["-c", script],
+      { cwd: dir, env: sandboxGitEnv(), encoding: "utf8" });
+    return { status: run.status ?? 1, out: `${run.stdout ?? ""}${run.stderr ?? ""}` };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 test("A CLEAN MERGE PASSES — without this the check is a blanket refusal wearing a predicate's clothes", (t) => {
   if (shallowHere()) {
     t.skip("shallow clone -- the fixture commits are not present, and that is a fact about the checkout "
@@ -182,6 +219,12 @@ test("A CLEAN MERGE PASSES — without this the check is a blanket refusal weari
   }
   // `main` against itself: every symbol resolves, nothing is lost, and the block must return control
   // rather than exit. The first thing anyone does with a guard that refuses everything is route around it.
+  //
+  // **AND IT EXAMINES AN EMPTY POPULATION, WHICH IS WHY IT MISSED A REAL FALSE REFUSAL.** A commit against
+  // itself makes `git diff --name-only origin/main..HEAD` empty BY CONSTRUCTION, so `0 missing` here is
+  // asserted over zero symbols — the exact "clean answer over nothing" the block's own header warns about,
+  // in the block's own test. It still proves the block returns control rather than exiting, which is worth
+  // keeping. The test below is the positive control that actually looks at something.
   // A CONCRETE SHA, NOT THE STRING "origin/main". The `ts` job's checkout has no `refs/remotes/origin/main`
   // at all -- `actions/checkout` fetches the PR ref, not the branch -- so passing that name to
   // `update-ref` inside the fixture clone died with `fatal: origin/main: not a valid SHA1`, and the
@@ -215,4 +258,31 @@ test("THE FIXTURES ARE DURABLE, and this is answerable even on a shallow clone",
       `${commit} is not an ancestor of origin/main, so nothing guarantees it stays reachable -- that is `
       + "how the stale-base test pinned a commit on a deleted branch and turned the trunk red on every run");
   }
+});
+
+test("A FILE LARGER THAN THE PIPE BUFFER PASSES — the false refusal, and it was nondeterministic", () => {
+  // MEASURED 2026-09-09, and it refused a real push. The check was
+  // `printf '%s' "$after" | grep -q "\\b$symbol\\b"`, and `grep -q` exits at its first match — so on a
+  // file bigger than the 64 KB pipe buffer `printf` is killed by SIGPIPE, exits 141, and `set -o pipefail`
+  // hands 141 to the `||` as the pipeline's status. Indistinguishable there from "not found".
+  //
+  // `packages/lab/src/training/real-page-corpus.mjs` is 73 KB and exports `assertDisjoint`, first
+  // occurring at byte 1878: the hook refused the push naming `assertDisjoint` and `REAL_PAGES` as
+  // "exported by origin/main and not resolving after your merge", with both sitting in the pushed file.
+  // Three consecutive runs of the same loop over the same file named three different sets, because
+  // whether printf finishes before grep exits is a race — so this could not have been read off the code
+  // by anyone who had not seen it bite.
+  //
+  // The direction matters: it can only refuse wrongly, never pass wrongly (a genuinely absent symbol makes
+  // grep read to EOF, so printf completes). A guard that refuses correct work is the one that gets
+  // overridden by habit, which this repo has already paid for once with `A11Y_SKIP_VERIFY=1`.
+  const result = runInSyntheticRepo(100_000);
+  // The count first, and asserted as a NUMBER rather than as `0 missing` alone: the positive control
+  // above passes over an empty set, and this test exists precisely because that is not proof of anything.
+  assert.match(result.out, /resolve-toward-main — 2 exported symbol\(s\) checked/,
+    `expected both of main's exports to be examined:\n${result.out}`);
+  assert.match(result.out, /0 missing/,
+    `both symbols are present in the pushed file; a refusal here is the SIGPIPE fault:\n${result.out}`);
+  assert.equal(result.status, 0, `an additive one-line change must pass:\n${result.out}`);
+  assert.match(result.out, /A11Y_REACHED_END/, "the block must return control, not exit");
 });
