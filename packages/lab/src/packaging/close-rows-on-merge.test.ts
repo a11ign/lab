@@ -16,16 +16,31 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
-import { closurePlan, EXIT } from "../../../../scripts/close-rows-for-merged-pr.mjs";
+import { closurePlan, labelsToStrip, EXIT } from "../../../../scripts/close-rows-for-merged-pr.mjs";
+// THE AUDIT'S OWN DEBRIS CHECK, imported rather than re-derived -- #754's own mutation target is that
+// THIS function, unchanged, must go quiet once labelsToStrip has done its work, and must report the
+// finding again the moment it has not. Proving that with a re-implemented predicate would prove nothing
+// about the real audit.
+import { closedDebris } from "../../../../scripts/ready-label-audit.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOW = `${REPO}.github/workflows/close-rows.yml`;
 
 test("an OPEN declared row is closed", () => {
   const plan = closurePlan([{ number: 344, state: "OPEN" }]);
-  assert.deepEqual(plan.close, [344]);
+  assert.deepEqual(plan.close, [{ number: 344, labels: [] }]);
   assert.deepEqual(plan.already, []);
   assert.equal(plan.none, false);
+});
+
+test("#754: a row's labels travel with it into the close plan, from the SAME lookup that resolved state", () => {
+  const plan = closurePlan([{ number: 344, state: "OPEN", labels: ["ready", "in-progress", "session:x"] }]);
+  assert.deepEqual(plan.close, [{ number: 344, labels: ["ready", "in-progress", "session:x"] }]);
+});
+
+test("#754: a row with no labels field at all (an older caller, or a row with none) defaults to []", () => {
+  const plan = closurePlan([{ number: 344, state: "OPEN" }]);
+  assert.deepEqual(plan.close[0].labels, []);
 });
 
 test("a row somebody already closed by hand is reported, never silently skipped", () => {
@@ -49,7 +64,7 @@ test("a mixed set is split, not decided by its first member", () => {
   const plan = closurePlan([
     { number: 1, state: "CLOSED" }, { number: 2, state: "OPEN" }, { number: 3, state: "OPEN" },
   ]);
-  assert.deepEqual(plan.close, [2, 3]);
+  assert.deepEqual(plan.close, [{ number: 2, labels: [] }, { number: 3, labels: [] }]);
   assert.deepEqual(plan.already, [1]);
 });
 
@@ -103,4 +118,66 @@ test("the workflow actually RUNS the script — a correct plan wired to nothing 
   assert.match(runner?.run ?? "", /pull_request\.number/,
     "it must act on the PR the event names, not on a search — acting on a set it derived itself is how a "
     + "tool closes a row nobody asked it to.");
+});
+
+// --- #754: labelsToStrip -- the row's claim removed in the SAME act as the close ---
+
+test("#754 ACCEPTANCE: a row closed by a merged PR loses ready, in-progress, started and session:* -- "
+  + "MUTATION TARGET, this function is what makes audit's DEBRIS finding go quiet", () => {
+  const stripped = labelsToStrip(["ready", "in-progress", "started", "session:worker-contracts", "backlog"]);
+  assert.deepEqual(stripped.sort(), ["in-progress", "ready", "session:worker-contracts", "started"]);
+});
+
+test("#754 ACCEPTANCE: the was-ready marker is UNTOUCHED -- it is a record of what the row was, not a "
+  + "claim on it (matches #703's real state after the 2026-09-09 hand clean-up)", () => {
+  const stripped = labelsToStrip(["was-ready", "backlog"]);
+  assert.deepEqual(stripped, []);
+});
+
+test("a row carrying none of the four never produces a spurious strip", () => {
+  assert.deepEqual(labelsToStrip(["backlog", "ready-audit-exempt"]), []);
+});
+
+test("a row with no session:* label at all strips only what it actually carries", () => {
+  assert.deepEqual(labelsToStrip(["ready", "backlog"]), ["ready"]);
+});
+
+test("only a label spelled EXACTLY session:<name>, not merely containing the word, is stripped as a claim", () => {
+  assert.deepEqual(labelsToStrip(["session-notes", "backlog"]), [],
+    "a label that happens to start with the letters 'session' but is not the session:<name> convention "
+    + "must not be mistaken for a claim label");
+});
+
+// --- #754's OWN MUTATION TARGET: audit's real closedDebris(), driven against the real DEBRIS shapes ---
+
+test("#754 MUTATION TARGET: closedDebris (the real audit check) reports the EXACT finding from the "
+  + "2026-09-09 measurement -- #721 (ready), #703 (in-progress + session:product-manager), #687 "
+  + "(in-progress + session:worker-capture) -- when a merge-close does NOT strip labels", () => {
+  const closedWithoutStripping = [
+    { number: 721, title: "row 721", state: "CLOSED" as const, labels: ["ready", "backlog"] },
+    { number: 703, title: "row 703", state: "CLOSED" as const,
+      labels: ["in-progress", "session:product-manager", "was-ready"] },
+    { number: 687, title: "row 687", state: "CLOSED" as const, labels: ["in-progress", "session:worker-capture"] },
+  ];
+  const found = closedDebris(closedWithoutStripping);
+  assert.deepEqual(found.map((f) => f.number).sort(), [687, 703, 721],
+    "this is the exact finding measured 13:24:55Z before the hand clean-up -- the audit must reproduce "
+    + "it against the unstripped shape, or this test is not proving anything about the real regression");
+});
+
+test("#754 ACCEPTANCE: closedDebris (the real audit check) is QUIET once labelsToStrip's output has "
+  + "actually been removed from each of those same three rows -- was-ready survives and does not "
+  + "trigger it", () => {
+  const rowsAfterStripping = [
+    { number: 721, title: "row 721", labels: ["ready", "backlog"] },
+    { number: 703, title: "row 703", labels: ["in-progress", "session:product-manager", "was-ready"] },
+    { number: 687, title: "row 687", labels: ["in-progress", "session:worker-capture"] },
+  ].map((row) => ({
+    ...row,
+    state: "CLOSED" as const,
+    labels: row.labels.filter((l) => !labelsToStrip(row.labels).includes(l)),
+  }));
+  assert.deepEqual(closedDebris(rowsAfterStripping), []);
+  // The record survives -- proving the filter above did not simply delete every label.
+  assert.ok(rowsAfterStripping.find((r) => r.number === 703)?.labels.includes("was-ready"));
 });
