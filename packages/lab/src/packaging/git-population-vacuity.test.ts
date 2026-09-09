@@ -242,6 +242,13 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "in it. The guard quoted is that synthetic-fixture assertion, not the real-diff test, which is "
       + "deliberately allowed to examine nothing and say so.",
   },
+  "packages/lab/src/packaging/checkout-dash-safety.test.ts": {
+    guard: "files.length > 100",
+    note: "#637: joined this classification the same way `git-spawn-classification.test.ts` and every "
+      + "other sibling did -- its own `tracked()` calls `execFileSync(\"git\", [\"ls-files\", ...])` for "
+      + "a DIFFERENT population (destructive `git checkout --` sites, not ref/branch/tag/log/diff), so it "
+      + "is guarded, not exempt: the quoted floor is that file's own vacuity guard for its `ls-files` walk.",
+  },
 };
 
 test("MUTATION: without the SELF exclusion, this file would discover itself", () => {

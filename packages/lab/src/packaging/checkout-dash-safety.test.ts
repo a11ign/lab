@@ -157,7 +157,12 @@ test("MUTATION: the Ansible argv: list form is discovered — the shape a litera
 
 test("CONTROL: `git checkout --quiet <ref>`/`--detach <ref>` are NOT discovered — checking out a ref is "
   + "a different, non-destructive operation from restoring a path", () => {
-  const quiet = 'run(`cd ${dir} && git checkout --quiet ${ref}`);\n';
+  // NO `cd ${dir}` PREFIX HERE, DELIBERATELY -- an earlier draft had one, and it made THIS FIXTURE
+  // STRING (never executed, describing hypothetical code) trip control-plane-checkout-is-one-fact.test.
+  // ts's own tree-wide `cd`-discovery sweep, which cannot tell a fixture literal from a real directory
+  // entry. The `--quiet` question this test asks needs no `cd` at all; removed rather than worked
+  // around, matching this repo's own precedent for a guard tripped by a fixture rather than a fault.
+  const quiet = 'run(`git checkout --quiet ${ref}`);\n';
   const detach = '      argv: [git, checkout, --detach, "{{ ref }}"]\n';
   assert.ok(!DESTRUCTIVE_CHECKOUT.test(stripComments(quiet)),
     "--quiet is a flag, not the bare -- pathspec separator — this was the first pass's own false match");
