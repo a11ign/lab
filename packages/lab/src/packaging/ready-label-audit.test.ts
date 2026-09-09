@@ -5,6 +5,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, handClaims, strandedByIncompleteDecline,
   fetchOpenIssues, fetchAllIssues, closedDebris, isClosedDebrisLabel, readyRowsAbsentFromBoard,
@@ -731,4 +734,37 @@ test("CHECKS names all eight, so the partial-audit sentence states a true denomi
     "open issues", "hand claims", "declined rows", "closed issues",
     "board membership", "closing PR references", "claim activity", "closed-row provenance",
   ]);
+});
+
+// --- #804: the four claim-label literals are declared in EXACTLY ONE place, scripts/claim-labels.mjs ---
+
+const SCRIPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../../../scripts");
+const CLAIM_LABEL_NAMES = ["READY_LABEL", "WAS_READY_LABEL", "CLAIM_LABEL", "STARTED_LABEL"];
+/** A fresh declaration (`const X = "..."`), never an import or a re-export -- both of those name the
+ * identifier too, and only a declaration is the drift risk this test exists to close off. */
+const DECLARES_A_CLAIM_LABEL = new RegExp(
+  `\\b(?:const|let|var)\\s+(?:${CLAIM_LABEL_NAMES.join("|")})\\s*=\\s*"`,
+);
+
+test("#804 ACCEPTANCE, MUTATION TARGET: no scripts/*.mjs file other than claim-labels.mjs declares any "
+  + "of the four claim-label literals -- row-claim.mjs and ready-label-audit.mjs each own only an "
+  + "import + re-export, close-rows-for-merged-pr.mjs only an import; a fresh `const X = \"...\"` "
+  + "anywhere else is the exact fact-stated-twice shape this file exists to prevent recurring", () => {
+  const offenders = [];
+  for (const entry of readdirSync(SCRIPTS_DIR, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".mjs") || entry.name === "claim-labels.mjs") continue;
+    const source = readFileSync(join(SCRIPTS_DIR, entry.name), "utf8");
+    if (DECLARES_A_CLAIM_LABEL.test(source)) offenders.push(entry.name);
+  }
+  assert.deepEqual(offenders, [],
+    `these scripts/*.mjs files declare a claim-label literal locally instead of importing it from `
+    + `claim-labels.mjs: ${offenders.join(", ")}`);
+});
+
+test("#804: claim-labels.mjs itself is a real LEAF -- it imports nothing, so nothing depending on it "
+  + "(directly or transitively) can form a cycle through it", () => {
+  const source = readFileSync(join(SCRIPTS_DIR, "claim-labels.mjs"), "utf8");
+  assert.doesNotMatch(source, /^import\s/m,
+    "claim-labels.mjs must stay import-free -- an import here would reintroduce exactly the cycle risk "
+    + "the leaf-module design exists to remove");
 });
