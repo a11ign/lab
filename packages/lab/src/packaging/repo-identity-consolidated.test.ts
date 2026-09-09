@@ -18,6 +18,16 @@
  * sites that must still resolve on GitHub today (every `uses: <repo>@<ref>` Action reference) are the
  * one exception and check `REPO` instead; see `repo-identity.mjs`'s own comment on the split.
  *
+ * #569 MOVED THE TWO README BADGE SITES INTO THAT SAME EXCEPTION. #66 classed them with "static prose" --
+ * the reasoning that put clone instructions and `package.json` fields under `PRODUCT_REPO` -- but a badge
+ * is not prose a reader interprets and forgives; it is an image a browser FETCHES the instant the page
+ * renders, before any of the surrounding text explaining the rename is read. The V1 rehearsal found this
+ * exactly the way it found the `uses:` line's own #325-era mistakes: reading the document as a stranger
+ * would and following what it actually points at, not what it says about itself. `https://github.com/
+ * a11ign/a11ign` 404s until #63 lands, so the badges belong with `REPO`, not `PRODUCT_REPO` -- the same
+ * "must resolve on GitHub today" test `action-reference.test.ts` already applies to the `uses:` line, one
+ * exception wider.
+ *
  * WHY A FLAT LIST RATHER THAN A REPO-WIDE REGEX SWEEP. A sweep would need to tell a genuine reference to
  * THIS repository apart from an unrelated `owner/repo`-shaped string (a different project entirely, an
  * example in prose) — the same false-positive risk this project's own leak sweeps have hit repeatedly. A
@@ -41,8 +51,10 @@ const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
  * `uses:` line) and each shape gets its own entry rather than one loosely-matching pattern per file.
  */
 const SITES: Array<{ file: string; expect: string }> = [
-  { file: "README.md", expect: `${PRODUCT_REPO_URL}/actions/workflows/lint.yml/badge.svg` },
-  { file: "README.md", expect: `${PRODUCT_REPO_URL}/actions/workflows/capture-regression.yml/badge.svg` },
+  // #569: REPO, not PRODUCT_REPO -- a badge is fetched live, the same "must resolve today" shape as the
+  // `uses:` line two lines down, not the static prose PRODUCT_REPO covers. See this file's own header.
+  { file: "README.md", expect: `${REPO_URL}/actions/workflows/lint.yml/badge.svg` },
+  { file: "README.md", expect: `${REPO_URL}/actions/workflows/capture-regression.yml/badge.svg` },
   { file: "README.md", expect: `uses: ${REPO}@main` },
   { file: "SECURITY.md", expect: `${PRODUCT_REPO_URL}/security/advisories/new` },
   { file: "docs/control-plane-proxmox.md",
