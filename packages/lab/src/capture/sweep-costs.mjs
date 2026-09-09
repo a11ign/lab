@@ -21,6 +21,26 @@
  * `sweep` marks; nothing new is instrumented here. #431 is what made the records exist to replay.
  */
 
+/**
+ * THE CAPTURE INSIDE A RECORD ON DISK — both shapes, not either.
+ *
+ * A dataset capture IS the capture; a `runs/witness/` record WRAPS it as `{capturedAt, task, capture}`,
+ * and `runs/witness/` is what #659's own Region names. A reader handling only the top level reported
+ * "No captures with diagnostics" over a directory holding 24 of them — **a tool describing an empty
+ * population rather than refusing an unreadable one**, and an empty answer looks like a finding about the
+ * data. Same rule `evidence-diff` already carries for its own two shapes.
+ *
+ * Lives here rather than in `bench-capture.mjs` so it can be tested without one: that script resolves
+ * `datasetRoot()` at module scope, so anything importing it needs a corpus, and the acceptance classifier
+ * refuses such a command on a runner that has none. The decision is pure; only the file walk is not.
+ *
+ * @param {any} record @returns {any | null}
+ */
+export function captureIn(record) {
+  if (Array.isArray(record?.diagnostics)) return record;
+  return Array.isArray(record?.capture?.diagnostics) ? record.capture : null;
+}
+
 /** A sweep mark that can be read: it names a type and did not fail. */
 const isReadableSweep = (/** @type {any} */ mark) =>
   mark && typeof mark === "object" && mark.event === "sweep"

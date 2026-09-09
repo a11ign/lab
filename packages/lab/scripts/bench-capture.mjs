@@ -16,7 +16,7 @@ import { CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mj
 
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
-import { costCause, MIN_TRIPS_FOR_A_RATE, rateAcrossPages, sweepCostsByPage, walkRate }
+import { captureIn, costCause, MIN_TRIPS_FOR_A_RATE, rateAcrossPages, sweepCostsByPage, walkRate }
   from "../src/capture/sweep-costs.mjs";
 import { captureTolerantly } from "../../worker-fleet/src/capture-client.mjs";
 import { datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
@@ -156,20 +156,6 @@ function report(/** @type {any} */ runs) {
 // Nothing new is instrumented: every capture already carries per-phase diagnostics. This only
 // aggregates them, and reports p50/p95 rather than a mean because the tail is where a wedged
 // guest shows up -- a mean hides one 60-second capture among fifty good ones.
-/**
- * BOTH SHAPES, NOT EITHER. A dataset capture IS the capture; a `runs/witness/` record WRAPS it
- * (`{capturedAt, task, capture}`) -- and #659's own Region names `runs/witness/`. Reading only the top
- * level reported "No captures with diagnostics" over a directory holding 24 of them, which is a tool
- * describing an empty population rather than refusing an unreadable one: an empty answer looks like a
- * finding about the data. Same rule `evidence-diff` already carries for its own two shapes.
- *
- * @param {any} record @returns {any | null}
- */
-function captureIn(record) {
-  if (Array.isArray(record?.diagnostics)) return record;
-  return Array.isArray(record?.capture?.diagnostics) ? record.capture : null;
-}
-
 export async function fromDisk(/** @type {any} */ root) {
   const { readdirSync, readFileSync } = await import("node:fs");
   const { resolve } = await import("node:path");

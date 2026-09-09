@@ -10,7 +10,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  costCause, MIN_TRIPS_FOR_A_RATE, median, rateAcrossPages, sweepCostsByPage, sweepCostsOf, walkRate,
+  captureIn, costCause, MIN_TRIPS_FOR_A_RATE, median, rateAcrossPages, sweepCostsByPage, sweepCostsOf,
+  walkRate,
 } from "./sweep-costs.mjs";
 
 const sweep = (over: Record<string, unknown>) => ({
@@ -162,4 +163,26 @@ test("the carrier's own rate is the walk PLUS its probe, and the two are separab
 test("with nothing but the carrier there is no baseline, and null says so", () => {
   assert.equal(walkRate([{ type: "formField", msPerTrip: [1261] }]), null);
   assert.equal(walkRate([]), null);
+});
+
+/**
+ * BOTH RECORD SHAPES, and reading one reported an empty population over a full directory.
+ *
+ * `bench-capture --from-disk` handled only the bare dataset shape, so pointing it at `runs/witness` —
+ * the directory #659's own Region names — printed "No captures with diagnostics" over 24 of them.
+ */
+test("a wrapped witness record and a bare dataset capture both yield their capture", () => {
+  const diagnostics = [{ event: "sweep", type: "link", found: 1 }];
+  assert.equal(captureIn({ url: "https://bare/", diagnostics })?.url, "https://bare/");
+  assert.equal(captureIn({ capturedAt: "t", task: "x", capture: { url: "https://wrapped/", diagnostics } })?.url,
+    "https://wrapped/");
+});
+
+test("a record with no diagnostics either way is null, not an empty capture", () => {
+  // `null` so the caller SKIPS it. An empty capture would be counted into the population and reported as
+  // a run that found nothing, which is the same conflation one level up.
+  assert.equal(captureIn({ url: "https://x/" }), null);
+  assert.equal(captureIn({ capture: { url: "https://x/" } }), null);
+  assert.equal(captureIn(null), null);
+  assert.equal(captureIn({ diagnostics: "not an array" }), null);
 });
