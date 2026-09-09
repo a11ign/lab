@@ -176,6 +176,21 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
 const SELF = "packages/lab/src/packaging/control-plane-checkout-is-one-fact.test.ts";
 
 /**
+ * Named files, not a directory -- exempted for the identical reason SELF is, and kept exact rather than
+ * a prefix on purpose: "the exemption is the FIELD, not the FILE" above already rejected the broader
+ * directory-wide shape once, and a fixtures/ prefix would be that same trade again, one level up.
+ *
+ * `owned-path-signoff.test.ts`'s fixtures are real PR bodies fetched verbatim (`gh pr view --json body`,
+ * #603) so that predicate is verified against text nobody wrote for the test. #584's own body quotes a
+ * home-root literal from this file's own subject, one PR before this file existed -- editing the fixture
+ * to dodge this guard would make it describe a body nobody actually posted.
+ */
+const QUOTED_FIXTURE_FILES = new Set([
+  "packages/lab/src/packaging/fixtures/pr-584-body.md",
+  "packages/lab/src/packaging/fixtures/pr-613-body.md",
+]);
+
+/**
  * A RECORD OF THE PAST IS NOT CODE, AND IT IS NOT RENAMED — BUT THE EXEMPTION IS THE FIELD, NOT THE FILE.
  *
  * `docs/board/reported/` holds what an operator actually ran and what it actually printed. One record
@@ -203,14 +218,20 @@ const SELF = "packages/lab/src/packaging/control-plane-checkout-is-one-fact.test
  * A record that cannot be parsed is scanned WHOLE. Failing closed is the only safe direction: a malformed
  * record that silently exempted itself would be an escape hatch anybody could open with a typo.
  *
- * ## The line this is the third instance of
+ * ## The line this is the FOURTH instance of
  *
- * **A guard keyed on an OPERATION will find that operation in prose, in records, and on other people's
- * machines, and each of those needs a DIFFERENT answer.** Three today, all of them the guard working:
- * the `.ps1` home roots belonged to the Windows guests and were scoped out (two fleets, two facts); the
- * deprecated local VM's path belongs to a machine nobody has measured, where demanding a value would be
- * the guess #515 forbids arriving through a guard; and this is a quotation, where the only correct edit
- * is none. A guard that answered all three the same way would be wrong three times.
+ * **A guard keyed on an OPERATION will find that operation in prose, in records, on other people's
+ * machines, and in the fixtures that test the guard -- and each needs a DIFFERENT answer.** Four now, all
+ * of them the guard working: the `.ps1` home roots belonged to the Windows guests and were scoped out (two
+ * fleets, two facts); the deprecated local VM's path belongs to a machine nobody has measured, where
+ * demanding a value would be the guess #515 forbids arriving through a guard; a record in
+ * `docs/board/reported/` is a quotation, where the only correct edit is none; and #603's fixtures
+ * (`QUOTED_FIXTURE_FILES` below) quote #584's own outage description verbatim -- home-root and guest-root
+ * literals included, see `guest-paths-are-measured.test.ts` for the sibling guard #584 itself made pass --
+ * the MOST self-defeating of the four, because the fixture exists *precisely* to prove a DIFFERENT guard
+ * works, and finding its literal here is not a violation, it is the evidence. A guard that answered all
+ * four the same way would be wrong four times.
+ * (Deliberately not quoting the literal itself -- doing so trips the sibling guard, as its first draft did.)
  *
  * ## And the finding that outlives the keying
  *
@@ -268,7 +289,7 @@ const REPO_SUBDIRECTORIES = new Set(
 function trackedSource(): string[] {
   return execFileSync("git", ["ls-files"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
     .split("\n").filter(Boolean)
-    .filter((f) => f !== SELF && !f.includes("/dist/") && !f.startsWith("runs/"))
+    .filter((f) => f !== SELF && !QUOTED_FIXTURE_FILES.has(f) && !f.includes("/dist/") && !f.startsWith("runs/"))
     // EVERY tracked text file, not a language. The `.mjs`/`.ts` walk is what hid a `.sh`, and narrowing
     // a walk to the languages you expect is the shape this whole file is about.
     .filter((f) => /\.(ts|mjs|js|yml|yaml|sh|ps1|cmd|py|md|json|service|xml)$/.test(f));
