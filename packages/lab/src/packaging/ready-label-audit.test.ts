@@ -10,7 +10,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, handClaims, strandedByIncompleteDecline,
-  fetchOpenIssues, fetchAllIssues, closedDebris, isClosedDebrisLabel, readyRowsAbsentFromBoard,
+  fetchOpenIssues, fetchOpenIssuesChecked, fetchReportedOpenIssueCount, fetchAllIssues, closedDebris,
+  isClosedDebrisLabel, openRowsAbsentFromBoard, labellessRows,
   readyRowsAlreadyMerged, fetchClosingPrRefs, fetchLatestReopenedAt, CHECKS, runCheck,
 } from "../../../../scripts/ready-label-audit.mjs";
 // #782: `isClosedDebrisLabel` now DERIVES from this, rather than pinning the two equal with a separate
@@ -229,6 +230,48 @@ test("MUTATION: a label object with no name is a thrown error", () => {
   assert.throws(() => fetchOpenIssues({ run }), /has a label with no name/);
 });
 
+// --- #788: fetchReportedOpenIssueCount and fetchOpenIssuesChecked -- every label-keyed audit states
+// what it examined against what GitHub's own search index reports open, and refuses as partial when
+// the two differ, so a population that shrinks (or grows) silently is visible rather than clean-looking ---
+
+test("fetchReportedOpenIssueCount reads GitHub's search-index total via --jq", () => {
+  const run = () => "68\n";
+  assert.equal(fetchReportedOpenIssueCount({ run }), 68);
+});
+
+test("fetchReportedOpenIssueCount throws, never falls back to 0, when gh fails", () => {
+  const run = throwingRun("gh: not authenticated");
+  assert.throws(() => fetchReportedOpenIssueCount({ run }), /could not read GitHub's reported open-issue count/);
+});
+
+test("fetchReportedOpenIssueCount throws on an unparseable count rather than guessing", () => {
+  const run = () => "not a number";
+  assert.throws(() => fetchReportedOpenIssueCount({ run }), /was not a number/);
+});
+
+test("fetchOpenIssuesChecked: examined count matches reported count -- returns the issues and the count", () => {
+  const run = jsonRun(JSON.stringify([{ number: 1, title: "a", labels: [{ name: READY_LABEL }] }]));
+  const result = fetchOpenIssuesChecked({ run, fetchReportedCount: () => 1 });
+  assert.deepEqual(result.issues, [{ number: 1, title: "a", labels: [READY_LABEL] }]);
+  assert.equal(result.reportedCount, 1);
+});
+
+test("#788 ACCEPTANCE, MUTATION TARGET: examined count LOWER than GitHub's reported open count REFUSES "
+  + "as partial -- the exact shape a silently narrowed query would produce", () => {
+  const run = jsonRun(JSON.stringify([{ number: 1, title: "a", labels: [{ name: READY_LABEL }] }]));
+  assert.throws(() => fetchOpenIssuesChecked({ run, fetchReportedCount: () => 5 }),
+    /examined 1 open issue\(s\) but GitHub's search index reports 5 open/);
+});
+
+test("fetchOpenIssuesChecked: examined count HIGHER than reported also refuses -- the comparison is an "
+  + "equality, not a floor", () => {
+  const run = jsonRun(JSON.stringify([
+    { number: 1, title: "a", labels: [] }, { number: 2, title: "b", labels: [] },
+  ]));
+  assert.throws(() => fetchOpenIssuesChecked({ run, fetchReportedCount: () => 1 }),
+    /examined 2 open issue\(s\) but GitHub's search index reports 1 open/);
+});
+
 // --- #378: a CLOSED row carrying ready/in-progress/session:* is DEBRIS, a separate population from
 // mutexViolations, reported with separate wording, never collapsed with an open-row contradiction ---
 
@@ -381,36 +424,59 @@ test("MUTATION: reverting fetchAllIssues to request --state open loses every clo
   assert.equal(debris[0].number, 292);
 });
 
-// --- readyRowsAbsentFromBoard: pure, no I/O -- #399's third population ---
+// --- openRowsAbsentFromBoard: pure, no I/O -- #399's third population, widened to every open row by #788 ---
 
-test("readyRowsAbsentFromBoard: a ready row whose number is on the board is not reported", () => {
+test("openRowsAbsentFromBoard: a row whose number is on the board is not reported", () => {
   const issues = [{ number: 1, title: "on the board", labels: [READY_LABEL] }];
-  assert.deepEqual(readyRowsAbsentFromBoard(issues, new Set([1])), []);
+  assert.deepEqual(openRowsAbsentFromBoard(issues, new Set([1])), []);
 });
 
-test("readyRowsAbsentFromBoard: a ready row absent from the board's item numbers is reported", () => {
+test("openRowsAbsentFromBoard: a row absent from the board's item numbers is reported", () => {
   const issues = [{ number: 1, title: "off the board", labels: [READY_LABEL] }];
-  assert.deepEqual(readyRowsAbsentFromBoard(issues, new Set([2, 3])), issues);
+  assert.deepEqual(openRowsAbsentFromBoard(issues, new Set([2, 3])), issues);
 });
 
-test("readyRowsAbsentFromBoard: a non-ready row absent from the board is not this population's business", () => {
-  const issues = [{ number: 1, title: "no ready label", labels: ["blocked"] }];
-  assert.deepEqual(readyRowsAbsentFromBoard(issues, new Set()), []);
+test("#788 ACCEPTANCE, MUTATION TARGET: a row with NO `ready` label, absent from the board, IS reported "
+  + "-- the exact population the ready-only version could not see: 24 open rows of every other kind had "
+  + "no Project item while it read clean", () => {
+  const issues = [{ number: 1, title: "no ready label, off the board", labels: ["blocked"] }];
+  assert.deepEqual(openRowsAbsentFromBoard(issues, new Set()), issues);
 });
 
-test("readyRowsAbsentFromBoard: neither a label check nor a Status check alone would see this -- only the "
+test("openRowsAbsentFromBoard: neither a label check nor a Status check alone would see this -- only the "
   + "comparison does", () => {
-  // Two rows both carry `ready` (the label is correct, so a label-only check sees nothing wrong) and
-  // neither has an item on the board at all (so there is no Status to read either) -- #399's own measured
-  // shape, four such rows existing while the Ready lane read empty.
+  // Three rows, deliberately mixed labels (READY_LABEL, none, a different one) -- #399's original shape
+  // widened by #788: the label carried is irrelevant, only board membership is.
   const issues = [
     { number: 10, title: "row A", labels: [READY_LABEL] },
-    { number: 11, title: "row B", labels: [READY_LABEL] },
-    { number: 12, title: "row C, genuinely on the board", labels: [READY_LABEL] },
+    { number: 11, title: "row B", labels: [] },
+    { number: 12, title: "row C, genuinely on the board", labels: ["blocked"] },
   ];
   const boardNumbers = new Set([12]);
-  const missing = readyRowsAbsentFromBoard(issues, boardNumbers);
-  assert.deepEqual(missing.map((i) => i.number), [10, 11]);
+  const missing = openRowsAbsentFromBoard(issues, boardNumbers);
+  assert.deepEqual(missing.map((i: { number: number }) => i.number), [10, 11]);
+});
+
+// --- labellessRows: pure, no I/O -- #788's own population, invisible to every OTHER check ---
+
+test("#788 ACCEPTANCE, MUTATION TARGET: a row with NO labels at all is reported -- exactly #623's shape", () => {
+  const issues = [{ number: 623, title: "the most irreversible row on the milestone", labels: [] }];
+  assert.deepEqual(labellessRows(issues), issues);
+});
+
+test("labellessRows: a row carrying even one label (backlog is the safe default) is NOT reported -- a "
+  + "check that fires on a labelled row is one people learn to ignore", () => {
+  const issues = [{ number: 1, title: "fixed by hand", labels: ["backlog"] }];
+  assert.deepEqual(labellessRows(issues), []);
+});
+
+test("labellessRows: a mixed population reports only the labelless ones, in order", () => {
+  const issues = [
+    { number: 600, title: "labelless", labels: [] },
+    { number: 601, title: "labelled", labels: ["backlog"] },
+    { number: 644, title: "also labelless", labels: [] },
+  ];
+  assert.deepEqual(labellessRows(issues).map((i) => i.number), [600, 644]);
 });
 
 // --- readyRowsAlreadyMerged: pure, no I/O -- #443's fourth population, refined by #550 ---
@@ -728,10 +794,10 @@ test("MUTATION: one refusing check does NOT stop the checks after it -- the whol
   assert.deepEqual(refused, ["board membership"]);
 });
 
-test("CHECKS names all eight, so the partial-audit sentence states a true denominator", () => {
-  assert.equal(CHECKS.length, 8);
+test("CHECKS names all nine, so the partial-audit sentence states a true denominator", () => {
+  assert.equal(CHECKS.length, 9);
   assert.deepEqual(CHECKS.map(([what]) => what), [
-    "open issues", "hand claims", "declined rows", "closed issues",
+    "open issues", "hand claims", "labelless rows", "declined rows", "closed issues",
     "board membership", "closing PR references", "claim activity", "closed-row provenance",
   ]);
 });

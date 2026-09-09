@@ -43,25 +43,40 @@ test("`blocked` is refused — a person's refusal is not something a green gate 
     + "strength of the PR being green.");
 });
 
-test("a `session:` label is a HOLD and is refused, naming the holder (#266)", () => {
-  const { arm, reason } = sweepDecision(pr({ labels: ["session:worker-capture"] }));
+test("a `hold:` label is a HOLD and is refused, naming the holder (#266)", () => {
+  const { arm, reason } = sweepDecision(pr({ labels: ["hold:worker-capture"] }));
   assert.equal(arm, false);
-  assert.match(reason, /session:worker-capture/,
+  assert.match(reason, /hold:worker-capture/,
     "naming the holder is the point: `held` sends you to the label list, `held by worker-capture` sends "
     + "you to a session.");
 });
 
-test("EVERY `session:` label is named, not just the first — two sessions is a collision worth seeing", () => {
-  const { reason } = sweepDecision(pr({ labels: ["session:worker-capture", "session:dispatcher"] }));
-  assert.match(reason, /session:worker-capture/);
-  assert.match(reason, /session:dispatcher/);
+/**
+ * THE PREFIX MOVED, 2026-09-09, AND THIS IS THE HALF THAT MATTERS. `session:<name>` meant BOTH "this PR
+ * is mine" and "this PR is held", and ceo's 12:2xZ ruling put an ownership label on every PR its author
+ * opened. orchestrator hand-labelled twelve of their own PRs that afternoon; every one was, to this
+ * predicate, HELD, and #725 was about to apply the label to every armed PR in the org.
+ *
+ * So an OWNERSHIP label must now arm. Flipping the test above to `hold:` alone would have left that
+ * untested -- the case the rename exists for is the one where the old label appears and nothing happens.
+ */
+test("a `session:` label is OWNERSHIP and still ARMS -- the collision the `hold:` namespace ended", () => {
+  assert.equal(sweepDecision(pr({ labels: ["session:orchestrator"] })).arm, true,
+    "twelve PRs carried exactly this on 2026-09-09 to mark whose they were; refusing to arm them is the "
+    + "defect, not the guard");
+});
+
+test("EVERY `hold:` label is named, not just the first — two sessions is a collision worth seeing", () => {
+  const { reason } = sweepDecision(pr({ labels: ["hold:worker-capture", "hold:dispatcher"] }));
+  assert.match(reason, /hold:worker-capture/);
+  assert.match(reason, /hold:dispatcher/);
 });
 
 test("a label merely CONTAINING the word is not a hold — `blocked-on-fleet` must not read as `blocked`", () => {
   // Substring matching is how a guard comes to refuse the case it was never written for. The `blocked`
   // check is an exact membership test and this pins it as one.
   assert.equal(sweepDecision(pr({ labels: ["blocked-on-fleet"] })).arm, true);
-  assert.equal(sweepDecision(pr({ labels: ["not-session:anything"] })).arm, true);
+  assert.equal(sweepDecision(pr({ labels: ["not-hold:anything"] })).arm, true);
 });
 
 test("ZERO check runs is refused, and the reason says STRANDED rather than anything resembling `wait`", () => {
