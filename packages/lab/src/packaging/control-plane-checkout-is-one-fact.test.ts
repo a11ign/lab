@@ -176,6 +176,41 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
 const SELF = "packages/lab/src/packaging/control-plane-checkout-is-one-fact.test.ts";
 
 /**
+ * A RECORD OF THE PAST IS NOT CODE, AND IT IS NOT RENAMED.
+ *
+ * `docs/board/reported/` holds what an operator actually ran and what it actually printed — the fleet's
+ * own evidence trail, quoted. One of those records carries
+ *
+ *     "command": "ssh <control-plane> 'cd <the control-plane checkout> && git merge --ff-only origin/main'"
+ *
+ * which is a real `cd` and cannot interpolate anything: it is a quotation, already redacted to
+ * placeholders, and editing it would make the record describe a command **nobody ran**. This repository
+ * has produced that defect once already — the rename sweep rewrote ten recorded capture URLs (#534) and
+ * an npm error transcript quoted in `packages/scorer/tsconfig.json`, both of which had to be restored to
+ * what was recorded.
+ *
+ * A FILE predicate rather than a target classification, deliberately. Classifying the target would put
+ * `<the` in a list of directories, which is nonsense a reader has to decode; and the reason is a property
+ * of the FILE — everything in there is a quotation — not of any one path inside it.
+ *
+ * ## The line this is the third instance of
+ *
+ * **A guard keyed on an operation will find that operation in prose, in records, and on other people's
+ * machines, and each of those needs a DIFFERENT answer.** Three today, all of them the guard working:
+ * the `.ps1` home roots belonged to the Windows guests and were scoped out (two fleets, two facts); the
+ * deprecated local VM's path belongs to a machine nobody has measured and demanding a value for it would
+ * be the guess #515 forbids; and this is a quotation, where the only correct edit is none. A guard that
+ * answered all three the same way would be wrong three times.
+ *
+ * NARROW ON PURPOSE. It would be more precise to say "a `command` field inside a reported record is
+ * quoted text", and that was rejected: it makes this guard know the record schema, which is more coupling
+ * than it buys. The escape-hatch risk is real either way and is pinned by its own test below — a `cd`
+ * into an unclassified literal OUTSIDE this directory must still fail, or the boundary has become a way
+ * of not being checked.
+ */
+const QUOTED_RECORDS = "docs/board/reported/";
+
+/**
  * The top-level directories of THIS repository. A relative `cd packages/control/ansible` is a move
  * INSIDE a checkout, not into one — decided by reading the tree rather than by listing the paths that
  * happen to appear in today's docs, which is a list that drifts the moment somebody writes another one.
@@ -192,6 +227,22 @@ function trackedSource(): string[] {
     // EVERY tracked text file, not a language. The `.mjs`/`.ts` walk is what hid a `.sh`, and narrowing
     // a walk to the languages you expect is the shape this whole file is about.
     .filter((f) => /\.(ts|mjs|js|yml|yaml|sh|ps1|cmd|py|md|json|service|xml)$/.test(f));
+}
+
+/**
+ * The entry sites in ONE file's source, with the quoted-records boundary applied. Extracted so the
+ * boundary is testable against a string rather than only against whatever happens to be on disk today --
+ * a test that can only observe the tree cannot show that the rule is about RECORDS rather than about the
+ * particular text one record happens to contain.
+ */
+export function entrySitesIn(file: string, source: string): Array<[string, string]> {
+  if (file.startsWith(QUOTED_RECORDS)) return [];
+  const found: Array<[string, string]> = [];
+  for (const m of stripComments(source).matchAll(ENTERS_A_DIRECTORY)) {
+    const target = directoryEntered((m[1] ?? m[2] ?? m[3] ?? m[4]).replace(/[`"'].*$/, ""));
+    if (target !== "") found.push([file, target]);
+  }
+  return found;
 }
 
 /** Every discovered site: `[file, whatItEnters]`, one row per occurrence. */
@@ -232,6 +283,7 @@ test("every site that ENTERS a directory either interpolates the source of truth
     + "that passes having examined nothing is the defect this file exists to prevent (10 on 2026-09-08)");
 
   const unclassified = sites.filter(([file, target]) => {
+    if (file.startsWith(QUOTED_RECORDS)) return false;   // a quotation, not code -- see above
     // A target that CANNOT be the control plane's checkout, decided by shape rather than by listing
     // every literal. The checkout is `/root/<name>` or the bare `<name>` reached from `/root`; none of
     // these three can be that, and enumerating them one at a time would be a list that drifts.
@@ -277,6 +329,30 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
   "g": "`~/g` in a `claude-md-links.test.ts` fixture, a two-character stand-in for a path, not a "
     + "directory anybody has.",
 };
+
+test("THE BOUNDARY IS NOT AN ESCAPE HATCH -- a `cd` into an unclassified literal outside the quoted-"
+  + "records directory still fails, and the same text inside it does not. A classification that widens "
+  + "into a way of not being checked is worse than the false positive it removed", () => {
+  const quoted = `docs/board/reported/gates/x.json`;
+  const code = `packages/control/src/x.mjs`;
+  // The real record's own text, verbatim: a command an operator ran, redacted to placeholders. It
+  // cannot interpolate the source of truth, because it is a quotation of something that already
+  // happened -- and editing it would make the record describe a command nobody ran.
+  const line = "\"command\": \"ssh <control-plane> 'cd <the control-plane checkout> && git merge'\"";
+
+  const walked = (file: string) => entrySitesIn(file, line);
+  assert.deepEqual(walked(quoted), [], "a quotation in a reported record is not a use");
+  assert.notDeepEqual(walked(code), [],
+    "the SAME text in a source file must still be found -- if this passes, the boundary has stopped "
+    + "being about records and started being about the string");
+  // AND A DOC THAT IS NOT A RECORD IS STILL CHECKED. Without this line the first two assertions pass
+  // with the boundary widened to `docs/` -- which is precisely what `npm run mutate` reported, and it
+  // was reported as THE GUARD DID NOT BITE rather than as a failure, because a pin asserting the wrong
+  // half is indistinguishable from a working one until something breaks the half it does not watch.
+  assert.notDeepEqual(walked("docs/roles/README.md"), [],
+    "a `cd` in ordinary documentation is still a site to classify -- the boundary is `reported/`, the "
+    + "directory of QUOTATIONS, and not documentation in general");
+});
 
 test("no file names a directory under a home root that should be the checkout -- the SECOND question, "
   + "and the only one that reaches an ASSIGNMENT: `REPO_PATH=\"${A11Y_REPO_PATH:-$HOME/a11ign}\"` is not "
