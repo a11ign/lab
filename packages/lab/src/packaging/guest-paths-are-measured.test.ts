@@ -104,6 +104,16 @@ const GUEST_ROOTS = [
 const SELF = "packages/lab/src/packaging/guest-paths-are-measured.test.ts";
 
 /**
+ * A quotation, not a claim about a real machine. `owned-path-signoff.test.ts`'s fixtures are real PR
+ * bodies fetched verbatim (`gh pr view --json body`) so that predicate can be verified against text
+ * nobody wrote for the test -- and one of them (#584) quotes THIS ROW's own outage, `C:\Users\witness\
+ * a11ign` included, one PR before this file existed. Rewriting the fixture to dodge this guard would
+ * make the record describe a body nobody actually posted -- the exact harm `docs/board/reported/`'s
+ * QUOTED_RECORDS boundary exists to prevent, one directory over.
+ */
+const QUOTED_FIXTURES = "packages/lab/src/packaging/fixtures/";
+
+/**
  * Directories under those roots that are NOT the ones measured, each with the reason. A path reaching
  * neither this list nor the measured value FAILS BY NAME.
  */
@@ -136,6 +146,7 @@ function trackedText(): string[] {
   return execFileSync("git", ["ls-files"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
     .split("\n").filter(Boolean)
     .filter((f) => f !== SELF && !f.includes("/dist/") && !f.startsWith("runs/"))
+    .filter((f) => !f.startsWith(QUOTED_FIXTURES))
     .filter((f) => /\.(ts|mjs|js|yml|yaml|sh|ps1|cmd|py|md|json|service|xml)$/.test(f));
 }
 

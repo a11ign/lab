@@ -211,6 +211,24 @@ const SELF = "packages/lab/src/packaging/control-plane-checkout-is-one-fact.test
 const QUOTED_RECORDS = "docs/board/reported/";
 
 /**
+ * A SECOND quotation directory, for the identical reason: `owned-path-signoff.test.ts`'s fixtures hold
+ * real PR bodies (`gh pr view --json body`, verbatim) so that predicate can be verified against text
+ * nobody wrote for the test. One of those bodies is #584's own, quoting a home-root literal that is
+ * this file's exact subject, one PR earlier -- see `guest-paths-are-measured.test.ts` for the sibling
+ * guard #584 itself made pass. Editing the fixture to dodge this guard would make it stop being what
+ * #603 asked for: the real thing an author wrote, not a synthesised stand-in shaped to pass. Kept
+ * separate from `QUOTED_RECORDS` rather than merged into one array, because the two directories are
+ * owned by different rows for different reasons and a shared name would blur that.
+ *
+ * (Deliberately not quoting the literal itself here -- doing so trips exactly the sibling guard this
+ * paragraph is about, one file over, as its first draft did.)
+ */
+const QUOTED_FIXTURES = "packages/lab/src/packaging/fixtures/";
+
+/** Is `file` a quotation of something that already happened, rather than code this repo runs? */
+const isQuotation = (file: string) => file.startsWith(QUOTED_RECORDS) || file.startsWith(QUOTED_FIXTURES);
+
+/**
  * The top-level directories of THIS repository. A relative `cd packages/control/ansible` is a move
  * INSIDE a checkout, not into one — decided by reading the tree rather than by listing the paths that
  * happen to appear in today's docs, which is a list that drifts the moment somebody writes another one.
@@ -236,7 +254,7 @@ function trackedSource(): string[] {
  * particular text one record happens to contain.
  */
 export function entrySitesIn(file: string, source: string): Array<[string, string]> {
-  if (file.startsWith(QUOTED_RECORDS)) return [];
+  if (isQuotation(file)) return [];
   const found: Array<[string, string]> = [];
   for (const m of stripComments(source).matchAll(ENTERS_A_DIRECTORY)) {
     const target = directoryEntered((m[1] ?? m[2] ?? m[3] ?? m[4]).replace(/[`"'].*$/, ""));
@@ -283,7 +301,7 @@ test("every site that ENTERS a directory either interpolates the source of truth
     + "that passes having examined nothing is the defect this file exists to prevent (10 on 2026-09-08)");
 
   const unclassified = sites.filter(([file, target]) => {
-    if (file.startsWith(QUOTED_RECORDS)) return false;   // a quotation, not code -- see above
+    if (isQuotation(file)) return false;   // a quotation, not code -- see above
     // A target that CANNOT be the control plane's checkout, decided by shape rather than by listing
     // every literal. The checkout is `/root/<name>` or the bare `<name>` reached from `/root`; none of
     // these three can be that, and enumerating them one at a time would be a list that drifts.
@@ -359,6 +377,7 @@ test("no file names a directory under a home root that should be the checkout --
   + "an operation, so no amount of operation-keying finds it", () => {
   const named: string[] = [];
   for (const file of trackedSource()) {
+    if (isQuotation(file)) continue;   // a quotation, not code -- see QUOTED_FIXTURES above
     for (const m of stripComments(read(file)).matchAll(UNDER_A_HOME_ROOT)) {
       const segment = m[1].replace(/\.+$/, "");
       if (segment === "") continue;
