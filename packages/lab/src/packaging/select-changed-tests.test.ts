@@ -40,10 +40,16 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
 import {
   sourceClosure, discoverTestFiles, selectTests, broadReasons, pathStringReferences,
   discoversFromTree, alwaysRunTests, testFilesToRun,
 } from "../../../../scripts/select-changed-tests.mjs";
+
+// #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
+// rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
+// population must be derived from a real import, never from scanning source text.
+declareTreeWideGuard();
 
 type PackageSpec = { dir: string; name: string; exportsMap?: Record<string, unknown>; files: Record<string, string> };
 
