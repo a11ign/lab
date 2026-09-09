@@ -40,7 +40,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { REPO, REPO_URL, PRODUCT_REPO, PRODUCT_REPO_URL, PRODUCT_GIT_URL }
+import { REPO, REPO_URL, REPO_GIT_URL, PRODUCT_REPO, PRODUCT_REPO_URL, PRODUCT_GIT_URL }
   from "../../../../scripts/repo-identity.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
@@ -100,8 +100,15 @@ const SITES: Array<{ file: string; expect: string }> = [
   { file: "packages/cli/README.md", expect: `uses: ${REPO}@main` },
   { file: "packages/scorer/package.json", expect: PRODUCT_GIT_URL },
   { file: "packages/judge/package.json", expect: PRODUCT_GIT_URL },
+  // OPERATIONAL, not documentary (#604) -- so REPO, exactly like the `uses:` lines above and for a
+  // stronger reason. This value is handed to `git clone` on a box being provisioned; it is not something
+  // a human reads and updates. It was classified as a PRODUCT_REPO site by the 2026-09-06 audit, which
+  // is a decision rather than an oversight, and this changes the decision: a badge that 404s is a broken
+  // image, while this 404s the provisioning of a new worker. `fleet:deploy` pulls into a checkout the
+  // guest already has, so the fleet runs and only GROWING it fails -- invisible until somebody needs
+  // capacity, which is the worst shape a configuration fault can have.
   { file: "packages/control/ansible/roles/worker/defaults/main.yml",
-    expect: `worker_repo_url: ${PRODUCT_GIT_URL}` },
+    expect: `worker_repo_url: ${REPO_GIT_URL}` },
   { file: "packages/control/ansible/collections/ansible_collections/a11y/worker/galaxy.yml",
     expect: `repository: ${PRODUCT_REPO_URL}` },
   { file: ".github/ISSUE_TEMPLATE/config.yml", expect: `${PRODUCT_REPO_URL}/security/advisories/new` },
