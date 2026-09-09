@@ -20,7 +20,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { join, relative } from "node:path";
+import { extname, join, relative } from "node:path";
 import ts from "typescript";
 
 /** Above this, a function is no longer readable in one screenful even generously scrolled. */
@@ -41,8 +41,32 @@ function sourceFiles(dir: string): string[] {
 
 interface Oversized { name: string; lines: number; file: string }
 
+/**
+ * THE SCRIPT KIND FOLLOWS THE EXTENSION, and passing `ts.ScriptKind.JS` for everything was not a
+ * harmless simplification — it silently corrupted this guard's own measurement.
+ *
+ * Parsed as JS, `new Set<string>()` is `new Set < string > ()`: a comparison, not a generic call. The
+ * parser recovers by mis-balancing the braces that follow, and the enclosing function's node then runs to
+ * END OF FILE. Measured 2026-09-09 on `evidence-diff.test.ts`, where one test was reported as 152 lines
+ * and its real length is 47.
+ *
+ * The false POSITIVE is the loud half and it is what found this. **The false NEGATIVE is the half with
+ * teeth**: every function AFTER the mis-parse is swallowed into that one node and never measured on its
+ * own, so a genuinely oversized function later in any `.ts` file using a generic was invisible here. That
+ * is this guard failing in exactly the direction it exists to prevent.
+ *
+ * Measured across all 764 files this guard walks, before changing anything:
+ *
+ *     ScriptKind.JS : 1 over 90  -> the phantom
+ *     by extension  : 0 over 90
+ *
+ * **Nothing is being hidden today — but nothing was being checked in those files either, and those are
+ * not the same claim.** Read without that sentence, `0 over 90` says "no problem" and this correction
+ * looks like tidying.
+ */
 function oversizedIn(file: string): Oversized[] {
-  const src = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.ESNext, true, ts.ScriptKind.JS);
+  const kind = extname(file) === ".ts" ? ts.ScriptKind.TS : ts.ScriptKind.JS;
+  const src = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.ESNext, true, kind);
   const found: Oversized[] = [];
   const visit = (node: ts.Node): void => {
     const isFunction = ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node)

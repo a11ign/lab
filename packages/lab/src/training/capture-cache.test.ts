@@ -269,3 +269,39 @@ test("DIRECTION TWO -- a DIFFERENT profile stamp changes the key, which is the w
     "the whole cache key must move, not merely the environment fragment -- a field that changes "
     + "`environmentKey` and not `cacheKey` would be a key nobody consults");
 });
+
+/**
+ * #687 — THE DOCUMENT IDENTITY IS NOT A CACHE KEY, AND MUST NOT BECOME ONE.
+ *
+ * `documentIdentity` gives every capture a statement of which document it was served, so two captures of
+ * one URL can be compared at all. Putting that in `environmentKey` would invalidate every cached capture
+ * for a property that cannot vary on the pages the cache is for:
+ *
+ *   - **Real-page captures never cache** (`docs/lab-pipeline.md`), so there is no key to protect there.
+ *   - **The corpus's pages are ours** — generated into a directory, served by our own page server, and
+ *     the key already covers every file in it. A generated page cannot serve two renders.
+ *
+ * So the population where a document digest would change a key is EMPTY, and adding it would cost a full
+ * recapture of 2,122+ captures to guard a case that cannot arise.
+ *
+ * The shape assertion above would already fail on a new field — but it can be satisfied by editing the
+ * expected object in the same commit, which makes the recapture cost invisible to the reviewer. These two
+ * fail with the reason instead.
+ */
+test("no cache-key field is derived from the document a capture was served", () => {
+  const identityish = /document|identity|digest|census|title|served|render/i;
+  const offenders = Object.keys(environmentKey({})).filter((key) => identityish.test(key));
+  assert.deepEqual(offenders, [],
+    "a field naming the served document in `environmentKey` invalidates every capture on disk. #687 "
+    + "records why the population it would guard is empty; if that has changed, say so there first.");
+});
+
+test("capture-cache.mjs does not read a capture's document identity", () => {
+  // The field-name guard above cannot see a key computed from the identity under another name. This can:
+  // the module has no business importing it at all, since a cache key is decided BEFORE a capture exists.
+  const source = readFileSync(
+    new URL("./capture-cache.mjs", import.meta.url), "utf8");
+  assert.equal(/document-identity/.test(source), false,
+    "capture-cache.mjs imported document-identity — a cache key is decided before the capture runs, so "
+    + "there is nothing there for it to read except a decision to invalidate the corpus. #687.");
+});

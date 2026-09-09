@@ -29,6 +29,7 @@ import { captureIsSelfConsistent } from "@a11ign/evidence/verify";
 import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { repeatCapturesRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 import { EVIDENCE_FIELDS, fieldValues } from "../capture/evidence-diff.mjs";
+import { compareIdentity, documentIdentity } from "@a11ign/evidence/document-identity";
 
 /**
  * `--probe-forms` and `--probe-tables` are how a canary reaches the fields that carry interaction
@@ -130,6 +131,35 @@ export function comparable(/** @type {any} */ capture) {
     out[field[1]] = fieldValues(capture, field);
   }
   return out;
+}
+
+/**
+ * WERE ALL N CAPTURES SERVED THE SAME DOCUMENT? — #687.
+ *
+ * This gate's whole premise is "one page, captured repeatedly, compared by CONTENT", and until now
+ * nothing checked the premise. A canary served a different document — a consent wall, a sign-in
+ * redirect, an outage page — reports EVERY field unstable, and the reader is sent to look for a
+ * nondeterministic probe. Measured on `https://calendly.com/` (#685): two captures eight minutes apart
+ * on one worker were served `accounts.google.com`'s sign-in wall and `calendly.com/scheduling`, and
+ * every record said `url: "https://calendly.com/"`.
+ *
+ * Compared PAIRWISE AGAINST THE FIRST rather than by digest equality across the set: identity components
+ * are optional, so two captures can be UNCOMPARABLE rather than equal or different, and a set of digests
+ * would silently read "unexamined" as "differs". Returns the pairs that DIFFER, never the ones nobody
+ * could compare.
+ *
+ * @param {any[]} captures the raw captures, in order
+ * @returns {{ at: number, differing: any[] }[]} one entry per capture served a different document
+ */
+export function servedDifferentDocuments(captures) {
+  if (captures.length < 2) return [];
+  const first = documentIdentity(captures[0]);
+  const differed = [];
+  for (let i = 1; i < captures.length; i += 1) {
+    const result = compareIdentity(first, documentIdentity(captures[i]));
+    if (result.verdict === "DIFFERENT_DOCUMENT") differed.push({ at: i + 1, differing: result.differing });
+  }
+  return differed;
 }
 
 let recoveries = 0;
@@ -276,6 +306,28 @@ async function main() {
 }
 
 /**
+ * Which captures were served another document, and what that does to everything printed after it.
+ *
+ * Split out of `report` for the same reason `report` was split out of `main`: the lint gate's
+ * complexity-15 limit, and extraction is the honest fix rather than a suppression.
+ *
+ * @param {{ at: number, differing: any[] }[]} servedDifferently
+ */
+function printServedDifferently(servedDifferently) {
+  // PRINTED BEFORE the field list, because it changes what the field list MEANS. Every field varying
+  // across two different documents is the expected result, not a finding about a probe.
+  for (const { at, differing } of servedDifferently) {
+    console.log(`  DIFFERENT DOCUMENT  capture ${at} was not served the page capture 1 was: `
+      + differing.map((/** @type {any} */ d) =>
+        `${d.component} ${JSON.stringify(d.before)} -> ${JSON.stringify(d.after)}`).join("; "));
+  }
+  if (servedDifferently.length) {
+    console.log("  ^ the instability above is a fact about the PAGE, not about this pipeline. Settle "
+      + "which document you meant to capture before reading any field as unstable.");
+  }
+}
+
+/**
  * The verdict. Split from `main` to stay inside the lint gate's 70-line and complexity-15 limits --
  * which is the honest fix for a long function, rather than a suppression.
  */
@@ -305,6 +357,10 @@ function report(/** @type {any} */ { runs, raw, errors }) {
   const traversed = runs.map((/** @type {any} */ r, /** @type {any} */ i) => r.transcript.length > 0 && captureIsSelfConsistent(raw[i]));
   const inconsistent = runs.filter((/** @type {any} */ _, /** @type {any} */ i) => runs[i].transcript.length > 0 && !traversed[i]);
   const usable = runs.filter((/** @type {any} */ _, /** @type {any} */ i) => traversed[i]);
+  // THE PREMISE, CHECKED. Indexed against `raw` for the same reason `traversed` is: identity reads the
+  // capture's diagnostic marks, which the flattened comparison shape does not carry.
+  const servedDifferently = servedDifferentDocuments(
+    raw.filter((/** @type {any} */ _, /** @type {any} */ i) => traversed[i]));
 
   if (usable.length < 2) {
     console.error(`\nOnly ${usable.length} usable capture(s); nothing to compare.`);
@@ -321,6 +377,7 @@ function report(/** @type {any} */ { runs, raw, errors }) {
 
   const unstable = compareFields(usable);
 
+  printServedDifferently(servedDifferently);
   for (const e of errors) console.log(`  FAILED    ${e}`);
   if (empty.length) {
     console.log(`  EMPTY     ${empty.length} capture(s) heard nothing at all — the foreground flake, ` +
@@ -340,7 +397,14 @@ function report(/** @type {any} */ { runs, raw, errors }) {
   // capture or an error is a failure too, just a different one -- so all three fail the run.
   // An inconsistent capture is a failure like the others -- production would retry it -- so it fails the
   // run rather than being quietly dropped from the comparison.
-  process.exit(unstable === 0 && errors.length === 0 && empty.length === 0 && inconsistent.length === 0 ? 0 : 1);
+  // ONE LIST, not a five-term conjunction, and the reason is the lint gate's complexity limit rather
+  // than taste -- each `&&` is a branch. The semantics are unchanged: all five are failures, they are
+  // just DIFFERENT failures, which is why each is printed above under its own name rather than summed.
+  //
+  // A capture served another document fails the run like the other four, and for the same reason: this
+  // gate must not report a canary STABLE, or usefully unstable, over a page it was never given.
+  const failures = [unstable, errors.length, empty.length, inconsistent.length, servedDifferently.length];
+  process.exit(failures.some((/** @type {number} */ n) => n > 0) ? 1 : 0);
 }
 
 /**
