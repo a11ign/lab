@@ -66,6 +66,21 @@ test("multiple session labels are all reported -- a race leaves both visible unt
   assert.deepEqual(status.sessions.sort(), ["worker-contracts", "worker-judge"]);
 });
 
+// --- #656: the claim records the BRANCH, so an escalating session can tell a portable row from a held
+// one before it ever offers to take it (see scripts/carry-branch.mjs's own header for the incident) ---
+
+test("claimStatus reads the recorded branch off a branch: label", () => {
+  const status = claimStatus(["in-progress", "session:worker-config", "started",
+    "branch:agent/pre-push-delete-583"]);
+  assert.equal(status.branch, "agent/pre-push-delete-583");
+});
+
+test("claimStatus reports branch: null when no branch label is present -- a real, common state (a "
+  + "dispatched-not-started row, or a non-code row), never a parse failure", () => {
+  const status = claimStatus(["in-progress", "session:worker-config"]);
+  assert.equal(status.branch, null);
+});
+
 // --- decideClaim: pure ---
 
 test("decideClaim says proceed on a genuinely unclaimed row", () => {
@@ -251,6 +266,87 @@ test("claimRow (start) additionally writes STARTED_LABEL, transitioning dispatch
   assert.deepEqual(result, { claimed: true, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall!.includes(STARTED_LABEL), "claim/start must mark started");
+});
+
+// --- #656: claimRow records the branch, declineRow removes it ---
+
+test("#656 ACCEPTANCE: claimRow given a branch writes branch:<name> in the SAME edit as the claim", () => {
+  const calls: string[][] = [];
+  let reads = 0;
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      reads += 1;
+      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
+        { name: STARTED_LABEL }, { name: "branch:agent/row-claim-branch-656" }];
+      return JSON.stringify({ number: 656, title: "A row", labels });
+    }
+    return "";
+  };
+  const result = claimRow(656, "worker-config",
+    { run, moveStatus: () => ({ moved: true }), branch: "agent/row-claim-branch-656" });
+  assert.deepEqual(result, { claimed: true, statusMoved: true });
+  const editCall = calls.find((a) => a[1] === "edit");
+  assert.ok(editCall!.includes("branch:agent/row-claim-branch-656"), "must write the branch label");
+});
+
+test("claimRow with NO branch given writes no branch: label at all -- not every claimed row is code, "
+  + "and a dispatch-only claim may not have one yet", () => {
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") return JSON.stringify({ number: 656, title: "A row", labels: [] });
+    return "";
+  };
+  claimRow(656, "worker-config", { run, moveStatus: () => ({ moved: true }) });
+  const editCall = calls.find((a) => a[1] === "edit")!;
+  assert.ok(!editCall.some((a) => a.startsWith("branch:")), "no branch was given, none should be written");
+});
+
+test("#656 MUTATION: losing the claim race backs off the branch label too, not just session -- a "
+  + "back-off must leave nothing of this session's attempt standing", () => {
+  let reads = 0;
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      reads += 1;
+      if (reads === 1) return JSON.stringify({ number: 656, title: "A row", labels: [] });
+      return JSON.stringify({ number: 656, title: "A row", labels: [{ name: CLAIM_LABEL },
+        { name: "session:worker-config" }, { name: "session:worker-judge" }] });
+    }
+    return "";
+  };
+  const result = claimRow(656, "worker-config",
+    { run, moveStatus: () => ({ moved: true }), branch: "agent/row-claim-branch-656" });
+  assert.equal(result.claimed, false);
+  const removedLabels = (args: string[]) => args
+    .map((a, i) => (a === "--remove-label" ? args[i + 1] : null)).filter((l): l is string => l !== null);
+  const backOffCall = calls.find((a) => removedLabels(a).includes("session:worker-config"));
+  assert.ok(backOffCall, "must back off");
+  assert.ok(removedLabels(backOffCall!).includes("branch:agent/row-claim-branch-656"),
+    "the branch label this attempt wrote must be removed alongside the session label it lost with");
+});
+
+test("#656 ACCEPTANCE: declineRow removes the recorded branch label when releasing a row", () => {
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      return JSON.stringify({ number: 656, title: "A row", labels: [{ name: CLAIM_LABEL },
+        { name: "session:worker-config" }, { name: STARTED_LABEL },
+        { name: "branch:agent/row-claim-branch-656" }] });
+    }
+    return "";
+  };
+  const result = declineRow(656, "worker-config", { run, moveStatus: () => ({ moved: true }) });
+  assert.equal(result.declined, true);
+  const editCall = calls.find((a) => a[1] === "edit")!;
+  const removedLabels = editCall
+    .map((a, i) => (a === "--remove-label" ? editCall[i + 1] : null)).filter((l): l is string => l !== null);
+  assert.ok(removedLabels.includes("branch:agent/row-claim-branch-656"),
+    "declining must remove the stale branch label -- a released row is nobody's, and a lingering "
+    + "branch: label would tell a future escalation \"held\" for a row that is actually free");
 });
 
 test("MUTATION: dispatching a `ready` row removes `ready` -- #197's review finding, caught before merge", () => {
