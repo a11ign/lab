@@ -12,6 +12,11 @@
  * paid for `refreshBrowseBuffer` (a correct remedy whose trigger was never set, inert on every capture
  * ever taken) and for `scorer:verify` (a security check nothing invoked).
  */
+// no-token: gh
+//
+// #827. This file exercises `sweepDecision` (pure, fixtures in and a verdict out) and reads source text
+// with `readFileSync`. `auto-arm-sweep.mjs`'s `gh` helper is in the closure because it is in the module,
+// not because anything here calls it -- `main()` is never invoked.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -205,4 +210,29 @@ test("MUTATION TARGET (#404/#415): removing `reopened` or `synchronize` from the
     "exactly four trigger types (opened, ready_for_review, reopened, synchronize) -- if this grows or "
     + "shrinks without the tests above changing, something was added or removed without being reasoned "
     + "about here");
+});
+
+/**
+ * MERGED MEANWHILE IS THE ORDINARY CASE ON A FAST MAIN, NOT A FAILURE.
+ *
+ * The candidate list is read at the top of a sweep run. On a main taking eight merges in half an hour, a
+ * PR can go green, arm itself and land between that read and the arm — `gh pr merge --auto` then exits
+ * non-zero, and reporting it as FAILED TO ARM puts `sweep` red on main's tip for a PR that did exactly
+ * what it was supposed to. Measured on #845 at 17:25:53Z.
+ *
+ * The predicate is asked of the API rather than matched on the failure's message, because `gh` exits 1
+ * for a merged PR, an unmergeable one and a network fault alike.
+ */
+test("the sweep's source asks the API whether the PR merged, rather than matching on the error text", () => {
+  const src = readFileSync(
+    fileURLToPath(new URL("../../../../scripts/auto-arm-sweep.mjs", import.meta.url)), "utf8");
+  assert.match(src, /function mergedMeanwhile/);
+  assert.match(src, /pulls\/\$\{number\}/,
+    "it must ASK -- a predicate reading `cause.message` cannot tell a merge from a network fault");
+  assert.doesNotMatch(src, /cause\.message.*already merged|already merged.*cause\.message/,
+    "no message-matching path may creep back in beside it");
+  const helper = src.slice(src.indexOf("function mergedMeanwhile"));
+  assert.match(helper.slice(0, helper.indexOf("\n}")), /catch \{\s*return false;/,
+    "UNREADABLE IS NOT MERGED: a failed lookup must report FAILED TO ARM, because not knowing why an "
+    + "arm failed is not the same as knowing it was harmless");
 });

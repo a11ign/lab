@@ -12,7 +12,7 @@ import {
   READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, handClaims, strandedByIncompleteDecline,
   fetchOpenIssues, fetchOpenIssuesChecked, fetchReportedOpenIssueCount, fetchAllIssues, closedDebris,
   isClosedDebrisLabel, openRowsAbsentFromBoard, labellessRows,
-  readyRowsAlreadyMerged, fetchClosingPrRefs, fetchLatestReopenedAt, CHECKS, runCheck,
+  readyRowsAlreadyMerged, fetchClosingPrRefs, fetchLatestReopenedAt, CHECKS, runCheck, isProjectsCredentialGap,
 } from "../../../../scripts/ready-label-audit.mjs";
 // #782: `isClosedDebrisLabel` now DERIVES from this, rather than pinning the two equal with a separate
 // test -- so this import is the proof the derivation actually happened, not a second, parallel check.
@@ -766,9 +766,10 @@ test("claimsNobodyIsWorking: a claim made TEN MINUTES ago with no branch is NOT 
 // runs answered NOTHING about closing PR references or dead claims -- two questions that need no
 // board at all -- because the fourth check could not ask its own.
 
-test("#527-adjacent: a throwing check is recorded as REFUSED, never counted as a clean zero", () => {
+test("#527-adjacent: a throwing check with an UNEXPLAINED cause is recorded as REFUSED, never counted "
+  + "as a clean zero", () => {
   const refused: string[] = [];
-  const count = runCheck("board membership", () => { throw new Error("no ProjectV2"); }, refused);
+  const count = runCheck("board membership", () => { throw new Error("gh: not authenticated"); }, refused);
   assert.equal(count, 0, "a refusal contributes no findings");
   assert.deepEqual(refused, ["board membership"], "and it is named, so the zero cannot read as clean");
 });
@@ -784,7 +785,7 @@ test("MUTATION: one refusing check does NOT stop the checks after it -- the whol
   const refused: string[] = [];
   const checks: [string, () => number][] = [
     ["first", () => { ran.push("first"); return 0; }],
-    ["board membership", () => { throw new Error("Could not resolve to a ProjectV2"); }],
+    ["board membership", () => { throw new Error("gh: not authenticated"); }],
     ["closing PR references", () => { ran.push("closing PR references"); return 0; }],
     ["claim activity", () => { ran.push("claim activity"); return 0; }],
   ];
@@ -792,6 +793,45 @@ test("MUTATION: one refusing check does NOT stop the checks after it -- the whol
   assert.deepEqual(ran, ["first", "closing PR references", "claim activity"],
     "every askable check still ran");
   assert.deepEqual(refused, ["board membership"]);
+});
+
+// --- #546/ceo's ruling, 2026-09-09: the ONE named, ungrantable credential gap is NOT a generic refusal ---
+
+test("isProjectsCredentialGap: matches GitHub's own two measured wordings for the SAME cause -- \"this "
+  + "does not exist\" and \"no permission to see it\" render identically", () => {
+  assert.ok(isProjectsCredentialGap("no ProjectV2"));
+  assert.ok(isProjectsCredentialGap("gh: Could not resolve to a ProjectV2 with the number 2"));
+  assert.ok(!isProjectsCredentialGap("gh: not authenticated"),
+    "an unrelated failure must not be swept into the one named gap");
+});
+
+test("#546 ACCEPTANCE, MUTATION TARGET: runCheck records a ProjectV2 throw in `notRun`, not `refused` "
+  + "-- a job red on every commit for a capability nobody here can grant trains everyone to ignore it", () => {
+  const refused: string[] = [];
+  const notRun: string[] = [];
+  const count = runCheck("board membership",
+    () => { throw new Error("gh: Could not resolve to a ProjectV2 with the number 2"); }, refused, notRun);
+  assert.equal(count, 0);
+  assert.deepEqual(refused, [], "the named gap must not also count as an unexplained refusal");
+  assert.deepEqual(notRun, ["board membership"]);
+});
+
+test("#546: an UNRELATED throw on the same check still lands in `refused`, never swallowed into "
+  + "`notRun` just because the check happens to be board membership", () => {
+  const refused: string[] = [];
+  const notRun: string[] = [];
+  runCheck("board membership", () => { throw new Error("ENOTFOUND api.github.com"); }, refused, notRun);
+  assert.deepEqual(refused, ["board membership"]);
+  assert.deepEqual(notRun, []);
+});
+
+test("#546: notRun defaults to a fresh array when the caller does not pass one -- callers written "
+  + "before this ruling still work unchanged", () => {
+  const refused: string[] = [];
+  assert.doesNotThrow(() =>
+    runCheck("board membership", () => { throw new Error("no ProjectV2"); }, refused));
+  assert.deepEqual(refused, [], "with no notRun array supplied, the named gap still does not become a "
+    + "refusal -- it is simply not recorded anywhere the caller can see, same as before this test existed");
 });
 
 test("CHECKS names all nine, so the partial-audit sentence states a true denominator", () => {
