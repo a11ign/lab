@@ -181,6 +181,49 @@ test("claimRow claims a genuinely unclaimed row: reads, writes, re-reads, confir
   assert.ok(editCall!.includes(CLAIM_LABEL) && editCall!.includes("session:worker-contracts"));
 });
 
+// --- #707: claim-time enforcement of the three required template fields ---
+
+/** A `run` that answers BOTH `--json` shapes `writeRowLabels` needs from `issue view` -- the plain label
+ * fetch (`fetchLabels`) and the body fetch (the new template-fields check) -- distinguished by the actual
+ * `--json` value asked for, since a naive "any `issue view` call" mock would answer one shape for both
+ * and break whichever call came second. */
+function claimRunWithBody(body: string, labels: string[] = []) {
+  return (_cmd: string, args: string[]) => {
+    if (args[1] === "view") {
+      const jsonIndex = args.indexOf("--json");
+      const jsonArg = jsonIndex >= 0 ? args[jsonIndex + 1] : "";
+      if (jsonArg === "body") return JSON.stringify({ body });
+      return JSON.stringify({ number: 707, title: "A row", labels: labels.map((name) => ({ name })) });
+    }
+    return ""; // the `edit` call
+  };
+}
+
+test("#707 ACCEPTANCE: claimRow refuses a row missing template fields, naming them, end to end", () => {
+  const run = claimRunWithBody("just prose, no headings at all");
+  const result = claimRow(707, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
+  assert.equal(result.claimed, false);
+  const reason = (result as { reason: string }).reason;
+  assert.match(reason, /Region/);
+  assert.match(reason, /Acceptance/);
+  assert.match(reason, /Open-check/);
+});
+
+test("#707 ACCEPTANCE, POSITIVE CONTROL: claimRow proceeds when all three fields are stated", () => {
+  const run = claimRunWithBody(
+    "## Region\n\nscripts/row-claim.mjs\n\n## Acceptance\n\nnpm test\n\n## Open-check\n\ngh issue view 707\n");
+  const result = claimRow(707, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
+  assert.equal(result.claimed, true);
+});
+
+test("MUTATION TARGET: claimRow refuses on an INCOMPLETE row even when it is otherwise this session's "
+  + "own resumed claim -- the template check is a property of the ROW, not skipped like session "
+  + "eligibility is", () => {
+  const run = claimRunWithBody("no headings", ["in-progress", "session:worker-contracts"]);
+  const result = claimRow(707, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
+  assert.equal(result.claimed, false);
+});
+
 test("claimRow refuses immediately when already claimed by another -- never even attempts to write", () => {
   const calls: string[][] = [];
   const run = (cmd: string, args: string[]) => {
