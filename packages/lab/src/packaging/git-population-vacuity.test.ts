@@ -9,7 +9,7 @@
  *
  * DISCOVERED, never hand-listed, over the identical shape as `git-spawn-classification.test.ts` (env
  * scrubbing) and `exit-code-contract.test.ts`'s Python extension (exit-code classification): every
- * `.test.ts` file spawning git to list branches/tags/log/grep/ls-files/show must be classified here.
+ * `.test.ts` file spawning git to list branches/tags/log/grep/ls-files/show/diff must be classified here.
  *
  * CLASSIFICATION, not a bare pass/fail, because phrasing varies too much to trust a regex on its own —
  * `.length >= N`, `.size >= N`, a named local (`scanned`, `checked`) compared against a floor, or (for a
@@ -17,23 +17,47 @@
  * classified file's quoted guard expression is checked to literally still appear in the file, so a
  * classification cannot silently drift from what the file actually does.
  *
- * SWEPT AND BOUNDED, not exhaustive: this file's population is git-ref/branch/tag/log/grep/ls-files/show
- * calls specifically (items 1-2 of the six-instance row). `readdirSync`-based discovery was already swept
- * separately (docs/backlog.md, "checked every readdirSync-based discovery test in the tree (55 files)...
- * all but that instance already have one") and is not re-walked here. A broader sweep of every
- * `matchAll`-based population in the tree (~50 files) found two further confirmed gaps outside this
- * file's scope (`criteria-counts-are-not-spelled-out.test.ts`, `candidate-gate-examines-the-candidate.
- * test.ts` — both fixed directly, not folded into this discovery, because each has its own bespoke
- * population shape that a generic classifier could not describe honestly) and two soft gaps also fixed
- * directly (`capture-faults.test.ts`'s negative assertion lacked a positive-count proof that the file it
- * reads is non-trivial; `action-reference.test.ts`'s third test relied on a SIBLING test's guard rather
- * than proving its own population, which `node:test` cannot enforce since one test's failure does not
- * stop a sibling from reporting a false pass). See docs/backlog.md for the full sweep record.
+ * #633: `diff` JOINED THE POPULATION LIST, and it is the sharpest member. This file's own scope used to
+ * read "branch/tag/log/grep/ls-files/show" — `diff` was left out on the reasoning that a two-ref
+ * comparison "enumerates" less obviously than `ls-files`. It is the identical vacuity, sharper: a `git
+ * diff A..B` where `B` is an ancestor of `A` (routinely `A` itself — `HEAD` compared against
+ * `origin/main` on `main`'s own tip) is `diff(B, B)`, empty BY CONSTRUCTION, and a "0 missing" assertion
+ * over it is proven about zero symbols. `pre-push-resolve-toward-main.test.ts`'s "A CLEAN MERGE PASSES"
+ * test was exactly this shape — measured live, 2026-09-09, after the vacuity held a real SIGPIPE false
+ * refusal invisible for weeks (the guard's own test could never have caught it: it examined nothing).
+ * Fixed there directly (a synthetic 100 KB fixture with a genuinely non-empty, two-symbol population);
+ * this entry is what stops the SAME shape landing unclassified in the next file that reaches for `diff`.
+ *
+ * SWEPT AND BOUNDED, not exhaustive: this file's population is git-ref/branch/tag/log/grep/ls-files/
+ * show/diff calls specifically (items 1-2 of the six-instance row, plus #633's `diff` extension).
+ * `readdirSync`-based discovery was already swept separately (docs/backlog.md, "checked every
+ * readdirSync-based discovery test in the tree (55 files)... all but that instance already have one")
+ * and is not re-walked here. A broader sweep of every `matchAll`-based population in the tree (~50 files)
+ * found two further confirmed gaps outside this file's scope (`criteria-counts-are-not-spelled-out.test.
+ * ts`, `candidate-gate-examines-the-candidate.test.ts` — both fixed directly, not folded into this
+ * discovery, because each has its own bespoke population shape that a generic classifier could not
+ * describe honestly) and two soft gaps also fixed directly (`capture-faults.test.ts`'s negative
+ * assertion lacked a positive-count proof that the file it reads is non-trivial; `action-reference.test.
+ * ts`'s third test relied on a SIBLING test's guard rather than proving its own population, which
+ * `node:test` cannot enforce since one test's failure does not stop a sibling from reporting a false
+ * pass). See docs/backlog.md for the full sweep record.
+ *
+ * DELIBERATELY NOT BROADENED to catch an indirected call site (`const git = (...args) =>
+ * execFileSync("git", args, ...)`, the shape `pre-push-resolve-toward-main.test.ts` and `pre-push-stale-
+ * base.test.ts` both use). `git-spawn-classification.test.ts`'s sibling walk covers "any git spawn" with
+ * a wrapper-tolerant `<identifier>("git", ...)` pattern for a DIFFERENT question (env-scrubbing); this
+ * file's own literal-subcommand pattern is what makes CLASSIFICATION's guard-expression check meaningful
+ * (it greps for the exact string proving a population non-empty, which only exists to find for a call
+ * whose subcommand is a literal in the source). Widening it would require inventing a second checking
+ * strategy for wrapped calls this file was never built to describe honestly — narrower coverage that is
+ * checkable beats broader coverage that only looks checked.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
@@ -51,11 +75,12 @@ const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
  */
 const SELF = "packages/lab/src/packaging/git-population-vacuity.test.ts";
 
-/** `git branch -r`, `git tag`, `git log`, `git grep`, `git ls-files`, `git show`, `git for-each-ref` --
- * every git subcommand that ENUMERATES a population, comments stripped first so a docstring mentioning
- * one (this file's own header, or the sibling divergence test's) cannot be mistaken for a real call. */
+/** `git branch -r`, `git tag`, `git log`, `git grep`, `git ls-files`, `git show`, `git for-each-ref`,
+ * `git diff` (#633) -- every git subcommand that ENUMERATES a population, comments stripped first so a
+ * docstring mentioning one (this file's own header, or the sibling divergence test's) cannot be mistaken
+ * for a real call. */
 const SPAWNS_GIT_POPULATION =
-  /\b(?:execFileSync|spawnSync)\(\s*["']git["'],\s*\[\s*["'](?:branch|tag|log|grep|ls-files|show|for-each-ref)/;
+  /\b(?:execFileSync|spawnSync)\(\s*["']git["'],\s*\[\s*["'](?:branch|tag|log|grep|ls-files|show|for-each-ref|diff)/;
 
 function tracked(): string[] {
   return execFileSync("git", ["ls-files", "*.test.ts"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
@@ -217,6 +242,16 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "argument, floored at 20 against the known census of ~26 (23 real spawns plus 3 files carrying "
       + "documented data-not-a-spawn exemptions)",
   },
+  "packages/lab/src/packaging/claude-md-content-preservation.test.ts": {
+    guard: "removed,\n    [norm(",
+    note: "#633: joined this classification when `diff` did. `claudeMdDiff()` runs a real `git diff "
+      + "origin/main -- CLAUDE.md` and CAN be empty by construction (on trunk-guard, or a PR that never "
+      + "touches CLAUDE.md, HEAD legitimately equals origin/main) -- but the file's own header already "
+      + "gets this right: the extraction logic (`removedSubstantiveLines`) is proven against a SYNTHETIC "
+      + "diff built in the test, so the mechanism is exercised whether or not the real diff has anything "
+      + "in it. The guard quoted is that synthetic-fixture assertion, not the real-diff test, which is "
+      + "deliberately allowed to examine nothing and say so.",
+  },
 };
 
 test("MUTATION: without the SELF exclusion, this file would discover itself", () => {
@@ -233,11 +268,12 @@ test("the discovery finds a non-trivial population -- vacuity guard for the walk
   const files = tracked();
   assert.ok(files.length > 200, `only found ${files.length} tracked .test.ts files -- the ls-files scan is broken`);
   const discovered = discoverGitPopulationTests();
-  // The known census: 10 (#459 added generated-paths.test.ts). A floor, not a pin -- a legitimate new
-  // git-population test raises it, and the test below is what catches one arriving unclassified. This
-  // guard exists only to catch the discovery pattern itself breaking and matching nothing.
-  assert.ok(discovered.length >= 8,
-    `only found ${discovered.length} git-population test(s), fewer than the known census of 9 -- the `
+  // The known census: 19 (#633 added `diff` to SPAWNS_GIT_POPULATION and discovered
+  // claude-md-content-preservation.test.ts as the one new member). A floor, not a pin -- a legitimate
+  // new git-population test raises it, and the test below is what catches one arriving unclassified.
+  // This guard exists only to catch the discovery pattern itself breaking and matching nothing.
+  assert.ok(discovered.length >= 15,
+    `only found ${discovered.length} git-population test(s), fewer than the known census of 19 -- the `
     + "discovery pattern is probably broken, not the population shrinking");
 });
 
@@ -278,4 +314,64 @@ test("CONTROL: a non-population git call (status, config, rev-parse) is not disc
   const fixture = 'execFileSync("git", ["status", "--porcelain"], opts);\n';
   assert.ok(!SPAWNS_GIT_POPULATION.test(stripComments(fixture)),
     "status/config/rev-parse are not population-enumerating commands -- they are out of this file's scope");
+});
+
+test("#633 CONTROL: `diff` is discovered -- the extension this row exists to prove, not merely declare", () => {
+  const fixture = 'execFileSync("git", ["diff", "--name-only", base, head], opts);\n';
+  assert.ok(SPAWNS_GIT_POPULATION.test(stripComments(fixture)),
+    "a `diff` call must now be discovered -- if this regresses, the classification below stops being "
+    + "checked and every file in it could silently go vacuous again");
+});
+
+// --- #633's own required mutation: restore ONE self-diff, and show it goes green over nothing ---
+
+/**
+ * #633's own instruction: "restore ONE self-diff. That test must go green over nothing — and the sweep
+ * must name it." This is that reproduction, self-contained rather than depending on the real hook
+ * (already fixed elsewhere) or a specific file's internals — a THROWAWAY repo where `HEAD` and a second
+ * ref are made to point at the identical commit, exactly the `runAgainst(head, head)` shape
+ * `pre-push-resolve-toward-main.test.ts`'s positive control used before #633.
+ *
+ * `sandboxGitEnv()` scrubs `GIT_*`, the identical discipline `test-support/git-sandbox.ts` documents at
+ * length: `cwd` is not isolation for a spawned git process, `GIT_DIR` is.
+ */
+function selfDiffFixture(): string {
+  const dir = mkdtempSync(join(tmpdir(), "self-diff-vacuity-"));
+  try {
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: dir, env: sandboxGitEnv(), encoding: "utf8" });
+    git("init", "--quiet");
+    execFileSync("bash", ["-c", "echo real-content > file.txt"], { cwd: dir });
+    git("add", "file.txt");
+    git("-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "-m", "one real commit");
+    // THE VACUITY: `second` is the SAME commit as HEAD -- no second branch, no divergence. Naming it a
+    // different local variable is what made the original bug read as a real two-sided comparison; it
+    // was always one ref, twice.
+    const second = git("rev-parse", "HEAD").trim();
+    return git("diff", "--name-only", `${second}..HEAD`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("#633 MUTATION: a self-diff is empty by construction, and a naive check reads that as CLEAN having "
+  + "examined zero files -- the exact shape that held a real SIGPIPE false-refusal invisible for weeks in "
+  + "pre-push-resolve-toward-main.test.ts's own positive control before this row", () => {
+  const changedFiles = selfDiffFixture();
+  assert.equal(changedFiles, "", "a ref diffed against itself must produce an empty diff -- this is the "
+    + "premise the whole defect rests on, proven directly rather than assumed");
+
+  // THE NAIVE CHECK, reproduced rather than imported: count what changed, report "0 checked, 0 missing".
+  // Built the identical way the pre-#633 resolve-toward-main block was -- and it is TRUE, which is
+  // exactly the trap: a check that examined nothing and a check that examined everything and found no
+  // problems produce the SAME sentence.
+  const checked = changedFiles.split("\n").filter(Boolean).length;
+  const missing: string[] = [];
+  assert.equal(checked, 0, "the naive check's own count must read zero -- proving it examined nothing, "
+    + "not merely that nothing was wrong");
+  assert.equal(missing.length, 0);
+  // "0 checked, 0 missing" -- passes, unconditionally, having looked at nothing. This is the sentence
+  // that must never be trusted alone; a real positive control needs a SECOND fixture with a genuinely
+  // non-empty population, which is what #633 fixed directly in pre-push-resolve-toward-main.test.ts and
+  // what this file's own CLASSIFICATION table now requires of every file that reaches for `diff`.
 });

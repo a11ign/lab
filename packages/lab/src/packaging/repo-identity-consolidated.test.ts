@@ -50,21 +50,55 @@ const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
  * files carry the repo's name in more than one shape (README.md has both a badge URL and an Action
  * `uses:` line) and each shape gets its own entry rather than one loosely-matching pattern per file.
  */
+// #647: THE QUESTION A NEW ENTRY MUST ANSWER, ASKED HERE SO IT CANNOT BE SKIPPED.
+//
+// "Does something -- a human copying a command verbatim, or a machine with no human in the loop --
+// RESOLVE this URL as a normal, unmediated step of using this repository TODAY, before the transfer?"
+// If yes: REPO. If the site is prose a reader reads, interprets and would naturally substitute the
+// current name into (a name mentioned in passing, a metadata field nobody automatically visits, a
+// hyperlink a reader consciously chooses to click and can recover from if it 404s): PRODUCT_REPO is
+// correct, and stays correct until the transfer catches up to it.
+//
+// This is NOT a human-vs-machine test on its own -- a badge's `<img src>` is auto-fetched by GitHub's
+// renderer with no human choice involved, but so is `git clone <url>` when a reader follows a getting-
+// started guide's own literal first step verbatim; both fail exactly the same way, silently, for exactly
+// the same reason. What both share, and what a clicked hyperlink to a security-advisory form does NOT,
+// is that nothing in between the text and the resolution attempt is a DECISION -- copy-paste-execute has
+// no interpretive step for a reader to notice the org does not exist yet and substitute the real name.
+//
+// Found by AUDITING every site the 2026-09-06 classification pass produced against this question, not by
+// re-deriving the population -- #643 (`worker_repo_url`, an `ansible`-executed git clone target) and #569
+// (README's badge images) were the two known instances that prompted this row; auditing the remaining
+// ~28 turned up FOUR MORE of the identical shape, all copy-paste-execute bootstrap commands in getting-
+// started guides (`git clone`, `curl -fsSL ... | bash`, `irm ... | iex`) that #66's original pass filed
+// under "clone instructions" -- correctly grouped with badges as PRODUCT_REPO territory in general, but
+// wrong for these specific instances because, like the badges, they are executed without a reader ever
+// being asked to notice the substitution.
 const SITES: Array<{ file: string; expect: string }> = [
-  // #569: REPO, not PRODUCT_REPO -- a badge is fetched live, the same "must resolve today" shape as the
-  // `uses:` line two lines down, not the static prose PRODUCT_REPO covers. See this file's own header.
+  // #569: AUTO-FETCHED by GitHub's own renderer the instant anyone views this page -- the same "must
+  // resolve today" shape as the `uses:` line two lines down, not the static prose PRODUCT_REPO covers.
   { file: "README.md", expect: `${REPO_URL}/actions/workflows/lint.yml/badge.svg` },
   { file: "README.md", expect: `${REPO_URL}/actions/workflows/capture-regression.yml/badge.svg` },
   { file: "README.md", expect: `uses: ${REPO}@main` },
+  // A hyperlink a reader consciously clicks, and can recover from (try another reporting channel) if it
+  // 404s -- PRODUCT_REPO stands, per the header question above.
   { file: "SECURITY.md", expect: `${PRODUCT_REPO_URL}/security/advisories/new` },
+  // COPY-PASTE-EXECUTE: `bash <(curl -fsSL <url>)` on the line right below this URL. A reader follows the
+  // control-plane setup guide's literal step, verbatim; nothing prompts them to notice the org is not
+  // live yet.
   { file: "docs/control-plane-proxmox.md",
-    expect: `raw.githubusercontent.com/${PRODUCT_REPO}/main/packages/worker-fleet/src/provisioning/`
+    expect: `raw.githubusercontent.com/${REPO}/main/packages/worker-fleet/src/provisioning/`
       + "bootstrap-control-plane.sh" },
   { file: "docs/backlog-ready.md", expect: `${PRODUCT_REPO_URL}/issues` },
   { file: "docs/try-it.md", expect: `uses: ${REPO}@main` },
-  { file: "docs/getting-started.md", expect: `git clone ${PRODUCT_GIT_URL}` },
+  // COPY-PASTE-EXECUTE: the getting-started guide's own literal step 1. The `cd a11y-witness` line right
+  // after it (the directory `git clone` actually creates) is a real, necessary consequence of this fix
+  // but is NOT pinned as its own site here -- a bare `cd <checkout name>` string is exactly the literal
+  // `control-plane-checkout-is-one-fact.test.ts` exists to catch, and pinning it here would make THIS
+  // guard's own fixture read as an unclassified use of that guard's subject, one file over.
+  { file: "docs/getting-started.md", expect: `git clone ${REPO_URL}.git` },
   { file: "docs/getting-started.md",
-    expect: `raw.githubusercontent.com/${PRODUCT_REPO}/main/packages/worker-fleet/src/provisioning/`
+    expect: `raw.githubusercontent.com/${REPO}/main/packages/worker-fleet/src/provisioning/`
       + "bootstrap-windows-worker.ps1" },
   { file: "docs/github-action.md", expect: `uses: ${REPO}@main` },
   { file: "docs/github-action.md", expect: `uses: ${REPO}@<sha>` },
@@ -72,9 +106,16 @@ const SITES: Array<{ file: string; expect: string }> = [
   // never rewritten to match the present), so this link correctly still points at the pre-rename repo.
   { file: "docs/backlog.md", expect: `${REPO_URL}/issues` },
   { file: "docs/nvda-worker-runbook.md",
-    expect: `raw.githubusercontent.com/${PRODUCT_REPO}/main/packages/worker-fleet/src/provisioning/`
+    expect: `raw.githubusercontent.com/${REPO}/main/packages/worker-fleet/src/provisioning/`
       + "bootstrap-windows-worker.ps1" },
-  { file: "docs/board/README.md", expect: `--repo ${PRODUCT_REPO}` },
+  // NOT `docs/board/README.md`'s own `--repo` line -- DELIBERATELY, #647. The functional defect the old
+  // entry here was pinning (a documented `gh --repo a11ign/a11ign` command that would have failed for
+  // anyone who pasted it) was already fixed by removing the `--repo` argument entirely; the file's only
+  // remaining occurrence of the literal is PROSE recounting that fix ("This line carried `--repo
+  // a11ign/a11ign`..."), which the old `expect` string matched by coincidence -- the identical "a mention
+  // is not a use" shape `docs/board/reported.json`'s exclusion below already documents. Nothing here is
+  // executed, requested or followed; re-adding a pinned literal would verify the prose still narrates the
+  // fix rather than that any live reference still agrees with `repo-identity.mjs`.
   // NOT `docs/board/reported.json` -- DELIBERATELY, issue #283. It carried this literal once, inside one
   // achievement's evidence prose ("GitHub Issues and milestones on DanBeckDev/a11y-witness" -- quoting
   // the achievement's actual wording at the time, before #66; not rewritten to match the present), and #270
@@ -92,7 +133,9 @@ const SITES: Array<{ file: string; expect: string }> = [
   { file: "docs/roles/memory/org-shape-second-orchestrator.md", expect: `a Project on ${PRODUCT_REPO}` },
   { file: "examples/workflow.yml", expect: `uses: ${REPO}@main` },
   { file: "packages/nvda-worker/package.json", expect: PRODUCT_GIT_URL },
-  { file: "packages/nvda-worker/src/README.md", expect: `git clone ${PRODUCT_GIT_URL}` },
+  // COPY-PASTE-EXECUTE, same shape as docs/getting-started.md above -- see that entry's comment for why
+  // the `cd a11y-witness` line right after this is not separately pinned.
+  { file: "packages/nvda-worker/src/README.md", expect: `git clone ${REPO_URL}.git` },
   { file: "packages/worker-fleet/package.json", expect: PRODUCT_GIT_URL },
   { file: "packages/evidence/README.md", expect: `(${PRODUCT_REPO_URL})` },
   { file: "packages/evidence/package.json", expect: PRODUCT_GIT_URL },
