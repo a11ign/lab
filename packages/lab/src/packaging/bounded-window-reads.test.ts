@@ -83,8 +83,10 @@ const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
  *
  * The first version of this carried a lookbehind meant to exclude the field list and excluded the reads
  * instead: `(?<!["'\w])\.statusCheckRollup` rejects `pr.statusCheckRollup`, because the character before
- * the dot is a word character. It found 3 readers where there are 6, and the floor below is what caught
- * it — a discovery that silently shrinks reports cleanly about a population it never examined.
+ * the dot is a word character. It found 3 FILES where there were 4 (5 read LINES where there were 6),
+ * and the floor below is what caught it — a discovery that silently shrinks reports cleanly about a
+ * population it never examined. The two numbers this sentence used to carry, 4 in one paragraph and 6
+ * in another, were a file count and a line count stated as though they were the same quantity.
  */
 const READS_THE_ROLLUP = /\.statusCheckRollup\b/;
 
@@ -132,13 +134,46 @@ function rollupReaders(): string[] {
   return [...new Set(rollupReadLines().map(([file]) => file))];
 }
 
+/**
+ * The readers this discovery MUST still find, BY NAME, each with the reason it reads the rollup.
+ *
+ * A BARE COUNT DRIFTS DOWN WITHOUT LEAVING A RECORD. The floor was `readers.length >= 4`, and it did
+ * its job once already -- it is what caught the lookbehind that silently found 3. But there are two
+ * ways to reach 3, the predicate breaking and a reader legitimately going away, and they produce the
+ * SAME failure with the SAME repair to hand: lower the number. Doing that for the second reason is
+ * correct; doing it for the first recreates the defect this file exists to catch. A number cannot tell
+ * the two apart, so the number is not the floor.
+ *
+ * A NAME can. A predicate that shrinks loses every entry at once and the failure says which are gone;
+ * a reader that genuinely stops reading the rollup is one deleted line, and deleting it forces the
+ * question the count never asked -- what answers this now?
+ */
+const EXPECTED_READERS: Record<string, string> = {
+  "scripts/merge-queue.mjs":
+    "checksBlocking -- THE site #634 found. If it is not in the population, the guard cannot have caught it",
+  "scripts/queue-stalled.mjs":
+    "head quiet time and the gate's conclusion, both narrowed per name",
+  "scripts/update-branch-sweep.mjs":
+    "the same two reads on the sweep's side -- #500 and #517 fixed this file twice",
+  // DEPARTED 2026-09-09 (dispatcher/table-reports-rate-limit): `scripts/queue-table.mjs` read the
+  // rollup through `newestPerName` and now does not read it at all. Its checks moved from
+  // `gh pr view --json statusCheckRollup` (GraphQL) to `gh api .../check-runs` (REST), because GraphQL
+  // hit 5000/5000 account-wide at 14:41Z and a table that cannot be read during an outage reports
+  // nothing. The read was never wrong; the field is simply no longer where the table gets its answer,
+  // and `isRed`/`NOT_RED` (#784) plus check-runs' own newest-per-name now carry that discipline.
+  // FOUR reader files before, THREE after. Recorded here rather than by decrementing a number,
+  // because "a reader left" and "the search broke" must not look the same.
+};
+
 test("the discovery finds the readers it should -- a check that passes having examined nothing is the "
   + "defect one layer up from the one this sweeps", () => {
   const readers = rollupReaders();
-  assert.ok(readers.length >= 4,
-    `only ${readers.length} rollup reader(s) found; measured 4 on 2026-09-09: ${readers.join(", ")}`);
-  assert.ok(readers.includes("scripts/merge-queue.mjs"),
-    "the site this row found must be in the population, or the guard cannot have caught it");
+  const missing = Object.keys(EXPECTED_READERS).filter((file) => !readers.includes(file));
+  assert.deepEqual(missing, [],
+    "the discovery lost known reader(s). Either READS_THE_ROLLUP has silently shrunk -- which is what "
+    + "it did once already, finding 3 files where there were 4 -- or these files genuinely stopped "
+    + "reading the rollup, in which case delete the entry from EXPECTED_READERS and say in its place "
+    + `what answers the question now. Found: ${readers.join(", ") || "(nothing)"}`);
 });
 
 test("every read of the rollup passes through a predicate that NAMES ITS WINDOW, or is classified -- "
