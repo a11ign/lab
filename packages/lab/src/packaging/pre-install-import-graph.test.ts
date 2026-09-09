@@ -107,6 +107,36 @@ function scriptBehind(command: string | undefined): string | null {
 }
 
 /**
+ * Scripts invoked by an `action.yml` step whose `if:` includes `always()`.
+ *
+ * #567: A DIFFERENT PRE-INSTALL SHAPE THAN A WORKFLOW'S OWN, found by the V1 rehearsal (#324) rather than
+ * by this file — `action.yml` (the composite action's own step list) is not one of the `.github/
+ * workflows/*.yml` files `preInstallScripts` already walks, and its risk is not "before `npm ci` in
+ * sequence" (`preInstallScripts`'s own rule): an ordinary step skips when an earlier one fails, but an
+ * `always()` step runs REGARDLESS -- including the exact run where "Install a11ign" (the step that
+ * creates `node_modules` in the action's own checkout) itself failed or never started. `action.yml`'s own
+ * "Comment on the pull request" step is this shape, and #567 measured it crashing live: `post-comment.ts`
+ * imported a workspace package, and the ONE step whose entire job is reporting honestly on failure was
+ * itself unable to run under exactly the failure it exists to handle.
+ *
+ * Split into per-step chunks on `- name:`/`- uses:` (the same loose, indentation-tolerant boundary
+ * `preInstallScripts` already trusts for a workflow job), so a chunk's own `if:` line can be checked
+ * independently of whichever step precedes or follows it.
+ */
+export function alwaysStepScripts(actionYmlText: string): string[] {
+  const found: string[] = [];
+  const steps = actionYmlText.split(/(?=^\s*- (?:name|uses):)/m);
+  for (const step of steps) {
+    if (!/if:.*always\(\)/.test(step)) continue;
+    for (const line of step.split("\n")) {
+      const call = /\b(?:node|npx tsx)\s+([A-Za-z0-9._/-]+\.(?:mjs|ts))\b/.exec(line);
+      if (call) found.push(call[1]);
+    }
+  }
+  return found;
+}
+
+/**
  * Every entry that runs before `node_modules` and `dist` can both be relied on.
  *
  * DISCOVERED, never listed — see this file's header for what listing cost.
@@ -115,6 +145,12 @@ export function preInstallEntries(): string[] {
   const entries = new Set<string>();
   for (const file of readdirSync(WORKFLOWS).filter((f) => f.endsWith(".yml"))) {
     for (const script of preInstallScripts(readFileSync(join(WORKFLOWS, file), "utf8"))) {
+      entries.add(script);
+    }
+  }
+  const actionYml = join(REPO, "action.yml");
+  if (existsSync(actionYml)) {
+    for (const script of alwaysStepScripts(readFileSync(actionYml, "utf8"))) {
       entries.add(script);
     }
   }
@@ -209,4 +245,40 @@ test("preInstallScripts stops at an install step, and resumes at the next job", 
   ].join("\n");
   assert.deepEqual(preInstallScripts(yaml), ["scripts/before.mjs", "scripts/fresh-job.mjs"],
     "a script after `npm ci` is safe; a new job starts uninstalled again");
+});
+
+test("#567 alwaysStepScripts: finds a script invoked by an always() step, ignores one that isn't", () => {
+  // Driven against a fixture, same reasoning as preInstallScripts's own test above: the real action.yml
+  // could stop having any always() step tomorrow and this must not go blind to the shape when that happens.
+  const yaml = [
+    "steps:",
+    "  - name: Install a11ign",
+    "    run: npm ci",
+    "  - name: Report",
+    "    run: |",
+    "      npx tsx packages/cli/src/action/run.ts --result=out.json",
+    "  - name: Comment on the pull request",
+    "    if: ${{ always() && inputs.comment-on-pr == 'true' }}",
+    "    run: |",
+    "      npx tsx packages/cli/src/action/post-comment.ts --summary=x.md",
+  ].join("\n");
+  assert.deepEqual(alwaysStepScripts(yaml), ["packages/cli/src/action/post-comment.ts"],
+    "only the always()-gated step's script belongs -- an ordinary sequential step (Report) is safe "
+    + "because it is skipped, not run, when an earlier step fails");
+});
+
+test("#567 alwaysStepScripts: a step with no always() in its `if:` is not swept in", () => {
+  const yaml = [
+    "steps:",
+    "  - name: Something conditional",
+    "    if: ${{ github.event_name == 'pull_request' }}",
+    "    run: node scripts/conditional.mjs",
+  ].join("\n");
+  assert.deepEqual(alwaysStepScripts(yaml), []);
+});
+
+test("#567 MUTATION TARGET: post-comment.ts is discovered as a pre-install entry via action.yml's own "
+  + "always() step, not merely present in the tree", () => {
+  assert.ok(preInstallEntries().includes("packages/cli/src/action/post-comment.ts"),
+    "action.yml's real 'Comment on the pull request' step must be discovered by alwaysStepScripts");
 });
