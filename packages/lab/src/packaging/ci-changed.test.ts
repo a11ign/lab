@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { classify, knownPackages, readWorkspaceDependencyGraph, dependentsOf, packedFiles, candidatePackedPaths,
-  testDependencyMap, jobsFor }
+  reachesPacked, testDependencyMap, jobsFor }
   from "../../../../scripts/ci-changed.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
@@ -148,14 +148,33 @@ test("classify: a TEST FILE beside a BUILT source file does not fire changeset â
   assert.equal(result.changeset, false);
 });
 
-test("candidatePackedPaths: raw path always included; .ts additionally maps to its dist/ counterpart", () => {
-  assert.deepEqual(candidatePackedPaths("src/provisioning/deploy.ps1"), ["src/provisioning/deploy.ps1"]);
-  assert.deepEqual(candidatePackedPaths("src/cli.ts"), ["src/cli.ts", "dist/cli.js", "dist/cli.d.ts"]);
-  assert.deepEqual(candidatePackedPaths("src/action/run.tsx"),
-    ["src/action/run.tsx", "dist/action/run.js", "dist/action/run.d.ts"]);
+test("candidatePackedPaths: raw path always included; any src/ extension maps to a dist/ PREFIX candidate", () => {
+  // A raw-ship file (e.g. worker-fleet's src/provisioning/*.ps1, which has no build step at all) still
+  // gets a spurious dist/ prefix candidate now that the mapping is extension-agnostic -- harmless, per
+  // this file's own design note: "never having one candidate too many". It simply never matches anything
+  // packed, so `reachesPacked` falls through to the raw path, which is what actually ships it.
+  assert.deepEqual(candidatePackedPaths("src/provisioning/deploy.ps1"),
+    ["src/provisioning/deploy.ps1", "dist/provisioning/deploy."]);
+  assert.deepEqual(candidatePackedPaths("src/cli.ts"), ["src/cli.ts", "dist/cli."]);
+  assert.deepEqual(candidatePackedPaths("src/action/run.tsx"), ["src/action/run.tsx", "dist/action/run."]);
+  // #720: extension-agnostic on purpose -- worker-fleet's tsconfig compiles .mjs under src/ too.
+  assert.deepEqual(candidatePackedPaths("src/deploy-worker.mjs"), ["src/deploy-worker.mjs", "dist/deploy-worker."]);
   // A .ts file OUTSIDE src/ (there are none in this repo, but the mapping must not guess for one) gets no
   // dist/ candidate at all -- only a package's own rootDir gets built there.
   assert.deepEqual(candidatePackedPaths("scripts/build.ts"), ["scripts/build.ts"]);
+});
+
+test("reachesPacked: prefix candidates match ANY packed file under that prefix, exact candidates match exactly", () => {
+  assert.equal(reachesPacked(new Set(["dist/cli.js", "dist/cli.d.ts"]), ["src/cli.ts", "dist/cli."]), true);
+  assert.equal(reachesPacked(new Set(["dist/deploy-worker.mjs"]), ["src/deploy-worker.mjs", "dist/deploy-worker."]), true);
+  assert.equal(reachesPacked(new Set(["dist/other.js"]), ["src/cli.ts", "dist/cli."]), false);
+  assert.equal(reachesPacked(new Set(["src/provisioning/deploy.ps1"]), ["src/provisioning/deploy.ps1"]), true);
+});
+
+test("classify: a .mjs source file worker-fleet actually PACKS fires changeset â€” #720, was false before the fix", () => {
+  const getPackedFiles = fakePacked({ "worker-fleet": ["dist/deploy-worker.mjs"] });
+  const result = classify(["packages/worker-fleet/src/deploy-worker.mjs"], ["worker-fleet"], {}, { getPackedFiles });
+  assert.equal(result.changeset, true);
 });
 
 /**
@@ -167,8 +186,22 @@ test("candidatePackedPaths: raw path always included; .ts additionally maps to i
 test("packedFiles + candidatePackedPaths against the REAL packages/cli: src/cli.ts reaches a consumer", () => {
   const packed = packedFiles(REPO.replace(/\/$/, ""), "cli");
   assert.ok(packed.size > 0, "npm pack --dry-run reported an empty manifest for packages/cli -- broken build?");
-  const hit = candidatePackedPaths("src/cli.ts").some((p) => packed.has(p));
+  const hit = reachesPacked(packed, candidatePackedPaths("src/cli.ts"));
   assert.ok(hit, `none of src/cli.ts's candidate paths were packed; packed set was: ${[...packed].slice(0, 10).join(", ")}...`);
+});
+
+/**
+ * #720: the REAL bug, against the REAL package -- worker-fleet actually ships `dist/deploy-worker.mjs`
+ * via `tsc --build`'s `allowJs`, and the old `.tsx?`-only regex could never see it. This is what a naive
+ * `git checkout lead/changeset-gate-asks-npm -- <file>` would have missed: that stranded branch predates
+ * this file's `--precise`/`npm pack`-based architecture entirely (#132/#151), so re-deriving the fix here
+ * -- against today's `classify()` -- is the right move, not reviving `consumer-visible.mjs`.
+ */
+test("packedFiles + candidatePackedPaths against the REAL packages/worker-fleet: src/deploy-worker.mjs reaches a consumer", () => {
+  const packed = packedFiles(REPO.replace(/\/$/, ""), "worker-fleet");
+  assert.ok(packed.size > 0, "npm pack --dry-run reported an empty manifest for packages/worker-fleet -- broken build?");
+  const hit = reachesPacked(packed, candidatePackedPaths("src/deploy-worker.mjs"));
+  assert.ok(hit, `none of src/deploy-worker.mjs's candidate paths were packed; packed set was: ${[...packed].slice(0, 10).join(", ")}...`);
 });
 
 test("classify: a root config file touches EVERY known package, never just the ones that happened to change", () => {
