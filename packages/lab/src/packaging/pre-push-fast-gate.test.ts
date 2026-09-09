@@ -73,10 +73,17 @@ test("2026-09-07: both main and the fast gate run the SAME mjs parse check, not 
   // ONE fixed invocation, present in both branches, that does not read `$changed` at all: `mjs-parses.
   // test.ts` is CLAUDE.md's own named check for a `.mjs` file that lint and `tsc --noEmit` cannot see fail.
   assert.ok(!/globs=\(\)/.test(HOOK), "the touched-package glob-building loop should be gone, not merely unused");
+  // #704: lint/typecheck/mjs-parse-check moved into ONE shared function (`run_gate_with_guards_budget`,
+  // which also runs and times the #716 tree-wide-guard sweep) called from BOTH branches -- so the literal
+  // `run "mjs parse check" ...` line now appears exactly ONCE in the file's source, in the function body,
+  // and the population-of-two claim this test used to make is now a claim about CALL SITES instead.
   const mjsParseCheck = /run "mjs parse check"\s+npx tsx --test packages\/worker-fleet\/src\/mjs-parses\.test\.ts/g;
   const matches = [...HOOK.matchAll(mjsParseCheck)];
-  assert.equal(matches.length, 2, "expected the mjs parse check exactly once in main's gate and once in the "
-    + `fast gate, found ${matches.length}`);
+  assert.equal(matches.length, 1, "expected the mjs parse check exactly once, in the shared gate function, "
+    + `found ${matches.length}`);
+  const callSites = [...HOOK.matchAll(/run_gate_with_guards_budget\s+"[^"]+"/g)];
+  assert.equal(callSites.length, 2,
+    "the shared gate function must be called exactly once from main's branch and once from the fast gate's");
 });
 
 /**
