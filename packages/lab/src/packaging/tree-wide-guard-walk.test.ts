@@ -15,6 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import { walkTree, declareTreeWideGuard, _lsFilesSpawnCountForTests } from "../../../../scripts/tree-wide-guard.mjs";
@@ -55,6 +56,30 @@ test("kind \"both\": the union of what \"ts\" and \"mjs\" find separately, nothi
 test("kind \"all\": no extension filter -- every tracked path under root, .test.ts included", () => {
   const found = walkTree({ kind: "all", roots: ["packages/lab/src/packaging"] });
   assert.ok(found.some((f) => f.path.endsWith(".test.ts")), "kind \"all\" must not silently drop test files");
+});
+
+test("#795: kind \"all\" never computes a ScriptKind -- a text-only guard has no use for one, and "
+  + "computing it anyway is exactly the unconditional `typescript` load the CPU follow-up traced nine "
+  + "seconds to across the ~9 guards that only ever call walkTree with kind \"all\"", () => {
+  const found = walkTree({ kind: "all", roots: ["packages/lab/src/packaging"] });
+  assert.ok(found.every((f) => f.scriptKind === undefined),
+    "kind \"all\" results must never carry a ScriptKind");
+});
+
+test("#795 ISOLATED: a FRESH process calling ONLY kind \"all\" never loads typescript at all -- proof, "
+  + "not just an undefined field, checked in a real subprocess since this file's OWN earlier tests "
+  + "(kind \"ts\"/\"mjs\"/\"both\") have already loaded it by the time this test runs in-process", () => {
+  const helperPath = fileURLToPath(new URL("../../../../scripts/tree-wide-guard.mjs", import.meta.url));
+  const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
+  const script = `
+    import { walkTree, _typescriptLoadedForTests } from ${JSON.stringify(helperPath)};
+    walkTree({ kind: "all", roots: ["packages/lab/src/packaging"] });
+    process.stdout.write(String(_typescriptLoadedForTests()));
+  `;
+  const out = execFileSync(process.execPath, ["--input-type=module", "-e", script],
+    { cwd: repoRoot, encoding: "utf8" });
+  assert.equal(out.trim(), "false",
+    "a process that only ever asked walkTree for kind \"all\" must never have loaded typescript");
 });
 
 test("#795: a repeated call with the SAME argv is served from the per-process cache, not respawned -- "
