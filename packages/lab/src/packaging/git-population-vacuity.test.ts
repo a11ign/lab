@@ -132,6 +132,16 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "sibling test that guards it, so a sibling's guard failing did not stop this one reporting a "
       + "false pass on the same empty population",
   },
+  "packages/lab/src/packaging/bounded-window-reads.test.ts": {
+    guard: "readers.length >= 4",
+    note: "guarded — #634. It walks `git ls-files` for every file whose CODE reads `statusCheckRollup` "
+      + "off an object and requires each read to narrow the rollup to the newest run per NAME. Vacuity "
+      + "is the failure with teeth here and it ALREADY HAPPENED once inside that file: its discovery "
+      + "regex carried a lookbehind that excluded the READS instead of the `--json` field list, and it "
+      + "found 3 readers where there are 4. Every other assertion in that file is about the RESULT — "
+      + "are the sites it found classified? — and each is SATISFIED by finding fewer sites. Only this "
+      + "floor asks about the SEARCH.",
+  },
   "packages/lab/src/packaging/guest-paths-are-measured.test.ts": {
     guard: "named.length >= 15",
     note: "guarded — the guest-checkout outage of 2026-09-08. It walks `git ls-files` for every tracked "
@@ -241,6 +251,13 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "diff built in the test, so the mechanism is exercised whether or not the real diff has anything "
       + "in it. The guard quoted is that synthetic-fixture assertion, not the real-diff test, which is "
       + "deliberately allowed to examine nothing and say so.",
+  },
+  "packages/lab/src/packaging/checkout-dash-safety.test.ts": {
+    guard: "files.length > 100",
+    note: "#637: joined this classification the same way `git-spawn-classification.test.ts` and every "
+      + "other sibling did -- its own `tracked()` calls `execFileSync(\"git\", [\"ls-files\", ...])` for "
+      + "a DIFFERENT population (destructive `git checkout --` sites, not ref/branch/tag/log/diff), so it "
+      + "is guarded, not exempt: the quoted floor is that file's own vacuity guard for its `ls-files` walk.",
   },
 };
 
