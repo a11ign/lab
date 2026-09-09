@@ -1,4 +1,11 @@
 // @ts-check
+// writes: runs/git-fixture-cache
+// #731: THIS FILE CALLS `runsRoot()` TO CHOOSE A LOCATION IT CREATES ITSELF, NEVER TO READ EVIDENCE. The
+// acceptance job's closure walk (`scripts/acceptance-commands.mjs`) used to read ANY `runsRoot()` call as
+// "needs the corpus" -- true for a gate reading `runs/` as evidence, false here, and #722 (a PR that never
+// touched this file) inherited a refusal for a chain it does not own because the walk could not tell the
+// two apart. The `writes:` header above is verified against this file's own code (a real `mkdirSync`, at
+// the declared subdirectory), never trusted on its word alone -- see `writeDeclarationHolds` in that file.
 // #660: ONE FIXTURE REPOSITORY, BUILT ONCE, REUSED BY EVERY TEST THAT NEEDS THE SAME HISTORICAL COMMIT
 // PAIR -- not a fix to the tests' OWN correctness, a fix to how many times they pay for the same setup.
 //
