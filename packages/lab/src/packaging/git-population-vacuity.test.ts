@@ -107,6 +107,15 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "sibling test that guards it, so a sibling's guard failing did not stop this one reporting a "
       + "false pass on the same empty population",
   },
+  "packages/lab/src/packaging/guest-paths-are-measured.test.ts": {
+    guard: "named.length >= 15",
+    note: "guarded — the guest-checkout outage of 2026-09-08. It walks `git ls-files` for every tracked "
+      + "text file naming a path under a Windows guest root and requires the directory to be the one "
+      + "MEASURED on a real box. Vacuity is the failure with teeth and it has already happened five "
+      + "times to this population: four sessions swept it and each found a real subset — one grepped a "
+      + "Linux path, one scoped to packages/, one read JavaScript only while the facts were in YAML and "
+      + "PowerShell, and one used a single-backslash pattern that cannot match a JS string literal.",
+  },
   "packages/lab/src/packaging/control-plane-checkout-is-one-fact.test.ts": {
     guard: "sites.length >= 8",
     note: "guarded — the outage of 2026-09-08. It walks `git ls-files` for every site that ENTERS a "
