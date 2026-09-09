@@ -428,6 +428,115 @@ test("#665 ACCEPTANCE: claimRow given a worktree writes worktree:<path> in the S
   assert.ok(editCall!.includes(`${WORKTREE_LABEL_PREFIX}/tmp/a11y-wt-665`), "must write the worktree label");
 });
 
+// --- #749: `branch:<name>`/`worktree:<path>` do not exist until claimRow creates them, and the removal
+// of `ready` must never apply while the additions did not (#677's own reproduction: the reverse) ---
+
+test("#749 ACCEPTANCE: claimRow given a branch CREATES the branch: label before adding it -- `gh label "
+  + "create --force` runs before `gh issue edit --add-label`, never after, and never skipped", () => {
+  const calls: string[][] = [];
+  let reads = 0;
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      reads += 1;
+      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
+        { name: STARTED_LABEL }, { name: "branch:agent/new-branch-749" }];
+      return JSON.stringify({ number: 749, title: "A row", labels });
+    }
+    return "";
+  };
+  const result = claimRow(749, "worker-config",
+    { run, moveStatus: () => ({ moved: true }), branch: "agent/new-branch-749" });
+  assert.equal(result.claimed, true);
+  const createIndex = calls.findIndex((a) => a[0] === "label" && a[1] === "create"
+    && a.includes("branch:agent/new-branch-749"));
+  const addIndex = calls.findIndex((a) => a[1] === "edit" && a.includes("--add-label")
+    && a.includes("branch:agent/new-branch-749"));
+  assert.ok(createIndex !== -1, `expected a \`gh label create\` call for the branch label; got: `
+    + `${JSON.stringify(calls)}`);
+  assert.ok(addIndex !== -1, "expected the add-label edit call to still happen");
+  assert.ok(createIndex < addIndex, "the label must be created BEFORE it is added, never after");
+  assert.ok(calls.some((a) => a.includes("--force")), "creation must be idempotent (--force), so a "
+    + "label a previous claim already made never errors this claim");
+});
+
+test("#749 ACCEPTANCE: every label in the add set is created, not just `branch:` -- `worktree:` is the "
+  + "identical shape one field over, and was found exactly as unwritten (`gh label list` returned 0) "
+  + "while fixing this row", () => {
+  const calls: string[][] = [];
+  let reads = 0;
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      reads += 1;
+      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
+        { name: STARTED_LABEL }, { name: "worktree:/tmp/a11y-wt-749" }];
+      return JSON.stringify({ number: 749, title: "A row", labels });
+    }
+    return "";
+  };
+  claimRow(749, "worker-config", { run, moveStatus: () => ({ moved: true }), worktree: "/tmp/a11y-wt-749" });
+  const created = calls.filter((a) => a[0] === "label" && a[1] === "create").map((a) => a[2]);
+  assert.ok(created.includes("worktree:/tmp/a11y-wt-749"), `expected worktree: to be created too; got: `
+    + `${JSON.stringify(created)}`);
+});
+
+test("#749 ACCEPTANCE: a failed ADD leaves `ready` untouched -- the removal must never run while the "
+  + "additions are not KNOWN to have succeeded, the exact reverse of #677's own reproduction (its remove "
+  + "applied while its adds did not)", () => {
+  const calls: string[][] = [];
+  let reads = 0;
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      reads += 1;
+      return JSON.stringify({ number: 749, title: "A row",
+        labels: reads === 1 ? [{ name: READY_LABEL }] : [] });
+    }
+    if (args[1] === "edit" && args.includes("--add-label")) {
+      throw new Error("simulated: gh issue edit refused an add-label target");
+    }
+    return "";
+  };
+  assert.throws(() => claimRow(749, "worker-config", { run, moveStatus: () => ({ moved: true }) }),
+    /simulated/, "a genuinely failed add must propagate, not be swallowed into a false claimed:true");
+  assert.ok(!calls.some((a) => a[1] === "edit" && a.includes("--remove-label")),
+    "the remove-label call must never have been reached -- `ready` stays on the row, recoverable and "
+    + "visible, rather than the row losing it while gaining nothing");
+});
+
+test("#749 MUTATION: skipping label creation reproduces the original failure -- a claim naming a branch "
+  + "that genuinely does not exist as a label yet must fail exactly the way #677 did, proving the fix "
+  + "above is what prevents it rather than the label happening to exist by coincidence", () => {
+  const calls: string[][] = [];
+  let reads = 0;
+  // A `run` that behaves like the REAL `gh issue edit` did on #677: `--add-label` for a label that has
+  // never been created throws; `label create` is never called (the mutation this test targets: what if
+  // `ensureLabelsExist` were skipped entirely?), so the add-label call below always sees an unknown label.
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      reads += 1;
+      return JSON.stringify({ number: 749, title: "A row",
+        labels: reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" }] });
+    }
+    if (args[0] === "label" && args[1] === "create") return ""; // the fix's own creation call, if made
+    if (args[1] === "edit" && args.includes("--add-label") && args.includes("branch:agent/never-existed-749")) {
+      // Reproduces `gh`'s real refusal of an add-label target that was never created -- this only fires
+      // if the label genuinely was never created first, which is exactly what a skipped
+      // `ensureLabelsExist` call would leave true.
+      const created = calls.some((a) => a[0] === "label" && a[1] === "create"
+        && a.includes("branch:agent/never-existed-749"));
+      if (!created) throw new Error("'branch:agent/never-existed-749' not found");
+    }
+    return "";
+  };
+  const result = claimRow(749, "worker-config",
+    { run, moveStatus: () => ({ moved: true }), branch: "agent/never-existed-749" });
+  assert.equal(result.claimed, true, "the real fix creates the label first, so this must succeed -- if "
+    + "it throws instead, the creation step above was skipped or removed");
+});
+
 test("#665 ACCEPTANCE: declineRow calls removeWorktree with the recorded path, and removes the label "
   + "once it succeeds", () => {
   const calls: string[][] = [];
@@ -482,12 +591,18 @@ test("MUTATION: dispatching a `ready` row removes `ready` -- #197's review findi
     return "";
   };
   dispatchRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
-  const editCall = calls.find((a) => a[1] === "edit");
-  assert.ok(editCall, "must have written the dispatch");
-  const removeIndex = editCall!.indexOf("--remove-label");
-  assert.ok(removeIndex !== -1 && editCall![removeIndex + 1] === READY_LABEL,
-    `dispatching must remove \`ready\` in the same call, so a row is never both pickable and taken -- `
-    + `got: ${JSON.stringify(editCall)}`);
+  const editCalls = calls.filter((a) => a[1] === "edit");
+  assert.ok(editCalls.length > 0, "must have written the dispatch");
+  // #749: the add and the remove are now two SEPARATE calls, in that order -- a combined call is not
+  // atomic (#677's own reproduction: its `--remove-label` applied while its `--add-label`s did not), so
+  // this checks the remove genuinely happened, not that it happened in the SAME subprocess call as the
+  // add. "Never both pickable and taken" still holds: the remove only runs once the add call is known to
+  // have succeeded (`run` throws on failure), so the two states are still never both true at once.
+  const removeCall = editCalls.find((a) => a.includes("--remove-label"));
+  assert.ok(removeCall, `dispatching must remove \`ready\`, so a row is never both pickable and taken -- `
+    + `got: ${JSON.stringify(editCalls)}`);
+  const removeIndex = removeCall!.indexOf("--remove-label");
+  assert.equal(removeCall![removeIndex + 1], READY_LABEL);
 });
 
 test("#449 MUTATION TARGET: claiming a `ready` row writes the was-ready marker in the SAME edit that "
@@ -533,10 +648,12 @@ test("#444: a runner: label is NEVER removed by a claim -- it survives, unlike r
   const result = claimRow(324, "worker-audit", { run, moveStatus: () => ({ moved: true }) });
   assert.equal(result.claimed, true, `expected a successful claim by the named runner, got: `
     + `${JSON.stringify(result)}`);
-  const editCall = calls.find((a) => a[1] === "edit");
-  assert.ok(editCall, "must have written the claim");
-  const removedLabels = editCall!.map((a, i) => (a === "--remove-label" ? editCall![i + 1] : null))
-    .filter((l): l is string => l !== null);
+  const editCalls = calls.filter((a) => a[1] === "edit");
+  assert.ok(editCalls.length > 0, "must have written the claim");
+  // #749: add and remove are now two separate calls -- collect removals across ALL of them, never just
+  // the first "edit" found, or a real removal in the second call would read as absent.
+  const removedLabels = editCalls.flatMap((call) =>
+    call.map((a, i) => (a === "--remove-label" ? call[i + 1] : null)).filter((l): l is string => l !== null));
   assert.ok(!removedLabels.includes("runner:worker-audit"),
     "runner: records WHO a row was reserved for, and stays true after the reservation is honoured");
   assert.ok(removedLabels.includes(READY_LABEL), "ready must still be removed as usual");
