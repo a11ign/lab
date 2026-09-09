@@ -69,11 +69,65 @@ export function localAnchorLinks(text: string): Array<{ file: string; anchor: st
   return links;
 }
 
+/**
+ * #649: `wc -c` counts BYTES; `text.length` (what the guard actually checks against
+ * `MAX_CLAUDE_MD_CHARS`, and what the 40,000 load-truncation limit is itself measured in) counts UTF-16
+ * CHARACTERS. Measured 2026-09-09: CLAUDE.md read 40,151 bytes against 39,835 characters -- 316 bytes of
+ * em dashes, arrows and typographic quotes, none of them a second character. The obvious hand check
+ * (`wc -c`) reports "151 over" on a file the guard correctly reads as 165 UNDER, and nothing in either
+ * number says which unit it is in. So the message states BOTH, with their units, so a reader never has
+ * a reason to reach for `wc -c` and doubt a passing guard.
+ */
+export function sizeReport(text: string, limit: number) {
+  const characters = text.length;
+  const bytes = Buffer.byteLength(text, "utf8");
+  const headroom = limit - characters;
+  const fmt = (n: number) => n.toLocaleString("en-US");
+  const message = `${fmt(characters)} characters (${fmt(bytes)} bytes) against a ${fmt(limit)} `
+    + `CHARACTER limit — ${headroom >= 0 ? `${fmt(headroom)} characters of headroom`
+      : `${fmt(Math.abs(headroom))} characters OVER`}`;
+  return { characters, bytes, limit, headroom, underLimit: characters < limit, message };
+}
+
 test("CLAUDE.md is under the load-truncation limit this split exists to fix (#155/#458)", () => {
-  const size = claudeMd().length;
-  assert.ok(size < MAX_CLAUDE_MD_CHARS,
-    `CLAUDE.md is ${size} characters, at or over the ${MAX_CLAUDE_MD_CHARS} target — ` +
-    "move more narrative to docs/, do not just trim prose in place");
+  // Printed UNCONDITIONALLY, on pass and on refusal (#649's own acceptance) -- an assert message is only
+  // ever shown on failure, so a reader watching a clean run never sees the number a passing guard is
+  // clearing, and the character-vs-byte gap stays invisible until the day it matters.
+  const report = sizeReport(claudeMd(), MAX_CLAUDE_MD_CHARS);
+  console.log(`  ${report.message}`);
+  assert.ok(report.underLimit,
+    `${report.message} -- move more narrative to docs/, do not just trim prose in place`);
+});
+
+test("#649 MUTATION: a string OVER the character limit but UNDER in bytes cannot exist -- bytes are never "
+  + "fewer than characters for text this encoding produces, so the refusal direction that matters is the "
+  + "other one: a string UNDER the character limit but OVER a naive byte-based reading must NOT refuse", () => {
+  // 20,000 two-byte characters (U+00E9, é): 20,000 UTF-16 characters, 40,000 UTF-8 bytes -- under
+  // MAX_CLAUDE_MD_CHARS on the character count the guard actually uses, and `wc -c` would read exactly at
+  // the limit on this fixture's bytes alone, which is the exact confusion #649 exists to end.
+  const fixture = "é".repeat(20_000);
+  const report = sizeReport(fixture, MAX_CLAUDE_MD_CHARS);
+  assert.equal(report.characters, 20_000);
+  assert.equal(report.bytes, 40_000, "the fixture's own byte count drifted -- é must stay 2 bytes in UTF-8");
+  assert.ok(report.underLimit, "20,000 characters must read as under a 40,000-CHARACTER limit, regardless "
+    + "of how many bytes those characters take up");
+  assert.match(report.message, /character/i);
+});
+
+test("#649 ACCEPTANCE / MUTATION TARGET: a string that crosses the CHARACTER limit refuses and NAMES "
+  + "characters, even when it is nowhere near double the limit in bytes", () => {
+  const fixture = "x".repeat(MAX_CLAUDE_MD_CHARS + 1);
+  const report = sizeReport(fixture, MAX_CLAUDE_MD_CHARS);
+  assert.equal(report.characters, MAX_CLAUDE_MD_CHARS + 1);
+  assert.ok(!report.underLimit, "one character over the limit must refuse");
+  assert.match(report.message, /character/i, "the refusal must name characters, so a reader's next move "
+    + "is not `wc -c`");
+  assert.match(report.message, /OVER/);
+});
+
+test("CONTROL: the message prints both numbers with their units, matching #649's own worked example shape", () => {
+  const report = sizeReport("hello", 10);
+  assert.equal(report.message, "5 characters (5 bytes) against a 10 CHARACTER limit — 5 characters of headroom");
 });
 
 test("CLAUDE.md still makes a substantial number of links into the docs/ files it was split into", () => {
