@@ -104,6 +104,20 @@ const GUEST_ROOTS = [
 const SELF = "packages/lab/src/packaging/guest-paths-are-measured.test.ts";
 
 /**
+ * Named files, not a directory -- same device as SELF above, and kept exact rather than a prefix so a
+ * future fixture under this same directory is still examined by default.
+ *
+ * `owned-path-signoff.test.ts`'s fixtures are real PR bodies fetched verbatim (`gh pr view --json body`,
+ * #603) so that predicate is verified against text nobody wrote for the test -- and one of them (#584)
+ * quotes THIS ROW's own outage, one PR before this file existed. Rewriting the fixture to dodge this
+ * guard would make it describe a body nobody actually posted.
+ */
+const QUOTED_FIXTURE_FILES = new Set([
+  "packages/lab/src/packaging/fixtures/pr-584-body.md",
+  "packages/lab/src/packaging/fixtures/pr-613-body.md",
+]);
+
+/**
  * Directories under those roots that are NOT the ones measured, each with the reason. A path reaching
  * neither this list nor the measured value FAILS BY NAME.
  */
@@ -135,7 +149,7 @@ const OTHER_GUEST_DIRECTORIES: Record<string, string> = {
 function trackedText(): string[] {
   return execFileSync("git", ["ls-files"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
     .split("\n").filter(Boolean)
-    .filter((f) => f !== SELF && !f.includes("/dist/") && !f.startsWith("runs/"))
+    .filter((f) => f !== SELF && !QUOTED_FIXTURE_FILES.has(f) && !f.includes("/dist/") && !f.startsWith("runs/"))
     .filter((f) => /\.(ts|mjs|js|yml|yaml|sh|ps1|cmd|py|md|json|service|xml)$/.test(f));
 }
 
