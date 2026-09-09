@@ -60,6 +60,38 @@ export function sweepNeverRan(mark) {
   return [mark?.prevStop, mark?.nextStop].includes("deadline") && ms === 0;
 }
 
+/**
+ * Stop reasons that mean the sweep ENDED, as opposed to being stopped.
+ *
+ * `exhausted` is the page running out of elements; `silent` is NVDA's own end-of-page answer after the
+ * late-speech retries. Everything else — `deadline`, `cap`, `error`, `focusModeStuck` — is the sweep being
+ * cut off with elements it never reached, and a count from one of those is a lower bound, not a total.
+ */
+const SWEEP_RAN_OUT = new Set(["exhausted", "silent"]);
+
+/**
+ * DID THIS SWEEP FINISH, GET CUT OFF, OR NEVER START? — three states, and the middle one is the one that
+ * gets lost.
+ *
+ * `sweepNeverRan` already separated "never started" from "ran". That is not enough for anything that
+ * DIVIDES by the result: a sweep cut off by the deadline having walked 78 trips reports `found: 38`
+ * against a census of 295, and `0.13` reads as "this sweep reaches an eighth of the links on this page"
+ * when what it says is "it got an eighth of the way through before the clock". Measured on IKEA, where
+ * BOTH usable `link` observations are `deadline` stops and both were being read as coverage.
+ *
+ * The same three states `examinationState` draws for the report (#677), one level down at the sweep.
+ *
+ * @param {any} mark a `sweep` diagnostic
+ * @returns {"complete" | "truncated" | "never-ran"}
+ */
+export function sweepCompleteness(mark) {
+  if (sweepNeverRan(mark)) return "never-ran";
+  const stops = [mark?.prevStop, mark?.nextStop].filter((s) => typeof s === "string");
+  // EVERY direction must have ended on its own. A sweep whose backward half exhausted and whose forward
+  // half hit the deadline reached everything behind the caret and an unknown fraction ahead of it.
+  return stops.length > 0 && stops.every((s) => SWEEP_RAN_OUT.has(s)) ? "complete" : "truncated";
+}
+
 /** A sweep mark that can be read: it names a type and did not fail. */
 const isReadableSweep = (/** @type {any} */ mark) =>
   mark && typeof mark === "object" && mark.event === "sweep"
