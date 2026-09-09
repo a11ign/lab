@@ -146,6 +146,8 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
   "repo": "a PLACEHOLDER in `docs/roles/README.md`'s instructions, the shape `<repo>` would have if the "
     + "author had written the angle brackets",
   "checkout": "the same, one line down",
+  "<dir>": "a PLACEHOLDER in `docs/roles/product-manager.md`'s resume rules (`git -C <dir>`, never a bare "
+    + "`cd`): prose stating the rule this guard enforces, with the angle brackets written; not a directory",
   "a11y-witness/packages/control/ansible": "the copy-paste runbook in `packages/control/ansible/"
     + "README.md`, restored by #554. It names the directory LITERALLY and must: a human pastes it into "
     + "a shell, and a shell cannot import a constant. It is in this list rather than derived, so a "
