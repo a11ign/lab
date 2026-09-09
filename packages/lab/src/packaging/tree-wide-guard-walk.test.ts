@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import ts from "typescript";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { walkTree, declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { walkTree, declareTreeWideGuard, _lsFilesSpawnCountForTests } from "../../../../scripts/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file.
 declareTreeWideGuard();
@@ -55,6 +55,20 @@ test("kind \"both\": the union of what \"ts\" and \"mjs\" find separately, nothi
 test("kind \"all\": no extension filter -- every tracked path under root, .test.ts included", () => {
   const found = walkTree({ kind: "all", roots: ["packages/lab/src/packaging"] });
   assert.ok(found.some((f) => f.path.endsWith(".test.ts")), "kind \"all\" must not silently drop test files");
+});
+
+test("#795: a repeated call with the SAME argv is served from the per-process cache, not respawned -- "
+  + "several real guards ask walkTree for the same roots more than once in one file. A Map's own `.size` "
+  + "cannot prove this (`.set` on an existing key does not grow it either way), so this counts the real "
+  + "spawns themselves", () => {
+  const before = _lsFilesSpawnCountForTests();
+  walkTree({ kind: "mjs", roots: ["packages/worker-fleet/src"] });
+  const afterFirst = _lsFilesSpawnCountForTests();
+  assert.ok(afterFirst > before, "a genuinely new argv must spawn git at least once");
+  walkTree({ kind: "mjs", roots: ["packages/worker-fleet/src"] });
+  const afterSecond = _lsFilesSpawnCountForTests();
+  assert.equal(afterSecond, afterFirst,
+    "the identical argv, asked again, must be served from cache -- not spawn git a second time");
 });
 
 test("selfPath marks the caller's own file isSelf: true -- named, not silently included or excluded", () => {
