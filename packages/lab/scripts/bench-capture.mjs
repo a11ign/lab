@@ -16,6 +16,8 @@ import { CAPTURE_CLIENT_TIMEOUT_MS } from "../../worker-fleet/src/worker-http.mj
 
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { costCause, MIN_TRIPS_FOR_A_RATE, rateAcrossPages, sweepCostsByPage, walkRate }
+  from "../src/capture/sweep-costs.mjs";
 import { captureTolerantly } from "../../worker-fleet/src/capture-client.mjs";
 import { datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
 
@@ -25,7 +27,7 @@ import { datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--dir=", "--from-disk", "--protocol="], { entry: import.meta.url, command: "npm run bench:capture" });
+refuseUnknownFlags(["--dir=", "--from-disk", "--protocol=", "--sweeps"], { entry: import.meta.url, command: "npm run bench:capture" });
 
 const [worker, page, countArg] = process.argv.slice(2);
 
@@ -154,17 +156,32 @@ function report(/** @type {any} */ runs) {
 // Nothing new is instrumented: every capture already carries per-phase diagnostics. This only
 // aggregates them, and reports p50/p95 rather than a mean because the tail is where a wedged
 // guest shows up -- a mean hides one 60-second capture among fifty good ones.
-async function fromDisk(/** @type {any} */ root) {
+/**
+ * BOTH SHAPES, NOT EITHER. A dataset capture IS the capture; a `runs/witness/` record WRAPS it
+ * (`{capturedAt, task, capture}`) -- and #659's own Region names `runs/witness/`. Reading only the top
+ * level reported "No captures with diagnostics" over a directory holding 24 of them, which is a tool
+ * describing an empty population rather than refusing an unreadable one: an empty answer looks like a
+ * finding about the data. Same rule `evidence-diff` already carries for its own two shapes.
+ *
+ * @param {any} record @returns {any | null}
+ */
+function captureIn(record) {
+  if (Array.isArray(record?.diagnostics)) return record;
+  return Array.isArray(record?.capture?.diagnostics) ? record.capture : null;
+}
+
+export async function fromDisk(/** @type {any} */ root) {
   const { readdirSync, readFileSync } = await import("node:fs");
   const { resolve } = await import("node:path");
   const files = readdirSync(root).filter((f) => f.endsWith(".json") && f !== "manifest.json");
   const runs = [];
   for (const file of files) {
-    let capture;
+    let record;
     try {
-      capture = JSON.parse(readFileSync(resolve(root, file), "utf8"));
+      record = JSON.parse(readFileSync(resolve(root, file), "utf8"));
     } catch { continue; } // a partial write is not a data point
-    if (!Array.isArray(capture.diagnostics)) continue;
+    const capture = captureIn(record);
+    if (!capture) continue;
     const done = capture.diagnostics.filter((/** @type {any} */ e) => typeof e.atMs === "number").at(-1);
     const start = capture.diagnostics.find((/** @type {any} */ e) => e.event === "nvdaStart");
     runs.push({
@@ -178,6 +195,10 @@ async function fromDisk(/** @type {any} */ root) {
       // The population this capture belongs to. ABSENT is a value, not a gap: the cache reads a
       // missing protocol as `unknown`, so those captures match no live guest either.
       protocol: capture.provenance?.captureProtocol ?? "absent",
+      // FOR THE PER-SWEEP REPLAY (#659). The page ASKED for, and only the `sweep` marks -- keeping whole
+      // diagnostics for thousands of captures holds a corpus in memory to read eight numbers from each.
+      url: typeof capture.url === "string" ? capture.url : undefined,
+      diagnostics: capture.diagnostics.filter((/** @type {any} */ e) => e?.event === "sweep"),
     });
   }
   return runs;
@@ -320,6 +341,59 @@ function reportFromDisk(/** @type {any} */ runs, /** @type {string} */ scope) {
   }
 }
 
+/**
+ * PER SWEEP TYPE, PER PAGE — #659, and the reason it is not the phase table above.
+ *
+ * `sweep` is one phase covering eight types, and one of them (`formField`) carries an activation probe
+ * the other seven do not. Summed into a phase, that one type's behaviour is everybody's. Split by type,
+ * #659's question becomes answerable: is the total trips x a constant (what seeing the page costs), or is
+ * the rate itself climbing (where a reducible cost would live)?
+ *
+ * @param {any[]} runs
+ */
+function reportSweeps(runs) {
+  const pages = sweepCostsByPage(runs);
+  /** @type {Map<string, any[]>} */
+  const byType = new Map();
+  for (const [, types] of pages) {
+    for (const [type, acc] of types) byType.set(type, [...(byType.get(type) ?? []), acc]);
+  }
+  console.log(`\nper sweep type across ${pages.size} page(s) — median ms per round trip:`);
+  console.log(`  ${"type".padEnd(12)}${"pages".padStart(5)}${"thin".padStart(6)}  `
+    + `${"rates".padEnd(30)}${"spread".padStart(7)}  cause`);
+  for (const [type, perPage] of [...byType].sort()) {
+    const rate = rateAcrossPages(perPage);
+    const rates = rate.rates.map((/** @type {number} */ r) => r.toFixed(0)).join(", ");
+    console.log(`  ${type.padEnd(12)}${String(rate.pages).padStart(5)}${String(rate.thin).padStart(6)}  `
+      + `${rates.padEnd(30)}${(rate.spread === null ? "--" : rate.spread.toFixed(1)).padStart(7)}  `
+      + `${costCause(rate)}`);
+  }
+  reportWalkRate(byType);
+  console.log(`\n  thin = pages whose sweep made fewer than ${MIN_TRIPS_FOR_A_RATE} round trips, `
+    + "excluded and counted: a rate over four trips is noise, and one such page read as the strongest "
+    + "per-step scaling in the set until it was excluded. See sweep-costs.mjs for the measurement.");
+}
+
+/**
+ * THE ANSWER, not just the table. Every type but the carrier only walks, so their median rate is what a
+ * round trip costs; the carrier's excess over it is its probe rather than a slower walk.
+ *
+ * Split from `reportSweeps` to keep that function inside the complexity gate.
+ *
+ * @param {Map<string, any[]>} byType
+ */
+function reportWalkRate(byType) {
+  const walk = walkRate([...byType].flatMap(([type, perPage]) =>
+    perPage.map((/** @type {any} */ p) => ({ ...p, type }))));
+  if (walk === null) return;
+  console.log(`\n  walk rate (every type with no onItem): ${walk.toFixed(0)} ms/trip`);
+  const carrier = rateAcrossPages(byType.get("formField") ?? []);
+  if (carrier.rates.length === 0) return;
+  console.log(`  formField: ${Math.min(...carrier.rates).toFixed(0)}-`
+    + `${Math.max(...carrier.rates).toFixed(0)} ms/trip — the excess over ${walk.toFixed(0)} is its `
+    + "per-field activation, NOT a slower walk. Where it reads at the walk rate, the probe cost nothing.");
+}
+
 if (IS_MAIN) await main();
 
 async function main() {
@@ -341,6 +415,7 @@ async function main() {
       process.exit(2);
     }
     reportFromDisk(chosen.runs, chosen.scope);
+    if (process.argv.includes("--sweeps")) reportSweeps(chosen.runs);
     process.exit(0);
   }
 
