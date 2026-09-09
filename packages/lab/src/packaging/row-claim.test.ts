@@ -973,6 +973,19 @@ test("moveProjectStatus snapshots first, then moves the field, in that order", (
     "the snapshot must run, and complete, BEFORE the mutation it protects");
 });
 
+test("#891 ACCEPTANCE: moveProjectStatus passes excludeIssueNumber: issueNumber to the snapshot, so the "
+  + "#747 floor cannot refuse the very call that is about to give this row its Status", () => {
+  const seenDeps: Array<{ excludeIssueNumber?: number | null }> = [];
+  const run = () => "";
+  const snapshot = <T,>(mutate: () => T, deps: { excludeIssueNumber?: number | null } = {}): T => {
+    seenDeps.push(deps);
+    return mutate();
+  };
+  moveProjectStatus(891, "Ready", { run, snapshot, log: () => {} });
+  assert.equal(seenDeps.length, 1);
+  assert.equal(seenDeps[0].excludeIssueNumber, 891);
+});
+
 test("moveProjectStatus calls gh project item-edit with the real field name and the given Status option", () => {
   const calls: string[][] = [];
   const run = (cmd: string, args: string[]) => { calls.push(args); return ""; };
