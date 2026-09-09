@@ -86,6 +86,15 @@ function specifiersOf(source: string): string[] {
  * Read line by line rather than through a YAML parser, deliberately: `packages/control` cannot depend on
  * one (ADR 0012) and `lab-job.mjs` already slices its catalogue by the indentation the file commits to,
  * for the same reason. A job header resets the "has installed" state; an install step sets it.
+ *
+ * #558: A LINE THAT MERELY PRINTS THE SHAPE IS NOT AN INVOCATION OF IT -- the same "a file that only
+ * MENTIONS spawning git has not spawned it" class this repo has hit repeatedly (`git-spawn-classification`,
+ * the path-string search stripping comments first). `consumer-gate.yml`'s `check-pin` job tells a human
+ * to regenerate via `echo "::error::... regenerate (node scripts/generate-consumer-gate.mjs) ..."`, inside
+ * a job with no `npm ci` (it needs only `git`, never `node`) -- so the bare regex below read that ADVICE
+ * TEXT as a pre-install invocation. `echo` lines are skipped before the invocation regex runs; a real
+ * `run: node scripts/…` (or one inside a `run: |` block) never starts with `echo`, so nothing legitimate
+ * is excluded.
  */
 export function preInstallScripts(workflowText: string): string[] {
   const found: string[] = [];
@@ -94,6 +103,7 @@ export function preInstallScripts(workflowText: string): string[] {
     if (/^ {2}[A-Za-z0-9_-]+:\s*$/.test(line)) installed = false;          // a new job
     if (/npm (ci|install)\b/.test(line)) installed = true;
     if (installed) continue;
+    if (/^\s*echo\b/.test(line)) continue;                                 // prose, not an invocation
     const call = /\bnode\s+(scripts\/[A-Za-z0-9._-]+\.mjs)/.exec(line);
     if (call) found.push(call[1]);
   }
@@ -245,6 +255,22 @@ test("preInstallScripts stops at an install step, and resumes at the next job", 
   ].join("\n");
   assert.deepEqual(preInstallScripts(yaml), ["scripts/before.mjs", "scripts/fresh-job.mjs"],
     "a script after `npm ci` is safe; a new job starts uninstalled again");
+});
+
+test("#558 MUTATION TARGET: an echo line MENTIONING a script's name is not read as invoking it -- "
+  + "the same 'a mention is not a use' shape this repo has hit for comments and path strings, arriving "
+  + "here through advice text printed inside a job that has no npm ci because it never needs node at "
+  + "all (consumer-gate.yml's check-pin, which only runs git)", () => {
+  const yaml = [
+    "jobs:",
+    "  check-pin:",
+    "    steps:",
+    "      - uses: actions/checkout@v4",
+    "      - run: |",
+    '          echo "::error::regenerate (node scripts/generate-consumer-gate.mjs) and dispatch again"',
+  ].join("\n");
+  assert.deepEqual(preInstallScripts(yaml), [],
+    "an echo string naming a script is prose, not a pre-install invocation of it");
 });
 
 test("#567 alwaysStepScripts: finds a script invoked by an always() step, ignores one that isn't", () => {
