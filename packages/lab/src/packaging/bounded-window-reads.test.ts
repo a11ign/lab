@@ -20,6 +20,24 @@
  * files that consume the value mostly do so through `newestPerName`. **The finding was one site**, and
  * it was the one that decides whether a PR may merge.
  *
+ * ## A FLOOR ASSERTS ABOUT THE SEARCH; EVERY OTHER ASSERTION IS ABOUT THE RESULT
+ *
+ * The finding inside the finding, and it generalises past this row.
+ *
+ * `READS_THE_ROLLUP` first carried a lookbehind meant to exclude the `--json` field list —
+ * `(?<!["'\w])\.statusCheckRollup` — which **excludes the reads instead**, because the character before
+ * the dot in `pr.statusCheckRollup` is a word character. It found **3** readers where there are **4**.
+ *
+ * **There is no signal for that.** A sweep whose predicate silently shrinks reports cleanly, and 3-of-4
+ * and 4-of-4 are the same output: an empty list of unclassified sites. Every assertion below except the
+ * floor is about the RESULT — *are the sites this found classified?* — and each one is satisfied by
+ * finding fewer sites. Only the floor asks about the SEARCH: *did this examine a population at all?*
+ *
+ * That is why a floor is not a nicety on a discovery guard. It is the only assertion in the file whose
+ * failure mode is the guard's own blindness rather than the tree's state — the same reason
+ * `git-spawn-classification.test.ts` keeps `spawningGit.length >= 18` beside its classification, and the
+ * reason `evidence:check` reporting `2 compared: 2 same` on a 48-case sample was a false clean.
+ *
  * ## The finding: the FIFTH call site of a fix applied four times
  *
  * `merge-queue.mjs`'s `checksBlocking` filtered the RAW rollup:
@@ -74,6 +92,7 @@ const NAMES_ITS_WINDOW = /newestPerName|newestConclusion(Of)?|headQuietSeconds/;
  * Classified rather than fixed, so "nothing needs this" and "somebody forgot" stay different states.
  */
 const WIDER_WINDOW_IS_HARMLESS: Record<string, string> = {
+  // EMPTY BY MEASUREMENT, NOT BY OVERSIGHT -- do not delete this as dead.
   // EMPTY TODAY, and that is a measurement rather than an omission: all four readers now narrow the
   // rollup. It exists so the next reader that genuinely does not need the current answer is CLASSIFIED
   // rather than made to adopt a predicate it has no use for -- "nothing needs this" and "somebody
