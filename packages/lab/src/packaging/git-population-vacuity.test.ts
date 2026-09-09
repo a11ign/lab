@@ -268,11 +268,38 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
   "packages/lab/src/packaging/checkout-dash-safety.test.ts": {
     guard: "files.length > 100",
     note: "#637: joined this classification the same way `git-spawn-classification.test.ts` and every "
-      + "other sibling did -- its own `tracked()` calls `execFileSync(\"git\", [\"ls-files\", ...])` for "
-      + "a DIFFERENT population (destructive `git checkout --` sites, not ref/branch/tag/log/diff), so it "
-      + "is guarded, not exempt: the quoted floor is that file's own vacuity guard for its `ls-files` walk.",
+      + "other sibling did -- its own `tracked()` calls a DIFFERENT population (destructive `git checkout "
+      + "--` sites, not ref/branch/tag/log/diff), so it is guarded, not exempt: the quoted floor is that "
+      + "file's own vacuity guard, now downstream of `walkTree` rather than a literal spawn (#795).",
+  },
+  "packages/lab/src/packaging/tree-wide-guard-walk.test.ts": {
+    guard: "found.length > 20",
+    note: "#795: the ONE real, literal `execFileSync(\"git\", [\"ls-files\"...])` call left in the tree-wide "
+      + "guard population, deliberately -- it independently re-derives what `walkTree` should have returned, "
+      + "so it must spawn git itself rather than call `walkTree` (which would make the cross-check "
+      + "meaningless, comparing the helper against itself). Guarded on its own vacuity floor.",
   },
 };
+
+/**
+ * #795: MOST OF THIS FILE'S OWN CLASSIFIED POPULATION MOVED BEHIND `walkTree` (`scripts/tree-wide-
+ * guard.mjs`), and dropped out of `discoverGitPopulationTests()` as a direct consequence -- not because
+ * the discovery pattern broke, but because the population it was built to find (a file's OWN literal
+ * `execFileSync("git", ["ls-files"...])`) genuinely shrank when 17 guards stopped writing that call
+ * themselves. Each one's vacuity floor is still real and still tested (`inventory-is-control-plane-
+ * only.test.ts`'s `reaching.length > 0` and its siblings did not move or weaken) -- it now runs one call
+ * deeper, inside the shared helper, rather than inline in the guard's own source.
+ *
+ * THIS FILE'S OWN LITERAL-SUBCOMMAND DESIGN (see the header's "DELIBERATELY NOT BROADENED") means it
+ * cannot see through that indirection without inventing the second checking strategy the header already
+ * argues against -- so their CLASSIFICATION entries stay, as a historical record, the same way `backlog-
+ * ready.test.ts`'s entry above records a guard "RETIRED WITH ITS SUBJECT rather than quietly dropped."
+ * `git-spawn-classification.test.ts`'s own broader, wrapper-tolerant walk is what still finds `walkTree`'s
+ * own real spawn inside `tree-wide-guard.mjs` and requires IT to import and call a canonical scrubbing
+ * helper -- which it does. The census here dropped from 19 (2026-09-09, pre-#795) to 6 (measured directly
+ * against the tree the same day, post-#795); the floor below was lowered to match, with slack for genuine
+ * future drops rather than a number that will need touching again for the next one.
+ */
 
 test("MUTATION: without the SELF exclusion, this file would discover itself", () => {
   // This file's own `tracked()` calls `execFileSync("git", ["ls-files", ...])`, which matches
@@ -288,13 +315,16 @@ test("the discovery finds a non-trivial population -- vacuity guard for the walk
   const files = tracked();
   assert.ok(files.length > 200, `only found ${files.length} tracked .test.ts files -- the ls-files scan is broken`);
   const discovered = discoverGitPopulationTests();
-  // The known census: 19 (#633 added `diff` to SPAWNS_GIT_POPULATION and discovered
-  // claude-md-content-preservation.test.ts as the one new member). A floor, not a pin -- a legitimate
-  // new git-population test raises it, and the test below is what catches one arriving unclassified.
-  // This guard exists only to catch the discovery pattern itself breaking and matching nothing.
-  assert.ok(discovered.length >= 15,
-    `only found ${discovered.length} git-population test(s), fewer than the known census of 19 -- the `
-    + "discovery pattern is probably broken, not the population shrinking");
+  // The known census DROPPED, correctly, from 19 to 6 on 2026-09-09 (#795): 17 guards moved their own
+  // population-enumerating `git ls-files` call behind the shared `walkTree` helper, so they stopped
+  // matching this file's deliberately literal, unwrapped `execFileSync("git", [...` pattern -- see the
+  // header note above CLASSIFICATION. That is the population genuinely shrinking for a real, verified
+  // reason, not this discovery breaking -- the floor is set with slack below 6 rather than pinned to it,
+  // so the NEXT genuine drop does not require touching this number again, and the test below is what
+  // catches a real member arriving unclassified.
+  assert.ok(discovered.length >= 4,
+    `only found ${discovered.length} git-population test(s), fewer than the post-#795 census of 6 -- the `
+    + "discovery pattern is probably broken, not the population shrinking further");
 });
 
 test("every discovered git-population test is classified, and its guard still exists", () => {

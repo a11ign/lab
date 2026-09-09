@@ -1,10 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -28,12 +26,13 @@ const REPO = join(import.meta.dirname, "../../../..");
  *
  * My method was sound and my POPULATION was three directories I thought of. So this walks every tracked
  * source file `git ls-files` returns — the population is the repository, not a memory of it.
+ *
+ * #795: the walk itself (the scrubbed `git ls-files` call, and the assertion that its own count is real)
+ * now lives in `walkTree`, shared with every other tree-wide guard rather than re-derived here.
  */
 const tracked = (): string[] =>
-  // SCRUB GIT_* — a leaked GIT_DIR redirects this `ls-files` onto another repository, and the population
-  // would then be somebody else's tracked files. That is this test's own defect, one layer down.
-  execFileSync("git", ["ls-files"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
-    .split("\n").filter((f) => /\.(mjs|ts|js)$/.test(f) && !f.includes("node_modules"));
+  walkTree({ kind: "all", roots: [] }).map((f) => f.path)
+    .filter((f) => /\.(mjs|ts|js)$/.test(f) && !f.includes("node_modules"));
 
 /** Reaching the inventory means importing the reader, not merely naming the file in prose. */
 const READER = "inventoryWorkerUrls";

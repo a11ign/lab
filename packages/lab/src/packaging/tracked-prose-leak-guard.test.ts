@@ -44,13 +44,11 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import { LEAK_PATTERNS, allLeaksIn } from "./leak-patterns.mjs";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -66,9 +64,7 @@ const MIN_TRACKED_MARKDOWN_FILES = 50;
 const IN_SCOPE = ["a named SSH private key file", "a live pct exec container-hop command"];
 
 function trackedMarkdownFiles(): string[] {
-  return execFileSync("git", ["ls-files", "*.md"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
-    .split("\n")
-    .filter(Boolean);
+  return walkTree({ kind: "all", roots: [] }).map((f) => f.path).filter((f) => f.endsWith(".md"));
 }
 
 /** Collapsed so a match cannot be defeated by a hard-wrapped line boundary. */

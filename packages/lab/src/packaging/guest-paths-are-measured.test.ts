@@ -67,11 +67,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -153,8 +151,7 @@ const OTHER_GUEST_DIRECTORIES: Record<string, string> = {
 
 /** Every tracked text file — every language, because the sweep that looked at one language missed four. */
 function trackedText(): string[] {
-  return execFileSync("git", ["ls-files"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
-    .split("\n").filter(Boolean)
+  return walkTree({ kind: "all", roots: [], selfPath: SELF }).map((f) => f.path)
     .filter((f) => f !== SELF && !QUOTED_FIXTURE_FILES.has(f) && !f.includes("/dist/") && !f.startsWith("runs/"))
     .filter((f) => /\.(ts|mjs|js|yml|yaml|sh|ps1|cmd|py|md|json|service|xml)$/.test(f));
 }
