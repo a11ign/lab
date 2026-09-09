@@ -586,6 +586,53 @@ test("claimsNobodyIsWorking: an in-progress row with no PR and a cold branch is 
     "the flag must name the session holding it, or nobody knows whose claim to release");
 });
 
+test("#756 claimsNobodyIsWorking: a COMMENT in the window keeps a claim live, as `ceo`'s rule (#723) says", async () => {
+  const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
+  // THE LIVE CASE THIS ROW WAS FILED FROM. #426 held `in-progress`, had no open PR and no branch at all,
+  // and carried a comment 47 minutes old. The release rule read it live; this check read it DEAD, and
+  // `tracker-auditor` had to overrule the tool to follow the rule.
+  const rows = [{ number: 426, title: "commented, not pushed",
+    labels: ["in-progress", "session:worker-audit", "session:orchestrator"] }];
+  const activity = { hasOpenPr: new Map(), lastPushMinutes: new Map(),
+    claimedMinutes: new Map([[426, 1800]]), lastCommentMinutes: new Map([[426, 47]]) };
+  assert.deepEqual(claimsNobodyIsWorking(rows, activity), [],
+    "a comment inside the window is work in progress that has produced no commit yet");
+});
+
+test("#756 claimsNobodyIsWorking: a comment OUTSIDE the window does not keep it alive", async () => {
+  const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
+  // THE MUTATION #756's acceptance names: move the comment out of the window and the row comes back.
+  const rows = [{ number: 426, title: "commented long ago", labels: ["in-progress", "session:orchestrator"] }];
+  const flagged = claimsNobodyIsWorking(rows, { hasOpenPr: new Map(), lastPushMinutes: new Map(),
+    claimedMinutes: new Map([[426, 1800]]), lastCommentMinutes: new Map([[426, 241]]) });
+  assert.deepEqual(flagged.map((f: { number: number }) => f.number), [426]);
+});
+
+test("#756 claimsNobodyIsWorking: an ABSENT comment age is not read as fresh", async () => {
+  const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
+  // A row whose comments could not be read is left ABSENT from the map, and absent must mean "no comment
+  // seen", never "commented just now" -- the same discipline the branch age already keeps. The three-fact
+  // shape (no `lastCommentMinutes` key at all) is the same case and must decide identically.
+  const rows = [{ number: 9, title: "unreadable comments", labels: ["in-progress", "session:x"] }];
+  const base = { hasOpenPr: new Map(), lastPushMinutes: new Map(), claimedMinutes: new Map([[9, 1800]]) };
+  assert.deepEqual(claimsNobodyIsWorking(rows, base).map((f: { number: number }) => f.number), [9],
+    "an older three-fact caller still decides, and still flags");
+  assert.deepEqual(claimsNobodyIsWorking(rows, { ...base, lastCommentMinutes: new Map() })
+    .map((f: { number: number }) => f.number), [9]);
+});
+
+test("#756 claimsNobodyIsWorking: a comment does not rescue a row claimed ten minutes ago into a push report", async () => {
+  const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
+  // The reported `minutes` must keep describing the BRANCH. A row kept alive by a comment and one kept
+  // alive by a push are different situations, and the line that names one must not silently mean the
+  // other -- so a row that IS flagged still reports its push age, comment or no comment.
+  const rows = [{ number: 5, title: "old comment, old branch", labels: ["in-progress", "session:y"] }];
+  const flagged = claimsNobodyIsWorking(rows, { hasOpenPr: new Map(),
+    lastPushMinutes: new Map([[5, 900]]), claimedMinutes: new Map([[5, 1800]]),
+    lastCommentMinutes: new Map([[5, 900]]) });
+  assert.equal(flagged[0].minutes, 900, "the reported age is the branch's, never the comment's");
+});
+
 test("claimsNobodyIsWorking: NO BRANCH AT ALL is the strongest case, never read as fresh", async () => {
   const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
   // #143 was claimed THIRTY HOURS before anyone noticed, with no branch ever pushed. An absent age read
