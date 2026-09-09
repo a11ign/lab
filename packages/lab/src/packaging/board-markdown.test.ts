@@ -6,6 +6,17 @@ import path from "node:path";
 import { toHtml, inline } from "../../../../scripts/board-markdown.mjs";
 import { document } from "../../../../scripts/board-document.mjs";
 
+// no-token: todaysReleaseExists
+//
+// #827: this file imports ONLY `document` from board-document.mjs, and every test below renders it from a
+// literal fixture object -- never from `collect()`, never from anything that reaches `gh`. But the
+// acceptance closure walk scans the WHOLE FILE'S text for a `gh` spawn, not the one export this file
+// actually imports, and board-document.mjs's OWN `todaysReleaseExists` (a real `gh release view` call,
+// used only by the daily-edition CLI path this file never touches) tripped it. Measured: 5/5 pass with
+// `gh` stubbed to exit 4 on every call -- this file genuinely needs no token. Verified, not merely
+// declared: the acceptance job's own closure walk checks this file's text does not call
+// `todaysReleaseExists(` before trusting the declaration.
+
 /* THE TEST THAT WOULD HAVE CAUGHT IT, and the reason it is written against RENDERED OUTPUT rather than
  * against the converter's branches.
  *

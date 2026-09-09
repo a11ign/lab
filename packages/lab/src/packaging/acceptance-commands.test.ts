@@ -18,6 +18,8 @@ import {
   hasFullHistoryDeclaration, jobCapabilities,
   deriveClosureRequirements, closureRequirementMessage, unmetClosureRequirements,
   unmetCommandClosureRequirements,
+  runsTheWholeSuite,
+  suiteTestFiles
 } from "../../../../scripts/acceptance-commands.mjs";
 
 // A file known to exist, relative to the repo root -- where every real invocation of this command runs
@@ -970,4 +972,245 @@ test("#731 MUTATION: point a write-only corpus-root user's declared write path a
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// --- #827: `token` means TWO things too -- a file whose OWN operation needs it, and a file that merely
+// SHARES A MODULE with one that does. `board-markdown.test.ts`/`board-achievement-retirement.test.ts` each
+// import only `document` from `board-document.mjs`, render it from a literal fixture, and pass with `gh`
+// stubbed to exit 4 -- but the walk scans the WHOLE FILE's text for every pattern, not the one export a
+// caller actually imports, so reaching `board-document.mjs` at all charges every test for its OTHER
+// export (`todaysReleaseExists`, a real `gh release view` spawn) even when that export is never imported.
+//
+// SAME SELF-REFERENCE DISCIPLINE AS THE #731 SECTION ABOVE: this file is walked by its own #621
+// self-reference test (`REAL_FILE`, above), so nothing here spells `execFileSync("gh"` contiguously --
+// every fixture builds it through `spell()`, exactly as the corpus section builds `runsRoot(`. ---
+
+/**
+ * A SYNTHETIC board-document.mjs-SHAPED module: one file exporting a SAFE function (pure, no `gh`) beside
+ * a RISKY one (spawns `gh`) -- the real shape #827 fixes. `riskyFnName` is a parameter, never a shared
+ * default, so a mutation test below can be sure it is naming the SAME identifier it declares against.
+ */
+function writeSyntheticMixedModule(dir: string, riskyFnName: string): string {
+  const fixture = join(dir, "mixed-module.mjs");
+  writeFileSync(fixture, [
+    "import { execFileSync } from \"node:child_process\";",
+    "export function safeRender(x) { return String(x); }",
+    `export function ${riskyFnName}() { execFileSync("${spell("g", "h")}", ["release", "view"]); }`,
+  ].join("\n"));
+  return fixture;
+}
+
+test("#827 REGRESSION: an entry importing ONLY the safe export of a mixed module is STILL charged token, "
+  + "with no declaration -- the exact live shape (board-markdown.test.ts before this row) proving the "
+  + "fix below is earned, not merely a walk that stopped looking", () => {
+  const dir = mkdtempSync(join(tmpdir(), "acceptance-token-"));
+  try {
+    writeSyntheticMixedModule(dir, "checkRelease");
+    const entry = join(dir, "consumer.test.mjs");
+    writeFileSync(entry, [
+      "import { safeRender } from \"./mixed-module.mjs\";",
+      "safeRender(1);",
+    ].join("\n"));
+    const hits = deriveClosureRequirements(entry);
+    assert.deepEqual(hits.map((h) => h.requirement), ["token"],
+      `expected a token hit with no declaration; got: ${hits.map(closureRequirementMessage).join("; ")}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#827: an entry that declares `// no-token: <fn>` and genuinely never calls that function derives NO "
+  + "requirement at all, even though the module it imports contains a real `gh` spawn elsewhere", () => {
+  const dir = mkdtempSync(join(tmpdir(), "acceptance-token-"));
+  try {
+    writeSyntheticMixedModule(dir, "checkRelease");
+    const entry = join(dir, "consumer.test.mjs");
+    writeFileSync(entry, [
+      "// no-token: checkRelease",
+      "import { safeRender } from \"./mixed-module.mjs\";",
+      "safeRender(1);",
+    ].join("\n"));
+    const hits = deriveClosureRequirements(entry);
+    assert.deepEqual(hits, [], `expected no hits; got: ${hits.map(closureRequirementMessage).join("; ")}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#827: `// no-token:` is checked ONCE against the entry, not per-file -- an entry TWO HOPS from the "
+  + "risky module, through a pure re-export, is exempted the same way", () => {
+  const dir = mkdtempSync(join(tmpdir(), "acceptance-token-"));
+  try {
+    writeSyntheticMixedModule(dir, "checkRelease");
+    const helper = join(dir, "helper.mjs");
+    writeFileSync(helper, [
+      "export { safeRender } from \"./mixed-module.mjs\";",
+    ].join("\n"));
+    const entry = join(dir, "consumer.test.mjs");
+    writeFileSync(entry, [
+      "// no-token: checkRelease",
+      "import { safeRender } from \"./helper.mjs\";",
+      "safeRender(1);",
+    ].join("\n"));
+    const hits = deriveClosureRequirements(entry);
+    assert.deepEqual(hits, [], `expected no hits two hops deep; got: ${hits.map(closureRequirementMessage).join("; ")}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#827: a `// no-token:` declaration naming a function the entry's OWN code DOES call is named as "
+  + "WRONG, never silently trusted -- a file claiming it avoids a call it actually makes must still refuse "
+  + "as token, with a message pointing at the bad declaration rather than a generic one", () => {
+  const dir = mkdtempSync(join(tmpdir(), "acceptance-token-"));
+  try {
+    writeSyntheticMixedModule(dir, "checkRelease");
+    const entry = join(dir, "consumer.test.mjs");
+    writeFileSync(entry, [
+      "// no-token: checkRelease",
+      "import { checkRelease } from \"./mixed-module.mjs\";",
+      "checkRelease();",
+    ].join("\n"));
+    const hits = deriveClosureRequirements(entry);
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0].requirement, "token");
+    assert.equal(hits[0].wrongDeclaration, true);
+    assert.match(closureRequirementMessage(hits[0]), /declares `\/\/ no-token:`.*DOES call/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#827 MUTATION: an entry that genuinely earns its exemption, then edited to also call the risky "
+  + "function, must lose it -- proving the exemption is EARNED by the entry's own code, not granted by "
+  + "the header alone", () => {
+  const dir = mkdtempSync(join(tmpdir(), "acceptance-token-"));
+  try {
+    writeSyntheticMixedModule(dir, "checkRelease");
+    const entry = join(dir, "consumer.test.mjs");
+    const clean = [
+      "// no-token: checkRelease",
+      "import { safeRender, checkRelease } from \"./mixed-module.mjs\";",
+      "safeRender(1);",
+    ].join("\n");
+    writeFileSync(entry, clean);
+    assert.deepEqual(deriveClosureRequirements(entry), [], "sanity: the clean fixture must be exempt first");
+    const mutated = `${clean}\ncheckRelease();\n`;
+    assert.notEqual(mutated, clean, "the mutation must actually land, or this proves nothing");
+    writeFileSync(entry, mutated);
+    const hits = deriveClosureRequirements(entry);
+    assert.equal(hits.length, 1, `expected the token hit to return; got: ${JSON.stringify(hits)}`);
+    assert.equal(hits[0].wrongDeclaration, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#827: removing every runnable command from a body must still not report success -- #826's own rule, "
+  + "unaffected by this row's declaration mechanism (a REFUSED-only report is its own state, never `ok`)", () => {
+  const body = "Closes #1\nAcceptance: npm test\n";
+  const report = acceptanceReport(body, () => 0);
+  assert.equal(report.ok, false, "a whole-suite command naming no file must still fail the job");
+});
+
+test("#827 ACCEPTANCE, against the REAL files this row was filed over: board-markdown.test.ts and "
+  + "board-achievement-retirement.test.ts each carry `// no-token:` now, and each derives NO token "
+  + "requirement from board-document.mjs's own `gh release view` spawn", () => {
+  for (const file of [
+    "packages/lab/src/packaging/board-markdown.test.ts",
+    "packages/lab/src/packaging/board-achievement-retirement.test.ts",
+  ]) {
+    const hits = deriveClosureRequirements(file);
+    assert.deepEqual(hits, [], `${file} must derive no requirement now that it declares \`// no-token:\` `
+      + `and never calls the function it names; got: ${hits.map(closureRequirementMessage).join("; ")}`);
+  }
+});
+
+// --- #513's OTHER HALF: the command everybody actually types ---
+//
+// `unmetCommandRequirements` and `unmetCommandClosureRequirements` both opened with
+// `if (!/tsx --test/.test(command)) return []`, so the capability gate asked whether a command NAMED a
+// file needing a capability. `npm test` names none and runs them all.
+//
+// Measured 2026-09-09: four PRs red on `acceptance / run` at once, every one for `gh: To use GitHub CLI
+// in a GitHub Actions workflow, set the GH_TOKEN environment variable`, in a job that passes no token BY
+// DESIGN because it runs commands taken from a stranger's PR body. None of the four had touched the code
+// that failed; the check named their authors for a line they never wrote.
+//
+// #513 split `row-claim-live.test.ts` out precisely so a `tsx --test` command naming it could be refused.
+// That half worked. This is the half nobody had.
+
+test("A WHOLE-SUITE COMMAND IS SEEN BY THE CAPABILITY GATE -- `npm test` names no file and runs all of "
+  + "them, and asking whether it NAMES one is a question about the adjacent property", () => {
+  const caps = { history: false, token: false, fleet: false, corpus: false };
+  const verdict = classifyCommand("npm test", { capabilities: caps });
+  assert.equal(verdict.verdict, "refused");
+  assert.match(verdict.reason, /which this job does not have/);
+  assert.match(verdict.reason, /\.test\.ts/, "the refusal must NAME a file, or it is not followable");
+});
+
+test("`npm run test:ts` is the same command by another name, and the gate must not be fooled by which "
+  + "spelling an author used", () => {
+  const caps = { history: false, token: false, fleet: false, corpus: false };
+  assert.equal(classifyCommand("npm run test:ts", { capabilities: caps }).verdict, "refused");
+});
+
+test("CONTROL: a job WITH the capabilities still runs the suite -- this gate refuses on absence, never "
+  + "on the command's shape", () => {
+  const caps = { history: true, token: true, fleet: true, corpus: true };
+  assert.equal(classifyCommand("npm test", { capabilities: caps }).verdict, "runnable");
+});
+
+test("CONTROL: a command that merely mentions the word test is not a whole-suite command", () => {
+  const caps = { history: false, token: false, fleet: false, corpus: false };
+  assert.equal(runsTheWholeSuite("node scripts/test-helper.mjs"), false);
+  assert.equal(runsTheWholeSuite("npm run test:python"), false,
+    "python has its own population and its own skip -- widening this to every `test:` script would "
+    + "refuse a command whose files this walk never examined");
+  assert.equal(classifyCommand("node -e \"process.exit(0)\"", { capabilities: caps }).verdict, "runnable");
+});
+
+/**
+ * THE FLOOR. Every assertion above is satisfied by finding FEWER files: an empty population makes the
+ * union of requirements empty, `npm test` reads as needing nothing, and the gate passes having examined
+ * nothing -- the failure this whole mechanism exists to prevent, reintroduced one layer up.
+ *
+ * `suiteTestFiles` throws rather than returning `[]` for the same reason, and this proves the glob it
+ * reads out of `package.json` actually resolves against this tree.
+ */
+test("the suite population is real -- a floor, because every check above passes vacuously over an empty one", () => {
+  const files = suiteTestFiles();
+  assert.ok(files.length >= 300,
+    `only ${files.length} test file(s) found; \`test:ts\` itself asserts --min=300, so fewer means the `
+    + "glob no longer resolves and this gate is answering about a population it never examined");
+  assert.ok(files.some((f: string) => f.endsWith("row-claim-live.test.ts")),
+    "the file whose token requirement started this must be IN the population, or the gate cannot have "
+    + "caught it");
+});
+
+/**
+ * REFUSED IS NOT GREEN FOR A WHOLE-SUITE COMMAND (ceo, 2026-09-09). "An acceptance job that passes
+ * having verified nothing is how `verified` comes to mean `unexamined`."
+ *
+ * Every OTHER refusal stays `ok: true`, and the distinction is not a nicety: those are a legitimate "not
+ * this job's to run" — the author NAMED a file, and this job cannot run that particular one. `npm test`
+ * names nothing, so refusing it means the PR has declared no acceptance this job can act on at all.
+ */
+test("a whole-suite acceptance line FAILS the job, and the message names the fix rather than the state", () => {
+  const caps = { history: false, token: false, fleet: false, corpus: false };
+  const report = acceptanceReport("Acceptance: npm test", () => 0, { capabilities: caps });
+  assert.equal(report.ok, false, "passing here is how `verified` comes to mean `unexamined`");
+  assert.match(report.lines[0], /Name the files this change is verified by/);
+  assert.match(report.lines[0], /no token and no corpus/,
+    "the refusal must say WHY this job cannot, or the author reads it as the tool being broken");
+});
+
+test("CONTROL: a refusal of a NAMED file stays a pass -- the author did their part and this job cannot "
+  + "run that one file. Failing both would make the two indistinguishable, and they need opposite fixes", () => {
+  const caps = { history: false, token: false, fleet: false, corpus: false };
+  const named = acceptanceReport(
+    "Acceptance: npx tsx --test packages/lab/src/packaging/queue-table.test.ts", () => 0, { capabilities: caps });
+  assert.equal(named.ok, true);
+  assert.match(named.lines[0], /REFUSED/);
+  assert.doesNotMatch(named.lines[0], /Name the files/);
 });
