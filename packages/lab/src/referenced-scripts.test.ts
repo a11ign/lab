@@ -34,7 +34,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join, dirname, relative } from "node:path";
 import { sandboxGitEnv } from "../../../scripts/git-env.mjs";
-import { declareTreeWideGuard } from "../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../scripts/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -95,8 +95,7 @@ function insideGitRepo(): boolean {
 let trackedFilesCache: Set<string> | null = null;
 function trackedFiles(): Set<string> {
   if (trackedFilesCache === null) {
-    trackedFilesCache = new Set(
-      execFileSync("git", ["ls-files"], { env: sandboxGitEnv(), encoding: "utf8" }).split("\n").filter(Boolean));
+    trackedFilesCache = new Set(walkTree({ kind: "all", roots: [] }).map((f) => f.path));
   }
   return trackedFilesCache;
 }
@@ -124,8 +123,8 @@ test("every scripts/ program referenced by package.json or action.yml is tracked
 
 /** `extends` targets of every tracked tsconfig, resolved to repo-relative paths. */
 function extendedConfigs(): Array<{ from: string; target: string }> {
-  const configs = execFileSync("git", ["ls-files", "*tsconfig*.json"], { env: sandboxGitEnv(), encoding: "utf8" })
-    .split("\n").filter(Boolean);
+  const configs = walkTree({ kind: "all", roots: [] }).map((f) => f.path)
+    .filter((f) => /tsconfig.*\.json$/.test(f.split("/").pop() ?? ""));
   const found: Array<{ from: string; target: string }> = [];
   for (const from of configs) {
     // tsconfig permits comments, and this repo uses them heavily to record WHY a setting is load-bearing.

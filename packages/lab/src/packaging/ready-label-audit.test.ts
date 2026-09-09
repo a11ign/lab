@@ -5,11 +5,17 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, handClaims, strandedByIncompleteDecline,
   fetchOpenIssues, fetchAllIssues, closedDebris, isClosedDebrisLabel, readyRowsAbsentFromBoard,
   readyRowsAlreadyMerged, fetchClosingPrRefs, fetchLatestReopenedAt, CHECKS, runCheck,
 } from "../../../../scripts/ready-label-audit.mjs";
+// #782: `isClosedDebrisLabel` now DERIVES from this, rather than pinning the two equal with a separate
+// test -- so this import is the proof the derivation actually happened, not a second, parallel check.
+import { labelsToStrip } from "../../../../scripts/close-rows-for-merged-pr.mjs";
 
 // --- mutexViolations: pure, no I/O ---
 
@@ -245,6 +251,33 @@ test("#444: runner: must NOT join MUTEX_LABELS -- a reserved-but-ready row is ge
   const issues = [{ number: 324, title: "V1 rehearsal", labels: [READY_LABEL, "runner:worker-audit"] }];
   assert.deepEqual(mutexViolations(issues), [],
     "a reserved-but-unclaimed row must not read as a mutex violation");
+});
+
+// --- #782: isClosedDebrisLabel DERIVES from labelsToStrip, so the two populations cannot drift again ---
+
+test("#782 ACCEPTANCE, MUTATION TARGET: a closed row carrying ONLY a stale `started` label -- the exact "
+  + "shape 52 real closed rows had 2026-09-09, invisible to the pre-#782 hand-rolled list, which never "
+  + "named `started` at all -- IS now reported as debris", () => {
+  assert.ok(isClosedDebrisLabel("started"),
+    "labelsToStrip has always included `started` (#754); isClosedDebrisLabel's own list never did until "
+    + "it started deriving from labelsToStrip instead");
+  const issues = [{ number: 640, title: "closed with only started left", state: "CLOSED" as const,
+    labels: ["backlog", "started", "was-ready"] }];
+  assert.deepEqual(closedDebris(issues), [{ number: 640, title: "closed with only started left", debris: ["started"] }]);
+});
+
+test("#782: isClosedDebrisLabel agrees with labelsToStrip on every label labelsToStrip itself would strip "
+  + "-- proven by calling THROUGH labelsToStrip, not by asserting a second hand-picked list", () => {
+  for (const label of ["ready", "in-progress", "started", "session:worker-contracts", "session:anything"]) {
+    assert.equal(isClosedDebrisLabel(label), labelsToStrip([label]).length > 0,
+      `isClosedDebrisLabel(${label}) disagreed with labelsToStrip -- the two must never drift independently`);
+  }
+});
+
+test("#782: was-ready is debris-exempt on BOTH sides -- labelsToStrip never touches it, and "
+  + "isClosedDebrisLabel must not either, now that one derives from the other", () => {
+  assert.equal(labelsToStrip([WAS_READY_LABEL]).length, 0);
+  assert.equal(isClosedDebrisLabel(WAS_READY_LABEL), false);
 });
 
 test("isClosedDebrisLabel: an ordinary label, or a MUTEX_LABELS entry that is not ready/in-progress, does not count", () => {
@@ -701,4 +734,37 @@ test("CHECKS names all eight, so the partial-audit sentence states a true denomi
     "open issues", "hand claims", "declined rows", "closed issues",
     "board membership", "closing PR references", "claim activity", "closed-row provenance",
   ]);
+});
+
+// --- #804: the four claim-label literals are declared in EXACTLY ONE place, scripts/claim-labels.mjs ---
+
+const SCRIPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../../../scripts");
+const CLAIM_LABEL_NAMES = ["READY_LABEL", "WAS_READY_LABEL", "CLAIM_LABEL", "STARTED_LABEL"];
+/** A fresh declaration (`const X = "..."`), never an import or a re-export -- both of those name the
+ * identifier too, and only a declaration is the drift risk this test exists to close off. */
+const DECLARES_A_CLAIM_LABEL = new RegExp(
+  `\\b(?:const|let|var)\\s+(?:${CLAIM_LABEL_NAMES.join("|")})\\s*=\\s*"`,
+);
+
+test("#804 ACCEPTANCE, MUTATION TARGET: no scripts/*.mjs file other than claim-labels.mjs declares any "
+  + "of the four claim-label literals -- row-claim.mjs and ready-label-audit.mjs each own only an "
+  + "import + re-export, close-rows-for-merged-pr.mjs only an import; a fresh `const X = \"...\"` "
+  + "anywhere else is the exact fact-stated-twice shape this file exists to prevent recurring", () => {
+  const offenders = [];
+  for (const entry of readdirSync(SCRIPTS_DIR, { withFileTypes: true })) {
+    if (!entry.isFile() || !entry.name.endsWith(".mjs") || entry.name === "claim-labels.mjs") continue;
+    const source = readFileSync(join(SCRIPTS_DIR, entry.name), "utf8");
+    if (DECLARES_A_CLAIM_LABEL.test(source)) offenders.push(entry.name);
+  }
+  assert.deepEqual(offenders, [],
+    `these scripts/*.mjs files declare a claim-label literal locally instead of importing it from `
+    + `claim-labels.mjs: ${offenders.join(", ")}`);
+});
+
+test("#804: claim-labels.mjs itself is a real LEAF -- it imports nothing, so nothing depending on it "
+  + "(directly or transitively) can form a cycle through it", () => {
+  const source = readFileSync(join(SCRIPTS_DIR, "claim-labels.mjs"), "utf8");
+  assert.doesNotMatch(source, /^import\s/m,
+    "claim-labels.mjs must stay import-free -- an import here would reintroduce exactly the cycle risk "
+    + "the leaf-module design exists to remove");
 });
