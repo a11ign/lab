@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { parse as parseYaml } from "yaml";
 
 /* THE STATED HOUR MUST BE TRUE IN WINTER TOO.
  *
@@ -148,4 +149,49 @@ test("republish CANNOT be reached from the schedule, and CANNOT create an editio
   assert.deepEqual(ungated, [],
     `these steps do not accept the republish gate, so a republish would run some and skip others: `
     + `${ungated.join(", ")}`);
+});
+
+// ---------------------------------------------------------------------------------------------------
+// #590: THE EVENING RUN IS RETIRED ON PURPOSE, AND RESTORING IT MEANS GOING BACK TO THE BOARD.
+//
+// `board-summary-check` ran at 21:00 the evening before an edition until 2026-09-08, when the board moved
+// it, in its own words: "it should be 30 mins before as it should be as fresh as possible as a lot
+// happens over night." A summary written the evening before is a forecast about a night that has not
+// happened -- measured that day, the queue went from twelve open PRs to zero between the summary being
+// written and the edition rendering.
+//
+// This is pinned because the ghost outlived the decision: three files still described the 21:00 entry in
+// the present tense on 2026-09-09, and one of them was the `// command:` header that GENERATES
+// docs/commands.md -- so one stale line was being reproduced into a second document on every docs run. A
+// future reader meeting that prose could restore an evening cron believing they were repairing a gap.
+// ---------------------------------------------------------------------------------------------------
+test("#590 board-summary-check runs in the MORNING of the edition, never the evening before", () => {
+  const text = readFileSync(path.join(REPO, ".github/workflows/board-summary-check.yml"), "utf8");
+  const doc = parseYaml(text) as { on: { schedule?: { cron: string }[] } };
+  const crons = (doc.on.schedule ?? []).map((s) => s.cron);
+  assert.ok(crons.length > 0, "the schedule must still exist -- an unscheduled check warns nobody");
+
+  for (const cron of crons) {
+    const hour = Number(cron.split(/\s+/)[1]);
+    assert.ok(hour >= 5 && hour <= 8,
+      `cron "${cron}" fires at ${hour}:00 UTC, outside the morning window. The board moved this check to `
+      + "the morning of the edition on 2026-09-08 (2a1bdd92): a summary written the evening before is a "
+      + "forecast about a night that has not happened. Restoring an evening run means taking that back to "
+      + "the board, not adding a cron.");
+  }
+});
+
+test("#590 no document describes the retired 21:00 entry as current", () => {
+  // The `// command:` header is the one that matters: it GENERATES docs/commands.md, so a stale sentence
+  // there is reproduced into a second document on every docs run -- one wrong line, two places, forever.
+  for (const file of ["scripts/board-summary-check.mjs", "docs/commands.md", "docs/npm-scripts.md"]) {
+    const text = readFileSync(path.join(REPO, file), "utf8");
+    for (const line of text.split("\n")) {
+      if (!line.includes("21:00")) continue;
+      assert.match(line, /USED TO|until 2026|moved it|RIGHT WHEN IT RAN|was correct for/,
+        `${file} mentions 21:00 outside a retraction:\n  ${line.trim()}\n`
+        + "The evening run was retired on 2026-09-08. A description of it in the present tense is the "
+        + "ghost that let three sessions believe the warning still existed.");
+    }
+  }
 });

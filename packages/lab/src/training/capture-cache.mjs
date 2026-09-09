@@ -86,7 +86,7 @@ export function hashPageDir(pageDir) {
  * @param {{ screenReader?: string, screenReaderVersion?: string, guidepupVersion?: string,
  *           browser?: string, browserVersion?: string, windowsVersion?: string, architecture?: string,
  *           captureProtocol?: string|number, screenReaderSettings?: string,
- *           provisionRevision?: string }} [environment]
+ *           provisionRevision?: string, browserProfile?: string }} [environment]
  *
  * EVERY FIELD LISTED, because each is a cache key and an absent one silently becomes `"unknown"` -- which
  * is a value two different guests can share. The comments below record what each costs when it is wrong;
@@ -119,6 +119,29 @@ export function environmentKey(environment = {}) {
     // than saying we cannot tell. It still differs from the new digest, so nothing blends.
     screenReaderSettings: environment.screenReaderSettings ?? "default",
     provisionRevision: environment.provisionRevision ?? "unstamped",
+    // WHICH BROWSER PROFILE THE CAPTURE WAS TAKEN AGAINST (#561), and it is here for the same reason
+    // `screenReaderSettings` is: it changes what NVDA says before this project ever sees it.
+    //
+    // `browser-profile.mjs`'s own header states the mechanism: a fresh `--user-data-dir` shows Edge's
+    // first-run welcome surface, and on a page with no headings NVDA's quick-nav escapes the empty
+    // document into that surface and records it as PHANTOM PAGE CONTENT. A cold profile does not merely
+    // differ from a warm one, it injects content that is not the page. The U+FFFC incident is the same
+    // variable measured from the other end: the autofill icon reached 3%, then 8%, then 31% of affected
+    // captures as the profile LEARNED, with 26 good/bad pairs disagreeing about it.
+    //
+    // `gate:stability` cannot cover this and it is worth saying why here as well as at the worker: that
+    // gate compares captures taken minutes apart WITHIN ONE RUN, so a uniformly cold profile is stable by
+    // construction. It caught U+FFFC only because the profile was WARMING during the run. Nothing
+    // compares evidence ACROSS runs -- that is this key's job, and this field is the gap being closed.
+    //
+    // `"adopted"` for a capture that predates the field -- NOT "unknown", and the difference is a whole
+    // recapture. Every guest on the day this shipped had a profile and no stamp; the worker stamps such a
+    // profile with the literal `adopted`, so a live guest reports exactly what an old record defaults to
+    // and NOTHING BLENDS AND NOTHING MISSES. Reading MISSING as CHANGED would invalidate every cached
+    // capture for a field that has just been introduced -- the `os`-key recapture paid a second time, for
+    // no information. Same device as `screenReaderSettings: "default"` one field up: the absent value is
+    // a FACT about how those captures were taken, not an admission that we cannot tell.
+    browserProfile: environment.browserProfile ?? "adopted",
   };
 }
 
