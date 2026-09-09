@@ -91,10 +91,12 @@ const SITES: Array<{ file: string; expect: string }> = [
       + "bootstrap-control-plane.sh" },
   { file: "docs/backlog-ready.md", expect: `${PRODUCT_REPO_URL}/issues` },
   { file: "docs/try-it.md", expect: `uses: ${REPO}@main` },
-  // COPY-PASTE-EXECUTE: the getting-started guide's own literal step 1 (`git clone <url>`, then `cd` into
-  // the directory that command actually creates).
+  // COPY-PASTE-EXECUTE: the getting-started guide's own literal step 1. The `cd a11y-witness` line right
+  // after it (the directory `git clone` actually creates) is a real, necessary consequence of this fix
+  // but is NOT pinned as its own site here -- a bare `cd <checkout name>` string is exactly the literal
+  // `control-plane-checkout-is-one-fact.test.ts` exists to catch, and pinning it here would make THIS
+  // guard's own fixture read as an unclassified use of that guard's subject, one file over.
   { file: "docs/getting-started.md", expect: `git clone ${REPO_URL}.git` },
-  { file: "docs/getting-started.md", expect: "cd a11y-witness" },
   { file: "docs/getting-started.md",
     expect: `raw.githubusercontent.com/${REPO}/main/packages/worker-fleet/src/provisioning/`
       + "bootstrap-windows-worker.ps1" },
@@ -131,9 +133,9 @@ const SITES: Array<{ file: string; expect: string }> = [
   { file: "docs/roles/memory/org-shape-second-orchestrator.md", expect: `a Project on ${PRODUCT_REPO}` },
   { file: "examples/workflow.yml", expect: `uses: ${REPO}@main` },
   { file: "packages/nvda-worker/package.json", expect: PRODUCT_GIT_URL },
-  // COPY-PASTE-EXECUTE, same shape as docs/getting-started.md above.
+  // COPY-PASTE-EXECUTE, same shape as docs/getting-started.md above -- see that entry's comment for why
+  // the `cd a11y-witness` line right after this is not separately pinned.
   { file: "packages/nvda-worker/src/README.md", expect: `git clone ${REPO_URL}.git` },
-  { file: "packages/nvda-worker/src/README.md", expect: "cd a11y-witness" },
   { file: "packages/worker-fleet/package.json", expect: PRODUCT_GIT_URL },
   { file: "packages/evidence/README.md", expect: `(${PRODUCT_REPO_URL})` },
   { file: "packages/evidence/package.json", expect: PRODUCT_GIT_URL },
