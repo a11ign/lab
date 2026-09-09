@@ -18,7 +18,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { revertVerdict, revertPrBody, revertTriggerJobs, newestRunFor, conclusionOf, EXIT }
+import { revertVerdict, revertPrBody, revertTriggerJobs, newestRunFor, conclusionOf,
+  prCreateArgs, EXIT }
   from "../../../../scripts/trunk-revert.mjs";
 
 const PUSH = "a1b2c3d4e5f6789012345678901234567890abcd";
@@ -32,7 +33,7 @@ const bothAt = (conclusion: string | null): Record<string, string | null> =>
 const GREEN = bothAt("success");
 
 test("READY: the push's own gate failed, the commit before it was green, and main has not moved on", () => {
-  const v = revertVerdict({ beforeConclusions: GREEN, currentMainSha: PUSH, pushSha: PUSH });
+  const v = revertVerdict({ beforeConclusions: GREEN, currentMainSha: PUSH, pushSha: PUSH, parentRecheck: "pass" });
   assert.equal(v.code, EXIT.READY, v.reason);
 });
 
@@ -63,19 +64,19 @@ test("null before-conclusion covers the FIRST PUSH this workflow has ever seen, 
 
 test("THE #316 STALE-ACTION CASE: main has moved on since this push -- refuse rather than revert a possible fix", () => {
   const laterSha = "9988776655443322110099887766554433221100";
-  const v = revertVerdict({ beforeConclusions: GREEN, currentMainSha: laterSha, pushSha: PUSH });
+  const v = revertVerdict({ beforeConclusions: GREEN, currentMainSha: laterSha, pushSha: PUSH, parentRecheck: "pass" });
   assert.equal(v.code, EXIT.REFUSED);
   assert.match(v.reason, /moved on/);
   assert.match(v.reason, /already have/);
 });
 
 test("currentMainSha === pushSha (the exact-match case) is what makes READY possible at all", () => {
-  const v = revertVerdict({ beforeConclusions: GREEN, currentMainSha: PUSH, pushSha: PUSH });
+  const v = revertVerdict({ beforeConclusions: GREEN, currentMainSha: PUSH, pushSha: PUSH, parentRecheck: "pass" });
   assert.equal(v.code, EXIT.READY);
 });
 
 test("a failed lookup of main's current tip is CANNOT_ASK, never treated as \"still the tip\"", () => {
-  const v = revertVerdict({ beforeConclusions: GREEN, currentMainSha: null, pushSha: PUSH });
+  const v = revertVerdict({ beforeConclusions: GREEN, currentMainSha: null, pushSha: PUSH, parentRecheck: "pass" });
   assert.equal(v.code, EXIT.CANNOT_ASK);
 });
 
@@ -189,7 +190,8 @@ test("#582 MUTATION TARGET: a job named in the if: but absent from the map canno
   const jobs = revertTriggerJobs(WORKFLOW);
   const partial = { [jobs[0]]: "success" };
   assert.equal(Object.keys(partial).length < jobs.length, true, "fixture premise: this map is short one job");
-  assert.equal(revertVerdict({ beforeConclusions: partial, currentMainSha: PUSH, pushSha: PUSH }).code,
+  assert.equal(revertVerdict({ beforeConclusions: partial, currentMainSha: PUSH, pushSha: PUSH,
+    parentRecheck: "pass" }).code,
     EXIT.READY, "a short map reads READY -- which is why the map must be built from the derived list");
 });
 
@@ -233,7 +235,111 @@ test("#582 conclusionOf: an unfinished run's empty-string conclusion is null, ne
 });
 
 test("#582 the READY sentence NAMES the jobs it checked, so a future narrowing is visible in the log", () => {
-  const v = revertVerdict({ beforeConclusions: GREEN, currentMainSha: PUSH, pushSha: PUSH });
+  const v = revertVerdict({ beforeConclusions: GREEN, currentMainSha: PUSH, pushSha: PUSH, parentRecheck: "pass" });
   assert.equal(v.code, EXIT.READY);
   for (const job of revertTriggerJobs(WORKFLOW)) assert.match(v.reason, new RegExp(job));
+});
+
+// ---------------------------------------------------------------------------------------------------
+// #616: A REVERT PR OPENS AS A DRAFT, BECAUSE THIS DECISION CANNOT YET TELL A BROKEN PUSH FROM A CLOCK.
+// ---------------------------------------------------------------------------------------------------
+
+test("#616 the revert PR is opened as a DRAFT -- the one flag standing between a wrong verdict and a "
+  + "merged revert", () => {
+  // 2026-09-09, this decision's first end-to-end execution: main went red on a WALL-CLOCK assertion ("the
+  // summary states WHEN it was written, and that time is within 60 minutes of the render"). The previous
+  // commit was green, verifiably, in its own run sixty-one minutes earlier -- so the verdict was true of
+  // its inputs and false of the world, and #615 was opened, ARMED, against a merge that touched only the
+  // merge-guard rules. #582 taught this to recognise a failure that ALREADY EXISTED; it still cannot
+  // recognise one that DID NOT EXIST when the parent was measured. Both print "the commit before was
+  // green" and only one means it.
+  //
+  // Asserted on the argv rather than on `performRevert`, which spawns git and `gh` and has no unit test.
+  // A one-flag decision is exactly what a refactor loses silently.
+  const args = prCreateArgs({ title: "revert: x broke main", body: "b", branch: "revert/abc-316" });
+  assert.ok(args.includes("--draft"),
+    "without --draft the revert PR is mergeable the moment its own gate is green, and the verdict that "
+    + "opened it has not been read by anyone");
+  assert.deepEqual(args.slice(0, 2), ["pr", "create"]);
+  assert.ok(args.includes("--head") && args.includes("revert/abc-316"));
+});
+
+test("#616 MUTATION TARGET: nothing in the revert path arms the PR", () => {
+  // The old code armed it directly, because a PR created with GITHUB_TOKEN fires no `pull_request` event
+  // and `auto-arm.yml` would therefore never see it. That fact is unchanged and is now load-bearing in
+  // the other direction: un-drafting alone does not arm it either, so whoever confirms the attribution
+  // must arm it by hand. That is the right amount of friction for an action that deletes merged work.
+  const source = readFileSync(path.join(REPO_ROOT, "scripts/trunk-revert.mjs"), "utf8");
+  const armCall = /gh\(\[\s*"pr",\s*"merge"[\s\S]{0,120}?"--auto"/.exec(source);
+  assert.equal(armCall, null,
+    "trunk-revert.mjs must not arm its own revert PR: a draft that arms itself is not a hold");
+});
+
+// ---------------------------------------------------------------------------------------------------
+// #616: WAS THE PARENT GREEN BECAUSE IT WAS CORRECT, OR BECAUSE IT WAS MEASURED EARLIER?
+//
+// Every other input to this decision is a RECORDED conclusion, and a recorded conclusion is true as of
+// the moment it was taken. On 2026-09-09 main went red on a wall-clock assertion; the parent was green,
+// verifiably, in its own run sixty-one minutes earlier; every check passed and a revert PR was opened
+// against a merge that had broken nothing. product-manager's statement of it: the input silently encoded
+// the time it was read, so the revert's own freshness check inherited the staleness it was measuring.
+// ---------------------------------------------------------------------------------------------------
+
+test("#616 a parent that was recorded green and FAILS THE SAME CHECK NOW cannot be attributed", () => {
+  const v = revertVerdict({ beforeConclusions: GREEN, currentMainSha: PUSH, pushSha: PUSH,
+    parentRecheck: "fail" });
+  assert.equal(v.code, EXIT.REFUSED);
+  assert.match(v.reason, /COULD NOT ATTRIBUTE/);
+  assert.match(v.reason, /the world's rather than this push's/);
+});
+
+test("#616 THE TEST ceo NAMED: the two sentences never print the same words", () => {
+  // "this push's own" and "could not attribute" need OPPOSITE responses -- revert the merge, or go and
+  // find what moved in the world. Before #616 they printed the same sentence, which is why a decision
+  // that was wrong about the world still read as confident. Any overlap here is the defect returning.
+  const inherited = revertVerdict({
+    beforeConclusions: { trunkGate: "success", trunkBuildTest: "failure" },
+    currentMainSha: PUSH, pushSha: PUSH, parentRecheck: "pass" });
+  const unattributable = revertVerdict({ beforeConclusions: GREEN, currentMainSha: PUSH, pushSha: PUSH,
+    parentRecheck: "fail" });
+  const ready = revertVerdict({ beforeConclusions: GREEN, currentMainSha: PUSH, pushSha: PUSH,
+    parentRecheck: "pass" });
+
+  assert.equal(inherited.code, EXIT.REFUSED);
+  assert.equal(unattributable.code, EXIT.REFUSED);   // same code, and that is fine
+  assert.notEqual(inherited.reason, unattributable.reason);
+  assert.match(inherited.reason, /ALREADY RED/);
+  assert.match(unattributable.reason, /COULD NOT ATTRIBUTE/);
+  assert.doesNotMatch(inherited.reason, /COULD NOT ATTRIBUTE/);
+  assert.doesNotMatch(unattributable.reason, /ALREADY RED/);
+  // And the unattributable refusal SAYS how it differs from the inherited one, in the message itself --
+  // a reader meeting it once should not have to find this test to know which of the two they have.
+  assert.match(unattributable.reason, /NOT the inherited-failure refusal/);
+  assert.notEqual(ready.reason, unattributable.reason);
+});
+
+test("#616 MUTATION TARGET: a re-check that did not happen is CANNOT_ASK, never READY", () => {
+  // The one function where an open question must not resolve toward acting. `null` is the default, so a
+  // caller that forgets to pass it gets a refusal rather than a revert.
+  const v = revertVerdict({ beforeConclusions: GREEN, currentMainSha: PUSH, pushSha: PUSH });
+  assert.equal(v.code, EXIT.CANNOT_ASK);
+  assert.match(v.reason, /was not re-run/);
+  assert.match(v.reason, /true as of the moment it was taken/);
+});
+
+test("#616 the inherited check still comes FIRST -- a parent already red is not a re-check question", () => {
+  // Ordering matters for the message rather than the code: a parent that was red when measured needs no
+  // re-run to explain it, and reporting it as unattributable would send the reader looking for a change
+  // in the world that is not there.
+  const v = revertVerdict({
+    beforeConclusions: { trunkGate: "success", trunkBuildTest: "failure" },
+    currentMainSha: PUSH, pushSha: PUSH, parentRecheck: "fail" });
+  assert.match(v.reason, /ALREADY RED/, "the more specific fault wins, as it does for staleness");
+});
+
+test("#616 READY now asserts BOTH facts, so the log says which question was asked", () => {
+  const v = revertVerdict({ beforeConclusions: GREEN, currentMainSha: PUSH, pushSha: PUSH,
+    parentRecheck: "pass" });
+  assert.equal(v.code, EXIT.READY);
+  assert.match(v.reason, /still passes that check when re-run now/);
 });
