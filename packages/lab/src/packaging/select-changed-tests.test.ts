@@ -35,7 +35,7 @@
  * plus named members plus the incident itself, and `npm run mutate` on `discoversFromTree`'s first
  * `return true` -- the whole git leg -- must turn them red.
  */
-import { test } from "node:test";
+import { test, before } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -406,10 +406,24 @@ test("discoversFromTree: a walk rooted in the CORPUS is subtracted -- `runs/` is
     + "names corpus paths constantly while being exactly the guard this row exists to keep running");
 });
 
+/**
+ * #716: `realRepoWalk()` and `alwaysRunTests()` over it are PURE, READ-ONLY computations across the
+ * repo's whole test population (400+ files) -- nothing they do writes to disk or mutates shared state, so
+ * unlike `carry-branch.test.ts`'s fixture (a real git remote real tests genuinely push to) there is no
+ * leak risk in computing this once and sharing it. It was recomputed FOUR times, once per test below,
+ * each a full closure walk over every discovered test file.
+ */
+let sharedWalk: ReturnType<typeof realRepoWalk>;
+let sharedAlwaysRun: ReturnType<typeof alwaysRunTests>;
+before(() => {
+  sharedWalk = realRepoWalk();
+  sharedAlwaysRun = alwaysRunTests(sharedWalk.every, { closureOf: sharedWalk.closureOf, repoRoot: REPO });
+});
+
 test("alwaysRunTests: THE INCIDENT, reproduced -- the diff that added `acceptance-prose.test.ts` "
   + "(`bb0854da`, two files) selects six tests and NOT `git-spawn-classification.test.ts`, the guard it "
   + "went on to break; the always-run set is what puts it back", () => {
-  const { every, closureOf } = realRepoWalk();
+  const { closureOf } = sharedWalk;
   const guard = "packages/lab/src/packaging/git-spawn-classification.test.ts";
   // The incident's own diff, quoted rather than re-derived from history: a shallow checkout cannot see
   // `bb0854da`, and a test that skips in CI proves nothing about the job CI runs.
@@ -421,7 +435,7 @@ test("alwaysRunTests: THE INCIDENT, reproduced -- the diff that added `acceptanc
     + "asserting about a repository that no longer exists -- read it before relaxing it");
   assert.deepEqual(selection.fallbackPackages, [], "neither changed file is uncovered, so nothing widens");
 
-  const alwaysRun = alwaysRunTests(every, { closureOf, repoRoot: REPO });
+  const alwaysRun = sharedAlwaysRun;
   assert.ok(alwaysRun.some((g) => g.test === guard), `${guard} is not in the always-run set`);
   assert.ok(testFilesToRun({ ...selection, alwaysRun }).includes(guard),
     "the guard must reach what the job actually RUNS, not merely a set the selector computed");
@@ -429,8 +443,8 @@ test("alwaysRunTests: THE INCIDENT, reproduced -- the diff that added `acceptanc
 
 test("alwaysRunTests: a FLOOR against the real repo -- the narrowing mutation is the one with teeth, "
   + "because a selector that runs too few guards is indistinguishable from a passing suite", () => {
-  const { every, closureOf } = realRepoWalk();
-  const alwaysRun = alwaysRunTests(every, { closureOf, repoRoot: REPO });
+  const { every } = sharedWalk;
+  const alwaysRun = sharedAlwaysRun;
   assert.ok(every.length > 400, `only ${every.length} test files discovered -- the population is wrong`);
   assert.ok(alwaysRun.length >= 60,
     `${alwaysRun.length} always-run guard(s) of ${every.length} test files; measured 107 on 2026-09-08, `
@@ -444,8 +458,7 @@ test("alwaysRunTests: a FLOOR against the real repo -- the narrowing mutation is
 test("alwaysRunTests: the five guards #501 names are all in, and `cli-flags.test.ts` is in BY THE HELPER "
   + "LEG specifically -- its own source walks nothing, so it can only have arrived through "
   + "`command-line-census.mjs`, which is the leg a self-only predicate would silently drop", () => {
-  const { every, closureOf } = realRepoWalk();
-  const alwaysRun = alwaysRunTests(every, { closureOf, repoRoot: REPO });
+  const alwaysRun = sharedAlwaysRun;
   const by = new Map(alwaysRun.map((g) => [g.test, g.why]));
   for (const named of [
     "packages/lab/src/packaging/git-spawn-classification.test.ts",
@@ -464,8 +477,7 @@ test("alwaysRunTests: the five guards #501 names are all in, and `cli-flags.test
 test("alwaysRunTests: a `capture-cache.mjs` consumer is NOT in the set -- the helper leg's strictness, "
   + "pinned from the other side, because relaxing it adds 13 ordinary unit tests that no changed file "
   + "can reach through a corpus directory read", () => {
-  const { every, closureOf } = realRepoWalk();
-  const tests = new Set(alwaysRunTests(every, { closureOf, repoRoot: REPO }).map((g) => g.test));
+  const tests = new Set(sharedAlwaysRun.map((g) => g.test));
   assert.ok(!tests.has("packages/lab/src/training/capture-resume.test.ts"));
   assert.ok(!tests.has("packages/evidence/src/announcement.corpus.test.ts"),
     "a corpus reader has no tracked population and cannot be broken by a changed file");
