@@ -797,12 +797,52 @@ test("MUTATION: one refusing check does NOT stop the checks after it -- the whol
 
 // --- #546/ceo's ruling, 2026-09-09: the ONE named, ungrantable credential gap is NOT a generic refusal ---
 
-test("isProjectsCredentialGap: matches GitHub's own two measured wordings for the SAME cause -- \"this "
-  + "does not exist\" and \"no permission to see it\" render identically", () => {
+// #849: THE VERBATIM MESSAGE, CAPTURED, NOT TYPED -- from the first real audit run after #849 merged
+// (run 34386872582, 2026-09-09T18:05:19Z). #849's own test proved `isProjectsCredentialGap` true against
+// a HAND-WRITTEN message ("Could not resolve to a ProjectV2") and merged; the very next live run hit
+// GitHub's OTHER real wording -- the GraphQL field path, `user.projectV2` (lowercase p), inside a
+// FORBIDDEN error -- which `.includes("ProjectV2")` does not match case-sensitively, and #849's audit
+// exited 2 printing "1 refused for an unexplained reason: board membership", the exact sentence this
+// ruling exists to end. ceo's own rule, now stated here because this is where the predicate gets edited
+// next: a predicate over a message is verified against a captured real message, never a written one.
+const REAL_PROJECTV2_FORBIDDEN_MESSAGE = "board-snapshot: could not read Project 2 items -- refusing to "
+  + "snapshot a partial board. FORBIDDEN (user.projectV2): Resource not accessible by personal access token";
+
+test("isProjectsCredentialGap: matches GitHub's own THREE measured wordings for the SAME cause -- the "
+  + "GraphQL type name (\"ProjectV2\"), the field path (\"user.projectV2\", the one #849 missed), and "
+  + "\"no permission to see it\" versus \"this does not exist\" all render as the identical text either way", () => {
   assert.ok(isProjectsCredentialGap("no ProjectV2"));
   assert.ok(isProjectsCredentialGap("gh: Could not resolve to a ProjectV2 with the number 2"));
+  assert.ok(isProjectsCredentialGap(REAL_PROJECTV2_FORBIDDEN_MESSAGE),
+    "the real, captured message from run 34386872582 -- lowercase p, inside FORBIDDEN -- must match");
   assert.ok(!isProjectsCredentialGap("gh: not authenticated"),
     "an unrelated failure must not be swept into the one named gap");
+  assert.ok(!isProjectsCredentialGap("FORBIDDEN: Resource not accessible by personal access token"),
+    "a FORBIDDEN token failure with NO mention of ProjectV2 at all is a genuinely different problem and "
+    + "must not be misclassified as this one named gap -- widening to FORBIDDEN alone was considered and "
+    + "rejected for exactly this reason");
+});
+
+test("#849 ACCEPTANCE, MUTATION TARGET: runCheck given the REAL captured message prints NOT RUN and "
+  + "records it in `notRun` -- the OUTCOME, not merely that the predicate returns true. #849's own test "
+  + "proved the predicate true and still merged a version that exited 2 on this exact message in "
+  + "production, because nothing asserted what runCheck actually DOES with it", () => {
+  const refused: string[] = [];
+  const notRun: string[] = [];
+  let stderr = "";
+  const original = process.stderr.write;
+  process.stderr.write = ((chunk: string) => { stderr += chunk; return true; }) as typeof process.stderr.write;
+  try {
+    const count = runCheck("board membership",
+      () => { throw new Error(REAL_PROJECTV2_FORBIDDEN_MESSAGE); }, refused, notRun);
+    assert.equal(count, 0);
+    assert.deepEqual(notRun, ["board membership"]);
+    assert.deepEqual(refused, [], "the real message must not also land in refused");
+    assert.match(stderr, /^NOT RUN board membership:/m);
+    assert.doesNotMatch(stderr, /COULD NOT AUDIT/);
+  } finally {
+    process.stderr.write = original;
+  }
 });
 
 test("#546 ACCEPTANCE, MUTATION TARGET: runCheck records a ProjectV2 throw in `notRun`, not `refused` "
