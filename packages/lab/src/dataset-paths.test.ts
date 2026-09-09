@@ -171,6 +171,11 @@ const EXEMPT: Record<string, string> = {
     + "imports the published cli package the other way), and anchored on process.cwd() rather than this "
     + "module's own location on purpose: witness is the one write path meant for someone running the "
     + "PUBLISHED package outside this repo, whose runs/ is wherever they typed the command.",
+  "packages/lab/src/packaging/derived-artifact-sweep.test.ts":
+    "#639: its CLASSIFICATION table's `produces` field for two dataset generators states "
+    + "\"runs/screenreader-dataset/** (gitignored)\" and \"runs/screenreader-acceptance/** (gitignored)\" "
+    + "as plain descriptive strings -- what those generators write, quoted for a human reading the sweep's "
+    + "own classification, never a path this file resolves or reads for itself.",
 };
 
 test("the discovery walk finds a realistic slice of the repo's own source", () => {
