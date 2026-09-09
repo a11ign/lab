@@ -39,9 +39,18 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { checkoutFixturePair } from "./git-fixture-cache.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const HOOK_PATH = new URL("../../../../scripts/git-hooks/pre-push", import.meta.url);
+
+// #660: THE FIXED PAIR, NAMED ONCE. `bb7fa639`/`3d38dbf0` are the only shas ever passed to `runAgainst`
+// twice in this file (tests 1 and 2 both want the real #232 incident) -- everything else (`head, head`, a
+// moving target) still takes the original whole-repo `--shared` clone below, since there is nothing fixed
+// to key a cache on. Matching on the literal strings, not a general "is this pair cacheable" predicate,
+// keeps the fast path exactly as narrow as the thing it was measured against.
+const FIXTURE_MAIN_SHA = "bb7fa639";
+const FIXTURE_HEAD_SHA = "3d38dbf0";
 
 /** The real block, extracted by its own markers — never a reimplementation of it. */
 function resolveBlock(): string {
@@ -63,16 +72,27 @@ function resolveBlock(): string {
  * `--shared` so no objects are copied: this runs against the real object store, read-only, and the clone
  * is deleted afterwards. `sandboxGitEnv` scrubs `GIT_*`, because `cwd` is not isolation for a spawned
  * git — the fault that had a hook-run test answering about another repository on 2026-09-06.
+ *
+ * #660: `--shared` DOES NOT COPY OBJECTS, BUT IT STILL NEGOTIATES EVERY LOCAL REF -- measured at ~116 s
+ * per call against this checkout's 767+ refs, twice, for the one pair (`bb7fa639`/`3d38dbf0`) both callers
+ * below actually want. That pair is fixed, so `checkoutFixturePair` fetches from a small cached bundle
+ * (built once, reused across runs, keyed on the two shas — see `git-fixture-cache.mjs`) instead of cloning
+ * the whole repository. Every other pair (a moving `head, head`) has nothing fixed to cache and keeps the
+ * original path.
  */
 function runAgainst(mainRef: string, headRef: string): { status: number; out: string } {
   const dir = mkdtempSync(join(tmpdir(), "b5-resolve-"));
   try {
     const git = (...args: string[]) =>
       execFileSync("git", args, { cwd: dir, env: sandboxGitEnv(), encoding: "utf8", stdio: "pipe" });
-    execFileSync("git", ["clone", "--shared", "--no-checkout", "-q", REPO_ROOT, dir],
-      { env: sandboxGitEnv(), stdio: "pipe" });
-    git("update-ref", "refs/remotes/origin/main", mainRef);
-    git("checkout", "-q", "--detach", headRef);
+    if (mainRef === FIXTURE_MAIN_SHA && headRef === FIXTURE_HEAD_SHA) {
+      checkoutFixturePair(dir, mainRef, headRef, { repoRoot: REPO_ROOT, env: sandboxGitEnv() });
+    } else {
+      execFileSync("git", ["clone", "--shared", "--no-checkout", "-q", REPO_ROOT, dir],
+        { env: sandboxGitEnv(), stdio: "pipe" });
+      git("update-ref", "refs/remotes/origin/main", mainRef);
+      git("checkout", "-q", "--detach", headRef);
+    }
     const script = `set -euo pipefail\nskipped=()\n${resolveBlock()}\necho A11Y_REACHED_END`;
     // `spawnSync`, NOT `execFileSync`: the block writes its verdict to STDERR, and `execFileSync` returns
     // stdout alone on success. The first version of this driver therefore threw away the entire output it
