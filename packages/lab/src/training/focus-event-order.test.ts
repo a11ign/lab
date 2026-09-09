@@ -112,12 +112,20 @@ test("the threshold is not consulted on the reversed path, so no case of that sh
   // receipt, and the comparison is gated behind it. Proven by TIME, not by reading: the reversed pair
   // reports identically whether its two events are 5ms or five minutes apart, which a threshold-sensitive
   // path could not do.
+  //
+  // UPDATED (#811, #832): the evidence now names the focusout's OWN `atMs` (folded in so genuinely
+  // distinct real occurrences don't collide under `ruleFindings`' shared dedup) -- so `near` and `far`
+  // must share the SAME anchor `atMs` for their focusout, or a difference in the evidence would say
+  // nothing about the threshold at all, only that the two fixtures happened to pick different clocks. What
+  // this test actually varies, and must keep varying, is the GAP to the focusin -- 5ms here, five minutes
+  // in `far` -- with the focusout itself anchored at the same moment in both.
   const near = focusFindings(REVERSED);
   const far = focusFindings([
-    { type: "focusout", id: 1, name: "Coupon", atMs: 0 },
-    { type: "focusin", id: 1, name: "Coupon", atMs: 300_000 },
+    { type: "focusout", id: 1, name: "Coupon", atMs: 100 },
+    { type: "focusin", id: 1, name: "Coupon", atMs: 300_100 },
   ]);
   assert.deepEqual(near, far,
-    "the reversed path must be insensitive to the gap between the two events; if these ever differ, the "
-    + "threshold HAS become reachable here and issue #14's acceptance is worth revisiting");
+    "the reversed path must be insensitive to the GAP between the two events (both focusouts are anchored "
+    + "at atMs 100 here, so the comparison isolates the gap); if these ever differ, the threshold HAS "
+    + "become reachable here and issue #14's acceptance is worth revisiting");
 });
