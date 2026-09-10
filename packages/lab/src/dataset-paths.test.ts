@@ -274,3 +274,66 @@ test("REPO_ROOT resolves whether runs/ is a real directory or the symlink `.giti
     "dataset-paths.mjs must resolve purely by string joining, never by asking the filesystem what runs/ "
     + "actually is -- that is what makes it work identically for a real directory and for the lab's symlink");
 });
+
+/*
+ * EVERY ROOT UNDER `runs/` MOVES WHEN `runs/` MOVES — the CLASS, after `realCorpusRoot` was the one that
+ * did not (#930).
+ *
+ * It resolved `"runs/real-page-corpus"` against REPO_ROOT directly instead of going through `runsRoot()`,
+ * so `RUNS_ROOT=/mnt/corpus` relocated the dataset, the captures and the repeat-captures and left the
+ * real-page corpus behind at the repo root. Nine callers read that root and `capture-real-pages.mjs`
+ * WRITES through it, so the cost was captures landing in the wrong tree, not merely being read from one.
+ *
+ * Found by #930's mutation (point `RUNS_ROOT` at an empty directory; the sweep must not report a clean
+ * corpus) rather than by reading the file, and nothing here tested behaviour at all before this — the
+ * scans above check SOURCE TEXT, which is why a resolver that read the right env var in the wrong way
+ * satisfied every one of them. This asserts the property itself, over every root, so the next root added
+ * to this module cannot repeat it.
+ */
+test("#930: every runs/-anchored root relocates under RUNS_ROOT, and under A11Y_RUNS_ROOT", async () => {
+  const paths = await import("./dataset-paths.mjs");
+  const before = { runs: process.env.RUNS_ROOT, a11y: process.env.A11Y_RUNS_ROOT };
+  try {
+    for (const varName of ["RUNS_ROOT", "A11Y_RUNS_ROOT"]) {
+      delete process.env.RUNS_ROOT;
+      delete process.env.A11Y_RUNS_ROOT;
+      process.env[varName] = "/tmp/a11y-relocated-corpus";
+      const roots = {
+        runsRoot: paths.runsRoot(),
+        datasetRoot: paths.datasetRoot(),
+        realCorpusRoot: paths.realCorpusRoot(),
+        repeatCapturesRoot: paths.repeatCapturesRoot(),
+        datasetExportPath: paths.datasetExportPath(),
+      };
+      for (const [name, value] of Object.entries(roots)) {
+        assert.ok(value.startsWith("/tmp/a11y-relocated-corpus"),
+          `${name}() ignored ${varName}: it answered ${value}. A root that does not move with runs/ is `
+          + "read from — or written to — the wrong tree on any machine that mounts the corpus elsewhere, "
+          + "and nothing says so. That was realCorpusRoot's defect (#930).");
+      }
+    }
+  } finally {
+    delete process.env.RUNS_ROOT;
+    delete process.env.A11Y_RUNS_ROOT;
+    if (before.runs !== undefined) process.env.RUNS_ROOT = before.runs;
+    if (before.a11y !== undefined) process.env.A11Y_RUNS_ROOT = before.a11y;
+  }
+});
+
+test("#930: an explicit REAL_CORPUS_ROOT still wins over RUNS_ROOT — the override is not collateral", async () => {
+  // The fix must not take away the ability to point THIS root somewhere specific. Same shape
+  // `datasetExportPath()` uses for DATASET_EXPORT, and `runs-write-guard.test.ts` still recognises the
+  // name, so removing it would be a silent capability loss rather than a narrowing.
+  const paths = await import("./dataset-paths.mjs");
+  const before = { runs: process.env.RUNS_ROOT, real: process.env.REAL_CORPUS_ROOT };
+  try {
+    process.env.RUNS_ROOT = "/tmp/a11y-relocated-corpus";
+    process.env.REAL_CORPUS_ROOT = "/tmp/a11y-explicit-real";
+    assert.equal(paths.realCorpusRoot(), "/tmp/a11y-explicit-real");
+  } finally {
+    delete process.env.RUNS_ROOT;
+    delete process.env.REAL_CORPUS_ROOT;
+    if (before.runs !== undefined) process.env.RUNS_ROOT = before.runs;
+    if (before.real !== undefined) process.env.REAL_CORPUS_ROOT = before.real;
+  }
+});
