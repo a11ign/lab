@@ -1,0 +1,460 @@
+{
+  "note": "Lifted verbatim from runs/witness. The first captures to carry structureCensus.readAt (#854), which is what makes #844 answerable.",
+  "captures": [
+    {
+      "source": "runs/witness/2026-09-09T18-08-59-216Z-www-hubspot-com.json",
+      "site": "www-hubspot-com",
+      "structureCensus": {
+        "event": "structureCensus",
+        "atMs": 207662,
+        "readAt": {
+          "startedAtMs": 38833,
+          "tookMs": 58
+        },
+        "heading": 28,
+        "formControl": 14,
+        "link": 79,
+        "graphic": 28,
+        "landmark": 7,
+        "targetMatch": "matched"
+      },
+      "domFormField": 2,
+      "sweeps": [
+        {
+          "event": "sweep",
+          "type": "heading",
+          "found": 1,
+          "atMs": 42466,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 7,
+          "nextTrips": 3
+        },
+        {
+          "event": "sweep",
+          "type": "landmark",
+          "found": 2,
+          "atMs": 43698,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 5,
+          "nextTrips": 5
+        },
+        {
+          "event": "sweep",
+          "type": "formField",
+          "found": 12,
+          "atMs": 48314,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 7,
+          "nextTrips": 23
+        },
+        {
+          "event": "sweep",
+          "type": "graphic",
+          "found": 2,
+          "atMs": 49888,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 7,
+          "nextTrips": 5
+        },
+        {
+          "event": "sweep",
+          "type": "link",
+          "found": 1,
+          "atMs": 50793,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 3,
+          "nextTrips": 5
+        },
+        {
+          "event": "sweep",
+          "type": "list",
+          "found": 22,
+          "atMs": 62674,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 3,
+          "nextTrips": 47
+        },
+        {
+          "event": "sweep",
+          "type": "frame",
+          "found": 2,
+          "atMs": 64921,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 3,
+          "nextTrips": 7
+        }
+      ]
+    },
+    {
+      "source": "runs/witness/2026-09-09T18-11-08-365Z-www-salesforce-com.json",
+      "site": "www-salesforce-com",
+      "structureCensus": {
+        "event": "structureCensus",
+        "atMs": 336866,
+        "readAt": {
+          "startedAtMs": 59598,
+          "tookMs": 52
+        },
+        "heading": 47,
+        "formControl": 18,
+        "link": 61,
+        "graphic": 37,
+        "landmark": 9,
+        "targetMatch": "fallback"
+      },
+      "domFormField": 7,
+      "sweeps": [
+        {
+          "event": "sweep",
+          "type": "heading",
+          "found": 52,
+          "atMs": 83816,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 63,
+          "nextTrips": 85
+        },
+        {
+          "event": "sweep",
+          "type": "landmark",
+          "found": 10,
+          "atMs": 89370,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 17,
+          "nextTrips": 19
+        },
+        {
+          "event": "sweep",
+          "type": "formField",
+          "found": 27,
+          "atMs": 130319,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 43,
+          "nextTrips": 39
+        },
+        {
+          "event": "sweep",
+          "type": "graphic",
+          "found": 22,
+          "atMs": 145157,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 47,
+          "nextTrips": 45
+        },
+        {
+          "event": "sweep",
+          "type": "link",
+          "found": 87,
+          "atMs": 185975,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 91,
+          "nextTrips": 143
+        },
+        {
+          "event": "sweep",
+          "type": "list",
+          "found": 3,
+          "atMs": 190415,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 3,
+          "nextTrips": 9
+        },
+        {
+          "event": "sweep",
+          "type": "frame",
+          "found": 2,
+          "atMs": 195083,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 3,
+          "nextTrips": 7
+        }
+      ]
+    },
+    {
+      "source": "runs/witness/2026-09-09T18-13-03-215Z-www-ikea-com.json",
+      "site": "www-ikea-com",
+      "structureCensus": {
+        "event": "structureCensus",
+        "atMs": 450123,
+        "readAt": {
+          "startedAtMs": 67147,
+          "tookMs": 186
+        },
+        "heading": 70,
+        "formControl": 136,
+        "link": 275,
+        "graphic": 135,
+        "landmark": 6,
+        "targetMatch": "matched"
+      },
+      "domFormField": 51,
+      "sweeps": [
+        {
+          "event": "sweep",
+          "type": "heading",
+          "found": 81,
+          "atMs": 100756,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 19,
+          "nextTrips": 165
+        },
+        {
+          "event": "sweep",
+          "type": "landmark",
+          "found": 6,
+          "atMs": 104927,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 13,
+          "nextTrips": 13
+        },
+        {
+          "event": "sweep",
+          "type": "formField",
+          "found": 270,
+          "atMs": 280854,
+          "prevStop": "silent",
+          "nextStop": "exhausted",
+          "prevTrips": 482,
+          "nextTrips": 491
+        },
+        {
+          "event": "sweep",
+          "type": "graphic",
+          "found": 192,
+          "atMs": 409194,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 359,
+          "nextTrips": 357
+        },
+        {
+          "event": "sweep",
+          "type": "link",
+          "found": 46,
+          "atMs": 425723,
+          "prevStop": "deadline",
+          "nextStop": "deadline",
+          "prevTrips": 93,
+          "nextTrips": 1
+        },
+        {
+          "event": "sweep",
+          "type": "list",
+          "found": 0,
+          "atMs": 428769,
+          "prevStop": "deadline",
+          "nextStop": "deadline",
+          "prevTrips": 1,
+          "nextTrips": 1
+        },
+        {
+          "event": "sweep",
+          "type": "frame",
+          "found": 0,
+          "atMs": 431652,
+          "prevStop": "deadline",
+          "nextStop": "deadline",
+          "prevTrips": 1,
+          "nextTrips": 1
+        }
+      ]
+    },
+    {
+      "source": "runs/witness/2026-09-09T18-56-18-875Z-tfl-gov-uk.json",
+      "site": "tfl-gov-uk",
+      "structureCensus": {
+        "event": "structureCensus",
+        "atMs": 276452,
+        "readAt": {
+          "startedAtMs": 62085,
+          "tookMs": 142
+        },
+        "heading": 23,
+        "formControl": 15,
+        "link": 63,
+        "graphic": 5,
+        "landmark": 11,
+        "targetMatch": "matched"
+      },
+      "domFormField": 1392,
+      "sweeps": [
+        {
+          "event": "sweep",
+          "type": "heading",
+          "found": 23,
+          "atMs": 78858,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 49,
+          "nextTrips": 47
+        },
+        {
+          "event": "sweep",
+          "type": "landmark",
+          "found": 8,
+          "atMs": 84289,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 17,
+          "nextTrips": 17
+        },
+        {
+          "event": "sweep",
+          "type": "formField",
+          "found": 34,
+          "atMs": 148943,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 11,
+          "nextTrips": 73
+        },
+        {
+          "event": "sweep",
+          "type": "graphic",
+          "found": 22,
+          "atMs": 167354,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 31,
+          "nextTrips": 73
+        },
+        {
+          "event": "sweep",
+          "type": "link",
+          "found": 38,
+          "atMs": 183887,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 21,
+          "nextTrips": 73
+        },
+        {
+          "event": "sweep",
+          "type": "list",
+          "found": 5,
+          "atMs": 189195,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 3,
+          "nextTrips": 13
+        },
+        {
+          "event": "sweep",
+          "type": "frame",
+          "found": 0,
+          "atMs": 192849,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 3,
+          "nextTrips": 3
+        }
+      ]
+    },
+    {
+      "source": "runs/witness/2026-09-10T22-03-21-030Z-www-w3-org.json",
+      "site": "www-w3-org",
+      "structureCensus": {
+        "event": "structureCensus",
+        "atMs": 214309,
+        "readAt": {
+          "startedAtMs": 41666,
+          "tookMs": 42
+        },
+        "heading": 5,
+        "formControl": 15,
+        "link": 46,
+        "graphic": 4,
+        "landmark": 2,
+        "targetMatch": "matched"
+      },
+      "domFormField": 15,
+      "sweeps": [
+        {
+          "event": "sweep",
+          "type": "heading",
+          "found": 5,
+          "atMs": 45399,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 13,
+          "nextTrips": 11
+        },
+        {
+          "event": "sweep",
+          "type": "landmark",
+          "found": 2,
+          "atMs": 47002,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 7,
+          "nextTrips": 5
+        },
+        {
+          "event": "sweep",
+          "type": "formField",
+          "found": 15,
+          "atMs": 61807,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 7,
+          "nextTrips": 31
+        },
+        {
+          "event": "sweep",
+          "type": "graphic",
+          "found": 4,
+          "atMs": 65647,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 11,
+          "nextTrips": 9
+        },
+        {
+          "event": "sweep",
+          "type": "link",
+          "found": 47,
+          "atMs": 87854,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 33,
+          "nextTrips": 93
+        },
+        {
+          "event": "sweep",
+          "type": "list",
+          "found": 4,
+          "atMs": 92739,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 3,
+          "nextTrips": 11
+        },
+        {
+          "event": "sweep",
+          "type": "frame",
+          "found": 0,
+          "atMs": 96812,
+          "prevStop": "exhausted",
+          "nextStop": "exhausted",
+          "prevTrips": 3,
+          "nextTrips": 3
+        }
+      ]
+    }
+  ]
+}
