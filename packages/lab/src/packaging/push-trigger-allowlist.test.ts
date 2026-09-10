@@ -69,16 +69,15 @@ function allStepsIncludingLocalReusableCalls(file: string): Array<Record<string,
 }
 
 // Every entry needs a reason, and the reason is what a reviewer checks -- not the presence of a key.
-const PUSH_TO_MAIN_ALLOWLIST: Record<string, string> = {
-  "board-liveness.yml": "watchdog for board-report.yml's schedule; push is the one trigger immune to "
-    + "GitHub's 60-day scheduled-workflow disable, which is the exact failure this checks for",
-  "npm-token-liveness.yml": "sibling watchdog for the first-publish NPM_TOKEN (#73); same reasoning as "
-    + "board-liveness.yml, same immunity requirement",
-  "workflow-run-liveness.yml": "watchdog asking whether the pull request that produced a commit already "
-    + "on main was actually tested (#118); a push-triggered check about a commit that has ALREADY merged "
-    + "cannot itself run pre-merge on that PR, and needs the same immunity to the 60-day schedule-disable "
-    + "problem board-liveness.yml does",
-};
+//
+// EMPTY SINCE #901 (The CI Reset, step 1), AND MEANT TO STAY EMPTY. The three watchdogs that lived here
+// (board editions, NPM_TOKEN, workflow-run liveness) each fired their own workflow on every push to main --
+// 777 runs on 2026-09-09 for three scripts that take seconds. They still run on push, for the reason this
+// category existed (a cron dies with the inactivity it watches for), but as three continue-on-error steps
+// in `trunk-guard.yml`'s `watchdogs` job, which runs on every push anyway. A NEW watchdog goes there too,
+// as a step, never as a workflow of its own: `trunk-guard.yml`'s structural test below allows
+// `continue-on-error` only inside that one job.
+const PUSH_TO_MAIN_ALLOWLIST: Record<string, string> = {};
 
 // A SECOND, SEPARATE closed category -- opened 2026-09-07 by board decision (pipeline unit 3, #316).
 // `trunk-guard.yml` is deliberately NOT a watchdog: it DOES build, it DOES run the full suite, and it is
@@ -156,9 +155,15 @@ test("every workflow triggering on push to main is on one of the three closed al
     + "same way C2/#416 did.");
 });
 
-test("the watchdog allowlist names exactly the three known watchdogs -- a shrinking or silently-growing list is a signal", () => {
-  assert.deepEqual(Object.keys(PUSH_TO_MAIN_ALLOWLIST).sort(),
-    ["board-liveness.yml", "npm-token-liveness.yml", "workflow-run-liveness.yml"]);
+test("the watchdog allowlist is EMPTY since #901 -- a watchdog is a step in trunk-guard.yml's watchdogs job, never a workflow", () => {
+  assert.deepEqual(Object.keys(PUSH_TO_MAIN_ALLOWLIST), []);
+  const doc = parseYaml(readWorkflow("trunk-guard.yml")) as { jobs: Record<string, { steps?: Array<Record<string, unknown>> }> };
+  const runLines = (doc.jobs.watchdogs?.steps ?? []).map((s) => String(s.run ?? "")).join("\n");
+  for (const script of ["board-schedule-liveness.mjs", "npm-token-liveness.mjs", "workflow-run-liveness.mjs"]) {
+    assert.match(runLines, new RegExp(`scripts/${script.replace(".", "\\.")}`),
+      `${script} is no longer a workflow of its own and must therefore be a step in trunk-guard.yml's `
+      + "watchdogs job -- a watchdog that is in neither place has silently stopped running");
+  }
 });
 
 test("the trunk-gate allowlist names exactly the one known trunk check", () => {
@@ -200,9 +205,22 @@ for (const file of Object.keys(TRUNK_GATE_ALLOWLIST)) {
   test(`${file}: structurally the trunk gate, not a watchdog -- builds, runs the full suite, is NOT continue-on-error`, () => {
     const text = readWorkflow(file);
 
-    assert.doesNotMatch(stripYamlComments(text), /continue-on-error:\s*true/,
-      `${file} is continue-on-error -- the trunk gate's whole point is that a failure here is ACTED ON `
-      + "(a revert), so a red run must be able to block/drive something, not be shrugged off");
+    // #901: `continue-on-error` is permitted ONLY inside the `watchdogs` job, which `decideRevert` does not
+    // depend on. Everywhere else in this file it would let a red gate be shrugged off.
+    const parsed = parseYaml(text) as { jobs: Record<string, { steps?: Array<Record<string, unknown>>; "continue-on-error"?: unknown }> };
+    for (const [name, job] of Object.entries(parsed.jobs)) {
+      if (name === "watchdogs") continue;
+      assert.notEqual(job["continue-on-error"], true, `${file}: job ${name} is continue-on-error`);
+      for (const step of job.steps ?? []) {
+        assert.notEqual(step["continue-on-error"], true,
+          `${file}: a step in job ${name} is continue-on-error -- the trunk gate's whole point is that a `
+          + "failure here is ACTED ON (a revert), so a red run must be able to drive something, not be "
+          + "shrugged off. Only the watchdogs job may carry it");
+      }
+    }
+    const decideRevert = parsed.jobs.decideRevert as { needs?: string[] } | undefined;
+    assert.ok(decideRevert && !(decideRevert.needs ?? []).includes("watchdogs"),
+      `${file}: decideRevert must not depend on watchdogs, or a red watchdog could drive a revert`);
 
     // A1 (#452): follows a local `uses: ./.github/workflows/reusable-build-test.yml` call -- the real
     // build/test commands checked below now live there, not in this file's own steps.

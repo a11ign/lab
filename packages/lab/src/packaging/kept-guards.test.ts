@@ -84,7 +84,10 @@ const KEPT_UNDER_PACKAGING = KEPT_ON_PR_PATH.filter((path) => path.startsWith("p
 // does.
 const PACKAGING_TOTAL_BEFORE_THIS_ROW = 207;
 const KEPT_UNDER_PACKAGING_BEFORE_THIS_ROW = 4;
-const PENDING_TRIAGE_COUNT = (PACKAGING_TOTAL_BEFORE_THIS_ROW - KEPT_UNDER_PACKAGING_BEFORE_THIS_ROW) - 10 + 2;
+// #901 deleted `ready-label-audit-triggers.test.ts` with the workflow it pinned (PR #923): one fewer pending.
+// BOTH deltas are kept deliberately -- this is the conflict the header above predicts, and the resolution
+// it prescribes. 203 - 1 (#901) - 10 + 2 (#906) = 194.
+const PENDING_TRIAGE_COUNT = (PACKAGING_TOTAL_BEFORE_THIS_ROW - KEPT_UNDER_PACKAGING_BEFORE_THIS_ROW) - 1 - 10 + 2;
 
 function packagingTestFiles() {
   return walkTree({ kind: "all", roots: ["packages/lab/src/packaging"] })
