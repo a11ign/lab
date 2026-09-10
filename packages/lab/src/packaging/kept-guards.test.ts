@@ -62,7 +62,8 @@ const KEPT_UNDER_PACKAGING = KEPT_ON_PR_PATH.filter((path) => path.startsWith("p
 // row's own file existed.
 const PACKAGING_TOTAL_BEFORE_THIS_ROW = 207;
 const KEPT_UNDER_PACKAGING_BEFORE_THIS_ROW = 4;
-const PENDING_TRIAGE_COUNT = PACKAGING_TOTAL_BEFORE_THIS_ROW - KEPT_UNDER_PACKAGING_BEFORE_THIS_ROW;
+// #901 deleted `ready-label-audit-triggers.test.ts` with the workflow it pinned (PR #923): one fewer pending.
+const PENDING_TRIAGE_COUNT = (PACKAGING_TOTAL_BEFORE_THIS_ROW - KEPT_UNDER_PACKAGING_BEFORE_THIS_ROW) - 1;
 
 function packagingTestFiles() {
   return walkTree({ kind: "all", roots: ["packages/lab/src/packaging"] })
