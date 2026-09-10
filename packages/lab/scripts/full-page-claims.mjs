@@ -19,10 +19,12 @@ import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { sweepOutcomes, ranOutShortOfTheCensus } from "@a11ign/evidence/conformance";
+import { realCorpusRoot } from "../src/dataset-paths.mjs";
 
-/** Where the real-page captures live, overridable for a checkout that mounts `runs/` elsewhere. */
-const CORPUS = process.env.A11Y_REAL_PAGE_CORPUS
-  ?? join(process.env.A11Y_RUNS_ROOT ?? process.env.RUNS_ROOT ?? "runs", "real-page-corpus");
+// FROM `dataset-paths.mjs`, never resolved here. `runs/` moves (A11Y_RUNS_ROOT, RUNS_ROOT, a mounted
+// volume on the lab) and a second copy of that resolution is the "fact stated twice" shape this repo has
+// paid for five times in a day -- `dataset-paths.test.ts` refuses a file that rolls its own, correctly.
+const CORPUS = realCorpusRoot();
 
 /** Below this, the directory almost certainly is not the corpus, and a zero would read as "all clean". */
 const MIN_CAPTURES = 5;
