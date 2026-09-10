@@ -58,11 +58,33 @@ export const KEPT_ON_PR_PATH = [...LEAK_GUARDS, ...PRODUCT_FACT_PINS, SELF];
 
 const KEPT_UNDER_PACKAGING = KEPT_ON_PR_PATH.filter((path) => path.startsWith("packages/lab/src/packaging/"));
 
-// Pinned, not derived -- see the file header. Both measured against origin/main, 2026-09-10, before this
-// row's own file existed.
+// Pinned, not derived -- see the file header. Updated by each guard-triage group (2 to 6) as it lands,
+// which is the intended use of this constant, not a violation of "leave the kept LIST intact" above --
+// the kept-set array never changes here, only the running total of what groups 2-6 have moved or deleted.
+// A group that lands concurrently with another will conflict on this line; re-resolve the arithmetic,
+// do not drop either group's change.
+//
+// #903 (baseline): 207 total, 4 kept-under-packaging -- pending 203.
+// #906 (guard triage 4 of 6): -10 deleted (board-style, board-markdown, board-schedule,
+// board-summary-origin, board-achievement-retirement, board-achievement-staleness, board-record,
+// board-report, audit-citation-index, audit-findings-dispositioned), +2 added
+// (board-report-smoke.test.ts, board-reported-data-integrity.test.ts -- two tests extracted from
+// board-style.test.ts that check real data integrity, not content/style, so they did not retire with the
+// rest of that file) -- pending 203 - 10 + 2 = 195.
+//
+// FIVE ORIGINAL CANDIDATES RESTORED, NOT DELETED: a-hold-means-cannot-merge, pr-hold,
+// merge-guard-pr-hold-rule, workflow-lane-check, arm-pr all name "hold"/"lane"/"session-label" families
+// the CI Reset's own text lists as retiring -- but each tests a mechanism CURRENTLY, ACTIVELY wired into
+// mergeSafety or auto-arm.yml today (workflow-lane-check.mjs and merge-guard.mjs's composed
+// mergeSafetyVerdict run inside ci.yml's mergeSafety job; pr-hold-state.mjs's armVerdict/armabilityOf and
+// arm-pr.mjs's armDecision run inside auto-arm.yml), not merely a retired label taxonomy. Deleting their
+// only test coverage would leave a live, merge-blocking mechanism untested until #902 (which removes
+// mergeSafety) actually lands. Restoring them is not a correction to the KEPT list above (they were never
+// in it) -- it is this row declining to touch them until the row that retires their CALLING workflow
+// does.
 const PACKAGING_TOTAL_BEFORE_THIS_ROW = 207;
 const KEPT_UNDER_PACKAGING_BEFORE_THIS_ROW = 4;
-const PENDING_TRIAGE_COUNT = PACKAGING_TOTAL_BEFORE_THIS_ROW - KEPT_UNDER_PACKAGING_BEFORE_THIS_ROW;
+const PENDING_TRIAGE_COUNT = (PACKAGING_TOTAL_BEFORE_THIS_ROW - KEPT_UNDER_PACKAGING_BEFORE_THIS_ROW) - 10 + 2;
 
 function packagingTestFiles() {
   return walkTree({ kind: "all", roots: ["packages/lab/src/packaging"] })
