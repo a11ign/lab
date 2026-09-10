@@ -19,7 +19,9 @@ import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { sweepOutcomes, ranOutShortOfTheCensus } from "@a11ign/evidence/conformance";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { realCorpusRoot } from "../src/dataset-paths.mjs";
+import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 
 // FROM `dataset-paths.mjs`, never resolved here. `runs/` moves (A11Y_RUNS_ROOT, RUNS_ROOT, a mounted
 // volume on the lab) and a second copy of that resolution is the "fact stated twice" shape this repo has
@@ -45,6 +47,9 @@ function scopeInputOf(capture) {
 }
 
 function main() {
+  // No flags, and an unrecognised one is REFUSED rather than ignored -- a `--role=calibration` somebody
+  // assumes this accepts would otherwise run the whole corpus and report it as though it were filtered.
+  refuseUnknownFlags([], { entry: import.meta.url, command: "npm run lab:full-page-claims" });
   let files;
   try {
     files = readdirSync(CORPUS).filter((f) => f.endsWith(".json")).sort();
@@ -57,11 +62,17 @@ function main() {
   }
 
   const lost = [];
+  // HOW OLD EACH EXAMINED CAPTURE IS, reported beside the count -- `real-page-corpus-freshness.test.ts`.
+  // A corpus-wide figure over captures taken across different builds is the "dataset that spans a code
+  // change" shape: the count can move because the instrument moved, and a reader who is not told the
+  // ages cannot tell that from the page changing. `capturedAt`/`role` live on the WRAPPER, not on
+  // `capture`, which is where `calibrate-abstention.mjs` reads them too.
+  const ages = [];
   let examined = 0, noCensus = 0, noTrips = 0;
   for (const file of files) {
-    let capture;
+    let capture, parsed;
     try {
-      const parsed = JSON.parse(readFileSync(join(CORPUS, file), "utf8"));
+      parsed = JSON.parse(readFileSync(join(CORPUS, file), "utf8"));
       capture = parsed.capture ?? parsed;
     } catch {
       continue; // a file that will not parse is not evidence either way, and the count below says so
@@ -73,13 +84,17 @@ function main() {
     // whole area keeps producing.
     if (!input.sweeps.some((s) => typeof s.trips === "number")) { noTrips += 1; continue; }
     examined += 1;
+    if (typeof parsed.capturedAt === "string") {
+      ages.push({ at: parsed.capturedAt, role: parsed.role ?? "no role recorded" });
+    }
     const short = ranOutShortOfTheCensus(input);
     if (short.length) lost.push({ page: file.replace(/\.json$/, ""), short });
   }
 
   console.log(`FULL-PAGE CLAIM, over ${files.length} capture(s) at ${CORPUS}`);
   console.log(`  examined ${examined} — ${noCensus} with no usable census, ${noTrips} predating #887's trips`);
-  console.log(`  ${lost.length} of ${examined} LOSE the full-page claim\n`);
+  console.log(`  ${lost.length} of ${examined} LOSE the full-page claim`);
+  console.log(`${captureAgeLines(ages).join("\n")}\n`);
   for (const { page, short } of lost) {
     console.log(`  ${page}`);
     for (const s of short) {
