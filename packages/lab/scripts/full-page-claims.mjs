@@ -110,7 +110,10 @@ function main() {
   console.log(`FULL-PAGE CLAIM, over ${files.length} capture(s) at ${CORPUS}`);
   console.log(`  examined ${examined} — ${noCensus} with no usable census, ${noTrips} predating #887's trips, `
     + `${unparseable} unparseable`);
-  console.log(`  ${lost.length} of ${examined} LOSE the full-page claim`);
+  // THE DENOMINATOR ON THE VERDICT LINE, not the line above it -- the fleet operator's point, and #920's
+  // cure: `fleet:status` printed a consistency verdict one line away from its count and nobody joined them.
+  // A verdict a reader can quote without its denominator is a verdict they will quote without it.
+  console.log(`  ${lost.length} of ${examined} examined (of ${files.length} on disk) LOSE the full-page claim`);
   console.log(`${captureAgeLines(ages).join("\n")}\n`);
   for (const { page, short } of lost) {
     console.log(`  ${page}`);
@@ -119,7 +122,9 @@ function main() {
         + `${String(s.census).padStart(4)}  trips ${String(s.trips).padStart(4)}`);
     }
   }
-  if (!lost.length) console.log("  none — every examined capture's sweeps made at least as many trips as its census");
+  if (!lost.length) {
+    console.log(`  none of the ${examined} examined — every one's sweeps made at least as many trips as its census`);
+  }
 }
 
 // RUN ONLY WHEN INVOKED, never on import -- `entry-points.test.ts` requires it, so that

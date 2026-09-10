@@ -53,7 +53,9 @@ test("#930: thirty captures with no usable census REFUSE, rather than report a c
   const { status, out } = runAgainst({ ...many(30, NO_CENSUS, "p"), "broken.json": "not json" });
   assert.notEqual(status, 0, `examined nothing and exited 0 -- the defect this file exists for:\n${out}`);
   assert.match(out, /examined 0 of 31/, "the refusal must say how many it examined out of how many it read");
-  assert.doesNotMatch(out, /none — every examined capture/,
+  // The CURRENT wording of the clean verdict. Asserting absence of old text would pass forever once the
+  // wording moved -- a check that cannot fail -- so this names what the script prints today.
+  assert.doesNotMatch(out, /none of the \d+ examined/,
     "a verdict of 'none lose the claim' over zero examined captures is the clean-over-nothing result");
 });
 
@@ -75,4 +77,12 @@ test("#930 CONTROL: enough examinable captures still report, so the fix is not '
   const { status, out } = runAgainst(many(6, EXAMINABLE, "g"));
   assert.equal(status, 0, `six examinable captures must produce a report:\n${out}`);
   assert.match(out, /examined 6 — 0 with no usable census, 0 predating #887's trips, 0 unparseable/);
+});
+
+test("#930: the verdict line carries its own denominator — examined, and on disk", () => {
+  // The fleet operator's point, and #920's cure: a verdict one line away from its count gets quoted
+  // without it. Both the LOSE line and the clean line must name how many were examined.
+  const clean = runAgainst({ ...many(6, EXAMINABLE, "g"), ...many(2, NO_CENSUS, "p") });
+  assert.match(clean.out, /0 of 6 examined \(of 8 on disk\) LOSE the full-page claim/);
+  assert.match(clean.out, /none of the 6 examined —/);
 });
