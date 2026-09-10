@@ -28,7 +28,16 @@ import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 // paid for five times in a day -- `dataset-paths.test.ts` refuses a file that rolls its own, correctly.
 const CORPUS = realCorpusRoot();
 
-/** Below this, the directory almost certainly is not the corpus, and a zero would read as "all clean". */
+/**
+ * Below this many EXAMINED captures the answer is not worth stating, and a zero would read as "all clean".
+ *
+ * Applied to `examined`, after the loop -- never to the files on disk. #900's first version checked
+ * `files.length` before the loop that skips unparseable, no-census and pre-#887 captures, so a directory of
+ * thirty captures with no usable census passed the floor, examined NOTHING, and printed "none — every
+ * examined capture's sweeps made at least as many trips as its census" with exit 0: the exact
+ * examined-nothing clean result the floor exists to stop, in the one place it is the verdict. Found by
+ * worker-capture reproducing it against a synthetic directory, not by reading the diff.
+ */
 const MIN_CAPTURES = 5;
 
 /** The census keys `ranOutShortOfTheCensus` can compare against — the four with a `CENSUS_KEY` entry. */
@@ -56,10 +65,6 @@ function main() {
   } catch (error) {
     throw new Error(`cannot read the real-page corpus at ${CORPUS} — is this the lab?`, { cause: error });
   }
-  if (files.length < MIN_CAPTURES) {
-    throw new Error(`${files.length} capture(s) at ${CORPUS}: below the floor of ${MIN_CAPTURES}, so a `
-      + "clean result here would mean 'nothing was examined' rather than 'nothing was found'");
-  }
 
   const lost = [];
   // HOW OLD EACH EXAMINED CAPTURE IS, reported beside the count -- `real-page-corpus-freshness.test.ts`.
@@ -68,14 +73,17 @@ function main() {
   // ages cannot tell that from the page changing. `capturedAt`/`role` live on the WRAPPER, not on
   // `capture`, which is where `calibrate-abstention.mjs` reads them too.
   const ages = [];
-  let examined = 0, noCensus = 0, noTrips = 0;
+  let examined = 0, noCensus = 0, noTrips = 0, unparseable = 0;
   for (const file of files) {
     let capture, parsed;
     try {
       parsed = JSON.parse(readFileSync(join(CORPUS, file), "utf8"));
       capture = parsed.capture ?? parsed;
     } catch {
-      continue; // a file that will not parse is not evidence either way, and the count below says so
+      // Not evidence either way -- and COUNTED, so every file on disk lands in exactly one total below.
+      // This comment used to say "the count below says so" when no count did: 31 files, 0 + 30 + 0 = 30.
+      unparseable += 1;
+      continue;
     }
     const input = scopeInputOf(capture);
     if (!input.census) { noCensus += 1; continue; }
@@ -91,8 +99,17 @@ function main() {
     if (short.length) lost.push({ page: file.replace(/\.json$/, ""), short });
   }
 
+  // THE FLOOR, ON WHAT WAS EXAMINED -- see MIN_CAPTURES. Refuses rather than reporting, and names every
+  // reason a file was set aside, so "the corpus predates #887" and "this is not the corpus" read differently.
+  if (examined < MIN_CAPTURES) {
+    throw new Error(`examined ${examined} of ${files.length} file(s) at ${CORPUS} — below the floor of `
+      + `${MIN_CAPTURES} (${noCensus} with no usable census, ${noTrips} predating #887's trips, ${unparseable} `
+      + "unparseable). A clean result here would mean 'nothing was examined', not 'nothing was found'.");
+  }
+
   console.log(`FULL-PAGE CLAIM, over ${files.length} capture(s) at ${CORPUS}`);
-  console.log(`  examined ${examined} — ${noCensus} with no usable census, ${noTrips} predating #887's trips`);
+  console.log(`  examined ${examined} — ${noCensus} with no usable census, ${noTrips} predating #887's trips, `
+    + `${unparseable} unparseable`);
   console.log(`  ${lost.length} of ${examined} LOSE the full-page claim`);
   console.log(`${captureAgeLines(ages).join("\n")}\n`);
   for (const { page, short } of lost) {
