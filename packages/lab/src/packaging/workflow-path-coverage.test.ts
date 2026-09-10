@@ -54,12 +54,6 @@ const NOT_A_GATE: Record<string, string> = {
     + "trigger is the clock, so covering a source directory is not a thing it could mean.",
   "board-summary-check.yml": "the 21:00 warning that tomorrow's executive summary is unwritten — a "
     + "scheduled reminder about a document, not a gate over source.",
-  "board-liveness.yml": "asks whether the board editions are still arriving. It runs on push precisely "
-    + "because a scheduled watchdog is disabled by the inactivity it watches for, and it examines the "
-    + "issue tracker rather than the diff.",
-  "npm-token-liveness.yml": "asks whether the first-publish NPM_TOKEN is gone (#73). Same shape as "
-    + "board-liveness.yml and for the identical reason -- it runs on push rather than a schedule, and it "
-    + "examines an org secret and an issue thread, not the diff.",
   "release.yml": "publishes. It is triggered deliberately and its own gate chain is `release:gate:ci`, "
     + "not a path filter over the change that happens to be at HEAD.",
   "action-smoke.yml": "release-time only since 2026-09-06 (chairman's direction) -- `workflow_call`/"
@@ -67,13 +61,10 @@ const NOT_A_GATE: Record<string, string> = {
     + "not trigger on a diff at all, so covering a source directory is not a thing it could mean.",
   "capture-regression.yml": "same change, same reason as action-smoke.yml -- release-time only, called "
     + "from release.yml, no push or pull_request trigger left to filter.",
-  "coverage.yml": "the whole-repo coverage threshold, moved off ci.yml's per-PR job (chairman's "
-    + "direction, 2026-09-06 -- 154s of a measured 269s). Runs on a nightly schedule plus workflow_dispatch, "
-    + "same shape as board-report.yml: it judges the repository as a whole against a fixed threshold, not "
-    + "a diff, and its trigger is the clock rather than a change landing.",
-  "ready-label-audit.yml": "audits live GitHub label state on an hourly clock (#246), same shape as "
-    + "coverage.yml and board-report.yml -- it examines the issue tracker's current labels, not a diff, "
-    + "so covering a source directory is not a thing it could mean.",
+  "nightly.yml": "the whole-repo coverage threshold (moved off ci.yml's per-PR job 2026-09-06, 154s of a "
+    + "measured 269s) and the tracker's label audit (#246, hourly-plus-event until #901 livelocked it at "
+    + "1,040 runs a day), both on one 06:00 UTC schedule. Each judges the repository or the tracker as a "
+    + "whole, not a diff; the trigger is the clock, not a change landing.",
 };
 
 const workflowFiles = (): string[] =>

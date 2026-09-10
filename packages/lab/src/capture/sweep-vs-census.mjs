@@ -70,7 +70,7 @@ export const CENSUS_KEY_FOR_SWEEP = Object.freeze({
  * @param {{ diagnostics?: unknown[] }} capture
  * @returns {{ type: string, found: number, present: number | null, basis: "raw" | "none",
  *             completeness: "complete" | "truncated" | "never-ran", ratio: number | null,
- *             censusReadAt: number | null }[]}
+ *             censusReadAt: number | null, sweptAt: number | null, apartMs: number | null }[]}
  */
 export function sweepAgainstCensus(capture) {
   const diagnostics = Array.isArray(capture?.diagnostics) ? capture.diagnostics : [];
@@ -104,15 +104,65 @@ export function sweepAgainstCensus(capture) {
       // A sweep cut off by the deadline reports a lower bound, and dividing it by a real census produces
       // a number that reads as coverage. Both usable `link` observations on IKEA are deadline stops.
       const completeness = sweepCompleteness(mark);
+      // WHEN THIS SWEEP RAN, and how far that is from the census read -- #844. `readAt` (#854) made the
+      // census's own moment legible; this is the other half, and the two together turn "we cannot know
+      // whether these describe one moment" into a number. Measured across the 14 captures that carry
+      // `readAt`: the census lands at 28-67 s and `formField` walks at 37-280 s, so the halves of every
+      // ratio on disk are 1 s to 230 s apart. A BOUND rather than an absence.
+      const sweptAt = typeof mark.atMs === "number" ? mark.atMs : null;
       return {
         type: mark.type, found, present, completeness,
         basis: /** @type {"raw" | "none"} */ (present === null ? "none" : "raw"),
-        censusReadAt,
+        censusReadAt, sweptAt,
+        // `null` when either moment is missing -- an unknown gap is not a gap of zero, which is the whole
+        // distinction #854 was about one field over.
+        apartMs: censusReadAt !== null && sweptAt !== null ? sweptAt - censusReadAt : null,
         // `null` when there is no denominator, NEVER 0 and never Infinity: a ratio against nothing is not
         // a small ratio, and rendering one would put a number where a question mark belongs.
         ratio: present && completeness === "complete" ? found / present : null,
       };
     });
+}
+
+/**
+ * DID THE PAGE HOLD STILL BETWEEN THE TWO READS? — #844, and it is what lets a verdict be issued at all.
+ *
+ * #850 refused every verdict because no capture recorded WHEN its census was read. #854 fixed that, and
+ * the answer turned out to be worse than unknown: on the 14 captures that carry `readAt`, the census
+ * lands at 28-67 s and `formField` walks at 37-280 s. **Knowing both moments proves they are not the
+ * same one.** A gate that opened merely because the moments were recorded would have been reading
+ * "we can see the gap" as "there is no gap".
+ *
+ * **`heading` is the control, and the row named it before this could measure it**: it carries no `onItem`,
+ * so the sweep changes nothing, and its roles are unambiguous — a heading is a heading in the DOM, in the
+ * accessibility tree and to NVDA alike. **So a `heading` ratio of exactly 1 is direct evidence that the
+ * page did not change over that interval**, whatever the interval was. It replaces a threshold on time,
+ * which would have been a number somebody chose.
+ *
+ * Measured across the 14:
+ *
+ *     w3.org (8 captures)     heading 1.00 on every one   -- the page holds still
+ *     tfl.gov.uk              heading 1.00                -- holds still, and formField still reads 2.27
+ *     salesforce              heading 1.11                -- grew
+ *     ikea                    heading 1.16                -- grew
+ *     hubspot                 heading 0.04                -- did not grow; the SWEEP collapsed (#897)
+ *
+ * **A ratio BELOW 1 is not a page that shrank**, and treating it as a control failure would be right for
+ * the wrong reason. hubspot's 0.04 is the chat-dialog collapse: the sweep was sealed inside a modal and
+ * exhausted it. `ranOutShortOfTheCensus` (#887) is what names that, and this returns `null` — "the
+ * control itself did not report" — rather than pretending to a verdict either way.
+ *
+ * @param {readonly { type: string, ratio: number | null, completeness: string }[]} rows one capture's rows
+ * @returns {boolean | null} `null` when the control could not be read
+ */
+export function pageHeldStill(rows) {
+  const control = rows.find((row) => row.type === "heading");
+  if (!control || control.completeness !== "complete" || control.ratio === null) return null;
+  // BELOW 1 IS NOT AN ANSWER ABOUT THE PAGE. A sweep that found fewer than the census counted did not
+  // observe a shrinking page; it observed less of one. Reported as "the control did not report" so the
+  // caller withholds rather than concluding, which is the same asymmetry `ranOutShortOfTheCensus` states.
+  if (control.ratio < 1) return null;
+  return control.ratio === 1;
 }
 
 /** A ratio this far either side of 1 is a disagreement worth reporting rather than measurement noise. */
@@ -154,13 +204,24 @@ export const RATIO_IS_AGREEMENT_WITHIN = 1.25;
  * `onItem`, walks at ~100 s, `found` **80 on all five captures** while the census moved 83 → 69.
  *
  * @param {readonly (number | null)[]} ratios one per capture, `null` where there was no denominator
- * @param {{ censusReadAt?: readonly (number | null)[] }} [moments] when each capture's census was READ
+ * @param {{ censusReadAt?: readonly (number | null)[], heldStill?: boolean | null }} [moments]
+ *   when each capture's census was READ, and whether the `heading` control says the page held still
  */
 export function populationVerdict(ratios, moments = {}) {
   // THE MOMENT GATE COMES FIRST, before any arithmetic on the ratios. Checking the numbers and then
   // qualifying them would put a verdict in front of a reader who stops at the first line.
   const readAt = moments.censusReadAt;
   if (!readAt || readAt.some((t) => typeof t !== "number")) return "not-simultaneous";
+  // KNOWING THE MOMENTS IS NOT THE SAME AS THEIR BEING THE SAME MOMENT -- #844, and this is the half #850
+  // could not reach. Once `readAt` shipped, every capture on disk could say when its census was read, and
+  // the answer was that the census lands at 28-67 s while `formField` walks at 37-280 s. A gate that
+  // opened on the moments being RECORDED would have read "we can see the gap" as "there is no gap".
+  //
+  // `pageHeldStill` is the evidence that closes it: the `heading` sweep changes nothing and its roles are
+  // unambiguous, so a ratio of exactly 1 says the page did not change over that interval whatever its
+  // length. `undefined` means the caller did not pass a control -- a comparison nobody controlled is not
+  // one this may rule on, which is the same refusal the moments themselves get above.
+  if (moments.heldStill !== true) return "not-simultaneous";
   const usable = /** @type {number[]} */ (ratios.filter((r) => typeof r === "number" && Number.isFinite(r)));
   if (usable.length < 2) return "cannot say";
   const above = usable.filter((r) => r > RATIO_IS_AGREEMENT_WITHIN).length;

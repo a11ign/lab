@@ -1,0 +1,139 @@
+/**
+ * Guard triage 1 of 6 (#903) -- names the set of guards that stay on the pull-request path, so "which
+ * guards run on a PR" is a list somebody wrote down rather than whatever survives groups 2 to 6.
+ *
+ * Triage rule from the CI Reset: a guard stays on the PR path only if it catches something that would be
+ * wrong in the product, or dangerous in public. Two families qualify -- the leak guards (the repo is
+ * public since 2026-09-06, and these are the guards with a real blast radius) and the product-fact pins
+ * (each compares two copies of a product fact, which is what a test is).
+ *
+ * TWO CORRECTIONS TO THE PLAN'S TABLE, found by reading the real tree rather than trusting it -- the same
+ * discipline this row's own filing already applied once (five of the nine files are not under
+ * `packages/lab/src/packaging/` at all, contrary to the plan's table) and a second the filing missed:
+ * the plan names `fleet-key-name.test.ts`; the real file on `origin/main` is
+ * `fleet-key-name-is-one-fact.test.ts`. Asserted below, not just corrected in the list, so a future rename
+ * back to the plan's spelling is caught rather than silently accepted.
+ *
+ * THE ACCOUNTING MUST CLOSE, or a kept file quietly dropped from the array below is invisible as long as
+ * it still exists on disk. `PENDING_TRIAGE_COUNT` is a PINNED literal (measured once against
+ * `origin/main`, 2026-09-10: 207 packaging test files total, 4 of the 9 kept files live under packaging,
+ * so 207 - 4 = 203 remain for groups 2 to 6) -- never derived from `KEPT_UNDER_PACKAGING.length`, because
+ * a count derived from the very array being mutated cannot catch the array being mutated. Naming which of
+ * the 203 goes to which of groups 2-6 is their job (see "Not in scope" on the row), not this one's; this
+ * row only has to prove none of them fell through a crack no test was watching.
+ *
+ * This file adds itself to the packaging population and to the kept set -- it is the guard that keeps the
+ * boundary, so it belongs on the PR path by the same rule as everything else here. 207 -> 208; the row's
+ * own acceptance text says "unchanged at 207, because this row adds one file and removes none", which is
+ * arithmetically impossible for a row that adds a file -- 208 is the corrected, measured number.
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { walkTree } from "../../../../scripts/tree-wide-guard.mjs";
+
+const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+
+const LEAK_GUARDS = [
+  "packages/lab/src/packaging/tracked-source-leak-guard.test.ts",
+  "packages/lab/src/packaging/tracked-prose-leak-guard.test.ts",
+  "packages/lab/src/packaging/fleet-key-name-is-one-fact.test.ts",
+  "packages/lab/src/gates/inventory-is-control-plane-only.test.ts",
+];
+
+const PRODUCT_FACT_PINS = [
+  "packages/judge/src/asserting-subtypes.test.ts",
+  "packages/worker-fleet/src/protocol-guard.test.ts",
+  "packages/worker-fleet/src/entry-points.test.ts",
+  "packages/lab/src/referenced-scripts.test.ts",
+  "packages/lab/src/packaging/generated-paths.test.ts",
+];
+
+/** This file itself: the guard that keeps the boundary named here. */
+const SELF = "packages/lab/src/packaging/kept-guards.test.ts";
+
+export const KEPT_ON_PR_PATH = [...LEAK_GUARDS, ...PRODUCT_FACT_PINS, SELF];
+
+const KEPT_UNDER_PACKAGING = KEPT_ON_PR_PATH.filter((path) => path.startsWith("packages/lab/src/packaging/"));
+
+// Pinned, not derived -- see the file header. Updated by each guard-triage group (2 to 6) as it lands,
+// which is the intended use of this constant, not a violation of "leave the kept LIST intact" above --
+// the kept-set array never changes here, only the running total of what groups 2-6 have moved or deleted.
+// A group that lands concurrently with another will conflict on this line; re-resolve the arithmetic,
+// do not drop either group's change.
+//
+// #903 (baseline): 207 total, 4 kept-under-packaging -- pending 203.
+// #906 (guard triage 4 of 6): -10 deleted (board-style, board-markdown, board-schedule,
+// board-summary-origin, board-achievement-retirement, board-achievement-staleness, board-record,
+// board-report, audit-citation-index, audit-findings-dispositioned), +2 added
+// (board-report-smoke.test.ts, board-reported-data-integrity.test.ts -- two tests extracted from
+// board-style.test.ts that check real data integrity, not content/style, so they did not retire with the
+// rest of that file) -- pending 203 - 10 + 2 = 195.
+//
+// FIVE ORIGINAL CANDIDATES RESTORED, NOT DELETED: a-hold-means-cannot-merge, pr-hold,
+// merge-guard-pr-hold-rule, workflow-lane-check, arm-pr all name "hold"/"lane"/"session-label" families
+// the CI Reset's own text lists as retiring -- but each tests a mechanism CURRENTLY, ACTIVELY wired into
+// mergeSafety or auto-arm.yml today (workflow-lane-check.mjs and merge-guard.mjs's composed
+// mergeSafetyVerdict run inside ci.yml's mergeSafety job; pr-hold-state.mjs's armVerdict/armabilityOf and
+// arm-pr.mjs's armDecision run inside auto-arm.yml), not merely a retired label taxonomy. Deleting their
+// only test coverage would leave a live, merge-blocking mechanism untested until #902 (which removes
+// mergeSafety) actually lands. Restoring them is not a correction to the KEPT list above (they were never
+// in it) -- it is this row declining to touch them until the row that retires their CALLING workflow
+// does.
+const PACKAGING_TOTAL_BEFORE_THIS_ROW = 207;
+const KEPT_UNDER_PACKAGING_BEFORE_THIS_ROW = 4;
+// #901 deleted `ready-label-audit-triggers.test.ts` with the workflow it pinned (PR #923): one fewer pending.
+// BOTH deltas are kept deliberately -- this is the conflict the header above predicts, and the resolution
+// it prescribes. 203 - 1 (#901) - 10 + 2 (#906) = 194.
+const PENDING_TRIAGE_COUNT = (PACKAGING_TOTAL_BEFORE_THIS_ROW - KEPT_UNDER_PACKAGING_BEFORE_THIS_ROW) - 1 - 10 + 2;
+
+function packagingTestFiles() {
+  return walkTree({ kind: "all", roots: ["packages/lab/src/packaging"] })
+    .map((file) => file.path)
+    .filter((path) => path.endsWith(".test.ts"));
+}
+
+test("#903: all nine plan-named kept files exist on disk, at the paths named here", () => {
+  for (const path of KEPT_ON_PR_PATH) {
+    assert.ok(existsSync(join(REPO_ROOT, path)), `${path} does not exist`);
+  }
+});
+
+test("#903: the plan's table names the wrong file for the fleet-key-name guard", () => {
+  assert.ok(
+    !existsSync(join(REPO_ROOT, "packages/lab/src/packaging/fleet-key-name.test.ts")),
+    "the plan's own spelling now exists -- if it was reintroduced deliberately, update this test and the kept list",
+  );
+  assert.ok(existsSync(join(REPO_ROOT, "packages/lab/src/packaging/fleet-key-name-is-one-fact.test.ts")));
+});
+
+test("#903: the packaging population is exhaustively accounted for -- kept plus pending, nothing dropped", () => {
+  const files = packagingTestFiles();
+  const expected = KEPT_UNDER_PACKAGING.length + PENDING_TRIAGE_COUNT;
+  assert.equal(
+    files.length,
+    expected,
+    `packaging holds ${files.length} test file(s); kept (${KEPT_UNDER_PACKAGING.length}) + pending `
+      + `(${PENDING_TRIAGE_COUNT}) = ${expected} -- the accounting no longer closes. A file was added, `
+      + "removed, or moved without this row's pinned count being updated to match.",
+  );
+  for (const path of KEPT_UNDER_PACKAGING) {
+    assert.ok(files.includes(path), `${path} is in the kept list but the tree walk did not find it`);
+  }
+});
+
+test("#903 MUTATION TARGET: dropping a kept-under-packaging file from the list, while it stays on disk, breaks the accounting", () => {
+  // The row's own named mutation: "delete one of the nine from the list but leave it on disk." Simulated
+  // here rather than by editing the real array, so this test proves the LOGIC catches it without this
+  // file having to un-fix itself to prove a negative.
+  const mutatedKeptCount = KEPT_UNDER_PACKAGING.length - 1;
+  const files = packagingTestFiles();
+  assert.notEqual(
+    files.length,
+    mutatedKeptCount + PENDING_TRIAGE_COUNT,
+    "removing one kept file from the count must desync the accounting -- if this equality holds, the "
+      + "exhaustiveness check cannot see a kept file disappearing from the list",
+  );
+});
