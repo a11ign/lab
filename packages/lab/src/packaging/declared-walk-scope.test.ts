@@ -24,7 +24,7 @@
  */
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { closeSync, globSync, mkdtempSync, openSync, readFileSync, readdir, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, globSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdir, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -34,8 +34,9 @@ import { parseWalkScope, inScope, readsDuring, WHOLE_REPOSITORY } from "../../..
 import { knownPackages } from "../../../../scripts/ci-changed.mjs";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { withGitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
 import {
-  alwaysRunTests, discoverTestFiles, narrowByDeclaredScope, packageIndex, sourceClosure,
+  alwaysRunTests, changedFiles, discoverTestFiles, narrowByDeclaredScope, packageIndex, sourceClosure,
 } from "../../../../scripts/select-changed-tests.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -124,6 +125,27 @@ test("with NO declarations anywhere, narrowing changes nothing at all", () => {
   const { kept, narrowed } = narrowByDeclaredScope(undeclared, ["packages/judge/src/rules.ts"], { readSource: plain });
   assert.deepEqual(kept, undeclared);
   assert.deepEqual(narrowed, []);
+});
+
+test("A RENAME OUT OF THE SCOPE keeps the guard: the diff names the side that LEFT, not only where it went", () => {
+  // `git diff --name-only` detects renames by default and prints only the destination. A PR moving
+  // `scripts/a.mjs` to `tools/a.mjs` listed `tools/a.mjs` alone, and a guard declared on `scripts` -- whose
+  // population had just lost a file -- was left out of the run that lost it.
+  withGitSandbox(({ dir, run, commit }) => {
+    mkdirSync(join(dir, "scripts"));
+    writeFileSync(join(dir, "scripts/a.mjs"), "export const a = 1;\n");
+    run(["add", "."]);
+    commit("base");
+    const base = run(["rev-parse", "HEAD"]).trim();
+    mkdirSync(join(dir, "tools"));
+    run(["mv", "scripts/a.mjs", "tools/a.mjs"]);
+    commit("move a script out of scripts/");
+    const files = changedFiles(base, dir);
+    assert.deepEqual(files, ["scripts/a.mjs", "tools/a.mjs"]);
+    const guard = [{ test: "g.test.ts", why: "walks the tree" }];
+    const { kept } = narrowByDeclaredScope(guard, files, { readSource: () => declaring(`["scripts"]`) });
+    assert.equal(kept.length, 1, "a guard over scripts/ must run on the PR that moved a file out of it");
+  });
 });
 
 // ---------------------------------------------------------------------------------------------------------
