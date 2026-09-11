@@ -30,6 +30,11 @@ function gateBlock(): string {
 // declared Closes against what GitHub will actually close (#549) -- and it stays REQUIRED on ceo's ruling.
 // Neither is process noise: none of the last forty red runs was either. Its lane step is gone, and the head
 // -vs-tip race it still carries (#294) is not #277's "behind main", which branch protection now owns.
+// WHERE THE RULE LIVES: `ci-changed.test.ts` owns it, deriving the required set from ci.yml itself so a
+// job added tomorrow is required by DEFAULT. `KEPT` here is a second copy and deliberately a dumb one --
+// it names today's answer so this file can assert the loop and the needs list against each other. A
+// correctly-added job turns two tests here red until KEPT is edited too; that friction is the price of
+// the second reading, and the edit is one line (worker-capture's review of #1001).
 const KEPT = ["changed", "ts", "python", "ansible", "changeset", "rulesFitness", "holdAndCloses"];
 const DROPPED = ["docs", "board", "acceptance", "ownedPaths"];
 
