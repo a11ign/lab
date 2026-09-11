@@ -21,8 +21,9 @@ import {
   readyRowsAlreadyMerged, fetchClosingPrRefs, fetchLatestReopenedAt, CHECKS, runCheck, isProjectsCredentialGap,
   fetchClosedUnmergedPrs, fetchClosingIssueRefs, soleUnmergedCloserRows,
   criterionStatusesFromSource, criterionOwningRow, coverageTrackerDisagreements, fetchClosedCompletedIssues,
-  reachableCriteriaWithoutRow,
+  reachableCriteriaWithoutRow, provenanceVerdicts, provenanceFindings,
 } from "../../../../scripts/ready-label-audit.mjs";
+import { ARM_LABELS_FROM } from "../../../../scripts/claim-provenance.mjs";
 // #782: `isClosedDebrisLabel` now DERIVES from this, rather than pinning the two equal with a separate
 // test -- so this import is the proof the derivation actually happened, not a second, parallel check.
 import { labelsToStrip } from "../../../../scripts/close-rows-for-merged-pr.mjs";
@@ -1214,4 +1215,21 @@ test("MUTATION: moving 1.3.5 from `reachable` to any other status stops the cove
     assert.deepEqual(coverageTrackerDisagreements(new Map([["1.3.5", status]]), issues), [],
       `status "${status}" must not be reported as a disagreement`);
   }
+});
+
+test("#848: the provenance finding counts ONLY undeclared rows -- a pre-#839 closing PR is reported, not counted", () => {
+  // The four shapes of 2026-09-09's reportable rows. The first version counted by `!attributed`, so the
+  // pre-#839 closing PR (five of that evening's rows, all work that shipped under a Closes line) sat in the
+  // finding beside the two genuine bypasses, and would have stayed there.
+  const row = (number: number) => ({ number, title: `row ${number}`, closedAt: "2026-09-09T18:00:00Z", events: [] });
+  const closers: Record<number, unknown> = {
+    887: { number: 894, headRefName: "agent/exhausted-over-a-gap-887", merged: true, createdAt: "2026-09-09T16:00:00Z", sessionLabels: [] },
+    853: null,
+    900: { number: 905, headRefName: "agent/x-900", merged: true, createdAt: ARM_LABELS_FROM, sessionLabels: ["session:worker-capture"] },
+    912: { number: 913, headRefName: "agent/unclaimed-912", merged: true, createdAt: ARM_LABELS_FROM, sessionLabels: [] },
+  };
+  const verdicts = provenanceVerdicts([887, 853, 900, 912].map(row) as never, (n: number) => closers[n] as never);
+  assert.deepEqual(verdicts.map((v) => [v.number, v.verdict]),
+    [[887, "work"], [853, "undeclared"], [900, "worker"], [912, "undeclared"]]);
+  assert.deepEqual(provenanceFindings(verdicts), [853, 912], "the count the audit exits with");
 });
