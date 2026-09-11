@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { REAL_PAGES } from "../training/real-page-corpus.mjs";
+import { realCorpusRoot } from "../dataset-paths.mjs";
 
 const STAND_IN = "192.0.2.10";
 const CONFORMANT_FIXTURE = REAL_PAGES.find((page) => page.role === "fixture" && page.publishedClaim === "conformant");
@@ -34,8 +35,10 @@ test("#881: a conformant fixture captured at another address is SCORED, under it
       capturedAt: new Date().toISOString(),
       capture: { url: fetched.href, transcript: ["heading level 1, Fixture page"] },
     }));
-    // SET BEFORE THE IMPORT: the gate resolves its corpus root once, at module load.
+    // SET BEFORE THE IMPORT: the gate resolves its corpus root once, at module load, through
+    // `realCorpusRoot()` -- asked here too, so a pass is about THIS directory and never about `runs/`.
     process.env.REAL_CORPUS_ROOT = dir;
+    assert.equal(realCorpusRoot(), dir, "the gate would read somewhere other than the directory this test wrote");
     const { currentFindings } = await import("../../scripts/check-real-page-findings.ts");
     const keys = Object.keys(currentFindings());
 
