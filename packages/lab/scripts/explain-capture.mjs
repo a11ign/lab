@@ -279,24 +279,37 @@ export function whatItAsked(capture) {
   if (!observed || typeof observed !== "object") {
     return [absent("which channels it asked about — it predates CAPTURE_PROTOCOL_VERSION 10")];
   }
-  const rows = [];
-  for (const [channel, seen] of Object.entries(/** @type {Record<string, any>} */ (observed))) {
-    if (!seen?.asked) {
-      // "NOT ASKED" rather than "no": the channel is empty and that is a fact about this run, not the page.
-      rows.push(`    NOT ASKED  ${channel} — ${seen?.why ?? "no reason recorded"}`);
-    } else if (seen.complete === false) {
-      rows.push(`    ! ${channel} asked, and the sweep did NOT run out — stopped `
-        + `${JSON.stringify(seen.stop ?? {})}. An absence here is about the sweep, not the page.`);
-    } else if (seen.complete === true) {
-      rows.push(`    ok ${channel} — asked, and NVDA itself said there were no more`);
-    } else {
-      // A THIRD STATE, and inventing either of the other two would be the defect this field removes.
-      // `tableCells` walks a grid with Ctrl+Alt+Arrow and has no "no next heading" to exhaust, so it can
-      // report that it ran and cannot report that it finished.
-      rows.push(`    ~ ${channel} — asked, but this channel has no exhaustion signal to report`);
-    }
-  }
+  // THE CHANNELS THIS CAPTURE SWEPT, from its own `structure` -- #343. Every array there is a sweep, and every
+  // sweep writes its verdict into `observed` under the same key (`collectByType`'s `observedAs`, `EXTRA_SWEEPS`'
+  // `key`, `tableCells` directly). Looping over `observed` alone printed NOTHING for a channel with no entry --
+  // the sweeps after the one `sweepEveryStructuralType`'s single try/catch caught -- which is the one answer
+  // this section exists never to give. Taken from the capture rather than a list typed here, so a capture that
+  // predates a channel (`frames`) is not asked about it.
+  const swept = capture?.structure && typeof capture.structure === "object" ? Object.keys(capture.structure) : [];
+  const rows = [...new Set([...swept, ...Object.keys(observed)])]
+    .map((channel) => askedRow(channel, /** @type {Record<string, any>} */ (observed)[channel]));
   return rows.length ? rows : [absent("which channels it asked about — `observed` is empty")];
+}
+
+/**
+ * One channel's line: what the capture recorded about asking it -- or that it recorded nothing.
+ * @param {string} channel @param {any} seen the channel's `observed` entry, `undefined` when there is none
+ */
+function askedRow(channel, seen) {
+  if (seen === undefined) {
+    return absent(`whether it finished sweeping ${channel} -- it swept into \`structure.${channel}\` and recorded no verdict`);
+  }
+  // "NOT ASKED" rather than "no": the channel is empty and that is a fact about this run, not the page.
+  if (!seen?.asked) return `    NOT ASKED  ${channel} — ${seen?.why ?? "no reason recorded"}`;
+  if (seen.complete === false) {
+    return `    ! ${channel} asked, and the sweep did NOT run out — stopped `
+      + `${JSON.stringify(seen.stop ?? {})}. An absence here is about the sweep, not the page.`;
+  }
+  if (seen.complete === true) return `    ok ${channel} — asked, and NVDA itself said there were no more`;
+  // A THIRD STATE, and inventing either of the other two would be the defect this field removes.
+  // `tableCells` walks a grid with Ctrl+Alt+Arrow and has no "no next heading" to exhaust, so it can
+  // report that it ran and cannot report that it finished.
+  return `    ~ ${channel} — asked, but this channel has no exhaustion signal to report`;
 }
 
 /**
