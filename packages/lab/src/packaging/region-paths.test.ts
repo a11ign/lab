@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  regionPathsFromBody, extractRegionSection, declaredRegionFiles,
+  regionPathsFromBody, extractRegionSection, declaredRegionFiles, regionCovers,
   extractLabeledSection, hasTemplateField,
 } from "../../../../scripts/region-paths.mjs";
 
@@ -63,8 +63,8 @@ test("a bare inline 'Region:' line -- this issue's own shape -- is read as a sin
     ["scripts/row-claim/file-overlap-rule.mjs", "scripts/row-claim.mjs"]);
 });
 
-test("a Region section naming only bare directories (no file extension) returns [], not null -- a real, " +
-  "comparable, empty answer", () => {
+test("a Region section that mentions directories only inside a SENTENCE returns [], not null -- a real, " +
+  "comparable, empty answer (#941: a STANDALONE directory line declares a prefix; see below)", () => {
   const body = "## Region\n\n`scripts/` for the helper, `packages/lab/src/packaging/` for its test, and "
     + "`docs/` wherever the procedure ends up being written down.\n";
   assert.deepEqual(declaredRegionFiles(body), []);
@@ -89,6 +89,59 @@ test("a genuine Region-declared file with an extension is still extracted -- the
   const body = "## Region\n\n`scripts/row-claim.mjs` and `packages/lab/src/packaging/row-claim.test.ts`.\n";
   assert.deepEqual(declaredRegionFiles(body),
     ["scripts/row-claim.mjs", "packages/lab/src/packaging/row-claim.test.ts"]);
+});
+
+// --- #941: a STANDALONE directory line in a Region declares a PREFIX, never nothing ---
+
+/** #941's own three-line block: one file and two directories, fenced the way rows are filed. */
+const THREE_LINE_REGION = "## Region\n\n```\nscripts/select-changed-tests.mjs\npackages/lab/src/packaging/\ndocs/\n```\n\n"
+  + "## Not in scope\n\nnothing\n";
+
+test("#941 REPRODUCED: the file grammar alone reads only the file out of this block -- the defect's own output", () => {
+  // What `declaredRegionFiles` returned for this block before #941: the two directory lines vanished.
+  assert.deepEqual(regionPathsFromBody(extractRegionSection(THREE_LINE_REGION) ?? ""), ["scripts/select-changed-tests.mjs"]);
+});
+
+test("#941: a standalone directory line declares a prefix, beside the files the block names", () => {
+  assert.deepEqual(declaredRegionFiles(THREE_LINE_REGION),
+    ["scripts/select-changed-tests.mjs", "packages/lab/src/packaging/", "docs/"]);
+});
+
+test("#941: a Region of ONLY directories no longer declares the empty set -- the five zero-declaration rows' shapes", () => {
+  const region = (...lines: string[]) => `## Region\n\n\`\`\`\n${lines.join("\n")}\n\`\`\`\n`;
+  assert.deepEqual(declaredRegionFiles(region("docs/", "packages/lab/src/packaging/")), ["docs/", "packages/lab/src/packaging/"]);
+  assert.deepEqual(declaredRegionFiles(region("packages/lab/src/packaging/")), ["packages/lab/src/packaging/"]);
+  assert.deepEqual(declaredRegionFiles(region("scripts/")), ["scripts/"]);
+  assert.deepEqual(declaredRegionFiles(region("packages/control/ansible/")), ["packages/control/ansible/"]);
+});
+
+test("#941: a bulleted or backticked directory line is still a standalone line", () => {
+  const body = "## Region\n\n- `packages/control/ansible/`\n* docs/board/\n";
+  assert.deepEqual(declaredRegionFiles(body), ["packages/control/ansible/", "docs/board/"]);
+});
+
+test("#941: regionCovers -- a directory covers everything under it, and nothing that merely shares its spelling", () => {
+  assert.ok(regionCovers("docs/", "docs/board/summaries/x.md"));
+  assert.ok(!regionCovers("docs/", "docsite/x.md"), "a prefix is a directory, not a string");
+  assert.ok(regionCovers("scripts/a.mjs", "scripts/a.mjs"));
+  assert.ok(!regionCovers("scripts/a.mjs", "scripts/a.mjs.bak"), "a file entry covers only itself");
+});
+
+test("#941: a one-line LIST of directories declares each item -- 7 older rows were written this way", () => {
+  assert.deepEqual(declaredRegionFiles("## Region\n\n`packages/`, `.github/workflows/`, `docs/adr/`\n"),
+    ["packages/", ".github/workflows/", "docs/adr/"], "#69's shape");
+  assert.deepEqual(declaredRegionFiles("## Region\n\n`packages/scorer/python/`; `packages/judge/src/`\n"),
+    ["packages/scorer/python/", "packages/judge/src/"]);
+  assert.deepEqual(declaredRegionFiles("## Region\n\ndocs/board/ and scripts/\n"), ["docs/board/", "scripts/"]);
+  // #43's shape: one item is a path and one is not a repository path at all. The path is still declared.
+  assert.deepEqual(declaredRegionFiles("## Region\n\n`packages/lab/scripts/`, the lab machine\n"), ["packages/lab/scripts/"]);
+});
+
+test("#941: a sentence that MENTIONS a directory declares nothing -- only a standalone path line does", () => {
+  // Region prose was read as a declaration twice on 2026-09-11 (#848, #920), and a prefix rule must not
+  // reopen that. The #710 fixture above is the same rule on a real body: its directories sit in a sentence.
+  const body = "## Region\n\nWhatever it needs under `docs/`, and `scripts/` for the helper.\n";
+  assert.deepEqual(declaredRegionFiles(body), []);
 });
 
 // --- extractLabeledSection / hasTemplateField: #707's generalisation, any field name ---
