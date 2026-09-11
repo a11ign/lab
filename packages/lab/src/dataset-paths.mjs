@@ -189,6 +189,32 @@ export function repeatCapturesRoot() {
 }
 
 /**
+ * Where `calibrate-abstention.mjs` writes its sweep -- `runs/abstention/`, OUTSIDE the real-page corpus it
+ * reads, where `build-realism-tier.mjs` once had to blacklist the file by name.
+ *
+ * Owned HERE, not in the script, because the path is stated twice: by the producer that writes it and by
+ * `lab-fetch.yml`'s `abstention-sweep` entry, the only way the file leaves the lab. `cbea0d3b` moved the
+ * producer's copy and not the fetch's, so from 2026-09-05 the sweep could not be fetched and nothing failed
+ * (#959). `lab-fetch-paths.test.ts` compares the fetch entry with this function.
+ *
+ * @returns {string}
+ */
+export function abstentionRoot() {
+  return resolve(runsRoot(), "abstention");
+}
+
+/**
+ * The shipped model's sweep -- the file PLAN.md's floor decisions rest on. `outDir` is the directory the
+ * sweep actually wrote to, which `ABSTENTION_OUT` can move; the file's NAME is fixed.
+ *
+ * @param {string} [outDir]
+ * @returns {string}
+ */
+export function abstentionSweepPath(outDir = abstentionRoot()) {
+  return resolve(outDir, "abstention-sweep.json");
+}
+
+/**
  * `A11Y_RUNS_READONLY=1 <writer>` is how a peer finds out whether a script writes into `runs/` without
  * reading its source: a genuine writer refuses and NAMES the exact path it would have written, a
  * read-only audit is unaffected, and with the flag unset every writer works exactly as before.

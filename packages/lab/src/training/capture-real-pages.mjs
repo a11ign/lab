@@ -82,11 +82,11 @@ function existingCaptures() {
       .map((name) => {
         try {
           const parsed = JSON.parse(readFileSync(resolve(OUT, name), "utf8"));
-          // A CAPTURE, identified by shape. This directory also holds `abstention-sweep*.json` and other
-          // reports, which carry no `capture.url` — they would read as `url: ""`, match no wanted page and
-          // be harmless, which is accidentally safe rather than deliberately. `capturesIn` in
-          // `audit-rule-coverage.ts` identifies by shape for the same reason and says why: a name
-          // convention is a second thing to keep in step.
+          // A CAPTURE, identified by shape. This directory held `abstention-sweep*.json` until `cbea0d3b`
+          // moved it to `runs/abstention/`, and can hold other reports, which carry no `capture.url` — they
+          // would read as `url: ""`, match no wanted page and be harmless, which is accidentally safe rather
+          // than deliberately. `capturesIn` in `audit-rule-coverage.ts` identifies by shape for the same
+          // reason and says why: a name convention is a second thing to keep in step.
           const url = parsed?.capture?.url;
           return typeof url === "string" && url
             ? { url, capturedAt: parsed.capturedAt, capture: parsed.capture } : null;
