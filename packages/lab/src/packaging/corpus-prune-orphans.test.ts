@@ -39,12 +39,12 @@ import { pathOf, REAL_PAGES } from "../training/real-page-corpus.mjs";
  * `/about` test below. Whether a differing origin is EXPLAINED depends on whether the declared page is a
  * fixture, so the verdict needs to know which page a path belongs to. And "fixture" is its ROLE (#940).
  */
-const DECLARED = new Map([
-  ["/route-title-stale/good.html", { url: "http://localhost:5050/route-title-stale/good.html", role: "fixture" }],
-  ["/visit/all/edinburgh-castle", { url: "https://www.historicenvironment.scot/visit/all/edinburgh-castle/", role: "training" }],
-  ["/search?query=", { url: "https://caselaw.nationalarchives.gov.uk/search?query=", role: "calibration" }],
-  ["/about", { url: "https://www.gov.scot/about/", role: "training" }],
-]);
+const DECLARED = [
+  { url: "http://localhost:5050/route-title-stale/good.html", role: "fixture" },
+  { url: "https://www.historicenvironment.scot/visit/all/edinburgh-castle/", role: "training" },
+  { url: "https://caselaw.nationalarchives.gov.uk/search?query=", role: "calibration" },
+  { url: "https://www.gov.scot/about/", role: "training" },
+];
 
 test("a declared page reached at ANOTHER ORIGIN is RELOCATED, never deletable", () => {
   // The whole safety property. `localhost:5050` declared, `192.0.2.10:5050` captured — both correct,
@@ -115,8 +115,7 @@ test("pathOf strips the origin and normalises, so two spellings of one page comp
 test("#940: a fixture declared at a NON-loopback base -- DATASET_BASE_URL set -- is still RELOCATED", () => {
   // The declaration as `FIXTURE_BASE` makes it when the variable names the lab's page server by address.
   // Decided by host alone, this came back RETIRED, and RETIRED is what `--apply` deletes.
-  const underBase = new Map([["/route-title-stale/good.html",
-    { url: "http://192.0.2.10:5050/route-title-stale/good.html", role: "fixture" }]]);
+  const underBase = [{ url: "http://192.0.2.10:5050/route-title-stale/good.html", role: "fixture" }];
   const verdict = classifyOrphan("http://198.51.100.7:5050/route-title-stale/good.html", underBase);
   assert.equal(verdict.verdict, "RELOCATED");
   assert.match(verdict.why, /NOT deletable/);
@@ -124,8 +123,20 @@ test("#940: a fixture declared at a NON-loopback base -- DATASET_BASE_URL set --
 
 test("#940: the host stays a second signal -- a loopback declaration with no role is still RELOCATED", () => {
   // Either signal keeps a capture. Wrongly keeping one costs a report line; wrongly deleting one is permanent.
-  const noRole = new Map([["/route-title-stale/good.html", { url: "http://localhost:5050/route-title-stale/good.html" }]]);
+  const noRole = [{ url: "http://localhost:5050/route-title-stale/good.html" }];
   assert.equal(classifyOrphan("http://192.0.2.10:5050/route-title-stale/good.html", noRole).verdict, "RELOCATED");
+});
+
+test("#940: a fixture SHARING its path with a published page is RELOCATED in either declaration order", () => {
+  // worker-capture's review of #943: the first version looked the path up in a Map where the LAST declaration
+  // won, so a fixture declared before a published page at the same path came back RETIRED -- deletable --
+  // while the gate, asking whether ANY fixture sits there, said RELOCATED. Four of today's 93 paths are shared.
+  const fixture = { url: "http://192.0.2.10:5050/about", role: "fixture" };
+  const published = { url: "https://www.gov.scot/about/", role: "training" };
+  for (const declared of [[fixture, published], [published, fixture]]) {
+    assert.equal(classifyOrphan("http://198.51.100.7:5050/about", declared).verdict, "RELOCATED",
+      `declared ${declared.map((d) => d.role).join(" then ")}`);
+  }
 });
 
 test("#940: a REAL page's path match is still RETIRED -- the role widens nothing for a published page", () => {

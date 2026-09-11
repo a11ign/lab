@@ -954,12 +954,20 @@ function relocatedFixtureFor(url) {
  * opposite fixes, and the fix for an undeclared page is to delete it. `corpus-prune-orphans.mjs` calls the
  * same set RELOCATED and refuses to delete it.
  *
+ * ANY fixture at the path, whatever else is declared there -- and the prune tool asks through THIS function
+ * too, not a lookup of its own. Its first #940 version built `path -> page` in a Map, where the LAST
+ * declaration at a path wins: a fixture and a published page sharing a path came back RETIRED to the prune
+ * and RELOCATED to the gate, and the prune is the side that deletes (worker-capture's review of #943). Four
+ * of today's 93 paths are shared, by published pages only -- latent, and settled in the delete direction.
+ *
+ * @template {{ url: string, role?: string }} Page
  * @param {unknown} url
- * @returns {RealPage | undefined}
+ * @param {readonly Page[]} [pages] the declarations to search -- `REAL_PAGES`, or a test's own
+ * @returns {Page | undefined}
  */
-export function pageServerFixtureAtPath(url) {
+export function pageServerFixtureAtPath(url, pages = /** @type {readonly any[]} */ (REAL_PAGES)) {
   const path = pathOf(url);
-  return REAL_PAGES.find((page) => isFixture(page) && pathOf(page.url) === path);
+  return pages.find((page) => isFixture(page) && pathOf(page.url) === path);
 }
 
 /**
