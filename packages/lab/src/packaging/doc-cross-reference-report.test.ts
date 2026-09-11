@@ -69,8 +69,8 @@ function sectionRows(report: string, check: string): string[] {
  * not: the check's own logic against fixtures, or a rule that is not a cross-reference at all.
  */
 const RETIRED_TO_THE_NIGHTLY_REPORT = [
-  "action-reference", "adr-status", "doc-citation-integrity", "doc-references", "env-doc-coverage",
-  "not-working-numbering",
+  "action-reference", "adr-index", "adr-status", "doc-citation-integrity", "doc-references",
+  "env-doc-coverage", "not-working-numbering",
 ];
 
 test("every guard retired from the pull-request path is one this report reads, and its file is gone", () => {
@@ -111,10 +111,29 @@ test("the registry is the fourteen, and each surviving pull-request test asserts
  * logic rather than the tree, so the exemption became a rule about files that no longer exist. What is
  * asserted instead is that it is really gone -- a rule left behind quietly re-selects tests nobody meant.
  */
-test("#954: `scripts/doc-checks/` gets no special case in the selector any more", () => {
-  const selector = readFileSync(join(REPO, "scripts/select-changed-tests.mjs"), "utf8");
-  assert.doesNotMatch(selector, /asHelper: !.*DOC_CHECKS/,
-    "the doc-checks exemption is still in `alwaysRunTests`, and the wrappers it was written for are gone");
+test("#954: a test whose ONLY tree walk is inside an imported doc-check is no longer always-run", () => {
+  // BEHAVIOURAL, not a grep. The first version of this test looked for the deleted constant's NAME, and
+  // worker-capture's review put the exemption back as an inline string: all twelve tests stayed green
+  // while three guards rejoined the always-run set. So this drives `alwaysRunTests` itself, with a
+  // synthetic test file that walks nothing of its own and imports a real `scripts/doc-checks/` module
+  // that walks `docs/adr/`. Under the #905 exemption it was selected; it must not be now.
+  const probe = "packages/lab/src/packaging/__probe-954.test.ts";
+  const docCheck = "scripts/doc-checks/adr-index.mjs";
+  const selected = (source: string, closure: string[]) => alwaysRunTests([probe], {
+    closureOf: () => new Set(closure.map((rel) => join(REPO, rel))),
+    repoRoot: REPO,
+    readSource: (rel: string) => (rel === probe ? source : readFileSync(join(REPO, rel), "utf8")),
+  }).map((guard) => guard.test);
+
+  assert.deepEqual(selected('import { check } from "../../../../scripts/doc-checks/adr-index.mjs";\ncheck();\n',
+    [probe, docCheck]), [],
+    "a doc check's module is judged as a HELPER again; if it is not, the #905 exemption is still in force");
+  // THE POSITIVE CONTROL, so this cannot pass by the selector being broken for everything: a test whose
+  // OWN source walks the tree is still always-run, which is the rule the exemption was an exception to.
+  assert.deepEqual(selected('import { readdirSync } from "node:fs";\nreaddirSync("packages");\n', [probe]), [probe]);
+});
+
+test("#954: no retired guard is selected, and the selector still finds the guards that walk for themselves", () => {
   const packages = knownPackages(REPO);
   const index = packageIndex(REPO, packages);
   const guards = new Set(alwaysRunTests(discoverTestFiles(REPO, packages), {
@@ -124,9 +143,14 @@ test("#954: `scripts/doc-checks/` gets no special case in the selector any more"
     assert.equal(guards.has(`packages/lab/src/packaging/${name}.test.ts`), false,
       `${name} is retired and still selected as an always-run guard`);
   }
-  // The class the selector still serves: a test that walks the tree ITSELF is always-run, doc check or not.
+  // #954/worker-capture: `adr-index`'s prose-count half moved to `claude-md-counts.test.ts`, which walks
+  // `docs/adr/` itself. It MUST be always-run there, or an ADR added in a PR that touches no packaging
+  // file passes with the count stale -- the coverage hole this row nearly shipped.
+  assert.ok(guards.has("packages/lab/src/packaging/claude-md-counts.test.ts"),
+    "the prose-count guard that inherited adr-index's population is not always-run");
   assert.ok(guards.size > 10, `only ${guards.size} always-run guards found; the selector is not reading the tree`);
 });
+
 
 test("a disagreement is named by the file it is in and the reference that dangles", async () => {
   await withTree({
@@ -258,4 +282,21 @@ test("#954: a report that already fits is returned untouched", () => {
   const short = renderReport([{ name: "x", test: "x.test.ts", result: { examined: 1, unit: "things", disagreements: [] } }],
     { root: "/r", commit: "abc", ref: "origin/main" });
   assert.equal(fitToComment(short), short);
+});
+
+test("#954: the cap holds even when what it refuses to drop is itself over the limit", () => {
+  // worker-capture's review of #996: `budget` can fall below the length of the parts this keeps, the loop
+  // then adds nothing, and the return was kept+notice+tail with no bound. Not reachable through this
+  // repo's own checks -- `runChecks` stores `error.message`, never a stack -- but an over-limit body is a
+  // 422 and a RED nightly step rather than a quiet short comment, so the guarantee is worth making
+  // unconditional rather than arguing it cannot be needed.
+  const huge = "x".repeat(COMMENT_LIMIT * 2);
+  const report = renderReport([
+    { name: "doc-references", test: null, result: { examined: 1, unit: huge, disagreements: [] } },
+    { name: "check-transfer-urls", test: null, error: huge },
+  ] as never, { root: "/r", commit: "abc", ref: "origin/main" });
+  const fitted = fitToComment(report);
+  assert.ok(fitted.length <= COMMENT_LIMIT, `returned ${fitted.length} characters against a ${COMMENT_LIMIT} limit`);
+  assert.match(fitted, /_CUT: even the summary exceeded GitHub's comment limit/,
+    "a body cut this hard must say so -- a silently truncated table is a wrong report, not a short one");
 });
