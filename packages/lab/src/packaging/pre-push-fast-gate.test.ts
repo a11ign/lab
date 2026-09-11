@@ -15,10 +15,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, rmSync, mkdirSync, chmodSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync, chmodSync, mkdtempSync, symlinkSync, readdirSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const HOOK = readFileSync(`${REPO}scripts/git-hooks/pre-push`, "utf8");
@@ -133,21 +136,61 @@ test("MUTATION: the real run() function reports FAILED on a genuine lint/typeche
   const runFn = /^run\(\) \{[\s\S]*?\n\}/m.exec(HOOK);
   assert.ok(runFn, "could not find run() in the real hook to drive");
 
-  const target = `${REPO}packages/lab/src/packaging/_scratch-run-fn-proof.test.ts`;
-  writeFileSync(target,
-    'import { test } from "node:test";\nconst unused = 1;\ntest("x", () => { const y: string = 5; });\n');
+  // #944: PLANTED IN AN EXPORT OF THE TREE, NEVER IN THE TREE. This wrote the scratch file into
+  // `packages/lab/src/packaging/` for as long as lint and typecheck took, and `node --test` runs files
+  // concurrently, so a test walking the tree listed it and then read it after `finally` deleted it (#938's
+  // `ts / run`, ENOENT). ENOENT was the lucky direction: a walker reading it WHILE it existed saw a `.test.ts`
+  // with a deliberate type error. The same two commands now run, unchanged, in a copy of HEAD.
+  //
+  // TWICE, AND THE FIRST RUN IS THE CONTROL. With the planted file clean, both must pass: that proves the
+  // export itself lints and type-checks (its first version did not -- `dist` is gitignored, so a relative
+  // `../dist/` import failed `tsc` whatever was planted), and that the tools SEE a file at that path. Only
+  // then does the violating version failing mean the violation was caught.
+  const exported = treeExport();
+  const gate = () => execFileSync("bash", ["-c", `set -u\n${runFn[0]}\nfailed=()\n`
+    + `run "lint" npm run --silent lint\n`
+    + `run "typecheck" npx tsc --noEmit\n`
+    + `printf 'FAILED=%s\\n' "\${failed[@]:-}"`], { cwd: exported, encoding: "utf8" });
   try {
-    const script = `set -u\n${runFn[0]}\nfailed=()\n`
-      + `run "lint" npm run --silent lint\n`
-      + `run "typecheck" npx tsc --noEmit\n`
-      + `printf '%s\\n' "\${failed[@]:-}"`;
-    const out = execFileSync("bash", ["-c", script], { cwd: REPO, encoding: "utf8" });
-    assert.match(out, /lint/, "a real lint error in a tracked package file must be reported FAILED");
-    assert.match(out, /typecheck/, "a real type error must be reported FAILED");
+    writeFileSync(join(exported, PLANTED), 'import { test } from "node:test";\ntest("x", () => {});\n');
+    const control = gate();
+    assert.match(control, /^FAILED=$/m, `the export fails lint or typecheck with a CLEAN file planted:\n${control}`);
+    assert.match(control, /ok {6}lint/, `lint did not run cleanly on the export:\n${control}`);
+    assert.match(control, /ok {6}typecheck/, `typecheck did not run cleanly on the export:\n${control}`);
+
+    writeFileSync(join(exported, PLANTED),
+      'import { test } from "node:test";\nconst unused = 1;\ntest("x", () => { const y: string = 5; });\n');
+    const out = gate();
+    assert.match(out, /FAILED=lint/, "a real lint error in a tracked package file must be reported FAILED");
+    assert.match(out, /FAILED=typecheck/, "a real type error must be reported FAILED");
   } finally {
-    rmSync(target, { force: true });
+    rmSync(exported, { recursive: true, force: true });
   }
 });
+
+/** Where the planted violation sits, relative to the tree root -- inside `treeExport()`'s copy only. */
+const PLANTED = "packages/lab/src/packaging/_scratch-run-fn-proof.test.ts";
+
+/**
+ * #944: HEAD, exported to a temp directory, with this checkout's `node_modules` linked in -- a tree lint and
+ * `tsc` see exactly as they see this one, and no other test can walk. `git archive` rather than a worktree:
+ * it registers nothing in `.git`, so a crashed run leaves only a temp directory behind. `sandboxGitEnv`,
+ * because a hook exports `GIT_DIR` and an inherited one would archive whatever it names.
+ */
+function treeExport(): string {
+  const dir = mkdtempSync(join(tmpdir(), "fast-gate-export-"));
+  const tar = execFileSync("git", ["archive", "--format=tar", "HEAD"],
+    { cwd: REPO, env: sandboxGitEnv(), maxBuffer: 256 * 1024 * 1024 });
+  execFileSync("tar", ["-x", "-C", dir], { input: tar });
+  symlinkSync(join(REPO, "node_modules"), join(dir, "node_modules"), "dir");
+  // Each package's BUILD, linked in too: `dist` is gitignored, and a relative `../dist/` import
+  // (`packages/scorer/bin/fetch-encoder.mjs`) fails `tsc` in a tree that lacks it.
+  for (const name of readdirSync(join(REPO, "packages"))) {
+    const built = join(REPO, "packages", name, "dist");
+    if (existsSync(built) && existsSync(join(dir, "packages", name))) symlinkSync(built, join(dir, "packages", name, "dist"), "dir");
+  }
+  return dir;
+}
 
 /**
  * #288: THE CHANGESET GATE WAS THE ONLY CHECK IN THIS HOOK THAT BYPASSED `run()`, so it had no way to say
@@ -170,9 +213,9 @@ function changesetBlock() {
 }
 
 function withFakeNode(behaviour: "fail" | "true" | "false") {
-  const dir = `${REPO}packages/lab/src/packaging/.scratch-fake-node-${behaviour}`;
-  rmSync(dir, { recursive: true, force: true });
-  mkdirSync(dir, { recursive: true });
+  // #944: a temp directory, never the tree -- it only has to be first on PATH, and inside
+  // `packages/lab/src/packaging/` it was a directory any concurrent directory walker could list.
+  const dir = mkdtempSync(join(tmpdir(), `fake-node-${behaviour}-`));
   const script = behaviour === "fail"
     ? '#!/bin/bash\necho "fatal: bad revision" >&2\nexit 1\n'
     : `#!/bin/bash\nprintf '%s' "${behaviour}"\n`;
