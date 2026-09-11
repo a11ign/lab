@@ -636,10 +636,16 @@ test("#690: every pull_request job is gated on the PR still being OPEN -- `edite
     `these jobs run on a CLOSED pull request: ${unguarded.join(", ")}. Either gate them on `
     + "`github.event.pull_request.state == 'open'` or make them need `changed`, which is gated.");
 
-  // `gate` is DELIBERATELY not gated: `if: always()`, and with every upstream job skipped it passes on
+  // `gate` is DELIBERATELY not gated ON THE PR'S STATE: with every upstream job skipped it passes on
   // "success or skipped". A required context that reports SKIPPED and one that reports SUCCESS are not
   // the same thing to branch protection, and this is the required one.
-  assert.equal(jobs.gate.if, "always()", "gate stays unconditional -- it is the required context");
+  //
+  // `!cancelled()` (#902) is not a state gate and does not weaken that. A cancelled run's jobs report
+  // `cancelled`, which the loop treats as neither success nor skipped, so gate FAILED on every run a push
+  // superseded -- and that red then sat on the head beside the real verdict. Two sessions read PR #996 as
+  // red from exactly that on 2026-09-11. A superseded run must report nothing, not a failure.
+  assert.equal(jobs.gate.if, "always() && !cancelled()",
+    "gate stays unconditional on the PR's state -- it is the required context -- and silent on a cancelled run");
 });
 
 test("action-smoke.yml and capture-regression.yml trigger on workflow_call and workflow_dispatch only", () => {
@@ -698,9 +704,24 @@ test("ci.yml has a gate job needing every scoped job, running even when one of t
   // DERIVED FROM THE FILE, NEVER A LITERAL. This assertion carried a hand-typed job list until #356 added
   // `ownedPaths`, and a literal answers "does gate need the jobs somebody typed here", which is not the
   // question -- the question is whether it needs the jobs this workflow ACTUALLY declares.
-  const scopedJobs = Object.keys(doc.jobs).filter((name) => name !== "gate");
+  //
+  // #902 NARROWED "EVERY JOB" TO "EVERY JOB THAT JUDGES THE PRODUCT". Of the last forty red `ci` runs on
+  // pull requests, 13 were `ts` and the rest were process jobs -- two of every three red PRs were red for
+  // something that said nothing about whether the code works. The five below are DROPPED FROM `needs`,
+  // not deleted: they still run and still report, and `gate-needs.test.ts` asserts each is still a job.
+  // The exclusion is a literal BECAUSE it is a decision; everything else is still derived from the file,
+  // so a NEW job added tomorrow fails here rather than being silently optional.
+  const NOT_REQUIRED_BY_GATE = ["docs", "board", "acceptance", "ownedPaths"];
+  const scopedJobs = Object.keys(doc.jobs)
+    .filter((name) => name !== "gate" && !NOT_REQUIRED_BY_GATE.includes(name));
   assert.deepEqual([...gate.needs as string[]].sort(), scopedJobs.sort(),
-    "gate must need every other job in this file, or a job could fail silently with gate still passing");
+    "gate must need every product job in this file, or one could fail silently with gate still passing. A "
+    + "job NEWLY added to ci.yml is required by default: adding it to NOT_REQUIRED_BY_GATE is a decision "
+    + "somebody has to write down, which is the only way this list stays honest.");
+  const vanished = NOT_REQUIRED_BY_GATE.filter((name) => !(name in doc.jobs));
+  assert.deepEqual(vanished, [],
+    `these were dropped from gate's needs and then deleted entirely: ${vanished.join(", ")}. #902 removed `
+    + "their authority, not their report -- a job that stops running takes its verdict with it.");
 
   // AND `needs:` IS ONLY HALF OF IT -- the gap #356 fell into, and the reason this is asserted rather than
   // read. Naming a job in `needs:` makes gate WAIT for it; it does not make gate FAIL for it. The verdict
@@ -714,8 +735,8 @@ test("ci.yml has a gate job needing every scoped job, running even when one of t
     "every job gate NEEDS must also have its result READ by gate's loop. A job in `needs:` but not in the "
     + "loop is one gate waits for and never judges, so its failure leaves gate green -- which is exactly "
     + "the silent pass the whole job exists to prevent.");
-  assert.equal(gate.if, "always()",
-    "gate must run with if: always() -- without it, a failing upstream job would SKIP gate too (a job's "
+  assert.equal(gate.if, "always() && !cancelled()",
+    "gate must run with if: always() && !cancelled() -- without `always()`, a failing upstream job would SKIP gate too (a job's "
     + "default if is success() on its dependencies), and the one context branch protection requires would "
     + "then report nothing on exactly the commit most in need of a red mark");
 });
