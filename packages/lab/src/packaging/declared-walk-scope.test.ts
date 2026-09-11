@@ -24,19 +24,28 @@
  */
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { closeSync, globSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdir, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import fsModule, {
+  closeSync, copyFileSync, globSync, mkdirSync, mkdtempSync, openAsBlob, openSync, readFileSync, readdir, readdirSync,
+  realpathSync, rmSync, statSync, symlinkSync, writeFileSync,
+} from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
+import { builtinModules } from "node:module";
+import { Worker } from "node:worker_threads";
+import { once } from "node:events";
 import { tmpdir } from "node:os";
-import { execSync, spawnSync } from "node:child_process";
+import childProcessModule, { execSync, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { parseWalkScope, inScope, readsDuring, WHOLE_REPOSITORY } from "../../../../scripts/walk-scope.mjs";
+import { stripComments } from "@a11ign/evidence/source-text";
+import {
+  DECLARER_BUILTINS, NOT_WRAPPED, WHOLE_REPOSITORY, inScope, isObserved, parseWalkScope, readsDuring,
+} from "../../../../scripts/walk-scope.mjs";
 import { knownPackages } from "../../../../scripts/ci-changed.mjs";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import { withGitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
 import {
-  alwaysRunTests, changedFiles, discoverTestFiles, narrowByDeclaredScope, packageIndex, sourceClosure,
+  alwaysRunTests, broadReasons, changedFiles, discoverTestFiles, narrowByDeclaredScope, packageIndex, sourceClosure,
 } from "../../../../scripts/select-changed-tests.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -152,8 +161,11 @@ test("A RENAME OUT OF THE SCOPE keeps the guard: the diff names the side that LE
 // The guard's own run checks its declaration — RUN, not described.
 // ---------------------------------------------------------------------------------------------------------
 
-/** Run a fixture guard that declares `scope` and reads `reads`, from the repository root, as CI would. */
-function runFixtureGuard(scope: string, reads: string[]) {
+/** A fixture guard's test body that reads each of `paths`. */
+const reading = (paths: string[]) => `for (const p of ${JSON.stringify(paths)}) fs.readFileSync(p, "utf8");`;
+
+/** Run a fixture guard that declares `scope` and runs `body`, from the repository root, as CI would. */
+function runFixtureGuard(scope: string, body: string) {
   const dir = mkdtempSync(join(tmpdir(), "walk-scope-"));
   // `.mts`, not `.ts`: a temp directory has no `package.json` saying `"type": "module"`, so a `.ts` file
   // there compiles as CommonJS, where the top-level `await` a declaring guard needs is a transform error.
@@ -163,10 +175,14 @@ function runFixtureGuard(scope: string, reads: string[]) {
   writeFileSync(file, [
     `import { declareWalkScope } from ${JSON.stringify(walkScope)};`,
     `import { test } from "node:test";`,
-    `import { readFileSync } from "node:fs";`,
+    `import * as fs from "node:fs";`,
+    `import { spawnSync } from "node:child_process";`,
+    `import { join } from "node:path";`,
+    `import { tmpdir } from "node:os";`,
     `export const ${W} = ${scope};`,
     `await declareWalkScope(import.meta.url);`,
-    `test("reads", () => { for (const p of ${JSON.stringify(reads)}) readFileSync(p, "utf8"); });`,
+    `const REPO = ${JSON.stringify(REPO)};`,
+    `test("reads", () => { ${body} });`,
     "",
   ].join("\n"));
   // `NODE_TEST_CONTEXT` scrubbed: node sets it for a test's children, and a nested `--test` run then reports
@@ -185,7 +201,7 @@ function runFixtureGuard(scope: string, reads: string[]) {
 
 test("A DECLARATION NARROWER THAN THE WALK FAILS THE GUARD'S OWN RUN", () => {
   // The row's mutation, made permanent: declared `docs`, read a product file.
-  const run = runFixtureGuard(`["docs"]`, ["packages/judge/src/rules.ts"]);
+  const run = runFixtureGuard(`["docs"]`, reading(["packages/judge/src/rules.ts"]));
   assert.notEqual(run.status, 0, "a guard that reads outside its declaration must fail");
   assert.match(`${run.stdout}${run.stderr}`,
     /declares WALK_SCOPE \["docs"\] and read 1 path\(s\) outside it: packages\/judge\/src\/rules\.ts/,
@@ -193,12 +209,32 @@ test("A DECLARATION NARROWER THAN THE WALK FAILS THE GUARD'S OWN RUN", () => {
 });
 
 test("...and a declaration that covers the walk passes — or the check above could be failing on everything", () => {
-  const run = runFixtureGuard(`["packages/judge"]`, ["packages/judge/src/rules.ts"]);
+  const run = runFixtureGuard(`["packages/judge"]`, reading(["packages/judge/src/rules.ts"]));
   assert.equal(run.status, 0, `${run.stdout}${run.stderr}`);
   // AND IT RAN. Exit 0 alone is not a pass: the first version of this fixture could not compile, and an
   // assertion on the exit code reported the control as green. The fixture's one test must be seen passing.
   assert.match(run.stdout, /ℹ pass 1\b/, "the fixture's own test must have run and passed");
   assert.match(run.stdout, /ℹ fail 0\b/);
+});
+
+test("THE REVIEW'S FIXTURE: a guard declaring docs that reads the whole repository by four routes FAILS its own run", () => {
+  // worker-judge's reproduction on #938, which passed at `86029cfd` with `ℹ pass 1`. One route per family.
+  const body = [
+    `spawnSync("git", ["ls-files", ":(exclude)docs"], { cwd: REPO });`,
+    `const gitDir = spawnSync("git", ["rev-parse", "--absolute-git-dir"], { cwd: REPO, encoding: "utf8" }).stdout.trim();`,
+    `const away = fs.mkdtempSync(join(tmpdir(), "fixture-away-"));`,
+    `spawnSync("git", ["-C", away, "--git-dir", gitDir, "ls-files"]);`,
+    `fs.copyFileSync(join(REPO, "packages/judge/src/rules.ts"), join(away, "r.ts"));`,
+    `fs.readFileSync(join(REPO, "node_modules/@a11ign/judge/package.json"));`,
+    `fs.rmSync(away, { recursive: true, force: true });`,
+  ].join(" ");
+  const run = runFixtureGuard(`["docs"]`, body);
+  const said = `${run.stdout}${run.stderr}`;
+  assert.notEqual(run.status, 0, `the review's fixture must fail its own run:\n${said.slice(-1500)}`);
+  assert.match(said, /declares WALK_SCOPE \["docs"\] and read \d+ path\(s\) outside it/);
+  assert.match(said, /\(the whole repository\) -- git ls-files/, "the pathspec magic, named");
+  assert.match(said, /pointed back at this checkout/, "the --git-dir from elsewhere, named");
+  assert.match(said, /packages\/judge\/src\/rules\.ts/, "the copied file, named");
 });
 
 // ---------------------------------------------------------------------------------------------------------
@@ -270,8 +306,135 @@ test("ANY OTHER CHILD PROCESS is the whole repository -- what it reads is not vi
   assert.ok(isUnbounded(await readsDuring(() => spawnSync(process.execPath, ["-e", "0"]))));
 });
 
+test("a WORKER THREAD is the whole repository -- it reads off this thread, where nothing is observed", async () => {
+  const reads = await readsDuring(async () => {
+    const worker = new Worker("0", { eval: true });
+    await once(worker, "exit");
+  });
+  assert.ok(isUnbounded(reads), reads.join(", "));
+});
+
 test("the wrappers keep what they wrap: realpathSync.native still resolves", () => {
   assert.equal(realpathSync.native(REPO), realpathSync(REPO));
+});
+
+// --- worker-judge's review of #938: eleven routes, each a false pass at `86029cfd`, in four families. ---
+
+const gitDirectory = () => spawnSync("git", ["rev-parse", "--absolute-git-dir"], inRepo).stdout.trim();
+
+test("PATHSPEC MAGIC is the whole repository: `:(exclude)docs` is everything EXCEPT docs", async () => {
+  assert.ok(isUnbounded(await readsDuring(() => spawnSync("git", ["ls-files", ":(exclude)docs"], inRepo))));
+  assert.ok(isUnbounded(await readsDuring(() => spawnSync("git", ["ls-files", ":!docs"], inRepo))));
+  // `:^` is the spelling the glob-prefix rule does NOT already catch -- no glob syntax in it -- so it is the one
+  // that shows the magic check is load-bearing rather than redundant.
+  assert.ok(isUnbounded(await readsDuring(() => spawnSync("git", ["ls-files", ":^docs"], inRepo))));
+  assert.ok(isUnbounded(await readsDuring(() => spawnSync("git", ["grep", "-l", "x", "--", ":(exclude)docs"], inRepo))));
+});
+
+test("an OPTION is never read as a pathspec: one that can change which files are read is the whole repository", async () => {
+  assert.ok(isUnbounded(await readsDuring(() => spawnSync("git", ["ls-files", "-x", "docs"], inRepo))));
+  assert.ok(isUnbounded(await readsDuring(() => spawnSync("git", ["ls-files", "--exclude-from", "docs/README.md"], inRepo))));
+  assert.ok(isUnbounded(await readsDuring(() => spawnSync("git", ["ls-files", "--exclude-standard", "-o", JUDGE], inRepo))),
+    "--exclude-standard reads the root .gitignore, which no declaration of packages/judge covers");
+  assert.ok(isUnbounded(await readsDuring(() => spawnSync("git", ["grep", "-f", "docs/README.md", "--", JUDGE], inRepo))),
+    "-f reads a pattern FILE");
+  // The control: options known to bound nothing away keep the pathspec, or every option would fail closed.
+  assert.deepEqual(await readsDuring(() => spawnSync("git", ["ls-files", "-z", "--cached", JUDGE], inRepo)), [JUDGE]);
+  assert.deepEqual(await readsDuring(() => spawnSync("git", ["grep", "-il", "-e", "x", "--", JUDGE], inRepo)), [JUDGE]);
+});
+
+test("a git run from ELSEWHERE that is pointed back here is the whole repository: --git-dir, GIT_DIR, a clone source", async () => {
+  const gitDir = gitDirectory();
+  const away = mkdtempSync(join(tmpdir(), "walk-scope-away-"));
+  const fromAway = { cwd: away, env: sandboxGitEnv(), encoding: "utf8" as const };
+  try {
+    assert.ok(isUnbounded(await readsDuring(() => spawnSync("git", ["--git-dir", gitDir, "ls-files"], fromAway))));
+    assert.ok(isUnbounded(await readsDuring(() => spawnSync("git", [`--git-dir=${gitDir}`, "ls-files"], fromAway))));
+    assert.ok(isUnbounded(await readsDuring(() =>
+      spawnSync("git", ["ls-files"], { ...fromAway, env: sandboxGitEnv({ GIT_DIR: gitDir }) }))),
+    "git exports GIT_DIR into every hook, so an inherited one points a temp-directory run straight back here");
+    assert.ok(isUnbounded(await readsDuring(() =>
+      spawnSync("git", ["clone", "-q", "--shared", "--no-checkout", REPO, "copy"], fromAway))));
+    // The control: a fixture repository of its own, pointed at nothing here, still reads nothing here.
+    assert.deepEqual(await readsDuring(() => spawnSync("git", ["init", "-q", "fixture"], fromAway)), []);
+  } finally {
+    rmSync(away, { recursive: true, force: true });
+  }
+});
+
+test("a read INSIDE the git directory is the whole repository -- in a worktree, that directory is outside it", async () => {
+  assert.ok(isUnbounded(await readsDuring(() => statSync(join(gitDirectory(), "HEAD")))));
+});
+
+test("copyFile and openAsBlob are seen -- two reads a hand-written list of wrappers did not name", async () => {
+  const away = mkdtempSync(join(tmpdir(), "walk-scope-copy-"));
+  try {
+    assert.deepEqual(await readsDuring(() => copyFileSync(join(REPO, MANIFEST), join(away, "m.json"))), [MANIFEST]);
+    assert.deepEqual(await readsDuring(() => openAsBlob(join(REPO, MANIFEST))), [MANIFEST]);
+  } finally {
+    rmSync(away, { recursive: true, force: true });
+  }
+});
+
+test("EVERY function on fs, fs.promises and child_process is wrapped, or named in NOT_WRAPPED with its reason", () => {
+  // Asked of the objects themselves, on whichever Node runs this, so a route a later Node adds fails HERE
+  // instead of passing a guard. A hand-written list is how `copyFile` and `openAsBlob` went unseen.
+  const owners: Array<[string, Record<string, unknown>, Readonly<Record<string, string>>]> = [
+    ["fs", fsModule as unknown as Record<string, unknown>, NOT_WRAPPED.fs],
+    ["fs.promises", fsModule.promises as unknown as Record<string, unknown>, NOT_WRAPPED.fs],
+    ["child_process", childProcessModule as unknown as Record<string, unknown>, NOT_WRAPPED.child_process],
+  ];
+  const unaccounted: string[] = [];
+  const listedYetWrapped: string[] = [];
+  for (const [label, owner, reasons] of owners) {
+    for (const [name, value] of Object.entries(owner)) {
+      if (typeof value !== "function") continue;
+      const listed = name.replace(/Sync$/, "") in reasons;
+      if (!isObserved(value) && !listed) unaccounted.push(`${label}.${name}`);
+      if (isObserved(value) && listed) listedYetWrapped.push(`${label}.${name}`);
+    }
+  }
+  assert.deepEqual(unaccounted, [], "neither wrapped nor given the reason it cannot read a path unseen");
+  assert.deepEqual(listedYetWrapped, [], "given a reason not to be wrapped, and wrapped anyway -- the list has drifted");
+});
+
+test("a path through a LINK is classified by where it leads", async () => {
+  // Deterministic: a link from outside the checkout into it.
+  const away = mkdtempSync(join(tmpdir(), "walk-scope-link-"));
+  try {
+    symlinkSync(join(REPO, JUDGE), join(away, "judge"));
+    assert.deepEqual(await readsDuring(() => readFileSync(join(away, "judge/package.json"))), [MANIFEST]);
+  } finally {
+    rmSync(away, { recursive: true, force: true });
+  }
+  // The real workspace link, `node_modules/@a11ign/judge`: `packages/judge` wherever `npm ci` ran in this
+  // checkout, CI included. A worktree borrowing another checkout's node_modules leads OUT, and reads nothing here.
+  const link = join(REPO, "node_modules/@a11ign/judge");
+  const leadsTo = relative(REPO, realpathSync(link));
+  const expected = leadsTo.startsWith("..") ? [] : [`${leadsTo}/package.json`];
+  assert.deepEqual(await readsDuring(() => readFileSync(join(link, "package.json"))), expected);
+});
+
+test("THIRD-PARTY node_modules is excluded ONLY because a lockfile change is a broad diff -- the premise, pinned", async (t) => {
+  // A broad diff runs every guard before any narrowing, so what `npm ci` installed cannot differ on a run
+  // that left a guard out. If either of these stopped being broad, this exclusion would become a false pass.
+  assert.deepEqual(broadReasons(["package-lock.json"]), ["package-lock.json"]);
+  assert.deepEqual(broadReasons(["package.json"]), ["package.json"]);
+  // A probe of our own, because a real package can be a LINK to another checkout's node_modules (a worktree
+  // set up that way) -- where a read leads out of this checkout and the exclusion is never reached, and this
+  // assertion first passed having tested nothing.
+  const modules = join(REPO, "node_modules");
+  if (relative(REPO, realpathSync(modules)).startsWith("..")) {
+    t.skip("node_modules here is a link to another checkout's, so no read under it can land in this one");
+    return;
+  }
+  const probe = mkdtempSync(join(modules, ".walk-scope-probe-"));
+  try {
+    writeFileSync(join(probe, "package.json"), "{}");
+    assert.deepEqual(await readsDuring(() => readFileSync(join(probe, "package.json"))), []);
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------------------------------------
@@ -303,17 +466,41 @@ test("every declaring guard imports walk-scope FIRST and runs its own check", ()
   }
 });
 
-test("no declaring guard reads by a route the observer cannot see: a computed import(), or a worker thread", () => {
-  // Both read off the thread the observer patches, so a declaration covering either would pass unverified.
-  // Refused here rather than recorded, because there is nothing in this process to record.
-  const packages = packageIndex(REPO, knownPackages(REPO));
-  for (const file of declarers) {
-    for (const source of sourceClosure(join(REPO, file), REPO, packages)) {
-      const code = readFileSync(source, "utf8");
-      assert.doesNotMatch(code, /\bimport\s*\(\s*[^"'`\s)]/, `${file}: ${source} imports a computed path`);
-      assert.doesNotMatch(code, /worker_threads/, `${file}: ${source} uses worker threads`);
-    }
+const ALLOWED_BUILTINS = new Set<string>(DECLARER_BUILTINS);
+const BUILTINS = new Set(builtinModules);
+
+/** Each route in one source file that reads through nothing the observer wraps -- empty when there is none. */
+function unseenRoutesIn(code: string): string[] {
+  const found: string[] = [];
+  if (/\bimport\s*\(\s*[^"'`\s)]/.test(code)) found.push("imports a computed path");
+  if (/\bnew\s+(?:\w+\.)?(?:File)?ReadStream\s*\(|\bnew\s+(?:\w+\.)?ChildProcess\s*\(/.test(code)) {
+    found.push("builds a stream or a process by hand");
   }
+  for (const [, spec] of code.matchAll(/(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*)["']([^"']+)["']/g)) {
+    const name = spec.replace(/^node:/, "");
+    const builtin = spec.startsWith("node:") || BUILTINS.has(name);
+    if (builtin && !ALLOWED_BUILTINS.has(name)) found.push(`imports node:${name}, which reads through nothing the observer wraps`);
+  }
+  return found;
+}
+
+test("no declaring guard reads by a route the observer cannot see -- refused in its own closure instead", () => {
+  // A computed `import()` (the loader reads off this thread), a `ReadStream` or `ChildProcess` built by hand,
+  // and any builtin outside DECLARER_BUILTINS (`node:sqlite`, `node:wasi`) read through nothing the observer
+  // wraps. There is nothing in the process to record, so the guard's own source is where to refuse them.
+  const packages = packageIndex(REPO, knownPackages(REPO));
+  const refused = declarers.flatMap((file) => [...sourceClosure(join(REPO, file), REPO, packages)]
+    .flatMap((source) => unseenRoutesIn(stripComments(readFileSync(source, "utf8")))
+      .map((why) => `${file}: ${relative(REPO, source)} ${why}`)));
+  assert.deepEqual(refused, []);
+});
+
+test("...and that refusal can fire: each unseen route is found, and a plain fs import is not", () => {
+  assert.deepEqual(unseenRoutesIn(`const m = await import(name);`), ["imports a computed path"]);
+  assert.deepEqual(unseenRoutesIn(`import { DatabaseSync } from "node:sqlite";`),
+    ["imports node:sqlite, which reads through nothing the observer wraps"]);
+  assert.deepEqual(unseenRoutesIn(`const s = new fs.ReadStream(p);`), ["builds a stream or a process by hand"]);
+  assert.deepEqual(unseenRoutesIn(`import { readFileSync } from "node:fs";\nconst m = await import("./x.mjs");`), []);
 });
 
 test("THE FAILURE SIGNATURE: on the four measured product diffs, only DECLARING guards are left out", () => {
