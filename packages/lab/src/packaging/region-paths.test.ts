@@ -8,12 +8,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import {
   regionPathsFromBody, extractRegionSection, declaredRegionFiles, regionCovers, rootFilesOnMain,
   extractLabeledSection, hasTemplateField,
 } from "../../../../scripts/region-paths.mjs";
+
+/** #999's fixture lives beside the others this directory already keeps (`pr-584-body.md`, `issue-687-body.txt`). */
+const FIXTURES = fileURLToPath(new URL("./fixtures", import.meta.url));
 
 test("extracts a backticked path from a Region section", () => {
   assert.deepEqual(regionPathsFromBody("Region: `scripts/row-claim.mjs`."), ["scripts/row-claim.mjs"]);
@@ -237,4 +241,87 @@ test("hasTemplateField: false for a heading with nothing under it before the nex
   const body = "## Region\n\n## Acceptance\n\nreal content\n";
   assert.equal(hasTemplateField(body, "Region"), false);
   assert.equal(hasTemplateField(body, "Acceptance"), true);
+});
+
+/**
+ * #999: A REGION CANNOT DECLARE A FILE WITH NO EXTENSION — the fenced half.
+ *
+ * `PATH_IN_PROSE` requires an extension of two to four letters, so a path without one was never a path to
+ * this parser: not dropped with a message, never seen. The live instance is #911, whose whole subject is
+ * `scripts/git-hooks/pre-push` — its Region named that file and the test beside it, and
+ * `declaredRegionFiles` returned ONE entry, the test. Eleven tracked files under the four declarable
+ * prefixes have no extension and four of them are the git hooks, which are files rows change; a hook's
+ * name is its contract with git, so renaming one to suit a parser is not available.
+ *
+ * THE FIX IS SCOPED TO THE FENCE, and that is the whole design rather than an implementation detail.
+ * Deleting the extension clause from `PATH_IN_PROSE` is the obvious fix and the wrong one: that regex runs
+ * over prose too, so `packages/lab/src` in a sentence would become a declared FILE and #941/#945's
+ * directory-prefix rule would go silently, in the same direction as the bug. The assertions below pin BOTH
+ * halves — the fenced line declares, and the prose mention still does not.
+ */
+const REGION_FENCE = (...paths: string[]) =>
+  `## Region\n\n\`\`\`\n${paths.join("\n")}\n\`\`\`\n\n## Acceptance\n\nx\n`;
+
+test("#999 REPRODUCED: the prose grammar alone reads nothing out of an extension-less path", () => {
+  // The defect's own output, from the grammar that has it -- so this file shows the fault rather than
+  // describing it, and would fail if `PATH_IN_PROSE` ever started matching these on its own.
+  assert.deepEqual(regionPathsFromBody("scripts/git-hooks/pre-push"), []);
+  assert.deepEqual(regionPathsFromBody("`scripts/git-hooks/pre-commit`"), []);
+});
+
+test("#999: a fenced Region line naming an extension-less file IS declared", () => {
+  assert.deepEqual(declaredRegionFiles(REGION_FENCE("scripts/git-hooks/pre-push")),
+    ["scripts/git-hooks/pre-push"]);
+  // All four hooks, because all four are files rows change and one working is not four working.
+  for (const hook of ["pre-push", "pre-commit", "post-checkout", "reference-transaction"]) {
+    assert.deepEqual(declaredRegionFiles(REGION_FENCE(`scripts/git-hooks/${hook}`)),
+      [`scripts/git-hooks/${hook}`]);
+  }
+});
+
+test("#999 ACCEPTANCE: #911's REAL body -- as filed, not an approximation -- resolves to TWO entries", () => {
+  // THE BODY AS FILED, read from a fixture of the issue itself. A hand-built approximation would be a
+  // fixture of what I believe the row says, and the defect was precisely that the row said something the
+  // parser could not hear. `issue-911-body.md` is #911's body, fetched whole.
+  const body = readFileSync(`${FIXTURES}/issue-911-body.md`, "utf8");
+  const declared = declaredRegionFiles(body);
+  assert.deepEqual([...(declared ?? [])].sort(),
+    ["packages/lab/src/packaging/pre-push-hook-scope.test.ts", "scripts/git-hooks/pre-push"],
+    "#911's Region names two files; before this row the hook was invisible and it resolved to one");
+});
+
+test("#999: PROSE still requires an extension -- #941/#945's directory rule is untouched", () => {
+  // The trap, asserted rather than trusted. Each of these is a MENTION, and a mention is a guess.
+  const prose = "## Region\n\nThe walk lives under packages/lab/src and the hooks in scripts/git-hooks.\n";
+  assert.deepEqual(declaredRegionFiles(prose), [],
+    "a sentence naming a directory declares nothing -- deleting the extension clause would make both of "
+    + "these declared FILES, which is #941/#945 undone in the same direction as the bug this row fixes");
+  // And an extension-less FILE in prose is still not a declaration: only the fence promotes it.
+  assert.deepEqual(declaredRegionFiles("## Region\n\nIt changes scripts/git-hooks/pre-push, mostly.\n"), []);
+  // While the directory rule keeps working, fenced or not -- a standalone line ending in `/` is a PREFIX.
+  assert.deepEqual(declaredRegionFiles(REGION_FENCE("packages/control/ansible/")),
+    ["packages/control/ansible/"]);
+});
+
+test("#999: a fenced line with anything else on it is prose, not a declaration", () => {
+  // The same standalone discipline `DIRECTORY_ITEM` carries. The Region's prose has been read as a
+  // declaration twice (#848, #920) and a fence must not reopen that.
+  assert.deepEqual(declaredRegionFiles(REGION_FENCE("scripts/git-hooks/pre-push and the test beside it")), []);
+  assert.deepEqual(declaredRegionFiles(REGION_FENCE("# scripts/git-hooks/pre-push")), []);
+});
+
+test("#999: only the REGION's own fence declares -- a fenced block elsewhere in the body does not", () => {
+  const body = "## Region\n\n```\nscripts/region-paths.mjs\n```\n\n## Acceptance\n\n```\n"
+    + "scripts/git-hooks/pre-push\n```\n";
+  assert.deepEqual(declaredRegionFiles(body), ["scripts/region-paths.mjs"],
+    "a path in the Acceptance block is a command's argument or a worked example, never a declaration of "
+    + "intent to change it -- the same line #975 draws for a root file named elsewhere in the body");
+});
+
+test("#999: #975's root-level files still resolve, and `.`/`..` still declare nothing", () => {
+  const known = new Set(["package.json", "CLAUDE.md"]);
+  assert.deepEqual(declaredRegionFiles(REGION_FENCE("package.json"), { rootFiles: known }), ["package.json"],
+    "a root file has no `/` and is #975's rule's to declare, not this one's -- both must keep working");
+  assert.deepEqual(declaredRegionFiles(REGION_FENCE("../outside/thing"), { rootFiles: known }), []);
+  assert.deepEqual(declaredRegionFiles(REGION_FENCE("./scripts/git-hooks/pre-push"), { rootFiles: known }), []);
 });
