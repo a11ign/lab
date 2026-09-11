@@ -19,6 +19,10 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
 import { CHECKS, headline, renderReport, runChecks } from "../../../../scripts/doc-cross-reference-report.mjs";
+import {
+  alwaysRunTests, discoverTestFiles, discoversFromTree, packageIndex, sourceClosure,
+} from "../../../../scripts/select-changed-tests.mjs";
+import { knownPackages } from "../../../../scripts/ci-changed.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const REPORT = join(REPO, "scripts/doc-cross-reference-report.mjs");
@@ -61,6 +65,30 @@ test("the registry is the fourteen, and each check's pull-request test asserts o
     const source = readFileSync(join(REPO, testFile), "utf8");
     assert.match(source, new RegExp(`scripts/(?:doc-checks/)?${name}\\.mjs"`),
       `${testFile} does not import the module the report runs for ${name} -- a second copy can drift`);
+  }
+});
+
+test("every guard origin/main ran on EVERY diff still does -- the walk moved into a module, selection follows it", () => {
+  // worker-judge's first head of #960 moved five guards' walks into `scripts/doc-checks/` and CI's selector
+  // stopped running them on every diff: it judged the walk by the HELPER rule, where a flat `readdirSync` does
+  // not count. `commands-documented` then missed the PRs it exists for (a new command script with no header),
+  // which "no guard leaves the PR path" forbids. Found by worker-capture's review, by probe commit.
+  const packages = knownPackages(REPO);
+  const index = packageIndex(REPO, packages);
+  const guards = new Set(alwaysRunTests(discoverTestFiles(REPO, packages), {
+    closureOf: (testFile: string) => sourceClosure(join(REPO, testFile), REPO, index), repoRoot: REPO,
+  }).map((guard) => guard.test));
+  // Measured on origin/main at 45fb4194, the base this row was built on: these eight of the fourteen.
+  const onMain = ["adr-index", "adr-status", "check-transfer-urls", "commands-documented", "doc-citation-integrity",
+    "env-doc-coverage", "roles-memory", "schema-migration-citations"];
+  const lost = CHECKS.filter((c) => onMain.includes(c.name) && !guards.has(c.test)).map((c) => c.name);
+  assert.deepEqual(lost, [], "these ran on every diff on origin/main and no longer do");
+  // THE CLASS, not only the eight: a check whose module discovers a population from the tree by the TEST's
+  // own rule is always-run, whichever check it is -- the next one moved here included.
+  for (const { name, test: testFile } of CHECKS) {
+    const module = join(REPO, "scripts/doc-checks", `${name}.mjs`);
+    if (!discoversFromTree(readFileSync(module, "utf8"))) continue;
+    assert.ok(guards.has(testFile), `${name}'s module walks the tree, and ${testFile} is not always-run`);
   }
 });
 
