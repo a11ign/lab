@@ -390,18 +390,20 @@ test("every wall-clock key inside a COMPARED field is classified", { skip: SKIP_
   const suspicious = /(Ms$|At$|Time|Duration|Elapsed|Waited|Seconds)/;
   const found = new Map<string, Set<string>>();
   for (const { name, cap } of CORPUS_SAMPLE) {
-    for (const [group, field] of EVIDENCE_FIELDS) {
+    // BY PATH, not `[group, field]`: a top-level `["media"]` (#977) read as `cap.media?.["undefined"]`, so this
+    // sweep never entered the two new channels (worker-judge's review of #985).
+    for (const field of EVIDENCE_FIELDS) {
       const walk = (node: unknown): void => {
         if (Array.isArray(node)) { node.forEach(walk); return; }
         if (!node || typeof node !== "object") return;
         for (const [key, value] of Object.entries(node)) {
           if (suspicious.test(key) && typeof value === "number") {
-            found.set(key, (found.get(key) ?? new Set()).add(`${group}.${field}`));
+            found.set(key, (found.get(key) ?? new Set()).add(field.join(".")));
           }
           walk(value);
         }
       };
-      walk((cap as Record<string, Record<string, unknown>>)[group]?.[field]);
+      walk(field.reduce((at: unknown, key) => (at as Record<string, unknown> | undefined)?.[key], cap));
     }
     void name;
   }
@@ -439,10 +441,13 @@ test("the sweep itself WORKS — proved synthetically, so the corpus pass is mea
   const suspicious = /(Ms$|At$|Time|Duration|Elapsed|Waited|Seconds)/;
   const capture = { interaction: { formChanges: [
     { control: "Send, button", kind: "submit", after: "", someNewProbeWaitedMs: 300 },
-  ] } } as Record<string, Record<string, unknown>>;
+  ] },
+  // A TOP-LEVEL channel too (#977): `media`'s obvious next field is a playback position, which would compare
+  // unequal to itself on every autoplay page.
+  media: [{ tag: "audio", autoplay: true, playedSeconds: 3 }] } as Record<string, unknown>;
 
   const found = new Set<string>();
-  for (const [group, field] of EVIDENCE_FIELDS) {
+  for (const field of EVIDENCE_FIELDS) {
     const walk = (node: unknown): void => {
       if (Array.isArray(node)) { node.forEach(walk); return; }
       if (!node || typeof node !== "object") return;
@@ -451,11 +456,13 @@ test("the sweep itself WORKS — proved synthetically, so the corpus pass is mea
         walk(value);
       }
     };
-    walk(capture[group]?.[field]);
+    walk(field.reduce((at: unknown, key) => (at as Record<string, unknown> | undefined)?.[key], capture));
   }
   assert.ok(found.has("someNewProbeWaitedMs"),
     "the walk did not reach a time-like key inside `interaction.formChanges` — so the corpus sweep above "
     + "would report a clean result having examined nothing");
+  assert.ok(found.has("playedSeconds"),
+    "the walk did not reach a time-like key inside the top-level `media` -- a one-segment path read as two");
   assert.equal(NOT_EVIDENCE_KEYS.has("someNewProbeWaitedMs"), false,
     "and it must be UNCLASSIFIED, or this proves only that the deny-list contains what it contains");
 });
