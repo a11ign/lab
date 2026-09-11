@@ -62,7 +62,11 @@ test("a bare A11Y_SKIP_VERIFY=1 is REFUSED, and the refusal lists what it would 
   assert.equal(status, 1, "a bare =1 must not skip");
   assert.equal(reached, false, "and must not fall through into the rest of the hook either");
   assert.match(stderr, /no longer skips on its own/);
-  for (const named of ["lint", "typecheck", "mjs parse check"]) {
+  // #911 cut this hook to three checks, and the list here follows it: the mjs parse check, the tree-wide
+  // sweep and the corpus-gated pair are gone, and the LEAK SCAN is the one that matters most in this
+  // message -- it is the only check here CI cannot catch up on, because the push it would have stopped
+  // has already happened by the time CI runs.
+  for (const named of ["lint", "typecheck", "the leak scan"]) {
     assert.match(stderr, new RegExp(named),
       `the refusal must NAME ${named} -- "nothing was verified" is what got scrolled past`);
   }
@@ -79,7 +83,7 @@ test("with a reason, it skips -- and prints BOTH the reason and the list of what
   assert.equal(reached, false, "skipping means skipping -- it must exit, not fall through");
   assert.match(stderr, /overridden: docs-only change, verified by hand/,
     "the reason is printed, not just the override, so it is in the log rather than in somebody's memory");
-  assert.match(stderr, /lint, typecheck, mjs parse check and the corpus-gated checks did NOT run/);
+  assert.match(stderr, /lint, typecheck and the leak scan did NOT run/);
 });
 
 test("a REASON with no A11Y_SKIP_VERIFY does nothing at all -- the reason is not itself an override", () => {
