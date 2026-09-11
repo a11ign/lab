@@ -17,40 +17,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, mkdtempSync, writeFileSync } from "node:fs";
-import { resolve, dirname, join } from "node:path";
+import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
+// #905: the roster parser and the per-file check live in the doc cross-reference check the nightly report
+// also runs -- one copy, which is what this file's own "exercise the exact same logic" comment asked for.
+import { README_PATH, checkRoster, roster } from "../../../../scripts/doc-checks/roles-readme.mjs";
 
-const README_PATH = "docs/roles/README.md";
 const readReadme = () => readFileSync(resolve(process.cwd(), README_PATH), "utf8");
-const readFile = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
-
-interface RosterRow {
-  role: string;
-  agent: string;
-  linkText: string;
-  filePath: string; // repo-relative, resolved from the README's own location
-  reporter: string | null; // backtick-quoted name, or null for "—" (nobody)
-}
-
-/**
- * Parses the roster table's rows: `| role | \`agent\` | [linkText](./file.md) | reports-to |`.
- * Table-row parsing, not a generic markdown parser -- this repo's own convention (dataset-paths.test.ts,
- * exit-code-contract.test.ts) is to read the exact shape a file commits to rather than a general format,
- * because a general parser hides a shape change instead of failing on it.
- */
-function roster(readmeSource: string): RosterRow[] {
-  const rows: RosterRow[] = [];
-  for (const line of readmeSource.split("\n")) {
-    const m = line.match(/^\|\s*(.+?)\s*\|\s*`([^`]+)`\s*\|\s*\[([^\]]+)\]\(([^)]+)\)\s*\|\s*(.+?)\s*\|$/);
-    if (!m) continue;
-    const [, role, agent, linkText, linkPath, reporterCell] = m;
-    if (role === "role") continue; // the header row
-    const filePath = join(dirname(README_PATH), linkPath);
-    const reporterMatch = reporterCell.match(/`([^`]+)`/);
-    rows.push({ role, agent, linkText, filePath, reporter: reporterMatch?.[1] ?? null });
-  }
-  return rows;
-}
 
 test("the roles README exists and states what it is for", () => {
   const source = readReadme();
@@ -68,49 +41,6 @@ test("the roster discovery finds a realistic slice of the eight roles", () => {
     `expected to find at least 6 roster rows in ${README_PATH}, found ${found.length} -- either the table `
     + "row format changed, or roles were removed, both of which this guard should be read as flagging");
 });
-
-/**
- * Splits the roster into files that exist (checked for completeness below) and files that do not.
- * Exported in spirit, not in fact -- kept as a plain function so the reporting test and the mutation
- * test below exercise the exact same logic the real check runs, rather than a restated copy of it.
- */
-function checkRoster(rows: RosterRow[]) {
-  const missing: string[] = [];
-  const incomplete: string[] = [];
-
-  for (const { agent, filePath, reporter } of rows) {
-    if (!existsSync(resolve(process.cwd(), filePath))) {
-      missing.push(`  ${agent} -> ${filePath}`);
-      continue;
-    }
-    const source = readFile(filePath);
-    const problems: string[] = [];
-
-    if (!source.includes(`\`${agent}\``)) problems.push("never mentions its own agent name in backticks");
-
-    if (reporter && !source.includes(`\`${reporter}\``)) {
-      problems.push(`never mentions its reporter (\`${reporter}\`) by name`);
-    }
-
-    if (!/^#+.*\b(lane|owns|role)\b/im.test(source)) {
-      problems.push("no heading naming its lane/role/what it owns");
-    }
-
-    // The ban section: either the literal resource-ban text (workers and dispatcher), or an explicit
-    // statement of exception (ceo/orchestrator, who are not bound to it the same way) -- checked as
-    // "addressed the topic at all", never as an exact phrasing, because this repo's own roles are not
-    // required to restate the ban identically if their role is precisely to be its exception. `ceo`'s own
-    // file states its exception as "never runs fleet:*, lab:*" under a "does NOT do" heading rather than
-    // in the ban's own words, which is exactly the free-phrasing case this check exists to allow.
-    if (!/collision into a silent wrong answer|must never do|the resource ban|\bexception\b|drive the fleet/i.test(source)) {
-      problems.push("no ban section and no stated exception to it");
-    }
-
-    if (problems.length) incomplete.push(`  ${agent} (${filePath}): ${problems.join("; ")}`);
-  }
-
-  return { missing, incomplete };
-}
 
 test("every existing role file names its own agent, its reporter, its lane and its ban", () => {
   const { incomplete } = checkRoster(roster(readReadme()));

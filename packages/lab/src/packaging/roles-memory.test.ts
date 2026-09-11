@@ -17,48 +17,27 @@
 // list a new entry slips past.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { LEAK_PATTERNS } from "./leak-patterns.mjs";
+// #905: the index <-> file rules live in the doc cross-reference check the nightly report also runs.
+import {
+  INDEX_PATH, MEMORY_DIR, danglingIndexEntries, factFiles as factFilesIn, indexEntries, unindexedFactFiles,
+} from "../../../../scripts/doc-checks/roles-memory.mjs";
 
-const MEMORY_DIR = "docs/roles/memory";
-const INDEX_PATH = `${MEMORY_DIR}/MEMORY.md`;
-const read = (relPath: string) => readFileSync(resolve(process.cwd(), relPath), "utf8");
-
-interface IndexEntry {
-  title: string;
-  file: string; // filename only, resolved relative to MEMORY_DIR
-  hook: string;
-}
-
-/** Parses `- [Title](file.md) — hook` lines -- this repo's own established index shape (MEMORY.md itself,
- * the live Claude Code memory system this was migrated from). */
-function parseIndex(indexSource: string): IndexEntry[] {
-  const entries: IndexEntry[] = [];
-  for (const line of indexSource.split("\n")) {
-    const m = line.match(/^- \[([^\]]+)\]\(([^)]+)\) — (.+)$/);
-    if (!m) continue;
-    const [, title, file, hook] = m;
-    entries.push({ title, file, hook });
-  }
-  return entries;
-}
-
-function factFiles(): string[] {
-  return readdirSync(resolve(process.cwd(), MEMORY_DIR))
-    .filter((name) => name.endsWith(".md") && name !== "MEMORY.md");
-}
+const ROOT = process.cwd();
+const read = (relPath: string) => readFileSync(resolve(ROOT, relPath), "utf8");
+const factFiles = () => factFilesIn(ROOT);
 
 test("the memory index exists and every entry links to a real file", () => {
-  assert.ok(existsSync(resolve(process.cwd(), INDEX_PATH)), `${INDEX_PATH} must exist`);
-  const entries = parseIndex(read(INDEX_PATH));
-  const missing = entries.filter((e) => !existsSync(resolve(process.cwd(), MEMORY_DIR, e.file)));
-  assert.deepEqual(missing.map((e) => e.file), [],
-    `these MEMORY.md entries link to files that do not exist: ${missing.map((e) => e.file).join(", ")}`);
+  assert.ok(existsSync(resolve(ROOT, INDEX_PATH)), `${INDEX_PATH} must exist`);
+  const missing = danglingIndexEntries(ROOT);
+  assert.deepEqual(missing, [],
+    `these MEMORY.md entries link to files that do not exist: ${missing.join(", ")}`);
 });
 
 test("the index discovery finds a realistic floor of migrated facts", () => {
-  const entries = parseIndex(read(INDEX_PATH));
+  const entries = indexEntries(ROOT);
   // A floor, not a target -- this set does not shrink to zero as a happy path. 17 were migrated when this
   // page was written; set well below that so trimming a stale entry later does not itself break the guard.
   assert.ok(entries.length >= 10,
@@ -81,10 +60,8 @@ test("every fact file on disk carries the memory system's own frontmatter shape"
 });
 
 test("every fact file on disk is linked from the index, and vice versa", () => {
-  const linked = new Set(parseIndex(read(INDEX_PATH)).map((e) => e.file));
-  const onDisk = new Set(factFiles());
-  const unlinked = [...onDisk].filter((f) => !linked.has(f));
-  const dangling = [...linked].filter((f) => !onDisk.has(f));
+  const unlinked = unindexedFactFiles(ROOT);
+  const dangling = danglingIndexEntries(ROOT);
   assert.deepEqual(unlinked, [], `these files exist under ${MEMORY_DIR} but are not indexed: ${unlinked.join(", ")}`);
   assert.deepEqual(dangling, [], `MEMORY.md links to file(s) not present on disk: ${dangling.join(", ")}`);
 });

@@ -13,30 +13,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 // GIT_* SCRUBBED, because `cwd` is not isolation for a spawned git. A leaked `GIT_DIR` -- which a hook or
 // a wrapping test can set -- redirects `check-ignore` onto another repository entirely, and it would
 // answer confidently about the wrong tree. `git-spawn-classification.test.ts` refuses this file until it
 // goes through the canonical helper, and it refused this very commit.
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+// #905: the citation rules live in the doc cross-reference check the nightly report also runs -- one copy.
+// Generating the untracked page first is this TEST's precondition (#393), not the report's, so it stays here.
+import {
+  DOCS, GENERATED_CITATIONS, brokenCitations, untrackedCitations,
+} from "../../../../scripts/doc-checks/doc-references.mjs";
 
 const repo = fileURLToPath(new URL("../../../../", import.meta.url));
-
-/** The documents a reader is most likely to follow an instruction from. */
-const DOCS = ["README.md", "RELEASE.md", "PLAN.md", "CLAUDE.md"];
-
-/**
- * Two shapes, both of which are claims about the filesystem:
- *   - a relative Markdown link, `(./path/to/thing)`
- *   - a backticked repo path, `` `packages/…` ``, which is how this repo cites files in prose
- *
- * Bare prose words are deliberately NOT matched. A regex loose enough to catch every mention would flag
- * ordinary English, and a check that cries wolf gets deleted — which costs more than the bug it prevents.
- */
-const REFERENCE = /\(\.\/([A-Za-z0-9._/-]+)\)|`((?:docs|packages|scripts|\.github)\/[A-Za-z0-9._/-]+)`/g;
 
 /**
  * A CITED PATH THAT IS GENERATED MUST BE GENERATED BEFORE IT IS CHECKED — #393, and the defect is a
@@ -76,12 +67,6 @@ const REFERENCE = /\(\.\/([A-Za-z0-9._/-]+)\)|`((?:docs|packages|scripts|\.githu
  * `tabTops`/`INTERACTION_CHANNELS` lesson — so a build artefact is declared here with its reason rather
  * than quietly dropped by a looser regex.
  */
-const isBuildOutput = (path: string): boolean => /^packages\/[^/]+\/dist\//.test(path);
-
-const GENERATED_CITATIONS = [
-  { path: "docs/coverage.md", generator: ["tsx", "packages/lab/scripts/generate-coverage-doc.ts"] },
-];
-
 function ensureGeneratedPagesExist(): void {
   for (const { path, generator } of GENERATED_CITATIONS) {
     if (existsSync(join(repo, path))) continue;
@@ -90,47 +75,12 @@ function ensureGeneratedPagesExist(): void {
   }
 }
 
-/**
- * Which of these paths does git deliberately not track? ONE call, over stdin.
- *
- * Per-path `git check-ignore` was the obvious spelling and took this test past two minutes on ~100
- * references — a unit test slow enough that the pre-push hook holding it gets deleted, which is this
- * repo's own recorded reason `capture:check` never ran once. `--stdin` answers the whole set in one
- * process. `check-ignore` exits 1 when NOTHING matches, which is a normal answer here and not an error.
- */
-function gitIgnoredAmong(paths: string[]): Set<string> {
-  if (paths.length === 0) return new Set();
-  try {
-    const out = execFileSync("git", ["check-ignore", "--stdin"],
-      { cwd: repo, env: sandboxGitEnv(), input: `${paths.join("\n")}\n`, encoding: "utf8", stdio: "pipe" });
-    return new Set(out.split("\n").map((line) => line.trim()).filter(Boolean));
-  } catch (error) {
-    const out = String((error as { stdout?: string }).stdout ?? "");
-    return new Set(out.split("\n").map((line) => line.trim()).filter(Boolean));
-  }
-}
-
-/** Glob-ish citations name a set, not a file, so they cannot be resolved by existence. */
-const isPattern = (path: string): boolean => path.includes("*");
-
 test("every path cited by the top-level docs exists", () => {
   ensureGeneratedPagesExist();
-  const broken: string[] = [];
-  let checked = 0;
-
   for (const doc of DOCS) {
-    const full = join(repo, doc);
-    assert.ok(existsSync(full), `${doc} is itself missing — this test's own subject`);
-    const text = readFileSync(full, "utf8");
-    const seen = new Set<string>();
-    for (const match of text.matchAll(REFERENCE)) {
-      const path = match[1] ?? match[2];
-      if (isPattern(path) || isBuildOutput(path) || seen.has(path)) continue;
-      seen.add(path);
-      checked += 1;
-      if (!existsSync(join(repo, path))) broken.push(`${doc}: ${path}`);
-    }
+    assert.ok(existsSync(join(repo, doc)), `${doc} is itself missing — this test's own subject`);
   }
+  const { broken, checked } = brokenCitations(repo);
 
   // Guard the guard. If the regex stops matching, this test passes having examined nothing — the exact
   // failure mode that let 604 silent probe crashes and a green corpus coexist for a whole dataset.
@@ -150,20 +100,7 @@ test("every path cited by the top-level docs exists", () => {
  * So rather than trusting the next author to remember, this asks git.
  */
 test("every cited path that git does not track is one this test knows how to generate", () => {
-  const generated = new Set(GENERATED_CITATIONS.map((entry) => entry.path));
-  const cited: { doc: string; path: string }[] = [];
-  for (const doc of DOCS) {
-    const text = readFileSync(join(repo, doc), "utf8");
-    for (const match of text.matchAll(REFERENCE)) {
-      const path = match[1] ?? match[2];
-      if (isPattern(path) || isBuildOutput(path) || generated.has(path)) continue;
-      if (existsSync(join(repo, path))) cited.push({ doc, path });
-    }
-  }
-  const scanned = cited.length;
-  const ignored = gitIgnoredAmong([...new Set(cited.map((entry) => entry.path))]);
-  const untracked = cited.filter((entry) => ignored.has(entry.path))
-    .map((entry) => `${entry.doc}: ${entry.path}`);
+  const { untracked, scanned } = untrackedCitations(repo);
   // Guard the guard, the same way the test above does: a regex that stopped matching would report a clean
   // set having examined nothing, and this file's whole subject is checks that pass without looking.
   assert.ok(scanned > 30, `the scan only resolved ${scanned} references; it is broken, not clean`);

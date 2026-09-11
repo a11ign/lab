@@ -27,93 +27,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
-import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+// #905: the citation reader lives in the doc cross-reference check the nightly report also runs -- one copy.
+import { allDocs as allDocsIn, findCitations as findCitationsIn } from "../../../../scripts/doc-checks/doc-citation-integrity.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const read = (relPath: string) => readFileSync(`${REPO}${relPath}`, "utf8");
-
-/** Documents this repo cites BY SECTION NUMBER from elsewhere. Extend this, never a generic Markdown walk. */
-const NUMBERED_DOCS: Record<string, string> = {
-  "not-working": "docs/not-working.md",
-  "known-gaps": "docs/known-gaps.md",
-  "architecture-audit": "docs/architecture-audit.md",
-};
-
-/** Which section identifiers actually exist in one of the three numbered documents, format-aware. */
-function sectionsIn(relPath: string): Set<string> {
-  const text = read(relPath);
-  const ids = new Set<string>();
-  if (relPath.endsWith("not-working.md")) {
-    // `18`, `18a` -- the lettered-supersession scheme `not-working-numbering.test.ts` enforces. A bare
-    // citation ("§18") is satisfied by EITHER form existing, since that test already guarantees a base
-    // number with any heading also has exactly one bare (current) one.
-    for (const m of text.matchAll(/^#{2,4} (\d+)[a-z]?\./gm)) ids.add(m[1]);
-  } else if (relPath.endsWith("known-gaps.md") || relPath.endsWith("architecture-audit.md")) {
-    for (const m of text.matchAll(/^## (\d+)\./gm)) ids.add(m[1]);
-    // architecture-audit.md ALSO has dotted subsections ("### 14.4"), which is its own citable unit --
-    // "§14" and "§14.4" are different claims and must not be conflated.
-    for (const m of text.matchAll(/^### (\d+)\.(\d+)/gm)) ids.add(`${m[1]}.${m[2]}`);
-  }
-  return ids;
-}
-
-const sectionCache = new Map<string, Set<string>>();
-function sectionsFor(relPath: string): Set<string> {
-  if (!sectionCache.has(relPath)) sectionCache.set(relPath, sectionsIn(relPath));
-  return sectionCache.get(relPath)!;
-}
-
-function allDocs(): string[] {
-  const files = readdirSync(`${REPO}docs`).filter((f) => f.endsWith(".md")).map((f) => `docs/${f}`);
-  files.push("CLAUDE.md");
-  return files;
-}
-
-interface Citation {
-  file: string;
-  line: number;
-  target: string;
-  cited: string;
-  ok: boolean | null; // null = the link's own target path could not be read at all
-  context: string;
-}
-
-function findCitations(): Citation[] {
-  const found: Citation[] = [];
-  for (const file of allDocs()) {
-    const text = read(file);
-    const lines = text.split("\n");
-
-    for (const [alias, target] of Object.entries(NUMBERED_DOCS)) {
-      const re = new RegExp(`${alias}(?:\\.md)?[\`'"\\]]{0,3}\\s*§(\\d+(?:\\.\\d+)?)`, "g");
-      for (const m of text.matchAll(re)) {
-        const line = text.slice(0, m.index).split("\n").length;
-        const cited = m[1];
-        found.push({
-          file, line, target, cited, ok: sectionsFor(target).has(cited),
-          context: (lines[line - 1] ?? "").trim().slice(0, 160),
-        });
-      }
-    }
-
-    for (const m of text.matchAll(/\[([^\]]*§(\d+(?:\.\d+)?)[^\]]*)\]\(([^)]+)\)/g)) {
-      const [, , cited, href] = m;
-      const hrefPath = href.split("#")[0];
-      if (!hrefPath.endsWith(".md")) continue;
-      const line = text.slice(0, m.index).split("\n").length;
-      const resolved = resolve(dirname(`${REPO}${file}`), hrefPath).replace(REPO, "");
-      let sections: Set<string> | null;
-      try { sections = sectionsFor(resolved); } catch { sections = null; }
-      found.push({
-        file, line, target: resolved, cited, ok: sections ? sections.has(cited) : null,
-        context: (lines[line - 1] ?? "").trim().slice(0, 160),
-      });
-    }
-  }
-  return found;
-}
+const allDocs = () => allDocsIn(REPO);
+const findCitations = () => findCitationsIn(REPO);
 
 const CITATIONS = findCitations();
 
