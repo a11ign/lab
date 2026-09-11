@@ -7,6 +7,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import {
   regionPathsFromBody, extractRegionSection, declaredRegionFiles, regionCovers,
   extractLabeledSection, hasTemplateField,
@@ -135,6 +138,22 @@ test("#941: a one-line LIST of directories declares each item -- 7 older rows we
   assert.deepEqual(declaredRegionFiles("## Region\n\ndocs/board/ and scripts/\n"), ["docs/board/", "scripts/"]);
   // #43's shape: one item is a path and one is not a repository path at all. The path is still declared.
   assert.deepEqual(declaredRegionFiles("## Region\n\n`packages/lab/scripts/`, the lab machine\n"), ["packages/lab/scripts/"]);
+});
+
+test("#941: EVERY root the tree tracks declares -- read from the tree, never from a list someone typed", () => {
+  // The first version hand-listed four roots and read `examples/`, `data/` and `.claude/skills/` as `[]`.
+  const repo = fileURLToPath(new URL("../../../../", import.meta.url));
+  const roots = execFileSync("git", ["ls-tree", "-d", "--name-only", "HEAD"], { cwd: repo, env: sandboxGitEnv(), encoding: "utf8" })
+    .split("\n").filter(Boolean);
+  assert.ok(roots.length >= 5, `the tree listed ${roots.length} root(s), so this asserts over almost nothing`);
+  for (const root of roots) {
+    assert.deepEqual(declaredRegionFiles(`## Region\n\n${root}/\n`), [`${root}/`], `${root}/ vanished`);
+    assert.deepEqual(declaredRegionFiles(`## Region\n\n\`${root}/nested/\`\n`), [`${root}/nested/`]);
+  }
+});
+
+test("#941: `.` and `..` segments declare nothing -- neither names a directory inside the tree", () => {
+  assert.deepEqual(declaredRegionFiles("## Region\n\n../outside/\n./\ndocs/../x/\n"), []);
 });
 
 test("#941: a sentence that MENTIONS a directory declares nothing -- only a standalone path line does", () => {
