@@ -19,6 +19,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { classifyUndeclared } from "../../scripts/check-real-page-findings.ts";
+import { REAL_PAGES, pathOf, realPageFor } from "../training/real-page-corpus.mjs";
 
 /** A real declared move, so `supersededBy` resolves it rather than the fixture asserting over nothing. */
 const MOVED = "https://www.metoffice.gov.uk/weather/warnings-and-advice/uk-warnings";
@@ -42,6 +43,36 @@ test("the three answers are separated, and every capture lands in exactly one", 
   assert.equal(superseded.length + furniture.length + unclaimed.length, undeclared.length);
 });
 
+/**
+ * A declared fixture, reached at an origin the matcher does NOT undo -- a named host instead of an address,
+ * and an address on another port. Both are built from a real `role: "fixture"` entry's path, never typed
+ * out, and the documentation range and a reserved TLD stand in for the lab: a positive control shaped like
+ * the thing, which cannot be the thing.
+ */
+const FIXTURE = REAL_PAGES.find((page) => page.role === "fixture");
+const NAMED_HOST = `http://pages.example.test:5050${pathOf(FIXTURE?.url)}`;
+const OTHER_PORT = `http://192.0.2.10:5051${pathOf(FIXTURE?.url)}`;
+
+test("#881: a fixture that did not reconcile is RELOCATED, never unclaimed -- the two take opposite fixes", () => {
+  assert.ok(FIXTURE, "no fixture in REAL_PAGES, so this test would assert over nothing");
+  // The premise, checked rather than assumed: these really are misses, so they really do arrive here.
+  assert.equal(realPageFor(NAMED_HOST), undefined);
+  assert.equal(realPageFor(OTHER_PORT), undefined);
+
+  const undeclared = [entry(MOVED), entry(NAMED_HOST), entry(OTHER_PORT), entry(FURNITURE), entry(UNKNOWN)];
+  const { superseded, relocated, furniture, unclaimed } = classifyUndeclared(undeclared, new Set([FURNITURE]));
+  assert.deepEqual(relocated.map((row) => row.entry.url), [NAMED_HOST, OTHER_PORT]);
+  assert.ok(relocated.every((row) => row.fixture.url === FIXTURE?.url), "each names the declaration it is of");
+  assert.deepEqual(unclaimed.map((e) => e.url), [UNKNOWN], "#881's first version read ten of these as this");
+  assert.equal(superseded.length + relocated.length + furniture.length + unclaimed.length, undeclared.length);
+});
+
+test("#881: a REAL page at an unknown path is not relocated -- only a page-server declaration can be", () => {
+  const { relocated, unclaimed } = classifyUndeclared([entry(UNKNOWN)], new Set());
+  assert.equal(relocated.length, 0);
+  assert.deepEqual(unclaimed.map((e) => e.url), [UNKNOWN]);
+});
+
 test("SUPERSEDED WINS over furniture, and the order is a decision rather than an accident", () => {
   // A capture can be both: the page moved AND the older capture read only a cookie wall — which is
   // exactly the historicenvironment pair in #365 and #363. The move is the actionable fact, because the
@@ -55,8 +86,8 @@ test("SUPERSEDED WINS over furniture, and the order is a decision rather than an
 });
 
 test("an empty input yields three empty answers, never a throw", () => {
-  const { superseded, furniture, unclaimed } = classifyUndeclared([], new Set());
-  assert.deepEqual([superseded.length, furniture.length, unclaimed.length], [0, 0, 0]);
+  const { superseded, relocated, furniture, unclaimed } = classifyUndeclared([], new Set());
+  assert.deepEqual([superseded.length, relocated.length, furniture.length, unclaimed.length], [0, 0, 0, 0]);
 });
 
 test("with NO furniture known, every non-superseded capture stays unclaimed", () => {

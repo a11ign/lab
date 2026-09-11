@@ -19,7 +19,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyOrphan, pathOf } from "../../scripts/corpus-prune-orphans.mjs";
+import { classifyOrphan } from "../../scripts/corpus-prune-orphans.mjs";
+import { pathOf } from "../training/real-page-corpus.mjs";
 
 // 192.0.2.0/24 is TEST-NET-1 (RFC 5737), reserved for documentation and routable nowhere. The real fleet
 // address is deliberately NOT written here: #83 is about internal addresses reaching a repo meant to be

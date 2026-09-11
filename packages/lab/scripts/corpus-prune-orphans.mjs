@@ -22,10 +22,14 @@
 //
 // **RELOCATED** — the capture IS of a declared page, reached at a different ORIGIN. Every fixture page is
 // declared `http://localhost:5050/...` and captured `http://192.0.2.10:5050/...`, because a fleet worker
-// cannot reach `localhost` (that resolves to itself). Both sides are individually correct and nothing
-// reconciles them; issue #146 is the fix. **These must never be deleted** — they are live evidence for
-// five criteria, and deleting them would turn a matching bug into a data-loss bug and take 2.4.1, 2.4.2,
-// 2.4.3, 2.1.1 and 1.4.13's only real-page grounding with it.
+// cannot reach `localhost` (that resolves to itself). **These must never be deleted** — they are live
+// evidence for five criteria, and deleting them would turn a matching bug into a data-loss bug and take
+// 2.4.1, 2.4.2, 2.4.3, 2.1.1 and 1.4.13's only real-page grounding with it.
+//
+// Since #881 `realPageFor` reconciles the ordinary case itself -- a fixture captured at an IPv4 address on
+// the declared port and path -- so those ten are no longer orphans and this tool never sees them. What can
+// still reach RELOCATED is a page-server capture the matcher does not undo (a named host, another port),
+// and the refusal to delete it stands exactly as before.
 //
 // So the classification is not decoration: it is the difference between tidying and destroying. Anything
 // this cannot confidently call RETIRED is reported as UNCLASSIFIED and left alone.
@@ -40,33 +44,15 @@ import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
-import { REAL_PAGES, realPageFor, normaliseUrl } from "../src/training/real-page-corpus.mjs";
+// `pathOf` and `servedByThePageServer` live in the corpus module since #881, because `realPageFor` now needs
+// them too: a page-server origin is the ONLY case where a differing origin is explained rather than
+// coincidental -- a fact about OUR serving arrangement, not something that can happen between two real
+// publishers -- and three readers each holding their own copy of it is how they drift.
+import {
+  REAL_PAGES, realPageFor, pathOf, servedByThePageServer,
+} from "../src/training/real-page-corpus.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { realCorpusRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
-
-/**
- * The path-and-query of a URL, so a page reached at a different ORIGIN is still recognisable.
- * @param {string} url @returns {string}
- */
-export function pathOf(url) {
-  const withoutScheme = String(url).replace(/^[a-z]+:\/\//i, "");
-  const slash = withoutScheme.indexOf("/");
-  return slash === -1 ? "/" : normaliseUrl(withoutScheme.slice(slash));
-}
-
-/**
- * A page-server origin — the ONLY case where a differing origin is explained rather than coincidental.
- *
- * The dataset page server is declared as `localhost:<port>` and reached by a fleet worker at the host's
- * LAN address on the same port, because a worker cannot reach `localhost` (that resolves to itself). That
- * is #146, and it is a fact about OUR serving arrangement — not something that can happen between two
- * real publishers.
- *
- * @param {string} url
- */
-function servedByThePageServer(url) {
-  return /^https?:\/\/(localhost|127\.0\.0\.1|\[?::1\]?)(:|\/|$)/i.test(String(url));
-}
 
 /**
  * What to do with a capture no declared page claims.
