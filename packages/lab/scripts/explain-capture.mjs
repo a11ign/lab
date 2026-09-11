@@ -39,6 +39,12 @@ import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { captureSupports, consentBanner } from "@a11ign/evidence/verify";
 import { datasetRoot, captureRoot, realCorpusRoot, repeatCapturesRoot } from "../src/dataset-paths.mjs";
+// "What did it ask?" lives in a module with NO imports (#343), so its test runs where CI's acceptance job
+// can run it: this file reaches `dataset-paths.mjs`, and any test importing it is classed as needing a
+// corpus. `absent` moves with it, so NOT RECORDED is still spelled in one place.
+import { absent, whatItAsked } from "../src/capture/what-it-asked.mjs";
+
+export { whatItAsked };
 
 refuseUnknownFlags(["--json"], { entry: import.meta.url, command: "npm run capture:explain" });
 
@@ -72,8 +78,6 @@ export { captureSupports };
 const mark = (/** @type {any} */ capture, /** @type {string} */ event) =>
   (capture.diagnostics ?? []).find((/** @type {any} */ m) => m && m.event === event) ?? null;
 
-/** `NOT RECORDED` is a distinct answer from `no`, and collapsing them is this repo's oldest defect. */
-const absent = (/** @type {string} */ what) => `    NOT RECORDED — this capture cannot say ${what}`;
 
 /**
  * Did the browser show the page that was asked for, and did anything serve it?
@@ -258,64 +262,10 @@ export function heldStill(capture) {
   return out;
 }
 
-/** @param {any} capture */
-/**
- * WHAT DID THIS CAPTURE ASK? — read from `observed`, which the capture records for itself since protocol 10.
- *
- * Every other section here is archaeology: it reconstructs what happened from a scatter of marks. This one
- * is not, and that is the point — the capture states it, so a channel nobody asked about says so in its own
- * words rather than being inferred from a missing mark.
- *
- * It also makes this report's closing line TRUE. "What it does not report, the page does not have" was a
- * claim nothing checked; a channel that was never asked is exactly the case where it is false, and until
- * now the report had no way to know. Measured across the corpus before this field existed: `formChanges`
- * empty on 4,830 captures of 6,467 and **3,006 of those never asked**.
- *
- * @param {any} capture
- * @returns {string[]}
- */
-export function whatItAsked(capture) {
-  const observed = capture?.observed;
-  if (!observed || typeof observed !== "object") {
-    return [absent("which channels it asked about — it predates CAPTURE_PROTOCOL_VERSION 10")];
-  }
-  // THE CHANNELS THIS CAPTURE SWEPT, from its own `structure` -- #343. Every array there is a sweep, and every
-  // sweep writes its verdict into `observed` under the same key (`collectByType`'s `observedAs`, `EXTRA_SWEEPS`'
-  // `key`, `tableCells` directly). Looping over `observed` alone printed NOTHING for a channel with no entry --
-  // the sweeps after the one `sweepEveryStructuralType`'s single try/catch caught -- which is the one answer
-  // this section exists never to give. Taken from the capture rather than a list typed here, so a capture that
-  // predates a channel (`frames`) is not asked about it.
-  const swept = capture?.structure && typeof capture.structure === "object" ? Object.keys(capture.structure) : [];
-  const rows = [...new Set([...swept, ...Object.keys(observed)])]
-    .map((channel) => askedRow(channel, /** @type {Record<string, any>} */ (observed)[channel]));
-  return rows.length ? rows : [absent("which channels it asked about — `observed` is empty")];
-}
-
-/**
- * One channel's line: what the capture recorded about asking it -- or that it recorded nothing.
- * @param {string} channel @param {any} seen the channel's `observed` entry, `undefined` when there is none
- */
-function askedRow(channel, seen) {
-  if (seen === undefined) {
-    return absent(`whether it finished sweeping ${channel} -- it swept into \`structure.${channel}\` and recorded no verdict`);
-  }
-  // "NOT ASKED" rather than "no": the channel is empty and that is a fact about this run, not the page.
-  if (!seen?.asked) return `    NOT ASKED  ${channel} — ${seen?.why ?? "no reason recorded"}`;
-  if (seen.complete === false) {
-    return `    ! ${channel} asked, and the sweep did NOT run out — stopped `
-      + `${JSON.stringify(seen.stop ?? {})}. An absence here is about the sweep, not the page.`;
-  }
-  if (seen.complete === true) return `    ok ${channel} — asked, and NVDA itself said there were no more`;
-  // A THIRD STATE, and inventing either of the other two would be the defect this field removes.
-  // `tableCells` walks a grid with Ctrl+Alt+Arrow and has no "no next heading" to exhaust, so it can
-  // report that it ran and cannot report that it finished.
-  return `    ~ ${channel} — asked, but this channel has no exhaustion signal to report`;
-}
-
 /**
  * THE INTERACTION PROBES: which ones RAN, and what each one concluded.
  *
- * `whatItAsked` above reads `observed`, which covers the SWEEP channels. The interaction probes are not in
+ * `whatItAsked` (`../src/capture/what-it-asked.mjs`) reads `observed`, which covers the SWEEP channels. The interaction probes are not in
  * it — `stateChanges` deliberately has no `observed` entry, and `focusReveal`, `focusEvents`,
  * `focusContext` and `routeChange` post-date it — so their verdicts live only in diagnostic marks, and
  * nothing read them. That is the hole this section fills, and it is a hole with a measured cost.
