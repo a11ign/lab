@@ -1,6 +1,13 @@
+/**
+ * #954: THE CROSS-REFERENCE HALF OF THIS FILE IS OFF THE PULL-REQUEST PATH. `check-transfer-urls`'s rule now runs
+ * once a night, in `scripts/doc-cross-reference-report.mjs`, which imports the same module this file
+ * does -- so nothing about the rule changed, only when it runs and what a disagreement costs. See #905
+ * for the argument and #954 for the retirement, which waited until the first nightly report had posted.
+ *
+ * WHAT STAYS HERE is what that report does not assert: how a URL is parsed out of a line, and how a 2xx, a 404 and a thrown fetch are classified -- proved against fixtures and a fake fetch, never the network.
+ */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fileURLToPath } from "node:url";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,36 +32,6 @@ import { PRODUCT_REPO } from "../../../../scripts/repo-identity.mjs";
  * outcome from `broken`, per #524's own explicit requirement that "the link is dead" and "I could not
  * reach the network" must never collapse into one report.
  */
-const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-
-test("the vacuity guard: the walk finds a real, non-trivial population in the real tree", () => {
-  const found = findTransferUrls(REPO);
-  // 29 URLs across 22 files, measured 2026-09-08 -- NOT the 34 the #524 issue first counted, which
-  // measured a different quantity: every file containing the bare STRING "a11ign/a11ign", including
-  // twelve with no fetchable URL at all (PLAN.md's prose, repo-identity.mjs's own declaration, three
-  // consistency tests reading PRODUCT_REPO via the imported constant rather than a literal). Both counts
-  // are correct answers to different questions; this test's floor is the URL count, the one this script
-  // can actually check.
-  //
-  // #569 moved README.md's two badge URLs off this population (they belong with REPO now, not
-  // PRODUCT_REPO -- a badge is fetched live, the same "must resolve today" shape as a `uses:` line, not
-  // the static prose PRODUCT_REPO covers). 26 measured 2026-09-09, after that move. The floor stays a
-  // floor, not a re-pin: a legitimate reclassification should lower this count over time as more sites
-  // are moved to REPO by the same reasoning (#647), and this test's job is catching the discovery pattern
-  // breaking, not catching the population shrinking on purpose.
-  assert.ok(found.length >= 20,
-    `found only ${found.length} a11ign/a11ign URL(s) -- 21 were found across 19 files on 2026-09-09 `
-    + "(#647 moved five more copy-paste-execute bootstrap/clone sites off PRODUCT_REPO, down from 26); a "
-    + "shrunk count means the discovery pattern stopped matching, not that the tree needs fewer checked");
-});
-
-test("the population spans more than markdown -- package.json fields are not missed", () => {
-  const found = findTransferUrls(REPO);
-  const packageJsonHits = found.filter((f) => f.file.endsWith("package.json"));
-  assert.ok(packageJsonHits.length > 0,
-    "found no package.json repository/homepage field naming a11ign/a11ign -- a walk that only reads "
-    + "markdown would miss exactly these, which are published to the npm registry and outlive a doc edit");
-});
 
 test("a badge-shaped line yields TWO separate URLs, not one string spanning both", () => {
   // #569 moved README.md's own two badge URLs off PRODUCT_REPO (they must resolve today, so they now
@@ -80,18 +57,6 @@ test("a badge-shaped line yields TWO separate URLs, not one string spanning both
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-});
-
-test("a synthetic test fixture (trunk-revert.test.ts's own PR-body URL) is included, not hidden", () => {
-  // The walk cannot tell a real documented URL from a look-alike fixture string in another test's own
-  // source -- trunk-revert.test.ts builds a synthetic `runUrl: "https://github.com/a11ign/a11ign/actions/
-  // runs/123"` to test revertPrBody()'s formatting, and that string matches this script's pattern exactly
-  // as written. Deliberately OVER-included rather than filtered out by an exclusion list: a hidden
-  // exclusion is a thing a future reader cannot see, while a fixture appearing in the transfer-day output
-  // is harmless and self-explanatory (it names its own file and is obviously not a real doc reference).
-  const found = findTransferUrls(REPO);
-  const hit = found.find((f) => f.file === "packages/lab/src/packaging/trunk-revert.test.ts");
-  assert.ok(hit, "trunk-revert.test.ts's synthetic fixture URL should still be found by the walk");
 });
 
 test("CLASSIFICATION: a 2xx response is reported as resolved cleanly", async () => {

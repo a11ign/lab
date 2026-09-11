@@ -14,6 +14,14 @@
  * only appended to. This test enforces BOTH halves discovered here, not listed by hand, so a THIRD closed
  * migration that repeats either shape fails on its own rather than needing someone to remember this file.
  */
+/**
+ * #954: THE CROSS-REFERENCE HALF OF THIS FILE IS OFF THE PULL-REQUEST PATH. `schema-migration-citations`'s rule now runs
+ * once a night, in `scripts/doc-cross-reference-report.mjs`, which imports the same module this file
+ * does -- so nothing about the rule changed, only when it runs and what a disagreement costs. See #905
+ * for the argument and #954 for the retirement, which waited until the first nightly report had posted.
+ *
+ * WHAT STAYS HERE is what that report does not assert: the rule that no comment cites a specific key (#908's), and the history document's own existence.
+ */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
@@ -22,7 +30,7 @@ import { fileURLToPath } from "node:url";
 // #905: the source population and the history-citation rule live in the doc cross-reference check the nightly
 // report also runs. The specific-key rule below is #908's and stays here.
 import {
-  HISTORY_DOC, danglingHistoryCitations, historyCitations, sourceFiles,
+  HISTORY_DOC, sourceFiles,
 } from "../../../../scripts/doc-checks/schema-migration-citations.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -56,20 +64,6 @@ test("no source comment cites a SPECIFIC KEY inside schema-migration.json as a p
     `these file(s) cite a specific field inside schema-migration.json, which is deleted the moment the `
     + `migration it describes closes -- point at ${HISTORY_DOC}'s permanent section instead:\n`
     + offenders.map((f) => `  ${f}`).join("\n"));
-});
-
-test("every cited schema-migration-history.md section actually exists there, and at least one citation exists", () => {
-  const citations = historyCitations(REPO, [SELF]);
-
-  assert.ok(citations.length >= 1,
-    `found 0 citation(s) of ${HISTORY_DOC} in source -- either the discovery regex is broken, or the one `
-    + "citation this row's fix wrote (packages/scorer/python/screenreader_features.py) was removed");
-
-  const dangling = danglingHistoryCitations(REPO, [SELF]);
-  assert.deepEqual(dangling, [],
-    `these citation(s) name a ${HISTORY_DOC} section that does not exist there -- either the doc's `
-    + "heading moved/was deleted, or the citation is stale:\n"
-    + dangling.map(({ file, section }) => `  ${file}: "${section}"`).join("\n"));
 });
 
 test("the history doc itself exists and is non-trivial", () => {

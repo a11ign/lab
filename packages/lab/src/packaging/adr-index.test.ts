@@ -10,33 +10,25 @@
  * equal with a test. An unindexed ADR is worse than a stale number — the index is how anyone finds these,
  * so a decision missing from it is a decision nobody will read before re-litigating it.
  */
+/**
+ * #954: THE CROSS-REFERENCE HALF OF THIS FILE IS OFF THE PULL-REQUEST PATH. `adr-index`'s rule now runs
+ * once a night, in `scripts/doc-cross-reference-report.mjs`, which imports the same module this file
+ * does -- so nothing about the rule changed, only when it runs and what a disagreement costs. See #905
+ * for the argument and #954 for the retirement, which waited until the first nightly report had posted.
+ *
+ * WHAT STAYS HERE is what that report does not assert: the ADR counts written out in English in two documents (#907's half of this file).
+ */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 // #905: the index rule lives in the doc cross-reference check the nightly report also runs -- one copy.
-import { adrFiles as adrFilesIn, deadAdrLinks, indexedAdrLinks, unindexedAdrs } from "../../../../scripts/doc-checks/adr-index.mjs";
+import { adrFiles as adrFilesIn } from "../../../../scripts/doc-checks/adr-index.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
 /** The ADR files themselves — the only source of truth here; everything else is a copy of this. */
 const adrFiles = (): string[] => adrFilesIn(REPO);
-
-test("every ADR file appears in the index", () => {
-  const files = adrFiles();
-  assert.ok(files.length >= 15, `only ${files.length} ADR files found; the discovery is broken`);
-
-  assert.deepEqual(unindexedAdrs(REPO), [],
-    "these ADRs are not in docs/adr/README.md, so nobody will find them before re-arguing the decision");
-});
-
-test("the index lists nothing that does not exist", () => {
-  // The other direction: a renamed or deleted ADR leaves a dead link, and a dead link in the one document
-  // that exists to be an index is worse than a missing row.
-  const linked = indexedAdrLinks(REPO);
-  assert.ok(linked.length >= 15, `only ${linked.length} ADR links parsed out of the index — the table shape changed`);
-  assert.deepEqual(deadAdrLinks(REPO), [], "the index links an ADR that does not exist");
-});
 
 test("the counts quoted in prose match how many ADRs there are", () => {
   // Written out in English in two documents, neither of which is generated. Both said 15 while 16 existed.

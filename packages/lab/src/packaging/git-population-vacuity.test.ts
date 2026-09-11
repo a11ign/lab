@@ -147,10 +147,14 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "records that the guard was RETIRED WITH ITS SUBJECT rather than quietly dropped.",
   },
   "packages/lab/src/packaging/action-reference.test.ts": {
-    guard: "lines.length >= 3",
-    note: "guarded — FIXED this unit: the ref-existence test computed `usesLines()` independently of the "
-      + "sibling test that guards it, so a sibling's guard failing did not stop this one reporting a "
-      + "false pass on the same empty population",
+    guard: null,
+    note: "RETIRED WITH ITS SUBJECT, 2026-09-11 (#954). The file is deleted: `action-reference`'s rule "
+      + "runs once a night in `scripts/doc-cross-reference-report.mjs`, which reads the same module, and "
+      + "the report states its own examined count -- which is the vacuity question this entry asked. Its "
+      + "guard was `lines.length >= 3`, added when the ref-existence test computed `usesLines()` "
+      + "independently of the sibling test that guarded it, so a sibling's failure did not stop this one "
+      + "reporting a false pass on the same empty population. Kept as an entry rather than deleted, the "
+      + "same as `backlog-ready.test.ts` above, so the record says RETIRED rather than quietly dropped.",
   },
   "packages/lab/src/packaging/bounded-window-reads.test.ts": {
     guard: "Object.keys(EXPECTED_READERS).filter((file) => !readers.includes(file))",

@@ -14,8 +14,9 @@ import { parse } from "yaml";
  *
  * `action-smoke.yml` could not have caught this: it runs `uses: ./` with the repository already
  * checked out by the surrounding job, so it never needs a checkout step and never reads what these
- * documents actually say to write. `action-reference.test.ts` proves the `uses:` line resolves; this
- * file proves the step BEFORE it exists at all, which that file cannot see -- it only ever looks for
+ * documents actually say to write. The nightly doc cross-reference report proves the `uses:`
+ * line resolves (#954 took that check off the pull-request path); this file proves the step BEFORE it
+ * exists at all, which that check cannot see -- it only ever looks for
  * the `a11y-witness` reference itself, not what precedes it.
  *
  * DISCOVERED, NOT TYPED. The first version of this file hand-listed three documents. A live review

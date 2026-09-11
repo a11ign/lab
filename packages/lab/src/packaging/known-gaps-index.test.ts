@@ -3,6 +3,14 @@
  * list -- see `scripts/known-gaps-index.mjs`'s own header for why. This is the guard: if a section closes
  * (or opens) without the index being regenerated, this test fails rather than a reader silently missing it.
  */
+/**
+ * #954: THE CROSS-REFERENCE HALF OF THIS FILE IS OFF THE PULL-REQUEST PATH. `known-gaps-index`'s rule now runs
+ * once a night, in `scripts/doc-cross-reference-report.mjs`, which imports the same module this file
+ * does -- so nothing about the rule changed, only when it runs and what a disagreement costs. See #905
+ * for the argument and #954 for the retirement, which waited until the first nightly report had posted.
+ *
+ * WHAT STAYS HERE is what that report does not assert: slugify against GitHub's own algorithm, the index builder's stability on a fixture, and the two mutations that prove it catches a stale index.
+ */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -13,43 +21,11 @@ import {
   buildIndexBlock,
   currentIndexBlock,
   isClosed,
-  openSections,
   parseHeadings,
   slugify,
 } from "../../../../scripts/known-gaps-index.mjs";
 
 const text = () => readFileSync(new URL(`../../../../${KNOWN_GAPS_FILE}`, import.meta.url), "utf8");
-
-test("the parser is reading the real file, not examining nothing", () => {
-  const headings = parseHeadings(text());
-  assert.ok(headings.length >= 40, `only found ${headings.length} headings -- the file's shape moved`);
-  assert.ok(headings.some((h) => h.number === null), "expected at least one meta (unnumbered) section");
-  assert.ok(headings.some((h) => h.number !== null && isClosed(h)), "expected at least one closed section");
-  assert.ok(openSections(text()).length > 0, "expected at least one open section, or this tests nothing");
-});
-
-test("known-gaps.md's committed index matches what the headings say right now", () => {
-  // THE PIN THAT MATTERS: closing or opening a section without running
-  // `npm run docs:known-gaps-index -- --write` fails here.
-  const current = text();
-  assert.equal(applyIndexBlock(current), current,
-    "docs/known-gaps.md's index is stale -- run `npm run docs:known-gaps-index -- --write` and commit it");
-});
-
-test("every open section is linked, every closed and meta section is not", () => {
-  const current = text();
-  const block = currentIndexBlock(current);
-  assert.ok(block, "docs/known-gaps.md has no known-gaps-index block at all");
-  const headings = parseHeadings(current);
-  for (const heading of headings) {
-    const listed = block!.includes(`[§${heading.number}]`);
-    if (heading.number !== null && !isClosed(heading)) {
-      assert.ok(listed, `§${heading.number} is open but missing from the index`);
-    } else if (heading.number !== null) {
-      assert.ok(!listed, `§${heading.number} is closed but still listed in the index`);
-    }
-  }
-});
 
 test("slugify approximates GitHub's anchor algorithm on real headings", () => {
   assert.equal(slugify("2. ~~The real-page corpus rots, and nothing watches it~~ — DONE"),

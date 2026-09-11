@@ -38,6 +38,14 @@
  * file is tracked on purpose rather than simply failing to see it. See `generate-commands-doc.mjs`'s own
  * header for why the exemption belongs there rather than in an omitted marker.
  */
+/**
+ * #954: THE CROSS-REFERENCE HALF OF THIS FILE IS OFF THE PULL-REQUEST PATH. `commands-documented`'s rule now runs
+ * once a night, in `scripts/doc-cross-reference-report.mjs`, which imports the same module this file
+ * does -- so nothing about the rule changed, only when it runs and what a disagreement costs. See #905
+ * for the argument and #954 for the retirement, which waited until the first nightly report had posted.
+ *
+ * WHAT STAYS HERE is what that report does not assert: the `// command:` header rule (#908's), its four mutation cases, and the honesty of the INTERNAL list -- none of which is a cross-reference.
+ */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -50,27 +58,10 @@ import { commandScripts, commandHeader } from "../../../../scripts/generate-comm
 // #905: the prose-coverage and page-freshness halves live in the doc cross-reference check the nightly report
 // also runs -- one copy. The `// command:` header rule and the MUTATION cases below stay here.
 import {
-  INTERNAL, commandsPage, documentation, npmScripts as npmScriptsIn, undocumentedNpmScripts,
+  INTERNAL, npmScripts as npmScriptsIn,
 } from "../../../../scripts/doc-checks/commands-documented.mjs";
 
-const DOCS = documentation(REPO);
 const npmScripts = () => npmScriptsIn(REPO);
-
-test("the documentation being searched is real, so this cannot pass having read nothing", () => {
-  // A guard written against a shape you did not verify is the count-based check all over again.
-  assert.ok(DOCS.length > 50_000, `only ${DOCS.length} chars of documentation found; the layout moved`);
-  assert.ok(npmScripts().length > 30, "too few npm scripts parsed; package.json shape changed");
-  assert.match(DOCS, /npm run fleet:status/, "a command known to be documented is not being found");
-});
-
-test("every npm script is documented in prose, or explicitly declared internal", () => {
-  const undocumented = undocumentedNpmScripts(REPO);
-
-  assert.deepEqual(undocumented, [],
-    "These npm scripts are discoverable only by reading source. Document each where the problem it "
-    + "solves is described — that is far more useful than an index — or add it to INTERNAL with a "
-    + "reason. A command nobody can find is a command nobody runs.");
-});
 
 test("the internal list is honest: every entry is a real npm script", () => {
   // An allowlist that outlives its entries is a hole nobody can see.
@@ -103,14 +94,6 @@ test("every script under scripts/ carries a `// command:` header", () => {
     + "pins) and have no `// command: <description>` header, or the header is too weak (empty, one word, "
     + "under 15 characters) to count as documentation:\n"
     + missing.map((f) => `  scripts/${f}`).join("\n"));
-});
-
-test("docs/commands.md matches the tree exactly", () => {
-  const { committed, fresh } = commandsPage(REPO);
-  assert.ok(committed !== null, "docs/commands.md does not exist -- run `node scripts/run.mjs docs-commands`");
-  assert.equal(committed, fresh,
-    "docs/commands.md is stale against the tree's own `// command:` headers -- run "
-    + "`node scripts/run.mjs docs-commands` and commit the result");
 });
 
 // --- MUTATION: `commandHeader` must actually distinguish a real description from a weak one ---
