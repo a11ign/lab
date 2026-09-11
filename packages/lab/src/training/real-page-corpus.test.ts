@@ -12,7 +12,9 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { assertDisjoint, pagesFor, REAL_PAGES, UNWITNESSABLE_ON_REAL_PAGES } from "./real-page-corpus.mjs";
+import {
+  assertDisjoint, pagesFor, realPageFor, servedByThePageServer, REAL_PAGES, UNWITNESSABLE_ON_REAL_PAGES,
+} from "./real-page-corpus.mjs";
 import { SCORED_CRITERIA, RULE_CRITERIA } from "@a11ign/judge/coverage";
 import { CASES } from "./case-matrix.mjs";
 
@@ -347,4 +349,66 @@ test("every claimExcludes entry names a criterion we actually score", () => {
     }
   }
   assert.deepEqual(stray, [], "these exclude a criterion this tool does not assess");
+});
+
+/**
+ * #881 / #146 -- THE ONE REWRITE `realPageFor` UNDOES, tested in BOTH directions.
+ *
+ * `capture-real-pages.mjs`'s `workerReachable` swaps a fixture url's loopback hostname for the host's LAN
+ * address and changes nothing else, and the capture records the url the worker loaded. `atHost` makes the
+ * same swap. The stand-in is from the RFC 5737 documentation range, never the lab's real address: a
+ * positive control shaped like the thing, which cannot be the thing, and which the tree's leak guard allows.
+ *
+ * One direction alone proves little. A matcher loosened to map any host to any fixture passes the first
+ * test and fails the second, and a matcher that reconciles nothing passes the second and fails the first.
+ */
+const LAB_STAND_IN = "192.0.2.10";
+
+function atHost(url: string, hostname: string): string {
+  const moved = new URL(url);
+  moved.hostname = hostname;
+  return moved.toString().replace(/\/$/, "");
+}
+
+const FIXTURES = REAL_PAGES.filter((page) => page.role === "fixture");
+const PUBLISHED = REAL_PAGES.filter((page) => page.role !== "fixture");
+
+test("#881: every fixture, captured at the lab's address, resolves to its OWN declaration", () => {
+  assert.ok(FIXTURES.length > 0, "no fixture in REAL_PAGES, so this test asserts over nothing");
+  for (const page of FIXTURES) {
+    // The precondition, stated: under `DATASET_BASE_URL` a fixture is declared at that base instead, is
+    // captured there unrewritten, and matches exactly -- so this test is only meaningful without it.
+    assert.ok(servedByThePageServer(page.url),
+      `${page.url} is not declared at the page server -- is DATASET_BASE_URL set in this environment?`);
+    assert.equal(realPageFor(atHost(page.url, LAB_STAND_IN))?.url, page.url);
+  }
+});
+
+test("#881: a published page still matches only itself -- at any other host it matches nothing", () => {
+  assert.ok(PUBLISHED.length > 0, "no published page in REAL_PAGES, so this test asserts over nothing");
+  for (const page of PUBLISHED) {
+    assert.equal(realPageFor(page.url)?.url, page.url, `${page.url} no longer matches its own url`);
+    assert.equal(realPageFor(atHost(page.url, LAB_STAND_IN)), undefined,
+      `${page.url} gained a second address -- only a page-server declaration may be reached at another host`);
+  }
+});
+
+test("#881: the rewrite changes the HOSTNAME ONLY, to an address -- so nothing else is forgiven", () => {
+  const [fixture] = FIXTURES;
+  const relocated = new URL(atHost(fixture.url, LAB_STAND_IN));
+  const variant = (change: (url: URL) => void): string => {
+    const url = new URL(relocated.href);
+    change(url);
+    return url.href;
+  };
+  assert.equal(realPageFor(atHost(fixture.url, "pages.example.test")), undefined,
+    "a NAMED host serving the same path on the same port is a different page");
+  assert.equal(realPageFor(variant((url) => { url.port = String(Number(url.port || "80") + 1); })), undefined,
+    "the rewrite never changes the port");
+  assert.equal(realPageFor(variant((url) => { url.protocol = "https:"; })), undefined,
+    "the rewrite never changes the scheme");
+  assert.equal(realPageFor(variant((url) => { url.pathname += "-other"; })), undefined,
+    "the rewrite never changes the path");
+  assert.equal(realPageFor("not a url"), undefined);
+  assert.equal(realPageFor(undefined), undefined);
 });

@@ -59,6 +59,7 @@
  * Widening past W3C means finding other publishers who state their own conformance — not labelling pages
  * ourselves, which would put us back where we started.
  */
+import { ipv4ToInt } from "@a11ign/worker-fleet/host-address";
 
 /**
  * WHAT THE POSITIVE SIDE OF THIS CORPUS ACTUALLY IS — measured 2026-08-22, and smaller than it looks.
@@ -861,6 +862,83 @@ export function normaliseUrl(url) {
 }
 
 /**
+ * A page-server origin: loopback, which is where every fixture is DECLARED (`FIXTURE_BASE`) and the one case
+ * where a capture's origin differs from its declaration's by design (#146). Moved here from
+ * `corpus-prune-orphans.mjs` (#881) so the matcher, the gate and the prune tool read one definition.
+ *
+ * @param {unknown} url
+ */
+export function servedByThePageServer(url) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[?::1\]?)(:|\/|$)/i.test(String(url));
+}
+
+/**
+ * A url with its origin removed, normalised -- what a relocated capture still has in common with its
+ * declaration. Moved here from `corpus-prune-orphans.mjs` with `servedByThePageServer`, unchanged.
+ *
+ * @param {unknown} url
+ */
+export function pathOf(url) {
+  const withoutScheme = String(url).replace(/^[a-z]+:\/\//i, "");
+  const slash = withoutScheme.indexOf("/");
+  return slash === -1 ? "/" : normaliseUrl(withoutScheme.slice(slash));
+}
+
+/**
+ * THE FIXTURE A RELOCATED CAPTURE IS OF -- #146, #881.
+ *
+ * A fixture is declared at the page server's loopback address, and no worker can fetch that: a guest's
+ * `localhost` is the guest. So `capture-real-pages.mjs`'s `workerReachable` rewrites exactly ONE part of the
+ * url before sending it -- the hostname, to `hostAddressForWorker(...)`, which only ever returns an IPv4
+ * literal -- and the capture records the url the worker loaded. Declaration and capture were each right and
+ * nothing reconciled them, so all ten fixtures read as "NO DECLARED PAGE CLAIMS" and the five conformant
+ * ones were never scored: 2.4.1, 2.4.2, 2.4.3, 2.1.1 and 1.4.13 lost their only real-page grounding to a
+ * host comparison. #881 then read the same ten as dataset pages written to the wrong place, and asked for
+ * them to be removed.
+ *
+ * This undoes that one rewrite and nothing else. The declared hostname goes back in place of the captured
+ * one, and everything the rewrite leaves alone -- scheme, port, path, query -- must then match as written.
+ * Two conditions keep a real publisher's page matching only itself:
+ *
+ *   - only a declaration SERVED BY THE PAGE SERVER can be reached this way, so no real page gains a second
+ *     address; and
+ *   - the captured host must be what the rewrite can produce, an IPv4 literal. A named host serving the same
+ *     path on the same port is still a different page.
+ *
+ * Tighter would be "this host's own address", but that is knowable only on the machine that captured, and
+ * the gate also runs against fetched copies of the corpus.
+ *
+ * @param {unknown} url
+ * @returns {RealPage | undefined}
+ */
+function relocatedFixtureFor(url) {
+  if (!URL.canParse(String(url))) return undefined;
+  const captured = new URL(String(url));
+  if (ipv4ToInt(captured.hostname) === null) return undefined;
+  return REAL_PAGES.find((page) => {
+    if (!servedByThePageServer(page.url)) return false;
+    const restored = new URL(captured.href);
+    restored.hostname = new URL(page.url).hostname;
+    return normaliseUrl(restored.href) === normaliseUrl(page.url);
+  });
+}
+
+/**
+ * The page-server fixture declared at this url's PATH, whatever its origin -- for a capture `realPageFor`
+ * still MISSED. That is a declared fixture reached some way `relocatedFixtureFor` does not undo (a named host
+ * rather than an address, another port), and it must not be reported as an undeclared page: the two take
+ * opposite fixes, and the fix for an undeclared page is to delete it. `corpus-prune-orphans.mjs` calls the
+ * same set RELOCATED and refuses to delete it.
+ *
+ * @param {unknown} url
+ * @returns {RealPage | undefined}
+ */
+export function pageServerFixtureAtPath(url) {
+  const path = pathOf(url);
+  return REAL_PAGES.find((page) => servedByThePageServer(page.url) && pathOf(page.url) === path);
+}
+
+/**
  * The corpus entry for a captured page, or `undefined`.
  *
  * Exists because a CAPTURED file does not carry the publisher's claim details. `capture-real-pages.mjs`
@@ -875,6 +953,9 @@ export function normaliseUrl(url) {
  * Callers should treat a miss as an ERROR, not as "no exceptions". A url that has drifted -- a redirect, a
  * publisher restructuring -- would otherwise silently produce an unmasked page, which is the exact failure
  * this lookup exists to prevent.
+ *
+ * A FIXTURE captured at the host's LAN address resolves to its loopback declaration (#881) -- see
+ * `relocatedFixtureFor` for the one rewrite that is undone, and why nothing else is.
  */
 /**
  * `unknown`, because the callers hold a capture's `url` field and it is optional there. `String(url)`
@@ -886,7 +967,7 @@ export function normaliseUrl(url) {
  */
 export function realPageFor(url) {
   const key = normaliseUrl(url);
-  return REAL_PAGES.find((page) => normaliseUrl(page.url) === key);
+  return REAL_PAGES.find((page) => normaliseUrl(page.url) === key) ?? relocatedFixtureFor(url);
 }
 
 /**
