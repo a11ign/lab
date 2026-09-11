@@ -252,3 +252,13 @@ test("#947: every channel's `observed` key is a name the CAPTURE writes -- read 
   const unwritten = Object.values(CHANNEL_FIELD).filter((key) => !written.has(key));
   assert.deepEqual(unwritten, [], "a channel the audit reads under a key the capture never writes");
 });
+
+test("#947: an `observed` entry that does not SAY whether it was asked is no record -- never 'not asked'", () => {
+  // worker-capture's review of #952: NOT ASKED is a statement (`notObserved` writes `asked: false`), and an entry
+  // with no `asked` states nothing. Today's writers always set it; a malformed or future one might not.
+  for (const entry of [{}, { complete: true }]) {
+    const { channels } = observationAmbiguity([capture({ heading: 0 }, { headings: [] }, observedHeadings(entry))]);
+    assert.equal(channels.heading.emptyNoRecord, 1, `${JSON.stringify(entry)} is no record`);
+    assert.equal(channels.heading.emptyNotAsked, 0, `${JSON.stringify(entry)} did not say it was not asked`);
+  }
+});

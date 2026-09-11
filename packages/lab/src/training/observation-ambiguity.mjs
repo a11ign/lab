@@ -113,6 +113,7 @@ function channelWasAsked(capture, channel, fallbackEvent) {
  *
  * FOUR ANSWERS, and the fourth is not folded into either of the others: a capture older than protocol 9 has no
  * `observed` entry to ask, and "no record" is a statement about the corpus's age, exactly as `cannotSay` is.
+ * An entry that does not say `asked: true` or `asked: false` is no record too: it states nothing either way.
  * Only `complete === true` counts as run to exhaustion: an asked sweep with any other `complete` has not shown
  * it finished, and reading it as finished would claim an absence nobody established.
  *
@@ -124,8 +125,11 @@ function channelWasAsked(capture, channel, fallbackEvent) {
  */
 function sweepAskedCount(capture, channel) {
   const recorded = observationOf(capture, /** @type {Record<string, string>} */ (CHANNEL_FIELD)[channel]);
-  if (!recorded) return "emptyNoRecord";
-  if (recorded.asked !== true) return "emptyNotAsked";
+  // NOT ASKED IS A STATEMENT -- `notObserved` writes `asked: false` -- so only `false` earns it. An entry that
+  // states neither (`{}`, `{ complete: true }`) says nothing about asking, and is no record, exactly like a
+  // missing entry (worker-capture's review of #952). Today's writers always set `asked`; the next may not.
+  if (recorded?.asked === false) return "emptyNotAsked";
+  if (recorded?.asked !== true) return "emptyNoRecord";
   return recorded.complete === true ? "emptyAskedComplete" : "emptyAskedShort";
 }
 
