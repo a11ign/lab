@@ -144,8 +144,14 @@ test("#939 THE READERS: each surviving one goes through the helper, and board-da
     assert.match(source(reader), /import \{ changedFiles \} from "\.\/changed-files\.mjs"/,
       `${reader} does not import the shared helper`);
   }
-  assert.match(source(".github/workflows/ci.yml"), /node scripts\/changed-files\.mjs origin\/\$\{\{ github\.base_ref \}\}\.\.\.HEAD > \/tmp\/lane-changed\.txt/,
-    "the lane check's own feed must come from the helper");
+  // #902 DELETED THE LANE STEP FROM ci.yml, so the feed it asserted is gone: ceo owns the pipeline lane
+  // now, every engineer's pipeline PR carries a `Lane-exception:` line naming them, and #916 brings
+  // CODEOWNERS on the 15th. `workflow-lane-check.mjs` stays and is still run by hand, and THE BYPASS test
+  // above still drives `laneVerdict` with a real rename, so #939's rule is asserted where it lives rather
+  // than through a workflow step that no longer exists.
+  assert.doesNotMatch(source(".github/workflows/ci.yml"), /workflow-lane-check\.mjs/,
+    "ci.yml runs the lane check again -- either #902 was reverted, in which case restore the feed "
+    + "assertion this comment replaced, or a second copy of the step has appeared");
   // #939's second defect, on the same line: the read-set check compared to LOCAL `main`, which in a shared
   // checkout has been measured over a thousand commits stale.
   assert.match(source("scripts/board-data.mjs"), /changedFiles\(\["origin\/main"\], \{ repoRoot: ROOT, pathspec: \[\.\.\.READ_SET\] \}\)/);
