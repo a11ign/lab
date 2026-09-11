@@ -3,9 +3,9 @@
  *
  * `alwaysRunTests` runs every guard whose population is discovered from the tree, on every pull request,
  * because a file added anywhere can join such a population. That is right for a guard whose population IS
- * the repository, and it stays exactly as it is. Measured by running all 131 always-run guards with their
- * reads observed: 17 walk the whole repository and 83 read inside a product package, but 31 read nothing a
- * product diff can touch — 14 of them nothing outside their own imports at all.
+ * the repository, and it stays exactly as it is. Measured by running all 131 always-run guards under the
+ * observer: 38 walk the whole repository and 69 read inside a product package, but 24 read nothing a
+ * product diff can touch — 6 of them nothing outside their own imports at all.
  *
  * So a guard may declare its scope, and `narrowByDeclaredScope` leaves it out of a run whose diff touches
  * none of it. The three properties this file pins are the row's acceptance:
@@ -33,6 +33,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseWalkScope, inScope, readsDuring, WHOLE_REPOSITORY } from "../../../../scripts/walk-scope.mjs";
 import { knownPackages } from "../../../../scripts/ci-changed.mjs";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import {
   alwaysRunTests, discoverTestFiles, narrowByDeclaredScope, packageIndex, sourceClosure,
 } from "../../../../scripts/select-changed-tests.mjs";
@@ -187,7 +188,8 @@ test("...and a declaration that covers the walk passes — or the check above co
 
 const JUDGE = "packages/judge";
 const MANIFEST = `${JUDGE}/package.json`;
-const inRepo = { cwd: REPO, encoding: "utf8" as const };
+// Scrubbed of `GIT_*`: run from a hook, a leaked `GIT_DIR` would point these at another repository.
+const inRepo = { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" as const };
 const isUnbounded = (reads: string[]) => reads.length === 1 && reads[0].startsWith(WHOLE_REPOSITORY);
 
 test("fs.promises -- the same object as node:fs/promises -- is seen", async () => {
@@ -209,8 +211,15 @@ test("LISTING THE ROOT is the whole repository, never nothing -- the root was on
 });
 
 test("a glob is recorded at its static prefix, resolved against its OWN cwd", async () => {
-  assert.deepEqual(await readsDuring(() => globSync("*.json", { cwd: join(REPO, JUDGE) })), [JUDGE]);
-  assert.deepEqual(await readsDuring(() => globSync("packages/*/package.json", { cwd: REPO })), ["packages"]);
+  // The prefix, and nothing outside it -- not an exact list. Node's glob stats each literal segment through
+  // `fs`, and whether those stats are seen depends on whether its internals loaded before the observer did:
+  // measured, they are with the observer on `--import` and are not with it imported here.
+  const within = (reads: string[], prefix: string) =>
+    reads.includes(prefix) && reads.every((read) => inScope(read, [prefix]));
+  const judge = await readsDuring(() => globSync("*.json", { cwd: join(REPO, JUDGE) }));
+  assert.ok(within(judge, JUDGE), judge.join(", "));
+  const every = await readsDuring(() => globSync("packages/*/package.json", { cwd: REPO }));
+  assert.ok(within(every, "packages"), every.join(", "));
 });
 
 test("git ls-files is bounded by its pathspecs, read against -C, past git's own -c", async () => {
