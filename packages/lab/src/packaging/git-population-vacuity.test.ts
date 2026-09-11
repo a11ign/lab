@@ -102,6 +102,14 @@ function discoverGitPopulationTests(): string[] {
  * still literally appear in the file's source below), or `null` with a stated reason no guard applies.
  */
 const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
+  "packages/lab/src/packaging/changed-files-renames.test.ts": {
+    guard: "scanned >= 100",
+    note: "guarded -- its two git spawns are a sandbox repository it BUILDS (a two-commit tree with one "
+      + "`git mv`), so those populations are non-empty by construction and asserted member by member. The "
+      + "population that could be vacuous is the SOURCE walk for bare `git diff --name-only` sites, and "
+      + "the floor counts files read rather than sites found: a clean list is the expected answer there, "
+      + "so 'nothing unexplained' and 'the walk opened no files' are otherwise the same observation.",
+  },
   "packages/lab/src/packaging/declared-walk-scope.test.ts": {
     guard: null,
     note: "NOT a discovery test (#929). It spawns git to prove that `walk-scope.mjs` records each argv form "

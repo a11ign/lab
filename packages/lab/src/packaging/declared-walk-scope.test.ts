@@ -46,8 +46,10 @@ import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import { withGitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
 import {
-  alwaysRunTests, broadReasons, changedFiles, discoverTestFiles, narrowByDeclaredScope, packageIndex, sourceClosure,
+  alwaysRunTests, broadReasons, discoverTestFiles, narrowByDeclaredScope, packageIndex, sourceClosure,
 } from "../../../../scripts/select-changed-tests.mjs";
+// #939: the shared reader every "which paths changed" caller now imports.
+import { changedFiles } from "../../../../scripts/changed-files.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const W = "WALK" + "_SCOPE";
@@ -150,7 +152,7 @@ test("A RENAME OUT OF THE SCOPE keeps the guard: the diff names the side that LE
     mkdirSync(join(dir, "tools"));
     run(["mv", "scripts/a.mjs", "tools/a.mjs"]);
     commit("move a script out of scripts/");
-    const files = changedFiles(base, dir);
+    const files = changedFiles([`${base}...HEAD`], { repoRoot: dir });
     assert.deepEqual(files, ["scripts/a.mjs", "tools/a.mjs"]);
     const guard = [{ test: "g.test.ts", why: "walks the tree" }];
     const { kept } = narrowByDeclaredScope(guard, files, { readSource: () => declaring(`["scripts"]`) });
