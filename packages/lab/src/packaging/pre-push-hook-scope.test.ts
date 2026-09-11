@@ -58,12 +58,28 @@ function codeLines(source: string): string[] {
     .filter((line) => line.trim().length > 0);
 }
 
-/** Every `run <label> <command...>` call site, with its line continuations joined. */
-function runSites(source: string): { label: string; command: string }[] {
-  const joined = source.replace(/\\\n\s*/g, " ");
+/**
+ * Every `run <label> <command...>` call site, with its line continuations joined and its COMMENTS GONE.
+ *
+ * THE COMMENT STRIP IS THE ASSERTION, not tidying — worker-judge's review of this PR. The first version
+ * matched the raw line, so gutting the call site and leaving the paths behind a `#` kept every test green:
+ *
+ *     run "leak scan" echo skipped # npx tsx --test \
+ *         packages/lab/src/packaging/tracked-source-leak-guard.test.ts
+ *
+ * `echo` exits 0, so driving the hook prints `ok  leak scan` having scanned nothing, and the file below
+ * still found the paths it was looking for. A pin that matches the WORDS rather than what RUNS is this
+ * repository's most-repeated defect, and it landed in the guard written to stop exactly this check being
+ * dropped. Hence `runner` as well as `command`: what the site actually executes, first token first.
+ */
+function runSites(source: string): { label: string; command: string; runner: string }[] {
+  const joined = source.replace(/\\\n\s*/g, " ").replace(/(^|\s)#.*$/gm, "$1");
   return [...joined.matchAll(/^\s*run "([^"]*)"\s+(.+)$/gm)]
-    .map((m) => ({ label: m[1], command: m[2].trim() }));
+    .map((m) => ({ label: m[1], command: m[2].trim(), runner: m[2].trim().split(/\s+/)[0] }));
 }
+
+/** What a check may be executed BY. Anything else is a check turned off while still reading like one. */
+const RUNNERS = new Set(["npx", "npm"]);
 
 /** Every place the hook invokes node, npm, npx or a local binary — checks and helpers alike. */
 function invocations(source: string): string[] {
@@ -98,6 +114,14 @@ test("THE THREE: the hook's checks are lint, typecheck and the leak scan -- and 
   assert.equal(sites.length, 3,
     "#911 reduced this hook to three checks. A fourth is a second copy of CI, which is what the row "
     + `deleted -- found: ${sites.map((s) => `${s.label} => ${s.command}`).join(" | ")}`);
+  // EXECUTED, not merely mentioned: every site must START with a real runner, so a call site gutted to
+  // `echo` or `:` with its old command left in a trailing comment is a fourth shape this refuses.
+  for (const site of sites) {
+    assert.ok(RUNNERS.has(site.runner),
+      `the ${site.label} site runs \`${site.runner}\`, which is not a runner -- a check executed by `
+      + `\`echo\` or \`:\` prints ok having done nothing, and its old command left in a comment still `
+      + `reads like the real thing: ${site.command}`);
+  }
   assert.ok(commands.some((c) => /\beslint\b/.test(c)), `no lint site among: ${commands.join(" | ")}`);
   assert.ok(commands.some((c) => /\bnpm run --silent typecheck\b/.test(c)),
     `no typecheck site among: ${commands.join(" | ")}`);
@@ -153,9 +177,13 @@ test("TYPECHECK IS NOT SCOPED, and the hook says why in terms of the MECHANISM",
     "and that no package program contains top-level scripts/, which is where most of this repo's rows live");
 });
 
-test("THE LEAK SCAN names both guards by file, and both files exist", () => {
+test("THE LEAK SCAN names both guards by file, EXECUTES them, and both files exist", () => {
   const site = runSites(hook()).find((s) => /tracked-.*-leak-guard/.test(s.command));
   assert.ok(site, "no leak scan site found");
+  // THE RUNNER FIRST. This check is the one whose value is being before the push, so "it is named in the
+  // hook" is not the question -- "the hook runs it" is.
+  assert.match(site!.command, /^npx tsx --test\b/,
+    `the leak scan must be EXECUTED by its runner, not merely named: ${site!.command}`);
   for (const guard of ["tracked-source-leak-guard", "tracked-prose-leak-guard"]) {
     assert.match(site!.command, new RegExp(`packages/lab/src/packaging/${guard}\\.test\\.ts`),
       `${guard} must be named by the hook -- it is the one check whose value is being before the push`);
