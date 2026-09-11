@@ -26,13 +26,33 @@ function gateBlock(): string {
   return next === -1 ? rest : rest.slice(0, next + 1);
 }
 
-const KEPT = ["changed", "ts", "python", "ansible", "changeset", "rulesFitness"];
-const DROPPED = ["docs", "board", "acceptance", "ownedPaths", "mergeSafety"];
+// `holdAndCloses` is what `mergeSafety` became: two person-applied controls -- a `hold:` label, and the
+// declared Closes against what GitHub will actually close (#549) -- and it stays REQUIRED on ceo's ruling.
+// Neither is process noise: none of the last forty red runs was either. Its lane step is gone, and the head
+// -vs-tip race it still carries (#294) is not #277's "behind main", which branch protection now owns.
+const KEPT = ["changed", "ts", "python", "ansible", "changeset", "rulesFitness", "holdAndCloses"];
+const DROPPED = ["docs", "board", "acceptance", "ownedPaths"];
 
 test("#902: the gate waits for the product jobs and nothing else", () => {
   const needs = /needs: \[([^\]]+)\]/.exec(gateBlock())?.[1];
   assert.ok(needs, "the gate's `needs` is no longer a single-line list; this guard cannot read it");
   assert.deepEqual(needs!.split(",").map((name) => name.trim()).sort(), [...KEPT].sort());
+});
+
+test("#902: a HELD pull request is still refused by a job the gate needs", () => {
+  // The hold refusal rides on `merge-guard.mjs --ci-gate`, and dropping its job from `needs` would leave a
+  // held PR reporting red while the gate went green -- so an ARMED one would merge. `pr-hold.mjs` disarms
+  // when it takes a hold, but the armed-then-held window is caught here and nowhere else in CI.
+  const job = /\n {2}holdAndCloses:\n[\s\S]*?(?=\n {2}[A-Za-z][\w-]*:\n)/.exec(CI)?.[0] ?? "";
+  // THE `run:` LINE, NOT THE NAME ANYWHERE IN THE BLOCK. The first version of this matched
+  // `merge-guard.mjs --ci-gate` anywhere in the job, and the comment above the step says those words too:
+  // deleting the step left the test green on its own explanation. A guard satisfied by prose about itself
+  // is the shape this repo has paid for more than once.
+  assert.match(job, /run: node scripts\/merge-guard\.mjs --ci-gate/,
+    "the hold refusal left this job; no other workflow in this repo reads a `hold:` label");
+  assert.match(job, /run: node scripts\/closes-mismatch-check\.mjs/,
+    "#549's comparison left this job, and only it has a token");
+  assert.ok(KEPT.includes("holdAndCloses"), "the job carrying both must be one the gate waits for");
 });
 
 test("#902: each job the gate stopped waiting for STILL RUNS -- dropped from needs, not deleted", () => {
