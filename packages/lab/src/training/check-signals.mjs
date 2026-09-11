@@ -22,7 +22,9 @@
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { CASES, signalMatches } from "./case-matrix.mjs";
+import { signalMatches } from "./case-matrix.mjs";
+// #958: the three-direction manifest check every verdict reader shares.
+import { assertManifestMatchesCases } from "./manifest-matches-cases.mjs";
 import { hasUsableCaptureFiles } from "./capture-resume.mjs";
 import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { readCapture as readCaptureFile } from "../capture/evidence-diff.mjs";
@@ -233,32 +235,24 @@ function main() {
     process.exit(1);
   }
 
-  // A MANIFEST CASE THAT NO LONGER EXISTS is a stale BUILD, not a broken signal, and saying so is the
-  // whole point. This file evaluates whatever the manifest lists; delete a case from `case-matrix.mjs`
-  // without regenerating and its captures are still on disk, its signal still does not fire, and the
-  // report says BLIND — "a defect in the signal or in the probe feeding it", which sends the reader to
-  // debug something that is working.
+  // A MANIFEST THAT HAS DRIFTED FROM `CASES` is a stale BUILD, not a broken signal, and saying so is the
+  // whole point. This file evaluates whatever the manifest lists: delete a case from `case-matrix.mjs`
+  // without regenerating and its signal never fires and reads as BLIND, which sends the reader to debug a
+  // probe that works (measured 2026-08-28, `skip-link-target-not-focusable`).
   //
-  // Measured 2026-08-28: deleting `skip-link-target-not-focusable` (a case whose mechanism a capture had
-  // just REFUTED) failed the pre-push gate with exactly that message. The gate was right to refuse and
-  // wrong about why. `audit-corpus-starvation.mjs` has had this distinction as `unmatched` all along —
-  // "records whose case has gone — a rename or a deletion" — and this file never learned it.
-  //
-  // SOME defined and some not, never NONE. A manifest in which not one case is defined is not this
-  // project's corpus at all — it is a fixture, and `capture-corpus-guards.test.ts` drives this file with
-  // exactly that. Refusing there would tell the caller nothing and break every harness. A manifest that
-  // is PARTLY defined is the real thing, gone stale.
-  const defined = new Set(CASES.map((/** @type {{ id: string }} */ testCase) => testCase.id));
-  const orphaned = cases.filter((/** @type {{ id: string }} */ { id }) => !defined.has(id));
-  if (orphaned.length && orphaned.length < cases.length) {
-    console.error(`REFUSING: ${orphaned.length} case(s) in the manifest are no longer DEFINED, so this `
-      + "manifest predates the case definitions and every verdict below would be computed against a "
-      + "corpus that no longer exists:");
-    for (const { id } of orphaned.slice(0, 8)) console.error(`  ${id}`);
-    if (orphaned.length > 8) console.error(`  ... and ${orphaned.length - 8} more`);
-    console.error("\nRegenerate:  npm run training:generate\n"
-      + "This is a STALE BUILD, not a broken signal — a deleted case's captures are still on disk and its "
-      + "signal will never fire, which reads as BLIND and sends you to debug a probe that works.");
+  // ALL THREE DIRECTIONS, from the one shared check (#958). This used to catch DELETED only, so on
+  // 2026-09-11 it PASSED over a manifest missing #869's five new 1.3.5 cases, which were never examined
+  // (`orchestrator`, #957). Asked of the WHOLE manifest, never the `--only` selection above: an added case
+  // is judged against all of `CASES`. A manifest sharing no id with `CASES` is a fixture, reported and let
+  // through -- `capture-corpus-guards.test.ts` drives this file with exactly that.
+  try {
+    assertManifestMatchesCases(manifest, {
+      consequence: "every verdict below would be computed against a case set that no longer exists",
+    });
+  } catch (error) {
+    console.error(`REFUSING: ${error instanceof Error ? error.message : String(error)}\n`
+      + "This is a STALE BUILD, not a broken signal: a deleted case's captures are still on disk and its "
+      + "signal will never fire, and an added case is never examined at all.");
     process.exit(2);
   }
 

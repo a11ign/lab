@@ -38,6 +38,8 @@ import { workerIsUsable } from "@a11ign/worker-fleet/health";
 import { drainAcrossPool } from "../src/training/worker-pool.mjs";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { captureTolerantly } from "@a11ign/worker-fleet/capture-client";
+// #958: the three-direction manifest check every verdict reader shares.
+import { assertManifestMatchesCases } from "../src/training/manifest-matches-cases.mjs";
 
 /**
  * the check that decides whether 2,122 cached captures survive a change. It also takes worker URLs
@@ -80,6 +82,11 @@ const browser = flag("browser", null);
 
 function manifestCases() {
   const manifest = JSON.parse(readFileSync(resolve(DATASET, "manifest.json"), "utf8"));
+  // THE VERDICT IS ABOUT THE CASES THE CODE DEFINES (#958), so a manifest that has drifted from them is
+  // refused before a single capture is compared -- asked of the WHOLE manifest, before `--only` narrows it.
+  assertManifestMatchesCases(manifest, {
+    consequence: "this would compare evidence over a case set the code no longer defines",
+  });
   return manifest.cases.filter((/** @type {any} */ c) => !only || (c.family ?? c.id).includes(only));
 }
 
