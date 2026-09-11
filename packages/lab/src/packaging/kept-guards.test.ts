@@ -83,7 +83,9 @@ export function keptSetProblems(kept: readonly string[], exists: (path: string) 
     problems.push(`KEPT_ON_PR_PATH has ${kept.length} entr${kept.length === 1 ? "y" : "ies"}, pinned at `
       + `${expectedCount}. An entry was ${kept.length < expectedCount ? "removed" : "added"} without the pin `
       + "moving. The kept set changes only by a row: if that row exists, update KEPT_COUNT with it; if not, "
-      + "`git diff origin/main -- packages/lab/src/packaging/kept-guards.test.ts` shows which entry moved.");
+      + "`git diff $(git merge-base origin/main HEAD) -- packages/lab/src/packaging/kept-guards.test.ts` shows "
+      + "which entry moved -- against the merge base, not origin/main, or an entry ADDED on main after this "
+      + "branch was cut reads as one this branch removed.");
   }
   for (const path of kept) {
     if (!exists(path)) problems.push(`${path} is in the kept set and does not exist on disk`);
@@ -105,6 +107,16 @@ test("#903: the plan's table names the wrong file for the fleet-key-name guard",
   assert.ok(existsSync(join(REPO_ROOT, "packages/lab/src/packaging/fleet-key-name-is-one-fact.test.ts")));
 });
 
+/**
+ * A FIXED SYNTHETIC KEPT SET for the two PROPERTY tests below -- never the real list. worker-capture's
+ * review of #936: with the real list as their fixture, shrinking it (the kept-set mutation) failed these
+ * too, and one of them then said "a population of 9 files failed the guard — it must depend on the kept set
+ * alone", which diagnoses the OPPOSITE of what happened. The list had shrunk; nothing had leaked in. A test
+ * whose failure message names the wrong cause sends its reader the wrong way, so each property is now tested
+ * against inputs it owns, and only the test that is ABOUT the real list fails when the real list changes.
+ */
+const SYNTHETIC_KEPT = ["kept/a.test.ts", "kept/b.test.ts", "kept/c.test.ts"];
+
 test("#931: adding or removing an UNRELATED packaging test cannot fail this guard", () => {
   // Against a synthetic filesystem, never the real directory: the kept files, plus 0, 1 and 50 unrelated
   // ones -- and the same with one of those removed. None of them is an input to the verdict, which is the
@@ -112,8 +124,8 @@ test("#931: adding or removing an UNRELATED packaging test cannot fail this guar
   const unrelated = (n: number) => Array.from({ length: n }, (_, i) => `packages/lab/src/packaging/other-${i}.test.ts`);
   for (const extra of [0, 1, 50]) {
     for (const population of [unrelated(extra), unrelated(extra).slice(1)]) {
-      const fs = new Set([...KEPT_ON_PR_PATH, ...population]);
-      assert.deepEqual(keptSetProblems(KEPT_ON_PR_PATH, (p) => fs.has(p), KEPT_COUNT), [],
+      const fs = new Set([...SYNTHETIC_KEPT, ...population]);
+      assert.deepEqual(keptSetProblems(SYNTHETIC_KEPT, (p) => fs.has(p), SYNTHETIC_KEPT.length), [],
         `a population of ${fs.size} files failed the guard -- it must depend on the kept set alone`);
     }
   }
@@ -129,8 +141,8 @@ test("#931 MUTATION TARGET: dropping an entry from the kept list, while it stays
 });
 
 test("#931: a kept file deleted from disk still fails, and the message names it by path", () => {
-  const missing = "packages/worker-fleet/src/protocol-guard.test.ts";
-  const problems = keptSetProblems(KEPT_ON_PR_PATH, (p) => p !== missing && onDisk(p), KEPT_COUNT);
+  const missing = "kept/b.test.ts";
+  const problems = keptSetProblems(SYNTHETIC_KEPT, (p) => p !== missing, SYNTHETIC_KEPT.length);
   assert.deepEqual(problems, [`${missing} is in the kept set and does not exist on disk`]);
 });
 
