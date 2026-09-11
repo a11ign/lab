@@ -58,7 +58,8 @@ const SUPPORTS_ABSENCE = new Set(["exact"]);
  * `unknown` also covers `tableCells` on a capture where `probeTables` never ran, which is the same
  * category -- nobody asked -- and is why that channel reads 100%.
  */
-const SWEEP_MISSED = new Set(["truncated", "phantom"]);
+// `elsewhere` (#951) is a capture defect too: the sweep ran out of a container and never examined the page.
+const SWEEP_MISSED = new Set(["truncated", "phantom", "elsewhere"]);
 
 /**
  * The interaction channels have no census to compare against, so their ambiguity used to be read from the
@@ -121,10 +122,14 @@ function channelWasAsked(capture, channel, fallbackEvent) {
  * records it under (`observedAs`). `observation-ambiguity.test.ts` pins that against the capture's source.
  *
  * @param {any} capture @param {string} channel
+ * @param {string} verdict the channel's `sweepCompleteness` verdict, which carries the one #951 verdict
  * @returns {"emptyAskedComplete" | "emptyAskedShort" | "emptyNotAsked" | "emptyNoRecord"}
  */
-function sweepAskedCount(capture, channel) {
+function sweepAskedCount(capture, channel, verdict) {
   const recorded = observationOf(capture, /** @type {Record<string, string>} */ (CHANNEL_FIELD)[channel]);
+  // ASKED, BUT IT RAN OUT OF A CONTAINER (#951): the capture's own `complete: true` is true about a chat
+  // widget, so it is short of the page, never "asked, ran out". Read from the one verdict, via `sweepCompleteness`.
+  if (verdict === "elsewhere" && recorded?.asked === true) return "emptyAskedShort";
   // NOT ASKED IS A STATEMENT -- `notObserved` writes `asked: false` -- so only `false` earns it. An entry that
   // states neither (`{}`, `{ complete: true }`) says nothing about asking, and is no record, exactly like a
   // missing entry (worker-capture's review of #952). Today's writers always set `asked`; the next may not.
@@ -165,7 +170,7 @@ function tallySweptChannels(capture, completeness, channels) {
     const announced = capture.structure?.[field];
     if (!Array.isArray(announced) || announced.length > 0) continue;
     row.empty++;
-    row[sweepAskedCount(capture, channel)]++;
+    row[sweepAskedCount(capture, channel, verdict)]++;
     if (SUPPORTS_ABSENCE.has(verdict)) row.emptySupported++;
     else if (SWEEP_MISSED.has(verdict)) row.sweepMissed++;
     else row.cannotSay++;

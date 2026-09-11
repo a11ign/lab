@@ -1,10 +1,11 @@
 // @ts-check
-// WHAT DID THIS CAPTURE ASK? -- one section of `capture:explain`, in a module with no imports (#343).
+// WHAT DID THIS CAPTURE ASK? -- one section of `capture:explain`, in a module that reaches no corpus (#343).
 //
 // Split out of `packages/lab/scripts/explain-capture.mjs` so a test of it runs anywhere, CI's acceptance
 // job included: that file reaches `dataset-paths.mjs`, so anything importing it is classed as needing a
 // corpus and the row's own acceptance command was refused. `explain-capture.mjs` imports and re-exports it,
-// so no reader of the report changes.
+// so no reader of the report changes. Its one import is `@a11ign/evidence/verify`, for #951's verdict.
+import { SWEEP_OF, sweptElsewhere } from "@a11ign/evidence/verify";
 
 /** `NOT RECORDED` is a distinct answer from `no`, and collapsing them is this repo's oldest defect. */
 export const absent = (/** @type {string} */ what) => `    NOT RECORDED — this capture cannot say ${what}`;
@@ -40,16 +41,19 @@ export function whatItAsked(capture) {
   const swept = capture?.structure && typeof capture.structure === "object"
     ? Object.entries(capture.structure).filter(([, value]) => Array.isArray(value)).map(([key]) => key)
     : [];
+  // A SWEEP THAT RAN OUT OF A CONTAINER (#951), keyed by the channel it fills (`links`), from the one verdict.
+  const elsewhere = new Map(sweptElsewhere(capture).map((s) => [/** @type {string} */ (SWEEP_OF[s.type]), s]));
   const rows = [...new Set([...swept, ...Object.keys(observed)])]
-    .map((channel) => askedRow(channel, /** @type {Record<string, any>} */ (observed)[channel]));
+    .map((channel) => askedRow(channel, /** @type {Record<string, any>} */ (observed)[channel], elsewhere.get(channel)));
   return rows.length ? rows : [absent("which channels it asked about — `observed` is empty")];
 }
 
 /**
  * One channel's line: what the capture recorded about asking it -- or that it recorded nothing.
  * @param {string} channel @param {any} seen the channel's `observed` entry, `undefined` when there is none
+ * @param {{ container: string | null } | undefined} [elsewhere] the verdict (#951), when this sweep ran out of a container
  */
-function askedRow(channel, seen) {
+function askedRow(channel, seen, elsewhere) {
   if (seen === undefined) {
     return absent(`whether it finished sweeping ${channel} -- it swept into \`structure.${channel}\` and recorded no verdict`);
   }
@@ -58,6 +62,13 @@ function askedRow(channel, seen) {
   if (seen.complete === false) {
     return `    ! ${channel} asked, and the sweep did NOT run out — stopped `
       + `${JSON.stringify(seen.stop ?? {})}. An absence here is about the sweep, not the page.`;
+  }
+  // BEFORE `complete === true`: the capture's own `complete` is NVDA's "no more", which is true about a chat
+  // widget the sweep was confined to -- and "ok" over it was the one line this section must never print (#951).
+  if (elsewhere) {
+    return `    ! ${channel} asked, and NVDA said there were no more — inside `
+      + `${elsewhere.container ? `"${elsewhere.container}"` : "a container it did not name"}, not the page (#951). `
+      + "An absence here is about that container, not the page.";
   }
   if (seen.complete === true) return `    ok ${channel} — asked, and NVDA itself said there were no more`;
   // A THIRD STATE, and inventing either of the other two would be the defect this field removes.

@@ -69,7 +69,7 @@ export const CENSUS_KEY_FOR_SWEEP = Object.freeze({
  *
  * @param {{ diagnostics?: unknown[] }} capture
  * @returns {{ type: string, found: number, present: number | null, basis: "raw" | "none",
- *             completeness: "complete" | "truncated" | "never-ran", ratio: number | null,
+ *             completeness: "complete" | "truncated" | "never-ran" | "elsewhere", ratio: number | null,
  *             censusReadAt: number | null, sweptAt: number | null, apartMs: number | null }[]}
  */
 export function sweepAgainstCensus(capture) {
@@ -103,7 +103,7 @@ export function sweepAgainstCensus(capture) {
       // COMPLETE, TRUNCATED OR NEVER-RAN — three states, because only a sweep that ENDED gives a ratio.
       // A sweep cut off by the deadline reports a lower bound, and dividing it by a real census produces
       // a number that reads as coverage. Both usable `link` observations on IKEA are deadline stops.
-      const completeness = sweepCompleteness(mark);
+      const completeness = sweepCompleteness(mark, diagnostics);
       // WHEN THIS SWEEP RAN, and how far that is from the census read -- #844. `readAt` (#854) made the
       // census's own moment legible; this is the other half, and the two together turn "we cannot know
       // whether these describe one moment" into a number. Measured across the 14 captures that carry
