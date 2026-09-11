@@ -28,8 +28,8 @@ test("the real lane file loads and names the pipeline -- a rename must fail this
   assert.ok(LANES, "docs/lane-ownership.json must load: absent or malformed is CANNOT_ASK, not 'no lanes'");
   const pipeline = LANES!.lanes.find((l) => l.paths.includes(".github/workflows/"));
   assert.ok(pipeline, "the pipeline lane must still cover .github/workflows/");
-  assert.equal(pipeline!.owner, "dispatcher");
-  assert.ok(pipeline!.branchPrefixes.includes("dispatcher/"));
+  assert.equal(pipeline!.owner, "ceo"); // moved from dispatcher 2026-09-11 (#913): the retired session cannot own a lane
+  assert.ok(pipeline!.branchPrefixes.includes("ceo/"));
   assert.ok(pipeline!.why.length > 80, "a lane states WHY it is a lane; a bare assertion of ownership is "
     + "the thing a reader cannot argue with or correct");
 });
@@ -38,19 +38,19 @@ test("THE INCIDENT: a pm/ branch changing a workflow is REFUSED, and the refusal
   const v = verdict("pm/board-records", [".github/workflows/ready-label-audit.yml"]);
   assert.equal(v.code, EXIT.REFUSED);
   assert.match(v.reasons[0], /the pipeline/);
-  assert.match(v.reasons[0], /dispatcher owns/);
+  assert.match(v.reasons[0], /ceo owns/);
   assert.match(v.reasons[0], /pm\/board-records/, "and it names the branch, so the reader knows why it fired");
   assert.match(v.reasons[0], /Lane-exception:/, "and it names the way out, or it is a wall people route around");
 });
 
-test("every non-dispatcher prefix is refused, not just pm/ -- 137 branches on origin are agent/", () => {
-  for (const branch of ["agent/x", "lead/x", "ceo/x", "pm/x", "marketing/x", "x"]) {
+test("every non-owner prefix is refused, not just pm/ -- 137 branches on origin are agent/", () => {
+  for (const branch of ["agent/x", "lead/x", "dispatcher/x", "pm/x", "marketing/x", "x"]) {
     assert.equal(verdict(branch, [".github/workflows/ci.yml"]).code, EXIT.REFUSED, `${branch} must refuse`);
   }
 });
 
 test("the lane's own branches pass, including revert/ -- decideRevert opens those itself", () => {
-  for (const branch of ["dispatcher/audit-drop-pr-trigger-579", "revert/4e87c87565-316"]) {
+  for (const branch of ["ceo/lane-owner-913", "revert/4e87c87565-316"]) {
     assert.equal(verdict(branch, [".github/workflows/trunk-guard.yml"]).code, EXIT.CLEAR, branch);
   }
 });
@@ -193,7 +193,7 @@ test("THE WIRING, not just the logic: the job running this check checks out FULL
 
 test("the lane file is DATA with a named owner, so the mechanism cannot quietly decide who owns what", () => {
   const raw = JSON.parse(readFileSync(path.join(REPO, "docs/lane-ownership.json"), "utf8"));
-  assert.equal(raw._owner, "ceo", "ceo assigns lanes; dispatcher owns the mechanism only");
+  assert.equal(raw._owner, "ceo", "ceo assigns lanes and, since 2026-09-11, owns the pipeline lane itself");
   assert.ok(String(raw._why).includes("2026-09-08"), "the file cites the ruling that created it");
   assert.ok(String(raw._exception).length > 100, "and states that a lane is not a wall, in the file itself");
 });
