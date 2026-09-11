@@ -7,32 +7,37 @@
  * public since 2026-09-06, and these are the guards with a real blast radius) and the product-fact pins
  * (each compares two copies of a product fact, which is what a test is).
  *
- * TWO CORRECTIONS TO THE PLAN'S TABLE, found by reading the real tree rather than trusting it -- the same
- * discipline this row's own filing already applied once (five of the nine files are not under
- * `packages/lab/src/packaging/` at all, contrary to the plan's table) and a second the filing missed:
- * the plan names `fleet-key-name.test.ts`; the real file on `origin/main` is
- * `fleet-key-name-is-one-fact.test.ts`. Asserted below, not just corrected in the list, so a future rename
- * back to the plan's spelling is caught rather than silently accepted.
+ * TWO CORRECTIONS TO THE PLAN'S TABLE, found by reading the real tree rather than trusting it: five of the
+ * nine files are not under `packages/lab/src/packaging/` at all, contrary to the plan's table; and the plan
+ * names `fleet-key-name.test.ts` where the real file is `fleet-key-name-is-one-fact.test.ts`. The second is
+ * asserted below, not just corrected in the list, so a rename back to the plan's spelling is caught.
  *
- * THE ACCOUNTING MUST CLOSE, or a kept file quietly dropped from the array below is invisible as long as
- * it still exists on disk. `PENDING_TRIAGE_COUNT` is a PINNED literal (measured once against
- * `origin/main`, 2026-09-10: 207 packaging test files total, 4 of the 9 kept files live under packaging,
- * so 207 - 4 = 203 remain for groups 2 to 6) -- never derived from `KEPT_UNDER_PACKAGING.length`, because
- * a count derived from the very array being mutated cannot catch the array being mutated. Naming which of
- * the 203 goes to which of groups 2-6 is their job (see "Not in scope" on the row), not this one's; this
- * row only has to prove none of them fell through a crack no test was watching.
+ * ## What this guards, and what it stopped guarding (#931)
  *
- * This file adds itself to the packaging population and to the kept set -- it is the guard that keeps the
- * boundary, so it belongs on the PR path by the same rule as everything else here. 207 -> 208; the row's
- * own acceptance text says "unchanged at 207, because this row adds one file and removes none", which is
- * arithmetically impossible for a row that adds a file -- 208 is the corrected, measured number.
+ * **It pins the KEPT SET, never the packaging population.** #903 first pinned the whole directory as a
+ * closed sum -- `files.length === kept + PENDING_TRIAGE_COUNT`, the pending count a literal -- so that
+ * dropping a kept file from the array could not pass silently. It worked, and it taxed every pull request
+ * that added or removed ANY test in `packages/lab/src/packaging/`: #923, a workflow row that touched no
+ * guard, went red on both `docs` and `ts` for correctly deleting one file, while `main` had been red for
+ * 27.8 hours, until its author found and decremented a constant he had no reason to know existed. Six
+ * triage rows were about to shrink the directory by ~115 files, each editing the same line. `ceo` ruled the
+ * population sum out; this is that change.
+ *
+ * **What survives is the property the row was filed for.** Every kept file exists on disk, and the kept
+ * list cannot silently shrink -- now by pinning the LIST's own length, a number that moves only when a row
+ * decides the kept set changes, rather than the population's, which moves whenever anybody adds a test.
+ *
+ * **What is genuinely lost, stated rather than glossed:** nothing here notices a packaging test appearing or
+ * disappearing OUTSIDE the kept set. That was never this guard's job -- it was a side effect of how the
+ * mutation got its teeth -- and a pull request that changes the population states its before/after count in
+ * its own body, where the reviewer checks it against disk.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { walkTree } from "../../../../scripts/tree-wide-guard.mjs";
+import { stripComments } from "@a11ign/evidence/source-text";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -56,49 +61,42 @@ const SELF = "packages/lab/src/packaging/kept-guards.test.ts";
 
 export const KEPT_ON_PR_PATH = [...LEAK_GUARDS, ...PRODUCT_FACT_PINS, SELF];
 
-const KEPT_UNDER_PACKAGING = KEPT_ON_PR_PATH.filter((path) => path.startsWith("packages/lab/src/packaging/"));
+/**
+ * The kept list's own length, PINNED -- the independent signal that lets a dropped entry be caught. A count
+ * derived from `KEPT_ON_PR_PATH` itself could not catch `KEPT_ON_PR_PATH` shrinking. It changes only when a
+ * row changes what is kept, which is a decision somebody writes down.
+ */
+const KEPT_COUNT = 10;
 
-// Pinned, not derived -- see the file header. Updated by each guard-triage group (2 to 6) as it lands,
-// which is the intended use of this constant, not a violation of "leave the kept LIST intact" above --
-// the kept-set array never changes here, only the running total of what groups 2-6 have moved or deleted.
-// A group that lands concurrently with another will conflict on this line; re-resolve the arithmetic,
-// do not drop either group's change.
-//
-// #903 (baseline): 207 total, 4 kept-under-packaging -- pending 203.
-// #906 (guard triage 4 of 6): -10 deleted (board-style, board-markdown, board-schedule,
-// board-summary-origin, board-achievement-retirement, board-achievement-staleness, board-record,
-// board-report, audit-citation-index, audit-findings-dispositioned), +2 added
-// (board-report-smoke.test.ts, board-reported-data-integrity.test.ts -- two tests extracted from
-// board-style.test.ts that check real data integrity, not content/style, so they did not retire with the
-// rest of that file) -- pending 203 - 10 + 2 = 195.
-//
-// FIVE ORIGINAL CANDIDATES RESTORED, NOT DELETED: a-hold-means-cannot-merge, pr-hold,
-// merge-guard-pr-hold-rule, workflow-lane-check, arm-pr all name "hold"/"lane"/"session-label" families
-// the CI Reset's own text lists as retiring -- but each tests a mechanism CURRENTLY, ACTIVELY wired into
-// mergeSafety or auto-arm.yml today (workflow-lane-check.mjs and merge-guard.mjs's composed
-// mergeSafetyVerdict run inside ci.yml's mergeSafety job; pr-hold-state.mjs's armVerdict/armabilityOf and
-// arm-pr.mjs's armDecision run inside auto-arm.yml), not merely a retired label taxonomy. Deleting their
-// only test coverage would leave a live, merge-blocking mechanism untested until #902 (which removes
-// mergeSafety) actually lands. Restoring them is not a correction to the KEPT list above (they were never
-// in it) -- it is this row declining to touch them until the row that retires their CALLING workflow
-// does.
-const PACKAGING_TOTAL_BEFORE_THIS_ROW = 207;
-const KEPT_UNDER_PACKAGING_BEFORE_THIS_ROW = 4;
-// #901 deleted `ready-label-audit-triggers.test.ts` with the workflow it pinned (PR #923): one fewer pending.
-// BOTH deltas are kept deliberately -- this is the conflict the header above predicts, and the resolution
-// it prescribes. 203 - 1 (#901) - 10 + 2 (#906) = 194.
-const PENDING_TRIAGE_COUNT = (PACKAGING_TOTAL_BEFORE_THIS_ROW - KEPT_UNDER_PACKAGING_BEFORE_THIS_ROW) - 1 - 10 + 2;
-
-function packagingTestFiles() {
-  return walkTree({ kind: "all", roots: ["packages/lab/src/packaging"] })
-    .map((file) => file.path)
-    .filter((path) => path.endsWith(".test.ts"));
+/**
+ * Every problem with the kept set, given the list and a way to ask whether a path exists. PURE, and it takes
+ * no packaging population at all -- which is the whole of #931: nothing outside the kept set is an input.
+ *
+ * @param {readonly string[]} kept
+ * @param {(path: string) => boolean} exists
+ * @param {number} expectedCount
+ * @returns {string[]}
+ */
+export function keptSetProblems(kept: readonly string[], exists: (path: string) => boolean, expectedCount: number) {
+  const problems: string[] = [];
+  if (kept.length !== expectedCount) {
+    problems.push(`KEPT_ON_PR_PATH has ${kept.length} entr${kept.length === 1 ? "y" : "ies"}, pinned at `
+      + `${expectedCount}. An entry was ${kept.length < expectedCount ? "removed" : "added"} without the pin `
+      + "moving. The kept set changes only by a row: if that row exists, update KEPT_COUNT with it; if not, "
+      + "`git diff $(git merge-base origin/main HEAD) -- packages/lab/src/packaging/kept-guards.test.ts` shows "
+      + "which entry moved -- against the merge base, not origin/main, or an entry ADDED on main after this "
+      + "branch was cut reads as one this branch removed.");
+  }
+  for (const path of kept) {
+    if (!exists(path)) problems.push(`${path} is in the kept set and does not exist on disk`);
+  }
+  return problems;
 }
 
-test("#903: all nine plan-named kept files exist on disk, at the paths named here", () => {
-  for (const path of KEPT_ON_PR_PATH) {
-    assert.ok(existsSync(join(REPO_ROOT, path)), `${path} does not exist`);
-  }
+const onDisk = (path: string) => existsSync(join(REPO_ROOT, path));
+
+test("#903: every kept file exists on disk, and the kept list is the length it is pinned at", () => {
+  assert.deepEqual(keptSetProblems(KEPT_ON_PR_PATH, onDisk, KEPT_COUNT), []);
 });
 
 test("#903: the plan's table names the wrong file for the fleet-key-name guard", () => {
@@ -109,31 +107,52 @@ test("#903: the plan's table names the wrong file for the fleet-key-name guard",
   assert.ok(existsSync(join(REPO_ROOT, "packages/lab/src/packaging/fleet-key-name-is-one-fact.test.ts")));
 });
 
-test("#903: the packaging population is exhaustively accounted for -- kept plus pending, nothing dropped", () => {
-  const files = packagingTestFiles();
-  const expected = KEPT_UNDER_PACKAGING.length + PENDING_TRIAGE_COUNT;
-  assert.equal(
-    files.length,
-    expected,
-    `packaging holds ${files.length} test file(s); kept (${KEPT_UNDER_PACKAGING.length}) + pending `
-      + `(${PENDING_TRIAGE_COUNT}) = ${expected} -- the accounting no longer closes. A file was added, `
-      + "removed, or moved without this row's pinned count being updated to match.",
-  );
-  for (const path of KEPT_UNDER_PACKAGING) {
-    assert.ok(files.includes(path), `${path} is in the kept list but the tree walk did not find it`);
+/**
+ * A FIXED SYNTHETIC KEPT SET for the two PROPERTY tests below -- never the real list. worker-capture's
+ * review of #936: with the real list as their fixture, shrinking it (the kept-set mutation) failed these
+ * too, and one of them then said "a population of 9 files failed the guard — it must depend on the kept set
+ * alone", which diagnoses the OPPOSITE of what happened. The list had shrunk; nothing had leaked in. A test
+ * whose failure message names the wrong cause sends its reader the wrong way, so each property is now tested
+ * against inputs it owns, and only the test that is ABOUT the real list fails when the real list changes.
+ */
+const SYNTHETIC_KEPT = ["kept/a.test.ts", "kept/b.test.ts", "kept/c.test.ts"];
+
+test("#931: adding or removing an UNRELATED packaging test cannot fail this guard", () => {
+  // Against a synthetic filesystem, never the real directory: the kept files, plus 0, 1 and 50 unrelated
+  // ones -- and the same with one of those removed. None of them is an input to the verdict, which is the
+  // property #931 exists for: #923 deleted one file and turned `docs` and `ts` red on a workflow row.
+  const unrelated = (n: number) => Array.from({ length: n }, (_, i) => `packages/lab/src/packaging/other-${i}.test.ts`);
+  for (const extra of [0, 1, 50]) {
+    for (const population of [unrelated(extra), unrelated(extra).slice(1)]) {
+      const fs = new Set([...SYNTHETIC_KEPT, ...population]);
+      assert.deepEqual(keptSetProblems(SYNTHETIC_KEPT, (p) => fs.has(p), SYNTHETIC_KEPT.length), [],
+        `a population of ${fs.size} files failed the guard -- it must depend on the kept set alone`);
+    }
   }
 });
 
-test("#903 MUTATION TARGET: dropping a kept-under-packaging file from the list, while it stays on disk, breaks the accounting", () => {
-  // The row's own named mutation: "delete one of the nine from the list but leave it on disk." Simulated
-  // here rather than by editing the real array, so this test proves the LOGIC catches it without this
-  // file having to un-fix itself to prove a negative.
-  const mutatedKeptCount = KEPT_UNDER_PACKAGING.length - 1;
-  const files = packagingTestFiles();
-  assert.notEqual(
-    files.length,
-    mutatedKeptCount + PENDING_TRIAGE_COUNT,
-    "removing one kept file from the count must desync the accounting -- if this equality holds, the "
-      + "exhaustiveness check cannot see a kept file disappearing from the list",
-  );
+test("#931 MUTATION TARGET: dropping an entry from the kept list, while it stays on disk, still fails", () => {
+  // #903's original mutation, unchanged -- the one that must survive the narrowing. The file is still on
+  // disk, so only the pinned length can see it go.
+  const dropped = KEPT_ON_PR_PATH.filter((path) => path !== "packages/lab/src/packaging/generated-paths.test.ts");
+  const problems = keptSetProblems(dropped, onDisk, KEPT_COUNT);
+  assert.equal(problems.length, 1, `expected exactly the length problem; got ${JSON.stringify(problems)}`);
+  assert.match(problems[0], /has 9 entries, pinned at 10\. An entry was removed/);
+});
+
+test("#931: a kept file deleted from disk still fails, and the message names it by path", () => {
+  const missing = "kept/b.test.ts";
+  const problems = keptSetProblems(SYNTHETIC_KEPT, (p) => p !== missing, SYNTHETIC_KEPT.length);
+  assert.deepEqual(problems, [`${missing} is in the kept set and does not exist on disk`]);
+});
+
+test("#931: no pinned count of the whole packaging population remains in this file", () => {
+  // Asserted against the file's own source, because the point is an ABSENCE, and an absence nothing checks
+  // comes back. COMMENTS STRIPPED first: the header names the old constant while explaining why it went,
+  // and a history is not a pin. The names are assembled rather than written out too -- this file reads
+  // itself, and a literal in the assertion would match the assertion.
+  const source = stripComments(readFileSync(fileURLToPath(import.meta.url), "utf8"));
+  for (const name of ["PENDING_" + "TRIAGE_COUNT", "PACKAGING_" + "TOTAL", "walk" + "Tree("]) {
+    assert.ok(!source.includes(name), `${name} is back in kept-guards.test.ts -- the population sum #931 removed`);
+  }
 });
