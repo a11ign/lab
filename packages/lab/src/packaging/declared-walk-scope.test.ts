@@ -30,6 +30,7 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseWalkScope, inScope } from "../../../../scripts/walk-scope.mjs";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 import {
   alwaysRunTests, discoverTestFiles, narrowByDeclaredScope, sourceClosure,
 } from "../../../../scripts/select-changed-tests.mjs";
@@ -150,8 +151,8 @@ function runFixtureGuard(scope: string, reads: string[]) {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   try {
-    return spawnSync("npx", ["tsx", "--test", "--test-reporter=spec", file],
-      { cwd: REPO, env, encoding: "utf8", timeout: 120_000 });
+    const npx = npmCliInvocation("npx", ["tsx", "--test", "--test-reporter=spec", file]);
+    return spawnSync(npx.command, npx.args, { cwd: REPO, env, encoding: "utf8", timeout: 120_000 });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
