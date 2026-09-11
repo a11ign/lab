@@ -11,7 +11,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import {
-  regionPathsFromBody, extractRegionSection, declaredRegionFiles, regionCovers,
+  regionPathsFromBody, extractRegionSection, declaredRegionFiles, regionCovers, rootFilesOnMain,
   extractLabeledSection, hasTemplateField,
 } from "../../../../scripts/region-paths.mjs";
 
@@ -150,6 +150,47 @@ test("#941: EVERY root the tree tracks declares -- read from the tree, never fro
     assert.deepEqual(declaredRegionFiles(`## Region\n\n${root}/\n`), [`${root}/`], `${root}/ vanished`);
     assert.deepEqual(declaredRegionFiles(`## Region\n\n\`${root}/nested/\`\n`), [`${root}/nested/`]);
   }
+});
+
+test("#975: a ROOT-LEVEL file the tree has is declared -- on its own line, backticked, or in a fenced list", () => {
+  // `PATH_IN_PROSE` needs one of four prefixes, so a Region naming `package.json` declared NOTHING for it and
+  // the claim-time overlap check was blind to the repository's most-edited files. Measured 2026-09-11: 10 of
+  // 64 open rows named a root file the parser dropped.
+  for (const name of ["package.json", "CLAUDE.md", "eslint.config.js"]) {
+    assert.deepEqual(declaredRegionFiles(`## Region\n\n${name}\n`), [name], `${name} on its own line vanished`);
+    assert.deepEqual(declaredRegionFiles(`## Region\n\n\`${name}\`\n`), [name], `backticked ${name} vanished`);
+    assert.deepEqual(declaredRegionFiles(`## Region\n\n\`\`\`\nscripts/row-file.mjs\n${name}\n\`\`\`\n`),
+      ["scripts/row-file.mjs", name], `${name} beside a prefixed path vanished`);
+  }
+});
+
+test("#975: ANCHORED TO THE TREE -- a word with a dot that is not a root file declares nothing", () => {
+  // The rule a person can check: `origin/main` has a file of that name at the root, or it is prose. Otherwise
+  // "the census writes evidence.json" would declare a file nobody touches, and the overlap check would refuse
+  // an unrelated claim.
+  const known = new Set(["package.json"]);
+  assert.deepEqual(declaredRegionFiles("## Region\n\nevidence.json\nmanifest.json\n", { rootFiles: known }), []);
+  assert.deepEqual(declaredRegionFiles("## Region\n\npackage.json\nevidence.json\n", { rootFiles: known }), ["package.json"]);
+  // And the real tree answers the same way: `package.json` is there, `evidence.json` is not.
+  const tree = rootFilesOnMain();
+  assert.ok(tree.has("package.json") && tree.has("CLAUDE.md"), "the root listing is empty or wrong, so the rule asserts nothing");
+  assert.equal(tree.has("evidence.json"), false);
+});
+
+test("#975: a root file named in the Region's PROSE is a declaration, and one named elsewhere in the body is not", () => {
+  // The parsed-section rule: what the Region says is a declaration, wherever in the section it appears. A row
+  // that cites `package.json` in its "What it is" is not declaring it -- `extractRegionSection` bounds this.
+  assert.deepEqual(declaredRegionFiles("## Region\n\nThe fix is in `package.json`, one line.\n"), ["package.json"]);
+  assert.deepEqual(declaredRegionFiles("## What it is\n\n`package.json` is wrong.\n\n## Region\n\nscripts/row-file.mjs\n"),
+    ["scripts/row-file.mjs"]);
+});
+
+test("#975: the #941 directory rule still declares its prefixes beside a root file", () => {
+  // #941 is the row this file's other half exists for, and a root-file rule must not cost it: a Region of one
+  // directory and one root file declares both.
+  assert.deepEqual(declaredRegionFiles("## Region\n\npackages/control/ansible/\npackage.json\n"),
+    ["packages/control/ansible/", "package.json"]);
+  assert.deepEqual(declaredRegionFiles("## Region\n\ndocs/, scripts/, README.md\n"), ["docs/", "scripts/", "README.md"]);
 });
 
 test("#941: `.` and `..` segments declare nothing -- neither names a directory inside the tree", () => {
