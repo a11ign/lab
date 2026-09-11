@@ -51,6 +51,16 @@ test("#343: a channel the capture SWEPT but recorded no verdict for prints NOT R
   assert.ok(!rows.some((r) => /\bok (lists|links)\b/.test(r)), "an absent verdict must never read as ok");
 });
 
+test("#343: only an ARRAY in `structure` is a sweep -- a timestamp or a tally beside them is not a channel", () => {
+  const rows = whatItAsked({
+    structure: { headings: [], sweptAt: "2026-09-11T03:00:00Z", headingLevels: { 1: 1, 2: 3 } },
+    observed: { headings: { asked: true, complete: true } },
+  });
+  assert.ok(!rows.some((r) => r.includes("sweptAt") || r.includes("headingLevels")),
+    `a non-array key is not a sweep, so it cannot be one with no verdict: ${JSON.stringify(rows)}`);
+  assert.equal(rows.filter((r) => r.includes("NOT RECORDED")).length, 0);
+});
+
 test("#343: ...and a channel this capture never swept is not invented -- an older capture has no `frames`", () => {
   const rows = whatItAsked({
     structure: { headings: [] },

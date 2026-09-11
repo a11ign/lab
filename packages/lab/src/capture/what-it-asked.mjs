@@ -35,7 +35,11 @@ export function whatItAsked(capture) {
   // the sweeps after the one `sweepEveryStructuralType`'s single try/catch caught -- which is the one answer
   // this section exists never to give. Taken from the capture rather than a list typed here, so a capture that
   // predates a channel (`frames`) is not asked about it.
-  const swept = capture?.structure && typeof capture.structure === "object" ? Object.keys(capture.structure) : [];
+  // ARRAYS ONLY, which is what makes a key a sweep: a non-array beside them (a timestamp, a tally) is not a
+  // channel, and read as one it printed a false NOT RECORDED (worker-judge's review of #950).
+  const swept = capture?.structure && typeof capture.structure === "object"
+    ? Object.entries(capture.structure).filter(([, value]) => Array.isArray(value)).map(([key]) => key)
+    : [];
   const rows = [...new Set([...swept, ...Object.keys(observed)])]
     .map((channel) => askedRow(channel, /** @type {Record<string, any>} */ (observed)[channel]));
   return rows.length ? rows : [absent("which channels it asked about — `observed` is empty")];
