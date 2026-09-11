@@ -102,6 +102,13 @@ function discoverGitPopulationTests(): string[] {
  * still literally appear in the file's source below), or `null` with a stated reason no guard applies.
  */
 const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
+  "packages/lab/src/packaging/declared-walk-scope.test.ts": {
+    guard: null,
+    note: "NOT a discovery test (#929). It spawns git to prove that `walk-scope.mjs` records each argv form "
+      + "(`ls-files` by pathspec, `grep` after `--`, `log` as the whole repository), and it asserts over "
+      + "what the observer RECORDED, never over git's output -- so there is no population to be vacuous "
+      + "about. Its own discovery walk, the always-run guards, is floored by `declarers.length > 0`.",
+  },
   "packages/lab/src/packaging/rescue-hunk.test.ts": {
     guard: null,
     note: "NOT a discovery test — it drives `git merge-file` and `git show` on ONE named pair of refs "

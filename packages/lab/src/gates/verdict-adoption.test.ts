@@ -1,8 +1,17 @@
+// FIRST, so it observes every read below it -- #929. See `scripts/walk-scope.mjs`.
+import { declareWalkScope } from "../../../../scripts/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
+
+/**
+ * WHAT THIS GUARD READS, declared so a diff outside it does not run it -- #929. It walks `packages/lab/scripts` for gates adopting the verdict helpers, and reads their sources there and in `packages/lab/src`.
+ * Its own run checks that, and fails if it ever reads wider.
+ */
+export const WALK_SCOPE = ["packages/lab/scripts", "packages/lab/src"];
+await declareWalkScope(import.meta.url);
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
