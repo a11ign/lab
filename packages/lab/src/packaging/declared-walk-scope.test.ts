@@ -531,6 +531,29 @@ test("every declaring guard imports walk-scope FIRST and runs its own check", ()
 const ALLOWED_BUILTINS = new Set<string>(Object.keys(DECLARER_BUILTINS));
 const BUILTINS = new Set(builtinModules);
 
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Each ESM_UNSYNCED name this source can bind through ESM -- derived from the table, so an unsynced module
+ * added there is refused here with no second list. EVERY spelling that can carry the name: a named import
+ * (alone or beside a default), a named RE-EXPORT, a namespace import, a `*` re-export, and a dynamic import.
+ * worker-judge's third review found the re-exports: a helper's `export { run } from "node:test"` handed a
+ * declarer the unwrapped function, and neither file matched the import-only spellings.
+ */
+function unsyncedBindingsIn(code: string): string[] {
+  const found: string[] = [];
+  for (const [module, names] of Object.entries(ESM_UNSYNCED as Record<string, Record<string, string>>)) {
+    const from = String.raw`\s*from\s*["'](?:node:)?${escapeRegExp(module)}["']`;
+    const opener = String.raw`\b(?:import\s+(?:[\w$]+\s*,\s*)?|export\s*)`;
+    const whole = new RegExp(String.raw`${opener}\*(?:\s*as\s+[\w$]+)?${from}|\bimport\s*\(\s*["'](?:node:)?${escapeRegExp(module)}["']\s*\)`);
+    for (const name of Object.keys(names)) {
+      const named = new RegExp(String.raw`${opener}\{[^}]*\b${escapeRegExp(name)}\b[^}]*\}${from}`);
+      if (named.test(code) || whole.test(code)) found.push(`node:${module}'s ${name}`);
+    }
+  }
+  return found;
+}
+
 /** Each route in one source file that reads through nothing the observer wraps -- empty when there is none. */
 function unseenRoutesIn(code: string): string[] {
   const found: string[] = [];
@@ -539,11 +562,7 @@ function unseenRoutesIn(code: string): string[] {
     found.push("builds a stream or a process by hand");
   }
   if (/\bimport\.meta\.resolve\s*\(/.test(code)) found.push("resolves a specifier through the ESM loader");
-  // `node:test`'s ESM bindings are not re-pointed (ESM_UNSYNCED), so its `run` is reachable unwrapped through
-  // a named, namespace or dynamic import -- a default import or `require` reaches the wrapper.
-  if (/\bimport\s*\{[^}]*\brun\b[^}]*\}\s*from\s*["']node:test["']|\bimport\s*\*\s*as\s+\w+\s+from\s*["']node:test["']|\bimport\s*\(\s*["']node:test["']\s*\)/.test(code)) {
-    found.push("reaches node:test's run through a binding the observer cannot re-point");
-  }
+  for (const binding of unsyncedBindingsIn(code)) found.push(`reaches ${binding} through a binding the observer cannot re-point`);
   if (/\._(?:findPath|load|resolveFilename|resolveLookupPaths|nodeModulePaths|initPaths|preloadModules)\s*\(/.test(code)) {
     found.push("calls Node's module internals directly");
   }
@@ -574,10 +593,16 @@ test("...and that refusal can fire: each unseen route is found, and a plain fs i
   assert.deepEqual(unseenRoutesIn(`const u = import.meta.resolve("@a11ign/judge");`), ["resolves a specifier through the ESM loader"]);
   assert.deepEqual(unseenRoutesIn(`Module._findPath(req, paths);`), ["calls Node's module internals directly"]);
   const viaTestBinding = ["reaches node:test's run through a binding the observer cannot re-point"];
-  assert.deepEqual(unseenRoutesIn(`import { test, run } from "node:test";`), viaTestBinding);
-  assert.deepEqual(unseenRoutesIn(`import * as t from "node:test";`), viaTestBinding);
-  assert.deepEqual(unseenRoutesIn(`const { run } = await import("node:test");`), viaTestBinding);
-  assert.deepEqual(unseenRoutesIn(`import { test, before } from "node:test";`), [], "the ordinary import is untouched");
+  for (const spelling of [`import { test, run } from "node:test";`, `import t, { run as r } from "node:test";`,
+    `import * as t from "node:test";`, `const { run } = await import("node:test");`,
+    // worker-judge's round 3: the re-exports, through which a helper hands a declarer the unwrapped function.
+    `export { run } from "node:test";`, `export * from "node:test";`, `export * as t from "node:test";`]) {
+    assert.deepEqual(unseenRoutesIn(spelling), viaTestBinding, spelling);
+  }
+  for (const harmless of [`import { test, before } from "node:test";`, `import nodeTest from "node:test";`,
+    `export { test } from "node:test";`, `import { runner } from "./x.mjs";`]) {
+    assert.deepEqual(unseenRoutesIn(harmless), [], `${harmless} binds nothing unsynced`);
+  }
   assert.deepEqual(unseenRoutesIn(`import { readFileSync } from "node:fs";\nconst m = await import("./x.mjs");`), []);
 });
 
