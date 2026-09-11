@@ -15,7 +15,8 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { CASES } from "./case-matrix.mjs";
-import { assertManifestMatchesCases, manifestDrift } from "./manifest-matches-cases.mjs";
+import { ACCEPTANCE_CASES, ALL_ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
+import { assertManifestMatchesCases, casesForKind, manifestDrift } from "./manifest-matches-cases.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const read = (path: string) => readFileSync(resolve(REPO, path), "utf8");
@@ -72,6 +73,7 @@ test("a drifted manifest names at most eight entries, and counts the rest", () =
 
 /** Every reader that computes a verdict on the case set, or acts on it (#958's table). */
 const READERS: Record<string, string> = {
+  "preflight-screenreader-dataset.mjs": "packages/lab/src/training/preflight-screenreader-dataset.mjs",
   "export-screenreader-dataset.mjs": "packages/lab/src/training/export-screenreader-dataset.mjs",
   "check-signals.mjs": "packages/lab/src/training/check-signals.mjs",
   "capture-screenreader-dataset.mjs": "packages/lab/src/training/capture-screenreader-dataset.mjs",
@@ -106,6 +108,64 @@ test("END TO END: check-signals REFUSES a manifest missing a defined case -- the
     assert.equal(run.status, 2, `exit ${run.status}; stdout:\n${run.stdout}\nstderr:\n${run.stderr}`);
     assert.match(run.stderr, new RegExp(`${missing.id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: in CASES, not in the manifest`));
     assert.match(run.stderr, /STALE BUILD, not a broken signal/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+/** Run `body` with `DATASET_KIND` set as a reader's environment would set it, then put it back. */
+function withKind<T>(kind: string | undefined, body: () => T): T {
+  const before = process.env.DATASET_KIND;
+  if (kind === undefined) delete process.env.DATASET_KIND; else process.env.DATASET_KIND = kind;
+  try { return body(); } finally {
+    if (before === undefined) delete process.env.DATASET_KIND; else process.env.DATASET_KIND = before;
+  }
+}
+
+test("#978: the case set is the one the manifest's KIND was generated from -- ALL_ACCEPTANCE_CASES, never CASES", () => {
+  assert.equal(casesForKind("acceptance"), ALL_ACCEPTANCE_CASES,
+    "the acceptance generator writes ALL_ACCEPTANCE_CASES, multi-defect cases included");
+  assert.notEqual(ALL_ACCEPTANCE_CASES.length, ACCEPTANCE_CASES.length, "the distinction this pins must exist");
+  assert.equal(casesForKind(undefined), CASES);
+  assert.equal(casesForKind("training"), CASES);
+  // Read at CALL time from the environment the acceptance npm scripts set -- so no reader passes a set itself.
+  assert.equal(withKind("acceptance", () => casesForKind()), ALL_ACCEPTANCE_CASES);
+});
+
+test("#978: an ACCEPTANCE manifest is COMPARED in all three directions, never escaped as a fixture", () => {
+  const listed = ALL_ACCEPTANCE_CASES.map(({ id }: { id: string }) => ({ id }));
+  withKind("acceptance", () => {
+    assert.deepEqual(manifestDrift({ cases: listed }), { fixture: false, drifted: [] }, "a faithful manifest is clean");
+    const [first, ...rest] = listed;
+    assert.deepEqual(manifestDrift({ cases: rest }).drifted, [`${first.id}: in CASES, not in the manifest`], "ADDED");
+    assert.deepEqual(manifestDrift({ cases: [...listed, { id: "acceptance-gone" }] }).drifted,
+      ["acceptance-gone: in the manifest, not in CASES"], "DELETED");
+    const family = (ALL_ACCEPTANCE_CASES[0] as unknown as { family: unknown }).family;
+    const changed = [{ ...first, family: "not-the-family" }, ...rest];
+    assert.deepEqual(manifestDrift({ cases: changed }).drifted,
+      [`${first.id}.family: manifest="not-the-family" CASES=${JSON.stringify(family)}`], "CHANGED");
+  });
+});
+
+test("#978 END TO END: preflight passes a freshly generated ACCEPTANCE manifest, and refuses one missing a case", () => {
+  // On `origin/main` the first half FAILED: preflight expected ACCEPTANCE_CASES (72) and the generator wrote 79,
+  // so `training:preflight-acceptance` refused every fresh manifest with "case count does not match".
+  const root = mkdtempSync(resolve(tmpdir(), "acceptance-978-"));
+  const env = { ...process.env, DATASET_KIND: "acceptance", DATASET_ROOT: root };
+  const run = (script: string) => spawnSync(process.execPath, [resolve(REPO, "packages/lab/src/training", script)],
+    { encoding: "utf8", timeout: 240_000, env });
+  try {
+    assert.equal(run("generate-screenreader-acceptance.mjs").status, 0, "the generator must write the manifest");
+    const fresh = run("preflight-screenreader-dataset.mjs");
+    assert.equal(fresh.status, 0, `preflight refused a fresh manifest:\n${fresh.stdout}\n${fresh.stderr}`);
+    assert.match(fresh.stdout, new RegExp(`Cases: ${ALL_ACCEPTANCE_CASES.length};`));
+    const path = resolve(root, "manifest.json");
+    const manifest = JSON.parse(readFileSync(path, "utf8"));
+    const dropped = manifest.cases.pop();
+    writeFileSync(path, JSON.stringify(manifest));
+    const stale = run("preflight-screenreader-dataset.mjs");
+    assert.notEqual(stale.status, 0, "preflight passed a manifest missing a defined case");
+    assert.ok(stale.stderr.includes(`${dropped.id}: in CASES, not in the manifest`), stale.stderr);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

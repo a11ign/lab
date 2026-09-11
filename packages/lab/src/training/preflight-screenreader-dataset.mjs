@@ -2,8 +2,9 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { CASES, SIGNAL_TYPES } from "./case-matrix.mjs";
-import { ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
+import { SIGNAL_TYPES } from "./case-matrix.mjs";
+// #978: the three-direction manifest check every reader shares, and the case set for this dataset kind.
+import { assertManifestMatchesCases, casesForKind } from "./manifest-matches-cases.mjs";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 
@@ -15,7 +16,10 @@ import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run training:preflight" });
 
 const ROOT = datasetRoot();
-const EXPECTED_CASES = process.env.DATASET_KIND === "acceptance" ? ACCEPTANCE_CASES : CASES;
+// THE SET THE MANIFEST WAS GENERATED FROM (#978). This was `ACCEPTANCE_CASES` for the acceptance kind, while the
+// generator writes `ALL_ACCEPTANCE_CASES` -- so the seven multi-defect cases were never preflighted, and the count
+// check this file carried refused every freshly generated acceptance manifest (79 against 72).
+const EXPECTED_CASES = casesForKind();
 const MANIFEST_PATH = resolve(ROOT, "manifest.json");
 const REPORT_PATH = resolve(ROOT, "preflight.json");
 const REQUIRED_HTML = "<!doctype html>";
@@ -65,7 +69,6 @@ function variantErrors(/** @type {any} */ testCase, /** @type {any} */ manifestC
 
 function assertCase(/** @type {any} */ testCase, /** @type {any} */ manifestCase) {
   const errors = metadataErrors(testCase);
-  if (!manifestCase || manifestCase.id !== testCase.id) errors.push("manifest mismatch");
   for (const variant of ["good", "bad"]) errors.push(...variantErrors(testCase, manifestCase, variant));
   if (testCase.good === testCase.bad) errors.push("good and bad instruments are identical");
   return errors;
@@ -111,9 +114,11 @@ function main() {
     throw new Error("Missing " + MANIFEST_PATH + ". Run npm run training:generate first.");
   }
   const manifest = readJson(MANIFEST_PATH);
-  if (!Array.isArray(manifest.cases) || manifest.cases.length !== EXPECTED_CASES.length) {
-    throw new Error("Manifest case count does not match the source case matrix.");
-  }
+  // ALL THREE DIRECTIONS, from the one shared check (#978) -- in place of a case COUNT, which a deletion and an
+  // addition cancel out of, and a per-case lookup that saw the added direction alone.
+  assertManifestMatchesCases(manifest, {
+    consequence: "preflight would validate pages against definitions the code no longer has",
+  });
   const report = buildReport(manifest);
   writeFileSync(REPORT_PATH, JSON.stringify(report, null, 2) + "\n", "utf8");
   console.log("Preflight: " + report.status);

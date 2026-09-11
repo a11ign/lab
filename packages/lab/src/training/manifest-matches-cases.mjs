@@ -17,7 +17,26 @@
 //
 // PASS THE WHOLE MANIFEST, never a `--only` selection of it: the `added` direction compares against all of
 // `CASES`, so a filtered list would read as every unselected case missing.
+//
+// AND THE CASE SET THAT MATCHES THE MANIFEST'S KIND (#978). The acceptance scripts run these same readers
+// with `DATASET_KIND=acceptance` over a manifest of `acceptance-…` ids; compared against `CASES` it shared
+// no id, took the fixture escape and was compared with nothing. `casesForKind` resolves the set once, here,
+// so no reader can pass the wrong one.
 import { CASES } from "./case-matrix.mjs";
+import { ALL_ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
+
+/**
+ * The case definitions a manifest of this dataset kind is generated from. ACCEPTANCE is the whole set
+ * `generate-screenreader-acceptance.mjs` writes -- `ALL_ACCEPTANCE_CASES`, the single-defect cases plus the
+ * multi-defect ones -- never `ACCEPTANCE_CASES` alone: measured on a manifest generated from `main` into a
+ * temporary directory, 79 entries, and against `ALL_ACCEPTANCE_CASES` it drifts in no direction while
+ * against `ACCEPTANCE_CASES` (72) the seven multi-defect cases read as deleted.
+ * @param {string | undefined} [kind] `DATASET_KIND`, read at call time by default
+ * @returns {readonly { id: string }[]}
+ */
+export function casesForKind(kind = process.env.DATASET_KIND) {
+  return kind === "acceptance" ? ALL_ACCEPTANCE_CASES : CASES;
+}
 
 /** Key-sorted JSON, so two definitions that differ only in key order compare equal. @param {unknown} value @returns {string} */
 function canonicalJson(value) {
@@ -37,10 +56,11 @@ function canonicalJson(value) {
  * is compared: "every id is missing" is not the drift this guards against. The real corpus shares every id.
  *
  * @param {{ cases: readonly { id: string }[] }} manifest the WHOLE manifest
- * @param {readonly { id: string }[]} [cases] what the code defines; `CASES` unless a test passes its own
+ * @param {readonly { id: string }[]} [cases] what the code defines; the set for `DATASET_KIND` (`casesForKind`)
+ *   unless a test passes its own
  * @returns {{ fixture: boolean, drifted: string[] }}
  */
-export function manifestDrift(manifest, cases = CASES) {
+export function manifestDrift(manifest, cases = casesForKind()) {
   const defined = new Map(cases.map((testCase) => [testCase.id, testCase]));
   if (!manifest.cases.some((entry) => defined.has(entry.id))) return { fixture: true, drifted: [] };
   /** @type {string[]} */
@@ -78,7 +98,7 @@ const NAMED = 8;
  * @param {{ consequence: string, cases?: readonly { id: string }[], log?: (line: string) => void }} options
  *   `consequence` finishes "so ..." with what this reader would do wrong over a stale manifest
  */
-export function assertManifestMatchesCases(manifest, { consequence, cases = CASES, log = console.log }) {
+export function assertManifestMatchesCases(manifest, { consequence, cases = casesForKind(), log = console.log }) {
   const { fixture, drifted } = manifestDrift(manifest, cases);
   if (fixture) {
     log(`Manifest shares no case id with CASES (${manifest.cases.length} entries); not comparing definitions.`);
