@@ -24,39 +24,14 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+// #905: the numbering rules live in the doc cross-reference check the nightly report also runs -- one copy.
+import {
+  DOC, badLetterGroups, byNumber, duplicateCurrentNumbers, headings, orphanedLetters,
+} from "../../../../scripts/doc-checks/not-working-numbering.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const DOC = "docs/not-working.md";
-const text = readFileSync(`${REPO}${DOC}`, "utf8");
-
-interface Heading {
-  /** 2-4: `##` through `####`. Depth is not part of identity — `#### 20a.` and `## 18a.` are the same shape one level in. */
-  depth: number;
-  number: string;
-  /** Empty for a bare (current) heading; a single lowercase letter for a superseded/collided one. */
-  letter: string;
-  title: string;
-  line: number;
-}
-
-/** Every numbered heading on the page, at any depth from 2 to 4 hashes. */
-function headings(): Heading[] {
-  const lines = text.split("\n");
-  const found: Heading[] = [];
-  lines.forEach((line, index) => {
-    const match = /^(#{2,4}) (\d+)([a-z]?)\.\s*(.+)$/.exec(line);
-    if (match) {
-      found.push({
-        depth: match[1].length, number: match[2], letter: match[3], title: match[4], line: index + 1,
-      });
-    }
-  });
-  return found;
-}
-
-const HEADINGS = headings();
+const HEADINGS = headings(REPO);
 
 test("the page still has numbered headings to check -- the format has not silently changed", () => {
   // The vacuity guard: a heading format change (different marker, different punctuation) would make the
@@ -70,12 +45,7 @@ test("the page still has numbered headings to check -- the format has not silent
 });
 
 test("no base number has more than one BARE (current) heading", () => {
-  const byNumber = new Map<string, Heading[]>();
-  for (const h of HEADINGS) byNumber.set(h.number, [...(byNumber.get(h.number) ?? []), h]);
-
-  const offenders = [...byNumber.entries()]
-    .map(([number, hs]) => ({ number, bare: hs.filter((h) => h.letter === "") }))
-    .filter(({ bare }) => bare.length > 1);
+  const offenders = duplicateCurrentNumbers(HEADINGS);
 
   assert.deepEqual(offenders.map((o) => o.number), [],
     "More than one heading claims to be the CURRENT (bare) entry for the same number -- exactly the "
@@ -90,10 +60,7 @@ test("no base number has more than one BARE (current) heading", () => {
 test("every lettered heading's base number has exactly one current (bare) sibling somewhere on the page", () => {
   // The other direction: a letter with nothing bare to point at is an orphan -- the current entry was
   // deleted or renumbered and the pointer was never updated.
-  const bareNumbers = new Set(HEADINGS.filter((h) => h.letter === "").map((h) => h.number));
-  const orphaned = HEADINGS
-    .filter((h) => h.letter !== "" && !bareNumbers.has(h.number))
-    .map((h) => `line ${h.line}: "§${h.number}${h.letter}" has no bare "§${h.number}" on the page`);
+  const orphaned = orphanedLetters(HEADINGS);
   assert.deepEqual(orphaned, [],
     `lettered heading(s) point at a current entry that does not exist:\n${orphaned.join("\n")}`);
 });
@@ -101,29 +68,15 @@ test("every lettered heading's base number has exactly one current (bare) siblin
 test("letters within one duplicate group are unique and contiguous from 'a'", () => {
   // Catches a copy-paste that reuses an existing letter, or a gap left by an edit -- either would silently
   // make "which one is oldest" ambiguous again, one level down from the bare-number problem this exists for.
-  const byNumber = new Map<string, string[]>();
-  for (const h of HEADINGS) {
-    if (h.letter === "") continue;
-    byNumber.set(h.number, [...(byNumber.get(h.number) ?? []), h.letter]);
-  }
-  const bad: string[] = [];
-  for (const [number, letters] of byNumber) {
-    const sorted = [...letters].sort();
-    const expected = Array.from({ length: letters.length }, (_, i) => String.fromCharCode(97 + i));
-    if (JSON.stringify(sorted) !== JSON.stringify(expected)) {
-      bad.push(`§${number}: letters found ${JSON.stringify(sorted)}, expected ${JSON.stringify(expected)}`);
-    }
-  }
-  assert.deepEqual(bad, []);
+  assert.deepEqual(badLetterGroups(HEADINGS), []);
 });
 
 test("REPORT: sections, duplicate groups, and which entry is current", () => {
-  const byNumber = new Map<string, Heading[]>();
-  for (const h of HEADINGS) byNumber.set(h.number, [...(byNumber.get(h.number) ?? []), h]);
-  const duplicateGroups = [...byNumber.entries()].filter(([, hs]) => hs.length > 1);
+  const numbers = byNumber(HEADINGS);
+  const duplicateGroups = [...numbers.entries()].filter(([, hs]) => hs.length > 1);
 
   const lines = [
-    `${HEADINGS.length} numbered headings, ${byNumber.size} distinct base numbers, `
+    `${HEADINGS.length} numbered headings, ${numbers.size} distinct base numbers, `
     + `${duplicateGroups.length} duplicate group(s).`,
   ];
   for (const [number, hs] of duplicateGroups) {

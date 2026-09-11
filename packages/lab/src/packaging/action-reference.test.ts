@@ -17,39 +17,16 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
-import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+// #905: the scan lives in the doc cross-reference check the nightly report also runs -- one copy.
+import {
+  missingRefs, ownerRepo, remoteRefs, usesLines as usesLinesIn, wrongOwner,
+} from "../../../../scripts/doc-checks/action-reference.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
-const DOCS = ["README.md", "docs/github-action.md", "examples/workflow.yml"];
-/** This repository, from git rather than from a constant that would be the fourth place to disagree. */
-const OWNER_REPO = (() => {
-  try {
-    const url = execFileSync("git", ["config", "--get", "remote.origin.url"],
-      { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" }).trim();
-    return /[:/]([^/:]+\/[^/]+?)(?:\.git)?$/.exec(url)?.[1] ?? null;
-  } catch {
-    return null; // no git remote (a packed tarball); the tests below skip honestly rather than fail
-  }
-})();
-
-const usesLines = (): { file: string; owner: string; ref: string }[] => {
-  const found = [];
-  for (const file of DOCS) {
-    const path = resolve(REPO, file);
-    if (!existsSync(path)) continue;
-    for (const m of readFileSync(path, "utf8").matchAll(/uses:\s*([\w.-]+\/[\w.-]+)@([\w.-]+)/g)) {
-      // BOTH names, deliberately, during the #66/#325 transition: the Action reference itself still
-      // says `DanBeckDev/a11y-witness` (kept that way until #325 actually moves the repository), while
-      // everything else in these docs now says `a11ign`.
-      if (!/a11ign|a11y-witness/i.test(m[1])) continue; // third-party actions are not ours to validate
-      found.push({ file, owner: m[1], ref: m[2] });
-    }
-  }
-  return found;
-};
+/** This repository, from git; null with no git remote (a packed tarball) -- the tests below skip honestly. */
+const OWNER_REPO = ownerRepo(REPO);
+const usesLines = () => usesLinesIn(REPO);
 
 test("the docs cite this action at all, or this suite is vacuous", () => {
   assert.ok(usesLines().length >= 3, "expected a `uses:` line in each of the three consumer-facing docs");
@@ -57,8 +34,7 @@ test("the docs cite this action at all, or this suite is vacuous", () => {
 
 test("every documented `uses:` names THIS repository", () => {
   if (!OWNER_REPO) return;
-  const wrong = usesLines().filter((u) => u.owner.toLowerCase() !== OWNER_REPO.toLowerCase())
-    .map((u) => `${u.file}: ${u.owner} (this repo is ${OWNER_REPO})`);
+  const wrong = wrongOwner(usesLines(), OWNER_REPO);
   assert.deepEqual(wrong, [],
     "a consumer copying this line gets `Unable to resolve action` before anything runs");
 });
@@ -74,16 +50,8 @@ test("every documented ref exists — a tag nobody cut resolves for nobody", () 
   // `main` included, reported as unresolvable; the real shape is worse -- ONE irrelevant ref, so an
   // empty-population guard alone does not catch it. `git ls-remote` asks the repository itself, which is
   // the actual question this test needs answered and does not depend on what this checkout fetched.
-  const refs = new Set<string>();
-  try {
-    for (const line of execFileSync("git", ["ls-remote", "--tags", "--heads", "origin"],
-      { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" }).split("\n")) {
-      const match = /refs\/(?:tags|heads)\/(.+)$/.exec(line);
-      if (match) refs.add(match[1]);
-    }
-  } catch {
-    return; // no network reach to origin; see OWNER_REPO for the "no git metadata" sibling case
-  }
+  const refs = remoteRefs(REPO);
+  if (!refs) return; // no network reach to origin; see OWNER_REPO for the "no git metadata" sibling case
   if (refs.size === 0) return; // ls-remote itself returned nothing -- a check that examined no refs
   const lines = usesLines();
   // The sibling test above already guards `usesLines()` being non-empty, but this test computes it AGAIN
@@ -91,8 +59,7 @@ test("every documented ref exists — a tag nobody cut resolves for nobody", () 
   // to "pass" a broken scan whenever `node:test` reports both, since neither run stops the other.
   assert.ok(lines.length >= 3,
     `only found ${lines.length} documented \`uses:\` line(s) -- this scan is broken, not the docs`);
-  const missing = lines.filter((u) => !refs.has(u.ref))
-    .map((u) => `${u.file}: @${u.ref} does not exist (have: ${[...refs].sort().join(", ")})`);
+  const missing = missingRefs(lines, refs);
   assert.deepEqual(missing, [],
     "cut the tag in the same change that documents it, or document a ref that resolves today");
 });

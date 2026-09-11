@@ -44,73 +44,17 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+// #905: the walk and the coverage rule live in the doc cross-reference check the nightly report also runs.
+import {
+  documentation as documentationIn, documentationDocs, envReadsByFile as envReadsByFileIn, undocumentedVariables,
+} from "../../../../scripts/doc-checks/env-doc-coverage.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
-
-/** Every file matching `filter` under `dir`, recursively. */
-function walk(dir: string, filter: (name: string) => boolean): string[] {
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  return entries.flatMap((entry) => {
-    if (SKIP_DIRS.has(entry.name)) return [];
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) return walk(full, filter);
-    return filter(entry.name) ? [full] : [];
-  });
-}
-
-/**
- * Where a human would look — CLAUDE.md is for working ON the repo, docs/ and package READMEs are for
- * using it. `docs/architecture-audit.md` is excluded on purpose: see this file's own header.
- */
-function documentation(): string {
-  const parts = [readFileSync(join(REPO, "CLAUDE.md"), "utf8")];
-  for (const name of ["README.md", "CONTRIBUTING.md"]) {
-    if (existsSync(join(REPO, name))) parts.push(readFileSync(join(REPO, name), "utf8"));
-  }
-  for (const file of walk(join(REPO, "docs"), (n) => n.endsWith(".md") && n !== "architecture-audit.md")) {
-    parts.push(readFileSync(file, "utf8"));
-  }
-  for (const file of walk(join(REPO, "packages"), (n) => n === "README.md")) {
-    parts.push(readFileSync(file, "utf8"));
-  }
-  return parts.join("\n");
-}
-
-/** Names this project's own convention would never expect written up: shell/OS built-ins that a
- *  process.env read can pick up incidentally, never anything this repo defines the meaning of. */
-const NOT_A_PROJECT_VARIABLE = new Set([
-  "HOME", "HOSTNAME", "HOST", "PATH", "LOCALAPPDATA", "TEMP", "TMP", "TMPDIR",
-]);
-
-const ENV_READ = /process\.env\.([A-Z][A-Z0-9_]*)\b|process\.env\[["']([A-Z][A-Z0-9_]*)["']\]/g;
-
-/** Every `process.env.NAME` this repo's own source reads, mapped to the files that read it. */
-function envReadsByFile(): Map<string, Set<string>> {
-  const map = new Map<string, Set<string>>();
-  const files = [
-    ...walk(join(REPO, "packages"), (n) => /\.(mjs|ts|js)$/.test(n)),
-    ...walk(join(REPO, "scripts"), (n) => /\.(mjs|ts|js)$/.test(n)),
-  ];
-  for (const file of files) {
-    const source = readFileSync(file, "utf8");
-    for (const match of source.matchAll(ENV_READ)) {
-      const name = match[1] ?? match[2];
-      if (NOT_A_PROJECT_VARIABLE.has(name)) continue;
-      if (!map.has(name)) map.set(name, new Set());
-      map.get(name)!.add(file);
-    }
-  }
-  return map;
-}
+const documentation = () => documentationIn(REPO);
+const envReadsByFile = () => envReadsByFileIn(REPO);
 
 test("the discovery finds a realistic population, so this cannot pass having read nothing", () => {
   const reads = envReadsByFile();
@@ -126,12 +70,7 @@ test("the discovery finds a realistic population, so this cannot pass having rea
 });
 
 test("every variable read in 2+ files is documented somewhere a human looks", () => {
-  const docs = documentation();
-  const multiFile = [...envReadsByFile().entries()].filter(([, files]) => files.size > 1);
-
-  const undocumented = multiFile
-    .filter(([name]) => !new RegExp(`\\b${name}\\b`).test(docs))
-    .map(([name, files]) => `  ${name} (${files.size} files)`);
+  const undocumented = undocumentedVariables(REPO).map(({ name, files }) => `  ${name} (${files.length} files)`);
 
   assert.deepEqual(undocumented, [],
     "These variable(s) are read in more than one file and appear nowhere in CLAUDE.md, README.md, "
@@ -151,7 +90,7 @@ test("architecture-audit.md is excluded from the documentation corpus, by name, 
   // testing its own mechanism; this tests the WALK directly instead.
   assert.ok(existsSync(join(REPO, "docs/architecture-audit.md")),
     "the file this test excludes must actually exist, or excluding it proves nothing");
-  const included = walk(join(REPO, "docs"), (n) => n.endsWith(".md") && n !== "architecture-audit.md");
+  const included = documentationDocs(REPO);
   assert.ok(included.length > 20, `the docs/ walk found only ${included.length} files; the filter is too broad`);
   assert.ok(!included.some((f) => f.endsWith("architecture-audit.md")),
     "architecture-audit.md must not appear in the documentation corpus -- it is the audit OF this "
