@@ -17,7 +17,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { compareCapture, EVIDENCE_FIELDS, NOT_COMPARED } from "./evidence-diff.mjs";
+import { compareCapture, COMPARED_OUTSIDE_THE_TABLE, ENVELOPE_FIELDS, EVIDENCE_FIELDS, fieldKey, FIELD_GROUPS, NOT_COMPARED }
+  from "./evidence-diff.mjs";
 
 /** A capture the pipeline accepts, carrying `over`. */
 const capture = (over: Record<string, unknown> = {}) => ({
@@ -61,9 +62,8 @@ function typedefFields(name: string): string[] {
   return [...new Set([...(body as RegExpMatchArray)[1].matchAll(/\b([A-Za-z_$][\w$]*)\??:\s*/g)].map((m) => m[1]))].sort();
 }
 
-/** The two groups whose fields are classified one level down, and the one field compared outside the table. */
-const GROUPS = new Set(["structure", "interaction"]);
-const COMPARED_ELSEWHERE = new Set(["transcript"]);
+const GROUPS = new Set<string>(FIELD_GROUPS);
+const COMPARED_ELSEWHERE = new Set<string>(COMPARED_OUTSIDE_THE_TABLE);
 
 test("#977 THE CLASS: every field capture-core's typedefs declare is compared, a group, the transcript, or NOT_COMPARED", () => {
   const compared = new Set(EVIDENCE_FIELDS.map((f) => f.join(".")));
@@ -80,10 +80,41 @@ test("#977 THE CLASS: every field capture-core's typedefs declare is compared, a
     "a capture field is neither compared nor excluded with a reason, so evidence:check reads SAME for any change to it");
   // Every exclusion carries a reason, and none outlives its field: a reason for a field the capture no longer
   // declares is a claim about nothing, and the next reader would trust it.
-  const declared = new Set([...top, ...typedefFields("CapturedStructure").map((k) => `structure.${k}`),
+  const declared = new Set([...top, ...ENVELOPE_FIELDS, ...typedefFields("CapturedStructure").map((k) => `structure.${k}`),
     ...typedefFields("CapturedInteraction").map((k) => `interaction.${k}`)]);
   for (const [field, why] of Object.entries(excluded)) {
     assert.ok(why.length > 20, `${field} is excluded with no real reason`);
     assert.ok(declared.has(field), `${field} is excluded but the capture no longer declares it`);
   }
 });
+
+test("#985: a pair differing ONLY in whether a SWEEP was asked is CHANGED -- it decides whether an absence is a finding", () => {
+  // An EMPTY channel compares [] = [] whether or not it was swept, and `asked: false` is what makes
+  // `sweepCompleteness` read `unknown` instead of judging the absence -- so this flip moved findings and model
+  // input while evidence:check said SAME.
+  const asked = (headings: boolean) => capture({ structure: { headings: [], landmarks: [], formFields: [] },
+    observed: { headings: { asked: headings, complete: true, stop: { prev: "exhausted", next: "exhausted" } } } });
+  const flipped = compareCapture(asked(true), asked(false));
+  assert.equal(flipped.verdict, "CHANGED");
+  assert.deepEqual(flipped.changes.map((c: { field: string }) => c.field), ["observed.headings.asked"]);
+  assert.equal(compareCapture(asked(true), asked(true)).verdict, "SAME", "the control");
+});
+
+test("#985: an INTERACTION channel's `asked`, and every other part of `observed`, is not compared -- measured first (#984)", () => {
+  const observed = (formChanges: boolean, stop: string) => capture({
+    observed: { formChanges: { asked: formChanges, why: "x" }, headings: { asked: true, complete: true, stop: { prev: stop, next: stop } } } });
+  assert.equal(compareCapture(observed(true, "exhausted"), observed(false, "exhausted")).verdict, "SAME",
+    "an interaction channel's asked follows activation, which varies with probe budgets -- #984 measures it");
+  assert.equal(compareCapture(observed(true, "exhausted"), observed(true, "silent")).verdict, "SAME",
+    "stop reasons vary with NVDA's timing");
+  const sweeps = EVIDENCE_FIELDS.filter((f) => f[0] === "observed").map((f) => f[1]).sort();
+  const structure = EVIDENCE_FIELDS.filter((f) => f[0] === "structure").map((f) => f[1]).sort();
+  assert.deepEqual(sweeps, structure, "asked is compared for exactly the structure channels, derived from them");
+});
+
+test("#985: every field's key is DISTINCT -- `gate:stability` keys by it, and a collision overwrites a channel in silence", () => {
+  const keys = EVIDENCE_FIELDS.map(fieldKey);
+  assert.equal(new Set(keys).size, keys.length, `colliding keys: ${keys.filter((k, i) => keys.indexOf(k) !== i).join(", ")}`);
+  assert.equal(fieldKey(["structure", "headings"]), "headings", "a [group, name] field keeps the name it always had");
+});
+

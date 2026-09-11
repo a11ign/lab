@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import { EVIDENCE_FIELDS, NOT_COMPARED } from "./evidence-diff.mjs";
+import { COMPARED_OUTSIDE_THE_TABLE, EVIDENCE_FIELDS, FIELD_GROUPS, NOT_COMPARED } from "./evidence-diff.mjs";
 import { runsRoot } from "../dataset-paths.mjs";
 import { corpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
@@ -53,7 +53,7 @@ const NOT_EVIDENCE: Readonly<Record<string, string>> = NOT_COMPARED;
  * a plain capture is still read exactly as before and a wrapper cannot mask a top-level field.
  */
 function fieldsIn(file: Record<string, unknown>): string[] {
-  const groups = ["structure", "interaction"] as const;
+  const groups = FIELD_GROUPS;
   const hasEvidence = (o: unknown): boolean =>
     !!o && typeof o === "object" && groups.some((g) => (o as Record<string, unknown>)[g] !== undefined);
   const capture = hasEvidence(file) ? file : hasEvidence(file?.capture) ? file.capture : file;
@@ -61,6 +61,21 @@ function fieldsIn(file: Record<string, unknown>): string[] {
   for (const group of groups) {
     const section = (capture as Record<string, Record<string, unknown>> | undefined)?.[group];
     for (const key of Object.keys(section ?? {})) out.push(`${group}.${key}`);
+  }
+  // THE TOP LEVEL TOO (#977). `media` and `formInputs` sit beside the groups, and a walk that emitted only
+  // `group.name` could never see them on disk -- so they read as phantoms on every corpus, however fresh
+  // (worker-judge's review of #985). Only for a real CAPTURE, one with a transcript: a report that happens to
+  // carry an `interaction` key (the ambiguity audit's does) is not a capture, and its keys are not fields.
+  const top = capture as Record<string, unknown> | undefined;
+  if (Array.isArray(top?.transcript)) {
+    for (const key of Object.keys(top as object)) if (!groups.includes(key)) out.push(key);
+    // And every DEEPER compared path that resolves here -- `observed.<channel>.asked` (#985) -- so "compared but
+    // on no capture" asks whether the path has a value, not whether its name was enumerated.
+    for (const field of EVIDENCE_FIELDS.filter((f) => f.length > 2)) {
+      if (field.reduce((at: unknown, key) => (at as Record<string, unknown> | undefined)?.[key], top) !== undefined) {
+        out.push(field.join("."));
+      }
+    }
   }
   return out;
 }
@@ -127,8 +142,9 @@ test("every evidence field a capture carries is compared, or explicitly excluded
   assert.ok(onDisk.size >= 10,
     `only ${onDisk.size} evidence field(s) found on disk; the capture shape or the corpus has changed`);
 
-  const compared = new Set((EVIDENCE_FIELDS as [string, string][]).map((f) => f.join(".")));
-  const unaccounted = [...onDisk].filter((f) => !compared.has(f) && !(f in NOT_EVIDENCE)).sort();
+  const compared = new Set(EVIDENCE_FIELDS.map((f) => f.join(".")));
+  const unaccounted = [...onDisk].filter((f) => !compared.has(f) && !(f in NOT_EVIDENCE)
+    && !COMPARED_OUTSIDE_THE_TABLE.includes(f)).sort();
   assert.deepEqual(unaccounted, [],
     "these fields exist on captures and evidence:check neither compares nor excludes them, so a change "
     + `that altered them would report SAME: ${unaccounted.join(", ")}`);
@@ -141,7 +157,7 @@ test("EVIDENCE_FIELDS names each field ONCE — a duplicate is invisible to the 
   // could not see a defect inside it. A duplicate costs nothing today and is a real risk the moment two
   // entries for the same field are given DIFFERENT flattening comments describing different behaviour —
   // which one a reader trusts becomes luck.
-  const fields = (EVIDENCE_FIELDS as [string, string][]).map((f) => f.join("."));
+  const fields = EVIDENCE_FIELDS.map((f) => f.join("."));
   const seen = new Set<string>();
   const duplicated = [...new Set(fields.filter((f) => (seen.has(f) ? true : (seen.add(f), false))))].sort();
   assert.deepEqual(duplicated, [], `listed more than once in EVIDENCE_FIELDS: ${duplicated.join(", ")}`);
@@ -163,7 +179,11 @@ test("EVIDENCE_FIELDS names each field ONCE — a duplicate is invisible to the 
  * arrived, so this list cannot quietly outlive its reason.
  */
 const PENDING_CAPTURE: Record<string, string> = {
-  // EMPTY, and every entry that was ever here was retired BY THIS GUARD rather than by anyone remembering.
+  // #977 compares `formInputs` (#170's census, 1.3.5), and no capture on disk carries it yet: the worker that
+  // writes it is protocol 17, which orchestrator deploys in the window after #973.
+  formInputs: "#170's DOM census, compared by #977 before any capture carries it. Closes when: the recapture "
+    + "CAPTURE_PROTOCOL_VERSION 16 -> 17 forces (#170, orchestrator's window) lands in runs/.",
+  // Every entry that was ever here before was retired BY THIS GUARD rather than by anyone remembering.
   //
   // `interaction.focusEvents` was the last, retired 2026-09-06. Its entry said "Closes when: the
   // recapture that CAPTURE_PROTOCOL_VERSION 14 -> 15 forces", that recapture ran, and this guard
@@ -197,7 +217,7 @@ test("nothing is compared that no capture actually carries", () => {
   const onDisk = fieldsOnDisk();
   const corpus = corpusOnDisk(onDisk.size > 0);
   if (!corpus.read) { console.log(skipLine(corpus)); return; }
-  const phantom = (EVIDENCE_FIELDS as [string, string][])
+  const phantom = EVIDENCE_FIELDS
     .map((f) => f.join(".")).filter((f) => !onDisk.has(f) && !(f in PENDING_CAPTURE)).sort();
   assert.deepEqual(phantom, [],
     `these are compared but appear on no capture, so they contribute nothing: ${phantom.join(", ")}`);
