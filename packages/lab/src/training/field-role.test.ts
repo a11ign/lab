@@ -7,7 +7,9 @@
  *
  *   - the CONFORMANCE LINE (`rules:real-pages`), which scores pages whose publisher declares them conformant;
  *   - the ASSERTED-WRONGLY and REFERRED figures (`calibrate-abstention.mjs`), fitted on `calibration`;
- *   - TRAINING (`build-realism-tier.mjs`), built from `training`.
+ *   - TRAINING (`build-realism-tier.mjs`), built from `training`;
+ *   - RULE COVERAGE's real evidence (`audit-rule-coverage.ts`), where a rule firing on a real page grades it
+ *     "validated" -- the fourth reader, found by worker-capture's review of #970.
  *
  * Each is asserted THROUGH THE READER'S OWN SELECTION FUNCTION, which the reader imports from
  * `real-page-selection.mjs` -- never through a list here of which roles count, because that list is the one
@@ -21,7 +23,7 @@ import { resolve } from "node:path";
 
 import { REAL_PAGES, capturablePages, isRecordedRefusal, pagesFor } from "./real-page-corpus.mjs";
 import {
-  calibrationEntries, conformanceLineAnswer, fieldPopulationLines, trainingEntries,
+  calibrationEntries, conformanceLineAnswer, fieldPopulationLines, ruleCoverageAdmits, trainingEntries,
 } from "./real-page-selection.mjs";
 import { discoverRoles } from "./real-page-role-coverage.mjs";
 import { gateVerdicts, worstVerdict } from "../../../../scripts/board-gates.mjs";
@@ -96,6 +98,21 @@ test("TRAINING admits no field page -- through `build-realism-tier.mjs`, the rea
   assert.equal(admitted.length, pagesFor("training").length, "the control: every training page is admitted");
   assert.match(read("packages/lab/scripts/build-realism-tier.mjs"),
     /import \{[^}]*\btrainingEntries\b[^}]*\} from "\.\.\/src\/training\/real-page-selection\.mjs"/);
+});
+
+test("RULE COVERAGE counts no field capture as real evidence -- through `audit-rule-coverage.ts`' own selection", () => {
+  // `rules:coverage` counts every capture under the real-page directory, whatever its role, and a rule firing
+  // on one grades it "validated on real evidence". A field page claims nothing, so it validates nothing.
+  for (const url of RULED) assert.equal(ruleCoverageAdmits(url), false, `${url} counts as real evidence`);
+  // The control: every other role still counts, and so does a capture no entry claims -- exactly as before.
+  for (const page of REAL_PAGES.filter((p) => p.role !== "field")) {
+    assert.equal(ruleCoverageAdmits(page.url), true, `${page.url} (${page.role}) stopped counting`);
+  }
+  assert.equal(ruleCoverageAdmits("https://example.invalid/undeclared"), true);
+  assert.match(read("packages/lab/scripts/audit-rule-coverage.ts"),
+    /import \{[^}]*\bruleCoverageAdmits\b[^}]*\} from "\.\.\/src\/training\/real-page-selection\.mjs"/);
+  assert.match(read("packages/lab/scripts/audit-rule-coverage.ts"), /!ruleCoverageAdmits\(/,
+    "and it must ask it before counting a real capture");
 });
 
 test("a RECORDED REFUSAL reaches no finding, no figure and no training record -- and is never visited", () => {

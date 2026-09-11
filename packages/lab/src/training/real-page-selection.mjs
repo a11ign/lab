@@ -55,6 +55,17 @@ export function trainingEntries(entries) {
 }
 
 /**
+ * RULE COVERAGE'S REAL POPULATION -- `rules:coverage` (`audit-rule-coverage.ts`): every real-page capture
+ * except a `field` page's (#955, worker-capture's review of #970). That audit grades a rule "validated on real
+ * evidence" when it fires on one, clears a channel's "no-channel" when one carries it, and counts captures
+ * toward its completeness floor. A field page claims nothing, so a rule firing there validates nothing, and
+ * its captures would inflate the floor with pages the audit cannot judge. A capture no entry claims is still
+ * counted, exactly as before: this removes `field` and nothing else.
+ * @param {unknown} url @returns {boolean}
+ */
+export const ruleCoverageAdmits = (url) => realPageFor(url)?.role !== "field";
+
+/**
  * THE FIELD POPULATION, PRINTED APART FROM THE CONFORMANCE LINE (#955, `ceo`'s acceptance). What a reader of
  * `rules:real-pages` needs about pages that claim nothing: which were captured, which are recorded refusals
  * with the outcome a stranger meets, and which have no capture yet -- so a missing capture never reads as a
