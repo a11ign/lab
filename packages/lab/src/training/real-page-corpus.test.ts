@@ -8,12 +8,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  assertDisjoint, pagesFor, realPageFor, servedByThePageServer, REAL_PAGES, UNWITNESSABLE_ON_REAL_PAGES,
+  assertDisjoint, isFixture, pagesFor, realPageFor, REAL_PAGES, UNWITNESSABLE_ON_REAL_PAGES,
 } from "./real-page-corpus.mjs";
 import { SCORED_CRITERIA, RULE_CRITERIA } from "@a11ign/judge/coverage";
 import { CASES } from "./case-matrix.mjs";
@@ -376,10 +377,8 @@ const PUBLISHED = REAL_PAGES.filter((page) => page.role !== "fixture");
 test("#881: every fixture, captured at the lab's address, resolves to its OWN declaration", () => {
   assert.ok(FIXTURES.length > 0, "no fixture in REAL_PAGES, so this test asserts over nothing");
   for (const page of FIXTURES) {
-    // The precondition, stated: under `DATASET_BASE_URL` a fixture is declared at that base instead, is
-    // captured there unrewritten, and matches exactly -- so this test is only meaningful without it.
-    assert.ok(servedByThePageServer(page.url),
-      `${page.url} is not declared at the page server -- is DATASET_BASE_URL set in this environment?`);
+    // No precondition on DATASET_BASE_URL any more: since #940 reconciliation asks whether the declaration is
+    // a FIXTURE (`isFixture`, by role), not whether its host is loopback, so this holds under any base.
     assert.equal(realPageFor(atHost(page.url, LAB_STAND_IN))?.url, page.url);
   }
 });
@@ -411,4 +410,37 @@ test("#881: the rewrite changes the HOSTNAME ONLY, to an address -- so nothing e
     "the rewrite never changes the path");
   assert.equal(realPageFor("not a url"), undefined);
   assert.equal(realPageFor(undefined), undefined);
+});
+
+
+/**
+ * #940 -- UNDER A NON-LOOPBACK `DATASET_BASE_URL`, THE MATCHER AND THE GATE STILL KNOW A FIXTURE.
+ *
+ * `FIXTURE_BASE` is read from the variable at import, so only a process started with it set sees the
+ * declarations the lab would. Both readers used to decide "fixture" from the declaration's loopback host:
+ * the matcher then stopped reconciling a relocated fixture, and the gate printed it as UNDECLARED -- the
+ * heading whose fix is deletion -- instead of RELOCATED.
+ */
+test("#940: with DATASET_BASE_URL non-loopback, a relocated fixture still reconciles and still reads as RELOCATED", () => {
+  const [fixture] = REAL_PAGES.filter((page) => page.role === "fixture");
+  const path = new URL(fixture.url).pathname;
+  const probe = `
+    const { realPageFor, pageServerFixtureAtPath } = await import(${JSON.stringify(new URL("./real-page-corpus.mjs", import.meta.url).href)});
+    console.log(JSON.stringify({
+      reconciled: realPageFor("http://198.51.100.7:5050${path}")?.url ?? null,
+      relocated: pageServerFixtureAtPath("http://pages.example.test:5050${path}")?.url ?? null,
+    }));`;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", probe],
+    { env: { ...process.env, DATASET_BASE_URL: "http://192.0.2.10:5050" }, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  const expected = `http://192.0.2.10:5050${path}`;
+  assert.deepEqual(JSON.parse(run.stdout), { reconciled: expected, relocated: expected });
+});
+
+test("#940: isFixture is the page's ROLE, with a loopback host as a second signal -- never the host alone", () => {
+  assert.equal(isFixture({ url: "http://192.0.2.10:5050/route-title-stale/good.html", role: "fixture" }), true);
+  assert.equal(isFixture({ url: "http://localhost:5050/route-title-stale/good.html" }), true);
+  assert.equal(isFixture({ url: "https://www.gov.scot/about/", role: "training" }), false);
+  // Every declared fixture is one by role, whatever base it was declared at.
+  assert.ok(REAL_PAGES.filter((page) => page.role === "fixture").every(isFixture));
 });

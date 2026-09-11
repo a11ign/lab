@@ -873,6 +873,30 @@ export function servedByThePageServer(url) {
 }
 
 /**
+ * IS THIS DECLARATION ONE OF OUR FIXTURES -- decided by what the page IS, never only by where it is served
+ * today (#940).
+ *
+ * `role: "fixture"` is a fact about the page. Its host is `FIXTURE_BASE`, which `DATASET_BASE_URL` overrides --
+ * a documented override, for a network where the computed page-server address is wrong -- so a host test
+ * alone made "may this capture be deleted" depend on an environment variable nobody is told controls it.
+ * With it set to any non-loopback address, `corpus-prune-orphans --apply` deleted all ten fixture captures as
+ * RETIRED: the only real-page grounding 2.4.1, 2.4.2, 2.4.3, 2.1.1 and 1.4.13 have, reported as routine
+ * housekeeping. The machine most likely to set the variable is the lab, which is also the one that runs
+ * `--apply`.
+ *
+ * The host stays as a SECOND signal, never the only one: either makes a declaration a fixture, because
+ * wrongly keeping a capture costs a line in a report and wrongly deleting one cannot be undone.
+ *
+ * ONE PREDICATE for all three readers -- `realPageFor`'s reconciliation, the gate's RELOCATED heading and
+ * the prune tool's -- so the gate and the prune can never disagree about which captures are fixtures.
+ *
+ * @param {{ url: string, role?: string }} page
+ */
+export function isFixture(page) {
+  return page.role === "fixture" || servedByThePageServer(page.url);
+}
+
+/**
  * A url with its origin removed, normalised -- what a relocated capture still has in common with its
  * declaration. Moved here from `corpus-prune-orphans.mjs` with `servedByThePageServer`, unchanged.
  *
@@ -900,8 +924,8 @@ export function pathOf(url) {
  * one, and everything the rewrite leaves alone -- scheme, port, path, query -- must then match as written.
  * Two conditions keep a real publisher's page matching only itself:
  *
- *   - only a declaration SERVED BY THE PAGE SERVER can be reached this way, so no real page gains a second
- *     address; and
+ *   - only a FIXTURE declaration (`isFixture`: its role, or a page-server host) can be reached this way, so
+ *     no real page gains a second address; and
  *   - the captured host must be what the rewrite can produce, an IPv4 literal. A named host serving the same
  *     path on the same port is still a different page.
  *
@@ -916,7 +940,7 @@ function relocatedFixtureFor(url) {
   const captured = new URL(String(url));
   if (ipv4ToInt(captured.hostname) === null) return undefined;
   return REAL_PAGES.find((page) => {
-    if (!servedByThePageServer(page.url)) return false;
+    if (!isFixture(page)) return false;
     const restored = new URL(captured.href);
     restored.hostname = new URL(page.url).hostname;
     return normaliseUrl(restored.href) === normaliseUrl(page.url);
@@ -935,7 +959,7 @@ function relocatedFixtureFor(url) {
  */
 export function pageServerFixtureAtPath(url) {
   const path = pathOf(url);
-  return REAL_PAGES.find((page) => servedByThePageServer(page.url) && pathOf(page.url) === path);
+  return REAL_PAGES.find((page) => isFixture(page) && pathOf(page.url) === path);
 }
 
 /**
