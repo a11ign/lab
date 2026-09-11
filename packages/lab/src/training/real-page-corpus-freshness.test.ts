@@ -11,7 +11,8 @@
  * `build-realism-tier.mjs`.
  *
  * DISCOVERED, not hand-listed, for the reason this repo's other population guards exist
- * (`dataset-paths.test.ts`, `env-doc-coverage.test.ts`, `commands-documented.test.ts`): a hand-written
+ * (`dataset-paths.test.ts`, `commands-documented.test.ts`, and the `env-doc-coverage` check the nightly
+ * report runs since #954): a hand-written
  * list of "the files that matter" is exactly the kind of list a new file slips past. The signature is a
  * file that both resolves `realCorpusRoot()` and calls `readdirSync` -- resolving the path alone (like
  * `audit-corpus-urls.mjs`, which only imports the DECLARED page list to make live HTTP requests and never

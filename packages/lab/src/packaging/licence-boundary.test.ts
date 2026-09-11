@@ -9,7 +9,7 @@
  * import ever reaches the Apache-2.0 package, the licence is broken — not the architecture, the licence
  * — and it would break silently, because nothing about an `import` statement announces its provenance.
  *
- * This is the same reasoning as `spawned-paths.test.ts` and `doc-references.test.ts`: a claim that lives
+ * This is the same reasoning as `spawned-paths.test.ts` and the `doc-references` check: a claim that lives
  * only in prose rots. ADR 0006 states the boundary; this enforces it.
  */
 import { test } from "node:test";

@@ -99,8 +99,9 @@ const CLASSIFICATION: Record<string, GeneratorEntry> = {
   "packages/lab/scripts/generate-coverage-doc.ts": {
     produces: "docs/coverage.md",
     status: "notCommitted",
-    detail: "#158 -- gitignored deliberately; generated-paths.test.ts and doc-references.test.ts both "
-      + "assert it stays untracked, so no committed tree is ever false about it.",
+    detail: "#158 -- gitignored deliberately; generated-paths.test.ts asserts it stays untracked and the "
+      + "nightly report's doc-references check reads it as a citation (#954), so no committed tree is "
+      + "ever false about it.",
   },
   "packages/lab/src/training/generate-screenreader-dataset.mjs": {
     produces: "runs/screenreader-dataset/** (gitignored)",
