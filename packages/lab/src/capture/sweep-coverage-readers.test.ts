@@ -1,8 +1,8 @@
 /**
  * #951, ONE VERDICT, EVERY READER -- the #887 fixture read through each reader of a sweep's completeness.
  *
- * `sweptElsewhere` (`@a11ign/evidence/verify`) is the one place that decides a sweep ran out of a container
- * rather than the page. Every reader below used to call round 9's trapped capture something else --
+ * `sweptElsewhere` (`@a11ign/evidence/verify`) is the one place that decides a sweep found far less than the
+ * page's census, whatever held it. Every reader below used to call round 9's trapped capture something else --
  * `capture:explain` "ok links", the ambiguity audit "asked, ran out", the lab's own `sweepCompleteness`
  * "complete" -- which is the repo's most expensive recurring shape: a fix at one call site when the behaviour
  * reaches several. This file is what fails if one of them stops asking the verdict.
@@ -62,9 +62,9 @@ test("#951 READER capture:explain: never \"ok links\" over a sweep of a chat wid
   const rows = whatItAsked(TRAPPED);
   const links = rows.find((r) => /\blinks\b/.test(r)) ?? "";
   assert.doesNotMatch(links, /\bok links\b/, `the trapped link sweep printed as ok: ${links}`);
-  assert.match(links, /inside a container it did not name, not the page \(#951\)/);
+  assert.match(links, /found far less than the page's census, so something held it \(it named no container\) \(#951\)/);
   const graphics = rows.find((r) => /\bgraphics\b/.test(r)) ?? "";
-  assert.match(graphics, /inside "Message History, region", not the page \(#951\)/);
+  assert.match(graphics, /something held it \(it named "Message History, region" first\) \(#951\)/);
 });
 
 test("#951 READER the lab's sweepCompleteness and sweep-vs-census: `elsewhere`, never `complete`, and no ratio", () => {
@@ -72,12 +72,12 @@ test("#951 READER the lab's sweepCompleteness and sweep-vs-census: `elsewhere`, 
   assert.equal(labCompleteness(mark, TRAPPED.diagnostics), "elsewhere");
   const link = sweepAgainstCensus(TRAPPED).find((row) => row.type === "link");
   assert.equal(link?.completeness, "elsewhere");
-  assert.equal(link?.ratio, null, "a sweep of a container is not a coverage figure for the page");
+  assert.equal(link?.ratio, null, "a sweep something held is not a coverage figure for the page");
 });
 
 test("#951 READER the ambiguity audit: an EMPTY trapped sweep is \"asked, short\" and a capture defect -- never \"asked, ran out\"", () => {
   const { channels } = observationAmbiguity([EMPTY_TRAP]);
-  assert.equal(channels.link.emptyAskedComplete, 0, "its own complete:true is true about the container");
+  assert.equal(channels.link.emptyAskedComplete, 0, "its own complete:true is true about whatever held it");
   assert.equal(channels.link.emptyAskedShort, 1);
   assert.equal(channels.link.sweepMissed, 1, "a sweep that never examined the page is the capture's defect");
 });

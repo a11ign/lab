@@ -1,5 +1,5 @@
 // @ts-check
-// #951: the capture-level verdict on a sweep that ran out of a container, not the page -- the ONE verdict.
+// #951: the capture-level verdict on a sweep that found far less than the census, whatever held it -- the ONE verdict.
 import { sweptElsewhere } from "@a11ign/evidence/verify";
 /**
  * WHAT IS THE SWEEP TIME SPENT ON? — #659, and the question is NOT how to cut it.
@@ -83,8 +83,8 @@ const SWEEP_RAN_OUT = new Set(["exhausted", "silent"]);
  *
  * The same three states `examinationState` draws for the report (#677), one level down at the sweep.
  *
- * AND A FOURTH, "elsewhere" (#951): a sweep whose both directions exhausted can still have exhausted a chat
- * widget rather than the page, and this used to call it "complete" while `@a11ign/evidence`'s own
+ * AND A FOURTH, "elsewhere" (#951): a sweep whose both directions exhausted can still have been held -- by a
+ * chat widget, a consent overlay, something unread -- and this used to call it "complete" while `@a11ign/evidence`'s own
  * `sweepCompleteness` called it something else -- two functions, one name, two answers. It asks the one
  * verdict, `sweptElsewhere`, which is capture-level (a graphic sweep follows its capture's link sweep), so it
  * needs the capture's diagnostics and not only the mark.

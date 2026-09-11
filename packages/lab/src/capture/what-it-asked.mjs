@@ -5,7 +5,7 @@
 // job included: that file reaches `dataset-paths.mjs`, so anything importing it is classed as needing a
 // corpus and the row's own acceptance command was refused. `explain-capture.mjs` imports and re-exports it,
 // so no reader of the report changes. Its one import is `@a11ign/evidence/verify`, for #951's verdict.
-import { SWEEP_OF, sweptElsewhere } from "@a11ign/evidence/verify";
+import { SWEEP_OF, sweptElsewhere, whatHeldTheSweep } from "@a11ign/evidence/verify";
 
 /** `NOT RECORDED` is a distinct answer from `no`, and collapsing them is this repo's oldest defect. */
 export const absent = (/** @type {string} */ what) => `    NOT RECORDED — this capture cannot say ${what}`;
@@ -51,7 +51,7 @@ export function whatItAsked(capture) {
 /**
  * One channel's line: what the capture recorded about asking it -- or that it recorded nothing.
  * @param {string} channel @param {any} seen the channel's `observed` entry, `undefined` when there is none
- * @param {{ container: string | null } | undefined} [elsewhere] the verdict (#951), when this sweep ran out of a container
+ * @param {{ container: string | null } | undefined} [elsewhere] the verdict (#951), when this sweep found far less than the census
  */
 function askedRow(channel, seen, elsewhere) {
   if (seen === undefined) {
@@ -63,12 +63,11 @@ function askedRow(channel, seen, elsewhere) {
     return `    ! ${channel} asked, and the sweep did NOT run out — stopped `
       + `${JSON.stringify(seen.stop ?? {})}. An absence here is about the sweep, not the page.`;
   }
-  // BEFORE `complete === true`: the capture's own `complete` is NVDA's "no more", which is true about a chat
-  // widget the sweep was confined to -- and "ok" over it was the one line this section must never print (#951).
+  // BEFORE `complete === true`: the capture's own `complete` is NVDA's "no more", which is true about whatever
+  // held the sweep -- and "ok" over it was the one line this section must never print (#951).
   if (elsewhere) {
-    return `    ! ${channel} asked, and NVDA said there were no more — inside `
-      + `${elsewhere.container ? `"${elsewhere.container}"` : "a container it did not name"}, not the page (#951). `
-      + "An absence here is about that container, not the page.";
+    return `    ! ${channel} asked: the sweep ${whatHeldTheSweep(elsewhere)} (#951). `
+      + "An absence here says nothing about the page.";
   }
   if (seen.complete === true) return `    ok ${channel} — asked, and NVDA itself said there were no more`;
   // A THIRD STATE, and inventing either of the other two would be the defect this field removes.
