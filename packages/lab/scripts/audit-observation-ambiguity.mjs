@@ -96,6 +96,31 @@ const pct = (/** @type {number} */ part, /** @type {number} */ whole) =>
     (whole === 0 ? "   n/a" : (100 * part / whole).toFixed(1).padStart(5) + "%");
 
 /**
+ * #947: THE SAME EMPTIES, SPLIT BY WHETHER THE SWEEP WAS ASKED -- the capture's own protocol-9 record, which
+ * this audit read for the interaction channels only. A second table, not more columns on the first: the census
+ * verdict and the asked record are two independent readings of one empty, and each row of each table
+ * partitions `empty` on its own.
+ * @param {Record<string, any>} channels
+ */
+function reportAskedSplit(channels) {
+  console.log("sweep channels -- was the sweep asked? (the capture's own record, observed.<channel>)");
+  console.log("channel       empty   asked, ran out   asked, stopped   NOT ASKED   no record (pre-9)");
+  for (const [channel, row] of Object.entries(channels)) {
+    console.log(
+      channel.padEnd(12) +
+      String(row.empty).padStart(6) +
+      String(row.emptyAskedComplete).padStart(9) + " " + pct(row.emptyAskedComplete, row.empty) +
+      String(row.emptyAskedShort).padStart(9) + " " + pct(row.emptyAskedShort, row.empty) +
+      String(row.emptyNotAsked).padStart(7) + " " + pct(row.emptyNotAsked, row.empty) +
+      String(row.emptyNoRecord).padStart(9) + " " + pct(row.emptyNoRecord, row.empty),
+    );
+  }
+  console.log("NOT ASKED     the capture says it did not look. A `0` here is not a fact about the page.");
+  console.log("no record     older than protocol 9, so the capture cannot say either way.");
+  console.log("");
+}
+
+/**
  * Was each recorded activation soundly measured, and by how much?
  *
  * The verdict alone is now a constant -- `baselineQuiet` reads `true` on 1,117 of 1,117 stated entries on
@@ -178,6 +203,7 @@ function main() {
   console.log("cannot say    no census, or the probe never ran. A statement about this corpus, not a page.");
   console.log("page HAS none the only column on which a `0` is a fact about the page.");
   console.log("");
+  reportAskedSplit(result.channels);
   console.log("interaction channels — no census, so read from the capture's own protocol-9 record");
   console.log("  (observed.<channel>.asked); pre-protocol-9 captures fall back to the `formProbe` mark)");
   for (const [field, row] of Object.entries(result.interaction)) {
