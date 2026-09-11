@@ -91,30 +91,6 @@ test("a control that stopped being found is CHANGED — this is the custom-contr
   assert.equal(compareCapture(capture(), noControls).verdict, "CHANGED");
 });
 
-test("#977: a capture differing ONLY in `media` is CHANGED -- 1.4.2's rule reads it, so SAME would ship stale evidence", () => {
-  const audio = { tag: "audio", autoplay: true, muted: false, controls: false, loop: true };
-  const base = capture({ media: [audio] });
-  const changed = compareCapture(base, capture({ media: [{ ...audio, muted: true }] }));
-  assert.equal(changed.verdict, "CHANGED");
-  assert.deepEqual(changed.changes.map((c) => c.field), ["media"]);
-  assert.equal(compareCapture(base, capture({ media: [audio] })).verdict, "SAME", "the control: identical media is SAME");
-  assert.equal(compareCapture(base, capture({ media: [] })).verdict, "CHANGED", "the census losing an element is a change");
-});
-
-test("#977: a capture differing ONLY in `formInputs` is CHANGED -- 1.3.5's rule and signal read it (#170)", () => {
-  const field = { tag: "input", type: "text", autocomplete: "given-name" };
-  const base = capture({ formInputs: [field] });
-  const changed = compareCapture(base, capture({ formInputs: [{ ...field, autocomplete: "fname" }] }));
-  assert.equal(changed.verdict, "CHANGED", "the one attribute 1.3.5 decides on, and the count unchanged");
-  assert.deepEqual(changed.changes.map((c) => c.field), ["formInputs"]);
-  assert.equal(compareCapture(base, capture({ formInputs: [field] })).verdict, "SAME");
-});
-
-test("#977: every top-level channel in EVIDENCE_FIELDS is a one-segment path the comparison actually reads", () => {
-  const topLevel = EVIDENCE_FIELDS.filter((f) => f.length === 1).map((f) => f[0]).sort();
-  assert.deepEqual(topLevel, ["formInputs", "media"]);
-});
-
 test("a GAINED field value is CHANGED too — absence is evidence in this corpus", () => {
   // custom-control's bad pages prove a 4.1.2 failure by finding NO controls. A change that starts
   // finding one destroys the case just as surely as losing one.

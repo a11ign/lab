@@ -102,6 +102,28 @@ export const EVIDENCE_FIELDS = [
 ];
 
 /**
+ * WHAT IS DELIBERATELY NOT COMPARED, each with the reason -- beside the table it completes (#977). A capture
+ * field is compared (`EVIDENCE_FIELDS`), a group whose fields are classified one level down, the transcript
+ * (compared by `compareCapture` itself), or named here. `top-level-channels.test.ts` holds every field
+ * capture-core's typedefs declare to exactly that; `evidence-fields.test.ts` holds every field on disk to it.
+ * Moved here from `evidence-fields.test.ts`, which kept `navigatedOnSubmit`'s reason alone, so both guards read
+ * one list.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const NOT_COMPARED = Object.freeze({
+  "interaction.navigatedOnSubmit": "a record of what the PROBE did (did currentPageUrl() see a move), "
+    + "not what NVDA announced; it flips with probe order and even with transient network conditions "
+    + "rather than with the page, so comparing it would report drift for a change in how the capture "
+    + "was driven, not in what the page says (whether to compare it anyway is #984, a flip-rate measurement)",
+  url: "which page was asked for; the pair is matched on it, and `documentIdentity` compares what was SERVED",
+  screenReader: "which screen reader; `isUsableCapture` refuses anything but NVDA, so a difference is not a capture",
+  capturedAt: "when; it differs on every capture of every page",
+  diagnostics: "the capture's own debugging log, a FORBIDDEN_INPUT_KEY; marks and timings vary run to run",
+  observed: "what the capture ASKED and how each sweep stopped; stop reasons vary with NVDA's timing, and the "
+    + "evidence the asking produced is compared in the channels it describes",
+});
+
+/**
  * A phrase's shape, ignoring the wording NVDA varies between runs.
  *
  * Kept crude on purpose: lowercased and whitespace-collapsed only. Normalising harder (stripping
