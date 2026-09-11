@@ -30,7 +30,8 @@ import fsModule, {
 } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
-import { builtinModules } from "node:module";
+import moduleApi, { builtinModules, createRequire } from "node:module";
+import * as nodeTest from "node:test";
 import { Worker } from "node:worker_threads";
 import { once } from "node:events";
 import { tmpdir } from "node:os";
@@ -38,7 +39,7 @@ import childProcessModule, { execSync, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 import {
-  DECLARER_BUILTINS, NOT_WRAPPED, WHOLE_REPOSITORY, inScope, isObserved, parseWalkScope, readsDuring,
+  DECLARER_BUILTINS, ESM_UNSYNCED, NOT_WRAPPED, WHOLE_REPOSITORY, inScope, isObserved, parseWalkScope, readsDuring,
 } from "../../../../scripts/walk-scope.mjs";
 import { knownPackages } from "../../../../scripts/ci-changed.mjs";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
@@ -376,20 +377,26 @@ test("copyFile and openAsBlob are seen -- two reads a hand-written list of wrapp
   }
 });
 
-test("EVERY function on fs, fs.promises and child_process is wrapped, or named in NOT_WRAPPED with its reason", () => {
+test("EVERY function on fs, child_process, node:test, node:module, process and worker_threads is wrapped, or named in NOT_WRAPPED", () => {
   // Asked of the objects themselves, on whichever Node runs this, so a route a later Node adds fails HERE
   // instead of passing a guard. A hand-written list is how `copyFile` and `openAsBlob` went unseen.
+  const asRecord = (value: unknown) => value as Record<string, unknown>;
   const owners: Array<[string, Record<string, unknown>, Readonly<Record<string, string>>]> = [
-    ["fs", fsModule as unknown as Record<string, unknown>, NOT_WRAPPED.fs],
-    ["fs.promises", fsModule.promises as unknown as Record<string, unknown>, NOT_WRAPPED.fs],
-    ["child_process", childProcessModule as unknown as Record<string, unknown>, NOT_WRAPPED.child_process],
+    ["fs", asRecord(fsModule), NOT_WRAPPED.fs],
+    ["fs.promises", asRecord(fsModule.promises), NOT_WRAPPED.fs],
+    ["child_process", asRecord(childProcessModule), NOT_WRAPPED.child_process],
+    // #938's second review: the allowlisted builtins whose surface starts something or takes a path.
+    ["test", asRecord(nodeTest.default ?? nodeTest), NOT_WRAPPED.test],
+    ["module", asRecord(moduleApi), NOT_WRAPPED.module],
+    ["process", asRecord(process), NOT_WRAPPED.process],
+    ["worker_threads", asRecord(createRequire(import.meta.url)("node:worker_threads")), NOT_WRAPPED.worker_threads],
   ];
   const unaccounted: string[] = [];
   const listedYetWrapped: string[] = [];
   for (const [label, owner, reasons] of owners) {
     for (const [name, value] of Object.entries(owner)) {
       if (typeof value !== "function") continue;
-      const listed = name.replace(/Sync$/, "") in reasons;
+      const listed = (label.startsWith("fs") ? name.replace(/Sync$/, "") : name) in reasons;
       if (!isObserved(value) && !listed) unaccounted.push(`${label}.${name}`);
       if (isObserved(value) && listed) listedYetWrapped.push(`${label}.${name}`);
     }
@@ -437,6 +444,61 @@ test("THIRD-PARTY node_modules is excluded ONLY because a lockfile change is a b
   }
 });
 
+// --- worker-judge's second review of #938: allowlisted builtins that read or start something unseen. ---
+
+test("node:test's run() is the whole repository -- it starts its files through Node's INTERNAL spawn", async () => {
+  // Through the default export, the CommonJS object the wrapper sits on. The named ESM binding is NOT
+  // re-pointed (ESM_UNSYNCED), which is why that spelling is refused in a declarer's source instead.
+  const reads = await readsDuring(async () => {
+    for await (const event of nodeTest.default.run({ files: [] })) void event;
+  });
+  assert.ok(isUnbounded(reads), reads.join(", "));
+});
+
+test("every WRAPPED function's ESM binding IS the wrapper -- or is named in ESM_UNSYNCED with what covers it", async () => {
+  // `syncBuiltinESMExports` is what makes `import { readdir } from "node:fs"` reach a wrapper, and it does not
+  // reach `node:test`: measured, and the reason this is a test rather than a sentence in a header.
+  const specifiers: Record<string, string> = { fs: "node:fs", "child_process": "node:child_process",
+    test: "node:test", module: "node:module", "worker_threads": "node:worker_threads" };
+  const unsynced: string[] = [];
+  for (const [label, specifier] of Object.entries(specifiers)) {
+    const namespace = await import(specifier) as Record<string, unknown>;
+    const cjs = createRequire(import.meta.url)(specifier) as Record<string, unknown>;
+    for (const [name, value] of Object.entries(cjs)) {
+      if (!isObserved(value) || namespace[name] === value) continue;
+      const covered = (ESM_UNSYNCED as Record<string, Record<string, string>>)[label]?.[name];
+      if (!covered) unsynced.push(`${specifier}.${name}`);
+    }
+  }
+  assert.deepEqual(unsynced, [], "wrapped on the CommonJS object, unwrapped where an ESM import reaches it");
+});
+
+test("process.loadEnvFile and process.dlopen read their file through an internal binding, so they are wrapped", async () => {
+  // `.gitignore` has no `=` in it, so loading it as an env file sets nothing.
+  assert.deepEqual(await readsDuring(() => process.loadEnvFile(join(REPO, ".gitignore"))), [".gitignore"]);
+  assert.deepEqual(await readsDuring(() => assert.throws(() => process.dlopen({ exports: {} }, join(REPO, MANIFEST)))), [MANIFEST]);
+});
+
+test("getBuiltinModule of a builtin OFF the allowlist is the whole repository -- no import names it", async () => {
+  assert.ok(isUnbounded(await readsDuring(() => process.getBuiltinModule("node:vm"))));
+  assert.deepEqual(await readsDuring(() => process.getBuiltinModule("node:path")), []);
+  const raw = process as unknown as { binding: (name: string) => unknown };
+  assert.ok(isUnbounded(await readsDuring(() => assert.throws(() => raw.binding("walk-scope-no-such-binding")))));
+});
+
+test("a CommonJS resolution is recorded -- what require.resolve found, or where a relative request looked", async () => {
+  const requireFromJudge = createRequire(join(REPO, JUDGE, "src", "index.ts"));
+  assert.deepEqual(await readsDuring(() => requireFromJudge.resolve("../package.json")), [MANIFEST]);
+  assert.deepEqual(await readsDuring(() => assert.throws(() => requireFromJudge.resolve("./walk-scope-absent.mjs"))),
+    [`${JUDGE}/src/walk-scope-absent.mjs`]);
+});
+
+test("findPackageJSON reads the directory it walked, and a loader hook is the whole repository", async () => {
+  const find = (moduleApi as unknown as { findPackageJSON?: (s: string, b: string) => string | undefined }).findPackageJSON;
+  if (find) assert.deepEqual(await readsDuring(() => find("./rules.ts", pathToFileURL(join(REPO, JUDGE, "src", "x.ts")).href)), [JUDGE]);
+  assert.ok(isUnbounded(await readsDuring(() => assert.throws(() => (moduleApi.register as unknown as () => void)()))));
+});
+
 // ---------------------------------------------------------------------------------------------------------
 // The repository as it is.
 // ---------------------------------------------------------------------------------------------------------
@@ -466,7 +528,7 @@ test("every declaring guard imports walk-scope FIRST and runs its own check", ()
   }
 });
 
-const ALLOWED_BUILTINS = new Set<string>(DECLARER_BUILTINS);
+const ALLOWED_BUILTINS = new Set<string>(Object.keys(DECLARER_BUILTINS));
 const BUILTINS = new Set(builtinModules);
 
 /** Each route in one source file that reads through nothing the observer wraps -- empty when there is none. */
@@ -475,6 +537,15 @@ function unseenRoutesIn(code: string): string[] {
   if (/\bimport\s*\(\s*[^"'`\s)]/.test(code)) found.push("imports a computed path");
   if (/\bnew\s+(?:\w+\.)?(?:File)?ReadStream\s*\(|\bnew\s+(?:\w+\.)?ChildProcess\s*\(/.test(code)) {
     found.push("builds a stream or a process by hand");
+  }
+  if (/\bimport\.meta\.resolve\s*\(/.test(code)) found.push("resolves a specifier through the ESM loader");
+  // `node:test`'s ESM bindings are not re-pointed (ESM_UNSYNCED), so its `run` is reachable unwrapped through
+  // a named, namespace or dynamic import -- a default import or `require` reaches the wrapper.
+  if (/\bimport\s*\{[^}]*\brun\b[^}]*\}\s*from\s*["']node:test["']|\bimport\s*\*\s*as\s+\w+\s+from\s*["']node:test["']|\bimport\s*\(\s*["']node:test["']\s*\)/.test(code)) {
+    found.push("reaches node:test's run through a binding the observer cannot re-point");
+  }
+  if (/\._(?:findPath|load|resolveFilename|resolveLookupPaths|nodeModulePaths|initPaths|preloadModules)\s*\(/.test(code)) {
+    found.push("calls Node's module internals directly");
   }
   for (const [, spec] of code.matchAll(/(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*)["']([^"']+)["']/g)) {
     const name = spec.replace(/^node:/, "");
@@ -500,6 +571,13 @@ test("...and that refusal can fire: each unseen route is found, and a plain fs i
   assert.deepEqual(unseenRoutesIn(`import { DatabaseSync } from "node:sqlite";`),
     ["imports node:sqlite, which reads through nothing the observer wraps"]);
   assert.deepEqual(unseenRoutesIn(`const s = new fs.ReadStream(p);`), ["builds a stream or a process by hand"]);
+  assert.deepEqual(unseenRoutesIn(`const u = import.meta.resolve("@a11ign/judge");`), ["resolves a specifier through the ESM loader"]);
+  assert.deepEqual(unseenRoutesIn(`Module._findPath(req, paths);`), ["calls Node's module internals directly"]);
+  const viaTestBinding = ["reaches node:test's run through a binding the observer cannot re-point"];
+  assert.deepEqual(unseenRoutesIn(`import { test, run } from "node:test";`), viaTestBinding);
+  assert.deepEqual(unseenRoutesIn(`import * as t from "node:test";`), viaTestBinding);
+  assert.deepEqual(unseenRoutesIn(`const { run } = await import("node:test");`), viaTestBinding);
+  assert.deepEqual(unseenRoutesIn(`import { test, before } from "node:test";`), [], "the ordinary import is untouched");
   assert.deepEqual(unseenRoutesIn(`import { readFileSync } from "node:fs";\nconst m = await import("./x.mjs");`), []);
 });
 
@@ -513,6 +591,21 @@ test("THE FAILURE SIGNATURE: on the four measured product diffs, only DECLARING 
     assert.equal(kept.length + narrowed.length, repoGuards.length, "every guard is kept or narrowed, never lost");
     for (const n of narrowed) assert.ok(declarers.includes(n.test), `${n.test} was narrowed without declaring a scope`);
   }
+});
+
+test("THE SELECTOR DOES NOT INSTALL THE OBSERVER -- it reads declarations through the parser module alone", () => {
+  // It once imported `walk-scope.mjs` to parse, which wrapped fs, child_process, process and node:test in the
+  // CI selector's own process for nothing. Asked in a fresh process, since this file's own is observed.
+  // The observer must not be imported to ask, so this reads the wrapper's own marker symbol instead.
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", [
+    `await import(${JSON.stringify(pathToFileURL(join(REPO, "scripts/select-changed-tests.mjs")).href)});`,
+    `const fs = await import("node:fs");`,
+    `const marked = Object.getOwnPropertySymbols(fs.readFileSync).map(String).filter((s) => s.includes("walk-scope"));`,
+    `console.log(JSON.stringify(marked));`,
+  ].join("\n")], { cwd: REPO, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(JSON.parse(run.stdout.trim().split("\n").pop() ?? "null"), [],
+    "fs.readFileSync carries the observer's marker in a process that only imported the selector");
 });
 
 test("this file declares no scope of its own — it walks every test file to find the ones that do", () => {
