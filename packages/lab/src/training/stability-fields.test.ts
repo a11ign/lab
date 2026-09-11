@@ -45,9 +45,13 @@ function stabilityFields(): Set<string> {
   return new Set(Object.keys(comparable(everyChannel) as Record<string, unknown>));
 }
 
-/** What `evidence:check` compares, by bare field name (it keys on `[group, name]`). */
+/**
+ * What `evidence:check` compares, by bare field name: the path's LAST segment, the key `comparable` uses --
+ * `[group, name]` gives `name`, and a top-level channel's one-segment path (#977, `media`, `formInputs`)
+ * gives itself rather than `undefined`.
+ */
 const evidenceFields = (): Set<string> =>
-  new Set((EVIDENCE_FIELDS as [string, string][]).map(([, name]) => name));
+  new Set(EVIDENCE_FIELDS.map((field) => field[field.length - 1]));
 
 test("gate:stability compares every field evidence:check does", () => {
   const missing = [...evidenceFields()].filter((f) => !stabilityFields().has(f)).sort();

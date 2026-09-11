@@ -111,6 +111,63 @@ function corpusOnDisk(present: boolean) {
   });
 }
 
+/**
+ * #977: THE CLASS, FROM CAPTURE-CORE'S OWN TYPEDEFS -- so it runs in CI, where `runs/` does not exist.
+ *
+ * The test below walks `structure.*` and `interaction.*` on disk, and nothing walked the TOP level: `media`
+ * (1.4.2's rule) and `formInputs` (1.3.5's rule and signal, #170) sit beside the two groups, so neither was
+ * compared or excluded and a capture change to either read SAME. And the walk needs a corpus, so in CI it
+ * checked nothing at all. This one reads the typedefs `capture-core.mjs` declares the capture with -- the
+ * same source `wire-types-describe-the-wire.test.ts` pins against the published type -- so every field the
+ * worker says it emits must be COMPARED, a GROUP, the TRANSCRIPT, or named NOT_EVIDENCE with a reason.
+ */
+const CAPTURE_CORE = readFileSync(join(import.meta.dirname, "../../../nvda-worker/src/capture-core.mjs"), "utf8");
+
+/** A `@typedef {{ ... }} Name` line's field names -- the wire test's reading, one line, no nested braces. */
+function typedefFields(name: string): string[] {
+  const line = CAPTURE_CORE.split("\n").find((l) => l.includes("@typedef {{") && new RegExp(`\\}\\}\\s*${name}\\b`).test(l));
+  assert.ok(line, `@typedef {{ ... }} ${name} not found on one line -- capture-core.mjs has moved`);
+  const body = (line as string).match(/\{\{([^]*)\}\}/);
+  assert.ok(body, `no {{ ... }} body on the ${name} typedef line`);
+  return [...new Set([...(body as RegExpMatchArray)[1].matchAll(/\b([A-Za-z_$][\w$]*)\??:\s*/g)].map((m) => m[1]))].sort();
+}
+
+/** The two groups whose fields are classified one level down. */
+const GROUPS = new Set(["structure", "interaction"]);
+/** Compared, but not through `EVIDENCE_FIELDS`. */
+const COMPARED_ELSEWHERE: Record<string, string> = {
+  transcript: "compared by `compareCapture` itself, as a SET of phrases with drift named rather than a field",
+};
+/** Top-level fields deliberately not compared, each with the reason -- the `NOT_EVIDENCE` of the capture's top. */
+const NOT_EVIDENCE_TOP: Record<string, string> = {
+  url: "which page was asked for; the pair is matched on it, and `documentIdentity` compares what was SERVED",
+  screenReader: "which screen reader; `isCapture` refuses anything but NVDA, so a difference is not a capture",
+  capturedAt: "when; it differs on every capture of every page",
+  diagnostics: "the capture's own debugging log, a FORBIDDEN_INPUT_KEY; marks and timings vary run to run",
+  observed: "what the capture ASKED and how each sweep stopped; stop reasons vary with NVDA's timing, and the "
+    + "evidence the asking produced is compared in the channels it describes",
+};
+
+test("#977 EVERY FIELD capture-core's typedefs declare is compared, a group, the transcript, or NOT_EVIDENCE -- in CI", () => {
+  const compared = new Set(EVIDENCE_FIELDS.map((f) => f.join(".")));
+  const top = typedefFields("Capture");
+  assert.ok(top.length >= 8 && top.includes("structure") && top.includes("interaction"),
+    `the Capture typedef reads as ${top.join(", ")} -- the parser is broken, not the capture`);
+  const unclassifiedTop = top.filter((f) => !GROUPS.has(f) && !(f in COMPARED_ELSEWHERE)
+    && !compared.has(f) && !(f in NOT_EVIDENCE_TOP));
+  assert.deepEqual(unclassifiedTop, [],
+    "a top-level capture field is neither compared nor excluded, so evidence:check reads SAME for any change to it");
+  for (const [group, typedef] of [["structure", "CapturedStructure"], ["interaction", "CapturedInteraction"]]) {
+    const unclassified = typedefFields(typedef).map((k) => `${group}.${k}`)
+      .filter((k) => !compared.has(k) && !(k in NOT_EVIDENCE));
+    assert.deepEqual(unclassified, [], `a ${typedef} field is neither compared nor excluded`);
+  }
+  // No reason kept for a field the capture no longer declares: an exclusion outliving its field is a claim
+  // about nothing, and the next reader would trust it.
+  assert.deepEqual(Object.keys(NOT_EVIDENCE_TOP).filter((f) => !top.includes(f)), []);
+  assert.deepEqual(Object.keys(COMPARED_ELSEWHERE).filter((f) => !top.includes(f)), []);
+});
+
 test("every evidence field a capture carries is compared, or explicitly excluded", () => {
   const onDisk = fieldsOnDisk();
   // ASK WHETHER THE CORPUS IS STILL MOVING, not just whether it is there. This test passed a full

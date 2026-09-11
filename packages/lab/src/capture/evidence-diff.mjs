@@ -32,7 +32,11 @@ import { compareIdentity, documentIdentity } from "@a11ign/evidence/document-ide
  * The paths are the contract; the object is JSON.
  */
 
-/** @type {[string, string][]} */
+/**
+ * A field is a PATH: `[group, name]` inside `structure`/`interaction`, or `[name]` for a channel at the capture's top
+ * level (#977). `fieldValues` walks any depth, and a field is named by `path.join(".")`.
+ * @type {string[][]}
+ */
 export const EVIDENCE_FIELDS = [
   ["structure", "headings"], ["structure", "landmarks"], ["structure", "formFields"],
   ["structure", "tableCells"], ["structure", "links"], ["structure", "lists"],
@@ -87,6 +91,14 @@ export const EVIDENCE_FIELDS = [
   // `typedFeedback` gained `titleBefore`/`titleAfter` in the same protocol for 3.2.2 and is already
   // listed, so the flattening picks those up without a second entry.
   ["interaction", "focusContext"],
+  // THE TOP-LEVEL DOM-ONLY CHANNELS -- #977. `media` (1.4.2's rule) and `formInputs` (1.3.5's rule and
+  // `inputPurposeInvalid`, #170) sit BESIDE `structure`/`interaction`, not inside them, so a table of
+  // `[group, name]` pairs could not name them and this gate read SAME for any change to either -- a
+  // capture-pipeline change that broke `mediaCensus` or `formInputCensus` would have shipped without a
+  // recapture. Arrays of objects, so `flatten` compares each entry's content, not the count. The class is
+  // pinned in `evidence-fields.test.ts`, from capture-core's own typedefs, so the next top-level channel
+  // cannot arrive unclassified.
+  ["media"], ["formInputs"],
 ];
 
 /**
@@ -196,11 +208,11 @@ function flatten(entry) {
  * forced this.
  *
  * @param {EvidenceCapture | null | undefined} capture
- * @param {[string, string]} field
+ * @param {string[]} field a path -- `[group, name]`, or `[name]` for a top-level channel (#977)
  * @returns {string[]}
  */
-export function fieldValues(capture, [group, name]) {
-  const value = capture?.[group]?.[name];
+export function fieldValues(capture, field) {
+  const value = field.reduce((/** @type {any} */ at, key) => at?.[key], capture);
   if (Array.isArray(value)) return value.map(flatten);
   // AN OBJECT, FLATTENED. `routeChange` is `{control, titleBefore, titleAfter, headingBefore,
   // headingAfter}` rather than a list, and the array-only version returned [] for it — so adding it to

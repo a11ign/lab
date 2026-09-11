@@ -128,7 +128,9 @@ export function comparable(/** @type {any} */ capture) {
   /** @type {Record<string, any[]>} */
   const out = { transcript: list(capture.transcript) };
   for (const field of EVIDENCE_FIELDS) {
-    out[field[1]] = fieldValues(capture, field);
+    // The path's LAST segment, so `[group, name]` keys as it always has and a top-level `[name]` (#977) keys
+    // by its name rather than as `undefined`.
+    out[field[field.length - 1]] = fieldValues(capture, field);
   }
   return out;
 }
