@@ -123,10 +123,20 @@ import { ipv4ToInt } from "@a11ign/worker-fleet/host-address";
  */
 
 /**
- * @typedef {"calibration" | "training" | "fixture"} CorpusRole
+ * @typedef {"calibration" | "training" | "fixture" | "field"} CorpusRole
  *
  * `calibration` fits the scorer's abstention threshold. `training` is what the scorer learns from.
  * `fixture` is NEITHER, and the separation is load-bearing rather than tidy.
+ *
+ * `field` (#955, decided by `ceo` 2026-09-11) is the fourth, and it is outside every number this corpus
+ * feeds: pages a STRANGER is likely to point this tool at -- commercial marketing sites -- with NO
+ * conformance claim. The other three roles are UK public-sector, university, W3C and our own pages, so the
+ * corpus could not express a defect that only marketing-site furniture produces: 0 of 114 real-page
+ * captures carried a chat widget when #951 was found on one. A `field` page is never in the conformance
+ * line, never in the asserted-wrongly or referred figures, and never in training -- each reader's own
+ * selection already admits only its own role or claim, and `field-role.test.ts` asserts that through each
+ * of them rather than through a list of which roles count. Its only purpose is the furniture: chat widgets,
+ * consent overlays, geo-redirects and cookie walls.
  *
  * ADR 0015's why-2: every publisher-declared inaccessible page lives in calibration, so the TRAINING
  * distribution contains no broken page at all — which is why a real inaccessible page sits further from
@@ -144,7 +154,13 @@ import { ipv4ToInt } from "@a11ign/worker-fleet/host-address";
  * @typedef {object} RealPage
  * @property {string} url
  * @property {CorpusRole} role
- * @property {"conformant" | "inaccessible"} publishedClaim  What the SOURCE says, never our assessment.
+ * @property {"conformant" | "inaccessible"} [publishedClaim]  What the SOURCE says, never our assessment.
+ *   ABSENT exactly on a `field` page, which no source makes a claim about (#955) -- so a reader asking
+ *   `publishedClaim === "conformant"` can never admit one, and `field-role.test.ts` asserts the absence.
+ * @property {{fault: "wrong-page", reason: "geo-redirect", observed: string}} [refused]  A `field` page
+ *   RECORDED AS REFUSED rather than captured (#955): what a stranger here meets at the address they would
+ *   type is this tool refusing it as the wrong page, because the site redirected by location. `observed`
+ *   is where it landed, as recorded on #955 from round 5. Never captured (no fleet time), never scored.
  * @property {string} source  Where that claim is published, so a reader can check it.
  * @property {string} demonstrates  What the page is an example of, in the source's own terms.
  * @property {{url: string, when: string, why: string}[]} [movedFrom]  Addresses this page used to live at.
@@ -263,6 +279,15 @@ const BAD_BEFORE_CLAIM =
 const DESIGN_SYSTEM_CLAIM =
   "The Cabinet Office publishes design-system.service.gov.uk as fully compliant with WCAG 2.2 Level AA, "
   + "with no known non-compliant content (https://design-system.service.gov.uk/accessibility-statement/)";
+
+/** Why a `field` page is here -- in place of a claim, which it does not have (#955). */
+const FIELD_SOURCE =
+  "ceo's ruling on #955 (2026-09-11): a page a stranger is likely to point this tool at. NO conformance "
+  + "claim, by design, so never in the conformance line, the asserted-wrongly or referred figures, or training";
+
+const GEO_REDIRECT_REFUSAL =
+  "what a stranger here meets at the global address: the site redirects by location, and the capture "
+  + "refuses the page it landed on as the wrong page";
 
 const TUTORIAL_CLAIM =
   "W3C states its site conforms to WCAG 2 Level AA (https://www.w3.org/WAI/), and each tutorial page "
@@ -842,11 +867,61 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant", source: OWN_FIXTURE_CLAIM,
     demonstrates: "the same fields in reading order, no positive tabindex — 2.4.3's silent half" },
 
+  // FIELD -- #955, the first set, ruled by `ceo` at 04:28Z on 2026-09-11 from `orchestrator`'s reading of
+  // round 5 (on the row). Ten entries: six captured pages and four recorded refusals, at the GLOBAL address
+  // a stranger would type. It stays small (ten to fifteen) and grows only by `orchestrator` proposing on
+  // #955. No `publishedClaim` on any of them: a conformance claim is exactly what this role does not have.
+  //
+  // HUBSPOT IS THE CONTROL. It is the page #951 was found on -- a chat widget that opens by itself -- so the
+  // role holds at least one page where #951's widget count MUST be at least 1. A zero with hubspot here
+  // flags the signature or the capture, which is what makes the count non-vacuous (the data half,
+  // `orchestrator`'s).
+  { url: "https://www.hubspot.com/", role: "field", source: FIELD_SOURCE,
+    demonstrates: "a commercial marketing page whose chat widget opens by itself — the page #951 was found "
+      + "on, and this role's positive control for it" },
+  { url: "https://www.notion.com/", role: "field", source: FIELD_SOURCE,
+    demonstrates: "a commercial marketing page, captured in round 5" },
+  { url: "https://www.dropbox.com/", role: "field", source: FIELD_SOURCE,
+    demonstrates: "a commercial marketing page, captured in round 5" },
+  { url: "https://www.adobe.com/", role: "field", source: FIELD_SOURCE,
+    demonstrates: "a commercial marketing page, captured in round 5" },
+  { url: "https://www.atlassian.com/", role: "field", source: FIELD_SOURCE,
+    demonstrates: "a commercial marketing page, captured in round 5 with a partial examination" },
+  { url: "https://mailchimp.com/", role: "field", source: FIELD_SOURCE,
+    demonstrates: "a commercial marketing page, captured in round 5 with a partial examination" },
+  // THE FOUR REFUSALS. A stranger in this location pointing the tool at stripe.com gets exactly this, and
+  // the role exists to hold what a stranger meets -- so each is recorded at the global URL with the outcome
+  // it produced, not re-declared at a regional URL (which would make it a fact about this fleet's location
+  // and cost fleet time). `observed` is copied from the row as recorded, scheme and all left as written.
+  { url: "https://stripe.com/", role: "field", source: FIELD_SOURCE, demonstrates: GEO_REDIRECT_REFUSAL,
+    refused: { fault: "wrong-page", reason: "geo-redirect", observed: "stripe.com/gb" } },
+  { url: "https://www.shopify.com/", role: "field", source: FIELD_SOURCE, demonstrates: GEO_REDIRECT_REFUSAL,
+    refused: { fault: "wrong-page", reason: "geo-redirect", observed: "shopify.com/uk" } },
+  { url: "https://www.canva.com/", role: "field", source: FIELD_SOURCE, demonstrates: GEO_REDIRECT_REFUSAL,
+    refused: { fault: "wrong-page", reason: "geo-redirect", observed: "canva.com/en_gb/" } },
+  { url: "https://www.zendesk.com/", role: "field", source: FIELD_SOURCE, demonstrates: GEO_REDIRECT_REFUSAL,
+    refused: { fault: "wrong-page", reason: "geo-redirect", observed: "zendesk.co.uk/#georedirect" } },
 ]);
 
 /** Pages for one role. @param {CorpusRole} role @returns {RealPage[]} */
 export function pagesFor(role) {
   return REAL_PAGES.filter((page) => page.role === role);
+}
+
+/**
+ * A `field` page recorded as refused rather than captured (#955). It has an expected outcome instead of a
+ * capture, so nothing that captures, scores or trains may take it.
+ * @param {{ refused?: unknown }} page @returns {boolean}
+ */
+export const isRecordedRefusal = (page) => page.refused !== undefined;
+
+/**
+ * The pages a capture run should visit: every page but a recorded refusal, whose outcome is already on
+ * record and would cost fleet time to reproduce (#955 -- "no fleet time" for the four).
+ * @template {{ refused?: unknown }} P @param {readonly P[]} pages @returns {P[]}
+ */
+export function capturablePages(pages) {
+  return pages.filter((page) => !isRecordedRefusal(page));
 }
 
 /**

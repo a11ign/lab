@@ -26,7 +26,7 @@
  * corpus automatically would turn the third into a silent corpus change, which is the one thing this
  * corpus exists not to do.
  */
-import { REAL_PAGES } from "../src/training/real-page-corpus.mjs";
+import { REAL_PAGES, isRecordedRefusal } from "../src/training/real-page-corpus.mjs";
 import { createHostThrottle, hostOf } from "../src/training/host-throttle.mjs";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
@@ -103,6 +103,23 @@ function addressesSamePage(actual, requested) {
   }
 }
 
+/**
+ * Why this audit does not fetch a page, or null when it does.
+ *
+ * LOCALLY SERVED FIXTURES ARE NOT SUBJECT TO ROT. Corpus entries at `http://localhost:5050/...` are pages this
+ * project writes and serves itself, so no publisher can move them -- and without the page server up they
+ * report UNREACHABLE, which is noise about the machine rather than news about the corpus.
+ *
+ * A RECORDED REFUSAL REDIRECTS BY DECLARATION (#955): a `field` page kept at the global address a stranger
+ * types, whose outcome -- a geo-redirect the capture refuses -- IS the entry. Reporting it as MOVED would ask
+ * a human to "fix" the one address the role exists to hold.
+ * @param {import("../src/training/real-page-corpus.mjs").RealPage} page @returns {"local" | "refusal" | null}
+ */
+function whyNotFetched(page) {
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)/.test(page.url)) return "local";
+  return isRecordedRefusal(page) ? "refusal" : null;
+}
+
 async function main() {
   const waitTurn = createHostThrottle({ minGapMs: POLITE_GAP_MS });
   const moved = [];
@@ -110,18 +127,16 @@ async function main() {
   /** Answered, but with a status that means we did not see the page. */
   const blocked = [];
   let checked = 0;
-  let local = 0;
+  /** Pages this audit does not fetch, by why -- counted, so their absence from the report is a fact. */
+  const notFetched = { local: 0, refusal: 0 };
 
   if (!AS_JSON) {
     process.stdout.write(`Checking ${REAL_PAGES.length} real-page url(s), politely (${POLITE_GAP_MS} ms `
       + `between requests to one host)\n\n`);
   }
   for (const page of REAL_PAGES) {
-    // LOCALLY SERVED FIXTURES ARE NOT SUBJECT TO ROT. Four corpus entries are `http://localhost:5050/...`
-    // pages this project writes and serves itself, so no publisher can move them — and without the page
-    // server up they report UNREACHABLE, which is noise about the machine rather than news about the
-    // corpus. Counted so their absence from the report is a fact rather than a silence.
-    if (/^https?:\/\/(localhost|127\.0\.0\.1)/.test(page.url)) { local += 1; continue; }
+    const skip = whyNotFetched(page);
+    if (skip) { notFetched[skip] += 1; continue; }
     await waitTurn(hostOf(page.url));
     const { final, status, error } = await landsAt(page.url);
     checked += 1;
@@ -158,14 +173,16 @@ async function main() {
   }
 
   if (AS_JSON) {
-    process.stdout.write(`${JSON.stringify({ checked, local, moved, unreachable, blocked }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ checked, local: notFetched.local, refusals: notFetched.refusal,
+      moved, unreachable, blocked }, null, 2)}\n`);
   } else {
     // `checked` MINUS what could not be seen, because the whole defect above was a page counted as
     // checked that nothing looked at. The two numbers are printed together so the gap is never implicit.
     const seen = checked - blocked.length;
     process.stdout.write(`\n  ${checked} checked (${seen} actually seen), ${moved.length} moved, `
       + `${unreachable.length} unreachable, ${blocked.length} blocked to this audit, `
-      + `${local} locally served (not subject to rot)\n`);
+      + `${notFetched.local} locally served (not subject to rot), ${notFetched.refusal} recorded refusal(s) `
+      + "(redirect by declaration, #955)\n");
     if (blocked.length) {
       process.stdout.write("  A BLOCKED page is not a passing page. Those are unverified here; the capture\n"
         + "  run is what can answer them, because it drives a real browser.\n");

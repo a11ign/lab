@@ -47,7 +47,13 @@ import {
   type CapturedAnnouncements,
 } from "@a11ign/evidence/verify";
 import { nameOf } from "@a11ign/evidence";
-import { realPageFor, supersededBy, pageServerFixtureAtPath, REAL_PAGES } from "../src/training/real-page-corpus.mjs";
+import {
+  realPageFor, supersededBy, pageServerFixtureAtPath, REAL_PAGES, pagesFor,
+} from "../src/training/real-page-corpus.mjs";
+// THE CONFORMANCE LINE'S SELECTION, and the field population it leaves out, imported rather than written here
+// (#955): `field-role.test.ts` asserts through both, so what this gate scores and prints and what that test
+// checks are one copy.
+import { conformanceLineAnswer, fieldPopulationLines } from "../src/training/real-page-selection.mjs";
 import { REPO_ROOT, realCorpusRoot } from "../src/dataset-paths.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 
@@ -101,7 +107,8 @@ const CAPTURE_AGES: { at: string; role: string }[] = [];
  * `reportDeclaredExclusions`, which prints every declared exclusion on every run precisely so a temporary
  * one cannot become permanent by silence. The asymmetry was only enforced in one direction.
  */
-const NOT_SCORED: { file: string; url: string; why: "undeclared" | "not conformant" | "no transcript" }[] = [];
+type NotScoredWhy = "undeclared" | "not conformant" | "no transcript" | "field";
+const NOT_SCORED: { file: string; url: string; why: NotScoredWhy }[] = [];
 
 /**
  * The pages declared unexaminable, with their reasons. Empty when the file is absent, deliberately: a
@@ -184,6 +191,11 @@ function reportDeclaredExclusions(unusablePages: string[]): string[] {
   return declaredHere;
 }
 
+/** The field pages this run found a capture of, by declared url, from what `pageThisGateScores` recorded. */
+function fieldCapturesSeen(): Set<string> {
+  return new Set(NOT_SCORED.filter((entry) => entry.why === "field").map((entry) => entry.url));
+}
+
 function reportCaptureAges(): void {
   process.stdout.write(`${captureAgeLines(CAPTURE_AGES).join("\n")}\n`);
   reportWhatWasNotScored();
@@ -218,6 +230,7 @@ function reportWhatWasNotScored(): void {
   const answers = classifyUndeclared(undeclared, furnitureUrls);
   process.stdout.write(`  scored ${CAPTURE_AGES.length} capture(s); walked past ${NOT_SCORED.length}`
     + ` (${by("not conformant").length} on pages the publisher does not declare conformant,`
+    + ` ${by("field").length} on field pages, which claim nothing (see the field line above),`
     + ` ${answers.unclaimed.length} undeclared, ${answers.superseded.length} superseded`
     + ` by a page that moved, ${answers.relocated.length} relocated fixture(s) that did not reconcile,`
     + ` ${answers.furniture.length} reclassified as furniture (see below),`
@@ -377,19 +390,18 @@ type Findings = Record<string, string[]>;
  * Rule. The name states the question the two checks jointly answer.
  */
 function pageThisGateScores(file: string, capture: { url?: string; transcript?: unknown }):
-  { page: ReturnType<typeof realPageFor>; why: null } | { page: null; why: "undeclared" | "not conformant" | "no transcript" } {
+  { page: ReturnType<typeof realPageFor>; why: null } | { page: null; why: NotScoredWhy } {
   const url = String(capture.url ?? "");
   if (!Array.isArray(capture.transcript)) {
     NOT_SCORED.push({ file, url, why: "no transcript" });
     return { page: null, why: "no transcript" };
   }
-  const page = realPageFor(capture.url);
-  if (!page || page.publishedClaim !== "conformant") {
-    const why = page ? "not conformant" : "undeclared";
-    NOT_SCORED.push({ file, url, why });
-    return { page: null, why };
-  }
-  return { page, why: null };
+  // A FIELD PAGE IS ITS OWN ANSWER (#955): printed as its own population, keyed by its DECLARED url so the
+  // field line can say which declared pages were captured, and never scored against the baseline.
+  const answer = conformanceLineAnswer(capture.url);
+  if (answer.page) return answer;
+  NOT_SCORED.push({ file, url: answer.why === "field" ? String(realPageFor(capture.url)?.url) : url, why: answer.why });
+  return answer;
 }
 
 /**
@@ -1180,6 +1192,7 @@ function main(): void {
 
   const { added, removed } = compare(current, baseline);
   process.stdout.write(`\n  ${pages} conformant real page(s) scored against the baseline.\n`);
+  process.stdout.write(`${fieldPopulationLines(pagesFor("field"), fieldCapturesSeen()).join("\n")}\n`);
   reportWhichPathThisGateRead();
   reportCaptureAges();
   for (const change of removed) {

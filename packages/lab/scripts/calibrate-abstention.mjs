@@ -44,6 +44,8 @@ import { ruleFindings } from "@a11ign/judge/rules";
 import { oracleCounts } from "@a11ign/evidence/verify";
 
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
+// THE FIGURES' SELECTION, imported rather than written here (#955): `field-role.test.ts` asserts through it.
+import { calibrationEntries } from "../src/training/real-page-selection.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, realCorpusRoot, abstentionRoot, abstentionSweepPath, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
@@ -131,7 +133,7 @@ function calibrationPages() {
     process.stdout.write(`  NOTE: ${undeclared.length} captured page(s) are not in real-page-corpus.mjs `
       + "and are excluded; a capture nobody declares cannot be scored against a claim.\n");
   }
-  return loaded.filter((entry) => realPageFor(entry.capture?.url ?? "")?.role === "calibration");
+  return calibrationEntries(loaded);
 }
 
 /**

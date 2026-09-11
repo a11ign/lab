@@ -80,10 +80,15 @@ test("every PUBLISHED page carries a published claim and a citation for it", () 
   // and the exemption is narrow on purpose. They cannot enter calibration or training (see `CorpusRole`),
   // so no statistical claim rests on them; they exist so a rule-only criterion can be validated at all.
   // The rest of the corpus keeps the rule that makes it worth having.
+  //
+  // `field` pages (#955) are exempt for the OPPOSITE reason: nobody labelled them, because they make no
+  // claim at all, and `field-role.test.ts` asserts that absence. Each reader that rests a number on a claim
+  // already asks for one, so a page without one reaches none of them.
   for (const page of REAL_PAGES) {
-    if (page.role === "fixture") continue;
+    if (page.role === "fixture" || page.role === "field") continue;
     assert.match(page.url, /^https:\/\//, `${page.url} must be a real fetchable page`);
-    assert.ok(["conformant", "inaccessible"].includes(page.publishedClaim));
+    assert.ok(["conformant", "inaccessible"].includes(String(page.publishedClaim)),
+      `${page.url} carries no published claim, and only a field page may lack one`);
     assert.match(page.source, /https:\/\//, `${page.url} must cite where its claim is published`);
     assert.ok(page.demonstrates.length > 5, `${page.url} must say what it is an example of`);
   }
