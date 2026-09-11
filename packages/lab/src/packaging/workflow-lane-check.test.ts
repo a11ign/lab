@@ -163,21 +163,34 @@ test("exceptionFor accepts an em-dash as well as a double hyphen -- both are wri
   assert.ok(exceptionFor("Lane-exception: the pipeline -- assigned by ceo -- because x\n", "the pipeline"));
 });
 
-/**
- * #902 REMOVED THE CI WIRING, and THE WIRING test went with it rather than being left to fail.
- *
- * It asserted that `ci.yml`'s `mergeSafety` job ran this check at `fetch-depth: 0`, because a three-dot
- * diff on a shallow checkout exits 128 before node runs -- the fault that cost this check its own first
- * pull request. That assertion had a subject only while a workflow ran the check, and ceo's ruling of
- * 2026-09-11 ended that: the pipeline lane's owner is now ceo, every engineer's pipeline PR carries a
- * `Lane-exception:` line naming them, and #916 brings CODEOWNERS and required reviews on the 15th, so the
- * step's only remaining effect was refusing pull requests ceo had assigned.
- *
- * `workflow-lane-check.mjs` STAYS and every verdict test below still drives it; it is runnable by hand and
- * `changed-files-renames.test.ts` still drives `laneVerdict` against a real `git mv`. **If a workflow ever
- * runs this check again, restore a wiring test with it**: the shallow-checkout fault is a property of
- * running it in CI, not of the rule, and nothing below can see it.
- */
+test("THE WIRING, not just the logic: the job running this check checks out FULL depth", () => {
+  // Measured 2026-09-09, and it cost this check its own first PR. The step diffs `origin/<base>...HEAD`,
+  // and a three-dot diff needs a MERGE BASE. On the default shallow checkout there is none, and git does
+  // not degrade -- reproduced in a `--depth=1` clone:
+  //
+  //     $ git diff --name-only FETCH_HEAD...HEAD
+  //     fatal: FETCH_HEAD...HEAD: no merge base          (exit 128)
+  //
+  // Under `bash -e` that fails the step BEFORE node runs, so the check reported a real-sounding refusal
+  // with nothing to do with lanes. Every assertion above drives the VERDICT and none of them could see
+  // this: a pure function tested exhaustively, wired to an input it never receives. That is this
+  // repository's own rule -- test a check in the direction it will actually run.
+  const ci = readFileSync(path.join(REPO, ".github/workflows/ci.yml"), "utf8");
+  const job = ci.split(/^ {2}deliberateRefusals:$/m)[1]?.split(/^ {2}\S/m)[0] ?? "";
+  assert.ok(job.includes("workflow-lane-check.mjs"),
+    "this test is pinned to deliberateRefusals; if the step moved, move this with it rather than deleting it");
+  assert.match(job, /fetch-depth:\s*0/,
+    "the job must check out full depth, or the three-dot diff has no merge base and exits 128");
+  // #939 moved the diff itself behind `scripts/changed-files.mjs`, so that the SOURCE side of a rename is
+  // listed too -- a bare `git diff --name-only` prints only the destination, and a PR moving a file OUT of
+  // another session's lane was invisible to the check that owns it. The RANGE is what this test pins, and
+  // it is unchanged by that move: whatever produces the list must ask for `origin/<base>...HEAD` by name.
+  assert.match(job, /changed-files\.mjs origin\/\$\{\{ github\.base_ref \}\}\.\.\.HEAD/,
+    "and it must diff against the base ref by name -- FETCH_HEAD after a shallow fetch is the fault above");
+  assert.ok(!job.includes("FETCH_HEAD"),
+    "FETCH_HEAD is the fault itself: after a shallow fetch it has no merge base with HEAD and git exits 128");
+});
+
 test("the lane file is DATA with a named owner, so the mechanism cannot quietly decide who owns what", () => {
   const raw = JSON.parse(readFileSync(path.join(REPO, "docs/lane-ownership.json"), "utf8"));
   assert.equal(raw._owner, "ceo", "ceo assigns lanes and, since 2026-09-11, owns the pipeline lane itself");

@@ -26,16 +26,19 @@ function gateBlock(): string {
   return next === -1 ? rest : rest.slice(0, next + 1);
 }
 
-// `holdAndCloses` is what `mergeSafety` became: two person-applied controls -- a `hold:` label, and the
-// declared Closes against what GitHub will actually close (#549) -- and it stays REQUIRED on ceo's ruling.
-// Neither is process noise: none of the last forty red runs was either. Its lane step is gone, and the head
-// -vs-tip race it still carries (#294) is not #277's "behind main", which branch protection now owns.
+// `deliberateRefusals` is what `mergeSafety` became: THREE checks a person's own decision drives -- a
+// `hold:` label, the declared Closes against what GitHub will actually close (#549), and a crossing into
+// another session's lane. It stays REQUIRED. None is process noise: none of the last forty red runs was any
+// of them. ceo ruled the lane check out and then back in on worker-capture's objection -- the first ruling
+// covered only ASSIGNED crossings, and an unassigned one would merge silently, since the record ceo relies
+// on IS the line this check enforces. The head-vs-tip race it also carries (#294) is not #277's "behind
+// main", which branch protection now owns.
 // WHERE THE RULE LIVES: `ci-changed.test.ts` owns it, deriving the required set from ci.yml itself so a
 // job added tomorrow is required by DEFAULT. `KEPT` here is a second copy and deliberately a dumb one --
 // it names today's answer so this file can assert the loop and the needs list against each other. A
 // correctly-added job turns two tests here red until KEPT is edited too; that friction is the price of
 // the second reading, and the edit is one line (worker-capture's review of #1001).
-const KEPT = ["changed", "ts", "python", "ansible", "changeset", "rulesFitness", "holdAndCloses"];
+const KEPT = ["changed", "ts", "python", "ansible", "changeset", "rulesFitness", "deliberateRefusals"];
 const DROPPED = ["docs", "board", "acceptance", "ownedPaths"];
 
 test("#902: the gate waits for the product jobs and nothing else", () => {
@@ -44,11 +47,11 @@ test("#902: the gate waits for the product jobs and nothing else", () => {
   assert.deepEqual(needs!.split(",").map((name) => name.trim()).sort(), [...KEPT].sort());
 });
 
-test("#902: a HELD pull request is still refused by a job the gate needs", () => {
+test("#902: the three deliberate refusals are all in one job the gate needs", () => {
   // The hold refusal rides on `merge-guard.mjs --ci-gate`, and dropping its job from `needs` would leave a
   // held PR reporting red while the gate went green -- so an ARMED one would merge. `pr-hold.mjs` disarms
   // when it takes a hold, but the armed-then-held window is caught here and nowhere else in CI.
-  const job = /\n {2}holdAndCloses:\n[\s\S]*?(?=\n {2}[A-Za-z][\w-]*:\n)/.exec(CI)?.[0] ?? "";
+  const job = /\n {2}deliberateRefusals:\n[\s\S]*?(?=\n {2}[A-Za-z][\w-]*:\n)/.exec(CI)?.[0] ?? "";
   // THE `run:` LINE, NOT THE NAME ANYWHERE IN THE BLOCK. The first version of this matched
   // `merge-guard.mjs --ci-gate` anywhere in the job, and the comment above the step says those words too:
   // deleting the step left the test green on its own explanation. A guard satisfied by prose about itself
@@ -57,7 +60,10 @@ test("#902: a HELD pull request is still refused by a job the gate needs", () =>
     "the hold refusal left this job; no other workflow in this repo reads a `hold:` label");
   assert.match(job, /run: node scripts\/closes-mismatch-check\.mjs/,
     "#549's comparison left this job, and only it has a token");
-  assert.ok(KEPT.includes("holdAndCloses"), "the job carrying both must be one the gate waits for");
+  assert.match(job, /run: \|\n[\s\S]*?node scripts\/workflow-lane-check\.mjs/,
+    "the lane check left this job; an UNASSIGNED crossing would then merge with no record, which is the "
+    + "case ceo's second ruling of 2026-09-11 kept it for");
+  assert.ok(KEPT.includes("deliberateRefusals"), "the job carrying all three must be one the gate waits for");
 });
 
 test("#902: each job the gate stopped waiting for STILL RUNS -- dropped from needs, not deleted", () => {
