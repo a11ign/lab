@@ -17,11 +17,20 @@
  * `audit-corpus-urls.mjs`, which only imports the DECLARED page list to make live HTTP requests and never
  * reads a captured file) is not enough to be in scope.
  */
+// FIRST, so it observes every read below it -- #929. See `scripts/walk-scope.mjs`.
+import { declareWalkScope } from "../../../../scripts/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+
+/**
+ * WHAT THIS GUARD READS, declared so a diff outside it does not run it -- #929. It walks the lab package for corpus readers -- `src`, `scripts`, `baselines`, `tests` -- and nothing outside `packages/lab`.
+ * Its own run checks that, and fails if it ever reads wider.
+ */
+export const WALK_SCOPE = ["packages/lab"];
+await declareWalkScope(import.meta.url);
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
