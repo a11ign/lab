@@ -24,15 +24,17 @@
  */
 import { test, before } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, globSync, mkdtempSync, openSync, readFileSync, readdir, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { spawnSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { parseWalkScope, inScope } from "../../../../scripts/walk-scope.mjs";
+import { parseWalkScope, inScope, readsDuring, WHOLE_REPOSITORY } from "../../../../scripts/walk-scope.mjs";
+import { knownPackages } from "../../../../scripts/ci-changed.mjs";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 import {
-  alwaysRunTests, discoverTestFiles, narrowByDeclaredScope, sourceClosure,
+  alwaysRunTests, discoverTestFiles, narrowByDeclaredScope, packageIndex, sourceClosure,
 } from "../../../../scripts/select-changed-tests.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -177,6 +179,71 @@ test("...and a declaration that covers the walk passes — or the check above co
 });
 
 // ---------------------------------------------------------------------------------------------------------
+// Every route to the tree is SEEN, or fails closed. An unseen read is a false pass: a declaration narrower
+// than the walk, checked by an observer that missed the walk, reads as verified. The first observer wrapped
+// only the sync `fs` calls and `git` in argv form -- `await readdir(...)`, `openSync`, `execSync("git ...")`
+// and any child process all walked past it.
+// ---------------------------------------------------------------------------------------------------------
+
+const JUDGE = "packages/judge";
+const MANIFEST = `${JUDGE}/package.json`;
+const inRepo = { cwd: REPO, encoding: "utf8" as const };
+const isUnbounded = (reads: string[]) => reads.length === 1 && reads[0].startsWith(WHOLE_REPOSITORY);
+
+test("fs.promises -- the same object as node:fs/promises -- is seen", async () => {
+  assert.deepEqual(await readsDuring(() => readFile(join(REPO, MANIFEST), "utf8")), [MANIFEST]);
+});
+
+test("a callback readdir is seen", async () => {
+  const reads = await readsDuring(() => new Promise((done, fail) =>
+    readdir(join(REPO, JUDGE), (error) => (error ? fail(error) : done(undefined)))));
+  assert.deepEqual(reads, [JUDGE]);
+});
+
+test("openSync is seen, so a read through a file descriptor is not a way round", async () => {
+  assert.deepEqual(await readsDuring(() => closeSync(openSync(join(REPO, MANIFEST), "r"))), [MANIFEST]);
+});
+
+test("LISTING THE ROOT is the whole repository, never nothing -- the root was once dropped as an empty path", async () => {
+  assert.ok(isUnbounded(await readsDuring(() => readdirSync(REPO))));
+});
+
+test("a glob is recorded at its static prefix, resolved against its OWN cwd", async () => {
+  assert.deepEqual(await readsDuring(() => globSync("*.json", { cwd: join(REPO, JUDGE) })), [JUDGE]);
+  assert.deepEqual(await readsDuring(() => globSync("packages/*/package.json", { cwd: REPO })), ["packages"]);
+});
+
+test("git ls-files is bounded by its pathspecs, read against -C, past git's own -c", async () => {
+  assert.deepEqual(await readsDuring(() => spawnSync("git", ["-C", "packages", "ls-files", "judge"], inRepo)), [JUDGE]);
+  assert.deepEqual(await readsDuring(() => spawnSync("git", ["-c", "core.quotepath=off", "ls-files", JUDGE], inRepo)),
+    [JUDGE], "an unskipped `-c` value reads as the subcommand -- unknown, so the whole repository");
+  assert.ok(isUnbounded(await readsDuring(() => spawnSync("git", ["ls-files"], inRepo))), "no pathspec is the whole tree");
+});
+
+test("git grep's first operand is its PATTERN: only what follows -- bounds it", async () => {
+  assert.ok(isUnbounded(await readsDuring(() => spawnSync("git", ["grep", "-l", "packages/judge"], inRepo))));
+  assert.deepEqual(await readsDuring(() => spawnSync("git", ["grep", "-l", "x", "--", JUDGE], inRepo)), [JUDGE]);
+});
+
+test("git history readers are the whole repository; rev-parse reads no population", async () => {
+  assert.ok(isUnbounded(await readsDuring(() => spawnSync("git", ["log", "-1", "--format=%H"], inRepo))));
+  assert.deepEqual(await readsDuring(() => spawnSync("git", ["rev-parse", "HEAD"], inRepo)), []);
+});
+
+test("a shell string is parsed only when it is plain git; a pipeline is the whole repository", async () => {
+  assert.deepEqual(await readsDuring(() => execSync(`git ls-files ${JUDGE}`, inRepo)), [JUDGE]);
+  assert.ok(isUnbounded(await readsDuring(() => execSync(`git ls-files ${JUDGE} | head -1`, inRepo))));
+});
+
+test("ANY OTHER CHILD PROCESS is the whole repository -- what it reads is not visible, so it cannot be verified", async () => {
+  assert.ok(isUnbounded(await readsDuring(() => spawnSync(process.execPath, ["-e", "0"]))));
+});
+
+test("the wrappers keep what they wrap: realpathSync.native still resolves", () => {
+  assert.equal(realpathSync.native(REPO), realpathSync(REPO));
+});
+
+// ---------------------------------------------------------------------------------------------------------
 // The repository as it is.
 // ---------------------------------------------------------------------------------------------------------
 
@@ -184,12 +251,9 @@ type Guard = { test: string, why: string };
 let repoGuards: Guard[];
 let declarers: string[];
 before(() => {
-  const dirs = readdirSync(join(REPO, "packages"), { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name);
-  const packages = new Map<string, { dir: string, exportsMap: Record<string, unknown> }>();
-  for (const dir of dirs) {
-    const manifest = JSON.parse(readFileSync(join(REPO, "packages", dir, "package.json"), "utf8"));
-    packages.set(manifest.name, { dir, exportsMap: manifest.exports ?? {} });
-  }
+  // The selector's own index, not a third copy of it -- this file checks what the selector acts on.
+  const dirs = knownPackages(REPO);
+  const packages = packageIndex(REPO, dirs);
   const every = discoverTestFiles(REPO, dirs);
   repoGuards = alwaysRunTests(every, { closureOf: (t: string) => sourceClosure(join(REPO, t), REPO, packages), repoRoot: REPO });
   declarers = every.filter((t: string) => parseWalkScope(readFileSync(join(REPO, t), "utf8")) !== null);
@@ -205,6 +269,19 @@ test("every declaring guard imports walk-scope FIRST and runs its own check", ()
     const firstImport = source.split("\n").find((line) => line.startsWith("import "));
     assert.match(firstImport ?? "", /walk-scope\.mjs"/, `${file}: the walk-scope import must be the FIRST import`);
     assert.match(source, /await declareWalkScope\(import\.meta\.url\)/, `${file}: declares a scope and never checks it`);
+  }
+});
+
+test("no declaring guard reads by a route the observer cannot see: a computed import(), or a worker thread", () => {
+  // Both read off the thread the observer patches, so a declaration covering either would pass unverified.
+  // Refused here rather than recorded, because there is nothing in this process to record.
+  const packages = packageIndex(REPO, knownPackages(REPO));
+  for (const file of declarers) {
+    for (const source of sourceClosure(join(REPO, file), REPO, packages)) {
+      const code = readFileSync(source, "utf8");
+      assert.doesNotMatch(code, /\bimport\s*\(\s*[^"'`\s)]/, `${file}: ${source} imports a computed path`);
+      assert.doesNotMatch(code, /worker_threads/, `${file}: ${source} uses worker threads`);
+    }
   }
 });
 
