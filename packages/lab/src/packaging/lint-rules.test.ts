@@ -61,3 +61,27 @@ test("an IIFE is measured too, as function-size.test.ts measured every function 
   assert.deepEqual(
     await reportedLines(PHYSICAL, commentDense(91, { iife: true }), "packages/lab/src/packaging/fixture.ts"), [2]);
 });
+
+/**
+ * THE BUDGET MUST STAY CLOSE TO WHAT THE CODE ACTUALLY DOES — `function-size.test.ts`'s fourth test, kept at
+ * worker-capture's review of #988 and rewritten as a lint-output check.
+ *
+ * A limit far above the real maximum stops being a decision and becomes decoration, and nobody notices the
+ * drift back toward the 154-line function this budget was set against. Nothing else here asserts that,
+ * because it is a property of the TREE rather than of the rule: it changes on its own, as functions are
+ * extracted, with no edit to `eslint.config.js` to review.
+ *
+ * The budget is read from the config rather than restated, so there is one copy of the number.
+ */
+test("the budget is close to what the code actually does", async () => {
+  const configured = await eslint.calculateConfigForFile(join(root, "packages/lab/src/packaging/fixture.ts"));
+  const [, options] = (configured.rules as Record<string, [string, { max: number }]>)[PHYSICAL];
+  const floor = options.max - 30;
+  const probe = new ESLint({ cwd: root,
+    overrideConfig: { rules: { [PHYSICAL]: ["error", { ...options, max: floor }] } } });
+  const reports = (await probe.lintFiles(["packages", "scripts"]))
+    .flatMap((r) => r.messages).filter((m) => m.ruleId === PHYSICAL);
+  assert.ok(reports.length > 0,
+    `no function in the tree exceeds ${floor} lines, against a budget of ${options.max}. That gap means the `
+    + `budget is not doing any work — lower it to just above the longest function.`);
+});
