@@ -36,7 +36,14 @@ import { runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
  */
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run corpus:unclosable-map" });
 
-const OUT = resolve(runsRoot(), "unclosable-vetoes.json");
+/**
+ * #968: EXPORTED, so `lab-fetch-paths.test.ts` can compare `lab-fetch.yml`'s entry against the path this
+ * script actually writes, instead of checking only that the file still MENTIONS the name. #959 measured
+ * the difference: a producer that moves its output while the fetch entry stays is invisible to a mention
+ * check and caught by this one. Importing this module runs nothing -- `main()` is guarded on
+ * `import.meta.url`, and `refuseUnknownFlags` takes the same guard as its `entry`.
+ */
+export const OUT = resolve(runsRoot(), "unclosable-vetoes.json");
 
 /**
  * The two kinds, kept SEPARATE rather than merged into one list of forgiven pairs.
