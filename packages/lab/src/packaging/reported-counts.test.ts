@@ -187,11 +187,17 @@ test("#1067 MUTATION TARGET: the PREDICATE finds a planted floor and ignores a b
   // wearing the costume of the fix.** Deleted, and replaced with the assertion nothing else makes: that
   // the predicate distinguishes the two kinds over a directory where the answer is known.
   const files = ["plant/reported.test.ts", "plant/precondition.test.ts"];
+  // THE FIXTURES ARE ASSEMBLED, and the walk itself is why: this file lives INSIDE the scope it scans, so
+  // a planted floor written whole is discovered in this very source and reported as a new instance. The
+  // fixture names the thing the checker greps for -- the fourth time this shape has fired tonight, and the
+  // first time inside the guard that hunts it. A guard's own fixture file is the densest possible source
+  // of false positives for the guard itself.
+  const ok = `assert${".ok("}`;
   const sources: Record<string, string> = {
     // the shape this row is about: a floor on a number the same assertion reports
-    "plant/reported.test.ts": "assert.ok(walked.length >= 40, `only ${walked.length} walked`);\n",
+    "plant/reported.test.ts": `${ok}walked.length >= 40, \`only \${walked.length} walked\`);\n`,
     // the shape it must NOT flag: a precondition, stated in prose, iterated after
-    "plant/precondition.test.ts": 'assert.ok(everywhere.length >= 2, "only meaningful when stated twice");\n',
+    "plant/precondition.test.ts": `${ok}everywhere.length >= 2, "only meaningful when stated twice");\n`,
   };
   const found = discoverReportedFloors({ files, read: (f) => sources[f], strip: "plant/" });
   assert.deepEqual(found, ["reported.test.ts: walked.length"],
