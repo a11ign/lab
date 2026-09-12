@@ -14,10 +14,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import {
-  regionPathsFromBody, extractRegionSection, declaredRegionFiles, regionCovers, rootFilesOnMain,
-  extractLabeledSection, hasTemplateField,
-} from "../../../../scripts/region-paths.mjs";
+import { declaredRegionFiles, extractLabeledSection, extractRegionSection, hasTemplateField, pathInProse, regionCovers, regionPathsFromBody, rootFilesOnMain, trackedTopLevelDirs, unrecognisedRegionPaths } from "../../../../scripts/region-paths.mjs";
 
 /** #999's fixture lives beside the others this directory already keeps (`pr-584-body.md`, `issue-687-body.txt`). */
 const FIXTURES = fileURLToPath(new URL("./fixtures", import.meta.url));
@@ -534,4 +531,49 @@ test("#1081: the population of environment-asserting guards, stated", () => {
   // `=== 2` and delete the thing that makes the equality above mean anything. If both patterns broke, the
   // equality would read `0 === 0` and pass; this is the only line that refuses that.
   assert.ok(guarded >= 2, "and the two this row fixed must still be guarded");
+});
+
+/**
+ * #1158: A `.claude/` PATH DECLARED INLINE RESERVED NOTHING, AND NOTHING SAID SO.
+ *
+ * `PATH_IN_PROSE` carried `packages|scripts|docs|\.github` as literals, so the same path in the same
+ * Region declared normally FENCED and vanished INLINE — two spellings of one intent disagreeing in
+ * silence. `row-file` accepted the row, the author read their own path back out of the body, and B4
+ * reserved nothing.
+ *
+ * **The fix is not adding `.claude` to the list.** That fixes today and rebuilds the trap for the next
+ * directory, which is exactly what happened between #975 and this.
+ */
+test("#1158 clause 1: a .claude path declares IDENTICALLY inline and fenced", () => {
+  // The two spellings compared TO EACH OTHER, never each to a literal, so a future prefix change cannot
+  // make them drift again without this failing.
+  const path = ".claude/rules/agent-practices.md";
+  const fenced = declaredRegionFiles(`## Region\n\n\`\`\`\n${path}\n\`\`\`\n`);
+  const inline = declaredRegionFiles(`## Region\n\n\`${path}\`\n`);
+  assert.deepEqual(inline, fenced, "the same path in the same section must declare the same thing");
+  assert.ok(fenced?.includes(path), "and both must actually contain it, or they agree on nothing");
+});
+
+test("#1158 clause 2: the prefixes are DERIVED from the tree, not listed", () => {
+  const dirs = trackedTopLevelDirs();
+  assert.ok(dirs.length > 0, "no top-level directories found -- the derivation is broken, not the repo");
+  for (const expected of ["packages", "scripts", "docs", ".github", ".claude"]) {
+    assert.ok(dirs.includes(expected), `${expected} is a real top-level directory and must be derived`);
+  }
+  // And the derivation must be what the matcher uses, or the two could agree today and drift tomorrow.
+  assert.ok(pathInProse().source.includes("\\.claude"), "the regex is built from the derived list");
+});
+
+test("#1158 clause 3: a path the parser does not recognise is SURFACED, not dropped", () => {
+  // INDEPENDENT of clause 1 by construction: `nosuchdir` is not a directory of this repo, so no amount of
+  // deriving prefixes will ever declare it. That is what makes this clause a separate claim rather than
+  // clause 1 restated -- deriving fixes every directory that EXISTS, and this catches the rest.
+  assert.deepEqual(unrecognisedRegionPaths("## Region\n\n`nosuchdir/thing.md`\n"), ["nosuchdir/thing.md"]);
+  // The "does declare" control uses a directory that predates this row, NOT `.claude`. Using `.claude`
+  // here made this clause fail under clause 4's mutation -- which is clause 4's whole point: removing the
+  // derivation must break clause 1 and leave this GREEN, or this is only clause 1 restated.
+  assert.deepEqual(unrecognisedRegionPaths("## Region\n\n`docs/README.md`\n"), [],
+    "a path that DOES declare is not stray");
+  assert.deepEqual(unrecognisedRegionPaths("## Region\n\nits deliverable is not a commit\n"), [],
+    "a Region with no paths has nothing to surface");
 });
