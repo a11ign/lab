@@ -1,3 +1,4 @@
+// @ts-check
 // command: (not a command) the named manifest of the nightly-only population, pinned by nightly-only-path.test.ts
 /**
  * #1149: WHO LIVES IN THE NIGHTLY-ONLY PATH, BY NAME.
