@@ -19,6 +19,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   METRICS, EXIT, figure, passRate, renderFigure, renderTable, totalCount, mainColour,
   firstFailingAssertion, byConclusion, queueReport, utilisation, boardDeadline, watchReport,
@@ -553,4 +555,51 @@ test("#1154: the lag is measured tip-minus-run, and one run's duration of queuei
   assert.equal(runsHaveStopped({ newestRunAt, mainTipAt: "2026-09-12T18:00:00Z" }), true);
   assert.equal(runsHaveStopped({ newestRunAt, mainTipAt: "not a date" }), null,
     "an unparseable tip is unknown, never `not stopped` -- the direction a wrong default errs in matters");
+});
+
+// --- #1072: the three-value exit contract produces three values -------------------------------------
+//
+// `EXIT` declared QUIET/ATTENTION/CANNOT_ASK and no path set CANNOT_ASK. `watchReport` has always
+// distinguished the states -- it opens "CANNOT ASK: main's colour is unknown" when the read failed -- so
+// the report said one thing and the status said another, and the status is what a caller reads.
+//
+// AN UNREACHABLE EXIT CODE IS A PROMISE TO THE CALLER, NOT A DEAD BRANCH. `could not ask` and `main is
+// red` are a fact about this watch and a fact about main; collapsing them hands the reader the second
+// when only the first is true.
+//
+// Asserted on the STATUS the exit code encodes rather than by running `main()`, which would need the
+// network: the decision is `colour.readable ? ATTENTION : CANNOT_ASK`, and these drive both arms of it
+// through `watchReport` to prove the report and the status agree about which state it is.
+
+test("#1072: an unreadable main REPORTS cannot-ask, and that is the state the exit code must carry", () => {
+  const unreadable = { readable: false, red: false, since: null, hours: null, atLeast: false,
+    firstFailing: null, why: "gh: HTTP 502", windows: [], examined: 0, pageBeginsMidRed: false };
+  const lines = watchReport({ colour: unreadable });
+  assert.ok(lines.length > 0, "an unreadable main is never silent");
+  assert.match(lines[0], /CANNOT ASK/,
+    "the report already says it; before #1072 the exit code said ATTENTION instead");
+  assert.equal(unreadable.readable ? EXIT.ATTENTION : EXIT.CANNOT_ASK, EXIT.CANNOT_ASK,
+    "and the status carries the same state -- a caller must not have to parse prose to learn it");
+});
+
+test("#1072: a READABLE red main is ATTENTION, so cannot-ask did not swallow the ordinary case", () => {
+  const red = { readable: true, red: true, since: "2026-09-12T10:00:00Z", hours: 2, atLeast: false,
+    firstFailing: "a test", why: null, windows: [], examined: 3, pageBeginsMidRed: false };
+  assert.ok(watchReport({ colour: red }).length > 0);
+  assert.equal(red.readable ? EXIT.ATTENTION : EXIT.CANNOT_ASK, EXIT.ATTENTION,
+    "a red main is a fact ABOUT MAIN and must stay distinguishable from a failure to read it");
+});
+
+test("#1072: every declared EXIT value is one some path can produce", () => {
+  // The row's own open-check, as an assertion. A name in this object is a promise to whoever reads the
+  // status, and a promise nothing keeps is worse than an absent one: the reader plans for a state that
+  // never arrives and treats its absence as evidence.
+  const source = readFileSync(fileURLToPath(new URL("../../../../scripts/org-watch.mjs", import.meta.url)),
+    "utf8");
+  const produced = new Set([...source.matchAll(/EXIT\.([A-Z_]+)/g)].map((m) => m[1]));
+  produced.delete("");
+  for (const name of Object.keys(EXIT)) {
+    assert.ok(produced.has(name),
+      `EXIT.${name} is declared and no path references it -- a three-value contract that delivers two`);
+  }
 });
