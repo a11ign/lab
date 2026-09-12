@@ -33,6 +33,7 @@ import {
   worktreeStatus, removeClaimedWorktree, WORKTREE_LABEL_PREFIX, BRANCH_LABEL_PREFIX,
   claimRecordComment, claimRecordFrom, claimedObjects, fetchClaimComments, CLAIM_RECORD_MARKER,
 } from "../../../../scripts/row-claim.mjs";
+import { laneReason } from "../../../../scripts/row-claim/runner-rule.mjs";
 import { READY_LABEL, WAS_READY_LABEL } from "../../../../scripts/ready-label-audit.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
@@ -1489,4 +1490,73 @@ test("#665 MUTATION direction 2 (the issue's own instruction): drop the removal,
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+// --- #1039: row-claim reads LANE OWNERSHIP, which it never did ---
+
+const LIVE = ["ceo", "product-manager", "orchestrator", "worker-capture", "worker-judge"] as const;
+
+test("#1039: a row in another LIVE session's lane is refused, naming the owner and the route", () => {
+  // Measured: a session claimed #965 (`lane:ceo`, whose body says "`ceo` builds this") and the labels
+  // afterwards read `in-progress, session:worker-judge, started, was-ready, lane:ceo`. The lane label sat
+  // through the whole claim as an ATTRIBUTE of the row and was never read as a PERMISSION. They caught it
+  // themselves. In the same ten minutes B4 refused them twice over file overlap: the guard that stops two
+  // sessions touching one FILE watched a session start work in another session's LANE without a word.
+  const reason = laneReason(["ready", "lane:ceo"], "worker-capture", { liveSessions: LIVE });
+  assert.ok(reason, "a row in ceo's lane must not be claimable by another session in silence");
+  assert.match(reason, /ceo/, "and the OWNER is named -- the only thing a claimant can act on is asking them");
+  assert.match(reason, /Lane-exception:/,
+    "AND THE ROUTE. `docs/lane-ownership.json`'s own `_exception` says a lane is not a wall: ceo assigns "
+    + "across lanes deliberately and the crossing is a `Lane-exception:` line that the PR check PRINTS. A "
+    + "refusal naming no way forward is the shape ruled against on #741");
+});
+
+test("#1039: `lane:any` reserves NOBODY -- it means no lane, never everyone's lane", () => {
+  // It is the overwhelming majority of rows. An accidental reservation here stops the org, which is a
+  // worse outcome than the defect being fixed.
+  assert.equal(laneReason(["ready", "lane:any"], "worker-capture", { liveSessions: LIVE }), null);
+  assert.equal(laneReason(["ready"], "worker-capture", { liveSessions: LIVE }), null,
+    "and a row with no lane label at all is not reserved either");
+  // AND `any` IS EXEMPT BY NAME, not by accident of the roster. The first version of this test passed
+  // `lane:any` against the real roster -- where "any" is not a session, so the `owner !== "any"` clause
+  // was never reached and DELETING it was 0 red. The exemption has to be observable, so the roster here
+  // pretends "any" is a session: if the clause goes, this refuses `lane:any` and the org stops.
+  assert.equal(laneReason(["ready", "lane:any"], "worker-capture", { liveSessions: [...LIVE, "any"] }), null,
+    "`lane:any` means NO lane. It must be exempt because of what it says, never because nothing is named "
+    + "that");
+});
+
+test("#1039: the lane's OWNER claims as though the label were not there", () => {
+  // `runnerReason`'s own rule one function up: proceeding as your OWN reservation must not read as a
+  // reservation at all.
+  assert.equal(laneReason(["ready", "lane:worker-capture"], "worker-capture", { liveSessions: LIVE }), null);
+});
+
+test("#1039: a lane naming a RETIRED session reserves nobody", () => {
+  // `lane:dispatcher` was retired by description on #913 and six closed rows still carry it. A reservation
+  // for a session that cannot claim is a row nobody can ever take -- the guard would have created exactly
+  // the stranded-work state #933 is about, by refusing everyone for ever.
+  assert.equal(laneReason(["ready", "lane:dispatcher"], "worker-capture", { liveSessions: LIVE }), null,
+    "the roster is INJECTED here rather than inherited, because 'retired' is only expressible against a "
+    + "known roster -- a test reading today's list would pass tomorrow for a different reason");
+});
+
+test("#1039 MUTATION TARGET: reading `session:` instead of `lane:` must fail the owner case", () => {
+  // The row's declared mutation, expressed so a reviewer need not perform it. A rule keyed on `session:`
+  // would find nothing on a ready, unclaimed row -- which is exactly #965's state when it was taken -- so
+  // the owner assertion fails while `lane:any` still passes, and the two are not one assertion twice.
+  assert.equal(laneReason(["ready", "session:ceo"], "worker-capture", { liveSessions: LIVE }), null,
+    "a `session:` label is a claim record, not a reservation; if this ever refuses, the rule has moved to "
+    + "the wrong label and will refuse every row somebody else is already working on");
+  assert.ok(laneReason(["ready", "lane:ceo"], "worker-capture", { liveSessions: LIVE }),
+    "while the lane label -- the one that means ownership -- still does");
+});
+
+test("#1039: the check runs BEFORE the claimed check, so a ready unclaimed row is still reserved", () => {
+  // `runnerReason`'s stated reason, and #965's shape exactly: the row was `ready`, not yet `in-progress`,
+  // when it was claimed out of its owner's lane. A check gated on `claimed` first would have said nothing.
+  const decision = decideClaim(["ready", "lane:ceo"], "worker-capture");
+  assert.equal(decision.proceed, false);
+  assert.match(String(decision.reason), /lane/i,
+    "and the reason is the LANE one, not the claim one -- an unclaimed row has no claim to report");
 });
