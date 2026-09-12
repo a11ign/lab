@@ -104,21 +104,70 @@ test("#1135 clause 4: the PR suite's floor still holds after the split, on the r
  * parser and ESLint's own ignore/config calculation), never a string read of tsconfig's include list, so
  * a narrowed include or a new ignore pattern fails here rather than silently un-typechecking the
  * population.
+ *
+ * #1143: IT NAMED THE SEED BY PATH, so it broke the moment the population got a real tenant and the
+ * placeholder left -- which is the transition the seed's own comment invites (*"when #908's first residual
+ * lands, this file may go"*). A guard whose population is one hard-coded file cannot survive that file
+ * being the temporary one. It now walks the population and asserts EVERY member is typechecked and linted,
+ * with a vacuity guard, so it holds for whatever lives here rather than for the file that happened to live
+ * here first.
  */
 test("#1135 clause 5: the nightly population stays typechecked and linted on the PR path -- only its RUN moves", async () => {
-  const seed = `${REPO}packages/lab/nightly/nightly-population-seed.test.ts`;
+  const nightly = globSync("packages/*/nightly/**/*.test.ts", { cwd: REPO })
+    .map((f) => `${REPO}${f}`.replace(/\\/g, "/"));
+  assert.ok(nightly.length > 0,
+    "the nightly population is empty, so every assertion below would pass having examined nothing -- "
+    + "`test:nightly`'s own --min refuses this too, and this is the second place it must not read as fine");
   const ts = await import("typescript");
   const configFile = ts.readConfigFile(`${REPO}tsconfig.json`, ts.sys.readFile);
   assert.equal(configFile.error, undefined, "tsconfig.json parses");
   const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, REPO);
   const typechecked = parsed.fileNames.map((f) => f.replace(/\\/g, "/"));
-  assert.ok(typechecked.includes(seed), "tsconfig's include resolves the nightly seed, so `tsc --noEmit` reads it");
+  assert.deepEqual(nightly.filter((f) => !typechecked.includes(f)), [],
+    "tsconfig's include must resolve every nightly test, so `tsc --noEmit` reads them");
   const prTest = `${REPO}packages/lab/src/packaging/nightly-only-path.test.ts`;
   assert.ok(typechecked.includes(prTest), "and still resolves the PR population (the control)");
 
   const { ESLint } = await import("eslint");
   const eslint = new ESLint({ cwd: REPO });
-  assert.equal(await eslint.isPathIgnored(seed), false, "eslint does not ignore the nightly population");
-  const config = (await eslint.calculateConfigForFile(seed)) as { rules?: Record<string, unknown> };
-  assert.ok(Object.keys(config.rules ?? {}).length > 0, "and applies real rules to it, not an empty config");
+  const ignored: string[] = [];
+  const ruleless: string[] = [];
+  for (const file of nightly) {
+    if (await eslint.isPathIgnored(file)) ignored.push(file);
+    const config = (await eslint.calculateConfigForFile(file)) as { rules?: Record<string, unknown> };
+    if (Object.keys(config.rules ?? {}).length === 0) ruleless.push(file);
+  }
+  assert.deepEqual(ignored, [], "eslint must not ignore any of the nightly population");
+  assert.deepEqual(ruleless, [], "and must apply real rules to each, not an empty config");
+});
+
+/**
+ * #1143: NO TEST MAY BE IN BOTH POPULATIONS — asserted against the REAL TREE, which nothing did.
+ *
+ * The row that moved the first real tenant here specified this mutation: *"leave a copy at the old path.
+ * Clause 1 must go red — a file in both populations is paid for twice, which is worse than not moving
+ * it."* **It does not go red.** Clause 1 drives the two resolvers over a throwaway fixture repo, which is
+ * the right way to test the GLOBS and cannot see anything about this repository's own files. So the whole
+ * suite was green with the moved test present at both paths, and the PR path would have gone on paying
+ * the 21.5 s the move exists to remove — while the row's acceptance said that case was covered.
+ *
+ * A guard over a fixture answers "does the pattern work". A guard over the tree answers "did anyone do
+ * it". This repo keeps paying for the first standing in for the second.
+ *
+ * Compared by BASENAME rather than by content: a copy that was then edited is still a copy for this
+ * purpose, and two files that genuinely need the same name in both populations is a thing to argue about
+ * on a PR rather than to permit silently.
+ */
+test("#1143: no test file name appears in both the PR and the nightly populations", () => {
+  const pr = globSync("packages/*/src/**/*.test.ts", { cwd: REPO });
+  const nightly = globSync("packages/*/nightly/**/*.test.ts", { cwd: REPO });
+  assert.ok(pr.length > 0 && nightly.length > 0,
+    `both populations must be non-empty or this compares nothing: pr=${pr.length} nightly=${nightly.length}`);
+
+  const base = (f: string) => f.split("/").pop();
+  const prNames = new Set(pr.map(base));
+  const inBoth = nightly.filter((f) => prNames.has(base(f)));
+  assert.deepEqual(inBoth, [],
+    "a test lives in both populations, so the PR path pays for it AND the nightly job runs it again. If a "
+    + "file was moved here, delete the original; if the duplication is deliberate, say so here.");
 });
