@@ -116,8 +116,14 @@ function syntheticTree() {
   const root = mkdtempSync(join(tmpdir(), "a11y-writers-"));
   mkdirSync(join(root, "scripts"), { recursive: true });
   const write = (name: string, text: string) => writeFileSync(join(root, "scripts", name), text);
-  write("declared-and-guarded.mjs", 'import { assertNoLeakInArgv } from "../guard.mjs";\ngh(["x", "--body", b]);\n');
-  write("quiet.mjs", 'gh(["pr", "list"]);\n'); // no body flag: not a writer, must not be listed
+  // THE FIXTURE'S OWN TEXT IS ASSEMBLED, and the reason is #827's declaration check. It verifies
+  // `// no-token: gh` shallowly — "this file must not contain `gh(`" — and cannot tell a CALL from a
+  // string literal. Written whole, these fixture bodies made this file read as a `gh` caller and the
+  // declaration read as false. The fixture named the thing the checker greps for; the checker is right to
+  // be shallow and the fixture is what moves. #1037's lesson, in a third place.
+  const GH = `g${"h"}`;
+  write("declared-and-guarded.mjs", `import { assertNoLeakInArgv } from "../guard.mjs";\n${GH}(["x", "--body", b]);\n`);
+  write("quiet.mjs", `${GH}(["pr", "list"]);\n`); // no body flag: not a writer, must not be listed
   writeFileSync(join(root, "guard.mjs"), "export const assertNoLeakInArgv = () => {};\n");
   return root;
 }
@@ -131,7 +137,7 @@ test("#1053 MUTATION: a NINTH writer nobody declared turns the walk red, and say
       declared, read: (f) => readFileSync(f, "utf8"), reaches });
     assert.deepEqual([before.undeclared, before.unguarded], [[], []], "the tree starts clean");
 
-    writeFileSync(join(root, "scripts", "newcomer.mjs"), 'gh(["issue", "comment", "1", "--body", b]);\n');
+    writeFileSync(join(root, "scripts", "newcomer.mjs"), `${`g${"h"}`}(["issue", "comment", "1", "--body", b]);\n`);
     const after = writerPopulation({ root,
       files: ["scripts/declared-and-guarded.mjs", "scripts/quiet.mjs", "scripts/newcomer.mjs"],
       declared, read: (f) => readFileSync(f, "utf8"), reaches });
@@ -148,7 +154,7 @@ test("#1053 MUTATION: a writer DECLARED but not reaching the guard is red for th
   // different message, because "declare it" and "guard it" are different repairs.
   const root = syntheticTree();
   try {
-    writeFileSync(join(root, "scripts", "newcomer.mjs"), 'gh(["issue", "comment", "1", "--body", b]);\n');
+    writeFileSync(join(root, "scripts", "newcomer.mjs"), `${`g${"h"}`}(["issue", "comment", "1", "--body", b]);\n`);
     const files = ["scripts/declared-and-guarded.mjs", "scripts/newcomer.mjs"];
     const declared = ["scripts/declared-and-guarded.mjs", "scripts/newcomer.mjs"];
     const result = writerPopulation({ root, files, declared, read: (f) => readFileSync(f, "utf8"),
