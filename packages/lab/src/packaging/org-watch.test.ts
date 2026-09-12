@@ -105,7 +105,7 @@ test("#912: a metric with NO figure at all still renders, as NOT MEASURED", () =
 });
 
 test("#912: the red-hours metric does NOT claim the attendance half in its label", () => {
-  // worker-capture's finding. The value is raw red-hours from `mainColour`, which reads `trunk-guard`
+  // worker-capture's finding. The value is raw red-hours from `mainColour`, which reads `trunk`
   // conclusions and knows nothing about who was looking -- and the separating case is 2026-09-12's own
   // incident: 03:52Z-04:15Z with nobody knowing, then minutes with two sessions on it. `redHours` scores
   // those two stretches IDENTICALLY, so the word must not be in the name.
@@ -403,7 +403,7 @@ test("#1047: the weekly figure is the SUM of the windows and names its denominat
   const figure = redHoursFigure(redWindows(runs, new Date("2026-09-12T07:00:00Z")));
   assert.equal(figure.value, "1.5", "1 hour plus 0.5, not the current window and not the newest");
   assert.match(figure.note, /2 window\(s\) across 5 settled run\(s\) examined/,
-    "A GAP IN THE RUNS IS NOT GREEN -- trunk-guard runs on merges, so a week with few merges has few "
+    "A GAP IN THE RUNS IS NOT GREEN -- trunk runs on merges, so a week with few merges has few "
     + "conclusions to read and must say so rather than presenting a quiet sheet as a clean one");
   assert.doesNotMatch(figure.note, /STILL OPEN/);
 });
@@ -452,4 +452,16 @@ test("#1049: the bound is named `pageBeginsMidRed`, not `atLeast` -- same cause,
     new Date("2026-09-12T01:00:00Z"));
   assert.equal(read.pageBeginsMidRed, true);
   assert.equal("atLeast" in read, false, "the streak's word must not be borrowed for a different claim");
+});
+
+// #909 (2026-09-12): the trunk workflow file was renamed trunk-guard.yml -> trunk.yml. A default that still named
+// the old file would 404, and `mainColour` reads a 404 as "no runs on main at all" -- a CANNOT_ASK on every hourly
+// watch, which posts ATTENTION for a red that is not there. Pinned on the URL the default actually asks for.
+test("#909: mainColour asks for trunk.yml's runs by default, the file's name since the rename", () => {
+  const asked: string[][] = [];
+  const run = (args: string[]) => { asked.push(args); return JSON.stringify({ workflow_runs: [] }); };
+  mainColour({ repo: "o/r", run });
+  const url = asked.flat().find((a) => a.includes("/actions/workflows/"));
+  assert.ok(url, "mainColour reads the workflow runs endpoint");
+  assert.match(url, /\/actions\/workflows\/trunk\.yml\/runs/, "the file on main today, not trunk-guard.yml");
 });
