@@ -113,6 +113,20 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "--exclude-standard`, since plain `ls-files` is blind to the untracked file most likely to carry "
       + "a fresh leak. Its `ls-files` scrubs `GIT_*` through `sandboxGitEnv()` for the usual reason.",
   },
+  "packages/lab/src/packaging/row-reachability.test.ts": {
+    guard: "available === 0",
+    note: "guarded, and the shape is the INVERSE of every other entry here. The usual guard proves a "
+      + "population non-empty BEFORE asserting over it. This one asks whether the checkout can hold a "
+      + "population AT ALL, and skips the assertion by name when it cannot -- `remoteRefsBesidesMain()` "
+      + "counts remote-tracking refs under `origin/` besides main and HEAD, and `refPopulationVerdict` "
+      + "returns \"skip\" at zero. #1064: the floor it gates (`examined.refs > 0`, #772's, and still "
+      + "right) was asserting against an environment CI does not have -- `actions/checkout` fetches the "
+      + "PR's ref and its base, not the other ~290 `origin/agent/*` -- so `docs` was red on #1057 and "
+      + "#1062 and #1057 MERGED through it. THE READ IS DELIBERATELY A DIFFERENT QUESTION: asking "
+      + "\"are there unmerged refs\" a second way would be asking the function under test. And only the "
+      + "floor is conditional -- #719's own subject, that `environmentKey` is not reported missing, still "
+      + "runs and is asserted with the ref question answered as CI answers it.",
+  },
   "packages/lab/src/gates/unexaminable-declaration.test.ts": {
     guard: "found.size >= 20",
     note: "guarded -- #1030's sweep spawns `git grep -l -F` once per path-like token in lab-job.yml, "
