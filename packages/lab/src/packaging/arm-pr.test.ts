@@ -1,3 +1,10 @@
+// no-token: gh
+//
+// This file imports `arm-pr.mjs`, which spawns `gh`, and the parser charges a command its whole import
+// closure. True of the IMPORT and false of the CALL: every impure test here injects its own `run`.
+//
+// PROVED, NOT ASSERTED, since #827's check is deliberately shallow: GH_TOKEN and GITHUB_TOKEN unset, a
+// fake `gh` first on PATH that exits 97 and shouts -- 17 pass, 0 fail, and the fake never printed.
 /**
  * #725: AN ARMED PR CARRIES NOTHING SAYING WHOSE IT IS.
  *
