@@ -23,6 +23,7 @@ import {
   fetchClosedUnmergedPrs, fetchClosingIssueRefs, soleUnmergedCloserRows,
   criterionStatusesFromSource, criterionOwningRow, coverageTrackerDisagreements, fetchClosedCompletedIssues,
   reachableCriteriaWithoutRow, provenanceVerdicts, provenanceFindings,
+  guidanceDrift,
 } from "../../../../scripts/ready-label-audit.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { ARM_LABELS_FROM } from "../../../../scripts/claim-provenance.mjs";
@@ -1105,15 +1106,17 @@ test("#546: notRun defaults to a fresh array when the caller does not pass one -
     + "refusal -- it is simply not recorded anywhere the caller can see, same as before this test existed");
 });
 
-test("CHECKS names all twelve, so the partial-audit sentence states a true denominator", () => {
-  // #1130 added the twelfth. This pin is why: the audit's own "N of M check(s) did not answer" sentence
-  // reads M from `CHECKS.length`, so a check added without updating the denominator would make every
-  // partial-audit report understate what it failed to examine.
-  assert.equal(CHECKS.length, 12);
+test("CHECKS names all thirteen, so the partial-audit sentence states a true denominator", () => {
+  // #1130 added the twelfth, #1163 the thirteenth. This pin is why: the audit's own "N of M check(s) did
+  // not answer" sentence reads M from `CHECKS.length`, so a check added without updating the denominator
+  // would make every partial-audit report understate what it failed to examine.
+  //
+  // It caught #1163's entry within a minute of it being added, which is the whole of its job.
+  assert.equal(CHECKS.length, 13);
   assert.deepEqual(CHECKS.map(([what]) => what), [
     "open issues", "hand claims", "labelless rows", "declined rows", "closed issues",
     "board membership", "closing PR references", "claim activity", "closed-row provenance",
-    "closing PR never merged", "coverage vs tracker", "release declaration",
+    "closing PR never merged", "coverage vs tracker", "release declaration", "filing guidance",
   ]);
 });
 
@@ -1426,4 +1429,84 @@ test("#1130: agreeing sets report nothing, and the check is not vacuous on empty
   assert.deepEqual([real.labelOnly, real.milestoneOnly], [[1], [2]],
     "the predicate must be able to report BOTH sides at once, or the two tests above pass because it "
     + "reports nothing rather than because the sets agree");
+});
+
+// ---- #1163: docs/row-filing.md and the `Out of release` milestone carry ONE rule -------------------
+//
+// The row asked for sentence 2 to be "COMPARED to the milestone description's, not asserted
+// independently". That comparison cannot live in a test: the description exists only on GitHub, and a
+// test that fetches it needs a `token` the acceptance job does not have — which is the row's OWN first
+// sentence, turned on the row. So the comparison is a pure function here and the LIVE fetch is the
+// thirteenth `CHECKS` entry, in the file that already runs with a token and already pins the
+// `out-of-release` label and the `Out of release` milestone equal.
+//
+// What this file holds is the mechanism. What the live check holds is the instance.
+
+const DESCRIPTION_AS_IT_READS = "Rows deliberately outside every release, so they are VISIBLE and UNDATED. "
+  + "THIS LABEL ANSWERS ONE QUESTION ONLY: does this block the 20 September publish. IT DOES NOT MEAN "
+  + "UNIMPORTANT. A row that is out of release and worth fixing soon is spelled 'out of release, ready' — "
+  + "importance is said by the ready order, not by which milestone a row sits on.";
+
+const rowFilingDoc = () =>
+  readFileSync(fileURLToPath(new URL("../../../../docs/row-filing.md", import.meta.url)), "utf8");
+
+test("#1163: the page and the milestone description are compared, and today they agree", () => {
+  const drift = guidanceDrift(rowFilingDoc(), DESCRIPTION_AS_IT_READS);
+  assert.equal(drift.readable, true);
+  assert.deepEqual(drift.missingFromDoc, [],
+    "docs/row-filing.md must carry every load-bearing part of the rule, or a filer reads half of it");
+  assert.deepEqual(drift.missingFromMilestone, [],
+    "and so must the description, or the board reader and the filer are told different things");
+});
+
+test("#1163 MUTATION: changing the MILESTONE's wording only is what clause 3 asks for, and it goes red", () => {
+  // The row's clause 3 says "change the milestone description's version only". Literally, that is a WRITE
+  // against the live tracker, which a row's acceptance may not perform (#1049) — so it is done here, to
+  // the copy, which is the same experiment without the side effect.
+  const softened = DESCRIPTION_AS_IT_READS.replace("IT DOES NOT MEAN UNIMPORTANT.", "");
+  const drift = guidanceDrift(rowFilingDoc(), softened);
+
+  assert.deepEqual(drift.missingFromMilestone, ["not unimportant"],
+    "the claim that went is named, so the reader is told WHICH half drifted rather than that something did");
+  assert.deepEqual(drift.missingFromDoc, [],
+    "and the page is reported as still carrying it -- a drift report that cannot say which copy moved "
+    + "sends the next person to read both");
+});
+
+test("#1163: an UNREADABLE description is unknown, never agreement", () => {
+  for (const absent of [null, "", "   "]) {
+    const drift = guidanceDrift(rowFilingDoc(), absent);
+    assert.equal(drift.readable, false, `a description spelled ${JSON.stringify(absent)} answers nothing`);
+    assert.deepEqual(drift.missingFromMilestone, [],
+      "and it must not be reported as MISSING the claims either -- `gh` without the scope and a "
+      + "description that dropped the rule are different faults with different fixes");
+  }
+});
+
+test("#1163: the claims are matched across LINE BREAKS, because the page wraps and the description does not", () => {
+  // The two copies differ in whitespace BY CONSTRUCTION: markdown wraps at 110 characters and a milestone
+  // description is one long line. A pattern that cannot span a wrap therefore fails on the page and passes
+  // on the description — which is exactly what happened when this function was first written, and it
+  // reported the page as having dropped a rule the page was carrying.
+  const wrapped = DESCRIPTION_AS_IT_READS.replace(/ /g, "\n");
+  assert.deepEqual(guidanceDrift(wrapped, DESCRIPTION_AS_IT_READS).missingFromDoc, [],
+    "one word per line must read identically to one long line, or the check is about layout");
+});
+
+test("#1163: `filing guidance` is the thirteenth CHECKS entry, so the live comparison actually runs", () => {
+  const names = CHECKS.map(([name]) => name);
+  assert.ok(names.includes("filing guidance"),
+    "a pure comparison nothing calls is a fact stated once more, not a fact compared");
+  assert.equal(names.length, new Set(names).size, "each check is named once");
+});
+
+test("#1163: every claim in the table is pinned, so deleting one cannot quietly weaken the comparison", () => {
+  // Without this, removing a row from `GUIDANCE_CLAIMS` makes `guidanceDrift` compare less and report the
+  // same clean result — a guard that narrows its own population and stays green, which is the shape #1160
+  // is about one file over. Driven through the function rather than read off the source: a description
+  // missing EVERY claim must name every claim.
+  const drift = guidanceDrift(rowFilingDoc(), "a description that says none of it");
+  assert.deepEqual(drift.missingFromMilestone, [
+    "one question", "the question itself", "not unimportant", "the spelling", "where importance is said",
+  ], "five claims, named, in order — a shorter list here means the comparison got smaller");
 });
