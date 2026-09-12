@@ -231,16 +231,19 @@ test("#913: a RETIRED session is named as retired, and an unknown one is not", (
   // The four labels are retired BY DESCRIPTION and kept, because merged PRs carry them and a record of the
   // past is never renamed. Measured through the REST API 2026-09-12, at the moment of retirement:
   //
-  //                               closed ISSUES   closed PULL REQUESTS   open (either)
-  //     session:dispatcher              0                 4                   0
-  //     session:worker-audit            0                 2                   0
-  //     session:worker-contracts        0                 3                   0
-  //     session:worker-config           0                 4                   0
+  //                               ROWS carrying it   closed PULL REQUESTS carrying it
+  //     session:dispatcher                  0                        4
+  //     session:worker-audit                0                        2
+  //     session:worker-contracts            0                        3
+  //     session:worker-config               0                        4
   //
-  // The population is PULL REQUESTS and no issue carries one, so the precondition holds in its strongest
-  // form. `gh issue list --state closed --label <name>` reports 0 and `gh pr list` reports 4: **neither is
-  // wrong, they count different denominators, and nothing in either output says which.** A tracker count
-  // is a fact at a time and does not belong in an assertion; the MECHANISM does, and this is it.
+  // ZERO ROWS carry any of the four; the four `session:dispatcher` objects REST returns all carry a
+  // `pull_request` key. Retiring a label that only closed pull requests carry disturbs nothing.
+  //
+  // `gh api …/issues` returns pull requests too -- GitHub's REST API treats every PR as an issue -- so it
+  // needs `select(.pull_request == null)` whenever ROWS are meant. **A superset is not a better source
+  // when the extra members are a different kind of thing.** A tracker count is a fact at a time and does
+  // not belong in an assertion; the MECHANISM does, and this is it.
   for (const retired of RETIRED_SESSIONS) {
     assert.deepEqual(unknownSessionLabels([`session:${retired}`]),
       [{ label: `session:${retired}`, retired: true }],
