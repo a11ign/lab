@@ -9,6 +9,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { derivedLocalRule, pinnedWithin } from "../../../../scripts/uncontrolled-emptiness.mjs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ESLint } from "eslint";
@@ -127,4 +129,108 @@ test("#1144: a read split across LINES is reported, which a line regex cannot se
     [1], "reported at the line the member expression STARTS on, not where `.statusCheckRollup` sits -- "
       + "I expected 2 and the rule is right: the node begins at `pr`. The point is that it is reported "
       + "at all, since no single line here carries both the read and a wrapper for a regex to compare");
+});
+
+/**
+ * #1155: THE DERIVED-LOCAL EMPTINESS RULE — `ceo`'s ruling on #1123's evidence, which was that the 226
+ * uncontrolled assertions are not one population and only this shape is decidable today.
+ *
+ * `assert.deepEqual(offenders, [])` where `const offenders = files.filter(...)` passes when `files` is
+ * EMPTY. The control belongs on the population, not the filtered subject.
+ *
+ * **THE POPULATION IS RE-DERIVED, not taken from #1123's count** — the row's clause 2, and it earned its
+ * place. Measured over the full 535-file population: **97 assertions carry the shape, 32 are genuinely
+ * unpinned in their own test.** The rule's hits are a STRICT SUBSET of the shape population (zero
+ * rule-only), and the 65 it passes are passed correctly — sampled, they carry
+ * `assert.ok(source.length >= N, …)` in the same test.
+ *
+ * That gap is a finding about #1123's instrument rather than about this rule: its pin pattern requires
+ * `.length` followed by `,` or `)`, so it reads `assert.ok(offered.length >= 5)` as NOT a pin — when
+ * `>= 5` is a stronger pin than `> 0`. **A count measured with a narrow pin detector overstates how much
+ * is uncontrolled**, which matters because that count was the argument for a ratchet.
+ */
+const RULE = "local/uncontrolled-emptiness";
+const inTest = (body: string) =>
+  `import assert from "node:assert/strict";\nimport test from "node:test";\ntest("t", () => {\n${body}\n});\n`;
+
+test("#1155: an emptiness assertion on a locally derived collection with no pin on its source is REPORTED", async () => {
+  const lines = await reportedLines(RULE,
+    inTest("  const files = walk();\n  const bad = files.filter((f) => f.x);\n  assert.deepEqual(bad, []);"),
+    "packages/lab/src/packaging/zz-fixture-uncontrolled.test.ts");
+  assert.equal(lines.length, 1, `expected one report, got ${lines.length}`);
+});
+
+test("#1155: the SAME assertion with its source pinned in the same test is NOT reported", async () => {
+  // The control. Without it the test above is satisfied by a rule that reports EVERY emptiness assertion
+  // -- the "a guard that only ever says no" shape `sound` exists to rule out for the isolation gate.
+  const lines = await reportedLines(RULE,
+    inTest("  const files = walk();\n  assert.ok(files.length >= 3, \"the walk is broken\");\n"
+      + "  const bad = files.filter((f) => f.x);\n  assert.deepEqual(bad, []);"),
+    "packages/lab/src/packaging/zz-fixture-controlled.test.ts");
+  assert.deepEqual(lines, []);
+});
+
+test("#1155: a pin in a DIFFERENT test does not control this one", async () => {
+  // Two tests run independently and either could be the one that stops examining anything. Searching the
+  // whole file would let one pin excuse every assertion in it -- a control on the wrong object reading as
+  // a control, which is #1123's own instance 2.
+  const lines = await reportedLines(RULE,
+    `import assert from "node:assert/strict";\nimport test from "node:test";\n`
+    + `test("a", () => {\n  const files = walk();\n  assert.ok(files.length >= 3);\n});\n`
+    + `test("b", () => {\n  const files = walk();\n  const bad = files.filter((f) => f.x);\n`
+    + `  assert.deepEqual(bad, []);\n});\n`,
+    "packages/lab/src/packaging/zz-fixture-other-test.test.ts");
+  assert.equal(lines.length, 1);
+});
+
+test("#1155: a collection derived from a CALL is out of scope, and deliberately", async () => {
+  // ceo's ruling: the rule can see the shape and cannot see the population. A report here has no action
+  // attached except restructuring the test, and a rule whose remedy is "write it differently" is a style
+  // rule wearing a correctness rule's name.
+  const lines = await reportedLines(RULE,
+    inTest("  const bad = walk().filter((f) => f.x);\n  assert.deepEqual(bad, []);"),
+    "packages/lab/src/packaging/zz-fixture-from-call.test.ts");
+  assert.deepEqual(lines, []);
+});
+
+test("#1155: an exemption carries ONE OF TWO reasons, and the config says which for each", () => {
+  // ceo's ruling: "controlled by a guard this rule cannot see" and "the vacuity is the point" are
+  // different claims, and one option carrying both makes the list unreadable -- the failure an exemption
+  // list exists to prevent. A third kind of reason is a ROW, not a third entry.
+  const config = readFileSync(join(root, "eslint.config.js"), "utf8");
+  assert.match(config, /"packages\/lab\/src\/packaging\/git-population-vacuity\.test\.ts": "demonstration"/);
+  assert.match(config, /"packages\/lab\/src\/capture\/verify\.corpus\.test\.ts": "guarded-by labCorpusReadable"/,
+    "the guarded-by reason must NAME the symbol -- `a guard exists` is the claim, and an unnamed one "
+    + "cannot be checked against the file");
+});
+
+test("#1155: an exemption whose reason is neither shape is itself an ERROR", async () => {
+  // Without this the list rots quietly: an entry reading "because it was failing" would silence a file
+  // and nobody could tell an argued case from a suppressed one.
+  const { ESLint } = await import("eslint");
+  const strict = new ESLint({ cwd: root, overrideConfig: [{
+    files: ["**/*.ts"],
+    plugins: { probe: { rules: { "uncontrolled-emptiness": derivedLocalRule } } },
+    rules: { "probe/uncontrolled-emptiness": ["error", { exempt: { "zz-fixture-bad-reason.test.ts": "it was noisy" } }] },
+  }] });
+  const [result] = await strict.lintText("export const x = 1;\n",
+    { filePath: join(root, "zz-fixture-bad-reason.test.ts") });
+  const hits = result.messages.filter((m) => m.ruleId === "probe/uncontrolled-emptiness");
+  assert.equal(hits.length, 1, JSON.stringify(result.messages.map((m) => m.message)));
+  assert.match(hits[0].message, /neither `demonstration` nor `guarded-by <symbol>`/);
+});
+
+test("#1155: a CONJUNCTION pins both its operands -- the shape that cost a redundant pin in #1160", () => {
+  // `assert.ok(pr.length > 0 && nightly.length > 0, ...)` controls BOTH. The first detector required the
+  // name to open the `assert.ok(` call, so it read a conjunct as no pin, reported an already-pinned site,
+  // and the generated fix stacked a second pin on a working control.
+  //
+  // It is the same defect I had just corrected in #1123's own instrument -- that one required `.length`
+  // to be followed by `,` or `)`, so `assert.ok(x.length >= 5)` read as no pin and the uncontrolled count
+  // came out at twice its true size. A pin detector that recognises one SPELLING reports every other as
+  // absent; mine recognised one POSITION.
+  assert.equal(pinnedWithin('assert.ok(pr.length > 0 && nightly.length > 0, "both");', "nightly"), true);
+  assert.equal(pinnedWithin('assert.ok(pr.length > 0 && nightly.length > 0, "both");', "pr"), true);
+  assert.equal(pinnedWithin('assert.ok(other.length > 0);\nassert.deepEqual(x, []);', "nightly"), false,
+    "and it must not run past the end of one call into the next");
 });
