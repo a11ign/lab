@@ -103,6 +103,24 @@ test("#912: a metric with NO figure at all still renders, as NOT MEASURED", () =
   assert.equal((table.match(/NOT MEASURED/g) ?? []).length, METRICS.length);
 });
 
+test("#912: the red-hours metric does NOT claim the attendance half in its label", () => {
+  // worker-capture's finding. The value is raw red-hours from `mainColour`, which reads `trunk-guard`
+  // conclusions and knows nothing about who was looking -- and the separating case is 2026-09-12's own
+  // incident: 03:52Z-04:15Z with nobody knowing, then minutes with two sessions on it. `redHours` scores
+  // those two stretches IDENTICALLY, so the word must not be in the name.
+  //
+  // This asserts the LABEL, which is the text a reader of the table sees -- not a comment explaining it.
+  // That distinction is #1027's whole subject and it is why this assertion is legitimate where a pin on a
+  // comment would not be: the label IS the deliverable, and its wrongness is the defect rather than a
+  // description of one.
+  const redHours = metric("redHours");
+  assert.doesNotMatch(redHours.label, /unattended/i,
+    "a metric that cannot separate attended from unattended must not carry the word");
+  assert.equal(redHours.baseline, "27.8",
+    "and the baseline STAYS -- 27.8 is the same measurement, so dropping it would lose the comparison "
+    + "rather than correct the claim");
+});
+
 test("#912/#928: main's red streak is the FIRST failure after the last success, not the newest failure", () => {
   // #928 was 8 runs over 27.8 hours. A newest-failure reading would have reported the gap since the most
   // recent run -- minutes -- and the number that mattered was the one from the first failure in the streak.
@@ -129,18 +147,60 @@ test("#912: a green main is quiet -- the watch says nothing and exits 0", () => 
     workflow_runs: [{ conclusion: "success", created_at: "2026-09-12T03:00:00Z", databaseId: 9 }],
   });
   const colour = mainColour({ repo: "o/r", now: new Date("2026-09-12T04:00:00Z"), run });
-  assert.deepEqual(colour, { red: false, since: null, hours: null, firstFailing: null });
+  assert.deepEqual(colour, { readable: true, red: false, since: null, hours: null, atLeast: false,
+    firstFailing: null, why: null });
   assert.equal(EXIT.QUIET, 0, "and silence is exit 0, so an hourly job that finds nothing costs nothing");
 });
 
-test("#912: an unreadable runs list is NOT reported as green -- but it is reported as not-red, and this "
-  + "test exists to pin which", () => {
-  // A deliberate, stated limitation rather than an oversight: a failed read currently reads as `red: false`,
-  // so the watch stays quiet. That is the wrong direction for a clock and it is the first thing to fix if
-  // this ever misses a break. It is pinned here so the next reader finds the decision rather than the bug.
-  const colour = mainColour({ repo: "o/r", run: () => { throw new Error("gh: HTTP 502"); } });
-  assert.equal(colour.red, false);
-  assert.equal(colour.since, null, "and it carries no evidence, which is the tell that it did not measure");
+test("#912: AN UNREADABLE MAIN AND A GREEN MAIN ARE NOT THE SAME OBJECT -- the one line that would have "
+  + "caught the worst defect in this file", () => {
+  // worker-capture's finding. This test previously asserted `red === false` and `since === null` and called
+  // the missing evidence "the tell that it did not measure". **There was no tell:** a green main returns
+  // those same two values, so the assertion was satisfied by a green main too. Composed with
+  // `watchReport`'s silence-when-clean, six hours of `gh` failing were six quiet hours at exit 0 --
+  // **the clock's only failure mode looked exactly like its success.**
+  const unreadable = mainColour({ repo: "o/r", run: () => { throw new Error("gh: HTTP 502"); } });
+  const green = mainColour({ repo: "o/r", now: new Date("2026-09-12T04:00:00Z"),
+    run: () => JSON.stringify({ workflow_runs: [{ conclusion: "success", created_at: "2026-09-12T03:00:00Z" }] }) });
+  assert.notDeepEqual(unreadable, green,
+    "field for field, these used to be identical -- and this is the assertion that separates them");
+  assert.equal(unreadable.readable, false);
+  assert.equal(green.readable, true);
+  assert.match(unreadable.why ?? "", /HTTP 502/, "and it carries WHY, so the line can say what failed");
+});
+
+test("#912: an EMPTY runs list is unreadable too -- a workflow with no runs answers the question no more "
+  + "than a 502 does", () => {
+  const empty = mainColour({ repo: "o/r", run: () => JSON.stringify({ workflow_runs: [] }) });
+  assert.equal(empty.readable, false);
+  assert.match(empty.why ?? "", /no runs on main at all/,
+    "renamed, never triggered, or a branch filter matching nothing -- all of them are `could not ask`");
+});
+
+test("#912: the watch is LOUD when it cannot ask -- silence is reserved for a main that is genuinely "
+  + "green", () => {
+  const unreadable = mainColour({ repo: "o/r", run: () => { throw new Error("gh: HTTP 502"); } });
+  const lines = watchReport({ colour: unreadable });
+  assert.equal(lines.length, 1, "an unreadable clock must not be quiet");
+  assert.match(lines[0], /^CANNOT ASK/);
+  assert.match(lines[0], /HTTP 502/, "naming what failed, so a reader can act rather than investigate");
+  assert.match(lines[0], /treat its silence elsewhere as unverified/,
+    "and saying what the silence is worth -- nothing else in the org is looking");
+});
+
+test("#912: a streak longer than the page is reported as a LOWER BOUND, not as an exact number", () => {
+  // worker-capture's third finding: `per_page=20`, so a streak with no success in the page takes its
+  // oldest run from the PAGE BOUNDARY. #928's own table is about a number read as exact when it was not.
+  const failures = Array.from({ length: 3 }, (_, i) => ({
+    conclusion: "failure", created_at: `2026-09-1${i + 1}T00:00:00Z`, databaseId: i + 1,
+  }));
+  const run = (args: string[]) => (args[0] === "api"
+    ? JSON.stringify({ workflow_runs: failures })
+    : "not ok 7 - something");
+  const colour = mainColour({ repo: "o/r", now: new Date("2026-09-14T00:00:00Z"), run });
+  assert.equal(colour.atLeast, true, "no success in the page means the streak may be older than it looks");
+  assert.match(watchReport({ colour })[0], /at least/,
+    "and the LINE must say so -- a bound printed as an exact number is the shape #928 is about");
 });
 
 test("#912: the first failing assertion is null when the log names none -- a different report from "
@@ -251,9 +311,11 @@ test("#912 READ 4: the board summary is quiet before 06:15, urgent after it, and
 });
 
 test("#912: the watch is SILENT when clean -- the property that makes 24 runs a day affordable", () => {
-  const green = { red: false, since: null, hours: null, firstFailing: null };
+  const green = { readable: true, red: false, since: null, hours: null, atLeast: false,
+    firstFailing: null, why: null };
   assert.deepEqual(watchReport({ colour: green }), [], "a quiet hour must cost a reader nothing");
-  const red = { red: true, since: "2026-09-11T00:12:00Z", hours: 27.8, firstFailing: "not ok 41 - x" };
+  const red = { readable: true, red: true, since: "2026-09-11T00:12:00Z", hours: 27.8, atLeast: false,
+    firstFailing: "not ok 41 - x", why: null };
   const lines = watchReport({ colour: red });
   assert.equal(lines.length, 1);
   assert.match(lines[0], /27\.8h/);
