@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 // Four levels up, to the REPO ROOT. The gate is monorepo tooling, not a package: it has to pack and install
 // every package including this one, so it cannot live inside any of them. Its tests live here because `lab` is
 // where this repo's internal tooling tests live.
-import { checkIsolation, internalDependencies } from "../../../../scripts/isolation-gate.mjs";
+import { checkIsolation, internalDependencies, declaredBins, allPackages } from "../../../../scripts/isolation-gate.mjs";
 
 const fixture = (name: string) => fileURLToPath(new URL(`../../../../scripts/isolation-fixtures/${name}`, import.meta.url));
 
@@ -101,4 +101,71 @@ test("a decline is distinguishable from a real failure, which is the whole point
   assert.equal(declined.skipped, true);
   assert.notEqual(broken.skipped, true, "an undeclared dependency is a DEFECT, never a platform limit");
   assert.equal(broken.ok, false);
+});
+
+/**
+ * #1129: a DECLARED BIN THAT NEVER REACHES THE CONSUMER, which every check above was structurally unable
+ * to see.
+ *
+ * The row asked for `npm pack` plus an install outside the workspace, on the premise that nothing here
+ * opens the tarball. That premise did not survive: this gate has packed and installed since ADR 0007, and
+ * three of the row's four clauses were already honoured — the install is outside the repo, the population
+ * is derived, and a package with no smoke test is REFUSED rather than skipped. What survived is the one
+ * clause about `bin`, and it survived because it is real:
+ *
+ * **Measured 2026-09-12 on this repo — pointing all five of `@a11ign/worker-fleet`'s bins at a file that
+ * does not exist left `checkIsolation` reporting `ok: true`.** Nine bins are declared across four
+ * published packages; exactly one (`a11ign`) was ever executed, two were checked for existence, and
+ * `worker-fleet`'s five were not looked at.
+ *
+ * The reason it hid is npm's, not ours: an install links a shim for a bin whose target it received and
+ * creates NOTHING for one it did not — no warning, exit 0. So a consumer's `command not found` is the
+ * first anyone hears of it, and on the registry that costs a version number rather than a test run.
+ */
+test("a declared bin whose target is not in the package is REJECTED, though the package imports fine", () => {
+  // NOT a `"files"` omission -- that one cannot happen. The first version of this test tried to lose the
+  // bin by leaving it out of `files` and the gate passed, correctly: `npm pack --dry-run --json` showed
+  // npm force-includes a bin target regardless of the allow-list. So the class is narrower than the row
+  // supposed, and it is the class this repo is exposed to: four of nine declared bins point into `dist/`,
+  // which is gitignored build output, and a pack whose build did not run loses all four silently.
+  const verdict = checkIsolation(fixture("dangling-bin"));
+  assert.equal(verdict.ok, false, "a bin a consumer cannot run must not pass");
+  assert.equal(verdict.stage, "bin", `expected the bin stage, got ${verdict.stage}: ${verdict.detail}`);
+  assert.match(verdict.detail, /a11ign-fixture-dangling/, "the verdict must name the bin that is missing");
+  // The fixture's own smoke test passes against this tarball -- it imports the package and never spawns
+  // anything. Asserting that here is what makes the test above a claim about the BIN rather than about
+  // the fixture being broken in some general way.
+  assert.doesNotMatch(verdict.detail, /works when installed/);
+});
+
+test("a declared bin that IS packed passes, so the bin check is not merely always-failing", () => {
+  const verdict = checkIsolation(fixture("linked-bin"));
+  assert.equal(verdict.ok, true, `a packed bin should install and link, got: ${verdict.detail}`);
+  assert.match(verdict.detail, /1 bin\(s\) on PATH/);
+});
+
+test("a package with NO bin is a declared case, not an absence that reads like a pass", () => {
+  // The shape that has cost this repo most is a check whose "nothing to do" and "everything fine" render
+  // identically. `sound` declares no bin at all, and its PASS line has to SAY so.
+  const verdict = checkIsolation(fixture("sound"));
+  assert.equal(verdict.ok, true, verdict.detail);
+  assert.match(verdict.detail, /no bins declared/);
+});
+
+test("declaredBins reads the string shorthand, which links the unscoped package name", () => {
+  // `"bin": "./cli.mjs"` links ONE name -- the package name with the scope dropped. Reading only the
+  // object form would report such a package as declaring no bins, and the check would pass by not looking.
+  assert.deepEqual(declaredBins({ name: "@a11ign/worker-fleet", bin: "./dist/doctor.mjs" }), ["worker-fleet"]);
+  assert.deepEqual(declaredBins({ name: "a11ign", bin: "./dist/cli.js" }), ["a11ign"]);
+  assert.deepEqual(declaredBins({ name: "@a11ign/evidence" }), []);
+  assert.deepEqual(declaredBins({ name: "@a11ign/scorer", bin: { one: "./a.mjs", two: "./b.mjs" } }), ["one", "two"]);
+});
+
+test("every bin the six published packages declare is reachable in a real consumer install", () => {
+  // The population, derived rather than typed: this is the assertion that would have caught the live
+  // defect, and it is the reason the row was filed. Slow on purpose -- it is six real packs and installs.
+  const failures = allPackages()
+    .map((dir) => ({ dir, verdict: checkIsolation(dir) }))
+    .filter(({ verdict }) => verdict.stage === "bin");
+  assert.deepEqual(failures.map(({ dir, verdict }) => `${dir}: ${verdict.detail}`), []);
 });
