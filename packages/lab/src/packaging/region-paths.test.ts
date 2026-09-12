@@ -12,6 +12,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripComments } from "@a11ign/evidence/source-text";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import {
   regionPathsFromBody, extractRegionSection, declaredRegionFiles, regionCovers, rootFilesOnMain,
@@ -491,14 +492,46 @@ test("#1081: the population of environment-asserting guards, stated", () => {
   //   assertions comparing a reading's `source` to the literal "origin/main"   2, both in THIS file
   //   files already carrying a named skip for a missing ref                    1 (row-reachability)
   //
-  // What the sweep CANNOT see, said rather than implied: an assertion that names a machine property
-  // without spelling `origin/main` -- a port being free, a corpus present, a worker answering. Those are
-  // different environment facts needing different reads, and each gets its own row (#1064's rule).
-  const text = readFileSync(new URL("./region-paths.test.ts", import.meta.url), "utf8");
-  const unconditional = [...text.matchAll(/assert\.equal\([^;]*?\.source, "origin\/main"/g)].length;
+  // COUNTED THROUGH `stripComments`, and that is not hygiene -- worker-capture broke the first version by
+  // injecting the exact defect this exists to catch (a real, executable, unguarded
+  // `assert.equal(reading.source, "origin/main", ...)`) alongside a COMMENT merely quoting
+  // `if (!sourceAssertionSkipped()) {`. It read 3 === 3 and passed: 44/0. A comment ANYWHERE in the file
+  // bought an unguarded assertion ANYWHERE in the file, and this file is unusually full of prose quoting
+  // assertion shapes -- including the one deleted two tests above -- so the material was already here.
+  // Reproduced before fixing, red after.
+  //
+  // IT MATCHES THE PAYLOAD, NOT A SPAN, and that is the second thing worker-capture broke. The first
+  // version was `assert\.equal\([^;]*?\.source, "origin\/main"` -- and `[^;]` matches NEWLINES where `.`
+  // does not, so an `assert.equal(` could pair with a `.source` several statements below it as long as no
+  // semicolon intervened. Narrowing that to `[^;\n]*?` fixes the pairing and opens the OPPOSITE hole: a
+  // genuinely unguarded assertion written across two lines then matches nothing and is invisible. Measured
+  // both -- the narrowed version read 44/0 against exactly that injection.
+  //
+  // So the pattern names the two tokens that must be ADJACENT and drops the `assert.equal(` prefix
+  // entirely. There is no span left to mis-pair, and the line break an author happens to insert before
+  // `.source` cannot hide it.
+  //
+  // WHAT THE SWEEP CANNOT SEE, said rather than implied, in two categories:
+  //
+  //   (a) a machine property external to the repository -- a port being free, a corpus present, a worker
+  //       answering. Different environment facts needing different reads, each its own row (#1064).
+  //   (b) THE CHECKOUT'S OWN GIT STATE, which is the category that actually bit #1080 and which (a) does
+  //       NOT cover. Measured here 2026-09-12: of 41 test files under `packages/*/src` that spawn git,
+  //       17 never mention `origin/main` at all, so neither pattern above can reach them. And one NAMED
+  //       instance does mention it in a shape this sweep does not match:
+  //       `pre-push-stale-base.test.ts` asserts `isAncestorOf(PINNED_STALE_BASE, "origin/main")`, whose
+  //       `isAncestorOf` rethrows anything that is not git's exit 1 -- and an absent ref exits 128, so it
+  //       THROWS rather than degrading. Verified both codes in this checkout. It is guarded today only by
+  //       a SHALLOW-CLONE skip, a different predicate answering a neighbouring question. Not fixed here:
+  //       each fact gets its own read and its own row.
+  const text = stripComments(readFileSync(new URL("./region-paths.test.ts", import.meta.url), "utf8"));
+  const unconditional = [...text.matchAll(/\.source,\s*"origin\/main"/g)].length;
   const guarded = [...text.matchAll(/if \(!sourceAssertionSkipped\(\)\) \{/g)].length;
   assert.equal(unconditional, guarded,
     `every "origin/main" source assertion must sit inside the skip: ${unconditional} assertions, `
     + `${guarded} guards. A new one added outside it fails here rather than in CI`);
+  // THE NON-EMPTINESS CONTROL, not a count -- said out loud so the next reader does not "tighten" it to
+  // `=== 2` and delete the thing that makes the equality above mean anything. If both patterns broke, the
+  // equality would read `0 === 0` and pass; this is the only line that refuses that.
   assert.ok(guarded >= 2, "and the two this row fixed must still be guarded");
 });
