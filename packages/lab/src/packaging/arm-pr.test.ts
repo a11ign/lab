@@ -33,6 +33,10 @@ import {
   LIVE_SESSIONS,
   RETIRED_SESSIONS,
   unknownSessionLabels,
+  settledReason,
+  prState,
+  waitForSettled,
+  armMerge,
 } from "../../../../scripts/arm-pr.mjs";
 
 /** A fake `run` recording every call it received and returning canned `gh issue view` output. */
@@ -245,3 +249,117 @@ test("#1000: a row carrying only LIVE labels arms exactly as it does today -- bo
   assert.ok(editCall!.includes("session:worker-judge"));
 });
 ;
+
+// --- #1022: ARMING IS VERIFIED FROM THE PR'S STATE, NEVER FROM `gh`'s EXIT CODE ---
+//
+// Found live: marking #1020 ready fired the `arm` workflow while `gate` was already green, so GitHub
+// merged the PR immediately and `gh pr merge --auto` answered `GraphQL: Merge already in progress`. Every
+// non-zero `gh` exit threw, so the workflow went RED on a PR that had merged correctly -- `mergedAt` is
+// 01:15:33Z and the merge call was refused at 01:15:33.05Z, the same second.
+//
+// The mirror of this is ALREADY PINNED ABOVE, for disarming: "`gh pr merge --disable-auto` returns success
+// on a PR that is already merging, having changed nothing". Disarming is read from the state because the
+// exit code lies about SUCCESS; arming was read from the exit code, which lies about FAILURE. One half of
+// the class was fixed. These tests are the other half.
+
+/** A `gh` stub: `pr view --json state` answers `state`, `pr merge` fails with `mergeError` if given. */
+function ghStub({ state, mergeError, states }: {
+  state?: string; mergeError?: string; states?: (string | undefined)[];
+}) {
+  const calls: string[][] = [];
+  let reads = 0;
+  const run = (cmd: string, args: string[]) => {
+    calls.push([cmd, ...args]);
+    if (args[1] === "merge") {
+      if (mergeError) { const e = new Error(mergeError) as Error & { status: number }; e.status = 1; throw e; }
+      return "";
+    }
+    if (args[1] === "view") {
+      const answer = states ? states[Math.min(reads, states.length - 1)] : state;
+      reads += 1;
+      if (answer === undefined) throw new Error("gh: HTTP 502");
+      return JSON.stringify({ state: answer });
+    }
+    return "";
+  };
+  return { run, calls };
+}
+
+test("#1022 ACCEPTANCE: a merge refused because the PR ALREADY MERGED is a success, not a failure -- and "
+  + "the verdict names the STATE it read", () => {
+  const { run, calls } = ghStub({ mergeError: "GraphQL: Merge already in progress (mergePullRequest)",
+    state: "MERGED" });
+  const outcome = armMerge({ number: "1020", repo: "o/r" }, { run, sleep: () => "ok" as const });
+  assert.equal(outcome.armed, false, "nothing was armed -- and that is the correct outcome here");
+  assert.match(outcome.reason, /already merged/,
+    "the reason must name the state, so a reader can tell this from a swallowed error");
+  assert.ok(calls.some((c) => c[2] === "view" && c.includes("state")),
+    "the verdict must come from a STATE read, not from the merge call's own message");
+});
+
+test("#1022 ACCEPTANCE (the direction that must not be lost): a PR that is still OPEN after a refused "
+  + "merge RE-THROWS -- an un-armed PR nobody merged is a real fault", () => {
+  const { run } = ghStub({ mergeError: "GraphQL: Base branch was modified", state: "OPEN" });
+  assert.throws(
+    () => armMerge({ number: "1020", repo: "o/r" }, { run, sleep: () => "ok" as const, attempts: 2 }),
+    /Base branch was modified/,
+    "the ORIGINAL error must reach the caller unchanged -- without this the fix is `ignore the error`");
+});
+
+test("#1022: the verdict is read from the STATE, not from the message text -- a reworded GraphQL string "
+  + "must change nothing, for the reason `merge-guard` keys recovery on FAULT.* codes and never on prose", () => {
+  for (const wording of ["GraphQL: Merge already in progress (mergePullRequest)",
+    "Pull request is already merged", "something GitHub has not said yet"]) {
+    const { run } = ghStub({ mergeError: wording, state: "MERGED" });
+    const outcome = armMerge({ number: "1020", repo: "o/r" }, { run, sleep: () => "ok" as const });
+    assert.equal(outcome.armed, false, `wording "${wording}" must not change the verdict`);
+    assert.match(outcome.reason, /already merged/);
+  }
+});
+
+test("#1022: a merge that SUCCEEDS still reports armed, and never reads the state at all", () => {
+  const { run, calls } = ghStub({ state: "OPEN" });
+  const outcome = armMerge({ number: "999", repo: "o/r" }, { run, sleep: () => "ok" as const });
+  assert.deepEqual(outcome, { armed: true, reason: "auto-merge enabled" });
+  assert.deepEqual(calls.filter((c) => c[2] === "view"), [],
+    "the happy path must cost no extra call -- a state read only happens once a merge has been refused");
+});
+
+test("#1022: waitForSettled WAITS ON A POSITIVE VERDICT -- `OPEN` on the first read is also what a "
+  + "genuinely un-armable PR looks like, so one read cannot tell them apart", () => {
+  const { run, calls } = ghStub({ states: ["OPEN", "OPEN", "MERGED"] });
+  const sleeps: number[] = [];
+  assert.equal(waitForSettled({ number: "1", repo: "o/r" },
+    { run, sleep: (ms: number) => { sleeps.push(ms); return "ok" as const; }, attempts: 5, intervalMs: 7 }),
+    "MERGED");
+  assert.equal(calls.filter((c) => c[2] === "view").length, 3, "it must stop the moment it settles");
+  assert.deepEqual(sleeps, [7, 7], "and sleep BETWEEN reads, never before the first one");
+});
+
+test("#1022: waitForSettled gives up rather than waiting forever, and an UNREADABLE state never counts "
+  + "as settled -- unreadable is not merged, the same distinction `armDecision` draws for labels", () => {
+  const stillOpen = ghStub({ state: "OPEN" });
+  assert.equal(waitForSettled({ number: "1", repo: "o/r" },
+    { run: stillOpen.run, sleep: () => "ok" as const, attempts: 3, intervalMs: 1 }), null);
+  assert.equal(stillOpen.calls.filter((c) => c[2] === "view").length, 3, "exactly the budget, no more");
+  const unreadable = ghStub({ state: undefined });
+  assert.equal(waitForSettled({ number: "1", repo: "o/r" },
+    { run: unreadable.run, sleep: () => "ok" as const, attempts: 2, intervalMs: 1 }), null,
+    "a failed read must not resolve to MERGED, which would turn this row's false RED into a false GREEN");
+});
+
+test("#1022: settledReason is pure and refuses to call an unreadable state settled", () => {
+  assert.match(settledReason("MERGED")!, /already merged/);
+  assert.match(settledReason("CLOSED")!, /already closed/);
+  assert.equal(settledReason("OPEN"), null);
+  assert.equal(settledReason(null), null, "null is `could not read`, and could-not-read is never `done`");
+  assert.equal(settledReason("merged"), null, "gh answers in upper case; a lower-case match would be "
+    + "matching a spelling this API does not use");
+});
+
+test("#1022: prState returns null rather than a guess when the read fails", () => {
+  assert.equal(prState({ number: "1", repo: "o/r", run: () => { throw new Error("gh: HTTP 502"); } }), null);
+  assert.equal(prState({ number: "1", repo: "o/r", run: () => "not json" }), null);
+  assert.equal(prState({ number: "1", repo: "o/r", run: () => JSON.stringify({}) }), null);
+  assert.equal(prState({ number: "1", repo: "o/r", run: () => JSON.stringify({ state: "OPEN" }) }), "OPEN");
+});
