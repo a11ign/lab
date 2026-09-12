@@ -1510,3 +1510,28 @@ test("#1163: every claim in the table is pinned, so deleting one cannot quietly 
     "one question", "the question itself", "not unimportant", "the spelling", "where importance is said",
   ], "five claims, named, in order — a shorter list here means the comparison got smaller");
 });
+
+// #1163: BOTH COLUMNS OF THE DELETION DETECTOR, PINNED. worker-capture measured these on review and the
+// header now names the check by what they show. They are assertions rather than a paragraph because a
+// stated cost nobody drives is a claim, and the next person to add a sixth pattern needs to find out here
+// that the check cannot see meaning -- not by trusting it for the inversion case in production.
+
+const EVERY_PHRASE_NEGATED = "It is false that out-of-release does not mean unimportant. It is no longer "
+  + "true that the label answers one question: does this block the 20 September publish. Nothing is spelled "
+  + "out of release, ready, and it is not the case that importance is said by the ready order.";
+
+const FAITHFULLY_REWORDED = "Out-of-release is not a statement about importance. Importance is carried by "
+  + "the order of the ready column. The label asks only whether the 20 September publish is blocked.";
+
+test("#1163: a copy saying the OPPOSITE of every rule passes clean -- inversion is not detectable here", () => {
+  assert.deepEqual(guidanceDrift(rowFilingDoc(), EVERY_PHRASE_NEGATED).missingFromMilestone, [],
+    "every phrase is intact and every meaning is reversed; a substring test cannot tell them apart, which "
+    + "is why the header calls this a DELETION detector and not a drift detector");
+});
+
+test("#1163: a faithful REWORDING reads as every rule deleted -- the false red, measured not assumed", () => {
+  assert.equal(guidanceDrift(rowFilingDoc(), FAITHFULLY_REWORDED).missingFromMilestone.length, 5,
+    "maximal sensitivity to wording is the same property as maximal insensitivity to meaning -- the cost "
+    + "is that an editorial pass on either copy reddens the nightly audit until the phrase is re-synced, "
+    + "and the remedy is to re-sync it, never to loosen a pattern");
+});
