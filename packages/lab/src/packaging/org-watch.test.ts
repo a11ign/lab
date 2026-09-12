@@ -165,6 +165,37 @@ test("#912: the queue is aggregated BY CONCLUSION, never filtered and then concl
   assert.equal(examined, 5, "every check is in exactly one bucket, so the buckets sum to the population");
 });
 
+test("#912: the queue counter normalises `gh`'s THREE spellings of an absent conclusion", () => {
+  // Measured 2026-09-12 against this repository, because one idiom does not cover them:
+  //
+  //     gh api .../check-runs          conclusion: null       status: "in_progress"    lower case
+  //     gh run list --json             conclusion: ""         status: "in_progress"    lower case
+  //     gh pr list statusCheckRollup   conclusion: "SKIPPED"  status: "COMPLETED"      UPPER CASE
+  //
+  // `??` falls back on `null` and NOT on `""`, so the middle row buckets under the empty string -- a
+  // count labelled with nothing, which reads as a category nobody recognises rather than as the pending
+  // run it is. And the third makes `SUCCESS` and `success` two buckets of one outcome.
+  const counts = byConclusion([
+    { name: "a", conclusion: "success", status: "completed" },   // gh api, done
+    { name: "b", conclusion: "SUCCESS", status: "COMPLETED" },   // statusCheckRollup, same outcome
+    { name: "c", conclusion: null, status: "in_progress" },      // gh api, pending
+    { name: "d", conclusion: "", status: "in_progress" },        // gh run list, pending -- the `??` trap
+  ]);
+  assert.deepEqual(counts, { success: 2, in_progress: 2 },
+    "two successes and two pending, however each source spells them -- a counter whose whole job is "
+    + "`count the population by outcome` must not invent an outcome, and an empty-string bucket is that");
+  assert.equal(Object.values(counts).reduce((a, b) => a + b, 0), 4, "and the buckets sum to the population");
+});
+
+test("#912: a check with NOTHING readable counts as `unknown`, not as an empty label", () => {
+  // The honest bucket. It is still counted -- dropping it would make the buckets stop summing to the
+  // population, which is the property the queue read exists to have.
+  assert.deepEqual(byConclusion([{ name: "x", conclusion: "", status: "" }]), { unknown: 1 });
+  assert.deepEqual(byConclusion([{ name: "x", conclusion: null, status: null }]), { unknown: 1 });
+  assert.deepEqual(byConclusion([{ name: "x", conclusion: "  ", status: "  " }]), { unknown: 1 },
+    "whitespace is not a conclusion either");
+});
+
 test("#912: `total_count` is the count, not the page -- and a failed read is null, never 0", () => {
   assert.equal(totalCount("actions/runs?per_page=1", {
     repo: "o/r",
