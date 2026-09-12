@@ -59,7 +59,15 @@ const REPORTED_FLOOR =
  * fails, so fixing a floor forces its removal rather than leaving a stale allowance behind.
  *
  * `fixture-absence-guard.test.ts: tree.files.length` is deliberately ABSENT: it is the worked example, and
- * it now derives the count a second way and asserts equality. `> 500` against a 1,460-file tree tolerated
+ * it now derives the count a second way and asserts equality.
+ *
+ * **The two `tracker-writer-population.test.ts` entries were added by the ratchet working**, on #1053's
+ * merge: the walk found them, this guard refused, and they were examined rather than waved through.
+ * `examined` is a vacuity floor over 132 files and is right; `sending.length` is a floor beside an EXACT
+ * equality against the registry's length, so the count that is a claim is already held and the floor is
+ * the vacuity half. **Both are in the baseline anyway** — the guard cannot tell an examined floor from an
+ * unexamined one, and a baseline that recorded verdicts would be a second place for the reasoning to
+ * drift from the code. `> 500` against a 1,460-file tree tolerated
  * losing two thirds of it, in the guard whose whole subject is which tree is being asked.
  */
 const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
@@ -119,6 +127,8 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "select-changed-tests.test.ts: every.length",
   "select-changed-tests.test.ts: files.length",
   "spawned-paths.test.ts: files.length",
+  "tracker-writer-population.test.ts: examined",
+  "tracker-writer-population.test.ts: sending.length",
   "trainer-callers.test.ts: invocations.length",
   "tree-wide-guard-walk.test.ts: found.length",
   "tree-wide-guards.test.ts: files.length",
