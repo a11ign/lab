@@ -235,11 +235,26 @@ test("origin/main resolves to a real commit -- this test cannot pass having exam
  * merge-base diff needs it. Found by `worker-judge` in review, driving these exports against a real
  * behind-main head rather than reasoning about the dots.
  */
-test("every substantive line removed from CLAUDE.md still exists as text somewhere", () => {
+test("every substantive line removed from CLAUDE.md still exists as text somewhere", (t) => {
   ensureOriginMain();
   const git = (...args: string[]) => execFileSync("git", args,
     { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8", maxBuffer: 1024 * 1024 * 64 });
-  const base = git("merge-base", "origin/main", "HEAD").trim();
+  // A MERGE-BASE NEEDS HISTORY, AND NOT EVERY JOB HAS IT. `ci.yml`'s `acceptance` job runs this suite
+  // as the PR's own acceptance command at the default checkout depth, where `merge-base` THROWS -- there
+  // is no common ancestor in the clone. Found by CI, not by reasoning: the belief going in was that every
+  // job running this suite is `fetch-depth: 0`, which is true of `ts` and false of `acceptance`.
+  //
+  // Skipping is the honest answer rather than deepening the clone from inside a test: the `ts` job runs
+  // this same assertion with full history, so the check is not lost -- it is just not this job's to make.
+  // A guard that cannot see the history must say so, not compare against what it happens to have.
+  let base: string;
+  try {
+    base = git("merge-base", "origin/main", "HEAD").trim();
+  } catch {
+    t.skip("no merge-base with origin/main in this checkout -- shallow clone (the `acceptance` job). "
+      + "The `ts` job runs this with fetch-depth: 0. Not run, and not counted as a pass.");
+    return;
+  }
   const removed = removedSubstantiveLines(git("diff", base, "--", "CLAUDE.md"));
   const missing = unpreservedLines(removed, haystack());
   assert.deepEqual(missing, [], unpreservedMessage(missing, removed.length, git("show", `${base}:CLAUDE.md`)));
@@ -378,7 +393,16 @@ test("a branch merely BEHIND main is accused of nothing -- the two-dot trap", (t
     t.skip("no commit touching CLAUDE.md in this history -- shallow clone. Not run, and not a pass.");
     return;
   }
-  const behind = git("rev-parse", `${lastTouch}^`).trim();
+  // The PARENT may be outside a shallow clone even when the commit itself is in it -- which is exactly
+  // how this failed in the `acceptance` job: `lastTouch` resolved and `lastTouch^` did not.
+  let behind: string;
+  try {
+    behind = git("rev-parse", `${lastTouch}^`).trim();
+  } catch {
+    t.skip(`${lastTouch.slice(0, 8)} is in this clone but its parent is not -- shallow. Not run, and `
+      + "not counted as a pass.");
+    return;
+  }
   const naive = removedSubstantiveLines(git("diff", "origin/main", behind, "--", "CLAUDE.md"));
   const base = git("merge-base", "origin/main", behind).trim();
   const correct = removedSubstantiveLines(git("diff", base, behind, "--", "CLAUDE.md"));
