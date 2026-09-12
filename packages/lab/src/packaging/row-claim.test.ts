@@ -16,6 +16,11 @@
 // `removeClaimedWorktree`, which need actual filesystem/git state) do fall through to `defaultRun` when
 // they omit `{ run }` -- but that function only ever calls `git`, never `gh` (read its own source: both
 // spawn `"git"` as the literal `cmd`, nothing else), so this declaration is honest even for those two.
+//
+// #987 ADDED A THIRD `gh`-SPAWNING DEFAULT, `fetchClaimComments`, and no test here reaches it: every
+// `declineRow` call injects `fetchComments`, and the tests that exercise the function itself inject `run`.
+// Re-proved after that change rather than assumed -- fake `gh` first on `PATH` exiting 97, `GH_TOKEN` and
+// `GITHUB_TOKEN` unset: 90 pass, and the fake is invoked ZERO times.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
