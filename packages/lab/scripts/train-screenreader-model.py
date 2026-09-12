@@ -252,10 +252,12 @@ def refuse_to_destroy_release_weights(args: argparse.Namespace) -> None:
         # after the encoder pass; train #2 ran to completion; `.previous` still held the earlier candidate
         # with its acceptance report. Verified by `lab:inventory`, not inferred.
         #
-        # The stronger form -- rotate on SUCCESS rather than at startup -- is a backlog row and deliberately
-        # not done here: it means writing to a temporary directory and moving on success, which restructures
-        # the one path that holds release-eligible weights, for a hazard that measurement says does not
-        # currently bite. If you change WHAT A FAILED TRAIN LEAVES BEHIND, this reasoning expires with it.
+        # The stronger form -- rotate on SUCCESS rather than at startup -- is #13, CLOSED 2026-09-06 as a
+        # DECISION rather than as a fix, and deliberately not done here: it means writing to a temporary
+        # directory and moving on success, which restructures the one path that holds release-eligible
+        # weights, for a hazard that measurement says does not currently bite. Searching the tracker for an
+        # OPEN row finds nothing -- #13 holds the reasoning, and re-filing it would carry none of that.
+        # If you change WHAT A FAILED TRAIN LEAVES BEHIND, this reasoning expires with it.
         print(f"Rotated the previous release-eligible model to {previous} "
               f"(generalisationVerified={existing.get('generalisationVerified')}, floor={floor}). "
               "Nothing was lost; one generation is kept -- see the note above for why a CRASH here "
