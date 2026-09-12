@@ -169,9 +169,27 @@ test("the TRAINING role is all-conformant, and that is recorded rather than assu
   //
   // This asserts the CURRENT composition so the day it changes, it changes deliberately and visibly.
   // Adding a training-role inaccessible page should fail here and be a considered edit, not a silent one.
-  const trainingClaims = new Set(pagesFor("training").map((p) => p.publishedClaim));
-  assert.deepEqual([...trainingClaims], ["conformant"],
-    "a training-role page published as inaccessible changes what the novelty score means — see ADR 0015");
+  // #1178/#1189: ONE PAGE ADMITTED BY NAME, and the citation is what makes the edit answerable later.
+  //
+  // This guard asked for "a considered edit, not a silent one". The consideration is `orchestrator`'s
+  // measurement on #1178: both arms captured from the same disk corpus, declaration the only difference.
+  // The 4.1.3 tier MOVED (0 of 39 -> 1 of 40) and the distance pair did NOT (0.8231 / 0.7208 in both), on
+  // a demonstrably different instrument -- different dataset sha, 2869 -> 2870 records, different report
+  // hash. The mechanism is `distinctStructures`: 837 in BOTH arms, and the OOD reference samples 512 rows
+  // by evenly spaced indices over them, so the same 837 draws the same rows and EVERY novelty figure is
+  // unchanged rather than just this pair's.
+  //
+  // THE FALSIFIER, which is the half that keeps this from reading as "broken pages are free": a page that
+  // RAISES `distinctStructures` would move the reference. That field is read first for any future invited
+  // origin, and admitting a second page here without it is the edit this guard exists to refuse.
+  const ADMITTED_INACCESSIBLE_TRAINING = ["https://the-internet.herokuapp.com/login"];
+  const unexpected = pagesFor("training")
+    .filter((p) => p.publishedClaim !== "conformant" && !ADMITTED_INACCESSIBLE_TRAINING.includes(p.url))
+    .map((p) => p.url);
+  assert.deepEqual(unexpected, [],
+    "a training-role page published as inaccessible changes what the novelty score means — see ADR 0015. "
+    + "One page is admitted BY NAME on #1178's measurement; a second needs its own, starting with whether "
+    + "it raises `distinctStructures`");
 });
 
 test("the positive side is counted in DEFECTS, not pages — three BAD pages share one template", () => {
@@ -183,7 +201,13 @@ test("the positive side is counted in DEFECTS, not pages — three BAD pages sha
   // assertion read as "the positive side spans two sources" — which is true of the pages and false of the
   // thing this guards, which is what a real-page RECALL number may claim. Recall is measured on published
   // labels; a fixture we authored cannot support that claim and is excluded from it here.
-  const inaccessible = REAL_PAGES.filter((p) => p.publishedClaim === "inaccessible" && p.role !== "fixture");
+  // #1178/#1189: THE RECALL CLAIM IS ABOUT CALIBRATION, so the one admitted TRAINING page is excluded
+  // here rather than counted as a second family. The training role is never used to measure anything --
+  // this file's own section header says so -- and a recall number is fitted on calibration. Counting it
+  // would make this assertion read "the positive side spans two sources", which is true of the pages and
+  // false of the thing this guards.
+  const inaccessible = REAL_PAGES.filter((p) => p.publishedClaim === "inaccessible"
+    && p.role !== "fixture" && p.role !== "training");
   const families = new Set(inaccessible.map((p) => new URL(p.url).pathname.replace(/[^/]+$/, "")));
   assert.equal(families.size, 1,
     "the positive side spans one source family; any claim of real-page recall must say so — ADR 0015");
