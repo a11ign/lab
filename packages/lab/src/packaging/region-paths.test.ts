@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { declaredRegionFiles, extractLabeledSection, extractRegionSection, hasTemplateField, pathInProse, regionCovers, regionPathsFromBody, rootFilesOnMain, trackedTopLevelDirs, unrecognisedRegionPaths } from "../../../../scripts/region-paths.mjs";
+import { declaredRegionFiles, directoryReservations, extractLabeledSection, extractRegionSection, hasTemplateField, pathInProse, regionCovers, regionPathsFromBody, rootFilesOnMain, trackedTopLevelDirs, unrecognisedRegionPaths } from "../../../../scripts/region-paths.mjs";
 
 /** #999's fixture lives beside the others this directory already keeps (`pr-584-body.md`, `issue-687-body.txt`). */
 const FIXTURES = fileURLToPath(new URL("./fixtures", import.meta.url));
@@ -576,4 +576,36 @@ test("#1158 clause 3: a path the parser does not recognise is SURFACED, not drop
     "a path that DOES declare is not stray");
   assert.deepEqual(unrecognisedRegionPaths("## Region\n\nits deliverable is not a commit\n"), [],
     "a Region with no paths has nothing to surface");
+});
+
+/**
+ * #1186: A DIRECTORY IN A REGION RESERVES EVERY FILE BENEATH IT, AND THE COUNT IS THE MESSAGE.
+ *
+ * The row was filed with the cause inverted — that a directory claims NOTHING — because its instrument
+ * was `region.includes(f)`, plain string equality, standing in for `regionCovers`. **Both readings produce
+ * the same `declaredRegionFiles` output**, so nothing about that output could have separated them.
+ *
+ * A one-line Region that reserves a thousand files looks exactly like one that reserves one.
+ */
+test("#1186 clause 1: a directory entry is surfaced WITH the number of files it reserves", () => {
+  // The count is the point: "this is a directory" tells the author what they typed; "1031 files" tells
+  // them what they did.
+  const [only] = directoryReservations("## Region\n\n```\npackages/\n```\n", () => 1031);
+  assert.equal(only.entry, "packages/");
+  assert.equal(only.files, 1031, "the count is injected here so this is not a corpus read");
+});
+
+test("#1186 clause 3: a real file path is unaffected", () => {
+  // The control. Without it the clause above passes on an implementation that surfaces everything.
+  assert.deepEqual(directoryReservations("## Region\n\n```\ndocs/README.md\n```\n", () => 99), []);
+});
+
+test("#1186 clause 4: B4's directory branch still covers every file under a declared prefix", () => {
+  // PINNED, because the obvious implementation of this row would "fix" what #941 built on purpose.
+  // `file-overlap-rule.mjs` is correct and is out of this row's Region; the fix is at DECLARATION time.
+  assert.equal(regionCovers("docs/", "docs/anything/deep.md"), true,
+    "a declared directory must keep covering everything beneath it -- this row surfaces the scope, it does "
+    + "not change it");
+  assert.equal(regionCovers("docs/", "docsite/x.md"), false, "and must not cover a name that merely shares its spelling");
+  assert.equal(regionCovers("docs/a.md", "docs/b.md"), false, "a file entry covers itself only");
 });
