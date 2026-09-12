@@ -149,6 +149,13 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
  * matched nothing would return the baseline too** if the baseline were empty — the synthetic case is the
  * only one that can tell "it found nothing" from "there is nothing".
  */
+/**
+ * What the last walk actually read. Recorded BY the walk rather than recomputed beside it: a second
+ * `git ls-files` compared against the first is a check whose input contains its own claim, which is the
+ * defect this file exists to find and the one I wrote here first.
+ */
+let walkedFiles: string[] = [];
+
 function discoverReportedFloors(
   deps: { files?: string[]; read?: (f: string) => string; strip?: string } = {},
 ): string[] {
@@ -157,6 +164,7 @@ function discoverReportedFloors(
     .split("\n").filter((f) => f.endsWith(".test.ts"));
   const read = deps.read ?? ((f: string) => readFileSync(resolve(REPO, f), "utf8"));
   const strip = deps.strip ?? `${SCOPE}/`;
+  walkedFiles = files;
   const found = new Set<string>();
   for (const file of files) {
     const text = read(file);
@@ -177,6 +185,24 @@ test("#1067: no NEW floor stands in for a count it also reports", () => {
     + "not empty' and never 'the count is right' -- `>= 4` is satisfied by 4, by 58 and by 157. Either "
     + "derive the count a second way and assert EQUALITY, or add it to KNOWN_REPORTED_FLOORS in the same "
     + "commit with the reason it is a precondition rather than a stand-in");
+});
+
+test("#1067: the WALK enumerated the scope -- protection that survives an empty baseline", () => {
+  // worker-judge, reviewing #1071: with an empty scope AND an empty baseline, both tests above compare two
+  // empty sets and pass. **The ratchet's protection decays to zero exactly as the row succeeds** -- when
+  // the last floor is fixed and the last entry leaves, a walk that reads nothing is indistinguishable from
+  // a tree with nothing to find, and the person it catches is the one doing what the row asked.
+  //
+  // The file count, derived independently of the walk, is non-emptiness without a floor.
+  discoverReportedFloors();                       // the real walk, whose enumeration is what is under test
+  const independently = execFileSync("git", ["ls-files", `${SCOPE}/*.test.ts`],
+    { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() }).split("\n").filter(Boolean);
+  assert.ok(independently.length > 0,
+    "the scope is not empty -- this is the only claim a count can make here without becoming the floor "
+    + "this row is about");
+  assert.deepEqual(walkedFiles.sort(), independently.sort(),
+    "the walk read exactly the files git lists -- MEMBERSHIP, not a count, and derived from a different "
+    + "git invocation than the walk's own, or this is a check whose input contains its own claim");
 });
 
 test("#1067: the baseline SHRINKS and never rots -- a fixed floor must leave it", () => {

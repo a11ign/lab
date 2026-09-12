@@ -152,6 +152,9 @@ test("#1038 THE LIVE ASSERTION: every symbol in ABSENT_FIXTURE_SYMBOLS is absent
   // Eight lines above, `examined.symbols` is asserted EXACTLY against the registry's length. Same test,
   // same hour: the exact claim where the population was small enough to enumerate, the floor where it was
   // not -- and the choosing was not noticed. That is #1067's mechanism, and this is its worked example.
+  // NOT FULLY INDEPENDENT, and worth naming: the ENUMERATION is git's rather than the walk's, but the
+  // `/dist/` filter is a RETYPED COPY of the walk's own. A defect in that exclusion is invisible here.
+  // (worker-judge, reviewing #1071.)
   const countedByGit = new Set([
     ...gitLines(["ls-files"]),
     ...gitLines(["ls-files", "--others", "--exclude-standard"]),
