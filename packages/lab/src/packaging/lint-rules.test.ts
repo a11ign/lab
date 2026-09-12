@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { derivedLocalRule, pinnedWithin } from "../../../../scripts/uncontrolled-emptiness.mjs";
+import { derivedLocalRule } from "../../../../scripts/uncontrolled-emptiness.mjs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ESLint } from "eslint";
@@ -220,17 +220,62 @@ test("#1155: an exemption whose reason is neither shape is itself an ERROR", asy
   assert.match(hits[0].message, /neither `demonstration` nor `guarded-by <symbol>`/);
 });
 
-test("#1155: a CONJUNCTION pins both its operands -- the shape that cost a redundant pin in #1160", () => {
-  // `assert.ok(pr.length > 0 && nightly.length > 0, ...)` controls BOTH. The first detector required the
-  // name to open the `assert.ok(` call, so it read a conjunct as no pin, reported an already-pinned site,
-  // and the generated fix stacked a second pin on a working control.
-  //
-  // It is the same defect I had just corrected in #1123's own instrument -- that one required `.length`
-  // to be followed by `,` or `)`, so `assert.ok(x.length >= 5)` read as no pin and the uncontrolled count
-  // came out at twice its true size. A pin detector that recognises one SPELLING reports every other as
-  // absent; mine recognised one POSITION.
-  assert.equal(pinnedWithin('assert.ok(pr.length > 0 && nightly.length > 0, "both");', "nightly"), true);
-  assert.equal(pinnedWithin('assert.ok(pr.length > 0 && nightly.length > 0, "both");', "pr"), true);
-  assert.equal(pinnedWithin('assert.ok(other.length > 0);\nassert.deepEqual(x, []);', "nightly"), false,
-    "and it must not run past the end of one call into the next");
+test("#1155: the pin detector answers the SYNTAX, and every edge that read as pinned is gone", async () => {
+  // worker-judge's five edges on #1167, each of which read an ABSENT control as present -- the cheap,
+  // uncaught direction. A regex over the test's source got all five wrong the same way; asking the AST
+  // gets them right for one reason rather than five.
+  const { ESLint } = await import("eslint");
+  const probe = new ESLint({ cwd: root, overrideConfig: [{
+    files: ["**/*.ts"],
+    plugins: { probe: { rules: { "uncontrolled-emptiness": derivedLocalRule } } },
+    rules: { "probe/uncontrolled-emptiness": "error" },
+  }] });
+  const run = async (pin: string) => {
+    const code = `import assert from "node:assert/strict";\nimport test from "node:test";\n`
+      + `test("t", () => {\n  const files = walk();\n  ${pin}\n`
+      + `  const bad = files.filter((f) => f.x);\n  assert.deepEqual(bad, []);\n});\n`;
+    const [r] = await probe.lintText(code, { filePath: join(root, "zz-fixture-edge.test.ts") });
+    return r.messages.filter((m) => m.ruleId === "probe/uncontrolled-emptiness").length;
+  };
+
+  assert.equal(await run('assert.ok(files.length > 0);'), 0, "a plain pin controls it");
+  assert.equal(await run('assert.ok(a.length > 0 && files.length > 0);'), 0,
+    "a CONJUNCTION controls both operands -- the shape that cost a redundant pin in #1160");
+
+  // The five that must NOT count. Each was PINNED under the textual detector.
+  assert.equal(await run('assert.ok(a.length > 0 || files.length > 0);'), 1, "a disjunction controls NEITHER");
+  assert.equal(await run('assert.ok(!(files.length > 0));'), 1, "a negation asserts it IS empty");
+  assert.equal(await run('assert.ok(cond ? files.length > 0 : true);'), 1, "a conditional controls nothing when false");
+  assert.equal(await run('// assert.ok(files.length > 0);'), 1,
+    "a COMMENT is not a pin -- and commenting a line out is HOW a pin gets removed (#1088)");
+  assert.equal(await run('assert.equal(files.length, 0);'), 1,
+    "asserting it IS empty is the opposite of a pin; the old lookahead was defeated by `\\s*` backtracking");
+  assert.equal(await run('assert.ok(files.length >= 0);'), 1, "`>= 0` is true of an empty array");
+
+  // And it must not over-credit: a conjunction about a DIFFERENT variable is not a pin on this one.
+  assert.equal(await run('assert.ok(a.length > 0 && b.length > 0);'), 1, "wrong variable");
+});
+
+test("#1155: `guarded-by <symbol>` must name a symbol the file actually contains", async () => {
+  // worker-judge's should-fix 2: the reason's SHAPE was tested and its content was not, so
+  // `guarded-by someSymbolNotInTheFile` exempted the file. The rot mode is the dangerous one -- remove
+  // the guard, keep the entry, and the exemption hides the defect the rule exists to find.
+  const { ESLint } = await import("eslint");
+  const withReason = (reason: string) => new ESLint({ cwd: root, overrideConfig: [{
+    files: ["**/*.ts"],
+    plugins: { probe: { rules: { "uncontrolled-emptiness": derivedLocalRule } } },
+    rules: { "probe/uncontrolled-emptiness": ["error", { exempt: { "zz-fixture-guarded.test.ts": reason } }] },
+  }] });
+  const code = `import assert from "node:assert/strict";\nimport test from "node:test";\n`
+    + `const GUARD = labCorpusReadable({});\n`
+    + `test("t", () => {\n  if (!GUARD.read) return;\n  const files = walk();\n`
+    + `  const bad = files.filter((f) => f.x);\n  assert.deepEqual(bad, []);\n});\n`;
+  const hits = async (reason: string) => {
+    const [r] = await withReason(reason).lintText(code, { filePath: join(root, "zz-fixture-guarded.test.ts") });
+    return r.messages.filter((m) => m.ruleId === "probe/uncontrolled-emptiness");
+  };
+  assert.deepEqual(await hits("guarded-by labCorpusReadable"), [], "the symbol is in the file, so the exemption stands");
+  const absent = await hits("guarded-by someSymbolNotInTheFile");
+  assert.equal(absent.length, 1);
+  assert.match(absent[0].message, /does not appear in this file/);
 });
