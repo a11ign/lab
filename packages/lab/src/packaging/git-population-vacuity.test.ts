@@ -244,7 +244,13 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "reporting a false pass on the same empty population. Kept as an entry rather than deleted, the "
       + "same as `backlog-ready.test.ts` above, so the record says RETIRED rather than quietly dropped.",
   },
-  "packages/lab/src/packaging/bounded-window-reads.test.ts": {
+  // #1144 MOVED THIS to `packages/lab/nightly/` when its per-node half became an ESLint rule. The
+  // discovery walk (`git ls-files "*.test.ts"`) reaches the new path unchanged; only this KEY was a
+  // path literal, so the table went stale the moment the file moved and CI failed on an ENOENT.
+  //
+  // WORTH KNOWING FOR THE REST OF #908: every conversion that relocates a residual breaks any
+  // path-keyed classification naming it, in a file the mover has no reason to open.
+  "packages/lab/nightly/bounded-window-reads.test.ts": {
     guard: "Object.keys(EXPECTED_READERS).filter((file) => !readers.includes(file))",
     note: "guarded — #634. It walks `git ls-files` for every file whose CODE reads `statusCheckRollup` "
       + "off an object and requires each read to narrow the rollup to the newest run per NAME. Vacuity "
