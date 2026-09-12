@@ -214,15 +214,6 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
     note: "guarded — TWO populations in this file (referenced scripts, tsconfig extends targets); this "
       + "is the referenced-scripts one, the stronger of the two",
   },
-  "packages/lab/src/packaging/backlog-ready.test.ts": {
-    guard: null,
-    note: "NO LONGER A GIT POPULATION, 2026-09-06. It used to run the region-diff claim check over "
-      + "unmerged branches, guarded on `branches.length > 0`. The tracker moved to GitHub Issues, "
-      + "`docs/backlog-ready.md` became a signpost, and the file was rewritten to assert that the issue "
-      + "TEMPLATE requires the three fields the page used to carry. It shells no git and has no "
-      + "population to be vacuous over. Kept as an entry rather than deleted so the classification "
-      + "records that the guard was RETIRED WITH ITS SUBJECT rather than quietly dropped.",
-  },
   "packages/lab/src/packaging/action-reference.test.ts": {
     guard: null,
     note: "RETIRED WITH ITS SUBJECT, 2026-09-11 (#954). The file is deleted: `action-reference`'s rule "
@@ -347,16 +338,6 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
     note: "guarded — #492's `git ls-files '*.ts' '*.mjs'` walk for every file mentioning npx/npm as a call "
       + "argument, floored at 20 against the known census of ~26 (23 real spawns plus 3 files carrying "
       + "documented data-not-a-spawn exemptions)",
-  },
-  "packages/lab/src/packaging/claude-md-content-preservation.test.ts": {
-    guard: "removed,\n    [norm(",
-    note: "#633: joined this classification when `diff` did. `claudeMdDiff()` runs a real `git diff "
-      + "origin/main -- CLAUDE.md` and CAN be empty by construction (on trunk-guard, or a PR that never "
-      + "touches CLAUDE.md, HEAD legitimately equals origin/main) -- but the file's own header already "
-      + "gets this right: the extraction logic (`removedSubstantiveLines`) is proven against a SYNTHETIC "
-      + "diff built in the test, so the mechanism is exercised whether or not the real diff has anything "
-      + "in it. The guard quoted is that synthetic-fixture assertion, not the real-diff test, which is "
-      + "deliberately allowed to examine nothing and say so.",
   },
   "packages/lab/src/packaging/checkout-dash-safety.test.ts": {
     guard: "files.length > 100",
