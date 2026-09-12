@@ -11,6 +11,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { readFileSync } from "node:fs";
+
 import { REAL_PAGES } from "./real-page-corpus.mjs";
 
 const configured = REAL_PAGES.filter((page: { formState?: unknown }) => page.formState !== undefined);
@@ -69,8 +71,77 @@ test("no configured state COMPLETES a form", () => {
     + "owns.");
 });
 
+// ---------------------------------------------------------------------------------------------------
+// #1114: CONSENT AND PROBE ARE ONE DECISION, and the corpus had them apart.
+//
+// `formState` is the consent; `probeForms` is what makes a capture drive the form. One without the other
+// is either a declaration that does nothing (consent, no probe -- the state this row found) or the thing
+// the guard above already forbids (probe, no consent). **Both directions, because a guard that catches
+// one is half a comparison.**
+// ---------------------------------------------------------------------------------------------------
+
+const probed = (REAL_PAGES as { url: string; probeForms?: unknown; formState?: unknown }[])
+  .filter((page) => page.probeForms === true);
+
+test("#1114: a page carrying formState also carries probeForms — consent without the probe does nothing", () => {
+  const consentedButUnprobed = (configured as { url: string; probeForms?: unknown }[])
+    .filter((page) => page.probeForms !== true).map((page) => page.url);
+  assert.deepEqual(consentedButUnprobed, [],
+    "these record consent to submit and are never submitted, so no capture reaches the status message "
+    + "4.1.3 needs. Consent is not the expensive half -- the probe is -- and declaring one without the "
+    + `other is a decision nobody made: ${consentedButUnprobed.join(", ")}`);
+});
+
+test("#1114: and probeForms is only ever set WITH a formState — the other direction", () => {
+  const probedWithoutConsent = (probed as { url: string; formState?: unknown }[])
+    .filter((page) => page.formState === undefined).map((page) => page.url);
+  assert.deepEqual(probedWithoutConsent, [],
+    "these would press submit with no values supplied, which is the thing ADR 0024 says makes submitting "
+    + `acceptable in the first place: ${probedWithoutConsent.join(", ")}`);
+});
+
+test("#1114: probeForms may only be set on an INVITED origin — asserted by origin, never by heuristic", () => {
+  // THE CLAUSE THAT MUST NOT WEAKEN. Setting this key is what causes a POST to a stranger's server --
+  // this file's first line -- so it is held the same way `formState` is: an explicit list of origins
+  // whose own published purpose is that people submit the form, not a rule like "looks like a demo".
+  const uninvited = (probed as { url: string }[])
+    .filter((page) => !INVITED.some((prefix) => page.url.startsWith(prefix))).map((page) => page.url);
+  assert.deepEqual(uninvited, [],
+    `these would submit a form on a site nobody invited us to: ${uninvited.join(", ")}`);
+});
+
+test("#1114: a consented page's before/after TWIN is shipped, or its absence is declared", () => {
+  // #32's evidence is a PAIR: the conformant page announced "Submission Failed" and the inaccessible twin
+  // filled ZERO fields because its controls have no accessible names. Only the conformant half shipped,
+  // and a positive with no negative is the starvation shape `corpus:starvation` exists to catch.
+  //
+  // The twin carries NO consent and NO probe, which is not an oversight: the guard above already rules
+  // that a formState belongs on the conformant half, because submitting the broken twin would send an
+  // empty form. The evidence it carries is that the fields cannot be filled, which needs no submission.
+  const urls = new Set(REAL_PAGES.map((page: { url: string }) => page.url));
+  const source = readFileSync(new URL("./real-page-corpus.mjs", import.meta.url), "utf8");
+  const missing = (configured as { url: string }[])
+    .filter((page) => page.url.includes("/after/"))
+    .map((page) => page.url.replace("/after/", "/before/"))
+    .filter((twin) => !urls.has(twin))
+    // DECLARED ABSENCE COUNTS, and it has to be the absence that is declared rather than the subject:
+    // the twin's own URL must appear in the corpus file's prose. `before/survey.html` is already an eval
+    // TEST fixture -- `real-page-corpus.test.ts` refused it when I added it -- so under ADR 0010 shipping
+    // it here would train on a held-out page. The declaration is where that reasoning lives.
+    .filter((twin) => !source.includes(twin));
+  assert.deepEqual(missing, [],
+    "these consented pages have no inaccessible twin in the corpus AND no note saying why, so a capture "
+    + `round over them produces a positive with no negative and nothing records that: ${missing.join(", ")}`);
+});
+
 test("the guard can see something, or it proves nothing", () => {
   assert.ok(configured.length > 0,
     "no real page carries a formState — either 4.1.3's grounding was removed, or this test is reading "
     + "the wrong field and would pass over anything");
+  // #1114: AND THE SAME FOR THE PROBE. Three of the four clauses above are `deepEqual(x, [])`, which an
+  // empty `probed` satisfies by construction -- so without this, removing every `probeForms` from the
+  // corpus reads as four green guards rather than as the state this row exists to end.
+  assert.ok(probed.length > 0,
+    "no real page is probed, so every probeForms clause above is vacuous — that is the state #1114 "
+    + "found, and it must not be able to return silently");
 });
