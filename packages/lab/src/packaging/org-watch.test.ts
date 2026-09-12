@@ -22,6 +22,7 @@ import assert from "node:assert/strict";
 import {
   METRICS, EXIT, figure, passRate, renderFigure, renderTable, totalCount, mainColour,
   firstFailingAssertion, byConclusion, queueReport, utilisation, boardDeadline, watchReport,
+  redWindows, redHoursFigure,
 } from "../../../../scripts/org-watch.mjs";
 
 const metric = (key: string) => METRICS.find((m) => m.key === key)!;
@@ -148,7 +149,7 @@ test("#912: a green main is quiet -- the watch says nothing and exits 0", () => 
   });
   const colour = mainColour({ repo: "o/r", now: new Date("2026-09-12T04:00:00Z"), run });
   assert.deepEqual(colour, { readable: true, red: false, since: null, hours: null, atLeast: false,
-    firstFailing: null, why: null });
+    firstFailing: null, why: null, windows: [], examined: 1, pageBeginsMidRed: false });
   assert.equal(EXIT.QUIET, 0, "and silence is exit 0, so an hourly job that finds nothing costs nothing");
 });
 
@@ -312,13 +313,143 @@ test("#912 READ 4: the board summary is quiet before 06:15, urgent after it, and
 
 test("#912: the watch is SILENT when clean -- the property that makes 24 runs a day affordable", () => {
   const green = { readable: true, red: false, since: null, hours: null, atLeast: false,
-    firstFailing: null, why: null };
+    firstFailing: null, why: null, windows: [], examined: 0, pageBeginsMidRed: false };
   assert.deepEqual(watchReport({ colour: green }), [], "a quiet hour must cost a reader nothing");
   const red = { readable: true, red: true, since: "2026-09-11T00:12:00Z", hours: 27.8, atLeast: false,
-    firstFailing: "not ok 41 - x", why: null };
+    firstFailing: "not ok 41 - x", why: null, windows: [], examined: 0, pageBeginsMidRed: false };
   const lines = watchReport({ colour: red });
   assert.equal(lines.length, 1);
   assert.match(lines[0], /27\.8h/);
   assert.match(lines[0], /not ok 41 - x/, "and the assertion, never the job name");
   assert.equal(EXIT.ATTENTION, 1, "so an hour with something in it exits non-zero");
+});
+
+// --- #1047: MAIN'S COLOUR IS A SEQUENCE, NOT A SAMPLE ---
+//
+// Tonight's red lasted 19.9 minutes against a first read specified as HOURLY -- roughly a 1-in-3 chance of
+// overlapping any given sample. product-manager's own 30-minute clock read green at 03:43Z, the red became
+// knowable at 03:59:19Z, and their 04:13Z reading reported it three minutes AFTER a person had found it by
+// hand. A sampling watch that misses produces a GREEN RECORD across a window in which main was broken, and
+// "silent when clean" and "silent because it did not look" render identically in a log.
+
+test("#1047 ACCEPTANCE: a red that opened and closed entirely BETWEEN two reads is still reported", () => {
+  // The case a sampling read returns green for, and the reason this row exists. `mainColour.red` is false
+  // here and correct -- main IS green now -- and the window is still the thing the reader needs.
+  const runs = [
+    { conclusion: "success", created_at: "2026-09-12T04:19:00Z" },
+    { conclusion: "failure", created_at: "2026-09-12T03:52:00Z" },
+    { conclusion: "success", created_at: "2026-09-12T03:16:00Z" },
+  ];
+  const colour = mainColour({ repo: "o/r", now: new Date("2026-09-12T05:00:00Z"),
+    run: () => JSON.stringify({ workflow_runs: runs }) });
+  assert.equal(colour.red, false, "main IS green now -- and that was never the whole question");
+  assert.deepEqual(colour.windows, [{ since: "2026-09-12T03:52:00Z", until: "2026-09-12T04:19:00Z",
+    hours: 0.5, open: false }]);
+  assert.equal(colour.examined, 3, "and how many settled runs it read, since a quiet week is not a clean one");
+});
+
+test("#1047: TWO breaks in one interval are two windows, not one", () => {
+  const runs = [
+    { conclusion: "success", created_at: "2026-09-12T06:00:00Z" },
+    { conclusion: "failure", created_at: "2026-09-12T05:00:00Z" },
+    { conclusion: "success", created_at: "2026-09-12T04:00:00Z" },
+    { conclusion: "failure", created_at: "2026-09-12T03:00:00Z" },
+    { conclusion: "success", created_at: "2026-09-12T02:00:00Z" },
+  ];
+  const { windows, examined } = redWindows(runs, new Date("2026-09-12T07:00:00Z"));
+  assert.equal(windows.length, 2, "a reader told `1 window` would go looking for one cause");
+  assert.deepEqual(windows.map((w) => w.hours), [1, 1]);
+  assert.equal(examined, 5);
+});
+
+test("#1047: a window STILL OPEN at the read counts to now and SAYS SO -- the worst state must not "
+  + "report as the best", () => {
+  // product-manager's edge. Summed naively an unclosed window contributes zero, or is dropped for having
+  // no close; either way main being red RIGHT NOW reads as a clean sheet.
+  const runs = [
+    { conclusion: "failure", created_at: "2026-09-12T04:00:00Z" },
+    { conclusion: "success", created_at: "2026-09-12T03:00:00Z" },
+  ];
+  const read = redWindows(runs, new Date("2026-09-12T05:30:00Z"));
+  assert.deepEqual(read.windows, [{ since: "2026-09-12T04:00:00Z", until: null, hours: 1.5, open: true }]);
+  const figure = redHoursFigure(read);
+  assert.equal(figure.value, "1.5", "counted to the read time, not dropped");
+  assert.match(figure.note, /STILL OPEN at the read/,
+    "and the LINE says it -- `3 windows, 0.9 hours` and `… the last still open` are different instructions");
+});
+
+test("#1047: an IN-FLIGHT run neither opens nor closes a window", () => {
+  const runs = [
+    { conclusion: null, created_at: "2026-09-12T04:30:00Z" },
+    { conclusion: "failure", created_at: "2026-09-12T04:00:00Z" },
+    { conclusion: "success", created_at: "2026-09-12T03:00:00Z" },
+  ];
+  const read = redWindows(runs, new Date("2026-09-12T05:00:00Z"));
+  assert.equal(read.windows.length, 1);
+  assert.equal(read.windows[0].open, true, "the in-flight run does not close it -- it is not a success");
+  assert.equal(read.examined, 2, "and it is not counted as examined, because it settled nothing");
+});
+
+test("#1047: the weekly figure is the SUM of the windows and names its denominator -- a single current "
+  + "window is the sampling assumption one layer up", () => {
+  // It would report 0 for a night with three breaks all fixed before the weekly read.
+  const runs = [
+    { conclusion: "success", created_at: "2026-09-12T06:00:00Z" },
+    { conclusion: "failure", created_at: "2026-09-12T05:00:00Z" },
+    { conclusion: "success", created_at: "2026-09-12T04:00:00Z" },
+    { conclusion: "failure", created_at: "2026-09-12T03:30:00Z" },
+    { conclusion: "success", created_at: "2026-09-12T03:00:00Z" },
+  ];
+  const figure = redHoursFigure(redWindows(runs, new Date("2026-09-12T07:00:00Z")));
+  assert.equal(figure.value, "1.5", "1 hour plus 0.5, not the current window and not the newest");
+  assert.match(figure.note, /2 window\(s\) across 5 settled run\(s\) examined/,
+    "A GAP IN THE RUNS IS NOT GREEN -- trunk-guard runs on merges, so a week with few merges has few "
+    + "conclusions to read and must say so rather than presenting a quiet sheet as a clean one");
+  assert.doesNotMatch(figure.note, /STILL OPEN/);
+});
+
+test("#1047: no settled runs at all is zero windows over zero examined, and the note says the zero", () => {
+  // The clean output of a question nobody could ask. `0 windows across 0 runs` is a different report from
+  // `0 windows across 500 runs`, and only the second is a clean sheet.
+  const figure = redHoursFigure(redWindows([{ conclusion: null, created_at: "2026-09-12T04:00:00Z" }],
+    new Date("2026-09-12T05:00:00Z")));
+  assert.equal(figure.value, "0");
+  assert.match(figure.note, /0 window\(s\) across 0 settled run\(s\) examined/);
+});
+
+test("#1049 ACCEPTANCE: a page that BEGINS MID-RED reports a lower bound, in the VALUE and not only the "
+  + "note -- the clip understates threefold in the direction that looks better", () => {
+  // worker-capture's finding, and the fixture is theirs: the same history read two ways. `redWindows`
+  // opens at the first `failure` it can SEE, so when the run that actually opened the window is off the
+  // end of `per_page=20` the window starts at the page edge instead.
+  const whole = [
+    { conclusion: "success", created_at: "2026-09-12T05:00:00Z" },
+    { conclusion: "failure", created_at: "2026-09-12T00:00:00Z" },
+    { conclusion: "failure", created_at: "2026-09-11T14:00:00Z" },
+    { conclusion: "success", created_at: "2026-09-11T13:00:00Z" },
+  ];
+  const truncated = whole.slice(0, 2); // the page edge falls mid-red
+  const now = new Date("2026-09-12T06:00:00Z");
+
+  const full = redHoursFigure(redWindows(whole, now));
+  assert.equal(full.value, "15", "the whole history: red from 14:00 to 05:00");
+  assert.doesNotMatch(full.note, /MID-RED/, "a page that starts on a success is not a bound");
+
+  const clipped = redHoursFigure(redWindows(truncated, now));
+  assert.equal(clipped.value, "at least 5",
+    "THREE TIMES understated, on a metric whose target is 0 -- so the NUMBER says it is a bound, because "
+    + "the number is what gets quoted");
+  assert.match(clipped.note, /BEGINS MID-RED/);
+  // AND THE DENOMINATOR IS NOT THE WARNING. "1 window across 2 settled runs" is exactly what a quiet week
+  // looks like, which is why the bound cannot be left to a reader comparing counts.
+  assert.match(clipped.note, /1 window\(s\) across 2 settled run\(s\)/);
+});
+
+test("#1049: the bound is named `pageBeginsMidRed`, not `atLeast` -- same cause, different claim", () => {
+  // `mainColour.atLeast` already means "no success in the page, so the STREAK may be older than it looks".
+  // One object cannot carry both under one name, and typescript said so the moment they met.
+  const read = redWindows([{ conclusion: "failure", created_at: "2026-09-12T00:00:00Z" }],
+    new Date("2026-09-12T01:00:00Z"));
+  assert.equal(read.pageBeginsMidRed, true);
+  assert.equal("atLeast" in read, false, "the streak's word must not be borrowed for a different claim");
 });

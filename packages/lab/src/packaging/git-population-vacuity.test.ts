@@ -102,6 +102,17 @@ function discoverGitPopulationTests(): string[] {
  * still literally appear in the file's source below), or `null` with a stated reason no guard applies.
  */
 const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
+  "packages/lab/src/packaging/fixture-absence-guard.test.ts": {
+    guard: "tree.files.length > 500",
+    note: "guarded twice, and the file count alone was not enough. A clean result is the EXPECTED answer "
+      + "here -- every declared symbol is absent from the working tree -- so 'nothing leaked' and 'the "
+      + "walk read no files' are the same observation, which the count floor separates. But the count "
+      + "does not say WHICH tree was read: pointing the walk at `origin/main` instead turned 0 red, "
+      + "because the symbols are absent from both. The positive control is a marker present in that file "
+      + "and not on the base, which the guard must FIND -- and it also forced `--others "
+      + "--exclude-standard`, since plain `ls-files` is blind to the untracked file most likely to carry "
+      + "a fresh leak. Its `ls-files` scrubs `GIT_*` through `sandboxGitEnv()` for the usual reason.",
+  },
   "packages/lab/src/gates/unexaminable-declaration.test.ts": {
     guard: "found.size >= 20",
     note: "guarded -- #1030's sweep spawns `git grep -l -F` once per path-like token in lab-job.yml, "
