@@ -34,9 +34,18 @@ test("the workflow triggers on push to main, alongside its existing pull_request
   assert.deepEqual(doc.on.push?.branches, ["main"]);
 });
 
-test("update-branch only runs on the push event, never on a pull_request event", () => {
+test("#1094 update-branch runs on push AND on auto_merge_enabled, never on opened, synchronize or ready_for_review", () => {
+  // A merge landing and a PR being armed are the two inputs of `updateBranchDecision`; `push` covers the
+  // first and `auto_merge_enabled` is when the second flips. Pinned against #1080's real ordering on
+  // 2026-09-12 -- ReadyForReview 10:28:13Z, AutoMergeEnabled 10:28:23Z -- so a trigger on ready_for_review
+  // alone reads "not armed" ten seconds too early and reproduces the 57-minute deadlock with a second event.
   const doc = loadDoc();
-  assert.equal(doc.jobs["update-branch"]?.if, "github.event_name == 'push'");
+  const cond = String(doc.jobs["update-branch"]?.if ?? "");
+  assert.match(cond, /github\.event_name == 'push'/);
+  assert.match(cond, /github\.event\.action == 'auto_merge_enabled'/);
+  assert.doesNotMatch(cond, /opened|synchronize|ready_for_review/);
+  const types = (doc as { on?: { pull_request?: { types?: string[] } } }).on?.pull_request?.types ?? [];
+  assert.ok(types.includes("auto_merge_enabled"), "the workflow must subscribe to auto_merge_enabled");
 });
 
 test("update-branch reads A11IGN_BOT_TOKEN through an env: mapping, never as a CLI argument", () => {
