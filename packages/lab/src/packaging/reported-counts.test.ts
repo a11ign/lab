@@ -73,7 +73,6 @@ const REPORTED_FLOOR =
 const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "acceptance-commands.test.ts: files.length",
   "action-inputs.test.ts: inputs.length",
-  "backlog-lifecycle.test.ts: STRUCK.length",
   "board-liveness.test.ts: named.length",
   "candidate-gate-examines-the-candidate.test.ts: stages.length",
   "changed-files-renames.test.ts: scanned",
@@ -81,7 +80,6 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "checkout-dash-safety.test.ts: files.length",
   "ci-changed.test.ts: map.size",
   "ci-changed.test.ts: packages.length",
-  "claude-md-counts.test.ts: files.length",
   "commands-documented.test.ts: scripts.length",
   "control-plane-checkout-is-one-fact.test.ts: sites.length",
   "control-plane-hygiene.test.ts: trap.checked",
