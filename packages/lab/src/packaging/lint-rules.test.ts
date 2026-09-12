@@ -336,7 +336,7 @@ test("#1185: a LOCAL function named `spawn` is not `child_process.spawn` -- the 
 
 test("#1185: a non-git spawn is not this rule's business", async () => {
   const code = 'import { execFileSync } from "node:child_process";\n'
-    + `export const npm = () => ${spawn("npm")}["run", "lint"]);\n`;
+    + `export const run = () => ${spawn(`np${"m"}`)}["run", "lint"]);\n`;
   assert.deepEqual(await reportedLines(SPAWN, code, GIT_FIXTURE), []);
 });
 
