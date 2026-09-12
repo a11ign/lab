@@ -206,10 +206,12 @@ test("MUTATION TARGET (#404/#415): removing `reopened` or `synchronize` from the
   const doc = parseYaml(readFileSync(WORKFLOW, "utf8")) as {
     on: { pull_request: { types: string[] } },
   };
-  assert.equal(doc.on.pull_request.types.length, 4,
-    "exactly four trigger types (opened, ready_for_review, reopened, synchronize) -- if this grows or "
-    + "shrinks without the tests above changing, something was added or removed without being reasoned "
-    + "about here");
+  // #1094 added `auto_merge_enabled`, reasoned in auto-arm-update-branch.test.ts: it is the event on
+  // which update-branch's "is it armed" input flips, and `arm` is excluded from it by its own `if`.
+  assert.deepEqual([...doc.on.pull_request.types].sort(),
+    ["auto_merge_enabled", "opened", "ready_for_review", "reopened", "synchronize"],
+    "exactly these five trigger types -- if this grows or shrinks without the tests above changing, "
+    + "something was added or removed without being reasoned about here");
 });
 
 /**
