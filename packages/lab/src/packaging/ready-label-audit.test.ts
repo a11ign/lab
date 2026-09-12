@@ -16,13 +16,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, handClaims, strandedByIncompleteDecline,
-  fetchOpenIssues, fetchOpenIssuesChecked, fetchReportedOpenIssueNumbers, openIssueSetSummary, fetchAllIssues, closedDebris,
+  fetchOpenIssues, fetchOpenIssuesChecked, fetchReportedOpenIssueNumbers, openIssueSetSummary, fetchAllIssues, fetchIssues, closedDebris,
   isClosedDebrisLabel, openRowsAbsentFromBoard, labellessRows,
   readyRowsAlreadyMerged, fetchClosingPrRefs, fetchLatestReopenedAt, CHECKS, runCheck, isProjectsCredentialGap,
   fetchClosedUnmergedPrs, fetchClosingIssueRefs, soleUnmergedCloserRows,
   criterionStatusesFromSource, criterionOwningRow, coverageTrackerDisagreements, fetchClosedCompletedIssues,
   reachableCriteriaWithoutRow, provenanceVerdicts, provenanceFindings,
 } from "../../../../scripts/ready-label-audit.mjs";
+import { stripComments } from "@a11ign/evidence/source-text";
 import { ARM_LABELS_FROM } from "../../../../scripts/claim-provenance.mjs";
 // #782: `isClosedDebrisLabel` now DERIVES from this, rather than pinning the two equal with a separate
 // test -- so this import is the proof the derivation actually happened, not a second, parallel check.
@@ -466,13 +467,115 @@ test("MUTATION: fetchAllIssues throwing gh failure is a thrown error naming the 
   assert.throws(() => fetchAllIssues({ run }), /could not list all issues/);
 });
 
-test("MUTATION: a listing returned AT the real 500-row limit is refused, not read as complete", async () => {
-  // #378's own header: 51 open + 174 closed already exceeded the audit's OLD 200-row cap once read
-  // together. A result exactly AT the requested limit is indistinguishable from a truncated one.
-  const { fetchIssues } = await import("../../../../scripts/ready-label-audit.mjs");
-  const run = () => JSON.stringify(
-    Array.from({ length: 500 }, (_unused, i) => ({ number: i, title: "t", labels: [], state: "OPEN" })));
-  assert.throws(() => fetchIssues({ run, state: "all" }), /exactly the requested limit \(500\)/);
+// -----------------------------------------------------------------------------------------------------
+// #1090: THE WALK ENDS ON A SHORT PAGE, NEVER ON A LITERAL.
+//
+// The closed-issue check went dark the day this repo crossed 500 issues and refused, correctly, every
+// night after. The refusal was right; the fix is not a bigger number. Measured 2026-09-12 while building
+// this: 472 closed + 59 open = 531 issues, 555 closed PRs.
+//
+// EVERY ASSERTION BELOW DRIVES `fetchIssues`/`fetchClosedUnmergedPrs` THEMSELVES, with a `run` that
+// answers the `--limit` it is actually handed, because a stub returning a fixed array would pass whether
+// the walk exists or not -- it would be testing the mapper.
+// -----------------------------------------------------------------------------------------------------
+
+/**
+ * A `gh` that holds `total` rows and honours `--limit` the way the real CLI does: it returns the first
+ * `limit` of them, so a request larger than the population comes back SHORT. It records every argv.
+ */
+function ghWithPopulation(total: number, calls: string[][] = []) {
+  const run = (_cmd: string, args: string[]) => {
+    calls.push(args);
+    const limit = Number(args[args.indexOf("--limit") + 1]);
+    return JSON.stringify(Array.from({ length: Math.min(limit, total) },
+      (_unused, i) => ({ number: i, title: "t", labels: [], state: "OPEN", mergedAt: null })));
+  };
+  return { run, calls };
+}
+
+test("#1090 ACCEPTANCE: a population LARGER than the first ask is read WHOLE, not truncated at it", () => {
+  // 531 is the real population that put this check in the dark, and 500 was the literal it died on.
+  const calls: string[][] = [];
+  const { run } = ghWithPopulation(531, calls);
+  const issues = fetchIssues({ run, state: "all" });
+
+  assert.equal(issues.length, 531,
+    "the walk must return the whole population -- stopping at the first ask is the defect #1090 is");
+  assert.deepEqual([...new Set(issues.map((i) => i.number))].length, 531,
+    "and every row distinct, so a repeated page could not be mistaken for progress");
+});
+
+test("#1090: the ARGV is what carries the walk -- asserted, not assumed", () => {
+  // A flag nobody reads and an extra var nobody reads are the same defect. The walk lives entirely in
+  // what `gh` is called with, so that is what gets pinned.
+  const calls: string[][] = [];
+  const { run } = ghWithPopulation(531, calls);
+  fetchIssues({ run, state: "all" });
+
+  const limits = calls.map((args) => Number(args[args.indexOf("--limit") + 1]));
+  assert.deepEqual(limits, [500, 1000],
+    "it must ASK AGAIN, larger, after a full page -- one call means it never walked");
+  for (const args of calls) {
+    assert.deepEqual(args.slice(0, 2), ["issue", "list"], "still the issue listing");
+    assert.equal(args[args.indexOf("--state") + 1], "all",
+      "and still `--state all` on every page -- a walk that narrows its own question mid-way is worse "
+      + "than one that stops early, because the pages then answer different questions");
+    assert.equal(args[args.indexOf("--json") + 1], "number,title,labels,state",
+      "and the same fields, or the later pages map to a different shape");
+  }
+});
+
+test("#1090: a genuinely truncated read STILL REFUSES -- the guard is not deleted, it is relocated", () => {
+  // THE DIRECTION THAT MATTERS. The existing guard's whole value is that it never reports a partial
+  // count as a complete one, and paging must not quietly remove that. A `gh` that returns a full page
+  // FOREVER is exactly a source that cannot prove completeness, and it must raise rather than hand back
+  // whatever it has.
+  const run = (_cmd: string, args: string[]) => {
+    const limit = Number(args[args.indexOf("--limit") + 1]);
+    return JSON.stringify(Array.from({ length: limit },
+      (_unused, i) => ({ number: i, title: "t", labels: [], state: "OPEN" })));
+  };
+  assert.throws(() => fetchIssues({ run, state: "all" }), (error: Error) => {
+    assert.match(error.message, /LOWER BOUND, not a total/,
+      "and it must say WHICH it is: a ceiling reached is a lower bound, never an answer");
+    assert.doesNotMatch(error.message, /Raise the limit\./,
+      "the old advice was the defect -- a bigger literal reproduces this exactly, later and quieter");
+    return true;
+  });
+});
+
+test("#1090: the closed-PR read walks too — it had NO truncation guard at all, which fails quiet", () => {
+  // The two `--limit 1000` reads were worse than the 500 that went dark: they had no `=== limit` check,
+  // so passing the cap would have silently shortened the population instead of refusing. Measured
+  // 2026-09-12: 555 closed PRs, over half way to a cap nothing was watching.
+  const calls: string[][] = [];
+  const { run } = ghWithPopulation(555, calls);
+  const prs = fetchClosedUnmergedPrs({ run });
+
+  assert.equal(prs.length, 555, "every closed PR, across pages -- these are all unmerged in the fixture");
+  assert.deepEqual(calls.map((args) => Number(args[args.indexOf("--limit") + 1])), [500, 1000],
+    "by the same walk, not a second copy of it");
+});
+
+test("#1090: NO hand-set page cap survives in the source — all four call sites, not the one that hurt", () => {
+  // A fix applied at ONE call site when the behaviour reaches several is this repo's most expensive
+  // recurring shape. The row named three (`fetchIssues`' 500 and two `1000`s); building it found a
+  // FOURTH at `fetchClaimActivity`, an unguarded `--limit 100` on open PRs whose under-read would have
+  // RELEASED live claims rather than refusing.
+  //
+  // Read through `stripComments`, because this file's prose quotes the caps it removed -- the comment
+  // directly above this one contains `1000` and `100`, and a bare text scan would count them.
+  const source = stripComments(readFileSync(
+    new URL("../../../../scripts/ready-label-audit.mjs", import.meta.url), "utf8"));
+  const literalLimits = [...source.matchAll(/"--limit",\s*"(\d+)"/g)].map((m) => m[1]);
+  assert.deepEqual(literalLimits, [],
+    `hand-set --limit literals survive in ready-label-audit.mjs: ${literalLimits.join(", ")}. `
+    + "Every listing goes through the shared walk, or the next one goes dark on its own schedule");
+
+  // THE CONTROL on that pattern: it must still be able to see one, or the assertion above passes
+  // because the regex narrowed rather than because the source is clean.
+  assert.match('run("gh", ["pr", "list", "--limit", "100"])', /"--limit",\s*"(\d+)"/,
+    "the cap pattern cannot see a cap -- the assertion above would then be vacuous");
 });
 
 test("MUTATION: reverting fetchAllIssues to request --state open loses every closed row again", () => {
