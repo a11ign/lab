@@ -12,6 +12,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripComments } from "@a11ign/evidence/source-text";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import {
   regionPathsFromBody, extractRegionSection, declaredRegionFiles, regionCovers, rootFilesOnMain,
@@ -341,11 +342,70 @@ test("#999: #975's root-level files still resolve, and `.`/`..` still declare no
  * that `git` cannot answer about at all, which is the situation being claimed — a stub would prove the
  * branch is reachable, not that git's refusal reaches it.
  */
+/**
+ * #1081: DOES THIS CHECKOUT HAVE `origin/main` AT ALL?
+ *
+ * `actions/checkout` fetches the pull request's merge ref and its base -- not the remote-tracking
+ * `origin/main` these assertions name. `rootFilesOnMain()` loops `["origin/main", "HEAD"]`, so with the
+ * first absent the second answers correctly and **the tests below fail on the checkout rather than on the
+ * code**. Measured on #1080, where `docs` reported both as failures of a PR that touches neither file.
+ *
+ * THE CORRECT SHAPE WAS ALREADY FOUR LINES BELOW ONE OF THEM: `#995: the reading is a SHAPE` accepts
+ * `"origin/main" | "HEAD" | null`. Two assertions in one file disagreeing about what a legitimate reading
+ * looks like -- and it is three now, counting the memo test's closing line.
+ *
+ * ASKED BY A ROUTE THE SUBJECT DOES NOT USE (#1064's rule): `rootFilesOnMain` runs `git ls-tree`, this
+ * runs `git rev-parse --verify`. A defect in one cannot silence the other.
+ */
+const REPO_ROOT = fileURLToPath(new URL("../../../..", import.meta.url));
+
+const defaultRevParse = (): void => {
+  execFileSync("git", ["rev-parse", "--verify", "--quiet", "origin/main"],
+    { cwd: REPO_ROOT, encoding: "utf8", env: sandboxGitEnv(), stdio: ["ignore", "pipe", "pipe"] });
+};
+
+export function originMainReadable(
+  { run = defaultRevParse }: { run?: () => void } = {},
+): boolean {
+  // THE CATCH IS NARROWED TO WHAT GIT SAYS, and that is not fastidiousness. My first version caught
+  // everything and returned `false` -- and `REPO` was not defined in this file, so a **ReferenceError**
+  // became the verdict "this checkout has no origin/main". Both source assertions silently skipped in a
+  // checkout that has one, and the suite went green. **A catch that turns a coding error into an
+  // environment verdict is the defect this row is about, committed inside its own fix.**
+  try {
+    run();
+    return true;
+  } catch (error) {
+    if (typeof (error as { status?: number }).status !== "number") throw error;
+    return false;
+  }
+}
+
+/**
+ * Reported at RUN time, never as a `{ skip }` option: a skipped test is invisible in an ordinary run and
+ * reads as "not applicable", and this one is skipped for a reason a reader needs. The message scopes
+ * itself, because only the SOURCE assertion is conditional -- the rest of each test still runs.
+ */
+export function sourceAssertionSkipped(
+  { readable = originMainReadable, warn = console.error }:
+    { readable?: () => boolean; warn?: (s: string) => void } = {},
+): boolean {
+  if (readable()) return false;
+  warn("SKIPPED, the `origin/main` source assertion only (this checkout has no remote-tracking "
+    + "`origin/main`, as a CI checkout does not): `rootFilesOnMain` falls through to HEAD, which is "
+    + "correct. The rest of this test still ran.");
+  return true;
+}
+
 test("#995: a successful reading names the ref that answered", () => {
   const reading = rootFilesOnMain();
-  assert.equal(reading.source, "origin/main",
-    "this checkout has origin/main, so the first source must be the one reported -- a fallback here would "
-    + "mean the reader silently answered from somewhere else");
+  if (!sourceAssertionSkipped()) {
+    assert.equal(reading.source, "origin/main",
+      "this checkout HAS origin/main, so the first source must be the one reported -- a fallback here "
+      + "would mean the reader silently answered from somewhere else");
+  }
+  // NOT conditional: whichever ref answered, a real reading names the repository's root files. Losing this
+  // to an environment check would be the cure killing the patient.
   assert.ok(reading.files.has("package.json"));
 });
 
@@ -375,7 +435,103 @@ test("#995: a failed reading is NOT memoised -- one bad moment must not be perma
     rmSync(nowhere, { recursive: true, force: true });
   }
   const afterwards = rootFilesOnMain();
-  assert.equal(afterwards.source, "origin/main",
+  if (!sourceAssertionSkipped()) {
+    assert.equal(afterwards.source, "origin/main",
+      "the failure was cached: every root file would stay undeclarable for the life of this process");
+  }
+  // THE MEMO CLAIM ITSELF IS NOT CONDITIONAL, and this is the assertion that carries it: a cached failure
+  // would return the empty set here whatever ref answered. The source line above is about WHICH ref; this
+  // one is about whether the reader retried at all, which is the property the test is named for.
+  assert.ok(afterwards.files.has("package.json"),
     "the failure was cached: every root file would stay undeclarable for the life of this process");
-  assert.ok(afterwards.files.has("package.json"));
+});
+
+test("#1081: the source assertion is conditional and the READING assertion is not", () => {
+  // Driven both ways over the predicate, because a skip proved only by running somewhere that happens to
+  // lack the ref is a skip proved to be QUIET. The two directions are the two environments: a developer
+  // checkout with remote-tracking refs, and CI's, which fetches the PR's merge ref and its base.
+  // DRIVES THE REAL FUNCTION, not a local closure shaped like it. The first version of this test built
+  // its own `skip` and asserted on that -- so making the real `sourceAssertionSkipped` unconditional was
+  // **0 red**. A guard whose only input is a fixture proves the fixture (#1077), and it took a mutation
+  // to see it here too.
+  const said: string[] = [];
+  const warn = (m: string) => said.push(m);
+  assert.equal(sourceAssertionSkipped({ readable: () => true, warn }), false,
+    "with origin/main present the source assertion is REACHED");
+  assert.deepEqual(said, [], "and nothing is announced when nothing was skipped");
+  assert.equal(sourceAssertionSkipped({ readable: () => false, warn }), true,
+    "without it the source assertion is skipped");
+  assert.equal(said.length, 1, "and it SAYS so -- a silent skip reads as 'not applicable'");
+  assert.match(said[0], /The rest of this test still ran/,
+    "and scopes itself, or a reader takes the whole test as skipped");
+
+  // AND THE READABILITY READ ITSELF: a thrown ReferenceError must not become "no origin/main".
+  //
+  // THE ASSERTION THAT WAS HERE FAILED IN CI, AND IT WAS THIS ROW'S OWN DEFECT. It read
+  // `assert.equal(originMainReadable(), true, "this checkout has origin/main...")` -- an assertion about
+  // the MACHINE, in the fix for a row about assertions about the machine. CI has no `origin/main`, so it
+  // failed there and nowhere else, which is the exact failure mode being repaired two functions above.
+  //
+  // It is deleted rather than made conditional: the two injected calls below drive BOTH branches of the
+  // predicate, so the live one added no coverage and one environment assumption. **A test that can only
+  // pass on the author's machine is not a weaker test, it is a different one.**
+  assert.equal(originMainReadable({ run: () => {} }), true, "a clean rev-parse reads as present");
+  assert.equal(originMainReadable({ run: () => { throw Object.assign(new Error("exit 1"), { status: 1 }); } }),
+    false, "and git's own exit-1 reads as absent");
+  assert.throws(() => originMainReadable({ run: () => { throw new ReferenceError("REPO is not defined"); } }),
+    /REPO is not defined/,
+    "a coding error must RETHROW -- my first version caught it and reported 'no origin/main', skipping "
+    + "both assertions in a checkout that has one");
+
+});
+
+test("#1081: the population of environment-asserting guards, stated", () => {
+  // THE SWEEP IS THE ROW, not this file's two lines. Measured 2026-09-12 across
+  // `packages/*/src/**/*.test.ts` by two patterns:
+  //
+  //   assertions comparing a reading's `source` to the literal "origin/main"   2, both in THIS file
+  //   files already carrying a named skip for a missing ref                    1 (row-reachability)
+  //
+  // COUNTED THROUGH `stripComments`, and that is not hygiene -- worker-capture broke the first version by
+  // injecting the exact defect this exists to catch (a real, executable, unguarded
+  // `assert.equal(reading.source, "origin/main", ...)`) alongside a COMMENT merely quoting
+  // `if (!sourceAssertionSkipped()) {`. It read 3 === 3 and passed: 44/0. A comment ANYWHERE in the file
+  // bought an unguarded assertion ANYWHERE in the file, and this file is unusually full of prose quoting
+  // assertion shapes -- including the one deleted two tests above -- so the material was already here.
+  // Reproduced before fixing, red after.
+  //
+  // IT MATCHES THE PAYLOAD, NOT A SPAN, and that is the second thing worker-capture broke. The first
+  // version was `assert\.equal\([^;]*?\.source, "origin\/main"` -- and `[^;]` matches NEWLINES where `.`
+  // does not, so an `assert.equal(` could pair with a `.source` several statements below it as long as no
+  // semicolon intervened. Narrowing that to `[^;\n]*?` fixes the pairing and opens the OPPOSITE hole: a
+  // genuinely unguarded assertion written across two lines then matches nothing and is invisible. Measured
+  // both -- the narrowed version read 44/0 against exactly that injection.
+  //
+  // So the pattern names the two tokens that must be ADJACENT and drops the `assert.equal(` prefix
+  // entirely. There is no span left to mis-pair, and the line break an author happens to insert before
+  // `.source` cannot hide it.
+  //
+  // WHAT THE SWEEP CANNOT SEE, said rather than implied, in two categories:
+  //
+  //   (a) a machine property external to the repository -- a port being free, a corpus present, a worker
+  //       answering. Different environment facts needing different reads, each its own row (#1064).
+  //   (b) THE CHECKOUT'S OWN GIT STATE, which is the category that actually bit #1080 and which (a) does
+  //       NOT cover. Measured here 2026-09-12: of 41 test files under `packages/*/src` that spawn git,
+  //       17 never mention `origin/main` at all, so neither pattern above can reach them. And one NAMED
+  //       instance does mention it in a shape this sweep does not match:
+  //       `pre-push-stale-base.test.ts` asserts `isAncestorOf(PINNED_STALE_BASE, "origin/main")`, whose
+  //       `isAncestorOf` rethrows anything that is not git's exit 1 -- and an absent ref exits 128, so it
+  //       THROWS rather than degrading. Verified both codes in this checkout. It is guarded today only by
+  //       a SHALLOW-CLONE skip, a different predicate answering a neighbouring question. Not fixed here:
+  //       each fact gets its own read and its own row.
+  const text = stripComments(readFileSync(new URL("./region-paths.test.ts", import.meta.url), "utf8"));
+  const unconditional = [...text.matchAll(/\.source,\s*"origin\/main"/g)].length;
+  const guarded = [...text.matchAll(/if \(!sourceAssertionSkipped\(\)\) \{/g)].length;
+  assert.equal(unconditional, guarded,
+    `every "origin/main" source assertion must sit inside the skip: ${unconditional} assertions, `
+    + `${guarded} guards. A new one added outside it fails here rather than in CI`);
+  // THE NON-EMPTINESS CONTROL, not a count -- said out loud so the next reader does not "tighten" it to
+  // `=== 2` and delete the thing that makes the equality above mean anything. If both patterns broke, the
+  // equality would read `0 === 0` and pass; this is the only line that refuses that.
+  assert.ok(guarded >= 2, "and the two this row fixed must still be guarded");
 });
