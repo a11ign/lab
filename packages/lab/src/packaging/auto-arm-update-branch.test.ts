@@ -47,15 +47,35 @@ test("the workflow triggers on push to main, alongside its existing pull_request
 function runsOn(cond: string, ctx: { event_name: string; action: string; draft?: boolean; base?: string }): boolean {
   const TOKENS = /^(?:\s+|github\.event_name|github\.event\.action|github\.event\.pull_request\.draft|github\.event\.pull_request\.base\.ref|true|false|==|!=|&&|\|\||[()]|'[a-z_]*')+$/;
   assert.match(cond, TOKENS, `the if: expression uses only the grammar this evaluator accepts: ${cond}`);
+  const OPERAND = String.raw`(ctx\.\w+|"[^"]*"|true|false)`;
   const js = cond
     .replace(/github\.event\.pull_request\.draft/g, "ctx.draft")
     .replace(/github\.event\.pull_request\.base\.ref/g, "ctx.base")
     .replace(/github\.event_name/g, "ctx.event_name")
     .replace(/github\.event\.action/g, "ctx.action")
     .replace(/'([a-z_]*)'/g, (_m, v: string) => JSON.stringify(v))
-    .replace(/==/g, "===")
-    .replace(/!=/g, "!==");
-  return Boolean(new Function("ctx", `return (${js});`)(ctx));
+    // #1103 clause 7: `==` is GitHub's comparison, which COERCES, not JS's `===`, which does not.
+    .replace(new RegExp(`${OPERAND}\\s*(==|!=)\\s*${OPERAND}`, "g"),
+      (_m, a: string, op: string, b: string) => `${op === "!=" ? "!" : ""}eq(${a}, ${b})`);
+  return Boolean(new Function("ctx", "eq", `return (${js});`)(ctx, githubEquals));
+}
+
+/**
+ * GitHub's documented `==`: same-type values compare directly (strings case-insensitively); different
+ * types are both cast to a number first -- null (an absent context value) -> 0, false -> 0, true -> 1,
+ * a string -> Number(string), NaN for anything non-numeric -- and NaN equals nothing. Only the values the
+ * grammar above admits reach here; that closed grammar is what makes these rules sufficient.
+ */
+function githubEquals(a: unknown, b: unknown): boolean {
+  const x = a === undefined ? null : a;
+  const y = b === undefined ? null : b;
+  if (typeof x === "string" && typeof y === "string") return x.toLowerCase() === y.toLowerCase();
+  if (typeof x === typeof y && x !== null) return x === y;
+  if (x === null && y === null) return true;
+  const num = (v: unknown): number =>
+    v === null ? 0 : typeof v === "boolean" ? (v ? 1 : 0) : typeof v === "number" ? v : Number(v);
+  const nx = num(x); const ny = num(y);
+  return !Number.isNaN(nx) && !Number.isNaN(ny) && nx === ny;
 }
 
 test("#1094 update-branch runs on push AND on auto_merge_enabled, never on opened, synchronize or ready_for_review", () => {
@@ -71,7 +91,8 @@ test("#1094 update-branch runs on push AND on auto_merge_enabled, never on opene
   for (const action of ["opened", "synchronize", "ready_for_review", "reopened"]) {
     assert.equal(runsOn(cond, { event_name: "pull_request", action }), false, `pull_request/${action}: does not run`);
   }
-  assert.equal(runsOn(cond, { event_name: "workflow_dispatch", action: "" }), false, "no third way in");
+  assert.equal(runsOn(cond, { event_name: "workflow_run", action: "" }), true, "#1103 a gate completed: runs");
+  assert.equal(runsOn(cond, { event_name: "workflow_dispatch", action: "" }), false, "no fourth way in");
   const types = (doc as { on?: { pull_request?: { types?: string[] } } }).on?.pull_request?.types ?? [];
   assert.ok(types.includes("auto_merge_enabled"), "the workflow must subscribe to auto_merge_enabled");
 });
@@ -161,4 +182,57 @@ test("#1022 the arm job does NOT run on auto_merge_enabled -- the re-arm loop th
     "the event arm exists for still runs it");
   assert.equal(runsOn(cond, { event_name: "pull_request", action: "ready_for_review", draft: true, base: "main" }), false,
     "a draft is never armed");
+});
+
+const CI_WORKFLOW = `${REPO}.github/workflows/ci.yml`;
+
+test("#1103 clause 3: the workflow subscribes to `ci` completing, by the NAME ci.yml declares, never a second literal", () => {
+  const doc = loadDoc() as Doc & { on: { workflow_run?: { workflows?: string[]; types?: string[] } } };
+  const ciName = (parseYaml(readFileSync(CI_WORKFLOW, "utf8")) as { name?: string }).name;
+  assert.ok(ciName, "ci.yml declares a name:, which is what workflow_run matches on");
+  assert.deepEqual(doc.on.workflow_run?.workflows, [ciName], "workflow_run names ci.yml's own name");
+  assert.deepEqual(doc.on.workflow_run?.types, ["completed"], "a completed run is the gate concluding");
+});
+
+test("#1103 clause 4: the log names a THIRD cause, a gate completing, with the PR it completed for", () => {
+  const doc = loadDoc();
+  const step = (doc.jobs["update-branch"]?.steps ?? []).find((s) => (s.run ?? "").includes("update-branch-sweep.mjs"));
+  const run = step?.run ?? "";
+  assert.match(run, /UPDATE-BRANCH: ran because a gate completed for #\$\{?EVENT_GATE_PR[^}]*\}? \(workflow_run\)/,
+    "the workflow_run cause is named in the log, with the PR");
+  const env = (step?.env ?? {}) as Record<string, string>;
+  assert.equal(env.EVENT_GATE_PR, "${{ github.event.workflow_run.pull_requests[0].number }}");
+  const causes = [...run.matchAll(/UPDATE-BRANCH: ran because ([^"]+)"/g)].map((m) => m[1]);
+  assert.equal(new Set(causes).size, 3, `three distinct causes rendered, got: ${causes.join(" | ")}`);
+});
+
+test("#1103: only update-branch admits workflow_run -- sweep and stalled stay off it, arm too", () => {
+  const doc = loadDoc();
+  const gateDone = { event_name: "workflow_run", action: "" };
+  for (const job of ["sweep", "stalled", "arm"]) {
+    const cond = String(doc.jobs[job]?.if ?? "");
+    assert.ok(cond, `${job} has an if:`);
+    assert.equal(runsOn(cond, gateDone), false, `${job} does not run when a gate completes`);
+  }
+  // and sweep/stalled still run on the events they exist for
+  assert.equal(runsOn(String(doc.jobs.sweep?.if), { event_name: "push", action: "" }), true);
+  assert.equal(runsOn(String(doc.jobs.stalled?.if), { event_name: "pull_request", action: "synchronize" }), true);
+});
+
+test("#1103 clause 7: the evaluator coerces like GitHub -- an absent draft == false is TRUE, and the base clause is not what keeps arm off a push", () => {
+  const onPush = { event_name: "push", action: "" };
+  // The sub-expression GitHub and `===` disagreed on at #1095's head: absent -> null -> 0, false -> 0.
+  assert.equal(runsOn("github.event.pull_request.draft == false", onPush), true, "GitHub's answer, not ===");
+  assert.equal(runsOn("github.event.pull_request.base.ref == 'main'", onPush), false, "0 == NaN is false");
+  // arm's condition AS IT STOOD at 2ed5d225 with the base clause removed: GitHub would have RUN arm on a push.
+  const armWithoutBase = "github.event.pull_request.draft == false && github.event.action != 'auto_merge_enabled'";
+  assert.equal(runsOn(armWithoutBase, onPush), true, "the guard the base clause was silently carrying");
+  // The live condition no longer relies on it.
+  const live = String(loadDoc().jobs.arm?.if ?? "");
+  assert.equal(runsOn(live, onPush), false, "arm stays off push by its own event clause");
+  assert.equal(runsOn(live.replace(" && github.event.pull_request.base.ref == 'main'", ""), onPush), false,
+    "and still off push with the base clause removed");
+  // (GitHub also compares strings case-insensitively; the grammar admits only lowercase literals, so that
+  // rule can never decide an answer here and the grammar refusing 'PUSH' is the assertion that matters.)
+  assert.throws(() => runsOn("github.event_name == 'PUSH'", onPush), "outside the grammar: refused, not guessed");
 });
