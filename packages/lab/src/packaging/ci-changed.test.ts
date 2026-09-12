@@ -711,7 +711,9 @@ test("ci.yml has a gate job needing every scoped job, running even when one of t
   // not deleted: they still run and still report, and `gate-needs.test.ts` asserts each is still a job.
   // The exclusion is a literal BECAUSE it is a decision; everything else is still derived from the file,
   // so a NEW job added tomorrow fails here rather than being silently optional.
-  const NOT_REQUIRED_BY_GATE = ["docs", "board", "acceptance", "ownedPaths"];
+  // #1065: `docs` is DELETED, not merely dropped -- it went red unread on an environment-only failure and
+  // its population runs unscoped in trunk-guard after every merge.
+  const NOT_REQUIRED_BY_GATE = ["board", "acceptance", "ownedPaths"];
   const scopedJobs = Object.keys(doc.jobs)
     .filter((name) => name !== "gate" && !NOT_REQUIRED_BY_GATE.includes(name));
   assert.deepEqual([...gate.needs as string[]].sort(), scopedJobs.sort(),
