@@ -1575,9 +1575,15 @@ test("#1063: check carries B4's OWN output, not a paraphrase of it", () => {
   assert.match(lines.join("\n"), /B4 REFUSES THIS CLAIM/);
 });
 
-test("#1063: no overlap prints NOTHING -- silence is the clean answer, and only the clean one", () => {
-  assert.deepEqual(b4Lines(["docs/"], [{ number: 999, files: ["scripts/x.mjs"] }]), [],
-    "a clear row must not gain a line saying so; the verdict above it already says STARTABLE");
+test("#1063: a CLEAR row says so -- silence would be indistinguishable from B4 not running", () => {
+  // REVERSED by worker-capture's review of #1085, and the argument is better than my original. Printing
+  // nothing when clear made `row-claim check` byte-identical to `row-reachability.mjs` standalone -- while
+  // the verdict right above promises the reader they have the B4 half. Three states now render as three
+  // sentences: refused, could-not-ask, clear.
+  const clear = b4Lines(["docs/"], [{ number: 999, files: ["scripts/x.mjs"] }]);
+  assert.match(clear.join("\n"), /B4: no open pull request holds any file in this row's Region\./);
+  assert.doesNotMatch(clear.join("\n"), /REFUSES|COULD NOT BE ASKED/,
+    "and it must not read as either of the other two");
 });
 
 test("#1063: a failed lookup is INCONCLUSIVE, never 'no overlap'", () => {
@@ -1615,5 +1621,7 @@ test("#1063: the PRINTING is held too -- `b4Lines` perfect and never reached was
   said.length = 0;
   reportB4(1, { write: (s: string) => said.push(s), mine: () => ["docs/"],
     others: () => [{ number: 999, files: ["scripts/x.mjs"] }] });
-  assert.deepEqual(said, [], "and a clear row writes NOTHING -- the control, without which 'always print' passes");
+  assert.equal(said.length, 1, "a clear row also reaches the writer -- three states, three sentences");
+  assert.match(said[0], /no open pull request holds any file/,
+    "and it is the CLEAR sentence, not the refusal -- the control, without which one message passes for all");
 });
