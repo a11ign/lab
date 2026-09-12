@@ -54,3 +54,17 @@ test("#1181: the COUNT is never truncated even when the names are", () => {
   assert.match(out, new RegExp(`${REAL_PAGES.length} of ${REAL_PAGES.length} DECLARED`));
   assert.match(out, /\.\.\. and \d+ more/);
 });
+
+test("#1183: a capture with NO url is UNREADABLE, not missing", () => {
+  // worker-judge on #1183. "Could not ask" and "the answer is no" are different facts, and an absent
+  // `capture.url` was reading as the second -- sending the reader to the fleet for a file on disk.
+  const ages = [
+    ...declaredUrls.map((url) => ({ at: AT, role: "training", url })),
+    { at: AT, role: "training" },
+  ];
+  const out = captureAgeLines(ages).join("\n");
+  assert.match(out, /1 capture\(s\) carry NO url/);
+  assert.match(out, /could not ask.*not.*the answer is no/i);
+  assert.doesNotMatch(out, /DECLARED page\(s\) have NO capture/,
+    "an unreadable entry must not also be counted as a missing page");
+});

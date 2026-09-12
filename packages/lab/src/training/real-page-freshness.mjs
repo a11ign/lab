@@ -68,6 +68,16 @@ const totalDeclared = REAL_PAGES.length;
  * ever enumerates what exists cannot distinguish "not captured" from "not declared". The comparison has to
  * run the other way round — from the DECLARED list, which is the only place that knows a page should exist.
  *
+ * **THE TWO ADDRESSES ARE NOT GUARANTEED EQUAL, and that is the limit of this comparison.** A capture is
+ * written under the DECLARED address, but `capture.url` is the one it LANDED ON -- `real-page-corpus.mjs`'s
+ * own typedef says nothing records where a capture was requested from. So a page that redirects (a slash
+ * added, `http` upgraded, a locale prefix) is named here as having no capture while its capture is on
+ * disk. The direction is safe -- a false alarm, never a false clean -- but the sentence it prints is one
+ * this row taught people to believe, so: **check for a redirect before checking for a capture.**
+ *
+ * The key that cannot drift is `slug(page.url)`, which is what captures are WRITTEN under and is derived
+ * from the declared address by construction. It is not exported today; exporting it is its own row.
+ *
  * @param {readonly string[]} declared every url `REAL_PAGES` names
  * @param {readonly string[]} found every url a capture was read for
  * @returns {string[]} declared urls with no capture, sorted
@@ -105,8 +115,17 @@ export function captureAgeLines(ages) {
   // facts, and printing the second for the first is how this module came to say a half-captured corpus
   // was fresh.
   const urls = ages.flatMap((c) => (typeof c.url === "string" ? [c.url] : []));
+  // AN ENTRY WITH NO URL IS UNREADABLE, NOT MISSING -- worker-judge on #1183, and it is this repo's
+  // most-recorded distinction: "could not ask" must not render as "the answer is no". Without this
+  // branch a capture whose `url` did not survive its write is named as a page nobody captured, which
+  // sends the reader to the fleet for a file that is on disk.
+  const unreadable = ages.length - urls.length;
   if (urls.length > 0) {
     const missing = missingCaptures(REAL_PAGES.map((p) => p.url), urls);
+    if (unreadable > 0) {
+      lines.push(`  *** ${unreadable} capture(s) carry NO url, so they could not be reconciled at all. `
+        + "They are neither present nor missing below -- this is `could not ask`, not `the answer is no`.");
+    }
     if (missing.length > 0) {
       // THE COUNT FIRST, then names, capped. A reader that printed all of them would bury the number in a
       // wall on the run where the number is largest -- and the largest number is the one that matters most.
