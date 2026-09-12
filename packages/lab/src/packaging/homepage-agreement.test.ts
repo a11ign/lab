@@ -23,7 +23,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -34,21 +35,26 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
  *
  * npm's own rule is the derivation — `private: true` is what stops a package being published — so this
  * cannot disagree with what actually ships the way a list of names can.
+ *
+ * `repo` DEFAULTS to this checkout and is a parameter for one reason: the silent-drop test below has to
+ * drive THIS function over a package that states no homepage, and no such package exists here. Building
+ * the answer by hand instead is what that test used to do, and it asserted a property of `Set` rather than
+ * anything about this code — **a guard whose only input is a fixture proves the fixture.**
  */
-function publishedPackages(): { file: string; homepage: string | null }[] {
-  const globs = (JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")) as { workspaces?: string[] })
+function publishedPackages(repo: string = REPO): { file: string; homepage: string | null }[] {
+  const globs = (JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as { workspaces?: string[] })
     .workspaces ?? [];
   const roots = globs.flatMap((glob) => {
     const base = glob.replace(/\/\*$/, "");
     return glob.endsWith("/*")
-      ? readdirSync(join(REPO, base), { withFileTypes: true })
+      ? readdirSync(join(repo, base), { withFileTypes: true })
         .filter((e) => e.isDirectory()).map((e) => `${base}/${e.name}`)
       : [glob];
   });
   return roots
     .map((root) => ({ root, file: `${root}/package.json` }))
-    .filter(({ file }) => existsSync(join(REPO, file)))
-    .map(({ file }) => ({ file, json: JSON.parse(readFileSync(join(REPO, file), "utf8")) as
+    .filter(({ file }) => existsSync(join(repo, file)))
+    .map(({ file }) => ({ file, json: JSON.parse(readFileSync(join(repo, file), "utf8")) as
       { private?: boolean; homepage?: string } }))
     .filter(({ json }) => json.private !== true)
     // A published package with NO homepage is a DISAGREEMENT, not an exclusion: dropping it here would let
@@ -91,16 +97,54 @@ test("#1078: the population is DERIVED, and it is six rather than the five both 
   }
   assert.ok(!published.includes("lab") && !published.includes("control"),
     "and a PRIVATE package is not published, so its absence is correct rather than a gap");
+  // THIS TEST IS THE AGREEMENT TEST'S NON-EMPTINESS PROOF, and that is not obvious from either.
+  // **The agreement test passes on an EMPTY set** -- `distinct` is then just `[readme]`, length 1 -- so
+  // nothing in it notices a walk that found nothing. Measured, making the walk return no packages:
+  //
+  //     agreement    PASS      <- the one the row is about
+  //     this test    FAIL
+  //     silent-drop  FAIL
+  //
+  // Two catch it, and neither says so. Narrowing either later removes a protection the agreement test
+  // depends on and does not mention.
 });
 
-test("#1078: a package with NO homepage disagrees rather than being skipped", () => {
-  // The silent-drop hole: filtering out a package that states nothing would let one copy vanish instead of
-  // change, and the remaining five would agree. `null` is a distinct value in the comparison above, so it
-  // fails -- and the message says "(none stated)" rather than leaving a reader to spot an absence.
-  const stated = [{ file: "packages/x/package.json", homepage: "https://example.invalid" },
-    { file: "packages/y/package.json", homepage: null }];
-  assert.equal([...new Set(stated.map((s) => s.homepage))].length, 2,
-    "a missing homepage must read as a different value from a stated one");
+/** A throwaway repo on disk: a workspaces glob and one `package.json` per named package. */
+function fixtureRepo(packages: Record<string, Record<string, unknown>>): string {
+  const root = mkdtempSync(join(tmpdir(), "homepage-agreement-"));
+  writeFileSync(join(root, "package.json"), JSON.stringify({ workspaces: ["packages/*"] }));
+  for (const [name, json] of Object.entries(packages)) {
+    mkdirSync(join(root, "packages", name), { recursive: true });
+    writeFileSync(join(root, "packages", name, "package.json"), JSON.stringify(json));
+  }
+  return root;
+}
+
+test("#1078: a package with NO homepage disagrees rather than being SKIPPED — driven through the real walk", () => {
+  // THE SILENT-DROP HOLE, and the test that used to stand here could not see it. It built `stated` by hand
+  // and asserted `new Set(...).size === 2` -- a property of `Set`, not of `publishedPackages`, so adding
+  // `.filter(({ json }) => json.homepage !== undefined)` to the walk was **0 red**. The synthetic value was
+  // the only value it was ever given.
+  //
+  // No package in this repo states no homepage, so the fixture is a REPO rather than an answer: the real
+  // function walks it, and what it returns is the assertion.
+  const repo = fixtureRepo({
+    stated: { name: "stated", homepage: "https://example.invalid" },
+    silent: { name: "silent" },
+    hidden: { name: "hidden", private: true, homepage: "https://example.invalid" },
+  });
+  const walked = publishedPackages(repo);
+
+  const silent = walked.find((p) => p.file.includes("/silent/"));
+  assert.ok(silent, `a published package stating no homepage must survive the walk; it returned `
+    + `${walked.map((p) => p.file).join(", ")} -- dropping it would let one copy VANISH instead of change, `
+    + "and the rest would then agree");
+  assert.equal(silent.homepage, null, "and it must read as `null`, a value that disagrees with any URL");
+
+  assert.ok(!walked.some((p) => p.file.includes("/hidden/")),
+    "a `private` package is not published, so it is correctly absent rather than a gap");
+  assert.equal(new Set(walked.map((p) => p.homepage)).size, 2,
+    "so the comparison above sees TWO values across these three packages and fails, which is the point");
 });
 
 test("#1078: the README link is found by POSITION, so it survives the value changing", () => {
