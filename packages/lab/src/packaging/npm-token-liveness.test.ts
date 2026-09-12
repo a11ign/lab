@@ -81,12 +81,12 @@ test("the workflow that runs this has no schedule key -- it must fire on push, n
   // The exact reason `board-liveness.test.ts` pins the same thing: a watchdog that is itself scheduled is
   // disabled by the same 60-day inactivity rule it exists to catch, so moving this onto a cron would
   // silently remove the one property that makes it work.
-  // #901: a step in trunk-guard.yml's watchdogs job since 2026-09-10, not a workflow of its own.
-  const workflow = readFileSync(path.join(REPO_ROOT, ".github/workflows/trunk-guard.yml"), "utf8");
+  // #901: a step in trunk.yml's watchdogs job since 2026-09-10, not a workflow of its own.
+  const workflow = readFileSync(path.join(REPO_ROOT, ".github/workflows/trunk.yml"), "utf8");
   assert.doesNotMatch(workflow, /^\s*schedule:/m,
-    "trunk-guard.yml must never gain a `schedule:` trigger -- see its own header for why a watchdog "
+    "trunk.yml must never gain a `schedule:` trigger -- see its own header for why a watchdog "
     + "cannot be a cron");
   assert.match(workflow, /^\s*push:/m, "it must trigger on push, which cannot be disabled by inactivity");
   assert.match(workflow, /run: node scripts\/npm-token-liveness\.mjs --post --issue=73/,
-    "the token watchdog step must still be in trunk-guard.yml");
+    "the token watchdog step must still be in trunk.yml");
 });

@@ -38,7 +38,7 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const WORKFLOW = `${REPO}.github/workflows/trunk-guard.yml`;
+const WORKFLOW = `${REPO}.github/workflows/trunk.yml`;
 const JOB = "decideRevert";
 
 type Step = { env?: Record<string, string>, run?: string };

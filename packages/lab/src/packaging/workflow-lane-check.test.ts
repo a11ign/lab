@@ -62,7 +62,7 @@ test("every non-owner prefix is refused, not just pm/ -- 137 branches on origin 
 
 test("the lane's own branches pass, including revert/ -- decideRevert opens those itself", () => {
   for (const branch of ["ceo/lane-owner-913", "revert/4e87c87565-316"]) {
-    assert.equal(verdict(branch, [".github/workflows/trunk-guard.yml"]).code, EXIT.CLEAR, branch);
+    assert.equal(verdict(branch, [".github/workflows/trunk.yml"]).code, EXIT.CLEAR, branch);
   }
 });
 

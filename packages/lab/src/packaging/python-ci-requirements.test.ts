@@ -55,7 +55,7 @@ function requirements(text: string): Map<string, string> {
 
 test("CI runs the Python suite, with the flags a stale compile makes necessary", () => {
   // A1 (#452): the actual `setup-python`/`pytest` steps live in `reusable-build-test.yml` now -- both
-  // `ci.yml`'s `python` job and `trunk-guard.yml`'s `trunkBuildTest` job CALL it rather than carrying
+  // `ci.yml`'s `python` job and `trunk.yml`'s `trunkBuildTest` job CALL it rather than carrying
   // their own copy. Checking the reusable file is checking the one real definition, not a caller.
   const workflow = read(".github/workflows/reusable-build-test.yml");
   assert.match(workflow, /setup-python/,
