@@ -39,7 +39,9 @@ function gateBlock(): string {
 // correctly-added job turns two tests here red until KEPT is edited too; that friction is the price of
 // the second reading, and the edit is one line (worker-capture's review of #1001).
 const KEPT = ["changed", "ts", "python", "ansible", "changeset", "rulesFitness", "deliberateRefusals"];
-const DROPPED = ["docs", "board", "acceptance", "ownedPaths"];
+// #1065: `docs` left this list when it was deleted outright -- red and unread on an environment-only failure,
+// its population already run unscoped by trunk-guard after every merge.
+const DROPPED = ["board", "acceptance", "ownedPaths"];
 
 test("#902: the gate waits for the product jobs and nothing else", () => {
   const needs = /needs: \[([^\]]+)\]/.exec(gateBlock())?.[1];
