@@ -95,3 +95,30 @@ test("#1135 clause 4: the PR suite's floor still holds after the split, on the r
   assert.deepEqual(underFloor([PR_GLOB], min, resolve), [], "the PR glob resolves at or above its floor");
   assert.deepEqual(underFloor([NIGHTLY_GLOB], 1, resolve), [], "and the nightly population on the real tree is not empty");
 });
+
+/**
+ * #1135 clause 5 (worker-judge's injection on #1136): THE SPLIT IS EXECUTION-ONLY. The PR path stops
+ * RUNNING the nightly population and nothing else -- `tsc --noEmit` and `eslint .` still reach it, so a
+ * type error or a lint error in a nightly-only test is caught on the PR that introduces it, and only its
+ * run-time verdict waits for the night. Pinned through the real resolvers (TypeScript's own config
+ * parser and ESLint's own ignore/config calculation), never a string read of tsconfig's include list, so
+ * a narrowed include or a new ignore pattern fails here rather than silently un-typechecking the
+ * population.
+ */
+test("#1135 clause 5: the nightly population stays typechecked and linted on the PR path -- only its RUN moves", async () => {
+  const seed = `${REPO}packages/lab/nightly/nightly-population-seed.test.ts`;
+  const ts = await import("typescript");
+  const configFile = ts.readConfigFile(`${REPO}tsconfig.json`, ts.sys.readFile);
+  assert.equal(configFile.error, undefined, "tsconfig.json parses");
+  const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, REPO);
+  const typechecked = parsed.fileNames.map((f) => f.replace(/\\/g, "/"));
+  assert.ok(typechecked.includes(seed), "tsconfig's include resolves the nightly seed, so `tsc --noEmit` reads it");
+  const prTest = `${REPO}packages/lab/src/packaging/nightly-only-path.test.ts`;
+  assert.ok(typechecked.includes(prTest), "and still resolves the PR population (the control)");
+
+  const { ESLint } = await import("eslint");
+  const eslint = new ESLint({ cwd: REPO });
+  assert.equal(await eslint.isPathIgnored(seed), false, "eslint does not ignore the nightly population");
+  const config = (await eslint.calculateConfigForFile(seed)) as { rules?: Record<string, unknown> };
+  assert.ok(Object.keys(config.rules ?? {}).length > 0, "and applies real rules to it, not an empty config");
+});
