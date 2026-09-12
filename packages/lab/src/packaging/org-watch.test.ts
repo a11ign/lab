@@ -22,7 +22,7 @@ import assert from "node:assert/strict";
 import {
   METRICS, EXIT, figure, passRate, renderFigure, renderTable, totalCount, mainColour,
   firstFailingAssertion, byConclusion, queueReport, utilisation, boardDeadline, watchReport,
-  redWindows, redHoursFigure,
+  redWindows, redHoursFigure, runsHaveStopped,
 } from "../../../../scripts/org-watch.mjs";
 
 const metric = (key: string) => METRICS.find((m) => m.key === key)!;
@@ -454,9 +454,25 @@ test("#1049: the bound is named `pageBeginsMidRed`, not `atLeast` -- same cause,
   assert.equal("atLeast" in read, false, "the streak's word must not be borrowed for a different claim");
 });
 
-// #909 (2026-09-12): the trunk workflow file was renamed trunk-guard.yml -> trunk.yml. A default that still named
-// the old file would 404, and `mainColour` reads a 404 as "no runs on main at all" -- a CANNOT_ASK on every hourly
-// watch, which posts ATTENTION for a red that is not there. Pinned on the URL the default actually asks for.
+// #909 (2026-09-12): the trunk workflow file was renamed trunk-guard.yml -> trunk.yml. Pinned on the URL the
+// default actually asks for.
+//
+// **CORRECTED by #1154, because the reason first written here was wrong and the true one is worse.** This
+// comment said the old name "would 404, and `mainColour` reads a 404 as no runs on main at all -- a
+// CANNOT_ASK on every hourly watch, which posts ATTENTION for a red that is not there." Measured live the
+// same afternoon:
+//
+//   actions/workflows/trunk-guard.yml/runs   200   total_count=409   newest 15:07:32Z  (frozen at the rename)
+//   mainColour({ workflow: "trunk-guard" })  ->  { red: false, examined: 20, why: null }
+//   mainColour({ workflow: "trunk"       })  ->  { red: false, examined: 4,  why: null }
+//
+// No 404, no CANNOT_ASK, no ATTENTION. **A confident green off a history that had stopped**, with a larger
+// `examined` than the true reading -- so the field a reader uses to judge confidence points at the stale
+// answer. A false ATTENTION is loud and self-announcing; this is neither, and the next person calibrates
+// the urgency of the whole class from whichever reason is written down.
+//
+// The staleness guard below is what makes the default not the only thing standing between the clock and
+// this failure, since the next rename will not be accompanied by somebody remembering this file.
 test("#909: mainColour asks for trunk.yml's runs by default, the file's name since the rename", () => {
   const asked: string[][] = [];
   const run = (args: string[]) => { asked.push(args); return JSON.stringify({ workflow_runs: [] }); };
@@ -464,4 +480,77 @@ test("#909: mainColour asks for trunk.yml's runs by default, the file's name sin
   const url = asked.flat().find((a) => a.includes("/actions/workflows/"));
   assert.ok(url, "mainColour reads the workflow runs endpoint");
   assert.match(url, /\/actions\/workflows\/trunk\.yml\/runs/, "the file on main today, not trunk-guard.yml");
+});
+
+// ---- #1154: a run list that STOPPED is not a green main ----------------------------------------------
+//
+// The third member of the family `mainColour` already had two of: a 502 is caught by the `catch`, an empty
+// page by the `no runs on main at all` guard. **The case GitHub actually produces is neither.** A deleted
+// or renamed workflow's path stays addressable for ever and answers 200 with its frozen history, so the
+// green shape comes back with nothing malformed in it.
+//
+// Measured against main's TIP COMMIT rather than against a clock, deliberately: `trunk` runs on merges, so
+// "no new runs" is TRUE and healthy on a weekend. Main's tip moving while the workflow does not run is a
+// different statement, it is the one that is false, and it needs no memory of a rename.
+
+const RUNS_FROZEN = JSON.stringify({ workflow_runs: [
+  { conclusion: "success", created_at: "2026-09-12T15:07:32Z" },
+  { conclusion: "success", created_at: "2026-09-12T14:59:09Z" },
+] });
+
+/** A runner that answers BOTH endpoints, which the older fixtures in this file do not. */
+const twoEndpoints = (tipAt: string | null) => (args: string[]) => {
+  if (args.some((a) => a.includes("/commits/main"))) {
+    if (tipAt === null) throw new Error("gh: HTTP 502");
+    return tipAt;
+  }
+  return RUNS_FROZEN;
+};
+
+// THE GUARD IS NOT INSTANT, AND THAT IS STATED RATHER THAN HIDDEN. At the moment the real incident was
+// measured, main's tip led the frozen workflow's newest run by **0.96 hours** -- under the two-hour lag, so
+// this guard would have said nothing yet. It crosses at two hours and stays crossed for ever afterwards,
+// because the numerator only grows. That is the right trade for a clock whose false alarm costs the org an
+// investigation: the failure it catches is permanent, so catching it on the second hourly read rather than
+// the first costs one reading, while a tight threshold costs a wolf cry on every slow queue.
+test("#1154: main's tip ahead of the newest run reads as STOPPED, not as green", () => {
+  // The real incident, read four hours later than it was: tip 19:00Z against the list frozen at 15:07Z.
+  // (Deliberately not 17:05Z, which is 1.96h and UNDER the lag by four minutes -- I wrote that fixture
+  // first, from the real timestamps plus "about an hour", and the test failed. The apparatus was right.)
+  const read = mainColour({ repo: "o/r", run: twoEndpoints("2026-09-12T19:00:00Z"),
+    now: new Date("2026-09-12T19:30:00Z") });
+  assert.equal(read.readable, false, "a workflow that has stopped seeing main cannot report on main");
+  assert.equal(read.red, false);
+  assert.match(String(read.why), /stopped\s+seeing main/);
+  const green = mainColour({ repo: "o/r", run: twoEndpoints("2026-09-12T15:07:40Z"),
+    now: new Date("2026-09-12T19:30:00Z") });
+  assert.notDeepEqual(read, green,
+    "#912's rule, applied to the third failure: an unreadable main and a green one must not be the same "
+    + "object -- that is the single assertion that would have caught the original defect in this file");
+});
+
+test("#1154: A QUIET MAIN IS NOT A STOPPED ONE -- the tip has not moved, so there is nothing to report", () => {
+  // The tip landed BEFORE the newest run, which is what a healthy repo looks like at any distance from
+  // the last merge. An age threshold would fire here after two hours of a weekend; this does not fire ever.
+  const read = mainColour({ repo: "o/r", run: twoEndpoints("2026-09-12T15:07:00Z"),
+    now: new Date("2026-09-15T09:00:00Z") });
+  assert.equal(read.readable, true, "three days with no merge is quiet, not broken");
+  assert.equal(read.why, null);
+});
+
+test("#1154: AN UNREADABLE TIP DECLINES TO SPEAK -- unknown is not stale and it is not fine either", () => {
+  const read = mainColour({ repo: "o/r", run: twoEndpoints(null), now: new Date("2026-09-12T16:30:00Z") });
+  assert.equal(read.readable, true,
+    "the guard cannot see main's tip, so it must not invent staleness -- the run list is used as it stands");
+  assert.equal(runsHaveStopped({ newestRunAt: "2026-09-12T15:07:32Z", mainTipAt: null }), null,
+    "null is UNKNOWN, and the caller must be able to tell it from false");
+});
+
+test("#1154: the lag is measured tip-minus-run, and one run's duration of queueing is not a stop", () => {
+  const newestRunAt = "2026-09-12T15:00:00Z";
+  assert.equal(runsHaveStopped({ newestRunAt, mainTipAt: "2026-09-12T16:00:00Z" }), false,
+    "a merge an hour ago whose run has not appeared yet is a queue, not a rename");
+  assert.equal(runsHaveStopped({ newestRunAt, mainTipAt: "2026-09-12T18:00:00Z" }), true);
+  assert.equal(runsHaveStopped({ newestRunAt, mainTipAt: "not a date" }), null,
+    "an unparseable tip is unknown, never `not stopped` -- the direction a wrong default errs in matters");
 });
