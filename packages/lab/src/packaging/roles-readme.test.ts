@@ -96,3 +96,16 @@ test("MUTATION: missing is reported not failed, incomplete fails, and a broken r
     "a malformed table row (missing a pipe) was still parsed -- the row regex is too permissive to catch "
     + "a real format change");
 });
+
+test("#1096 the review-verdict convention is in the README, by its parts, with the reason the sha is there", () => {
+  // Parts, not one frozen sentence: a test pinning the whole string fails on a comma and teaches the next
+  // editor to edit the test. The sha sentence is what makes this a protocol rather than a format.
+  const source = readReadme();
+  assert.match(source, /^## Review verdicts/m, "the README must carry the convention under its own heading");
+  assert.match(source, /Review of #<n> at `<head8>`, by <session>: convinced\./, "the convinced form");
+  assert.match(source, /by <session>: not convinced/, "the not-convinced form");
+  assert.match(source, /a verdict is on a head, never on a PR/i, "why the sha is there");
+  assert.match(source, /author marks the PR ready on\s+`convinced`; a reviewer never arms or merges/,
+    "who arms: the author, never the reviewer");
+});
+
