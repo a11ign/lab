@@ -32,6 +32,7 @@ import {
   CLAIM_LABEL, STARTED_LABEL, BLOCKED_LABEL, recordCheck, recordConflict, latestCheckFor,
   worktreeStatus, removeClaimedWorktree, WORKTREE_LABEL_PREFIX, BRANCH_LABEL_PREFIX,
   claimRecordComment, claimRecordFrom, claimedObjects, fetchClaimComments, CLAIM_RECORD_MARKER,
+  b4Lines, reportB4,
 } from "../../../../scripts/row-claim.mjs";
 import { laneReason } from "../../../../scripts/row-claim/runner-rule.mjs";
 import { READY_LABEL, WAS_READY_LABEL } from "../../../../scripts/ready-label-audit.mjs";
@@ -1559,4 +1560,60 @@ test("#1039: the check runs BEFORE the claimed check, so a ready unclaimed row i
   assert.equal(decision.proceed, false);
   assert.match(String(decision.reason), /lane/i,
     "and the reason is the LANE one, not the claim one -- an unclaimed row has no claim to report");
+});
+
+// --- #1063: `row-claim check` runs B4, read-only ---
+
+test("#1063: check carries B4's OWN output, not a paraphrase of it", () => {
+  // THE MARKER IS A FRAGMENT ONLY `fileOverlapReason` EMITS. A hand-written sentence saying the same
+  // thing must not satisfy this -- #1054's verdict said "EXPECT row-claim claim TO REFUSE THIS" and that
+  // was a PREDICTION: it inferred the refusal from "an OPEN PR holds a file" and could not know that B4
+  // excludes `.changeset/` on both sides, or which files, or which PR.
+  const lines = b4Lines(["docs/"], [{ number: 999, files: ["docs/guide.md"] }]);
+  assert.match(lines.join("\n"), /, which already touches: docs\/guide\.md/,
+    "the refusal must be B4's own text, so a change to the rule reaches this output without an edit here");
+  assert.match(lines.join("\n"), /B4 REFUSES THIS CLAIM/);
+});
+
+test("#1063: no overlap prints NOTHING -- silence is the clean answer, and only the clean one", () => {
+  assert.deepEqual(b4Lines(["docs/"], [{ number: 999, files: ["scripts/x.mjs"] }]), [],
+    "a clear row must not gain a line saying so; the verdict above it already says STARTABLE");
+});
+
+test("#1063: a failed lookup is INCONCLUSIVE, never 'no overlap'", () => {
+  // The conflation `startability` refuses one level up, and the defect #1054 was filed for: `null` and
+  // `[]` are different readings and printed the same silence before this.
+  const unaskable: [string[] | null, { number: number; files: string[] }[] | null][] =
+    [[null, []], [["docs/"], null], [null, null]];
+  for (const [mine, theirs] of unaskable) {
+    const lines = b4Lines(mine, theirs);
+    assert.match(lines.join("\n"), /B4 COULD NOT BE ASKED/,
+      "an unaskable question must not read as a clear one");
+    assert.match(lines.join("\n"), /INCONCLUSIVE, not clear/);
+  }
+});
+
+test("#1063: an OPEN PR reading zero files is surfaced, not folded into 'no conflict'", () => {
+  // #462's own finding: checking one PR's files and getting zero looked like "no overlap, proceed" and was
+  // a MERGED PR whose head had become an ancestor of main. A stale reading is not a clean one.
+  const lines = b4Lines(["docs/"], [{ number: 42, files: [] }]);
+  assert.match(lines.join("\n"), /#42 read as touching NO files/);
+  assert.match(lines.join("\n"), /stale reading, not a clean one/);
+});
+
+test("#1063: the PRINTING is held too -- `b4Lines` perfect and never reached was 0 red", () => {
+  // The mutation that found this: `if (false) process.stdout.write(...)` at the call site, with every
+  // `b4Lines` assertion still passing. A seam held and a call site unheld is the shape this repo records
+  // most; here it was in the fix for a row about exactly that.
+  const said: string[] = [];
+  reportB4(1, { write: (s: string) => said.push(s), mine: () => ["docs/"],
+    others: () => [{ number: 999, files: ["docs/guide.md"] }] });
+  assert.equal(said.length, 1, "a refusal must reach the writer, not merely be computed");
+  assert.match(said[0], /B4 REFUSES THIS CLAIM: overlaps #999/);
+  assert.match(said[0], /\n$/, "and end with a newline, or it runs into whatever prints next");
+
+  said.length = 0;
+  reportB4(1, { write: (s: string) => said.push(s), mine: () => ["docs/"],
+    others: () => [{ number: 999, files: ["scripts/x.mjs"] }] });
+  assert.deepEqual(said, [], "and a clear row writes NOTHING -- the control, without which 'always print' passes");
 });
