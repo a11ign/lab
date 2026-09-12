@@ -18,7 +18,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { workerControlFix, nextCommand, isRunnableCommand, readyFrom, gatingChecks, addCheck }
+import { workerControlFix, nextCommand, isRunnableCommand, readyFrom, gatingChecks, addCheck, allChecks }
   from "../../../worker-fleet/src/doctor.mjs";
 
 /** The refusal `worker-ctl.sh` actually prints, quoted from the #915 rehearsal. */
@@ -101,13 +101,21 @@ test("#1073 ACCEPTANCE: a checkout whose only failing check is `dataset` reads R
 
 test("#1073: a failing `worker` check still produces NOT READY — the gate narrows, it does not vanish", () => {
   // A readiness command that is always ready is worse than one that is never ready, because it is believed.
+  // THE COUNT, NOT A FLOOR -- #1067's ratchet caught the first version of this, which was
+  // `assert.ok(gatingChecks().length >= 5, …)`: a floor on a number the same assertion reported, in the PR
+  // after the ratchet landed. `>= 5` is satisfied by 5 and by 9 and by 400. The vacuity risk here is the
+  // LOOP being empty, so the honest assertion is that the loop examined every gating check -- a property,
+  // derived on both sides, with no literal to drift.
+  let examined = 0;
   for (const gating of gatingChecks()) {
+    examined += 1;
     assert.equal(readyFrom([{ name: gating, ok: false }, { name: "dataset", ok: true }]), false,
       `${gating} decides readiness and a failure there must still read NOT READY`);
   }
-  assert.ok(gatingChecks().length >= 5,
-    `only ${gatingChecks().length} check(s) gate; the loop above would be nearly empty and would pass `
-    + "having asserted almost nothing");
+  assert.equal(examined, gatingChecks().length, "the loop examined every gating check");
+  assert.deepEqual(gatingChecks().sort(), allChecks().filter((n) => n !== "dataset").sort(),
+    "and the gating set is every declared check except `dataset` -- the one entry #1073 makes report "
+    + "rather than decide. Adding a check with `gates: false` must be a deliberate act that shows up here");
 });
 
 test("#1073: every check DECLARES whether it gates, and an undeclared one cannot inherit a default", () => {
