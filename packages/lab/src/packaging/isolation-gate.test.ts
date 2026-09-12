@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 // Four levels up, to the REPO ROOT. The gate is monorepo tooling, not a package: it has to pack and install
 // every package including this one, so it cannot live inside any of them. Its tests live here because `lab` is
 // where this repo's internal tooling tests live.
-import { checkIsolation, internalDependencies, declaredBins, allPackages } from "../../../../scripts/isolation-gate.mjs";
+import { checkIsolation, internalDependencies, declaredBins } from "../../../../scripts/isolation-gate.mjs";
 
 const fixture = (name: string) => fileURLToPath(new URL(`../../../../scripts/isolation-fixtures/${name}`, import.meta.url));
 
@@ -161,11 +161,7 @@ test("declaredBins reads the string shorthand, which links the unscoped package 
   assert.deepEqual(declaredBins({ name: "@a11ign/scorer", bin: { one: "./a.mjs", two: "./b.mjs" } }), ["one", "two"]);
 });
 
-test("every bin the six published packages declare is reachable in a real consumer install", () => {
-  // The population, derived rather than typed: this is the assertion that would have caught the live
-  // defect, and it is the reason the row was filed. Slow on purpose -- it is six real packs and installs.
-  const failures = allPackages()
-    .map((dir) => ({ dir, verdict: checkIsolation(dir) }))
-    .filter(({ verdict }) => verdict.stage === "bin");
-  assert.deepEqual(failures.map(({ dir, verdict }) => `${dir}: ${verdict.detail}`), []);
-});
+// #1143: the six-package pack-and-install MOVED to `packages/lab/nightly/isolation-gate-real-consumer.test.ts`.
+// 21.5 s of this file's 33.2 s was that one test; the eleven that remain cost ~11 s together and three of
+// them are ADR 0007's trust condition, which must fire on a PR that touches this gate. Moving the FILE
+// would have taken those with it to save three seconds. The assertion is unchanged, only where it runs.

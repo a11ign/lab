@@ -90,16 +90,22 @@ const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
  */
 const READS_THE_ROLLUP = /\.statusCheckRollup\b/;
 
-/** The predicates that NAME the window they ask about. A read passing through one of these is safe. */
 // #1144: `NAMES_ITS_WINDOW` and `WIDER_WINDOW_IS_HARMLESS` moved WITH the per-node check --
 // the wrapper names are the rule's `NARROWS_THE_WINDOW` set and the exemption is its
 // `wideWindowIsHarmless` option, which is #908 clause 3: the table is asserted where the rule
 // reads it, as the rule's own fixture, rather than in a test the rule never consults.
-
-/**
- * Files that read the rollup without a window-naming predicate, each with the reason it is harmless.
- * Classified rather than fixed, so "nothing needs this" and "somebody forgot" stay different states.
- */
+//
+// #1152 extended the regex here with `newestRun`/`newestRunCompletedAt` while this PR was open, which
+// is the two halves of one fact moving apart in two branches -- the merge conflict you are reading the
+// resolution of. Both names are in the rule's set instead, and the discipline #1152 stated with them
+// travels too: a name on that list is a CLAIM ABOUT BEHAVIOUR, so the rule's doc comment records where
+// each one is proved. These two are proved in `update-branch-decision.test.ts` rather than here,
+// because importing `update-branch-sweep.mjs` into this file would give it a `token` requirement
+// through its closure (measured: `deriveClosureRequirements` -> token via update-branch-sweep.mjs -> gh)
+// and disqualify it from the job that runs acceptance commands. That is #1116's trap.
+//
+// The exemption table went the same way: "files that read the rollup without a window-naming predicate,
+// each with the reason it is harmless" is now the rule's `wideWindowIsHarmless` option, and it is empty.
 
 function trackedCode(): string[] {
   return walkTree({ kind: "both", roots: ["scripts", "packages", ".github"] }).map((f) => f.path)
@@ -213,3 +219,4 @@ test("THE SHA IS NOT A RUN IDENTIFIER -- `pull_request: edited` re-runs CI witho
   assert.equal(newestConclusionOf(oneHeadTwoRuns, "ci"), "SUCCESS",
     "asking `did every run at this sha succeed` answers FAILURE here and is the wrong question");
 });
+

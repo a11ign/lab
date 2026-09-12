@@ -26,7 +26,7 @@ import {
 import { closedDebris } from "../../../../scripts/ready-label-audit.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const WORKFLOW = `${REPO}.github/workflows/close-rows.yml`;
+const WORKFLOW = `${REPO}.github/workflows/trunk.yml`; // #909: close-rows.yml folded into trunk.yml's closeRows job
 
 test("an OPEN declared row is closed", () => {
   const plan = closurePlan([{ number: 344, state: "OPEN" }]);
@@ -74,52 +74,57 @@ test("the exit codes are the contract, and CANNOT_ASK is distinct from a clean r
   assert.deepEqual(EXIT, { DONE: 0, COULD_NOT_CLOSE: 1, CANNOT_ASK: 2 });
 });
 
-test("the workflow fires only on a MERGED pull request into main", () => {
+test("#909: the closeRows job rides trunk.yml's push to main, and cannot push (contents: read)", () => {
   const doc = parseYaml(readFileSync(WORKFLOW, "utf8")) as {
     on: Record<string, unknown>;
-    permissions: Record<string, string>;
-    jobs: Record<string, { if: string; steps: { uses?: string; run?: string; env?: Record<string, string> }[] }>;
+    jobs: Record<string, { permissions?: Record<string, string>; steps: { uses?: string; run?: string; env?: Record<string, string> }[] }>;
   };
-  // #394: `workflow_dispatch` joined `pull_request: closed` as a manual, on-demand path (a `push: main`
-  // trigger would still need an entry on the watchdog allowlist and would still have to re-derive the
-  // closing references from a commit range; neither is true of a manual dispatch against one named PR).
-  assert.deepEqual(Object.keys(doc.on).sort(), ["pull_request", "workflow_dispatch"]);
-  assert.deepEqual((doc.on as { pull_request: { types: string[] } }).pull_request, { types: ["closed"] });
-  const job = doc.jobs.close;
-  assert.match(job.if, /merged == true/,
-    "without this a PR closed WITHOUT merging would close its rows — the exact 'closed a row whose work "
-    + "did not land' failure close-merged-rows.mjs refuses to risk.");
-  assert.match(job.if, /base\.ref == 'main'/,
-    "a PR into a non-main base has not landed on the trunk and must close nothing.");
-  assert.match(job.if, /workflow_dispatch/,
-    "the manual trigger must be admitted by this job's own `if:`, or #394's dispatch input does nothing.");
+  assert.deepEqual(Object.keys(doc.on).sort(), ["push", "workflow_dispatch"]);
+  assert.deepEqual((doc.on as { push: { branches: string[] } }).push, { branches: ["main"] },
+    "a push to main IS a merge landing (every merge is a PAT merge since #416); a PR closed WITHOUT merging "
+    + "pushes nothing, so the 'closed a row whose work did not land' failure close-merged-rows.mjs refuses "
+    + "to risk cannot arise from this trigger");
+  const job = doc.jobs.closeRows;
+  assert.ok(job, "trunk.yml carries the closeRows job");
+  assert.deepEqual(job.permissions, { issues: "write", "pull-requests": "read", contents: "read" },
+    "a job triggered by a merge must never be able to push -- the permissions close-rows.yml carried, and no more, "
+    + "pinned on THIS job because decideRevert beside it legitimately holds contents: write");
+  const run = job.steps.map((s) => s.run ?? "").join("\n");
+  assert.match(run, /close-rows-for-merged-pr\.mjs/, "the same closure plan drives the dispatch path");
+  assert.match(run, /close-rows-sweep\.mjs/, "and the push path");
+  const env = job.steps.find((s) => s.run?.includes("close-rows"))?.env ?? {};
+  assert.equal(env.GH_TOKEN, "${{ github.token }}");
+  assert.equal(env.GITHUB_REPOSITORY, "${{ github.repository }}");
 });
 
-test("the workflow can close issues and can do NOTHING else", () => {
-  const doc = parseYaml(readFileSync(WORKFLOW, "utf8")) as { permissions: Record<string, string> };
-  assert.equal(doc.permissions.issues, "write");
-  assert.equal(doc.permissions.contents, "read",
-    "this workflow must never be able to write code. `contents: write` here would give a job triggered "
-    + "by a merged PR the ability to push, which is a far larger blast radius than closing a row.");
-  assert.equal(doc.permissions["pull-requests"], "read");
+test("#909: the closeRows JOB can close issues and can do NOTHING else -- pinned at the job, beside a job that can push", () => {
+  const doc = parseYaml(readFileSync(WORKFLOW, "utf8")) as {
+    permissions?: Record<string, string>;
+    jobs: Record<string, { permissions?: Record<string, string> }>;
+  };
+  assert.deepEqual(doc.jobs.closeRows.permissions, { issues: "write", "pull-requests": "read", contents: "read" },
+    "close-rows.yml carried exactly these at the workflow level; folded into trunk.yml they are pinned on the job, "
+    + "because decideRevert in the same file legitimately holds contents: write and a workflow-level grant would "
+    + "hand it to this job too");
+  assert.equal(doc.permissions, undefined, "no workflow-level permissions block widens what closeRows gets");
 });
 
-test("the workflow actually RUNS the script — a correct plan wired to nothing is no plan", () => {
+test("#909: the closeRows job actually RUNS the scripts -- a correct plan wired to nothing is no plan", () => {
   const doc = parseYaml(readFileSync(WORKFLOW, "utf8")) as {
     jobs: Record<string, { steps: { uses?: string; run?: string; env?: Record<string, string> }[] }>;
   };
-  const steps = doc.jobs.close.steps;
+  const steps = doc.jobs.closeRows.steps;
   assert.ok(steps.some((s) => typeof s.uses === "string" && s.uses.startsWith("actions/checkout")),
-    "it runs a script from the repo, so it needs a checkout — without one the step fails MODULE_NOT_FOUND, "
+    "it runs a script from the repo, so it needs a checkout -- without one the step fails MODULE_NOT_FOUND, "
     + "the #331 shape where a workflow's missing prerequisite reads as a code bug.");
   const runner = steps.find((s) => s.run?.includes("close-rows-for-merged-pr.mjs"));
   assert.ok(runner, "no step runs scripts/close-rows-for-merged-pr.mjs.");
   assert.equal(runner?.env?.GH_TOKEN, "${{ github.token }}");
-  assert.ok(runner?.env?.GITHUB_REPOSITORY,
-    "the script exits CANNOT_ASK without it rather than guessing a repo.");
-  assert.match(runner?.run ?? "", /pull_request\.number/,
-    "it must act on the PR the event names, not on a search — acting on a set it derived itself is how a "
-    + "tool closes a row nobody asked it to.");
+  assert.ok(runner?.env?.GITHUB_REPOSITORY, "the script exits CANNOT_ASK without it rather than guessing a repo.");
+  assert.equal(runner?.env?.DISPATCH_PR, "${{ github.event.inputs.pr }}",
+    "the dispatch path acts on the PR the dispatcher names; the push path sweeps the window the merge is in, "
+    + "idempotently, because a push event carries no PR number");
+  assert.match(runner?.run ?? "", /close-rows-sweep\.mjs --window=60/);
 });
 
 // --- #754: labelsToStrip -- the row's claim removed in the SAME act as the close ---
