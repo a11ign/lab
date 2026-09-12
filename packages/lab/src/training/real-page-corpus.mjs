@@ -380,8 +380,16 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   //
   // The mismatched e-mails are the rejection this form actually performs. `because` records that, so a run
   // that hears NO error can report what it expected rather than reporting bare silence.
+  // #1114: THE CONSENT WAS HERE AND THE PROBE WAS OFF, which made the consent a declaration that did
+  // nothing. `formState` IS the consent (ADR 0024, and `real-page-form-consent.test.ts`'s first line):
+  // supplying the values is what makes submitting acceptable. `probeForms` is what makes the capture
+  // actually drive the form, and without it no capture ever reaches 4.1.3's status message.
+  //
+  // Safe here and nowhere else in this array: W3C publishes these as examples to try, the submission is
+  // inert, and the consent guard asserts that by ORIGIN rather than by heuristic.
   { url: "https://www.w3.org/WAI/demos/bad/after/survey.html", role: "calibration",
     publishedClaim: "conformant", source: BAD_AFTER_CLAIM, demonstrates: "survey form, fixed",
+    probeForms: true,
     formState: {
       state: "error",
       submit: "submit",
@@ -397,6 +405,23 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, witnessableAs: ["4.1.2"], demonstrates: "ticket listing, broken — NOT a form: 0 <form>, 0 <input>, 14 layout tables. See the WHAT THE POSITIVES ACTUALLY ARE note above" },
   { url: "https://www.w3.org/WAI/demos/bad/before/template.html", role: "calibration",
     publishedClaim: "inaccessible", source: BAD_BEFORE_CLAIM, witnessableAs: ["4.1.2"], demonstrates: "page template, broken" },
+
+  // #1114: `before/survey.html` IS DELIBERATELY ABSENT, and this is the declaration the row asks for.
+  //
+  // It is the inaccessible twin of the one page we drive, and #32's evidence is a PAIR -- the conformant
+  // page announced "Submission Failed" and this twin filled ZERO fields because its controls have no
+  // accessible names. I added it, and `real-page-corpus.test.ts` refused it:
+  //
+  //     no corpus page is also an eval TEST fixture
+  //     https://www.w3.org/WAI/demos/bad/before/survey.html is already an eval TEST fixture
+  //
+  // **It is already in the held-out set.** ADR 0010's rule, the same reason `after/home.html` and
+  // `before/home.html` are absent -- adding it would train on an evaluation page and every number
+  // measured against it afterwards would be measuring memorisation.
+  //
+  // So the negative half of this pair exists, in the place that can actually use it: the eval test set.
+  // The capture round on `after/survey.html` produces the positive; the twin's evidence is read where it
+  // already lives. A row that wants both in the TRAINING corpus has to argue with ADR 0010 first.
 
 
   // --- CALIBRATION, second publisher: GOV.UK Design System component pages. --------------------
