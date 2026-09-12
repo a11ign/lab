@@ -72,6 +72,13 @@ const REPORTED_FLOOR =
  */
 const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "acceptance-commands.test.ts: files.length",
+  // #1101, and MY OWN RATCHET CAUGHT ME — the second time this one has. The floor is on the file list the
+  // no-test-file-imports sweep runs over, and it is a PRECONDITION rather than a stand-in: there is no
+  // right number to assert, because the tree's test-file count changes with every row, and the question
+  // the assertion answers is only "did `git ls-files` return a population at all". The sweep's real
+  // verdict is an EQUALITY on the offenders (`deepEqual(offenders, [])`), with its own control driving
+  // the predicate over a source that must produce one.
+  "merge-guard-checks-rule.test.ts: files.length",
   "action-inputs.test.ts: inputs.length",
   "board-liveness.test.ts: named.length",
   "candidate-gate-examines-the-candidate.test.ts: stages.length",

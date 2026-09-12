@@ -359,6 +359,15 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "argument, floored at 20 against the known census of ~26 (23 real spawns plus 3 files carrying "
       + "documented data-not-a-spawn exemptions)",
   },
+  "packages/lab/src/packaging/merge-guard-checks-rule.test.ts": {
+    guard: "files.length > 200",
+    note: "#1101: joined this classification the day its sweep was written, because this file refused it "
+      + "first. Its `tracked()` enumerates every `packages/*/src/**/*.test.ts` to assert that NO test file "
+      + "imports another -- an emptiness assertion, so it needs exactly what this table exists to require: "
+      + "the quoted floor proves `ls-files` returned a population, and a separate control drives the "
+      + "offender predicate over a source that must produce one. The control came first and was not "
+      + "enough: it proved the PREDICATE could match while nothing proved the LIST was non-empty.",
+  },
   "packages/lab/src/packaging/checkout-dash-safety.test.ts": {
     guard: "files.length > 100",
     note: "#637: joined this classification the same way `git-spawn-classification.test.ts` and every "
