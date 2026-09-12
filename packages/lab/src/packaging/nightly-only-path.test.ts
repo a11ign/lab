@@ -16,6 +16,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { globSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { NIGHTLY_TENANTS } from "../../nightly/tenants.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -170,4 +171,50 @@ test("#1143: no test file name appears in both the PR and the nightly population
   assert.deepEqual(inBoth, [],
     "a test lives in both populations, so the PR path pays for it AND the nightly job runs it again. If a "
     + "file was moved here, delete the original; if the duplication is deliberate, say so here.");
+});
+
+// --- #1149: the nightly-only population is NAMED, and the names are pinned to the disk both ways -------
+//
+// `--min=1` and the `nightly.length > 0` guard both pass at N−1, so a tenant that is deleted, moved back
+// or renamed past the glob leaves in silence and the job reports green over what remains. `ceo` ruled
+// against a ratchet: a number bumped by hand records what someone last typed, and is satisfied by the
+// very shrinkage it exists to catch.
+//
+// BOTH DIRECTIONS, AND THEY ARE DIFFERENT FAILURES. A one-directional pin is satisfied by an EMPTY
+// manifest — the vacuity this row closes, reappearing one level up.
+
+test("#1149: every nightly tenant on disk is NAMED in the manifest", () => {
+  const onDisk = globSync("packages/*/nightly/**/*.test.ts", { cwd: REPO }).sort();
+  assert.ok(onDisk.length > 0, "the walk found nothing, so neither assertion below examines anything");
+  const unnamed = onDisk.filter((f) => !NIGHTLY_TENANTS.includes(f));
+  assert.deepEqual(unnamed, [],
+    `${unnamed.length} nightly test(s) are on disk and not in packages/lab/nightly/tenants.mjs. Add them `
+    + "BY NAME: this population has no floor that can see it shrink, so the manifest is what makes a "
+    + `tenant's arrival or departure visible:\n${unnamed.map((f) => `  ${f}`).join("\n")}`);
+});
+
+test("#1149: every name in the manifest is a file that EXISTS — the direction a one-way pin misses", () => {
+  // Without this, an empty manifest satisfies the assertion above and the pin proves nothing. It is also
+  // the direction that catches the real event: a tenant deleted from disk while its name stays here.
+  const onDisk = new Set(globSync("packages/*/nightly/**/*.test.ts", { cwd: REPO }));
+  // `local/uncontrolled-emptiness` (#1167, merged today) caught this line as I wrote it: without the pin
+  // below, an EMPTY manifest satisfies this assertion — the precise vacuity this test exists to close,
+  // committed inside the fix for it. The rule reported at the line, which is the whole argument for it
+  // having become a rule rather than a sweep.
+  assert.ok(NIGHTLY_TENANTS.length > 0,
+    "#1149: an empty manifest passes every check below having named nothing, and the assertion above "
+    + "would then be satisfied by a directory with no tenants at all");
+  const missing = NIGHTLY_TENANTS.filter((f) => !onDisk.has(f));
+  assert.deepEqual(missing, [],
+    `${missing.length} name(s) in the manifest have no file on disk. A tenant left the nightly path and `
+    + "the manifest still claims it — which is the event `--min=1` and the vacuity guard both pass "
+    + `through:\n${missing.map((f) => `  ${f}`).join("\n")}`);
+});
+
+test("#1149 CONTROL: manifest and disk agree today, so a pin that always refuses is distinguishable", () => {
+  const onDisk = globSync("packages/*/nightly/**/*.test.ts", { cwd: REPO }).sort();
+  assert.deepEqual(onDisk, [...NIGHTLY_TENANTS].sort(),
+    "if these ever differ, one of the two assertions above is the one to read — this control exists so a "
+    + "guard that refuses everything cannot look identical to one that works");
+  assert.equal(NIGHTLY_TENANTS.length, new Set(NIGHTLY_TENANTS).size, "each tenant is named once");
 });
