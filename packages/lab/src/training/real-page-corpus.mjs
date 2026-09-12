@@ -272,6 +272,26 @@ const OWN_FIXTURE_CLAIM =
   "Authored by this project to demonstrate one failure, served over HTTP and captured through the "
   + "real-page path (packages/lab/src/training/case-matrix.mjs)";
 
+/**
+ * #1175/#1169: THE SECOND INVITED ORIGIN, and the publisher's sentence is quoted rather than summarised.
+ *
+ * `ceo` chose it on a measured table of four candidates (#1169, 2026-09-12), each checked live with curl.
+ * It was the only one carrying all three of ADR 0024's clauses: a publisher sentence that says the site
+ * exists to be driven, a submission measured from the RESPONSE rather than assumed from the page, and --
+ * which the row did not ask for and is worth more than the clauses -- **an error rendered with NO LIVE
+ * REGION**, the non-conformant 4.1.3 half the training role lacked.
+ *
+ * The measurement, from #1169 rather than re-run here (a login POST is an action, not a read):
+ * `/login` posts to `/authenticate`; a real POST with a cookie jar returns 303 -> 200 and a
+ * server-rendered `<div id="flash" class="flash error">Your username is invalid!</div>`; the credential
+ * check is hard-coded and nothing changes state. The error div carries no `role="alert"` and no
+ * `aria-live`, which is exactly why this page is here.
+ */
+const THE_INTERNET_CLAIM =
+  "Sauce Labs publishes the-internet as an example application to drive: \"An example application that "
+  + "captures prominent and ugly functionality found on the web. Perfect for writing automated acceptance "
+  + "tests against.\" (https://github.com/saucelabs/the-internet/blob/master/README.md)";
+
 const BAD_BEFORE_CLAIM =
   "W3C publishes the 'before' pages as the inaccessible version, with its own evaluation report "
   + "(https://www.w3.org/WAI/demos/bad/before/annualreport/)";
@@ -507,22 +527,34 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
 
   // --- TRAINING: the realism tier. Never used to measure anything. -----------------------------------
   //
-  // #1175: THE CONSENTED FORM FOR THIS TIER IS NOT HERE YET, AND THAT IS `ceo`'s ruling rather than an
-  // omission. #1169 chose `https://the-internet.herokuapp.com/login` as the non-conformant 4.1.3 half
-  // this role lacks, and the consent for it IS in place -- `INVITED` in `real-page-form-consent.test.ts`
-  // carries the publisher's sentence and the measured POST.
   //
-  // What is NOT settled is what the entry does to a measured number. `real-page-corpus.test.ts`'s
-  // "the TRAINING role is all-conformant" guard exists because ADR 0015's why-2 records that this role
-  // contains no real broken page -- which is WHY a real inaccessible page sits further from the training
-  // set (0.6978 against 0.8164 for the two `tickets.html` variants), an effect ADR 0010 first
-  // misattributed. **Adding the first broken page changes what that number means**, and the guard's own
-  // comment asks for a considered edit rather than a silent one.
+  // #1175: THE ONE CONSENTED FORM IN THIS TIER, and the non-conformant half of #32's 4.1.3 pair.
   //
-  // So the entry waits on a decision row whose acceptance is a MEASUREMENT: `build-realism` run on a
-  // branch carrying it, reporting the distance pair before and after and what the 4.1.3 tier reads.
-  // A number's meaning is not changed by ruling that it has changed.
-
+  // `formState` IS the consent (ADR 0024) and `probeForms` is what makes a capture actually drive it --
+  // #1114's finding, where the consent was here and the probe was off, so the declaration did nothing.
+  // BOTH, or this entry is one of the two failures that row recorded.
+  //
+  // The field names are the page's own, read from its markup on 2026-09-12 rather than guessed:
+  // `<label for="username">Username</label>`, `<label for="password">Password</label>`, and a submit
+  // button whose accessible name comes from the text inside its `<i>` -- `Login`. A `field` that does not
+  // match what NVDA announces fills nothing and the capture reports silence, which is indistinguishable
+  // from a form that announced nothing.
+  //
+  // `state: "error"` because the invalid credentials are the point: the response renders
+  // `Your username is invalid!` in a div with NO `role="alert"` and NO `aria-live`, so a screen-reader
+  // user is told nothing. That is the 4.1.3 failure this tier had no real-page example of.
+  { url: "https://the-internet.herokuapp.com/login", role: "training",
+    publishedClaim: "inaccessible", source: THE_INTERNET_CLAIM, witnessableAs: ["4.1.3"],
+    demonstrates: "login form whose error message is rendered with no live region",
+    probeForms: true,
+    formState: {
+      state: "error",
+      submit: "Login",
+      fields: [
+        { field: "Username", value: "not-a-real-user" },
+        { field: "Password", value: "not-a-real-password" },
+      ],
+    } },
 { url: "https://www.w3.org/WAI/tutorials/images/decorative/", role: "training",
     publishedClaim: "conformant", source: TUTORIAL_CLAIM, demonstrates: "decorative images, alt=\"\"" },
   { url: "https://www.w3.org/WAI/tutorials/images/functional/", role: "training",
