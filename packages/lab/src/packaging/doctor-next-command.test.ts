@@ -18,8 +18,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { workerControlFix, nextCommand, isRunnableCommand, readyFrom, gatingChecks, addCheck, allChecks }
-  from "../../../worker-fleet/src/doctor.mjs";
+import { spawnSync } from "node:child_process";
+
+import { workerControlFix, nextCommand, isRunnableCommand, readyFrom, gatingChecks, addCheck, allChecks,
+  doctorRun, errorDocument } from "../../../worker-fleet/src/doctor.mjs";
 
 /** The refusal `worker-ctl.sh` actually prints, quoted from the #915 rehearsal. */
 const DEPRECATION_REFUSAL = "could not query the local pool (DEPRECATED: worker-ctl.sh manages a local "
@@ -162,4 +164,98 @@ test("#1077: EVERY check the source adds is declared — the table is complete, 
   assert.ok(added.some((name) => name.includes(" ")),
     `no multi-word check name was found among ${added.join(", ")} -- the pattern has narrowed back to one `
     + "that cannot see the names it missed the first time");
+});
+
+// ---------------------------------------------------------------------------------------------------
+// #1082: a `--json` run that CANNOT produce JSON still produces JSON.
+//
+// Measured on `1e74e3d0`: a check threw and `doctor --json` exited 1 with ZERO BYTES on stdout, the whole
+// failure on stderr where a `--json` consumer never looks. "Could not ask" and "no output" are different
+// facts for a caller and only the first is actionable -- the second is indistinguishable from a command
+// that was never run at all.
+//
+// `2>&1` is NOT the fix, which is what separates this from #1068's watch job: THAT stdout is prose, so
+// merging stderr in was free. This one is a PARSED format, and redirecting into it produces invalid JSON --
+// worse than nothing, because a consumer that parses gets a syntax error instead of a document.
+// ---------------------------------------------------------------------------------------------------
+
+/** The text a real check would carry up. Deliberately ordinary prose: the assertion is that THIS reaches
+ *  the document, so a message the tool could have invented instead would prove nothing. */
+const CHECK_FAILURE = "the scorer did not answer within 20s";
+const throwingStep = () => { throw new Error(CHECK_FAILURE); };
+
+/** Runs `doctorRun` with its streams captured, so stdout and stderr can be asserted on separately. */
+async function runCapturing(steps: (() => unknown)[]) {
+  const out: string[] = [];
+  const err: string[] = [];
+  const code = await doctorRun({ steps, json: true, out: (l: string) => out.push(l), err: (l: string) => err.push(l) });
+  return { code, out, err };
+}
+
+test("#1082 ACCEPTANCE: a check that throws still puts a PARSEABLE document on stdout, and the exit is not 0", async () => {
+  const { code, out, err } = await runCapturing([throwingStep]);
+
+  // Parsed, not pattern-matched: a regex over the text would pass on a fragment that no consumer can read,
+  // which is the exact failure -- output that looks like an answer and is not one.
+  const doc = JSON.parse(out.join("\n"));
+
+  assert.equal(doc.ready, false, "a run that could not complete is not ready");
+  assert.match(String(doc.error), new RegExp(CHECK_FAILURE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    `the REAL failure text must survive into the document; got ${JSON.stringify(doc.error)}`);
+  assert.ok("checks" in doc, "`checks` is PRESENT -- an absent key crashes a consumer reading `.checks[]`");
+  assert.deepEqual(doc.checks, [],
+    "and EMPTY rather than partial: a partial list reads exactly like a complete verdict, and nothing in it "
+    + "distinguishes a check missing because it passed from one missing because the run died under it");
+
+  // Asserted HERE, beside the body, so the two cannot drift: a document saying `ready: false` under exit 0
+  // tells a shell the opposite of what it tells a parser.
+  assert.notEqual(code, 0, "the exit code still reports failure");
+  assert.equal(err.length, 0, "and in --json mode NOTHING goes to stderr that stdout did not already say");
+});
+
+test("#1082: nothing that is not JSON reaches stdout -- the whole of it parses, in one piece", async () => {
+  const { out } = await runCapturing([() => {}, throwingStep, () => { throw new Error("never reached"); }]);
+  assert.equal(out.length, 1, `stdout is ONE document, not a document plus a line about it; got ${out.length} writes`);
+  assert.doesNotThrow(() => JSON.parse(out[0]),
+    "a `console.log` beside the document would corrupt it for every consumer -- the failure this exists to "
+    + "prevent, not to introduce");
+});
+
+test("#1082 CONTROL: a step that RETURNS still renders the ordinary document, through the same call", async () => {
+  // Without this, `return errorDocument(...)` unconditionally satisfies every assertion above while
+  // destroying the tool. So this drives the SAME entry point over a step that succeeds -- and it is a
+  // control only because it would go red under that mutation: the error document carries no `next_command`
+  // and an empty `checks`, so the membership assertion below could not hold.
+  //
+  // Not hand-built. A document assembled in the test is a fixture agreeing with a fixture, which is how
+  // #1077 shipped a guard whose only input was a name the real tool never used.
+  const { out } = await runCapturing([() => addCheck("dataset", true, "control: a check that returns", null)]);
+  const doc = JSON.parse(out.join("\n"));
+
+  assert.ok(!("error" in doc), "no `error` key -- its presence is the signal that NO verdict exists");
+  assert.ok("next_command" in doc, "the ordinary document still answers the field CLAUDE.md tells an agent to read");
+  assert.ok(doc.checks.some((c: { name: string, detail: string }) => c.detail === "control: a check that returns"),
+    `the step's own check must reach the document; got ${JSON.stringify(doc.checks.map((c: { name: string }) => c.name))}`);
+});
+
+test("#1082: driven as a real process -- real stdout, real exit code, not a captured fixture", () => {
+  // #1077's lesson, applied before the fact: the synthetic name was the only name I ever gave that check,
+  // and the real command threw. The assertions above share one injected `out`; this one shares nothing with
+  // them -- it spawns node, reads the bytes on fd 1, and reads the status the shell would read.
+  const doctorUrl = new URL("../../../worker-fleet/src/doctor.mjs", import.meta.url).href;
+  const script = `import { doctorRun } from ${JSON.stringify(doctorUrl)};\n`
+    + `process.exit(await doctorRun({ steps: [() => { throw new Error(${JSON.stringify(CHECK_FAILURE)}); }], json: true }));\n`;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+
+  assert.notEqual(run.status, 0, `the process must fail; it exited ${run.status}. stderr: ${run.stderr}`);
+  const doc = JSON.parse(run.stdout);
+  assert.equal(doc.ready, false);
+  assert.deepEqual(doc.checks, []);
+  assert.match(String(doc.error), new RegExp(CHECK_FAILURE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+    "the real failure text, off the real stdout");
+});
+
+test("#1082: `errorDocument` carries a non-Error throw too, rather than printing [object Object]", () => {
+  assert.equal(errorDocument("a string was thrown").error, "a string was thrown");
+  assert.deepEqual(errorDocument(new Error("x")), { ready: false, error: "x", checks: [] });
 });
