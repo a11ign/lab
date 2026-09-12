@@ -30,6 +30,28 @@
  * reading the file after `git checkout -- ` (with a trailing space) had already been grepped and come up
  * empty for anything but prose — exactly the shape #637's own acceptance names: *"The live sites
  * separated from the prose, by reading each rather than by pattern."*
+ *
+ * THIS GUARD CANNOT BECOME AN ESLINT RULE, and #1133 exists to say so where the next reader meets it.
+ * #908 proposes converting the process-rule pins into lint rules, on the argument that a rule runs in
+ * seconds and REPORTS AT THE LINE. That argument holds only where ESLint can see the file. Measured
+ * 2026-09-12:
+ *
+ *     this guard's population          365 files   { mjs: 292, yml: 63, sh: 10 }
+ *     reachable by eslint.config.js    292         files: ["**\/*.{ts,mjs,js}"]
+ *     NOT reachable                     73
+ *
+ *     $ npx eslint --no-ignore packages/control/ansible/lab-reset.yml
+ *       0:0  warning  File ignored because no matching configuration was supplied
+ *
+ * **And the only live site this guard has ever found is one of the 73.** `lab-reset.yml`'s Ansible
+ * `argv:` list is the entire `CLASSIFICATION` table below. A converted rule would cover 80% of the
+ * population and NONE of the sites it has ever caught -- which is worse than no rule, because the guard
+ * it replaced would be gone.
+ *
+ * #908's exits are convert, or delete with the reason. This guard takes NEITHER, and that third outcome
+ * is what this paragraph records. The test at the bottom of this file is what stops it going stale: if
+ * `eslint.config.js` ever grows a glob covering every walked file -- a YAML plugin is a normal thing to
+ * add -- the paragraph becomes false and nothing else would notice.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -243,4 +265,58 @@ test("#637 MUTATION direction 2: the same string in a `.md` file changes nothing
     "no .md file can appear in the discovered set -- tracked() never globs for one");
   assert.ok(!discovered.includes("CLAUDE.md"),
     "CLAUDE.md itself carries the warning text this file's own header quotes, and must never be flagged");
+});
+
+/**
+ * #1133: THE REASON THIS GUARD CANNOT CONVERT, HELD RATHER THAN WRITTEN DOWN.
+ *
+ * The header records why #908 must not turn this file into an ESLint rule: 73 of its 365 files are
+ * unlintable and the only live site it has ever found is one of them. **That is a fact about
+ * `eslint.config.js`, not about this file**, so it can stop being true without anyone touching either
+ * paragraph — a YAML plugin is an ordinary thing to add, and the day it lands the reason above becomes
+ * false silently. A reason nothing checks is #1123's shape.
+ *
+ * DERIVED FROM THE REAL CONFIG, never from a typed list of extensions. `eslint.config.js` is imported
+ * and its `files:` globs are read, so this compares the guard's population against what ESLint is
+ * actually configured to see rather than against what this test remembers it seeing.
+ */
+const ESLINT_GLOB = /^\*\*\/\*\.(?:\{([\w,]+)\}|(\w+))$/;
+
+/** The extensions ESLint is configured to lint, from its own `files:` globs. */
+async function eslintExtensions(): Promise<Set<string>> {
+  const config = (await import("../../../../eslint.config.js")).default as { files?: string[] }[];
+  const globs = [...new Set(config.flatMap((block) => block.files ?? []))];
+  const extensions = new Set<string>();
+  for (const glob of globs) {
+    const parsed = ESLINT_GLOB.exec(glob);
+    // REFUSING an unrecognised glob rather than skipping it: a shape this parser does not know could
+    // widen ESLint's reach, and reading it as "no extensions" would make the comparison below pass for
+    // the wrong reason -- which is the exact failure this test exists to prevent one level down.
+    assert.ok(parsed, `eslint.config.js uses a files glob this test cannot parse (${glob}). Widen the `
+      + "parser deliberately: an unparsed glob could be the one that makes this guard convertible, and "
+      + "silently ignoring it would let the header's reason go stale unnoticed");
+    for (const ext of (parsed[1] ?? parsed[2]).split(",")) extensions.add(ext);
+  }
+  return extensions;
+}
+
+test("#1133: ESLint still cannot see this guard's population — the header's reason is still true", async () => {
+  const population = tracked();
+  const lintable = await eslintExtensions();
+  const unreachable = population.filter((f) => !lintable.has(f.split(".").pop() ?? ""));
+
+  assert.ok(unreachable.length > 0,
+    `every one of this guard's ${population.length} files is now lintable by eslint.config.js `
+    + `(${[...lintable].sort().join(", ")}), so the header's reason for not converting this guard to an `
+    + "ESLint rule is FALSE. Re-open #908's decision for this guard rather than leaving the paragraph");
+
+  // AND THE LIVE SITE SPECIFICALLY, because "some file is unreachable" is not the argument. The argument
+  // is that the ONE site this guard has ever caught is unreachable, and that is what makes converting a
+  // net loss rather than a partial one.
+  const liveSites = Object.keys(CLASSIFICATION);
+  assert.ok(liveSites.length > 0, "the classification table is empty, so this assertion compares nothing");
+  const reachableLiveSites = liveSites.filter((f) => lintable.has(f.split(".").pop() ?? ""));
+  assert.deepEqual(reachableLiveSites, [],
+    `these live sites ARE lintable: ${reachableLiveSites.join(", ")}. If every site this guard has found `
+    + "sits inside ESLint's reach, converting stops being a net loss and #908's decision changes");
 });
