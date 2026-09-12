@@ -102,6 +102,14 @@ function discoverGitPopulationTests(): string[] {
  * still literally appear in the file's source below), or `null` with a stated reason no guard applies.
  */
 const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
+  "packages/lab/src/packaging/local-import-closure.test.ts": {
+    guard: "files.length > 500",
+    note: "guarded -- it sweeps `git ls-files` for any tracked file whose local imports the stripper makes "
+      + "invisible, and a clean result is the EXPECTED answer there, so 'nothing blinded' and 'the walk "
+      + "read no files' are otherwise the same observation. The floor is a file count, not a finding "
+      + "count. Its `ls-files` scrubs `GIT_*` through `sandboxGitEnv()` for the same reason: a leaked "
+      + "GIT_DIR would sweep another repository and assert clean about it.",
+  },
   "packages/lab/src/packaging/changed-files-renames.test.ts": {
     guard: "scanned >= 100",
     note: "guarded -- its two git spawns are a sandbox repository it BUILDS (a two-commit tree with one "
