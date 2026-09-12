@@ -109,3 +109,56 @@ test("#1096 the review-verdict convention is in the README, by its parts, with t
     "who arms: the author, never the reviewer");
 });
 
+
+// ---------------------------------------------------------------------------------------------------
+// #1118: THE PROVISIONAL PERIOD HAD NO END CONDITION AND ITS MARKER WAS INVISIBLE TO EVERY MATCHER.
+//
+// "`ceo` lifts that line when the sample holds" named no sample and no threshold. A condition nobody can
+// evaluate resolves by FATIGUE — the line comes out when spot-checking feels unnecessary, which is
+// exactly when a missed disagreement is least likely to be noticed.
+//
+// Asserted BY SHAPE, not by matching one frozen sentence: a guard pinned to today's wording would refuse
+// the next honest rewrite and prove nothing about whether a condition exists.
+// ---------------------------------------------------------------------------------------------------
+
+const reviewerBrief = readFileSync(
+  new URL("../../../../docs/roles/reviewer.md", import.meta.url), "utf8");
+
+test("#1118: the lift condition is COUNTABLE — a number, a checker, and what counts as held", () => {
+  assert.match(reviewerBrief, /\b(five|5)\b[^.]*\bconsecutive\b/i,
+    "the lift condition must name how many verdicts; \"when the sample holds\" is a condition nobody "
+    + "can evaluate, and one nobody can evaluate resolves by fatigue");
+  assert.match(reviewerBrief, /spot-check(s|ed|ing)?[^.]*\b(ceo|worker-judge)\b/i,
+    "and WHO spot-checks, or the condition names a process with no actor");
+  assert.match(reviewerBrief, /re-running the PR's Acceptance line and one Mutation/,
+    "and what a spot-check IS -- otherwise 'spot-checked' means whatever the reader already does");
+});
+
+test("#1118: it says what a DISAGREEMENT does, not only what agreement does", () => {
+  // THE CLAUSE THAT MATTERS MOST. A condition that only says when to stop checking cannot say when to
+  // start again, and the spot-check that does not hold is the outcome the whole arrangement exists for.
+  assert.match(reviewerBrief, /does not hold[^.]*resets the count to zero/i,
+    "a failed spot-check must have a stated consequence");
+  assert.match(reviewerBrief, /puts the line back/i,
+    "and the period must be able to RESTART after the lift, or 'lifted' means 'never checked again'");
+});
+
+test("#1118: the count is PER MODEL, because a sample of one model says nothing about another", () => {
+  // Not a detail: this role's model was swapped on 2026-09-12 when its quota ran out. A count carried
+  // across that swap would report a sample that was never taken of the thing being sampled.
+  assert.match(reviewerBrief, /per model/i, "the count must be per model");
+  assert.match(reviewerBrief, /model change restarts the count at zero/i,
+    "and a swap must restart it -- otherwise the number measures the arrangement rather than the model");
+});
+
+test("#1118: the provisional marker is ON THE VERDICT LINE, where the sha-plus-word matcher reads", () => {
+  // THE SHARPER HALF OF THE ROW. `(provisional: ...)` as prose on a FOLLOWING line is legible to a human
+  // and invisible to every automated reader in the org: a provisional verdict and a full one are
+  // identical to the clock, so nothing could report how many were outstanding. On the line, it can.
+  assert.match(reviewerBrief, /by reviewer: convinced \(provisional\)/,
+    "the marker must sit inside the verdict sentence the matcher already parses");
+  const stale = reviewerBrief.match(/^.*\(provisional: spot-check before ready\).*$/m);
+  assert.equal(stale, null,
+    "the old off-line marker must be gone, not merely joined by the new one -- two spellings of one "
+    + "state is how a matcher ends up seeing neither");
+});
