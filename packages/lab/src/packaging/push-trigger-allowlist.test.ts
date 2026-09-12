@@ -19,7 +19,7 @@
  *
  * `update-branch` (in `auto-arm.yml`) is neither of the first two shapes. It is not a schedule watchdog --
  * there is no cron here for GitHub to silently disable, so the schedule-disable immunity the first
- * category exists for does not apply. And it is not `trunk-guard.yml`'s reactive check on `main`'s OWN
+ * category exists for does not apply. And it is not `trunk.yml`'s reactive check on `main`'s OWN
  * tip -- it never builds or tests anything, and a failure here is never meant to be acted on the way a
  * revert is. It is a third, narrower shape: a push-to-main job that acts on OTHER open pull requests after
  * a merge -- never on main's own tip -- and cannot gate anything because the merge it reacts to already
@@ -46,7 +46,7 @@ const readWorkflow = (name: string) => readFileSync(`${WORKFLOWS_DIR}${name}`, "
  * calls via `uses: ./.github/workflows/<file>.yml` -- one hop only, never recursive, because nothing in
  * this repo's own workflows currently calls a reusable workflow from within another one.
  *
- * A1 (#452) split `ci.yml` and `trunk-guard.yml`'s build/test steps into `reusable-build-test.yml`, so a
+ * A1 (#452) split `ci.yml` and `trunk.yml`'s build/test steps into `reusable-build-test.yml`, so a
  * structural check reading only a caller's OWN `steps:` would see nothing at all -- a caller job has
  * `uses:`/`with:` instead of `steps:`, and the real `npm run build`/test commands moved to the callee.
  * This is the discovery-follows-the-real-shape fix, not a special case for one file: any future reusable
@@ -74,23 +74,23 @@ function allStepsIncludingLocalReusableCalls(file: string): Array<Record<string,
 // (board editions, NPM_TOKEN, workflow-run liveness) each fired their own workflow on every push to main --
 // 777 runs on 2026-09-09 for three scripts that take seconds. They still run on push, for the reason this
 // category existed (a cron dies with the inactivity it watches for), but as three continue-on-error steps
-// in `trunk-guard.yml`'s `watchdogs` job, which runs on every push anyway. A NEW watchdog goes there too,
-// as a step, never as a workflow of its own: `trunk-guard.yml`'s structural test below allows
+// in `trunk.yml`'s `watchdogs` job, which runs on every push anyway. A NEW watchdog goes there too,
+// as a step, never as a workflow of its own: `trunk.yml`'s structural test below allows
 // `continue-on-error` only inside that one job.
 const PUSH_TO_MAIN_ALLOWLIST: Record<string, string> = {};
 
 // A SECOND, SEPARATE closed category -- opened 2026-09-07 by board decision (pipeline unit 3, #316).
-// `trunk-guard.yml` is deliberately NOT a watchdog: it DOES build, it DOES run the full suite, and it is
+// `trunk.yml` is deliberately NOT a watchdog: it DOES build, it DOES run the full suite, and it is
 // NOT continue-on-error, because a red run there is exactly the signal that drives an automatic revert,
 // not something to observe and move past. It exists because unit 1 (#298) made `strict=false` real:
 // GitHub now completes a merge the instant a PR's own head is green, with no requirement that the actual
 // MERGE COMMIT landing on `main` was ever tested -- `ci.yml`'s `pull_request` trigger tests a PR's head,
 // never the commit it produces on merge. That is a genuinely different gap from "did a schedule go
 // silent", and closing it needs the opposite shape from a watchdog: real verification, real action. See
-// `trunk-guard.yml`'s own header for the full reasoning and `scripts/trunk-revert.mjs`'s for the two ways
+// `trunk.yml`'s own header for the full reasoning and `scripts/trunk-revert.mjs`'s for the two ways
 // a naive "revert on red" would be worse than nothing.
 const TRUNK_GATE_ALLOWLIST: Record<string, string> = {
-  "trunk-guard.yml": "pipeline unit 3 (#316): the merge commit landing on main after strict=false (#298) "
+  "trunk.yml": "pipeline unit 3 (#316): the merge commit landing on main after strict=false (#298) "
     + "has never itself been tested by ci.yml's pull_request-triggered run. This is the one place that gap "
     + "is closed, and unlike a watchdog, a failure here is meant to be ACTED ON (an automatic revert, "
     + "bounded to never fire on inherited failure or after main has moved on), not merely observed.",
@@ -149,25 +149,25 @@ test("every workflow triggering on push to main is on one of the three closed al
     + "TRUNK_GATE_ALLOWLIST or TRUNK_FOLLOWUP_ALLOWLIST -- a check that gates code must run on the PR "
     + "(chairman's direction, 2026-09-06: a check that runs after the merge cannot stop it). If this is a "
     + "non-gating watchdog immune to the schedule-disable problem the same way board-liveness.yml is, add "
-    + "it to PUSH_TO_MAIN_ALLOWLIST; if it is a reactive trunk check like trunk-guard.yml, argue its case "
+    + "it to PUSH_TO_MAIN_ALLOWLIST; if it is a reactive trunk check like trunk.yml, argue its case "
     + "for TRUNK_GATE_ALLOWLIST in writing, the same way #316 did; if it acts on OTHER open PRs after a "
     + "merge rather than on main's own tip or a schedule, argue its case for TRUNK_FOLLOWUP_ALLOWLIST the "
     + "same way C2/#416 did.");
 });
 
-test("the watchdog allowlist is EMPTY since #901 -- a watchdog is a step in trunk-guard.yml's watchdogs job, never a workflow", () => {
+test("the watchdog allowlist is EMPTY since #901 -- a watchdog is a step in trunk.yml's watchdogs job, never a workflow", () => {
   assert.deepEqual(Object.keys(PUSH_TO_MAIN_ALLOWLIST), []);
-  const doc = parseYaml(readWorkflow("trunk-guard.yml")) as { jobs: Record<string, { steps?: Array<Record<string, unknown>> }> };
+  const doc = parseYaml(readWorkflow("trunk.yml")) as { jobs: Record<string, { steps?: Array<Record<string, unknown>> }> };
   const runLines = (doc.jobs.watchdogs?.steps ?? []).map((s) => String(s.run ?? "")).join("\n");
   for (const script of ["board-schedule-liveness.mjs", "npm-token-liveness.mjs", "workflow-run-liveness.mjs"]) {
     assert.match(runLines, new RegExp(`scripts/${script.replace(".", "\\.")}`),
-      `${script} is no longer a workflow of its own and must therefore be a step in trunk-guard.yml's `
+      `${script} is no longer a workflow of its own and must therefore be a step in trunk.yml's `
       + "watchdogs job -- a watchdog that is in neither place has silently stopped running");
   }
 });
 
 test("the trunk-gate allowlist names exactly the one known trunk check", () => {
-  assert.deepEqual(Object.keys(TRUNK_GATE_ALLOWLIST).sort(), ["trunk-guard.yml"]);
+  assert.deepEqual(Object.keys(TRUNK_GATE_ALLOWLIST).sort(), ["trunk.yml"]);
 });
 
 test("the trunk-followup allowlist names exactly the one known followup job", () => {
@@ -240,7 +240,7 @@ for (const file of Object.keys(TRUNK_GATE_ALLOWLIST)) {
 // suite, continue-on-error so a red run can never read as a gate) -- but for the OPPOSITE reason. A
 // watchdog is cheap because it only asks "is a schedule silent"; a followup job is cheap because it only
 // pushes OTHER PRs' branches, and building or testing here would mean it had grown into verifying
-// something -- which is `trunk-guard.yml`'s job, not this one's.
+// something -- which is `trunk.yml`'s job, not this one's.
 for (const file of Object.keys(TRUNK_FOLLOWUP_ALLOWLIST)) {
   test(`${file}: structurally a followup job -- continue-on-error, no build step, no full-suite run`, () => {
     const text = readWorkflow(file);

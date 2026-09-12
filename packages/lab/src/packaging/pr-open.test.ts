@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { checkBody, bodyFromArgs } from "../../../../scripts/pr-open.mjs";
+import { checkBody, bodyFromArgs, armAfterCreate } from "../../../../scripts/pr-open.mjs";
 
 const NEVER_RUN = () => { throw new Error("checkBody must never RUN a command for a body this test expects to refuse"); };
 
@@ -118,4 +118,25 @@ test("MUTATION TARGET: a local regex standing in for the real parser is CAUGHT, 
   const real = checkBody(DUPLICATE_BODY_708, { run: NEVER_RUN });
   assert.equal(real.ok, false, "the real parser correctly refuses the same body -- proving a hand-rolled "
     + "regex would have let #708's exact defect through");
+});
+
+// #909: a PR opened READY by this wrapper is armed at creation, on the injected runner's argv -- never a draft,
+// never an edit. Drafts are armed by auto-arm.yml on ready_for_review, because GitHub refuses auto-merge on a
+// draft; this is the docs-and-tests path, which opens ready and whose flag was set by a workflow run instead.
+test("#909: `pr-open create` without --draft arms the PR at creation, by branch, merge commits only", () => {
+  const argv = armAfterCreate("create", ["--title", "t", "--body-file", "b.md", "--base", "main", "--head", "ceo/x"]);
+  assert.deepEqual(argv, [["pr", "merge", "--auto", "--merge", "ceo/x"]]);
+  const eq = armAfterCreate("create", ["--head=ceo/y", "--body", "x"]);
+  assert.deepEqual(eq, [["pr", "merge", "--auto", "--merge", "ceo/y"]], "--head=value is read too");
+});
+
+test("#909: a draft is NOT armed at creation, and `edit` never arms -- the two paths that must stay quiet", () => {
+  assert.deepEqual(armAfterCreate("create", ["--draft", "--title", "t", "--head", "ceo/x"]), []);
+  assert.deepEqual(armAfterCreate("create", ["--title", "t", "--head", "ceo/x", "--draft"]), [], "--draft anywhere");
+  assert.deepEqual(armAfterCreate("edit", ["--body", "x"]), []);
+});
+
+test("#909 MUTATION TARGET: arming uses --merge, never --squash or --rebase (the org merges by merge commit only)", () => {
+  const [[, , , method]] = armAfterCreate("create", ["--head", "ceo/x"]);
+  assert.equal(method, "--merge");
 });
