@@ -91,7 +91,18 @@ const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
 const READS_THE_ROLLUP = /\.statusCheckRollup\b/;
 
 /** The predicates that NAME the window they ask about. A read passing through one of these is safe. */
-const NAMES_ITS_WINDOW = /newestPerName|newestConclusion(Of)?|headQuietSeconds/;
+// #1126 adds `newestRun`/`newestRunCompletedAt`: `newestConclusion` was refactored to call `newestRun`,
+// so that the conclusion and its TIMESTAMP come from the same run rather than from two scans that could
+// disagree. Both narrow to one run per name by the identical rule, so both belong here -- but a NAME on
+// this list is a claim about behaviour, and this file already proves that claim for `newestConclusionOf`
+// rather than asserting it. **The matching proof for these two is in `update-branch-decision.test.ts`**
+// ("the readers added to NAMES_ITS_WINDOW actually narrow"), not here, and deliberately: importing
+// `update-branch-sweep.mjs` into THIS file gives it a `token` requirement through the closure -- measured,
+// `deriveClosureRequirements` -> token via update-branch-sweep.mjs -> gh -- which would disqualify it from
+// the job that runs acceptance commands. That is #1116's trap, and its remedy is placement: the assertion
+// lives in the file that already imports the module and already carries the requirement. Without a proof
+// SOMEWHERE, extending a regex is how a non-narrowing reader gets admitted by being called the right thing.
+const NAMES_ITS_WINDOW = /newestPerName|newestConclusion(Of)?|newestRun(CompletedAt)?|headQuietSeconds/;
 
 /**
  * Files that read the rollup without a window-naming predicate, each with the reason it is harmless.
@@ -220,3 +231,4 @@ test("THE SHA IS NOT A RUN IDENTIFIER -- `pull_request: edited` re-runs CI witho
   assert.equal(newestConclusionOf(oneHeadTwoRuns, "ci"), "SUCCESS",
     "asking `did every run at this sha succeed` answers FAILURE here and is the wrong question");
 });
+
