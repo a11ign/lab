@@ -32,8 +32,10 @@ import {
   CLAIM_LABEL, STARTED_LABEL, BLOCKED_LABEL, recordCheck, recordConflict, latestCheckFor,
   worktreeStatus, removeClaimedWorktree, WORKTREE_LABEL_PREFIX, BRANCH_LABEL_PREFIX,
   claimRecordComment, claimRecordFrom, claimedObjects, fetchClaimComments, CLAIM_RECORD_MARKER,
+  b4Lines, reportB4,
 } from "../../../../scripts/row-claim.mjs";
 import { laneReason } from "../../../../scripts/row-claim/runner-rule.mjs";
+import { stripComments } from "@a11ign/evidence/source-text";
 import { READY_LABEL, WAS_READY_LABEL } from "../../../../scripts/ready-label-audit.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
@@ -1559,4 +1561,92 @@ test("#1039: the check runs BEFORE the claimed check, so a ready unclaimed row i
   assert.equal(decision.proceed, false);
   assert.match(String(decision.reason), /lane/i,
     "and the reason is the LANE one, not the claim one -- an unclaimed row has no claim to report");
+});
+
+// --- #1063: `row-claim check` runs B4, read-only ---
+
+test("#1063: check carries B4's OWN output, not a paraphrase of it", () => {
+  // THE MARKER IS A FRAGMENT ONLY `fileOverlapReason` EMITS. A hand-written sentence saying the same
+  // thing must not satisfy this -- #1054's verdict said "EXPECT row-claim claim TO REFUSE THIS" and that
+  // was a PREDICTION: it inferred the refusal from "an OPEN PR holds a file" and could not know that B4
+  // excludes `.changeset/` on both sides, or which files, or which PR.
+  const lines = b4Lines(["docs/"], [{ number: 999, files: ["docs/guide.md"] }]);
+  assert.match(lines.join("\n"), /, which already touches: docs\/guide\.md/,
+    "the refusal must be B4's own text, so a change to the rule reaches this output without an edit here");
+  assert.match(lines.join("\n"), /B4 REFUSES THIS CLAIM/);
+});
+
+test("#1063: a CLEAR row says so -- silence would be indistinguishable from B4 not running", () => {
+  // REVERSED by worker-capture's review of #1085, and the argument is better than my original. Printing
+  // nothing when clear made `row-claim check` byte-identical to `row-reachability.mjs` standalone -- while
+  // the verdict right above promises the reader they have the B4 half. Three states now render as three
+  // sentences: refused, could-not-ask, clear.
+  const clear = b4Lines(["docs/"], [{ number: 999, files: ["scripts/x.mjs"] }]);
+  assert.match(clear.join("\n"), /B4: no open pull request holds any file in this row's Region\./);
+  assert.doesNotMatch(clear.join("\n"), /REFUSES|COULD NOT BE ASKED/,
+    "and it must not read as either of the other two");
+});
+
+test("#1063: a failed lookup is INCONCLUSIVE, never 'no overlap'", () => {
+  // The conflation `startability` refuses one level up, and the defect #1054 was filed for: `null` and
+  // `[]` are different readings and printed the same silence before this.
+  const unaskable: [string[] | null, { number: number; files: string[] }[] | null][] =
+    [[null, []], [["docs/"], null], [null, null]];
+  for (const [mine, theirs] of unaskable) {
+    const lines = b4Lines(mine, theirs);
+    assert.match(lines.join("\n"), /B4 COULD NOT BE ASKED/,
+      "an unaskable question must not read as a clear one");
+    assert.match(lines.join("\n"), /INCONCLUSIVE, not clear/);
+  }
+});
+
+test("#1063: an OPEN PR reading zero files is surfaced, not folded into 'no conflict'", () => {
+  // #462's own finding: checking one PR's files and getting zero looked like "no overlap, proceed" and was
+  // a MERGED PR whose head had become an ancestor of main. A stale reading is not a clean one.
+  const lines = b4Lines(["docs/"], [{ number: 42, files: [] }]);
+  assert.match(lines.join("\n"), /#42 read as touching NO files/);
+  assert.match(lines.join("\n"), /stale reading, not a clean one/);
+});
+
+test("#1063: the PRINTING is held too -- `b4Lines` perfect and never reached was 0 red", () => {
+  // The mutation that found this: `if (false) process.stdout.write(...)` at the call site, with every
+  // `b4Lines` assertion still passing. A seam held and a call site unheld is the shape this repo records
+  // most; here it was in the fix for a row about exactly that.
+  const said: string[] = [];
+  reportB4(1, { write: (s: string) => said.push(s), mine: () => ["docs/"],
+    others: () => [{ number: 999, files: ["docs/guide.md"] }] });
+  assert.equal(said.length, 1, "a refusal must reach the writer, not merely be computed");
+  assert.match(said[0], /B4 REFUSES THIS CLAIM: overlaps #999/);
+  assert.match(said[0], /\n$/, "and end with a newline, or it runs into whatever prints next");
+
+  said.length = 0;
+  reportB4(1, { write: (s: string) => said.push(s), mine: () => ["docs/"],
+    others: () => [{ number: 999, files: ["scripts/x.mjs"] }] });
+  assert.equal(said.length, 1, "a clear row also reaches the writer -- three states, three sentences");
+  assert.match(said[0], /no open pull request holds any file/,
+    "and it is the CLEAR sentence, not the refusal -- the control, without which one message passes for all");
+});
+
+test("#1063: `renderStatus`'s UNCLAIMED branch calls reportB4 -- the row's deliverable, held", () => {
+  // THE LAST UNHELD LINE, and worker-capture's answer to it: assert the CALL EXISTS rather than that it
+  // ran. Everything else here could be perfect and `check` could stop running B4 with a green suite --
+  // `reportB4(issueNumber);` replaced by `void issueNumber;` was 0 red at `daab117a`.
+  //
+  // IT ENDS THE REGRESS BY CHANGING THE KIND OF CHECK, not by adding a level. An in-process output spy
+  // cannot reach `renderStatus`: it is not exported and calls `reportReachability` (which spawns node)
+  // and `recordCheckSafely` with no injection, so capturing it needs the network.
+  //
+  // STRIPPED OF COMMENTS FIRST, which is what makes this different from a grep: a JSDoc line mentioning
+  // `reportB4(` would satisfy a bare text search, and that is the trap every text-search guard in this
+  // repository has fallen into at least once.
+  //
+  // SCOPED TO THE BRANCH, so it fails loudly if the call moves rather than passing vacuously somewhere
+  // else in the file.
+  const source = stripComments(readFileSync(
+    new URL("../../../../scripts/row-claim.mjs", import.meta.url), "utf8"));
+  const unclaimedBranch = /if \(!status\.claimed\) \{([\s\S]*?)\n {2}\}/.exec(source);
+  assert.ok(unclaimedBranch, "the UNCLAIMED branch must still be findable, or this asserts nothing");
+  assert.match(unclaimedBranch[1], /reportB4\(issueNumber\)/,
+    "the unclaimed path must CALL reportB4 -- this assertion is exactly as strong as the claim it holds: "
+    + "that the call exists, never that it ran");
 });
