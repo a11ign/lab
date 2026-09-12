@@ -35,6 +35,7 @@ import {
   b4Lines, reportB4,
 } from "../../../../scripts/row-claim.mjs";
 import { laneReason } from "../../../../scripts/row-claim/runner-rule.mjs";
+import { stripComments } from "@a11ign/evidence/source-text";
 import { READY_LABEL, WAS_READY_LABEL } from "../../../../scripts/ready-label-audit.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
@@ -1624,4 +1625,28 @@ test("#1063: the PRINTING is held too -- `b4Lines` perfect and never reached was
   assert.equal(said.length, 1, "a clear row also reaches the writer -- three states, three sentences");
   assert.match(said[0], /no open pull request holds any file/,
     "and it is the CLEAR sentence, not the refusal -- the control, without which one message passes for all");
+});
+
+test("#1063: `renderStatus`'s UNCLAIMED branch calls reportB4 -- the row's deliverable, held", () => {
+  // THE LAST UNHELD LINE, and worker-capture's answer to it: assert the CALL EXISTS rather than that it
+  // ran. Everything else here could be perfect and `check` could stop running B4 with a green suite --
+  // `reportB4(issueNumber);` replaced by `void issueNumber;` was 0 red at `daab117a`.
+  //
+  // IT ENDS THE REGRESS BY CHANGING THE KIND OF CHECK, not by adding a level. An in-process output spy
+  // cannot reach `renderStatus`: it is not exported and calls `reportReachability` (which spawns node)
+  // and `recordCheckSafely` with no injection, so capturing it needs the network.
+  //
+  // STRIPPED OF COMMENTS FIRST, which is what makes this different from a grep: a JSDoc line mentioning
+  // `reportB4(` would satisfy a bare text search, and that is the trap every text-search guard in this
+  // repository has fallen into at least once.
+  //
+  // SCOPED TO THE BRANCH, so it fails loudly if the call moves rather than passing vacuously somewhere
+  // else in the file.
+  const source = stripComments(readFileSync(
+    new URL("../../../../scripts/row-claim.mjs", import.meta.url), "utf8"));
+  const unclaimedBranch = /if \(!status\.claimed\) \{([\s\S]*?)\n {2}\}/.exec(source);
+  assert.ok(unclaimedBranch, "the UNCLAIMED branch must still be findable, or this asserts nothing");
+  assert.match(unclaimedBranch[1], /reportB4\(issueNumber\)/,
+    "the unclaimed path must CALL reportB4 -- this assertion is exactly as strong as the claim it holds: "
+    + "that the call exists, never that it ran");
 });
