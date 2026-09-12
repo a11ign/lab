@@ -102,6 +102,17 @@ function discoverGitPopulationTests(): string[] {
  * still literally appear in the file's source below), or `null` with a stated reason no guard applies.
  */
 const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
+  "packages/lab/src/packaging/tracker-writer-population.test.ts": {
+    guard: "examined >= 100",
+    note: "guarded -- #1053's walk spawns `git ls-files scripts` once and asks, of every `.mjs` it "
+      + "returns, whether the file sends a body to GitHub and whether its import closure reaches the leak "
+      + "guard. A clean result is the EXPECTED answer, so 'no writer is undeclared or unguarded' and 'the "
+      + "walk read no files' are otherwise the same observation. The floor counts FILES WALKED, not "
+      + "writers found, because the writers found is the number that ought to be small -- and the writers "
+      + "found is pinned EXACTLY against the registry's length beside it. A floor cannot hold a count "
+      + "(#1067): the count that is also a claim gets an equality, the vacuity guard gets the floor. "
+      + "Measured at 132 walked and 11 sending when written.",
+  },
   "packages/lab/src/packaging/fixture-absence-guard.test.ts": {
     guard: "tree.files.length > 500",
     note: "guarded twice, and the file count alone was not enough. A clean result is the EXPECTED answer "
