@@ -17,8 +17,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 
-import { classifyCoverageFailure, commentBody, KIND } from "../../../../scripts/coverage-failure-classifier.mjs";
+import { classifyCoverageFailure, commentBody, KIND, testFailuresIn } from "../../../../scripts/coverage-failure-classifier.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
@@ -97,4 +101,68 @@ test("the threshold-miss pattern is checked against c8's OWN source, not a guess
   assert.match(src, /'ERROR: Coverage for '/,
     "c8's own error-message construction changed shape -- update classifyCoverageFailure's regex to match "
     + "before trusting its REGRESSION verdict again");
+});
+
+// --- #1089: the reporter's REAL bytes, generated here, not a fixture typed from a terminal ---
+
+/** Run one deliberately failing test under `reporter` and return exactly what it printed. */
+function reporterOutput(reporter: "tap" | "spec"): string {
+  const dir = mkdtempSync(join(tmpdir(), "a11y-1089-"));
+  try {
+    const file = join(dir, "t.test.mjs");
+    writeFileSync(file, 'import { test } from "node:test";\n'
+      + 'import assert from "node:assert/strict";\n'
+      + 'test("passes", () => assert.ok(true));\n'
+      + 'test("fails on purpose", () => assert.equal(1, 2));\n');
+    // NODE_TEST_CONTEXT MUST GO. The test runner sets it for its own children, and a child that sees it
+    // emits the v8 serialiser regardless of `--test-reporter` -- so this helper returned bytes in neither
+    // format and `testFailuresIn` correctly said null. **The harness was shaping the fixture it was being
+    // used to generate**, which is the same defect as a hand-typed one wearing a different hat.
+    const { NODE_TEST_CONTEXT, ...env } = process.env;
+    void NODE_TEST_CONTEXT;
+    const run = spawnSync(process.execPath, ["--test", `--test-reporter=${reporter}`, file],
+      { encoding: "utf8", env });
+    return `${run.stdout}${run.stderr}`;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("#1089: BOTH reporters are read, and the bytes come from the reporters", () => {
+  // THE FIXTURE IS GENERATED, because the defect was a fixture typed from what the author's terminal
+  // showed. `/ℹ fail (\d+)/` is the SPEC reporter's glyph; CI runs node 22 with no TTY, where the default
+  // is TAP. So `testsFailed` was 0 for every CI run there has ever been, and run 34677157881's single
+  // named failure classified as CANNOT TELL.
+  //
+  // A hand-typed fixture cannot catch this, by construction: it can only contain the format its author
+  // saw. Generating it means the test fails the day node changes either reporter, which is the day it
+  // should.
+  for (const reporter of ["tap", "spec"] as const) {
+    const failures = testFailuresIn(reporterOutput(reporter));
+    assert.ok(failures !== null, `${reporter}'s summary line must be read at all`);
+    assert.equal(failures.count, 1, `${reporter}: one test failed`);
+    assert.ok(failures.names.includes("fails on purpose"),
+      `${reporter}: the failing test must be NAMED, not just counted -- got ${JSON.stringify(failures.names)}`);
+  }
+});
+
+test("#1089: an unreadable log is null, never zero failures", () => {
+  // The conflation the old code shipped: `failMatch ? Number(failMatch[1]) : 0`. A log it could not parse
+  // and a log with nothing wrong produced the same 0, and the verdict then read CANNOT TELL for the wrong
+  // reason -- which is indistinguishable from the right one to a reader.
+  assert.equal(testFailuresIn("c8 ran and said nothing about tests"), null,
+    "no summary line at all is 'could not read', not 'nothing failed'");
+  const clean = classifyCoverageFailure({ ciOutcome: "success", buildOutcome: "success",
+    coverageLog: "c8 ran and said nothing about tests" });
+  assert.match(clean.detail, /carries NEITHER reporter's test summary/,
+    "and the verdict must SAY which kind of CANNOT TELL it is");
+});
+
+test("#1089: a real TAP log reaches the TEST_FAILURE verdict with the name in it", () => {
+  const verdict = classifyCoverageFailure({ ciOutcome: "success", buildOutcome: "success",
+    coverageLog: reporterOutput("tap") });
+  assert.equal(verdict.kind, "TEST_FAILURE",
+    "CI's own reporter must produce the test-failure verdict, which is the whole row");
+  assert.match(verdict.detail, /fails on purpose/,
+    "and name the test, because a count sends a reader to the run and a name sends them to the test");
 });
