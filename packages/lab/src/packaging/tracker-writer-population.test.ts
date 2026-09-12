@@ -27,7 +27,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { TRACKER_WRITERS, sendsABody, bodyFromArgv, assertNoLeakInArgv }
+import { TRACKER_WRITERS, TRACKER_WRITER_DIR, sendsABody, bodyFromArgv, assertNoLeakInArgv }
   from "../../../../packages/lab/src/packaging/leak-patterns.mjs";
 import { localImports } from "../../../../scripts/local-import-closure.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
@@ -79,7 +79,7 @@ function writerPopulation(
 const realPopulation = () => writerPopulation({
   root: REPO,
   files: trackedScripts(),
-  declared: TRACKER_WRITERS,
+  declared: TRACKER_WRITERS.map((name) => `${TRACKER_WRITER_DIR}${name}`),
   read: (f) => readFileSync(f, "utf8"),
   reaches: (entry) => reachesGuard(entry),
 });
