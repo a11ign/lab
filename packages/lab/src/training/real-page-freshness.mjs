@@ -120,12 +120,17 @@ export function captureAgeLines(ages) {
   // branch a capture whose `url` did not survive its write is named as a page nobody captured, which
   // sends the reader to the fleet for a file that is on disk.
   const unreadable = ages.length - urls.length;
+  // ABOVE the reconciliation guard, not inside it -- worker-judge on #1183. Gated on `urls.length > 0`,
+  // this line vanished in the ONE state where the reader most needs it: every capture lacking a url, which
+  // is what a shape change or an older corpus produces, all at once. A branch added to end silence that is
+  // itself silent on its own worst input is the defect this row is about, three lines under the comment
+  // stating the rule it broke.
+  if (unreadable > 0) {
+    lines.push(`  *** ${unreadable} capture(s) carry NO url, so they could not be reconciled at all. `
+      + "They are neither present nor missing below -- this is `could not ask`, not `the answer is no`.");
+  }
   if (urls.length > 0) {
     const missing = missingCaptures(REAL_PAGES.map((p) => p.url), urls);
-    if (unreadable > 0) {
-      lines.push(`  *** ${unreadable} capture(s) carry NO url, so they could not be reconciled at all. `
-        + "They are neither present nor missing below -- this is `could not ask`, not `the answer is no`.");
-    }
     if (missing.length > 0) {
       // THE COUNT FIRST, then names, capped. A reader that printed all of them would bury the number in a
       // wall on the run where the number is largest -- and the largest number is the one that matters most.

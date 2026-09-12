@@ -68,3 +68,12 @@ test("#1183: a capture with NO url is UNREADABLE, not missing", () => {
   assert.doesNotMatch(out, /DECLARED page\(s\) have NO capture/,
     "an unreadable entry must not also be counted as a missing page");
 });
+
+test("#1183: 100% unreadable is REPORTED — the state that produced nothing at all", () => {
+  // The one state where the reader most needs telling, and the only one the first fix was silent on:
+  // gated on `urls.length > 0`, the unreadable line vanished exactly when every capture lacked a url --
+  // which is what a shape change or an older corpus produces, all at once. The single url-less entry
+  // among readable ones was the rarer half and the one that branch handled.
+  const out = captureAgeLines([{ at: AT, role: "training" }, { at: AT, role: "training" }]).join("\n");
+  assert.match(out, /2 capture\(s\) carry NO url/);
+});
