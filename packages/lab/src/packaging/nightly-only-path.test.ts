@@ -88,7 +88,9 @@ test("#1135 clause 3: nightly.yml runs the nightly-only population as a job that
 
 test("#1135 clause 4: the PR suite's floor still holds after the split, on the real tree", () => {
   const min = floorOf(PACKAGE_JSON.scripts["test:ts"]);
-  assert.ok(min >= 300, `the floor is not lowered to make room: ${min}`);
+  // EQUALITY, not a floor (#1067): the row states `--min=300`; a different number is a decision this test
+  // should make somebody state, in both directions.
+  assert.equal(min, 300, `the PR floor is the one the row states, not lowered to make room: ${min}`);
   const resolve = (pattern: string) => globSync(pattern, { cwd: REPO });
   assert.deepEqual(underFloor([PR_GLOB], min, resolve), [], "the PR glob resolves at or above its floor");
   assert.deepEqual(underFloor([NIGHTLY_GLOB], 1, resolve), [], "and the nightly population on the real tree is not empty");
