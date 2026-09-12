@@ -143,11 +143,21 @@ test("#954: no retired guard is selected, and the selector still finds the guard
     assert.equal(guards.has(`packages/lab/src/packaging/${name}.test.ts`), false,
       `${name} is retired and still selected as an always-run guard`);
   }
-  // #954/worker-capture: `adr-index`'s prose-count half moved to `claude-md-counts.test.ts`, which walks
-  // `docs/adr/` itself. It MUST be always-run there, or an ADR added in a PR that touches no packaging
-  // file passes with the count stale -- the coverage hole this row nearly shipped.
-  assert.ok(guards.has("packages/lab/src/packaging/claude-md-counts.test.ts"),
-    "the prose-count guard that inherited adr-index's population is not always-run");
+  // #907 RETIRED THIS ASSERTION, AND IT IS NOT A STALE REFERENCE -- it is one row's decision undone by
+  // another, so the reason is recorded rather than the line quietly removed.
+  //
+  // #954/worker-capture moved `adr-index`'s prose-count half into `claude-md-counts.test.ts` and asserted
+  // here that it stays ALWAYS-RUN, because an ADR added in a PR touching no packaging file would otherwise
+  // pass with the count stale. That was right while a count existed.
+  //
+  // #907 deleted the count itself: CLAUDE.md and `docs/README.md` now say "the decision records" and
+  // "architecture decision records, indexed" with no number in either, so there is nothing to go stale and
+  // nothing to keep always-run. **The population #954 protected no longer exists** -- and the guard that
+  // held it is one of the six prose pins #907 removes, because a test that fails when a sentence is
+  // reworded teaches people not to edit the docs.
+  //
+  // WHAT WOULD BRING IT BACK: a transcribed count returning to either file. `reported-counts.test.ts`
+  // (#1067) is the ratchet for that class now, and the nightly report reads the links.
   assert.ok(guards.size > 10, `only ${guards.size} always-run guards found; the selector is not reading the tree`);
 });
 
