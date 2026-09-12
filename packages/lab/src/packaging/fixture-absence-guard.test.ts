@@ -35,6 +35,12 @@ import { ABSENT_FIXTURE_SYMBOLS, fixtureSymbol } from "../../../../scripts/fixtu
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 
+/** `git ls-files` output as lines, from the repository root, with `GIT_*` scrubbed. */
+const gitLines = (args: string[]): string[] =>
+  execFileSync("git", args, { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() })
+    .split("\n").filter(Boolean);
+
+
 type Violation = { symbol: string; claim: string; file: string; line: number };
 
 /**
@@ -138,7 +144,24 @@ test("#1038: ZERO DECLARATIONS is not ZERO VIOLATIONS -- the examined count is p
 test("#1038 THE LIVE ASSERTION: every symbol in ABSENT_FIXTURE_SYMBOLS is absent from the TRACKED WORKING "
   + "TREE -- the tree that contains the file under review", () => {
   const tree = trackedWorkingTree();
-  assert.ok(tree.files.length > 500, `only ${tree.files.length} files discovered; the walk is broken`);
+  // #1067: DERIVED A SECOND WAY AND ASSERTED EQUAL, where this was `> 500` against a tree of 1,460 --
+  // a floor that tolerated losing TWO THIRDS of the walk, in the guard whose whole subject is which tree
+  // is being asked. The independent count comes from git directly rather than from the walk under test,
+  // so the two can disagree; a floor cannot disagree with anything above it.
+  //
+  // Eight lines above, `examined.symbols` is asserted EXACTLY against the registry's length. Same test,
+  // same hour: the exact claim where the population was small enough to enumerate, the floor where it was
+  // not -- and the choosing was not noticed. That is #1067's mechanism, and this is its worked example.
+  // NOT FULLY INDEPENDENT, and worth naming: the ENUMERATION is git's rather than the walk's, but the
+  // `/dist/` filter is a RETYPED COPY of the walk's own. A defect in that exclusion is invisible here.
+  // (worker-judge, reviewing #1071.)
+  const countedByGit = new Set([
+    ...gitLines(["ls-files"]),
+    ...gitLines(["ls-files", "--others", "--exclude-standard"]),
+  ].filter((f) => !f.includes("/dist/")));
+  assert.equal(tree.files.length, countedByGit.size,
+    `the walk read ${tree.files.length} files and git lists ${countedByGit.size}; they must be the same `
+    + "tree, and a floor could not have told you they were not");
   assert.ok(Object.keys(ABSENT_FIXTURE_SYMBOLS).length > 0,
     "the registry must not be empty, or this assertion is the clean output of a question nobody asked");
   const { violations, examined } = absenceViolations({ symbols: ABSENT_FIXTURE_SYMBOLS, ...tree });

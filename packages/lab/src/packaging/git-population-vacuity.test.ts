@@ -113,9 +113,23 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "(#1067): the count that is also a claim gets an equality, the vacuity guard gets the floor. "
       + "Measured at 132 walked and 11 sending when written.",
   },
+  "packages/lab/src/packaging/reported-counts.test.ts": {
+    guard: 'assert.deepEqual(found, ["reported.test.ts: walked.length"]',
+    note: "guarded, and NOT by a floor -- which would be this guard committing the defect it exists to "
+      + "find (#1067). Its `git ls-files` walk over the packaging directory is proved non-empty by driving "
+      + "the same predicate over a SYNTHETIC directory where the answer is known: a planted reported-floor "
+      + "must be found and a planted precondition must not. Over the real tree a broken predicate returns "
+      + "the baseline and looks clean; over the planted one it cannot. The two baseline tests then hold "
+      + "the real walk in both directions -- a new instance fails, and an entry matching nothing fails -- "
+      + "so no single number stands in for the count.",
+  },
   "packages/lab/src/packaging/fixture-absence-guard.test.ts": {
-    guard: "tree.files.length > 500",
-    note: "guarded twice, and the file count alone was not enough. A clean result is the EXPECTED answer "
+    guard: "tree.files.length, countedByGit.size",
+    note: "guarded twice, and the file count alone was not enough. #1067: the file-count guard was "
+      + "`tree.files.length > 500` against a tree of 1,460 -- a floor tolerating the loss of two thirds of "
+      + "the walk -- and is now an EQUALITY against a count derived from git independently of the walk "
+      + "under test. This `guard` field moved with it: the table checks the literal still appears, so the "
+      + "assertion and its classification go together or CI catches you. A clean result is the EXPECTED answer "
       + "here -- every declared symbol is absent from the working tree -- so 'nothing leaked' and 'the "
       + "walk read no files' are the same observation, which the count floor separates. But the count "
       + "does not say WHICH tree was read: pointing the walk at `origin/main` instead turned 0 red, "
