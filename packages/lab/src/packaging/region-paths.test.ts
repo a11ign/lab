@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { declaredRegionFiles, directoryReservations, extractLabeledSection, extractRegionSection, hasTemplateField, pathInProse, regionCovers, regionPathsFromBody, rootFilesOnMain, trackedTopLevelDirs, unrecognisedRegionPaths } from "../../../../scripts/region-paths.mjs";
+import { declaredRegionFiles, directoryReservations, extractLabeledSection, extractRegionSection, hasTemplateField, pathInProse, regionCovers, regionPathsFromBody, rootFilesOnMain, slashlessDirectoryEntries, trackedTopLevelDirs, unrecognisedRegionPaths } from "../../../../scripts/region-paths.mjs";
 
 /** #999's fixture lives beside the others this directory already keeps (`pr-584-body.md`, `issue-687-body.txt`). */
 const FIXTURES = fileURLToPath(new URL("./fixtures", import.meta.url));
@@ -608,4 +608,54 @@ test("#1186 clause 4: B4's directory branch still covers every file under a decl
     + "not change it");
   assert.equal(regionCovers("docs/", "docsite/x.md"), false, "and must not cover a name that merely shares its spelling");
   assert.equal(regionCovers("docs/a.md", "docs/b.md"), false, "a file entry covers itself only");
+});
+
+/**
+ * #1193: A DIRECTORY REGION WAS TOLD IT DECLARES NOTHING AND RESERVES 107 FILES, IN THE SAME RUN.
+ *
+ * `unrecognisedRegionPaths`'s shape ends each path at a segment, so it reads `packages/lab/` back out as
+ * `packages/lab` — a different string from the declaration. Neither of its tests saw it (`startsWith`
+ * fails because the token is SHORTER than the prefix), so every directory that reserved anything was also
+ * reported stray. Measured over the tracker on one snapshot, before and after: **14 rows → 1**, and the
+ * survivor's remaining report is a genuinely undeclared path.
+ *
+ * THE TRAP FOR ANYONE MAINTAINING THIS: a test written against `docs/` or `scripts/` PASSES WHILE THE
+ * DEFECT IS LIVE. The eight tracked top-level names escaped, and not by being handled — `docs/` has no
+ * segment after its slash, so the shape never matched it at all. The two cells that looked correct were
+ * the two the instrument could not see, which is why the clause below pins a directory one level down and
+ * keeps a top-level one beside it as the control.
+ */
+test("#1193 clause 1: the slash-less spelling of a declared directory is NOT stray", () => {
+  // ONE LEVEL DOWN, deliberately. `docs/` cannot fail this and so cannot witness it.
+  assert.deepEqual(unrecognisedRegionPaths("## Region\n\n```\ndocs/adr/\n```\n"), [],
+    "the Region declared docs/adr/ -- reporting docs/adr as declaring nothing contradicts it");
+  // The control that keeps the fix honest: a path nothing declared is still surfaced. Without this the
+  // clause above passes on an implementation that reports nothing at all.
+  // INLINE, not fenced -- a fenced path is taken as a declaration whatever it is, including one that
+  // names no file in the repository (nothing checks existence; recorded on #1186, out of this row).
+  // A fenced control here would be green by construction and would witness nothing.
+  assert.deepEqual(unrecognisedRegionPaths("## Region\n\n`nosuchdir/thing.md`\n"),
+    ["nosuchdir/thing.md"], "a path that really does declare nothing must still be surfaced");
+  // And the top-level spelling, which passed BEFORE this fix and must keep passing after it -- so a
+  // regression here means the fix moved rather than that it worked.
+  assert.deepEqual(unrecognisedRegionPaths("## Region\n\n```\ndocs/\n```\n"), []);
+});
+
+test("#1193 clause 2: a directory declared WITHOUT its slash is surfaced -- it reserves nothing", () => {
+  // The one cell with no witness at all before this row, and the cell an author reaches by FOLLOWING the
+  // old stray message: drop the slash to satisfy "declares NOTHING" and nothing speaks at all.
+  assert.deepEqual(slashlessDirectoryEntries("## Region\n\n```\ndocs/adr\n```\n", () => true),
+    ["docs/adr"]);
+  // A real FILE is not a directory missing its slash. Without this the clause fires on every Region.
+  assert.deepEqual(slashlessDirectoryEntries("## Region\n\n```\ndocs/README.md\n```\n", () => false), []);
+  // And the correct spelling is not reported by this one -- that is `directoryReservations`'s job.
+  assert.deepEqual(slashlessDirectoryEntries("## Region\n\n```\ndocs/adr/\n```\n", () => true), []);
+});
+
+test("#1193 clause 3: the predicate asks whether tracked files sit BENEATH the entry", () => {
+  // Driven against the real tree rather than an injected answer, because the defect this replaces was a
+  // comparison that looked right and asked the wrong question. `docs/adr` holds files; `docs/README.md`
+  // is a file and holds none.
+  assert.deepEqual(slashlessDirectoryEntries("## Region\n\n```\ndocs/adr\n```\n"), ["docs/adr"]);
+  assert.deepEqual(slashlessDirectoryEntries("## Region\n\n```\ndocs/README.md\n```\n"), []);
 });
