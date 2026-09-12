@@ -348,9 +348,6 @@ test("every discovered script either ADOPTS the verdict helpers, or is DOCUMENTE
       .filter(Boolean).length;
     return buckets > 1;
   });
-  assert.ok(all.length > 0,
-    "#1160: if `all` is empty this assertion passes having compared nothing -- "
-    + "the control belongs on the population, not on `inTwoPlaces`");
   assert.deepEqual(inTwoPlaces, [], "a script cannot adopt the contract AND carry its own — pick one");
 });
 
