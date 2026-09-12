@@ -104,3 +104,35 @@ test("#1165 MUTATION: softening the property must go red, and the count is not t
   // `nine` would refuse the next honest addition while proving nothing about whether the record is useful.
   assert.doesNotMatch(text, /exactly nine instances and no more/i);
 });
+
+/**
+ * #1176: INSTANCE 11 IS DIFFERENT IN KIND, NOT THE ELEVENTH OF A KIND.
+ *
+ * Every other entry produces a WRONG answer, so something downstream disagrees with it. Instance 11
+ * produced a RIGHT one — *"code unchanged from the convinced"* was true, and measured on a tree that had
+ * never moved because `git checkout` refused a reconstructed sha. **Nothing downstream ever disagrees with
+ * a correct conclusion**, so the backstop every other instance has is gone.
+ *
+ * Without that clause the entry is an eleventh anecdote and the remedy on the page is unchanged — which is
+ * the reading this row exists to prevent.
+ */
+test("#1176: instance 11 is in the table with what it PRINTED", () => {
+  // Like the other ten: the printed value is what a reader recognises when it happens to them.
+  assert.match(flat(), /\| 11 \|.*empty.*\|/,
+    "instance 11 must record its printed value -- an empty diff -- not only its cause");
+  assert.match(flat(), /never moved/, "and what that emptiness actually meant");
+});
+
+test("#1176: the section says a RIGHT answer has no downstream corrector", () => {
+  // The claim that makes it different in kind. A count of instances is not the property.
+  assert.match(flat(), /Nothing downstream ever disagrees with a correct conclusion/,
+    "the page must state why a right answer measured on nothing survives");
+});
+
+test("#1176: the refusal-above-the-answer rule names BOTH instances it generalises", () => {
+  // A rule with one instance reads as an anecdote about that instance. 8 is ESLint's parse error above a
+  // `grep -c`; 11 is `fatal: unable to read tree` above an empty diff.
+  assert.match(flat(), /the refusal is above the answer and the answer is what you read/);
+  assert.match(flat(), /catches 8 and 11 together/,
+    "both instances must be named, or the rule reads as a note about one of them");
+});

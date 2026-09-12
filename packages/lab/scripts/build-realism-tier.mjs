@@ -319,7 +319,9 @@ function writeProvenance(/** @type {any} */ baseText, /** @type {any} */ records
 function reportCaptureAges(entries) {
   const ages = entries
     .filter((e) => typeof e.capturedAt === "string")
-    .map((e) => ({ at: e.capturedAt, role: e.role ?? "no role recorded" }));
+    // #1181: the url too, so the reporter can reconcile against what was DECLARED. Without it a page
+    // that was never captured is invisible to every line below.
+    .map((e) => ({ at: e.capturedAt, role: e.role ?? "no role recorded", url: e.capture?.url }));
   process.stdout.write(`${captureAgeLines(ages).join("\n")}\n`);
 }
 

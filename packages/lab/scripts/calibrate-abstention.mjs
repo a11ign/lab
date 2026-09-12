@@ -303,7 +303,9 @@ export function contradictedFindings(/** @type {any} */ page) {
 function reportCaptureAges(pages) {
   const ages = pages
     .filter((entry) => typeof entry.capturedAt === "string")
-    .map((entry) => ({ at: entry.capturedAt, role: entry.role ?? "no role recorded" }));
+    // #1181: the url too -- see `missingCaptures`. A declared page with no capture contributes no
+    // age, no role and no spread, so nothing here could report it.
+    .map((entry) => ({ at: entry.capturedAt, role: entry.role ?? "no role recorded", url: entry.capture?.url }));
   process.stdout.write(`${captureAgeLines(ages).join("\n")}\n`);
 }
 

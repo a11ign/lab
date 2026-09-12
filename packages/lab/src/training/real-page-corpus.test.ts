@@ -14,7 +14,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  assertDisjoint, isFixture, pagesFor, realPageFor, REAL_PAGES, UNWITNESSABLE_ON_REAL_PAGES,
+  assertDisjoint, isFixture, pagesFor, realPageFor, REAL_PAGES, UNWITNESSABLE_ON_REAL_PAGES, unreachableDeclarations,
 } from "./real-page-corpus.mjs";
 import { SCORED_CRITERIA, RULE_CRITERIA } from "@a11ign/judge/coverage";
 import { CASES } from "./case-matrix.mjs";
@@ -242,14 +242,18 @@ test("a declared criterion must not be one real-page capture structurally cannot
   // `probeForms: false` because pressing *Book* on a stranger's site is not a review. Measured: 0 of 77
   // real captures carry `formChanges` or `postSubmitFields`. A page admitted on the strength of one of
   // those would be admitted on evidence that is never collected.
-  const blocked = new Set<string>(UNWITNESSABLE_ON_REAL_PAGES);
-  const impossible: string[] = [];
-  for (const page of REAL_PAGES) {
-    for (const criterion of page.witnessableAs ?? []) {
-      if (blocked.has(criterion)) impossible.push(`${page.url} -> ${criterion}`);
-    }
-  }
-  assert.deepEqual(impossible, [],
+  // #1175, on `ceo`'s ruling: UNLESS THE PAGE CARRIES CONSENT. The list's justification is that
+  // `capture-real-pages.mjs` sets `probeForms: false` globally -- and **ADR 0024 made per-page consent the
+  // exception to exactly that**, with #1114 establishing that consent plus the probe is what makes a
+  // capture actually drive the form. A page declaring `probeForms: true` and a `formState` IS reaching
+  // 3.3.1 and 4.1.3, so blocking it cites a mechanism that no longer applies to it.
+  //
+  // This is a mechanism truth, not a widening: the consent decision still belongs to `INVITED` in
+  // `real-page-form-consent.test.ts`, which is unchanged, and a page without consent is blocked exactly
+  // as before. Without this, a page published as inaccessible whose only witnessable criterion is 4.1.3
+  // could not be admitted AT ALL -- guard `:193` requires a `witnessableAs` and this one forbade the only
+  // value it could have. That deadlock is what #1175 hit.
+  assert.deepEqual(unreachableDeclarations(REAL_PAGES), [],
     "this page is justified by a criterion whose probe does not run on pages we do not own, so the "
     + "evidence it was admitted for will never be gathered");
 });
@@ -448,4 +452,47 @@ test("#940: isFixture is the page's ROLE, with a loopback host as a second signa
   assert.equal(isFixture({ url: "https://www.gov.scot/about/", role: "training" }), false);
   // Every declared fixture is one by role, whatever base it was declared at.
   assert.ok(REAL_PAGES.filter((page) => page.role === "fixture").every(isFixture));
+});
+
+// --- #1175: the consent exception, DRIVEN rather than merely present ----------------------------------
+//
+// `ceo`'s ruling: the unwitnessable list means "unwitnessable UNLESS the page carries consent", because
+// its justification is the global `probeForms: false` and ADR 0024 made a per-page `formState` the
+// exception to exactly that. The page that needed it is held on a decision row, so the corpus cannot
+// exercise this branch — removing the exception leaves the suite green. These four cases are why the rule
+// lives in a function.
+
+test("#1175: a page carrying BOTH halves of consent may declare a form-probe criterion", () => {
+  assert.deepEqual(unreachableDeclarations([
+    { url: "https://x/login", witnessableAs: ["4.1.3"], probeForms: true, formState: { state: "error" } },
+  ]), [], "consent plus the probe is what makes a capture drive the form, so 4.1.3 is reachable there");
+});
+
+test("#1175: EITHER HALF ALONE leaves the criterion exactly as unreachable — #1114's finding", () => {
+  // The case that makes this an exception rather than a hole. A page claiming `probeForms` with no
+  // `formState` has no values to submit; one with a `formState` and no probe never submits. #1114 was
+  // the second of those, shipped and inert, and it is why the guard asks for both rather than either.
+  assert.deepEqual(unreachableDeclarations([
+    { url: "https://probe-only/login", witnessableAs: ["4.1.3"], probeForms: true },
+  ]), ["https://probe-only/login -> 4.1.3"]);
+  assert.deepEqual(unreachableDeclarations([
+    { url: "https://consent-only/login", witnessableAs: ["4.1.3"], formState: { state: "error" } },
+  ]), ["https://consent-only/login -> 4.1.3"]);
+});
+
+test("#1175: a page with no consent at all is blocked exactly as before — the rule did not widen", () => {
+  assert.deepEqual(unreachableDeclarations([
+    { url: "https://plain/page", witnessableAs: ["4.1.3", "3.3.1"] },
+  ]), ["https://plain/page -> 4.1.3", "https://plain/page -> 3.3.1"],
+  "both listed criteria, so the exception is scoped to consent and not to the criterion");
+});
+
+test("#1175: a criterion NOT on the list is unaffected by consent either way", () => {
+  for (const page of [
+    { url: "https://a/p", witnessableAs: ["4.1.2"] },
+    { url: "https://b/p", witnessableAs: ["4.1.2"], probeForms: true, formState: { state: "error" } },
+  ]) {
+    assert.deepEqual(unreachableDeclarations([page]), [],
+      "the list is what blocks, and consent only lifts what the list blocks");
+  }
 });

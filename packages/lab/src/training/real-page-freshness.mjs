@@ -49,17 +49,52 @@ import { REAL_PAGES, pagesFor } from "./real-page-corpus.mjs";
  */
 export const ROLE_SPREAD_WARN_MS = 6 * 60 * 60 * 1000;
 
+/** How many missing pages to NAME before falling back to a count -- the count is never truncated. */
+const NAMED_MISSING = 10;
+
 const DEFAULT_ROLE = "training";
 const defaultRoleCount = pagesFor(DEFAULT_ROLE).length;
 const totalDeclared = REAL_PAGES.length;
 
 /**
+ * #1181: WHICH DECLARED PAGES NOTHING CAPTURED — pure, so the reconciliation is testable without a corpus.
+ *
+ * Every reader here reports on the captures it FOUND. A page declared in `REAL_PAGES` that was never
+ * captured contributes no entry, so it is absent from the ages, absent from the role counts, and absent
+ * from the spread — **invisible to every line this module prints.** The reporter says the corpus is fresh
+ * because everything it can see is fresh, and what it cannot see is the thing that went wrong.
+ *
+ * That is this repository's own most expensive shape: *an absence has many causes*, and a reader that only
+ * ever enumerates what exists cannot distinguish "not captured" from "not declared". The comparison has to
+ * run the other way round — from the DECLARED list, which is the only place that knows a page should exist.
+ *
+ * **THE TWO ADDRESSES ARE NOT GUARANTEED EQUAL, and that is the limit of this comparison.** A capture is
+ * written under the DECLARED address, but `capture.url` is the one it LANDED ON -- `real-page-corpus.mjs`'s
+ * own typedef says nothing records where a capture was requested from. So a page that redirects (a slash
+ * added, `http` upgraded, a locale prefix) is named here as having no capture while its capture is on
+ * disk. The direction is safe -- a false alarm, never a false clean -- but the sentence it prints is one
+ * this row taught people to believe, so: **check for a redirect before checking for a capture.**
+ *
+ * The key that cannot drift is `slug(page.url)`, which is what captures are WRITTEN under and is derived
+ * from the declared address by construction. It is not exported today; exporting it is its own row.
+ *
+ * @param {readonly string[]} declared every url `REAL_PAGES` names
+ * @param {readonly string[]} found every url a capture was read for
+ * @returns {string[]} declared urls with no capture, sorted
+ */
+export function missingCaptures(declared, found) {
+  const seen = new Set(found);
+  return [...new Set(declared)].filter((url) => !seen.has(url)).sort();
+}
+
+/**
  * One line per role: how many, and the window they were captured in. PURE, so it can be tested against
  * the cases that matter without a corpus — the mixed population must WARN and the single run must NOT.
  *
- * @param {{ at: string, role: string }[]} ages
+ * @param {{ at: string, role: string, url?: string }[]} ages
  * @returns {string[]}
  */
+
 export function captureAgeLines(ages) {
   if (ages.length === 0) {
     // Absent prints as NOT RECORDED, never as OK — `capture:explain`'s rule. A corpus of captures too old
@@ -74,6 +109,45 @@ export function captureAgeLines(ages) {
     const [oldest, newest] = [sorted[0], sorted[sorted.length - 1]];
     lines.push(`    ${role}: ${times.length} capture(s), `
       + (oldest === newest ? oldest : `${oldest} .. ${newest}`));
+  }
+  // #1181: THE RECONCILIATION, and it runs only when the caller can supply urls. A caller that passes
+  // none gets silence rather than "0 missing" -- `could not ask` and `the answer is none` are different
+  // facts, and printing the second for the first is how this module came to say a half-captured corpus
+  // was fresh.
+  const urls = ages.flatMap((c) => (typeof c.url === "string" ? [c.url] : []));
+  // AN ENTRY WITH NO URL IS UNREADABLE, NOT MISSING -- worker-judge on #1183, and it is this repo's
+  // most-recorded distinction: "could not ask" must not render as "the answer is no". Without this
+  // branch a capture whose `url` did not survive its write is named as a page nobody captured, which
+  // sends the reader to the fleet for a file that is on disk.
+  // THE KEY'S PRESENCE, not its value. Four of the six callers never map `url` at all -- for them the
+  // answer is "not asked", and reporting it as unreadable made the ordinary case warn (CI, `not ok 161`).
+  // A caller that DOES map it writes `url: e.capture?.url`, so the key is present and the value is
+  // `undefined` exactly when the capture lost the field. That is the case worth a line; the other is not
+  // a fact about the corpus at all.
+  const supplying = ages.some((c) => "url" in c);
+  const unreadable = supplying ? ages.length - urls.length : 0;
+  // ABOVE the reconciliation guard, not inside it -- worker-judge on #1183. Gated on `urls.length > 0`,
+  // this line vanished in the ONE state where the reader most needs it: every capture lacking a url, which
+  // is what a shape change or an older corpus produces, all at once. A branch added to end silence that is
+  // itself silent on its own worst input is the defect this row is about, three lines under the comment
+  // stating the rule it broke.
+  if (unreadable > 0) {
+    lines.push(`  *** ${unreadable} capture(s) carry NO url, so they could not be reconciled at all. `
+      + "They are neither present nor missing below -- this is `could not ask`, not `the answer is no`.");
+  }
+  if (urls.length > 0) {
+    const missing = missingCaptures(REAL_PAGES.map((p) => p.url), urls);
+    if (missing.length > 0) {
+      // THE COUNT FIRST, then names, capped. A reader that printed all of them would bury the number in a
+      // wall on the run where the number is largest -- and the largest number is the one that matters most.
+      lines.push(`  *** ${missing.length} of ${REAL_PAGES.length} DECLARED page(s) have NO capture here, `
+        + "so every count above excludes them. Nothing else reports this: a page with no capture "
+        + "contributes no age, no role and no spread, and is invisible to every line of this report.");
+      for (const url of missing.slice(0, NAMED_MISSING)) lines.push(`      ${url}`);
+      if (missing.length > NAMED_MISSING) {
+        lines.push(`      ... and ${missing.length - NAMED_MISSING} more`);
+      }
+    }
   }
   const all = ages.map((c) => c.at).sort();
   const newestOverall = Date.parse(all[all.length - 1]);
