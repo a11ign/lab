@@ -200,6 +200,10 @@ test("#1067: the WALK enumerated the scope -- protection that survives an empty 
   assert.ok(independently.length > 0,
     "the scope is not empty -- this is the only claim a count can make here without becoming the floor "
     + "this row is about");
+  // THE TWO CHECKS COMPOSE, and neither covers this alone: the independent listing is a different
+  // PATHSPEC of the same command, so an `ls-files` defect would make both see the same wrong set -- and
+  // that case is caught by the STALENESS test above instead, where all 66 baseline entries go stale at
+  // once. Do not "simplify" by deleting either. (worker-judge, reviewing #1071.)
   assert.deepEqual(walkedFiles.sort(), independently.sort(),
     "the walk read exactly the files git lists -- MEMBERSHIP, not a count, and derived from a different "
     + "git invocation than the walk's own, or this is a check whose input contains its own claim");
