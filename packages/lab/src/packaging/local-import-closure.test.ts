@@ -15,9 +15,16 @@
  * `//`-embedded opener AND a later block comment to close against. With no closer the regex never matches
  * and the case passes. **The fixture was missing the closer, not the opener.**
  *
- * WHO WALKS IT: `acceptance-commands.mjs`'s closure requirement walk (token/corpus/history),
- * `tree-wide-guards.mjs`'s guard discovery, and `row-claim/file-overlap-rule.mjs` — B4, which the org leans
- * on harder since B2 stopped counting open PRs.
+ * WHO WALKS IT: `acceptance-commands.mjs:70`'s closure requirement walk (token/corpus/history),
+ * `tree-wide-guards.mjs:23`'s guard discovery, and `gh-token-jobs.test.ts:23`. Re-derived rather than
+ * relayed — an earlier version of this sentence named `row-claim/file-overlap-rule.mjs`, which does NOT
+ * walk this closure: its imports are `repo-identity.mjs`, `merge-guard/lookups.mjs` and `region-paths.mjs`,
+ * so it is one of the ten BLINDED files, a subject and not a walker.
+ *
+ * AND THE COST COMPOUNDS, which is product-manager's restatement and the better one: **a walk that REACHES
+ * a blinded file stops there.** So all three walkers saw closures that terminated early at any of the ten —
+ * and B4's own module being one of them means whatever walked toward it never saw `region-paths.mjs`
+ * behind it.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -87,8 +94,13 @@ test("#1019 THE VACUITY FLOOR: no tracked file loses a local import to the strip
   // `import ... from` is FLAGGED; `export ... from`, `import "./x"`, `await import("./x")` and a
   // MULTI-LINE `import {\n...\n} from` are all four SILENT -- and `localImports` walks all four. Two are
   // live here: `board-report.mjs` and `check-scheduled-jobs.mjs` score 0 on this predicate while
-  // `localImports` finds imports in both, because their import lists span lines. **The floor covers 579 of
-  // the 635 files with local imports, not every tracked file.** Counting what `localImports` itself counts,
+  // `localImports` finds imports in both, because their import lists span lines.
+  //
+  // THE REACH, RE-DERIVED HERE RATHER THAN QUOTED. Of 871 tracked `.mjs`/`.ts` files, **541 have a local
+  // import by `localImports`, 46 of those score zero on this line predicate, so the floor covers 495.** A
+  // count of 635/60/575 was in an earlier draft of this comment; it came to me in a message, I put it in
+  // the file without re-deriving it, and the subtraction in it was wrong as well. The population is stated
+  // here so the next reader can re-run it instead of inheriting it. Counting what `localImports` itself counts,
   // rather than a second differently-shaped predicate over lines, is the better guard and is its own row.
   // `sandboxGitEnv()`, and it is this test's own vacuity at stake rather than a convention: a leaked
   // `GIT_DIR` points `ls-files` at ANOTHER repository, the sweep reads that tree, finds nothing blinded and
