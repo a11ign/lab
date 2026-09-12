@@ -72,12 +72,24 @@ test("#1019: a real block comment is still blanked, and OFFSETS ARE PRESERVED", 
   assert.match(stripped, /const b = 2;/);
 });
 
-test("#1019 THE LIVE INSTANCE: row-claim.mjs's twelve local imports are visible", () => {
-  // The real file, pinned rather than a fixture: it is the instance that found this. TWELVE, not thirteen
-  // -- the thirteenth relative specifier in that file is a `//` comment quoting an import, which is prose
-  // and correctly blanked. Counted from the raw source it reads as thirteen, and that wrong number sat in
-  // this row's own open-check until worker-judge counted independently.
-  assert.equal(localImports(`${REPO}scripts/row-claim.mjs`).length, 12);
+test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and one of them is prose", () => {
+  // The real file, pinned rather than a fixture: it is the instance that found this. The point is not the
+  // number, it is the GAP -- exactly one relative specifier in that file is a `//` comment quoting an
+  // import, so the raw source always reads one higher than the truth, and that wrong number sat in #1019's
+  // own open-check until worker-judge counted independently. Pinning the gap instead of the total means
+  // the next import added to `row-claim.mjs` does not falsify a test that was never about the total.
+  //
+  // (#1014 added the thirteenth import and this assertion caught it, which is the test working. It was
+  // an exact `12` then; it is the difference now, for the reason above.)
+  const walked = localImports(`${REPO}scripts/row-claim.mjs`).length;
+  const rawSpecifiers = new Set(
+    [...readFileSync(`${REPO}scripts/row-claim.mjs`, "utf8").matchAll(/from\s+"(\.[^"]*)"/g)].map((m) => m[1]),
+  ).size;
+  assert.ok(walked >= 12, `expected row-claim.mjs's imports to be visible, walked ${walked}`);
+  assert.equal(rawSpecifiers - walked, 1,
+    `raw source spells ${rawSpecifiers} relative specifiers and the walk sees ${walked}: exactly one is `
+    + "the `//` comment quoting an import. A gap of 0 means the stripper stopped blanking comments; a gap "
+    + "above 1 means it started eating real ones");
   // The two that decide what CI runs, and a SIGHTED control so this cannot pass by the walk finding
   // nothing anywhere.
   assert.equal(localImports(`${REPO}scripts/ci-changed.mjs`).length, 5);
