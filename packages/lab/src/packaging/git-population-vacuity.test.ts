@@ -102,6 +102,17 @@ function discoverGitPopulationTests(): string[] {
  * still literally appear in the file's source below), or `null` with a stated reason no guard applies.
  */
 const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
+  "packages/lab/src/gates/unexaminable-declaration.test.ts": {
+    guard: "found.size >= 20",
+    note: "guarded -- #1030's sweep spawns `git grep -l -F` once per path-like token in lab-job.yml, "
+      + "asking whether anything in the tree READS the path the prose names. A clean result is the "
+      + "EXPECTED answer, so 'no prose names a file nothing reads' and 'the pattern stopped matching' "
+      + "are otherwise the same observation -- which is why the floor counts TOKENS FOUND rather than "
+      + "orphans found. Measured at 31 when written. Each `git grep` scrubs `GIT_*` through "
+      + "`sandboxGitEnv()`: a leaked GIT_DIR would search another repository and vouch for this one's "
+      + "prose from it. The grep's own exit 1 (no match) is the FINDING here, not an error, and is "
+      + "caught and read as such.",
+  },
   "packages/lab/src/packaging/local-import-closure.test.ts": {
     guard: "files.length > 500",
     note: "guarded -- it sweeps `git ls-files` for any tracked file whose local imports the stripper makes "
