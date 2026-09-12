@@ -22,6 +22,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments, localImports } from "../../../../scripts/local-import-closure.mjs";
@@ -79,9 +80,22 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's twelve local imports are visible"
 });
 
 test("#1019 THE VACUITY FLOOR: no tracked file loses a local import to the stripper", () => {
-  // The sweep that measured the defect, kept as the guard. A new `//` comment containing a block-opener
-  // fails here rather than being re-measured by hand a month later.
-  const files = execFileSync("git", ["ls-files", "*.mjs", "*.ts"], { cwd: REPO, encoding: "utf8" })
+  // The sweep that measured the defect, kept as the guard. A new instance fails here rather than being
+  // re-measured by hand a month later.
+  //
+  // WHAT THIS PREDICATE REACHES, measured by worker-judge blinding each statement shape in turn: a plain
+  // `import ... from` is FLAGGED; `export ... from`, `import "./x"`, `await import("./x")` and a
+  // MULTI-LINE `import {\n...\n} from` are all four SILENT -- and `localImports` walks all four. Two are
+  // live here: `board-report.mjs` and `check-scheduled-jobs.mjs` score 0 on this predicate while
+  // `localImports` finds imports in both, because their import lists span lines. **The floor covers 579 of
+  // the 635 files with local imports, not every tracked file.** Counting what `localImports` itself counts,
+  // rather than a second differently-shaped predicate over lines, is the better guard and is its own row.
+  // `sandboxGitEnv()`, and it is this test's own vacuity at stake rather than a convention: a leaked
+  // `GIT_DIR` points `ls-files` at ANOTHER repository, the sweep reads that tree, finds nothing blinded and
+  // asserts `[]` -- clean, having examined the wrong repo, in the one test whose whole job is not to be
+  // vacuous. `files.length > 500` does not save it; any large repository clears 500.
+  const files = execFileSync("git", ["ls-files", "*.mjs", "*.ts"],
+    { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() })
     .split("\n").filter(Boolean).filter((f) => !f.includes("/dist/"));
   assert.ok(files.length > 500, `only ${files.length} files discovered; the sweep is broken, not the tree`);
   // AN IMPORT STATEMENT, not any mention of a specifier. The first version of this sweep counted every
@@ -99,4 +113,31 @@ test("#1019 THE VACUITY FLOOR: no tracked file loses a local import to the strip
   assert.deepEqual(blinded, [],
     "these files have local imports the stripper makes invisible, so every walker reading them sees a "
     + "shorter closure than the file has -- and it fails by finding LESS, which reads as clean");
+});
+
+test("#1019 THE MIRROR: a block comment whose closer is on the same line as a `//` does not eat the file", () => {
+  // worker-judge, reviewing this: sequential passes fail in BOTH directions and the order only chooses
+  // which. A block comment containing `//` with its closer on the SAME LINE -- a URL, the most ordinary
+  // comment there is -- has that closer eaten by a line-first pass, leaving the opener to match forward to
+  // the next closer anywhere later. Same under-charging direction, same silence.
+  //
+  // Concatenated for the reason the fixtures above are: a literal here would make this file an instance of
+  // what it tests, and the sweep below reads every tracked file including this one.
+  const oneLineBlock = `/${"*"} see http:/${"/"}example.com ${"*"}/`;
+  const source = `${oneLineBlock}\nimport MARKER from "./y.mjs";\n${CLOSER}\n`;
+  assert.match(stripComments(source), /import MARKER/,
+    "the one-line block's closer was consumed as part of a line comment, and its opener then ran forward");
+});
+
+test("#1019: the LINE pass preserves offsets too, not just the block pass", () => {
+  // The offset fixture above contains no `//` at all, so the line form's length preservation was asserted
+  // nowhere -- worker-judge's catch. Both forms must keep the text the same length with newlines intact,
+  // because `closureRequirementMessage` reads an offset into the stripped text as a line number in the real
+  // file. That property rejects the `source-text` tokenizer; it does NOT choose between the orderings.
+  const source = "const a = 1; // a trailing note\nconst b = 2;\n";
+  const stripped = stripComments(source);
+  assert.equal(stripped.length, source.length);
+  assert.equal(stripped.split("\n").length, source.split("\n").length);
+  assert.doesNotMatch(stripped, /trailing note/);
+  assert.match(stripped, /const a = 1;/);
 });
