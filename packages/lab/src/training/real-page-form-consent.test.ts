@@ -26,9 +26,63 @@ const configured = REAL_PAGES.filter((page: { formState?: unknown }) => page.for
  */
 const INVITED = ["https://www.w3.org/WAI/demos/"];
 
+/**
+ * #1141: COMPARED BY PARSED URL, NEVER BY STRING PREFIX.
+ *
+ * `url.startsWith(prefix)` held only because the prefix ends in a slash, and **nothing pinned that
+ * slash**: dropping it left the suite 9/0 while `https://www.w3.org.evil.invalid/` became invited. One
+ * character between a lookalike domain and a real origin, unheld -- worker-capture measured it.
+ *
+ * `new URL()` does the work a longer prefix string cannot: it resolves `..` before comparison, it puts
+ * userinfo (`https://www.w3.org@evil.invalid/`) in `username` rather than `host`, and `origin` is scheme
+ * + host + port as one value that cannot be extended by appending characters. **A lookalike host is not a
+ * prefix problem to be patched; it is a parsing problem, and parsing is the fix.**
+ *
+ * PATH CONTAINMENT IS SEPARATE from origin equality and both are required. `/WAI/demos-evil/x` and
+ * `/WAI/demosomething/x` are on the invited ORIGIN and outside the invited PATH -- the second is the one
+ * the trailing slash was silently doing, and the first is what a sibling directory on w3.org would be.
+ *
+ * AN UNPARSEABLE URL IS REFUSED, stated rather than left to `try`'s shape: a page whose URL cannot be
+ * read is not a page that has been checked, and "could not ask" must never render as "the answer is yes".
+ *
+ * @param url the page's declared URL
+ * @returns true only if it parses AND sits at an invited origin inside an invited path
+ */
+function isInvited(url: string): boolean {
+  // PARSED ONCE, BEFORE THE LOOP, so the refusal is its own statement rather than a branch inside an
+  // iteration. My first version parsed per prefix and returned false from the catch -- correct, and
+  // UNTESTABLE: with a single entry in `INVITED`, `return false` and `continue` behave identically, so
+  // the mutation for this row's clause 2 was 0 RED. **A clause whose two outcomes are indistinguishable
+  // at the current population is not held, whatever the code says.**
+  //
+  // It is still not distinguishable BY THAT MUTATION while `INVITED` has one entry, and saying so is the
+  // point. What holds it is the table below asserting the returned value for an unparseable URL
+  // directly -- inverting the catch to `return true` is 1 red.
+  let page: URL;
+  try {
+    page = new URL(url);
+  } catch {
+    return false;
+  }
+  for (const prefix of INVITED) {
+    const invited = new URL(prefix);
+    if (page.origin !== invited.origin) continue;
+    // DIRECTORY CONTAINMENT, not a string test: `new URL` has already resolved `..`, and the invited
+    // pathname ends in `/` -- an invariant the SPOOFS table pins, so dropping that slash is 1 red rather
+    // than a silent widening. That slash is why `startsWith` is a boundary here and not a prefix match.
+    //
+    // worker-capture, reviewing: the `page.pathname === invited.pathname` disjunct this line used to
+    // carry is SUBSUMED by `startsWith` -- and it was redundancy, not documentation. Saying it was
+    // deliberate would have been the comfortable answer and the wrong one; the sentence above is where
+    // the directory-root case belongs.
+    if (page.pathname.startsWith(invited.pathname)) return true;
+  }
+  return false;
+}
+
 test("only pages published AS form examples carry a formState", () => {
   const uninvited = configured
-    .filter((page: { url: string }) => !INVITED.some((prefix) => page.url.startsWith(prefix)))
+    .filter((page: { url: string }) => !isInvited(page.url))
     .map((page: { url: string }) => page.url);
   assert.deepEqual(uninvited, [],
     "A formState submits this form on a live site every time the real-page corpus is captured. It is "
@@ -105,7 +159,7 @@ test("#1114: probeForms may only be set on an INVITED origin — asserted by ori
   // this file's first line -- so it is held the same way `formState` is: an explicit list of origins
   // whose own published purpose is that people submit the form, not a rule like "looks like a demo".
   const uninvited = (probed as { url: string }[])
-    .filter((page) => !INVITED.some((prefix) => page.url.startsWith(prefix))).map((page) => page.url);
+    .filter((page) => !isInvited(page.url)).map((page) => page.url);
   assert.deepEqual(uninvited, [],
     `these would submit a form on a site nobody invited us to: ${uninvited.join(", ")}`);
 });
@@ -144,4 +198,65 @@ test("the guard can see something, or it proves nothing", () => {
   assert.ok(probed.length > 0,
     "no real page is probed, so every probeForms clause above is vacuous — that is the state #1114 "
     + "found, and it must not be able to return silently");
+});
+
+// ---------------------------------------------------------------------------------------------------
+// #1141: THE SPOOF TABLE, with each row said to be NEWLY-caught or ALREADY-caught.
+//
+// The first two the string-prefix guard already rejected, and they are here BECAUSE of that: a fix must
+// not be credited with catching what was never getting through. The ones the parse actually buys are the
+// sibling path, the prefix-extension path, and the `..` traversal.
+// ---------------------------------------------------------------------------------------------------
+
+const SPOOFS: Array<[url: string, invited: boolean, note: string]> = [
+  ["https://www.w3.org.evil.invalid/WAI/demos/x.html", false,
+    "ALREADY-caught — lookalike host. The old prefix rejected it only because the prefix ends in `/`; "
+    + "drop that character and it was invited. `origin` cannot be extended by appending characters."],
+  ["https://www.w3.org@evil.invalid/WAI/demos/x.html", false,
+    "ALREADY-caught — userinfo host. `new URL` puts `www.w3.org` in `username`, never in `host`."],
+  ["https://www.w3.org/WAI/demos-evil/x.html", false,
+    "NEWLY-caught — sibling path on the invited ORIGIN. This is what the trailing slash was doing "
+    + "silently, and it is the one a compromised or unrelated w3.org directory would look like."],
+  ["https://www.w3.org/WAI/demosomething/x.html", false,
+    "NEWLY-caught — prefix-extension path. `/WAI/demos` is a prefix of `/WAI/demosomething`; "
+    + "`/WAI/demos/` is not a prefix of it."],
+  ["https://www.w3.org/WAI/demos/../../private/x.html", false,
+    "NEWLY-caught — `..` traversal. `new URL` NORMALISES the path before comparison, so this resolves to "
+    + "`/private/x.html` and fails containment. A string prefix compares the unresolved text and admits it."],
+  ["https://www.w3.org", false,
+    "NEWLY-caught — bare host, no path. `pathname` is `/`, which is not inside `/WAI/demos/`."],
+  ["https://www.w3.org/WAI/demos/bad/after/survey.html", true,
+    "the genuine invited page — the control, without which every row above is satisfied by a guard that "
+    + "only ever says no."],
+  ["not a url at all", false,
+    "unparseable is REFUSED, never skipped: a page whose URL cannot be read has not been checked, and "
+    + "'could not ask' must not render as 'the answer is yes'."],
+];
+
+test("#1141: every spoof shape is judged by the parsed URL, and the genuine page still passes", () => {
+  const wrong = SPOOFS.filter(([url, invited]) => isInvited(url) !== invited)
+    .map(([url, invited, note]) => `${url} -> expected ${invited}: ${note}`);
+  assert.deepEqual(wrong, [], `these were judged wrongly:\n  ${wrong.join("\n  ")}`);
+  assert.ok(SPOOFS.some(([, invited]) => invited),
+    "the table contains no invited URL, so a guard that returned false for everything would pass it");
+});
+
+test("#1141: the TRAILING SLASH is no longer load-bearing — the row's own mutation", () => {
+  // 0 red before this row: dropping the slash left the suite green while `www.w3.org.evil.invalid`
+  // became invited. It is not load-bearing now because `origin` is compared as a whole value, so this
+  // asserts the property directly rather than re-running the mutation.
+  const withoutSlash = "https://www.w3.org/WAI/demos";
+  const page = new URL("https://www.w3.org.evil.invalid/WAI/demos/x.html");
+  assert.notEqual(page.origin, new URL(withoutSlash).origin,
+    "a lookalike host must differ by ORIGIN, so no amount of prefix trimming can admit it");
+  assert.equal(isInvited("https://www.w3.org.evil.invalid/WAI/demos/x.html"), false);
+});
+
+test("#1141: the four real invited corpus pages still pass — derived, not a floor", () => {
+  const invited = REAL_PAGES.filter((p: { url: string }) => isInvited(p.url)).map((p: { url: string }) => p.url);
+  assert.equal(invited.length, REAL_PAGES.filter((p: { url: string }) =>
+    p.url.startsWith("https://www.w3.org/WAI/demos/")).length,
+  "every page the old string prefix accepted must still be accepted — this fix tightens the boundary, "
+  + "and a tightening that drops a genuine page is a different change from the one this row asked for");
+  assert.ok(invited.length > 0, "no invited page is accepted, so the assertion above compares zero to zero");
 });
