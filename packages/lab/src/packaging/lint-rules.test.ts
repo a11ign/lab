@@ -286,12 +286,19 @@ test("#1155: `guarded-by <symbol>` must name a symbol the file actually contains
 // make and only a line to hold. That is precisely why it beats the sweep it replaces: at the spawn's line,
 // on every lint run, refusing a new file as it is written.
 
+// FIXTURES BUILT BY CONCATENATION, NEVER SPELLED. Two tree-wide guards read source text and cannot
+// tell a string literal from a call -- `git-population-vacuity` and the npx/npm resolution guard both
+// classified THIS file as a spawner when these fixtures spelled the call intact. That is the
+// fixture-cannot-name-itself shape: a "guaranteed absent" literal self-matches every whole-tree scan
+// once the file is merged, and the remedy is to fingerprint it rather than write it.
+const spawn = (bin: string) => `exec${"FileSync"}(${JSON.stringify(bin)}, `;
+
 const SPAWN = "local/git-spawn-scrubbed";
 const GIT_FIXTURE = "scripts/fixture.mjs";
 
 test("#1185: a git spawn with no helper is reported AT THE SPAWN", async () => {
   const code = 'import { execFileSync } from "node:child_process";\n'
-    + 'export const head = () => execFileSync("git", ["rev-parse", "HEAD"]);\n';
+    + `export const head = () => ${spawn("git")}["rev-parse", "HEAD"]);\n`;
   assert.deepEqual(await reportedLines(SPAWN, code, GIT_FIXTURE), [2],
     "the line of the call, not the file -- the whole reason this is a rule and not a sweep");
 });
@@ -299,8 +306,8 @@ test("#1185: a git spawn with no helper is reported AT THE SPAWN", async () => {
 test("#1185: imported AND called is scrubbed; imported alone is not", async () => {
   const imported = 'import { execFileSync } from "node:child_process";\n'
     + 'import { sandboxGitEnv } from "./git-env.mjs";\n';
-  const called = `${imported}export const head = () => execFileSync("git", ["rev-parse"], { env: sandboxGitEnv() });\n`;
-  const notCalled = `${imported}export const head = () => execFileSync("git", ["rev-parse"]);\n`;
+  const called = `${imported}export const head = () => ${spawn("git")}["rev-parse"], { env: sandboxGitEnv() });\n`;
+  const notCalled = `${imported}export const head = () => ${spawn("git")}["rev-parse"]);\n`;
 
   assert.deepEqual(await reportedLines(SPAWN, called, GIT_FIXTURE), []);
   assert.deepEqual(await reportedLines(SPAWN, notCalled, GIT_FIXTURE), [3],
@@ -312,21 +319,30 @@ test("#1185: a git spawn inside a COMMENT is not a spawn, which a regex over sou
   // Three such comments exist in this tree. The sweep strips comments to survive them; the rule asks the
   // syntax and cannot make the mistake at all. Measured while scoping #1185: a regex over raw source read
   // all three as unscrubbed spawns.
-  const code = '// a comment mentioning execFileSync("git", ["ls-files"]) as prose\n'
-    + '/** and a doc comment: execFileSync("git", ...) */\n'
+  const code = `// a comment mentioning ${spawn("git")}["ls-files"]) as prose\n`
+    + `/** and a doc comment: ${spawn("git")}...) */\n`
     + 'export const nothing = 1;\n';
+  assert.deepEqual(await reportedLines(SPAWN, code, GIT_FIXTURE), []);
+});
+
+test("#1185: a LOCAL function named `spawn` is not `child_process.spawn` -- the import is the rule", async () => {
+  // Found by this rule firing six times on the fixtures written for it: the builder below is named
+  // `spawn` and takes "git" as its first argument. Matching by callee NAME is a rendering; resolving the
+  // identifier to an import from `node:child_process` is the property.
+  const code = `const ${"spawn"} = (bin: string) => bin;\n`
+    + `export const x = ${"spawn"}("git");\n`;
   assert.deepEqual(await reportedLines(SPAWN, code, GIT_FIXTURE), []);
 });
 
 test("#1185: a non-git spawn is not this rule's business", async () => {
   const code = 'import { execFileSync } from "node:child_process";\n'
-    + 'export const npm = () => execFileSync("npm", ["run", "lint"]);\n';
+    + `export const npm = () => ${spawn("npm")}["run", "lint"]);\n`;
   assert.deepEqual(await reportedLines(SPAWN, code, GIT_FIXTURE), []);
 });
 
 test("#1185: the exemption is per FILE and lives in the rule's own option", async () => {
   const code = 'import { execFileSync } from "node:child_process";\n'
-    + 'export const head = () => execFileSync("git", ["rev-parse"]);\n';
+    + `export const head = () => ${spawn("git")}["rev-parse"]);\n`;
   const eslintWithExempt = new ESLint({ cwd: root, overrideConfig: {
     rules: { [SPAWN]: ["error", { dataNotASpawn: [GIT_FIXTURE] }] } } });
   const [result] = await eslintWithExempt.lintText(code, { filePath: join(root, GIT_FIXTURE) });
