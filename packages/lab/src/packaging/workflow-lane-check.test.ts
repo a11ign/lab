@@ -231,14 +231,16 @@ test("#913: a RETIRED session is named as retired, and an unknown one is not", (
   // The four labels are retired BY DESCRIPTION and kept, because merged PRs carry them and a record of the
   // past is never renamed. Measured through the REST API 2026-09-12, at the moment of retirement:
   //
-  //     session:dispatcher        0 open, 4 closed
-  //     session:worker-audit      0 open, 2 closed
-  //     session:worker-contracts  0 open, 3 closed
-  //     session:worker-config     0 open, 4 closed
+  //                               closed ISSUES   closed PULL REQUESTS   open (either)
+  //     session:dispatcher              0                 4                   0
+  //     session:worker-audit            0                 2                   0
+  //     session:worker-contracts        0                 3                   0
+  //     session:worker-config           0                 4                   0
   //
-  // `gh issue list --state closed --label session:dispatcher` reports **0** for the same question -- the
-  // count above is the REST one, and the discrepancy is why it is REST. A tracker count is a fact at a
-  // time and does not belong in an assertion; the MECHANISM does, and this is it.
+  // The population is PULL REQUESTS and no issue carries one, so the precondition holds in its strongest
+  // form. `gh issue list --state closed --label <name>` reports 0 and `gh pr list` reports 4: **neither is
+  // wrong, they count different denominators, and nothing in either output says which.** A tracker count
+  // is a fact at a time and does not belong in an assertion; the MECHANISM does, and this is it.
   for (const retired of RETIRED_SESSIONS) {
     assert.deepEqual(unknownSessionLabels([`session:${retired}`]),
       [{ label: `session:${retired}`, retired: true }],
