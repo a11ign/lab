@@ -9,6 +9,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { derivedLocalRule } from "../../../../scripts/uncontrolled-emptiness.mjs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ESLint } from "eslint";
@@ -127,4 +129,153 @@ test("#1144: a read split across LINES is reported, which a line regex cannot se
     [1], "reported at the line the member expression STARTS on, not where `.statusCheckRollup` sits -- "
       + "I expected 2 and the rule is right: the node begins at `pr`. The point is that it is reported "
       + "at all, since no single line here carries both the read and a wrapper for a regex to compare");
+});
+
+/**
+ * #1155: THE DERIVED-LOCAL EMPTINESS RULE — `ceo`'s ruling on #1123's evidence, which was that the 226
+ * uncontrolled assertions are not one population and only this shape is decidable today.
+ *
+ * `assert.deepEqual(offenders, [])` where `const offenders = files.filter(...)` passes when `files` is
+ * EMPTY. The control belongs on the population, not the filtered subject.
+ *
+ * **THE POPULATION IS RE-DERIVED, not taken from #1123's count** — the row's clause 2, and it earned its
+ * place. Measured over the full 535-file population: **97 assertions carry the shape, 32 are genuinely
+ * unpinned in their own test.** The rule's hits are a STRICT SUBSET of the shape population (zero
+ * rule-only), and the 65 it passes are passed correctly — sampled, they carry
+ * `assert.ok(source.length >= N, …)` in the same test.
+ *
+ * That gap is a finding about #1123's instrument rather than about this rule: its pin pattern requires
+ * `.length` followed by `,` or `)`, so it reads `assert.ok(offered.length >= 5)` as NOT a pin — when
+ * `>= 5` is a stronger pin than `> 0`. **A count measured with a narrow pin detector overstates how much
+ * is uncontrolled**, which matters because that count was the argument for a ratchet.
+ */
+const RULE = "local/uncontrolled-emptiness";
+const inTest = (body: string) =>
+  `import assert from "node:assert/strict";\nimport test from "node:test";\ntest("t", () => {\n${body}\n});\n`;
+
+test("#1155: an emptiness assertion on a locally derived collection with no pin on its source is REPORTED", async () => {
+  const lines = await reportedLines(RULE,
+    inTest("  const files = walk();\n  const bad = files.filter((f) => f.x);\n  assert.deepEqual(bad, []);"),
+    "packages/lab/src/packaging/zz-fixture-uncontrolled.test.ts");
+  assert.equal(lines.length, 1, `expected one report, got ${lines.length}`);
+});
+
+test("#1155: the SAME assertion with its source pinned in the same test is NOT reported", async () => {
+  // The control. Without it the test above is satisfied by a rule that reports EVERY emptiness assertion
+  // -- the "a guard that only ever says no" shape `sound` exists to rule out for the isolation gate.
+  const lines = await reportedLines(RULE,
+    inTest("  const files = walk();\n  assert.ok(files.length >= 3, \"the walk is broken\");\n"
+      + "  const bad = files.filter((f) => f.x);\n  assert.deepEqual(bad, []);"),
+    "packages/lab/src/packaging/zz-fixture-controlled.test.ts");
+  assert.deepEqual(lines, []);
+});
+
+test("#1155: a pin in a DIFFERENT test does not control this one", async () => {
+  // Two tests run independently and either could be the one that stops examining anything. Searching the
+  // whole file would let one pin excuse every assertion in it -- a control on the wrong object reading as
+  // a control, which is #1123's own instance 2.
+  const lines = await reportedLines(RULE,
+    `import assert from "node:assert/strict";\nimport test from "node:test";\n`
+    + `test("a", () => {\n  const files = walk();\n  assert.ok(files.length >= 3);\n});\n`
+    + `test("b", () => {\n  const files = walk();\n  const bad = files.filter((f) => f.x);\n`
+    + `  assert.deepEqual(bad, []);\n});\n`,
+    "packages/lab/src/packaging/zz-fixture-other-test.test.ts");
+  assert.equal(lines.length, 1);
+});
+
+test("#1155: a collection derived from a CALL is out of scope, and deliberately", async () => {
+  // ceo's ruling: the rule can see the shape and cannot see the population. A report here has no action
+  // attached except restructuring the test, and a rule whose remedy is "write it differently" is a style
+  // rule wearing a correctness rule's name.
+  const lines = await reportedLines(RULE,
+    inTest("  const bad = walk().filter((f) => f.x);\n  assert.deepEqual(bad, []);"),
+    "packages/lab/src/packaging/zz-fixture-from-call.test.ts");
+  assert.deepEqual(lines, []);
+});
+
+test("#1155: an exemption carries ONE OF TWO reasons, and the config says which for each", () => {
+  // ceo's ruling: "controlled by a guard this rule cannot see" and "the vacuity is the point" are
+  // different claims, and one option carrying both makes the list unreadable -- the failure an exemption
+  // list exists to prevent. A third kind of reason is a ROW, not a third entry.
+  const config = readFileSync(join(root, "eslint.config.js"), "utf8");
+  assert.match(config, /"packages\/lab\/src\/packaging\/git-population-vacuity\.test\.ts": "demonstration"/);
+  assert.match(config, /"packages\/lab\/src\/capture\/verify\.corpus\.test\.ts": "guarded-by labCorpusReadable"/,
+    "the guarded-by reason must NAME the symbol -- `a guard exists` is the claim, and an unnamed one "
+    + "cannot be checked against the file");
+});
+
+test("#1155: an exemption whose reason is neither shape is itself an ERROR", async () => {
+  // Without this the list rots quietly: an entry reading "because it was failing" would silence a file
+  // and nobody could tell an argued case from a suppressed one.
+  const { ESLint } = await import("eslint");
+  const strict = new ESLint({ cwd: root, overrideConfig: [{
+    files: ["**/*.ts"],
+    plugins: { probe: { rules: { "uncontrolled-emptiness": derivedLocalRule } } },
+    rules: { "probe/uncontrolled-emptiness": ["error", { exempt: { "zz-fixture-bad-reason.test.ts": "it was noisy" } }] },
+  }] });
+  const [result] = await strict.lintText("export const x = 1;\n",
+    { filePath: join(root, "zz-fixture-bad-reason.test.ts") });
+  const hits = result.messages.filter((m) => m.ruleId === "probe/uncontrolled-emptiness");
+  assert.equal(hits.length, 1, JSON.stringify(result.messages.map((m) => m.message)));
+  assert.match(hits[0].message, /neither `demonstration` nor `guarded-by <symbol>`/);
+});
+
+test("#1155: the pin detector answers the SYNTAX, and every edge that read as pinned is gone", async () => {
+  // worker-judge's five edges on #1167, each of which read an ABSENT control as present -- the cheap,
+  // uncaught direction. A regex over the test's source got all five wrong the same way; asking the AST
+  // gets them right for one reason rather than five.
+  const { ESLint } = await import("eslint");
+  const probe = new ESLint({ cwd: root, overrideConfig: [{
+    files: ["**/*.ts"],
+    plugins: { probe: { rules: { "uncontrolled-emptiness": derivedLocalRule } } },
+    rules: { "probe/uncontrolled-emptiness": "error" },
+  }] });
+  const run = async (pin: string) => {
+    const code = `import assert from "node:assert/strict";\nimport test from "node:test";\n`
+      + `test("t", () => {\n  const files = walk();\n  ${pin}\n`
+      + `  const bad = files.filter((f) => f.x);\n  assert.deepEqual(bad, []);\n});\n`;
+    const [r] = await probe.lintText(code, { filePath: join(root, "zz-fixture-edge.test.ts") });
+    return r.messages.filter((m) => m.ruleId === "probe/uncontrolled-emptiness").length;
+  };
+
+  assert.equal(await run('assert.ok(files.length > 0);'), 0, "a plain pin controls it");
+  assert.equal(await run('assert.ok(a.length > 0 && files.length > 0);'), 0,
+    "a CONJUNCTION controls both operands -- the shape that cost a redundant pin in #1160");
+
+  // The five that must NOT count. Each was PINNED under the textual detector.
+  assert.equal(await run('assert.ok(a.length > 0 || files.length > 0);'), 1, "a disjunction controls NEITHER");
+  assert.equal(await run('assert.ok(!(files.length > 0));'), 1, "a negation asserts it IS empty");
+  assert.equal(await run('assert.ok(cond ? files.length > 0 : true);'), 1, "a conditional controls nothing when false");
+  assert.equal(await run('// assert.ok(files.length > 0);'), 1,
+    "a COMMENT is not a pin -- and commenting a line out is HOW a pin gets removed (#1088)");
+  assert.equal(await run('assert.equal(files.length, 0);'), 1,
+    "asserting it IS empty is the opposite of a pin; the old lookahead was defeated by `\\s*` backtracking");
+  assert.equal(await run('assert.ok(files.length >= 0);'), 1, "`>= 0` is true of an empty array");
+
+  // And it must not over-credit: a conjunction about a DIFFERENT variable is not a pin on this one.
+  assert.equal(await run('assert.ok(a.length > 0 && b.length > 0);'), 1, "wrong variable");
+});
+
+test("#1155: `guarded-by <symbol>` must name a symbol the file actually contains", async () => {
+  // worker-judge's should-fix 2: the reason's SHAPE was tested and its content was not, so
+  // `guarded-by someSymbolNotInTheFile` exempted the file. The rot mode is the dangerous one -- remove
+  // the guard, keep the entry, and the exemption hides the defect the rule exists to find.
+  const { ESLint } = await import("eslint");
+  const withReason = (reason: string) => new ESLint({ cwd: root, overrideConfig: [{
+    files: ["**/*.ts"],
+    plugins: { probe: { rules: { "uncontrolled-emptiness": derivedLocalRule } } },
+    rules: { "probe/uncontrolled-emptiness": ["error", { exempt: { "zz-fixture-guarded.test.ts": reason } }] },
+  }] });
+  const code = `import assert from "node:assert/strict";\nimport test from "node:test";\n`
+    + `const GUARD = labCorpusReadable({});\n`
+    + `test("t", () => {\n  if (!GUARD.read) return;\n  const files = walk();\n`
+    + `  const bad = files.filter((f) => f.x);\n  assert.deepEqual(bad, []);\n});\n`;
+  const hits = async (reason: string) => {
+    const [r] = await withReason(reason).lintText(code, { filePath: join(root, "zz-fixture-guarded.test.ts") });
+    return r.messages.filter((m) => m.ruleId === "probe/uncontrolled-emptiness");
+  };
+  assert.deepEqual(await hits("guarded-by labCorpusReadable"), [], "the symbol is in the file, so the exemption stands");
+  const absent = await hits("guarded-by someSymbolNotInTheFile");
+  assert.equal(absent.length, 1);
+  assert.match(absent[0].message, /does not appear in this file/);
 });
