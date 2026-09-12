@@ -20,6 +20,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { stripComments } from "@a11ign/evidence/source-text";
 import { fileURLToPath } from "node:url";
 import {
   METRICS, EXIT, figure, passRate, renderFigure, renderTable, totalCount, mainColour,
@@ -594,8 +595,20 @@ test("#1072: every declared EXIT value is one some path can produce", () => {
   // The row's own open-check, as an assertion. A name in this object is a promise to whoever reads the
   // status, and a promise nothing keeps is worse than an absent one: the reader plans for a state that
   // never arrives and treats its absence as evidence.
-  const source = readFileSync(fileURLToPath(new URL("../../../../scripts/org-watch.mjs", import.meta.url)),
-    "utf8");
+  //
+  // COMMENTS STRIPPED FIRST, and `worker-capture` found why on review: this reads the source as TEXT, so
+  // before the strip a *comment* mentioning `EXIT.CANNOT_ASK` satisfied it and the guard went green with
+  // the value unreachable. It passed today only by the phrasing of the paragraph above line 622, which
+  // writes the name without its `EXIT.` prefix -- and a guard about a promise nothing keeps, itself kept
+  // by prose, is the thing it was written to refuse. `stripComments` is the shared helper three other
+  // guards reached for after the identical defect.
+  //
+  // WHAT IS STILL NOT HANDLED, stated rather than left for a future mutation: `stripComments`
+  // deliberately preserves STRING LITERALS, so `EXIT.CANNOT_ASK` inside a diagnostic message would also
+  // satisfy this. All three references in the script today are real assignments; if one ever moves into
+  // a message, this needs to narrow to an assignment context rather than a mention.
+  const source = stripComments(readFileSync(
+    fileURLToPath(new URL("../../../../scripts/org-watch.mjs", import.meta.url)), "utf8"));
   const produced = new Set([...source.matchAll(/EXIT\.([A-Z_]+)/g)].map((m) => m[1]));
   produced.delete("");
   for (const name of Object.keys(EXIT)) {
