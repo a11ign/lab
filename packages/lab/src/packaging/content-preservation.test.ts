@@ -216,15 +216,33 @@ test("origin/main resolves to a real commit -- this test cannot pass having exam
   assert.match(sha, /^[0-9a-f]{40}$/, `origin/main resolved to "${sha}", not a real commit SHA`);
 });
 
+/**
+ * THE BASE IS THE MERGE-BASE, AND NEITHER OF THE TWO OBVIOUS SPELLINGS IS RIGHT.
+ *
+ * `git diff origin/main -- CLAUDE.md` is TWO-DOT: it compares main's tip to this working tree, so a
+ * branch that is merely BEHIND main is accused of removing every line main has added since. Measured on
+ * a head 741 commits back: **14 removed lines two-dot, 0 three-dot**, and 4 of them flagged -- with the
+ * message telling the author to move main's own new text into `docs/`. It does not fire in PR CI, where
+ * checkout takes the merge ref and HEAD already contains main; it fires LOCALLY, on any branch that has
+ * not merged main, which is the ordinary state here.
+ *
+ * But `origin/main...HEAD` is not the fix either: three-dot compares against the COMMIT, so it silently
+ * drops removals that are still only in the working tree -- exactly the edit this guard should catch
+ * soonest, while the author still has the body in front of them.
+ *
+ * So: resolve the merge-base, then diff the WORKING TREE against it. `fetch-depth: 0` on the `ts` job is
+ * what makes `merge-base` resolvable, and `ci.yml`'s `deliberateRefusals` already records that a
+ * merge-base diff needs it. Found by `worker-judge` in review, driving these exports against a real
+ * behind-main head rather than reasoning about the dots.
+ */
 test("every substantive line removed from CLAUDE.md still exists as text somewhere", () => {
   ensureOriginMain();
-  const diff = execFileSync("git", ["diff", "origin/main", "--", "CLAUDE.md"],
+  const git = (...args: string[]) => execFileSync("git", args,
     { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8", maxBuffer: 1024 * 1024 * 64 });
-  const removed = removedSubstantiveLines(diff);
+  const base = git("merge-base", "origin/main", "HEAD").trim();
+  const removed = removedSubstantiveLines(git("diff", base, "--", "CLAUDE.md"));
   const missing = unpreservedLines(removed, haystack());
-  const oldMd = execFileSync("git", ["show", "origin/main:CLAUDE.md"],
-    { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8", maxBuffer: 1024 * 1024 * 64 });
-  assert.deepEqual(missing, [], unpreservedMessage(missing, removed.length, oldMd));
+  assert.deepEqual(missing, [], unpreservedMessage(missing, removed.length, git("show", `${base}:CLAUDE.md`)));
 });
 
 /**
@@ -312,6 +330,10 @@ test("#907's diff: the old guard flagged 8 of 9, this flags the 1 whose text rea
     git("cat-file", "-e", `${BASE}^{commit}`);
     git("cat-file", "-e", `${HEAD}^{commit}`);
   } catch {
+    // DEFENCE ONLY, and say so rather than implying it fires: every job running this suite uses
+    // `fetch-depth: 0`, so a shallow checkout cannot happen in CI today. `worker-judge` exercised this
+    // path against a fixture repo at the same depth -- `origin/main` resolving, neither commit present --
+    // and it reported `skipped 1` with `pass 7 fail 0`, so the branch is tested rather than assumed.
     t.skip(`#907's commits (${BASE}, ${HEAD}) are not in this checkout -- shallow clone. `
       + "Not run, and not counted as a pass.");
     return;
@@ -329,4 +351,45 @@ test("#907's diff: the old guard flagged 8 of 9, this flags the 1 whose text rea
   assert.equal(missing[0].words, 5, "and it survives 5 words -- one below the floor, which is the margin");
   assert.equal(missing[0].matched, "Do not go looking for",
     "the matched run is generic English, which is why 5 words is not preservation");
+});
+
+/**
+ * THE CASE THAT DISTINGUISHES TWO-DOT FROM THREE-DOT, which the suite did not have.
+ *
+ * A branch LEVEL with main produces the same answer either way, so every test that exercises the happy
+ * state is blind to this. The distinguishing case is a branch genuinely BEHIND main with no removals of
+ * its own: two-dot accuses it of removing everything main has added since it forked, and the accusation
+ * grows louder the longer the branch lives. `product-manager` named the mutation; `worker-judge` found
+ * the defect by driving these exports rather than re-implementing the comparison beside them.
+ *
+ * Driven against real history rather than a fixture, because the bug was never in the comparison -- it
+ * was in which two trees were handed to it, and a hand-made diff cannot be wrong in that way.
+ */
+test("a branch merely BEHIND main is accused of nothing -- the two-dot trap", (t) => {
+  const git = (...args: string[]) => execFileSync("git", args,
+    { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8", maxBuffer: 1024 * 1024 * 64 });
+  ensureOriginMain();
+  // DERIVED, not a magic depth: the parent of the last commit that touched CLAUDE.md is by construction
+  // a point where main has since changed the file. My first attempt used `--skip=200` and the guard
+  // below caught it -- CLAUDE.md had not moved in 200 commits, so the naive diff reported 0 and the test
+  // would have passed having exercised nothing. A depth chosen by eye is a depth that goes stale.
+  const lastTouch = git("log", "-n1", "--format=%H", "origin/main", "--", "CLAUDE.md").trim();
+  if (lastTouch === "") {
+    t.skip("no commit touching CLAUDE.md in this history -- shallow clone. Not run, and not a pass.");
+    return;
+  }
+  const behind = git("rev-parse", `${lastTouch}^`).trim();
+  const naive = removedSubstantiveLines(git("diff", "origin/main", behind, "--", "CLAUDE.md"));
+  const base = git("merge-base", "origin/main", behind).trim();
+  const correct = removedSubstantiveLines(git("diff", base, behind, "--", "CLAUDE.md"));
+
+  // The trap must be REAL at this depth, or this test proves nothing by passing.
+  assert.ok(naive.length > 0,
+    "the naive two-dot diff reported no removals, so this history cannot exercise the trap -- the test "
+    + "would pass for the wrong reason");
+  assert.equal(base, behind,
+    "a commit reachable from main IS its own merge-base with main; if this moved, the setup is wrong");
+  assert.deepEqual(correct, [],
+    `a branch that is only BEHIND main removed nothing, but the merge-base diff found ${correct.length} `
+    + "removed line(s) -- the base is wrong");
 });
