@@ -149,6 +149,21 @@ test("#1030 SWEEP: no path in lab-job.yml's operator-facing prose is one that no
   assert.ok(found.size >= 20,
     `expected the sweep to find the file's many paths, found ${found.size} — a population this small `
     + "means the pattern stopped matching, not that the paths went away");
+  // A FLOOR CANNOT TELL "THE PATTERN STILL MATCHES EVERYTHING" FROM "IT MATCHES 22 OF THE 31 IT USED TO".
+  // Measured by worker-judge reviewing this PR: narrowing the pattern to require two directory segments
+  // drops the population 31 -> 26, and three segments -> 22. Both clear a floor of 20 in silence, and the
+  // shape they drop FIRST is the single-segment one — `runs/real-page-unexaminable.json`, the defect this
+  // row exists for, and ten of the twelve the first sweep flagged. So the SHAPE is asserted, not only the
+  // size, in both directions: the pattern must match a known single-segment token, and the real corpus
+  // must still contain one.
+  assert.ok(PATHISH.test("declare it in runs/real-page-unexaminable.json before re-running"),
+    "POSITIVE CONTROL: the pattern must match a single-directory-segment path. A narrowing that stops "
+    + "matching this shape is invisible to a count, and this shape is the one the row is about");
+  PATHISH.lastIndex = 0; // `g` regexes carry state between `.test()` calls; a stale index is a false negative
+  const singleSegment = [...found.keys()].filter((path) => path.split("/").length === 2);
+  assert.ok(singleSegment.length > 0,
+    `the corpus must still contain single-segment paths; found ${singleSegment.length} of ${found.size}. `
+    + "Zero here means the pattern narrowed even though the total stayed healthy");
 
   const orphans = [...found].filter(([path]) => {
     if (existsSync(resolve(REPO_ROOT, path))) return false;
