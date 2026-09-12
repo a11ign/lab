@@ -427,6 +427,58 @@ function disclosurePair({ id, title, control, task }) {
   });
 }
 
+/**
+ * #1115: HELD-OUT PAIRS FOR 4.1.3'S OTHER TWO STATUS CATEGORIES.
+ *
+ * `acceptance-matrix.test.ts` refused the corpus cases without these, and its refusal is the right one:
+ * a subtype with corpus cases and no acceptance pair means `training:evaluate-acceptance` reports
+ * `passed: true` having never examined it.
+ *
+ * NOT ledgered as SUBTYPES_WITHOUT_ACCEPTANCE_COVERAGE, and the ledger's own entries say why that would
+ * be dishonest: every one there is a subtype with NO TRAINED HEAD, where an acceptance pair would test
+ * the rule instead. These two will have heads the moment #34's round captures them — so the held-out
+ * measurement is exactly what they need, and skipping it is how a subtype ships unmeasured.
+ *
+ * SYNCHRONOUS, for the reason the corpus builders are: a polite region waits for idle, so an
+ * asynchronous update announces intermittently and `gate:stability` refuses that evidence.
+ *
+ * @param {TitledPair & { control: string, waiting: string }} spec
+ */
+function waitingStatusPair({ id, title, control, waiting, task }) {
+  const body = `<button id="go" type="button">${control}</button><p id="state"></p>`;
+  const script = `document.querySelector('#go').addEventListener('click',()=>{document.querySelector('#state').textContent='${waiting}'})`;
+  return pair({
+    id,
+    criterion: "4.1.3",
+    subtype: "status-waiting",
+    task,
+    mutation: "A waiting state appears without being announced.",
+    badSignal: { type: "form-activation-silent", control, expected: waiting },
+    probeForms: true,
+    good: page({ title, heading: title, script,
+      body: body.replace('id="state"', 'id="state" role="status" aria-live="polite" aria-atomic="true"') }),
+    bad: page({ title, heading: title, body, script }),
+  });
+}
+
+/** @param {TitledPair & { control: string, progress: string }} spec */
+function progressStatusPair({ id, title, control, progress, task }) {
+  const body = `<button id="next" type="button">${control}</button><p id="progress">Step 1 of 4</p>`;
+  const script = `document.querySelector('#next').addEventListener('click',()=>{document.querySelector('#progress').textContent='${progress}'})`;
+  return pair({
+    id,
+    criterion: "4.1.3",
+    subtype: "status-progress",
+    task,
+    mutation: "A progress indicator advances without being announced.",
+    badSignal: { type: "form-activation-silent", control, expected: progress },
+    probeForms: true,
+    good: page({ title, heading: title, script,
+      body: body.replace('id="progress"', 'id="progress" role="status" aria-live="polite" aria-atomic="true"') }),
+    bad: page({ title, heading: title, body, script }),
+  });
+}
+
 /** @param {TitledPair & { control: string }} spec */
 function statusPair({ id, title, control, task }) {
   const body = "<button id=\"filter\" type=\"button\">" + control + "</button><p id=\"count\">Showing 8 items.</p><ul><li>First item</li><li>Second item</li></ul>";
@@ -905,6 +957,15 @@ export const ACCEPTANCE_CASES = Object.freeze([
   statusPair({ id: "status-red", title: "Colour catalogue", control: "Show red items", task: "Show red items and notice the result count." }),
   statusPair({ id: "status-large", title: "Size catalogue", control: "Show large items", task: "Show large items and notice the result count." }),
   statusPair({ id: "status-new", title: "New items", control: "Show new items", task: "Show new items and notice the result count." }),
+  // #1115: the held-out halves of 4.1.3's other two categories.
+  waitingStatusPair({ id: "status-waiting-stock", title: "Stock check", control: "Check stock",
+    waiting: "Checking stock, please wait.", task: "Check stock and notice whether anything is announced while it works." }),
+  waitingStatusPair({ id: "status-waiting-postage", title: "Postage quote", control: "Check postage",
+    waiting: "Checking postage, please wait.", task: "Check postage and notice whether anything is announced while it works." }),
+  progressStatusPair({ id: "status-progress-application", title: "Application form", control: "Continue to step 2",
+    progress: "Step 2 of 4", task: "Continue to step 2 and notice whether the step change is announced." }),
+  progressStatusPair({ id: "status-progress-booking", title: "Booking form", control: "Continue to dates",
+    progress: "Step 2 of 4", task: "Continue to dates and notice whether the step change is announced." }),
   statusPair({ id: "status-local", title: "Local items", control: "Show local items", task: "Show local items and notice the result count." }),
   // ---- subtypes the held-out set could not previously express (2026-09-05) ----
   contextChangePair({ id: "focus-renames-page", title: "Grant enquiry", field: "Grant reference", changedTitle: "Results for the grant reference you typed", task: "Enter the grant reference and notice whether the page stays where you were.", on: "focus" }),

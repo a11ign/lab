@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { CASES, evidenceUnits, signalMatches, arrowKeysAreInert } from "./case-matrix.mjs";
 
@@ -130,4 +131,82 @@ test("an unprobed or unreadable capture makes NO arrow claim", () => {
   assert.equal(arrowKeysAreInert({ focusBefore: "", announced: "", focusAfter: "" }), false);
   assert.equal(arrowKeysAreInert({ focusBefore: "Standard, radio button", announced: "", focusAfter: "" }),
     false);
+});
+
+// ---------------------------------------------------------------------------------------------------
+// #1115: 4.1.3 WAS ONE SUBTYPE, 150 CASES DEEP.
+//
+// A criterion whose whole population is one subtype cannot distinguish the categories it claims, and a
+// model trained on it learns the subtype rather than the criterion — the starvation shape ADR 0015 is
+// about, with the flaw INSIDE the data so no held-out split can punish it.
+//
+//     before: { "form-activation-silent": 150 }
+//     after:  { "form-activation-silent": 150, "status-waiting": 24, "status-progress": 24 }
+//
+// TWELVE DECLARATIONS, FORTY-EIGHT CASES. The row predicted twelve, not knowing this file multiplies
+// every declaration by its `+also-*` and `+with-component-index` expansions. Stated rather than trimmed
+// to hit the predicted number: the row's requirement is six pairs of each category, and that is what is
+// declared.
+// ---------------------------------------------------------------------------------------------------
+
+const statusCases = CASES.filter((c: { criterion: string }) => c.criterion === "4.1.3");
+const bySubtype = (name: string) =>
+  statusCases.filter((c: { subtype: string }) => c.subtype === name);
+
+test("#1115: 4.1.3 is no longer ONE subtype — asserted as a distribution, never as a count", () => {
+  // A COUNT GOES STALE the next time a case is added; this is a property of the population. Each
+  // represented subtype must carry BOTH halves, because a subtype present only as a positive teaches the
+  // label rather than the criterion.
+  const subtypes = [...new Set(statusCases.map((c: { subtype: string }) => c.subtype))].sort() as string[];
+  assert.ok(subtypes.length > 1,
+    `4.1.3 is still one subtype (${subtypes.join(", ")}) -- a criterion whose whole population is one `
+    + "subtype cannot distinguish the categories it claims");
+
+  for (const subtype of subtypes) {
+    const cases = bySubtype(subtype) as { good?: string; bad?: string }[];
+    assert.ok(cases.some((c) => typeof c.good === "string" && c.good !== ""),
+      `${subtype} has no conformant half`);
+    assert.ok(cases.some((c) => typeof c.bad === "string" && c.bad !== ""),
+      `${subtype} has no failing half`);
+  }
+});
+
+test("#1115: six WAITING and six PROGRESS pairs are declared, and they are well-formed", () => {
+  // Counted from the DECLARATIONS rather than from the expanded array: `+also-*` and
+  // `+with-component-index` multiply every case in this file, so the expanded total is a fact about the
+  // expansion and not about what this row built.
+  for (const subtype of ["status-waiting", "status-progress"]) {
+    const declared = bySubtype(subtype)
+      .filter((c: { id: string }) => !c.id.includes("+"));
+    assert.equal(declared.length, 6, `${subtype} declares ${declared.length} pairs, expected six`);
+    for (const c of declared as {
+      id: string; task: string; source: string; mutation: string;
+      badSignal: { type: string; control?: string; expected?: string };
+      good: string; bad: string; probeForms: boolean;
+    }[]) {
+      assert.ok(c.task && c.source && c.mutation, `${c.id}: missing task, source or mutation`);
+      assert.ok(c.good.includes("role=\"status\""), `${c.id}: the conformant half must announce`);
+      assert.ok(!c.bad.includes("role=\"status\""), `${c.id}: the failing half must NOT announce`);
+      assert.ok(c.probeForms, `${c.id}: a case nobody probes cannot produce the evidence it declares`);
+      assert.ok(!c.good.includes("setTimeout") && !c.bad.includes("setTimeout"),
+        `${c.id}: SYNCHRONOUS ONLY -- a polite region waits for idle, so an asynchronous update announces `
+        + "intermittently, and `filter-status-silent-checkbox` was withdrawn over exactly that");
+    }
+  }
+});
+
+test("#1115: each new case declares a badSignal an implementation actually reads", () => {
+  // THE #1114 LESSON, ONE FILE OVER: a declaration nothing implements does nothing. `check-signals.mjs`
+  // maps a badSignal TYPE to the evidence fields a capture records, so a new type invented here would
+  // name a contract no run can honour. The type is reused and the SUBTYPE is what this row moves.
+  //
+  // This asserts the DECLARATION; #34 proves the firing, because the run that would is `orchestrator`'s.
+  const source = readFileSync(new URL("./check-signals.mjs", import.meta.url), "utf8");
+  for (const c of [...bySubtype("status-waiting"), ...bySubtype("status-progress")] as
+    { id: string; badSignal: { type: string; control?: string; expected?: string } }[]) {
+    assert.ok(source.includes(`"${c.badSignal.type}"`),
+      `${c.id} declares badSignal type ${c.badSignal.type}, which check-signals.mjs does not read`);
+    assert.ok(c.badSignal.control && c.badSignal.expected,
+      `${c.id}: the signal must name the control to press and what it expects to hear`);
+  }
 });
