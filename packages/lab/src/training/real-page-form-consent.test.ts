@@ -67,9 +67,15 @@ function isInvited(url: string): boolean {
   for (const prefix of INVITED) {
     const invited = new URL(prefix);
     if (page.origin !== invited.origin) continue;
-    // The invited pathname ends in `/` by construction above; `startsWith` on a NORMALISED pathname is a
-    // directory-containment test rather than a string test, because `new URL` has already resolved `..`.
-    if (page.pathname === invited.pathname || page.pathname.startsWith(invited.pathname)) return true;
+    // DIRECTORY CONTAINMENT, not a string test: `new URL` has already resolved `..`, and the invited
+    // pathname ends in `/` -- an invariant the SPOOFS table pins, so dropping that slash is 1 red rather
+    // than a silent widening. That slash is why `startsWith` is a boundary here and not a prefix match.
+    //
+    // worker-capture, reviewing: the `page.pathname === invited.pathname` disjunct this line used to
+    // carry is SUBSUMED by `startsWith` -- and it was redundancy, not documentation. Saying it was
+    // deliberate would have been the comfortable answer and the wrong one; the sentence above is where
+    // the directory-root case belongs.
+    if (page.pathname.startsWith(invited.pathname)) return true;
   }
   return false;
 }
