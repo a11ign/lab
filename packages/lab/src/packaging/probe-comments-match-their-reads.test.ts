@@ -171,6 +171,9 @@ test("THE FLOOR: all 15 probe functions are found, by name", () => {
 test("no probe's comment claims a read its code does not make", () => {
   const verdicts = EVERY_PROBE.map(classify);
   const contradicted = verdicts.filter((v) => v.state === "contradicted");
+  assert.ok(verdicts.length > 0,
+    "#1160: if `verdicts` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `contradicted`");
   assert.deepEqual(contradicted, [],
     "a probe's comment names a source nothing it calls reads. That is the #812 shape: the judge reads "
     + "the evidence as the comment describes it, so a wrong comment is a wrong finding rather than a "

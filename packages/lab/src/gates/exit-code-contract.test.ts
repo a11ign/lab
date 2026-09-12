@@ -336,6 +336,9 @@ test("every discovered script either ADOPTS the verdict helpers, or is DOCUMENTE
   const all = exitCodeModules();
   const missing = all.filter((path) =>
     !adoptsVerdict(path) && !(path in DOCUMENTED) && !(path in INFRASTRUCTURE));
+  assert.ok(all.length > 0,
+    "#1160: if `all` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `missing`");
   assert.deepEqual(missing, [],
     `these call process.exit/set process.exitCode and are classified nowhere — read what each code means `
     + `from the source and add a line to ${DOC}, then classify here (never infer from the name)`);

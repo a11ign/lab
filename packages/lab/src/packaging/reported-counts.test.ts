@@ -219,6 +219,9 @@ test("#1067: the baseline SHRINKS and never rots -- a fixed floor must leave it"
   // here for ever, saying a defect exists where none does, and the next reader would trust it.
   const discovered = new Set(discoverReportedFloors());
   const stale = KNOWN_REPORTED_FLOORS.filter((f) => !discovered.has(f));
+  assert.ok(KNOWN_REPORTED_FLOORS.length > 0,
+    "#1160: if `KNOWN_REPORTED_FLOORS` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `stale`");
   assert.deepEqual(stale, [],
     "these are in the baseline and match nothing in the tree -- either the floor was fixed (remove the "
     + "entry, in the commit that fixed it) or the test moved (update the entry)");

@@ -179,6 +179,9 @@ test("every marked file is IN the tsc program, so a marker can never be a commen
   // because every source file lives under `packages/`.
   const patterns = includePatterns();
   const inert = CHECKED.filter((path) => !patterns.some((pattern) => pattern.test(path)));
+  assert.ok(CHECKED.length > 0,
+    "#1160: if `CHECKED` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `inert`");
   assert.deepEqual(inert, [],
     `${inert.length} file(s) carry \`// @ts-check\` and are outside every tsconfig include pattern, so `
       + "the compiler never opens them and the marker does nothing. Add the directory to `include`, or "
@@ -190,6 +193,9 @@ test("the include patterns reach every .mjs, so marking one is always enough", (
   // next `.mjs` in a new directory is silently unmarkable and the failure looks like "it passes".
   const patterns = includePatterns();
   const unreachable = MJS.filter((path) => !patterns.some((pattern) => pattern.test(path)));
+  assert.ok(MJS.length > 0,
+    "#1160: if `MJS` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `unreachable`");
   assert.deepEqual(unreachable, [],
     `${unreachable.length} .mjs file(s) match no tsconfig include pattern, so adding \`// @ts-check\` to `
       + "them would do nothing. Widen `include` before marking them.");
