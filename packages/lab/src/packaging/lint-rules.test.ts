@@ -85,3 +85,46 @@ test("the budget is close to what the code actually does", async () => {
     `no function in the tree exceeds ${floor} lines, against a budget of ${options.max}. That gap means the `
     + `budget is not doing any work — lower it to just above the longest function.`);
 });
+
+// --- `local/bounded-window-reads`, formerly bounded-window-reads.test.ts's per-node half (#1144) -------
+//
+// The guard it replaces asked whether the LINE mentioned a window-naming predicate. That passed a raw
+// read whenever its line mentioned a wrapper for any reason -- which is the guard's OWN recorded
+// adjacency defect one granularity down: its header says the first version asked whether the FILE
+// mentioned one, `npm run mutate` reported THE GUARD DID NOT BITE, and per-line fixed the file case and
+// kept the shape. An AST rule asks whether THIS read is wrapped, which is the property itself.
+
+const WINDOW = "local/bounded-window-reads";
+const FIXTURE = "scripts/fixture.mjs";
+
+test("#1144: a raw statusCheckRollup read is reported, at its line", async () => {
+  assert.deepEqual(
+    await reportedLines(WINDOW, 'export const a = (pr) => pr.statusCheckRollup.filter((r) => r.ok);', FIXTURE),
+    [1]);
+});
+
+test("#1144: a read wrapped in a narrowing predicate is NOT reported", async () => {
+  // The non-emptiness half of the pair: without it, a rule that reported everything would pass the test
+  // above and this file would be asserting that ESLint runs at all.
+  assert.deepEqual(
+    await reportedLines(WINDOW, 'export const a = (pr) => newestPerName(pr.statusCheckRollup).filter((r) => r.ok);', FIXTURE),
+    []);
+});
+
+test("#1144 THE REASON TO CONVERT: a raw read on a line that also mentions a wrapper IS reported", async () => {
+  // The line-regex predicate passed this: `NAMES_ITS_WINDOW` matched anywhere on the line, so an
+  // unrelated call to a wrapper exempted a raw read beside it. Latent rather than live -- all 21 rollup
+  // reads in the tree passed the old predicate correctly -- and it is the whole argument for the AST rule.
+  assert.deepEqual(
+    await reportedLines(WINDOW,
+      'export const a = (pr, o) => [pr.statusCheckRollup, newestPerName(o)];', FIXTURE),
+    [1], "the read is raw; the wrapper on the same line is a NEIGHBOUR of it, not applied to it");
+});
+
+test("#1144: a read split across LINES is reported, which a line regex cannot see", async () => {
+  assert.deepEqual(
+    await reportedLines(WINDOW, 'export const a = (pr) => pr\n  .statusCheckRollup\n  .filter((r) => r.ok);', FIXTURE),
+    [1], "reported at the line the member expression STARTS on, not where `.statusCheckRollup` sits -- "
+      + "I expected 2 and the rule is right: the node begins at `pr`. The point is that it is reported "
+      + "at all, since no single line here carries both the read and a wrapper for a regex to compare");
+});

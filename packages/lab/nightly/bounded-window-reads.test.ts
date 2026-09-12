@@ -66,15 +66,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { newestPerName, newestConclusionOf } from "../../../../scripts/newest-check-run.mjs";
-import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
+import { newestPerName, newestConclusionOf } from "../../../scripts/newest-check-run.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../scripts/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
 // population must be derived from a real import, never from scanning source text.
 declareTreeWideGuard();
 
-const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
+const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
 
 /**
@@ -91,19 +91,15 @@ const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
 const READS_THE_ROLLUP = /\.statusCheckRollup\b/;
 
 /** The predicates that NAME the window they ask about. A read passing through one of these is safe. */
-const NAMES_ITS_WINDOW = /newestPerName|newestConclusion(Of)?|headQuietSeconds/;
+// #1144: `NAMES_ITS_WINDOW` and `WIDER_WINDOW_IS_HARMLESS` moved WITH the per-node check --
+// the wrapper names are the rule's `NARROWS_THE_WINDOW` set and the exemption is its
+// `wideWindowIsHarmless` option, which is #908 clause 3: the table is asserted where the rule
+// reads it, as the rule's own fixture, rather than in a test the rule never consults.
 
 /**
  * Files that read the rollup without a window-naming predicate, each with the reason it is harmless.
  * Classified rather than fixed, so "nothing needs this" and "somebody forgot" stay different states.
  */
-const WIDER_WINDOW_IS_HARMLESS: Record<string, string> = {
-  // EMPTY BY MEASUREMENT, NOT BY OVERSIGHT -- do not delete this as dead.
-  // EMPTY TODAY, and that is a measurement rather than an omission: all four readers now narrow the
-  // rollup. It exists so the next reader that genuinely does not need the current answer is CLASSIFIED
-  // rather than made to adopt a predicate it has no use for -- "nothing needs this" and "somebody
-  // forgot" must not be the same state.
-};
 
 function trackedCode(): string[] {
   return walkTree({ kind: "both", roots: ["scripts", "packages", ".github"] }).map((f) => f.path)
@@ -176,17 +172,14 @@ test("the discovery finds the readers it should -- a check that passes having ex
     + `what answers the question now. Found: ${readers.join(", ") || "(nothing)"}`);
 });
 
-test("every read of the rollup passes through a predicate that NAMES ITS WINDOW, or is classified -- "
-  + "the rollup unions superseded runs, so a raw filter answers about every attempt ever made", () => {
-  const unclassified = rollupReadLines()
-    .filter(([file, line]) => !(file in WIDER_WINDOW_IS_HARMLESS) && !NAMES_ITS_WINDOW.test(line))
-    .map(([file, line]) => `${file}: ${line}`);
-  assert.deepEqual(unclassified, [],
-    "these read `statusCheckRollup` without narrowing it to the newest run per NAME. A superseded FAILED "
-    + "run survives on the head for ever, so a raw filter reports a green PR as failing -- which is what "
-    + "`merge-queue.mjs` did until #634. Use `newestPerName` from `scripts/newest-check-run.mjs`, or add "
-    + "an entry to WIDER_WINDOW_IS_HARMLESS saying why the wider window cannot mislead here.");
-});
+// #1144: THE PER-NODE HALF IS NOW AN ESLINT RULE -- `local/bounded-window-reads` in `eslint.config.js`.
+// It asks whether THIS read is wrapped by walking the AST upward, rather than whether its LINE mentions a
+// wrapper; the line version passed a raw read whenever its line mentioned one for any reason, which is
+// this guard's own recorded adjacency defect one granularity down. The rule reports AT THE LINE on every
+// pull request, and `lint-rules.test.ts` drives both directions through the repo's own config.
+//
+// WHAT STAYS HERE IS THE RUN-PROPERTY HALF: a rule sees one file and cannot say "the discovery found
+// nothing". That is why this file is in `packages/*/nightly/` (#1135/#1136) and off the PR path.
 
 test("NEWEST PER NAME, not first -- the rollup is a union in insertion order, so `find` returns the "
   + "OLDEST. This is the property four separate fixes were about", () => {
