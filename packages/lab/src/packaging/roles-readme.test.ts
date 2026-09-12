@@ -162,3 +162,72 @@ test("#1118: the provisional marker is ON THE VERDICT LINE, where the sha-plus-w
     "the old off-line marker must be gone, not merely joined by the new one -- two spellings of one "
     + "state is how a matcher ends up seeing neither");
 });
+
+// --- #1157: the line that stands in for a guard the 64 call-derived assertions cannot have ------------
+//
+// `ceo` split 236 emptiness assertions three ways on 2026-09-12: a RULE where a rule can work (the 64
+// derived-local, #1155), a DEFINITION where the shape is not yet understood (the 73 accumulators, #1156),
+// and a WRITTEN HABIT where neither can — the 64 derived from a CALL, which no rule can trace without
+// guessing at what the call returns.
+//
+// **This repository loses habits, and that is the argument against this line rather than a reason to omit
+// it.** The counter is that the alternative is a rule that infers intent, which is the defect this whole
+// family is about one level up. So the habit is written in both places a reader meets it, and pinned here
+// so it cannot quietly leave one of them.
+//
+// ASSERTED IN EACH FILE SEPARATELY, never as "at least one of the two carries it". A check satisfied by
+// either copy is a check that lets them drift — which is the fact-stated-twice defect, landing on the line
+// that tells people how to avoid defects.
+
+const agentPractices = readFileSync(
+  new URL("../../../../.claude/rules/agent-practices.md", import.meta.url), "utf8");
+
+const POSITIVE_CONTROL = /an emptiness assertion names where its positive control lives/i;
+
+/**
+ * EVERY ASSERTION BELOW READS THE FLATTENED TEXT, and this file is the third place today that learned it
+ * the same way. Both documents wrap, so the sentence is split across a line break in `reviewer.md`
+ * (`**An emptiness\n   assertion names...`) and not in `agent-practices.md` -- **a prose assertion against
+ * a wrapped file is matching a line, not a sentence**, and the failure is a silent non-match that reads
+ * exactly like the prose being absent.
+ *
+ * It was caught here by the mutation's own landing check rather than by care: `assert.notEqual(without,
+ * text)` fired because the replace had matched nothing. That is the pre-read check #1165 is about, working.
+ */
+const flat = (/** @type {string} */ text: string) => text.replace(/\s+/g, " ");
+
+test("#1157: the practices file carries the line, with what makes it applicable rather than aspirational", () => {
+  assert.match(flat(agentPractices), POSITIVE_CONTROL,
+    "the sentence itself, since this is the only thing standing in for a guard on 64 assertions");
+  assert.match(flat(agentPractices), /point at it/i,
+    "and the operative half: a control you BELIEVE in is not one you can POINT AT, which is the "
+    + "difference between this line and an encouragement");
+  assert.match(flat(agentPractices), /64 derive from a CALL|64 call-derived/i,
+    "and the population it covers, so a reader can tell whether their case is one of them");
+});
+
+test("#1157: the reviewer's entry says what a reviewer DOES, not that the property is desirable", () => {
+  const brief = flat(reviewerBrief);
+
+  assert.match(brief, POSITIVE_CONTROL, "the same sentence, in the other place a reader meets it");
+  assert.match(brief, /\bask where its positive control lives\b/i,
+    "an instruction with a verb -- a checklist item that states a property gives the reviewer nothing to do");
+  assert.match(brief, /point at it, not describe it/i,
+    "and names what counts as an answer, or 'ask' is satisfied by any reply");
+  assert.match(brief, /you are the check/i,
+    "and says where the reviewer's judgement is the ONLY instrument, which is the whole reason the line "
+    + "exists rather than a rule");
+});
+
+test("#1157 MUTATION: removing the line from EITHER file must go red, not just from both", () => {
+  // The row's clause 3, driven rather than asserted. Two copies with a check that accepts either would
+  // let one drift away silently -- and the drift would be invisible precisely because the other copy
+  // still reads correctly to anyone who looks in one place.
+  for (const [name, text] of [["agent-practices.md", agentPractices], ["reviewer.md", reviewerBrief]]) {
+    const without = flat(text).replace(POSITIVE_CONTROL, "a removed sentence");
+    assert.notEqual(without, flat(text), `the mutation must LAND in ${name}, or this proves nothing`);
+    assert.doesNotMatch(without, POSITIVE_CONTROL,
+      `${name} without the line must fail the assertion above -- a guard that passes on one copy is what `
+      + "lets the two drift apart");
+  }
+});
