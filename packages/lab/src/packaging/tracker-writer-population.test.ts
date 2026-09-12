@@ -192,3 +192,29 @@ test("#1053: the guard throws on a leaking body BEFORE the spawn, and the probe 
   assert.doesNotThrow(() => assertNoLeakInArgv("git", ["commit", "-m", `the box at ${PRIVATE_LAN}`]),
     "and a non-`gh` command is not this guard's business — the tree guard already holds committed files");
 });
+
+test("#1066: all THREE ways `gh` takes a body are recognised, one assertion per form", () => {
+  // worker-judge, reviewing #1066: `--body=<text>` returned `null`, so a leaking body went out unchecked —
+  // and the `-f body=` branch, which proves fusing was thought about, was itself held by NOTHING (removing
+  // it was 0 red). Two of three forms recognised, one of two held. One test per form closes both, and it
+  // is driven through `assertNoLeakInArgv` so the REFUSAL is what is asserted rather than the parse.
+  const leak = `the box at ${PRIVATE_LAN} answered`;
+  const forms: [string, string[]][] = [
+    ["--body <text>", ["issue", "comment", "1", "--body", leak]],
+    ["--body=<text>", ["issue", "comment", "1", `--body=${leak}`]],
+    ["-f body=<text>", ["api", "repos/x/issues/1", "--method", "PATCH", "-f", `body=${leak}`]],
+  ];
+  for (const [name, argv] of forms) {
+    assert.equal(bodyFromArgv(argv), leak, `${name} must be read`);
+    assert.throws(() => assertNoLeakInArgv("gh", argv), /REFUSING/, `${name} must be refused`);
+  }
+  // And the control: a clean body in each form is allowed, or three assertions above are satisfied by a
+  // parser that returns the argv and a guard that refuses everything.
+  for (const [name, argv] of forms) {
+    const clean = argv.map((a) => a.replace(leak, "nothing of interest"));
+    assert.doesNotThrow(() => assertNoLeakInArgv("gh", clean), `${name} with a clean body must pass`);
+  }
+  assert.equal(bodyFromArgv(["pr", "create", "--body-file", "/tmp/x"]), null,
+    "and `--body-file` still reads as no inline body — it names a file this cannot see, which is the "
+    + "bound stated in the function's own header");
+});

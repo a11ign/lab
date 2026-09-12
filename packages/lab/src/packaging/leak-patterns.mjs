@@ -127,10 +127,17 @@ export function leakRefusalReason(body) {
  */
 export function bodyFromArgv(args) {
   for (let i = 0; i < args.length; i += 1) {
-    if (args[i] === "--body" && i + 1 < args.length) return args[i + 1];
-    // `gh api -f body=<text>` and `-F body=@file`: the value is fused to the key, so a flag-name match
-    // alone does not find it. `-F` is excluded for the same reason as `--body-file`: it names a file.
-    if (args[i] === "-f" && i + 1 < args.length && args[i + 1].startsWith("body=")) {
+    const arg = args[i];
+    if (arg === "--body" && i + 1 < args.length) return args[i + 1];
+    // FUSED FORMS, BOTH OF THEM. `gh` takes a body three ways and this saw two: the `-f body=` branch
+    // below carried the comment "the value is fused to the key, so a flag-name match alone does not find
+    // it", and that sentence is equally true of `--body=<text>` -- which this returned `null` for, so a
+    // leaking body went out unchecked. worker-judge, reviewing #1066. No writer uses the fused long form
+    // today (every `--body=` in the tree is a script parsing its own argv), so it was not a live leak;
+    // it was the row's own thesis one level in, with the next writer two characters away from it.
+    if (arg.startsWith("--body=")) return arg.slice("--body=".length);
+    // `gh api -f body=<text>`. `-F` is excluded for the same reason as `--body-file`: it names a file.
+    if (arg === "-f" && i + 1 < args.length && args[i + 1].startsWith("body=")) {
       return args[i + 1].slice("body=".length);
     }
   }
