@@ -24,6 +24,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import {
   closedRowNumbers,
   sessionLabelsOf,
@@ -31,7 +32,7 @@ import {
   labelArmedPr,
   LIVE_SESSIONS,
   RETIRED_SESSIONS,
-  retiredSessionLabels,
+  unknownSessionLabels,
 } from "../../../../scripts/arm-pr.mjs";
 
 /** A fake `run` recording every call it received and returning canned `gh issue view` output. */
@@ -165,24 +166,65 @@ test("Re-arming an already-labelled PR calls labelArmedPr again but issues the S
 // `worker` verdict. So four live labels carry a retired meaning, and the only thing keeping them retired
 // was that nobody applied one -- a rule nobody enforces, which is a rule that has already drifted.
 
-test("#1000: the live and retired sets are DISJOINT and cover every session label that exists", () => {
-  // The lists are a literal in `arm-pr.mjs` because no file holds "who is live": `docs/roles/README.md`'s
-  // roster names eleven agents including every retired one, since it is a record of the roles this org has
-  // HAD. So the literal is pinned here against the labels themselves -- a sixth session added next month
-  // fails this rather than silently attributing to nothing.
-  const overlap = LIVE_SESSIONS.filter((s) => RETIRED_SESSIONS.includes(s));
-  assert.deepEqual(overlap, [], "a session cannot be both live and retired");
-  assert.deepEqual([...LIVE_SESSIONS, ...RETIRED_SESSIONS].sort(),
-    ["ceo", "dispatcher", "orchestrator", "product-manager", "worker-audit", "worker-capture",
-      "worker-config", "worker-contracts", "worker-judge"].sort(),
-    "every `session:*` label this repository has must be classified on one side or the other");
+test("#1000: the live and retired sets are DISJOINT, and the split is checked against the REAL labels", () => {
+  // worker-capture's review: the first version compared these two lists against a THIRD hand-typed one in
+  // this same file, so "a sixth session added next month fails this" was not delivered -- creating
+  // `session:worker-fleet` tomorrow changed nothing the test read. My own #1016 reasoning is the argument
+  // against it: a literal is a second copy of something GitHub holds, and a drifted one names things that
+  // do not exist.
+  //
+  // So the DISJOINTNESS is checked here (pure, always), and the COVERAGE is checked against `gh label
+  // list` below -- which needs a token, so it reports honestly rather than passing when it cannot ask.
+  assert.deepEqual(LIVE_SESSIONS.filter((s) => RETIRED_SESSIONS.includes(s)), [],
+    "a session cannot be both live and retired");
+  assert.ok(LIVE_SESSIONS.length >= 1 && RETIRED_SESSIONS.length >= 1);
 });
 
-test("#1000: a retired label is NAMED, never silently dropped", () => {
-  assert.deepEqual(retiredSessionLabels(["session:worker-judge", "session:dispatcher"]),
-    ["session:dispatcher"]);
-  assert.deepEqual(retiredSessionLabels(["session:ceo", "session:product-manager"]), [],
+test("#1000: every `session:*` label that EXISTS is classified -- asked of GitHub, skipped honestly", () => {
+  // THE COVERAGE HALF, and it cannot be a literal: the question is "which labels exist", which only the
+  // repository can answer. CI has no token, so this says so rather than passing -- a check that cannot ask
+  // must report that, which is this repo's own rule and the reason the skip prints.
+  // OPT-IN, and that is not timidity: this file declares `// no-token: gh`, and a test that spawns `gh`
+  // whenever a token happens to be present makes that declaration false on exactly the machines where it
+  // matters. The flag keeps both true -- the acceptance job never spawns, and an agent asks deliberately.
+  if (process.env.A11Y_CHECK_SESSION_LABELS !== "1") {
+    console.log("  NOT RUN: the label coverage check is opt-in -- `A11Y_CHECK_SESSION_LABELS=1 npx tsx "
+      + "--test packages/lab/src/packaging/arm-pr.test.ts` asks GitHub which `session:*` labels exist. The "
+      + "disjointness test above ran; nothing here checked that the two lists COVER them.");
+    return;
+  }
+  let labels: string[];
+  try {
+    labels = JSON.parse(execFileSync("gh",
+      ["label", "list", "--repo", "DanBeckDev/a11y-witness", "--limit", "200", "--json", "name"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }))
+      .map((l: { name: string }) => l.name).filter((n: string) => n.startsWith("session:"));
+  } catch {
+    console.log("  SKIPPED: `gh label list` could not be asked (no token here). NOT a pass -- the "
+      + "disjointness test above still ran, but nothing checked that the two lists COVER the labels that "
+      + "exist. Run this locally with a token before trusting the split.");
+    return;
+  }
+  const classified = new Set([...LIVE_SESSIONS, ...RETIRED_SESSIONS].map((s) => `session:${s}`));
+  const unclassified = labels.filter((l) => !classified.has(l)).sort();
+  assert.deepEqual(unclassified, [],
+    `these \`session:*\` labels exist and are neither live nor retired: ${unclassified.join(", ")}. A new `
+    + "session must be added to LIVE_SESSIONS in arm-pr.mjs, or arm-pr will refuse every row it claims.");
+  const missing = [...classified].filter((l) => !labels.includes(l)).sort();
+  assert.deepEqual(missing, [],
+    `these are classified in arm-pr.mjs and no longer exist as labels: ${missing.join(", ")}`);
+});
+
+test("#1000: a not-live label is NAMED, and says WHICH KIND of not-live", () => {
+  assert.deepEqual(unknownSessionLabels(["session:worker-judge", "session:dispatcher"]),
+    [{ label: "session:dispatcher", retired: true }]);
+  assert.deepEqual(unknownSessionLabels(["session:ceo", "session:product-manager"]), [],
     "every live session passes -- a refusal that fires on the normal case is how a guard gets bypassed");
+  // worker-capture's second finding: a typo and a session created next week are NOT retired, and telling
+  // them they were sends the reader to a row with nothing to do with their problem. Refusing all three is
+  // right -- failing closed -- but the sentence has to be true of each.
+  assert.deepEqual(unknownSessionLabels(["session:worker-captur", "session:brand-new-role"]),
+    [{ label: "session:worker-captur", retired: false }, { label: "session:brand-new-role", retired: false }]);
 });
 
 test("#1000: the refusal applies NOTHING -- not even the live label beside the retired one", () => {
