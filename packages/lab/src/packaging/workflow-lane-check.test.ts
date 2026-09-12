@@ -1,3 +1,13 @@
+// no-token: gh
+//
+// #913: this file imports `LIVE_SESSIONS`/`RETIRED_SESSIONS`/`unknownSessionLabels` from `arm-pr.mjs`,
+// and that module spawns `gh` at line 30 for the PR read its own CLI does -- a path nothing here takes:
+// every assertion below is a pure function of a data file and a label array. The roster is imported rather
+// than retyped deliberately (a second copy drifts from the one the guards read), and importing it is what
+// charges this file for the token.
+//
+// DECLARED AND THEN PROVED: run with `GH_TOKEN`/`GITHUB_TOKEN` unset and a fake `gh` first on `PATH`
+// that exits 97 and announces itself -- 20 pass / 0 fail, and the fake is never called.
 /**
  * A LANE IS WHO MAY CHANGE A PATH -- ceo's ruling, 2026-09-08, and these pin the mechanism.
  *
