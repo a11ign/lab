@@ -544,6 +544,49 @@ test("#1090: a genuinely truncated read STILL REFUSES -- the guard is not delete
   });
 });
 
+test("#1090: the walk is BOUNDED independently of the ceiling comparison — a hang is not a refusal", () => {
+  // worker-capture on #1098: termination rested on TWO expressions agreeing -- the `Math.min` that stops
+  // the doubling and the `limit >= MAX_ISSUE_FETCH` that throws. Changing that `>=` to `>` asked for 8000
+  // for ever: measured `exit 124`, no output at all.
+  //
+  // A HANG IS NOT A REFUSAL. This walk exists so a partial count is never reported as a total, and a hang
+  // reports neither -- in the nightly it is a stuck job rather than a failing one, the quietest of the
+  // three. Counting the asks is what makes that edit fail fast instead of spinning, and it is why this
+  // test counts CALLS rather than only catching the throw.
+  let calls = 0;
+  const run = (_cmd: string, args: string[]) => {
+    calls += 1;
+    const limit = Number(args[args.indexOf("--limit") + 1]);
+    return JSON.stringify(Array.from({ length: limit },
+      (_unused, i) => ({ number: i, title: "t", labels: [], state: "OPEN" })));
+  };
+  assert.throws(() => fetchIssues({ run, state: "all" }), /LOWER BOUND, not a total/);
+  assert.equal(calls, 5,
+    `500 -> 1000 -> 2000 -> 4000 -> 8000 is five asks and the fifth refuses; got ${calls}. A count that `
+    + "grows here means the ceiling stopped ending the walk, which is the edit that used to hang");
+
+  // AND FROM A DIFFERENT START, because the bound is DERIVED from `first` rather than typed. This is the
+  // one caller that does not start at FIRST_ASK, and a hard-coded bound would either cut this walk short
+  // or leave it unbounded -- neither of which the five-ask case above can see.
+  const fromTwoHundred: number[] = [];
+  const counting = (_cmd: string, args: string[]) => {
+    const limit = Number(args[args.indexOf("--limit") + 1]);
+    fromTwoHundred.push(limit);
+    return JSON.stringify(Array.from({ length: limit },
+      (_unused, i) => ({ number: i, title: "t", labels: [], state: "OPEN" })));
+  };
+  assert.throws(() => fetchOpenIssues({ run: counting }), /LOWER BOUND, not a total/);
+  assert.deepEqual(fromTwoHundred, [200, 400, 800, 1600, 3200, 6400, 8000],
+    "seven asks from 200, ending ON the ceiling -- the bound is derived from the start, not typed");
+});
+
+// THE HONEST NOTE ON THE BOUND ABOVE, because a guard nobody can mutate red reads like a guard nobody
+// needs: REMOVING `if (asks > maxAsks)` on its own is 0 red, and it must be. It is a SECOND guard on a
+// condition the ceiling check already handles, so it can only bite when that check has ALSO been broken,
+// and no single mutation reaches a two-fault state. What holds it is the pair: the call counts above turn
+// `>=` -> `>` from `exit 124` with no output into 2 red. Said out loud so the next reader deletes neither
+// half thinking the other covers it -- same hazard as a floor that is really a non-emptiness control.
+
 test("#1090: the closed-PR read walks too — it had NO truncation guard at all, which fails quiet", () => {
   // The two `--limit 1000` reads were worse than the 500 that went dark: they had no `=== limit` check,
   // so passing the cap would have silently shortened the population instead of refusing. Measured
