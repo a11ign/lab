@@ -152,6 +152,26 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "floor is conditional -- #719's own subject, that `environmentKey` is not reported missing, still "
       + "runs and is asserted with the ref question answered as CI answers it.",
   },
+  "packages/lab/src/packaging/backlog-ready.test.ts": {
+    guard: null,
+    note: "RETIRED WITH ITS SUBJECT by #907, kept as an entry rather than deleted -- the same convention "
+      + "the `action-reference` entry uses for #954, and the one worker-capture pointed out I had "
+      + "followed once and not twice. The file is gone: it was one of six prose pins #907 removed, "
+      + "because a test that fails when a sentence is reworded teaches people not to edit the docs. It "
+      + "had already stopped being a git population on 2026-09-06 when the tracker moved to GitHub "
+      + "Issues. **The record is the point: a classification that simply vanishes leaves the next reader "
+      + "unable to tell a guard that was retired from one that was never classified.**",
+  },
+  "packages/lab/src/packaging/claude-md-content-preservation.test.ts": {
+    guard: null,
+    note: "RETIRED WITH ITS SUBJECT by #907, for the reason above. Its own verdict on that PR is why: "
+      + "it flagged eight substantive lines, and SEVEN were re-wrapped or de-numbered lines whose "
+      + "content survives -- including the three of the paragraph #907 reworded to demonstrate that "
+      + "rewording no longer fails the build. **It compares LINE BY LINE, and its own message says it "
+      + "cannot tell a corrected sentence from a deleted one and does not try to.** What it did hold -- "
+      + "that text leaving CLAUDE.md still exists somewhere under docs/, #181's 1,337 lines -- is real "
+      + "and is now #1087, filed in the same commit range rather than left as a gap.",
+  },
   "packages/lab/src/gates/unexaminable-declaration.test.ts": {
     guard: "found.size >= 20",
     note: "guarded -- #1030's sweep spawns `git grep -l -F` once per path-like token in lab-job.yml, "
@@ -213,15 +233,6 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
     guard: "referenced.size >= 10",
     note: "guarded — TWO populations in this file (referenced scripts, tsconfig extends targets); this "
       + "is the referenced-scripts one, the stronger of the two",
-  },
-  "packages/lab/src/packaging/backlog-ready.test.ts": {
-    guard: null,
-    note: "NO LONGER A GIT POPULATION, 2026-09-06. It used to run the region-diff claim check over "
-      + "unmerged branches, guarded on `branches.length > 0`. The tracker moved to GitHub Issues, "
-      + "`docs/backlog-ready.md` became a signpost, and the file was rewritten to assert that the issue "
-      + "TEMPLATE requires the three fields the page used to carry. It shells no git and has no "
-      + "population to be vacuous over. Kept as an entry rather than deleted so the classification "
-      + "records that the guard was RETIRED WITH ITS SUBJECT rather than quietly dropped.",
   },
   "packages/lab/src/packaging/action-reference.test.ts": {
     guard: null,
@@ -347,16 +358,6 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
     note: "guarded — #492's `git ls-files '*.ts' '*.mjs'` walk for every file mentioning npx/npm as a call "
       + "argument, floored at 20 against the known census of ~26 (23 real spawns plus 3 files carrying "
       + "documented data-not-a-spawn exemptions)",
-  },
-  "packages/lab/src/packaging/claude-md-content-preservation.test.ts": {
-    guard: "removed,\n    [norm(",
-    note: "#633: joined this classification when `diff` did. `claudeMdDiff()` runs a real `git diff "
-      + "origin/main -- CLAUDE.md` and CAN be empty by construction (on trunk-guard, or a PR that never "
-      + "touches CLAUDE.md, HEAD legitimately equals origin/main) -- but the file's own header already "
-      + "gets this right: the extraction logic (`removedSubstantiveLines`) is proven against a SYNTHETIC "
-      + "diff built in the test, so the mechanism is exercised whether or not the real diff has anything "
-      + "in it. The guard quoted is that synthetic-fixture assertion, not the real-diff test, which is "
-      + "deliberately allowed to examine nothing and say so.",
   },
   "packages/lab/src/packaging/checkout-dash-safety.test.ts": {
     guard: "files.length > 100",
