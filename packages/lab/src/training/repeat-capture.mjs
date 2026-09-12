@@ -28,7 +28,7 @@ import { assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { captureIsSelfConsistent } from "@a11ign/evidence/verify";
 import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { repeatCapturesRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
-import { EVIDENCE_FIELDS, fieldValues } from "../capture/evidence-diff.mjs";
+import { EVIDENCE_FIELDS, fieldKey, fieldValues } from "../capture/evidence-diff.mjs";
 import { compareIdentity, documentIdentity } from "@a11ign/evidence/document-identity";
 
 /**
@@ -128,7 +128,9 @@ export function comparable(/** @type {any} */ capture) {
   /** @type {Record<string, any[]>} */
   const out = { transcript: list(capture.transcript) };
   for (const field of EVIDENCE_FIELDS) {
-    out[field[1]] = fieldValues(capture, field);
+    // `fieldKey`: `[group, name]` keys as it always has, and every other path by its whole name -- a top-level
+    // `[name]` (#977) is not `undefined`, and eight `observed.<channel>.asked` (#985) do not collide on `asked`.
+    out[fieldKey(field)] = fieldValues(capture, field);
   }
   return out;
 }

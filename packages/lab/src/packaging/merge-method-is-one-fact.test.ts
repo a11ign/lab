@@ -27,11 +27,20 @@
  * month is the case a hand-written list cannot cover -- and a fifth is exactly what happened to
  * `newestPerName` (#634 found the fifth call site of a fix applied four times).
  */
+// FIRST, so it observes every read below it -- #929. See `scripts/walk-scope.mjs`.
+import { declareWalkScope } from "../../../../scripts/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+/**
+ * WHAT THIS GUARD READS, declared so a product diff does not run it -- #929. It walks `scripts/` for the
+ * merge-method call sites and nothing else; its own run checks that, and fails if it ever reads wider.
+ */
+export const WALK_SCOPE = ["scripts"];
+await declareWalkScope(import.meta.url);
 
 const SCRIPTS_DIR = fileURLToPath(new URL("../../../../scripts/", import.meta.url));
 

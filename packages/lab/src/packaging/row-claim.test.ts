@@ -16,6 +16,11 @@
 // `removeClaimedWorktree`, which need actual filesystem/git state) do fall through to `defaultRun` when
 // they omit `{ run }` -- but that function only ever calls `git`, never `gh` (read its own source: both
 // spawn `"git"` as the literal `cmd`, nothing else), so this declaration is honest even for those two.
+//
+// #987 ADDED A THIRD `gh`-SPAWNING DEFAULT, `fetchClaimComments`, and no test here reaches it: every
+// `declineRow` call injects `fetchComments`, and the tests that exercise the function itself inject `run`.
+// Re-proved after that change rather than assumed -- fake `gh` first on `PATH` exiting 97, `GH_TOKEN` and
+// `GITHUB_TOKEN` unset: 90 pass, and the fake is invoked ZERO times.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -25,7 +30,8 @@ import { join } from "node:path";
 import {
   claimStatus, decideClaim, fetchLabels, claimRow, dispatchRow, declineRow, moveProjectStatus,
   CLAIM_LABEL, STARTED_LABEL, BLOCKED_LABEL, recordCheck, recordConflict, latestCheckFor,
-  worktreeStatus, removeClaimedWorktree, WORKTREE_LABEL_PREFIX,
+  worktreeStatus, removeClaimedWorktree, WORKTREE_LABEL_PREFIX, BRANCH_LABEL_PREFIX,
+  claimRecordComment, claimRecordFrom, claimedObjects, fetchClaimComments, CLAIM_RECORD_MARKER,
 } from "../../../../scripts/row-claim.mjs";
 import { READY_LABEL, WAS_READY_LABEL } from "../../../../scripts/ready-label-audit.mjs";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
@@ -36,6 +42,15 @@ import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 // already inject for label calls, which answers `""` for a GraphQL snapshot query it was never built to
 // serve -- caught and reported (never thrown, per `moveProjectStatus`'s own contract), but noisy and
 // beside the point of what each of those tests is actually proving.
+
+// #987: EVERY `declineRow` TEST BELOW INJECTS THIS, and the injection is not boilerplate -- it is the
+// reason those tests still assert what their names say. `declineRow` now reads the row's COMMENTS to find
+// the branch and worktree a claim recorded (a label cannot hold a path; see `CLAIM_RECORD_MARKER`), and the
+// real `fetchClaimComments` REFUSES a response it cannot read rather than reporting "nothing recorded" --
+// so without a stub, fifteen tests about labels and Status moves would have failed on a comment read they
+// are not about. Two tests further down inject real comment bodies instead, and those are the ones that
+// prove the record round-trips.
+const noRecord = () => [];
 
 // --- claimStatus: pure, no I/O ---
 
@@ -339,7 +354,8 @@ test("claimRow (start) additionally writes STARTED_LABEL, transitioning dispatch
 
 // --- #656: claimRow records the branch, declineRow removes it ---
 
-test("#656 ACCEPTANCE: claimRow given a branch writes branch:<name> in the SAME edit as the claim", () => {
+test("#656/#987 ACCEPTANCE: claimRow given a branch RECORDS it -- in a comment now, never a label, "
+  + "because GitHub caps a label name at 50 characters", () => {
   const calls: string[][] = [];
   let reads = 0;
   const run = (cmd: string, args: string[]) => {
@@ -347,7 +363,7 @@ test("#656 ACCEPTANCE: claimRow given a branch writes branch:<name> in the SAME 
     if (args[1] === "view") {
       reads += 1;
       const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
-        { name: STARTED_LABEL }, { name: "branch:agent/row-claim-branch-656" }];
+        { name: STARTED_LABEL }];
       return JSON.stringify({ number: 656, title: "A row", labels });
     }
     return "";
@@ -355,8 +371,16 @@ test("#656 ACCEPTANCE: claimRow given a branch writes branch:<name> in the SAME 
   const result = claimRow(656, "worker-config",
     { run, moveStatus: () => ({ moved: true }), branch: "agent/row-claim-branch-656" });
   assert.deepEqual(result, { claimed: true, statusMoved: true });
-  const editCall = calls.find((a) => a[1] === "edit");
-  assert.ok(editCall!.includes("branch:agent/row-claim-branch-656"), "must write the branch label");
+  const editCall = calls.find((a) => a[1] === "edit")!;
+  assert.ok(!editCall.some((a) => a.startsWith("branch:")),
+    "#987: no `branch:` label may be written any more -- a path or a long branch name does not fit in one");
+  const comment = calls.find((a) => a[1] === "comment");
+  assert.ok(comment, "the claim must record the branch somewhere");
+  const body = comment![comment!.indexOf("--body") + 1];
+  assert.match(body, /^<!-- row-claim: claim record -->/, "the record must carry the marker readers match");
+  assert.match(body, /Claimed-branch: agent\/row-claim-branch-656/);
+  // AND THE ROUND TRIP, not just the write: the reader must get the same string back out.
+  assert.equal(claimRecordFrom([body]).branch, "agent/row-claim-branch-656");
 });
 
 test("claimRow with NO branch given writes no branch: label at all -- not every claimed row is code, "
@@ -372,8 +396,8 @@ test("claimRow with NO branch given writes no branch: label at all -- not every 
   assert.ok(!editCall.some((a) => a.startsWith("branch:")), "no branch was given, none should be written");
 });
 
-test("#656 MUTATION: losing the claim race backs off the branch label too, not just session -- a "
-  + "back-off must leave nothing of this session's attempt standing", () => {
+test("#656/#987 MUTATION: losing the claim race leaves NO claim record behind -- a back-off must leave "
+  + "nothing of this session's attempt standing, and a comment cannot be un-posted", () => {
   let reads = 0;
   const calls: string[][] = [];
   const run = (cmd: string, args: string[]) => {
@@ -393,8 +417,11 @@ test("#656 MUTATION: losing the claim race backs off the branch label too, not j
     .map((a, i) => (a === "--remove-label" ? args[i + 1] : null)).filter((l): l is string => l !== null);
   const backOffCall = calls.find((a) => removedLabels(a).includes("session:worker-config"));
   assert.ok(backOffCall, "must back off");
-  assert.ok(removedLabels(backOffCall!).includes("branch:agent/row-claim-branch-656"),
-    "the branch label this attempt wrote must be removed alongside the session label it lost with");
+  // #987: THIS IS WHY THE RECORD IS POSTED AFTER THE RACE CHECK, not before. An `--add-label` can be taken
+  // back; an issue comment cannot. A claim that lost must leave no comment naming a worktree it never kept,
+  // so there is nothing here to retract -- which is only true if nothing was ever written.
+  assert.equal(calls.filter((a) => a[1] === "comment").length, 0,
+    "a losing claim must post no claim record -- an appended comment is not removable the way a label is");
 });
 
 test("#656 ACCEPTANCE: declineRow removes the recorded branch label when releasing a row", () => {
@@ -408,7 +435,7 @@ test("#656 ACCEPTANCE: declineRow removes the recorded branch label when releasi
     }
     return "";
   };
-  const result = declineRow(656, "worker-config", { run, moveStatus: () => ({ moved: true }) });
+  const result = declineRow(656, "worker-config", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) });
   assert.equal(result.declined, true);
   const editCall = calls.find((a) => a[1] === "edit")!;
   const removedLabels = editCall
@@ -420,7 +447,16 @@ test("#656 ACCEPTANCE: declineRow removes the recorded branch label when releasi
 
 // --- #665: claimRow records the worktree, declineRow removes it (and the directory it names) ---
 
-test("#665 ACCEPTANCE: claimRow given a worktree writes worktree:<path> in the SAME edit as the claim", () => {
+/**
+ * #987's own acceptance path. THE PATH IS 63 CHARACTERS -- the length that could not be claimed at all
+ * before this row, because `worktree:` + this path is a 72-character label and GitHub caps a label name at
+ * 50. It is the real shape too: a worktree beside this checkout, which is where every engineer here puts
+ * one, and the reason `--worktree=` went unused while #933's hazard went unrecorded.
+ */
+const LONG_WORKTREE = "/Users/danielbeck/Documents/repos/personal/a11y-wt-987";
+
+test("#987 ACCEPTANCE: a claim naming a 63-character worktree path SUCCEEDS and records the path -- the "
+  + "case that was refused outright while the record lived in a label", () => {
   const calls: string[][] = [];
   let reads = 0;
   const run = (cmd: string, args: string[]) => {
@@ -428,7 +464,166 @@ test("#665 ACCEPTANCE: claimRow given a worktree writes worktree:<path> in the S
     if (args[1] === "view") {
       reads += 1;
       const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
-        { name: STARTED_LABEL }, { name: "worktree:/tmp/a11y-wt-665" }];
+        { name: STARTED_LABEL }];
+      return JSON.stringify({ number: 987, title: "A row", labels });
+    }
+    return "";
+  };
+  const path = `${LONG_WORKTREE}${"x".repeat(63 - LONG_WORKTREE.length)}`;
+  assert.equal(path.length, 63, "the fixture must be the length this row is about, not merely long");
+  assert.ok(`${WORKTREE_LABEL_PREFIX}${path}`.length > 50,
+    "if this ever fails, GitHub's cap has moved and the whole premise of #987 needs re-measuring");
+  const result = claimRow(987, "worker-config", { run, moveStatus: () => ({ moved: true }), worktree: path });
+  assert.deepEqual(result, { claimed: true, statusMoved: true });
+  // Nothing carrying the path may reach a label -- not the add set, and not `gh label create` either,
+  // which is where the 422 actually landed.
+  for (const call of calls) {
+    assert.ok(!call.some((a) => a.includes(path) && a.startsWith(WORKTREE_LABEL_PREFIX)),
+      `a label carrying the path would be refused by GitHub: ${JSON.stringify(call)}`);
+  }
+  const comment = calls.find((a) => a[1] === "comment")!;
+  const body = comment[comment.indexOf("--body") + 1];
+  assert.equal(claimRecordFrom([body]).worktree, path,
+    "the path must come back out BYTE-IDENTICAL -- a truncated or digested record cannot be handed to "
+    + "`git worktree remove`, which is the only reason #665 recorded it at all");
+});
+
+test("#987 ACCEPTANCE: A LONG BRANCH NAME TOO -- `branch:` leaves 43 characters, and the row asked for "
+  + "both fields, not just the one that was reported", () => {
+  const calls: string[][] = [];
+  let reads = 0;
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      reads += 1;
+      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
+        { name: STARTED_LABEL }];
+      return JSON.stringify({ number: 987, title: "A row", labels });
+    }
+    return "";
+  };
+  const branch = `agent/${"a-long-enough-segment-".repeat(3)}987`;
+  assert.ok(`${BRANCH_LABEL_PREFIX}${branch}`.length > 50, "the fixture must exceed the cap it is about");
+  claimRow(987, "worker-config", { run, moveStatus: () => ({ moved: true }), branch });
+  const editCall = calls.find((a) => a[1] === "edit")!;
+  assert.ok(!editCall.some((a) => a.startsWith(BRANCH_LABEL_PREFIX)), "no branch label may be written");
+  const comment = calls.find((a) => a[1] === "comment")!;
+  assert.equal(claimRecordFrom([comment[comment.indexOf("--body") + 1]]).branch, branch);
+});
+
+test("#987 ACCEPTANCE: declineRow removes the worktree the CLAIM COMMENT names -- the record is only "
+  + "worth keeping if the release reads the same place the claim wrote", () => {
+  const path = "/Users/danielbeck/Documents/repos/personal/a11y-wt-declined-987";
+  const removed: string[] = [];
+  const run = (cmd: string, args: string[]) => {
+    if (args[1] === "view") {
+      return JSON.stringify({ number: 987, title: "A row", labels: [{ name: CLAIM_LABEL },
+        { name: "session:worker-judge" }, { name: STARTED_LABEL }] });
+    }
+    return "";
+  };
+  const comments = [claimRecordComment({ session: "worker-judge", branch: "agent/x-987", worktree: path })];
+  const result = declineRow(987, "worker-judge", { run, fetchComments: () => comments,
+    moveStatus: () => ({ moved: true }),
+    removeWorktree: (p: string) => { removed.push(p); return { removed: true as const }; } });
+  assert.equal(result.declined, true);
+  assert.deepEqual(removed, [path], "the path from the comment, byte-identical, is what must be removed");
+});
+
+test("#987: a RELEASE record supersedes the claim record, so `check` stops naming a worktree the decline "
+  + "already removed -- the stale-record failure a label removal used to handle for free", () => {
+  const path = "/private/tmp/wt-987";
+  const posted: string[] = [];
+  const run = (cmd: string, args: string[]) => {
+    if (args[1] === "view") {
+      return JSON.stringify({ number: 987, title: "A row", labels: [{ name: CLAIM_LABEL },
+        { name: "session:worker-judge" }, { name: STARTED_LABEL }] });
+    }
+    if (args[1] === "comment") posted.push(args[args.indexOf("--body") + 1]);
+    return "";
+  };
+  const claim = claimRecordComment({ session: "worker-judge", worktree: path });
+  declineRow(987, "worker-judge", { run, fetchComments: () => [claim],
+    moveStatus: () => ({ moved: true }), removeWorktree: () => ({ removed: true as const }) });
+  const release = posted.find((b) => b.includes(CLAIM_RECORD_MARKER));
+  assert.ok(release, "the decline must append a release record");
+  // THE ROUND TRIP THAT MATTERS: reading the thread in order, newest-wins, must now say nothing is held.
+  assert.deepEqual(claimRecordFrom([claim, release!]),
+    { branch: null, worktree: null, recorded: true },
+    "a released row must read as recorded-and-empty, never as the claim that came before it");
+  assert.equal(claimRecordFrom([claim]).worktree, path,
+    "and the claim alone must still read as held, or this test would pass on a broken reader");
+});
+
+test("#987: a decline that had NOTHING recorded posts no release record -- noise a later "
+  + "`claimRecordFrom` would then have to read past", () => {
+  const posted: string[] = [];
+  const run = (cmd: string, args: string[]) => {
+    if (args[1] === "view") {
+      return JSON.stringify({ number: 987, title: "A row", labels: [{ name: CLAIM_LABEL },
+        { name: "session:worker-judge" }, { name: STARTED_LABEL }] });
+    }
+    if (args[1] === "comment") posted.push(args[args.indexOf("--body") + 1]);
+    return "";
+  };
+  declineRow(987, "worker-judge",
+    { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) });
+  assert.deepEqual(posted.filter((b) => b.includes(CLAIM_RECORD_MARKER)), []);
+});
+
+test("#987: claimRecordFrom takes the NEWEST record and ignores every other comment -- a row can be "
+  + "claimed, released and claimed again, and each of those appended its own", () => {
+  const first = claimRecordComment({ session: "a", worktree: "/private/tmp/wt-first" });
+  const release = claimRecordComment({ session: "a", released: true });
+  const second = claimRecordComment({ session: "b", worktree: "/private/tmp/wt-second" });
+  const noise = "Reviewed at `abc1234`: convinced. Claimed-worktree: /private/tmp/wt-quoted";
+  assert.equal(claimRecordFrom([first, release, second, noise]).worktree, "/private/tmp/wt-second",
+    "a comment QUOTING a field line is not a record -- only the marker makes one");
+  assert.deepEqual(claimRecordFrom([noise]), { branch: null, worktree: null, recorded: false });
+  assert.deepEqual(claimRecordFrom([]), { branch: null, worktree: null, recorded: false });
+});
+
+test("#987 THE MIGRATION READ: claimedObjects falls back to a pre-#987 `worktree:` LABEL, and the comment "
+  + "wins whenever there is one -- 3 open rows carried a label the day this landed", () => {
+  const legacy = ["in-progress", "session:worker-judge", `${WORKTREE_LABEL_PREFIX}/private/tmp/wt-772`,
+    `${BRANCH_LABEL_PREFIX}agent/refs-carrying-symbol-772`];
+  assert.deepEqual(claimedObjects({ labels: legacy, comments: [] }),
+    { branch: "agent/refs-carrying-symbol-772", worktree: "/private/tmp/wt-772" },
+    "dropping this fallback would leave those rows' directories unremoved on decline -- the one outcome "
+    + "#665 exists to prevent");
+  const record = claimRecordComment({ session: "worker-judge", worktree: "/private/tmp/wt-new" });
+  assert.deepEqual(claimedObjects({ labels: legacy, comments: [record] }),
+    { branch: null, worktree: "/private/tmp/wt-new" },
+    "the COMMENT is the record: a row that has one must not be read through a label left over beside it");
+  assert.deepEqual(claimedObjects({ labels: ["in-progress"], comments: [] }),
+    { branch: null, worktree: null });
+});
+
+test("#987: fetchClaimComments REFUSES a response it cannot read, rather than reporting nothing recorded "
+  + "-- unreadable is not unrecorded, and the difference is a directory that never gets removed", () => {
+  const cases: [string, () => string][] = [
+    ["a failed call", () => { throw new Error("gh: HTTP 502"); }],
+    ["not JSON", () => "<html>proxy error</html>"],
+    ["no comments array", () => JSON.stringify({ number: 987, title: "A row" })],
+  ];
+  for (const [name, run] of cases) {
+    assert.throws(() => fetchClaimComments(987, { run: () => run() }), /row-claim/,
+      `${name} must refuse, never return []`);
+  }
+  assert.deepEqual(
+    fetchClaimComments(987, { run: () => JSON.stringify({ comments: [{ body: "one" }, { body: "two" }] }) }),
+    ["one", "two"], "and the reading path must work, or the refusals above prove nothing");
+});
+
+test("#665/#987 ACCEPTANCE: claimRow given a worktree records it in the claim comment, not a label", () => {
+  const calls: string[][] = [];
+  let reads = 0;
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      reads += 1;
+      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
+        { name: STARTED_LABEL }];
       return JSON.stringify({ number: 665, title: "A row", labels });
     }
     return "";
@@ -436,15 +631,37 @@ test("#665 ACCEPTANCE: claimRow given a worktree writes worktree:<path> in the S
   const result = claimRow(665, "worker-config",
     { run, moveStatus: () => ({ moved: true }), worktree: "/tmp/a11y-wt-665" });
   assert.deepEqual(result, { claimed: true, statusMoved: true });
-  const editCall = calls.find((a) => a[1] === "edit");
-  assert.ok(editCall!.includes(`${WORKTREE_LABEL_PREFIX}/tmp/a11y-wt-665`), "must write the worktree label");
+  const editCall = calls.find((a) => a[1] === "edit")!;
+  assert.ok(!editCall.some((a) => a.startsWith(WORKTREE_LABEL_PREFIX)), "no worktree label may be written");
+  const comment = calls.find((a) => a[1] === "comment")!;
+  assert.equal(claimRecordFrom([comment[comment.indexOf("--body") + 1]]).worktree, "/tmp/a11y-wt-665");
 });
 
-// --- #749: `branch:<name>`/`worktree:<path>` do not exist until claimRow creates them, and the removal
-// of `ready` must never apply while the additions did not (#677's own reproduction: the reverse) ---
+test("#987: a claim naming NEITHER a branch nor a worktree posts NO record -- a marker comment with no "
+  + "fields is how a RELEASE is spelled, and the two states must not share a spelling", () => {
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") return JSON.stringify({ number: 665, title: "A row", labels: [] });
+    return "";
+  };
+  claimRow(665, "worker-config", { run, moveStatus: () => ({ moved: true }) });
+  assert.equal(calls.filter((a) => a[1] === "comment").length, 0);
+});
 
-test("#749 ACCEPTANCE: claimRow given a branch CREATES the branch: label before adding it -- `gh label "
-  + "create --force` runs before `gh issue edit --add-label`, never after, and never skipped", () => {
+// --- #749: a label must EXIST before `gh` can add it, and the removal of `ready` must never apply while
+// the additions did not (#677's own reproduction: the reverse).
+//
+// #987 CHANGED WHAT THESE TWO TESTS CAN POINT AT, and that is worth stating rather than quietly narrowing.
+// #749 was found on `branch:<name>` and `worktree:<path>` -- PER-ROW-UNIQUE labels this repo had never
+// created in advance, so they were the only labels `claimRow` could add that did not already exist.
+// `claimRow` no longer writes either. The ORDERING property is unchanged and still load-bearing
+// (`ensureLabelsExist` is exported, and `row-file.mjs` adds `lane:<owner>` labels through it that genuinely
+// may not exist yet), so these keep guarding the order over whatever labels the claim DOES write, and no
+// longer name a specific one. They are deliberately not deleted: the guard outlived its first instance. ---
+
+test("#749 ACCEPTANCE: claimRow CREATES every label before adding it -- `gh label create --force` runs "
+  + "before `gh issue edit --add-label`, never after, and never skipped", () => {
   const calls: string[][] = [];
   let reads = 0;
   const run = (cmd: string, args: string[]) => {
@@ -452,7 +669,7 @@ test("#749 ACCEPTANCE: claimRow given a branch CREATES the branch: label before 
     if (args[1] === "view") {
       reads += 1;
       const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
-        { name: STARTED_LABEL }, { name: "branch:agent/new-branch-749" }];
+        { name: STARTED_LABEL }];
       return JSON.stringify({ number: 749, title: "A row", labels });
     }
     return "";
@@ -460,37 +677,42 @@ test("#749 ACCEPTANCE: claimRow given a branch CREATES the branch: label before 
   const result = claimRow(749, "worker-config",
     { run, moveStatus: () => ({ moved: true }), branch: "agent/new-branch-749" });
   assert.equal(result.claimed, true);
-  const createIndex = calls.findIndex((a) => a[0] === "label" && a[1] === "create"
-    && a.includes("branch:agent/new-branch-749"));
-  const addIndex = calls.findIndex((a) => a[1] === "edit" && a.includes("--add-label")
-    && a.includes("branch:agent/new-branch-749"));
-  assert.ok(createIndex !== -1, `expected a \`gh label create\` call for the branch label; got: `
-    + `${JSON.stringify(calls)}`);
+  const createIndex = calls.findIndex((a) => a[0] === "label" && a[1] === "create");
+  const addIndex = calls.findIndex((a) => a[1] === "edit" && a.includes("--add-label"));
+  assert.ok(createIndex !== -1, `expected a \`gh label create\` call; got: ${JSON.stringify(calls)}`);
   assert.ok(addIndex !== -1, "expected the add-label edit call to still happen");
   assert.ok(createIndex < addIndex, "the label must be created BEFORE it is added, never after");
   assert.ok(calls.some((a) => a.includes("--force")), "creation must be idempotent (--force), so a "
     + "label a previous claim already made never errors this claim");
 });
 
-test("#749 ACCEPTANCE: every label in the add set is created, not just `branch:` -- `worktree:` is the "
-  + "identical shape one field over, and was found exactly as unwritten (`gh label list` returned 0) "
-  + "while fixing this row", () => {
+test("#749 ACCEPTANCE: EVERY label in the add set is created, derived from the add set rather than named "
+  + "-- a hand-picked creation list is how `worktree:` was found unwritten (`gh label list` returned 0) "
+  + "while fixing that row in the first place", () => {
   const calls: string[][] = [];
   let reads = 0;
   const run = (cmd: string, args: string[]) => {
     calls.push(args);
     if (args[1] === "view") {
       reads += 1;
-      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
-        { name: STARTED_LABEL }, { name: "worktree:/tmp/a11y-wt-749" }];
+      const labels = reads === 1 ? [{ name: READY_LABEL }] : [{ name: CLAIM_LABEL },
+        { name: "session:worker-config" }, { name: STARTED_LABEL }];
       return JSON.stringify({ number: 749, title: "A row", labels });
     }
     return "";
   };
   claimRow(749, "worker-config", { run, moveStatus: () => ({ moved: true }), worktree: "/tmp/a11y-wt-749" });
   const created = calls.filter((a) => a[0] === "label" && a[1] === "create").map((a) => a[2]);
-  assert.ok(created.includes("worktree:/tmp/a11y-wt-749"), `expected worktree: to be created too; got: `
-    + `${JSON.stringify(created)}`);
+  const editCall = calls.find((a) => a[1] === "edit" && a.includes("--add-label"))!;
+  const added = editCall
+    .map((a, i) => (a === "--add-label" ? editCall[i + 1] : null)).filter((l): l is string => l !== null);
+  assert.ok(added.length > 0, "the claim must add something, or this test proves nothing");
+  assert.deepEqual(added.filter((l) => !created.includes(l)), [],
+    `every added label must have been created first; added ${JSON.stringify(added)}, `
+    + `created ${JSON.stringify(created)}`);
+  // AND THE WAS-READY MARKER IS IN IT: the row above was `ready`, so the claim writes that marker too --
+  // the case a creation list naming only the git-object labels would have missed.
+  assert.ok(added.includes(WAS_READY_LABEL), "the was-ready marker must be among the added labels here");
 });
 
 test("#749 ACCEPTANCE: a failed ADD leaves `ready` untouched -- the removal must never run while the "
@@ -563,7 +785,7 @@ test("#665 ACCEPTANCE: declineRow calls removeWorktree with the recorded path, a
     return "";
   };
   const removeWorktree = (path: string) => { removeCalls.push(path); return { removed: true } as const; };
-  const result = declineRow(665, "worker-config", { run, moveStatus: () => ({ moved: true }), removeWorktree });
+  const result = declineRow(665, "worker-config", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }), removeWorktree });
   assert.equal(result.declined, true);
   assert.deepEqual(removeCalls, ["/tmp/a11y-wt-665"], "must call removeWorktree with the recorded path");
   const editCall = calls.find((a) => a[1] === "edit")!;
@@ -585,7 +807,7 @@ test("#665 MUTATION direction 1: a DIRTY worktree refuses the WHOLE decline, nam
   const removeWorktree = () => ({ removed: false as const,
     reason: "/tmp/a11y-wt-665 has uncommitted change(s) -- refusing to remove it: M dirty.txt",
     files: ["M dirty.txt"] });
-  const result = declineRow(665, "worker-config", { run, moveStatus: () => ({ moved: true }), removeWorktree });
+  const result = declineRow(665, "worker-config", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }), removeWorktree });
   assert.equal(result.declined, false);
   assert.match((result as { reason: string }).reason, /uncommitted change/);
   assert.ok(!calls.some((a) => a[1] === "edit"),
@@ -684,7 +906,7 @@ test("declineRow returns a dispatched-but-not-started row to genuinely unclaimed
     }
     return "";
   };
-  const result = declineRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
+  const result = declineRow(176, "worker-contracts", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, closed: false, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall!.includes(CLAIM_LABEL) && editCall!.includes("session:worker-contracts"));
@@ -702,7 +924,7 @@ test("declineRow also clears STARTED_LABEL when a started row is declined", () =
     }
     return "";
   };
-  const result = declineRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
+  const result = declineRow(176, "worker-contracts", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, closed: false, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit");
   assert.ok(editCall!.includes(STARTED_LABEL));
@@ -724,7 +946,7 @@ test("#449 ACCEPTANCE: a claim-then-decline of a row that WAS `ready` restores `
   };
   const moveCalls: [number, string][] = [];
   const result = declineRow(171, "worker-audit",
-    { run, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
+    { run, fetchComments: noRecord, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
   assert.deepEqual(result, { declined: true, restoredReady: true, blocked: false, closed: false, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit")!;
   assert.ok(editCall.includes(READY_LABEL) && editCall[editCall.indexOf(READY_LABEL) - 1] === "--add-label",
@@ -746,7 +968,7 @@ test("#449 ACCEPTANCE: MUTATION TARGET -- a decline carrying --blocked leaves `b
     return "";
   };
   const moveCalls: [number, string][] = [];
-  const result = declineRow(171, "worker-audit", { run,
+  const result = declineRow(171, "worker-audit", { run, fetchComments: noRecord,
     moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; },
     blockedReason: "found it depends on unmerged work" });
   assert.deepEqual(result, { declined: true, restoredReady: false, blocked: true, closed: false, statusMoved: true });
@@ -774,7 +996,7 @@ test("#752 REGRESSION: #721's real shape -- a claimed, was-ready row that has si
   };
   const moveCalls: [number, string][] = [];
   const result = declineRow(721, "worker-contracts",
-    { run, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
+    { run, fetchComments: noRecord, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
   assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, closed: true, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit")!;
   assert.ok(!editCall.includes("--add-label"), "nothing is added back onto a closed row");
@@ -794,7 +1016,7 @@ test("#752: a CLOSED row is unaffected by --blocked -- closed wins over every ot
     return "";
   };
   const result = declineRow(721, "worker-contracts",
-    { run, moveStatus: () => ({ moved: true }), blockedReason: "found it depends on unmerged work" });
+    { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }), blockedReason: "found it depends on unmerged work" });
   assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, closed: true, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit")!;
   assert.ok(!editCall.includes("--add-label"), "blocked is not added either -- a closed row needs nothing next");
@@ -815,7 +1037,7 @@ test("#752: an OPEN row's decline is UNCHANGED by the closed check -- `state` pr
   };
   const moveCalls: [number, string][] = [];
   const result = declineRow(171, "worker-audit",
-    { run, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
+    { run, fetchComments: noRecord, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
   assert.deepEqual(result, { declined: true, restoredReady: true, blocked: false, closed: false, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit")!;
   assert.ok(editCall.includes(READY_LABEL) && editCall[editCall.indexOf(READY_LABEL) - 1] === "--add-label");
@@ -829,7 +1051,7 @@ test("declineRow refuses to release a row held by someone else", () => {
     return JSON.stringify({ number: 176, title: "A row",
       labels: [{ name: CLAIM_LABEL }, { name: "session:worker-judge" }] });
   };
-  const result = declineRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
+  const result = declineRow(176, "worker-contracts", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) });
   assert.equal(result.declined, false);
   assert.match((result as { reason: string }).reason, /worker-judge/);
   assert.ok(!calls.some((a) => a[1] === "edit"), "must not write anything when refusing");
@@ -838,7 +1060,7 @@ test("declineRow refuses to release a row held by someone else", () => {
 test("declineRow says so, rather than silently no-op'ing, when the row was never claimed", () => {
   const run = () => JSON.stringify({ number: 176, title: "A row",
     labels: [{ name: "backlog" }, { name: "ready" }] });
-  const result = declineRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
+  const result = declineRow(176, "worker-contracts", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) });
   assert.equal(result.declined, false);
   assert.match((result as { reason: string }).reason, /nothing to decline/);
 });
@@ -1109,7 +1331,7 @@ test("MUTATION target: declineRow moves Status BACK to 'Ready' on a successful d
   };
   const moveCalls: [number, string][] = [];
   const result = declineRow(400, "worker-contracts",
-    { run, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
+    { run, fetchComments: noRecord, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
   assert.deepEqual(result, { declined: true, restoredReady: true, blocked: false, closed: false, statusMoved: true });
   assert.deepEqual(moveCalls, [[400, "Ready"]]);
 });
@@ -1120,12 +1342,12 @@ test("declineRow's own declined:true does not depend on the Status move succeedi
     labels: [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }, { name: STARTED_LABEL },
       { name: WAS_READY_LABEL }] });
   const notOnBoardResult = declineRow(400, "worker-contracts",
-    { run, moveStatus: () => ({ moved: false, reason: "not on the Project", notOnBoard: true }) });
+    { run, fetchComments: noRecord, moveStatus: () => ({ moved: false, reason: "not on the Project", notOnBoard: true }) });
   assert.deepEqual(notOnBoardResult, { declined: true, restoredReady: true, blocked: false, closed: false,
     statusMoved: false, notOnBoard: true, statusReason: "not on the Project" });
 
   const halfAppliedResult = declineRow(400, "worker-contracts",
-    { run, moveStatus: () => ({ moved: false, reason: "gh: rate limited", notOnBoard: false }) });
+    { run, fetchComments: noRecord, moveStatus: () => ({ moved: false, reason: "gh: rate limited", notOnBoard: false }) });
   assert.deepEqual(halfAppliedResult, { declined: true, restoredReady: true, blocked: false, closed: false,
     statusMoved: false, notOnBoard: false, statusReason: "gh: rate limited" });
 });
@@ -1135,7 +1357,7 @@ test("declineRow does NOT move Status when the decline itself is refused (not th
     labels: [{ name: CLAIM_LABEL }, { name: "session:worker-judge" }] });
   const moveCalls: [number, string][] = [];
   const result = declineRow(400, "worker-contracts",
-    { run, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
+    { run, fetchComments: noRecord, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
   assert.equal(result.declined, false);
   assert.deepEqual(moveCalls, []);
 });

@@ -19,7 +19,11 @@ import {
   fetchOpenIssues, fetchOpenIssuesChecked, fetchReportedOpenIssueNumbers, openIssueSetSummary, fetchAllIssues, closedDebris,
   isClosedDebrisLabel, openRowsAbsentFromBoard, labellessRows,
   readyRowsAlreadyMerged, fetchClosingPrRefs, fetchLatestReopenedAt, CHECKS, runCheck, isProjectsCredentialGap,
+  fetchClosedUnmergedPrs, fetchClosingIssueRefs, soleUnmergedCloserRows,
+  criterionStatusesFromSource, criterionOwningRow, coverageTrackerDisagreements, fetchClosedCompletedIssues,
+  reachableCriteriaWithoutRow, provenanceVerdicts, provenanceFindings,
 } from "../../../../scripts/ready-label-audit.mjs";
+import { ARM_LABELS_FROM } from "../../../../scripts/claim-provenance.mjs";
 // #782: `isClosedDebrisLabel` now DERIVES from this, rather than pinning the two equal with a separate
 // test -- so this import is the proof the derivation actually happened, not a second, parallel check.
 import { labelsToStrip } from "../../../../scripts/close-rows-for-merged-pr.mjs";
@@ -954,11 +958,12 @@ test("#546: notRun defaults to a fresh array when the caller does not pass one -
     + "refusal -- it is simply not recorded anywhere the caller can see, same as before this test existed");
 });
 
-test("CHECKS names all nine, so the partial-audit sentence states a true denominator", () => {
-  assert.equal(CHECKS.length, 9);
+test("CHECKS names all eleven, so the partial-audit sentence states a true denominator", () => {
+  assert.equal(CHECKS.length, 11);
   assert.deepEqual(CHECKS.map(([what]) => what), [
     "open issues", "hand claims", "labelless rows", "declined rows", "closed issues",
     "board membership", "closing PR references", "claim activity", "closed-row provenance",
+    "closing PR never merged", "coverage vs tracker",
   ]);
 });
 
@@ -993,4 +998,238 @@ test("#804: claim-labels.mjs itself is a real LEAF -- it imports nothing, so not
   assert.doesNotMatch(source, /^import\s/m,
     "claim-labels.mjs must stay import-free -- an import here would reintroduce exactly the cycle risk "
     + "the leaf-module design exists to remove");
+});
+
+// --- #870: a closed row closed by a PR that never merged ---
+
+function closingIssueRefsResponse(byPr: Record<string, { number: number; issues: number[] }>) {
+  const repository: Record<string, unknown> = {};
+  for (const [alias, { number, issues }] of Object.entries(byPr)) {
+    repository[alias] = { number, closingIssuesReferences: { nodes: issues.map((n) => ({ number: n })) } };
+  }
+  return JSON.stringify({ data: { repository } });
+}
+
+test("fetchClosedUnmergedPrs: keeps only PRs with mergedAt null, never merge_commit_sha", () => {
+  const run = () => JSON.stringify([
+    { number: 1, mergedAt: null },
+    { number: 2, mergedAt: "2026-09-01T00:00:00Z" },
+    { number: 3, mergedAt: null },
+  ]);
+  assert.deepEqual(fetchClosedUnmergedPrs({ run }), [
+    { number: 1, mergedAt: null }, { number: 3, mergedAt: null },
+  ]);
+});
+
+test("fetchClosedUnmergedPrs throws, rather than returning an empty list, when gh itself fails", () => {
+  const run = () => { throw new Error("gh: not authenticated"); };
+  assert.throws(() => fetchClosedUnmergedPrs({ run }), /could not list closed PRs/);
+});
+
+test("fetchClosingIssueRefs: empty input makes no gh call at all", () => {
+  let called = false;
+  const run = () => { called = true; return "{}"; };
+  assert.deepEqual(fetchClosingIssueRefs([], { run }), new Map());
+  assert.equal(called, false);
+});
+
+test("fetchClosingIssueRefs: #89's real shape -- a closed-unmerged PR still names its closing issue "
+  + "(#870's own finding: the ISSUE-side field cannot see this, so this reads the PR's OWN side)", () => {
+  const run = () => closingIssueRefsResponse({ p0: { number: 89, issues: [79] } });
+  assert.deepEqual(fetchClosingIssueRefs([89], { run }).get(89), [79]);
+});
+
+test("fetchClosingIssueRefs: a PR declaring no closing issue reads an empty array, not absent", () => {
+  const run = () => closingIssueRefsResponse({ p0: { number: 1, issues: [] } });
+  assert.deepEqual(fetchClosingIssueRefs([1], { run }).get(1), []);
+});
+
+test("fetchClosingIssueRefs throws, rather than returning an empty map, when gh itself fails", () => {
+  const run = () => { throw new Error("gh: rate limited"); };
+  assert.throws(() => fetchClosingIssueRefs([1], { run }), /could not resolve closing issue references/);
+});
+
+test("fetchClosingIssueRefs throws on a response missing an expected PR alias, rather than guessing", () => {
+  const run = () => JSON.stringify({ data: { repository: {} } });
+  assert.throws(() => fetchClosingIssueRefs([89], { run }), /missing from the closing-issue-references/);
+});
+
+test("soleUnmergedCloserRows: #79's real shape -- sole unmerged closer, GitHub recognises no merged "
+  + "closer at all -- flagged", () => {
+  const issues = [{ number: 79, title: "1.3.5 is a rule...", closedAt: "2026-09-07T02:08:29Z",
+    stateReason: "COMPLETED" }];
+  const unmergedRefs = new Map([[89, [79]]]);
+  const mergedRefs = new Map([[79, []]]); // #870's own measurement: EMPTY, not the stale PR
+  assert.deepEqual(soleUnmergedCloserRows(issues, unmergedRefs, mergedRefs),
+    [{ number: 79, title: "1.3.5 is a rule...", closedAt: "2026-09-07T02:08:29Z", closedBy: 89 }]);
+});
+
+test("soleUnmergedCloserRows: #159's real shape -- an unmerged PR once claimed it, but GitHub currently "
+  + "recognises a DIFFERENT, merged PR closing it -- NOT flagged", () => {
+  const issues = [{ number: 159, title: "reported.json becomes a directory",
+    closedAt: "2026-09-08T00:00:00Z", stateReason: "COMPLETED" }];
+  const unmergedRefs = new Map([[172, [159]]]);
+  const mergedRefs = new Map([[159, [{ number: 473, state: "MERGED", mergedAt: "2026-09-08T05:52:23Z" }]]]);
+  assert.deepEqual(soleUnmergedCloserRows(issues, unmergedRefs, mergedRefs), []);
+});
+
+test("soleUnmergedCloserRows: an issue no closed-unmerged PR ever named is not this check's population", () => {
+  const issues = [{ number: 1, title: "unrelated", closedAt: "2026-09-01T00:00:00Z",
+    stateReason: "COMPLETED" }];
+  assert.deepEqual(soleUnmergedCloserRows(issues, new Map(), new Map()), []);
+});
+
+test("soleUnmergedCloserRows: TWO different closed-unmerged PRs both naming the same issue is not "
+  + "'sole' -- not flagged, so this check never guesses between two competing claims", () => {
+  const issues = [{ number: 1, title: "two claimants", closedAt: "2026-09-01T00:00:00Z",
+    stateReason: "COMPLETED" }];
+  const unmergedRefs = new Map([[10, [1]], [11, [1]]]);
+  assert.deepEqual(soleUnmergedCloserRows(issues, unmergedRefs, new Map()), []);
+});
+
+test("fetchClosedCompletedIssues: reads stateReason and closedAt, defaulting a missing reason to null", () => {
+  const run = () => JSON.stringify([
+    { number: 1, title: "a", closedAt: "2026-09-01T00:00:00Z", stateReason: "COMPLETED" },
+    { number: 2, title: "b", closedAt: "2026-09-02T00:00:00Z" },
+  ]);
+  assert.deepEqual(fetchClosedCompletedIssues({ run }), [
+    { number: 1, title: "a", closedAt: "2026-09-01T00:00:00Z", stateReason: "COMPLETED" },
+    { number: 2, title: "b", closedAt: "2026-09-02T00:00:00Z", stateReason: null },
+  ]);
+});
+
+// --- #870: criterion-coverage.ts vs a closed row, ceo's ruling -- the sharper, unambiguous check ---
+
+test("criterionStatusesFromSource: extracts every criterion/status pair, comments before status skipped", () => {
+  const source = `export const X = {
+  "1.1.1": { status: "assessed", channels: ["x"], note: "n" },
+  "1.3.5": {
+    // a paragraph of reasoning
+    // spanning several lines
+    status: "partial", needs: ["dom"],
+  },
+};`;
+  assert.deepEqual(criterionStatusesFromSource(source), new Map([["1.1.1", "assessed"], ["1.3.5", "partial"]]));
+});
+
+test("criterionStatusesFromSource: the real file yields all 55 WCAG 2.2 AA criteria", () => {
+  const source = readFileSync(
+    join(SCRIPTS_DIR, "..", "packages/judge/src/criterion-coverage.ts"), "utf8");
+  const statuses = criterionStatusesFromSource(source);
+  assert.ok(statuses.size >= 50, `only found ${statuses.size} -- the scan's own shape may have drifted`);
+  assert.equal(statuses.get("1.3.5"), "partial", "#869's own fix -- re-read the file if this drifts");
+});
+
+test("criterionOwningRow: a row title beginning with the criterion number, #79's own convention", () => {
+  const issues = [{ number: 79, title: "1.3.5 is a rule we could write today",
+    closedAt: "2026-09-07T02:08:29Z", stateReason: "COMPLETED" }];
+  assert.deepEqual(criterionOwningRow("1.3.5", issues), issues[0]);
+});
+
+test("criterionOwningRow: a criterion number appearing LATER in a title is not a match -- only a title "
+  + "that BEGINS with it counts", () => {
+  const issues = [{ number: 2, title: "something about 1.3.5 in passing",
+    closedAt: "2026-09-01T00:00:00Z", stateReason: "COMPLETED" }];
+  assert.equal(criterionOwningRow("1.3.5", issues), undefined);
+});
+
+test("criterionOwningRow: word-boundaried -- '1.3.5' must not match a title beginning '1.3.50'", () => {
+  const issues = [{ number: 3, title: "1.3.50 is not a real criterion",
+    closedAt: "2026-09-01T00:00:00Z", stateReason: "COMPLETED" }];
+  assert.equal(criterionOwningRow("1.3.5", issues), undefined);
+});
+
+test("criterionOwningRow: no matching title at all returns undefined, not a guess", () => {
+  assert.equal(criterionOwningRow("1.3.5", []), undefined);
+});
+
+test("coverageTrackerDisagreements: #79's real shape -- `reachable` and closed COMPLETED disagree", () => {
+  const statuses = new Map([["1.3.5", "reachable"]]);
+  const issues = [{ number: 79, title: "1.3.5 is a rule we could write today",
+    closedAt: "2026-09-07T02:08:29Z", stateReason: "COMPLETED" }];
+  assert.deepEqual(coverageTrackerDisagreements(statuses, issues),
+    [{ criterion: "1.3.5", status: "reachable", row: issues[0] }]);
+});
+
+test("coverageTrackerDisagreements: `partial` is NOT a disagreement with a closed row -- it is ALREADY "
+  + "this file's own definition of code existing, just incompletely (#869's own correction, #886)", () => {
+  const statuses = new Map([["1.3.5", "partial"]]);
+  const issues = [{ number: 79, title: "1.3.5 is a rule we could write today",
+    closedAt: "2026-09-07T02:08:29Z", stateReason: "COMPLETED" }];
+  assert.deepEqual(coverageTrackerDisagreements(statuses, issues), []);
+});
+
+test("coverageTrackerDisagreements: `assessed` and `out-of-scope` are likewise not disagreements", () => {
+  const issues = [{ number: 1, title: "1.1.1 something", closedAt: "2026-09-01T00:00:00Z",
+    stateReason: "COMPLETED" }];
+  assert.deepEqual(coverageTrackerDisagreements(new Map([["1.1.1", "assessed"]]), issues), []);
+  assert.deepEqual(coverageTrackerDisagreements(new Map([["1.1.1", "out-of-scope"]]), issues), []);
+});
+
+test("coverageTrackerDisagreements: a row closed NOT_PLANNED is not a disagreement -- it never claimed "
+  + "the work was done", () => {
+  const statuses = new Map([["1.3.5", "reachable"]]);
+  const issues = [{ number: 79, title: "1.3.5 is a rule we could write today",
+    closedAt: "2026-09-07T02:08:29Z", stateReason: "NOT_PLANNED" }];
+  assert.deepEqual(coverageTrackerDisagreements(statuses, issues), []);
+});
+
+test("coverageTrackerDisagreements: no matching row at all is NOT reported as a disagreement -- see "
+  + "reachableCriteriaWithoutRow for that third state", () => {
+  assert.deepEqual(coverageTrackerDisagreements(new Map([["1.3.5", "reachable"]]), []), []);
+});
+
+test("reachableCriteriaWithoutRow: names a `reachable` criterion with no matching closed row, "
+  + "distinct from both agreeing and disagreeing", () => {
+  assert.deepEqual(reachableCriteriaWithoutRow(new Map([["1.3.5", "reachable"]]), []), ["1.3.5"]);
+});
+
+test("reachableCriteriaWithoutRow: a criterion WITH a row (agreeing or disagreeing) is not in this list", () => {
+  const issues = [{ number: 79, title: "1.3.5 is a rule we could write today",
+    closedAt: "2026-09-07T02:08:29Z", stateReason: "COMPLETED" }];
+  assert.deepEqual(reachableCriteriaWithoutRow(new Map([["1.3.5", "reachable"]]), issues), []);
+});
+
+test("reachableCriteriaWithoutRow: a non-`reachable` criterion is never named here, row or no row", () => {
+  assert.deepEqual(reachableCriteriaWithoutRow(new Map([["1.1.1", "assessed"]]), []), []);
+});
+
+test("MUTATION: giving #79's fixture a SECOND, merged closing PR stops the reopen check flagging it, "
+  + "and states why", () => {
+  const issues = [{ number: 79, title: "1.3.5 is a rule...", closedAt: "2026-09-07T02:08:29Z",
+    stateReason: "COMPLETED" }];
+  const unmergedRefs = new Map([[89, [79]]]);
+  const stillFlagged = soleUnmergedCloserRows(issues, unmergedRefs, new Map([[79, []]]));
+  assert.equal(stillFlagged.length, 1, "control: the unmutated fixture must still flag");
+  const mergedRefs = new Map([[79, [{ number: 900, state: "MERGED", mergedAt: "2026-09-10T00:00:00Z" }]]]);
+  assert.deepEqual(soleUnmergedCloserRows(issues, unmergedRefs, mergedRefs), [],
+    "a later merged PR now recognised as closing #79 must stop the reopen recommendation");
+});
+
+test("MUTATION: moving 1.3.5 from `reachable` to any other status stops the coverage check flagging it", () => {
+  const issues = [{ number: 79, title: "1.3.5 is a rule we could write today",
+    closedAt: "2026-09-07T02:08:29Z", stateReason: "COMPLETED" }];
+  assert.equal(coverageTrackerDisagreements(new Map([["1.3.5", "reachable"]]), issues).length, 1,
+    "control: the unmutated fixture must still disagree");
+  for (const status of ["partial", "assessed", "out-of-scope"]) {
+    assert.deepEqual(coverageTrackerDisagreements(new Map([["1.3.5", status]]), issues), [],
+      `status "${status}" must not be reported as a disagreement`);
+  }
+});
+
+test("#848: the provenance finding counts ONLY undeclared rows -- a pre-#839 closing PR is reported, not counted", () => {
+  // The four shapes of 2026-09-09's reportable rows. The first version counted by `!attributed`, so the
+  // pre-#839 closing PR (five of that evening's rows, all work that shipped under a Closes line) sat in the
+  // finding beside the two genuine bypasses, and would have stayed there.
+  const row = (number: number) => ({ number, title: `row ${number}`, closedAt: "2026-09-09T18:00:00Z", events: [] });
+  const closers: Record<number, unknown> = {
+    887: { number: 894, headRefName: "agent/exhausted-over-a-gap-887", merged: true, createdAt: "2026-09-09T16:00:00Z", sessionLabels: [] },
+    853: null,
+    900: { number: 905, headRefName: "agent/x-900", merged: true, createdAt: ARM_LABELS_FROM, sessionLabels: ["session:worker-capture"] },
+    912: { number: 913, headRefName: "agent/unclaimed-912", merged: true, createdAt: ARM_LABELS_FROM, sessionLabels: [] },
+  };
+  const verdicts = provenanceVerdicts([887, 853, 900, 912].map(row) as never, (n: number) => closers[n] as never);
+  assert.deepEqual(verdicts.map((v) => [v.number, v.verdict]),
+    [[887, "work"], [853, "undeclared"], [900, "worker"], [912, "undeclared"]]);
+  assert.deepEqual(provenanceFindings(verdicts), [853, 912], "the count the audit exits with");
 });

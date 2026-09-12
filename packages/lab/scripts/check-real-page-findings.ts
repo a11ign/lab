@@ -47,7 +47,13 @@ import {
   type CapturedAnnouncements,
 } from "@a11ign/evidence/verify";
 import { nameOf } from "@a11ign/evidence";
-import { realPageFor, supersededBy, REAL_PAGES } from "../src/training/real-page-corpus.mjs";
+import {
+  realPageFor, supersededBy, pageServerFixtureAtPath, REAL_PAGES, pagesFor,
+} from "../src/training/real-page-corpus.mjs";
+// THE CONFORMANCE LINE'S SELECTION, and the field population it leaves out, imported rather than written here
+// (#955): `field-role.test.ts` asserts through both, so what this gate scores and prints and what that test
+// checks are one copy.
+import { conformanceLineAnswer, fieldPopulationLines } from "../src/training/real-page-selection.mjs";
 import { REPO_ROOT, realCorpusRoot } from "../src/dataset-paths.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 
@@ -101,7 +107,8 @@ const CAPTURE_AGES: { at: string; role: string }[] = [];
  * `reportDeclaredExclusions`, which prints every declared exclusion on every run precisely so a temporary
  * one cannot become permanent by silence. The asymmetry was only enforced in one direction.
  */
-const NOT_SCORED: { file: string; url: string; why: "undeclared" | "not conformant" | "no transcript" }[] = [];
+type NotScoredWhy = "undeclared" | "not conformant" | "no transcript" | "field";
+const NOT_SCORED: { file: string; url: string; why: NotScoredWhy }[] = [];
 
 /**
  * The pages declared unexaminable, with their reasons. Empty when the file is absent, deliberately: a
@@ -184,6 +191,11 @@ function reportDeclaredExclusions(unusablePages: string[]): string[] {
   return declaredHere;
 }
 
+/** The field pages this run found a capture of, by declared url, from what `pageThisGateScores` recorded. */
+function fieldCapturesSeen(): Set<string> {
+  return new Set(NOT_SCORED.filter((entry) => entry.why === "field").map((entry) => entry.url));
+}
+
 function reportCaptureAges(): void {
   process.stdout.write(`${captureAgeLines(CAPTURE_AGES).join("\n")}\n`);
   reportWhatWasNotScored();
@@ -218,8 +230,10 @@ function reportWhatWasNotScored(): void {
   const answers = classifyUndeclared(undeclared, furnitureUrls);
   process.stdout.write(`  scored ${CAPTURE_AGES.length} capture(s); walked past ${NOT_SCORED.length}`
     + ` (${by("not conformant").length} on pages the publisher does not declare conformant,`
+    + ` ${by("field").length} on field pages, which claim nothing (see the field line above),`
     + ` ${answers.unclaimed.length} undeclared, ${answers.superseded.length} superseded`
-    + ` by a page that moved, ${answers.furniture.length} reclassified as furniture (see below),`
+    + ` by a page that moved, ${answers.relocated.length} relocated fixture(s) that did not reconcile,`
+    + ` ${answers.furniture.length} reclassified as furniture (see below),`
     + ` ${by("no transcript").length} with no transcript).\n`);
   if (!undeclared.length) return;
   reportUndeclared(answers);
@@ -241,11 +255,18 @@ function reportWhatWasNotScored(): void {
  * ORDER MATTERS AND IS NOT ARBITRARY: superseded is decided first, so a capture that both moved and read
  * only furniture is reported as MOVED. The move is the actionable fact — the successor capture exists and
  * is being scored — where "it read a cookie wall" describes a file that is already history.
+ *
+ * #881 ADDS A FOURTH, decided second: RELOCATED, a page-server fixture `realPageFor` could not reconcile. It
+ * is a declared page, so the fix for an unclaimed capture -- declare it or delete it -- is the wrong one
+ * twice over, and #881's first version asked for exactly that deletion by reading ten of these under the
+ * unclaimed heading. The ordinary relocation now reconciles and never arrives here; this catches the kind
+ * that does not.
  */
 export function classifyUndeclared(
   undeclared: { file: string; url: string }[], furnitureUrls: Set<string>,
 ): {
   superseded: { entry: { file: string; url: string }; by: NonNullable<ReturnType<typeof supersededBy>> }[];
+  relocated: { entry: { file: string; url: string }; fixture: NonNullable<ReturnType<typeof pageServerFixtureAtPath>> }[];
   furniture: { file: string; url: string }[];
   unclaimed: { file: string; url: string }[];
 } {
@@ -253,9 +274,15 @@ export function classifyUndeclared(
     .map((entry) => ({ entry, by: supersededBy(entry.url) }))
     .filter((row): row is { entry: { file: string; url: string }; by: NonNullable<ReturnType<typeof supersededBy>> } =>
       row.by !== undefined);
-  const rest = undeclared.filter((entry) => !supersededBy(entry.url));
+  const notMoved = undeclared.filter((entry) => !supersededBy(entry.url));
+  const relocated = notMoved
+    .map((entry) => ({ entry, fixture: pageServerFixtureAtPath(entry.url) }))
+    .filter((row): row is { entry: { file: string; url: string }; fixture: NonNullable<ReturnType<typeof pageServerFixtureAtPath>> } =>
+      row.fixture !== undefined);
+  const rest = notMoved.filter((entry) => !pageServerFixtureAtPath(entry.url));
   return {
     superseded,
+    relocated,
     furniture: rest.filter((entry) => furnitureUrls.has(entry.url)),
     unclaimed: rest.filter((entry) => !furnitureUrls.has(entry.url)),
   };
@@ -280,7 +307,7 @@ function reportUndeclared(answers: ReturnType<typeof classifyUndeclared>): void 
   // FURNITURE IS ITS OWN ANSWER (#428) and is excluded here the same way `superseded` is: reported once,
   // with the scored furniture captures below, rather than a second time under "no idea what this is".
   // Both sets come from `classifyUndeclared`, so this list and the headline count above it cannot disagree.
-  const { superseded, unclaimed } = answers;
+  const { superseded, relocated, unclaimed } = answers;
 
   if (superseded.length) {
     process.stdout.write(`\n  ${superseded.length} capture(s) SUPERSEDED — the page moved, this corpus `
@@ -288,6 +315,15 @@ function reportUndeclared(answers: ReturnType<typeof classifyUndeclared>): void 
     for (const { entry, by } of superseded) {
       process.stdout.write(`        SUPERSEDED: ${entry.file}\n`
         + `                 -> ${by.page.url}  (declared moved ${by.moved.when})\n`);
+    }
+  }
+  if (relocated.length) {
+    // The FILE and the DECLARED url, never the fetched one: that is the lab's LAN address, and this output
+    // gets quoted into the tracker.
+    process.stdout.write(`\n  ${relocated.length} capture(s) RELOCATED — a DECLARED fixture reached at an origin `
+      + "the matcher does not reconcile (#881). Not undeclared, and NEVER to be deleted:\n");
+    for (const { entry, fixture } of relocated) {
+      process.stdout.write(`        RELOCATED: ${entry.file}\n                 -> ${fixture.url}\n`);
     }
   }
   if (!unclaimed.length) return;
@@ -354,23 +390,27 @@ type Findings = Record<string, string[]>;
  * Rule. The name states the question the two checks jointly answer.
  */
 function pageThisGateScores(file: string, capture: { url?: string; transcript?: unknown }):
-  { page: ReturnType<typeof realPageFor>; why: null } | { page: null; why: "undeclared" | "not conformant" | "no transcript" } {
+  { page: ReturnType<typeof realPageFor>; why: null } | { page: null; why: NotScoredWhy } {
   const url = String(capture.url ?? "");
   if (!Array.isArray(capture.transcript)) {
     NOT_SCORED.push({ file, url, why: "no transcript" });
     return { page: null, why: "no transcript" };
   }
-  const page = realPageFor(capture.url);
-  if (!page || page.publishedClaim !== "conformant") {
-    const why = page ? "not conformant" : "undeclared";
-    NOT_SCORED.push({ file, url, why });
-    return { page: null, why };
-  }
-  return { page, why: null };
+  // A FIELD PAGE IS ITS OWN ANSWER (#955): printed as its own population, keyed by its DECLARED url so the
+  // field line can say which declared pages were captured, and never scored against the baseline.
+  const answer = conformanceLineAnswer(capture.url);
+  if (answer.page) return answer;
+  NOT_SCORED.push({ file, url: answer.why === "field" ? String(realPageFor(capture.url)?.url) : url, why: answer.why });
+  return answer;
 }
 
-/** What the rules say about every conformant real page, as `url -> sorted criteria`. */
-function currentFindings(): Findings {
+/**
+ * What the rules say about every conformant real page, as `declared url -> sorted criteria`.
+ *
+ * EXPORTED for `relocated-fixture-key.test.ts` (#881), which drives it through `REAL_CORPUS_ROOT` at a
+ * synthetic directory: the key is the one thing here that reaches a tracked file, and it was untested.
+ */
+export function currentFindings(): Findings {
   const out: Findings = {};
   let entries: string[];
   try {
@@ -402,17 +442,23 @@ function currentFindings(): Findings {
       // `not conformant` page is EXPECTED to carry findings (that is the whole point of the declaration),
       // and `no transcript` has nothing for `noteEvidence` to read.
       if (scored.why === "undeclared") {
-        noteEvidence(capture as { url?: string } & CapturedAnnouncements);
+        noteEvidence(String(capture.url), capture as CapturedAnnouncements);
       }
       continue;
     }
+    // #881: EVERY RECORD OF A SCORED CAPTURE IS KEYED BY THE DECLARED URL, never the one the worker fetched.
+    // They are the same string for every real publisher, and for a fixture they are not: the capture holds
+    // the lab's LAN address, which `realPageFor` now reconciles. Keyed by the fetched url, `--update` would
+    // write that address into the tracked baseline in a public repository, and the evidence, outcome and
+    // finding maps below would each hold a key the baseline never had.
+    const key = scored.page.url;
     // RECORDED HERE, past every filter, so the ages describe the captures this gate actually scored. Above
     // the filters it described the directory listing -- see this constant's own header for the 113-vs-86.
     if (capturedAt) CAPTURE_AGES.push({ at: capturedAt, role });
     // `capture` is read from real JSON on disk, of a shape only checked at runtime (the `Array.isArray`
     // guard just above) -- the same `as` boundary the rest of this file casts at when handing a parsed
     // capture to `pageCensus`/`domCensus`.
-    noteEvidence(capture as { url?: string } & CapturedAnnouncements);
+    noteEvidence(key, capture as CapturedAnnouncements);
     // HONOUR THE PUBLISHER'S OWN EXCEPTIONS, which this gate was ignoring.
     //
     // `publishedClaim: "conformant"` does not mean the publisher claims every criterion. Almost every UK
@@ -434,16 +480,16 @@ function currentFindings(): Findings {
     const declared = (scored.page.claimExcludes ?? []).map(String);
     const subtypeScoped = declared.filter((entry) => entry.includes(":"));
     if (subtypeScoped.length) {
-      process.stdout.write(`  NOTE ${capture.url}: ${subtypeScoped.join(", ")} `
+      process.stdout.write(`  NOTE ${key}: ${subtypeScoped.join(", ")} `
         + "is subtype-scoped and these findings are criterion-level, so it cannot mask them.\n");
     }
     const excluded = new Set(declared.filter((entry) => !entry.includes(":")));
     const found = ruleFindings(withCensus(capture)) as readonly RuleFinding[];
-    noteOutcomes(String(capture.url), found);
+    noteOutcomes(key, found);
     const criteria = [...new Set(found.map((finding) => String(finding.wcag).split(" ")[0]))]
       .filter((criterion) => !excluded.has(criterion))
       .sort();
-    out[String(capture.url)] = criteria;
+    out[key] = criteria;
   }
   return out;
 }
@@ -635,11 +681,12 @@ function censusLine(
   return `no census recorded; ${lines} announcement(s)`;
 }
 
-function noteEvidence(capture: { url?: string } & CapturedAnnouncements): void {
+/** `url` is the key every map below is read back by -- the declared url for a scored capture (#881). */
+function noteEvidence(url: string, capture: CapturedAnnouncements): void {
   const census = pageCensus(capture as never);
   const dom = domCensus(capture as never);
   const target = rawTargetMatch(capture);
-  if (target) TARGET_MATCH.set(String(capture.url), target);
+  if (target) TARGET_MATCH.set(url, target);
   const lines = Array.isArray(capture.transcript) ? capture.transcript.length : 0;
   // The FIRST few announcements as well as the counts. The counts said `heading=0` on a page whose
   // published HTML carries forty of them, and a count cannot tell you whether the tool read a cookie
@@ -648,14 +695,14 @@ function noteEvidence(capture: { url?: string } & CapturedAnnouncements): void {
   // hand afterwards is the step this line exists to remove.
   const openingLines = (Array.isArray(capture.transcript) ? capture.transcript : [])
     .slice(0, 3).map((line) => String(line));
-  OPENINGS.set(String(capture.url), openingLines);
+  OPENINGS.set(url, openingLines);
   // The heading NAMES, not just the count -- #363. A count cannot tell the page's headings from the
   // consent overlay's, and that is the whole question `furnitureCaptures()` is trying to answer.
-  HEADINGS.set(String(capture.url), headingsAnnouncedIn(capture.transcript));
-  if (census) CENSUS.set(String(capture.url), census);
-  if (dom) DOM_CENSUS.set(String(capture.url), dom);
+  HEADINGS.set(url, headingsAnnouncedIn(capture.transcript));
+  if (census) CENSUS.set(url, census);
+  if (dom) DOM_CENSUS.set(url, dom);
   const opening = openingLines.map((line) => JSON.stringify(line.slice(0, 60))).join(" ");
-  EVIDENCE.set(String(capture.url),
+  EVIDENCE.set(url,
     censusLine(census, dom, target, lines) + (opening ? `\n           opens: ${opening}` : ""));
 }
 
@@ -1145,6 +1192,7 @@ function main(): void {
 
   const { added, removed } = compare(current, baseline);
   process.stdout.write(`\n  ${pages} conformant real page(s) scored against the baseline.\n`);
+  process.stdout.write(`${fieldPopulationLines(pagesFor("field"), fieldCapturesSeen()).join("\n")}\n`);
   reportWhichPathThisGateRead();
   reportCaptureAges();
   for (const change of removed) {

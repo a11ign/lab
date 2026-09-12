@@ -110,8 +110,9 @@ export function removedSubstantiveLines(diff: string): string[] {
 /**
  * The same line with every run of digits blanked, for ONE narrow exemption below.
  *
- * A number in CLAUDE.md that another test PINS to a real count -- `adr-index.test.ts` and
- * `claude-md-counts.test.ts` both require `for the N decision records` to equal the ADR count -- changes
+ * A number in CLAUDE.md that another test PINS to a real count -- `claude-md-counts.test.ts` requires
+ * `for the N decision records` to equal the ADR count, and since #954 the same test pins docs/README.md's
+ * sentence about the same directory -- changes
  * whenever the counted thing changes. The old wording is then "removed" from CLAUDE.md and must NOT be
  * preserved anywhere: a stale count kept verbatim in `docs/` is the drift those tests exist to prevent.
  * Before this exemption, every PR that added an ADR was refused by this test for obeying the other two.

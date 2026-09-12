@@ -1,4 +1,6 @@
 // @ts-check
+// #951: the capture-level verdict on a sweep that found far less than the census, whatever held it -- the ONE verdict.
+import { sweptElsewhere } from "@a11ign/evidence/verify";
 /**
  * WHAT IS THE SWEEP TIME SPENT ON? — #659, and the question is NOT how to cut it.
  *
@@ -81,11 +83,19 @@ const SWEEP_RAN_OUT = new Set(["exhausted", "silent"]);
  *
  * The same three states `examinationState` draws for the report (#677), one level down at the sweep.
  *
+ * AND A FOURTH, "elsewhere" (#951): a sweep whose both directions exhausted can still have been held -- by a
+ * chat widget, a consent overlay, something unread -- and this used to call it "complete" while `@a11ign/evidence`'s own
+ * `sweepCompleteness` called it something else -- two functions, one name, two answers. It asks the one
+ * verdict, `sweptElsewhere`, which is capture-level (a graphic sweep follows its capture's link sweep), so it
+ * needs the capture's diagnostics and not only the mark.
+ *
  * @param {any} mark a `sweep` diagnostic
- * @returns {"complete" | "truncated" | "never-ran"}
+ * @param {readonly unknown[]} diagnostics the capture's own, which the verdict reads
+ * @returns {"complete" | "truncated" | "never-ran" | "elsewhere"}
  */
-export function sweepCompleteness(mark) {
+export function sweepCompleteness(mark, diagnostics) {
   if (sweepNeverRan(mark)) return "never-ran";
+  if (sweptElsewhere(/** @type {any} */ ({ diagnostics })).some((s) => s.type === mark?.type)) return "elsewhere";
   const stops = [mark?.prevStop, mark?.nextStop].filter((s) => typeof s === "string");
   // EVERY direction must have ended on its own. A sweep whose backward half exhausted and whose forward
   // half hit the deadline reached everything behind the caret and an unknown fraction ahead of it.

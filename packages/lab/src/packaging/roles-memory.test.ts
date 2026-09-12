@@ -15,56 +15,27 @@
 // DISCOVERED from MEMORY.md's own index and from the directory listing, never hand-listed, for the same
 // reason every other discovery test in this repo gives: a hand-maintained list is exactly the kind of
 // list a new entry slips past.
+/**
+ * #954: THE CROSS-REFERENCE HALF OF THIS FILE IS OFF THE PULL-REQUEST PATH. `roles-memory`'s rule now runs
+ * once a night, in `scripts/doc-cross-reference-report.mjs`, which imports the same module this file
+ * does -- so nothing about the rule changed, only when it runs and what a disagreement costs. See #905
+ * for the argument and #954 for the retirement, which waited until the first nightly report had posted.
+ *
+ * WHAT STAYS HERE is what that report does not assert: the frontmatter shape every fact file carries, and the leak guard with its mutation.
+ */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { LEAK_PATTERNS } from "./leak-patterns.mjs";
+// #905: the index <-> file rules live in the doc cross-reference check the nightly report also runs.
+import {
+  MEMORY_DIR, factFiles as factFilesIn,
+} from "../../../../scripts/doc-checks/roles-memory.mjs";
 
-const MEMORY_DIR = "docs/roles/memory";
-const INDEX_PATH = `${MEMORY_DIR}/MEMORY.md`;
-const read = (relPath: string) => readFileSync(resolve(process.cwd(), relPath), "utf8");
-
-interface IndexEntry {
-  title: string;
-  file: string; // filename only, resolved relative to MEMORY_DIR
-  hook: string;
-}
-
-/** Parses `- [Title](file.md) — hook` lines -- this repo's own established index shape (MEMORY.md itself,
- * the live Claude Code memory system this was migrated from). */
-function parseIndex(indexSource: string): IndexEntry[] {
-  const entries: IndexEntry[] = [];
-  for (const line of indexSource.split("\n")) {
-    const m = line.match(/^- \[([^\]]+)\]\(([^)]+)\) — (.+)$/);
-    if (!m) continue;
-    const [, title, file, hook] = m;
-    entries.push({ title, file, hook });
-  }
-  return entries;
-}
-
-function factFiles(): string[] {
-  return readdirSync(resolve(process.cwd(), MEMORY_DIR))
-    .filter((name) => name.endsWith(".md") && name !== "MEMORY.md");
-}
-
-test("the memory index exists and every entry links to a real file", () => {
-  assert.ok(existsSync(resolve(process.cwd(), INDEX_PATH)), `${INDEX_PATH} must exist`);
-  const entries = parseIndex(read(INDEX_PATH));
-  const missing = entries.filter((e) => !existsSync(resolve(process.cwd(), MEMORY_DIR, e.file)));
-  assert.deepEqual(missing.map((e) => e.file), [],
-    `these MEMORY.md entries link to files that do not exist: ${missing.map((e) => e.file).join(", ")}`);
-});
-
-test("the index discovery finds a realistic floor of migrated facts", () => {
-  const entries = parseIndex(read(INDEX_PATH));
-  // A floor, not a target -- this set does not shrink to zero as a happy path. 17 were migrated when this
-  // page was written; set well below that so trimming a stale entry later does not itself break the guard.
-  assert.ok(entries.length >= 10,
-    `expected at least 10 entries in ${INDEX_PATH}, found ${entries.length} -- either the index line `
-    + "format changed, or entries were removed, both of which this guard should be read as flagging");
-});
+const ROOT = process.cwd();
+const read = (relPath: string) => readFileSync(resolve(ROOT, relPath), "utf8");
+const factFiles = () => factFilesIn(ROOT);
 
 test("every fact file on disk carries the memory system's own frontmatter shape", () => {
   const problems: string[] = [];
@@ -78,15 +49,6 @@ test("every fact file on disk carries the memory system's own frontmatter shape"
   }
   assert.deepEqual(problems, [],
     `these fact file(s) do not carry the required frontmatter shape:\n${problems.join("\n")}`);
-});
-
-test("every fact file on disk is linked from the index, and vice versa", () => {
-  const linked = new Set(parseIndex(read(INDEX_PATH)).map((e) => e.file));
-  const onDisk = new Set(factFiles());
-  const unlinked = [...onDisk].filter((f) => !linked.has(f));
-  const dangling = [...linked].filter((f) => !onDisk.has(f));
-  assert.deepEqual(unlinked, [], `these files exist under ${MEMORY_DIR} but are not indexed: ${unlinked.join(", ")}`);
-  assert.deepEqual(dangling, [], `MEMORY.md links to file(s) not present on disk: ${dangling.join(", ")}`);
 });
 
 /**

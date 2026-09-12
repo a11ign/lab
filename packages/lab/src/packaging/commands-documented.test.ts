@@ -38,83 +38,30 @@
  * file is tracked on purpose rather than simply failing to see it. See `generate-commands-doc.mjs`'s own
  * header for why the exemption belongs there rather than in an omitted marker.
  */
+/**
+ * #954: THE CROSS-REFERENCE HALF OF THIS FILE IS OFF THE PULL-REQUEST PATH. `commands-documented`'s rule now runs
+ * once a night, in `scripts/doc-cross-reference-report.mjs`, which imports the same module this file
+ * does -- so nothing about the rule changed, only when it runs and what a disagreement costs. See #905
+ * for the argument and #954 for the retirement, which waited until the first nightly report had posted.
+ *
+ * WHAT STAYS HERE is what that report does not assert: the `// command:` header rule (#908's), its four mutation cases, and the honesty of the INTERNAL list -- none of which is a cross-reference.
+ */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
-import { commandScripts, commandHeader, buildPage, OUT } from "../../../../scripts/generate-commands-doc.mjs";
+import { commandScripts, commandHeader } from "../../../../scripts/generate-commands-doc.mjs";
+// #905: the prose-coverage and page-freshness halves live in the doc cross-reference check the nightly report
+// also runs -- one copy. The `// command:` header rule and the MUTATION cases below stay here.
+import {
+  INTERNAL, npmScripts as npmScriptsIn,
+} from "../../../../scripts/doc-checks/commands-documented.mjs";
 
-/**
- * npm scripts nobody is expected to type, with the reason each is exempt.
- *
- * A reason rather than a bare name: "why is this one allowed to be undocumented" is exactly the question
- * a future reader will have, and an unexplained allowlist is a hole nobody can audit.
- */
-const INTERNAL: Record<string, string> = {
-  build: "invoked by npm lifecycle and by run-job.yml; not something an operator chooses to run",
-  test: "the universal convention; documenting `npm test` would be noise",
-  lint: "the universal convention",
-  typecheck: "the universal convention",
-  pretest: "an npm lifecycle hook — npm runs it, nobody types it",
-  pretypecheck: "an npm lifecycle hook — npm runs it, nobody types it",
-  "test:python": "one half of `npm test`, which runs it; not chosen separately",
-  "test:ts": "one half of `npm test`, which runs it; not chosen separately",
-};
-
-/** Where a human would look for a HAND-WRITTEN command's prose. CLAUDE.md is for working ON the repo;
- *  docs/ is for using it. Deliberately does NOT include `docs/commands.md` as a search target for THIS
- *  population -- npm scripts are still documented in prose, and `docs/commands.md` covers `scripts/*.mjs`
- *  only; conflating the two would let an npm script satisfy this check by accidentally sharing a
- *  substring with a scripts/ header instead of actually being written about. */
-function documentation(): string {
-  const parts = [readFileSync(join(REPO, "CLAUDE.md"), "utf8")];
-  for (const name of ["README.md", "CONTRIBUTING.md"]) {
-    if (existsSync(join(REPO, name))) parts.push(readFileSync(join(REPO, name), "utf8"));
-  }
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
-      if (full === OUT) continue;
-      if (entry.isDirectory()) walk(full);
-      else if (entry.name.endsWith(".md")) parts.push(readFileSync(full, "utf8"));
-    }
-  };
-  walk(join(REPO, "docs"));
-  // The ansible playbooks are where the lab jobs are defined, and their headers are real documentation —
-  // `lab-job.yml`'s catalogue explains every job it can run, with the reason each exists.
-  walk(join(REPO, "packages/control/ansible"));
-  return parts.join("\n");
-}
-
-const DOCS = documentation();
-
-function npmScripts(): string[] {
-  const pkg = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")) as
-    { scripts: Record<string, string> };
-  return Object.keys(pkg.scripts).sort();
-}
-
-test("the documentation being searched is real, so this cannot pass having read nothing", () => {
-  // A guard written against a shape you did not verify is the count-based check all over again.
-  assert.ok(DOCS.length > 50_000, `only ${DOCS.length} chars of documentation found; the layout moved`);
-  assert.ok(npmScripts().length > 30, "too few npm scripts parsed; package.json shape changed");
-  assert.match(DOCS, /npm run fleet:status/, "a command known to be documented is not being found");
-});
-
-test("every npm script is documented in prose, or explicitly declared internal", () => {
-  const undocumented = npmScripts()
-    .filter((name) => !Object.hasOwn(INTERNAL, name))
-    .filter((name) => !DOCS.includes(name));
-
-  assert.deepEqual(undocumented, [],
-    "These npm scripts are discoverable only by reading source. Document each where the problem it "
-    + "solves is described — that is far more useful than an index — or add it to INTERNAL with a "
-    + "reason. A command nobody can find is a command nobody runs.");
-});
+const npmScripts = () => npmScriptsIn(REPO);
 
 test("the internal list is honest: every entry is a real npm script", () => {
   // An allowlist that outlives its entries is a hole nobody can see.
@@ -147,15 +94,6 @@ test("every script under scripts/ carries a `// command:` header", () => {
     + "pins) and have no `// command: <description>` header, or the header is too weak (empty, one word, "
     + "under 15 characters) to count as documentation:\n"
     + missing.map((f) => `  scripts/${f}`).join("\n"));
-});
-
-test("docs/commands.md matches the tree exactly", () => {
-  assert.ok(existsSync(OUT), "docs/commands.md does not exist -- run `node scripts/run.mjs docs-commands`");
-  const committed = readFileSync(OUT, "utf8");
-  const fresh = buildPage(commandScripts());
-  assert.equal(committed, fresh,
-    "docs/commands.md is stale against the tree's own `// command:` headers -- run "
-    + "`node scripts/run.mjs docs-commands` and commit the result");
 });
 
 // --- MUTATION: `commandHeader` must actually distinguish a real description from a weak one ---

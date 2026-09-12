@@ -26,6 +26,8 @@ import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
 import { datasetRoot, captureRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 import { captureFilePath, rejectedCaptureFilePath } from "../capture/evidence-diff.mjs";
+// #958: the three-direction manifest check every verdict reader shares.
+import { assertManifestMatchesCases } from "./manifest-matches-cases.mjs";
 
 /**
  * a typo here costs a full corpus run: `--resmue` silently means a fresh capture of 1,061 pairs.
@@ -864,6 +866,12 @@ async function captureDataset(/** @type {any} */ cases, /** @type {any} */ done,
 async function main() {
   refuseIfRunsReadonly(ROOT);
   const manifest = readManifest();
+  // A CAPTURE TAKEN UNDER A STALE MANIFEST IS TAKEN UNDER THE OLD DEFINITIONS (#958). The export's own header
+  // records the cost: `probeFocus: true` was added to a case and the capture ran without the probe, because
+  // this reads the manifest, not `CASES`. Asked of the WHOLE manifest, before `--only` narrows it.
+  assertManifestMatchesCases(manifest, {
+    consequence: "the capture would take evidence under definitions the code no longer has",
+  });
   const cases = selectCases(manifest.cases, ONLY);
   // EVERY selector must match something, not merely one of them. See `unmatchedSelectors`.
   const missed = unmatchedSelectors(manifest.cases, ONLY);

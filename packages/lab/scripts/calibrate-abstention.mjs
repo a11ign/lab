@@ -44,9 +44,11 @@ import { ruleFindings } from "@a11ign/judge/rules";
 import { oracleCounts } from "@a11ign/evidence/verify";
 
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
+// THE FIGURES' SELECTION, imported rather than written here (#955): `field-role.test.ts` asserts through it.
+import { calibrationEntries } from "../src/training/real-page-selection.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
-import { REPO_ROOT, realCorpusRoot, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, realCorpusRoot, abstentionRoot, abstentionSweepPath, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
 /**
  * takes NO flags — it is configured entirely by environment, so any flag passed to it today is
@@ -64,7 +66,7 @@ refuseUnknownFlags([], { entry: import.meta.url, command: "npm run lab:job -- -e
 const REPO = REPO_ROOT;
 const ROOT = realCorpusRoot();
 /** Where this script's own OUTPUT goes. Separate from `ROOT`, which is its input. */
-const OUT_DIR = resolve(REPO_ROOT, process.env.ABSTENTION_OUT || resolve(runsRoot(), "abstention"));
+const OUT_DIR = resolve(REPO_ROOT, process.env.ABSTENTION_OUT || abstentionRoot());
 const PYTHON = process.env.A11Y_PYTHON || resolve(REPO, ".venv/bin/python");
 const SCORER = resolve(REPO, "packages/scorer/python/score.py");
 /**
@@ -131,7 +133,7 @@ function calibrationPages() {
     process.stdout.write(`  NOTE: ${undeclared.length} captured page(s) are not in real-page-corpus.mjs `
       + "and are excluded; a capture nobody declares cannot be scored against a claim.\n");
   }
-  return loaded.filter((entry) => realPageFor(entry.capture?.url ?? "")?.role === "calibration");
+  return calibrationEntries(loaded);
 }
 
 /**
@@ -392,7 +394,7 @@ function main() {
   // blacklist which `abstention-sweep.candidate.json` had already outgrown — it only escaped notice because
   // a role filter downstream happened to drop it for an unrelated reason.
   mkdirSync(OUT_DIR, { recursive: true });
-  const outPath = resolve(OUT_DIR, MODEL ? "abstention-sweep.candidate.json" : "abstention-sweep.json");
+  const outPath = MODEL ? resolve(OUT_DIR, "abstention-sweep.candidate.json") : abstentionSweepPath(OUT_DIR);
   writeFileSync(outPath, JSON.stringify({ model: MODEL ?? "shipped", calibrationPages: n, scored, rows }, null, 2));
   process.stdout.write(`\n  written: ${outPath}\n`);
 
@@ -433,7 +435,7 @@ function reportRegression(/** @type {any} */ rows) {
   const baseline = readBaselineSweep();
   if (!baseline) {
     process.stdout.write("\n  NO BASELINE to compare against, so this run cannot tell better from worse.\n"
-      + `  Run the sweep against the shipped model first; it writes ${resolve(OUT_DIR, "abstention-sweep.json")}.\n`);
+      + `  Run the sweep against the shipped model first; it writes ${abstentionSweepPath(OUT_DIR)}.\n`);
     return;
   }
   const comparison = compareAtFloor(rows, baseline.rows ?? [], DERIVED);
@@ -475,7 +477,7 @@ export function compareAtFloor(/** @type {any} */ rows, /** @type {any} */ basel
 
 /** The shipped model's sweep, which is the baseline any candidate must not be worse than. */
 function readBaselineSweep() {
-  const path = resolve(OUT_DIR, "abstention-sweep.json");
+  const path = abstentionSweepPath(OUT_DIR);
   if (!existsSync(path)) return null;
   return JSON.parse(readFileSync(path, "utf8"));
 }

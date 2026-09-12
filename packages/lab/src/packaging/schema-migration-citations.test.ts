@@ -14,46 +14,33 @@
  * only appended to. This test enforces BOTH halves discovered here, not listed by hand, so a THIRD closed
  * migration that repeats either shape fails on its own rather than needing someone to remember this file.
  */
+/**
+ * #954: THE CROSS-REFERENCE HALF OF THIS FILE IS OFF THE PULL-REQUEST PATH. `schema-migration-citations`'s rule now runs
+ * once a night, in `scripts/doc-cross-reference-report.mjs`, which imports the same module this file
+ * does -- so nothing about the rule changed, only when it runs and what a disagreement costs. See #905
+ * for the argument and #954 for the retirement, which waited until the first nightly report had posted.
+ *
+ * WHAT STAYS HERE is what that report does not assert: the rule that no comment cites a specific key (#908's), and the history document's own existence.
+ */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+// #905: the source population and the history-citation rule live in the doc cross-reference check the nightly
+// report also runs. The specific-key rule below is #908's and stays here.
+import {
+  HISTORY_DOC, sourceFiles,
+} from "../../../../scripts/doc-checks/schema-migration-citations.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git"]);
-const HISTORY_DOC = "docs/schema-migration-history.md";
-
-/** Every file matching `filter` under `dir`, recursively. Copied from `env-doc-coverage.test.ts`'s
- *  `walk` rather than imported, so the two tests independently agreeing is a fact about the source. */
-function walk(dir: string, filter: (name: string) => boolean): string[] {
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  return entries.flatMap((entry) => {
-    if (SKIP_DIRS.has(entry.name)) return [];
-    const full = join(dir, entry.name);
-    if (entry.isDirectory()) return walk(full, filter);
-    return filter(entry.name) ? [full] : [];
-  });
-}
 
 const SELF = fileURLToPath(import.meta.url);
 
-/** `.py` alongside `.mjs`/`.ts`/`.js`, because the citation this issue was filed over lives in Python --
- *  `env-doc-coverage.test.ts`'s own `walk` use only reads JS-family files and would not have seen it.
- *
- *  EXCLUDES THIS FILE ITSELF. Both patterns below are regex literals whose SOURCE TEXT contains the exact
- *  shape they are looking for -- a scanner necessarily writes down what it scans for -- so without this
- *  exclusion the file would always report itself as an offender/citation, which is noise no real defect
- *  could ever be told apart from. */
-const SOURCE_FILES = [
-  ...walk(join(REPO, "packages"), (n) => /\.(mjs|ts|js|py)$/.test(n)),
-  ...walk(join(REPO, "scripts"), (n) => /\.(mjs|ts|js|py)$/.test(n)),
-].filter((file) => file !== SELF);
+/** `.py` alongside `.mjs`/`.ts`/`.js`, because the citation this issue was filed over lives in Python.
+ *  EXCLUDES THIS FILE ITSELF: the regex literal below writes down the shape it scans for, so without this
+ *  exclusion the file would always report itself as an offender. */
+const SOURCE_FILES = sourceFiles(REPO, [SELF]);
 
 test("vacuity guard: the source scan finds a non-trivial population", () => {
   assert.ok(SOURCE_FILES.length > 100,
@@ -77,42 +64,6 @@ test("no source comment cites a SPECIFIC KEY inside schema-migration.json as a p
     `these file(s) cite a specific field inside schema-migration.json, which is deleted the moment the `
     + `migration it describes closes -- point at ${HISTORY_DOC}'s permanent section instead:\n`
     + offenders.map((f) => `  ${f}`).join("\n"));
-});
-
-// Matches the phrasing this row's fix writes at the one real citation
-// (`packages/scorer/python/screenreader_features.py`): the doc's path, a possessive, a quoted section
-// name, then the word "section". Written apart here so this file's OWN comment does not match its own
-// pattern. Quoted so the discovery reads the section name off the citation itself rather than a second,
-// hand-kept list of what should be cited.
-const HISTORY_CITATION = /docs\/schema-migration-history\.md`?['’]s\s+"([^"]+)"\s+section/g;
-
-test("every cited schema-migration-history.md section actually exists there, and at least one citation exists", () => {
-  const historyText = readFileSync(join(REPO, HISTORY_DOC), "utf8");
-  const sectionHeadings = new Set(
-    [...historyText.matchAll(/^##\s+(.+?)\s*$/gm)].map((m) => m[1]),
-  );
-  // Citations name a SECTION, and a heading also carries "(opened ..., closed by ...)" after it -- so a
-  // citation of "v18 -> v19" must match a heading that STARTS with that text, not equals it exactly.
-  const headingStartsWith = (cited: string) =>
-    [...sectionHeadings].some((heading) => heading === cited || heading.startsWith(`${cited} `));
-
-  const citations: { file: string; section: string }[] = [];
-  for (const file of SOURCE_FILES) {
-    const source = readFileSync(file, "utf8");
-    for (const match of source.matchAll(HISTORY_CITATION)) {
-      citations.push({ file: file.slice(REPO.length), section: match[1] });
-    }
-  }
-
-  assert.ok(citations.length >= 1,
-    `found 0 citation(s) of ${HISTORY_DOC} in source -- either the discovery regex is broken, or the one `
-    + "citation this row's fix wrote (packages/scorer/python/screenreader_features.py) was removed");
-
-  const dangling = citations.filter(({ section }) => !headingStartsWith(section));
-  assert.deepEqual(dangling, [],
-    `these citation(s) name a ${HISTORY_DOC} section that does not exist there -- either the doc's `
-    + "heading moved/was deleted, or the citation is stale:\n"
-    + dangling.map(({ file, section }) => `  ${file}: "${section}"`).join("\n"));
 });
 
 test("the history doc itself exists and is non-trivial", () => {

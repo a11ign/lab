@@ -59,6 +59,7 @@
  * Widening past W3C means finding other publishers who state their own conformance — not labelling pages
  * ourselves, which would put us back where we started.
  */
+import { ipv4ToInt } from "@a11ign/worker-fleet/host-address";
 
 /**
  * WHAT THE POSITIVE SIDE OF THIS CORPUS ACTUALLY IS — measured 2026-08-22, and smaller than it looks.
@@ -122,10 +123,20 @@
  */
 
 /**
- * @typedef {"calibration" | "training" | "fixture"} CorpusRole
+ * @typedef {"calibration" | "training" | "fixture" | "field"} CorpusRole
  *
  * `calibration` fits the scorer's abstention threshold. `training` is what the scorer learns from.
  * `fixture` is NEITHER, and the separation is load-bearing rather than tidy.
+ *
+ * `field` (#955, decided by `ceo` 2026-09-11) is the fourth, and it is outside every number this corpus
+ * feeds: pages a STRANGER is likely to point this tool at -- commercial marketing sites -- with NO
+ * conformance claim. The other three roles are UK public-sector, university, W3C and our own pages, so the
+ * corpus could not express a defect that only marketing-site furniture produces: 0 of 114 real-page
+ * captures carried a chat widget when #951 was found on one. A `field` page is never in the conformance
+ * line, never in the asserted-wrongly or referred figures, and never in training -- each reader's own
+ * selection already admits only its own role or claim, and `field-role.test.ts` asserts that through each
+ * of them rather than through a list of which roles count. Its only purpose is the furniture: chat widgets,
+ * consent overlays, geo-redirects and cookie walls.
  *
  * ADR 0015's why-2: every publisher-declared inaccessible page lives in calibration, so the TRAINING
  * distribution contains no broken page at all — which is why a real inaccessible page sits further from
@@ -143,7 +154,13 @@
  * @typedef {object} RealPage
  * @property {string} url
  * @property {CorpusRole} role
- * @property {"conformant" | "inaccessible"} publishedClaim  What the SOURCE says, never our assessment.
+ * @property {"conformant" | "inaccessible"} [publishedClaim]  What the SOURCE says, never our assessment.
+ *   ABSENT exactly on a `field` page, which no source makes a claim about (#955) -- so a reader asking
+ *   `publishedClaim === "conformant"` can never admit one, and `field-role.test.ts` asserts the absence.
+ * @property {{fault: "wrong-page", reason: "geo-redirect", observed: string}} [refused]  A `field` page
+ *   RECORDED AS REFUSED rather than captured (#955): what a stranger here meets at the address they would
+ *   type is this tool refusing it as the wrong page, because the site redirected by location. `observed`
+ *   is where it landed, as recorded on #955 from round 5. Never captured (no fleet time), never scored.
  * @property {string} source  Where that claim is published, so a reader can check it.
  * @property {string} demonstrates  What the page is an example of, in the source's own terms.
  * @property {{url: string, when: string, why: string}[]} [movedFrom]  Addresses this page used to live at.
@@ -262,6 +279,15 @@ const BAD_BEFORE_CLAIM =
 const DESIGN_SYSTEM_CLAIM =
   "The Cabinet Office publishes design-system.service.gov.uk as fully compliant with WCAG 2.2 Level AA, "
   + "with no known non-compliant content (https://design-system.service.gov.uk/accessibility-statement/)";
+
+/** Why a `field` page is here -- in place of a claim, which it does not have (#955). */
+const FIELD_SOURCE =
+  "ceo's ruling on #955 (2026-09-11): a page a stranger is likely to point this tool at. NO conformance "
+  + "claim, by design, so never in the conformance line, the asserted-wrongly or referred figures, or training";
+
+const GEO_REDIRECT_REFUSAL =
+  "what a stranger here meets at the global address: the site redirects by location, and the capture "
+  + "refuses the page it landed on as the wrong page";
 
 const TUTORIAL_CLAIM =
   "W3C states its site conforms to WCAG 2 Level AA (https://www.w3.org/WAI/), and each tutorial page "
@@ -841,11 +867,61 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant", source: OWN_FIXTURE_CLAIM,
     demonstrates: "the same fields in reading order, no positive tabindex — 2.4.3's silent half" },
 
+  // FIELD -- #955, the first set, ruled by `ceo` at 04:28Z on 2026-09-11 from `orchestrator`'s reading of
+  // round 5 (on the row). Ten entries: six captured pages and four recorded refusals, at the GLOBAL address
+  // a stranger would type. It stays small (ten to fifteen) and grows only by `orchestrator` proposing on
+  // #955. No `publishedClaim` on any of them: a conformance claim is exactly what this role does not have.
+  //
+  // HUBSPOT IS THE CONTROL. It is the page #951 was found on -- a chat widget that opens by itself -- so the
+  // role holds at least one page where #951's widget count MUST be at least 1. A zero with hubspot here
+  // flags the signature or the capture, which is what makes the count non-vacuous (the data half,
+  // `orchestrator`'s).
+  { url: "https://www.hubspot.com/", role: "field", source: FIELD_SOURCE,
+    demonstrates: "a commercial marketing page whose chat widget opens by itself — the page #951 was found "
+      + "on, and this role's positive control for it" },
+  { url: "https://www.notion.com/", role: "field", source: FIELD_SOURCE,
+    demonstrates: "a commercial marketing page, captured in round 5" },
+  { url: "https://www.dropbox.com/", role: "field", source: FIELD_SOURCE,
+    demonstrates: "a commercial marketing page, captured in round 5" },
+  { url: "https://www.adobe.com/", role: "field", source: FIELD_SOURCE,
+    demonstrates: "a commercial marketing page, captured in round 5" },
+  { url: "https://www.atlassian.com/", role: "field", source: FIELD_SOURCE,
+    demonstrates: "a commercial marketing page, captured in round 5 with a partial examination" },
+  { url: "https://mailchimp.com/", role: "field", source: FIELD_SOURCE,
+    demonstrates: "a commercial marketing page, captured in round 5 with a partial examination" },
+  // THE FOUR REFUSALS. A stranger in this location pointing the tool at stripe.com gets exactly this, and
+  // the role exists to hold what a stranger meets -- so each is recorded at the global URL with the outcome
+  // it produced, not re-declared at a regional URL (which would make it a fact about this fleet's location
+  // and cost fleet time). `observed` is copied from the row as recorded, scheme and all left as written.
+  { url: "https://stripe.com/", role: "field", source: FIELD_SOURCE, demonstrates: GEO_REDIRECT_REFUSAL,
+    refused: { fault: "wrong-page", reason: "geo-redirect", observed: "stripe.com/gb" } },
+  { url: "https://www.shopify.com/", role: "field", source: FIELD_SOURCE, demonstrates: GEO_REDIRECT_REFUSAL,
+    refused: { fault: "wrong-page", reason: "geo-redirect", observed: "shopify.com/uk" } },
+  { url: "https://www.canva.com/", role: "field", source: FIELD_SOURCE, demonstrates: GEO_REDIRECT_REFUSAL,
+    refused: { fault: "wrong-page", reason: "geo-redirect", observed: "canva.com/en_gb/" } },
+  { url: "https://www.zendesk.com/", role: "field", source: FIELD_SOURCE, demonstrates: GEO_REDIRECT_REFUSAL,
+    refused: { fault: "wrong-page", reason: "geo-redirect", observed: "zendesk.co.uk/#georedirect" } },
 ]);
 
 /** Pages for one role. @param {CorpusRole} role @returns {RealPage[]} */
 export function pagesFor(role) {
   return REAL_PAGES.filter((page) => page.role === role);
+}
+
+/**
+ * A `field` page recorded as refused rather than captured (#955). It has an expected outcome instead of a
+ * capture, so nothing that captures, scores or trains may take it.
+ * @param {{ refused?: unknown }} page @returns {boolean}
+ */
+export const isRecordedRefusal = (page) => page.refused !== undefined;
+
+/**
+ * The pages a capture run should visit: every page but a recorded refusal, whose outcome is already on
+ * record and would cost fleet time to reproduce (#955 -- "no fleet time" for the four).
+ * @template {{ refused?: unknown }} P @param {readonly P[]} pages @returns {P[]}
+ */
+export function capturablePages(pages) {
+  return pages.filter((page) => !isRecordedRefusal(page));
 }
 
 /**
@@ -858,6 +934,115 @@ export function pagesFor(role) {
 /** @param {unknown} url @returns {string} */
 export function normaliseUrl(url) {
   return String(url).trim().toLowerCase().replace(/#.*$/, "").replace(/\/+$/, "");
+}
+
+/**
+ * A page-server origin: loopback, which is where every fixture is DECLARED (`FIXTURE_BASE`) and the one case
+ * where a capture's origin differs from its declaration's by design (#146). Moved here from
+ * `corpus-prune-orphans.mjs` (#881) so the matcher, the gate and the prune tool read one definition.
+ *
+ * @param {unknown} url
+ */
+export function servedByThePageServer(url) {
+  return /^https?:\/\/(localhost|127\.0\.0\.1|\[?::1\]?)(:|\/|$)/i.test(String(url));
+}
+
+/**
+ * IS THIS DECLARATION ONE OF OUR FIXTURES -- decided by what the page IS, never only by where it is served
+ * today (#940).
+ *
+ * `role: "fixture"` is a fact about the page. Its host is `FIXTURE_BASE`, which `DATASET_BASE_URL` overrides --
+ * a documented override, for a network where the computed page-server address is wrong -- so a host test
+ * alone made "may this capture be deleted" depend on an environment variable nobody is told controls it.
+ * With it set to any non-loopback address, `corpus-prune-orphans --apply` deleted all ten fixture captures as
+ * RETIRED: the only real-page grounding 2.4.1, 2.4.2, 2.4.3, 2.1.1 and 1.4.13 have, reported as routine
+ * housekeeping. The machine most likely to set the variable is the lab, which is also the one that runs
+ * `--apply`.
+ *
+ * The host stays as a SECOND signal, never the only one: either makes a declaration a fixture, because
+ * wrongly keeping a capture costs a line in a report and wrongly deleting one cannot be undone.
+ *
+ * ONE PREDICATE for all three readers -- `realPageFor`'s reconciliation, the gate's RELOCATED heading and
+ * the prune tool's -- so the gate and the prune can never disagree about which captures are fixtures.
+ *
+ * @param {{ url: string, role?: string }} page
+ */
+export function isFixture(page) {
+  return page.role === "fixture" || servedByThePageServer(page.url);
+}
+
+/**
+ * A url with its origin removed, normalised -- what a relocated capture still has in common with its
+ * declaration. Moved here from `corpus-prune-orphans.mjs` with `servedByThePageServer`, unchanged.
+ *
+ * @param {unknown} url
+ */
+export function pathOf(url) {
+  const withoutScheme = String(url).replace(/^[a-z]+:\/\//i, "");
+  const slash = withoutScheme.indexOf("/");
+  return slash === -1 ? "/" : normaliseUrl(withoutScheme.slice(slash));
+}
+
+/**
+ * THE FIXTURE A RELOCATED CAPTURE IS OF -- #146, #881.
+ *
+ * A fixture is declared at the page server's loopback address, and no worker can fetch that: a guest's
+ * `localhost` is the guest. So `capture-real-pages.mjs`'s `workerReachable` rewrites exactly ONE part of the
+ * url before sending it -- the hostname, to `hostAddressForWorker(...)`, which only ever returns an IPv4
+ * literal -- and the capture records the url the worker loaded. Declaration and capture were each right and
+ * nothing reconciled them, so all ten fixtures read as "NO DECLARED PAGE CLAIMS" and the five conformant
+ * ones were never scored: 2.4.1, 2.4.2, 2.4.3, 2.1.1 and 1.4.13 lost their only real-page grounding to a
+ * host comparison. #881 then read the same ten as dataset pages written to the wrong place, and asked for
+ * them to be removed.
+ *
+ * This undoes that one rewrite and nothing else. The declared hostname goes back in place of the captured
+ * one, and everything the rewrite leaves alone -- scheme, port, path, query -- must then match as written.
+ * Two conditions keep a real publisher's page matching only itself:
+ *
+ *   - only a FIXTURE declaration (`isFixture`: its role, or a page-server host) can be reached this way, so
+ *     no real page gains a second address; and
+ *   - the captured host must be what the rewrite can produce, an IPv4 literal. A named host serving the same
+ *     path on the same port is still a different page.
+ *
+ * Tighter would be "this host's own address", but that is knowable only on the machine that captured, and
+ * the gate also runs against fetched copies of the corpus.
+ *
+ * @param {unknown} url
+ * @returns {RealPage | undefined}
+ */
+function relocatedFixtureFor(url) {
+  if (!URL.canParse(String(url))) return undefined;
+  const captured = new URL(String(url));
+  if (ipv4ToInt(captured.hostname) === null) return undefined;
+  return REAL_PAGES.find((page) => {
+    if (!isFixture(page)) return false;
+    const restored = new URL(captured.href);
+    restored.hostname = new URL(page.url).hostname;
+    return normaliseUrl(restored.href) === normaliseUrl(page.url);
+  });
+}
+
+/**
+ * The page-server fixture declared at this url's PATH, whatever its origin -- for a capture `realPageFor`
+ * still MISSED. That is a declared fixture reached some way `relocatedFixtureFor` does not undo (a named host
+ * rather than an address, another port), and it must not be reported as an undeclared page: the two take
+ * opposite fixes, and the fix for an undeclared page is to delete it. `corpus-prune-orphans.mjs` calls the
+ * same set RELOCATED and refuses to delete it.
+ *
+ * ANY fixture at the path, whatever else is declared there -- and the prune tool asks through THIS function
+ * too, not a lookup of its own. Its first #940 version built `path -> page` in a Map, where the LAST
+ * declaration at a path wins: a fixture and a published page sharing a path came back RETIRED to the prune
+ * and RELOCATED to the gate, and the prune is the side that deletes (worker-capture's review of #943). Four
+ * of today's 93 paths are shared, by published pages only -- latent, and settled in the delete direction.
+ *
+ * @template {{ url: string, role?: string }} Page
+ * @param {unknown} url
+ * @param {readonly Page[]} [pages] the declarations to search -- `REAL_PAGES`, or a test's own
+ * @returns {Page | undefined}
+ */
+export function pageServerFixtureAtPath(url, pages = /** @type {readonly any[]} */ (REAL_PAGES)) {
+  const path = pathOf(url);
+  return pages.find((page) => isFixture(page) && pathOf(page.url) === path);
 }
 
 /**
@@ -875,6 +1060,9 @@ export function normaliseUrl(url) {
  * Callers should treat a miss as an ERROR, not as "no exceptions". A url that has drifted -- a redirect, a
  * publisher restructuring -- would otherwise silently produce an unmasked page, which is the exact failure
  * this lookup exists to prevent.
+ *
+ * A FIXTURE captured at the host's LAN address resolves to its loopback declaration (#881) -- see
+ * `relocatedFixtureFor` for the one rewrite that is undone, and why nothing else is.
  */
 /**
  * `unknown`, because the callers hold a capture's `url` field and it is optional there. `String(url)`
@@ -886,7 +1074,7 @@ export function normaliseUrl(url) {
  */
 export function realPageFor(url) {
   const key = normaliseUrl(url);
-  return REAL_PAGES.find((page) => normaliseUrl(page.url) === key);
+  return REAL_PAGES.find((page) => normaliseUrl(page.url) === key) ?? relocatedFixtureFor(url);
 }
 
 /**

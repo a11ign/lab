@@ -22,7 +22,7 @@ import { mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { pagesFor, REAL_PAGES } from "./real-page-corpus.mjs";
+import { capturablePages, isRecordedRefusal, pagesFor, REAL_PAGES } from "./real-page-corpus.mjs";
 import { parseShard, shardOf } from "./shard.mjs";
 import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11ign/worker-fleet/worker-http";
 import { workerIsUsable } from "@a11ign/worker-fleet/health";
@@ -82,11 +82,11 @@ function existingCaptures() {
       .map((name) => {
         try {
           const parsed = JSON.parse(readFileSync(resolve(OUT, name), "utf8"));
-          // A CAPTURE, identified by shape. This directory also holds `abstention-sweep*.json` and other
-          // reports, which carry no `capture.url` — they would read as `url: ""`, match no wanted page and
-          // be harmless, which is accidentally safe rather than deliberately. `capturesIn` in
-          // `audit-rule-coverage.ts` identifies by shape for the same reason and says why: a name
-          // convention is a second thing to keep in step.
+          // A CAPTURE, identified by shape. This directory held `abstention-sweep*.json` until `cbea0d3b`
+          // moved it to `runs/abstention/`, and can hold other reports, which carry no `capture.url` — they
+          // would read as `url: ""`, match no wanted page and be harmless, which is accidentally safe rather
+          // than deliberately. `capturesIn` in `audit-rule-coverage.ts` identifies by shape for the same
+          // reason and says why: a name convention is a second thing to keep in step.
           const url = parsed?.capture?.url;
           return typeof url === "string" && url
             ? { url, capturedAt: parsed.capturedAt, capture: parsed.capture } : null;
@@ -466,6 +466,19 @@ async function leaseFixtureServer(/** @type {any} */ pages) {
   });
 }
 
+/**
+ * A RECORDED REFUSAL IS NOT VISITED (#955): its outcome -- the site geo-redirected and the capture refused the
+ * page it landed on -- is already on record, and reproducing it costs fleet time for a known answer. Named
+ * on every run, so "not captured" can never read as "forgotten".
+ * @param {readonly import("./real-page-corpus.mjs").RealPage[]} declared
+ */
+function reportRecordedRefusals(declared) {
+  for (const { url, refused } of declared.filter(isRecordedRefusal)) {
+    process.stdout.write(`  not visited, a recorded refusal: ${url} -> ${refused?.fault} `
+      + `(${refused?.reason} to ${refused?.observed}), as recorded on #955\n`);
+  }
+}
+
 async function main() {
   refuseIfRunsReadonly(realCorpusRoot());
   let workers;
@@ -478,7 +491,9 @@ async function main() {
     process.stderr.write(`${/** @type {any} */ (error).message}\n`);
     process.exit(2);
   }
-  const selected = ROLE ? pagesFor(/** @type {any} */ (ROLE)) : REAL_PAGES;
+  const declared = ROLE ? pagesFor(/** @type {any} */ (ROLE)) : REAL_PAGES;
+  const selected = capturablePages(declared);
+  reportRecordedRefusals(declared);
   const pages = shardOf(selected, SHARD);
   if (!pages.length) {
     process.stderr.write(`no pages for role '${ROLE}'\n`);

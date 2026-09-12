@@ -19,7 +19,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { classifyOrphan, pathOf } from "../../scripts/corpus-prune-orphans.mjs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { classifyOrphan } from "../../scripts/corpus-prune-orphans.mjs";
+import { pathOf, REAL_PAGES } from "../training/real-page-corpus.mjs";
 
 // 192.0.2.0/24 is TEST-NET-1 (RFC 5737), reserved for documentation and routable nowhere. The real fleet
 // address is deliberately NOT written here: #83 is about internal addresses reaching a repo meant to be
@@ -27,18 +33,18 @@ import { classifyOrphan, pathOf } from "../../scripts/corpus-prune-orphans.mjs";
 // differs from the declaration — any origin will do, and a fake one proves it more honestly.
 
 /**
- * Declared pages as `REAL_PAGES` holds them: path -> the page's OWN url.
+ * Declared pages as `REAL_PAGES` holds them: path -> the declared PAGE, its url and its role.
  *
  * Not a bare set of paths, and that is the fix for the defect real data found — see the
- * `/about` test below. Whether a differing origin is EXPLAINED depends on the declared page's own origin,
- * so the verdict needs to know which page a path belongs to.
+ * `/about` test below. Whether a differing origin is EXPLAINED depends on whether the declared page is a
+ * fixture, so the verdict needs to know which page a path belongs to. And "fixture" is its ROLE (#940).
  */
-const DECLARED = new Map([
-  ["/route-title-stale/good.html", "http://localhost:5050/route-title-stale/good.html"],
-  ["/visit/all/edinburgh-castle", "https://www.historicenvironment.scot/visit/all/edinburgh-castle/"],
-  ["/search?query=", "https://caselaw.nationalarchives.gov.uk/search?query="],
-  ["/about", "https://www.gov.scot/about/"],
-]);
+const DECLARED = [
+  { url: "http://localhost:5050/route-title-stale/good.html", role: "fixture" },
+  { url: "https://www.historicenvironment.scot/visit/all/edinburgh-castle/", role: "training" },
+  { url: "https://caselaw.nationalarchives.gov.uk/search?query=", role: "calibration" },
+  { url: "https://www.gov.scot/about/", role: "training" },
+];
 
 test("a declared page reached at ANOTHER ORIGIN is RELOCATED, never deletable", () => {
   // The whole safety property. `localhost:5050` declared, `192.0.2.10:5050` captured — both correct,
@@ -101,4 +107,83 @@ test("pathOf strips the origin and normalises, so two spellings of one page comp
   assert.equal(pathOf("https://Example.com/About/"), pathOf("https://other.example/about"));
   // A bare origin has no path; it must not become the empty string, which would match everything.
   assert.equal(pathOf("https://example.com"), "/");
+});
+
+
+// --- #940: DATASET_BASE_URL MUST NOT DECIDE WHAT MAY BE DELETED -------------------------------------------
+
+test("#940: a fixture declared at a NON-loopback base -- DATASET_BASE_URL set -- is still RELOCATED", () => {
+  // The declaration as `FIXTURE_BASE` makes it when the variable names the lab's page server by address.
+  // Decided by host alone, this came back RETIRED, and RETIRED is what `--apply` deletes.
+  const underBase = [{ url: "http://192.0.2.10:5050/route-title-stale/good.html", role: "fixture" }];
+  const verdict = classifyOrphan("http://198.51.100.7:5050/route-title-stale/good.html", underBase);
+  assert.equal(verdict.verdict, "RELOCATED");
+  assert.match(verdict.why, /NOT deletable/);
+});
+
+test("#940: the host stays a second signal -- a loopback declaration with no role is still RELOCATED", () => {
+  // Either signal keeps a capture. Wrongly keeping one costs a report line; wrongly deleting one is permanent.
+  const noRole = [{ url: "http://localhost:5050/route-title-stale/good.html" }];
+  assert.equal(classifyOrphan("http://192.0.2.10:5050/route-title-stale/good.html", noRole).verdict, "RELOCATED");
+});
+
+test("#940: a fixture SHARING its path with a published page is RELOCATED in either declaration order", () => {
+  // worker-capture's review of #943: the first version looked the path up in a Map where the LAST declaration
+  // won, so a fixture declared before a published page at the same path came back RETIRED -- deletable --
+  // while the gate, asking whether ANY fixture sits there, said RELOCATED. Four of today's 93 paths are shared.
+  const fixture = { url: "http://192.0.2.10:5050/about", role: "fixture" };
+  const published = { url: "https://www.gov.scot/about/", role: "training" };
+  for (const declared of [[fixture, published], [published, fixture]]) {
+    assert.equal(classifyOrphan("http://198.51.100.7:5050/about", declared).verdict, "RELOCATED",
+      `declared ${declared.map((d) => d.role).join(" then ")}`);
+  }
+});
+
+test("#940: a REAL page's path match is still RETIRED -- the role widens nothing for a published page", () => {
+  // The other direction, and the reason it matters: a tool that called everything RELOCATED would pass the
+  // tests above and never delete anything again.
+  assert.equal(classifyOrphan("https://www.nationalarchives.gov.uk/about/", DECLARED).verdict, "RETIRED");
+  assert.equal(classifyOrphan("https://www.historicenvironment.scot/visit-a-place/places/edinburgh-castle/", DECLARED).verdict,
+    "RETIRED");
+});
+
+const PRUNE = fileURLToPath(new URL("../../scripts/corpus-prune-orphans.mjs", import.meta.url));
+/** Every fixture's path, from the declarations themselves -- never a second, hand-typed list of ten. */
+const FIXTURE_PATHS = REAL_PAGES.filter((page) => page.role === "fixture").map((page) => pathOf(page.url));
+/** A documentation-range base standing in for "the lab's page server, configured by DATASET_BASE_URL". */
+const CONFIGURED_BASE = "http://192.0.2.10:5050";
+const RETIRED_REAL_PAGE = "https://www.historicenvironment.scot/visit-a-place/places/edinburgh-castle/";
+
+test("#940: with DATASET_BASE_URL non-loopback, --apply deletes NO fixture capture and still deletes a retired page", () => {
+  // THE REAL TOOL, IN THE REAL ENVIRONMENT, ON A SYNTHETIC CORPUS. `FIXTURE_BASE` is read from the variable at
+  // import, so only a process started with it set can show what the lab would do. Before #940 this deleted
+  // every fixture capture below as RETIRED -- "the declaration moved and this stayed" -- because
+  // `classifyOrphan` decided "fixture" from the declaration's HOST, and the variable had moved the host.
+  assert.ok(FIXTURE_PATHS.length > 0, "no fixture in REAL_PAGES, so this test asserts over nothing");
+  const dir = mkdtempSync(join(tmpdir(), "prune-940-"));
+  try {
+    const write = (file: string, url: string) =>
+      writeFileSync(join(dir, file), JSON.stringify({ role: "fixture", capturedAt: "2026-09-10T00:00:00Z", capture: { url } }));
+    // Two shapes of fixture capture: at an ADDRESS (a worker reached the page server by IP), and at a NAMED
+    // host no matcher undoes -- the second can only be saved by `classifyOrphan` itself.
+    FIXTURE_PATHS.forEach((path, i) => {
+      write(`fixture-${i}-address.json`, `http://198.51.100.7:5050${path}`);
+      write(`fixture-${i}-named.json`, `http://pages.example.test:5050${path}`);
+    });
+    writeFileSync(join(dir, "retired.json"), JSON.stringify({ capture: { url: RETIRED_REAL_PAGE } }));
+
+    const env: Record<string, string | undefined> = { ...process.env, DATASET_BASE_URL: CONFIGURED_BASE, REAL_CORPUS_ROOT: dir };
+    delete env.A11Y_RUNS_READONLY;
+    const run = spawnSync(process.execPath, [PRUNE, "--apply"], { env, encoding: "utf8" });
+    assert.equal(run.status, 0, run.stderr);
+
+    const gone = FIXTURE_PATHS.flatMap((_, i) => [`fixture-${i}-address.json`, `fixture-${i}-named.json`])
+      .filter((file) => !existsSync(join(dir, file)));
+    assert.deepEqual(gone, [], "fixture captures were DELETED -- the only real-page grounding for five criteria");
+    assert.ok(!existsSync(join(dir, "retired.json")), "the other direction: a genuinely retired page is still deleted");
+    // The named-host captures are the ones `classifyOrphan` decides, so they must be reported RELOCATED.
+    assert.match(run.stdout, new RegExp(`1 RETIRED, ${FIXTURE_PATHS.length} RELOCATED`));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

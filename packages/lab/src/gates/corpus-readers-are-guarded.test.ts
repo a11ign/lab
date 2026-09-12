@@ -162,6 +162,11 @@ const NOT_A_CORPUS_READ: Record<string, string> = {
     "#639: matched on the same two \"runs/...\" descriptive strings as its own dataset-paths.test.ts EXEMPT "
     + "entry -- what two generators write, quoted for a human reading the sweep's classification table, "
     + "never a corpus this file opens or reads.",
+  "packages/lab/src/packaging/lab-fetch-paths.test.ts":
+    "#959: resolves the path ACCESSORS (runsRoot, datasetRoot, captureRoot, realCorpusRoot) to compare "
+    + "their STRINGS with lab-fetch.yml's entries -- path arithmetic, never a file under runs/. Its "
+    + "readFileSync calls take REPO_ROOT paths (the two playbooks, package.json, a producer's own source), "
+    + "and its existsSync checks a committed artefact in the tree, never a capture.",
 };
 
 /** Every test file whose source, comments stripped, looks like it might read the corpus. */

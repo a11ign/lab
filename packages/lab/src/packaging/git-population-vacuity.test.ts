@@ -102,6 +102,40 @@ function discoverGitPopulationTests(): string[] {
  * still literally appear in the file's source below), or `null` with a stated reason no guard applies.
  */
 const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
+  "packages/lab/src/gates/unexaminable-declaration.test.ts": {
+    guard: "found.size >= 20",
+    note: "guarded -- #1030's sweep spawns `git grep -l -F` once per path-like token in lab-job.yml, "
+      + "asking whether anything in the tree READS the path the prose names. A clean result is the "
+      + "EXPECTED answer, so 'no prose names a file nothing reads' and 'the pattern stopped matching' "
+      + "are otherwise the same observation -- which is why the floor counts TOKENS FOUND rather than "
+      + "orphans found. Measured at 31 when written. Each `git grep` scrubs `GIT_*` through "
+      + "`sandboxGitEnv()`: a leaked GIT_DIR would search another repository and vouch for this one's "
+      + "prose from it. The grep's own exit 1 (no match) is the FINDING here, not an error, and is "
+      + "caught and read as such.",
+  },
+  "packages/lab/src/packaging/local-import-closure.test.ts": {
+    guard: "files.length > 500",
+    note: "guarded -- it sweeps `git ls-files` for any tracked file whose local imports the stripper makes "
+      + "invisible, and a clean result is the EXPECTED answer there, so 'nothing blinded' and 'the walk "
+      + "read no files' are otherwise the same observation. The floor is a file count, not a finding "
+      + "count. Its `ls-files` scrubs `GIT_*` through `sandboxGitEnv()` for the same reason: a leaked "
+      + "GIT_DIR would sweep another repository and assert clean about it.",
+  },
+  "packages/lab/src/packaging/changed-files-renames.test.ts": {
+    guard: "scanned >= 100",
+    note: "guarded -- its two git spawns are a sandbox repository it BUILDS (a two-commit tree with one "
+      + "`git mv`), so those populations are non-empty by construction and asserted member by member. The "
+      + "population that could be vacuous is the SOURCE walk for bare `git diff --name-only` sites, and "
+      + "the floor counts files read rather than sites found: a clean list is the expected answer there, "
+      + "so 'nothing unexplained' and 'the walk opened no files' are otherwise the same observation.",
+  },
+  "packages/lab/src/packaging/declared-walk-scope.test.ts": {
+    guard: null,
+    note: "NOT a discovery test (#929). It spawns git to prove that `walk-scope.mjs` records each argv form "
+      + "(`ls-files` by pathspec, `grep` after `--`, `log` as the whole repository), and it asserts over "
+      + "what the observer RECORDED, never over git's output -- so there is no population to be vacuous "
+      + "about. Its own discovery walk, the always-run guards, is floored by `declarers.length > 0`.",
+  },
   "packages/lab/src/packaging/rescue-hunk.test.ts": {
     guard: null,
     note: "NOT a discovery test — it drives `git merge-file` and `git show` on ONE named pair of refs "
@@ -140,10 +174,14 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "records that the guard was RETIRED WITH ITS SUBJECT rather than quietly dropped.",
   },
   "packages/lab/src/packaging/action-reference.test.ts": {
-    guard: "lines.length >= 3",
-    note: "guarded — FIXED this unit: the ref-existence test computed `usesLines()` independently of the "
-      + "sibling test that guards it, so a sibling's guard failing did not stop this one reporting a "
-      + "false pass on the same empty population",
+    guard: null,
+    note: "RETIRED WITH ITS SUBJECT, 2026-09-11 (#954). The file is deleted: `action-reference`'s rule "
+      + "runs once a night in `scripts/doc-cross-reference-report.mjs`, which reads the same module, and "
+      + "the report states its own examined count -- which is the vacuity question this entry asked. Its "
+      + "guard was `lines.length >= 3`, added when the ref-existence test computed `usesLines()` "
+      + "independently of the sibling test that guarded it, so a sibling's failure did not stop this one "
+      + "reporting a false pass on the same empty population. Kept as an entry rather than deleted, the "
+      + "same as `backlog-ready.test.ts` above, so the record says RETIRED rather than quietly dropped.",
   },
   "packages/lab/src/packaging/bounded-window-reads.test.ts": {
     guard: "Object.keys(EXPECTED_READERS).filter((file) => !readers.includes(file))",

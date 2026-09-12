@@ -1,5 +1,6 @@
 /**
- * NUMBERS CLAUDE.md STATES ABOUT ARTEFACTS, pinned the same way `asserting-subtypes.test.ts` pins the
+ * NUMBERS THE PROSE STATES ABOUT ARTEFACTS -- CLAUDE.md's, and since #954 the one docs/README.md states
+ * about the same directory, derived once here rather than twice. Pinned the same way `asserting-subtypes.test.ts` pins the
  * rules-owned/asserting counts: extract the number CURRENTLY in the prose with an anchored regex, assert
  * the regex actually matched something (an unmatched regex is a silent pass, not a clean one), then
  * compare against a value derived live from the artefact the sentence is about.
@@ -48,15 +49,25 @@ const WORD_FOR_COUNT = ["ZERO", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "S
   "TEN", "ELEVEN", "TWELVE", "THIRTEEN", "FOURTEEN", "FIFTEEN", "SIXTEEN", "SEVENTEEN", "EIGHTEEN",
   "NINETEEN", "TWENTY"];
 
-test("CLAUDE.md's ADR count matches docs/adr/", () => {
-  const stated = doc.match(/for the (\d+) decision records/);
-  assert.ok(stated, "CLAUDE.md must state the ADR count as `for the N decision records`");
-
+test("the ADR count matches docs/adr/ — in CLAUDE.md AND in docs/README.md", () => {
+  // #954: the docs/README.md half came from `adr-index.test.ts`, which is deleted. That file's other
+  // assertions -- every ADR indexed, and no index row for an ADR that does not exist -- are the nightly doc
+  // cross-reference report's now. THIS half is a prose count (#907's kind), which the report does not
+  // assert, so it moves rather than retires, and it moves HERE because this file already derives the same
+  // number from the same directory. One walk, two sentences pinned to it, and this file walks `docs/adr/`
+  // itself, so CI's selector runs it on every diff -- which `adr-index.test.ts` stopped doing the moment
+  // #954 removed the `scripts/doc-checks/` exemption its population depended on (worker-capture's review).
   // README.md is the index docs/adr/ ships alongside the records, not a decision itself.
   const files = readdirSync(join(REPO, "docs/adr")).filter((f) => f.endsWith(".md") && f !== "README.md");
   assert.ok(files.length > 10, `only found ${files.length} ADRs — docs/adr/ likely resolved to the wrong path`);
 
+  const stated = doc.match(/for the (\d+) decision records/);
+  assert.ok(stated, "CLAUDE.md must state the ADR count as `for the N decision records`");
   assert.equal(Number(stated[1]), files.length, "CLAUDE.md's decision-record count is stale");
+
+  const index = readFileSync(join(REPO, "docs/README.md"), "utf8").match(/(\d+) architecture decision records/);
+  assert.ok(index, "docs/README.md must state the ADR count as `N architecture decision records`");
+  assert.equal(Number(index[1]), files.length, "docs/README.md's decision-record count is stale");
 });
 
 // Reads inventory.example.yml, deliberately -- the real inventory.yml is gitignored (real addresses,

@@ -28,8 +28,8 @@ test("the real lane file loads and names the pipeline -- a rename must fail this
   assert.ok(LANES, "docs/lane-ownership.json must load: absent or malformed is CANNOT_ASK, not 'no lanes'");
   const pipeline = LANES!.lanes.find((l) => l.paths.includes(".github/workflows/"));
   assert.ok(pipeline, "the pipeline lane must still cover .github/workflows/");
-  assert.equal(pipeline!.owner, "dispatcher");
-  assert.ok(pipeline!.branchPrefixes.includes("dispatcher/"));
+  assert.equal(pipeline!.owner, "ceo"); // moved from dispatcher 2026-09-11 (#913): the retired session cannot own a lane
+  assert.ok(pipeline!.branchPrefixes.includes("ceo/"));
   assert.ok(pipeline!.why.length > 80, "a lane states WHY it is a lane; a bare assertion of ownership is "
     + "the thing a reader cannot argue with or correct");
 });
@@ -38,19 +38,19 @@ test("THE INCIDENT: a pm/ branch changing a workflow is REFUSED, and the refusal
   const v = verdict("pm/board-records", [".github/workflows/ready-label-audit.yml"]);
   assert.equal(v.code, EXIT.REFUSED);
   assert.match(v.reasons[0], /the pipeline/);
-  assert.match(v.reasons[0], /dispatcher owns/);
+  assert.match(v.reasons[0], /ceo owns/);
   assert.match(v.reasons[0], /pm\/board-records/, "and it names the branch, so the reader knows why it fired");
   assert.match(v.reasons[0], /Lane-exception:/, "and it names the way out, or it is a wall people route around");
 });
 
-test("every non-dispatcher prefix is refused, not just pm/ -- 137 branches on origin are agent/", () => {
-  for (const branch of ["agent/x", "lead/x", "ceo/x", "pm/x", "marketing/x", "x"]) {
+test("every non-owner prefix is refused, not just pm/ -- 137 branches on origin are agent/", () => {
+  for (const branch of ["agent/x", "lead/x", "dispatcher/x", "pm/x", "marketing/x", "x"]) {
     assert.equal(verdict(branch, [".github/workflows/ci.yml"]).code, EXIT.REFUSED, `${branch} must refuse`);
   }
 });
 
 test("the lane's own branches pass, including revert/ -- decideRevert opens those itself", () => {
-  for (const branch of ["dispatcher/audit-drop-pr-trigger-579", "revert/4e87c87565-316"]) {
+  for (const branch of ["ceo/lane-owner-913", "revert/4e87c87565-316"]) {
     assert.equal(verdict(branch, [".github/workflows/trunk-guard.yml"]).code, EXIT.CLEAR, branch);
   }
 });
@@ -176,18 +176,24 @@ test("THE WIRING, not just the logic: the job running this check checks out FULL
   // this: a pure function tested exhaustively, wired to an input it never receives. That is this
   // repository's own rule -- test a check in the direction it will actually run.
   const ci = readFileSync(path.join(REPO, ".github/workflows/ci.yml"), "utf8");
-  const job = ci.split(/^ {2}mergeSafety:$/m)[1]?.split(/^ {2}\S/m)[0] ?? "";
+  const job = ci.split(/^ {2}deliberateRefusals:$/m)[1]?.split(/^ {2}\S/m)[0] ?? "";
   assert.ok(job.includes("workflow-lane-check.mjs"),
-    "this test is pinned to mergeSafety; if the step moved, move this with it rather than deleting it");
+    "this test is pinned to deliberateRefusals; if the step moved, move this with it rather than deleting it");
   assert.match(job, /fetch-depth:\s*0/,
     "the job must check out full depth, or the three-dot diff has no merge base and exits 128");
-  assert.match(job, /git diff --name-only origin\/\$\{\{ github\.base_ref \}\}\.\.\.HEAD/,
+  // #939 moved the diff itself behind `scripts/changed-files.mjs`, so that the SOURCE side of a rename is
+  // listed too -- a bare `git diff --name-only` prints only the destination, and a PR moving a file OUT of
+  // another session's lane was invisible to the check that owns it. The RANGE is what this test pins, and
+  // it is unchanged by that move: whatever produces the list must ask for `origin/<base>...HEAD` by name.
+  assert.match(job, /changed-files\.mjs origin\/\$\{\{ github\.base_ref \}\}\.\.\.HEAD/,
     "and it must diff against the base ref by name -- FETCH_HEAD after a shallow fetch is the fault above");
+  assert.ok(!job.includes("FETCH_HEAD"),
+    "FETCH_HEAD is the fault itself: after a shallow fetch it has no merge base with HEAD and git exits 128");
 });
 
 test("the lane file is DATA with a named owner, so the mechanism cannot quietly decide who owns what", () => {
   const raw = JSON.parse(readFileSync(path.join(REPO, "docs/lane-ownership.json"), "utf8"));
-  assert.equal(raw._owner, "ceo", "ceo assigns lanes; dispatcher owns the mechanism only");
+  assert.equal(raw._owner, "ceo", "ceo assigns lanes and, since 2026-09-11, owns the pipeline lane itself");
   assert.ok(String(raw._why).includes("2026-09-08"), "the file cites the ruling that created it");
   assert.ok(String(raw._exception).length > 100, "and states that a lane is not a wall, in the file itself");
 });

@@ -129,6 +129,14 @@ const HAS_INCONCLUSIVE_DOCUMENTED: Record<string, string> = {
  * either always-true-by-construction or not-the-right-question for that script.
  */
 const NO_PARTIAL_POPULATION: Record<string, string> = {
+  "packages/lab/scripts/full-page-claims.mjs":
+    "REPORT-ONLY, AND IT STATES ITS OWN POPULATION: it makes no pass/fail judgement — it counts how many "
+    + "real-page captures lose Requirement 2's full-page claim and names the sweep that withheld each. "
+    + "'Did it see everything' is answered IN THE OUTPUT rather than by an exit code: every run prints "
+    + "the corpus size, how many it examined, how many had no usable census, and how many predate #887's "
+    + "`trips` and therefore cannot answer at all. A partial corpus therefore reports itself as partial. "
+    + "It also refuses below a floor of five captures, because a zero over an empty directory would read "
+    + "as 'nothing was found' rather than 'nothing was examined' — mutation-checked, see #900.",
   "packages/lab/scripts/corpus-backup.mjs":
     "NO POPULATION OF EVIDENCE: it copies ONE archive — the newest file `corpus-snapshot` wrote — to a "
     + "destination and reads its size back. Its population is a single artifact, so 'did it see "

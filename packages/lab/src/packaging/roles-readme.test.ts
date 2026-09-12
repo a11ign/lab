@@ -14,137 +14,24 @@
 // DISCOVERED from the README's own roster table, never hand-listed -- the same shape as every other
 // discovery test this repo has, for the reason CLAUDE.md gives all of them: a hand-maintained "the roles
 // that matter" list is exactly the kind of list a ninth role slips past.
+/**
+ * #954: THE CROSS-REFERENCE HALF OF THIS FILE IS OFF THE PULL-REQUEST PATH. `roles-readme`'s rule now runs
+ * once a night, in `scripts/doc-cross-reference-report.mjs`, which imports the same module this file
+ * does -- so nothing about the rule changed, only when it runs and what a disagreement costs. See #905
+ * for the argument and #954 for the retirement, which waited until the first nightly report had posted.
+ *
+ * WHAT STAYS HERE is what that report does not assert: the roster mutation case, built in a temporary directory, and the contingency drill section.
+ */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, mkdtempSync, writeFileSync } from "node:fs";
-import { resolve, dirname, join } from "node:path";
+import { readFileSync, mkdtempSync, writeFileSync } from "node:fs";
+import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
+// #905: the roster parser and the per-file check live in the doc cross-reference check the nightly report
+// also runs -- one copy, which is what this file's own "exercise the exact same logic" comment asked for.
+import { README_PATH, checkRoster, roster } from "../../../../scripts/doc-checks/roles-readme.mjs";
 
-const README_PATH = "docs/roles/README.md";
 const readReadme = () => readFileSync(resolve(process.cwd(), README_PATH), "utf8");
-const readFile = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
-
-interface RosterRow {
-  role: string;
-  agent: string;
-  linkText: string;
-  filePath: string; // repo-relative, resolved from the README's own location
-  reporter: string | null; // backtick-quoted name, or null for "—" (nobody)
-}
-
-/**
- * Parses the roster table's rows: `| role | \`agent\` | [linkText](./file.md) | reports-to |`.
- * Table-row parsing, not a generic markdown parser -- this repo's own convention (dataset-paths.test.ts,
- * exit-code-contract.test.ts) is to read the exact shape a file commits to rather than a general format,
- * because a general parser hides a shape change instead of failing on it.
- */
-function roster(readmeSource: string): RosterRow[] {
-  const rows: RosterRow[] = [];
-  for (const line of readmeSource.split("\n")) {
-    const m = line.match(/^\|\s*(.+?)\s*\|\s*`([^`]+)`\s*\|\s*\[([^\]]+)\]\(([^)]+)\)\s*\|\s*(.+?)\s*\|$/);
-    if (!m) continue;
-    const [, role, agent, linkText, linkPath, reporterCell] = m;
-    if (role === "role") continue; // the header row
-    const filePath = join(dirname(README_PATH), linkPath);
-    const reporterMatch = reporterCell.match(/`([^`]+)`/);
-    rows.push({ role, agent, linkText, filePath, reporter: reporterMatch?.[1] ?? null });
-  }
-  return rows;
-}
-
-test("the roles README exists and states what it is for", () => {
-  const source = readReadme();
-  assert.match(source, /^# If this machine is lost/m, `${README_PATH} must open with its own heading`);
-  assert.match(source, /^## The roster/m, `${README_PATH} must keep its roster table`);
-});
-
-test("the roster discovery finds a realistic slice of the eight roles", () => {
-  const found = roster(readReadme());
-  // A floor, not a target -- unlike the ready queue, this roster does NOT shrink to zero as a happy path;
-  // an organisation with no roles left is not the goal state this page works towards. Eight were named
-  // when this page was written (`ceo`, `orchestrator`, `dispatcher`, five workers); the floor is set below
-  // that so a role added or retired later does not itself break this guard.
-  assert.ok(found.length >= 6,
-    `expected to find at least 6 roster rows in ${README_PATH}, found ${found.length} -- either the table `
-    + "row format changed, or roles were removed, both of which this guard should be read as flagging");
-});
-
-/**
- * Splits the roster into files that exist (checked for completeness below) and files that do not.
- * Exported in spirit, not in fact -- kept as a plain function so the reporting test and the mutation
- * test below exercise the exact same logic the real check runs, rather than a restated copy of it.
- */
-function checkRoster(rows: RosterRow[]) {
-  const missing: string[] = [];
-  const incomplete: string[] = [];
-
-  for (const { agent, filePath, reporter } of rows) {
-    if (!existsSync(resolve(process.cwd(), filePath))) {
-      missing.push(`  ${agent} -> ${filePath}`);
-      continue;
-    }
-    const source = readFile(filePath);
-    const problems: string[] = [];
-
-    if (!source.includes(`\`${agent}\``)) problems.push("never mentions its own agent name in backticks");
-
-    if (reporter && !source.includes(`\`${reporter}\``)) {
-      problems.push(`never mentions its reporter (\`${reporter}\`) by name`);
-    }
-
-    if (!/^#+.*\b(lane|owns|role)\b/im.test(source)) {
-      problems.push("no heading naming its lane/role/what it owns");
-    }
-
-    // The ban section: either the literal resource-ban text (workers and dispatcher), or an explicit
-    // statement of exception (ceo/orchestrator, who are not bound to it the same way) -- checked as
-    // "addressed the topic at all", never as an exact phrasing, because this repo's own roles are not
-    // required to restate the ban identically if their role is precisely to be its exception. `ceo`'s own
-    // file states its exception as "never runs fleet:*, lab:*" under a "does NOT do" heading rather than
-    // in the ban's own words, which is exactly the free-phrasing case this check exists to allow.
-    if (!/collision into a silent wrong answer|must never do|the resource ban|\bexception\b|drive the fleet/i.test(source)) {
-      problems.push("no ban section and no stated exception to it");
-    }
-
-    if (problems.length) incomplete.push(`  ${agent} (${filePath}): ${problems.join("; ")}`);
-  }
-
-  return { missing, incomplete };
-}
-
-test("every existing role file names its own agent, its reporter, its lane and its ban", () => {
-  const { incomplete } = checkRoster(roster(readReadme()));
-  assert.deepEqual(incomplete, [],
-    "these role file(s) exist but are missing one of the four things this system requires -- its own name, "
-    + `its reporter, its lane, or its ban:\n${incomplete.join("\n")}`);
-});
-
-// A MISSING file is deliberately NOT a failure here, and that is a design decision, not an oversight.
-// A malformed row or an incomplete existing file is a defect fully inside the pushing agent's own
-// control -- an assertion failure is the right teacher. A missing file belongs to a DIFFERENT agent's
-// queue (each role writes its own), so failing `npm test` for everyone until an unrelated agent gets
-// round to writing prose is the exact shape CLAUDE.md already names as a defect: "a red gate teaches
-// everyone to ignore failures" (worker-capture, 2026-09-06), and this repo's own record is that a gate
-// red for reasons outside the pusher's control gets bypassed rather than respected --
-// `A11Y_SKIP_VERIFY=1` "used SIX TIMES in one evening" once already. Reported, not silent: printed to
-// stdout every run, and the next test proves the report cannot go quiet just because nothing failed.
-test("missing role files are reported by name, not hidden by going green", () => {
-  const { missing } = checkRoster(roster(readReadme()));
-  if (missing.length) {
-    console.warn(`\nROLE FILES OUTSTANDING (reported, not failed -- each is owned by a different agent):\n`
-      + missing.join("\n") + "\n");
-  }
-  // The report itself must stay truthful: a currently-empty gap list would make this assertion
-  // meaningless, so pin it against the real roster rather than asserting nothing.
-  assert.deepEqual(
-    missing.map((m) => m.trim().split(" ")[0]).sort(),
-    roster(readReadme())
-      .filter(({ filePath }) => !existsSync(resolve(process.cwd(), filePath)))
-      .map(({ agent }) => agent)
-      .sort(),
-    "the reported gap list must exactly match which roster files are actually absent",
-  );
-});
 
 test("the contingency drill section and its GIT_DIR warning both exist", () => {
   const source = readReadme();

@@ -22,10 +22,18 @@
 //
 // **RELOCATED** — the capture IS of a declared page, reached at a different ORIGIN. Every fixture page is
 // declared `http://localhost:5050/...` and captured `http://192.0.2.10:5050/...`, because a fleet worker
-// cannot reach `localhost` (that resolves to itself). Both sides are individually correct and nothing
-// reconciles them; issue #146 is the fix. **These must never be deleted** — they are live evidence for
-// five criteria, and deleting them would turn a matching bug into a data-loss bug and take 2.4.1, 2.4.2,
-// 2.4.3, 2.1.1 and 1.4.13's only real-page grounding with it.
+// cannot reach `localhost` (that resolves to itself). **These must never be deleted** — they are live
+// evidence for five criteria, and deleting them would turn a matching bug into a data-loss bug and take
+// 2.4.1, 2.4.2, 2.4.3, 2.1.1 and 1.4.13's only real-page grounding with it.
+//
+// Since #881 `realPageFor` reconciles the ordinary case itself -- a fixture captured at an IPv4 address on
+// the declared port and path -- so those ten are no longer orphans and this tool never sees them. What can
+// still reach RELOCATED is a page-server capture the matcher does not undo (a named host, another port),
+// and the refusal to delete it stands exactly as before.
+//
+// AND "FIXTURE" IS THE DECLARATION'S ROLE, NOT ITS HOST (#940). The host is `FIXTURE_BASE`, which
+// `DATASET_BASE_URL` overrides; deciding from the host alone made every fixture RETIRED -- deleted by
+// `--apply` -- the moment that documented variable was set to a non-loopback address.
 //
 // So the classification is not decoration: it is the difference between tidying and destroying. Anything
 // this cannot confidently call RETIRED is reported as UNCLASSIFIED and left alone.
@@ -40,33 +48,15 @@ import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
-import { REAL_PAGES, realPageFor, normaliseUrl } from "../src/training/real-page-corpus.mjs";
+// `pageServerFixtureAtPath` (and `isFixture` behind it) live in the corpus module (#881, #940), because
+// `realPageFor` and the gate need them too: a declared FIXTURE is the ONLY case where a differing origin is explained rather than
+// coincidental -- a fact about OUR serving arrangement, not something that can happen between two real
+// publishers -- and three readers each holding their own copy of it is how they drift.
+import {
+  REAL_PAGES, realPageFor, pageServerFixtureAtPath,
+} from "../src/training/real-page-corpus.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { realCorpusRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
-
-/**
- * The path-and-query of a URL, so a page reached at a different ORIGIN is still recognisable.
- * @param {string} url @returns {string}
- */
-export function pathOf(url) {
-  const withoutScheme = String(url).replace(/^[a-z]+:\/\//i, "");
-  const slash = withoutScheme.indexOf("/");
-  return slash === -1 ? "/" : normaliseUrl(withoutScheme.slice(slash));
-}
-
-/**
- * A page-server origin — the ONLY case where a differing origin is explained rather than coincidental.
- *
- * The dataset page server is declared as `localhost:<port>` and reached by a fleet worker at the host's
- * LAN address on the same port, because a worker cannot reach `localhost` (that resolves to itself). That
- * is #146, and it is a fact about OUR serving arrangement — not something that can happen between two
- * real publishers.
- *
- * @param {string} url
- */
-function servedByThePageServer(url) {
-  return /^https?:\/\/(localhost|127\.0\.0\.1|\[?::1\]?)(:|\/|$)/i.test(String(url));
-}
 
 /**
  * What to do with a capture no declared page claims.
@@ -87,15 +77,23 @@ function servedByThePageServer(url) {
  * the real corpus before trusting any of its verdicts.
  *
  * So the origin difference must be EXPLAINED, not merely present. It is explained in exactly one case:
- * the declared page is served by our own page server. Between two real hosts, the host IS the identity.
+ * the declared page is one of our own fixtures. Between two real hosts, the host IS the identity.
+ *
+ * WHICH DECLARATIONS ARE FIXTURES IS DECIDED BY `isFixture` -- the page's `role`, with its host a second
+ * signal -- and never by the host alone (#940). This used to ask only whether the declaration's host was
+ * loopback, and that host comes from `DATASET_BASE_URL`: with it set to any non-loopback address, all ten
+ * fixture captures came back RETIRED and `--apply` deleted them.
+ *
+ * ASKED THROUGH `pageServerFixtureAtPath`, the gate's own lookup: is ANY declaration at this path a fixture.
+ * A `path -> page` Map here let the last declaration at a shared path decide, which could call a fixture
+ * RETIRED while the gate called it RELOCATED.
  *
  * @param {string} url the capture's own url
- * @param {Map<string, string>} declaredByPath path-and-query -> the declared page's own url
+ * @param {readonly { url: string, role?: string }[]} declared every declared page
  */
-export function classifyOrphan(url, declaredByPath) {
-  const declared = declaredByPath.get(pathOf(url));
-  if (declared && servedByThePageServer(declared)) {
-    return { verdict: "RELOCATED", why: "a page-server page reached at the host's LAN address — see #146; NOT deletable" };
+export function classifyOrphan(url, declared) {
+  if (pageServerFixtureAtPath(url, declared)) {
+    return { verdict: "RELOCATED", why: "a declared fixture reached at another origin — see #146, #940; NOT deletable" };
   }
   if (/^https?:\/\//i.test(url)) {
     return { verdict: "RETIRED", why: "no declared page has this url or its path; the declaration moved and this stayed" };
@@ -112,9 +110,6 @@ const AGES = [];
 
 /** Every capture on disk that `realPageFor` does not match, with its file, url and verdict. */
 export function orphans(root = realCorpusRoot()) {
-  // PATH -> the declared page's own URL, not a bare set: the verdict needs to know WHICH page a path
-  // belongs to, because whether a differing origin is explained depends on that page's own origin.
-  const declaredByPath = new Map(REAL_PAGES.map((page) => [pathOf(page.url), page.url]));
   const out = [];
   for (const file of readdirSync(root).sort()) {
     if (!file.endsWith(".json")) continue;
@@ -128,11 +123,11 @@ export function orphans(root = realCorpusRoot()) {
     } catch {
       // A file that will not parse is not an orphan, it is a damaged capture — a different question, and
       // deleting it on this command's authority would be answering one with the other.
-      out.push({ file, url: "", ...classifyOrphan("", declaredByPath), unreadable: true });
+      out.push({ file, url: "", ...classifyOrphan("", REAL_PAGES), unreadable: true });
       continue;
     }
     if (realPageFor(url)) continue;
-    out.push({ file, url, ...classifyOrphan(url, declaredByPath) });
+    out.push({ file, url, ...classifyOrphan(url, REAL_PAGES) });
   }
   return out;
 }

@@ -15,20 +15,31 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, rmSync, mkdirSync, chmodSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync, mkdtempSync, symlinkSync, readdirSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const HOOK = readFileSync(`${REPO}scripts/git-hooks/pre-push`, "utf8");
 
-test("the hook branches on $BRANCH before deciding fast vs full", () => {
+test("#911: there is no fast/full split any more -- one path, and $BRANCH is resolved before it is used", () => {
+  // The split is GONE, and this test is what would otherwise have kept passing about a shape that no
+  // longer exists. `main` ran the gate plus two corpus checks, a board-only diff ran the board guards
+  // INSTEAD of lint and typecheck, and every other branch ran the gate plus a changeset gate. #911
+  // reduced the gate to three checks, at which point branching cost more than it saved -- and the
+  // board-only path had a hole: it never ran the sweep, so it never ran the leak guards, on the one kind
+  // of diff made entirely of the prose they scan.
   assert.match(HOOK, /BRANCH="\$\(git rev-parse --abbrev-ref HEAD\)"/);
   const branchLine = HOOK.indexOf('BRANCH="$(git rev-parse --abbrev-ref HEAD)"');
-  const ifMain = HOOK.indexOf('if [ "$BRANCH" = "main" ]');
-  assert.ok(branchLine > 0 && ifMain > branchLine,
-    "BRANCH must be resolved before the fast/full decision reads it");
+  const gateCall = HOOK.indexOf('run_gate "$BRANCH"');
+  assert.ok(branchLine > 0 && gateCall > branchLine,
+    "BRANCH must be resolved before the gate reads it -- it is the label the gate reports under");
+  assert.ok(!/if \[ "\$BRANCH" = "main" \]; then\n {2}run_gate/.test(HOOK),
+    "the gate must not branch on main again -- CI is the gate for every branch, main included");
 });
 
 test("package.json's shared test:ts script never leaks concurrency-capping into CI unconditionally", () => {
@@ -44,47 +55,9 @@ test("package.json's shared test:ts script never leaks concurrency-capping into 
     "test:ts must only add the flag when the env var is set, so CI (which never sets it) is never capped");
 });
 
-test("check-signals and rules:gate are gated to main, not just to the corpus being present", () => {
-  assert.match(HOOK, /if \[ "\$BRANCH" = "main" \] && \[ -d runs\/screenreader-dataset\/captures \]/);
-  assert.match(HOOK, /if \[ "\$BRANCH" = "main" \] && \[ -f runs\/screenreader-dataset\/screenreader-evidence\.jsonl \]/);
-});
 
-test("the fast gate calls changed-packages.mjs, never a second, hand-rolled diff", () => {
-  assert.match(HOOK, /node scripts\/changed-packages\.mjs/);
-});
 
-test("a board-only diff gets its own narrow branch, calling board-only-check.mjs -- never a second copy "
-  + "of the board/docs classification", () => {
-  // chairman's direction, 2026-09-06: docs/board/summaries/*.md and docs/board/reported.json are edited
-  // far more often than anything else under docs/. `board-only-check.mjs` reuses ci-changed.mjs's own
-  // `boardOnly`/`DOC_ROOT_FILES`, the same question ci.yml's `board` job asks -- this only checks the
-  // hook DISPATCHES to it and to the same test glob as that job, not that the classification is correct
-  // (board-only-check.test.ts and ci-changed.test.ts own that).
-  assert.match(HOOK, /node scripts\/board-only-check\.mjs/);
-  assert.match(HOOK, /packages\/lab\/src\/packaging\/board-\*\.test\.ts/);
-  assert.match(HOOK, /packages\/lab\/src\/packaging\/public-claim\.test\.ts/);
-});
 
-test("2026-09-07: both main and the fast gate run the SAME mjs parse check, not a package-scoped glob "
-  + "built from `changed`", () => {
-  // The touched-package glob-building loop this test used to drive (`globs=(); for pkg in $changed; do
-  // globs+=(...); done`) is GONE, along with the package suites it fed -- CI's acceptance job (#353) now
-  // covers what those suites checked, on every PR, before this hook could finish. What replaced them is
-  // ONE fixed invocation, present in both branches, that does not read `$changed` at all: `mjs-parses.
-  // test.ts` is CLAUDE.md's own named check for a `.mjs` file that lint and `tsc --noEmit` cannot see fail.
-  assert.ok(!/globs=\(\)/.test(HOOK), "the touched-package glob-building loop should be gone, not merely unused");
-  // #704: lint/typecheck/mjs-parse-check moved into ONE shared function (`run_gate_with_guards_budget`,
-  // which also runs and times the #716 tree-wide-guard sweep) called from BOTH branches -- so the literal
-  // `run "mjs parse check" ...` line now appears exactly ONCE in the file's source, in the function body,
-  // and the population-of-two claim this test used to make is now a claim about CALL SITES instead.
-  const mjsParseCheck = /run "mjs parse check"\s+npx tsx --test packages\/worker-fleet\/src\/mjs-parses\.test\.ts/g;
-  const matches = [...HOOK.matchAll(mjsParseCheck)];
-  assert.equal(matches.length, 1, "expected the mjs parse check exactly once, in the shared gate function, "
-    + `found ${matches.length}`);
-  const callSites = [...HOOK.matchAll(/run_gate_with_guards_budget\s+"[^"]+"/g)];
-  assert.equal(callSites.length, 2,
-    "the shared gate function must be called exactly once from main's branch and once from the fast gate's");
-});
 
 /**
  * `NODE_TEST_CONTEXT` IS THE `sweepLog` DEFECT ARRIVING IN THE TEST RUNNER ITSELF.
@@ -133,105 +106,75 @@ test("MUTATION: the real run() function reports FAILED on a genuine lint/typeche
   const runFn = /^run\(\) \{[\s\S]*?\n\}/m.exec(HOOK);
   assert.ok(runFn, "could not find run() in the real hook to drive");
 
-  const target = `${REPO}packages/lab/src/packaging/_scratch-run-fn-proof.test.ts`;
-  writeFileSync(target,
-    'import { test } from "node:test";\nconst unused = 1;\ntest("x", () => { const y: string = 5; });\n');
+  // #944: PLANTED IN AN EXPORT OF THE TREE, NEVER IN THE TREE. This wrote the scratch file into
+  // `packages/lab/src/packaging/` for as long as lint and typecheck took, and `node --test` runs files
+  // concurrently, so a test walking the tree listed it and then read it after `finally` deleted it (#938's
+  // `ts / run`, ENOENT). ENOENT was the lucky direction: a walker reading it WHILE it existed saw a `.test.ts`
+  // with a deliberate type error. The same two commands now run, unchanged, in a copy of HEAD.
+  //
+  // TWICE, AND THE FIRST RUN IS THE CONTROL. With the planted file clean, both must pass: that proves the
+  // export itself lints and type-checks (its first version did not -- `dist` is gitignored, so a relative
+  // `../dist/` import failed `tsc` whatever was planted), and that the tools SEE a file at that path. Only
+  // then does the violating version failing mean the violation was caught.
+  const exported = treeExport();
+  const gate = () => execFileSync("bash", ["-c", `set -u\n${runFn[0]}\nfailed=()\n`
+    + `run "lint" npm run --silent lint\n`
+    + `run "typecheck" npx tsc --noEmit\n`
+    + `printf 'FAILED=%s\\n' "\${failed[@]:-}"`], { cwd: exported, encoding: "utf8" });
   try {
-    const script = `set -u\n${runFn[0]}\nfailed=()\n`
-      + `run "lint" npm run --silent lint\n`
-      + `run "typecheck" npx tsc --noEmit\n`
-      + `printf '%s\\n' "\${failed[@]:-}"`;
-    const out = execFileSync("bash", ["-c", script], { cwd: REPO, encoding: "utf8" });
-    assert.match(out, /lint/, "a real lint error in a tracked package file must be reported FAILED");
-    assert.match(out, /typecheck/, "a real type error must be reported FAILED");
+    writeFileSync(join(exported, PLANTED), 'import { test } from "node:test";\ntest("x", () => {});\n');
+    const control = gate();
+    assert.match(control, /^FAILED=$/m, `the export fails lint or typecheck with a CLEAN file planted:\n${control}`);
+    assert.match(control, /ok {6}lint/, `lint did not run cleanly on the export:\n${control}`);
+    assert.match(control, /ok {6}typecheck/, `typecheck did not run cleanly on the export:\n${control}`);
+
+    writeFileSync(join(exported, PLANTED),
+      'import { test } from "node:test";\nconst unused = 1;\ntest("x", () => { const y: string = 5; });\n');
+    const out = gate();
+    assert.match(out, /FAILED=lint/, "a real lint error in a tracked package file must be reported FAILED");
+    assert.match(out, /FAILED=typecheck/, "a real type error must be reported FAILED");
   } finally {
-    rmSync(target, { force: true });
+    rmSync(exported, { recursive: true, force: true });
   }
 });
 
-/**
- * #288: THE CHANGESET GATE WAS THE ONLY CHECK IN THIS HOOK THAT BYPASSED `run()`, so it had no way to say
- * "could not run" -- `[ "$(node scripts/changeset-precise.mjs origin/main)" = "true" ]` discards the
- * command's own exit status and tests only the STRING it printed. Measured live: an unresolvable base ref
- * throws inside `changeset-precise.mjs`'s own `execFileSync`, uncaught, so the process exits non-zero
- * having printed NOTHING -- and empty output reads as `false`, so the hook printed a POSITIVE CLAIM ("no
- * file this push touches is one npm actually ships for a published package") from a check that examined
- * nothing at all.
- *
- * DRIVES THE REAL BLOCK, via a fake `node` on `PATH` standing in for `changeset-precise.mjs`'s two
- * distinct real behaviours (a clean exit with `true`/`false`, and a genuine failure) -- the same
- * discipline the `run()` test above uses, extracting rather than re-typing the hook's own logic.
- */
-function changesetBlock() {
-  const start = HOOK.indexOf('if [ -n "$changed" ]; then\n    # #288:');
-  const end = HOOK.indexOf('rm -f /tmp/a11y-changeset-precise-err.$$\n  fi', start);
-  assert.ok(start > 0 && end > start, "could not locate the #288 changeset block in the real hook");
-  return HOOK.slice(start, end + 'rm -f /tmp/a11y-changeset-precise-err.$$\n  fi'.length);
-}
+/** Where the planted violation sits, relative to the tree root -- inside `treeExport()`'s copy only. */
+const PLANTED = "packages/lab/src/packaging/_scratch-run-fn-proof.test.ts";
 
-function withFakeNode(behaviour: "fail" | "true" | "false") {
-  const dir = `${REPO}packages/lab/src/packaging/.scratch-fake-node-${behaviour}`;
-  rmSync(dir, { recursive: true, force: true });
-  mkdirSync(dir, { recursive: true });
-  const script = behaviour === "fail"
-    ? '#!/bin/bash\necho "fatal: bad revision" >&2\nexit 1\n'
-    : `#!/bin/bash\nprintf '%s' "${behaviour}"\n`;
-  writeFileSync(`${dir}/node`, script);
-  chmodSync(`${dir}/node`, 0o755);
+/**
+ * #944: HEAD, exported to a temp directory, with this checkout's `node_modules` linked in -- a tree lint and
+ * `tsc` see exactly as they see this one, and no other test can walk. `git archive` rather than a worktree:
+ * it registers nothing in `.git`, so a crashed run leaves only a temp directory behind. `sandboxGitEnv`,
+ * because a hook exports `GIT_DIR` and an inherited one would archive whatever it names.
+ */
+function treeExport(): string {
+  const dir = mkdtempSync(join(tmpdir(), "fast-gate-export-"));
+  const tar = execFileSync("git", ["archive", "--format=tar", "HEAD"],
+    { cwd: REPO, env: sandboxGitEnv(), maxBuffer: 256 * 1024 * 1024 });
+  execFileSync("tar", ["-x", "-C", dir], { input: tar });
+  symlinkSync(join(REPO, "node_modules"), join(dir, "node_modules"), "dir");
+  // Each package's BUILD, linked in too: `dist` is gitignored, and a relative `../dist/` import
+  // (`packages/scorer/bin/fetch-encoder.mjs`) fails `tsc` in a tree that lacks it.
+  for (const name of readdirSync(join(REPO, "packages"))) {
+    const built = join(REPO, "packages", name, "dist");
+    if (existsSync(built) && existsSync(join(dir, "packages", name))) symlinkSync(built, join(dir, "packages", name, "dist"), "dir");
+  }
   return dir;
 }
 
-test("#288: an unresolvable base ref is COULD NOT RUN, not a silent SKIPPED claim", () => {
-  const fakeNodeDir = withFakeNode("fail");
-  try {
-    const script = `set -u\nchanged="lab"\nskipped=()\nfailed=()\n${changesetBlock()}\n`
-      + `printf 'SKIPPED=%s\\n' "\${skipped[@]:-}"\nprintf 'FAILED=%s\\n' "\${failed[@]:-}"`;
-    const out = execFileSync("bash", ["-c", script],
-      { cwd: REPO, encoding: "utf8", env: { ...process.env, PATH: `${fakeNodeDir}:${process.env.PATH}` } });
-    assert.match(out, /COULD NOT RUN {2}changeset/, "a genuine failure to answer must print COULD NOT RUN");
-    assert.doesNotMatch(out, /no file this push touches is one npm actually ships/,
-      "the exact defect this row exists to end: a failure must never be read as the honest SKIPPED claim");
-    assert.match(out, /SKIPPED=changeset \(could not run\)/, "kept out of failed, per run()'s own precedent");
-    assert.doesNotMatch(out, /FAILED=changeset/, "a could-not-run must never fail the push");
-  } finally {
-    rmSync(fakeNodeDir, { recursive: true, force: true });
-  }
-});
-
-test("#288: a real, examined `false` still prints the honest SKIPPED claim, unchanged", () => {
-  const fakeNodeDir = withFakeNode("false");
-  try {
-    const script = `set -u\nchanged="lab"\nskipped=()\nfailed=()\n${changesetBlock()}\n`
-      + `printf 'SKIPPED=%s\\n' "\${skipped[@]:-}"`;
-    const out = execFileSync("bash", ["-c", script],
-      { cwd: REPO, encoding: "utf8", env: { ...process.env, PATH: `${fakeNodeDir}:${process.env.PATH}` } });
-    assert.match(out, /SKIPPED=changeset \(no file this push touches is one npm actually ships/,
-      "a genuine, examined `false` must keep its real claim -- this row narrows WHEN the claim is made, "
-      + "not what it says");
-    assert.doesNotMatch(out, /COULD NOT RUN/, "a real answer must never read as a failure to answer");
-  } finally {
-    rmSync(fakeNodeDir, { recursive: true, force: true });
-  }
-});
-
-test("MUTATION (#288): reverting to the bare string comparison must reproduce the exact live defect -- "
-  + "a failure read as the honest SKIPPED claim", () => {
-  const fakeNodeDir = withFakeNode("fail");
-  try {
-    const naiveScript = `set -u\nchanged="lab"\nskipped=()\nfailed=()\n`
-      + `if [ -n "$changed" ] && [ "$(node scripts/changeset-precise.mjs origin/main)" = "true" ]; then\n`
-      + `  :\nelse\n  skipped+=("changeset (no file this push touches is one npm actually ships for a published package)")\nfi\n`
-      + `printf 'SKIPPED=%s\\n' "\${skipped[@]:-}"`;
-    const out = execFileSync("bash", ["-c", naiveScript],
-      { cwd: REPO, encoding: "utf8", env: { ...process.env, PATH: `${fakeNodeDir}:${process.env.PATH}` } });
-    assert.match(out, /no file this push touches is one npm actually ships/,
-      "documents the exact live defect this row exists to end -- the naive comparison cannot see the "
-      + "command's own exit status, so a genuine failure prints the SAME sentence as an honest false");
-  } finally {
-    rmSync(fakeNodeDir, { recursive: true, force: true });
-  }
-});
-
+/**
+ * #911 REMOVED THE CHANGESET GATE FROM THIS HOOK, and with it the three #288 tests that drove its block.
+ *
+ * What they pinned was real and is worth naming rather than losing with the code: `$(cmd)` DISCARDS the
+ * command's own exit status, so `[ "$(node scripts/changeset-precise.mjs ...)" = "true" ]` could only ever
+ * test the STRING it printed -- and a command that died printing nothing made the hook state a POSITIVE
+ * claim ("no file this push touches is one npm actually ships") from a check that had examined nothing.
+ *
+ * The gate is now CI's `changeset` job alone, which is where it always also ran. The class those tests
+ * guarded against is held tree-wide by `scripts/piped-exit-status-guard.mjs` and its own test, which is a
+ * rule about every reader rather than about this one call site -- so deleting the instance does not delete
+ * the lesson. `git log -S"changeset_precise_status"` is where the three tests themselves live now.
+ */
 test(".github/workflows/ci.yml runs on the PR ONLY, with a cancelling concurrency group", () => {
   // NOT agent/** or lead/** and NOT main -- deliberately, since 2026-09-06 and sharpened again the same
   // day (chairman's direction): a check that runs after a merge cannot stop it, so `push` is not merely

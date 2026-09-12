@@ -32,8 +32,12 @@ import { compareIdentity, documentIdentity } from "@a11ign/evidence/document-ide
  * The paths are the contract; the object is JSON.
  */
 
-/** @type {[string, string][]} */
-export const EVIDENCE_FIELDS = [
+/**
+ * A field is a PATH: `[group, name]` inside `structure`/`interaction`, or `[name]` for a channel at the capture's top
+ * level (#977). `fieldValues` walks any depth, and a field is named by `path.join(".")`.
+ * @type {string[][]}
+ */
+const TABLE = [
   ["structure", "headings"], ["structure", "landmarks"], ["structure", "formFields"],
   ["structure", "tableCells"], ["structure", "links"], ["structure", "lists"],
   ["structure", "graphics"],
@@ -87,7 +91,90 @@ export const EVIDENCE_FIELDS = [
   // `typedFeedback` gained `titleBefore`/`titleAfter` in the same protocol for 3.2.2 and is already
   // listed, so the flattening picks those up without a second entry.
   ["interaction", "focusContext"],
+  // THE TOP-LEVEL DOM-ONLY CHANNELS -- #977. `media` (1.4.2's rule) and `formInputs` (1.3.5's rule and
+  // `inputPurposeInvalid`, #170) sit BESIDE `structure`/`interaction`, not inside them, so a table of
+  // `[group, name]` pairs could not name them and this gate read SAME for any change to either -- a
+  // capture-pipeline change that broke `mediaCensus` or `formInputCensus` would have shipped without a
+  // recapture. Arrays of objects, so `flatten` compares each entry's content, not the count. The class is
+  // pinned in `evidence-fields.test.ts`, from capture-core's own typedefs, so the next top-level channel
+  // cannot arrive unclassified.
+  ["media"], ["formInputs"],
 ];
+
+/**
+ * WHETHER EACH SWEEP WAS ASKED -- `observed.<channel>.asked`, for the STRUCTURE channels only (#985, product-manager's
+ * ruling (b) on worker-judge's review). `asked` feeds `sweepCompleteness` (verify.ts: `asked: false` reads `unknown`,
+ * which decides whether an absence is a finding) and the scorer's observation features, so a flip on an EMPTY
+ * channel moved findings and model input while every channel compared `[] = []` and read SAME.
+ *
+ * STRUCTURE ONLY because a sweep's `asked` is fixed by the capture options -- deterministic for a page. An
+ * INTERACTION channel's `asked` follows whether a control was ACTIVATED, which varies with probe budgets, so it
+ * joins #984's flip-rate measurement before it is compared. Derived from the table's own structure entries, so a
+ * sweep added there is asked about here without a second list.
+ */
+const ASKED_OF_EACH_SWEEP = TABLE.filter(([group]) => group === "structure").map(([, name]) => ["observed", name, "asked"]);
+
+/** @type {string[][]} */
+export const EVIDENCE_FIELDS = [...TABLE, ...ASKED_OF_EACH_SWEEP];
+
+/**
+ * The key a field goes by in `gate:stability`'s `comparable()` and anywhere else a field needs one name: the bare
+ * name for `[group, name]` (as it always was), the whole path otherwise -- so eight `observed.<channel>.asked`
+ * entries cannot collide on `asked`, and a future `[structure, media]` cannot overwrite `[media]` in silence.
+ * `top-level-channels.test.ts` holds every key distinct.
+ * @param {readonly string[]} field @returns {string}
+ */
+export function fieldKey(field) {
+  return field.length === 2 ? field[1] : field.join(".");
+}
+
+/**
+ * WHAT IS DELIBERATELY NOT COMPARED, each with the reason -- beside the table it completes (#977). A capture
+ * field is compared (`EVIDENCE_FIELDS`), a group whose fields are classified one level down, the transcript
+ * (compared by `compareCapture` itself), or named here. `top-level-channels.test.ts` holds every field
+ * capture-core's typedefs declare to exactly that; `evidence-fields.test.ts` holds every field on disk to it.
+ * Moved here from `evidence-fields.test.ts`, which kept `navigatedOnSubmit`'s reason alone, so both guards read
+ * one list.
+ * @type {Readonly<Record<string, string>>}
+ */
+export const NOT_COMPARED = Object.freeze({
+  "interaction.navigatedOnSubmit": "a record of what the PROBE did (did currentPageUrl() see a move), "
+    + "not what NVDA announced; it flips with probe order and even with transient network conditions "
+    + "rather than with the page, so comparing it would report drift for a change in how the capture "
+    + "was driven, not in what the page says (whether to compare it anyway is #984, a flip-rate measurement)",
+  url: "which page was asked for; the pair is matched on it, and `documentIdentity` compares what was SERVED",
+  screenReader: "which screen reader; `isUsableCapture` refuses anything but NVDA, so a difference is not a capture",
+  capturedAt: "when; it differs on every capture of every page",
+  diagnostics: "the capture's own debugging log, a FORBIDDEN_INPUT_KEY; marks and timings vary run to run",
+  // NOT "compared in the channels it describes" -- that was false for `asked` (worker-judge's review of #985).
+  observed: "COMPARED IN PART, so named here for the rest, part by part. `asked` for the STRUCTURE channels IS "
+    + "compared (`observed.<channel>.asked`, EVIDENCE_FIELDS): it is fixed by the capture options, and it feeds "
+    + "`sweepCompleteness` and the scorer's observation features. NOT compared, until measured: `asked` for the "
+    + "INTERACTION channels, which follows whether a control was ACTIVATED and so varies with probe budgets (#984 "
+    + "measures its flip rate); and `stop`, `why`, `activated` and `complete`, which vary with NVDA's timing. "
+    + "product-manager's ruling (b) on #985",
+  // THE ENVELOPE: added around the worker's own capture, so capture-core's typedefs do not declare them.
+  task: "the request's task text, added by server.mjs; it is what was asked for, not what NVDA said",
+  environment: "which browser, screen reader and worker took it, added by server.mjs; the capture cache keys on "
+    + "it (`environmentKey`), and a difference is a different environment, not different evidence",
+  meta: "backend metadata in the published CaptureResult (tool versions, timings), never evidence",
+  provenance: "the cache's own stamp (`stampProvenance`: cacheKey, pageHash, options), bookkeeping about the capture",
+});
+
+/**
+ * The fields `NOT_COMPARED` names that capture-core's typedefs do NOT declare, because something wraps the
+ * worker's capture and adds them: server.mjs (`task`, `environment`), the published type (`meta`) and the cache
+ * (`provenance`). Named so the class pin can tell an envelope field from an exclusion that outlived its field.
+ */
+export const ENVELOPE_FIELDS = Object.freeze(["task", "environment", "meta", "provenance"]);
+
+/**
+ * The two groups whose fields are classified one level down, and the one field compared outside the table --
+ * `compareCapture` compares `transcript` itself, as a set with drift named. Exported so the two guards that
+ * classify every capture field read one spelling.
+ */
+export const FIELD_GROUPS = Object.freeze(["structure", "interaction"]);
+export const COMPARED_OUTSIDE_THE_TABLE = Object.freeze(["transcript"]);
 
 /**
  * A phrase's shape, ignoring the wording NVDA varies between runs.
@@ -196,11 +283,11 @@ function flatten(entry) {
  * forced this.
  *
  * @param {EvidenceCapture | null | undefined} capture
- * @param {[string, string]} field
+ * @param {string[]} field a path -- `[group, name]`, or `[name]` for a top-level channel (#977)
  * @returns {string[]}
  */
-export function fieldValues(capture, [group, name]) {
-  const value = capture?.[group]?.[name];
+export function fieldValues(capture, field) {
+  const value = field.reduce((/** @type {any} */ at, key) => at?.[key], capture);
   if (Array.isArray(value)) return value.map(flatten);
   // AN OBJECT, FLATTENED. `routeChange` is `{control, titleBefore, titleAfter, headingBefore,
   // headingAfter}` rather than a list, and the array-only version returned [] for it — so adding it to
@@ -221,6 +308,10 @@ export function fieldValues(capture, [group, name]) {
     return Object.entries(value).map(([key, entry]) =>
       `${key}=${Array.isArray(entry) ? entry.map(flatten).join(";") : normalise(entry)}`);
   }
+  // A SCALAR AT THE END OF A PATH is one value -- `observed.<channel>.asked` (#985) is a boolean, and returning
+  // [] for it would compare nothing while appearing to compare something. `null` and absence stay [], exactly
+  // as before, so no existing field changes how it reads.
+  if (typeof value === "boolean" || typeof value === "number" || typeof value === "string") return [normalise(value)];
   return [];
 }
 

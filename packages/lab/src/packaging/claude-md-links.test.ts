@@ -14,10 +14,23 @@
  * it. This file's own `slugify`/`headingAnchors`/`localAnchorLinks` are unchanged from that attempt;
  * what #458 adds is `claude-md-content-preservation.test.ts`, the check #181 was missing.
  */
+/**
+ * #954: THE CROSS-REFERENCE HALF OF THIS FILE IS OFF THE PULL-REQUEST PATH. `claude-md-links`'s rule now runs
+ * once a night, in `scripts/doc-cross-reference-report.mjs`, which imports the same module this file
+ * does -- so nothing about the rule changed, only when it runs and what a disagreement costs. See #905
+ * for the argument and #954 for the retirement, which waited until the first nightly report had posted.
+ *
+ * WHAT STAYS HERE is what that report does not assert: CLAUDE.md's own load-truncation size limit, the MUTATION and CONTROL cases that prove the anchor rule bites, and slugify's parity with `known-gaps-index.mjs`.
+ */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+// #905: the anchor-link rule lives in the doc cross-reference check the nightly report also runs -- one copy.
+// The size limit below is not a cross-reference and stays here, on the pull-request path.
+import {
+  headingAnchors, localAnchorLinks, slugify,
+} from "../../../../scripts/doc-checks/claude-md-links.mjs";
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const CLAUDE_MD = "CLAUDE.md";
@@ -26,48 +39,6 @@ const CLAUDE_MD = "CLAUDE.md";
 const MAX_CLAUDE_MD_CHARS = 40_000;
 
 const claudeMd = () => readFileSync(`${ROOT}${CLAUDE_MD}`, "utf8");
-
-/**
- * Approximates GitHub's heading-anchor algorithm — the same approach `scripts/known-gaps-index.mjs`
- * uses for the identical reason: good enough for a reader to click through, not a reimplementation of
- * GitHub's renderer, so it is not asserted against GitHub's own output anywhere.
- */
-export function slugify(raw: string): string {
-  const stripped = raw
-    .replace(/~~/g, "")
-    .replace(/\*\*/g, "")
-    .replace(/`/g, "")
-    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
-  return stripped
-    .toLowerCase()
-    .replace(/[^\w\- ]+/g, "")
-    .trim()
-    .replace(/\s+/g, "-");
-}
-
-/** Every heading in a markdown file, GitHub-anchor-disambiguated in document order. */
-export function headingAnchors(text: string): Set<string> {
-  const seen = new Map<string, number>();
-  const anchors = new Set<string>();
-  for (const line of text.split("\n")) {
-    const match = /^#{1,6} (.*)$/.exec(line);
-    if (!match) continue;
-    const slug = slugify(match[1]);
-    const count = seen.get(slug) ?? 0;
-    seen.set(slug, count + 1);
-    anchors.add(count === 0 ? slug : `${slug}-${count}`);
-  }
-  return anchors;
-}
-
-/** Every `(relative/path.md#anchor)` link CLAUDE.md makes to another file in this repo. */
-export function localAnchorLinks(text: string): Array<{ file: string; anchor: string }> {
-  const links: Array<{ file: string; anchor: string }> = [];
-  for (const m of text.matchAll(/\(((?:docs|packages)\/[^)#\s]+\.md)#([a-z0-9-]+)\)/g)) {
-    links.push({ file: m[1], anchor: m[2] });
-  }
-  return links;
-}
 
 /**
  * #649: `wc -c` counts BYTES; `text.length` (what the guard actually checks against
@@ -128,31 +99,6 @@ test("#649 ACCEPTANCE / MUTATION TARGET: a string that crosses the CHARACTER lim
 test("CONTROL: the message prints both numbers with their units, matching #649's own worked example shape", () => {
   const report = sizeReport("hello", 10);
   assert.equal(report.message, "5 characters (5 bytes) against a 10 CHARACTER limit — 5 characters of headroom");
-});
-
-test("CLAUDE.md still makes a substantial number of links into the docs/ files it was split into", () => {
-  // A vacuity guard: a broken extraction regex would report zero links and every test below would pass
-  // having examined nothing, which is the exact "a check answering correctly about an empty population"
-  // shape this repo's own CLAUDE.md names as its most expensive recurring defect.
-  const links = localAnchorLinks(claudeMd());
-  assert.ok(links.length >= 20,
-    `only found ${links.length} local anchor link(s) in CLAUDE.md -- the extraction regex may be broken`);
-});
-
-test("every local anchor link in CLAUDE.md resolves to a heading that exists in its target file", () => {
-  const links = localAnchorLinks(claudeMd());
-  const byFile = new Map<string, Set<string>>();
-  const broken: string[] = [];
-  for (const { file, anchor } of links) {
-    if (!byFile.has(file)) {
-      byFile.set(file, headingAnchors(readFileSync(`${ROOT}${file}`, "utf8")));
-    }
-    const anchors = byFile.get(file)!;
-    if (!anchors.has(anchor)) broken.push(`${file}#${anchor}`);
-  }
-  assert.deepEqual(broken, [],
-    `${broken.length} link(s) in CLAUDE.md point at a heading that does not exist -- a moved or renamed ` +
-    `section has gone dark:\n${broken.join("\n")}`);
 });
 
 // --- The guard must be shown to fail, or it proves nothing ---

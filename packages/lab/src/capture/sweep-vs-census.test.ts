@@ -52,12 +52,23 @@ test("heading: found holds at 80 across a census that moves 83 -> 69", () => {
   assert.deepEqual(present, [83, 83, 69, 69, 69]);
 });
 
-test("a verdict IS available once each capture says when its census was read", () => {
+test("a verdict needs the CONTROL, not just the moments — #844", () => {
+  // #850's version of this test said a verdict is available "once each capture says when its census was
+  // read". #854 made every capture able to say, and the answer was that the census lands at 28-67 s while
+  // `formField` walks at 37-280 s: knowing both moments PROVES they are not the same moment. So the
+  // moments are necessary and not sufficient, and this asserts the difference.
+  assert.equal(populationVerdict([2.17, 2.12], { censusReadAt: [400_000, 402_000] }), "not-simultaneous",
+    "recorded moments alone must not open the gate — that reads 'we can see the gap' as 'there is no gap'");
+  assert.equal(populationVerdict([2.17, 2.12], { censusReadAt: [400_000, 402_000], heldStill: false }),
+    "not-simultaneous", "and a control that says the page GREW is a refusal, not a caveat");
+});
+
+test("a verdict IS available once the control says the page held still", () => {
   // Not a placeholder: the gate opens on `readAt.startedAtMs` (#854), which no capture on disk carries
   // yet. This is the behaviour that fix unlocks, pinned now so the gate cannot quietly become permanent.
-  assert.equal(populationVerdict([2.17, 2.12], { censusReadAt: [400_000, 402_000] }), "sweep-exceeds");
-  assert.equal(populationVerdict([0.96, 1.16], { censusReadAt: [100, 100] }), "agrees");
-  assert.equal(populationVerdict([2.17, 2.12], { censusReadAt: [400_000, null] }), "not-simultaneous",
+  assert.equal(populationVerdict([2.17, 2.12], { censusReadAt: [400_000, 402_000], heldStill: true }), "sweep-exceeds");
+  assert.equal(populationVerdict([0.96, 1.16], { censusReadAt: [100, 100], heldStill: true }), "agrees");
+  assert.equal(populationVerdict([2.17, 2.12], { censusReadAt: [400_000, null], heldStill: true }), "not-simultaneous",
     "one capture without a read time is enough to disqualify the comparison");
 });
 
@@ -138,16 +149,16 @@ test("a type with no census entry gets no invented denominator", () => {
 });
 
 test("fewer than two usable ratios is CANNOT SAY, never a verdict from one capture", () => {
-  const moment = { censusReadAt: [1, 2, 3] };
+  const moment = { censusReadAt: [1, 2, 3], heldStill: true };
   assert.equal(populationVerdict([1.9], moment), "cannot say");
   assert.equal(populationVerdict([null, null], moment), "cannot say");
-  assert.equal(populationVerdict([], { censusReadAt: [] }), "cannot say");
+  assert.equal(populationVerdict([], { censusReadAt: [], heldStill: true }), "cannot say");
 });
 
 test("consistent disagreement in one direction is reported as such", () => {
   // The two branches the row expected. They remain expressible — this is not a guard that answers
   // "unstable" to everything.
-  const moment = { censusReadAt: [1, 2, 3] };
+  const moment = { censusReadAt: [1, 2, 3], heldStill: true };
   assert.equal(populationVerdict([2.1, 2.3, 1.9], moment), "sweep-exceeds");
   assert.equal(populationVerdict([0.2, 0.4, 0.3], moment), "census-exceeds");
 });

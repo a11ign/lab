@@ -51,6 +51,9 @@ import { RULE_CRITERIA, SCORED_CRITERIA } from "@a11ign/judge/coverage";
 import { corpusState, minutesSinceLastWrite } from "../src/training/corpus-settled.mjs";
 import { CRITERION_COVERAGE, channelsPresent } from "@a11ign/judge/internal";
 import { REPO_ROOT, datasetRoot, captureRoot, realCorpusRoot } from "../src/dataset-paths.mjs";
+// RULE COVERAGE'S REAL POPULATION, imported rather than written here (#955): `field-role.test.ts` asserts
+// through it, so a `field` page's capture never grades a rule "validated on real evidence".
+import { ruleCoverageAdmits } from "../src/training/real-page-selection.mjs";
 
 const REPO = REPO_ROOT;
 // `CAPTURE_ROOT` was a second env-var name for the same thing `DATASET_CAPTURE_ROOT`/`DATASET_ROOT`
@@ -172,9 +175,11 @@ function capturesIn(dir: string): unknown[] {
   return out;
 }
 
-function tally(): { fires: Map<string, Tally>; scanned: Tally; realChannels: Set<string> } {
+function tally(): { fires: Map<string, Tally>; scanned: Tally; realChannels: Set<string>; fieldSkipped: number } {
   const fires = new Map<string, Tally>(RULE_CRITERIA.map((c) => [c, { corpus: 0, real: 0 }]));
   const scanned: Tally = { corpus: 0, real: 0 };
+  // Field captures walked past, COUNTED so their absence from the real column is a stated fact (#955).
+  let fieldSkipped = 0;
   // Which evidence channels any real capture actually carried. A rule whose channel is absent everywhere
   // did not stay SILENT on real pages — it had nothing to read, and those are different verdicts needing
   // different work: find a page that exhibits the failure, versus collect the evidence at all.
@@ -202,12 +207,13 @@ function tally(): { fires: Map<string, Tally>; scanned: Tally; realChannels: Set
   for (const { kind, dir, realOnly } of sources) {
     for (const capture of capturesIn(dir)) {
       if (realOnly && !isRealPage(capture)) continue;
+      if (kind === "real" && !ruleCoverageAdmits((capture as { url?: unknown }).url)) { fieldSkipped += 1; continue; }
       scanned[kind] += 1;
       record(kind, capture);
       if (kind === "real") noteChannels(capture);
     }
   }
-  return { fires, scanned, realChannels };
+  return { fires, scanned, realChannels, fieldSkipped };
 }
 
 type Verdict = {
@@ -266,14 +272,15 @@ function grade(criterion: string, count: Tally, realChannels: Set<string>): Verd
  */
 const EXPECTED_REAL_CAPTURES = 60;
 
-function report(verdicts: Verdict[], scanned: Tally): number {
+function report(verdicts: Verdict[], scanned: Tally, fieldSkipped: number): number {
   const unvalidated = verdicts.filter((v) => CLAIMED.has(v.status)
     && (v.grade === "unproven" || v.grade === "corpus-only" || v.grade === "no-channel"));
   const blocking = unvalidated.filter((v) => RULE_ONLY.has(v.criterion));
   const alsoScored = unvalidated.filter((v) => !RULE_ONLY.has(v.criterion));
 
   process.stdout.write(`\n  Rule coverage — what has actually FIRED, over ${scanned.corpus} corpus and `
-    + `${scanned.real} real capture(s)\n\n`);
+    + `${scanned.real} real capture(s)`
+    + `${fieldSkipped ? ` (${fieldSkipped} field capture(s) not counted: they claim nothing, #955)` : ""}\n\n`);
   process.stdout.write("  criterion  claimed    corpus     real   verdict\n");
   for (const v of [...verdicts].sort((a, b) => a.criterion.localeCompare(b.criterion))) {
     const label = {
@@ -355,7 +362,7 @@ function withCensus(capture: unknown): never {
 }
 
 function main(): void {
-  const { fires, scanned, realChannels } = tally();
+  const { fires, scanned, realChannels, fieldSkipped } = tally();
   if (scanned.corpus === 0 && scanned.real === 0) {
     process.stdout.write("\n  SKIPPED: no captures under runs/ — this audit needs a corpus to examine.\n"
       + "  That is an honest skip, not a pass. The lab holds the authoritative copy.\n");
@@ -377,12 +384,12 @@ function main(): void {
   }
   const verdicts = RULE_CRITERIA.map((c) => grade(c, fires.get(c) ?? { corpus: 0, real: 0 }, realChannels));
   if (JSON_OUT) {
-    process.stdout.write(`${JSON.stringify({ scanned, verdicts }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ scanned, fieldSkipped, verdicts }, null, 2)}\n`);
     process.exitCode = verdicts.some((v) => CLAIMED.has(v.status) && RULE_ONLY.has(v.criterion)
       && (v.grade === "unproven" || v.grade === "corpus-only" || v.grade === "no-channel")) ? 1 : 0;
     return;
   }
-  process.exitCode = report(verdicts, scanned);
+  process.exitCode = report(verdicts, scanned, fieldSkipped);
 }
 
 // Guarded, so importing this module cannot walk 3,200 captures as a side effect — and so

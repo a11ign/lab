@@ -58,7 +58,8 @@ const SUPPORTS_ABSENCE = new Set(["exact"]);
  * `unknown` also covers `tableCells` on a capture where `probeTables` never ran, which is the same
  * category -- nobody asked -- and is why that channel reads 100%.
  */
-const SWEEP_MISSED = new Set(["truncated", "phantom"]);
+// `elsewhere` (#951) is a capture defect too: the sweep found far less than the census -- something held it.
+const SWEEP_MISSED = new Set(["truncated", "phantom", "elsewhere"]);
 
 /**
  * The interaction channels have no census to compare against, so their ambiguity used to be read from the
@@ -101,12 +102,48 @@ function channelWasAsked(capture, channel, fallbackEvent) {
   return { asked: probeMarked(capture, fallbackEvent), byRecord: false };
 }
 
+/**
+ * #947: WAS THE SWEEP ASKED, AND DID IT RUN OUT? -- from the capture's own `observed` record, never inferred.
+ *
+ * Every capture since protocol 9 (`1b4851a8`, 2026-08-31) records this for each sweep channel:
+ * `sweepObservation` writes `{ asked: true, complete, stop }` when the sweep ran, and `notObserved(why)` writes
+ * `{ asked: false, why }` when it was not asked (`tableCells` without `probeTables`, for one). This audit read
+ * that record for the two interaction channels and not for the sweeps, so "this page has none" and "we did not
+ * ask" shared one column wherever the census could not tell them apart. `sweepCompleteness` and
+ * `capture:explain` already read it.
+ *
+ * FOUR ANSWERS, and the fourth is not folded into either of the others: a capture older than protocol 9 has no
+ * `observed` entry to ask, and "no record" is a statement about the corpus's age, exactly as `cannotSay` is.
+ * An entry that does not say `asked: true` or `asked: false` is no record too: it states nothing either way.
+ * Only `complete === true` counts as run to exhaustion: an asked sweep with any other `complete` has not shown
+ * it finished, and reading it as finished would claim an absence nobody established.
+ *
+ * The key is `CHANNEL_FIELD[channel]`: the structure field the sweep fills, which IS the name the capture
+ * records it under (`observedAs`). `observation-ambiguity.test.ts` pins that against the capture's source.
+ *
+ * @param {any} capture @param {string} channel
+ * @param {string} verdict the channel's `sweepCompleteness` verdict, which carries the one #951 verdict
+ * @returns {"emptyAskedComplete" | "emptyAskedShort" | "emptyNotAsked" | "emptyNoRecord"}
+ */
+function sweepAskedCount(capture, channel, verdict) {
+  const recorded = observationOf(capture, /** @type {Record<string, string>} */ (CHANNEL_FIELD)[channel]);
+  // ASKED, BUT SOMETHING HELD IT (#951): the capture's own `complete: true` is true about whatever held the
+  // sweep, so it is short of the page, never "asked, ran out". Read from the one verdict, via `sweepCompleteness`.
+  if (verdict === "elsewhere" && recorded?.asked === true) return "emptyAskedShort";
+  // NOT ASKED IS A STATEMENT -- `notObserved` writes `asked: false` -- so only `false` earns it. An entry that
+  // states neither (`{}`, `{ complete: true }`) says nothing about asking, and is no record, exactly like a
+  // missing entry (worker-capture's review of #952). Today's writers always set `asked`; the next may not.
+  if (recorded?.asked === false) return "emptyNotAsked";
+  if (recorded?.asked !== true) return "emptyNoRecord";
+  return recorded.complete === true ? "emptyAskedComplete" : "emptyAskedShort";
+}
+
 /** An empty tally for every channel and interaction field, so a channel with no records still prints. */
 function emptyTally() {
   /** @type {Record<string, any>} */
   const channels = {};
   for (const channel of Object.keys(CHANNEL_FIELD)) {
-    channels[channel] = { empty: 0, emptySupported: 0, sweepMissed: 0, cannotSay: 0, verdicts: {} };
+    channels[channel] = { empty: 0, emptySupported: 0, sweepMissed: 0, cannotSay: 0, verdicts: {}, emptyAskedComplete: 0, emptyAskedShort: 0, emptyNotAsked: 0, emptyNoRecord: 0 };
   }
   /** @type {Record<string, any>} */
   const interaction = {};
@@ -133,6 +170,7 @@ function tallySweptChannels(capture, completeness, channels) {
     const announced = capture.structure?.[field];
     if (!Array.isArray(announced) || announced.length > 0) continue;
     row.empty++;
+    row[sweepAskedCount(capture, channel, verdict)]++;
     if (SUPPORTS_ABSENCE.has(verdict)) row.emptySupported++;
     else if (SWEEP_MISSED.has(verdict)) row.sweepMissed++;
     else row.cannotSay++;

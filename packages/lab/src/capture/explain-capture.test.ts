@@ -12,7 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { captureOf, reachedThePage, reachedTheContent, wasAnythingInTheWay, heldStill, whatItAsked,
+import { captureOf, reachedThePage, reachedTheContent, wasAnythingInTheWay, heldStill,
   sweepAgreesWithTheTree, whichProbesRan, INTERACTION_PROBES }
   from "../../scripts/explain-capture.mjs";
 import { readdirSync, readFileSync } from "node:fs";
@@ -135,35 +135,6 @@ test("a POST-§13 capture explains with no verdict at all", () => {
 });
 
 
-
-test("WHAT DID IT ASK: a channel nobody asked about is a QUALIFICATION, not a clean result", () => {
-  // This report's closing line — "what it does not report, the page does not have" — was a claim nothing
-  // checked, and a channel that was never asked is exactly where it is false. Measured before `observed`
-  // existed: `formChanges` empty on 4,830 corpus captures and 3,006 of those never asked.
-  const rows = whatItAsked({
-    observed: {
-      headings: { asked: true, complete: true },
-      links: { asked: true, complete: false, stop: { prev: "deadline", next: "exhausted" } },
-      tableCells: { asked: true, complete: false, stop: { prev: "n/a", next: "n/a" } },
-      formChanges: { asked: false, why: "probeForms is off for this capture" },
-    },
-  });
-  const text = rows.join("\n");
-  assert.match(text, /NOT ASKED\s+formChanges/, "it must say so in the capture's own words");
-  assert.match(text, /! links asked, and the sweep did NOT run out/);
-  assert.match(text, /ok headings/);
-  assert.match(text, /! tableCells asked, and the sweep did NOT run out/,
-    "the table probe's count varies with timing — 4,2,4,4,1,4,4 over 18 captures of one page — so an "
-    + "absence there can never be read as the page having none, on any capture");
-});
-
-test("a capture predating the field says so, rather than reading as nothing to ask about", () => {
-  // Absence read as a clean result is the defect. A pre-protocol-10 capture cannot say, and must not be
-  // rendered as though every channel were fine.
-  const rows = whatItAsked({ url: "https://example.test/" });
-  assert.match(rows.join("\n"), /NOT RECORDED/);
-  assert.match(rows.join("\n"), /CAPTURE_PROTOCOL_VERSION 10/);
-});
 
 /**
  * WHICH INTERACTION PROBES RAN — the section added after this tool's own lesson was learned again.

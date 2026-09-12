@@ -158,7 +158,24 @@ export function datasetExportPath() {
  * @returns {string}
  */
 export function realCorpusRoot() {
-  return resolve(REPO_ROOT, process.env.REAL_CORPUS_ROOT || "runs/real-page-corpus");
+  // THROUGH `runsRoot()`, NOT A SECOND SPELLING OF `runs/` — #930. This resolved
+  // `"runs/real-page-corpus"` against REPO_ROOT directly, so it was the one root in this file that did
+  // NOT move when `runs/` moved: `RUNS_ROOT=/mnt/corpus` relocated the dataset, the captures and the
+  // repeat-captures, and left the real-page corpus behind at the repo root, silently. Nine callers read
+  // it — and `capture-real-pages.mjs` WRITES through it, so on a machine with `runs/` mounted elsewhere
+  // captures landed in the wrong tree rather than merely being read from one.
+  //
+  // Found by #930's own mutation rather than by reading: `RUNS_ROOT=<empty dir> full-page-claims.mjs`
+  // reported 28 captures from the real corpus instead of examined 0. The header above says "the one env
+  // name here was never the problem; only the repo-root anchor underneath it was duplicated" — the anchor
+  // was consolidated and the `runs/` segment was left hardcoded, which is a fix reaching the instance and
+  // not the class.
+  //
+  // `REAL_CORPUS_ROOT` still wins when set, and still resolves against REPO_ROOT — same shape
+  // `datasetExportPath()` above uses for `DATASET_EXPORT`, so an explicit override of THIS root is
+  // unaffected by where `runs/` happens to be.
+  const override = process.env.REAL_CORPUS_ROOT;
+  return override ? resolve(REPO_ROOT, override) : resolve(runsRoot(), "real-page-corpus");
 }
 
 /**
@@ -169,6 +186,32 @@ export function realCorpusRoot() {
  */
 export function repeatCapturesRoot() {
   return resolve(runsRoot(), "repeat-captures");
+}
+
+/**
+ * Where `calibrate-abstention.mjs` writes its sweep -- `runs/abstention/`, OUTSIDE the real-page corpus it
+ * reads, where `build-realism-tier.mjs` once had to blacklist the file by name.
+ *
+ * Owned HERE, not in the script, because the path is stated twice: by the producer that writes it and by
+ * `lab-fetch.yml`'s `abstention-sweep` entry, the only way the file leaves the lab. `cbea0d3b` moved the
+ * producer's copy and not the fetch's, so from 2026-09-05 the sweep could not be fetched and nothing failed
+ * (#959). `lab-fetch-paths.test.ts` compares the fetch entry with this function.
+ *
+ * @returns {string}
+ */
+export function abstentionRoot() {
+  return resolve(runsRoot(), "abstention");
+}
+
+/**
+ * The shipped model's sweep -- the file PLAN.md's floor decisions rest on. `outDir` is the directory the
+ * sweep actually wrote to, which `ABSTENTION_OUT` can move; the file's NAME is fixed.
+ *
+ * @param {string} [outDir]
+ * @returns {string}
+ */
+export function abstentionSweepPath(outDir = abstentionRoot()) {
+  return resolve(outDir, "abstention-sweep.json");
 }
 
 /**

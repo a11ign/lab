@@ -42,6 +42,9 @@ import { pathToFileURL } from "node:url";
 
 import { modelInput, observationOf, producerFeedsModel } from "@a11ign/scorer/evidence-units";
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
+// THE TRAINING SET'S SELECTION, imported rather than written here (#955): `field-role.test.ts` names this
+// reader and asserts through the function it calls.
+import { trainingEntries } from "../src/training/real-page-selection.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { captureWasTruncated } from "@a11ign/evidence/verify";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
@@ -325,17 +328,16 @@ function main() {
   const allEntries = readdirSync(CORPUS)
     .filter((f) => f.endsWith(".json"))
     .map((f) => JSON.parse(readFileSync(resolve(CORPUS, f), "utf8")));
-  const entries = allEntries
+  const entries = trainingEntries(allEntries
     // Selected by SHAPE, not by excluding filenames. This carried `f !== "abstention-sweep.json"` — a
     // blacklist that `abstention-sweep.candidate.json` had already outgrown, and which only escaped notice
     // because the role filter below dropped that file for an unrelated reason. A guard that works by
     // accident is not a guard. The sweep now writes to `runs/abstention/` rather than into this directory,
     // so nothing needs excluding; requiring a `capture` as well as a `role` means anything else that
     // appears here is skipped for a reason that will still hold for the next stray file.
-    // Role from the CORPUS, never the captured stamp — see calibrate-abstention.mjs for what the stamp
-    // cost. `realPageFor` is already imported and already used for `claimExcludes` twelve lines below,
-    // which is the same join applied to one field and not the other in one file.
-    .filter((e) => e.capture && realPageFor(e.capture.url ?? "")?.role === "training");
+    // Role from the CORPUS, never the captured stamp — `trainingEntries`, and see
+    // calibrate-abstention.mjs for what the stamp cost.
+    .filter((e) => e.capture));
   reportCaptureAges(entries);
 
   // No real-page captures is a legitimate state -- a fresh checkout has none -- so this writes the base

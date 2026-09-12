@@ -25,8 +25,8 @@
  * exactly the way it found the `uses:` line's own #325-era mistakes: reading the document as a stranger
  * would and following what it actually points at, not what it says about itself. `https://github.com/
  * a11ign/a11ign` 404s until #63 lands, so the badges belong with `REPO`, not `PRODUCT_REPO` -- the same
- * "must resolve on GitHub today" test `action-reference.test.ts` already applies to the `uses:` line, one
- * exception wider.
+ * "must resolve on GitHub today" check the nightly doc cross-reference report applies to the `uses:`
+ * line (`action-reference`, off the PR path since #954), one exception wider.
  *
  * WHY A FLAT LIST RATHER THAN A REPO-WIDE REGEX SWEEP. A sweep would need to tell a genuine reference to
  * THIS repository apart from an unrelated `owner/repo`-shaped string (a different project entirely, an

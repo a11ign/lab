@@ -13,6 +13,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { CHANNEL_FIELD, observationAmbiguity } from "./observation-ambiguity.mjs";
 import { SWEEP_OF } from "@a11ign/evidence/verify";
 
@@ -192,4 +195,70 @@ test("an unidentified capture contributes no id, rather than a made-up one", () 
   const failed = { structure: {}, diagnostics: [{ event: "pointerParkFailed" }] };
   const r = observationAmbiguity([failed], []);
   assert.deepEqual(r.instrument.failedIds, [""]);
+});
+
+// --- #947: WAS THE SWEEP ASKED? The capture has recorded it since protocol 9 (`1b4851a8`); the audit had
+// read it for the two interaction channels only.
+
+const STOP = { prev: "exhausted", next: "exhausted" };
+/** The heading sweep's own `observed` entry, as `sweepObservation` / `notObserved` write it. */
+const observedHeadings = (entry: unknown) => ({ observed: { headings: entry } });
+
+test("#947: an empty sweep channel lands in exactly ONE of four counts, by what the capture recorded", () => {
+  const { channels } = observationAmbiguity([
+    capture({ heading: 0 }, { headings: [] }, observedHeadings({ asked: true, complete: true, stop: STOP })),
+    capture({ heading: 0 }, { headings: [] }, observedHeadings({ asked: true, complete: false, stop: { prev: "deadline", next: "exhausted" } })),
+    capture({ heading: 0 }, { headings: [] }, observedHeadings({ asked: false, why: "this capture did not request it" })),
+    capture({ heading: 0 }, { headings: [] }), // pre-protocol-9: no `observed` block at all
+  ]);
+  const h = channels.heading;
+  assert.equal(h.empty, 4);
+  assert.deepEqual(
+    { complete: h.emptyAskedComplete, short: h.emptyAskedShort, notAsked: h.emptyNotAsked, noRecord: h.emptyNoRecord },
+    { complete: 1, short: 1, notAsked: 1, noRecord: 1 },
+    "\"this page has none\" and \"we could not ask\" must never be the same evidence");
+  // The four PARTITION the empties: a record counted twice inflates one answer, one counted zero times hides.
+  assert.equal(h.emptyAskedComplete + h.emptyAskedShort + h.emptyNotAsked + h.emptyNoRecord, h.empty);
+});
+
+test("#947: an `observed` block WITHOUT this channel is no record for it -- never read as asked or not asked", () => {
+  const { channels } = observationAmbiguity([
+    capture({ heading: 0 }, { headings: [] }, { observed: { landmarks: { asked: true, complete: true, stop: STOP } } }),
+  ]);
+  assert.equal(channels.heading.emptyNoRecord, 1);
+  assert.equal(channels.heading.emptyNotAsked + channels.heading.emptyAskedComplete + channels.heading.emptyAskedShort, 0);
+});
+
+test("#947: a NON-empty channel is not counted by the asked split either -- it answers only for absences", () => {
+  const { channels } = observationAmbiguity([
+    capture({ heading: 1 }, { headings: ["Welcome"] }, observedHeadings({ asked: false, why: "x" })),
+  ]);
+  assert.equal(channels.heading.empty, 0);
+  assert.equal(channels.heading.emptyNotAsked, 0);
+});
+
+test("#947: every channel's `observed` key is a name the CAPTURE writes -- read from its source, not a second list", () => {
+  // The audit reads `observed[CHANNEL_FIELD[channel]]`. That holds only while every CHANNEL_FIELD value is a key
+  // `capture-probes.mjs` actually records under: an `observedAs` of the three probe sweeps, a key of the extra
+  // sweeps, or the `observed.tableCells` the table probe sets. A rename on either side turns every count for that
+  // channel into "no record" with no error, so the correspondence is pinned here.
+  const probes = readFileSync(fileURLToPath(new URL("../../../nvda-worker/src/capture-probes.mjs", import.meta.url)), "utf8");
+  const written = new Set([
+    ...[...probes.matchAll(/observedAs: "([A-Za-z]+)"/g)].map((m) => m[1]),
+    ...[...probes.matchAll(/\{ key: "([A-Za-z]+)"/g)].map((m) => m[1]),
+    ...[...probes.matchAll(/observed\.([A-Za-z]+) =/g)].map((m) => m[1]),
+  ]);
+  assert.ok(written.size >= 6, `found only ${[...written].join(", ")} -- the source moved, so this pins nothing`);
+  const unwritten = Object.values(CHANNEL_FIELD).filter((key) => !written.has(key));
+  assert.deepEqual(unwritten, [], "a channel the audit reads under a key the capture never writes");
+});
+
+test("#947: an `observed` entry that does not SAY whether it was asked is no record -- never 'not asked'", () => {
+  // worker-capture's review of #952: NOT ASKED is a statement (`notObserved` writes `asked: false`), and an entry
+  // with no `asked` states nothing. Today's writers always set it; a malformed or future one might not.
+  for (const entry of [{}, { complete: true }]) {
+    const { channels } = observationAmbiguity([capture({ heading: 0 }, { headings: [] }, observedHeadings(entry))]);
+    assert.equal(channels.heading.emptyNoRecord, 1, `${JSON.stringify(entry)} is no record`);
+    assert.equal(channels.heading.emptyNotAsked, 0, `${JSON.stringify(entry)} did not say it was not asked`);
+  }
 });
