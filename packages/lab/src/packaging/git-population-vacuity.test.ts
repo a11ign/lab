@@ -113,9 +113,23 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "(#1067): the count that is also a claim gets an equality, the vacuity guard gets the floor. "
       + "Measured at 132 walked and 11 sending when written.",
   },
+  "packages/lab/src/packaging/reported-counts.test.ts": {
+    guard: 'assert.deepEqual(found, ["reported.test.ts: walked.length"]',
+    note: "guarded, and NOT by a floor -- which would be this guard committing the defect it exists to "
+      + "find (#1067). Its `git ls-files` walk over the packaging directory is proved non-empty by driving "
+      + "the same predicate over a SYNTHETIC directory where the answer is known: a planted reported-floor "
+      + "must be found and a planted precondition must not. Over the real tree a broken predicate returns "
+      + "the baseline and looks clean; over the planted one it cannot. The two baseline tests then hold "
+      + "the real walk in both directions -- a new instance fails, and an entry matching nothing fails -- "
+      + "so no single number stands in for the count.",
+  },
   "packages/lab/src/packaging/fixture-absence-guard.test.ts": {
-    guard: "tree.files.length > 500",
-    note: "guarded twice, and the file count alone was not enough. A clean result is the EXPECTED answer "
+    guard: "tree.files.length, countedByGit.size",
+    note: "guarded twice, and the file count alone was not enough. #1067: the file-count guard was "
+      + "`tree.files.length > 500` against a tree of 1,460 -- a floor tolerating the loss of two thirds of "
+      + "the walk -- and is now an EQUALITY against a count derived from git independently of the walk "
+      + "under test. This `guard` field moved with it: the table checks the literal still appears, so the "
+      + "assertion and its classification go together or CI catches you. A clean result is the EXPECTED answer "
       + "here -- every declared symbol is absent from the working tree -- so 'nothing leaked' and 'the "
       + "walk read no files' are the same observation, which the count floor separates. But the count "
       + "does not say WHICH tree was read: pointing the walk at `origin/main` instead turned 0 red, "
@@ -123,6 +137,20 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "and not on the base, which the guard must FIND -- and it also forced `--others "
       + "--exclude-standard`, since plain `ls-files` is blind to the untracked file most likely to carry "
       + "a fresh leak. Its `ls-files` scrubs `GIT_*` through `sandboxGitEnv()` for the usual reason.",
+  },
+  "packages/lab/src/packaging/row-reachability.test.ts": {
+    guard: "available === 0",
+    note: "guarded, and the shape is the INVERSE of every other entry here. The usual guard proves a "
+      + "population non-empty BEFORE asserting over it. This one asks whether the checkout can hold a "
+      + "population AT ALL, and skips the assertion by name when it cannot -- `remoteRefsBesidesMain()` "
+      + "counts remote-tracking refs under `origin/` besides main and HEAD, and `refPopulationVerdict` "
+      + "returns \"skip\" at zero. #1064: the floor it gates (`examined.refs > 0`, #772's, and still "
+      + "right) was asserting against an environment CI does not have -- `actions/checkout` fetches the "
+      + "PR's ref and its base, not the other ~290 `origin/agent/*` -- so `docs` was red on #1057 and "
+      + "#1062 and #1057 MERGED through it. THE READ IS DELIBERATELY A DIFFERENT QUESTION: asking "
+      + "\"are there unmerged refs\" a second way would be asking the function under test. And only the "
+      + "floor is conditional -- #719's own subject, that `environmentKey` is not reported missing, still "
+      + "runs and is asserted with the ref question answered as CI answers it.",
   },
   "packages/lab/src/gates/unexaminable-declaration.test.ts": {
     guard: "found.size >= 20",
