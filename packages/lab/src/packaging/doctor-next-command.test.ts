@@ -15,8 +15,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-import { workerControlFix, nextCommand, isRunnableCommand }
+import { workerControlFix, nextCommand, isRunnableCommand, readyFrom, gatingChecks, addCheck }
   from "../../../worker-fleet/src/doctor.mjs";
 
 /** The refusal `worker-ctl.sh` actually prints, quoted from the #915 rehearsal. */
@@ -81,4 +83,49 @@ test("#1059: the other two local-VM remedies are commands as well", () => {
     const { fix } = workerControlFix(observed);
     assert.ok(isRunnableCommand(fix), `${observed} -> ${fix} must be runnable`);
   }
+});
+
+// --- #1073: the dataset check REPORTS and does not gate ---
+
+test("#1073 ACCEPTANCE: a checkout whose only failing check is `dataset` reads READY", () => {
+  // product-manager's ruling, and the case nobody runs because everybody here has a corpus: a stranger
+  // clones the repo, configures a Windows worker, runs `npm run doctor`, and is told the tool is NOT READY
+  // because they have not generated a TRAINING CORPUS they have no reason to want. `doctor` is the first
+  // command the README names and CLAUDE.md tells an agent to obey its `next_command` — so a NOT READY on a
+  // machine that is ready for the documented purpose teaches the reader the verdict is not about them.
+  assert.equal(readyFrom([
+    { name: "worker", ok: true }, { name: "judge", ok: true }, { name: "pages", ok: true },
+    { name: "dataset", ok: false },
+  ]), true);
+});
+
+test("#1073: a failing `worker` check still produces NOT READY — the gate narrows, it does not vanish", () => {
+  // A readiness command that is always ready is worse than one that is never ready, because it is believed.
+  for (const gating of gatingChecks()) {
+    assert.equal(readyFrom([{ name: gating, ok: false }, { name: "dataset", ok: true }]), false,
+      `${gating} decides readiness and a failure there must still read NOT READY`);
+  }
+  assert.ok(gatingChecks().length >= 5,
+    `only ${gatingChecks().length} check(s) gate; the loop above would be nearly empty and would pass `
+    + "having asserted almost nothing");
+});
+
+test("#1073: every check DECLARES whether it gates, and an undeclared one cannot inherit a default", () => {
+  // Asserted by driving the real `add`, not by reading the table: a new check reaching a default silently
+  // is the whole defect, so the forcing function has to be observable.
+  assert.throws(() => addCheck("a-check-nobody-declared", false, "detail"), /declares no entry in GATES/,
+    "an undeclared check must refuse rather than gate or not-gate by accident");
+  // And the control: a declared one is accepted, or "throws on everything" satisfies the assertion above.
+  assert.doesNotThrow(() => addCheck("dataset", true, "detail"));
+});
+
+test("#1073: the non-gating check is still REPORTED with its fix", () => {
+  // "Not blocking" and "not shown" are different, and the second loses the lab path its diagnostic. The
+  // printer keys on `!c.ok`, never on whether the check gates — asserted on the source, because the print
+  // path writes to stdout from `main()` and has no seam.
+  const source = readFileSync(fileURLToPath(new URL("../../../worker-fleet/src/doctor.mjs", import.meta.url)), "utf8");
+  assert.match(source, /if \(\(!c\.ok \|\| c\.advisory\) && c\.fix\)/,
+    "the fix line is printed for any failing check, gating or not");
+  assert.doesNotMatch(source, /GATES\[[^\]]*\][^\n]*console\.log/,
+    "and nothing in the print path consults GATES — a check that stopped deciding must not stop appearing");
 });
