@@ -35,6 +35,11 @@ import { captureFilePath } from "../capture/evidence-diff.mjs";
 import { progressPath } from "../training/capture-progress.mjs";
 import { TRANSCRIPT } from "../../scripts/everything-pipeline.mjs";
 import { RETRAIN_TRANSCRIPT } from "../../scripts/retrain-pipeline.mjs";
+// #968: importing a PRODUCER runs nothing -- both guard `main()` on `import.meta.url`, and their
+// `refuseUnknownFlags` calls take the same guard as `entry`. Driven rather than assumed: imported under a
+// bare argv and under an argv carrying flags neither script declares, both load clean with exitCode 0.
+import { OUT as UNCLOSABLE_VETOES } from "../../scripts/emit-unclosable-vetoes.mjs";
+import { REPORT as EVIDENCE_CHECK_REPORT } from "../../scripts/evidence-check.mjs";
 
 /** The env overrides `dataset-paths.mjs` reads at call time. The lab runs with none, so neither does this. */
 const PATH_OVERRIDES = ["DATASET_ROOT", "DATASET_CAPTURE_ROOT", "DATASET_EXPORT", "REAL_CORPUS_ROOT"];
@@ -106,6 +111,12 @@ const RESOLVED: Record<string, () => Resolution> = {
   "real-page-capture": () => exported(resolve(realCorpusRoot(), `${PARAM}.json`)),
   "everything-transcript": () => exported(TRANSCRIPT),
   "retrain-transcript": () => exported(RETRAIN_TRANSCRIPT),
+  // #968: both were UNREACHED for one reason -- "a module-level `OUT` it does not export" -- which is the
+  // cheapest kind of unverified there is. `evidence-check`'s `OUT` is a DIRECTORY, so it exports `REPORT`
+  // beside it; naming `"report.json"` here instead would put the filename in two places, which is the
+  // drift #959 exists to stop rather than a tidier spelling of it.
+  "unclosable-vetoes": () => exported(UNCLOSABLE_VETOES),
+  "evidence-check": () => exported(EVIDENCE_CHECK_REPORT),
   "acceptance-report": () => ({ how: "invoked", path: argvAfter("acceptance", "--out") }),
   "false-positives": () => ({ how: "invoked", path: argvAfter("false-positives", "--out") }),
   "shipped-acceptance": () => ({ how: "invoked", path: argvAfter("acceptance-shipped", "--out") }),
@@ -120,12 +131,17 @@ const RESOLVED: Record<string, () => Resolution> = {
   "promoted-acceptance-report": tracked,
 };
 
-/** Producers found, paths not readable from here. Named on every run; each is a path worth exporting. */
+/**
+ * Producers found, paths not readable from here. Named on every run; each is a path worth exporting.
+ *
+ * #968: WAS SIX, IS FOUR. `unclosable-vetoes` and `evidence-check` moved into `RESOLVED` -- both were
+ * unverified only because a module-level `OUT` was not exported, which is one word each and the cheapest
+ * kind of unverified there is. The four that remain are two Python producers (paths built with `pathlib`),
+ * one that writes OUTSIDE `runs/` against cwd, and one whose name is hashed from the release by design.
+ */
 const UNREACHED: Record<string, { producer: string; why: string }> = {
   "grants-audit": { producer: "packages/scorer/python/audit_grants.py", why: "built with pathlib in Python" },
   "shortcuts": { producer: "packages/lab/scripts/audit-scorer-shortcuts.py", why: "built with pathlib in Python" },
-  "unclosable-vetoes": { producer: "packages/lab/scripts/emit-unclosable-vetoes.mjs", why: "a module-level `OUT` it does not export" },
-  "evidence-check": { producer: "packages/lab/scripts/evidence-check.mjs", why: "a module-level `OUT` it does not export" },
   "corpus-archive": {
     producer: "packages/lab/scripts/corpus-snapshot.mjs", why: "outside `runs/`: a `--out` flag defaulting to `backups`, against cwd",
   },
@@ -174,6 +190,25 @@ test("every unreached producer exists and still NAMES its file -- a rename is ca
     if (missing.length) lost.push(`${entry}: ${producer} no longer names ${missing.join(", ")}`);
   }
   assert.deepEqual(lost, [], lost.join("\n"));
+});
+
+test("#968: the UNVERIFIED COUNT is pinned, because nothing else counts it -- the diagnostics NAME each "
+  + "one and a silent seventh would read exactly like the six before it", () => {
+  // The direction matters and only one of the two is a defect. Falling is a producer that started
+  // exporting its path, which is this row; RISING is an entry that stopped being verifiable, and it would
+  // otherwise arrive as one more `NOT VERIFIED:` line among several -- the shape where a number moves and
+  // the only reader is a human scanning diagnostics.
+  assert.equal(Object.keys(UNREACHED).length, 4,
+    `expected four unreached producers, found ${Object.keys(UNREACHED).length}: `
+    + `${Object.keys(UNREACHED).join(", ")}. If this ROSE, an entry stopped being verifiable and the `
+    + "reason belongs in UNREACHED beside the others. If it FELL, a producer started exporting its path "
+    + "-- lower the number here, and say which in the commit.");
+  // AND WHY EACH ONE IS STILL THERE, so lowering the number cannot be done by deleting an entry: the four
+  // remaining reasons are structural, not "nobody got round to it".
+  assert.deepEqual(Object.keys(UNREACHED).sort(),
+    ["corpus-archive", "grants-audit", "promoted-changeset", "shortcuts"],
+    "these four are Python `pathlib`, Python `pathlib`, a path outside `runs/` against cwd, and a name "
+    + "hashed from the release -- none of them is an unexported constant, which is what #968 removed");
 });
 
 test("the normaliser turns every placeholder shape into `*` -- or two defaults would never compare equal", () => {

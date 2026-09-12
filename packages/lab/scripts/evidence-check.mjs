@@ -53,7 +53,18 @@ refuseUnknownFlags(["--sample=", "--only=", "--browser="], { entry: import.meta.
 // this default, and the only one that could not be redirected the way every other dataset tool can.
 const DATASET = datasetRoot();
 const BASELINE = resolve(DATASET, "captures");
-const OUT = resolve(DATASET, "evidence-check");
+/**
+ * #968: EXPORTED, for the reason `emit-unclosable-vetoes.mjs`'s own `OUT` is -- so the fetch entry is
+ * compared against the path this script writes rather than against a name the file still mentions.
+ */
+export const OUT = resolve(DATASET, "evidence-check");
+/**
+ * #968: THE FILE, not the directory -- `OUT` is a directory here, and `lab-fetch.yml` fetches the report
+ * inside it. Exported and derived so `"report.json"` is written in exactly one place: naming it again in
+ * the test would be a second copy of the fact, which is the drift #959 exists to stop rather than a
+ * tidier spelling of it.
+ */
+export const REPORT = resolve(OUT, "report.json");
 // `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
 // AbortSignal says, and the worker writes its status and body together at the END of a capture.
 // See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
@@ -412,13 +423,13 @@ async function main() {
 
   const summary = summarise(results);
   mkdirSync(OUT, { recursive: true });
-  writeFileSync(resolve(OUT, "report.json"), JSON.stringify({ worker, results, summary }, null, 2) + "\n", "utf8");
+  writeFileSync(REPORT, JSON.stringify({ worker, results, summary }, null, 2) + "\n", "utf8");
 
   process.stdout.write(`\n${summary.compared} compared: ` +
     `${summary.counts.SAME} same, ${summary.counts.DRIFT} drift, ${summary.counts.CHANGED} changed` +
     (summary.counts.REJECTED ? `, ${summary.counts.REJECTED} rejected (excluded)` : "") + "\n");
   process.stdout.write(`${summary.recommendation}\n`);
-  process.stdout.write(`Report: ${resolve(OUT, "report.json")}\n`);
+  process.stdout.write(`Report: ${REPORT}\n`);
   // Exit code is the contract, same as the other gates: 0 safe to ship, 1 evidence changed,
   // 2 could not answer. `inconclusive` MUST NOT exit 0, and that now covers PARTIAL coverage as well as
   // none: this exited 0 with "safe to ship" having compared 2 of 48, because a concurrent run stopped the
