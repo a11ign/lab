@@ -222,6 +222,9 @@ test("no corpus subtype loses held-out coverage without someone deciding to let 
   const uncovered = [...new Set<string>(CASES.map(subtypeKey))].filter((k) => !covered.has(k)).sort();
 
   const surprises = uncovered.filter((k) => !SUBTYPES_WITHOUT_ACCEPTANCE_COVERAGE.has(k));
+  assert.ok(uncovered.length > 0,
+    "#1160: if `uncovered` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `surprises`");
   assert.deepEqual(surprises, [],
     `these corpus subtypes have no acceptance pair and are not on the ledger, so `
     + `training:evaluate-acceptance would report passed:true having never examined them: ${surprises.join(", ")}. `

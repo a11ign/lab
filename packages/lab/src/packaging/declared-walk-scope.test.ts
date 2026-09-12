@@ -584,6 +584,9 @@ test("no declaring guard reads by a route the observer cannot see -- refused in 
   const refused = declarers.flatMap((file) => [...sourceClosure(join(REPO, file), REPO, packages)]
     .flatMap((source) => unseenRoutesIn(stripComments(readFileSync(source, "utf8")))
       .map((why) => `${file}: ${relative(REPO, source)} ${why}`)));
+  assert.ok(declarers.length > 0,
+    "#1160: if `declarers` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `refused`");
   assert.deepEqual(refused, []);
 });
 

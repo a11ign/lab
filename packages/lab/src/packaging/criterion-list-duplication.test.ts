@@ -121,6 +121,9 @@ const read = (file: string) => readFileSync(path.join(REPO, file), "utf8");
 test("every file holding a criterion list beside the canonical one is CLASSIFIED", () => {
   const found = candidates(read, sourceFiles());
   const unclassified = found.filter((f) => !(f in CLASSIFIED));
+  assert.ok(found.length > 0,
+    "#1160: if `found` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `unclassified`");
   assert.deepEqual(unclassified, [],
     "each of these imports, defines or re-declares a canonical criterion list AND holds its own list of "
     + "criterion numbers. Read it, then add it to CLASSIFIED with one of three reasons: it is the "

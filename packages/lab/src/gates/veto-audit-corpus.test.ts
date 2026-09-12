@@ -40,6 +40,9 @@ test("every veto audit reads the dataset the model is trained on", () => {
     assert.ok(command, `${name} is missing; this guard is checking a command that no longer exists`);
     return !command.includes("runs/screenreader-dataset/with-realism.jsonl");
   });
+  assert.ok(VETO_AUDITS.length > 0,
+    "#1160: if `VETO_AUDITS` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `wrong`");
   assert.deepEqual(wrong, [],
     "these audit a different corpus from the one the trainer uses, so a report and a baseline built by "
     + "two of them are not comparable — and the difference reads as a model regression");

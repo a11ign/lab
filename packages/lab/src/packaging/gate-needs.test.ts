@@ -72,6 +72,9 @@ test("#902: each job the gate stopped waiting for STILL RUNS -- dropped from nee
   // The row's own words: none of them is simply dropped. A job that vanished would take its report with
   // it, and `docs`'s guards moving to the nightly report is a different row's work, not this one's.
   const missing = DROPPED.filter((job) => !CI.includes(`\n  ${job}:\n`));
+  assert.ok(DROPPED.length > 0,
+    "#1160: if `DROPPED` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `missing`");
   assert.deepEqual(missing, [],
     `these jobs were removed from ci.yml entirely, not just from the gate's needs: ${missing.join(", ")}`);
 });

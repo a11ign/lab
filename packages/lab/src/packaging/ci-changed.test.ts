@@ -721,6 +721,9 @@ test("ci.yml has a gate job needing every scoped job, running even when one of t
     + "job NEWLY added to ci.yml is required by default: adding it to NOT_REQUIRED_BY_GATE is a decision "
     + "somebody has to write down, which is the only way this list stays honest.");
   const vanished = NOT_REQUIRED_BY_GATE.filter((name) => !(name in doc.jobs));
+  assert.ok(NOT_REQUIRED_BY_GATE.length > 0,
+    "#1160: if `NOT_REQUIRED_BY_GATE` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `vanished`");
   assert.deepEqual(vanished, [],
     `these were dropped from gate's needs and then deleted entirely: ${vanished.join(", ")}. #902 removed `
     + "their authority, not their report -- a job that stops running takes its verdict with it.");

@@ -57,6 +57,9 @@ test("every expected criterion is a real WCAG 2.2 AA criterion", () => {
   // that has nothing to do with the judge.
   const unknown = EVAL_CASES.flatMap((c) =>
     (c.expect ?? []).filter((num) => !criteria.has(num)).map((num) => `${c.id} expects ${num}`));
+  assert.ok(EVAL_CASES.length > 0,
+    "#1160: if `EVAL_CASES` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `unknown`");
   assert.deepEqual(unknown, []);
 });
 
@@ -65,6 +68,9 @@ test("every allowed criterion is real too", () => {
   // case definition.
   const unknown = EVAL_CASES.flatMap((c) =>
     (c.allow ?? []).filter((num) => !criteria.has(num)).map((num) => `${c.id} allows ${num}`));
+  assert.ok(EVAL_CASES.length > 0,
+    "#1160: if `EVAL_CASES` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `unknown`");
   assert.deepEqual(unknown, []);
 });
 

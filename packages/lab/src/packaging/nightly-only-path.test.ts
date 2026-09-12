@@ -167,6 +167,9 @@ test("#1143: no test file name appears in both the PR and the nightly population
   const base = (f: string) => f.split("/").pop();
   const prNames = new Set(pr.map(base));
   const inBoth = nightly.filter((f) => prNames.has(base(f)));
+  assert.ok(nightly.length > 0,
+    "#1160: if `nightly` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `inBoth`");
   assert.deepEqual(inBoth, [],
     "a test lives in both populations, so the PR path pays for it AND the nightly job runs it again. If a "
     + "file was moved here, delete the original; if the duplication is deliberate, say so here.");

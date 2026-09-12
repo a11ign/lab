@@ -127,6 +127,9 @@ test("#939 THE SHAPE: no script or workflow asks git for changed paths without -
     `the walk read ${scanned} files under scripts/ and .github/workflows/ -- the discovery is broken, and `
     + "a clean result here would be a claim about a population it never examined");
   const unexplained = bare.filter((site) => !(site.split(":")[0] in BARE_IS_DELIBERATE));
+  assert.ok(bare.length > 0,
+    "#1160: if `bare` is empty this assertion passes having compared nothing -- "
+    + "the control belongs on the population, not on `unexplained`");
   assert.deepEqual(unexplained, [],
     "these ask `git diff --name-only` without `--no-renames`, so a file moved OUT of a path they watch is "
     + `invisible to them. Use scripts/changed-files.mjs: ${unexplained.join(", ")}`);
