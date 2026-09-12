@@ -16,6 +16,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, handClaims, strandedByIncompleteDecline,
+  releaseDeclarationDrift,
   fetchOpenIssues, fetchOpenIssuesChecked, fetchReportedOpenIssueNumbers, openIssueSetSummary, fetchAllIssues, fetchIssues, closedDebris,
   isClosedDebrisLabel, openRowsAbsentFromBoard, labellessRows,
   readyRowsAlreadyMerged, fetchClosingPrRefs, fetchLatestReopenedAt, CHECKS, runCheck, isProjectsCredentialGap,
@@ -1104,12 +1105,15 @@ test("#546: notRun defaults to a fresh array when the caller does not pass one -
     + "refusal -- it is simply not recorded anywhere the caller can see, same as before this test existed");
 });
 
-test("CHECKS names all eleven, so the partial-audit sentence states a true denominator", () => {
-  assert.equal(CHECKS.length, 11);
+test("CHECKS names all twelve, so the partial-audit sentence states a true denominator", () => {
+  // #1130 added the twelfth. This pin is why: the audit's own "N of M check(s) did not answer" sentence
+  // reads M from `CHECKS.length`, so a check added without updating the denominator would make every
+  // partial-audit report understate what it failed to examine.
+  assert.equal(CHECKS.length, 12);
   assert.deepEqual(CHECKS.map(([what]) => what), [
     "open issues", "hand claims", "labelless rows", "declined rows", "closed issues",
     "board membership", "closing PR references", "claim activity", "closed-row provenance",
-    "closing PR never merged", "coverage vs tracker",
+    "closing PR never merged", "coverage vs tracker", "release declaration",
   ]);
 });
 
@@ -1378,4 +1382,48 @@ test("#848: the provenance finding counts ONLY undeclared rows -- a pre-#839 clo
   assert.deepEqual(verdicts.map((v) => [v.number, v.verdict]),
     [[887, "work"], [853, "undeclared"], [900, "worker"], [912, "undeclared"]]);
   assert.deepEqual(provenanceFindings(verdicts), [853, 912], "the count the audit exits with");
+});
+
+
+// ---------------------------------------------------------------------------------------------------
+// #1130 clause 4: THE TWO SETS PINNED EQUAL AS A PROPERTY OF THE TRACKER, not only at filing time.
+//
+// `row-file` now gives the label path the milestone, so FILING cannot produce a disagreement. That is
+// not enough: filing-time agreement does not survive a hand-edit, and a hand-edit is exactly how `ready`
+// and Ready-Status drifted across 16 rows unseen.
+//
+// The row's acceptance put this in `row-file.test.ts`. It cannot live there, measured rather than
+// argued: that file derives `[]` in #827's closure walk and a live `gh issue list` would move it to
+// `["token"]`, disqualifying it from the job that runs acceptance commands -- #1116's trap. And a
+// PR-path test asserting a TRACKER state fails the author of an unrelated PR the moment somebody
+// hand-edits a row, which is a monitor wearing a test's name. This audit is nightly, already holds the
+// token, and reports rather than refuses.
+// ---------------------------------------------------------------------------------------------------
+
+test("#1130: a row with the LABEL and not the milestone is reported", () => {
+  const drift = releaseDeclarationDrift([{ number: 7 }, { number: 9 }], [{ number: 9 }]);
+  assert.deepEqual(drift.labelOnly, [7],
+    "invisible to every milestone view, which is the state that milestone was created to end");
+  assert.deepEqual(drift.milestoneOnly, []);
+});
+
+test("#1130: a row in the MILESTONE and not labelled is reported -- the other direction", () => {
+  // BOTH DIRECTIONS, because a one-way check is half a comparison. This side is the one that undercounts
+  // `board-data.mjs`'s `outOfRelease()`, which reads the LABEL -- so a milestone-only row is missing from
+  // the board's own out-of-release figure.
+  const drift = releaseDeclarationDrift([{ number: 9 }], [{ number: 9 }, { number: 11 }]);
+  assert.deepEqual(drift.milestoneOnly, [11]);
+  assert.deepEqual(drift.labelOnly, []);
+});
+
+test("#1130: agreeing sets report nothing, and the check is not vacuous on empty input", () => {
+  assert.deepEqual(releaseDeclarationDrift([{ number: 3 }], [{ number: 3 }]),
+    { labelOnly: [], milestoneOnly: [] });
+  // THE NON-EMPTINESS CONTROL. Both assertions above are `deepEqual(x, [])` on one side, which an empty
+  // input satisfies by construction -- so without this, a `releaseDeclarationDrift` that always returned
+  // empty arrays would read as three green tests. Said out loud rather than left to be inferred.
+  const real = releaseDeclarationDrift([{ number: 1 }], [{ number: 2 }]);
+  assert.deepEqual([real.labelOnly, real.milestoneOnly], [[1], [2]],
+    "the predicate must be able to report BOTH sides at once, or the two tests above pass because it "
+    + "reports nothing rather than because the sets agree");
 });
