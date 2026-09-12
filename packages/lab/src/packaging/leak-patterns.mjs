@@ -110,3 +110,117 @@ export function leakRefusalReason(body) {
     + "own /24 (192.168.64.x, CLAUDE.md's documented `capture:check --worker=` command) are allowed and "
     + "never flagged. Replace the real value above and try again.";
 }
+
+/**
+ * The body a `gh` argv carries, or `null` when it carries none — #1053.
+ *
+ * KEYED ON THE BODY FLAG, NEVER ON THE CALL'S SHAPE. worker-judge's first count of the writer population
+ * matched a `gh` argv by shape and **missed two of the three writers #1052 had already guarded**, because
+ * `pr-open` builds `pr create` elsewhere and `tracker-comment` uses `gh api -f body=`. A guard whose
+ * population is defined by how a call is written is routed around by writing the next one differently.
+ *
+ * `--body-file` is deliberately NOT read from disk here: this is a pure function of the argv, and a writer
+ * passing a file passes a path this cannot see. Those writers check the body themselves before building
+ * the argv (that is what `pr-open` does), so the file case is covered where the text exists.
+ * @param {string[]} args
+ * @returns {string | null}
+ */
+export function bodyFromArgv(args) {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === "--body" && i + 1 < args.length) return args[i + 1];
+    // FUSED FORMS, BOTH OF THEM. `gh` takes a body three ways and this saw two: the `-f body=` branch
+    // below carried the comment "the value is fused to the key, so a flag-name match alone does not find
+    // it", and that sentence is equally true of `--body=<text>` -- which this returned `null` for, so a
+    // leaking body went out unchecked. worker-judge, reviewing #1066. No writer uses the fused long form
+    // today (every `--body=` in the tree is a script parsing its own argv), so it was not a live leak;
+    // it was the row's own thesis one level in, with the next writer two characters away from it.
+    if (arg.startsWith("--body=")) return arg.slice("--body=".length);
+    // `gh api -f body=<text>`. `-F` is excluded for the same reason as `--body-file`: it names a file.
+    if (arg === "-f" && i + 1 < args.length && args[i + 1].startsWith("body=")) {
+      return args[i + 1].slice("body=".length);
+    }
+  }
+  return null;
+}
+
+/**
+ * THROWS if a `gh` argv carries a body with a leak in it — #1053, and it is wired into the SPAWN HELPERS
+ * rather than the call sites.
+ *
+ * Eleven call sites across eight scripts, and five spawn helpers between them: guarding the helper covers
+ * every call in its consumers AND every call somebody adds tomorrow, where a per-call-site edit covers
+ * exactly the eleven that exist today. That is the difference between fixing the instances and fixing the
+ * class, and this repository's most expensive recurring shape is the first one.
+ *
+ * It THROWS rather than returning a reason because a spawn helper has no other channel: its callers expect
+ * output or an exception, and a helper that returned a refusal string would have it written into the
+ * tracker as the body.
+ * @param {string} cmd
+ * @param {string[]} args
+ * @returns {void}
+ */
+export function assertNoLeakInArgv(cmd, args) {
+  if (cmd !== "gh") return;
+  const body = bodyFromArgv(args);
+  if (body === null) return;
+  const reason = leakRefusalReason(body);
+  if (reason) throw new Error(reason);
+}
+
+/**
+ * EVERY SCRIPT THAT SENDS A BODY TO GITHUB — the declared population, #1053.
+ *
+ * A list a human edits deliberately, beside a walk that fails on a script carrying a body flag and absent
+ * from it. **Prose does not fail when a fourth writer appears**, which is what `tracker-leak-refusal.test.ts`
+ * named three writers in until this row.
+ *
+ * Measured 2026-09-12: eleven scripts spawn `gh` with a body flag; #1052 guarded three of them and eight
+ * sent a body nothing had checked. None demonstrably carried a leak — every one composes its body from
+ * computed values — so this is not a live hole. **It is filed because the class was stated as closed and
+ * was not, and the statement is what the next person reads.**
+ *
+ * The guard is REACHABILITY, not text: a writer is guarded when its local-import closure reaches this
+ * module, because five spawn helpers serve these eleven writers and guarding a helper covers its consumers
+ * and every call added to them tomorrow. A `grep` for the function name would report four correctly
+ * guarded writers as unguarded — the same defect as counting writers by the shape of their `gh` call.
+ * BARE NAMES, NOT PATHS, and that is not cosmetic. `spawned-paths.test.ts` refuses a repo-relative program
+ * path in source, because a program spawned by one breaks when the cwd moves -- a real defect, whose check
+ * is "a string that looks like a path to a script". **This list is eleven such strings that are never
+ * spawned**, so it fired eleven times on a declaration. The remedy it names (resolve from
+ * `import.meta.url`) would turn a readable list into eleven absolute paths for no gain, so the string the
+ * guard matches is removed instead of argued with: the walk prefixes `TRACKER_WRITER_DIR`.
+ *
+ * *The thing declared is not the thing done* -- and a checker that cannot tell a declaration from an
+ * invocation is right to be shallow and wrong to be obeyed literally. (worker-judge, on #1066.)
+ * @type {Readonly<string[]>}
+ */
+export const TRACKER_WRITERS = Object.freeze([
+  "board-report.mjs",
+  "board-schedule-liveness.mjs",
+  "board-summary-check.mjs",
+  "carry-branch.mjs",
+  "npm-token-liveness.mjs",
+  "pr-open.mjs",
+  "row-claim.mjs",
+  "row-file.mjs",
+  "stranded-branches.mjs",
+  "tracker-comment.mjs",
+  "trunk-revert.mjs",
+]);
+
+/** Where every declared writer lives. The prefix is here so the registry above holds no path-shaped string. */
+export const TRACKER_WRITER_DIR = "scripts/";
+
+/**
+ * Does this source text spawn `gh` with a body flag? The population predicate, keyed on the FLAG.
+ *
+ * Not on the call's shape, for the reason `bodyFromArgv` gives: a shape match missed two of the three
+ * writers that were already guarded. `--body-file` counts even though `bodyFromArgv` will not read it —
+ * a writer sending a file is still a writer, and it must check the text before it writes the file.
+ * @param {string} text
+ * @returns {boolean}
+ */
+export function sendsABody(text) {
+  return /"--body"|"--body-file"|["\x27]-f["\x27],\s*[`"\x27]body=|--body-file=/.test(text);
+}
