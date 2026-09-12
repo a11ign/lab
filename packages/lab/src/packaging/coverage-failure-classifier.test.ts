@@ -105,8 +105,18 @@ test("the threshold-miss pattern is checked against c8's OWN source, not a guess
 
 // --- #1089: the reporter's REAL bytes, generated here, not a fixture typed from a terminal ---
 
-/** Run one deliberately failing test under `reporter` and return exactly what it printed. */
-function reporterOutput(reporter: "tap" | "spec"): string {
+/**
+ * Run one deliberately failing test and return exactly what it printed.
+ *
+ * `reporter: null` IS THE PRODUCTION SPELLING and it is not a convenience. The coverage step runs
+ * `scripts/assert-glob-not-empty.mjs ... --run`, whose `refuseUnknownFlags` takes only
+ * `--min`/`--run`/`--test-concurrency` -- **production cannot be told which reporter to use, and exits
+ * on being asked.** So a generator that always passes `--test-reporter` exercises a path production
+ * cannot take, which is the `NODE_TEST_CONTEXT` defect one step out: the harness shaping the fixture it
+ * is being used to generate. Both named reporters are still driven, because the point of the row is that
+ * BOTH are read; the flagless case is what CI actually produces.
+ */
+function reporterOutput(reporter: "tap" | "spec" | null): string {
   const dir = mkdtempSync(join(tmpdir(), "a11y-1089-"));
   try {
     const file = join(dir, "t.test.mjs");
@@ -120,7 +130,8 @@ function reporterOutput(reporter: "tap" | "spec"): string {
     // used to generate**, which is the same defect as a hand-typed one wearing a different hat.
     const { NODE_TEST_CONTEXT, ...env } = process.env;
     void NODE_TEST_CONTEXT;
-    const run = spawnSync(process.execPath, ["--test", `--test-reporter=${reporter}`, file],
+    const run = spawnSync(process.execPath,
+      ["--test", ...(reporter === null ? [] : [`--test-reporter=${reporter}`]), file],
       { encoding: "utf8", env });
     return `${run.stdout}${run.stderr}`;
   } finally {
@@ -141,8 +152,13 @@ test("#1089: BOTH reporters are read, and the bytes come from the reporters", ()
     const failures = testFailuresIn(reporterOutput(reporter));
     assert.ok(failures !== null, `${reporter}'s summary line must be read at all`);
     assert.equal(failures.count, 1, `${reporter}: one test failed`);
-    assert.ok(failures.names.includes("fails on purpose"),
-      `${reporter}: the failing test must be NAMED, not just counted -- got ${JSON.stringify(failures.names)}`);
+    // THE EXACT LIST, not `includes`. `includes` was satisfied by a names array that ALSO carried
+    // `failing tests:` -- the spec reporter's section heading, which `specCase` matches because it is a
+    // line starting `✖ `. Deleting the filter that removes it was 0 red under the membership check, and
+    // the #169 comment would have read `1 test(s) failed: fails on purpose, failing tests:` -- a count
+    // and a name list that disagree, naming something that is not a test, in the one field this row adds.
+    assert.deepEqual(failures.names, ["fails on purpose"],
+      `${reporter}: the failing test must be NAMED and nothing else -- got ${JSON.stringify(failures.names)}`);
   }
 });
 
@@ -156,6 +172,27 @@ test("#1089: an unreadable log is null, never zero failures", () => {
     coverageLog: "c8 ran and said nothing about tests" });
   assert.match(clean.detail, /carries NEITHER reporter's test summary/,
     "and the verdict must SAY which kind of CANNOT TELL it is");
+});
+
+test("#1089: the FLAGLESS invocation — what production actually produces — reaches TEST_FAILURE", () => {
+  // The coverage step cannot choose a reporter: `assert-glob-not-empty.mjs`'s `refuseUnknownFlags` takes
+  // `--min`/`--run`/`--test-concurrency` and exits on `--test-reporter`. So "read both formats" is not
+  // the cautious choice over "CI is node 22 today" -- it is the only correct one, because the format is
+  // whatever node defaults to on the runner, and that has already changed once between node 22 and 24.
+  //
+  // Driven with NO reporter flag, which is the one spelling the other tests here cannot reach.
+  const log = reporterOutput(null);
+  const failures = testFailuresIn(log);
+  assert.ok(failures !== null,
+    `the default reporter's summary must be readable -- got null for:\n${log.slice(0, 400)}`);
+  assert.equal(failures.count, 1, "one test failed");
+  assert.deepEqual(failures.names, ["fails on purpose"],
+    `and exactly one name, with no section heading among them -- got ${JSON.stringify(failures.names)}`);
+
+  const verdict = classifyCoverageFailure({ ciOutcome: "success", buildOutcome: "success",
+    coverageLog: log });
+  assert.equal(verdict.kind, "TEST_FAILURE", "end to end, on the path CI takes");
+  assert.match(verdict.detail, /fails on purpose/, "with the name, not just the count");
 });
 
 test("#1089: a real TAP log reaches the TEST_FAILURE verdict with the name in it", () => {
