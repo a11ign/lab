@@ -60,7 +60,7 @@ test("#1183: a capture with NO url is UNREADABLE, not missing", () => {
   // `capture.url` was reading as the second -- sending the reader to the fleet for a file on disk.
   const ages = [
     ...declaredUrls.map((url) => ({ at: AT, role: "training", url })),
-    { at: AT, role: "training" },
+    { at: AT, role: "training", url: undefined },
   ];
   const out = captureAgeLines(ages).join("\n");
   assert.match(out, /1 capture\(s\) carry NO url/);
@@ -74,6 +74,20 @@ test("#1183: 100% unreadable is REPORTED — the state that produced nothing at 
   // gated on `urls.length > 0`, the unreadable line vanished exactly when every capture lacked a url --
   // which is what a shape change or an older corpus produces, all at once. The single url-less entry
   // among readable ones was the rarer half and the one that branch handled.
-  const out = captureAgeLines([{ at: AT, role: "training" }, { at: AT, role: "training" }]).join("\n");
+  // `url: undefined` -- the key PRESENT and the value absent, which is what a caller that maps
+  // `e.capture?.url` produces when the capture lost the field. An entry with no `url` key at all is a
+  // caller that does not supply urls, and that is "not asked" rather than "unreadable".
+  const out = captureAgeLines([
+    { at: AT, role: "training", url: undefined },
+    { at: AT, role: "training", url: undefined },
+  ]).join("\n");
   assert.match(out, /2 capture\(s\) carry NO url/);
+});
+
+test("#1181: a caller that never maps `url` is NOT ASKED, not unreadable", () => {
+  // Four of the six callers do not map it. Reporting them as unreadable made the ordinary case warn --
+  // CI's `not ok 161`, "one capture run does NOT warn". "Not asked" is not a fact about the corpus.
+  const out = captureAgeLines([{ at: AT, role: "training" }, { at: AT, role: "training" }]).join("\n");
+  assert.doesNotMatch(out, /carry NO url/);
+  assert.doesNotMatch(out, /DECLARED page\(s\) have NO capture/);
 });

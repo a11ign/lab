@@ -119,7 +119,13 @@ export function captureAgeLines(ages) {
   // most-recorded distinction: "could not ask" must not render as "the answer is no". Without this
   // branch a capture whose `url` did not survive its write is named as a page nobody captured, which
   // sends the reader to the fleet for a file that is on disk.
-  const unreadable = ages.length - urls.length;
+  // THE KEY'S PRESENCE, not its value. Four of the six callers never map `url` at all -- for them the
+  // answer is "not asked", and reporting it as unreadable made the ordinary case warn (CI, `not ok 161`).
+  // A caller that DOES map it writes `url: e.capture?.url`, so the key is present and the value is
+  // `undefined` exactly when the capture lost the field. That is the case worth a line; the other is not
+  // a fact about the corpus at all.
+  const supplying = ages.some((c) => "url" in c);
+  const unreadable = supplying ? ages.length - urls.length : 0;
   // ABOVE the reconciliation guard, not inside it -- worker-judge on #1183. Gated on `urls.length > 0`,
   // this line vanished in the ONE state where the reader most needs it: every capture lacking a url, which
   // is what a shape change or an older corpus produces, all at once. A branch added to end silence that is
