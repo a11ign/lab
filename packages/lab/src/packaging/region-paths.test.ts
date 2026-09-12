@@ -8,7 +8,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import {
@@ -176,7 +178,7 @@ test("#975: ANCHORED TO THE TREE -- a word with a dot that is not a root file de
   assert.deepEqual(declaredRegionFiles("## Region\n\nevidence.json\nmanifest.json\n", { rootFiles: known }), []);
   assert.deepEqual(declaredRegionFiles("## Region\n\npackage.json\nevidence.json\n", { rootFiles: known }), ["package.json"]);
   // And the real tree answers the same way: `package.json` is there, `evidence.json` is not.
-  const tree = rootFilesOnMain();
+  const tree = rootFilesOnMain().files;
   assert.ok(tree.has("package.json") && tree.has("CLAUDE.md"), "the root listing is empty or wrong, so the rule asserts nothing");
   assert.equal(tree.has("evidence.json"), false);
 });
@@ -324,4 +326,56 @@ test("#999: #975's root-level files still resolve, and `.`/`..` still declare no
     "a root file has no `/` and is #975's rule's to declare, not this one's -- both must keep working");
   assert.deepEqual(declaredRegionFiles(REGION_FENCE("../outside/thing"), { rootFiles: known }), []);
   assert.deepEqual(declaredRegionFiles(REGION_FENCE("./scripts/git-hooks/pre-push"), { rootFiles: known }), []);
+});
+
+/**
+ * #995: THE READER SAYS WHICH REF ANSWERED, SO AN EMPTY ANSWER IS NEVER SILENT.
+ *
+ * `rootFilesOnMain` used to return a bare `Set`, and three different situations produced the same value: a
+ * successful read of `origin/main`, a fallback read of `HEAD`, and a total failure. The last one silently
+ * declared that no Region names a root-level file — the exact state #975 had just fixed the parser to
+ * avoid, arriving one function below it. This repository has recorded that shape four times: a guard that
+ * skips quietly is indistinguishable from one that never ran.
+ *
+ * DRIVEN IN A REAL REPOSITORY, never by stubbing the module's own git call. The no-ref case is a directory
+ * that `git` cannot answer about at all, which is the situation being claimed — a stub would prove the
+ * branch is reachable, not that git's refusal reaches it.
+ */
+test("#995: a successful reading names the ref that answered", () => {
+  const reading = rootFilesOnMain();
+  assert.equal(reading.source, "origin/main",
+    "this checkout has origin/main, so the first source must be the one reported -- a fallback here would "
+    + "mean the reader silently answered from somewhere else");
+  assert.ok(reading.files.has("package.json"));
+});
+
+test("#995: the reading is a SHAPE, so the empty case is distinguishable from a real read", () => {
+  // The property the row is about, stated as a type rather than a value: every caller can tell the three
+  // apart, whether or not it chooses to.
+  const reading = rootFilesOnMain();
+  assert.deepEqual(Object.keys(reading).sort(), ["files", "source"]);
+  assert.ok(reading.files instanceof Set);
+  assert.ok(reading.source === null || reading.source === "origin/main" || reading.source === "HEAD");
+});
+
+test("#995: a failed reading is NOT memoised -- one bad moment must not be permanent", () => {
+  // THE SHARPER HALF OF THE MEMO. The cache was on the value and `new Set()` is truthy, so a single failed
+  // read poisoned the process: every later call returned the cached empty set without retrying, and every
+  // root file stayed undeclarable for the life of that process. A worktree read mid-fetch did exactly that.
+  //
+  // DRIVEN, not asserted on source text: a directory git cannot answer about, read through the same
+  // `execFileSync` every other call uses, and then the real repository in the SAME process. If the failure
+  // were cached, the second reading would come back empty.
+  const nowhere = mkdtempSync(join(tmpdir(), "a11y-995-"));
+  try {
+    const failed = rootFilesOnMain({ repoRoot: nowhere });
+    assert.equal(failed.source, null, "a directory outside any repository cannot name a source");
+    assert.equal(failed.files.size, 0);
+  } finally {
+    rmSync(nowhere, { recursive: true, force: true });
+  }
+  const afterwards = rootFilesOnMain();
+  assert.equal(afterwards.source, "origin/main",
+    "the failure was cached: every root file would stay undeclarable for the life of this process");
+  assert.ok(afterwards.files.has("package.json"));
 });
