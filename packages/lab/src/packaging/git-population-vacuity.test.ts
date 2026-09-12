@@ -152,6 +152,26 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "floor is conditional -- #719's own subject, that `environmentKey` is not reported missing, still "
       + "runs and is asserted with the ref question answered as CI answers it.",
   },
+  "packages/lab/src/packaging/backlog-ready.test.ts": {
+    guard: null,
+    note: "RETIRED WITH ITS SUBJECT by #907, kept as an entry rather than deleted -- the same convention "
+      + "the `action-reference` entry uses for #954, and the one worker-capture pointed out I had "
+      + "followed once and not twice. The file is gone: it was one of six prose pins #907 removed, "
+      + "because a test that fails when a sentence is reworded teaches people not to edit the docs. It "
+      + "had already stopped being a git population on 2026-09-06 when the tracker moved to GitHub "
+      + "Issues. **The record is the point: a classification that simply vanishes leaves the next reader "
+      + "unable to tell a guard that was retired from one that was never classified.**",
+  },
+  "packages/lab/src/packaging/claude-md-content-preservation.test.ts": {
+    guard: null,
+    note: "RETIRED WITH ITS SUBJECT by #907, for the reason above. Its own verdict on that PR is why: "
+      + "it flagged eight substantive lines, and SEVEN were re-wrapped or de-numbered lines whose "
+      + "content survives -- including the three of the paragraph #907 reworded to demonstrate that "
+      + "rewording no longer fails the build. **It compares LINE BY LINE, and its own message says it "
+      + "cannot tell a corrected sentence from a deleted one and does not try to.** What it did hold -- "
+      + "that text leaving CLAUDE.md still exists somewhere under docs/, #181's 1,337 lines -- is real "
+      + "and is now #1087, filed in the same commit range rather than left as a gap.",
+  },
   "packages/lab/src/gates/unexaminable-declaration.test.ts": {
     guard: "found.size >= 20",
     note: "guarded -- #1030's sweep spawns `git grep -l -F` once per path-like token in lab-job.yml, "
