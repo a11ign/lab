@@ -33,6 +33,9 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const PAGE = resolve(REPO, "docs/try-it.md");
 const page = () => readFileSync(PAGE, "utf8");
 
+/** The runs that REACHED the page, and so the exact size of the checked population (#1060). */
+const REACHING_RUNS = 5;
+
 const WORD_NUMBERS: Record<string, number> = {
   one: 1, two: 2, three: 3, four: 4, five: 5, six: 6,
   seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
@@ -53,6 +56,20 @@ export function runnableCommands(text: string): string[] {
   return blocks.flatMap((b) => b.split("\n"))
     .map((line) => line.replace(/\s+#.*$/, "").trim())
     .filter((line) => /^(npm|npx|node|git|cd)\b/.test(line));
+}
+
+/**
+ * The MEASUREMENT LIST only -- the figures enumerated after the "Measured on N real-page runs" clause,
+ * up to the sentence that ends it.
+ *
+ * NOT every figure in the block, which is a different quantity and the one I first pinned by mistake:
+ * `4 m 38 s` appears twice inside the markers, once as a measurement and once in the sentence naming the
+ * floor, so a count of occurrences said SIX for five runs. Pinning that number would have pinned "how
+ * often a figure is mentioned", which no one is trying to hold.
+ */
+export function measuredRuns(block: string): number[] {
+  const list = /Measured on [^:]*:([\s\S]*?)\*\*/.exec(block)?.[1] ?? "";
+  return figureSeconds(list);
 }
 
 /** Seconds for every `N m N s` figure in `text`. */
@@ -117,6 +134,54 @@ test("#1060 MUTATION TARGET: the containment rule catches the page as it was", (
     + "not on a fixture invented to pass it");
   const corrected = asItWas.replace("five to eight", "four to eight");
   assert.deepEqual(figuresOutsideRange(corrected), [], "and the correction must clear it");
+});
+
+test("#1060: the checked population is PINNED, because the author chooses what goes inside the markers", () => {
+  // worker-capture's finding on #1062, reproduced before it was fixed: move `4 m 38 s` out of the block
+  // and add "A further run took 1 m 02 s." after TIMING:END, and the suite was **24 pass / 0 fail**. The
+  // figure establishing the floor left the checked set, a figure under a quarter of the stated minimum
+  // appeared on the page, and nothing said anything.
+  //
+  // WHAT THE MARKERS BOUGHT AND WHAT THEY COST. They let the page quote the 3 m 45 s consent failure as
+  // the failure it is -- real evidence a reader needs. But an exemption with no bound is a guard people
+  // route around, which is exactly why `ceo` bounded #891's address exemption to one `/24` and nothing
+  // broader. Here the bound is the COUNT: the population is five long and enumerable, so it is pinned
+  // exactly rather than floored.
+  //
+  // The over-broad alternative -- every duration figure on the page must be inside the block -- was
+  // considered and rejected: it refuses the consent-banner quote, and an over-broad guard here is worse
+  // than the gap it closes.
+  const block = timingBlock(page());
+  assert.ok(block !== null);
+  const measured = measuredRuns(block!);
+  assert.equal(measured.length, REACHING_RUNS,
+    `the measurement list must hold exactly ${REACHING_RUNS} runs. Removing one silently shrinks the `
+    + "population every other assertion here is computed over; adding one means a new measurement, which "
+    + "is a deliberate edit to this number and to the prose beside it");
+  // AND THE PROSE COUNT, because "five real-page runs" is a claim about the list that follows it. Pinning
+  // the list without pinning the word leaves the two free to drift, which is this repo's most expensive
+  // recurring shape and the reason the range is pinned across its two copies four tests down.
+  assert.equal(WORD_NUMBERS[/on (\w+) real-page runs/.exec(block!)?.[1]?.toLowerCase() ?? ""], measured.length,
+    "the number spelled in the sentence and the number of figures after it are the same number");
+});
+
+test("#1060: the floor the prose names is the smallest figure in the block", () => {
+  // Pinning the count stops the population shrinking; it does not stop a swap. "the fastest run that
+  // reached the page was 4 m 38 s" is a claim ABOUT the figures beside it, so it is checked against them
+  // rather than left as prose that happens to be true today.
+  const block = timingBlock(page());
+  assert.ok(block !== null);
+  const stated = figureSeconds(/the fastest run that\s+reached the page was ([^-]+)/.exec(block!)?.[1] ?? "");
+  assert.equal(stated.length, 1, "the block states one fastest figure");
+  // AGAINST THE MEASUREMENT LIST, NOT AGAINST EVERY FIGURE IN THE BLOCK. The first version compared the
+  // stated floor to `min(figureSeconds(block))` -- and the floor sentence's own figure is IN the block, so
+  // the minimum could never exceed it and the assertion could never fail. Proved by mutation: swapping
+  // `4 m 38 s` for `5 m 10 s` in the measurement list was 0 red, because the sentence's own copy kept the
+  // minimum at 278. A check whose input contains its own claim is the fixture-names-itself shape, two
+  // tests after the comment warning about it.
+  assert.equal(stated[0], Math.min(...measuredRuns(block!)),
+    "the named floor and the smallest MEASURED run are the same number, or the prose is describing a run "
+    + "that is no longer in the set");
 });
 
 test("#1060: the range is stated more than once, and every statement agrees", () => {
