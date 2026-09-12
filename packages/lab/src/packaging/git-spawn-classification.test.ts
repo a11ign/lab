@@ -177,6 +177,27 @@ const CAN_SPAWN = /from\s+["']node:child_process["']|require\(\s*["']node:child_
  * believes" failure named in this file's header, caught here by testing the discovery against the real
  * fixed files rather than trusting the regex on sight.
  */
+/**
+ * #1185: THE PER-SPAWN CHECK MOVED TO `local/git-spawn-scrubbed`. WHAT STAYS HERE, AND WHY.
+ *
+ * The rule asks, of each `execFileSync("git", …)`, whether its file imports AND calls a canonical helper,
+ * and reports **at the spawn's line** on every lint run. That is strictly better than this sweep for that
+ * question: the sweep runs once in the PR suite and fails far from the call.
+ *
+ * **Two things it cannot do, and they are why this file is not deleted:**
+ *
+ * 1. **THE POPULATION.** A rule sees one file at a time and has no census, so it cannot notice that the
+ *    discovery pattern itself broke and matched nothing. `the discovery finds a non-trivial population`
+ *    below is that guard, and a lint rule reporting zero is indistinguishable from a lint rule that
+ *    matches nothing — which is #1165's shape and exactly what this repository files rows about.
+ * 2. **THE EXEMPTIONS ARE VERIFIED, not merely listed.** `GIT_IS_DATA_NOT_A_SPAWN`'s test proves each
+ *    entry names a tracked file that genuinely trips the pattern, does NOT import `node:child_process`,
+ *    and carries a reason longer than a placeholder. The rule's `dataNotASpawn` option can only be a list;
+ *    an exemption nobody checks is a bypass, and #1167's `guarded-by <symbol>` learned the same lesson.
+ *
+ * So: the rule holds the line per spawn, and this file holds the claims ABOUT THE SET. Measured at the
+ * conversion: 79 files spawn git and 79 scrub, so neither has a finding to make today.
+ */
 function spawnsGit(executable: string): boolean {
   return SPAWNS_GIT_DIRECTLY.test(executable) || /\bwithGitSandbox\(/.test(executable);
 }
