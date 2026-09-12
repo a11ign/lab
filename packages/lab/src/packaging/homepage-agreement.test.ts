@@ -24,6 +24,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { stripComments } from "@a11ign/evidence/source-text";
+import { productHome, PRODUCT_HOME_SOURCE } from "../../../../scripts/product-home.mjs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,8 +77,80 @@ function readmeProjectLink(): { file: string; homepage: string | null } {
   return { file: "README.md", homepage: link ? link[1] : null };
 }
 
+/**
+ * #1113: THE EIGHTH PLACE — the home the BOARD DOCUMENT renders, found by ROLE rather than by reading it
+ * back out of the source.
+ *
+ * `board-document.mjs:344` used to state the URL as a literal. It was the one place outside this file's
+ * population, and it was the one the chairman reads: after #1112 moved the other seven, the board would
+ * have been told the product lives at a domain that does not resolve, **with every guard here green**.
+ *
+ * BY ROLE MEANS CALLING WHAT THE DOCUMENT CALLS, not grepping what it prints. `productHome()` is the
+ * function the sentence renders, so this compares the VALUE the board is given — and it keeps working
+ * when the value changes, which is the whole reason the README's occurrence is found by position.
+ *
+ * AND IT IS A LEAF IMPORT, NOT `board-document.mjs`. That module needs `token` — it spawns `gh` at
+ * line 1204 — so importing it here would move this file from `[]` to `["token"]` in #827's closure walk
+ * and disqualify it from the job that runs acceptance commands. Measured with the real deriver, before
+ * and after. Same extraction and the same reason as `region-paths.mjs` (#462, B4).
+ */
+function boardDocumentHome(): { file: string; homepage: string | null } {
+  return { file: `scripts/board-document.mjs (via ${PRODUCT_HOME_SOURCE})`, homepage: productHome() };
+}
+
+/**
+ * WHAT `boardDocumentHome` CANNOT DO, said out loud because a member that cannot disagree reads exactly
+ * like one that can.
+ *
+ * `productHome()` reads `packages/cli/package.json`, which is ALREADY in the population — so the eighth
+ * entry is arithmetically incapable of disagreeing with the rest, and the `distinct.length === 1`
+ * assertion learns nothing from it. **That is the point rather than a hole**: a derived value cannot drift,
+ * which is the row's fourth requirement — the board document must not need editing when the value changes
+ * again.
+ *
+ * So the protection is NOT the comparison. It is the assertion below: that the document renders the
+ * function rather than a string. Put a literal back and the comparison stays green while the board is
+ * told something nobody checked — which is the state this row was filed about.
+ */
+test("#1113: the board document RENDERS the derived home — it does not state one", () => {
+  const source = stripComments(readFileSync(join(REPO, "scripts/board-document.mjs"), "utf8"));
+
+  assert.match(source, /productHome\(\)/,
+    "board-document.mjs must CALL productHome(). Without this the eighth place is a literal again, and "
+    + "the comparison above cannot see it: it compares a value derived from a manifest against that same "
+    + "manifest and agrees with itself");
+
+  // AND THE VALUE ITSELF MUST NOT APPEAR, in either spelling — keyed on `productHome()` rather than on a
+  // string typed here, so it keeps working when the value changes. That is the same rule the README's
+  // occurrence follows, and the reason is the same: a guard keyed on today's URL stops working on the one
+  // day it is needed.
+  //
+  // I GOT THIS WRONG TWICE BEFORE GETTING IT RIGHT, and the two failures are worth the lines. First I
+  // banned every URL literal: it flagged the release link `https://github.com/${REPO}/releases/...`,
+  // which is ASSEMBLED from values and cannot drift. Then I banned only URLs written whole — and my own
+  // CONTROL refused it, because that pattern needs the quote immediately before `https` and so cannot see
+  // a URL inside a sentence.
+  //
+  // **Which is exactly what the defect was.** The literal this row is about was `a11ign.com` — a BARE
+  // DOMAIN, mid-sentence, with no scheme — so neither pattern would ever have caught it, and any pattern
+  // loose enough to catch it flags ordinary prose. A canary that cannot express the fault proves nothing,
+  // and the control is what said so rather than a green run.
+  const home = productHome();
+  assert.ok(home, `${PRODUCT_HOME_SOURCE} states no homepage, so there is no value to look for`);
+  const bare = home.replace(/^https?:\/\//, "");
+  const asLiteral = new RegExp(bare.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  assert.doesNotMatch(source, asLiteral,
+    `board-document.mjs contains the homepage as a literal (${bare}). It must RENDER productHome(), not `
+    + "restate it: a copy here is the one the board reads and nothing compares.");
+
+  // THE CONTROL: the pattern must SEE the value when it is there, or the assertion above passes because
+  // the escaping broke rather than because the source is clean.
+  assert.match(`L.push("we live at ${bare} now");`, asLiteral,
+    "the value-as-literal pattern cannot find the value -- the assertion above would then be vacuous");
+});
+
 test("#1078: every published package and the README state the SAME homepage", () => {
-  const stated = [...publishedPackages(), readmeProjectLink()];
+  const stated = [...publishedPackages(), readmeProjectLink(), boardDocumentHome()];
   const distinct = [...new Set(stated.map((s) => s.homepage))];
   assert.equal(distinct.length, 1,
     `these disagree about the project homepage:\n  ${stated
