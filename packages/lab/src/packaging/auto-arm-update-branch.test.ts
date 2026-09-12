@@ -44,10 +44,12 @@ test("the workflow triggers on push to main, alongside its existing pull_request
  * and one that never ran at all (`github.event.action` is empty on a push). A condition is a
  * function of the event; assert the function.
  */
-function runsOn(cond: string, ctx: { event_name: string; action: string }): boolean {
-  const TOKENS = /^(?:\s+|github\.event_name|github\.event\.action|==|!=|&&|\|\||[()]|'[a-z_]*')+$/;
+function runsOn(cond: string, ctx: { event_name: string; action: string; draft?: boolean; base?: string }): boolean {
+  const TOKENS = /^(?:\s+|github\.event_name|github\.event\.action|github\.event\.pull_request\.draft|github\.event\.pull_request\.base\.ref|true|false|==|!=|&&|\|\||[()]|'[a-z_]*')+$/;
   assert.match(cond, TOKENS, `the if: expression uses only the grammar this evaluator accepts: ${cond}`);
   const js = cond
+    .replace(/github\.event\.pull_request\.draft/g, "ctx.draft")
+    .replace(/github\.event\.pull_request\.base\.ref/g, "ctx.base")
     .replace(/github\.event_name/g, "ctx.event_name")
     .replace(/github\.event\.action/g, "ctx.action")
     .replace(/'([a-z_]*)'/g, (_m, v: string) => JSON.stringify(v))
@@ -143,4 +145,20 @@ test("A11IGN_BOT_TOKEN never appears as a bare CLI argument in update-branch's s
   const runText = (doc.jobs["update-branch"]?.steps ?? []).map((s) => s.run ?? "").join("\n");
   assert.doesNotMatch(runText, /gh [^\n]*A11IGN_BOT_TOKEN/,
     "the token must reach `gh` only via GH_TOKEN, never as an explicit flag on a command line");
+});
+
+test("#1022 the arm job does NOT run on auto_merge_enabled -- the re-arm loop this PR's subscription would otherwise open (reviewer on #1095)", () => {
+  // Subscribing the workflow to auto_merge_enabled so update-branch can sweep on arming means `arm` also
+  // receives that event. Without the exclusion it re-arms the PR it just armed, which fires the event
+  // again: #1022's loop. The external reviewer measured that deleting the exclusion left 50/0 across three
+  // guards, so this pins it by evaluating the condition, not by reading it.
+  const doc = loadDoc();
+  const cond = String(doc.jobs.arm?.if ?? "");
+  const readyOnMain = { draft: false, base: "main" };
+  assert.equal(runsOn(cond, { event_name: "pull_request", action: "auto_merge_enabled", ...readyOnMain }), false,
+    "arming must not re-run arm");
+  assert.equal(runsOn(cond, { event_name: "pull_request", action: "ready_for_review", ...readyOnMain }), true,
+    "the event arm exists for still runs it");
+  assert.equal(runsOn(cond, { event_name: "pull_request", action: "ready_for_review", draft: true, base: "main" }), false,
+    "a draft is never armed");
 });
