@@ -1,21 +1,23 @@
 /**
- * #1078: `homepage` is stated in SIX places and nothing compares them.
+ * #1078: `homepage` is stated in SEVEN places and nothing compares them.
  *
  * `a11ign.com` does not resolve, and it is the `homepage` of every published package and the first link in
  * the README. **This guard does not endorse that value.** Whichever way #919's decision lands — the domain
- * resolving, the post-transfer repository URL, or publishing with it dead and recording that — the six must
+ * resolving, the post-transfer repository URL, or publishing with it dead and recording that — the seven must
  * still agree afterwards, and pinning them equal now makes the decision **one line in one place** rather
- * than six hand edits in publish week. A published package's metadata is fixed at publish time; correcting
+ * than seven hand edits in publish week. A published package's metadata is fixed at publish time; correcting
  * a `homepage` means republishing.
  *
  * THREE THINGS IT DELIBERATELY DOES NOT DO, each of which would make it stop working at the moment it is
  * needed:
  *
- *   - **It compares the six to EACH OTHER, never to a literal.** A literal would be a seventh copy, and the
- *     first edit would be to it.
+ *   - **It compares the seven to EACH OTHER, never to a literal.** A literal would be an EIGHTH copy, and
+ *     the first edit would be to it.
  *   - **The population is DERIVED** from the workspaces glob minus `private`, not a hand-typed list. #919
  *     and #1078 both say FIVE packages; the derivation finds **six** — `worker-fleet` is published and
- *     carries the homepage too. A hand-typed list would have shipped the row's own miscount.
+ *     carries the homepage too, so SEVEN places state it. A hand-typed list would have shipped the row's
+ *     own miscount -- and correcting only the PACKAGE count left "six places" standing one line above,
+ *     which is **a correction that fixes the number it was pointed at and not the one derived from it.**
  *   - **The README's occurrence is found by ROLE** — the project link in the preamble — never by matching
  *     the current string. A guard keyed on `a11ign.com` stops working the moment the value changes.
  */
@@ -50,7 +52,7 @@ function publishedPackages(): { file: string; homepage: string | null }[] {
       { private?: boolean; homepage?: string } }))
     .filter(({ json }) => json.private !== true)
     // A published package with NO homepage is a DISAGREEMENT, not an exclusion: dropping it here would let
-    // one go silently unstated, which is the six-copies defect with one copy deleted instead of changed.
+    // one go silently unstated, which is the seven-copies defect with one copy deleted instead of changed.
     .map(({ file, json }) => ({ file, homepage: json.homepage ?? null }));
 }
 
