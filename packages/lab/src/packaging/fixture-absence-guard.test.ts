@@ -26,8 +26,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, realpathSync } from "node:fs";
+import { resolve, dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 import { ABSENT_FIXTURE_SYMBOLS, fixtureSymbol } from "../../../../scripts/fixture-symbols.mjs";
@@ -72,7 +73,7 @@ function absenceViolations(
  * caught, and a guard reading `HEAD` is **green by construction before the first commit** — the shape
  * `untracked-files-escape-ls-files-guards` already records one field over.
  */
-function trackedWorkingTree(): { files: string[]; read: (path: string) => string } {
+function trackedWorkingTree(repoRoot: string = REPO): { files: string[]; read: (path: string) => string } {
   // EVERY TRACKED FILE, not a glob of the types I expect a fixture symbol to land in. A pathspec is a
   // guess about where the next leak will be, and the leak that started this row was in a `.ts` only by
   // chance -- a workflow, a fixture `.json`, a doc could carry one just as well.
@@ -84,11 +85,11 @@ function trackedWorkingTree(): { files: string[]; read: (path: string) => string
   // it arriving in a guard written by someone who had it written down. `--exclude-standard` keeps
   // `.gitignore`d build output out.
   const listed = (args: string[]) =>
-    execFileSync("git", ["ls-files", ...args], { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() })
+    execFileSync("git", ["ls-files", ...args], { cwd: repoRoot, encoding: "utf8", env: sandboxGitEnv() })
       .split("\n").filter(Boolean);
   const files = [...new Set([...listed([]), ...listed(["--others", "--exclude-standard"])])]
     .filter((f) => !f.includes("/dist/"));
-  return { files, read: (path) => readFileSync(resolve(REPO, path), "utf8") };
+  return { files, read: (path) => readFileSync(resolve(repoRoot, path), "utf8") };
 }
 
 test("#1038 ACCEPTANCE: a declared-absent symbol PRESENT in the working tree fails, naming file and line", () => {
@@ -175,5 +176,38 @@ test("#1038: the registry module does not itself contain any symbol whole -- it 
   const source = readFileSync(resolve(REPO, "scripts/fixture-symbols.mjs"), "utf8");
   for (const [claim, symbol] of Object.entries(ABSENT_FIXTURE_SYMBOLS)) {
     assert.ok(!source.includes(symbol), `${claim}: written whole in the registry itself`);
+  }
+});
+
+test("#1046 ACCEPTANCE: the walk examines BOTH tracked and untracked files, driven over a real repository "
+  + "rather than over whatever state my own checkout happened to be in", () => {
+  // worker-capture's blocker, and it is my own finding pointed at the guard that fixes it. My table said
+  // dropping `--others --exclude-standard` turned 1 red. It did -- IN MY WORKING TREE, where this file was
+  // still untracked. At any head where it IS tracked, plain `ls-files` finds the positive control anyway
+  // and the mutation turns **0**. So in CI the flag could be deleted in silence, and it is the half that
+  // does the work: an untracked file is where a fresh fixture symbol is commonest.
+  //
+  // **A measurement of a tree state the checker will not be in when it matters** -- the same object as my
+  // `{ready, screenReader}` fixture two reviews ago, and as worker-capture's fresh clone carrying
+  // committed history and not their uncommitted edit. All three are a probe that cannot observe the thing.
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "a11y-fixture-absence-")));
+  try {
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: repo, stdio: "pipe", env: sandboxGitEnv() });
+    git("init", "--quiet");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    writeFileSync(resolve(repo, "tracked.ts"), "const a = 1;\n");
+    git("add", "tracked.ts");
+    git("commit", "--quiet", "-m", "one");
+    writeFileSync(resolve(repo, "untracked.ts"), "const b = 2;\n");
+
+    const tree = trackedWorkingTree(repo);
+    assert.ok(tree.files.includes("tracked.ts"), "a committed file must be examined");
+    assert.ok(tree.files.includes("untracked.ts"),
+      "AND an uncommitted one -- `ls-files` alone is blind to it, and that is where a new fixture lives");
+    assert.equal(tree.files.length, 2, "and nothing else, so the assertion is about these two");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
   }
 });
