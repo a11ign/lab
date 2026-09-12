@@ -465,6 +465,15 @@ test("#1081: the source assertion is conditional and the READING assertion is no
     "and scopes itself, or a reader takes the whole test as skipped");
 
   // AND THE READABILITY READ ITSELF: a thrown ReferenceError must not become "no origin/main".
+  //
+  // THE ASSERTION THAT WAS HERE FAILED IN CI, AND IT WAS THIS ROW'S OWN DEFECT. It read
+  // `assert.equal(originMainReadable(), true, "this checkout has origin/main...")` -- an assertion about
+  // the MACHINE, in the fix for a row about assertions about the machine. CI has no `origin/main`, so it
+  // failed there and nowhere else, which is the exact failure mode being repaired two functions above.
+  //
+  // It is deleted rather than made conditional: the two injected calls below drive BOTH branches of the
+  // predicate, so the live one added no coverage and one environment assumption. **A test that can only
+  // pass on the author's machine is not a weaker test, it is a different one.**
   assert.equal(originMainReadable({ run: () => {} }), true, "a clean rev-parse reads as present");
   assert.equal(originMainReadable({ run: () => { throw Object.assign(new Error("exit 1"), { status: 1 }); } }),
     false, "and git's own exit-1 reads as absent");
@@ -473,10 +482,6 @@ test("#1081: the source assertion is conditional and the READING assertion is no
     "a coding error must RETHROW -- my first version caught it and reported 'no origin/main', skipping "
     + "both assertions in a checkout that has one");
 
-  // AND THE REAL PREDICATE AGREES WITH THIS CHECKOUT, or the two directions above are about nothing.
-  assert.equal(originMainReadable(), true,
-    "this checkout has origin/main, so the conditional above is exercised on its TRUE branch here; CI "
-    + "exercises the other one");
 });
 
 test("#1081: the population of environment-asserting guards, stated", () => {
