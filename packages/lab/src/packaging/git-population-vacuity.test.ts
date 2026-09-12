@@ -55,7 +55,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -449,12 +449,71 @@ test("every discovered git-population test is classified, and its guard still ex
     if (guard === null) continue;
     if (!stripComments(read(file)).includes(guard)) missingGuard.push(`${file}: "${guard}"`);
   }
+  assert.deepEqual(undeclaredRetirements(CLASSIFICATION), [],
+    `these classifications name a file that no longer exists and do not say so -- an entry whose file is `
+    + `gone is either a RETIREMENT with its reason, or debris that will sit here for ever looking like `
+    + `one:\n${undeclaredRetirements(CLASSIFICATION).map((m) => `  ${m}`).join("\n")}`);
   assert.deepEqual(missingGuard, [],
     `these classifications name a guard expression that no longer appears in the file -- the guard was `
     + `removed, renamed, or the classification is stale:\n${missingGuard.map((m) => `  ${m}`).join("\n")}`);
 });
 
+/**
+ * #1180: AN ENTRY WHOSE FILE IS GONE IS A RETIREMENT OR IT IS DEBRIS, and only one of those says so.
+ *
+ * `guard: null` skips the guard-string assertion above entirely, which is right — a retired entry has no
+ * guard to find. **The cost is that it also skips the only thing that reads the file at all**, so an entry
+ * naming a path that no longer exists sits here for ever, indistinguishable from the three that are
+ * deliberate. It would hide AMONG them: a reader who spot-checks one finds a tombstone with its reason and
+ * stops.
+ *
+ * An absent file with a NON-null guard is already caught — `read(file)` cannot find a guard in a file that
+ * is not there. **The unguarded case is exactly the one the convention exists to prevent.**
+ *
+ * I filed #1180 claiming three entries here were stale. They are not: `backlog-ready` and
+ * `claude-md-content-preservation` were retired by #907, `action-reference` by #954, each with its reason
+ * written down. **A right count with a wrong label, because I read the paths and not the entries** — which
+ * is the shape `docs/operational-lessons.md` records and whose remedy is to read one of the N first.
+ *
+ * @param classification the table, keyed by path
+ * @returns `path` for each entry whose file is absent and whose note does not declare the retirement
+ */
+export function undeclaredRetirements(
+  classification: Record<string, { guard: string | null; note: string }>,
+): string[] {
+  return Object.entries(classification)
+    .filter(([file, { note }]) => !existsSync(join(REPO, file)) && !/RETIRED/i.test(note))
+    .map(([file]) => file);
+}
+
 // --- The guard must be shown to fail, in both directions ---
+
+test("#1180: an entry whose file is gone must DECLARE the retirement, or it is indistinguishable from debris", () => {
+  // Driven on a fixture rather than on the real table, because the real one satisfies this today — the
+  // convention is followed and has never been enforced. A guard whose only evidence is that the tree
+  // happens to comply has not been shown to fire, which is this row's own subject one level up.
+  const retired = { guard: null, note: "RETIRED WITH ITS SUBJECT by #907, and here is why" };
+  const debris = { guard: null, note: "a population used only as a lookup set, so no guard is needed" };
+  const gone = "packages/lab/src/packaging/this-file-does-not-exist.test.ts";
+  const here = "packages/lab/src/packaging/git-population-vacuity.test.ts";
+
+  assert.deepEqual(undeclaredRetirements({ [gone]: retired }), [],
+    "a declared retirement is the convention, not a finding");
+  assert.deepEqual(undeclaredRetirements({ [gone]: debris }), [gone],
+    "the same shape without the word is what this exists to surface, and the PATH is named -- a count "
+    + "alone sends the reader to all 34, three of which are correct");
+  assert.deepEqual(undeclaredRetirements({ [here]: debris }), [],
+    "a file that EXISTS needs no retirement note, or every ordinary entry becomes a finding");
+});
+
+test("#1180: the real table satisfies it, and the three retirements are the reason rather than luck", () => {
+  const absent = Object.entries(CLASSIFICATION).filter(([f]) => !existsSync(join(REPO, f)));
+  assert.equal(absent.length, 3,
+    "three entries name a file that is gone -- #907 retired two and #954 one; if this number moves, the "
+    + "table gained or lost a tombstone and the note below should say which");
+  assert.deepEqual(undeclaredRetirements(CLASSIFICATION), [],
+    "and all three declare it, which is what makes the assertion above a guard rather than a wish");
+});
 
 test("MUTATION: a git-population call is discovered even split across lines, comments stripped", () => {
   const fixture = "// mentions execFileSync(\"git\", [\"branch\" in a comment, not real\n"
