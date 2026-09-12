@@ -170,6 +170,15 @@ import { ipv4ToInt } from "@a11ign/worker-fleet/host-address";
  *   Nothing in a capture records where it was REQUESTED from (`capture.url` is the only address it
  *   carries), so the link between the two files exists solely in this file's git history. This is that
  *   link, written where the corpus itself can read it.
+ * @property {boolean} [probeForms]
+ *   Whether a capture of this page DRIVES its form. Off for every real page unless declared here, because
+ *   pressing *Send* on a site we do not own is not a review.
+ *
+ *   **#1175: DECLARED HERE FOR THE FIRST TIME, and it has been in use since #1114.** The field was set on
+ *   the calibration entry, argued about in the prose below, and never in the type — so `tsc` could not see
+ *   it, and the first guard to READ it rather than set it failed to compile. A field a type does not know
+ *   about is one every consumer must guess at; this one is half of ADR 0024's consent, and #1114's whole
+ *   finding was that the two halves must travel together.
  * @property {{state: "error"|"success", submit: string,
  *   fields: {field: string, within?: string, nth?: number,
  *     value?: string, choose?: string, check?: boolean}[]}} [formState]
@@ -323,7 +332,47 @@ const TUTORIAL_CLAIM =
  * Conformant pages need no declaration. Their job is to be a page the tool must NOT accuse, and any
  * structure at all serves that.
  */
+/**
+ * #1175: UNWITNESSABLE **UNLESS THE PAGE CARRIES CONSENT**, and the qualifier is the whole of it.
+ *
+ * The paragraph above is true of the corpus as a whole and false of a consented page. **ADR 0024 made a
+ * per-page `formState` the exception to the global `probeForms: false`**, and #1114 established that the
+ * consent and the probe together are what make a capture drive the form at all — consent without the
+ * probe is a declaration that does nothing. So `real-page-corpus.test.ts`'s reachability guard skips a
+ * page carrying both, and blocks every other page exactly as before.
+ *
+ * Read as unqualified, this list and guard `:193` deadlock: a page published as inaccessible MUST declare
+ * what it can be witnessed as, and could not declare the only criterion it demonstrates. #1175 hit that
+ * with `the-internet.herokuapp.com/login`, whose whole reason for being chosen is 4.1.3.
+ */
 export const UNWITNESSABLE_ON_REAL_PAGES = Object.freeze(["3.3.1", "4.1.3"]);
+
+/**
+ * #1175: THE REACHABILITY RULE AS A FUNCTION, so the consent exception can be DRIVEN rather than merely
+ * present.
+ *
+ * The guard used to loop `REAL_PAGES` inline. Adding the exception there left a branch no test could
+ * reach — the only page needing it is held on a decision row, so removing the exception changed nothing
+ * and the suite stayed green. **A branch with no case is the vacuity this repository files rows about**,
+ * and shipping one inside a fix for a reachability guard would have been the same defect one level up.
+ *
+ * @param {{url: string, witnessableAs?: readonly string[], probeForms?: boolean, formState?: unknown}[]} pages
+ * @returns {string[]} `url -> criterion` for each declaration no capture of that page could witness
+ */
+export function unreachableDeclarations(pages) {
+  const blocked = new Set(UNWITNESSABLE_ON_REAL_PAGES);
+  const impossible = [];
+  for (const page of pages) {
+    // BOTH HALVES, which is #1114's finding rather than a style choice: consent without the probe is a
+    // declaration that does nothing, and the probe without consent is what the consent guard forbids.
+    // Either alone leaves the criterion exactly as unreachable as it was.
+    if (page.probeForms === true && page.formState !== undefined) continue;
+    for (const criterion of page.witnessableAs ?? []) {
+      if (blocked.has(criterion)) impossible.push(`${page.url} -> ${criterion}`);
+    }
+  }
+  return impossible;
+}
 
 export const REAL_PAGES = /** @type {RealPage[]} */ ([
   // --- CALIBRATION: the conformal abstention threshold is fitted here, and nowhere else. -------------
@@ -457,9 +506,24 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant", source: DESIGN_SYSTEM_CLAIM, demonstrates: "bypass block, first focusable element" },
 
   // --- TRAINING: the realism tier. Never used to measure anything. -----------------------------------
-  // Tutorial sub-examples, which is where the STRUCTURE the scorer has never seen lives: real navigation,
-  // real footers, code samples inside prose, and heading depth no generated page produces.
-  { url: "https://www.w3.org/WAI/tutorials/images/decorative/", role: "training",
+  //
+  // #1175: THE CONSENTED FORM FOR THIS TIER IS NOT HERE YET, AND THAT IS `ceo`'s ruling rather than an
+  // omission. #1169 chose `https://the-internet.herokuapp.com/login` as the non-conformant 4.1.3 half
+  // this role lacks, and the consent for it IS in place -- `INVITED` in `real-page-form-consent.test.ts`
+  // carries the publisher's sentence and the measured POST.
+  //
+  // What is NOT settled is what the entry does to a measured number. `real-page-corpus.test.ts`'s
+  // "the TRAINING role is all-conformant" guard exists because ADR 0015's why-2 records that this role
+  // contains no real broken page -- which is WHY a real inaccessible page sits further from the training
+  // set (0.6978 against 0.8164 for the two `tickets.html` variants), an effect ADR 0010 first
+  // misattributed. **Adding the first broken page changes what that number means**, and the guard's own
+  // comment asks for a considered edit rather than a silent one.
+  //
+  // So the entry waits on a decision row whose acceptance is a MEASUREMENT: `build-realism` run on a
+  // branch carrying it, reporting the distance pair before and after and what the 4.1.3 tier reads.
+  // A number's meaning is not changed by ruling that it has changed.
+
+{ url: "https://www.w3.org/WAI/tutorials/images/decorative/", role: "training",
     publishedClaim: "conformant", source: TUTORIAL_CLAIM, demonstrates: "decorative images, alt=\"\"" },
   { url: "https://www.w3.org/WAI/tutorials/images/functional/", role: "training",
     publishedClaim: "conformant", source: TUTORIAL_CLAIM, demonstrates: "functional images in links and buttons" },
