@@ -113,9 +113,14 @@ test("#1073: a failing `worker` check still produces NOT READY — the gate narr
       `${gating} decides readiness and a failure there must still read NOT READY`);
   }
   assert.equal(examined, gatingChecks().length, "the loop examined every gating check");
-  assert.deepEqual(gatingChecks().sort(), allChecks().filter((n) => n !== "dataset").sort(),
-    "and the gating set is every declared check except `dataset` -- the one entry #1073 makes report "
-    + "rather than decide. Adding a check with `gates: false` must be a deliberate act that shows up here");
+  // THE NON-GATING SET IS NAMED, and this is the one place a literal is right: these are DECISIONS, and
+  // the point is that adding a fourth is a deliberate, visible act rather than a default. It was
+  // `everything except dataset` until three more checks turned out to exist -- which this assertion
+  // caught, as it should have.
+  assert.deepEqual(allChecks().filter((n) => !gatingChecks().includes(n)).sort(),
+    ["dataset", "fleet reach", "host memory", "primary checkout"],
+    "these are the checks declared NOT to decide readiness. Adding one is a decision: say why beside its "
+    + "GATES entry, and change this list in the same commit");
 });
 
 test("#1073: every check DECLARES whether it gates, and an undeclared one cannot inherit a default", () => {
@@ -136,4 +141,25 @@ test("#1073: the non-gating check is still REPORTED with its fix", () => {
     "the fix line is printed for any failing check, gating or not");
   assert.doesNotMatch(source, /GATES\[[^\]]*\][^\n]*console\.log/,
     "and nothing in the print path consults GATES — a check that stopped deciding must not stop appearing");
+});
+
+test("#1077: EVERY check the source adds is declared — the table is complete, not merely consulted", () => {
+  // THE CASE THE SYNTHETIC NAME DID NOT REACH. My "an undeclared check throws" test drove a made-up name
+  // and passed, while the REAL doctor had three checks missing from GATES -- so `npm run doctor --json`
+  // threw, exit 1, zero bytes of JSON, on the command CLAUDE.md tells an agent to run first.
+  //
+  // The cause is the enumeration I built the table from: `add\("[a-z-]+"` matched ten names and **silently
+  // dropped every multi-word one** -- `fleet reach`, `host memory`, `primary checkout`. **A population
+  // built from a character class that could not express three of its members.** `[^"]+` finds all
+  // thirteen, and this asserts the two sets are equal rather than that the table is non-empty.
+  const source = readFileSync(fileURLToPath(new URL("../../../worker-fleet/src/doctor.mjs", import.meta.url)), "utf8");
+  const added = [...new Set([...source.matchAll(/\badd\("([^"]+)"/g)].map((m) => m[1]))].sort();
+  assert.deepEqual(added, allChecks().sort(),
+    `these differ: the source adds ${added.length} distinct checks and GATES declares ${allChecks().length}. `
+    + "Every added check must declare whether it gates, or `doctor` throws on its next real run");
+  // And the control on the pattern itself: it must be able to express a multi-word name, or the equality
+  // above is between two sets that both exclude the same three and agree for the wrong reason.
+  assert.ok(added.some((name) => name.includes(" ")),
+    `no multi-word check name was found among ${added.join(", ")} -- the pattern has narrowed back to one `
+    + "that cannot see the names it missed the first time");
 });
