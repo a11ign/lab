@@ -22,6 +22,9 @@ import {
   sessionLabelsOf,
   sessionLabelsForArm,
   labelArmedPr,
+  LIVE_SESSIONS,
+  RETIRED_SESSIONS,
+  retiredSessionLabels,
 } from "../../../../scripts/arm-pr.mjs";
 
 /** A fake `run` recording every call it received and returning canned `gh issue view` output. */
@@ -56,8 +59,8 @@ test("closedRowNumbers is EMPTY, not a guess, when the body names no row -- MISS
 test("sessionLabelsOf keeps only session:* -- a row's other labels (ready, backlog, in-progress) are "
   + "not attribution and must not leak onto the PR", () => {
   assert.deepEqual(
-    sessionLabelsOf(["ready", "in-progress", "session:worker-contracts", "backlog"]),
-    ["session:worker-contracts"],
+    sessionLabelsOf(["ready", "in-progress", "session:worker-capture", "backlog"]),
+    ["session:worker-capture"],
   );
 });
 
@@ -70,22 +73,22 @@ test("A ROW WITH NO SESSION LABEL CONTRIBUTES NOTHING -- #725's own ruling: a ro
 
 test("Arming a PR for a row carrying session:X puts session:X on the PR", () => {
   assert.deepEqual(
-    sessionLabelsForArm([["ready", "in-progress", "session:worker-contracts"]]),
-    ["session:worker-contracts"],
+    sessionLabelsForArm([["ready", "in-progress", "session:worker-capture"]]),
+    ["session:worker-capture"],
   );
 });
 
 test("A row with two session labels puts both on, rather than picking one", () => {
   assert.deepEqual(
-    sessionLabelsForArm([["session:worker-contracts", "session:worker-audit"]]).sort(),
-    ["session:worker-audit", "session:worker-contracts"],
+    sessionLabelsForArm([["session:worker-capture", "session:orchestrator"]]).sort(),
+    ["session:orchestrator", "session:worker-capture"],
   );
 });
 
 test("Two rows closed by one PR: each row's session label is kept, deduplicated, order-independent", () => {
   assert.deepEqual(
-    sessionLabelsForArm([["session:worker-contracts"], ["session:worker-contracts"], ["ready"]]),
-    ["session:worker-contracts"],
+    sessionLabelsForArm([["session:worker-capture"], ["session:worker-capture"], ["ready"]]),
+    ["session:worker-capture"],
   );
   assert.deepEqual(
     sessionLabelsForArm([["session:a"], ["session:b"]]).sort(),
@@ -94,11 +97,11 @@ test("Two rows closed by one PR: each row's session label is kept, deduplicated,
 });
 
 test("labelArmedPr: a row carrying session:X gets it added to the PR, read from the row at arm time", () => {
-  const { run, calls } = fakeRun({ "725": ["ready", "in-progress", "session:worker-contracts"] });
+  const { run, calls } = fakeRun({ "725": ["ready", "in-progress", "session:worker-capture"] });
   labelArmedPr({ number: "817", repo: "org/repo", prBody: "Closes #725\n", run });
   const editCall = calls.find((c) => c[1] === "pr" && c[2] === "edit");
   assert.ok(editCall, "expected a `gh pr edit` call");
-  assert.ok(editCall!.includes("--add-label") && editCall!.includes("session:worker-contracts"));
+  assert.ok(editCall!.includes("--add-label") && editCall!.includes("session:worker-capture"));
 });
 
 test("labelArmedPr: a row with NO session label leaves the PR unlabelled -- no gh pr edit call at all, "
@@ -117,12 +120,12 @@ test("labelArmedPr: a PR body with no Closes declaration makes no gh call at all
 
 test("labelArmedPr: two rows, two different session labels -- both go on the PR in one call", () => {
   const { run, calls } = fakeRun({
-    "717": ["session:worker-contracts"],
-    "718": ["session:worker-audit"],
+    "717": ["session:worker-capture"],
+    "718": ["session:orchestrator"],
   });
   labelArmedPr({ number: "900", repo: "org/repo", prBody: "Closes #717, #718\n", run });
   const editCall = calls.find((c) => c[1] === "pr" && c[2] === "edit")!;
-  assert.ok(editCall.includes("session:worker-contracts") && editCall.includes("session:worker-audit"));
+  assert.ok(editCall.includes("session:worker-capture") && editCall.includes("session:orchestrator"));
 });
 
 test("labelArmedPr: a row this can't read leaves the PR unlabelled for it rather than throwing -- arming "
@@ -137,13 +140,59 @@ test("labelArmedPr: a row this can't read leaves the PR unlabelled for it rather
 test("Re-arming an already-labelled PR calls labelArmedPr again but issues the SAME single add-label "
   + "call, not an accumulating one -- gh's own --add-label is idempotent, so no special-case dedup "
   + "against the PR's current labels is needed here", () => {
-  const { run, calls } = fakeRun({ "725": ["session:worker-contracts"] });
+  const { run, calls } = fakeRun({ "725": ["session:worker-capture"] });
   labelArmedPr({ number: "817", repo: "org/repo", prBody: "Closes #725\n", run });
   labelArmedPr({ number: "817", repo: "org/repo", prBody: "Closes #725\n", run });
   const editCalls = calls.filter((c) => c[1] === "pr" && c[2] === "edit");
   assert.equal(editCalls.length, 2, "one call per arm, as designed -- idempotent on GitHub's side");
   for (const c of editCalls) {
-    assert.equal(c.filter((a) => a === "session:worker-contracts").length, 1,
+    assert.equal(c.filter((a) => a === "session:worker-capture").length, 1,
       "never more than one copy of the same label in a single call");
   }
 });
+
+// --- #1000: A RETIRED SESSION LABEL IS REFUSED, BY NAME ----------------------------------------------
+//
+// #913 retired four session labels BY DESCRIPTION rather than by deletion: deleting one strips it from the
+// merged PRs carrying it as attribution, and eleven of thirteen are read by `attributionFor` to return the
+// `worker` verdict. So four live labels carry a retired meaning, and the only thing keeping them retired
+// was that nobody applied one -- a rule nobody enforces, which is a rule that has already drifted.
+
+test("#1000: the live and retired sets are DISJOINT and cover every session label that exists", () => {
+  // The lists are a literal in `arm-pr.mjs` because no file holds "who is live": `docs/roles/README.md`'s
+  // roster names eleven agents including every retired one, since it is a record of the roles this org has
+  // HAD. So the literal is pinned here against the labels themselves -- a sixth session added next month
+  // fails this rather than silently attributing to nothing.
+  const overlap = LIVE_SESSIONS.filter((s) => RETIRED_SESSIONS.includes(s));
+  assert.deepEqual(overlap, [], "a session cannot be both live and retired");
+  assert.deepEqual([...LIVE_SESSIONS, ...RETIRED_SESSIONS].sort(),
+    ["ceo", "dispatcher", "orchestrator", "product-manager", "worker-audit", "worker-capture",
+      "worker-config", "worker-contracts", "worker-judge"].sort(),
+    "every `session:*` label this repository has must be classified on one side or the other");
+});
+
+test("#1000: a retired label is NAMED, never silently dropped", () => {
+  assert.deepEqual(retiredSessionLabels(["session:worker-judge", "session:dispatcher"]),
+    ["session:dispatcher"]);
+  assert.deepEqual(retiredSessionLabels(["session:ceo", "session:product-manager"]), [],
+    "every live session passes -- a refusal that fires on the normal case is how a guard gets bypassed");
+});
+
+test("#1000: the refusal applies NOTHING -- not even the live label beside the retired one", () => {
+  // A partial arm is the state nobody can tell from a complete one: the PR would carry one true claim and
+  // silently lack another, and `attributionFor` reads what is there, not what was meant.
+  const { calls, run } = fakeRun({ 725: ["session:dispatcher", "session:worker-judge"] });
+  labelArmedPr({ number: "817", repo: "org/repo", prBody: "Closes #725\n", run });
+  assert.equal(calls.find((c) => c[1] === "pr" && c[2] === "edit"), undefined,
+    "a retired label refuses the whole arm; nothing is applied");
+});
+
+test("#1000: a row carrying only LIVE labels arms exactly as it does today -- both directions", () => {
+  const { calls, run } = fakeRun({ 725: ["session:worker-judge"] });
+  labelArmedPr({ number: "817", repo: "org/repo", prBody: "Closes #725\n", run });
+  const editCall = calls.find((c) => c[1] === "pr" && c[2] === "edit");
+  assert.ok(editCall, "a live session must arm unchanged -- a refusal that fires on the normal case is "
+    + "how a guard gets bypassed");
+  assert.ok(editCall!.includes("session:worker-judge"));
+});
+;
