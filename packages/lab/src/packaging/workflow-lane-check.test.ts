@@ -221,11 +221,45 @@ test("#913: every lane's owner is one of the five live sessions, derived and not
   // from the one the guards read, and drift in this direction produces a lane owned by nobody.
   const lanes = LANES?.lanes ?? [];
   assert.ok(lanes.length > 0, "the file must load -- absent or malformed is CANNOT_ASK, not 'no lanes'");
-  const strays = lanes.filter((lane) => !LIVE_SESSIONS.includes(lane.owner));
-  assert.deepEqual(strays.map((l) => `${l.lane} -> ${l.owner}`), [],
+  assert.deepEqual(straysAmong(lanes).map((l) => `${l.lane} -> ${l.owner}`), [],
     `these lanes name an owner that is not a live session (${LIVE_SESSIONS.join(", ")}). A lane owned by a `
     + "session that cannot claim is a lane nobody can be routed to");
+
+  // #1101: THE POSITIVE CONTROL, and without it the assertion above cannot fail meaningfully.
+  //
+  // `lanes.length > 0` proves the POPULATION is not empty. Nothing proved the PREDICATE could still
+  // produce a stray -- so replacing the filter with `const strays = []` was **0 red**, measured, 20 pass
+  // both ways. If `LIVE_SESSIONS` ever grew to include everything, if the filter inverted, or if
+  // `lane.owner` went undefined so `includes(undefined)` were always false, the assertion passes and the
+  // lane nobody can be routed to ships.
+  //
+  // **An emptiness assertion cannot tell "the predicate found nothing" from "the predicate can no longer
+  // find anything"** -- the same family as a floor that holds no count, and as `gh` returning exactly its
+  // `--limit`. The remedy is the same: give it something it MUST find.
+  //
+  // SHAPED LIKE A LANE AND UNABLE TO BE ONE: the owner is synthetic, and the first assertion below is
+  // what keeps it that way -- if this name ever became a real session, the control would be testing
+  // nothing and would say so rather than passing.
+  const IMPOSSIBLE_OWNER = "not-a-session-1101-control";
+  assert.ok(!LIVE_SESSIONS.includes(IMPOSSIBLE_OWNER),
+    `the control's owner is a live session, so it proves nothing: ${IMPOSSIBLE_OWNER}`);
+  const planted = straysAmong([...lanes, { lane: "planted", owner: IMPOSSIBLE_OWNER }]);
+  assert.deepEqual(planted.map((l) => l.owner), [IMPOSSIBLE_OWNER],
+    "the predicate must FIND a lane owned by a session that is not live -- exactly one, so a filter that "
+    + "returned everything would not satisfy this either");
 });
+
+/**
+ * #1101: the stray predicate, named so a positive control can drive THE SAME ONE the assertion uses.
+ *
+ * Inline, it could only ever be asserted empty; a control has to be able to call it. Extracted rather
+ * than duplicated, because a second copy in the test is the defect this file's own header warns about one
+ * level down: *"a second copy of the roster would drift from the one the guards read"*.
+ *
+ * @param {{ lane: string, owner: string }[]} lanes
+ */
+const straysAmong = (lanes: { lane: string; owner: string }[]) =>
+  lanes.filter((lane) => !LIVE_SESSIONS.includes(lane.owner));
 
 test("#913: a RETIRED session is named as retired, and an unknown one is not", () => {
   // The four labels are retired BY DESCRIPTION and kept, because merged PRs carry them and a record of the
