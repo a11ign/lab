@@ -149,7 +149,7 @@ test("#912: a green main is quiet -- the watch says nothing and exits 0", () => 
   });
   const colour = mainColour({ repo: "o/r", now: new Date("2026-09-12T04:00:00Z"), run });
   assert.deepEqual(colour, { readable: true, red: false, since: null, hours: null, atLeast: false,
-    firstFailing: null, why: null, windows: [], examined: 1 });
+    firstFailing: null, why: null, windows: [], examined: 1, pageBeginsMidRed: false });
   assert.equal(EXIT.QUIET, 0, "and silence is exit 0, so an hourly job that finds nothing costs nothing");
 });
 
@@ -313,10 +313,10 @@ test("#912 READ 4: the board summary is quiet before 06:15, urgent after it, and
 
 test("#912: the watch is SILENT when clean -- the property that makes 24 runs a day affordable", () => {
   const green = { readable: true, red: false, since: null, hours: null, atLeast: false,
-    firstFailing: null, why: null, windows: [], examined: 0 };
+    firstFailing: null, why: null, windows: [], examined: 0, pageBeginsMidRed: false };
   assert.deepEqual(watchReport({ colour: green }), [], "a quiet hour must cost a reader nothing");
   const red = { readable: true, red: true, since: "2026-09-11T00:12:00Z", hours: 27.8, atLeast: false,
-    firstFailing: "not ok 41 - x", why: null, windows: [], examined: 0 };
+    firstFailing: "not ok 41 - x", why: null, windows: [], examined: 0, pageBeginsMidRed: false };
   const lines = watchReport({ colour: red });
   assert.equal(lines.length, 1);
   assert.match(lines[0], /27\.8h/);
@@ -415,4 +415,41 @@ test("#1047: no settled runs at all is zero windows over zero examined, and the 
     new Date("2026-09-12T05:00:00Z")));
   assert.equal(figure.value, "0");
   assert.match(figure.note, /0 window\(s\) across 0 settled run\(s\) examined/);
+});
+
+test("#1049 ACCEPTANCE: a page that BEGINS MID-RED reports a lower bound, in the VALUE and not only the "
+  + "note -- the clip understates threefold in the direction that looks better", () => {
+  // worker-capture's finding, and the fixture is theirs: the same history read two ways. `redWindows`
+  // opens at the first `failure` it can SEE, so when the run that actually opened the window is off the
+  // end of `per_page=20` the window starts at the page edge instead.
+  const whole = [
+    { conclusion: "success", created_at: "2026-09-12T05:00:00Z" },
+    { conclusion: "failure", created_at: "2026-09-12T00:00:00Z" },
+    { conclusion: "failure", created_at: "2026-09-11T14:00:00Z" },
+    { conclusion: "success", created_at: "2026-09-11T13:00:00Z" },
+  ];
+  const truncated = whole.slice(0, 2); // the page edge falls mid-red
+  const now = new Date("2026-09-12T06:00:00Z");
+
+  const full = redHoursFigure(redWindows(whole, now));
+  assert.equal(full.value, "15", "the whole history: red from 14:00 to 05:00");
+  assert.doesNotMatch(full.note, /MID-RED/, "a page that starts on a success is not a bound");
+
+  const clipped = redHoursFigure(redWindows(truncated, now));
+  assert.equal(clipped.value, "at least 5",
+    "THREE TIMES understated, on a metric whose target is 0 -- so the NUMBER says it is a bound, because "
+    + "the number is what gets quoted");
+  assert.match(clipped.note, /BEGINS MID-RED/);
+  // AND THE DENOMINATOR IS NOT THE WARNING. "1 window across 2 settled runs" is exactly what a quiet week
+  // looks like, which is why the bound cannot be left to a reader comparing counts.
+  assert.match(clipped.note, /1 window\(s\) across 2 settled run\(s\)/);
+});
+
+test("#1049: the bound is named `pageBeginsMidRed`, not `atLeast` -- same cause, different claim", () => {
+  // `mainColour.atLeast` already means "no success in the page, so the STREAK may be older than it looks".
+  // One object cannot carry both under one name, and typescript said so the moment they met.
+  const read = redWindows([{ conclusion: "failure", created_at: "2026-09-12T00:00:00Z" }],
+    new Date("2026-09-12T01:00:00Z"));
+  assert.equal(read.pageBeginsMidRed, true);
+  assert.equal("atLeast" in read, false, "the streak's word must not be borrowed for a different claim");
 });
