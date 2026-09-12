@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { laneVerdict, loadLanes, inLane, exceptionFor } from "../../../../scripts/workflow-lane-check.mjs";
+import { LIVE_SESSIONS, RETIRED_SESSIONS, unknownSessionLabels } from "../../../../scripts/arm-pr.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const LANES = loadLanes();
@@ -196,4 +197,49 @@ test("the lane file is DATA with a named owner, so the mechanism cannot quietly 
   assert.equal(raw._owner, "ceo", "ceo assigns lanes and, since 2026-09-11, owns the pipeline lane itself");
   assert.ok(String(raw._why).includes("2026-09-08"), "the file cites the ruling that created it");
   assert.ok(String(raw._exception).length > 100, "and states that a lane is not a wall, in the file itself");
+});
+
+// --- #913: every lane owner DERIVES to a live session, rather than being pinned by name ---
+
+test("#913: every lane's owner is one of the five live sessions, derived and not spelled", () => {
+  // `:31` above pins the pipeline lane's owner as `ceo` BY NAME, which is right for that lane and says
+  // nothing about a lane added next month. This asserts the PROPERTY: `lane:<owner>` is read by the merge
+  // guard and now by `row-claim` (#1039), so an owner that is not a live session is a reservation nobody
+  // can satisfy -- the row-nobody-can-take shape, arriving through a data file.
+  //
+  // DERIVED AGAINST `LIVE_SESSIONS`, never a list retyped here: a second copy of the roster would drift
+  // from the one the guards read, and drift in this direction produces a lane owned by nobody.
+  const lanes = LANES?.lanes ?? [];
+  assert.ok(lanes.length > 0, "the file must load -- absent or malformed is CANNOT_ASK, not 'no lanes'");
+  const strays = lanes.filter((lane) => !LIVE_SESSIONS.includes(lane.owner));
+  assert.deepEqual(strays.map((l) => `${l.lane} -> ${l.owner}`), [],
+    `these lanes name an owner that is not a live session (${LIVE_SESSIONS.join(", ")}). A lane owned by a `
+    + "session that cannot claim is a lane nobody can be routed to");
+});
+
+test("#913: a RETIRED session is named as retired, and an unknown one is not", () => {
+  // The four labels are retired BY DESCRIPTION and kept, because merged PRs carry them and a record of the
+  // past is never renamed. Measured through the REST API 2026-09-12, at the moment of retirement:
+  //
+  //     session:dispatcher        0 open, 4 closed
+  //     session:worker-audit      0 open, 2 closed
+  //     session:worker-contracts  0 open, 3 closed
+  //     session:worker-config     0 open, 4 closed
+  //
+  // `gh issue list --state closed --label session:dispatcher` reports **0** for the same question -- the
+  // count above is the REST one, and the discrepancy is why it is REST. A tracker count is a fact at a
+  // time and does not belong in an assertion; the MECHANISM does, and this is it.
+  for (const retired of RETIRED_SESSIONS) {
+    assert.deepEqual(unknownSessionLabels([`session:${retired}`]),
+      [{ label: `session:${retired}`, retired: true }],
+      `${retired} is retired by the Org Reset and must be named as retired -- a typo and a retirement need `
+      + "different sentences, and telling a reader their typo was retired sends them to the wrong row");
+  }
+  assert.deepEqual(unknownSessionLabels(["session:brand-new-role"]),
+    [{ label: "session:brand-new-role", retired: false }],
+    "and a session this repository has never heard of is refused WITHOUT being called retired");
+  for (const live of LIVE_SESSIONS) {
+    assert.deepEqual(unknownSessionLabels([`session:${live}`]), [],
+      `${live} is live and must pass -- the control, without which 'flags everything' satisfies the above`);
+  }
 });
