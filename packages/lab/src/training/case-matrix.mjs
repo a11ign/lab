@@ -1280,6 +1280,67 @@ function statusVariant(/** @type {any} */ {
   });
 }
 
+/**
+ * #1115: 4.1.3'S OTHER TWO STATUS CATEGORIES — a WAITING state and a PROGRESS update.
+ *
+ * All 150 of 4.1.3's cases were `form-activation-silent`. **A criterion whose whole population is one
+ * subtype cannot distinguish the categories it claims**, and a model trained on it learns the subtype
+ * rather than the criterion — the starvation shape ADR 0015 is about, with the flaw INSIDE the data so no
+ * held-out split can punish it.
+ *
+ * SYNCHRONOUS ON PURPOSE, and this is the constraint that shapes both builders. A waiting state is
+ * genuinely asynchronous in the wild; built that way here it would announce intermittently, and
+ * `statusVariant`'s own header records what that costs — `filter-status-silent-checkbox` and
+ * `validation-live-silent` were WITHDRAWN over exactly this, because "evidence that appears
+ * intermittently teaches the model noise, and `gate:stability` exists to refuse it". A `<button>` says
+ * nothing of its own, and the update carries no `setTimeout` anywhere.
+ *
+ * THE BAD SIGNAL IS `form-activation-silent`, NOT A NEW TYPE, and that is deliberate rather than lazy:
+ * `check-signals.mjs:78` maps that type to the evidence fields a capture actually records
+ * (`interaction.formChanges`, `interaction.postSubmitFields`), and the mechanism here IS that mechanism —
+ * activate a control, expect an announcement. **Inventing a type nothing implements would be a
+ * declaration that does nothing**, which is the defect #1114 was filed for one file over. The SUBTYPE is
+ * what this row moves, and it is passed explicitly because `defaultSubtype` falls through to the signal's
+ * own type.
+ */
+function waitingStatusVariant(/** @type {any} */ { id, title, heading, control, waiting, task }) {
+  const body = `<button id="go" type="button">${control}</button><p id="state"></p>`;
+  const goodBody = body.replace('id="state"', 'id="state" role="status" aria-live="polite" aria-atomic="true"');
+  const script = `document.querySelector('#go').addEventListener('click', () => { document.querySelector('#state').textContent = '${waiting}'; });`;
+  return pair({
+    id,
+    family: "status-waiting",
+    criterion: "4.1.3",
+    subtype: "status-waiting",
+    task,
+    source: "WCAG 2.2 Understanding 4.1.3 Status Messages, the 'busy' example; Web Accessibility Cookbook, chapter 22",
+    mutation: "A waiting state appears in the page without being announced, so a screen-reader user is told nothing is happening.",
+    badSignal: { type: "form-activation-silent", control, expected: waiting },
+    good: page({ title, heading, body: goodBody, script }),
+    bad: page({ title, heading, body, script }),
+    probeForms: true,
+  });
+}
+
+function progressStatusVariant(/** @type {any} */ { id, title, heading, control, progress, task }) {
+  const body = `<button id="next" type="button">${control}</button><p id="progress">Step 1 of 4</p>`;
+  const goodBody = body.replace('id="progress"', 'id="progress" role="status" aria-live="polite" aria-atomic="true"');
+  const script = `document.querySelector('#next').addEventListener('click', () => { document.querySelector('#progress').textContent = '${progress}'; });`;
+  return pair({
+    id,
+    family: "status-progress",
+    criterion: "4.1.3",
+    subtype: "status-progress",
+    task,
+    source: "WCAG 2.2 Understanding 4.1.3 Status Messages, the progress example; Practical Web Accessibility, chapter 6",
+    mutation: "A progress indicator advances visually without being announced, so a screen-reader user cannot tell how far through they are.",
+    badSignal: { type: "form-activation-silent", control, expected: progress },
+    good: page({ title, heading, body: goodBody, script }),
+    bad: page({ title, heading, body, script }),
+    probeForms: true,
+  });
+}
+
 function tableVariant(/** @type {any} */ { id, title, heading, destination, task }) {
   const good = "<table><caption>Departures from Central station</caption><thead><tr><th scope=\"col\">Destination</th><th scope=\"col\">Departs</th><th scope=\"col\">Platform</th></tr></thead><tbody><tr><th scope=\"row\">" + destination + "</th><td>09:15</td><td>3</td></tr></tbody></table>";
   const bad = "<table><caption>Departures from Central station</caption><tr><td>Destination</td><td>Departs</td><td>Platform</td></tr><tr><td>" + destination + "</td><td>09:15</td><td>3</td></tr></table>";
@@ -1401,6 +1462,39 @@ const generatedCases = [
   errorVariant({ id: "form-error-silent-postcode", title: "Parcel booking", heading: "Parcel booking", field: "Postcode", submit: "Book parcel", message: "Enter the postcode before booking.", task: "Submit the parcel booking without a postcode." }),
   statusVariant({ id: "filter-status-silent-colours", title: "Clothing catalogue", heading: "Clothing catalogue", control: "Show blue items", task: "Show blue items and notice the result count." }),
   statusVariant({ id: "filter-status-silent-prices", title: "Book catalogue", heading: "Book catalogue", control: "Show books under ten pounds", task: "Show books under ten pounds and notice the result count." }),
+
+  // #1115: six WAITING pairs and six PROGRESS pairs, so 4.1.3 stops being one subtype.
+  ...[
+    ["appointments", "Appointment booking", "Check availability", "Checking availability, please wait."],
+    ["delivery", "Delivery options", "Check delivery dates", "Checking delivery dates, please wait."],
+    ["seats", "Seat selection", "Check remaining seats", "Checking remaining seats, please wait."],
+    ["refunds", "Refund request", "Check refund status", "Checking refund status, please wait."],
+    ["permits", "Permit application", "Check permit status", "Checking permit status, please wait."],
+    ["prescriptions", "Prescription renewal", "Check prescription status", "Checking prescription status, please wait."],
+  ].map(([slug, label, control, waiting]) => waitingStatusVariant({
+    id: "status-waiting-" + slug,
+    title: label,
+    heading: label,
+    control,
+    waiting,
+    task: control.charAt(0).toLowerCase() + control.slice(1) + " and notice whether anything is announced while it works.",
+  })),
+
+  ...[
+    ["signup", "Account signup", "Continue to step 2", "Step 2 of 4"],
+    ["survey", "Customer survey", "Continue to the next section", "Step 2 of 4"],
+    ["checkout", "Checkout", "Continue to payment", "Step 2 of 4"],
+    ["onboarding", "Team onboarding", "Continue to your details", "Step 2 of 4"],
+    ["claim", "Insurance claim", "Continue to the incident details", "Step 2 of 4"],
+    ["enrolment", "Course enrolment", "Continue to module choice", "Step 2 of 4"],
+  ].map(([slug, label, control, progress]) => progressStatusVariant({
+    id: "status-progress-" + slug,
+    title: label,
+    heading: label,
+    control,
+    progress,
+    task: control.charAt(0).toLowerCase() + control.slice(1) + " and notice whether the step change is announced.",
+  })),
   tableVariant({ id: "table-unassociated-hilltown", title: "Train timetable", heading: "Train timetable", destination: "Hilltown", task: "Compare the departure time and platform for Hilltown." }),
   tableVariant({ id: "table-unassociated-lakeside", title: "Train timetable", heading: "Train timetable", destination: "Lakeside", task: "Compare the departure time and platform for Lakeside." }),
 ];
