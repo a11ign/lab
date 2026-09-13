@@ -625,7 +625,7 @@ test("#1072: every declared EXIT value is one some path can produce", () => {
 // run's conclusion is `null`, which is not `"failure"`, so any run newer than the last completed one made
 // a red main read green. An ordinary in-flight run does this too and self-corrects within minutes; a
 // GHOST (#1253: `queued` forever, zero jobs, `updated_at == created_at` -- the two measured there were
-// still stuck at 116 minutes) never completes, so the masking never lifts.
+// still stuck 90 minutes after creation, read at 10:49:54Z) never completes, so the masking never lifts.
 //
 // This is the fourth member of the family this file already guards: a `gh` 502, an empty run list and a
 // stopped run list must none of them return what a green main returns.
