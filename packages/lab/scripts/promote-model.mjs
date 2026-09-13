@@ -26,7 +26,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, readdirSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { sandboxGitEnv } from "../../../scripts/git-env.mjs";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -214,6 +214,55 @@ function gitStatusForTargets() {
   }
 }
 
+/**
+ * EVERY PUBLIC PACKAGE'S VERSION, READ FROM ITS OWN MANIFEST -- #1396. Derived from `packages/*` by the
+ * `private` flag rather than listed, so a seventh public package is counted the day it exists.
+ *
+ * @param {string} [repo] @returns {Record<string, string>} version by package name
+ */
+export function publicPackageVersions(repo = REPO) {
+  const packages = resolve(repo, "packages");
+  /** @type {Record<string, string>} */
+  const versions = {};
+  for (const dir of readdirSync(packages)) {
+    const manifest = join(packages, dir, "package.json");
+    if (!existsSync(manifest)) continue;
+    const { name, version, private: isPrivate } = JSON.parse(readFileSync(manifest, "utf8"));
+    if (!isPrivate) versions[name] = version;
+  }
+  return versions;
+}
+
+/**
+ * THE LEVEL A PROMOTION RELEASES AT -- #1396, `ceo`'s ruling 5655570592.
+ *
+ * The weights are `@a11ign/scorer`'s API (ADR 0007), so a retrain is breaking. Under semver that is a
+ * MAJOR only from 1.0: while every public package is 0.x, a breaking change is a MINOR. Writing `major`
+ * there is what made the first publish read 1.0.0 -- two pending majors over 0.1.0 manifests -- for a
+ * product whose version one is defined as "an outside user says it was worth it", not as a first upload.
+ *
+ * NO VERSIONS IS A REFUSAL, NOT "all 0.x": an empty read (a wrong root, a renamed directory) would
+ * otherwise satisfy "every version is below 1" vacuously and silently choose `minor`.
+ *
+ * @param {Record<string, string>} versions @returns {"minor" | "major"}
+ */
+export function promotionLevel(versions) {
+  const all = Object.values(versions);
+  if (all.length === 0) {
+    throw new Error("no public package versions were read -- refusing to guess the level a promotion releases at");
+  }
+  return all.some((version) => Number(version.split(".")[0]) >= 1) ? "major" : "minor";
+}
+
+/** Why the level is what it is, in the words the changelog carries. */
+const LEVEL_REASON = {
+  major: `**Major, and not because the API changed — because the weights ARE the API.** A consumer's build can go
+from passing to failing with no code change on their side, which is breaking however small the diff looks.`,
+  minor: `**Minor, because no public package has reached 1.0 — the weights ARE the API all the same.** A consumer's
+build can go from passing to failing with no code change on their side. Under 0.x that ships as a minor, and
+from 1.0 every retrain is a major.`,
+};
+
 /** @param {string} candidateName @param {string} entry @returns {string} */
 function changesetPath(candidateName, entry) {
   const identity = createHash("sha256").update(entry).digest("hex").slice(0, 8);
@@ -228,19 +277,20 @@ function changesetPath(candidateName, entry) {
  * @param {boolean} [input.acceptRegression]  allow a deliberate loss against the shipped model
  * @param {object|null} [input.shippedReport] the shipped model's training report, or null on a first release
  * @param {object|null} [input.shippedAcceptance] its acceptance report — the only fixed-set baseline
+ * @param {Record<string, string>} [input.versions] every public package's version; decides minor or major
  */
 export function promote({ candidate, candidateName, dryRun = false, acceptRegression = false,
-  shippedReport = null, shippedAcceptance = null }) {
+  shippedReport = null, shippedAcceptance = null, versions = publicPackageVersions() }) {
   const { training, acceptance } = assertPromotable(candidate, shippedReport, shippedAcceptance,
     acceptRegression);
+  const level = promotionLevel(versions);
   const entry = `---
-"@a11ign/scorer": major
+"@a11ign/scorer": ${level}
 ---
 
 Retrained scorer weights (\`${candidateName}\`).
 
-**Major, and not because the API changed — because the weights ARE the API.** A consumer's build can go
-from passing to failing with no code change on their side, which is breaking however small the diff looks.
+${LEVEL_REASON[level]}
 
 Provenance, so a disputed finding can be traced to the model that produced it:
 
@@ -280,7 +330,7 @@ ${acceptRegression ? "\n**Accepted with a known regression against the previousl
   process.stdout.write(`Promoted ${candidateName}.\n`
     + `  weights   -> ${SHIPPED}\n  changeset -> ${target}\n\n`
     + "Nothing is committed and nothing is published. Review both, then commit them together — the\n"
-    + "changeset is what makes this a MAJOR release of @a11ign/scorer rather than a silent swap.\n");
+    + `changeset is what makes this a ${level.toUpperCase()} release of @a11ign/scorer rather than a silent swap.\n`);
   return { target, entry };
 }
 

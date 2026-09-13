@@ -324,12 +324,12 @@ test("#535: the guard's own exit codes are distinct -- ALLOW=0, HAZARD=1, ERROR=
 // only git can say what that index is called. A11Y_STALE_MIN=0 makes every staged file stale, as above.
 
 /** Runs `git commit` in the sandbox with the isolated real hook installed, and reports the hook's verdict. */
-function commitThroughHook(sandbox: GitSandbox, hookRoot: string, args: string[]): Verdict {
+function commitThroughHook(sandbox: GitSandbox, hookRoot: string, args: string[], env: Record<string, string> = {}): Verdict {
   try {
     execFileSync("git", ["-c", `core.hooksPath=${join(hookRoot, "scripts/git-hooks")}`,
       "-c", "user.name=Pre Commit Test", "-c", "user.email=pre-commit-test@example.invalid", "commit", "-q", ...args], {
       cwd: sandbox.dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
-      env: sandboxGitEnv({ A11Y_STALE_MIN: "0", A11Y_PRIMARY_COMMIT_REASON: "pre-commit-hook.test.ts — not the real primary" }),
+      env: sandboxGitEnv({ A11Y_STALE_MIN: "0", A11Y_PRIMARY_COMMIT_REASON: "pre-commit-hook.test.ts — not the real primary", ...env }),
     });
     return { status: 0, stderr: "" };
   } catch (error) {
@@ -402,5 +402,53 @@ test("#1314 `git commit -i <path>` and `git commit -a` still carry the whole ind
     assert.notEqual(all.status, 0, "-a stages every tracked change, named or not");
     assert.match(all.stderr, /nobody has touched/i, "refused by the HOOK, not by git");
     assert.match(all.stderr, /tracked\.txt/);
+  });
+});
+
+// --- #1422: the BREADTH refusal's own remedy ("Name the paths you mean") must pass too ---
+//
+// A11Y_STALE_MIN is set far above any file's age here, so every refusal below is the breadth refusal and not the stale
+// one, which fires first and has its own tests above. The default limit, 12, applies.
+
+/** Thirteen fresh files, one more than the default limit. */
+const THIRTEEN = Array.from({ length: 13 }, (_, i) => `named-${i + 1}.txt`);
+const NOT_STALE = { A11Y_STALE_MIN: "100000" };
+
+test("#1422 CONTROL: a plain `git commit` of 13 staged files is still REFUSED by the breadth net, and nothing is committed", () => {
+  withCommittedSandbox((sandbox, hookRoot) => {
+    stage(sandbox, THIRTEEN);
+    const result = commitThroughHook(sandbox, hookRoot, ["-m", "plain"], NOT_STALE);
+    assert.notEqual(result.status, 0, "the positive control: the refusal the remedy answers really fires here");
+    assert.match(result.stderr, /13 files staged \(limit 12\)/, "and it is the BREADTH refusal, not the stale one");
+    assert.match(result.stderr, /Name the paths you mean/, "and it offers the remedy the next test follows");
+    assert.deepEqual(committedNames(sandbox), ["tracked.txt"], "HEAD did not move");
+  });
+});
+
+test("#1422 ACCEPTANCE: following that remedy -- `git commit` naming all 13 files -- commits them", () => {
+  withCommittedSandbox((sandbox, hookRoot) => {
+    stage(sandbox, THIRTEEN);
+    const result = commitThroughHook(sandbox, hookRoot, ["-m", "named", ...THIRTEEN], NOT_STALE);
+    assert.equal(result.status, 0, `naming the paths, as the message says, must pass; got: ${result.stderr}`);
+    assert.deepEqual(committedNames(sandbox).sort(), [...THIRTEEN].sort());
+  });
+});
+
+test("#1422 A11Y_COMMIT_ALL=1 still passes a plain 13-file commit, through a real `git commit`", () => {
+  withCommittedSandbox((sandbox, hookRoot) => {
+    stage(sandbox, THIRTEEN);
+    const result = commitThroughHook(sandbox, hookRoot, ["-m", "all"], { ...NOT_STALE, A11Y_COMMIT_ALL: "1" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(committedNames(sandbox).length, 13);
+  });
+});
+
+test("#1422 `git commit -i <path>` over 12 already-staged files still carries the whole index, so breadth still REFUSES it", () => {
+  withCommittedSandbox((sandbox, hookRoot) => {
+    stage(sandbox, THIRTEEN.slice(0, 12));
+    writeFileSync(join(sandbox.dir, "tracked.txt"), "changed\n");
+    const include = commitThroughHook(sandbox, hookRoot, ["-m", "include", "-i", "tracked.txt"], NOT_STALE);
+    assert.notEqual(include.status, 0, "-i adds the named path to the 12 already staged: 13 in the index");
+    assert.match(include.stderr, /13 files staged \(limit 12\)/, "refused by the HOOK's breadth net, not by git");
   });
 });
