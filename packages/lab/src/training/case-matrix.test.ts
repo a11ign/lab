@@ -250,9 +250,15 @@ test("#1202 clause 1: the case exists, and BOTH its controls carry an expandable
     + `than the interesting one (two different controls): ${JSON.stringify(controls)}`);
 });
 
-test("#1202 clause 3 (MUTATION TARGET): the two controls are DIFFERENT controls", () => {
-  // The row's mutation is "make the two controls the same control". This is the assertion it must turn
-  // red, and it names the control rather than reporting a count.
+test("#1202 clause 3, MARKUP spelling: the two controls are DIFFERENT controls", () => {
+  // THE ROW'S MUTATION HAS TWO SPELLINGS AND THIS TEST CATCHES ONE OF THEM. "Make the two controls the
+  // same control" can mean renaming the second button in the MARKUP -- which this catches -- or pointing
+  // the good variant's `.focus()` at the control it started from, which is what actually decides whether
+  // `after` names the same control and is caught by the `.focus()` test below, not here.
+  //
+  // Labelled for the spelling it covers rather than as THE mutation target, because `worker-capture`
+  // pointed out in review that the focus-target reading is the more natural one and this test stays
+  // green under it. Both are covered; only the label was pointing at the less likely half.
   const controls = expandableControls(siblingCases[0].good).map((c) => c.name);
   assert.equal(new Set(controls).size, controls.length,
     `the case names the same control twice (${JSON.stringify(controls)}), so the post-activation read `
@@ -269,7 +275,7 @@ test("#1202 clause 2: the variants share their MARKUP -- only the script differs
   assert.notEqual(good, bad, "the variants are identical, so one of them is not the case it claims to be");
 });
 
-test("#1202: the bad variant is the one that can fire -- focus stays on the control", () => {
+test("#1202 clause 3, FOCUS-TARGET spelling: only the good variant moves focus, and to the sibling", () => {
   const { good, bad } = siblingCases[0];
   // The asymmetry that makes the pair valid: only the GOOD variant moves focus, so only the good
   // variant's capture produces a two-control pair. The finding fires on the bad variant, where focus

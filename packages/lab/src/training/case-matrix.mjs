@@ -643,12 +643,28 @@ const cases = [
   // conformant page. That difference is the thing the corpus could not previously express.
   //
   // ON THE ROW'S CLAUSE 2 ("the variants differ ONLY in the property the case is about"), because this
-  // pair does differ in two: the good script updates `aria-expanded` AND moves focus to the sibling; the
-  // bad script does neither. That is unavoidable here -- a good variant that did not update its state
-  // would not be conformant, and one that did not move focus would not reach the gate. What clause 2
-  // protects against is ATTRIBUTING a finding to the wrong difference, and nothing is attributed to the
-  // focus move: the finding fires only on the bad variant, where focus never moves. Raised on #1202
-  // before building rather than left to be found in review.
+  // pair does differ in two. Write them as variables -- P = updates `aria-expanded`, Q = moves focus:
+  //
+  //     bad:   not P, not Q  ->  finding fires
+  //     good:      P,     Q  ->  silent
+  //
+  // The attribution risk clause 2 names is "could the finding on BAD be caused by not-Q rather than
+  // not-P?" It cannot: `4.1.2:state-change-silent` requires a state change that went unannounced, and
+  // focus staying put does not create one -- content becoming visible while `aria-expanded` stays
+  // `false` does. The finding is attributable to not-P.
+  //
+  // SO Q IS NOT A CONFOUND, IT IS THE INDEPENDENT VARIABLE OF THE DEMONSTRATION. This case is not
+  // "conformant versus non-conformant, differing in one property"; it is "a two-control pair that must
+  // NOT be reported", with the bad variant as the control proving the signal can still fire. A pair
+  // holding Q constant could not demonstrate the gate at all, which is the row's own reason for
+  // existing.
+  //
+  // AN EARLIER VERSION OF THIS COMMENT SAID "nothing is attributed to the focus move", AND THAT WAS
+  // WRONG IN ONE DIRECTION -- `worker-capture` caught it in review. The GOOD variant's silence is
+  // attributable to the focus move entirely: remove the gate and it produces a finding, so it is silent
+  // BECAUSE the gate applied, and the gate applied BECAUSE focus moved. The corrected argument above is
+  // stronger than the row's clause 2 rather than an exception to it: it says why the second difference
+  // is REQUIRED, not why it is harmless.
   pair({
     id: "disclosure-focus-moves-to-collapsed-sibling",
     family: "dynamic-state",
