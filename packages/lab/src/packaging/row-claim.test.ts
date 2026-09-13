@@ -33,6 +33,10 @@ import {
   worktreeStatus, removeClaimedWorktree, WORKTREE_LABEL_PREFIX, BRANCH_LABEL_PREFIX,
   claimRecordComment, claimRecordFrom, claimedObjects, fetchClaimComments, CLAIM_RECORD_MARKER,
   b4Lines, reportB4, failureReport, landedWritesOf, LANDED_WRITE_EXIT,
+  claimWithWorktree,
+  worktreeTargetReason,
+  worktreeFlagsReason,
+  claimRecordSession,
 } from "../../../../scripts/row-claim.mjs";
 import { forgetProcessSnapshot, withBoardSnapshot } from "../../../../scripts/board-snapshot.mjs";
 import { refusalCause, PROJECT_UNREADABLE } from "../../../../scripts/settle-closed-status.mjs";
@@ -1918,3 +1922,143 @@ test("#1399 WIRING: the claim/dispatch and decline CLIs report a thrown error th
     assert.doesNotMatch(body, /COULD NOT DETERMINE/, `${fn} must not spell exit 2's message itself`);
   }
 });
+
+// --- #1432: `claim` OWNS THE WORKTREE -------------------------------------------------------------------------------
+//
+// Twice on 2026-09-13 a hand-written claim chain went on after `git worktree add` failed on a peer's path or branch, and
+// acted inside the peer's worktree. These drive `claimWithWorktree` with an injected git/gh `run`, filesystem check,
+// stamp reader and writer, and claim, and read the ORDER of what it did.
+
+/** The git/gh a worktree claim meets: a local branch, an origin branch, and row #1432's claim-record comments. */
+function worktreeClaimRun({ localBranch = false, remoteBranch = false, remoteStatus = 2, recordComments = [] as string[] } = {}) {
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push([cmd, ...args]);
+    if (cmd === "git" && args[0] === "rev-parse") {
+      if (localBranch) return "abc123";
+      throw Object.assign(new Error("git rev-parse: no such ref"), { status: 1 });
+    }
+    if (cmd === "git" && args[0] === "ls-remote") {
+      if (remoteBranch) return "abc123\trefs/heads/agent/x-1432";
+      throw Object.assign(new Error(`git ls-remote exited ${remoteStatus}`), { status: remoteStatus });
+    }
+    if (cmd === "gh" && args[0] === "issue" && args.includes("comments")) {
+      return JSON.stringify({ comments: recordComments.map((body) => ({ body })) });
+    }
+    return "";
+  };
+  return { run, calls };
+}
+
+const TARGET = { branch: "agent/x-1432", worktree: "/repos/wt-1432" };
+
+/** Runs a worktree claim with every seam injected, recording the order of git calls, stamps and the claim itself. */
+function worktreeClaim(stub: ReturnType<typeof worktreeClaimRun>, { pathExists = false, stampedBy = null as string | null,
+  claimResult = { claimed: true, statusMoved: true } as ReturnType<typeof claimWithWorktree>, claimThrows = false } = {}) {
+  const order: string[] = [];
+  const stamped: string[][] = [];
+  const claimCalls: unknown[][] = [];
+  const recordingRun = (cmd: string, args: string[]) => {
+    if (cmd === "git" && (args[0] === "fetch" || args[0] === "worktree" || args[0] === "branch")) order.push(`git ${args[0]} ${args[1]}`);
+    return stub.run(cmd, args);
+  };
+  const call = () => claimWithWorktree(1432, "worker-tooling", { ...TARGET, run: recordingRun as never,
+    exists: (path: string) => pathExists && path === TARGET.worktree, owner: () => stampedBy,
+    stamp: (worktree: string, session: string) => { order.push("stamp"); stamped.push([worktree, session]); },
+    claim: ((n: number, session: string, deps: unknown) => {
+      order.push("claim");
+      claimCalls.push([n, session, deps]);
+      if (claimThrows) throw Object.assign(new Error("gh: GraphQL exhausted"), { landed: ["added labels in-progress"] });
+      return claimResult;
+    }) as never });
+  return { call, order, stamped, claimCalls };
+}
+
+test("#1432 ACCEPTANCE: an existing PATH is refused before any write, and the refusal names its stamped owner", () => {
+  const stub = worktreeClaimRun();
+  const run = worktreeClaim(stub, { pathExists: true, stampedBy: "worker-capture" });
+  const result = run.call();
+  assert.equal(result.claimed, false);
+  assert.match((result as { reason: string }).reason, /--worktree=\/repos\/wt-1432 ALREADY EXISTS, stamped by `worker-capture`/);
+  assert.deepEqual(run.order, [], "no fetch, no worktree add, no stamp, no claim");
+});
+
+test("#1432: an existing path with no stamp says UNSTAMPED, never free", () => {
+  const result = worktreeClaim(worktreeClaimRun(), { pathExists: true, stampedBy: null }).call();
+  assert.match((result as { reason: string }).reason, /UNSTAMPED \(nobody recorded an owner, which is not the same as free\)/);
+});
+
+test("#1432 ACCEPTANCE: an existing LOCAL branch is refused before any write, naming the claim record's session", () => {
+  const record = claimRecordComment({ session: "worker-judge", branch: TARGET.branch, worktree: "/repos/wt-1432" });
+  const stub = worktreeClaimRun({ localBranch: true, recordComments: [record] });
+  const run = worktreeClaim(stub);
+  const result = run.call();
+  assert.match((result as { reason: string }).reason, /--branch=agent\/x-1432 ALREADY EXISTS locally \(row #1432's claim record names `worker-judge`\)/);
+  assert.deepEqual(run.order, []);
+});
+
+test("#1432: a branch that exists only ON ORIGIN is refused as well, and a record naming a different branch is said", () => {
+  const record = claimRecordComment({ session: "worker-judge", branch: "agent/other-1432" });
+  const run = worktreeClaim(worktreeClaimRun({ remoteBranch: true, recordComments: [record] }));
+  const result = run.call();
+  assert.match((result as { reason: string }).reason, /ALREADY EXISTS on origin \(row #1432's newest claim record does not name this branch\)/);
+  assert.deepEqual(run.order, []);
+});
+
+test("#1432: origin that cannot be ASKED is a refusal, never 'the branch is free'", () => {
+  const run = worktreeClaim(worktreeClaimRun({ remoteStatus: 128 }));
+  assert.throws(() => run.call(), /could not ask git whether branch agent\/x-1432 on origin exists/);
+  assert.deepEqual(run.order, []);
+});
+
+test("#1432 ACCEPTANCE: a clean claim CREATES the worktree, stamps it, THEN claims -- in that order", () => {
+  const stub = worktreeClaimRun();
+  const run = worktreeClaim(stub);
+  assert.deepEqual(run.call(), { claimed: true, statusMoved: true });
+  assert.deepEqual(run.order, ["git fetch --quiet", "git worktree add", "stamp", "claim"]);
+  const add = stub.calls.find((c) => c[1] === "worktree")!;
+  assert.deepEqual(add, ["git", "worktree", "add", "-b", "agent/x-1432", "/repos/wt-1432", "origin/main"]);
+  assert.deepEqual(run.stamped, [["/repos/wt-1432", "worker-tooling"]]);
+  const deps = run.claimCalls[0][2] as { branch: string; worktree: string };
+  assert.equal(deps.branch, "agent/x-1432", "the claim record names what was created");
+  assert.equal(deps.worktree, "/repos/wt-1432");
+  // WORKER-JUDGE'S QUESTION, decided as not refusing: the claim never asks which branch its cwd is on.
+  assert.ok(!stub.calls.some((c) => c.includes("--show-current") || c.includes("--abbrev-ref")),
+    "no read of the cwd's branch -- the created worktree, not the cwd, is where the work lands");
+});
+
+test("#1432: a claim REFUSED after the worktree was created removes that worktree and branch, and says so", () => {
+  const stub = worktreeClaimRun();
+  const run = worktreeClaim(stub, { claimResult: { claimed: false, reason: "B4: overlaps #9" } });
+  const result = run.call();
+  assert.equal(result.claimed, false);
+  assert.match((result as { reason: string }).reason, /^B4: overlaps #9 -- and the worktree \/repos\/wt-1432 and branch agent\/x-1432 it had just created were removed$/);
+  assert.deepEqual(run.order.slice(-2), ["git worktree remove", "git branch -D"]);
+});
+
+test("#1432: a failure AFTER the worktree landed carries it in #1399's landed list, never 'could not determine'", () => {
+  const run = worktreeClaim(worktreeClaimRun(), { claimThrows: true });
+  let error: unknown;
+  try { run.call(); } catch (caught) { error = caught; }
+  const landed = landedWritesOf(error);
+  assert.ok(landed, "the error names what landed");
+  assert.match(landed!.join("; "), /created worktree \/repos\/wt-1432 on new branch agent\/x-1432 from origin\/main/);
+});
+
+test("#1432: --branch and --worktree go together, and a claim with neither is unchanged", () => {
+  assert.match(worktreeFlagsReason({ branch: "agent/x-1432" }) ?? "", /--branch and --worktree go together/);
+  assert.match(worktreeFlagsReason({ worktree: "/repos/wt-1432" }) ?? "", /--branch and --worktree go together/);
+  assert.equal(worktreeFlagsReason({}), null);
+  assert.equal(worktreeFlagsReason(TARGET), null);
+});
+
+test("#1432: claimRecordSession reads the newest record's claimant, and a RELEASE claims nothing", () => {
+  const claim = claimRecordComment({ session: "worker-judge", branch: "b" });
+  const release = claimRecordComment({ session: "worker-judge", released: true });
+  assert.equal(claimRecordSession([claim]), "worker-judge");
+  assert.equal(claimRecordSession([claim, release]), null);
+  assert.equal(claimRecordSession(["unrelated comment"]), null);
+  assert.equal(worktreeTargetReason(TARGET, { run: worktreeClaimRun().run as never, exists: () => false, owner: () => null }), null,
+    "POSITIVE CONTROL: nothing exists, so nothing is refused");
+});
+
