@@ -264,6 +264,14 @@ test("#1306 ACCEPTANCE: a PR whose `merged` turns true on a LATER read is merged
   assert.equal(reads, 2, "it stops reading the moment the merge is seen");
   assert.deepEqual(slept, [MERGED_MEANWHILE_WAIT_MS], "one named wait between the two reads");
   assert.ok(MERGED_MEANWHILE_READS >= 2, "the race needs a second read at all -- one read is the defect");
+  // A FLOOR ON THE RE-READ WINDOW, not only a ceiling (worker-capture on #1379). Four reads with no wait between
+  // them land in the instant the one read lost, so the race is back with every count above still true. The three
+  // failures sat within about a second of `merged_at`; the window must be at least twice that, so a read-after-
+  // write lag only a little slower than the measured one does not re-race.
+  const MEASURED_RACE_WINDOW_MS = 1_000;
+  assert.ok((MERGED_MEANWHILE_READS - 1) * MERGED_MEANWHILE_WAIT_MS >= 2 * MEASURED_RACE_WINDOW_MS,
+    `the re-read window is ${(MERGED_MEANWHILE_READS - 1) * MERGED_MEANWHILE_WAIT_MS} ms, and the measured race `
+    + `was ~${MEASURED_RACE_WINDOW_MS} ms: reads that do not outlast it answer the same question at the same instant`);
 });
 
 test("#1306 CONTROL: a PR that NEVER reads merged still reports FAILED TO ARM, after exactly the bound", () => {
