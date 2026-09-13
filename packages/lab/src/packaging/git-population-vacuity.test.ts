@@ -162,6 +162,21 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "Issues. **The record is the point: a classification that simply vanishes leaves the next reader "
       + "unable to tell a guard that was retired from one that was never classified.**",
   },
+  "packages/lab/src/packaging/content-preservation.test.ts": {
+    guard: "unpreservedLines([gone], hay)",
+    note: "guarded BY A POSITIVE CONTROL, and a floor here would be wrong -- which is why this entry "
+      + "reads differently from every other one. #1087 revived the check the entry below records as "
+      + "retired. Its population is `git diff origin/main -- CLAUDE.md`, and on main's own tip that diff "
+      + "is legitimately EMPTY: `trunk-guard.yml` runs this suite against main, where HEAD IS origin/main "
+      + "and there is nothing to compare. So 'the population is non-empty' is not a precondition this "
+      + "test may assert -- most of its life is spent correctly examining nothing, and a floor would fail "
+      + "it for being in its normal state. The two empties are kept apart instead: `origin/main` failing "
+      + "to RESOLVE is a defect and has its own test, while resolving to an identical tree is not. What "
+      + "stands in for the floor is a CONTROL with a known answer -- a line present nowhere must be "
+      + "reported and one present verbatim must not -- so the comparison is exercised on every run "
+      + "regardless of what the diff holds. #1067's rule with the sign flipped: where a count would be a "
+      + "claim, assert the count; where the count is legitimately zero, assert the INSTRUMENT instead.",
+  },
   "packages/lab/src/packaging/claude-md-content-preservation.test.ts": {
     guard: null,
     note: "RETIRED WITH ITS SUBJECT by #907, for the reason above. Its own verdict on that PR is why: "
