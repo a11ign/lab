@@ -122,8 +122,11 @@ const EXEMPT: Array<{ file: string; value: string; reason: string }> = [
   // === UTM's local VM bridge (192.168.64.x), private to a single Mac -- #83's own EXEMPT
   // table already made this call; reused here across every new file type it now appears in,
   // rather than re-litigated per file.
+  // #1240: the `capture:check` example that carries this address moved out of root CLAUDE.md with
+  // "Verifying changes". The exemption follows the TEXT, not the filename it used to be under -- an
+  // exemption left pointing at a file the value no longer appears in is debris that hides nothing.
   ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
-    file: "CLAUDE.md", value,
+    file: ".github/CLAUDE.md", value,
     reason: "UTM's own local VM bridge, private to a single Mac",
   })),
   ...["REDACTED-INTERNAL-ADDRESS"].map((value) => ({
@@ -481,7 +484,7 @@ test("MUTATION: removing an EXEMPT entry the #119 fold inherited from the prose 
   // every one of its ten EXEMPT entries was already present here — verified by diffing both tables, not
   // assumed. This proves the inheritance is load-bearing rather than decorative: drop one entry from a
   // COPY of EXEMPT and confirm the file it names starts reading as an offender again, by that exact name.
-  const file = "CLAUDE.md";
+  const file = ".github/CLAUDE.md";  // #1240: follows the text, not the old filename
   const value = "REDACTED-INTERNAL-ADDRESS";
   assert.ok(EXEMPT.some((e) => e.file === file && e.value === value),
     `fixture assumption broke: ${file} -> "${value}" is no longer in EXEMPT`);

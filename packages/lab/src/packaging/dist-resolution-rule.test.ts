@@ -14,7 +14,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-const CLAUDE_MD = "CLAUDE.md";
+// #1240: the stale-`dist` warning moved to `.github/CLAUDE.md` with the rest of "Verifying changes".
+// NAMED, not searched: this guard asserts a specific claim is present in the file a session doing CI or
+// hook work actually loads, and "somewhere in the repo" is a weaker question than the one it asks.
+const CLAUDE_MD = ".github/CLAUDE.md";
 const ORCHESTRATOR_ROLE = "docs/roles/worker-loop-orchestrator.md";
 
 const read = (relPath: string) => readFileSync(resolve(process.cwd(), relPath), "utf8");

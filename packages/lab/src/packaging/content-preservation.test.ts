@@ -68,7 +68,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
@@ -149,17 +149,46 @@ export function longestSurvivingRun(line: string, haystack: string): { words: nu
   return { words, text };
 }
 
-/** The new CLAUDE.md plus every `docs/*.md` file, concatenated and whitespace-normalised. */
+/**
+ * #1240: NESTED `CLAUDE.md` FILES ARE DESTINATIONS, and they are NAMED rather than globbed.
+ *
+ * Claude Code loads a `CLAUDE.md` from the directory being worked in, so a paragraph moved from root to
+ * `packages/nvda-worker/CLAUDE.md` still reaches the session that needs it — which is what makes it a
+ * MOVE rather than a deletion, and what this guard has to be able to see.
+ *
+ * A TREE-WIDE `**\/CLAUDE.md` GLOB WOULD PASS THIS ROW AND EVERY FUTURE ONE FOR THE WRONG REASON.
+ * `docs/` and these four paths are destinations somebody chose; a glob is the absence of a choice, and it
+ * would silently accept text moved to a file nobody reads. Adding a fifth destination is a deliberate
+ * edit here, which is the property worth keeping.
+ */
+const NESTED_CLAUDE_MD = [
+  "packages/control/CLAUDE.md",
+  "packages/nvda-worker/CLAUDE.md",
+  "packages/lab/CLAUDE.md",
+  ".github/CLAUDE.md",
+];
+
+/** The new CLAUDE.md, every nested `CLAUDE.md`, and every `docs/*.md`, whitespace-normalised. */
 export function haystack(): string {
   const claudeMd = norm(readFileSync(join(REPO_ROOT, "CLAUDE.md"), "utf8"));
+  const nested = NESTED_CLAUDE_MD
+    .map((rel) => join(REPO_ROOT, rel))
+    .filter((abs) => existsSync(abs))
+    .map((abs) => norm(readFileSync(abs, "utf8")));
   const docsFiles = allDocsMd(join(REPO_ROOT, "docs"));
-  return claudeMd + " " + docsFiles.map((f) => norm(readFileSync(f, "utf8"))).join(" ");
+  return [claudeMd, ...nested, ...docsFiles.map((f) => norm(readFileSync(f, "utf8")))].join(" ");
 }
 
 /** Removed lines whose longest surviving run falls below the floor, each with what it DID match. */
 export function unpreservedLines(removed: string[], hay: string, minRun = MIN_SURVIVING_RUN):
 { line: string; matched: string; words: number }[] {
   return removed
+    // #1240: A WHOLE LINE PRESENT VERBATIM IS PRESERVED, whatever its word count. The floor exists to
+    // tell a surviving RUN from coincidental shared vocabulary -- and an exact match of the entire line
+    // is not coincidence, it is the strongest evidence this guard can have. Without this a short line
+    // that MOVED wholesale (`npm run worker:deploy -- --vm=a11y-worker-2`, five words) is reported as
+    // lost, which is the false positive that would make a reader stop trusting the report.
+    .filter((line) => !hay.includes(line))
     .map((line) => ({ line, ...longestSurvivingRun(line, hay) }))
     .filter((r) => r.words < minRun)
     .map((r) => ({ line: r.line, matched: r.text, words: r.words }));
@@ -199,7 +228,7 @@ export function unpreservedMessage(
       + `${words === 0 ? "(nothing)" : JSON.stringify(matched)}`;
   });
   return `${missing.length} of ${examined} substantive line(s) removed from CLAUDE.md have no run of `
-    + `${MIN_SURVIVING_RUN} consecutive words left anywhere in the new CLAUDE.md or under docs/ -- this `
+    + `${MIN_SURVIVING_RUN} consecutive words left anywhere in the new CLAUDE.md, a nested CLAUDE.md, or under docs/ -- this `
     + "is #181's failure mode, where 1,337 lines left the file and landed nowhere. This checks whether the "
     + "TEXT survived, not whether the meaning did: a reword keeping a long run is the same text, and a "
     + "reword keeping none is a rewrite worth a human's eye. Move each line into the docs/ file named "
