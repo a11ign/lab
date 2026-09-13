@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
 import {
-  closurePlan, labelsToStrip, applyClosurePlan, EXIT,
+  closurePlan, labelsToStrip, applyClosurePlan, EXIT, closeRowsExit,
 } from "../../../../scripts/close-rows-for-merged-pr.mjs";
 // THE AUDIT'S OWN DEBRIS CHECK, imported rather than re-derived -- #754's own mutation target is that
 // THIS function, unchanged, must go quiet once labelsToStrip has done its work, and must report the
@@ -295,4 +295,28 @@ test("#1299: applyClosurePlan NAMES a closed row whose Status did not move, on b
     "the just-closed path");
   assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: () => true }), { failed: [], unsettled: [] },
     "the positive control: a run whose every move settled names nobody");
+});
+
+test("#1299: the dispatch path's exit is ONE pure decision -- a refused Status move exits STATUS_NOT_MOVED, named", () => {
+  const unsettled = closeRowsExit({ failed: [], unsettled: [30, 31] }, "CLOSE-ROWS");
+  assert.equal(unsettled.code, EXIT.STATUS_NOT_MOVED);
+  assert.match(unsettled.lines.join("\n"), /^CLOSE-ROWS: closed, but Status NOT moved for 2: #30 #31 /m);
+  const both = closeRowsExit({ failed: [5], unsettled: [31] }, "CLOSE-ROWS");
+  assert.equal(both.code, EXIT.COULD_NOT_CLOSE, "a row that could not be closed outranks a Status that did not move");
+  assert.match(both.lines.join("\n"), /could not close 1: 5\b/);
+  assert.match(both.lines.join("\n"), /Status NOT moved for 1: #31\b/, "and the second fact is still named");
+  // POSITIVE CONTROL: nothing failed and every Status settled exits DONE and says nothing.
+  assert.deepEqual(closeRowsExit({ failed: [], unsettled: [] }, "CLOSE-ROWS"), { code: EXIT.DONE, lines: [] });
+});
+
+/** COMMENTS STRIPPED: commenting the call out IS the mutation a prose search agrees with. */
+test("#1299: the dispatch path's main() EXITS WITH that decision -- worker-capture's M1 on #1357 left it untested", () => {
+  const source = readFileSync(new URL("../../../../scripts/close-rows-for-merged-pr.mjs", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const mainBody = source.slice(source.indexOf("function main() {"));
+  assert.match(mainBody, /const \{ code, lines \} = closeRowsExit\(applyClosurePlan\(/,
+    "main() takes its exit from closeRowsExit over applyClosurePlan's outcome");
+  const afterPlan = mainBody.slice(mainBody.indexOf("closeRowsExit(applyClosurePlan("));
+  assert.match(afterPlan, /^\s*process\.exit\(code\);/m, "and exits with that code");
+  assert.doesNotMatch(afterPlan, /process\.exit\(EXIT\.DONE\)/, "not with DONE, whatever the outcome said");
 });
