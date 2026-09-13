@@ -415,6 +415,17 @@ test("#1446: a PR head that cannot be read refuses -- a failed read is never a m
   }
 });
 
+test("#1446: a head read that answers without a ref or without a commit refuses -- a partial answer is never a match", () => {
+  // The unreadable-head test above covers a read that throws or answers null; this is the third shape, an object with
+  // a field missing, which GitHub's own API can return for a PR whose head repository was deleted.
+  const { git } = gitFacts({ "rev-parse --abbrev-ref HEAD": "", "rev-parse HEAD": "" });
+  for (const partial of [{ ref: "agent/x", oid: "" }, { ref: "", oid: SHA_A }]) {
+    const { prHead } = prHeads({ 1454: partial });
+    assert.match(editTreeRefusal("edit", ["1454"], { git, prHead }) ?? "", /could not read PR #1454's head/,
+      `${JSON.stringify(partial)} must be refused as unreadable`);
+  }
+});
+
 test("#1446: edit must be given a PR NUMBER first, and create asks nothing here", () => {
   const { git, asked: gitAsked } = gitFacts({});
   const { prHead, asked } = prHeads({});
