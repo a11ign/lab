@@ -15,7 +15,12 @@
 // that a human has to change deliberately, and the deliberateness is the point.
 
 /**
- * Every git command `updatePrimary` runs, in order, when the shared `main` is already at the target.
+ * Every git command `updatePrimary` runs, in order, when the shared `main` is already at the target and
+ * HEAD did not move.
+ *
+ * The second entry is the HEAD read taken BEFORE the checkout (#1384): it is what the lockfile question is
+ * asked against. Under a stub that answers every `rev-parse` with the same sha, HEAD did not move, so no
+ * `diff` follows; the moved-HEAD paths add it and are driven in `update-primary.test.ts`.
  *
  * The last entry is `moveLocalMain` asking where `refs/heads/main` is. Under a stub that answers every
  * `rev-parse` with the same sha it stops there, because the branch needs no move; the BEHIND and DIVERGED
@@ -25,6 +30,7 @@
  */
 export const UPDATE_PRIMARY_ARGV = Object.freeze([
   Object.freeze(["fetch", "origin"]),
+  Object.freeze(["rev-parse", "HEAD"]),
   Object.freeze(["checkout", "--detach", "origin/main", "--quiet"]),
   Object.freeze(["rev-parse", "HEAD"]),
   Object.freeze(["rev-parse", "refs/heads/main"]),
