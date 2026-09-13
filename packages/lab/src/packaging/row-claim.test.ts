@@ -1671,7 +1671,11 @@ test("#852: three Status moves in one process make ONE board sweep, through the 
   };
   const results = [1, 2, 3].map((n) => moveProjectStatus(n, "In progress",
     { run, log: () => {}, snapshot: (mutate, deps) => withBoardSnapshot(mutate,
-      { ...deps, run, fetchReady: () => [], mkdir: () => {}, writeFile: () => {}, log: () => {} }) }));
+      // `exists: () => true` because `writeFile` is stubbed to drop the file -- with the real
+      // `existsSync` the snapshot this test never wrote reads as deleted and every reuse takes a fresh
+      // sweep, which is the disk check doing its job against a fixture rather than a defect.
+      { ...deps, run, fetchReady: () => [], mkdir: () => {}, writeFile: () => {}, log: () => {},
+        exists: () => true }) }));
 
   assert.deepEqual(results.map((r) => r.moved), [true, true, true],
     "all three must still move -- a cost fix that skips a mutation is a different bug");
