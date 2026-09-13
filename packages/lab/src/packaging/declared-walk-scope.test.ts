@@ -31,7 +31,6 @@ import fsModule, {
 import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import moduleApi, { builtinModules, createRequire } from "node:module";
-import * as nodeTest from "node:test";
 import { Worker } from "node:worker_threads";
 import { once } from "node:events";
 import { tmpdir } from "node:os";
@@ -39,6 +38,7 @@ import childProcessModule, { execSync, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 import {
+  runnerOwnedPaths, readsSoFar,
   DECLARER_BUILTINS, ESM_UNSYNCED, NOT_WRAPPED, WHOLE_REPOSITORY, inScope, isObserved, parseWalkScope, readsDuring,
 } from "../../../../scripts/walk-scope.mjs";
 import { knownPackages } from "../../../../scripts/ci-changed.mjs";
@@ -388,7 +388,9 @@ test("EVERY function on fs, child_process, node:test, node:module, process and w
     ["fs.promises", asRecord(fsModule.promises), NOT_WRAPPED.fs],
     ["child_process", asRecord(childProcessModule), NOT_WRAPPED.child_process],
     // #938's second review: the allowlisted builtins whose surface starts something or takes a path.
-    ["test", asRecord(nodeTest.default ?? nodeTest), NOT_WRAPPED.test],
+    // #1349: the REAL node:test, required -- the object walk-scope wraps. Under rstest the ESM `node:test` is the
+    // runner's shim, which is not what a declarer's `require` reaches, so enumerating it checked the wrong object.
+    ["test", asRecord(createRequire(import.meta.url)("node:test")), NOT_WRAPPED.test],
     ["module", asRecord(moduleApi), NOT_WRAPPED.module],
     ["process", asRecord(process), NOT_WRAPPED.process],
     ["worker_threads", asRecord(createRequire(import.meta.url)("node:worker_threads")), NOT_WRAPPED.worker_threads],
@@ -449,10 +451,12 @@ test("THIRD-PARTY node_modules is excluded ONLY because a lockfile change is a b
 // --- worker-judge's second review of #938: allowlisted builtins that read or start something unseen. ---
 
 test("node:test's run() is the whole repository -- it starts its files through Node's INTERNAL spawn", async () => {
-  // Through the default export, the CommonJS object the wrapper sits on. The named ESM binding is NOT
-  // re-pointed (ESM_UNSYNCED), which is why that spelling is refused in a declarer's source instead.
+  // Through `require`, the CommonJS object the wrapper sits on (#1349: under rstest the ESM default export is the
+  // runner's shim, not node:test). The named ESM binding is NOT re-pointed (ESM_UNSYNCED), which is why that
+  // spelling is refused in a declarer's source instead.
+  const realNodeTest = createRequire(import.meta.url)("node:test");
   const reads = await readsDuring(async () => {
-    for await (const event of nodeTest.default.run({ files: [] })) void event;
+    for await (const event of realNodeTest.run({ files: [] })) void event;
   });
   assert.ok(isUnbounded(reads), reads.join(", "));
 });
@@ -640,4 +644,21 @@ test("THE SELECTOR DOES NOT INSTALL THE OBSERVER -- it reads declarations throug
 
 test("this file declares no scope of its own — it walks every test file to find the ones that do", () => {
   assert.equal(parseWalkScope(readFileSync(fileURLToPath(import.meta.url), "utf8")), null);
+});
+
+// --- #1349: rstest. The copy `--import` preloads and the copy a test bundle carries are TWO module instances ---
+
+test("#1349: a SECOND copy of walk-scope shares one observer state -- it reports the reads the first copy recorded", async () => {
+  // A query string makes Node load a distinct module instance: the rstest situation (preloaded copy + bundled
+  // copy) without the bundler. With per-copy state, the second copy's record starts empty and this fails.
+  readFileSync(join(REPO, MANIFEST));
+  const second = await import(`${pathToFileURL(join(REPO, "scripts/walk-scope.mjs")).href}?second-copy-1349`);
+  assert.notEqual(second.readsSoFar, readsSoFar, "the fixture must really be a second instance, or this proves nothing");
+  assert.ok(readsSoFar().includes(MANIFEST), "the first copy saw the read");
+  assert.deepEqual(second.readsSoFar(), readsSoFar(), "one state per process: both copies report the same reads");
+});
+
+test("#1349: the runner's own snapshot probe beside a test file is the runner's read, not the guard's population", () => {
+  assert.deepEqual(runnerOwnedPaths(join(REPO, "packages/worker-fleet/src/capture-body-owner.test.ts")),
+    ["packages/worker-fleet/src/__snapshots__/capture-body-owner.test.ts.snap"]);
 });
