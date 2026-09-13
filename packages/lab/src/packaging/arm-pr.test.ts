@@ -24,6 +24,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
   closedRowNumbers,
   sessionLabelsOf,
@@ -327,4 +328,62 @@ test("#1022: prState returns null rather than a guess when the read fails", () =
   assert.equal(prState({ number: "1", repo: "o/r", run: () => "not json" }), null);
   assert.equal(prState({ number: "1", repo: "o/r", run: () => JSON.stringify({}) }), null);
   assert.equal(prState({ number: "1", repo: "o/r", run: () => JSON.stringify({ state: "OPEN" }) }), "OPEN");
+});
+
+// --- #1453: the live set is READ from docs/roles/sessions.json, and arm-pr types none ---
+
+const SESSIONS_FILE = new URL("../../../../docs/roles/sessions.json", import.meta.url);
+const sessionsFile = () => JSON.parse(readFileSync(SESSIONS_FILE, "utf8")) as { live: { name: string }[]; retired: { name: string }[] };
+
+test("#1453 ACCEPTANCE: arm-pr's live and retired sets EQUAL docs/roles/sessions.json's, worker-tooling included", () => {
+  const file = sessionsFile();
+  assert.deepEqual([...LIVE_SESSIONS], file.live.map((s) => s.name), "the live set is the file's, in the file's order");
+  assert.deepEqual([...RETIRED_SESSIONS], file.retired.map((s) => s.name), "and so is the retired set");
+  assert.ok(LIVE_SESSIONS.includes("worker-tooling"), "the session the typed list predated");
+  assert.deepEqual(unknownSessionLabels(["session:worker-tooling"]), [],
+    "the label the auto-arm job refused on #1412 now passes");
+});
+
+test("#1453: a retired session is refused because it is ABSENT from `live`, and `retired` only words the refusal", () => {
+  const file = sessionsFile();
+  assert.ok(!file.live.some((s) => s.name === "worker-audit") && file.retired.some((s) => s.name === "worker-audit"),
+    "the fixture's premise: worker-audit is in `retired` and not in `live`");
+  assert.deepEqual(unknownSessionLabels(["session:worker-audit"]), [{ label: "session:worker-audit", retired: true }]);
+  assert.deepEqual(unknownSessionLabels(["session:worker-fleet"]), [{ label: "session:worker-fleet", retired: false }],
+    "a name in neither list is refused too, and is not called retired");
+});
+
+test("#1453: the refusal counts the live sessions from the file, rather than saying 'five'", () => {
+  const errors: string[] = [];
+  const realError = console.error;
+  console.error = (...args: unknown[]) => { errors.push(args.join(" ")); };
+  try {
+    const { run } = fakeRun({ 725: ["session:worker-audit"] });
+    labelArmedPr({ number: "817", repo: "org/repo", prBody: "Closes #725\n", run });
+  } finally {
+    console.error = realError;
+  }
+  const said = errors.join("\n");
+  assert.match(said, new RegExp(`The ${LIVE_SESSIONS.length} live sessions`), said);
+  assert.doesNotMatch(said, /The five live sessions/);
+});
+
+/** The array literals in `source`'s code (comments stripped) that hold a quoted session name from `names`. */
+function typedSessionArrays(source: string, names: string[]): string[] {
+  const code = source.split("\n").filter((line) => !/^\s*(\*|\/\/|\/\*)/.test(line))
+    .map((line) => line.replace(/\s\/\/.*$/, "")).join("\n");
+  const alternation = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  return code.match(new RegExp(`\\[[^\\]]*["'\`](?:${alternation})["'\`][^\\]]*\\]`, "g")) ?? [];
+}
+
+test("#1453 STRUCTURAL: arm-pr.mjs declares no session-name array -- a typed list is refused", () => {
+  const file = sessionsFile();
+  const names = [...file.live, ...file.retired].map((s) => s.name);
+  const source = readFileSync(new URL("../../../../scripts/arm-pr.mjs", import.meta.url), "utf8");
+  assert.deepEqual(typedSessionArrays(source, names), [],
+    "arm-pr.mjs types a session list instead of reading docs/roles/sessions.json");
+  // POSITIVE CONTROL, built from the file's own names so this test file types no list either: the shape of the line #1453
+  // removed is found by the same predicate.
+  const typed = `export const LIVE_SESSIONS = [${file.live.map((s) => JSON.stringify(s.name)).join(", ")}];`;
+  assert.equal(typedSessionArrays(typed, names).length, 1, "the predicate finds a typed session array");
 });
