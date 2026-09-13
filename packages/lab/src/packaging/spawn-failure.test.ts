@@ -34,6 +34,33 @@ function realFailure(script: string, options: ExecFileSyncOptions): unknown {
   throw new Error(`the child was meant to fail and exited 0: ${script}`);
 }
 
+/**
+ * #1456: A CHILD KILLED BEFORE IT RUNS ITS FIRST LINE IS NOT THE CHILD THESE TESTS ARE ABOUT.
+ *
+ * Node's `timeout` counts from the spawn, not from the child's first line. The two timeout tests below ask what a
+ * STARTED child's timeout looks like -- its last stderr line, or a SIGTERM it handled -- and with a fixed 400 ms a
+ * child that had not yet started was killed first: no stderr, and a signal it never had the chance to trap. Each
+ * test then failed for a reason that was not its subject. Measured: a preload holding every child 600 ms before its
+ * script runs failed both tests 3 of 3 times; whole-suite runs failed one or the other twice that night; alone the
+ * file was 9 / 0.
+ *
+ * So the start is ESTABLISHED, never assumed: every attempt must time out AND carry the child's own stderr line,
+ * which it writes only once it is running (after installing its handler, in the trap test). Until then the timeout
+ * grows. A host so loaded that no attempt sees the child start fails here, loudly, rather than passing a test about
+ * a child that never ran. Each child sleeps far longer than the largest timeout, so none can simply exit.
+ */
+const TIMEOUTS_MS = [400, 2000, 10_000];
+const CHILD_SLEEP_MS = 60_000;
+
+function timedOutAfterStarting(script: string, options: ExecFileSyncOptions): unknown {
+  for (const timeout of TIMEOUTS_MS) {
+    const error = realFailure(script, { ...options, timeout }) as { code?: string; stderr?: unknown };
+    if (error.code === "ETIMEDOUT" && String(error.stderr ?? "").includes("last err: refused")) return error;
+  }
+  throw new Error(`the child never wrote its first stderr line within ${TIMEOUTS_MS.at(-1)} ms, so this host is too `
+    + "loaded to show what a STARTED child's timeout looks like -- refusing to pass on a child that never ran");
+}
+
 test("THE FIXTURE CANNOT NAME ITSELF: no word of the stderr appears in the argv the helper will print", () => {
   assert.doesNotMatch(WRITES_STDERR, /first-err|refused/);
 });
@@ -89,8 +116,9 @@ test("a child NODE killed -- output past maxBuffer, or past its timeout -- START
     // first draft called them "never started". The difference is a real pid and a signal.
     const overflowed = realFailure(`process.stdout.write("x".repeat(100000)); setTimeout(() => {}, 5000)`,
       { encoding: "utf8", stdio: "pipe", maxBuffer: 1024 });
-    const timedOut = realFailure(`${WRITES_STDERR.replace(/process\.exit\(\d+\)/, "setTimeout(() => {}, 5000)")}`,
-      { encoding: "utf8", stdio: "pipe", timeout: 400 });
+    const timedOut = timedOutAfterStarting(
+      `${WRITES_STDERR.replace(/process\.exit\(\d+\)/, `setTimeout(() => {}, ${CHILD_SLEEP_MS})`)}`,
+      { encoding: "utf8", stdio: "pipe" });
     assert.equal((timedOut as { code?: string }).code, "ETIMEDOUT", "the fixture must really time out");
 
     const overflowLine = describeSpawnFailure(overflowed, { inherited: false });
@@ -106,9 +134,11 @@ test("a child that TRAPS Node's SIGTERM and exits still STARTED -- no signal, bu
     // worker-judge's second blocker on #1301: past its timeout Node sends SIGTERM, a child that handles it
     // exits with a status, and the error then carries a code, a status and NO signal. "code and no signal"
     // called that "never started". Only a spawn that never ran has pid 0.
-    const trapped = realFailure(
-      `process.on("SIGTERM", () => process.exit(1)); setTimeout(() => {}, 5000)`,
-      { encoding: "utf8", stdio: "pipe", timeout: 400 }) as { code?: string; signal?: string | null; pid?: number };
+    // The handler is installed BEFORE the stderr line, so the line is proof the SIGTERM will be handled (#1456).
+    const trapped = timedOutAfterStarting(
+      `process.on("SIGTERM", () => process.exit(1)); process.stderr.write(process.env.SPAWN_FAILURE_STDERR); `
+        + `setTimeout(() => {}, ${CHILD_SLEEP_MS})`,
+      { encoding: "utf8", stdio: "pipe" }) as { code?: string; signal?: string | null; pid?: number };
     assert.equal(trapped.code, "ETIMEDOUT", "the fixture must really time out");
     assert.equal(trapped.signal, null, "and must really have handled the signal, or this is the other test");
     assert.ok((trapped.pid ?? 0) > 0, "a child that ran has a real pid");
