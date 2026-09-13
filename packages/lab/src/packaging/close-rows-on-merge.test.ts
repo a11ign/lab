@@ -71,7 +71,7 @@ test("a mixed set is split, not decided by its first member", () => {
 });
 
 test("the exit codes are the contract, and CANNOT_ASK is distinct from a clean run", () => {
-  assert.deepEqual(EXIT, { DONE: 0, COULD_NOT_CLOSE: 1, CANNOT_ASK: 2 });
+  assert.deepEqual(EXIT, { DONE: 0, COULD_NOT_CLOSE: 1, CANNOT_ASK: 2, STATUS_NOT_MOVED: 3 });
 });
 
 test("#909: the closeRows job rides trunk.yml's push to main, and cannot push (contents: read)", () => {
@@ -216,7 +216,7 @@ test("#776/#791 MUTATION TARGET: the real #677 measurement, end to end through c
 test("#776/#791 MUTATION TARGET: applyClosurePlan strips EVERY already-closed row's labels, not just "
   + "freshly-closed ones -- this is the exact wiring gap the real #677/#577/#752 bug had", () => {
   const stripped: Array<[number, string[]]> = [];
-  const failed = applyClosurePlan(
+  const { failed } = applyClosurePlan(
     { close: [], already: [{ number: 677, labels: ["in-progress", "session:worker-capture"] }] },
     { prNumber: "769", sha: "abc123", repo: "DanBeckDev/a11y-witness" },
     { strip: (n, labels) => { stripped.push([n, labels]); } },
@@ -228,7 +228,7 @@ test("#776/#791 MUTATION TARGET: applyClosurePlan strips EVERY already-closed ro
 test("applyClosurePlan still closes and strips a freshly-closing row, exactly as before", () => {
   const closedRows: number[] = [];
   const stripped: number[] = [];
-  const failed = applyClosurePlan(
+  const { failed } = applyClosurePlan(
     { close: [{ number: 344, labels: ["ready"] }], already: [] },
     { prNumber: "1", sha: "abc", repo: "DanBeckDev/a11y-witness" },
     { closeOne: (n) => { closedRows.push(n); return true; }, strip: (n) => { stripped.push(n); } },
@@ -241,7 +241,7 @@ test("applyClosurePlan still closes and strips a freshly-closing row, exactly as
 test("applyClosurePlan does NOT strip a row whose close failed -- a failed close reports failure, and "
   + "stripping labels on a row still actually open would be wrong", () => {
   const stripped: number[] = [];
-  const failed = applyClosurePlan(
+  const { failed } = applyClosurePlan(
     { close: [{ number: 344, labels: ["ready"] }], already: [] },
     { prNumber: "1", sha: "abc", repo: "DanBeckDev/a11y-witness" },
     { closeOne: () => false, strip: (n) => { stripped.push(n); } },
@@ -258,10 +258,10 @@ test("applyClosurePlan does NOT strip a row whose close failed -- a failed close
  */
 test("#1227: every row the plan closes gets its Status settled, in the same act", () => {
   const settled: number[] = [];
-  const failed = applyClosurePlan(
+  const { failed } = applyClosurePlan(
     { close: [{ number: 10, labels: [] }, { number: 11, labels: [] }], already: [{ number: 12, labels: [] }] },
     { prNumber: "1", sha: "abc", repo: "o/r" },
-    { closeOne: () => true, strip: () => {}, settle: (n: number) => { settled.push(n); } });
+    { closeOne: () => true, strip: () => {}, settle: (n: number) => { settled.push(n); return true; } });
   assert.deepEqual(failed, []);
   // ALREADY-CLOSED rows too: #776/#791's reasoning is that such a row may be THIS merge one second
   // earlier, and its Status is exactly as stale as a freshly-closed row's.
@@ -274,13 +274,25 @@ test("#1227: every row the plan closes gets its Status settled, in the same act"
 
 test("#1227: a row that FAILED to close is not settled -- the Status must not say Done", () => {
   const settled: number[] = [];
-  const failed = applyClosurePlan(
+  const { failed } = applyClosurePlan(
     { close: [{ number: 20, labels: [] }], already: [] },
     { prNumber: "1", sha: "abc", repo: "o/r" },
-    { closeOne: () => false, strip: () => {}, settle: (n: number) => { settled.push(n); } });
+    { closeOne: () => false, strip: () => {}, settle: (n: number) => { settled.push(n); return true; } });
   assert.deepEqual(failed, [20]);
   assert.deepEqual(settled, [],
     "the row is still OPEN -- moving it to Done would advertise finished work that is not finished, "
     + "which is the reverse direction of the defect this fixes");
 });
 
+
+test("#1299: applyClosurePlan NAMES a closed row whose Status did not move, on both paths -- and a clean run names none", () => {
+  const plan = { close: [{ number: 31, labels: [] }], already: [{ number: 30, labels: [] }] };
+  const ctx = { prNumber: "1", sha: "abc", repo: "o/r" };
+  const deps = { closeOne: () => true, strip: () => {} };
+  assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: (n: number) => n !== 30 }), { failed: [], unsettled: [30] },
+    "the already-closed path");
+  assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: (n: number) => n !== 31 }), { failed: [], unsettled: [31] },
+    "the just-closed path");
+  assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: () => true }), { failed: [], unsettled: [] },
+    "the positive control: a run whose every move settled names nobody");
+});
