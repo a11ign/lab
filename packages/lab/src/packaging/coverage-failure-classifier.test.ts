@@ -128,8 +128,13 @@ function reporterOutput(reporter: "tap" | "spec" | null): string {
     // emits the v8 serialiser regardless of `--test-reporter` -- so this helper returned bytes in neither
     // format and `testFailuresIn` correctly said null. **The harness was shaping the fixture it was being
     // used to generate**, which is the same defect as a hand-typed one wearing a different hat.
-    const { NODE_TEST_CONTEXT, ...env } = process.env;
-    void NODE_TEST_CONTEXT;
+    // #1319: THE COLOUR VARIABLES MUST GO TOO, for the same reason. Under rstest on a GitHub runner this helper's child
+    // printed the spec summary wrapped in ANSI codes, so `testFailuresIn` read no summary at all (#1469's cold run, job
+    // 103807627770). That the runner's rstest worker carries FORCE_COLOR is an INFERENCE from its coloured output. The
+    // measurement is local: with FORCE_COLOR=1 this file read 13 pass / 1 fail under tsx at HEAD, and 14 / 0 under both
+    // runners with these stripped. Production's coverage step sets none of them.
+    const { NODE_TEST_CONTEXT, FORCE_COLOR, NO_COLOR, NODE_DISABLE_COLORS, ...env } = process.env;
+    void NODE_TEST_CONTEXT; void FORCE_COLOR; void NO_COLOR; void NODE_DISABLE_COLORS;
     const run = spawnSync(process.execPath,
       ["--test", ...(reporter === null ? [] : [`--test-reporter=${reporter}`]), file],
       { encoding: "utf8", env });
