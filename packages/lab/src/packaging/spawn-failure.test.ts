@@ -49,7 +49,10 @@ function realFailure(script: string, options: ExecFileSyncOptions): unknown {
  * grows. A host so loaded that no attempt sees the child start fails here, loudly, rather than passing a test about
  * a child that never ran. Each child sleeps far longer than the largest timeout, so none can simply exit.
  */
-const TIMEOUTS_MS = [400, 2000, 10_000];
+const QUIET_HOST_TIMEOUT_MS = 400; // the deadline these tests always had, and all a quiet host needs
+const LOADED_HOST_TIMEOUT_MS = 2000;
+const GIVE_UP_TIMEOUT_MS = 10_000;
+const TIMEOUTS_MS = [QUIET_HOST_TIMEOUT_MS, LOADED_HOST_TIMEOUT_MS, GIVE_UP_TIMEOUT_MS];
 const CHILD_SLEEP_MS = 60_000;
 
 function timedOutAfterStarting(script: string, options: ExecFileSyncOptions): unknown {
