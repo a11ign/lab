@@ -16,7 +16,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,12 +49,25 @@ function stepNamed(fragment: string): number {
   return found[0];
 }
 
-/** Runs the floor's CLI from the repo root, capturing both streams, outside any parent test harness. */
-function floor(args: string[]): { status: number | null; output: string } {
-  const env = { ...process.env };
-  delete env.NODE_TEST_CONTEXT;
-  const result = spawnSync("node", [FLOOR, ...args], { cwd: REPO, encoding: "utf8", env });
-  return { status: result.status, output: `${result.stdout}${result.stderr}` };
+/**
+ * Runs the floor's CLI from the repo root, capturing both streams, outside any parent test harness.
+ *
+ * A11Y_RSTEST_CACHE_DIR POINTS AT A TEMPORARY ROOT, so an rstest run started here can never write its build cache into
+ * the repository's node_modules. While this row was built, a mutation that forced the cache on did exactly that, into the
+ * primary checkout's shared node_modules. The directory is removed afterwards.
+ */
+function floor(args: string[], extraEnv: Record<string, string> = {}):
+  { status: number | null; output: string; cacheFiles: number } {
+  const cacheRoot = mkdtempSync(join(tmpdir(), "runner-is-rstest-cache-"));
+  try {
+    const env = { ...process.env, ...extraEnv, A11Y_RSTEST_CACHE_DIR: cacheRoot };
+    delete env.NODE_TEST_CONTEXT;
+    const result = spawnSync("node", [FLOOR, ...args], { cwd: REPO, encoding: "utf8", env });
+    const cacheFiles = readdirSync(cacheRoot, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).length;
+    return { status: result.status, output: `${result.stdout}${result.stderr}`, cacheFiles };
+  } finally {
+    rmSync(cacheRoot, { recursive: true, force: true });
+  }
 }
 
 const SCOPED = "Unit tests of the changed test files";
@@ -183,10 +196,12 @@ test("#1319: --runner=rstest really runs rstest, and forwards both its passing a
  * rstest's runtime, where `defineConfig` is not a function, so importing the config from a test fails the whole file
  * under the new runner.
  */
-function configWith(ci: string | undefined): { buildCache: unknown; maxWorkers: unknown; cores: number } {
+function configWith(ci: string | undefined, cacheDir?: string): { buildCache: unknown; maxWorkers: unknown; cores: number } {
   const env = { ...process.env };
   delete env.CI;
+  delete env.A11Y_RSTEST_CACHE_DIR;
   if (ci !== undefined) env.CI = ci;
+  if (cacheDir !== undefined) env.A11Y_RSTEST_CACHE_DIR = cacheDir;
   const script = `const { default: c } = await import(${JSON.stringify(CONFIG_URL)}); `
     + "const { availableParallelism } = await import('node:os'); "
     + "process.stdout.write(JSON.stringify({ buildCache: c.performance?.buildCache ?? null, "
@@ -202,6 +217,20 @@ test("#1319: rstest's build cache is on exactly when CI is set, read from the re
   assert.equal(configWith(undefined).buildCache, false, "off locally, as #1315 measured: the build is under 1% of a run here");
   assert.equal(configWith("").buildCache, false);
   assert.equal(configWith("false").buildCache, false);
+});
+
+test("#1319: an rstest run this file starts with CI set writes its build cache under a TEMPORARY root", () => {
+  // CI set switches the cache on, so the cache files must appear in the helper's own temporary root. A count of zero
+  // would mean the variable did not reach rstest, and the cache went to the repository's node_modules instead.
+  const run = floor(["packages/lab/src/packaging/commands-documented.test.ts", "--min=1", "--run", "--runner=rstest"],
+    { CI: "true" });
+  assert.equal(run.status, 0, run.output);
+  assert.ok(run.cacheFiles > 0, "the build cache landed in the temporary root");
+});
+
+test("#1319: A11Y_RSTEST_CACHE_DIR moves an ENABLED cache out of node_modules, and never enables one", () => {
+  assert.deepEqual(configWith("true", "/tmp/somewhere").buildCache, { cacheDirectory: "/tmp/somewhere" });
+  assert.equal(configWith(undefined, "/tmp/somewhere").buildCache, false, "locally the variable does not switch it on");
 });
 
 test("#1319: locally the config caps workers at half the host's cores; in CI it leaves rstest's default", () => {
