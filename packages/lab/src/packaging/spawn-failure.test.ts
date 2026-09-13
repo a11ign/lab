@@ -101,6 +101,23 @@ test("a child NODE killed -- output past maxBuffer, or past its timeout -- START
     for (const line of [overflowLine, timeoutLine]) assert.doesNotMatch(line, /never started/);
   });
 
+test("a child that TRAPS Node's SIGTERM and exits still STARTED -- no signal, but a real pid and a status",
+  () => {
+    // worker-judge's second blocker on #1301: past its timeout Node sends SIGTERM, a child that handles it
+    // exits with a status, and the error then carries a code, a status and NO signal. "code and no signal"
+    // called that "never started". Only a spawn that never ran has pid 0.
+    const trapped = realFailure(
+      `process.on("SIGTERM", () => process.exit(1)); setTimeout(() => {}, 5000)`,
+      { encoding: "utf8", stdio: "pipe", timeout: 400 }) as { code?: string; signal?: string | null; pid?: number };
+    assert.equal(trapped.code, "ETIMEDOUT", "the fixture must really time out");
+    assert.equal(trapped.signal, null, "and must really have handled the signal, or this is the other test");
+    assert.ok((trapped.pid ?? 0) > 0, "a child that ran has a real pid");
+
+    const line = describeSpawnFailure(trapped, { inherited: false });
+    assert.match(line, /exited 1 \(ETIMEDOUT\): /);
+    assert.doesNotMatch(line, /never started/);
+  });
+
 test("a child killed by a signal says so, rather than `exited null`", () => {
   const killed = realFailure(`process.kill(process.pid, "SIGTERM")`, { encoding: "utf8", stdio: "pipe" });
   const line = describeSpawnFailure(killed, { inherited: false });
