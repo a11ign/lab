@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
-// command: refuse a release whose commit is not the one RELEASE.md's own rehearsal marker names
+// command: refuse a release not descended from RELEASE.md's rehearsal marker, or that changed a document the
+//          rehearsal exercised since it
 
 /**
  * `#813`'s gate half: `release:gate:ci` calls this, and it refuses `publish-for-real` when the commit

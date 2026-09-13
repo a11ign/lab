@@ -22,16 +22,32 @@ test("rehearsalMarkerSha returns null when the marker is absent -- never a guess
   assert.equal(rehearsalMarkerSha(null), null);
 });
 
-test("#813's own acceptance shape: a matching commit is clean", () => {
-  assert.deepEqual(rehearsalCurrencyProblems({ releaseMd: withMarker(), releaseSha: SHA }), []);
+// #1265 replaced #813's marker-EQUALS-release rule, which no committed tree could satisfy, with ancestor
+// plus unchanged exercised paths. The two git facts are injected, so each test below states them.
+const CURRENT = { releaseMd: withMarker(), releaseSha: OTHER_SHA, isAncestor: true, changedPaths: [] };
+
+// The positive controls for this emptiness are the next two tests: the same input with ONE fact flipped.
+test("#1265's acceptance shape: a marker that is an ancestor, with nothing it exercises changed since, "
+  + "is clean", () => {
+  assert.deepEqual(rehearsalCurrencyProblems(CURRENT), []);
 });
 
-test("MUTATION TARGET (#813's own mutation): a release commit that is not the marked one is a refusal "
-  + "naming BOTH shas", () => {
-  const problems = rehearsalCurrencyProblems({ releaseMd: withMarker(), releaseSha: OTHER_SHA });
+test("MUTATION TARGET (#1265): a marker that is NOT an ancestor of the release commit is a refusal naming "
+  + "BOTH shas", () => {
+  const problems = rehearsalCurrencyProblems({ ...CURRENT, isAncestor: false });
   assert.equal(problems.length, 1);
+  assert.match(problems[0], /NOT an ancestor/);
   assert.match(problems[0], new RegExp(SHA));
   assert.match(problems[0], new RegExp(OTHER_SHA));
+});
+
+test("an ancestor marker is still a refusal when an exercised path changed since it, naming every path",
+  () => {
+  const problems = rehearsalCurrencyProblems({ ...CURRENT, changedPaths: ["README.md", "action.yml"] });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /2 path\(s\)/);
+  assert.match(problems[0], /README\.md/);
+  assert.match(problems[0], /action\.yml/);
 });
 
 test("no marker at all is a stronger refusal than a stale one, named as such", () => {
@@ -53,7 +69,12 @@ test("FAILS CLOSED on an unresolved release commit -- 'could not ask' must never
   assert.match(problems[0], /could not resolve/);
 });
 
-test("a short sha in either position still compares equal to the full one", () => {
-  assert.deepEqual(
-    rehearsalCurrencyProblems({ releaseMd: withMarker(), releaseSha: SHA.slice(0, 8) }), []);
+test("FAILS CLOSED when ancestry could not be read -- and an OMITTED ancestry reads the same, so a caller "
+  + "that forgets to gather it is refused rather than passed", () => {
+  const withoutAncestry = { releaseMd: CURRENT.releaseMd, releaseSha: CURRENT.releaseSha, changedPaths: [] };
+  for (const input of [{ ...CURRENT, isAncestor: null }, withoutAncestry]) {
+    const problems = rehearsalCurrencyProblems(input);
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /could not tell whether the rehearsal marker is an ancestor/);
+  }
 });
