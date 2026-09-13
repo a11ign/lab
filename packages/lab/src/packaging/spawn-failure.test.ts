@@ -83,6 +83,24 @@ test("THE THREE ABSENCES are three different lines: wrote nothing, not captured,
   assert.equal(new Set(absences).size, absences.length, "two absences share a line, so a reader cannot tell them apart");
 });
 
+test("a child NODE killed -- output past maxBuffer, or past its timeout -- STARTED, and says why it was killed",
+  () => {
+    // worker-judge's blocker on #1301: both carry a `code` and a null `status`, exactly like ENOENT, and the
+    // first draft called them "never started". The difference is a real pid and a signal.
+    const overflowed = realFailure(`process.stdout.write("x".repeat(100000)); setTimeout(() => {}, 5000)`,
+      { encoding: "utf8", stdio: "pipe", maxBuffer: 1024 });
+    const timedOut = realFailure(`${WRITES_STDERR.replace(/process\.exit\(\d+\)/, "setTimeout(() => {}, 5000)")}`,
+      { encoding: "utf8", stdio: "pipe", timeout: 400 });
+    assert.equal((timedOut as { code?: string }).code, "ETIMEDOUT", "the fixture must really time out");
+
+    const overflowLine = describeSpawnFailure(overflowed, { inherited: false });
+    const timeoutLine = describeSpawnFailure(timedOut, { inherited: false });
+    assert.match(overflowLine, /killed by SIGTERM \(ENOBUFS\): /);
+    assert.match(timeoutLine, /killed by SIGTERM \(ETIMEDOUT\): last err: refused$/,
+      "a child that timed out may have said something worth its last line");
+    for (const line of [overflowLine, timeoutLine]) assert.doesNotMatch(line, /never started/);
+  });
+
 test("a child killed by a signal says so, rather than `exited null`", () => {
   const killed = realFailure(`process.kill(process.pid, "SIGTERM")`, { encoding: "utf8", stdio: "pipe" });
   const line = describeSpawnFailure(killed, { inherited: false });
