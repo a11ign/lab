@@ -135,8 +135,11 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "so no single number stands in for the count.",
   },
   "packages/lab/src/packaging/fixture-absence-guard.test.ts": {
-    guard: "tree.files.length, countedByGit.size",
-    note: "guarded twice, and the file count alone was not enough. #1067: the file-count guard was "
+    guard: "tree.files.length + tree.skipped.length, countedByGit.size",
+    note: "guarded twice, and the file count alone was not enough. #1307: the walk now READS regular files and "
+      + "NAMES every other entry in `skipped` (a worktree's `node_modules` link to a directory threw EISDIR), so "
+      + "the equality is a partition -- read plus skipped against git's own listing -- and this field moved again. "
+      + "#1067: the file-count guard was "
       + "`tree.files.length > 500` against a tree of 1,460 -- a floor tolerating the loss of two thirds of "
       + "the walk -- and is now an EQUALITY against a count derived from git independently of the walk "
       + "under test. This `guard` field moved with it: the table checks the literal still appears, so the "
