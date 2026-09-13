@@ -214,3 +214,35 @@ test("#1277: the failure line names the MODE, so `edit` and `create` are not con
   sendToGitHub("edit", ["1254"], { run: ghFails(), git: gitStub, err: (l: string) => { lines.push(l); } });
   assert.match(lines[0], /`gh pr edit` FAILED/);
 });
+
+// --- #1283: the failure path must not itself fail, and must not name a branch that does not exist ----
+
+test("#1283: on a DETACHED HEAD the line says `detached at <sha>`, not the literal `HEAD`", () => {
+  // `gh pr create` fails on a detached HEAD BY CONSTRUCTION, so the one shape where this message is
+  // guaranteed to be read is the shape where `--abbrev-ref` returns the string "HEAD" and the line
+  // named a branch nobody can retry from. worker-capture's finding on #1283, from their own run.
+  const lines: string[] = [];
+  sendToGitHub("create", ["--title", "x"], {
+    run: () => { throw new Error("Command failed: gh pr create"); },
+    git: (args: string[]) => (args.includes("--abbrev-ref") ? "HEAD" : "deadbee"),
+    err: (l: string) => { lines.push(l); },
+  });
+  assert.match(lines[0], /detached at `?deadbee/);
+  assert.doesNotMatch(lines[0], /Branch `HEAD`/, "the literal HEAD is not a branch anyone can retry from");
+});
+
+test("#1283: a failing `git` still prints the line -- an error handler that errors loses the cause", () => {
+  // Both rev-parse calls sat inside the catch unguarded, so a GIT_DIR pointing elsewhere replaced this
+  // message with a raw throw carrying git's error and losing gh's entirely -- worse than the 24-line
+  // dump it replaced, which at least contained the answer.
+  const lines: string[] = [];
+  assert.doesNotThrow(() => sendToGitHub("create", ["--title", "x"], {
+    run: () => { throw new Error("Command failed: gh pr create"); },
+    git: () => { throw new Error("fatal: not a git repository"); },
+    err: (l: string) => { lines.push(l); },
+  }));
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /\(unknown\)/, "the facts it could not read say so");
+  assert.match(lines[0], /Command failed: gh pr create/,
+    "AND gh's own message survives -- losing it is the thing that made the throw worse than the dump");
+});
