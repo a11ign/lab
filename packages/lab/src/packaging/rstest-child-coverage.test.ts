@@ -58,14 +58,18 @@ test("#1350 ACCEPTANCE: a spawned child's lines appear in the merged report; wit
     const untested = w.report[w.script] as unknown as { s: Record<string, number>; fnMap: Record<string, { name: string }> };
     // THE CONTROL, and the defect: rstest's own entry for a file only a child ran reads 0.
     assert.equal(coveredStatements(untested), 0, "rstest alone sees nothing a child covered");
+    // CAPTURED BEFORE THE CALL: an expectation read from an object the call can rewrite agrees with whatever it did.
+    const statementsBefore = Object.keys(untested.s).length;
+    const reportBefore = JSON.stringify(w.report);
 
     const { merged, childFiles } = await mergeChildCoverage(
       { report: w.report, entries: childCoverageEntries(w.rawDir, w.root), options: w.options, root: w.root });
     assert.deepEqual(childFiles, [w.script], "the child's file gained coverage");
     const after = merged.fileCoverageFor(w.script).toJSON() as typeof untested & { f: Record<string, number> };
     assert.ok(coveredStatements(after) > 0, "after the merge the child's statements are covered");
-    assert.equal(Object.keys(after.s).length, Object.keys(untested.s).length,
+    assert.equal(Object.keys(after.s).length, statementsBefore,
       "the SAME statements, counted by rstest's own converter -- c8's units would not match");
+    assert.equal(JSON.stringify(w.report), reportBefore, "and the report passed in is not modified");
     const hits = Object.fromEntries(Object.entries(after.fnMap).map(([id, fn]) => [fn.name, after.f[id]]));
     assert.ok(hits.reached > 0, "the function the child called is covered");
     assert.equal(hits.neverCalled, 0, "and the one it never called is not -- the merge attributes, it does not paint");
@@ -97,7 +101,10 @@ test("#1350: a child that ran a file OUTSIDE the report's population adds nothin
     runChild(w.script, w.rawDir);
     const entries = childCoverageEntries(w.rawDir, w.root);
     assert.ok(entries.some((e) => e.filePath === outside), "the outside file WAS covered by a child -- the positive control");
-    const { merged } = await mergeChildCoverage({ report: w.report, entries, options: w.options, root: w.root });
+    // The provider is given an include that DOES match the outside file, so its own filter lets it through: the
+    // report's population -- the file list rstest wrote -- is what must keep it out, not the provider's include.
+    const options = coverageOptionsFromC8rc({ include: ["*.mjs"], exclude: [] }, join(w.root, "report"));
+    const { merged } = await mergeChildCoverage({ report: w.report, entries, options, root: w.root });
     assert.deepEqual(merged.files(), [w.script], "but only files the report already lists are in the merged report");
     assert.ok(coverageTotals(merged).statements.covered > 0);
   } finally {
@@ -162,12 +169,17 @@ test("#1350: a file rstest covered IN-PROCESS keeps rstest's own maps -- child h
   try {
     runChild(w.script, w.rawDir);
     const base = inProcessShaped(w.report[w.script]);
+    // Every expectation is taken BEFORE the call. istanbul's merge rewrites objects it was handed in place, and on
+    // #1350 a doubling mutation survived this test because it compared against the base it had just doubled.
+    const counts = { s: Object.keys(base.s).length, f: Object.keys(base.f).length, b: Object.keys(base.b).length };
+    const baseBefore = JSON.stringify(base);
     const { merged, unmatched } = await mergeChildCoverage(
       { report: { [w.script]: base }, entries: childCoverageEntries(w.rawDir, w.root), options: w.options, root: w.root });
     const after = merged.fileCoverageFor(w.script).toJSON() as unknown as FileData;
-    assert.equal(Object.keys(after.s).length, Object.keys(base.s).length, "the statement map is rstest's, not doubled");
-    assert.equal(Object.keys(after.f).length, Object.keys(base.f).length, "and so is the function map");
-    assert.equal(Object.keys(after.b).length, Object.keys(base.b).length, "and the branch map");
+    assert.equal(Object.keys(after.s).length, counts.s, "the statement map is rstest's, not doubled");
+    assert.equal(Object.keys(after.f).length, counts.f, "and so is the function map");
+    assert.equal(Object.keys(after.b).length, counts.b, "and the branch map");
+    assert.equal(JSON.stringify(base), baseBefore, "and rstest's entry that was passed in is untouched");
     assert.ok(Object.values(after.s).some((n) => n > 0), "the child's hits landed on rstest's statements");
     assert.deepEqual(unmatched, { statements: 0, functions: 0, branches: 0 }, "every child structure found its start");
   } finally {
@@ -184,4 +196,29 @@ test("#1350: foldByStart counts a child structure with no base structure at its 
   assert.deepEqual(data.s, { 0: 2 }, "the matched statement gains the child's hits, the unmatched one is not added");
   assert.deepEqual(unmatched, { statements: 1, functions: 0, branches: 1 }, "both misses are counted, never silent");
   assert.deepEqual(base.s, { 0: 0 }, "the input is not modified");
+});
+
+test("#1350: the returned map shares no object with the caller's report -- merging more into it cannot rewrite the report", async () => {
+  const w = await workspace();
+  try {
+    // A second included file that no child runs: its entry passes through the merge unfolded.
+    const other = join(w.root, "other.mjs");
+    writeFileSync(other, FIXTURE);
+    const [otherEntry] = await new CoverageProvider(w.options as never, w.root)
+      .generateCoverageForUntestedFiles({ environmentName: "node", files: [other] });
+    const report = { ...w.report, [other]: otherEntry as unknown as FileData };
+    runChild(w.script, w.rawDir);
+    const reportBefore = JSON.stringify(report);
+    const { merged } = await mergeChildCoverage(
+      { report, entries: childCoverageEntries(w.rawDir, w.root), options: w.options, root: w.root });
+    // istanbul rewrites an entry IN PLACE when a later merge lands on it with a different map (end columns shifted
+    // here, as the in-process and child conversions differ). If the returned map held the caller's own objects,
+    // this would rewrite the caller's report.
+    const shifted = structuredClone(otherEntry) as unknown as FileData & { statementMap: Record<string, { end: { column: number } }> };
+    for (const located of Object.values(shifted.statementMap)) located.end.column += 1;
+    merged.merge({ [other]: shifted } as never);
+    assert.equal(JSON.stringify(report), reportBefore, "the caller's report is exactly as it was passed in");
+  } finally {
+    rmSync(w.root, { recursive: true, force: true });
+  }
 });
