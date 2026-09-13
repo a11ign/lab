@@ -170,8 +170,16 @@ test("#1251: every permission a called workflow's job requests is granted by its
   // per scope, per job, with `none < read < write`.
   const GUARDS_RUN_AS_JOBS = 3;                 // guards 5, 6 and 7 in the file header
   const rank: Record<string, number> = { none: 0, read: 1, write: 2 };
-  const scopesOf = (perms: unknown): Record<string, string> =>
-    perms !== null && typeof perms === "object" ? (perms as Record<string, string>) : {};
+  // `permissions:` has a scalar spelling too (`write-all`, `read-all`), which parses to a string. A
+  // block this reader cannot expand must REFUSE, not read as "no block": the two look identical to a
+  // loop over scopes, and only one of them is safe (worker-judge's second mutation on #1252).
+  const scopesOf = (perms: unknown, where: string): Record<string, string> => {
+    if (perms === undefined) return {};
+    assert.ok(perms !== null && typeof perms === "object",
+      `${where} spells permissions as '${String(perms)}', which this guard cannot expand per scope -- ` +
+      "write it as a map, or teach the guard the scalar spelling");
+    return perms as Record<string, string>;
+  };
   const release = parseYaml(workflow) as { jobs: Record<string, { uses?: string; permissions?: unknown }> };
   const calls = Object.entries(release.jobs).filter(([, job]) => typeof job.uses === "string");
   assert.equal(calls.length, GUARDS_RUN_AS_JOBS, "release.yml calls three local workflows (guards 5, 6 and 7)");
@@ -179,12 +187,18 @@ test("#1251: every permission a called workflow's job requests is granted by its
     const path = (caller.uses as string).replace(/^\.\//, "");
     const called = parseYaml(readFileSync(resolve(REPO, path), "utf8")) as
       { permissions?: unknown; jobs: Record<string, { permissions?: unknown }> };
-    const granted = scopesOf(caller.permissions);
+    const granted = scopesOf(caller.permissions, `release.yml job '${callerName}'`);
     for (const [jobName, job] of Object.entries(called.jobs)) {
       // A workflow-level `permissions:` applies to every job that does not declare its own, and a
       // single-job consumer workflow spells it there as often as on the job. Reading only the job
       // block passed, comparing nothing, when the block was moved up a level (worker-judge, #1252).
-      const requested = { ...scopesOf(called.permissions), ...scopesOf(job.permissions) };
+      // GitHub REPLACES the workflow block with a job's own rather than merging; this spread merges,
+      // so it can demand a grant a job does not strictly need -- deliberately: over-requesting fails
+      // closed, and the alternative misses a scope the job inherits.
+      const requested = {
+        ...scopesOf(called.permissions, `${path} (workflow level)`),
+        ...scopesOf(job.permissions, `${path} job '${jobName}'`),
+      };
       for (const [scope, level] of Object.entries(requested)) {
         assert.ok((rank[granted[scope] ?? "none"] ?? 0) >= (rank[level] ?? 0),
           `${path} job '${jobName}' requests '${scope}: ${level}' but release.yml's '${callerName}' job ` +
