@@ -43,8 +43,9 @@ import { join } from "node:path";
 import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
 import {
   sourceClosure, discoverTestFiles, selectTests, broadReasons, pathStringReferences,
-  discoversFromTree, alwaysRunTests, testFilesToRun,
+  discoversFromTree, alwaysRunTests, testFilesToRun, selectionFor,
 } from "../../../../scripts/select-changed-tests.mjs";
+import { knownPackages } from "../../../../scripts/ci-changed.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -261,6 +262,66 @@ test("SMOKE, against the real repo and #479's own real shape: scripts/git-hooks/
   assert.deepEqual(result.fallbackPackages, []);
   assert.ok(result.selectedTests.some((f) => f.includes("pre-push")),
     `expected a pre-push-named test among the selection: ${result.selectedTests.join(", ")}`);
+});
+
+// --- #1358: a document's by-path readers are searched across EVERY test, not the implicated packages' ---
+//
+// main went red at 16:10:46Z on #1353 (README.md, docs/github-action.md, docs/try-it.md, consumer-gate.yml,
+// one lab test): `documented-criteria.test.ts` in `judge` reads README.md and action.yml by name, but only
+// `lab` was implicated, so it was never a candidate, never ran on the PR, and failed on main. The real
+// guard is the fixture, on the real tree.
+
+const REPO_ROOT = new URL("../../../../", import.meta.url).pathname.replace(/\/$/, "");
+const DOCUMENTED_CRITERIA = "packages/judge/src/documented-criteria.test.ts";
+const INCIDENT_DIFF = [".github/workflows/consumer-gate.yml", "README.md", "docs/github-action.md", "docs/try-it.md",
+  "packages/lab/src/packaging/public-claim.test.ts"];
+
+/** Selection as `main` builds it for a diff implicating only `lab`, with and without the #1358 population. */
+function selectAsMain(changed: string[], { everyTest }: { everyTest: boolean }) {
+  const testFiles = discoverTestFiles(REPO_ROOT, ["lab"]);
+  const referenceCandidates = everyTest ? discoverTestFiles(REPO_ROOT, knownPackages(REPO_ROOT)) : undefined;
+  return selectTests(changed, { closureOf: () => new Set(), testFiles, repoRoot: REPO_ROOT, testPackages: ["lab"],
+    ...(referenceCandidates ? { referenceCandidates } : {}) });
+}
+
+test("#1358 ACCEPTANCE: a diff changing only README.md selects the tests that read it by path, documented-criteria among them", () => {
+  const readme = selectAsMain(["README.md"], { everyTest: true });
+  assert.ok(readme.selectedTests.includes(DOCUMENTED_CRITERIA), `not selected: ${readme.selectedTests.join(", ")}`);
+  assert.ok(readme.selectedTests.some((f) => !f.startsWith("packages/lab/")),
+    "a reader outside the implicated package is selected -- which is the whole defect");
+  assert.ok(selectAsMain(["action.yml"], { everyTest: true }).selectedTests.includes(DOCUMENTED_CRITERIA),
+    "action.yml's reader too");
+  assert.ok(selectAsMain(["docs/try-it.md"], { everyTest: true }).selectedTests
+    .includes("packages/lab/src/packaging/rehearsal-currency-gate.test.ts"), "and a docs/*.md reader");
+});
+
+test("#1358 THE INCIDENT: #1353's own diff now selects documented-criteria.test.ts", () => {
+  assert.ok(selectAsMain(INCIDENT_DIFF, { everyTest: true }).selectedTests.includes(DOCUMENTED_CRITERIA));
+});
+
+test("#1358 THE WIRING main USES: selectionFor, given the incident's scope, selects documented-criteria.test.ts", () => {
+  // selectAsMain above assembles its own options; this drives the function main itself calls, so a main
+  // that stops passing the wider population is caught here and not only by the CLI.
+  const { result } = selectionFor(INCIDENT_DIFF,
+    { repoRoot: REPO_ROOT, allPackages: knownPackages(REPO_ROOT), testPackages: ["lab"] });
+  assert.ok(result.selectedTests.includes(DOCUMENTED_CRITERIA), `not selected: ${result.selectedTests.length} tests`);
+});
+
+test("#1358 THE MECHANISM: with only the implicated package's tests as candidates, the incident reproduces", () => {
+  // The positive control for the two tests above: without the wider population the same diff misses the
+  // guard, so their passing is the population's doing and not something else that happens to select it.
+  assert.equal(selectAsMain(INCIDENT_DIFF, { everyTest: false }).selectedTests.includes(DOCUMENTED_CRITERIA), false);
+  assert.equal(selectAsMain(["README.md"], { everyTest: false }).selectedTests.includes(DOCUMENTED_CRITERIA), false);
+});
+
+test("#1358 CONTROL: a document no test reads selects nothing -- a doc change does not become 'run everything'", () => {
+  // BUILT, NEVER SPELLED: a literal naming this document would make THIS file a reader of it, and the control
+  // would select itself -- measured on the first run of this test.
+  const unread = ["docs", "capture-integrity-plan.md"].join("/");
+  const result = selectAsMain([unread], { everyTest: true });
+  assert.deepEqual(result.selectedTests, [], "no test names this document in a string literal");
+  assert.deepEqual(result.uncoveredFiles, [unread]);
+  assert.deepEqual(result.fallbackPackages, ["lab"], "it falls back to the implicated package only, as before");
 });
 
 test("selectTests: MUTATION TARGET -- a changed source file with ZERO reaching tests falls back to its "
