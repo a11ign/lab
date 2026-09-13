@@ -19,6 +19,7 @@ import { parse as parseYaml } from "yaml";
 import {
   closurePlan, labelsToStrip, applyClosurePlan, EXIT, closeRowsExit,
 } from "../../../../scripts/close-rows-for-merged-pr.mjs";
+import { refusalCause } from "../../../../scripts/settle-closed-status.mjs";
 // THE AUDIT'S OWN DEBRIS CHECK, imported rather than re-derived -- #754's own mutation target is that
 // THIS function, unchanged, must go quiet once labelsToStrip has done its work, and must report the
 // finding again the moment it has not. Proving that with a re-implemented predicate would prove nothing
@@ -261,7 +262,7 @@ test("#1227: every row the plan closes gets its Status settled, in the same act"
   const { failed } = applyClosurePlan(
     { close: [{ number: 10, labels: [] }, { number: 11, labels: [] }], already: [{ number: 12, labels: [] }] },
     { prNumber: "1", sha: "abc", repo: "o/r" },
-    { closeOne: () => true, strip: () => {}, settle: (n: number) => { settled.push(n); return true; } });
+    { closeOne: () => true, strip: () => {}, settle: (n: number) => { settled.push(n); return { settled: true, refused: [] }; } });
   assert.deepEqual(failed, []);
   // ALREADY-CLOSED rows too: #776/#791's reasoning is that such a row may be THIS merge one second
   // earlier, and its Status is exactly as stale as a freshly-closed row's.
@@ -277,7 +278,7 @@ test("#1227: a row that FAILED to close is not settled -- the Status must not sa
   const { failed } = applyClosurePlan(
     { close: [{ number: 20, labels: [] }], already: [] },
     { prNumber: "1", sha: "abc", repo: "o/r" },
-    { closeOne: () => false, strip: () => {}, settle: (n: number) => { settled.push(n); return true; } });
+    { closeOne: () => false, strip: () => {}, settle: (n: number) => { settled.push(n); return { settled: true, refused: [] }; } });
   assert.deepEqual(failed, [20]);
   assert.deepEqual(settled, [],
     "the row is still OPEN -- moving it to Done would advertise finished work that is not finished, "
@@ -289,24 +290,57 @@ test("#1299: applyClosurePlan NAMES a closed row whose Status did not move, on b
   const plan = { close: [{ number: 31, labels: [] }], already: [{ number: 30, labels: [] }] };
   const ctx = { prNumber: "1", sha: "abc", repo: "o/r" };
   const deps = { closeOne: () => true, strip: () => {} };
-  assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: (n: number) => n !== 30 }), { failed: [], unsettled: [30] },
-    "the already-closed path");
-  assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: (n: number) => n !== 31 }), { failed: [], unsettled: [31] },
-    "the just-closed path");
-  assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: () => true }), { failed: [], unsettled: [] },
+  assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: refuseOnly(30, "HTTP 500") }),
+    { failed: [], unsettled: [refusal(30, "HTTP 500")] }, "the already-closed path");
+  assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: refuseOnly(31, "HTTP 500") }),
+    { failed: [], unsettled: [refusal(31, "HTTP 500")] }, "the just-closed path");
+  assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: () => ({ settled: true, refused: [] }) }), { failed: [], unsettled: [] },
     "the positive control: a run whose every move settled names nobody");
 });
 
+/** CAPTURED, not composed: the reason `moveProjectStatus` gave for #1299 in trunk run 34769927592 (`02ae7420`). */
+const CAPTURED_PROJECT_UNREADABLE = "could not move #1299's Status to \"Done\" -- board-snapshot: could not read "
+  + "Project 2 items -- refusing to snapshot a partial board. NOT_FOUND (user.projectV2): Could not resolve to a "
+  + "ProjectV2 with the number 2.";
+/** A refusal classified by the real `refusalCause`, never a hand-typed cause. */
+function refusal(row: number, message: string) { return { row, cause: refusalCause(message), message }; }
+/** A `settle` that refuses exactly one row, for `message`, and settles every other. */
+function refuseOnly(row: number, message: string) {
+  return (n: number) => (n === row ? { settled: false, refused: [refusal(n, message)] } : { settled: true, refused: [] });
+}
+
 test("#1299: the dispatch path's exit is ONE pure decision -- a refused Status move exits STATUS_NOT_MOVED, named", () => {
-  const unsettled = closeRowsExit({ failed: [], unsettled: [30, 31] }, "CLOSE-ROWS");
+  const unsettled = closeRowsExit({ failed: [], unsettled: [refusal(30, "HTTP 500"), refusal(31, "HTTP 500")] }, "CLOSE-ROWS");
   assert.equal(unsettled.code, EXIT.STATUS_NOT_MOVED);
   assert.match(unsettled.lines.join("\n"), /^CLOSE-ROWS: closed, but Status NOT moved for 2: #30 #31 /m);
-  const both = closeRowsExit({ failed: [5], unsettled: [31] }, "CLOSE-ROWS");
+  const both = closeRowsExit({ failed: [5], unsettled: [refusal(31, "HTTP 500")] }, "CLOSE-ROWS");
   assert.equal(both.code, EXIT.COULD_NOT_CLOSE, "a row that could not be closed outranks a Status that did not move");
   assert.match(both.lines.join("\n"), /could not close 1: 5\b/);
   assert.match(both.lines.join("\n"), /Status NOT moved for 1: #31\b/, "and the second fact is still named");
   // POSITIVE CONTROL: nothing failed and every Status settled exits DONE and says nothing.
   assert.deepEqual(closeRowsExit({ failed: [], unsettled: [] }, "CLOSE-ROWS"), { code: EXIT.DONE, lines: [] });
+});
+
+test("bridge: the dispatch path exits DONE with ONE DEGRADED line when every refusal is the captured project-unreadable -- 3 otherwise", () => {
+  const ctx = { prNumber: "1", sha: "abc", repo: "o/r" };
+  const plan = { close: [{ number: 31, labels: [] }], already: [{ number: 30, labels: [] }] };
+  const deps = { closeOne: () => true, strip: () => {} };
+  const unreadable = (n: number) => ({ settled: false, refused: [refusal(n, CAPTURED_PROJECT_UNREADABLE)] });
+
+  const degraded = closeRowsExit(applyClosurePlan(plan, ctx, { ...deps, settle: unreadable }), "CLOSE-ROWS");
+  assert.equal(degraded.code, EXIT.DONE, "the CI run as captured: nothing but an unreadable Project");
+  assert.equal(degraded.lines.length, 1, "one line, and it says so");
+  assert.match(degraded.lines[0], /^CLOSE-ROWS: DEGRADED -- closed, but Status NOT moved for 2: #30 #31 -- every refusal was project-unreadable/);
+
+  const mixed = closeRowsExit(applyClosurePlan(plan, ctx,
+    { ...deps, settle: (n: number) => (n === 31 ? { settled: false, refused: [refusal(n, "HTTP 500")] } : unreadable(n)) }),
+  "CLOSE-ROWS");
+  assert.equal(mixed.code, EXIT.STATUS_NOT_MOVED, "one refusal for another cause exits 3, whatever else was unreadable");
+  assert.doesNotMatch(mixed.lines.join("\n"), /DEGRADED/);
+  assert.match(mixed.lines.join("\n"), /not project-unreadable: #31\)/);
+
+  const failedToo = closeRowsExit({ failed: [5], unsettled: [refusal(30, CAPTURED_PROJECT_UNREADABLE)] }, "CLOSE-ROWS");
+  assert.equal(failedToo.code, EXIT.COULD_NOT_CLOSE, "a degraded Status never softens a row that could not be closed");
 });
 
 /** COMMENTS STRIPPED: commenting the call out IS the mutation a prose search agrees with. */
