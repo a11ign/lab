@@ -29,7 +29,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { checkBody, bodyFromArgs, armAfterCreate, sendToGitHub, headTreeRefusal } from "../../../../scripts/pr-open.mjs";
+import { checkBody, bodyFromArgs, armAfterCreate, sendToGitHub, headTreeRefusal, editTreeRefusal } from "../../../../scripts/pr-open.mjs";
 
 const NEVER_RUN = () => { throw new Error("checkBody must never RUN a command for a body this test expects to refuse"); };
 
@@ -357,4 +357,90 @@ test("#1344 WIRING: main() refuses a mismatched head BEFORE checkBody runs any A
   const check = main.indexOf("checkBody(body)");
   assert.ok(refusal > 0 && check > 0, "both calls are in main()");
   assert.ok(refusal < check, "the head is compared before checkBody runs the Acceptance in this tree");
+});
+
+// --- #1446: `edit N` refuses unless THIS working tree is PR N's head branch, at its commit -------------------
+//
+// The edit half of #1344, reproduced 21:59Z: `pr-open edit 1454` from a worktree at da9858fb printed
+// `ACCEPTANCE: RAN ... -> pass` and wrote the probe's marker, for a PR whose head is 9d954d13. `edit` names only a
+// PR, so its head is READ -- through an injected `prHead` here, so no test reaches GitHub.
+
+/** A PR-head reader answering from `heads` -- an Error is thrown -- and keeping every (repo, number) it was asked. */
+function prHeads(heads: Record<string, { ref: string; oid: string } | Error | null>) {
+  const asked: string[][] = [];
+  const prHead = (repo: string, number: string) => {
+    asked.push([repo, number]);
+    const head = heads[number];
+    if (head instanceof Error) throw head;
+    return head ?? null;
+  };
+  return { prHead, asked };
+}
+
+test("#1446 case 1: edit N from a tree on ANOTHER branch refuses, naming PR N's head and the tree", () => {
+  const { git } = gitFacts({ "rev-parse --abbrev-ref HEAD": "agent/other", "rev-parse HEAD": SHA_B });
+  const { prHead, asked } = prHeads({ 1454: { ref: "agent/x", oid: SHA_A } });
+  const refusal = editTreeRefusal("edit", ["1454", "--repo", "owner/repo", "--body-file", "b.md"], { git, prHead }) ?? "";
+  assert.match(refusal, new RegExp(`PR #1454's head is \`agent/x\` at \`${SHA_A}\`, but this working tree is on \`agent/other\` at \`${SHA_B}\``));
+  assert.match(refusal, /Nothing ran and nothing was sent/);
+  assert.deepEqual(asked, [["owner/repo", "1454"]], "the head was read for that PR, from the --repo given");
+});
+
+test("#1446 case 1: edit N from a DETACHED HEAD refuses -- never a branch called HEAD", () => {
+  const { git } = gitFacts({ "rev-parse --abbrev-ref HEAD": "HEAD", "rev-parse HEAD": SHA_A });
+  const { prHead } = prHeads({ 7: { ref: "agent/x", oid: SHA_A } });
+  const refusal = editTreeRefusal("edit", ["7", "--body-file", "b.md"], { git, prHead }) ?? "";
+  assert.match(refusal, new RegExp(`on a detached HEAD at \`${SHA_A}\``), "the same commit, but no branch -- still not the head");
+});
+
+test("#1446 case 2 CONTROL: a tree on PR N's head branch at its commit runs as today -- no refusal", () => {
+  const { git } = gitFacts({ "rev-parse --abbrev-ref HEAD": "agent/x", "rev-parse HEAD": SHA_A });
+  const { prHead, asked } = prHeads({ 1454: { ref: "agent/x", oid: SHA_A } });
+  assert.equal(editTreeRefusal("edit", ["1454", "--body-file", "b.md"], { git, prHead }), null);
+  assert.deepEqual(asked, [["DanBeckDev/a11y-witness", "1454"]], "with no --repo, the head is read from this repository");
+});
+
+test("#1446 case 3: a tree on the head branch but NOT at the PR's head commit refuses, naming both SHAs", () => {
+  const { git } = gitFacts({ "rev-parse --abbrev-ref HEAD": "agent/x", "rev-parse HEAD": SHA_B });
+  const { prHead } = prHeads({ 1454: { ref: "agent/x", oid: SHA_A } });
+  const refusal = editTreeRefusal("edit", ["1454"], { git, prHead }) ?? "";
+  assert.match(refusal, new RegExp(`at \`${SHA_A}\`, but this working tree is on \`agent/x\` at \`${SHA_B}\``));
+});
+
+test("#1446: a PR head that cannot be read refuses -- a failed read is never a match", () => {
+  const { git } = gitFacts({ "rev-parse --abbrev-ref HEAD": "agent/x", "rev-parse HEAD": SHA_A });
+  for (const answer of [new Error("gh: HTTP 404"), null]) {
+    const { prHead } = prHeads({ 1454: answer });
+    assert.match(editTreeRefusal("edit", ["1454"], { git, prHead }) ?? "", /could not read PR #1454's head/);
+  }
+});
+
+test("#1446: a head read that answers without a ref or without a commit refuses -- a partial answer is never a match", () => {
+  // The unreadable-head test above covers a read that throws or answers null; this is the third shape, an object with
+  // a field missing, which GitHub's own API can return for a PR whose head repository was deleted.
+  const { git } = gitFacts({ "rev-parse --abbrev-ref HEAD": "", "rev-parse HEAD": "" });
+  for (const partial of [{ ref: "agent/x", oid: "" }, { ref: "", oid: SHA_A }]) {
+    const { prHead } = prHeads({ 1454: partial });
+    assert.match(editTreeRefusal("edit", ["1454"], { git, prHead }) ?? "", /could not read PR #1454's head/,
+      `${JSON.stringify(partial)} must be refused as unreadable`);
+  }
+});
+
+test("#1446: edit must be given a PR NUMBER first, and create asks nothing here", () => {
+  const { git, asked: gitAsked } = gitFacts({});
+  const { prHead, asked } = prHeads({});
+  assert.match(editTreeRefusal("edit", ["agent/x", "--body-file", "b.md"], { git, prHead }) ?? "", /takes the PR NUMBER first/);
+  assert.equal(editTreeRefusal("create", ["--head", "agent/x"], { git, prHead }), null, "create is #1344's check");
+  assert.deepEqual(asked, [], "no head was read for either");
+  assert.deepEqual(gitAsked, []);
+});
+
+test("#1446 WIRING: main() refuses an edit off PR N's head BEFORE checkBody runs any Acceptance command", () => {
+  const source = stripComments(readFileSync(fileURLToPath(new URL("../../../../scripts/pr-open.mjs", import.meta.url)), "utf8"));
+  const start = source.indexOf("function main() {");
+  const main = source.slice(start, source.indexOf("\n}\n", start));
+  const refusal = main.indexOf("editTreeRefusal(mode, rest)");
+  const check = main.indexOf("checkBody(body)");
+  assert.ok(refusal > 0 && check > 0, "both calls are in main()");
+  assert.ok(refusal < check, "the edit's head is compared before checkBody runs the Acceptance in this tree");
 });
