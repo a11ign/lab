@@ -431,7 +431,7 @@ test("#1292 ACCEPTANCE: a TAG-only push from a stale HEAD is allowed and names w
     for (const [label, stdin] of Object.entries(tagPushes)) {
       const result = runStaleBaseCheck(sandbox, {}, stdin);
       assert.equal(result.status, 0, `${label}: a tag-only push must not be refused: ${result.stderr}`);
-      assert.match(result.stderr, /stale-base-check \(this push only writes or deletes tag\(s\)/, label);
+      assert.match(result.stderr, /stale-base-check \(this push only writes tag\(s\)/, label);
     }
     // POSITIVE CONTROL, same sandbox and HEAD: a check that stopped running passes every assertion above.
     const branch = runStaleBaseCheck(sandbox, {}, updateStdin(sha, "refs/heads/side", ZERO_SHA));
@@ -461,5 +461,36 @@ test("#1292: a branch whose NAME contains `refs/tags/` is still a branch -- the 
     const result = runStaleBaseCheck(sandbox, {},
       updateStdin(sha, "refs/heads/refs/tags/looks-like-a-tag", ZERO_SHA));
     assert.equal(result.status, 1, "a match anywhere in the ref name would wave this branch push through");
+  });
+});
+
+// --- #1309: the skip reason names what the push did -- a deletion in a tag push may be a BRANCH's ---
+
+/** The one `stale-base-check` SKIPPED line a run printed, or "" -- so an assertion reads the reason, not all of stderr. */
+const skipReasonIn = (stderr: string) => stderr.split("\n").find((line) => line.includes("SKIPPED stale-base-check")) ?? "";
+
+test("#1309 ACCEPTANCE: a tag write plus a BRANCH deletion is allowed, and its reason says it deletes a ref -- "
+  + "never 'only writes or deletes tag(s)'", () => {
+  withGitSandbox((sandbox) => {
+    const sha = checkoutStaleSide(sandbox);
+    const stdin = `refs/tags/v0.1.0 ${sha} refs/tags/v0.1.0 ${ZERO_SHA}\n` + deletionStdin("refs/heads/old-branch");
+    const result = runStaleBaseCheck(sandbox, {}, stdin);
+    assert.equal(result.status, 0, `neither line needs a base, so this push is not refused: ${result.stderr}`);
+    const reason = skipReasonIn(result.stderr);
+    assert.match(reason, /this push only writes tag\(s\) and deletes ref\(s\)/,
+      "the reason names both kinds this push carried");
+    assert.doesNotMatch(reason, /writes or deletes tag\(s\)/,
+      "the old sentence, false for a push that deletes a branch -- worker-capture's #1300 probe");
+  });
+});
+
+test("#1309: a tag write with NO deletion says it only writes tag(s), and says nothing about deleting", () => {
+  withGitSandbox((sandbox) => {
+    const sha = checkoutStaleSide(sandbox);
+    const result = runStaleBaseCheck(sandbox, {}, `refs/tags/v0.1.0 ${sha} refs/tags/v0.1.0 ${ZERO_SHA}\n`);
+    assert.equal(result.status, 0);
+    const reason = skipReasonIn(result.stderr);
+    assert.match(reason, /this push only writes tag\(s\), which record an existing commit/);
+    assert.doesNotMatch(reason, /delet/, "a push that deleted nothing must not be described as deleting");
   });
 });
