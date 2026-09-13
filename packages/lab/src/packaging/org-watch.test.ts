@@ -690,3 +690,41 @@ test("#1263: the red STREAK is measured over completed runs too, not just the ve
     "the streak starts at the failure, not at the unfinished run sitting behind it");
   assert.equal(colour.inFlight, 1);
 });
+
+// --- #1286: a REFUSED queue read and an EMPTY one are different answers ------------------------------
+//
+// #1279 measured it: a refused `gh pr list` exits 1 with empty stdout, and four of five sessions hit
+// that window on 2026-09-13. `queueReport` took `prs` and returned `examined: prs.length`, so a refusal
+// arriving as `[]` reported `examined: 0` -- which the org reads as "nothing is queued" and acts on.
+// Built now because `queueReport` has NO CALLER yet: the third state can exist before anyone writes the
+// read that would collapse it, which is the only moment it costs nothing.
+
+test("#1286: a REFUSED read is not an empty queue, and not the same object", () => {
+  const refused = queueReport(null);
+  const empty = queueReport([]);
+  assert.equal(refused.refused, true);
+  assert.equal(refused.examined, null, "`0` is a count; a refusal has no count");
+  assert.match(String(refused.why), /NOT an empty queue/);
+  // #912's own remedy, applied to the fourth member of its family: the two must not be one object.
+  assert.notDeepEqual(refused, empty,
+    "an unreadable queue and an empty one returning the same thing is how six hours of `gh` failing "
+    + "read as six quiet hours at exit 0");
+});
+
+test("#1286 POSITIVE CONTROL: an EMPTY queue still reports examined 0 and is still fine", () => {
+  // Without this, a build answering `refused` whenever unsure passes the test above perfectly and
+  // blocks every quiet morning -- when an empty queue is the normal case, not a fault.
+  const empty = queueReport([]);
+  assert.equal(empty.refused, false);
+  assert.equal(empty.examined, 0);
+  assert.deepEqual(empty.failing, []);
+});
+
+test("#1286: a queue with content is unaffected -- the third state is additive", () => {
+  const report = queueReport([
+    { number: 1, checks: [{ name: "gate", conclusion: "failure", status: "completed" }] },
+  ] as never);
+  assert.equal(report.refused, false);
+  assert.equal(report.examined, 1);
+  assert.deepEqual(report.failing, [{ number: 1, jobs: ["gate"] }]);
+});
