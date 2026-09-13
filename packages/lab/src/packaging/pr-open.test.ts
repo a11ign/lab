@@ -214,6 +214,26 @@ test("#1277 POSITIVE CONTROL: a create that SUCCEEDS gains no failure line", () 
     "a ready create is armed with the whole `gh pr merge` argv, `pr` included");
 });
 
+test("#1348: a ready create with --head ARMS THAT HEAD, in both spellings -- through the spawn, not only armAfterCreate's return", () => {
+  // #909's tests hold what `armAfterCreate` RETURNS for a head; the positive control above holds the spawn, but its
+  // create passes no head. So nothing held that `sendToGitHub` hands the head on: a spawn built from a head-less
+  // argv would still arm, as `gh pr merge --auto --merge` with no argument -- which `gh` resolves against the
+  // CURRENT checkout's branch. `gitStub` says that branch is `agent/my-branch`, so an arm naming `agent/x` can only
+  // have come from `--head`.
+  for (const rest of [["--title", "x", "--head", "agent/x"], ["--title", "x", "--head=agent/x"]]) {
+    const label = rest.slice(2).join(" ");
+    const lines: string[] = [];
+    const spawned: string[][] = [];
+    const ok = sendToGitHub("create", rest,
+      { run: (args: string[]) => { spawned.push(args); }, git: gitStub, err: (l: string) => { lines.push(l); } });
+    assert.equal(ok, true, label);
+    assert.deepEqual(lines, [], `${label}: a create that succeeds prints no failure line`);
+    assert.deepEqual(spawned[0], ["pr", "create", ...rest], `${label}: the create carries the head as given`);
+    assert.deepEqual(spawned.slice(1), [["pr", "merge", "--auto", "--merge", "agent/x"]],
+      `${label}: the arm names the branch just opened, never the checkout's (agent/my-branch)`);
+  }
+});
+
 test("#1277: the failure line names the MODE, so `edit` and `create` are not confused in a transcript", () => {
   const lines: string[] = [];
   sendToGitHub("edit", ["1254"], { run: ghFails(), git: gitStub, err: (l: string) => { lines.push(l); } });
