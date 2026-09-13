@@ -24,9 +24,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   claimStatus, decideClaim, fetchLabels, claimRow, dispatchRow, declineRow, moveProjectStatus,
   CLAIM_LABEL, STARTED_LABEL, BLOCKED_LABEL, recordCheck, recordConflict, latestCheckFor,
@@ -1716,4 +1716,70 @@ test("#1275: a Status move reads only the item it touches, through the real call
   assert.equal(argv.filter((args) => args[0] === "issue" && args[1] === "list").length, 0, "nor #747's ready-issue list");
   assert.equal(argv.filter((args) => args[0] === "project" && args[1] === "item-edit").length, 4,
     "and every move still writes its own field -- the snapshot is what is shared, never the edit");
+});
+
+// --- #1373: removeClaimedWorktree -- what `decline` removes with -- against a worktree holding gitignored
+// `runs/` records. Real git, for #665's reason: "is this directory safe to delete" cannot be proven on a fake. ---
+
+const RECORD_FILES = ["runs/board-snapshots/a.json", "runs/board-snapshots/b.json", "runs/c.json"];
+
+function plantRecordFile(checkout: string, file: string) {
+  mkdirSync(dirname(join(checkout, file)), { recursive: true });
+  writeFileSync(join(checkout, file), `{"record":"${file}"}\n`);
+}
+
+/** `withRealWorktree`'s shape, with `/runs` ignored and `files` planted in the worktree's `runs/`. */
+function withRecordsWorktree<T>(files: string[],
+  fn: (t: { primary: string; worktree: string; run: (cmd: string, args: string[]) => string }) => T): T {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "row-claim-records-")));
+  const primary = join(root, "primary");
+  const worktree = join(root, "wt");
+  try {
+    execFileSync("git", ["init", "--quiet", primary], { env: sandboxGitEnv() });
+    git(primary, ["symbolic-ref", "HEAD", "refs/heads/main"]);
+    writeFileSync(join(primary, ".gitignore"), "/runs\n");
+    git(primary, ["add", ".gitignore"]);
+    git(primary, ["-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "-m", "initial"]);
+    git(primary, ["worktree", "add", "-q", "-b", "agent/records", worktree]);
+    for (const file of files) plantRecordFile(worktree, file);
+    return fn({ primary, worktree, run: (cmd: string, args: string[]) => git(primary, args) });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test("#1373: decline's remover REFUSES a clean worktree holding three runs/ records absent from the primary, naming 3", () => {
+  withRecordsWorktree(RECORD_FILES, ({ primary, worktree, run }) => {
+    assert.deepEqual(worktreeStatus(worktree), { clean: true }, "git reads it clean -- the reading that deleted them");
+    const result = removeClaimedWorktree(worktree, { run });
+    assert.equal(result.removed, false);
+    assert.match((result as { reason: string }).reason, /holds 3 of 3 runs\/ file\(s\)/);
+    assert.ok(git(primary, ["worktree", "list", "--porcelain"]).includes(worktree), "still registered");
+    for (const file of RECORD_FILES) assert.ok(existsSync(join(worktree, file)), `${file} must still be on disk`);
+  });
+});
+
+test("#1373: decline's remover REMOVES the worktree when all three records are in the primary with matching sha256", () => {
+  withRecordsWorktree(RECORD_FILES, ({ primary, worktree, run }) => {
+    for (const file of RECORD_FILES) plantRecordFile(primary, file);
+    assert.deepEqual(removeClaimedWorktree(worktree, { run }), { removed: true });
+    assert.equal(existsSync(worktree), false);
+  });
+});
+
+test("#1373 THE INCIDENT'S SHAPE: decline's remover treats an EMPTY reading on both sides as a refusal, never a match", () => {
+  withRecordsWorktree(RECORD_FILES, ({ primary, worktree, run }) => {
+    for (const file of RECORD_FILES) plantRecordFile(primary, file); // identical, so only the reading can refuse
+    const result = removeClaimedWorktree(worktree, { run, hash: () => "" });
+    assert.equal(result.removed, false, "two EMPTY readings compared equal must never authorise a removal");
+    assert.match((result as { reason: string }).reason, /matching NON-EMPTY sha256/);
+    for (const file of RECORD_FILES) assert.ok(existsSync(join(worktree, file)), `${file} must still be on disk`);
+  });
+});
+
+test("#1373 CONTROL: decline's remover removes a clean worktree with NO runs/ records, as it always did", () => {
+  withRecordsWorktree([], ({ worktree, run }) => {
+    assert.deepEqual(removeClaimedWorktree(worktree, { run }), { removed: true });
+    assert.equal(existsSync(worktree), false);
+  });
 });
