@@ -23,7 +23,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
-import { sweepDecision, EXIT } from "../../../../scripts/auto-arm-sweep.mjs";
+import {
+  sweepDecision, EXIT, mergedMeanwhile, MERGED_MEANWHILE_READS, MERGED_MEANWHILE_WAIT_MS,
+} from "../../../../scripts/auto-arm-sweep.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOW = `${REPO}.github/workflows/auto-arm.yml`;
@@ -233,8 +235,64 @@ test("the sweep's source asks the API whether the PR merged, rather than matchin
     "it must ASK -- a predicate reading `cause.message` cannot tell a merge from a network fault");
   assert.doesNotMatch(src, /cause\.message.*already merged|already merged.*cause\.message/,
     "no message-matching path may creep back in beside it");
-  const helper = src.slice(src.indexOf("function mergedMeanwhile"));
-  assert.match(helper.slice(0, helper.indexOf("\n}")), /catch \{\s*return false;/,
-    "UNREADABLE IS NOT MERGED: a failed lookup must report FAILED TO ARM, because not knowing why an "
-    + "arm failed is not the same as knowing it was harmless");
+});
+
+/**
+ * #1306: THE ONE READ LOST THE RACE, 3 OF 3. `arm` merges the PR `sweep` listed, and a single read at that
+ * instant got the pre-merge `false` -- each FAILED TO ARM line shares its second with `merged_at`, or is one
+ * after it. These drive `mergedMeanwhile` with an injected reader and sleep, never `gh`, and leave its bound
+ * at the module's own named constants, so shrinking the re-read is what goes red.
+ */
+function driven(answers: (boolean | Error)[]) {
+  const reads: number[] = [];
+  const slept: number[] = [];
+  const said: string[] = [];
+  const read = () => {
+    reads.push(reads.length + 1);
+    const answer = answers[Math.min(reads.length - 1, answers.length - 1)];
+    if (answer instanceof Error) throw answer;
+    return answer;
+  };
+  const merged = mergedMeanwhile("7", "o/r",
+    { read, sleep: (ms: number) => { slept.push(ms); }, log: (line: string) => { said.push(line); } });
+  return { merged, reads: reads.length, slept, said };
+}
+
+test("#1306 ACCEPTANCE: a PR whose `merged` turns true on a LATER read is merged meanwhile -- SKIPPED, not FAILED", () => {
+  const { merged, reads, slept } = driven([false, true]);
+  assert.equal(merged, true, "the second read is the one that sees the merge `arm` just made");
+  assert.equal(reads, 2, "it stops reading the moment the merge is seen");
+  assert.deepEqual(slept, [MERGED_MEANWHILE_WAIT_MS], "one named wait between the two reads");
+  assert.ok(MERGED_MEANWHILE_READS >= 2, "the race needs a second read at all -- one read is the defect");
+  // A FLOOR ON THE RE-READ WINDOW, not only a ceiling (worker-capture on #1379). Four reads with no wait between
+  // them land in the instant the one read lost, so the race is back with every count above still true. The three
+  // failures sat within about a second of `merged_at`; the window must be at least twice that, so a read-after-
+  // write lag only a little slower than the measured one does not re-race.
+  const MEASURED_RACE_WINDOW_MS = 1_000;
+  assert.ok((MERGED_MEANWHILE_READS - 1) * MERGED_MEANWHILE_WAIT_MS >= 2 * MEASURED_RACE_WINDOW_MS,
+    `the re-read window is ${(MERGED_MEANWHILE_READS - 1) * MERGED_MEANWHILE_WAIT_MS} ms, and the measured race `
+    + `was ~${MEASURED_RACE_WINDOW_MS} ms: reads that do not outlast it answer the same question at the same instant`);
+});
+
+test("#1306 CONTROL: a PR that NEVER reads merged still reports FAILED TO ARM, after exactly the bound", () => {
+  const { merged, reads, slept } = driven([false]);
+  assert.equal(merged, false, "the fix cannot be `never fail`: an arm that failed for a real reason still fails");
+  assert.equal(reads, MERGED_MEANWHILE_READS, "bounded: exactly the named number of reads, then it believes `false`");
+  assert.deepEqual(slept, Array(MERGED_MEANWHILE_READS - 1).fill(MERGED_MEANWHILE_WAIT_MS),
+    "a wait between reads, none after the last");
+  const TOTAL_WAIT_CEILING_MS = 10_000;
+  assert.ok(slept.reduce((a, b) => a + b, 0) <= TOTAL_WAIT_CEILING_MS,
+    "a genuinely failed arm must not stall the sweep for long before it says so");
+});
+
+test("#1306: a lookup that THROWS is printed with its cause, and still counts as not merged", () => {
+  const cause = new Error("HTTP 502: Bad Gateway (https://api.github.com/repos/o/r/pulls/7)");
+  const failing = driven([cause]);
+  assert.equal(failing.merged, false, "UNREADABLE IS NOT MERGED -- not knowing is not the same as harmless");
+  assert.equal(failing.said.length, MERGED_MEANWHILE_READS, "every failed read is said, not only the first");
+  assert.match(failing.said[0], /^SWEEP: #7 merged-meanwhile read 1\/\d+ FAILED -- HTTP 502: Bad Gateway/,
+    "the cause itself is printed: a bare catch made `lookup failed` and `not merged yet` the same line");
+  const recovered = driven([cause, true]);
+  assert.equal(recovered.merged, true, "a read that fails once and then sees the merge is still merged meanwhile");
+  assert.equal(recovered.said.length, 1);
 });
