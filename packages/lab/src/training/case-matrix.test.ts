@@ -275,6 +275,33 @@ test("#1202 clause 2: the variants share their MARKUP -- only the script differs
   assert.notEqual(good, bad, "the variants are identical, so one of them is not the case it claims to be");
 });
 
+/**
+ * #1209: A POINTER WHOSE TARGET IS GONE READS AS WORKING.
+ *
+ * The comment above sends a reader to a specific paragraph in `case-matrix.mjs`. Nothing held it there:
+ * deleting that paragraph left this suite **18/0 green**, with every reader the pointer sends across
+ * finding nothing and no way to tell whether it was deleted, renamed, or never written.
+ *
+ * The row's second done-when -- *"and the corrected argument in `case-matrix.mjs` is still 1"* -- was a
+ * ONE-TIME reading at merge. This makes it a standing one, which is the difference between a check and
+ * a note. Found by `worker-capture`, who drove the deletion rather than reasoning about it.
+ *
+ * SAME SHAPE AS #1184, and narrower: that pointer at least named something that had existed. A reader
+ * here follows a precise instruction and finds no such paragraph.
+ *
+ * ANCHORED ON THE PHRASE THE POINTER QUOTES, deliberately. A reword of the P/Q paragraph fails here --
+ * which is the point: the pointer and its target have to move together, and a guard that survived a
+ * reword would be back to holding nothing.
+ */
+test("#1209: the paragraph this file points at still exists in case-matrix.mjs", () => {
+  const target = readFileSync(new URL("./case-matrix.mjs", import.meta.url), "utf8");
+  assert.match(target, /P = updates `aria-expanded`, Q = moves focus/,
+    "the P/Q argument this file's FOCUS-TARGET comment sends readers to is gone from case-matrix.mjs. "
+    + "Move the pointer to wherever the argument now lives, or delete both -- a pointer whose target "
+    + "moved reads as working, and the reader who follows it cannot tell whether it was deleted, "
+    + "renamed, or never written");
+});
+
 test("#1202 clause 3, FOCUS-TARGET spelling: only the good variant moves focus, and to the sibling", () => {
   const { good, bad } = siblingCases[0];
   // The asymmetry that makes the pair valid: only the GOOD variant moves focus, so only the good
@@ -282,7 +309,9 @@ test("#1202 clause 3, FOCUS-TARGET spelling: only the good variant moves focus, 
   // never moves.
   //
   // WHY THAT IS SOUND IS ARGUED IN ONE PLACE, AND IT IS NOT HERE -- see the P/Q paragraph above
-  // `disclosure-focus-moves-to-collapsed-sibling` in `case-matrix.mjs`. #1209: this comment used to
+  // `disclosure-focus-moves-to-collapsed-sibling` in `case-matrix.mjs`, the one beginning
+  // "P = updates `aria-expanded`, Q = moves focus". THAT PHRASE IS PINNED by the test below, so this
+  // pointer cannot outlive what it points at. #1209: this comment used to
   // carry a SECOND copy of that argument, and the copy was the superseded version -- "nothing is ever
   // attributed to the focus move", which is wrong in one direction, since the good variant's silence is
   // attributable to the focus move entirely. It stood here, in the file whose failure message sends a
