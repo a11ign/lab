@@ -662,3 +662,25 @@ test("#1349: the runner's own snapshot probe beside a test file is the runner's 
   assert.deepEqual(runnerOwnedPaths(join(REPO, "packages/worker-fleet/src/capture-body-owner.test.ts")),
     ["packages/worker-fleet/src/__snapshots__/capture-body-owner.test.ts.snap"]);
 });
+
+// ---------------------------------------------------------------------------------------------------------
+// #1398: A `node:` SPECIFIER IS NO READ OF THE TREE. Under `rstest --coverage` all five WALK_SCOPE consumers
+// failed on "read 4 path(s) outside it: node:internal/modules/esm/loader; …". Measured by instrumenting the
+// recorders: `@rstest/core`'s bundled source-map support (`wrapCallSite` -> `mapSourcePosition` ->
+// `retrieveSourceMapURL`) calls `fs.existsSync` on every stack frame's file name, and a Node internal frame's is
+// `node:internal/...` -- which, resolved against the working directory, lands inside the repository.
+// ---------------------------------------------------------------------------------------------------------
+
+test("#1398 ACCEPTANCE: fs.existsSync on a node: id -- the call rstest's source-map support makes -- records nothing", async () => {
+  for (const id of ["node:internal/modules/esm/loader", "node:internal/process/task_queues", "node:fs"]) {
+    assert.deepEqual(await readsDuring(() => fsModule.existsSync(id)), [], id);
+  }
+  assert.deepEqual(await readsDuring(() => fsModule.existsSync(new URL("node:internal/process/report"))), [],
+    "and as a URL, which must not reach fileURLToPath -- it throws on any scheme but file:");
+});
+
+test("#1398 POSITIVE CONTROL: the same wrapper still records a real repository path, so the filter is not 'record nothing'", async () => {
+  assert.deepEqual(await readsDuring(() => fsModule.existsSync(join(REPO, MANIFEST))), [MANIFEST]);
+  assert.deepEqual(await readsDuring(() => fsModule.existsSync(MANIFEST)), [MANIFEST],
+    "a relative path, resolved against the working directory the suite runs in");
+});
