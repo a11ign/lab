@@ -164,6 +164,25 @@ function spokenForm(/** @type {any} */ text) {
   return text.replaceAll("_", "[ _]").replaceAll(".", "(?:\\.| dot )");
 }
 
+/**
+ * #1202: the markup BOTH variants of `disclosure-focus-moves-to-collapsed-sibling` use.
+ *
+ * ONE CONSTANT, not two copies. The pair's whole claim is that the markup is identical and only the
+ * script differs; two string literals would make that a thing a reader has to verify by eye on every
+ * future edit, and `case-matrix.test.ts` asserts it from this shape rather than from a comparison that
+ * could pass by accident.
+ *
+ * Both buttons carry `aria-expanded="false"`, which is the property the case exists for: the
+ * post-activation focus read must land on a control that ALSO announces a collapsed state, or the pair
+ * fails `sameControlAnnounced` for the uninteresting reason (no state on one side) rather than the
+ * interesting one (two different controls).
+ */
+const DISCLOSURE_SIBLING_BODY =
+  "<button id=\"delivery\" type=\"button\" aria-expanded=\"false\" aria-controls=\"delivery-content\">Show delivery options</button>"
+  + "<div id=\"delivery-content\" hidden>Standard delivery arrives within three working days.</div>"
+  + "<button id=\"hours\" type=\"button\" aria-expanded=\"false\" aria-controls=\"hours-content\">Show opening hours</button>"
+  + "<div id=\"hours-content\" hidden>We open at nine on weekdays and ten on Saturdays.</div>";
+
 const cases = [
   pair({
     id: "image-missing-alt",
@@ -599,6 +618,61 @@ const cases = [
       heading: "Account search",
       body: "<button type=\"button\"><span aria-hidden=\"true\">⌕</span></button>",
       script: "document.querySelector('button').focus();",
+    }),
+    probeForms: true,
+  }),
+  // #1202 (#828's code half): THE CASE THAT MAKES #812'S GATE OBSERVABLE.
+  //
+  // `rules.ts:501` refuses a `stateChange` whose two sides name DIFFERENT controls:
+  //
+  //     if (!sameControlAnnounced(change.control, change.after)) continue;
+  //
+  // `after` is a post-activation FOCUS read, so the two sides can legitimately describe two different
+  // controls -- and "both say collapsed" is then a true statement about two strings that says nothing
+  // about either control. Without that line, `before[0] === after[0]` holds and a finding is ADDED
+  // against a page that did nothing wrong.
+  //
+  // NO CORPUS CASE COULD REACH THAT LINE. Every disclosure case lands the post-activation read on the
+  // SAME control, so the gate's presence and its absence produced identical corpus results -- deleting
+  // it would have changed nothing any test observes. **Protection nobody can show works**, which is the
+  // shape this repo files more often than any other.
+  //
+  // THE GOOD VARIANT IS THE DEMONSTRATION, not the bad one. Its capture produces
+  // `Show delivery options ... collapsed` -> `Show opening hours ... collapsed`: two controls, both
+  // carrying an expandable state. With the gate, silent and correct. Without it, a false positive on a
+  // conformant page. That difference is the thing the corpus could not previously express.
+  //
+  // ON THE ROW'S CLAUSE 2 ("the variants differ ONLY in the property the case is about"), because this
+  // pair does differ in two: the good script updates `aria-expanded` AND moves focus to the sibling; the
+  // bad script does neither. That is unavoidable here -- a good variant that did not update its state
+  // would not be conformant, and one that did not move focus would not reach the gate. What clause 2
+  // protects against is ATTRIBUTING a finding to the wrong difference, and nothing is attributed to the
+  // focus move: the finding fires only on the bad variant, where focus never moves. Raised on #1202
+  // before building rather than left to be found in review.
+  pair({
+    id: "disclosure-focus-moves-to-collapsed-sibling",
+    family: "dynamic-state",
+    criterion: "4.1.2",
+    task: "Open the delivery options and read what is inside.",
+    source: "Web Accessibility Cookbook, chapter 22; Practical Web Accessibility, chapter 6",
+    mutation: "Activating the disclosure reveals its content without updating the announced expanded state.",
+    badSignal: { type: "state-change-silent", control: "Show delivery options" },
+    good: page({
+      title: "Delivery and opening hours",
+      heading: "Delivery and opening hours",
+      body: DISCLOSURE_SIBLING_BODY,
+      // Conformant: the state updates, and focus then moves to the sibling disclosure -- which is itself
+      // collapsed, so the post-activation read names a DIFFERENT control carrying the same state word.
+      script: "document.querySelector('#delivery').addEventListener('click', (event) => { const button = event.currentTarget; const open = button.getAttribute('aria-expanded') === 'true'; button.setAttribute('aria-expanded', String(!open)); document.querySelector('#delivery-content').hidden = open; document.querySelector('#hours').focus(); });",
+    }),
+    bad: page({
+      title: "Delivery and opening hours",
+      heading: "Delivery and opening hours",
+      body: DISCLOSURE_SIBLING_BODY,
+      // The real 4.1.2 failure, and focus STAYS on the control -- so both sides name the same control and
+      // the gate lets it through to the state comparison, which is what makes the signal fire here and
+      // be silent on the good variant.
+      script: "document.querySelector('#delivery').addEventListener('click', () => { document.querySelector('#delivery-content').hidden = false; });",
     }),
     probeForms: true,
   }),
@@ -3758,6 +3832,7 @@ function conformantBehaviourCases(/** @type {any} */ built) {
   }
   return generated;
 }
+
 
 /** Each conformant accompaniment applied to one host, skipping the ones it cannot take. */
 function everyConformantPiece(/** @type {any} */ template) {

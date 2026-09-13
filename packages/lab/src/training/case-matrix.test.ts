@@ -210,3 +210,73 @@ test("#1115: each new case declares a badSignal an implementation actually reads
       `${c.id}: the signal must name the control to press and what it expects to hear`);
   }
 });
+
+/**
+ * #1202 (#828's code half): THE CASE THAT MAKES #812'S GATE OBSERVABLE.
+ *
+ * `rules.ts` refuses a `stateChange` whose two sides name different controls
+ * (`sameControlAnnounced`). `after` is a post-activation FOCUS read, so the sides CAN describe two
+ * different controls -- and "both say collapsed" is then a true statement about two strings that says
+ * nothing about either control. Without that gate a finding is added against a conformant page.
+ *
+ * **No corpus case could reach that line.** Every disclosure case landed the post-activation read on the
+ * same control, so the gate's presence and its absence produced identical corpus results.
+ *
+ * THIS HALF OWNS THE FIXTURE, NOT THE EVIDENCE. Everything below is asserted from the case DEFINITION.
+ * Whether a real capture produces the predicted pair is #828's, on the fleet, through `check-signals` --
+ * a `runs/`-reading verdict this row must not report.
+ */
+const SIBLING_CASE = "disclosure-focus-moves-to-collapsed-sibling";
+const siblingCases = cases.filter((c) => c.id === SIBLING_CASE || c.id.startsWith(`${SIBLING_CASE}+`));
+
+/** The `aria-expanded` controls a variant's markup declares, in document order, with their names. */
+function expandableControls(html: string): { name: string; state: string }[] {
+  return [...html.matchAll(/<button[^>]*aria-expanded="(true|false)"[^>]*>([^<]*)<\/button>/g)]
+    .map((m) => ({ name: m[2].trim(), state: m[1] === "true" ? "expanded" : "collapsed" }));
+}
+
+test("#1202 clause 1: the case exists, and BOTH its controls carry an expandable state", () => {
+  assert.ok(siblingCases.length > 0,
+    `${SIBLING_CASE} is not in CASES, so every assertion below would pass having examined nothing`);
+  const good = siblingCases[0].good;
+  const controls = expandableControls(good);
+  // POSITIVE CONTROL: print the two control names before asserting anything about them. A case whose
+  // markup stopped parsing and a case with the wrong controls produce the same empty list.
+  assert.deepEqual(controls.map((c) => c.name), ["Show delivery options", "Show opening hours"],
+    `the two controls this case is about are not both present: ${JSON.stringify(controls)}`);
+  assert.deepEqual(controls.map((c) => c.state), ["collapsed", "collapsed"],
+    "BOTH must announce a collapsed state -- if the focus destination carries no expandable state the "
+    + "pair fails `sameControlAnnounced` for the uninteresting reason (no state on one side) rather "
+    + `than the interesting one (two different controls): ${JSON.stringify(controls)}`);
+});
+
+test("#1202 clause 3 (MUTATION TARGET): the two controls are DIFFERENT controls", () => {
+  // The row's mutation is "make the two controls the same control". This is the assertion it must turn
+  // red, and it names the control rather than reporting a count.
+  const controls = expandableControls(siblingCases[0].good).map((c) => c.name);
+  assert.equal(new Set(controls).size, controls.length,
+    `the case names the same control twice (${JSON.stringify(controls)}), so the post-activation read `
+    + "lands on the control it started from and `sameControlAnnounced` is satisfied for the ordinary "
+    + "reason. The case then exercises nothing #812 added, which is the parent's defect one level down");
+});
+
+test("#1202 clause 2: the variants share their MARKUP -- only the script differs", () => {
+  const { good, bad } = siblingCases[0];
+  const bodyOf = (html: string) => expandableControls(html);
+  assert.deepEqual(bodyOf(good), bodyOf(bad),
+    "the two variants must present the same controls in the same states; a pair differing in its markup "
+    + "as well as its behaviour cannot attribute a finding to either");
+  assert.notEqual(good, bad, "the variants are identical, so one of them is not the case it claims to be");
+});
+
+test("#1202: the bad variant is the one that can fire -- focus stays on the control", () => {
+  const { good, bad } = siblingCases[0];
+  // The asymmetry that makes the pair valid: only the GOOD variant moves focus, so only the good
+  // variant's capture produces a two-control pair. The finding fires on the bad variant, where focus
+  // never moves -- so nothing is ever attributed to the focus move.
+  assert.match(good, /#hours'\)\.focus\(\)/,
+    "the good variant must move focus to the sibling disclosure, or its capture never reaches the gate");
+  assert.ok(!/\.focus\(\)/.test(bad),
+    "the bad variant must NOT move focus: if it did, its pair would name two controls too and the gate "
+    + "would skip it, leaving a case whose signal cannot fire on either variant");
+});
