@@ -91,8 +91,13 @@ test("MUTATION: without scrubbing NODE_TEST_CONTEXT, the nested run is silently 
   // context left INTACT, the child process is refused and returns EMPTY output with exit 0 -- not a
   // thrown error, not a non-zero status. Proves the guard above is guarding something real.
   const npx2 = npmCliInvocation("npx", ["tsx", "--test", "packages/nvda-speech/src/**/*.test.ts"]);
+  // SET, NOT INHERITED (#1318). This relied on the PARENT runner's own NODE_TEST_CONTEXT surviving into the
+  // child, which is true only when the parent is node:test. Under rstest nothing sets it, so the child RAN and
+  // this test failed for a reason unrelated to what it proves. Inside a `--test` run node sets the variable to
+  // `child-v8` (measured on node v22.22), and a nested `--test` given that value is refused exactly as before:
+  // empty stdout, exit 0. Setting it here reproduces the refusal whichever runner is the parent.
   const out = execFileSync(npx2.command, npx2.args,
-    { cwd: REPO, encoding: "utf8" }); // process.env inherited, NODE_TEST_CONTEXT included -- deliberately not scrubbed
+    { cwd: REPO, encoding: "utf8", env: { ...process.env, NODE_TEST_CONTEXT: "child-v8" } });
   assert.equal(out, "", "expected the nested run to be silently refused when NODE_TEST_CONTEXT survives");
 });
 
