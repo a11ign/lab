@@ -52,6 +52,9 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const SELF = "packages/lab/src/packaging/live-default-seams.test.ts";
 /** The one command name this guard is about, assembled so this file's own text never spells a spawn of it. */
 const GH = ["g", "h"].join("");
+/** The fixture's local-only command, assembled for the same reason: `git-spawn-classification.test.ts` reads a
+ *  spelled `x("git", ...)` in this file's text as a real unscrubbed git spawn, and this file spawns nothing. */
+const GIT = ["g", "i", "t"].join("");
 
 type Source = { path: string; text: string };
 type FunctionLike = ts.FunctionDeclaration | ts.ArrowFunction | ts.FunctionExpression;
@@ -333,7 +336,7 @@ export function readThroughHelper({ run = defaultRun } = {}) { return pageOf({ r
 export function readPositional(deps = {}) { const { run = defaultRun } = deps; return ghHelper(["pr", "view"], run); }
 export function readAliased() { const run = defaultRun; return run("${GH}", ["issue", "list"]); }
 export function carrierOfDirect() { return readDirect(); }
-export function localOnly({ run = defaultRun } = {}) { return run("git", ["status"]); }
+export function localOnly({ run = defaultRun } = {}) { return run("${GIT}", ["status"]); }
 `;
 const FIXTURE_TEST = `
 import { readDirect, readThroughHelper, readPositional, readAliased, carrierOfDirect, localOnly } from "../../../../scripts/fixture-live.mjs";
