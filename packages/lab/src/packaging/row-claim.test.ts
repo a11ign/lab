@@ -1226,7 +1226,7 @@ test("#1275: moveProjectStatus passes touches: issueNumber, so its snapshot cove
 test("#1275: through the real caller, a Project the token cannot read is still reported as project-unreadable", () => {
   // #546's bridge: CI's token cannot read the user-owned Project, and settle-closed-status.mjs classifies each close
   // by the reason moveProjectStatus returns. Captured live 2026-09-13 with TOUCHED_ITEM_QUERY and project 999: gh
-  // exited 1 and printed this body -- board-snapshot.test.ts holds the whole capture.
+  // exited 1 and printed this body -- board-snapshot-scope.test.ts holds the whole capture and pins the response shape.
   forgetProcessSnapshot();
   const capturedErrors = { errors: [{ type: "NOT_FOUND", path: ["user", "projectV2"], locations: [{ line: 3, column: 27 }],
     message: "Could not resolve to a ProjectV2 with the number 999." }] };
