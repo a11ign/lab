@@ -24,7 +24,6 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import {
   closedRowNumbers,
   sessionLabelsOf,
@@ -178,45 +177,11 @@ test("#1000: the live and retired sets are DISJOINT, and the split is checked ag
   // do not exist.
   //
   // So the DISJOINTNESS is checked here (pure, always), and the COVERAGE is checked against `gh label
-  // list` below -- which needs a token, so it reports honestly rather than passing when it cannot ask.
+  // list` in arm-pr-labels-live.test.ts (#1140) -- which needs a token, so it reports honestly rather than
+  // passing when it cannot ask.
   assert.deepEqual(LIVE_SESSIONS.filter((s) => RETIRED_SESSIONS.includes(s)), [],
     "a session cannot be both live and retired");
   assert.ok(LIVE_SESSIONS.length >= 1 && RETIRED_SESSIONS.length >= 1);
-});
-
-test("#1000: every `session:*` label that EXISTS is classified -- asked of GitHub, skipped honestly", () => {
-  // THE COVERAGE HALF, and it cannot be a literal: the question is "which labels exist", which only the
-  // repository can answer. CI has no token, so this says so rather than passing -- a check that cannot ask
-  // must report that, which is this repo's own rule and the reason the skip prints.
-  // OPT-IN, and that is not timidity: this file declares `// no-token: gh`, and a test that spawns `gh`
-  // whenever a token happens to be present makes that declaration false on exactly the machines where it
-  // matters. The flag keeps both true -- the acceptance job never spawns, and an agent asks deliberately.
-  if (process.env.A11Y_CHECK_SESSION_LABELS !== "1") {
-    console.log("  NOT RUN: the label coverage check is opt-in -- `A11Y_CHECK_SESSION_LABELS=1 npx tsx "
-      + "--test packages/lab/src/packaging/arm-pr.test.ts` asks GitHub which `session:*` labels exist. The "
-      + "disjointness test above ran; nothing here checked that the two lists COVER them.");
-    return;
-  }
-  let labels: string[];
-  try {
-    labels = JSON.parse(execFileSync("gh",
-      ["label", "list", "--repo", "DanBeckDev/a11y-witness", "--limit", "200", "--json", "name"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }))
-      .map((l: { name: string }) => l.name).filter((n: string) => n.startsWith("session:"));
-  } catch {
-    console.log("  SKIPPED: `gh label list` could not be asked (no token here). NOT a pass -- the "
-      + "disjointness test above still ran, but nothing checked that the two lists COVER the labels that "
-      + "exist. Run this locally with a token before trusting the split.");
-    return;
-  }
-  const classified = new Set([...LIVE_SESSIONS, ...RETIRED_SESSIONS].map((s) => `session:${s}`));
-  const unclassified = labels.filter((l) => !classified.has(l)).sort();
-  assert.deepEqual(unclassified, [],
-    `these \`session:*\` labels exist and are neither live nor retired: ${unclassified.join(", ")}. A new `
-    + "session must be added to LIVE_SESSIONS in arm-pr.mjs, or arm-pr will refuse every row it claims.");
-  const missing = [...classified].filter((l) => !labels.includes(l)).sort();
-  assert.deepEqual(missing, [],
-    `these are classified in arm-pr.mjs and no longer exist as labels: ${missing.join(", ")}`);
 });
 
 test("#1000: a not-live label is NAMED, and says WHICH KIND of not-live", () => {
