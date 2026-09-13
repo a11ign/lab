@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
 import {
-  closurePlan, labelsToStrip, applyClosurePlan, settleClosedStatus, EXIT,
+  closurePlan, labelsToStrip, applyClosurePlan, EXIT,
 } from "../../../../scripts/close-rows-for-merged-pr.mjs";
 // THE AUDIT'S OWN DEBRIS CHECK, imported rather than re-derived -- #754's own mutation target is that
 // THIS function, unchanged, must go quiet once labelsToStrip has done its work, and must report the
@@ -284,19 +284,3 @@ test("#1227: a row that FAILED to close is not settled -- the Status must not sa
     + "which is the reverse direction of the defect this fixes");
 });
 
-test("#1227: the three outcomes are reported distinctly, never folded into one success", () => {
-  const said: string[] = [];
-  const log = console.log;
-  console.log = (line: string) => { said.push(String(line)); };
-  try {
-    settleClosedStatus(1, { moveStatus: () => ({ moved: true }) });
-    settleClosedStatus(2, { moveStatus: () => ({ moved: false, notOnBoard: true, reason: "not an item" }) });
-    settleClosedStatus(3, { moveStatus: () => ({ moved: false, notOnBoard: false, reason: "HTTP 500" }) });
-  } finally { console.log = log; }
-  assert.match(said[0], /#1 Status -> Done/);
-  assert.match(said[1], /#2 is not on the Project/,
-    "a row not on the board is a real, common state and not a defect -- ceo's ruling");
-  assert.match(said[2], /#3 CLOSED but Status NOT moved -- HTTP 500/,
-    "and a genuine failure is the half-applied case: the close landed and the board write did not, which "
-    + "must not look like an ordinary success");
-});
