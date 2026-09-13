@@ -60,7 +60,7 @@ function floor(args: string[], extraEnv: Record<string, string> = {}):
   { status: number | null; output: string; cacheFiles: number } {
   const cacheRoot = mkdtempSync(join(tmpdir(), "runner-is-rstest-cache-"));
   try {
-    const env = { ...process.env, ...extraEnv, A11Y_RSTEST_CACHE_DIR: cacheRoot };
+    const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv, A11Y_RSTEST_CACHE_DIR: cacheRoot };
     delete env.NODE_TEST_CONTEXT;
     const result = spawnSync("node", [FLOOR, ...args], { cwd: REPO, encoding: "utf8", env });
     const cacheFiles = readdirSync(cacheRoot, { recursive: true, withFileTypes: true }).filter((e) => e.isFile()).length;
