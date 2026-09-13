@@ -76,9 +76,15 @@ test("#1319 ACCEPTANCE: no step of reusable-build-test.yml runs `tsx --test`, co
 
 test("#1319: both branches of the scoped step go through the floor to rstest", () => {
   const lines = codeLines(STEPS[stepNamed(SCOPED)].run ?? "");
-  const throughFloor = lines.filter((line) =>
-    /\bnode scripts\/assert-glob-not-empty\.mjs\s+"\$\{(globs|files)\[@\]\}"\s+--min=1\s+--run\s+--runner=rstest\s*$/.test(line));
-  assert.equal(throughFloor.length, 2, `the broad-glob branch and the selected-files branch:\n${lines.join("\n")}`);
+  const floorLine = (variable: string, flags: string) => lines.filter((line) => new RegExp(
+    `\\bnode scripts/assert-glob-not-empty\\.mjs\\s+"\\$\\{${variable}\\[@\\]\\}"\\s+${flags}\\s*$`).test(line));
+  // The broad branch passes one glob per implicated PACKAGE, and a package can legitimately have no tests:
+  // `nvda-speech` has none under src, and #1469's first two CI runs were refused on exactly that glob. So that branch
+  // names and drops an empty package glob. The selected-files branch keeps the strict floor: a selected file that
+  // matches nothing is a real fault.
+  assert.equal(floorLine("globs", "--min=1 --drop-empty --run --runner=rstest").length, 1,
+    `the broad-glob branch:\n${lines.join("\n")}`);
+  assert.equal(floorLine("files", "--min=1 --run --runner=rstest").length, 1, `the selected-files branch:\n${lines.join("\n")}`);
 });
 
 test("#1319: the unscoped step runs `npm run test:ts`, and `test:ts` asks the floor for rstest over the whole glob", () => {
@@ -106,6 +112,15 @@ test("#1319: the command `--run` executes, per runner -- tsx unchanged, rstest w
   assert.throws(() => runnerInvocation({ runner: "jest", patterns: ["a.test.ts"] }), /--runner=jest is not a runner/);
 });
 
+test("#1319: an EMPTY pattern list is refused for both runners, because either would run the whole suite", () => {
+  // Measured while building this row: a mutation let --drop-empty pass an empty list through, and `rstest run` with no
+  // --include ran every test in the config's include, 92 workers on the shared host. `tsx --test` with no file runs its
+  // default glob the same way.
+  for (const runner of ["tsx", "rstest"]) {
+    assert.throws(() => runnerInvocation({ runner, patterns: [] }), /no pattern to run/, runner);
+  }
+});
+
 // --- the floor, under the new runner --------------------------------------------------------------------------------
 
 test("#1319: under --runner=rstest a glob matching nothing is refused BEFORE rstest starts", () => {
@@ -113,6 +128,26 @@ test("#1319: under --runner=rstest a glob matching nothing is refused BEFORE rst
   assert.equal(status, 1);
   assert.match(output, /matched 0, need at least 1/);
   assert.doesNotMatch(output, /rstest|Test Files|No test files found/i, "the floor refused; rstest never ran");
+});
+
+test("#1319: --drop-empty names an empty glob and drops it, and runs the rest", () => {
+  const { status, output } = floor(["packages/nvda-speech/src/**/*.test.ts",
+    "packages/lab/src/packaging/commands-documented.test.ts", "--min=1", "--drop-empty", "--run", "--runner=rstest"]);
+  assert.equal(status, 0, output);
+  assert.match(output, /packages\/nvda-speech\/src\/\*\*\/\*\.test\.ts\s+matched 0 -- dropped/,
+    "the dropped glob is named, never skipped silently");
+});
+
+test("#1319: --drop-empty still refuses when EVERY glob is empty, and without it an empty glob is refused as before", () => {
+  const allEmpty = floor(["packages/nvda-speech/src/**/*.test.ts", "packages/lab/src/packaging/nothing-matches-*.test.ts",
+    "--min=1", "--drop-empty", "--run", "--runner=rstest"]);
+  assert.equal(allEmpty.status, 1, allEmpty.output);
+  assert.match(allEmpty.output, /every glob matched nothing/);
+  assert.doesNotMatch(allEmpty.output, /No test files found/, "the floor refused; rstest never ran");
+  const strict = floor(["packages/nvda-speech/src/**/*.test.ts", "packages/lab/src/packaging/commands-documented.test.ts",
+    "--min=1"]);
+  assert.equal(strict.status, 1, "without --drop-empty the floor refuses an empty glob, as #355 requires");
+  assert.match(strict.output, /matched 0, need at least 1/);
 });
 
 test("#1319: an unknown --runner is refused with exit 2, before the floor or any runner", () => {
@@ -143,27 +178,39 @@ test("#1319: --runner=rstest really runs rstest, and forwards both its passing a
 // --- the build cache ----------------------------------------------------------------------------------------------
 
 /**
- * The config's `performance.buildCache` as a plain `node` process sees it with `CI` set to `ci`, or unset for undefined.
- * Read in a child, never imported here: inside an rstest worker `@rstest/core` resolves to rstest's runtime, where
- * `defineConfig` is not a function, so importing the config from a test fails the whole file under the new runner.
+ * The config's `performance.buildCache` and `pool.maxWorkers` as a plain `node` process sees them, with `CI` set to `ci`,
+ * or unset for undefined. Read in a child, never imported here: inside an rstest worker `@rstest/core` resolves to
+ * rstest's runtime, where `defineConfig` is not a function, so importing the config from a test fails the whole file
+ * under the new runner.
  */
-function buildCacheWith(ci: string | undefined): unknown {
+function configWith(ci: string | undefined): { buildCache: unknown; maxWorkers: unknown; cores: number } {
   const env = { ...process.env };
   delete env.CI;
   if (ci !== undefined) env.CI = ci;
   const script = `const { default: c } = await import(${JSON.stringify(CONFIG_URL)}); `
-    + "process.stdout.write(JSON.stringify(c.performance?.buildCache ?? null));";
+    + "const { availableParallelism } = await import('node:os'); "
+    + "process.stdout.write(JSON.stringify({ buildCache: c.performance?.buildCache ?? null, "
+    + "maxWorkers: c.pool?.maxWorkers ?? null, cores: availableParallelism() }));";
   const result = spawnSync("node", ["--input-type=module", "-e", script], { cwd: REPO, encoding: "utf8", env });
   assert.equal(result.status, 0, result.stderr);
   return JSON.parse(result.stdout);
 }
 
 test("#1319: rstest's build cache is on exactly when CI is set, read from the real config in a plain node process", () => {
-  assert.equal(buildCacheWith("true"), true, "GitHub Actions sets CI=true");
-  assert.equal(buildCacheWith("1"), true);
-  assert.equal(buildCacheWith(undefined), false, "off locally, as #1315 measured: the build is under 1% of a run here");
-  assert.equal(buildCacheWith(""), false);
-  assert.equal(buildCacheWith("false"), false);
+  assert.equal(configWith("true").buildCache, true, "GitHub Actions sets CI=true");
+  assert.equal(configWith("1").buildCache, true);
+  assert.equal(configWith(undefined).buildCache, false, "off locally, as #1315 measured: the build is under 1% of a run here");
+  assert.equal(configWith("").buildCache, false);
+  assert.equal(configWith("false").buildCache, false);
+});
+
+test("#1319: locally the config caps workers at half the host's cores; in CI it leaves rstest's default", () => {
+  // ceo's ruling after 22:49Z, when one whole-suite run at rstest's default took 92 worker processes on a host eight
+  // sessions share. A GitHub runner is not shared, so CI keeps the default.
+  const local = configWith(undefined);
+  assert.equal(local.maxWorkers, Math.max(1, Math.floor(local.cores / 2)), `cores ${local.cores}`);
+  assert.equal(configWith("false").maxWorkers, local.maxWorkers, "CI=false is a local run");
+  assert.equal(configWith("true").maxWorkers, null, "no cap in CI");
 });
 
 test("#1319: the cache is restored and its HIT or MISS printed before both test steps, keyed on the lockfile and the config", () => {
