@@ -398,3 +398,68 @@ test("#583 MUTATION direction 1, the issue's own instruction: delete a remote br
     assert.equal(result.status, 0, `expected success, got: ${result.stderr}`);
   });
 });
+
+// --- #1292: a tag write has no base to be stale against either ---
+
+const ZERO_SHA = "0000000000000000000000000000000000000000";
+
+/** The #348 incident shape: HEAD is `side`, built off a point origin/main has moved past. Returns its sha. */
+function checkoutStaleSide(sandbox: GitSandbox): string {
+  useMainAsInitialBranch(sandbox);
+  const staleTip = commitFile(sandbox, "a.txt", "1\n");
+  sandbox.run(["checkout", "-q", "-b", "side", staleTip]);
+  commitFile(sandbox, "side-only.txt", "3\n");
+  sandbox.run(["checkout", "-q", "main"]);
+  commitFile(sandbox, "main-moved-on.txt", "4\n");
+  sandbox.run(["update-ref", "refs/remotes/origin/main", "main"]);
+  sandbox.run(["checkout", "-q", "side"]);
+  return sandbox.run(["rev-parse", "side"]).trim();
+}
+
+test("#1292 ACCEPTANCE: a TAG-only push from a stale HEAD is allowed and names why it skipped -- and a "
+  + "BRANCH push from that same HEAD still refuses", () => {
+  withGitSandbox((sandbox) => {
+    const sha = checkoutStaleSide(sandbox);
+    // Each line shape measured from a real `git push` on git 2.53.0. `<sha>:refs/tags/<name>`, #1246's own
+    // form, reports the SHA as its local ref; a named tag reports the tag's refname.
+    const tagPushes: Record<string, string> = {
+      "sha to tag (#1246's form)": `${sha} ${sha} refs/tags/stranded/agent-x ${ZERO_SHA}\n`,
+      "named tag": `refs/tags/v0.1.0 ${sha} refs/tags/v0.1.0 ${ZERO_SHA}\n`,
+      "tag write plus tag deletion": `refs/tags/v0.1.0 ${sha} refs/tags/v0.1.0 ${ZERO_SHA}\n`
+        + deletionStdin("refs/tags/old"),
+    };
+    for (const [label, stdin] of Object.entries(tagPushes)) {
+      const result = runStaleBaseCheck(sandbox, {}, stdin);
+      assert.equal(result.status, 0, `${label}: a tag-only push must not be refused: ${result.stderr}`);
+      assert.match(result.stderr, /stale-base-check \(this push only writes or deletes tag\(s\)/, label);
+    }
+    // POSITIVE CONTROL, same sandbox and HEAD: a check that stopped running passes every assertion above.
+    const branch = runStaleBaseCheck(sandbox, {}, updateStdin(sha, "refs/heads/side", ZERO_SHA));
+    assert.equal(branch.status, 1, "a branch push from this stale HEAD must still be refused");
+    assert.match(branch.stderr, /#348/);
+  });
+});
+
+test("#1292: a MIXED push (a tag and a branch) refuses, and names the branch as the ref that needs a base",
+  () => {
+  withGitSandbox((sandbox) => {
+    const sha = checkoutStaleSide(sandbox);
+    // Measured: a mixed push reports its branch line's LOCAL ref as `HEAD`, so only the remote ref says
+    // what is being written -- which is why the hook reads that field.
+    const stdin = `HEAD ${sha} refs/heads/side ${ZERO_SHA}\nrefs/tags/v0.1.0 ${sha} refs/tags/v0.1.0 ${ZERO_SHA}\n`;
+    const result = runStaleBaseCheck(sandbox, {}, stdin);
+    assert.equal(result.status, 1, "a tag riding along must not silence the branch's real finding");
+    assert.match(result.stderr, /need a base: refs\/heads\/side$/m);
+    assert.doesNotMatch(result.stderr, /need a base:.*refs\/tags/, "the tag is not what made it refuse");
+  });
+});
+
+test("#1292: a branch whose NAME contains `refs/tags/` is still a branch -- the skip reads the namespace",
+  () => {
+  withGitSandbox((sandbox) => {
+    const sha = checkoutStaleSide(sandbox);
+    const result = runStaleBaseCheck(sandbox, {},
+      updateStdin(sha, "refs/heads/refs/tags/looks-like-a-tag", ZERO_SHA));
+    assert.equal(result.status, 1, "a match anywhere in the ref name would wave this branch push through");
+  });
+});
