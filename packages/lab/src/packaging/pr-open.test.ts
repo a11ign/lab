@@ -207,6 +207,11 @@ test("#1277 POSITIVE CONTROL: a create that SUCCEEDS gains no failure line", () 
   assert.equal(ok, true);
   assert.deepEqual(lines, [], "silence on success -- the failure line must move with the outcome");
   assert.equal(spawned[0][0], "pr", "and the command really ran rather than being skipped");
+  // The ARM spawn, which no test asserted: `run(args.slice(1))` sent `gh merge --auto --merge` after every
+  // ready create, an unknown command thrown raw after the PR already existed. `armAfterCreate`'s own tests
+  // check the argv it RETURNS; this checks the argv `sendToGitHub` actually SPAWNS from it.
+  assert.deepEqual(spawned.slice(1), [["pr", "merge", "--auto", "--merge"]],
+    "a ready create is armed with the whole `gh pr merge` argv, `pr` included");
 });
 
 test("#1277: the failure line names the MODE, so `edit` and `create` are not confused in a transcript", () => {
