@@ -29,7 +29,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { checkBody, bodyFromArgs, armAfterCreate, sendToGitHub } from "../../../../scripts/pr-open.mjs";
+import { checkBody, bodyFromArgs, armAfterCreate, sendToGitHub, headTreeRefusal } from "../../../../scripts/pr-open.mjs";
 
 const NEVER_RUN = () => { throw new Error("checkBody must never RUN a command for a body this test expects to refuse"); };
 
@@ -271,4 +271,90 @@ test("#1283: a failing `git` still prints the line -- an error handler that erro
   assert.match(lines[0], /\(unknown\)/, "the facts it could not read say so");
   assert.match(lines[0], /Command failed: gh pr create/,
     "AND gh's own message survives -- losing it is the thing that made the throw worse than the dump");
+});
+
+// --- #1344: `create --head B` refuses unless THIS working tree is B, at origin/B's commit ---------------------
+//
+// `checkBody` runs the Acceptance in whatever directory pr-open started in, and `--head` was read only to arm. So
+// the same command and body gave 51 tests from #1313's worktree and "# tests 43 / # pass 43" from the primary --
+// and #1343 was created on the 43. `headTreeRefusal` is driven here over an injected `git` answering by argv.
+
+const SHA_A = "a".repeat(40);
+const SHA_B = "b".repeat(40);
+
+/** A `git` answering each argv from `facts` -- an Error is thrown -- and keeping every argv it was asked. */
+function gitFacts(facts: Record<string, string | Error>) {
+  const asked: string[][] = [];
+  const git = (args: string[]) => {
+    asked.push(args);
+    const answer = facts[args.join(" ")];
+    if (answer === undefined) throw new Error(`no fact for: git ${args.join(" ")}`);
+    if (answer instanceof Error) throw answer;
+    return answer;
+  };
+  return { git, asked };
+}
+
+test("#1344 case 1: --head B from a tree on ANOTHER branch refuses, naming both refs", () => {
+  const { git } = gitFacts({ "rev-parse --abbrev-ref HEAD": "main" });
+  const refusal = headTreeRefusal("create", ["--title", "t", "--head", "agent/x"], { git });
+  assert.ok(refusal, "a tree on main must not test agent/x");
+  assert.match(refusal, /--head `agent\/x` but this working tree is on `main`/);
+  assert.match(refusal, /Nothing ran and nothing was sent/);
+  assert.match(headTreeRefusal("create", ["--head=agent/x"], { git }) ?? "", /--head `agent\/x`/, "the = spelling too");
+});
+
+test("#1344 case 1: --head B from a DETACHED HEAD refuses, naming the short sha -- never a branch called HEAD", () => {
+  const { git } = gitFacts({ "rev-parse --abbrev-ref HEAD": "HEAD", "rev-parse --short HEAD": "deadbee" });
+  const refusal = headTreeRefusal("create", ["--head", "agent/x"], { git }) ?? "";
+  assert.match(refusal, /on a detached HEAD at `deadbee`/, "the primary checkout's shape in the 43-test run");
+  assert.doesNotMatch(refusal, /on `HEAD`/);
+});
+
+test("#1344 case 2 CONTROL: a tree on B at origin/B's commit is the head being sent -- no refusal", () => {
+  const { git, asked } = gitFacts({
+    "rev-parse --abbrev-ref HEAD": "agent/x",
+    "rev-parse HEAD": SHA_A,
+    "rev-parse refs/remotes/origin/agent/x": SHA_A,
+  });
+  assert.equal(headTreeRefusal("create", ["--title", "t", "--head", "agent/x"], { git }), null);
+  assert.deepEqual(asked, [["rev-parse", "--abbrev-ref", "HEAD"], ["rev-parse", "HEAD"],
+    ["rev-parse", "refs/remotes/origin/agent/x"]], "and it compared the branch and both commits to say so");
+});
+
+test("#1344 CONTROL: no --head, and edit, have nothing to compare -- and ask git nothing", () => {
+  const { git, asked } = gitFacts({});
+  assert.equal(headTreeRefusal("create", ["--title", "t", "--body-file", "b.md"], { git }), null,
+    "without --head, gh opens the checked-out branch, which is the tree under test");
+  assert.equal(headTreeRefusal("edit", ["1344", "--body-file", "b.md"], { git }), null);
+  assert.deepEqual(asked, []);
+});
+
+test("#1344 case 3: a tree on B but NOT at origin/B's commit refuses, naming both SHAs", () => {
+  const { git } = gitFacts({
+    "rev-parse --abbrev-ref HEAD": "agent/x",
+    "rev-parse HEAD": SHA_A,
+    "rev-parse refs/remotes/origin/agent/x": SHA_B,
+  });
+  const refusal = headTreeRefusal("create", ["--head", "agent/x"], { git }) ?? "";
+  assert.match(refusal, new RegExp(`on \`agent/x\` at \`${SHA_A}\`, but \`origin/agent/x\` is \`${SHA_B}\``));
+});
+
+test("#1344 case 3: an unpushed B (origin/B unreadable) refuses and says to push -- never a match on a failed read", () => {
+  const { git } = gitFacts({
+    "rev-parse --abbrev-ref HEAD": "agent/x",
+    "rev-parse HEAD": SHA_A,
+    "rev-parse refs/remotes/origin/agent/x": new Error("fatal: ambiguous argument"),
+  });
+  assert.match(headTreeRefusal("create", ["--head", "agent/x"], { git }) ?? "", /unreadable -- push the branch first/);
+});
+
+test("#1344 WIRING: main() refuses a mismatched head BEFORE checkBody runs any Acceptance command", () => {
+  const source = stripComments(readFileSync(fileURLToPath(new URL("../../../../scripts/pr-open.mjs", import.meta.url)), "utf8"));
+  const start = source.indexOf("function main() {");
+  const main = source.slice(start, source.indexOf("\n}\n", start));
+  const refusal = main.indexOf("headTreeRefusal(mode, rest)");
+  const check = main.indexOf("checkBody(body)");
+  assert.ok(refusal > 0 && check > 0, "both calls are in main()");
+  assert.ok(refusal < check, "the head is compared before checkBody runs the Acceptance in this tree");
 });
