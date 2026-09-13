@@ -26,7 +26,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, realpathSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, realpathSync, statSync, symlinkSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -79,7 +79,7 @@ function absenceViolations(
  * caught, and a guard reading `HEAD` is **green by construction before the first commit** — the shape
  * `untracked-files-escape-ls-files-guards` already records one field over.
  */
-function trackedWorkingTree(repoRoot: string = REPO): { files: string[]; read: (path: string) => string } {
+function trackedWorkingTree(repoRoot: string = REPO): { files: string[]; skipped: string[]; read: (path: string) => string } {
   // EVERY TRACKED FILE, not a glob of the types I expect a fixture symbol to land in. A pathspec is a
   // guess about where the next leak will be, and the leak that started this row was in a `.ts` only by
   // chance -- a workflow, a fixture `.json`, a doc could carry one just as well.
@@ -93,9 +93,21 @@ function trackedWorkingTree(repoRoot: string = REPO): { files: string[]; read: (
   const listed = (args: string[]) =>
     execFileSync("git", ["ls-files", ...args], { cwd: repoRoot, encoding: "utf8", env: sandboxGitEnv() })
       .split("\n").filter(Boolean);
-  const files = [...new Set([...listed([]), ...listed(["--others", "--exclude-standard"])])]
+  const entries = [...new Set([...listed([]), ...listed(["--others", "--exclude-standard"])])]
     .filter((f) => !f.includes("/dist/"));
-  return { files, read: (path) => readFileSync(resolve(repoRoot, path), "utf8") };
+  // #1307: ONLY A REGULAR FILE IS READ, AND EVERY ENTRY THAT IS NOT ONE IS NAMED, NOT DROPPED. git lists a
+  // symlink as a file even when it points at a directory -- every worktree on this host links `node_modules`
+  // to the primary's, and `.gitignore`'s `node_modules/` matches directories only -- so the walk read it and
+  // threw EISDIR, failing two tests in every symlinked worktree and reviewer clone. `.gitignore` alone would
+  // fix that one link and leave the next. `stat` follows the link, so a symlink to a regular file is still
+  // read; a directory, a link to one, or a listed path that is gone is `skipped`, which the live test below
+  // reconciles against git's own listing.
+  const isRegularFile = (path: string) => statSync(resolve(repoRoot, path), { throwIfNoEntry: false })?.isFile() === true;
+  return {
+    files: entries.filter(isRegularFile),
+    skipped: entries.filter((path) => !isRegularFile(path)),
+    read: (path) => readFileSync(resolve(repoRoot, path), "utf8"),
+  };
 }
 
 test("#1038 ACCEPTANCE: a declared-absent symbol PRESENT in the working tree fails, naming file and line", () => {
@@ -159,9 +171,12 @@ test("#1038 THE LIVE ASSERTION: every symbol in ABSENT_FIXTURE_SYMBOLS is absent
     ...gitLines(["ls-files"]),
     ...gitLines(["ls-files", "--others", "--exclude-standard"]),
   ].filter((f) => !f.includes("/dist/")));
-  assert.equal(tree.files.length, countedByGit.size,
-    `the walk read ${tree.files.length} files and git lists ${countedByGit.size}; they must be the same `
-    + "tree, and a floor could not have told you they were not");
+  // #1307: the walk READS regular files and NAMES the rest, so git's listing must be exactly the two together --
+  // a partition, checked by set equality rather than by retyping the regular-file predicate here.
+  assert.deepEqual([...new Set([...tree.files, ...tree.skipped])].sort(), [...countedByGit].sort(),
+    `the walk read ${tree.files.length} files and skipped ${tree.skipped.length} (${tree.skipped.join(", ")}); `
+    + `git lists ${countedByGit.size}. They must be the same tree, and a floor could not have told you they were not`);
+  assert.equal(tree.files.length + tree.skipped.length, countedByGit.size, "and no entry is both read and skipped");
   assert.ok(Object.keys(ABSENT_FIXTURE_SYMBOLS).length > 0,
     "the registry must not be empty, or this assertion is the clean output of a question nobody asked");
   const { violations, examined } = absenceViolations({ symbols: ABSENT_FIXTURE_SYMBOLS, ...tree });
@@ -230,7 +245,41 @@ test("#1046 ACCEPTANCE: the walk examines BOTH tracked and untracked files, driv
     assert.ok(tree.files.includes("untracked.ts"),
       "AND an uncommitted one -- `ls-files` alone is blind to it, and that is where a new fixture lives");
     assert.equal(tree.files.length, 2, "and nothing else, so the assertion is about these two");
+    assert.deepEqual(tree.skipped, [], "a repository of regular files skips nothing");
   } finally {
     rmSync(repo, { recursive: true, force: true });
+  }
+});
+
+test("#1307 ACCEPTANCE: an untracked SYMLINK TO A DIRECTORY is skipped BY NAME, never read -- the worktree "
+  + "`node_modules` shape, planted in a real repository with the same `.gitignore`", () => {
+  // Every worktree on this host links `node_modules` to the primary checkout's. `.gitignore:1` is `node_modules/`,
+  // and a trailing slash matches only a directory, so git lists the link as an untracked FILE. The walk read it and
+  // threw EISDIR: 6 / 2 in every symlinked worktree and reviewer clone, while CI -- a real directory -- was green.
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "a11y-fixture-symlink-")));
+  const target = realpathSync(mkdtempSync(join(tmpdir(), "a11y-fixture-symlink-target-")));
+  try {
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: "pipe", env: sandboxGitEnv() });
+    git("init", "--quiet");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    writeFileSync(resolve(repo, ".gitignore"), "node_modules/\n");
+    writeFileSync(resolve(repo, "tracked.ts"), "const planted = \"planted-marker-1307\";\n");
+    git("add", ".gitignore", "tracked.ts");
+    git("commit", "--quiet", "-m", "one");
+    writeFileSync(resolve(target, "inside.ts"), "a package file\n");
+    symlinkSync(target, resolve(repo, "node_modules"), "dir");
+
+    assert.match(git("ls-files", "--others", "--exclude-standard"), /^node_modules$/m,
+      "the precondition: git lists the planted link as an untracked file, exactly as in a symlinked worktree");
+    const tree = trackedWorkingTree(repo);
+    assert.deepEqual(tree.skipped, ["node_modules"], "the link to a directory is skipped, and named");
+    assert.deepEqual([...tree.files].sort(), [".gitignore", "tracked.ts"]);
+    const { violations } = absenceViolations({ symbols: { "a planted marker": "planted-marker-1307" }, ...tree });
+    assert.deepEqual(violations.map((v) => v.file), ["tracked.ts"], "the positive control: regular files are still read");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(target, { recursive: true, force: true });
   }
 });
