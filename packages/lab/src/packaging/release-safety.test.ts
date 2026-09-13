@@ -178,10 +178,14 @@ test("#1251: every permission a called workflow's job requests is granted by its
   for (const [callerName, caller] of calls) {
     const path = (caller.uses as string).replace(/^\.\//, "");
     const called = parseYaml(readFileSync(resolve(REPO, path), "utf8")) as
-      { jobs: Record<string, { permissions?: unknown }> };
+      { permissions?: unknown; jobs: Record<string, { permissions?: unknown }> };
     const granted = scopesOf(caller.permissions);
     for (const [jobName, job] of Object.entries(called.jobs)) {
-      for (const [scope, level] of Object.entries(scopesOf(job.permissions))) {
+      // A workflow-level `permissions:` applies to every job that does not declare its own, and a
+      // single-job consumer workflow spells it there as often as on the job. Reading only the job
+      // block passed, comparing nothing, when the block was moved up a level (worker-judge, #1252).
+      const requested = { ...scopesOf(called.permissions), ...scopesOf(job.permissions) };
+      for (const [scope, level] of Object.entries(requested)) {
         assert.ok((rank[granted[scope] ?? "none"] ?? 0) >= (rank[level] ?? 0),
           `${path} job '${jobName}' requests '${scope}: ${level}' but release.yml's '${callerName}' job ` +
           `grants '${scope}: ${granted[scope] ?? "none"}' -- GitHub refuses the whole release at startup`);
