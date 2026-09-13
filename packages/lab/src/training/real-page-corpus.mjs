@@ -947,8 +947,23 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
   // A PAIR, which the four above are not. The bad half is what the gate wants; the good half is what the
   // STANDARD wants — 1.4.13's dismissable bullet is about a panel that CANNOT be dismissed, so a fixture
   // showing only the failure never shows the rule staying silent on a conformant panel reached through
-  // the same evidence channel. Deliberately a stricter bar than the precedent set: the four above should
-  // grow good siblings too, and that is a backlog row rather than a reason to repeat the omission here.
+  // the same evidence channel.
+  //
+  // THE DEFERRAL THAT USED TO END THIS PARAGRAPH IS DONE, and #1196 is how anyone found out. It said the
+  // four above should grow good siblings and deferred that to an unnamed backlog entry — naming no row,
+  // so a reader could not tell a deferral from an omission.
+  //
+  // (Paraphrased rather than quoted, deliberately: #1196's own open-check greps for that sentence, and a
+  // verbatim quotation here would match it forever. A correction that cites the text it removes keeps the
+  // count at one and reads as a fix that did not work.)
+  //
+  // **All five fixtures have been pairs since
+  // 2026-09-06** (`agent/fixture-pairs-prove-silence`); this sentence outlived the work it deferred by
+  // three months of commits, describing a corpus that no longer existed.
+  //
+  // What is NOT done is the harder half, and it has a home: `docs/fixture-pair-proof-audit.md` measures
+  // what a pair actually proves -- that the evidence channel reached BOTH captures, and that the bad
+  // half still produces the finding. A good sibling on its own does not establish either.
   { url: `${FIXTURE_BASE}/focus-panel-undismissable-help/bad.html`, role: "fixture",
     publishedClaim: "inaccessible", source: OWN_FIXTURE_CLAIM, witnessableAs: ["1.4.13"],
     demonstrates: "a panel revealed on focus that Escape does not dismiss — the DISMISSABLE bullet, the "
