@@ -120,9 +120,12 @@ test("#1350: childCoverageEntries keeps repo scripts only -- no node: internals,
       { url: "file:///elsewhere/other.mjs", functions: [] },
       { url: `file://${w.root}/node_modules/dep/index.js`, functions: [] },
       { url: `file://${w.script}?fresh-import=1`, functions: [] },
+      // A SIBLING that shares the root's prefix is not inside it (reviewer on #1403): /tmp/x-abc-other vs /tmp/x-abc.
+      { url: `file://${w.root}-other/sneaky.mjs`, functions: [] },
     ] }));
     writeFileSync(join(w.rawDir, "not-coverage.txt"), "ignored");
-    assert.deepEqual(childCoverageEntries(w.rawDir, w.root).map((e) => e.filePath), [w.script]);
+    assert.deepEqual(childCoverageEntries(w.rawDir, w.root).map((e) => e.filePath), [w.script],
+      "only the script under root survives -- the positive control -- and the prefix-sharing sibling does not");
   } finally {
     rmSync(w.root, { recursive: true, force: true });
   }
