@@ -106,8 +106,8 @@ const GATE_PROOFS: Record<string, GateProof> = {
   },
   "release:rehearsal-check": {
     catches: "a release whose history does not descend from RELEASE.md's own <!-- REHEARSAL:COMMIT --> "
-      + "marker, or that changed a document the rehearsal exercised since it -- a rehearsal that covered "
-      + "something else silently read as covering this one",
+      + "marker, or that changed a document or published package the rehearsal exercised since it -- a "
+      + "rehearsal that covered something else silently read as covering this one",
     provenBy: "packages/lab/src/packaging/rehearsal-currency-gate.test.ts",
   },
   "scorer:migration": {

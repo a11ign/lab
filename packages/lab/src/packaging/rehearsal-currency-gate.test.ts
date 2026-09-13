@@ -1,6 +1,7 @@
 /**
- * `release:rehearsal-check` must REFUSE a release whose commit is not the one `RELEASE.md`'s own rehearsal
- * marker names -- #813's own mutation, made real. Tier 2 of `docs/proving-a-gate.md`'s recipe:
+ * `release:rehearsal-check` must REFUSE a release the rehearsal `RELEASE.md` names no longer covers: a
+ * marker that is not an ancestor, or an exercised document or published package changed since it (#1265,
+ * replacing #813's marker-equals-release rule). Tier 2 of `docs/proving-a-gate.md`'s recipe:
  * `rehearsal-currency.test.ts` proves the decision over injected inputs; this proves the COMMAND -- the
  * paths it composes, the exit code it returns, the sentence it prints.
  */
@@ -44,10 +45,15 @@ function repoWith({ touchAfter = [] as string[] } = {}): { root: string; marker:
   git("init", "-q", "-b", "main");
   git("config", "user.email", "t@example.invalid");
   git("config", "user.name", "t");
-  for (const f of ["README.md", "docs/try-it.md", "docs/github-action.md", "action.yml", "RELEASE.md"]) {
+  for (const f of ["README.md", "docs/try-it.md", "docs/github-action.md", "action.yml", "RELEASE.md",
+    "packages/cli/src/index.ts", "packages/lab/src/internal.ts"]) {
     mkdirSync(join(root, dirname(f)), { recursive: true });
     writeFileSync(join(root, f), `${f}\n`);
   }
+  // One package a consumer installs and one that is `private`, so "published" is a distinction the
+  // fixture can fail on rather than a property every package here shares.
+  writeFileSync(join(root, "packages/cli/package.json"), JSON.stringify({ name: "a11ign" }));
+  writeFileSync(join(root, "packages/lab/package.json"), JSON.stringify({ name: "@a11ign/lab", private: true }));
   git("add", "-A");
   git("commit", "-qm", "the rehearsal's commit");
   const marker = git("rev-parse", "HEAD");
@@ -74,14 +80,18 @@ function runGate(root: string, releaseSha: string): { code: number; out: string 
   }
 }
 
-test("#813's own mutation, made real: a rehearsal that predates the release commit REFUSES, printing both", () => {
+// This fixture was "#813's own mutation, made real". Under #1265 a planted tmpdir is not a repository, so
+// ancestry cannot be read and it reaches the COULD-NOT-TELL refusal -- it kept passing for that reason
+// (#1291's second head). Named now for the branch it actually reaches, and asserting that branch by name.
+test("a tree that is not a repository cannot answer ancestry, and REFUSES as could-not-tell, printing both shas",
+  () => {
   const root = planted(`Prose.\n\n<!-- REHEARSAL:COMMIT ${SHA} -->\n\nMore prose.`);
   try {
     const { code, out } = runGate(root, OTHER_SHA);
-    assert.equal(code, 1, "a release commit the rehearsal never ran against must not pass");
-    assert.match(out, new RegExp(SHA), "the marked (stale) sha must be printed");
-    assert.match(out, new RegExp(OTHER_SHA), "the actual release sha must be printed");
-    assert.match(out, /FAIL/);
+    assert.equal(code, 1, "an ancestry nobody could read must not pass");
+    assert.match(out, /could not tell whether the rehearsal marker is an ancestor/);
+    assert.match(out, new RegExp(SHA), "the marked sha must be printed");
+    assert.match(out, new RegExp(OTHER_SHA), "the release sha must be printed");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -111,6 +121,26 @@ test("#1265: an exercised path changed since the marker REFUSES, naming the path
     assert.equal(code, 1);
     assert.match(out, /README\.md/, "the gate prints WHICH path, or the operator cannot act on it");
     assert.match(out, /EXERCISES/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("#1265: a PUBLISHED package changed since the marker REFUSES, naming the file", () => {
+  // `worker-capture`'s fixture on #1291: with only the four documents exercised, this passed.
+  const { root, head } = repoWith({ touchAfter: ["packages/cli/src/index.ts"] });
+  try {
+    const { code, out } = runGate(root, head);
+    assert.equal(code, 1, `a consumer installs this package; the gate said: ${out}`);
+    assert.match(out, /packages\/cli\/src\/index\.ts/);
+    assert.match(out, /EXERCISES 1 path/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("#1265: a PRIVATE package changed since the marker PASSES -- the set is derived, not every path", () => {
+  const { root, head } = repoWith({ touchAfter: ["packages/lab/src/internal.ts"] });
+  try {
+    const { code, out } = runGate(root, head);
+    assert.equal(code, 0, `nothing a consumer installs changed; the gate said: ${out}`);
+    assert.match(out, /PASS/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -160,17 +190,24 @@ test("a missing RELEASE.md entirely is a REFUSAL, never a crash", () => {
 });
 
 test("INCONCLUSIVE is unreachable from this gate, by construction -- one marker, one question", () => {
+  // "matching commit" used to be a planted tmpdir handed two equal shas: a state no history produces, and
+  // under #1265 a could-not-tell refusal. Real repositories now, so the PASS here is a real one.
+  const current = repoWith();
+  const changed = repoWith({ touchAfter: ["README.md"] });
   const scenarios = [
-    { label: "matching commit", root: planted(`<!-- REHEARSAL:COMMIT ${SHA} -->`), sha: SHA },
-    { label: "stale commit", root: planted(`<!-- REHEARSAL:COMMIT ${SHA} -->`), sha: OTHER_SHA },
+    { label: "ancestor, nothing exercised changed", root: current.root, sha: current.head },
+    { label: "exercised path changed", root: changed.root, sha: changed.head },
+    { label: "not a repository", root: planted(`<!-- REHEARSAL:COMMIT ${SHA} -->`), sha: OTHER_SHA },
     { label: "no marker", root: planted("nothing here"), sha: SHA },
   ];
   try {
-    for (const { label, root, sha } of scenarios) {
+    const codes = scenarios.map(({ label, root, sha }) => {
       const { code, out } = runGate(root, sha);
-      assert.ok(code === 0 || code === 1, `${label}: exit code was ${code}, expected 0 or 1 -- never 2`);
       assert.doesNotMatch(out, /INCONCLUSIVE/, `${label}: printed INCONCLUSIVE, which this gate must never reach`);
-    }
+      return code;
+    });
+    // Exact, not "0 or 1": a gate that refused everything would satisfy the looser form.
+    assert.deepEqual(codes, [0, 1, 1, 1]);
   } finally {
     for (const { root } of scenarios) rmSync(root, { recursive: true, force: true });
   }

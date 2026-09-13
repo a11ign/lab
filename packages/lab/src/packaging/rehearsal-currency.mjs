@@ -25,17 +25,38 @@ export function rehearsalMarkerSha(releaseMd) {
   return m ? m[1] : null;
 }
 
-/** The public documents and packaged files a V1 rehearsal actually exercises (#1265). */
-export const REHEARSAL_EXERCISES = ["README.md", "docs/try-it.md", "docs/github-action.md", "action.yml"];
+/**
+ * The public documents a V1 rehearsal is run FROM -- RELEASE.md's requirement 2 names the first three --
+ * and the Action `docs/github-action.md` tells a reader to install (#1265).
+ */
+export const REHEARSAL_DOCUMENTS = ["README.md", "docs/try-it.md", "docs/github-action.md", "action.yml"];
+
+/**
+ * The packages a consumer installs: every `packages/<dir>/package.json` not marked `private` -- the third
+ * thing #1265's done-when names, missing from the first build and found by `worker-capture` on #1291.
+ *
+ * DERIVED from the manifests rather than listed, so publishing a package widens the gate without anyone
+ * remembering to. An over-approximation in the SAFE direction: npm refuses to publish a `private` package,
+ * so everything a consumer CAN install is in this set, and a package that is merely never published only
+ * makes the gate refuse more. Anything short of the boolean `true` counts as published for the same reason.
+ * @param {{ dir: string, manifest: Record<string, unknown> }[]} packages
+ * @returns {string[]} one directory pathspec per published package
+ */
+export function publishedPackagePaths(packages) {
+  return packages.filter(({ manifest }) => manifest.private !== true).map(({ dir }) => `packages/${dir}/`);
+}
 
 /**
  * THE VERDICT, PURE. `[]` means the rehearsal on record covers the commit being released; anything else
  * is a refusal reason, never inferred silently.
- * @param {{ releaseMd: string | null, releaseSha: string | null,
- *           isAncestor?: boolean | null, changedPaths?: string[] }} input
+ * @param {{ releaseMd: string | null, releaseSha: string | null, isAncestor?: boolean | null,
+ *           changedPaths?: string[] | null, diffError?: string }} input
+ *   `isAncestor` and `changedPaths` are `null` -- or omitted -- when the read could not be made, and both
+ *   refuse: a caller that forgets to gather a fact is refused, never passed.
  * @returns {string[]}
  */
-export function rehearsalCurrencyProblems({ releaseMd, releaseSha, isAncestor = null, changedPaths = [] }) {
+export function rehearsalCurrencyProblems(
+  { releaseMd, releaseSha, isAncestor = null, changedPaths = null, diffError = "" }) {
   const marked = rehearsalMarkerSha(releaseMd);
   if (!marked) {
     return ["RELEASE.md carries no `<!-- REHEARSAL:COMMIT <sha> -->` marker at all -- no rehearsal is on "
@@ -68,6 +89,13 @@ export function rehearsalCurrencyProblems({ releaseMd, releaseSha, isAncestor = 
     return [`RELEASE.md's rehearsal marker names ${marked}, which is NOT an ancestor of the commit being `
       + `released (${releaseSha}) -- the rehearsal ran on a history this release is not descended from, `
       + "so it says nothing about it. Run the rehearsal against a commit in this history."];
+  }
+  // A diff that could not be taken is its OWN refusal, never a changed path. Reported as a change it
+  // would state something the gate never observed, collapsing one read later the could-not-tell/no split
+  // kept for ancestry above (`worker-capture`'s should-fix on #1291).
+  if (changedPaths === null) {
+    return ["could not tell whether anything the rehearsal exercises changed since the marker -- the diff "
+      + `could not be taken${diffError ? `: ${diffError}` : ""}. Refusing rather than assuming nothing did.`];
   }
   if (changedPaths.length > 0) {
     return [`RELEASE.md's rehearsal marker names ${marked}, an ancestor of ${releaseSha} -- but the `

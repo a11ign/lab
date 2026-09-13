@@ -5,7 +5,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { rehearsalCurrencyProblems, rehearsalMarkerSha } from "./rehearsal-currency.mjs";
+import { rehearsalCurrencyProblems, rehearsalMarkerSha, publishedPackagePaths } from "./rehearsal-currency.mjs";
 
 const SHA = "8849f92df9903660315d0cdc9037e7e04276eece";
 const OTHER_SHA = "f47339e2c1d4a5b6e7f8091a2b3c4d5e6f7a8b9c";
@@ -77,4 +77,30 @@ test("FAILS CLOSED when ancestry could not be read -- and an OMITTED ancestry re
     assert.equal(problems.length, 1);
     assert.match(problems[0], /could not tell whether the rehearsal marker is an ancestor/);
   }
+});
+
+test("a diff that could not be taken is its OWN refusal carrying git's reason -- never stated as a changed "
+  + "path", () => {
+  const problems = rehearsalCurrencyProblems({ ...CURRENT, changedPaths: null, diffError: "fatal: bad object" });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /the diff could not be taken: fatal: bad object/);
+  assert.doesNotMatch(problems[0], /EXERCISES/, "a change the gate never observed must not be reported as one");
+});
+
+test("an OMITTED changed-path list fails closed the same way -- a caller that forgets the diff is refused",
+  () => {
+  const problems = rehearsalCurrencyProblems(
+    { releaseMd: CURRENT.releaseMd, releaseSha: CURRENT.releaseSha, isAncestor: true });
+  assert.equal(problems.length, 1);
+  assert.match(problems[0], /the diff could not be taken/);
+});
+
+test("publishedPackagePaths keeps every package not marked private, and only those", () => {
+  // `private: "true"` stays IN: anything short of the boolean counts as published, because over-including
+  // only makes the gate refuse more, and the other direction passes a release nobody rehearsed.
+  assert.deepEqual(publishedPackagePaths([
+    { dir: "cli", manifest: { name: "a11ign" } },
+    { dir: "lab", manifest: { name: "@a11ign/lab", private: true } },
+    { dir: "odd", manifest: { private: "true" } },
+  ]), ["packages/cli/", "packages/odd/"]);
 });
