@@ -76,7 +76,7 @@ test("the refusal NAMES the files and says where the originals are", () => {
  * every spawn -- including the REAL `promote-model.mjs` process this test launches -- with GIT_* scrubbed.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
@@ -124,6 +124,11 @@ function plantRepo(sandbox: GitSandbox): void {
       dir.startsWith("runs/") ? "candidate weights" : "shipped weights");
   }
   writeFileSync(join(root, ".changeset/config.json"), "{}");
+  // A PUBLIC MANIFEST, because the command reads the level it releases at from every public package's
+  // version (#1396): minor while all are 0.x. A root with none is refused, not guessed at, so without this
+  // the command stops before it reaches the dirty-tree check this file is about.
+  writeFileSync(join(root, "packages/scorer/package.json"),
+    JSON.stringify({ name: "@a11ign/scorer", version: "0.0.0" }));
   sandbox.run(["add", "-A", "--", "packages", ".changeset"]);
   sandbox.commit("base");
 }
@@ -168,8 +173,10 @@ test("THE CONTROL: a clean tree promotes, writing the weights and the changeset"
     assert.equal(code, 0, `a clean tree must promote; got ${code}: ${out}`);
     assert.match(out, /Promoted candidate/);
     const status = sandbox.run(["status", "--porcelain"]);
-    assert.match(status, /\.changeset\/promote-candidate-[0-9a-f]{8}\.md/,
-      "the changeset must land, under the content-derived name");
+    const landed = /\.changeset\/(promote-candidate-[0-9a-f]{8}\.md)/.exec(status);
+    assert.ok(landed, "the changeset must land, under the content-derived name");
+    assert.match(readFileSync(join(sandbox.dir, ".changeset", landed[1]), "utf8"), /^"@a11ign\/scorer": minor$/m,
+      "#1396: the real command reads the planted 0.0.0 manifest and releases the promotion as a minor");
     assert.match(status, /packages\/scorer\/models\/screenreader-scorer\//,
       "and the weights must actually be copied, which is the wiring half nothing had watched");
   });
