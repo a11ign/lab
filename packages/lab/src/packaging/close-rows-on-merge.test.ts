@@ -18,8 +18,12 @@ import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
 import {
   closurePlan, labelsToStrip, applyClosurePlan, EXIT, closeRowsExit, liveClosureEffects, stripClaimLabels,
+  LIVE_SETTLE_DEPS,
 } from "../../../../scripts/close-rows-for-merged-pr.mjs";
 import { refusalCause } from "../../../../scripts/settle-closed-status.mjs";
+import { moveProjectStatus } from "../../../../scripts/row-claim.mjs";
+import { scopedStatus } from "../../../../scripts/board-snapshot.mjs";
+import { stripComments } from "@a11ign/evidence/source-text";
 // THE AUDIT'S OWN DEBRIS CHECK, imported rather than re-derived -- #754's own mutation target is that
 // THIS function, unchanged, must go quiet once labelsToStrip has done its work, and must report the
 // finding again the moment it has not. Proving that with a re-implemented predicate would prove nothing
@@ -392,4 +396,26 @@ test("#1400: liveClosureEffects is the ONE place the live effects are named -- m
   const mainBody = source.slice(source.indexOf("function main() {"));
   assert.match(mainBody, /applyClosurePlan\(plan, \{ prNumber: number, sha, repo \}, liveClosureEffects\(\)\)/,
     "main() hands applyClosurePlan the live effects explicitly -- without them production would be refused too");
+});
+
+// --- #1360: both live settle paths use ONE definition, and it carries the scoped Status lookup ---
+
+test("#1360 LIVE_SETTLE_DEPS carries the scoped Status lookup and the real move -- by identity, never called", () => {
+  // Identity only: calling either reaches Project 2, which this file must not do (#1400).
+  assert.equal(LIVE_SETTLE_DEPS.currentStatus, scopedStatus,
+    "without the lookup every closed row is moved, Done or not -- the mutation #1360 exists to save");
+  assert.equal(LIVE_SETTLE_DEPS.moveStatus, moveProjectStatus);
+});
+
+test("#1360 BOTH defaults settle with LIVE_SETTLE_DEPS: the per-merge effects and the sweep's closeOnePr", () => {
+  // Read from CODE with comments stripped, anchored to the call shape only code can have. Measured before this test:
+  // the sweep's own inline default could drop currentStatus and every close-rows test stayed green.
+  const code = (rel: string) => stripComments(readFileSync(fileURLToPath(new URL(`../../../../${rel}`, import.meta.url)), "utf8"));
+  assert.match(code("scripts/close-rows-for-merged-pr.mjs"), /settle:\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
+    "liveClosureEffects' settle must use the one definition");
+  assert.match(code("scripts/close-rows-sweep.mjs"), /settle\s*=\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
+    "closeOnePr's default settle must use the one definition");
+  for (const rel of ["scripts/close-rows-for-merged-pr.mjs", "scripts/close-rows-sweep.mjs"]) {
+    assert.doesNotMatch(code(rel), /settleClosedStatus\(n,\s*\{/, `${rel} builds its own settle deps inline again`);
+  }
 });
