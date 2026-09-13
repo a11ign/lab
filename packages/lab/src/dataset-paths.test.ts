@@ -137,6 +137,13 @@ const EXEMPT: Record<string, string> = {
     + "a fixture path under a temp root this test plants, not a read of the real corpus. (promote-model.mjs "
     + "itself is not in this list: it uses A11Y_PROMOTE_ROOT, which this scan does not look for, and its "
     + "one bare \"runs\" has no trailing slash, so it never matches the signature in the first place.)",
+  "packages/lab/src/packaging/prune-worktrees.test.ts":
+    "#1373: the runs/board-snapshots/* literals are files this test PLANTS inside a linked worktree of a "
+    + "temp fixture repository, to prove worktree removal refuses records the primary lacks. They are "
+    + "worktree-relative, never the dataset's runs root, and nothing here reads the real corpus.",
+  "packages/lab/src/packaging/row-claim.test.ts":
+    "#1373: the same planted fixture records as prune-worktrees.test.ts, for row-claim decline's remover "
+    + "(removeClaimedWorktree), inside a temp repository's linked worktree -- never the dataset's runs root.",
   "packages/control/src/lab-pipeline.test.ts":
     "Asserts the EXPECTED output-file argument each pipeline job is dispatched with (e.g. "
     + "\"runs/screenreader-dataset/with-realism.jsonl\") -- a literal it compares against, not a path this "
