@@ -3,7 +3,9 @@
  *
  * Measured 2026-09-13 in release dry run 34776105178: `changeset status` read `major` for all six public
  * packages, over manifests at 0.1.0, so `publish-for-real` would have shipped 1.0.0 -- two pending changesets
- * declared `major` (the rename, and a model promotion written by `promote:model` at `major`). Version one
+ * declared `major` (the rename, and a model promotion written by `promote:model` at `major`). The fix's own dry
+ * run, 34779638909 on `26c1d929`, reached the release gate; the gate refused at that run; the versions are read
+ * from the run on this commit. Version one
  * of this product is defined as an outside user saying it was worth it, not as a first upload.
  *
  * Two rules, both read from the REAL `.changeset/` and the REAL manifests:
