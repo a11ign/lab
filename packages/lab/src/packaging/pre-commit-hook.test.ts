@@ -315,3 +315,92 @@ test("#535: the guard's own exit codes are distinct -- ALLOW=0, HAZARD=1, ERROR=
   assert.equal(errorStatus, 2, "a usage error must exit with a code distinct from a real HAZARD (1)");
   assert.match(errorOutput, /usage:/);
 });
+
+
+// --- #1314: the stale refusal's own first remedy ("Commit explicit paths instead") must pass ---
+//
+// Driven through a REAL `git commit` with core.hooksPath at an isolated copy of the hook, never by setting
+// GIT_INDEX_FILE by hand: the hook tells a path commit apart by the temporary index git itself creates, and
+// only git can say what that index is called. A11Y_STALE_MIN=0 makes every staged file stale, as above.
+
+/** Runs `git commit` in the sandbox with the isolated real hook installed, and reports the hook's verdict. */
+function commitThroughHook(sandbox: GitSandbox, hookRoot: string, args: string[]): Verdict {
+  try {
+    execFileSync("git", ["-c", `core.hooksPath=${join(hookRoot, "scripts/git-hooks")}`,
+      "-c", "user.name=Pre Commit Test", "-c", "user.email=pre-commit-test@example.invalid", "commit", "-q", ...args], {
+      cwd: sandbox.dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+      env: sandboxGitEnv({ A11Y_STALE_MIN: "0", A11Y_PRIMARY_COMMIT_REASON: "pre-commit-hook.test.ts — not the real primary" }),
+    });
+    return { status: 0, stderr: "" };
+  } catch (error) {
+    const e = error as { status?: number; stderr?: string };
+    return { status: e.status ?? 1, stderr: String(e.stderr ?? "") };
+  }
+}
+
+/** A sandbox with one base commit, and the isolated hook tree; both removed after `body`. */
+function withCommittedSandbox(body: (sandbox: GitSandbox, hookRoot: string) => void): void {
+  const hookRoot = isolatedHookTree();
+  try {
+    withGitSandbox((sandbox) => {
+      writeFileSync(join(sandbox.dir, "tracked.txt"), "base\n");
+      sandbox.run(["add", "tracked.txt"]);
+      sandbox.commit("base");
+      body(sandbox, hookRoot);
+    });
+  } finally { rmSync(hookRoot, { recursive: true, force: true }); }
+}
+
+const committedNames = (sandbox: GitSandbox) => sandbox.run(["show", "--name-only", "--format=", "HEAD"]).trim().split("\n");
+const stagedNames = (sandbox: GitSandbox) => sandbox.run(["diff", "--cached", "--name-only"]).trim();
+
+test("#1314 CONTROL: a stale file in a plain `git commit` is still REFUSED, named, and nothing is committed", () => {
+  withCommittedSandbox((sandbox, hookRoot) => {
+    stage(sandbox, ["named.txt"]);
+    const result = commitThroughHook(sandbox, hookRoot, ["-m", "plain"]);
+    assert.notEqual(result.status, 0, "the positive control: the refusal the remedy answers really fires here");
+    assert.match(result.stderr, /nobody has touched/i);
+    assert.match(result.stderr, /named\.txt/);
+    assert.match(result.stderr, /Commit explicit paths instead/, "and it offers the remedy the next test follows");
+    assert.deepEqual(committedNames(sandbox), ["tracked.txt"], "HEAD did not move");
+  });
+});
+
+test("#1314 ACCEPTANCE: following the refusal's first remedy exactly -- `git commit <path>` of that stale file -- commits it", () => {
+  withCommittedSandbox((sandbox, hookRoot) => {
+    stage(sandbox, ["named.txt"]);
+    const result = commitThroughHook(sandbox, hookRoot, ["-m", "remedy", "named.txt"]);
+    assert.equal(result.status, 0, `the remedy the message names must pass, got: ${result.stderr}`);
+    assert.deepEqual(committedNames(sandbox), ["named.txt"]);
+  });
+});
+
+test("#1314 a path commit cannot carry a swept-in stale file: it commits only what was named, and leaves the rest staged", () => {
+  withCommittedSandbox((sandbox, hookRoot) => {
+    stage(sandbox, ["swept.txt", "named.txt"]);
+    const result = commitThroughHook(sandbox, hookRoot, ["-m", "remedy", "named.txt"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(committedNames(sandbox), ["named.txt"], "the swept file is not in the commit");
+    assert.equal(stagedNames(sandbox), "swept.txt", "and it is still staged, for a commit that will be checked");
+  });
+});
+
+test("#1314 `git commit -i <path>` and `git commit -a` still carry the whole index, so a stale file there is still REFUSED", () => {
+  withCommittedSandbox((sandbox, hookRoot) => {
+    stage(sandbox, ["swept.txt"]);
+    // A TRACKED path: `-i` on a file git has never seen is refused by git itself before any hook runs,
+    // which is what this test first measured -- a non-zero status that proved nothing about the hook.
+    writeFileSync(join(sandbox.dir, "tracked.txt"), "changed\n");
+    const include = commitThroughHook(sandbox, hookRoot, ["-m", "include", "-i", "tracked.txt"]);
+    assert.notEqual(include.status, 0, "-i adds the named path to everything already staged");
+    assert.match(include.stderr, /nobody has touched/i, "refused by the HOOK, not by git");
+    assert.match(include.stderr, /swept\.txt/);
+  });
+  withCommittedSandbox((sandbox, hookRoot) => {
+    writeFileSync(join(sandbox.dir, "tracked.txt"), "changed\n");
+    const all = commitThroughHook(sandbox, hookRoot, ["-a", "-m", "all"]);
+    assert.notEqual(all.status, 0, "-a stages every tracked change, named or not");
+    assert.match(all.stderr, /nobody has touched/i, "refused by the HOOK, not by git");
+    assert.match(all.stderr, /tracked\.txt/);
+  });
+});
