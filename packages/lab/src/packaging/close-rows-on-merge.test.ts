@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
 import {
-  closurePlan, labelsToStrip, applyClosurePlan, EXIT,
+  closurePlan, labelsToStrip, applyClosurePlan, settleClosedStatus, EXIT,
 } from "../../../../scripts/close-rows-for-merged-pr.mjs";
 // THE AUDIT'S OWN DEBRIS CHECK, imported rather than re-derived -- #754's own mutation target is that
 // THIS function, unchanged, must go quiet once labelsToStrip has done its work, and must report the
@@ -248,4 +248,55 @@ test("applyClosurePlan does NOT strip a row whose close failed -- a failed close
   );
   assert.deepEqual(failed, [344]);
   assert.deepEqual(stripped, []);
+});
+
+/**
+ * #1227: THE CLOSE-SIDE STATUS WRITE. `row-claim` wrote `In progress` on claim and nothing wrote the
+ * resting state, so the board refilled with closed rows at a live Status **at the rate the org closes
+ * rows** — measured during #1223/#1224 at roughly one per twenty minutes. Two backfills cleared 316 and
+ * neither closed the loop, because a guard that DETECTS and a write that PREVENTS are different things.
+ */
+test("#1227: every row the plan closes gets its Status settled, in the same act", () => {
+  const settled: number[] = [];
+  const failed = applyClosurePlan(
+    { close: [{ number: 10, labels: [] }, { number: 11, labels: [] }], already: [{ number: 12, labels: [] }] },
+    { prNumber: "1", sha: "abc", repo: "o/r" },
+    { closeOne: () => true, strip: () => {}, settle: (n: number) => { settled.push(n); } });
+  assert.deepEqual(failed, []);
+  // ALREADY-CLOSED rows too: #776/#791's reasoning is that such a row may be THIS merge one second
+  // earlier, and its Status is exactly as stale as a freshly-closed row's.
+  // [12, 10, 11] -- the ALREADY-CLOSED loop runs first. Asserted in order rather than sorted: the
+  // sequence is a fact about the function and sorting it away would hide a reordering that changed it.
+  assert.deepEqual(settled, [12, 10, 11],
+    "a row closed by this run and a row already closed both need settling -- leaving the second is how "
+    + "the population regrows from the path that was supposed to have fixed it");
+});
+
+test("#1227: a row that FAILED to close is not settled -- the Status must not say Done", () => {
+  const settled: number[] = [];
+  const failed = applyClosurePlan(
+    { close: [{ number: 20, labels: [] }], already: [] },
+    { prNumber: "1", sha: "abc", repo: "o/r" },
+    { closeOne: () => false, strip: () => {}, settle: (n: number) => { settled.push(n); } });
+  assert.deepEqual(failed, [20]);
+  assert.deepEqual(settled, [],
+    "the row is still OPEN -- moving it to Done would advertise finished work that is not finished, "
+    + "which is the reverse direction of the defect this fixes");
+});
+
+test("#1227: the three outcomes are reported distinctly, never folded into one success", () => {
+  const said: string[] = [];
+  const log = console.log;
+  console.log = (line: string) => { said.push(String(line)); };
+  try {
+    settleClosedStatus(1, { moveStatus: () => ({ moved: true }) });
+    settleClosedStatus(2, { moveStatus: () => ({ moved: false, notOnBoard: true, reason: "not an item" }) });
+    settleClosedStatus(3, { moveStatus: () => ({ moved: false, notOnBoard: false, reason: "HTTP 500" }) });
+  } finally { console.log = log; }
+  assert.match(said[0], /#1 Status -> Done/);
+  assert.match(said[1], /#2 is not on the Project/,
+    "a row not on the board is a real, common state and not a defect -- ceo's ruling");
+  assert.match(said[2], /#3 CLOSED but Status NOT moved -- HTTP 500/,
+    "and a genuine failure is the half-applied case: the close landed and the board write did not, which "
+    + "must not look like an ordinary success");
 });
