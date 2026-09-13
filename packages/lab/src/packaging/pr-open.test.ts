@@ -227,7 +227,8 @@ test("#1283: on a DETACHED HEAD the line says `detached at <sha>`, not the liter
     git: (args: string[]) => (args.includes("--abbrev-ref") ? "HEAD" : "deadbee"),
     err: (l: string) => { lines.push(l); },
   });
-  assert.match(lines[0], /detached at `?deadbee/);
+  assert.match(lines[0], /Detached at `deadbee`/, "one phrase, and the sha once");
+  assert.doesNotMatch(lines[0], /deadbee.*deadbee/, "not the sha twice, which the first fix produced");
   assert.doesNotMatch(lines[0], /Branch `HEAD`/, "the literal HEAD is not a branch anyone can retry from");
 });
 
