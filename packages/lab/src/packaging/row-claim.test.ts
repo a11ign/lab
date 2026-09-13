@@ -34,6 +34,7 @@ import {
   claimRecordComment, claimRecordFrom, claimedObjects, fetchClaimComments, CLAIM_RECORD_MARKER,
   b4Lines, reportB4,
 } from "../../../../scripts/row-claim.mjs";
+import { forgetProcessSnapshot, withBoardSnapshot } from "../../../../scripts/board-snapshot.mjs";
 import { laneReason } from "../../../../scripts/row-claim/runner-rule.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { READY_LABEL, WAS_READY_LABEL } from "../../../../scripts/ready-label-audit.mjs";
@@ -1649,4 +1650,34 @@ test("#1063: `renderStatus`'s UNCLAIMED branch calls reportB4 -- the row's deliv
   assert.match(unclaimedBranch[1], /reportB4\(issueNumber\)/,
     "the unclaimed path must CALL reportB4 -- this assertion is exactly as strong as the claim it holds: "
     + "that the call exists, never that it ran");
+});
+
+test("#852: three Status moves in one process make ONE board sweep, through the real caller", () => {
+  // The board-snapshot tests pin the wrapper; this pins the CALLER the row is about. `moveProjectStatus`
+  // is what every claim, dispatch and close goes through, and the assertion is on the ARGV because the
+  // return value is `{ moved: true }` either way — which is why a four-day-old cost went unnoticed.
+  forgetProcessSnapshot();
+  const argv: string[][] = [];
+  let served = 0;
+  const run = (_cmd: string, args: string[]) => {
+    argv.push(args);
+    if (!args.join(" ").includes("graphql")) return "";
+    const cursor = served; served += 1;
+    return JSON.stringify({ data: { user: { projectV2: { items: {
+      pageInfo: { hasNextPage: cursor < 2, endCursor: `c${cursor + 1}` },
+      nodes: [{ id: `PVTI_${cursor}`, content: { number: cursor, title: "t", state: "OPEN" },
+        fieldValues: { nodes: [{ name: "Ready", field: { name: "Status" } }] } }],
+    } } } } });
+  };
+  const results = [1, 2, 3].map((n) => moveProjectStatus(n, "In progress",
+    { run, log: () => {}, snapshot: (mutate, deps) => withBoardSnapshot(mutate,
+      { ...deps, run, fetchReady: () => [], mkdir: () => {}, writeFile: () => {}, log: () => {} }) }));
+
+  assert.deepEqual(results.map((r) => r.moved), [true, true, true],
+    "all three must still move -- a cost fix that skips a mutation is a different bug");
+  assert.equal(argv.filter((a) => a.join(" ").includes("graphql")).length, 3,
+    "one 3-page sweep for three moves. Before #852 this was NINE pages, and the row's own mutation "
+    + "clause names those two numbers");
+  assert.equal(argv.filter((a) => a[0] === "project" && a[1] === "item-edit").length, 3,
+    "and every move still writes its own field -- the sweep is what is shared, never the edit");
 });
