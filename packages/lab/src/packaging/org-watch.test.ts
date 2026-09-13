@@ -151,8 +151,10 @@ test("#912: a green main is quiet -- the watch says nothing and exits 0", () => 
     workflow_runs: [{ conclusion: "success", created_at: "2026-09-12T03:00:00Z", databaseId: 9 }],
   });
   const colour = mainColour({ repo: "o/r", now: new Date("2026-09-12T04:00:00Z"), run });
+  // #1263 added `inFlight`, and this `deepEqual` is what said so -- a shape pinned exactly is the reason
+  // adding a field to the green object cannot happen quietly. 0 here: the one run has a conclusion.
   assert.deepEqual(colour, { readable: true, red: false, since: null, hours: null, atLeast: false,
-    firstFailing: null, why: null, windows: [], examined: 1, pageBeginsMidRed: false });
+    firstFailing: null, why: null, windows: [], examined: 1, pageBeginsMidRed: false, inFlight: 0 });
   assert.equal(EXIT.QUIET, 0, "and silence is exit 0, so an hourly job that finds nothing costs nothing");
 });
 
@@ -316,10 +318,10 @@ test("#912 READ 4: the board summary is quiet before 06:15, urgent after it, and
 
 test("#912: the watch is SILENT when clean -- the property that makes 24 runs a day affordable", () => {
   const green = { readable: true, red: false, since: null, hours: null, atLeast: false,
-    firstFailing: null, why: null, windows: [], examined: 0, pageBeginsMidRed: false };
+    firstFailing: null, why: null, windows: [], examined: 0, pageBeginsMidRed: false, inFlight: 0 };
   assert.deepEqual(watchReport({ colour: green }), [], "a quiet hour must cost a reader nothing");
   const red = { readable: true, red: true, since: "2026-09-11T00:12:00Z", hours: 27.8, atLeast: false,
-    firstFailing: "not ok 41 - x", why: null, windows: [], examined: 0, pageBeginsMidRed: false };
+    firstFailing: "not ok 41 - x", why: null, windows: [], examined: 0, pageBeginsMidRed: false, inFlight: 0 };
   const lines = watchReport({ colour: red });
   assert.equal(lines.length, 1);
   assert.match(lines[0], /27\.8h/);
@@ -574,7 +576,7 @@ test("#1154: the lag is measured tip-minus-run, and one run's duration of queuei
 
 test("#1072: an unreadable main REPORTS cannot-ask, and that is the state the exit code must carry", () => {
   const unreadable = { readable: false, red: false, since: null, hours: null, atLeast: false,
-    firstFailing: null, why: "gh: HTTP 502", windows: [], examined: 0, pageBeginsMidRed: false };
+    firstFailing: null, why: "gh: HTTP 502", windows: [], examined: 0, pageBeginsMidRed: false, inFlight: 0 };
   const lines = watchReport({ colour: unreadable });
   assert.ok(lines.length > 0, "an unreadable main is never silent");
   assert.match(lines[0], /CANNOT ASK/,
@@ -585,7 +587,7 @@ test("#1072: an unreadable main REPORTS cannot-ask, and that is the state the ex
 
 test("#1072: a READABLE red main is ATTENTION, so cannot-ask did not swallow the ordinary case", () => {
   const red = { readable: true, red: true, since: "2026-09-12T10:00:00Z", hours: 2, atLeast: false,
-    firstFailing: "a test", why: null, windows: [], examined: 3, pageBeginsMidRed: false };
+    firstFailing: "a test", why: null, windows: [], examined: 3, pageBeginsMidRed: false, inFlight: 0 };
   assert.ok(watchReport({ colour: red }).length > 0);
   assert.equal(red.readable ? EXIT.ATTENTION : EXIT.CANNOT_ASK, EXIT.ATTENTION,
     "a red main is a fact ABOUT MAIN and must stay distinguishable from a failure to read it");
@@ -615,4 +617,76 @@ test("#1072: every declared EXIT value is one some path can produce", () => {
     assert.ok(produced.has(name),
       `EXIT.${name} is declared and no path references it -- a three-value contract that delivers two`);
   }
+});
+
+// --- #1263: THE COLOUR COMES FROM THE NEWEST **COMPLETED** RUN --------------------------------------
+//
+// `mainColour` read `newestFirst[0].conclusion !== "failure"` over the unfiltered run list. An in-flight
+// run's conclusion is `null`, which is not `"failure"`, so any run newer than the last completed one made
+// a red main read green. An ordinary in-flight run does this too and self-corrects within minutes; a
+// GHOST (#1253: `queued` forever, zero jobs, `updated_at == created_at` -- the two measured there were
+// still stuck at 116 minutes) never completes, so the masking never lifts.
+//
+// This is the fourth member of the family this file already guards: a `gh` 502, an empty run list and a
+// stopped run list must none of them return what a green main returns.
+
+const runAt = (conclusion: string | null, at: string, databaseId = 1) =>
+  ({ conclusion, created_at: `2026-09-13T${at}:00Z`, databaseId });
+const withRuns = (runs: unknown[]) => (args: string[]) =>
+  args.join(" ").includes("actions/workflows") ? JSON.stringify({ workflow_runs: runs })
+    : (args.join(" ").includes("commits/main") ? "2026-09-13T09:31:00Z" : "");
+const NOW_1263 = new Date("2026-09-13T11:00:00Z");
+const RED = [runAt("success", "08:00", 1), runAt("failure", "09:00", 2)];
+const GHOST = runAt(null, "09:30", 9);
+
+test("#1263 MUTATION TARGET: a red main stays red when a GHOST run is newer than the failure", () => {
+  const before = mainColour({ repo: "o/r", now: NOW_1263, run: withRuns(RED) });
+  const after = mainColour({ repo: "o/r", now: NOW_1263, run: withRuns([...RED, GHOST]) });
+  assert.equal(before.red, true, "the control: the same trunk with no ghost is red");
+  assert.equal(after.red, true, "and adding a run that never finishes does not make it green");
+  assert.equal(after.inFlight, 1, "the ghost is reported as its own fact, not folded into the colour");
+});
+
+test("#1263 THE OTHER DIRECTION: a green main does NOT become red because something is running", () => {
+  // Without this, the test above is satisfied by a function that calls every main red. An in-flight run
+  // is not evidence in either direction -- that is the whole claim.
+  const green = [runAt("failure", "08:00", 1), runAt("success", "09:00", 2)];
+  const colour = mainColour({ repo: "o/r", now: NOW_1263, run: withRuns([...green, GHOST]) });
+  assert.equal(colour.red, false);
+  assert.equal(colour.readable, true);
+  assert.equal(colour.inFlight, 1);
+});
+
+test("#1263: when NOTHING has completed there is no answer, and it is not the green one", () => {
+  const colour = mainColour({ repo: "o/r", now: NOW_1263, run: withRuns([GHOST]) });
+  assert.equal(colour.readable, false, "unfinished is not readable");
+  assert.equal(colour.red, false);
+  assert.match(String(colour.why), /NONE of them has completed/);
+  // The #912 line, applied to the new member of the family.
+  const green = mainColour({ repo: "o/r", now: NOW_1263,
+    run: withRuns([runAt("success", "09:00", 2)]) });
+  assert.notDeepEqual(colour, green,
+    "an in-flight main and a green main must not be the same object -- #912's finding, fourth case");
+});
+
+test("#1263: the red STREAK is measured over completed runs too, not just the verdict", () => {
+  // The same defect three lines down from the one above: `findIndex(conclusion === "success")` steps past
+  // an in-flight run, so `slice(0, lastSuccess)` would put it INSIDE the streak -- a run that has not
+  // finished counted as one that failed, inflating both the length and the hours-since.
+  // THE GHOST MUST SIT **INSIDE** THE STREAK, and my first version of this test did not.
+  //
+  // It put the ghost newest, which reproduces nothing: `oldest` is the streak's LAST element, so a ghost
+  // at the front cannot move `since`, `hours` or `firstFailing`. The mutation -- streak back on the
+  // unfiltered list -- passed 54/0 against it. A fixture that cannot express the fault proves nothing,
+  // and it reads exactly like one that can.
+  //
+  // With an unfinished run BETWEEN the last success and the newest failure, the unfiltered streak runs
+  // [failure 08:00, GHOST 07:00] and `oldest` IS the ghost: the streak is reported as starting an hour
+  // early, and `firstFailing` goes looking for the failing assertion of a run that never ran.
+  const ghostInside = [runAt("success", "06:00", 1), runAt(null, "07:00", 9), runAt("failure", "08:00", 3)];
+  const colour = mainColour({ repo: "o/r", now: NOW_1263, run: withRuns(ghostInside) });
+  assert.equal(colour.red, true);
+  assert.equal(colour.since, "2026-09-13T08:00:00Z",
+    "the streak starts at the failure, not at the unfinished run sitting behind it");
+  assert.equal(colour.inFlight, 1);
 });
