@@ -22,6 +22,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
+import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const ANSIBLE = "packages/control/ansible/";
@@ -30,7 +31,11 @@ const ANSIBLE = "packages/control/ansible/";
 const VENDORED = `${ANSIBLE}collections/`;
 
 const committedYml = () =>
-  execFileSync("git", ["-C", REPO, "ls-files", `${ANSIBLE}**/*.yml`, `${ANSIBLE}*.yml`], { encoding: "utf8" })
+  // `sandboxGitEnv()` is CALLED, not merely imported: git exports GIT_DIR into every hook environment, so
+  // a spawn with an inherited env reads whatever repository the caller was in -- which on 2026-09-06 put
+  // stray commits on real refs. A test that walks the tree is exactly the shape that inherits one.
+  execFileSync("git", ["-C", REPO, "ls-files", `${ANSIBLE}**/*.yml`, `${ANSIBLE}*.yml`],
+    { encoding: "utf8", env: sandboxGitEnv() })
     .split("\n").filter(Boolean);
 
 const EXPECTED_FILES = 44;
