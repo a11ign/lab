@@ -102,6 +102,17 @@ function discoverGitPopulationTests(): string[] {
  * still literally appear in the file's source below), or `null` with a stated reason no guard applies.
  */
 const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
+  "packages/lab/src/packaging/prose-satisfiable-guards.test.ts": {
+    guard: "bound.length > 20",
+    note: "guarded -- #1213's walk spawns `git ls-files '*.test.ts'` and asks, of every test file that "
+      + "binds a variable to the TEXT of a source file, whether any pattern it asserts matches the raw "
+      + "source and NOT the stripped source. A clean result is the EXPECTED answer on main today -- the "
+      + "live count is ZERO and all three remaining matches are deliberate comment reads -- so 'no guard "
+      + "is held up by prose' and 'the walk read nothing' would otherwise be the same observation. THREE "
+      + "stages can silently empty it (the walk, the variable binding, the pattern extraction) and the "
+      + "floor is on the second, with a second floor on the third, so the failure names WHICH stage came "
+      + "back empty rather than reporting a clean tree.",
+  },
   "packages/lab/src/packaging/tracker-writer-population.test.ts": {
     guard: "examined >= 100",
     note: "guarded -- #1053's walk spawns `git ls-files scripts` once and asks, of every `.mjs` it "

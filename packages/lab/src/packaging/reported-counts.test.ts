@@ -78,6 +78,15 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   // the assertion answers is only "did `git ls-files` return a population at all". The sweep's real
   // verdict is an EQUALITY on the offenders (`deepEqual(offenders, [])`), with its own control driving
   // the predicate over a source that must produce one.
+  // #1213, and both are PRECONDITIONS rather than stand-ins. The derivation has three places it can
+  // silently find nothing -- the `git ls-files` walk, the variable binding, and the pattern extraction --
+  // and an empty result at any of them leaves the real assertion green over an empty set. There is no
+  // right number to assert: the population changes with every test file added, and the count is reported
+  // only so a reader of the failure can see WHICH stage came back empty. The verdict this file actually
+  // gives is an EQUALITY (`deepEqual(unaccounted, [])`), with its own mutation driving a planted
+  // instance through the predicate.
+  "prose-satisfiable-guards.test.ts: bound.length",
+  "prose-satisfiable-guards.test.ts: patterns.length",
   "merge-guard-checks-rule.test.ts: files.length",
   "action-inputs.test.ts: inputs.length",
   "board-liveness.test.ts: named.length",
