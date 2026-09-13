@@ -142,6 +142,9 @@ export const NOT_COMPARED = Object.freeze({
     + "not what NVDA announced; it flips with probe order and even with transient network conditions "
     + "rather than with the page, so comparing it would report drift for a change in how the capture "
     + "was driven, not in what the page says (whether to compare it anyway is #984, a flip-rate measurement)",
+  "interaction.leftSite": "where an activation took the browser off the page's site (#1363): a record of what "
+    + "the PROBE did, like `navigatedOnSubmit` above, and the capture ENDS there -- so a capture that left and one "
+    + "that did not already differ in every channel the excursion stopped, which is where evidence:check sees it",
   url: "which page was asked for; the pair is matched on it, and `documentIdentity` compares what was SERVED",
   screenReader: "which screen reader; `isUsableCapture` refuses anything but NVDA, so a difference is not a capture",
   capturedAt: "when; it differs on every capture of every page",
