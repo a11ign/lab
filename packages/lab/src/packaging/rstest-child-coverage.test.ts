@@ -14,8 +14,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CoverageProvider } from "@rstest/coverage-v8";
 import {
-  childCoverageEntries, coverageOptionsFromC8rc, coverageTotals, mergeChildCoverage, rstestCoverageArgs,
+  childCoverageEntries, coverageOptionsFromC8rc, coverageTotals, foldByStart, mergeChildCoverage, rstestCoverageArgs,
 } from "../../../../scripts/rstest/merge-child-coverage.mjs";
+import type { FileData } from "../../../../scripts/rstest/merge-child-coverage.mjs";
 
 const FIXTURE = [
   "export function reached(n) { return n > 0 ? 'positive' : 'not positive'; }",
@@ -35,7 +36,7 @@ async function workspace() {
   // What rstest writes for an included file no test loaded: its OWN untested entry, every count 0.
   const [untested] = await new CoverageProvider(options as never, root)
     .generateCoverageForUntestedFiles({ environmentName: "node", files: [script] });
-  return { root, script, rawDir, options, report: { [script]: untested } as Record<string, unknown> };
+  return { root, script, rawDir, options, report: { [script]: untested as unknown as FileData } as Record<string, FileData> };
 }
 
 /** Spawn the fixture as a child, with or without `NODE_V8_COVERAGE`. */
@@ -54,7 +55,7 @@ test("#1350 ACCEPTANCE: a spawned child's lines appear in the merged report; wit
   const w = await workspace();
   try {
     runChild(w.script, w.rawDir);
-    const untested = w.report[w.script] as { s: Record<string, number>; fnMap: Record<string, { name: string }> };
+    const untested = w.report[w.script] as unknown as { s: Record<string, number>; fnMap: Record<string, { name: string }> };
     // THE CONTROL, and the defect: rstest's own entry for a file only a child ran reads 0.
     assert.equal(coveredStatements(untested), 0, "rstest alone sees nothing a child covered");
 
@@ -130,4 +131,57 @@ test("#1350: the population is `.c8rc.json`'s own, passed on rstest's command li
   assert.equal(args.filter((a) => a === "--coverage.exclude").length, c8rc.exclude.length);
   assert.ok(args.includes("--coverage.reportOnFailure"), "a host-dependent test failure must not suppress the report");
   assert.deepEqual(args.slice(0, 3), ["--coverage", "--coverage.provider", "v8"]);
+});
+
+/**
+ * #1350, measured on the whole suite: a file the suite ALSO imports has an in-process rstest entry whose END columns
+ * differ from the child's conversion (rstest wrote `end.column: None` where the child has `100`) and whose ids are its
+ * own. Merging the child's map as a second map doubled 103 files' statement maps. This base is the fixture's own entry
+ * reshaped that way -- the measured difference, reproduced -- so the fold is driven against the shape that broke it.
+ */
+/** Ids an in-process entry uses, deliberately disjoint from the fixture's own so a match by id cannot pass. */
+const OTHER_IDS = 1000;
+
+function inProcessShaped(entry: FileData): FileData {
+  const renumber = <V>(map: Record<string, V>, offset: number): Record<string, V> =>
+    Object.fromEntries(Object.entries(map).map(([id, v]) => [String(Number(id) + offset), v]));
+  type Spanned = { start: { line: number; column: number | null }; end: { line: number; column: number | null } };
+  const noEnd = (located: Spanned): Spanned => ({ ...located, end: { line: located.end.line, column: null } });
+  const statementMap = Object.fromEntries(Object.entries(entry.statementMap as Record<string, Spanned>)
+    .map(([id, located]) => [id, noEnd(located)]));
+  return {
+    ...entry,
+    statementMap: renumber(statementMap, OTHER_IDS), s: renumber(entry.s, OTHER_IDS),
+    fnMap: renumber(entry.fnMap, OTHER_IDS), f: renumber(entry.f, OTHER_IDS),
+    branchMap: renumber(entry.branchMap, OTHER_IDS), b: renumber(entry.b, OTHER_IDS),
+  };
+}
+
+test("#1350: a file rstest covered IN-PROCESS keeps rstest's own maps -- child hits fold on by start, no denominator grows", async () => {
+  const w = await workspace();
+  try {
+    runChild(w.script, w.rawDir);
+    const base = inProcessShaped(w.report[w.script]);
+    const { merged, unmatched } = await mergeChildCoverage(
+      { report: { [w.script]: base }, entries: childCoverageEntries(w.rawDir, w.root), options: w.options, root: w.root });
+    const after = merged.fileCoverageFor(w.script).toJSON() as unknown as FileData;
+    assert.equal(Object.keys(after.s).length, Object.keys(base.s).length, "the statement map is rstest's, not doubled");
+    assert.equal(Object.keys(after.f).length, Object.keys(base.f).length, "and so is the function map");
+    assert.equal(Object.keys(after.b).length, Object.keys(base.b).length, "and the branch map");
+    assert.ok(Object.values(after.s).some((n) => n > 0), "the child's hits landed on rstest's statements");
+    assert.deepEqual(unmatched, { statements: 0, functions: 0, branches: 0 }, "every child structure found its start");
+  } finally {
+    rmSync(w.root, { recursive: true, force: true });
+  }
+});
+
+test("#1350: foldByStart counts a child structure with no base structure at its start, and adds nothing for it", () => {
+  const located = (line: number, column: number) => ({ start: { line, column }, end: { line, column: column + 1 } });
+  const base = { statementMap: { 0: located(1, 0) }, s: { 0: 0 }, fnMap: {}, f: {}, branchMap: {}, b: {} };
+  const child = { statementMap: { 0: located(1, 0), 1: located(9, 4) }, s: { 0: 2, 1: 5 }, fnMap: {}, f: {},
+    branchMap: { 0: { loc: located(1, 0), locations: [located(1, 0), located(1, 2)] } }, b: { 0: [1, 0] } };
+  const { data, unmatched } = foldByStart(base as never, child as never);
+  assert.deepEqual(data.s, { 0: 2 }, "the matched statement gains the child's hits, the unmatched one is not added");
+  assert.deepEqual(unmatched, { statements: 1, functions: 0, branches: 1 }, "both misses are counted, never silent");
+  assert.deepEqual(base.s, { 0: 0 }, "the input is not modified");
 });
