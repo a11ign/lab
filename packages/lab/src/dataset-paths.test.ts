@@ -176,6 +176,10 @@ const EXEMPT: Record<string, string> = {
     + "\"runs/screenreader-dataset/** (gitignored)\" and \"runs/screenreader-acceptance/** (gitignored)\" "
     + "as plain descriptive strings -- what those generators write, quoted for a human reading the sweep's "
     + "own classification, never a path this file resolves or reads for itself.",
+  "packages/lab/src/packaging/row-claim-live.test.ts":
+    "#1406: it RECORDS gh's stdout for issues #737 and #758 byte for byte, and those issue bodies quote "
+    + "runs/witness/ capture paths as the prose of the rows they are -- recorded text the test reads "
+    + "filedByLine against, never a path this file resolves or reads.",
 };
 
 test("the discovery walk finds a realistic slice of the repo's own source", () => {
