@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
 import {
-  closurePlan, labelsToStrip, applyClosurePlan, EXIT, closeRowsExit,
+  closurePlan, labelsToStrip, applyClosurePlan, EXIT, closeRowsExit, liveClosureEffects, stripClaimLabels,
 } from "../../../../scripts/close-rows-for-merged-pr.mjs";
 import { refusalCause } from "../../../../scripts/settle-closed-status.mjs";
 // THE AUDIT'S OWN DEBRIS CHECK, imported rather than re-derived -- #754's own mutation target is that
@@ -214,13 +214,16 @@ test("#776/#791 MUTATION TARGET: the real #677 measurement, end to end through c
 
 // --- #776/#791: applyClosurePlan -- the WIRING, proven with injected closeOne/strip ---
 
+/** #1400: a `settle` that moves nothing and reaches nothing. Every call below passes all three effects. */
+const settledOk = () => ({ settled: true, refused: [] });
+
 test("#776/#791 MUTATION TARGET: applyClosurePlan strips EVERY already-closed row's labels, not just "
   + "freshly-closed ones -- this is the exact wiring gap the real #677/#577/#752 bug had", () => {
   const stripped: Array<[number, string[]]> = [];
   const { failed } = applyClosurePlan(
     { close: [], already: [{ number: 677, labels: ["in-progress", "session:worker-capture"] }] },
     { prNumber: "769", sha: "abc123", repo: "DanBeckDev/a11y-witness" },
-    { strip: (n, labels) => { stripped.push([n, labels]); } },
+    { closeOne: () => true, strip: (n, labels) => { stripped.push([n, labels]); }, settle: settledOk },
   );
   assert.deepEqual(failed, []);
   assert.deepEqual(stripped, [[677, ["in-progress", "session:worker-capture"]]]);
@@ -232,7 +235,7 @@ test("applyClosurePlan still closes and strips a freshly-closing row, exactly as
   const { failed } = applyClosurePlan(
     { close: [{ number: 344, labels: ["ready"] }], already: [] },
     { prNumber: "1", sha: "abc", repo: "DanBeckDev/a11y-witness" },
-    { closeOne: (n) => { closedRows.push(n); return true; }, strip: (n) => { stripped.push(n); } },
+    { closeOne: (n) => { closedRows.push(n); return true; }, strip: (n) => { stripped.push(n); }, settle: settledOk },
   );
   assert.deepEqual(failed, []);
   assert.deepEqual(closedRows, [344]);
@@ -245,7 +248,7 @@ test("applyClosurePlan does NOT strip a row whose close failed -- a failed close
   const { failed } = applyClosurePlan(
     { close: [{ number: 344, labels: ["ready"] }], already: [] },
     { prNumber: "1", sha: "abc", repo: "DanBeckDev/a11y-witness" },
-    { closeOne: () => false, strip: (n) => { stripped.push(n); } },
+    { closeOne: () => false, strip: (n) => { stripped.push(n); }, settle: settledOk },
   );
   assert.deepEqual(failed, [344]);
   assert.deepEqual(stripped, []);
@@ -353,4 +356,40 @@ test("#1299: the dispatch path's main() EXITS WITH that decision -- worker-captu
   const afterPlan = mainBody.slice(mainBody.indexOf("closeRowsExit(applyClosurePlan("));
   assert.match(afterPlan, /^\s*process\.exit\(code\);/m, "and exits with that code");
   assert.doesNotMatch(afterPlan, /process\.exit\(EXIT\.DONE\)/, "not with DONE, whatever the outcome said");
+});
+
+/**
+ * #1400: A TEST THAT OMITS AN EFFECT MUST FAIL, NOT REACH GITHUB. Each effect used to default to the live one, and two
+ * tests above reached the real Project 2 mover for #677 and #344 through the `settle` they left out -- passing while
+ * they did it, because `settleClosedStatus` never throws. The positive control: leave each effect out in turn.
+ */
+test("#1400 POSITIVE CONTROL: an omitted effect is refused by name BEFORE any effect runs -- never a live call", () => {
+  const plan = { close: [{ number: 41, labels: ["in-progress"] }], already: [{ number: 40, labels: ["in-progress"] }] };
+  const ctx = { prNumber: "1", sha: "abc", repo: "o/r" };
+  for (const omitted of ["closeOne", "strip", "settle"] as const) {
+    const ran: string[] = [];
+    const effects: Record<string, unknown> = {
+      closeOne: () => { ran.push("closeOne"); return true; },
+      strip: () => { ran.push("strip"); },
+      settle: () => { ran.push("settle"); return settledOk(); },
+    };
+    delete effects[omitted];
+    assert.throws(() => applyClosurePlan(plan, ctx, effects as never),
+      new RegExp(`applyClosurePlan: no ${omitted} given`), `omitting ${omitted} is refused, naming it`);
+    assert.deepEqual(ran, [], `and nothing ran before the refusal when ${omitted} was missing`);
+  }
+  assert.throws(() => applyClosurePlan(plan, ctx, undefined as never), /no closeOne, strip, settle given/,
+    "no effects at all names all three");
+});
+
+test("#1400: liveClosureEffects is the ONE place the live effects are named -- main() passes it, nothing defaults to it", () => {
+  const live = liveClosureEffects();
+  assert.deepEqual(Object.keys(live).sort(), ["closeOne", "settle", "strip"]);
+  assert.equal(live.strip, stripClaimLabels, "the live strip is the exported gh issue edit");
+  for (const effect of Object.values(live)) assert.equal(typeof effect, "function", "each is a function, and none is called here");
+  const source = readFileSync(new URL("../../../../scripts/close-rows-for-merged-pr.mjs", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const mainBody = source.slice(source.indexOf("function main() {"));
+  assert.match(mainBody, /applyClosurePlan\(plan, \{ prNumber: number, sha, repo \}, liveClosureEffects\(\)\)/,
+    "main() hands applyClosurePlan the live effects explicitly -- without them production would be refused too");
 });
