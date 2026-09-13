@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import {
   METRICS, EXIT, figure, passRate, renderFigure, renderTable, totalCount, mainColour,
   firstFailingAssertion, byConclusion, queueReport, utilisation, boardDeadline, watchReport,
-  redWindows, redHoursFigure, runsHaveStopped,
+  redWindows, redHoursFigure, runsHaveStopped, weeklyRedHoursFigure, RUNS_PAGE_SIZE,
 } from "../../../../scripts/org-watch.mjs";
 
 const metric = (key: string) => METRICS.find((m) => m.key === key)!;
@@ -727,4 +727,88 @@ test("#1286: a queue with content is unaffected -- the third state is additive",
   assert.equal(report.refused, false);
   assert.equal(report.examined, 1);
   assert.deepEqual(report.failing, [{ number: 1, jobs: ["gate"] }]);
+});
+
+// --- #1267: THE WEEKLY FIGURE IS BUILT IN ONE PLACE, AND IT READS `readable` -----------------------------------
+//
+// The expression `main()` used inline had two defects. It never read `colour.readable`, so an unreadable main
+// printed `0` against a target of `0` where every other unmeasured row says NOT MEASURED. And it printed the CURRENT
+// streak, which #1047 ruled out for this figure; the sum, `redHoursFigure`, was built, tested and never wired.
+// Every colour below comes from `mainColour` itself, never a hand-built object, because the table prints what
+// `mainColour` returns.
+
+const weeklyRow = (colour: ReturnType<typeof mainColour>) => renderTable({ redHours: weeklyRedHoursFigure(colour) })
+  .split("\n").find((line) => line.includes(metric("redHours").label)) ?? "";
+
+test("#1267 ACCEPTANCE: the weekly figure for a main that could not be read is NOT MEASURED, never 0", () => {
+  const unreadable = mainColour({ repo: "o/r", run: () => { throw new Error("gh: HTTP 502"); } });
+  const green = mainColour({ repo: "o/r", now: new Date("2026-09-12T04:00:00Z"),
+    run: () => JSON.stringify({ workflow_runs: [{ conclusion: "success", created_at: "2026-09-12T03:00:00Z" }] }) });
+  const weeklyUnreadable = weeklyRedHoursFigure(unreadable);
+  const weeklyGreen = weeklyRedHoursFigure(green);
+  assert.equal(weeklyUnreadable.value, null, "a figure that could not be made is null, which renderFigure prints as NOT MEASURED");
+  assert.match(weeklyRow(unreadable), /NOT MEASURED -- examined 0/);
+  assert.doesNotMatch(weeklyRow(unreadable), /\| 0 \(examined/, "and never the target's own 0");
+  assert.match(weeklyUnreadable.note, /HTTP 502/, "naming what could not be read");
+  // POSITIVE CONTROL, on the same assertions: a genuinely green main still reports 0. "0 hours red" and "could not
+  // tell" are different facts, and collapsing them the other way would be the same defect mirrored.
+  assert.equal(weeklyGreen.value, "0");
+  assert.match(weeklyRow(green), /\| 0 \(examined 1\)/);
+  assert.notDeepEqual(weeklyUnreadable, weeklyGreen,
+    "#912's line, on the weekly path: an unreadable main and a green one must not be the same object");
+});
+
+test("#1267: every unreadable shape mainColour has reports NOT MEASURED -- a 502, no runs, a stopped list, none completed", () => {
+  const shapes: Record<string, ReturnType<typeof mainColour>> = {
+    "a 502": mainColour({ repo: "o/r", run: () => { throw new Error("gh: HTTP 502"); } }),
+    "no runs": mainColour({ repo: "o/r", run: () => JSON.stringify({ workflow_runs: [] }) }),
+    "a stopped list (#1154)": mainColour({ repo: "o/r", run: twoEndpoints("2026-09-12T19:00:00Z"),
+      now: new Date("2026-09-12T19:30:00Z") }),
+    "none completed (#1263)": mainColour({ repo: "o/r", now: new Date("2026-09-12T05:00:00Z"),
+      run: () => JSON.stringify({ workflow_runs: [{ conclusion: null, created_at: "2026-09-12T04:00:00Z" }] }) }),
+  };
+  for (const [name, colour] of Object.entries(shapes)) {
+    assert.equal(colour.readable, false, `${name}: the fixture really is unreadable, or this asserts nothing`);
+    assert.match(weeklyRow(colour), /NOT MEASURED -- examined 0/, name);
+  }
+});
+
+test("#1267: a readable page reports the SUM of its red windows, not the current streak -- #1047's ruling, wired", () => {
+  // #1047's own fixture: two breaks, both fixed before the read. The inline expression printed `0` here, because
+  // main is green at the moment of the read.
+  const runs = [
+    { conclusion: "success", created_at: "2026-09-12T06:00:00Z" },
+    { conclusion: "failure", created_at: "2026-09-12T05:00:00Z" },
+    { conclusion: "success", created_at: "2026-09-12T04:00:00Z" },
+    { conclusion: "failure", created_at: "2026-09-12T03:30:00Z" },
+    { conclusion: "success", created_at: "2026-09-12T03:00:00Z" },
+  ];
+  const colour = mainColour({ repo: "o/r", now: new Date("2026-09-12T07:00:00Z"),
+    run: () => JSON.stringify({ workflow_runs: runs }) });
+  assert.equal(colour.red, false, "green at the read -- the case the current-streak figure reported as 0");
+  const weekly = weeklyRedHoursFigure(colour);
+  assert.equal(weekly.value, "1.5", "1 hour plus 0.5");
+  assert.equal(weekly.examined, 5);
+  assert.match(weekly.note, /2 window\(s\) across 5 settled run\(s\) examined/);
+  assert.doesNotMatch(weekly.window, /since the last trunk success/, "a sum over a page is not a streak since a success");
+  assert.match(weekly.window, new RegExp(`newest ${RUNS_PAGE_SIZE} trunk runs on main`));
+});
+
+test("#1267: a page that begins mid-red says 'at least' in the weekly VALUE (#1049)", () => {
+  const colour = mainColour({ repo: "o/r", now: new Date("2026-09-12T06:00:00Z"), run: () => JSON.stringify({
+    workflow_runs: [
+      { conclusion: "success", created_at: "2026-09-12T05:00:00Z" },
+      { conclusion: "failure", created_at: "2026-09-12T00:00:00Z" },
+    ] }) });
+  assert.equal(weeklyRedHoursFigure(colour).value, "at least 5");
+});
+
+test("#1267: main() builds the weekly figure ONLY through weeklyRedHoursFigure(colour) -- no second expression", () => {
+  const source = stripComments(readFileSync(new URL("../../../../scripts/org-watch.mjs", import.meta.url), "utf8"));
+  const start = source.indexOf("function main()");
+  assert.ok(start > 0, "main() must still be findable, or this asserts nothing");
+  const body = source.slice(start, source.indexOf("\n}\n", start));
+  assert.match(body, /redHours: weeklyRedHoursFigure\(colour\)/);
+  assert.doesNotMatch(body, /colour\.hours|colour\.red\b/,
+    "the current-streak expression is gone, not kept beside the call");
 });
