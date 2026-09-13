@@ -270,11 +270,18 @@ test("#1307 ACCEPTANCE: an untracked SYMLINK TO A DIRECTORY is skipped BY NAME, 
     git("commit", "--quiet", "-m", "one");
     writeFileSync(resolve(target, "inside.ts"), "a package file\n");
     symlinkSync(target, resolve(repo, "node_modules"), "dir");
+    // AND A SECOND LINK UNDER A NAME NO `.gitignore` MENTIONS. With only `node_modules` planted, a fix that skips
+    // that one name passed this test 9 / 0 -- the `.gitignore`-shaped fix the row says is not enough. The rule is
+    // the entry's SHAPE, so the test plants the shape under a second name.
+    symlinkSync(target, resolve(repo, "linked-dir"), "dir");
 
-    assert.match(git("ls-files", "--others", "--exclude-standard"), /^node_modules$/m,
+    const untracked = git("ls-files", "--others", "--exclude-standard");
+    assert.match(untracked, /^node_modules$/m,
       "the precondition: git lists the planted link as an untracked file, exactly as in a symlinked worktree");
+    assert.match(untracked, /^linked-dir$/m, "and the second link, under a name nothing ignores");
     const tree = trackedWorkingTree(repo);
-    assert.deepEqual(tree.skipped, ["node_modules"], "the link to a directory is skipped, and named");
+    assert.deepEqual([...tree.skipped].sort(), ["linked-dir", "node_modules"],
+      "every link to a directory is skipped and named, whatever it is called");
     assert.deepEqual([...tree.files].sort(), [".gitignore", "tracked.ts"]);
     const { violations } = absenceViolations({ symbols: { "a planted marker": "planted-marker-1307" }, ...tree });
     assert.deepEqual(violations.map((v) => v.file), ["tracked.ts"], "the positive control: regular files are still read");
