@@ -57,7 +57,18 @@ test("#746's own acceptance shape: a pipe the file pre-check cannot parse is ref
   + "real shape, #728's own mechanism)", () => {
   const result = checkBody(PIPE_BODY_727, { run: NEVER_RUN });
   assert.equal(result.ok, false);
-  assert.ok(result.lines.some((l) => l.includes("matched no file")));
+  // #728 LANDED, AND THIS TEST NAMED THE MESSAGE IT REPLACED. Its own title says "#728's own
+  // mechanism", so it was written expecting the wording to move; what it pinned was
+  // `matched no file: node, |, xargs` -- a claim about the FILESYSTEM, and a false one.
+  //
+  // THE VERDICT IS DELIBERATELY UNCHANGED and asserted first: still `ok: false`, still refused, still
+  // "EXECUTED NOTHING". #728 was about the confident wrong answer, not about the refusal, and a fix
+  // that quietly let a piped line PASS would have satisfied the row's first line while removing the
+  // protection #746 built. Both halves are asserted here so neither can move alone.
+  assert.ok(result.lines.some((l) => l.includes("cannot check this line: it contains a pipe")),
+    "the refusal must name the construct rather than assert about files that were never asked for");
+  assert.ok(result.lines.some((l) => l.includes("EXECUTED NOTHING")),
+    "and the section must still report having verified nothing -- that is what stops it reading as a pass");
 });
 
 test("#746's own acceptance shape: the section under `## Verified` (not `## Acceptance`) is MISSING "
