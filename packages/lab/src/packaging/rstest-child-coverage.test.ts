@@ -204,13 +204,17 @@ test("#1350: the returned map shares no object with the caller's report -- mergi
     // A second included file that no child runs: its entry passes through the merge unfolded.
     const other = join(w.root, "other.mjs");
     writeFileSync(other, FIXTURE);
-    const [otherEntry] = await new CoverageProvider(w.options as never, w.root)
+    // Both files in the population: the workspace's include names only child.mjs, and the provider honours it when
+    // generating an untested entry -- with it, other.mjs came back as NO entry and the merge threw on `undefined`.
+    const options = coverageOptionsFromC8rc({ include: ["*.mjs"], exclude: [] }, join(w.root, "report"));
+    const [otherEntry] = await new CoverageProvider(options as never, w.root)
       .generateCoverageForUntestedFiles({ environmentName: "node", files: [other] });
+    assert.ok(otherEntry, "the second file has an untested entry -- the positive control for this setup");
     const report = { ...w.report, [other]: otherEntry as unknown as FileData };
     runChild(w.script, w.rawDir);
     const reportBefore = JSON.stringify(report);
     const { merged } = await mergeChildCoverage(
-      { report, entries: childCoverageEntries(w.rawDir, w.root), options: w.options, root: w.root });
+      { report, entries: childCoverageEntries(w.rawDir, w.root), options, root: w.root });
     // istanbul rewrites an entry IN PLACE when a later merge lands on it with a different map (end columns shifted
     // here, as the in-process and child conversions differ). If the returned map held the caller's own objects,
     // this would rewrite the caller's report.
