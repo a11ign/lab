@@ -25,13 +25,17 @@ export function rehearsalMarkerSha(releaseMd) {
   return m ? m[1] : null;
 }
 
+/** The public documents and packaged files a V1 rehearsal actually exercises (#1265). */
+export const REHEARSAL_EXERCISES = ["README.md", "docs/try-it.md", "docs/github-action.md", "action.yml"];
+
 /**
  * THE VERDICT, PURE. `[]` means the rehearsal on record covers the commit being released; anything else
  * is a refusal reason, never inferred silently.
- * @param {{ releaseMd: string | null, releaseSha: string | null }} input
+ * @param {{ releaseMd: string | null, releaseSha: string | null,
+ *           isAncestor?: boolean | null, changedPaths?: string[] }} input
  * @returns {string[]}
  */
-export function rehearsalCurrencyProblems({ releaseMd, releaseSha }) {
+export function rehearsalCurrencyProblems({ releaseMd, releaseSha, isAncestor = null, changedPaths = [] }) {
   const marked = rehearsalMarkerSha(releaseMd);
   if (!marked) {
     return ["RELEASE.md carries no `<!-- REHEARSAL:COMMIT <sha> -->` marker at all -- no rehearsal is on "
@@ -44,12 +48,32 @@ export function rehearsalCurrencyProblems({ releaseMd, releaseSha }) {
     return ["could not resolve the commit being released -- refusing rather than guessing whether the "
       + "rehearsal on record is current"];
   }
-  // PREFIX-TOLERANT, either direction: a short sha in one and a full sha in the other must still compare
-  // equal, the same convention `merge-guard.mjs` uses for the identical reason.
-  if (!releaseSha.startsWith(marked) && !marked.startsWith(releaseSha)) {
-    return [`RELEASE.md's rehearsal marker names ${marked}, but the commit being released is ${releaseSha}`
-      + " -- a rehearsal covers the one commit it ran against, not whatever HEAD has become since. Run "
-      + "the rehearsal again and update the marker (and the prose beside it) before this release."];
+  // #1265: ANCESTOR PLUS UNCHANGED PATHS, because MARKER-EQUALS-RELEASE COULD NOT BE SATISFIED.
+  //
+  // The rule here required the release sha to EQUAL the marker. A rehearsal runs against commit X;
+  // recording it moves the marker in RELEASE.md, which IS commit Y; a release at Y reads marker X and
+  // refuses, and a release at X reads the previous marker and refuses. No committed tree satisfies it,
+  // and "run the rehearsal again and update the marker" cannot terminate. That is #558 part 1's defect
+  // -- `--check` once required the consumer-gate pin to EQUAL HEAD -- arriving in this gate.
+  //
+  // #558 part 2 settled the shape and `consumer-gate.yml`'s `check-pin` carries it: the marker must be
+  // an ANCESTOR of the release commit, and nothing the rehearsal EXERCISES may have changed since. The
+  // facts are INJECTED rather than read here: this function is a pure decision and giving it two `git`
+  // calls would put the spawn inside the judgement, where #1279 measured what a composed command costs.
+  if (isAncestor === null) {
+    return ["could not tell whether the rehearsal marker is an ancestor of the commit being released -- "
+      + "refusing rather than assuming it is (the same fail-closed reading as an unresolved release sha)"];
+  }
+  if (isAncestor === false) {
+    return [`RELEASE.md's rehearsal marker names ${marked}, which is NOT an ancestor of the commit being `
+      + `released (${releaseSha}) -- the rehearsal ran on a history this release is not descended from, `
+      + "so it says nothing about it. Run the rehearsal against a commit in this history."];
+  }
+  if (changedPaths.length > 0) {
+    return [`RELEASE.md's rehearsal marker names ${marked}, an ancestor of ${releaseSha} -- but the `
+      + `rehearsal EXERCISES ${changedPaths.length} path(s) that have changed since it:\n  `
+      + `${changedPaths.join("\n  ")}\nA rehearsal covers what it ran against. Run it again and update `
+      + "the marker (and the prose beside it) before this release."];
   }
   return [];
 }
