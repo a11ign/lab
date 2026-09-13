@@ -35,6 +35,7 @@ import {
   b4Lines, reportB4,
 } from "../../../../scripts/row-claim.mjs";
 import { forgetProcessSnapshot, withBoardSnapshot } from "../../../../scripts/board-snapshot.mjs";
+import { refusalCause, PROJECT_UNREADABLE } from "../../../../scripts/settle-closed-status.mjs";
 import { laneReason } from "../../../../scripts/row-claim/runner-rule.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { READY_LABEL, WAS_READY_LABEL } from "../../../../scripts/ready-label-audit.mjs";
@@ -1212,6 +1213,38 @@ test("#891 ACCEPTANCE: moveProjectStatus passes excludeIssueNumber: issueNumber 
   assert.equal(seenDeps[0].excludeIssueNumber, 891);
 });
 
+test("#1275: moveProjectStatus passes touches: issueNumber, so its snapshot covers the one item it edits", () => {
+  const seen: Array<{ touches?: number | number[] }> = [];
+  const snapshot = <T,>(mutate: () => T, deps: { touches?: number | number[] } = {}): T => {
+    seen.push(deps);
+    return mutate();
+  };
+  moveProjectStatus(1275, "In progress", { run: () => "", snapshot, log: () => {} });
+  assert.deepEqual(seen.map((deps) => deps.touches), [1275]);
+});
+
+test("#1275: through the real caller, a Project the token cannot read is still reported as project-unreadable", () => {
+  // #546's bridge: CI's token cannot read the user-owned Project, and settle-closed-status.mjs classifies each close
+  // by the reason moveProjectStatus returns. Captured live 2026-09-13 with TOUCHED_ITEM_QUERY and project 999: gh
+  // exited 1 and printed this body -- board-snapshot.test.ts holds the whole capture.
+  forgetProcessSnapshot();
+  const capturedErrors = { errors: [{ type: "NOT_FOUND", path: ["user", "projectV2"], locations: [{ line: 3, column: 27 }],
+    message: "Could not resolve to a ProjectV2 with the number 999." }] };
+  const argv: string[][] = [];
+  const run = (_cmd: string, args: string[]): string => {
+    argv.push(args);
+    const error = new Error("Command failed: gh api graphql ...") as Error & { stdout: string };
+    error.stdout = JSON.stringify(capturedErrors);
+    throw error;
+  };
+  const result = moveProjectStatus(1275, "Done", { run, log: () => {},
+    snapshot: (mutate, deps) => withBoardSnapshot(mutate, { ...deps, run, mkdir: () => {}, writeFile: () => {}, log: () => {} }) });
+  assert.equal(result.moved, false);
+  assert.equal((result as { notOnBoard: boolean }).notOnBoard, false, "unreadable is not the same as not on the board");
+  assert.equal(refusalCause((result as { reason: string }).reason), PROJECT_UNREADABLE);
+  assert.ok(!argv.some((args) => args[0] === "project" && args[1] === "item-edit"), "and nothing was edited");
+});
+
 test("moveProjectStatus calls gh project item-edit with the real field name and the given Status option", () => {
   const calls: string[][] = [];
   const run = (cmd: string, args: string[]) => { calls.push(args); return ""; };
@@ -1652,36 +1685,35 @@ test("#1063: `renderStatus`'s UNCLAIMED branch calls reportB4 -- the row's deliv
     + "that the call exists, never that it ran");
 });
 
-test("#852: three Status moves in one process make ONE board sweep, through the real caller", () => {
-  // The board-snapshot tests pin the wrapper; this pins the CALLER the row is about. `moveProjectStatus`
-  // is what every claim, dispatch and close goes through, and the assertion is on the ARGV because the
-  // return value is `{ moved: true }` either way — which is why a four-day-old cost went unnoticed.
+test("#1275: a Status move reads only the item it touches, through the real caller -- never the board", () => {
+  // The board-snapshot tests pin the wrapper; this pins the CALLER. `moveProjectStatus` is what every claim, filing
+  // and close goes through. #852 made the full sweep here one per process -- 6 pages at 555 items, plus the ready
+  // list -- and a filing is one process. Now each distinct item costs one targeted read, and a second move none.
+  // The assertion is on the ARGV because the return value is `{ moved: true }` either way.
   forgetProcessSnapshot();
   const argv: string[][] = [];
-  let served = 0;
   const run = (_cmd: string, args: string[]) => {
     argv.push(args);
-    if (!args.join(" ").includes("graphql")) return "";
-    const cursor = served; served += 1;
-    return JSON.stringify({ data: { user: { projectV2: { items: {
-      pageInfo: { hasNextPage: cursor < 2, endCursor: `c${cursor + 1}` },
-      nodes: [{ id: `PVTI_${cursor}`, content: { number: cursor, title: "t", state: "OPEN" },
-        fieldValues: { nodes: [{ name: "Ready", field: { name: "Status" } }] } }],
-    } } } } });
+    const issueArg = args.find((arg) => arg.startsWith("issue="));
+    if (!issueArg) return "";
+    const issue = Number(issueArg.slice("issue=".length));
+    return JSON.stringify({ data: { user: { projectV2: { id: "PVT_kwHOAsR0u84BinDJ" } }, repository: { issue: {
+      number: issue, title: "t", state: "OPEN", projectItems: { totalCount: 1, nodes: [
+        { id: `PVTI_${issue}`, project: { number: 2 }, fieldValueByName: { name: "Ready" } }] } } } } });
   };
-  const results = [1, 2, 3].map((n) => moveProjectStatus(n, "In progress",
+  const results = [1, 2, 3, 3].map((n) => moveProjectStatus(n, "In progress",
     { run, log: () => {}, snapshot: (mutate, deps) => withBoardSnapshot(mutate,
       // `exists: () => true` because `writeFile` is stubbed to drop the file -- with the real
       // `existsSync` the snapshot this test never wrote reads as deleted and every reuse takes a fresh
-      // sweep, which is the disk check doing its job against a fixture rather than a defect.
-      { ...deps, run, fetchReady: () => [], mkdir: () => {}, writeFile: () => {}, log: () => {},
-        exists: () => true }) }));
+      // read, which is the disk check doing its job against a fixture rather than a defect.
+      { ...deps, run, mkdir: () => {}, writeFile: () => {}, log: () => {}, exists: () => true }) }));
 
-  assert.deepEqual(results.map((r) => r.moved), [true, true, true],
-    "all three must still move -- a cost fix that skips a mutation is a different bug");
-  assert.equal(argv.filter((a) => a.join(" ").includes("graphql")).length, 3,
-    "one 3-page sweep for three moves. Before #852 this was NINE pages, and the row's own mutation "
-    + "clause names those two numbers");
-  assert.equal(argv.filter((a) => a[0] === "project" && a[1] === "item-edit").length, 3,
-    "and every move still writes its own field -- the sweep is what is shared, never the edit");
+  assert.deepEqual(results.map((r) => r.moved), [true, true, true, true],
+    "every move still moves -- a cost fix that skips a mutation is a different bug");
+  const graphql = argv.filter((args) => args.join(" ").includes("graphql"));
+  assert.equal(graphql.length, 3, "one targeted read per distinct item: #3, moved twice, is read once");
+  assert.ok(graphql.every((args) => args.some((arg) => arg.startsWith("issue="))), "and not one of them is a board page");
+  assert.equal(argv.filter((args) => args[0] === "issue" && args[1] === "list").length, 0, "nor #747's ready-issue list");
+  assert.equal(argv.filter((args) => args[0] === "project" && args[1] === "item-edit").length, 4,
+    "and every move still writes its own field -- the snapshot is what is shared, never the edit");
 });
