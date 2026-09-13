@@ -1,8 +1,9 @@
 /**
- * Promotion must refuse a candidate that has not passed, and must write a MAJOR changeset when it has.
+ * Promotion must refuse a candidate that has not passed, and must write a BREAKING changeset when it has:
+ * `minor` while every public package is 0.x, `major` from 1.0 (#1396).
  *
  * Promoting a model is a release of `@a11ign/scorer` — ADR 0007: the weights are that package's API,
- * and any retrain is a major, because a consumer's build goes from passing to failing with no code change.
+ * and any retrain is breaking, because a consumer's build goes from passing to failing with no code change.
  * Before 2026-08-22 there was no promotion step at all and this was an undocumented manual copy, so the two
  * gates were whatever the person remembered to check.
  *
@@ -16,7 +17,11 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readdirSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { promote } from "../../scripts/promote-model.mjs";
+import { promote, promotionLevel, publicPackageVersions } from "../../scripts/promote-model.mjs";
+
+/** Every public package before version one, as the tree reads during the first publish. */
+const ALL_ZERO = { "a11ign": "0.0.0", "@a11ign/evidence": "0.0.0", "@a11ign/judge": "0.0.0",
+  "@a11ign/nvda-worker": "0.0.0", "@a11ign/scorer": "0.0.0", "@a11ign/worker-fleet": "0.0.0" };
 
 /** The real `.changeset/`, because the name used to be computed from what is in it. */
 const CHANGESET_DIR = new URL("../../../../.changeset/", import.meta.url).pathname;
@@ -46,19 +51,44 @@ function candidate(training: object, acceptance: object): { dir: string; name: s
   return { dir, name: "under-test" };
 }
 
-const run = (training: object, acceptance: object) => {
+const run = (training: object, acceptance: object, versions: Record<string, string> = ALL_ZERO) => {
   const { dir, name } = candidate(training, acceptance);
   try {
-    return promote({ candidate: dir, candidateName: name, dryRun: true });
+    return promote({ candidate: dir, candidateName: name, dryRun: true, versions });
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 };
 
-test("a model that passed both gates yields a MAJOR changeset for the scorer", () => {
-  const { entry } = run(REPORT, { passed: true });
-  assert.match(entry, /"@a11ign\/scorer": major/,
-    "any retrain is a major — the weights are the API");
+test("#1396 while every public package is 0.x, a model that passed both gates yields a MINOR changeset", () => {
+  const { entry } = run(REPORT, { passed: true }, ALL_ZERO);
+  assert.match(entry, /^"@a11ign\/scorer": minor$/m,
+    "a retrain is breaking, and under 0.x breaking is a minor -- a major here is what made the first publish 1.0.0");
+  assert.doesNotMatch(entry, /": major/);
+  assert.match(entry, /\*\*Minor, because no public package has reached 1\.0/, "the changelog says why it is a minor");
+});
+
+test("#1396 once ANY public package is 1.x, the same promotion yields a MAJOR changeset", () => {
+  const { entry } = run(REPORT, { passed: true }, { ...ALL_ZERO, "@a11ign/judge": "1.0.0" });
+  assert.match(entry, /^"@a11ign\/scorer": major$/m, "any retrain is a major from 1.0 — the weights are the API");
+  assert.match(entry, /\*\*Major, and not because the API changed/);
+});
+
+test("#1396 promotionLevel: the boundary is the first 1.x, and no versions at all is a refusal", () => {
+  assert.equal(promotionLevel({ a: "0.0.0" }), "minor");
+  assert.equal(promotionLevel({ a: "0.9.12", b: "0.1.0" }), "minor");
+  assert.equal(promotionLevel({ a: "0.9.12", b: "1.0.0" }), "major");
+  assert.equal(promotionLevel({ a: "2.3.4" }), "major");
+  assert.throws(() => promotionLevel({}), /no public package versions were read/,
+    "an empty read must not satisfy 'every version is below 1' and silently choose minor");
+});
+
+test("#1396 publicPackageVersions reads the real tree: exactly the six public packages, and today that is a minor", () => {
+  const versions = publicPackageVersions();
+  // A WRITTEN expectation, not the directory listing re-read: a seventh public package, or one that went
+  // private, should make this fail so somebody decides what it means for the release level.
+  assert.deepEqual(Object.keys(versions).sort(), Object.keys(ALL_ZERO).sort());
+  assert.equal(promotionLevel(versions), "minor");
 });
 
 test("the provenance ADR 0007 requires is filled in from the report, not left to memory", () => {
@@ -129,8 +159,9 @@ test("a NEW head is coverage, not a regression", () => {
     criteria: { "2.4.2": { subtypes: { "2.4.2:route-title-stale":
       { threshold: 0.3, development: { positive: 30, precision: 0.8, recall: 0.7, falsePositive: 0 } } } } },
   }, { passed: true });
-  const { entry } = promote({ candidate: dir, candidateName: name, dryRun: true, shippedReport: shipped });
-  assert.match(entry, /major/);
+  const { entry } = promote({ candidate: dir, candidateName: name, dryRun: true, shippedReport: shipped,
+    versions: ALL_ZERO });
+  assert.match(entry, /^"@a11ign\/scorer": minor$/m, "promoted, not refused");
   rmSync(dir, { recursive: true, force: true });
 });
 
