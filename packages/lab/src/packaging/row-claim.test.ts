@@ -1604,7 +1604,7 @@ test("#1063: check carries B4's OWN output, not a paraphrase of it", () => {
   // thing must not satisfy this -- #1054's verdict said "EXPECT row-claim claim TO REFUSE THIS" and that
   // was a PREDICTION: it inferred the refusal from "an OPEN PR holds a file" and could not know that B4
   // excludes `.changeset/` on both sides, or which files, or which PR.
-  const lines = b4Lines(["docs/"], [{ number: 999, files: ["docs/guide.md"] }]);
+  const lines = b4Lines(["docs/"], [{ number: 999, files: ["docs/guide.md"], changedFiles: 1 }]);
   assert.match(lines.join("\n"), /, which already touches: docs\/guide\.md/,
     "the refusal must be B4's own text, so a change to the rule reaches this output without an edit here");
   assert.match(lines.join("\n"), /B4 REFUSES THIS CLAIM/);
@@ -1615,7 +1615,7 @@ test("#1063: a CLEAR row says so -- silence would be indistinguishable from B4 n
   // nothing when clear made `row-claim check` byte-identical to `row-reachability.mjs` standalone -- while
   // the verdict right above promises the reader they have the B4 half. Three states now render as three
   // sentences: refused, could-not-ask, clear.
-  const clear = b4Lines(["docs/"], [{ number: 999, files: ["scripts/x.mjs"] }]);
+  const clear = b4Lines(["docs/"], [{ number: 999, files: ["scripts/x.mjs"], changedFiles: 1 }]);
   assert.match(clear.join("\n"), /B4: no open pull request holds any file in this row's Region\./);
   assert.doesNotMatch(clear.join("\n"), /REFUSES|COULD NOT BE ASKED/,
     "and it must not read as either of the other two");
@@ -1624,7 +1624,7 @@ test("#1063: a CLEAR row says so -- silence would be indistinguishable from B4 n
 test("#1063: a failed lookup is INCONCLUSIVE, never 'no overlap'", () => {
   // The conflation `startability` refuses one level up, and the defect #1054 was filed for: `null` and
   // `[]` are different readings and printed the same silence before this.
-  const unaskable: [string[] | null, { number: number; files: string[] }[] | null][] =
+  const unaskable: [string[] | null, { number: number; files: string[]; changedFiles: number }[] | null][] =
     [[null, []], [["docs/"], null], [null, null]];
   for (const [mine, theirs] of unaskable) {
     const lines = b4Lines(mine, theirs);
@@ -1637,7 +1637,7 @@ test("#1063: a failed lookup is INCONCLUSIVE, never 'no overlap'", () => {
 test("#1063: an OPEN PR reading zero files is surfaced, not folded into 'no conflict'", () => {
   // #462's own finding: checking one PR's files and getting zero looked like "no overlap, proceed" and was
   // a MERGED PR whose head had become an ancestor of main. A stale reading is not a clean one.
-  const lines = b4Lines(["docs/"], [{ number: 42, files: [] }]);
+  const lines = b4Lines(["docs/"], [{ number: 42, files: [], changedFiles: 0 }]);
   assert.match(lines.join("\n"), /#42 read as touching NO files/);
   assert.match(lines.join("\n"), /stale reading, not a clean one/);
 });
@@ -1648,14 +1648,14 @@ test("#1063: the PRINTING is held too -- `b4Lines` perfect and never reached was
   // most; here it was in the fix for a row about exactly that.
   const said: string[] = [];
   reportB4(1, { write: (s: string) => said.push(s), mine: () => ["docs/"],
-    others: () => [{ number: 999, files: ["docs/guide.md"] }] });
+    others: () => [{ number: 999, files: ["docs/guide.md"], changedFiles: 1 }] });
   assert.equal(said.length, 1, "a refusal must reach the writer, not merely be computed");
   assert.match(said[0], /B4 REFUSES THIS CLAIM: overlaps #999/);
   assert.match(said[0], /\n$/, "and end with a newline, or it runs into whatever prints next");
 
   said.length = 0;
   reportB4(1, { write: (s: string) => said.push(s), mine: () => ["docs/"],
-    others: () => [{ number: 999, files: ["scripts/x.mjs"] }] });
+    others: () => [{ number: 999, files: ["scripts/x.mjs"], changedFiles: 1 }] });
   assert.equal(said.length, 1, "a clear row also reaches the writer -- three states, three sentences");
   assert.match(said[0], /no open pull request holds any file/,
     "and it is the CLEAR sentence, not the refusal -- the control, without which one message passes for all");
