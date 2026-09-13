@@ -278,8 +278,18 @@ test("#1202 clause 2: the variants share their MARKUP -- only the script differs
 test("#1202 clause 3, FOCUS-TARGET spelling: only the good variant moves focus, and to the sibling", () => {
   const { good, bad } = siblingCases[0];
   // The asymmetry that makes the pair valid: only the GOOD variant moves focus, so only the good
-  // variant's capture produces a two-control pair. The finding fires on the bad variant, where focus
-  // never moves -- so nothing is ever attributed to the focus move.
+  // variant's capture produces a two-control pair, and the finding fires on the bad variant, where focus
+  // never moves.
+  //
+  // WHY THAT IS SOUND IS ARGUED IN ONE PLACE, AND IT IS NOT HERE -- see the P/Q paragraph above
+  // `disclosure-focus-moves-to-collapsed-sibling` in `case-matrix.mjs`. #1209: this comment used to
+  // carry a SECOND copy of that argument, and the copy was the superseded version -- "nothing is ever
+  // attributed to the focus move", which is wrong in one direction, since the good variant's silence is
+  // attributable to the focus move entirely. It stood here, in the file whose failure message sends a
+  // reader to this exact clause, while the correction sat in the other file.
+  //
+  // A POINTER RATHER THAN A BETTER SECOND COPY. Two copies of a live argument is what produced this, and
+  // correcting both is the remedy that fails again the next time only one is edited.
   assert.match(good, /#hours'\)\.focus\(\)/,
     "the good variant must move focus to the sibling disclosure, or its capture never reaches the gate");
   assert.ok(!/\.focus\(\)/.test(bad),
