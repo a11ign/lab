@@ -1,3 +1,15 @@
+// no-token: gh
+//
+// #1277, and the declaration is DRIVEN rather than asserted. The detector flags this file's closure
+// because `armAfterCreate` (`pr-open.mjs`) RETURNS a `["pr", "merge", "--auto", ...]` argv -- a data
+// literal, not a spawn -- and `defaultGh` does spawn `gh`, but nothing here reaches it: `checkBody`,
+// `bodyFromArgs` and `armAfterCreate` are pure, and `sendToGitHub` takes `run` and `git` injected.
+//
+// Checked with an instrument rather than by reading: a `gh` on PATH that exits 1 with a loud message,
+// run against this whole suite. If any test spawned `gh` it would fail. 17 pass / 0 fail, and the shim
+// was confirmed reachable first (`gh --version` -> exit 1) so a silent PATH miss could not read as a
+// clean run. A CONSUMER assertion that really spawns `gh` must NOT carry this line.
+
 /**
  * `pr:open`/`pr:edit` (#746) -- check a PR body's Acceptance/Closes with the tree's OWN parser
  * (`scripts/acceptance-commands.mjs`) BEFORE `gh pr create`/`gh pr edit` ever sends it, refusing with the
@@ -17,7 +29,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { checkBody, bodyFromArgs, armAfterCreate } from "../../../../scripts/pr-open.mjs";
+import { checkBody, bodyFromArgs, armAfterCreate, sendToGitHub } from "../../../../scripts/pr-open.mjs";
 
 const NEVER_RUN = () => { throw new Error("checkBody must never RUN a command for a body this test expects to refuse"); };
 
@@ -150,4 +162,55 @@ test("#909: a draft is NOT armed at creation, and `edit` never arms -- the two p
 test("#909 MUTATION TARGET: arming uses --merge, never --squash or --rebase (the org merges by merge commit only)", () => {
   const [[, , , method]] = armAfterCreate("create", ["--head", "ceo/x"]);
   assert.equal(method, "--merge");
+});
+
+// --- #1277: a failed `gh pr create` says where it stopped, in one line -------------------------------
+//
+// Measured 2026-09-13 11:32Z filing #1254, with the account's GraphQL budget exhausted: the acceptance
+// ran and passed, `gh pr create` failed, and the failure arrived as a raw `execFileSync` throw -- 29
+// lines, 9 of them stack, ending in a dump whose `stdout: null, stderr: null` reads as "the command
+// produced no output" when the output is four lines above. The two useful lines were present; they were
+// buried in twenty-seven that were not, in a file whose three deliberate refusals are each one sentence.
+
+// THE REAL ERROR SHAPE, not a convenient one. `execFileSync` throws with `message` = "Command failed:
+// <the argv>" -- the CAUSE (`GraphQL: API rate limit already exceeded`) is written by `gh` to stderr,
+// which `stdio: "inherit"` has already put on screen one line above. My first fixture threw an Error
+// whose message WAS the cause, so it asserted a line the real failure does not produce.
+const ghFails = () => () => {
+  throw new Error("Command failed: gh pr create --body-file /tmp/b.md --title probe");
+};
+const gitStub = (args: string[]) => (args.includes("--abbrev-ref") ? "agent/my-branch" : "abc1234");
+
+test("#1277: a create that FAILS prints one line with the branch, the head and the cause", () => {
+  const lines: string[] = [];
+  const ok = sendToGitHub("create", ["--title", "x"],
+    { run: ghFails(), git: gitStub, err: (l: string) => { lines.push(l); } });
+
+  assert.equal(ok, false, "the caller sets exit 1 from this");
+  assert.equal(lines.length, 1, "ONE line -- the whole point is that it is not a stack");
+  assert.match(lines[0], /agent\/my-branch/, "the branch, because the retry needs it");
+  assert.match(lines[0], /abc1234/, "and the head the acceptance passed against, which a stack never says");
+  assert.match(lines[0], /Command failed: gh pr create/,
+    "THE SPAWN'S OWN MESSAGE SURVIVES. It names the argv rather than the cause -- the cause is gh's, "
+    + "written to inherited stderr one line above -- and a line that dropped this would leave an "
+    + "operator unable to see WHICH command failed when a run spawns more than one");
+  assert.doesNotMatch(lines[0], /\n\s+at /, "and no stack frames");
+});
+
+test("#1277 POSITIVE CONTROL: a create that SUCCEEDS gains no failure line", () => {
+  // Without this, a build that prints the failure line unconditionally passes the test above perfectly.
+  const lines: string[] = [];
+  const spawned: string[][] = [];
+  const ok = sendToGitHub("create", ["--title", "x"],
+    { run: (args: string[]) => { spawned.push(args); }, git: gitStub, err: (l: string) => { lines.push(l); } });
+
+  assert.equal(ok, true);
+  assert.deepEqual(lines, [], "silence on success -- the failure line must move with the outcome");
+  assert.equal(spawned[0][0], "pr", "and the command really ran rather than being skipped");
+});
+
+test("#1277: the failure line names the MODE, so `edit` and `create` are not confused in a transcript", () => {
+  const lines: string[] = [];
+  sendToGitHub("edit", ["1254"], { run: ghFails(), git: gitStub, err: (l: string) => { lines.push(l); } });
+  assert.match(lines[0], /`gh pr edit` FAILED/);
 });
