@@ -91,16 +91,56 @@ test("extractDocumentedJobsBlock: REFUSES a fence carrying its own top-level `na
   assert.throws(() => extractDocumentedJobsBlock(markdown), /top-level "name:" key/);
 });
 
-test("MUTATION TARGET: without the refusal, the exact #796 shape silently drops check-pin rather than "
-  + "erroring -- proving the guard, not just its message, is load-bearing", () => {
-  // Bypasses extractDocumentedJobsBlock's new check entirely, going straight to the splice it protects --
-  // this is what shipped, unguarded, until #796.
-  const jobsYaml = "on: pull_request\njobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n" + PINNED_STEP;
-  const workflow = buildConsumerGateWorkflow(jobsYaml);
-  assert.doesNotMatch(workflow, /check-pin:/,
-    "this assertion documents the BUG buildConsumerGateWorkflow still has in isolation -- the real "
-    + "protection is extractDocumentedJobsBlock refusing before this function is ever called, verified "
-    + "by the two REFUSES tests above");
+// --- #1256: the refusal is the splice's own precondition, not a list of the two keys that duplicate ---
+
+/** A Quickstart fence whose `jobs:` block has `above` before it and `below` after it. */
+function fenceWith({ above = "", below = "" }: { above?: string; below?: string }): string {
+  return ["```yaml", `${above}jobs:`, "  a11y:", "    runs-on: windows-2022", "    steps:",
+    "      - uses: DanBeckDev/a11y-witness@main", `${below}\`\`\``].join("\n");
+}
+
+// The top-level keys GitHub's workflow syntax defines besides `jobs:`, `on:` and `name:` (those two have
+// their own tests above). Every one of these was extracted WITHOUT error before #1256, because the guard
+// looked for a list of names rather than for the one line the splice needs.
+const OTHER_WORKFLOW_KEYS = ["permissions", "env", "defaults", "concurrency", "run-name"];
+
+for (const key of OTHER_WORKFLOW_KEYS) {
+  test(`#1256: REFUSES a fence opening with a top-level \`${key}:\`, naming the key`, () => {
+    assert.throws(() => extractDocumentedJobsBlock(fenceWith({ above: `${key}:\n  x: y\n` })),
+      new RegExp(`top-level "${key}:" key`));
+  });
+}
+
+test("#1256: REFUSES a comment line above `jobs:` -- no key at all, and it still made the splice a no-op", () => {
+  assert.throws(() => extractDocumentedJobsBlock(fenceWith({ above: "# add this to your workflow\n" })),
+    /the top-level line "# add this to your workflow"/);
+});
+
+test("#1256: REFUSES a top-level key BELOW the jobs block, which would land in the generated workflow", () => {
+  assert.throws(() => extractDocumentedJobsBlock(fenceWith({ below: "permissions:\n  contents: read\n" })),
+    /top-level "permissions:" key/);
+});
+
+test("#1256 CONTROL: a JOB-level `permissions:` -- README's own shape -- extracts, and check-pin is generated",
+  () => {
+    const plain = fenceWith({});
+    const jobLevel = plain.replace("    runs-on", "    permissions:\n      pull-requests: write\n    runs-on");
+    assert.match(jobLevel, /^ {4}permissions:$/m, "the fixture edit must have landed, or this control is the plain fence");
+    const workflow = buildConsumerGateWorkflow(extractDocumentedJobsBlock(jobLevel));
+    assert.match(workflow, /^ {2}check-pin:$/m);
+    assert.match(workflow, /^ {4}needs: \[check-pin\]$/m);
+  });
+
+test("MUTATION TARGET: without the refusal, a block not opening with `jobs:` is REFUSED by the splice "
+  + "itself -- #1256 closed the silent drop this test used to document", () => {
+  // Bypasses extractDocumentedJobsBlock's check entirely, going straight to the splice it protects. Until
+  // #1256 this asserted that the splice DROPPED check-pin in isolation, and matched `/check-pin:/` -- which
+  // the surviving `needs: [check-pin]` line cannot satisfy, but a looser `/check-pin/` would have. The
+  // splice now refuses a block it cannot anchor, so a caller that skips the extraction guard fails loudly.
+  for (const above of ["on: pull_request\n", "permissions:\n  contents: read\n", "# a comment\n"]) {
+    const jobsYaml = `${above}jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`;
+    assert.throws(() => buildConsumerGateWorkflow(jobsYaml), /does not open with `jobs:`/, JSON.stringify(above));
+  }
 });
 
 // --- pinActionRef: touches ONLY the a11y-witness uses: line ---
