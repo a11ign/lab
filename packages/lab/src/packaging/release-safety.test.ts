@@ -24,6 +24,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { parse as parseYaml } from "yaml";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const workflow = readFileSync(resolve(REPO, ".github/workflows/release.yml"), "utf8");
@@ -156,5 +157,35 @@ test("every package Changesets would publish is one we mean to publish", () => {
   for (const name of ["lab", "nvda-speech"]) {
     const pkg = JSON.parse(readFileSync(resolve(REPO, `packages/${name}/package.json`), "utf8"));
     assert.equal(pkg.private, true, `packages/${name} must stay private or Changesets will version it`);
+  }
+});
+
+test("#1251: every permission a called workflow's job requests is granted by its calling job", () => {
+  // GitHub validates a reusable-workflow call BEFORE any job exists: a nested job requesting a permission
+  // the caller did not grant fails the whole run as `startup_failure`, with the reason readable only on
+  // the run page. consumer-gate.yml is generated from README's Quickstart fence, so a README edit (as on
+  // 2026-09-09, `pull-requests: write` for the PR-comment step) changes what the call requests without
+  // touching this file -- and nothing on the PR path dispatches release.yml, so the first dispatch found
+  // it (run 34749848689). Parsed, not grepped: a permission block is structure, and the comparison is
+  // per scope, per job, with `none < read < write`.
+  const GUARDS_RUN_AS_JOBS = 3;                 // guards 5, 6 and 7 in the file header
+  const rank: Record<string, number> = { none: 0, read: 1, write: 2 };
+  const scopesOf = (perms: unknown): Record<string, string> =>
+    perms !== null && typeof perms === "object" ? (perms as Record<string, string>) : {};
+  const release = parseYaml(workflow) as { jobs: Record<string, { uses?: string; permissions?: unknown }> };
+  const calls = Object.entries(release.jobs).filter(([, job]) => typeof job.uses === "string");
+  assert.equal(calls.length, GUARDS_RUN_AS_JOBS, "release.yml calls three local workflows (guards 5, 6 and 7)");
+  for (const [callerName, caller] of calls) {
+    const path = (caller.uses as string).replace(/^\.\//, "");
+    const called = parseYaml(readFileSync(resolve(REPO, path), "utf8")) as
+      { jobs: Record<string, { permissions?: unknown }> };
+    const granted = scopesOf(caller.permissions);
+    for (const [jobName, job] of Object.entries(called.jobs)) {
+      for (const [scope, level] of Object.entries(scopesOf(job.permissions))) {
+        assert.ok((rank[granted[scope] ?? "none"] ?? 0) >= (rank[level] ?? 0),
+          `${path} job '${jobName}' requests '${scope}: ${level}' but release.yml's '${callerName}' job ` +
+          `grants '${scope}: ${granted[scope] ?? "none"}' -- GitHub refuses the whole release at startup`);
+      }
+    }
   }
 });
