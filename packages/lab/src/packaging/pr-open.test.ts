@@ -26,10 +26,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { checkBody, bodyFromArgs, armAfterCreate, sendToGitHub, headTreeRefusal, editTreeRefusal, main as prOpenMain,
+import { acceptanceEnv, checkBody, bodyFromArgs, armAfterCreate, sendToGitHub, headTreeRefusal, editTreeRefusal,
+  main as prOpenMain,
   EXIT_NOTHING_SENT, EXIT_USAGE, EXIT_LANDED_THEN_FAILED } from "../../../../scripts/pr-open.mjs";
 
 const NEVER_RUN = () => { throw new Error("checkBody must never RUN a command for a body this test expects to refuse"); };
@@ -516,4 +519,57 @@ test("#1479: the script's header documents every exit code main returns, each on
   for (const code of [0, EXIT_NOTHING_SENT, EXIT_USAGE, EXIT_LANDED_THEN_FAILED]) {
     assert.match(header, new RegExp(`^//\\s+${code}\\s+\\S`, "m"), `exit ${code} has its own line in the header`);
   }
+});
+
+// --- #1578: the Acceptance child resolves `gh` from its OWN PATH, never from pr-open's ---
+
+test("#1578 CONTROL: with no override the Acceptance child's environment is the process's, unchanged", () => {
+  const env = { PATH: "/usr/bin:/bin", HOME: "/home/x" };
+  assert.equal(acceptanceEnv(env), env, "no A11Y_ACCEPTANCE_PATH: the very same environment, not a copy");
+  const empty = { ...env, A11Y_ACCEPTANCE_PATH: "" };
+  assert.equal(acceptanceEnv(empty), empty, "an EMPTY override is no override -- it must not prepend `:`");
+});
+
+test("#1578: the override is prepended to the child's PATH and nothing else changes", () => {
+  const env = { PATH: "/usr/bin:/bin", HOME: "/home/x", A11Y_ACCEPTANCE_PATH: "/tmp/shim" };
+  assert.deepEqual(acceptanceEnv(env), { ...env, PATH: "/tmp/shim:/usr/bin:/bin" });
+  assert.equal(env.PATH, "/usr/bin:/bin", "the process's own environment is not mutated");
+  assert.equal(acceptanceEnv({ A11Y_ACCEPTANCE_PATH: "/tmp/shim" }).PATH, "/tmp/shim", "and with no PATH at all");
+});
+
+/** Owner read/write/execute, group and others read/execute: a script `PATH` can run. */
+const EXECUTABLE = 0o755;
+
+/** A directory holding a `gh` that records its argv and exits 0. */
+function recordingGh(): { dir: string; marker: string } {
+  const dir = mkdtempSync(join(tmpdir(), "a11y-1578-"));
+  const marker = join(dir, "calls");
+  writeFileSync(join(dir, "gh"), `#!/bin/sh\necho "$*" >> "${marker}"\nexit 0\n`);
+  chmodSync(join(dir, "gh"), EXECUTABLE);
+  return { dir, marker };
+}
+
+test("#1578 ACCEPTANCE, MUTATION TARGET: driven through main(), the Acceptance reaches the override's gh while create still gets its call", () => {
+  // `gh --version` makes no network call even from a real `gh`, so a regression here cannot become a live tracker
+  // call: it would only fail to reach the recorder, which is exactly what this asserts against.
+  const body = "## Acceptance\n\ngh --version\n\nCloses #1\n";
+  const { dir, marker } = recordingGh();
+  const spawned: string[][] = [];
+  const saved = process.env.A11Y_ACCEPTANCE_PATH;
+  process.env.A11Y_ACCEPTANCE_PATH = dir;
+  let code: number | undefined;
+  try {
+    code = prOpenMain(["create", "--draft", "--body", body], {
+      run: (args: string[]) => { spawned.push(args); },
+      git: () => "agent/x", out: () => {}, err: () => {},
+    });
+  } finally {
+    if (saved === undefined) delete process.env.A11Y_ACCEPTANCE_PATH; else process.env.A11Y_ACCEPTANCE_PATH = saved;
+  }
+  const recorded = existsSync(marker) ? readFileSync(marker, "utf8").trim() : "";
+  rmSync(dir, { recursive: true, force: true });
+  assert.equal(recorded, "--version", "the Acceptance child resolved `gh` from A11Y_ACCEPTANCE_PATH");
+  assert.equal(code, 0, "the body checked clean and the create was sent");
+  assert.deepEqual(spawned.map((args) => args.slice(0, 2)), [["pr", "create"]],
+    "pr-open's own create still went through its injected `gh`, untouched by the override");
 });
