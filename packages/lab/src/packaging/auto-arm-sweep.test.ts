@@ -24,8 +24,9 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
 import {
-  sweepDecision, EXIT, mergedMeanwhile, MERGED_MEANWHILE_READS, MERGED_MEANWHILE_WAIT_MS,
+  sweepDecision, EXIT, mergedMeanwhile, MERGED_MEANWHILE_READS, MERGED_MEANWHILE_WAIT_MS, holdLookalikes, decideAndWarn,
 } from "../../../../scripts/auto-arm-sweep.mjs";
+import { stripComments } from "@a11ign/evidence/source-text";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOW = `${REPO}.github/workflows/auto-arm.yml`;
@@ -295,4 +296,49 @@ test("#1306: a lookup that THROWS is printed with its cause, and still counts as
   const recovered = driven([cause, true]);
   assert.equal(recovered.merged, true, "a read that fails once and then sees the merge is still merged meanwhile");
   assert.equal(recovered.said.length, 1);
+});
+
+// --- #1595: a label that LOOKS like a hold and is not one is named, and changes nothing ---
+
+/** #1592 at 12:33:24Z, as the sweep saw it: green, non-draft, and these two labels. */
+const PR_1592 = { number: 1592, labels: ["session:worker-capture", "pr:hold"], checkRunCount: 30 };
+
+test("#1595 ACCEPTANCE, MUTATION TARGET: #1592's shape STILL ARMS, and each hold lookalike is named with the real hold", () => {
+  const said: string[] = [];
+  const decision = decideAndWarn(PR_1592, { log: (line: string) => { said.push(line); } });
+  assert.deepEqual(decision, sweepDecision(PR_1592), "the warning changes no arming decision");
+  assert.equal(decision.arm, true);
+  assert.equal(said.length, 2, `one line per lookalike: ${said.join(" | ")}`);
+  for (const label of PR_1592.labels) {
+    const line = said.find((l) => l.includes(`\`${label}\``)) ?? "";
+    assert.match(line, /^SWEEP: #1592 carries .*looks like a hold but is not one/, `${label}: ${line}`);
+    assert.match(line, /npm run pr:hold -- 1592 --session=<name>.*`hold:<name>`/, `${label} names the real hold`);
+  }
+});
+
+test("#1595 CONTROL: a real `hold:` is refused with today's reason and draws no warning", () => {
+  const said: string[] = [];
+  const held = { number: 1, labels: ["hold:worker-capture"], checkRunCount: 30 };
+  const decision = decideAndWarn(held, { log: (line: string) => { said.push(line); } });
+  assert.deepEqual(decision, sweepDecision(held));
+  assert.equal(decision.arm, false);
+  assert.match(decision.reason, /hold:worker-capture/);
+  assert.deepEqual(said, []);
+});
+
+test("#1595: exactly `pr:hold`, `hold`, `held` and `session:*` are lookalikes -- not `hold:*`, and not a word merely containing one", () => {
+  assert.deepEqual(holdLookalikes(["pr:hold", "hold", "held", "HELD", "session:orchestrator"]),
+    ["pr:hold", "hold", "held", "HELD", "session:orchestrator"]);
+  assert.deepEqual(holdLookalikes(["hold:worker-tooling", "blocked", "on-hold-list", "threshold", "withheld", "sessions"]), []);
+});
+
+test("#1595 WIRING: the sweep's per-PR loop asks decideAndWarn, so the warning is printed where the sweep runs", () => {
+  // main() spawns `gh` and is never invoked here, so the call site is read from the comment-stripped source -- the
+  // same approach as the merged-meanwhile source test above. Without it, main() could call sweepDecision directly
+  // and every test above would still pass while the sweep printed nothing.
+  const source = stripComments(readFileSync(`${REPO}scripts/auto-arm-sweep.mjs`, "utf8"));
+  const body = source.slice(source.indexOf("function main("));
+  assert.ok(body.length > 0 && /const \{ arm, reason \} = decideAndWarn\(\{ number, labels, checkRunCount \}\)/.test(body),
+    "main() must decide through decideAndWarn");
+  assert.ok(!/sweepDecision\(/.test(body), "and must not call sweepDecision beside it");
 });
