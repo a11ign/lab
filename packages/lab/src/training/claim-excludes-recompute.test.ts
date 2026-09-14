@@ -58,7 +58,8 @@ const corpusOf = (overrides: Record<string, string[]> = {}) => (url: string) => 
 };
 
 test("FIXTURE GUARD: the criteria the fixture relies on are scored, or the hand table measures nothing", () => {
-  for (const c of ["1.1.1", "4.1.2"]) assert.ok(SCORED_CRITERIA.includes(c), `${c} must be a scored criterion`);
+  const scored: readonly string[] = SCORED_CRITERIA;
+  for (const c of ["1.1.1", "4.1.2"]) assert.ok(scored.includes(c), `${c} must be a scored criterion`);
 });
 
 test("floorRows: stored pages in, the hand-computed table out, key order included", () => {
