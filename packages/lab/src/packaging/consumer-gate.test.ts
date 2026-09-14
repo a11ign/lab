@@ -235,6 +235,50 @@ test("extractJobName: refuses rather than guessing when jobs: has no job key on 
   assert.throws(() => extractJobName("not-jobs: true"), /no job key/);
 });
 
+// --- #1305: with more than one job, the name is the ACTION'S job, matched by identity, never the first ---
+//
+// extractJobName took the first key under `jobs:`, so any job listed above the Action's became the one check-pin
+// gated and verify-report judged. Found reviewing #1294. The Action is matched as either published identity: the
+// transfer (#63) rewrites README's `uses:` from one owner to the other. Owners are BUILT, so a transfer sweep of
+// repository literals cannot rewrite this fixture into agreement with itself.
+const PRE_TRANSFER = ["DanBeckDev", "a11y-witness"].join("/");
+const POST_TRANSFER = ["a11ign", "a11ign"].join("/");
+const SHA = "deadbeef1234567890deadbeef1234567890dead";
+const twoJobs = (secondUses: string, firstUses = "actions/checkout@v4") => [
+  "jobs:", "  lint: # an unrelated job listed first", "    runs-on: ubuntu-latest", "    steps:", `      - uses: ${firstUses}`,
+  "  a11y:", "    runs-on: windows-2022", "    steps:", "      - uses: actions/checkout@v4", `      - uses: ${secondUses}`, "",
+].join("\n");
+
+for (const identity of [PRE_TRANSFER, POST_TRANSFER]) {
+  test(`#1305: a two-job fence with the Action (${identity.split("/")[0]}) SECOND names the Action's job, and check-pin gates it`, () => {
+    const jobsYaml = twoJobs(`${identity}@${SHA}`);
+    assert.equal(extractJobName(jobsYaml), "a11y", "the job carrying the Action, not the first job");
+  });
+}
+
+test("#1305: needs: [check-pin] and verify-report both name the Action's job, not the job listed first", () => {
+  const jobsYaml = twoJobs(`${PRE_TRANSFER}@${SHA}`);
+  const workflow = buildConsumerGateWorkflow(jobsYaml);
+  const lines = workflow.split("\n");
+  assert.equal(lines[lines.indexOf("  a11y:") + 1], "    needs: [check-pin]", "check-pin gates the Action's job");
+  assert.ok(!lines.includes("  lint: # an unrelated job listed first\n    needs: [check-pin]"));
+  assert.equal(lines[lines.indexOf("  lint: # an unrelated job listed first") + 1], "    runs-on: ubuntu-latest",
+    "the first job gains no needs:");
+  assert.match(workflow, /^ {2}verify-report:\n {4}needs: \[a11y\]$/m, "verify-report judges the Action's job");
+});
+
+test("#1305: a fence whose jobs carry the Action zero times, or twice, is REFUSED by name", () => {
+  assert.throws(() => extractJobName(twoJobs("actions/setup-node@v4")),
+    /lists 2 jobs \(lint, a11y\) and none carries[\s\S]*#1305/);
+  assert.throws(() => extractJobName(twoJobs(`${POST_TRANSFER}@${SHA}`, `${PRE_TRANSFER}@${SHA}`)),
+    /2 carry the Action \(lint, a11y\)[\s\S]*#1305/);
+});
+
+test("#1305 CONTROL: a single-job block keeps today's answer, with or without the Action's uses: line", () => {
+  assert.equal(extractJobName(`jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`), "a11y");
+  assert.equal(extractJobName("jobs:\n  screen-reader:\n    runs-on: windows-2022"), "screen-reader");
+});
+
 // --- extractPinnedSha: read back from the already-pinned uses: line ---
 
 test("extractPinnedSha: reads the sha pinActionRef already baked in", () => {

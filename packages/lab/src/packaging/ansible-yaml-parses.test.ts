@@ -38,7 +38,7 @@ const committedYml = () =>
     { encoding: "utf8", env: sandboxGitEnv() })
     .split("\n").filter(Boolean);
 
-const EXPECTED_FILES = 44;
+const EXPECTED_FILES = 45;
 const EXPECTED_VENDORED = 2;
 
 test("#1274: every committed Ansible .yml parses, and the file list is NAMED not globbed", () => {
