@@ -37,6 +37,7 @@
  */
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { newFindingsVerdict, partitionByOutcome } from "../src/gates/referral-only-verdict.mjs";
+import { scoredCoverage } from "../src/gates/real-page-coverage.mjs";
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -165,17 +166,33 @@ function declaredUnexaminable(): Map<string, { reason: string; removedWhen: stri
  * A DECLARED page is subtracted from BOTH sides: it was not examined, and it is not counted as something
  * that should have been. An UNDECLARED unusable page comes off `examined` alone, which is what makes it
  * show as a shortfall -- the asymmetry is the whole guard, see `reportDeclaredExclusions`.
+ *
+ * #1524: `examined` COMES FROM `scoredCoverage`, which subtracts only the unusable captures that ARE scored
+ * pages. It used to be `pages - unusablePages.length` over every unusable capture, and a superseded history
+ * capture noted under its pre-move URL made stage 11 read 85 of 91 when it was never one of the 91.
  */
 function coverageVerdict(
-  { pages, unusablePages, declaredHere, failures }:
-  { pages: number; unusablePages: string[]; declaredHere: string[]; failures: number },
+  { pages, examined, declaredHere, failures }:
+  { pages: number; examined: number; declaredHere: string[]; failures: number },
 ) {
   return gateVerdict({
-    examined: pages - unusablePages.length,
+    examined,
     of: pages - declaredHere.length,
     source: "conformant real pages scored against the baseline",
     failures,
   });
+}
+
+/**
+ * #1524: AN UNUSABLE CAPTURE NO SCORED PAGE CLAIMS IS PRINTED, NEVER COUNTED. It is still a capture that read
+ * furniture or a census this run does not trust, and still worth fixing -- it just is not one of the pages the
+ * verdict's denominator counts, so subtracting it would report a shortfall in pages that were never missing.
+ */
+function reportNotScored(notScored: string[]): void {
+  if (!notScored.length) return;
+  process.stdout.write(`\n  ${notScored.length} unusable capture(s) are NOT IN THE SCORED SET -- no scored page `
+    + "claims them (a superseded page's pre-move URL is one), so they do not reduce coverage (#1524):\n");
+  for (const url of notScored) process.stdout.write(`    not in the scored set: ${url.replace(/^https:\/\//, "")}\n`);
 }
 
 function reportDeclaredExclusions(unusablePages: string[]): string[] {
@@ -1120,7 +1137,7 @@ function concludeAgainstBaseline(
   process.exitCode = exitCodeFor(verdict);
 }
 
-function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: number }): void {
+function reportAgainstBaseline({ added, scored }: { added: Change[]; scored: string[] }): void {
   const furniture = furnitureCaptures();
   if (furniture.consent.length || furniture.shell.length) {
     process.stdout.write(`\n  ${furniture.consent.length} capture(s) opened on a COOKIE/CONSENT overlay `
@@ -1180,15 +1197,17 @@ function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: numbe
   // `suspectCensusCaptures`'s own comment for why that over-counts slightly (only the census-reading
   // criteria are actually blind, not the transcript-based ones) and why that is the right simplification
   // for this gate rather than a defect in it.
-  const unusablePages = [...unusable];
-  const declaredHere = reportDeclaredExclusions(unusablePages);
+  // #1524: ONLY THE SCORED unusable pages reach the declared-page intersection and the verdict.
+  const coverage = scoredCoverage({ scored, unusable });
+  reportNotScored(coverage.notScored);
+  const declaredHere = reportDeclaredExclusions(coverage.unusablePages);
   // `reportable`, NOT `added`: a withheld finding is not a failure of the page, and counting it as one
   // would make an unreadable capture look like a broken conformance claim. It reduces COVERAGE instead --
   // which the verdict below already computes from `unusablePages`, so the withholding is accounted for
   // once, in the place that says the run could not see enough. And since #1504 not every reportable
   // finding is a failure either: only an ASSERTED one, or one with no recorded outcome.
   concludeAgainstBaseline(findings,
-    (failures) => coverageVerdict({ pages, unusablePages, declaredHere, failures }));
+    (failures) => coverageVerdict({ pages: scored.length, examined: coverage.examined, declaredHere, failures }));
 }
 
 function main(): void {
@@ -1244,7 +1263,7 @@ function main(): void {
   // that read the site's furniture instead of its page is a defect regardless: if it matches a baseline
   // entry made from an equally bad capture, the gate says PASS and the corpus quietly holds evidence of
   // a cookie banner. A bad capture that reproduces itself looks exactly like stability.
-  reportAgainstBaseline({ added, pages });
+  reportAgainstBaseline({ added, scored: Object.keys(current) });
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();
