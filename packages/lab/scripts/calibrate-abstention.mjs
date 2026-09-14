@@ -322,6 +322,41 @@ function reportWithheld(scored) {
   }
 }
 
+/**
+ * The per-floor table: what accepting every page at or above each floor would report.
+ *
+ * ONE COPY, and #1628 is why it is a function. It was inline in `main()`, and `claim-excludes-recompute.mjs`
+ * recomputes this same table from a STORED sweep output when the corpus's `claimExcludes` change -- a second
+ * copy of this loop there would be a second definition of "asserted wrongly", free to drift from the one the
+ * sweep prints and the public claim quotes. Both call this.
+ *
+ * Pure: it reads each scored page's `cosine`, `claim`, `predicted`, `cantTell` and `claimExcludes`, and nothing
+ * else. The row keys and their order are the ones `abstention-sweep.json` has always stored.
+ * @param {readonly any[]} scored
+ * @param {readonly number[]} floors
+ */
+export function floorRows(scored, floors) {
+  return floors.map((floor) => {
+    const accepted = scored.filter((p) => (p.cosine ?? 0) >= floor);
+    const conformant = accepted.filter((p) => p.claim === "conformant");
+    // Only findings the publisher's statement CONTRADICTS. See `contradictedFindings`.
+    const falsePositives = conformant.filter((p) => contradictedFindings(p).length > 0).length;
+    const cells = conformant.reduce((n, page) => n + testedCells(page), 0);
+    const wrongCells = conformant.reduce((n, page) => n + contradictedFindings(page).length, 0);
+    // Findings on criteria the publisher itself discloses as failing. Not errors -- reported so a
+    // corroborated finding is visible rather than merely uncounted, which would read as the model
+    // saying nothing on pages where it was in fact agreeing with the publisher.
+    const disclosed = conformant.filter(
+      (p) => p.predicted.length > contradictedFindings(p).length).length;
+    const inaccessible = accepted.filter((p) => p.claim === "inaccessible");
+    const caught = inaccessible.filter((p) => p.predicted.length > 0).length;
+    const referred = conformant.reduce((n, p) => n + (p.cantTell?.length ?? 0), 0);
+    return { floor, scored: accepted.length, conformantScored: conformant.length, falsePositives, referred,
+      cells, wrongCells,
+      disclosed, inaccessibleScored: inaccessible.length, inaccessibleCaught: caught };
+  });
+}
+
 function main() {
   refuseIfRunsReadonly(OUT_DIR);
   const pages = calibrationPages();
@@ -345,30 +380,13 @@ function main() {
   printLegend();
   process.stdout.write("\n  floor   scored  conformant  ASSERTED-WRONGLY  referred  wrong/cells  disclosed  inaccessible caught\n");
   process.stdout.write("  " + "-".repeat(76) + "\n");
-  const rows = [];
-  for (const floor of CANDIDATE_FLOORS) {
-    const accepted = scored.filter((p) => (p.cosine ?? 0) >= floor);
-    const conformant = accepted.filter((p) => p.claim === "conformant");
-    // Only findings the publisher's statement CONTRADICTS. See `contradictedFindings`.
-    const falsePositives = conformant.filter((p) => contradictedFindings(p).length > 0).length;
-    const cells = conformant.reduce((n, page) => n + testedCells(page), 0);
-    const wrongCells = conformant.reduce((n, page) => n + contradictedFindings(page).length, 0);
-    // Findings on criteria the publisher itself discloses as failing. Not errors -- reported so a
-    // corroborated finding is visible rather than merely uncounted, which would read as the model
-    // saying nothing on pages where it was in fact agreeing with the publisher.
-    const disclosed = conformant.filter(
-      (p) => p.predicted.length > contradictedFindings(p).length).length;
-    const inaccessible = accepted.filter((p) => p.claim === "inaccessible");
-    const caught = inaccessible.filter((p) => p.predicted.length > 0).length;
-    const referred = conformant.reduce((n, p) => n + (p.cantTell?.length ?? 0), 0);
-    rows.push({ floor, scored: accepted.length, conformantScored: conformant.length, falsePositives, referred,
-      cells, wrongCells,
-      disclosed, inaccessibleScored: inaccessible.length, inaccessibleCaught: caught });
-    process.stdout.write(`  ${String(floor).padEnd(7)} ${String(accepted.length).padEnd(7)} `
-      + `${String(conformant.length).padEnd(11)} ${String(falsePositives).padEnd(17)} `
-      + `${String(referred).padEnd(9)} ${String(`${wrongCells}/${cells}`).padEnd(10)} `
-      + `${String(disclosed).padEnd(10)} ${caught} of ${inaccessible.length}`
-      + `${floor === DERIVED ? "   <- THIS MODEL'S OWN FLOOR" : ""}\n`);
+  const rows = floorRows(scored, CANDIDATE_FLOORS);
+  for (const row of rows) {
+    process.stdout.write(`  ${String(row.floor).padEnd(7)} ${String(row.scored).padEnd(7)} `
+      + `${String(row.conformantScored).padEnd(11)} ${String(row.falsePositives).padEnd(17)} `
+      + `${String(row.referred).padEnd(9)} ${String(`${row.wrongCells}/${row.cells}`).padEnd(10)} `
+      + `${String(row.disclosed).padEnd(10)} ${row.inaccessibleCaught} of ${row.inaccessibleScored}`
+      + `${row.floor === DERIVED ? "   <- THIS MODEL'S OWN FLOOR" : ""}\n`);
   }
 
   const n = scored.length;
