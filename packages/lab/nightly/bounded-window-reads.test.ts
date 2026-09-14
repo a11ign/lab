@@ -220,3 +220,45 @@ test("THE SHA IS NOT A RUN IDENTIFIER -- `pull_request: edited` re-runs CI witho
     "asking `did every run at this sha succeed` answers FAILURE here and is the wrong question");
 });
 
+
+// --- #1623: newest per name is the newest WORKFLOW RUN when both entries name one ---
+
+/**
+ * #1617's two `gate` entries at head `84f684dd`, as `statusCheckRollup` returned them (GraphQL, read 2026-09-14 by
+ * worker-tooling), in GitHub's order and with the fields `gh pr list --json statusCheckRollup` carries. The CANCELLED
+ * run is the NEWER workflow run (34858134371) and "completed" at 14:49:32Z, before it started and before the older
+ * run's gate (34858130620) succeeded at 14:51:42Z.
+ */
+const PR_1617_GATES = [
+  { __typename: "CheckRun", name: "gate", status: "COMPLETED", conclusion: "CANCELLED", startedAt: "2026-09-14T14:49:33Z",
+    completedAt: "2026-09-14T14:49:32Z", workflowName: "ci",
+    detailsUrl: "https://github.com/DanBeckDev/a11y-witness/actions/runs/34858134371/job/104022946741" },
+  { __typename: "CheckRun", name: "gate", status: "COMPLETED", conclusion: "SUCCESS", startedAt: "2026-09-14T14:51:37Z",
+    completedAt: "2026-09-14T14:51:42Z", workflowName: "ci",
+    detailsUrl: "https://github.com/DanBeckDev/a11y-witness/actions/runs/34858130620/job/104023707501" },
+];
+/**
+ * #1605's pair at its merged head `8c1ebc44` (REST check-runs, read 2026-09-14), in the rollup's field shape: the
+ * cancelled gate in the OLDER run 34855015256, the success in the LATER run 34855153052. Not blocked; merged.
+ */
+const PR_1605_GATES = [
+  { __typename: "CheckRun", name: "gate", status: "COMPLETED", conclusion: "CANCELLED", startedAt: "2026-09-14T14:22:34Z",
+    completedAt: "2026-09-14T14:22:33Z", workflowName: "ci",
+    detailsUrl: "https://github.com/DanBeckDev/a11y-witness/actions/runs/34855015256/job/104012833979" },
+  { __typename: "CheckRun", name: "gate", status: "COMPLETED", conclusion: "SUCCESS", startedAt: "2026-09-14T14:26:18Z",
+    completedAt: "2026-09-14T14:26:21Z", workflowName: "ci",
+    detailsUrl: "https://github.com/DanBeckDev/a11y-witness/actions/runs/34855153052/job/104014192412" },
+];
+/** The same entries with no run id -- what completion-time ordering alone sees. */
+const withoutRunIds = (runs: { detailsUrl?: string }[]) => runs.map(({ detailsUrl, ...rest }) => {
+  void detailsUrl; // dropped on purpose: what completion-time ordering alone sees
+  return rest;
+});
+
+test("#1623: NEWEST PER NAME orders by workflow run -- #1617's gate reads CANCELLED, #1605's SUCCESS, and entries "
+  + "without run ids read by time as before", () => {
+  assert.equal(newestConclusionOf(PR_1617_GATES, "gate"), "CANCELLED");
+  assert.equal(newestConclusionOf([...PR_1617_GATES].reverse(), "gate"), "CANCELLED");
+  assert.equal(newestConclusionOf(PR_1605_GATES, "gate"), "SUCCESS");
+  assert.equal(newestConclusionOf(withoutRunIds(PR_1617_GATES), "gate"), "SUCCESS");
+});
