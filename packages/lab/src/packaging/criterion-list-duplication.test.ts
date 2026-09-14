@@ -82,6 +82,13 @@ const CLASSIFIED: Record<string, { why: string; issue?: number }> = {
       + "red the first time it could see itself. Declared rather than skipped by filename, on the rule "
       + "that a guard exempting its own file is how a guard stops applying to anyone.",
   },
+  "packages/lab/src/training/real-page-corpus.test.ts": {
+    why: "INDEPENDENTLY JUSTIFIED (#1515). Its one criterion run is a positive control on ICO's accessibility "
+      + "statement -- criteria the statement DISCLOSES as failing, asserted against the verbatim fixture's parsed "
+      + "failures -- not a copy of a canonical list. The scored set is only ever read from the SCORED_CRITERIA "
+      + "import, which derives each entry's claimExcludes. Widening the control to SCORED_CRITERIA would assert "
+      + "a property of the scorer rather than of the publisher's statement, which is what that test is for.",
+  },
 };
 
 /**
