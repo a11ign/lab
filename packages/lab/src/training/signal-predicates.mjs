@@ -145,7 +145,8 @@ function stateChangeIsSilent(/** @type {any} */ capture, /** @type {any} */ sign
  * The typing probe's echo problem one control along, and the same remedy: separate what the SCREEN READER
  * said about the control from what the PAGE said, then ask the question of the remainder.
  */
-const TOGGLE_OWN_STATE = /^(?:not\s+)?(?:checked|pressed|selected|expanded|collapsed)$/i;
+// EXPORTED (#1611) so `own-state-vocabulary-parity.test.ts` pins it equal to capture's `CONTROL_OWN_STATE`.
+export const TOGGLE_OWN_STATE = /^(?:not\s+)?(?:checked|pressed|selected|expanded|collapsed)$/i;
 
 /**
  * What the PAGE announced, with the control's own state removed.
@@ -176,7 +177,8 @@ function pageResponseTo(change) {
  * changes to `visited` on click puts exactly that word in the delta, and it is unit-tested directly for
  * that reason: a guard nothing exercises is a guard nobody has seen fail.
  */
-const LINK_OWN_STATE = /^(?:visited|link|same page|internal link|clickable)$/i;
+// EXPORTED (#1611): classified by `own-state-vocabulary-parity.test.ts` as having no capture counterpart.
+export const LINK_OWN_STATE = /^(?:visited|link|same page|internal link|clickable)$/i;
 
 /**
  * (4.1.3) A link filters the page and the new state is never announced.
