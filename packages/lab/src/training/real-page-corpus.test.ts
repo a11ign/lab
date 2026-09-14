@@ -520,3 +520,50 @@ test("#1175: a criterion NOT on the list is unaffected by consent either way", (
       "the list is what blocks, and consent only lifts what the list blocks");
   }
 });
+
+/**
+ * #1508: TfL's corpus entries follow TfL's STATEMENT, read on 2026-09-14 and recorded here as the fixture.
+ *
+ * The tube calibration entry cited `https://tfl.gov.uk/corporate/terms-and-conditions/accessibility`, which
+ * returns 404. The statement lives at `https://tfl.gov.uk/corporate/website-accessibility/accessibility-statement`
+ * ("Website accessibility statement - Transport for London", GET 2026-09-14T01:52:15Z, 200; the served page's
+ * sha256 began `d754612bceea7009`). Not to be confused with `/corporate/website-accessibility/`, a "Digital
+ * accessibility" landing page that links to it and says the sites "comply with W3C's WCAG2.2 Guidelines Level
+ * AA": the statement is the PSBAR document, and it says, verbatim:
+ *
+ *   "This website is partially compliant with the Web Content Accessibility Guidelines version 2.1 AA standard,
+ *    due to the non-compliances and exemptions listed below."
+ *   "This statement was prepared on 23 September 2020. It was last reviewed on 26 March 2025."
+ *
+ * Its "Non-compliance with the accessibility regulations" section, every item phrased "This fails WCAG
+ * criterion …", is TFL_STATEMENT_NON_COMPLIANCE below. `claimExcludes` is that list's intersection with
+ * `SCORED_CRITERIA` (the file's own rule), COMPUTED here rather than retyped.
+ */
+const TFL_STATEMENT = "https://tfl.gov.uk/corporate/website-accessibility/accessibility-statement";
+const TFL_DEAD_SOURCE = "https://tfl.gov.uk/corporate/terms-and-conditions/accessibility";
+const TFL_STATEMENT_NON_COMPLIANCE = [
+  "1.1.1", "1.2.2", "1.2.3", "1.2.5", "1.3.1", "1.4.1", "1.4.3", "1.4.10", "1.4.11", "2.1.1", "2.4.7", "2.4.11",
+  "2.5.3", "3.1.1", "3.3.1", "3.3.2", "4.1.1", "4.1.2", "4.1.3",
+];
+const tflPages = () => REAL_PAGES.filter((page) => page.url.startsWith("https://tfl.gov.uk/"));
+
+test("#1508: every TfL entry cites the live statement, and no entry cites the dead URL", () => {
+  assert.equal(tflPages().length, 2, "the tube calibration page and the plan-a-journey training page");
+  for (const page of tflPages()) {
+    assert.ok(page.source.includes(`(${TFL_STATEMENT})`), `${page.url} must cite ${TFL_STATEMENT}: ${page.source}`);
+    assert.match(page.source, /partially compliant/, `${page.url}: the statement says "partially compliant" (WCAG 2.1 AA)`);
+  }
+  const dead = REAL_PAGES.filter((page) => page.source.includes(TFL_DEAD_SOURCE)).map((page) => page.url);
+  assert.deepEqual(dead, [], "a source that returns 404 cites nothing");
+});
+
+test("#1508: the TfL TRAINING entry excludes exactly what the statement names failing that a head scores", () => {
+  const scored = new Set<string>(SCORED_CRITERIA);
+  const expected = TFL_STATEMENT_NON_COMPLIANCE.filter((criterion) => scored.has(criterion));
+  assert.ok(expected.length > 0, "the positive control: the recorded statement names scored criteria at all");
+  const training = tflPages().filter((page) => page.role === "training");
+  assert.equal(training.length, 1, "one TfL training page");
+  const byNumber = (a: string, b: string) => a.localeCompare(b, "en", { numeric: true });
+  assert.deepEqual([...(training[0].claimExcludes ?? [])].map(String).sort(byNumber), [...expected].sort(byNumber),
+    "claimExcludes is the statement's non-compliance list intersected with SCORED_CRITERIA -- no more, no fewer");
+});
