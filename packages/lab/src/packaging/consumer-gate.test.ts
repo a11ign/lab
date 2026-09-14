@@ -143,6 +143,40 @@ test("MUTATION TARGET: without the refusal, a block not opening with `jobs:` is 
   }
 });
 
+// --- #1304: the `needs:` splice anchors what YAML allows after a block job key, and refuses the rest ---
+//
+// `extractJobName` reads `  a11y: # gate` or `  a11y: ` as the job `a11y`, but the splice anchored on exactly
+// `  a11y:` + newline, matched nothing, and generated a check-pin job that nothing depended on -- no error. Found
+// reviewing #1294; the second anchor in the function #1256 fixed the first one of.
+
+const JOB_LINES_YAML_ALLOWS: ReadonlyArray<readonly [string, string]> = [
+  ["a trailing comment", "  a11y: # gate"],
+  ["a trailing space", "  a11y: "],
+  ["a tab, then a comment", "  a11y:\t# gate"],
+];
+
+for (const [label, jobLine] of JOB_LINES_YAML_ALLOWS) {
+  test(`#1304: a job line with ${label} still gets \`needs: [check-pin]\`, so check-pin gates the job`, () => {
+    const jobsYaml = `jobs:\n${jobLine}\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`;
+    const lines = buildConsumerGateWorkflow(jobsYaml).split("\n");
+    const at = lines.indexOf(jobLine);
+    assert.notEqual(at, -1, `the job line ${JSON.stringify(jobLine)} must survive verbatim`);
+    assert.equal(lines[at + 1], "    needs: [check-pin]", "needs: is the line right after the job key");
+    assert.ok(lines.includes("  check-pin:"), "and the check-pin job it names is generated");
+  });
+}
+
+test("#1304: a job line the splice cannot anchor is REFUSED -- a flow mapping on the key's own line", () => {
+  const jobsYaml = `jobs:\n  a11y: {runs-on: windows-2022}\n    steps:\n${PINNED_STEP}`;
+  assert.throws(() => buildConsumerGateWorkflow(jobsYaml), /not a block key[\s\S]*needs: \[check-pin\][\s\S]*#1304/);
+});
+
+test("#1304: the job key is matched literally -- a name carrying a RegExp metacharacter still gets its needs:", () => {
+  const jobsYaml = `jobs:\n  a+b:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`;
+  const lines = buildConsumerGateWorkflow(jobsYaml).split("\n");
+  assert.equal(lines[lines.indexOf("  a+b:") + 1], "    needs: [check-pin]");
+});
+
 // --- pinActionRef: touches ONLY the a11y-witness uses: line ---
 
 test("pinActionRef: pins the a11y-witness ref and leaves other uses: lines (e.g. actions/checkout) untouched", () => {
