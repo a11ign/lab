@@ -681,9 +681,13 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant",
     source: "NHS digital service manual: partially compliant, own statement (https://service-manual.nhs.uk/accessibility-statement)",
     demonstrates: "documented data table with a worked example" },
+  // #1515: ICO's statement (prepared 2020-09-23, last reviewed 2026-05-22, read 2026-09-14) is "partially
+  // compliant with the Web Content Accessibility Guidelines version 2.2 AA standard". `claimExcludes` is its
+  // "This fails WCAG" list intersected with SCORED_CRITERIA, EXCEPT 2.4.3: disclosed for its Power BI embed, and
+  // masking it would hide #1514's rotated-Tab-cycle defect here (ceo). `real-page-corpus.test.ts` holds the read.
   { url: "https://ico.org.uk/for-the-public/", role: "calibration",
-    publishedClaim: "conformant",
-    source: "ICO: partially compliant, own statement (https://ico.org.uk/global/accessibility-statement/)",
+    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.1.1", "2.4.7", "4.1.2"],
+    source: "ICO: partially compliant, own statement (https://ico.org.uk/global/accessibility/), prepared 2020-09-23, last reviewed 2026-05-22, read 2026-09-14",
     demonstrates: "public-facing hub, card layout" },
   // RE-ADDED 2026-08-27, once the tool could say WHICH verdict it was.
   //
@@ -818,9 +822,13 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "4.1.2"],
     source: "Companies House: partially compliant, own statement (https://find-and-update.company-information.service.gov.uk/help/accessibility-statement)",
     demonstrates: "company record" },
+  // #1515: ICO's statement (prepared 2020-09-23, last reviewed 2026-05-22, read 2026-09-14) is "partially
+  // compliant with the Web Content Accessibility Guidelines version 2.2 AA standard". `claimExcludes` is its
+  // "This fails WCAG" list intersected with SCORED_CRITERIA, EXCEPT 2.4.3: disclosed for its Power BI embed, and
+  // masking it would hide #1514's rotated-Tab-cycle defect here (ceo). `real-page-corpus.test.ts` holds the read.
   { url: "https://ico.org.uk/action-weve-taken/enforcement/", role: "calibration",
-    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "4.1.2"],
-    source: "Information Commissioner's Office: partially compliant, own statement (https://ico.org.uk/global/accessibility/)",
+    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.1.1", "2.4.7", "4.1.2"],
+    source: "Information Commissioner's Office: partially compliant, own statement (https://ico.org.uk/global/accessibility/), prepared 2020-09-23, last reviewed 2026-05-22, read 2026-09-14",
     demonstrates: "enforcement action listing" },
   { url: "https://www.mygov.scot/scottish-child-payment", role: "calibration",
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "4.1.2"],

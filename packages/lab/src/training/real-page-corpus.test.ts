@@ -602,3 +602,100 @@ test("#1508: BOTH TfL entries exclude exactly the statement's failures that SCOR
       `${page.url} (${page.role}): the statement's own disclosures a head scores -- no more, no fewer`);
   }
 });
+
+/**
+ * #1515: BOTH ICO entries follow ICO's accessibility STATEMENT, read verbatim here as the fixture -- the #1508 shape.
+ *
+ * The for-the-public calibration entry cited `https://ico.org.uk/global/accessibility-statement/`, which returns 404.
+ * The statement is `ICO_STATEMENT_READ.url` ("ICO accessibility statement", HTTP 200). Its "This fails WCAG …"
+ * sentences are worded three ways ("success criterion", "WCAG 2.1 success criterion", "WCAG 2.2 success
+ * criterion"), one names two criteria ("4.1.2 … and 2.4.3"), and one reads "2.1 1.4.11" where 2.1 is the WCAG
+ * version -- so the parse takes every x.y.z number inside each fail SENTENCE, not the first after a fixed phrase.
+ *
+ * `claimExcludes` on both entries is those failures intersected with `SCORED_CRITERIA` as `@a11ign/judge/coverage`
+ * exports it, EXCEPT 2.4.3 (`ceo`, 2026-09-14 ~02:24Z): the statement discloses it for ICO's Power BI embed, and
+ * masking it would hide #1514's rotated-Tab-cycle defect on ico.org.uk's own pages -- "masking 2.4.3 must not be how
+ * (a)'s defect goes quiet."
+ */
+const ICO_DEAD_SOURCE = "https://ico.org.uk/global/accessibility-statement/";
+const ICO_KEPT_UNMASKED = "2.4.3";
+const ICO_STATEMENT_READ = {
+  url: "https://ico.org.uk/global/accessibility/",
+  read: "2026-09-14T08:29:38Z (GET, HTTP 200; served page sha256 cc68bbca211fa5af...)",
+  compliance: "This website is partially compliant with the Web Content Accessibility Guidelines version 2.2 AA "
+    + "standard, due to the non-compliances listed below.",
+  dated: "This statement was prepared on 23 September 2020. It was last reviewed on 22 May 2026.",
+  /** Every element holding "This fails WCAG", in page order, with the paragraph that introduces its list. */
+  failing: [
+    ["Some elements of our main website (ico.org.uk) do not meet the standards in the following ways:", "Some pages require scrolling on small screens. This fails WCAG 2.1 success criterion 1.4.10 (reflow)."],
+    ["Some elements of our main website (ico.org.uk) do not meet the standards in the following ways:", "Some interactive components are not far enough apart on small screens. This fails WCAG 2.2 success criterion 2.5.8 (target size – minimum)."],
+    ["We use Microsoft Power BI to publish information about data security incidents reported to the ICO. This feature does not meet the accessibility standards in the following ways:", "Frame doesn’t reflow when zoomed in at high levels. This fails WCAG success criterion 1.4.10 (reflow)."],
+    ["We use Microsoft Power BI to publish information about data security incidents reported to the ICO. This feature does not meet the accessibility standards in the following ways:", "Buttons are missing labels and some are not in tabbing order. This fails WCAG success criterion 2.1.1 (keyboard)."],
+    ["We use Microsoft Power BI to publish information about data security incidents reported to the ICO. This feature does not meet the accessibility standards in the following ways:", "New slides are not announced and do not receive focus. This fails WCAG success criterion 4.1.2 (name, role, value) and 2.4.3 (focus order)."],
+    ["We use Microsoft Power BI to publish information about data security incidents reported to the ICO. This feature does not meet the accessibility standards in the following ways:", "Content in text boxes is not read aloud. This fails WCAG success criterion 4.1.2 (name, role, value)."],
+    ["We use Microsoft Power BI to publish information about data security incidents reported to the ICO. This feature does not meet the accessibility standards in the following ways:", "It is not possible to manipulate the presentation and styling of text content within the PowerBI visualiser beyond zooming in and changing colours. This fails WCAG success criterion 1.4.12 (visual presentation of text)."],
+    ["Our digital assistant does not meet the accessibility standards in the following ways:", "For a screen reader user, the digital assist answer blocks have no clear structure – everything is read out in one big block, or tabbing through the answer content just keeps moving through the options without using the sideways arrows (these are not keyboard operable). This fails WCAG success criterion 1.3.1 Information and relationships."],
+    ["Our digital assistant does not meet the accessibility standards in the following ways:", "The digital assist contents remain in the keyboard tabbing order even when the digital assist is collapsed. This fails WCAG success criterion 1.3.1 Information and relationships."],
+    ["Our digital assistant does not meet the accessibility standards in the following ways:", "A few buttons in the digital assist have no visible focus indicator. This fails WCAG success criterion 2.4.7 Focus visible."],
+    ["Our digital assistant does not meet the accessibility standards in the following ways:", "Visible focus on the user’s messages in the digital assist (when tabbing through the conversation) is unclear. This fails WCAG success criterion 2.4.11 Focus appearance."],
+    ["Our digital assistant does not meet the accessibility standards in the following ways:", "Digital assist responses are not announced clearly. This fails WCAG success criterion 4.1.2 Name, role and value."],
+    ["Our search pages do not meet the accessibility standards in the following ways:", "Not all pages contain a main heading. This fails WCAG 2.1 success criterion 1.3.1 (info and relationships)."],
+    ["Our search pages do not meet the accessibility standards in the following ways:", "Filters are missing ARIA IDs. This fails WCAG 2.1 success criterion 1.3.1 (info and relationships)."],
+    ["Our search pages do not meet the accessibility standards in the following ways:", "Placeholder text and the text entered into the search box does not contrast sufficiently with its surroundings. This fails WCAG 2.1 success criterion 2.1 1.4.11 (non-text contrast)."],
+    ["Our search pages do not meet the accessibility standards in the following ways:", "Adjacent links point to the same destination. This fails WCAG 2.1 success criterion 1.1.1 (non-text content)."],
+    ["Our search pages do not meet the accessibility standards in the following ways:", "Focus obscures links on small devices. This fails WCAG 2.2 success criterion 2.4.11 (focus not obscured – minimum)."],
+    ["Our search pages do not meet the accessibility standards in the following ways:", "Some links and interactive components are not far enough apart. This fails WCAG 2.2 success criterion 2.5.8 (target size – minimum)."],
+  ],
+} as const;
+
+/** How many distinct criteria the fixture's 18 fail sentences name: 19 in all, as 1.3.1, 1.4.10, 2.4.11, 2.5.8 and 4.1.2 repeat. */
+const ICO_STATEMENT_DISTINCT_FAILS = 11;
+
+/** Every criterion the statement's own text says it fails: every x.y.z number inside each "This fails WCAG" sentence. */
+function icoStatementFails(): string[] {
+  return [...new Set(ICO_STATEMENT_READ.failing.flatMap(([, text]) =>
+    [...text.matchAll(/This fails WCAG[^]*?(?<!\d)\.(?=\s+[A-Z]|\s*$)/g)]
+      .flatMap((sentence) => [...sentence[0].matchAll(/\b([1-4]\.[0-9]\.[0-9]{1,2})\b/g)].map((match) => match[1]))))];
+}
+const icoPages = () => REAL_PAGES.filter((page) => page.url.startsWith("https://ico.org.uk/"));
+
+test("#1515: the fixture is ICO's statement -- partially compliant, and it discloses 2.4.3 in its own words", () => {
+  assert.match(ICO_STATEMENT_READ.compliance, /partially compliant with the Web Content Accessibility Guidelines version 2\.2 AA/);
+  const fails = icoStatementFails();
+  assert.equal(fails.length, ICO_STATEMENT_DISTINCT_FAILS, "every fail sentence parsed across its three wordings, each criterion once");
+  for (const criterion of ["1.1.1", "2.1.1", "2.4.7", ICO_KEPT_UNMASKED]) {
+    assert.ok(fails.includes(criterion), `the statement names ${criterion}`);
+  }
+});
+
+test("#1515: every ICO entry cites the live statement, dated, and no entry cites the dead URL", () => {
+  assert.equal(icoPages().length, 2, "the for-the-public and enforcement calibration pages");
+  for (const page of icoPages()) {
+    assert.ok(page.source.includes(`(${ICO_STATEMENT_READ.url})`), `${page.url} must cite the statement: ${page.source}`);
+    assert.match(page.source, /partially compliant/, `${page.url}: the statement's own words`);
+    assert.match(page.source, /prepared 2020-09-23, last reviewed 2026-05-22, read 2026-09-14/, `${page.url}: dated`);
+  }
+  const dead = REAL_PAGES.filter((page) => page.source.includes(ICO_DEAD_SOURCE)).map((page) => page.url);
+  assert.deepEqual(dead, [], "a source that returns 404 cites nothing");
+});
+
+test("#1515: BOTH ICO entries exclude the statement's failures that SCORED_CRITERIA covers, except 2.4.3", () => {
+  const scored = new Set<string>(SCORED_CRITERIA);
+  const expected = icoStatementFails()
+    .filter((criterion) => scored.has(criterion) && criterion !== ICO_KEPT_UNMASKED).sort(byCriterion);
+  assert.ok(expected.includes("2.1.1") && expected.includes("2.4.7"),
+    "the positive control: the scored disclosures the enforcement entry did not carry");
+  for (const page of icoPages()) {
+    assert.deepEqual([...(page.claimExcludes ?? [])].map(String).sort(byCriterion), expected,
+      `${page.url} (${page.role}): the statement's own disclosures a head scores, less 2.4.3 -- no more, no fewer`);
+  }
+});
+
+test("#1515: 2.4.3 stays UNMASKED on both ICO entries although the statement discloses it", () => {
+  assert.ok(icoStatementFails().includes(ICO_KEPT_UNMASKED), "leaving it out is a decision only while the statement names it");
+  for (const page of icoPages()) {
+    assert.ok(!(page.claimExcludes ?? []).map(String).includes(ICO_KEPT_UNMASKED),
+      `${page.url}: ceo (2026-09-14 ~02:24Z) -- 2.4.3 is disclosed for ICO's Power BI embed, and masking it would hide `
+      + "#1514's rotated-Tab-cycle defect on this site's own pages");
+  }
+});
