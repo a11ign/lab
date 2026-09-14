@@ -415,6 +415,41 @@ test("CONTROL: a documented workflow WITH a checkout step generates a gate that 
     "the generator must not silently DROP a checkout step the document DOES show");
 });
 
+// --- #1555: the Action's identity comes from README's fence, either side of the transfer ---
+//
+// One constant, "DanBeckDev/a11y-witness", found README's fence and pinned and read back its `uses:` line. The transfer
+// (#63) rewrites that line to `a11ign/a11ign`, and the generator and `--check` would then refuse README outright. The
+// identities are BUILT (PRE_TRANSFER / POST_TRANSFER above), so a transfer sweep cannot rewrite this fixture into agreement.
+/** A full git sha is 40 hex characters -- the length `--check`'s own `\b[0-9a-f]{40}\b` strips. */
+const GIT_SHA_LENGTH = 40;
+const SHA_A = "a".repeat(GIT_SHA_LENGTH);
+const SHA_B = "b".repeat(GIT_SHA_LENGTH);
+const readmeUsing = (identity: string) => ["# fixture README", "", "```yaml", "jobs:", "  a11y:", "    runs-on: windows-2022",
+  "    steps:", "      - uses: actions/checkout@v4", `      - uses: ${identity}@main`, "        with:",
+  "          url: https://example.com/", "          task: Reach the page", "```", ""].join("\n");
+const withoutSha = (text: string) => text.replaceAll(/\b[0-9a-f]{40}\b/g, "<sha>");
+
+for (const identity of [PRE_TRANSFER, POST_TRANSFER]) {
+  test(`#1555: a README fence naming ${identity.split("/")[0]}'s identity generates, pins that same name, and --checks clean`, () => {
+    const readme = readmeUsing(identity);
+    const workflow = generate(readme, SHA_A);
+    assert.ok(workflow.includes(`- uses: ${identity}@${SHA_A}`), "pinned under the identity the fence carries");
+    const other = identity === PRE_TRANSFER ? POST_TRANSFER : PRE_TRANSFER;
+    assert.ok(!workflow.includes(`uses: ${other}@`), "and never rewritten to the other identity");
+    assert.equal(extractPinnedSha(workflow), SHA_A, "the pin reads back");
+    assert.equal(withoutSha(generate(readme, SHA_B)), withoutSha(workflow),
+      "--check's comparison: the same README at another commit is the same workflow, sha aside");
+  });
+}
+
+test("#1555: a fence naming neither identity is REFUSED, and the refusal names both", () => {
+  const fork = ["someone-else", "a11y-fork"].join("/");
+  assert.throws(() => extractDocumentedJobsBlock(readmeUsing(fork)), (error: Error) =>
+    /no ```yaml fence/.test(error.message) && error.message.includes(PRE_TRANSFER) && error.message.includes(POST_TRANSFER));
+  assert.throws(() => pinActionRef(`jobs:\n  a11y:\n    steps:\n      - uses: ${fork}@main`, SHA_A), (error: Error) =>
+    error.message.includes(PRE_TRANSFER) && error.message.includes(POST_TRANSFER));
+});
+
 // --- currentHeadSha: real git, not a fixture ---
 
 test("currentHeadSha: returns a real, full 40-character commit sha for this checkout", () => {
