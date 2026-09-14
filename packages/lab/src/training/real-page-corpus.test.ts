@@ -564,6 +564,9 @@ const TFL_STATEMENT_READ = {
   ],
 } as const;
 
+/** How many distinct criteria the fixture's 21 "This fails" sentences name: 1.3.1 appears twice. */
+const TFL_STATEMENT_DISTINCT_FAILS = 20;
+
 /** Every criterion the statement's own text says it fails, read from the fixture's sentences. */
 function tflStatementFails(): string[] {
   return [...new Set(TFL_STATEMENT_READ.failing.flatMap(([, text]) =>
@@ -575,7 +578,7 @@ const byCriterion = (a: string, b: string) => a.localeCompare(b, "en", { numeric
 test("#1508: the fixture is the statement -- it says partially compliant, and fails 1.1.1 in its own words", () => {
   assert.match(TFL_STATEMENT_READ.compliance, /partially compliant with the Web Content Accessibility Guidelines version 2\.1 AA/);
   const fails = tflStatementFails();
-  assert.equal(fails.length, 20, "20 distinct criteria across 21 fail sentences (1.3.1 is listed twice)");
+  assert.equal(fails.length, TFL_STATEMENT_DISTINCT_FAILS, "every fail sentence parsed, 1.3.1 counted once");
   assert.ok(fails.includes("1.1.1"), "the disclosure stage 11's tfl referral rests on");
 });
 

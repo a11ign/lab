@@ -713,9 +713,10 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     demonstrates: "institutional landing page with mixed media",
     movedFrom: [{ url: "https://www.nationalarchives.gov.uk/about/",
       when: "2026-08-26", why: "the publisher restructured its URLs; the declaration was corrected in b7dff539, \"the 14% wrong-page rate was seven stale URLs, not a capture fault\"" }] },
-  // #1508: TfL's statement, prepared 2020-09-23, last reviewed 2025-03-26, read 2026-09-14: "partially compliant with the Web Content Accessibility
-  // Guidelines version 2.1 AA standard". `claimExcludes` is its "This fails WCAG criterion" list intersected with
-  // SCORED_CRITERIA -- the publisher's own disclosures -- and `real-page-corpus.test.ts` holds the read verbatim.
+  // #1508: TfL's statement (prepared 2020-09-23, last reviewed 2025-03-26, read 2026-09-14) is "partially
+  // compliant with the Web Content Accessibility Guidelines version 2.1 AA standard". `claimExcludes` is its
+  // "This fails WCAG criterion" list intersected with SCORED_CRITERIA -- the publisher's own disclosures -- and
+  // `real-page-corpus.test.ts` holds the read verbatim.
   { url: "https://tfl.gov.uk/modes/tube/", role: "calibration",
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.1.1", "2.4.7", "3.3.1", "4.1.2", "4.1.3"],
     source: "Transport for London: partially compliant, own statement (https://tfl.gov.uk/corporate/website-accessibility/accessibility-statement), prepared 2020-09-23, last reviewed 2025-03-26, read 2026-09-14",
@@ -741,9 +742,10 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "4.1.2"],
     source: "University of Leeds: partially compliant, own statement (https://leeds.ac.uk/accessibility)",
     demonstrates: "undergraduate course prospectus" },
-  // #1508: TfL's statement, prepared 2020-09-23, last reviewed 2025-03-26, read 2026-09-14: "partially compliant with the Web Content Accessibility
-  // Guidelines version 2.1 AA standard". `claimExcludes` is its "This fails WCAG criterion" list intersected with
-  // SCORED_CRITERIA -- the publisher's own disclosures -- and `real-page-corpus.test.ts` holds the read verbatim.
+  // #1508: TfL's statement (prepared 2020-09-23, last reviewed 2025-03-26, read 2026-09-14) is "partially
+  // compliant with the Web Content Accessibility Guidelines version 2.1 AA standard". `claimExcludes` is its
+  // "This fails WCAG criterion" list intersected with SCORED_CRITERIA -- the publisher's own disclosures -- and
+  // `real-page-corpus.test.ts` holds the read verbatim.
   { url: "https://tfl.gov.uk/plan-a-journey/", role: "training",
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.1.1", "2.4.7", "3.3.1", "4.1.2", "4.1.3"],
     source: "Transport for London: partially compliant, own statement (https://tfl.gov.uk/corporate/website-accessibility/accessibility-statement), prepared 2020-09-23, last reviewed 2025-03-26, read 2026-09-14",
