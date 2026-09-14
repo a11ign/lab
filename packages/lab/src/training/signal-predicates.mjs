@@ -62,9 +62,31 @@ function hasMissingRole(/** @type {any} */ capture, /** @type {any} */ signal) {
     && !/button|link|checkbox|radio|menu|switch|heading/i.test(value));
 }
 
-const STATE_WORD = /\b(expanded|collapsed|open|closed|pressed|checked)\b/i;
+/**
+ * #1583: THE RULE'S PREDICATE, NOT A WIDER ONE. `addSilentStateChanges` (`packages/judge/src/rules.ts`) is the layer
+ * that ASSERTS 4.1.2:state-change-silent, and this signal labels the corpus cases that rule is scored against. Its
+ * own gates were wider, so it called "silent" what the rule does not:
+ *   - NO ROLE GATE. A combo box that stays collapsed after Enter is correct behaviour -- Enter is not the key that opens
+ *     one -- and the rule's positive `ENTER_ACTIVATES` list cost 12 wrong assertions on GOV.UK search boxes to learn.
+ *   - ANY STATE WORD, ON EITHER SIDE. `open`, `closed`, `pressed` and `checked` counted, and an `after` with no state word
+ *     at all read as a failure. The rule counts only the expandable pair, and only when BOTH sides carry it: an absent
+ *     state means the control is not a disclosure or the read missed it, and neither is evidence of a silent change.
+ * A COPY of the rule's two lists, because this file runs under plain `node` and cannot load `rules.ts`;
+ * `cross-boundary-predicate-parity.test.ts` pins the two answers equal shape by shape, including every shape these
+ * gates exclude.
+ */
+const ENTER_ACTIVATES = new Set(["button", "checkbox", "radio button", "menu item", "tab"]);
+const EXPANDABLE_STATES = new Set(["collapsed", "expanded"]);
 
-const stateWordOf = (/** @type {any} */ text) => (text.match(STATE_WORD)?.[1] ?? "").toLowerCase();
+/** Is this a control whose activation is Enter? The rule's `enterActivates`, through the shared grammar. */
+const enterActivates = (/** @type {unknown} */ announcement) => typeof announcement === "string" && announcement !== ""
+  && parseAnnouncement(announcement, "sweep").objects.some((object) => ENTER_ACTIVATES.has(object.role));
+
+/** The expandable states an announcement carries -- the rule's `statesOf`. */
+const expandableStatesOf = (/** @type {unknown} */ announcement) => (typeof announcement === "string" && announcement
+  ? parseAnnouncement(announcement, "sweep").objects.flatMap((object) => object.states)
+    .filter((state) => EXPANDABLE_STATES.has(state))
+  : []);
 
 // The disclosure failure is "operating the control did not change the announced state".
 //
@@ -89,12 +111,15 @@ function stateChangeIsSilent(/** @type {any} */ capture, /** @type {any} */ sign
   const changes = capture.interaction?.stateChanges || [];
   return changes.some((/** @type {any} */ { control, after }) => {
     if (!control.toLowerCase().includes(signal.control.toLowerCase())) return false;
+    // #1583: the ROLE gate first, the rule's order -- a combo box that stays collapsed after Enter is correct.
+    if (!enterActivates(control)) return false;
     // #1496: two different controls are not evidence about either one's state -- see `sameControlAnnounced`.
     if (!sameControlAnnounced(control, after)) return false;
-    const before = stateWordOf(control);
-    const now = stateWordOf(after);
-    // No state word at all is still a failure: nothing was conveyed either way.
-    return now === "" || now === before;
+    const before = expandableStatesOf(control);
+    const now = expandableStatesOf(after);
+    // #1583: an expandable state on BOTH sides, or there is no state change to have been silent about.
+    if (!before.length || !now.length) return false;
+    return before[0] === now[0];
   });
 }
 
