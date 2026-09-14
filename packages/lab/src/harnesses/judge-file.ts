@@ -8,7 +8,7 @@
  * This closes the end-to-end loop: a real screen-reader capture (e.g. NVDA on
  * the Windows worker) judged by the Codex-backed judge on the control plane.
  */
-import type { CaptureStructure } from "@a11ign/evidence";
+import type { CaptureInteraction, CaptureStructure } from "@a11ign/evidence";
 import { readFileSync } from "node:fs";
 import { judge } from "@a11ign/judge";
 
@@ -25,7 +25,7 @@ async function main(): Promise<void> {
     transcript: string[];
     // Derived from the wire type — known-gaps §15. A harness restating it is how the copies multiplied.
     structure?: Pick<CaptureStructure, "headings" | "landmarks" | "formFields">;
-    interaction?: { controls: string[]; stateChanges: { control: string; after: string }[] };
+    interaction?: Pick<CaptureInteraction, "controls" | "stateChanges">;
   };
   const verdict = await judge({
     url: data.url,
