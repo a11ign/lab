@@ -37,6 +37,8 @@ import {
   prState,
   waitForSettled,
   armMerge,
+  runArmPr,
+  EXIT,
 } from "../../../../scripts/arm-pr.mjs";
 
 /** A fake `run` recording every call it received and returning canned `gh issue view` output. */
@@ -387,3 +389,116 @@ test("#1453 STRUCTURAL: arm-pr.mjs declares no session-name array -- a typed lis
   const typed = `export const LIVE_SESSIONS = [${file.live.map((s) => JSON.stringify(s.name)).join(", ")}];`;
   assert.equal(typedSessionArrays(typed, names).length, 1, "the predicate finds a typed session array");
 });
+
+// --- #1478: the ENTRY POINT, driven with an injected runner ----------------------------------------------------------
+//
+// worker-judge's #1399 sweep: `gh pr merge --auto` LANDS, then `labelArmedPr`'s `gh pr edit --add-label` ran with no
+// guard. A throw there escaped `main`, and Node exited 1 -- the code this script already uses for a REFUSED label -- for
+// a PR that IS armed, and `arm-pr: armed #N` was never printed. These drive `runArmPr`, the path the workflow runs.
+
+/** A `gh` for the whole entry point, recording every call. The row #725 carries `rowLabel`. */
+function entryRun({ viewFails = false, state = "OPEN", mergeFails = false, editFails = false,
+  rowLabel = "session:worker-tooling" }: { viewFails?: boolean; state?: string; mergeFails?: boolean;
+  editFails?: boolean; rowLabel?: string } = {}) {
+  const calls: string[][] = [];
+  const run = (cmd: string, args: string[]) => {
+    calls.push([cmd, ...args]);
+    if (args[0] === "pr" && args[1] === "view") {
+      if (viewFails) throw new Error("gh: HTTP 502 on pr view");
+      return args.includes("labels,body,state")
+        ? JSON.stringify({ labels: [], body: "Closes #725\n", state })
+        : JSON.stringify({ state });
+    }
+    if (args[0] === "pr" && args[1] === "merge") {
+      if (mergeFails) throw Object.assign(new Error("GraphQL: Pull request is not mergeable"), { status: 1 });
+      return "";
+    }
+    if (args[0] === "issue" && args[1] === "view") return JSON.stringify({ labels: [{ name: rowLabel }] });
+    if (args[0] === "pr" && args[1] === "edit") {
+      if (editFails) throw Object.assign(new Error("gh: HTTP 502 on pr edit"), { status: 1 });
+      return "";
+    }
+    return "";
+  };
+  return { run, calls };
+}
+
+/** Runs the entry point for PR #817 in org/repo with `stub`, capturing its own log and error lines. */
+function entry(stub: ReturnType<typeof entryRun>, argv = ["node", "arm-pr.mjs", "--pr=817", "--repo=org/repo"]) {
+  const log: string[] = [];
+  const error: string[] = [];
+  const code = runArmPr({ argv, env: {}, run: stub.run as never, sleep: () => "ok" as const,
+    log: (line: string) => log.push(line), error: (line: string) => error.push(line) });
+  return { code, log, error };
+}
+
+const callIndex = (calls: string[][], sub: string) => calls.findIndex((c) => c[1] === "pr" && c[2] === sub);
+
+test("#1478 ACCEPTANCE: the label edit throws AFTER auto-merge landed -- exit 3, naming the armed PR and the labels not applied", () => {
+  const stub = entryRun({ editFails: true });
+  const { code, log, error } = entry(stub);
+  assert.equal(code, EXIT.ARMED_THEN_LABEL_FAILED, "not 1: that is the REFUSED code, and this PR is armed");
+  assert.ok(callIndex(stub.calls, "merge") >= 0 && callIndex(stub.calls, "merge") < callIndex(stub.calls, "edit"),
+    "the merge landed first, then the edit threw");
+  assert.ok(log.some((line) => line.startsWith("arm-pr: armed #817")), "what landed is printed before the step that failed");
+  const said = error.join("\n");
+  assert.match(said, /#817 IS ARMED: auto-merge was enabled/);
+  assert.match(said, /NOT applied: session:worker-tooling/);
+  assert.match(said, /HTTP 502 on pr edit/, "the underlying error is quoted, never swallowed");
+  assert.match(said, /Apply them by hand: gh pr edit 817 --repo org\/repo --add-label session:worker-tooling$/,
+    "the one failed step is named as a command, because re-running arm-pr would re-arm an armed PR");
+});
+
+test("#1478 CONTROL: a failure BEFORE any write -- the PR cannot be read -- exits CANNOT_ASK, and nothing is written", () => {
+  const stub = entryRun({ viewFails: true });
+  const { code } = entry(stub);
+  assert.equal(code, EXIT.CANNOT_ASK);
+  assert.equal(callIndex(stub.calls, "merge"), -1);
+  assert.equal(callIndex(stub.calls, "edit"), -1);
+});
+
+test("#1478 CONTROL: every call succeeds -- exit 0, armed, and labelled from the row", () => {
+  const stub = entryRun();
+  const { code, log } = entry(stub);
+  assert.equal(code, EXIT.DONE);
+  assert.ok(log.some((line) => line.startsWith("arm-pr: armed #817")));
+  const edit = stub.calls[callIndex(stub.calls, "edit")];
+  assert.deepEqual(edit.slice(edit.indexOf("--add-label")), ["--add-label", "session:worker-tooling"]);
+});
+
+test("#1478 CONTROL: a merge refused on a PR that stays OPEN still throws -- nothing landed, and no label is written", () => {
+  const stub = entryRun({ mergeFails: true });
+  assert.throws(() => entry(stub), /not mergeable/);
+  assert.equal(callIndex(stub.calls, "edit"), -1);
+});
+
+test("#1478: a PR that already MERGED is not armed and exits 0 with no write at all", () => {
+  const stub = entryRun({ state: "MERGED" });
+  assert.equal(entry(stub).code, EXIT.DONE);
+  assert.equal(callIndex(stub.calls, "merge"), -1);
+  assert.equal(callIndex(stub.calls, "edit"), -1);
+});
+
+test("#1478: a RETIRED session label still exits REFUSED (1), distinct from the partial-success code", () => {
+  const stub = entryRun({ rowLabel: "session:dispatcher" });
+  const { code, log } = entry(stub);
+  assert.equal(code, EXIT.REFUSED);
+  assert.ok(log.some((line) => line.startsWith("arm-pr: armed #817")), "the arm line still says what landed");
+  assert.equal(callIndex(stub.calls, "edit"), -1);
+});
+
+test("#1478: a missing --pr exits CANNOT_ASK before any call", () => {
+  const stub = entryRun();
+  assert.equal(entry(stub, ["node", "arm-pr.mjs", "--repo=org/repo"]).code, EXIT.CANNOT_ASK);
+  assert.equal(stub.calls.length, 0);
+});
+
+test("#1478: the script's header documents every exit code, the partial-success code included", () => {
+  assert.deepEqual(EXIT, { DONE: 0, REFUSED: 1, CANNOT_ASK: 2, ARMED_THEN_LABEL_FAILED: 3 });
+  const source = readFileSync(new URL("../../../../scripts/arm-pr.mjs", import.meta.url), "utf8");
+  const header = source.slice(0, source.indexOf("export const EXIT"));
+  for (const [name, code] of Object.entries(EXIT)) {
+    assert.match(header, new RegExp(`\`${code}\` ${name}:`), `the header documents ${code} ${name}`);
+  }
+});
+
