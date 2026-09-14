@@ -41,3 +41,31 @@ export function scoredCoverage({ scored, unusable }) {
     notScored: distinct.filter((url) => !scoredSet.has(url)),
   };
 }
+
+/**
+ * WHICH FURNITURE CAPTURES THE GATE'S FURNITURE HEADLINE COUNTS -- #1529.
+ *
+ * #1524 stopped an unscored furniture capture reducing coverage, and left the headline above it counting that
+ * capture anyway. On 2026-09-14 one output said "5 capture(s) opened on a COOKIE/CONSENT overlay and 1 on an
+ * unrendered SHELL", listed metoffice's pre-move capture under `furniture:`, and a few lines later named the same
+ * URL "not in the scored set". One capture was stated two ways, with the copies disagreeing.
+ *
+ * So the headline counts and lists only the furniture that is a scored page: the same intersection
+ * `scoredCoverage` makes, which is why the headline's count now equals what coverage subtracts for furniture.
+ * The rest is not dropped. It is returned as `notScored`, and the gate prints it with its evidence under the
+ * "not in the scored set" line.
+ *
+ * @param {{ scored: readonly string[], consent: Iterable<string>, shell: Iterable<string> }} input
+ *   `scored`: the declared page URLs this run scored. `consent`/`shell`: `furnitureCaptures()`'s two buckets.
+ * @returns {{ consent: string[], shell: string[], notScored: string[] }}
+ *   The scored pages in each bucket, and every other furniture URL, each distinct and in input order.
+ */
+export function scoredFurniture({ scored, consent, shell }) {
+  const scoredSet = new Set(scored);
+  const distinct = (/** @type {Iterable<string>} */ urls) => [...new Set(urls)];
+  return {
+    consent: distinct(consent).filter((url) => scoredSet.has(url)),
+    shell: distinct(shell).filter((url) => scoredSet.has(url)),
+    notScored: distinct([...consent, ...shell]).filter((url) => !scoredSet.has(url)),
+  };
+}
