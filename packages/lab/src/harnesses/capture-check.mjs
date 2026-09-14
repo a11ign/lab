@@ -12,6 +12,7 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { captureWithNvda } from "@a11ign/nvda-worker";
+import { capturedText } from "./captured-text.mjs";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "@a11ign/worker-fleet/host-address";
 import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl, requestJson } from "@a11ign/worker-fleet/worker-http";
@@ -176,15 +177,6 @@ function identityFailureCause(/** @type {any} */ r) {
     + ` while documentReady reported the title ${JSON.stringify(titleOf(r))}`;
 }
 
-function capturedText(/** @type {any} */ r) {
-  return [
-    ...r.transcript,
-    ...r.structure.headings, ...r.structure.landmarks, ...r.structure.formFields,
-    ...r.interaction.stateChanges.map((/** @type {any} */ s) => `${s.control} ${s.after}`),
-    ...r.interaction.formChanges.map((/** @type {any} */ s) => `${s.control} ${s.after}`),
-    ...(r.interaction.postSubmitFields ?? []),
-  ].join(" | ");
-}
 
 // Browser focus on a shared CI desktop is racy: a transient window/banner can
 // steal focus so NVDA reads chrome instead of our page. We can't make a single
