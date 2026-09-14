@@ -32,7 +32,7 @@ import {
   CLAIM_LABEL, STARTED_LABEL, BLOCKED_LABEL, recordCheck, recordConflict, latestCheckFor,
   worktreeStatus, removeClaimedWorktree, WORKTREE_LABEL_PREFIX, BRANCH_LABEL_PREFIX,
   claimRecordComment, claimRecordFrom, claimedObjects, fetchClaimComments, CLAIM_RECORD_MARKER,
-  b4Lines, reportB4,
+  b4Lines, reportB4, failureReport, landedWritesOf, LANDED_WRITE_EXIT,
 } from "../../../../scripts/row-claim.mjs";
 import { forgetProcessSnapshot, withBoardSnapshot } from "../../../../scripts/board-snapshot.mjs";
 import { refusalCause, PROJECT_UNREADABLE } from "../../../../scripts/settle-closed-status.mjs";
@@ -1782,4 +1782,139 @@ test("#1373 CONTROL: decline's remover removes a clean worktree with NO runs/ re
     assert.deepEqual(removeClaimedWorktree(worktree, { run }), { removed: true });
     assert.equal(existsSync(worktree), false);
   });
+});
+
+// --- #1399: a command that WROTE, then failed, exits LANDED_WRITE_EXIT and names the writes -- never
+// `COULD NOT DETERMINE`, whose exit 2 a caller reads as "nothing written". Measured at 326c9b71: `claim` added its
+// labels and removed `ready`, its verify read failed, and it printed COULD NOT DETERMINE with nothing on stdout. ---
+
+const ROW = 1399;
+// Distinct from 0, 1, 2 and 3, which callers already read as clean, refused, nothing-determined and half-applied.
+const DOCUMENTED_LANDED_WRITE_EXIT = 4;
+const TEMPLATE_BODY = "## Region\n\nscripts/row-claim.mjs\n\n## Acceptance\n\nnpm test\n\n## Open-check\n\ngh issue view 1399\n";
+
+/** A claim of #1399 by worker-judge from `ready`; `failAt(args, labelReads)` picks the one call that throws. */
+function claimRunFailingAt(failAt: (args: string[], labelReads: number) => boolean) {
+  const calls: string[][] = [];
+  let labelReads = 0;
+  const run = (_cmd: string, args: string[]) => {
+    calls.push(args);
+    const isLabelRead = args[1] === "view" && !args.includes("body");
+    if (isLabelRead) labelReads += 1;
+    if (failAt(args, labelReads)) throw new Error(`simulated: gh ${args.slice(0, 2).join(" ")} failed`);
+    if (args[1] === "view" && args.includes("body")) return JSON.stringify({ body: TEMPLATE_BODY });
+    if (isLabelRead) {
+      const labels = labelReads === 1 ? [READY_LABEL]
+        : [CLAIM_LABEL, "session:worker-judge", STARTED_LABEL, WAS_READY_LABEL];
+      return JSON.stringify({ number: ROW, title: "A row", state: "OPEN", labels: labels.map((name) => ({ name })) });
+    }
+    return "[]";
+  };
+  return { run, calls };
+}
+
+function thrownBy(act: () => unknown): unknown {
+  try {
+    act();
+  } catch (error) {
+    return error;
+  }
+  assert.fail("expected the command to throw");
+}
+
+const claimOf = (run: (cmd: string, args: string[]) => string) => () => claimRow(ROW, "worker-judge",
+  { run, moveStatus: () => ({ moved: true }), branch: "agent/x-1399", worktree: "/tmp/wt-1399" });
+const ADDED = `added labels ${CLAIM_LABEL}, session:worker-judge, ${STARTED_LABEL}, ${WAS_READY_LABEL}`;
+
+test("#1399 ACCEPTANCE: labels LANDED, then the verify read throws -- exit 4, naming the written labels", () => {
+  const { run } = claimRunFailingAt((args, reads) => args[1] === "view" && !args.includes("body") && reads === 2);
+  const error = thrownBy(claimOf(run));
+  assert.deepEqual(landedWritesOf(error), [ADDED, `removed label ${READY_LABEL}`]);
+  const report = failureReport(error);
+  assert.equal(report.exitCode, LANDED_WRITE_EXIT);
+  assert.equal(LANDED_WRITE_EXIT, DOCUMENTED_LANDED_WRITE_EXIT);
+  assert.match(report.text, /^PARTIALLY WRITTEN/);
+  assert.ok(report.text.includes(ADDED) && report.text.includes(`removed label ${READY_LABEL}`));
+  assert.doesNotMatch(report.text, /COULD NOT DETERMINE/);
+});
+
+test("#1399 CONTROL: the PRE-write read throws -- nothing is written, and COULD NOT DETERMINE stays, exit 2", () => {
+  const { run, calls } = claimRunFailingAt((args, reads) => args[1] === "view" && !args.includes("body") && reads === 1);
+  const error = thrownBy(claimOf(run));
+  assert.equal(landedWritesOf(error), null);
+  assert.deepEqual(failureReport(error).exitCode, 2);
+  assert.match(failureReport(error).text, /^COULD NOT DETERMINE: /);
+  assert.ok(!calls.some((a) => a[1] === "edit" || a[1] === "comment"), "no write may be attempted");
+});
+
+test("#1399: the remove-`ready` call throws AFTER the add landed -- exit 4, naming only the add", () => {
+  const { run } = claimRunFailingAt((args) => args[1] === "edit" && args.includes("--remove-label"));
+  const error = thrownBy(claimOf(run));
+  assert.deepEqual(landedWritesOf(error), [ADDED]);
+  assert.equal(failureReport(error).exitCode, LANDED_WRITE_EXIT);
+});
+
+test("#1399: the claim record throws after the labels and the verify -- exit 4, and the record is NOT listed", () => {
+  const { run } = claimRunFailingAt((args) => args[1] === "comment");
+  const error = thrownBy(claimOf(run));
+  assert.deepEqual(landedWritesOf(error), [ADDED, `removed label ${READY_LABEL}`]);
+  assert.equal(failureReport(error).exitCode, LANDED_WRITE_EXIT);
+});
+
+test("#1399 BOUNDARY: a failed ADD call is not known to have landed -- exit 2, as #749 left it", () => {
+  const { run } = claimRunFailingAt((args) => args[1] === "edit" && args.includes("--add-label"));
+  const error = thrownBy(claimOf(run));
+  assert.equal(landedWritesOf(error), null);
+  assert.equal(failureReport(error).exitCode, 2);
+});
+
+/** A decline of worker-judge's claim on #1399; the release record's comment is the call that throws. */
+function declineRunFailing(failAt: (args: string[]) => boolean) {
+  const calls: string[][] = [];
+  const run = (_cmd: string, args: string[]) => {
+    calls.push(args);
+    if (failAt(args)) throw new Error(`simulated: gh ${args.slice(0, 2).join(" ")} failed`);
+    if (args[1] === "view") {
+      return JSON.stringify({ number: ROW, title: "A row", state: "OPEN",
+        labels: [CLAIM_LABEL, "session:worker-judge", STARTED_LABEL, WAS_READY_LABEL].map((name) => ({ name })) });
+    }
+    return "";
+  };
+  const removed: string[] = [];
+  const deps = { run, moveStatus: () => ({ moved: true as const }),
+    fetchComments: () => [claimRecordComment({ session: "worker-judge", branch: "agent/x-1399", worktree: "/tmp/wt-1399" })],
+    removeWorktree: (path: string) => { removed.push(path); return { removed: true as const }; } };
+  return { deps, calls, removed };
+}
+
+test("#1399 ACCEPTANCE: decline removed the worktree and the labels, then its release record throws -- exit 4, naming both", () => {
+  const { deps, removed } = declineRunFailing((args) => args[1] === "comment");
+  const error = thrownBy(() => declineRow(ROW, "worker-judge", deps));
+  const landed = landedWritesOf(error);
+  assert.deepEqual(removed, ["/tmp/wt-1399"]);
+  assert.equal(landed?.length, 2, `expected the worktree and the labels, got ${JSON.stringify(landed)}`);
+  assert.equal(landed?.[0], "removed the recorded worktree /tmp/wt-1399");
+  assert.match(landed?.[1] ?? "", /^removed labels in-progress, session:worker-judge/);
+  assert.equal(failureReport(error).exitCode, LANDED_WRITE_EXIT);
+});
+
+test("#1399 CONTROL: decline's label read throws -- nothing removed, COULD NOT DETERMINE, exit 2", () => {
+  const { deps, removed, calls } = declineRunFailing((args) => args[1] === "view");
+  const error = thrownBy(() => declineRow(ROW, "worker-judge", deps));
+  assert.equal(landedWritesOf(error), null);
+  assert.equal(failureReport(error).exitCode, 2);
+  assert.deepEqual(removed, []);
+  assert.ok(!calls.some((a) => a[1] === "edit" || a[1] === "comment"));
+});
+
+test("#1399 WIRING: the claim/dispatch and decline CLIs report a thrown error through failureReport", () => {
+  const source = stripComments(readFileSync(new URL("../../../../scripts/row-claim.mjs", import.meta.url), "utf8"));
+  for (const fn of ["runDispatchOrClaim", "runDecline"]) {
+    const start = source.indexOf(`function ${fn}(`);
+    assert.ok(start >= 0, `${fn} not found`);
+    const end = source.indexOf("\nfunction ", start + 1);
+    const body = source.slice(start, end < 0 ? undefined : end);
+    assert.match(body, /failureReport\(error\)/, `${fn} must print a thrown error through failureReport`);
+    assert.doesNotMatch(body, /COULD NOT DETERMINE/, `${fn} must not spell exit 2's message itself`);
+  }
 });
