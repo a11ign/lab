@@ -26,6 +26,8 @@ import { signalMatches } from "./case-matrix.mjs";
 // #958: the three-direction manifest check every verdict reader shares.
 import { assertManifestMatchesCases } from "./manifest-matches-cases.mjs";
 import { hasUsableCaptureFiles } from "./capture-resume.mjs";
+// #1497: whether the bad capture holds a reading at all, asked before a signal is called blind.
+import { unmeasuredEvidence } from "./signal-evidence-measured.mjs";
 import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { readCapture as readCaptureFile } from "../capture/evidence-diff.mjs";
 import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
@@ -155,7 +157,15 @@ export function checkCase(testCase) {
   // Order matters: CONTAMINATED is the more serious diagnosis, so report it even when the
   // signal also fires on the bad page. "Fires on both" is not a half-working signal.
   if (firesOnGood) return { id: testCase.id, verdict: "CONTAMINATED", good, bad, firesOnBad };
-  if (!firesOnBad) return { id: testCase.id, verdict: "BLIND", good, bad };
+  if (!firesOnBad) {
+    // #1497: A BAD CAPTURE THAT HOLDS NO READING IS A HOLE, NOT A BLIND SIGNAL. `skip-link-target-replaced`
+    // read BLIND at stage 8 on one capture whose focus read failed after the probe followed the skip link,
+    // while its six variants measured the fault. The hole keeps the category `--require-complete` fails on,
+    // with the reason, so the report sends a reader to recapture rather than to debug a working signal.
+    const unmeasured = unmeasuredEvidence(bad, testCase.badSignal);
+    if (unmeasured) return { id: testCase.id, verdict: "NO CAPTURES", unmeasured };
+    return { id: testCase.id, verdict: "BLIND", good, bad };
+  }
   return { id: testCase.id, verdict: "OK" };
 }
 
@@ -189,7 +199,9 @@ function report(result, testCase) {
     return 0;
   }
   if (result.verdict === "NO CAPTURES") {
-    console.log(`  NO CAPTURES   ${result.id}  (nothing to check — capture it first)`);
+    console.log(result.unmeasured
+      ? `  NO CAPTURES   ${result.id}  (the bad capture holds no reading: ${result.unmeasured} — recapture it)`
+      : `  NO CAPTURES   ${result.id}  (nothing to check — capture it first)`);
     return 0;
   }
   if (result.verdict === "STALE CAPTURES") {
