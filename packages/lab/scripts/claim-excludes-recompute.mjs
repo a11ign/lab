@@ -30,7 +30,8 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
-import { pathToFileURL } from "node:url";
+import { posix, relative, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 
@@ -43,7 +44,10 @@ refuseUnknownFlags(["--sweep=", "--run=", "--urls="], {
   entry: import.meta.url, command: "node packages/lab/scripts/claim-excludes-recompute.mjs",
 });
 
-const CORPUS_FILE = "packages/lab/src/training/real-page-corpus.mjs";
+// git log's pathspec for the module imported above, resolved from this file rather than typed as a
+// repo-relative literal: in a file that spawns (git), such a literal is a cwd guess to `spawned-paths.test.ts`.
+const CORPUS_FILE = relative(REPO_ROOT, fileURLToPath(new URL("../src/training/real-page-corpus.mjs", import.meta.url)))
+  .split(sep).join(posix.sep);
 const REFUSED = 2;
 /** Column widths of the printed table, in the order the header names them. */
 const WIDTHS = { floor: 7, scored: 7, conformant: 11, wrongly: 17, disclosed: 10, wrongCells: 12, cells: 6 };
