@@ -1,11 +1,6 @@
 {
   "why": "Pages this gate CANNOT examine, each with the reason and the condition that removes it. A page listed here leaves the DENOMINATOR, so the run can be conclusive about what it did examine instead of INCONCLUSIVE for ever about what it could not. It is a stated exclusion, never a permanent one: `unexaminable-declaration.test.ts` requires every entry to carry both `reason` and `removedWhen`, and `check-real-page-findings.ts` PRINTS every entry on every run, so an exclusion cannot sit here unread. An unusable page that is NOT listed here still makes the run inconclusive -- which is what stops this file becoming a way to launder a failure into a pass.",
   "pages": {
-    "https://www.w3.org/WAI/demos/bad/after/survey.html": {
-      "reason": "The site rewrites its own extension: the capture landed on survey.php, not the requested survey.html. It IS the requested page, under a URL `sameDocument` cannot recognise as the same document, so the census is refused.",
-      "removedWhen": "The same `sameDocument` fix. This page is the cheapest possible test of it: same document, different extension, no redirect chain.",
-      "declaredAt": "2026-09-06"
-    },
     "https://www.historicenvironment.scot/visit/all/edinburgh-castle/": {
       "reason": "capture 2026-09-14T00:09:26.258Z, protocol 18, opened on a consent overlay and reached none of the page's own headings; the 01:25Z, 02:11Z and 03:43Z gate runs listed this capture as furniture, and all 11 runs since 2026-09-07T23:14:18Z listed the page; earlier captures: none reached the page -- every capture set since 2026-09-07 stopped on the overlay, and the surviving 2026-08-25 protocol-6 capture at the old URL opened on it too; captures from 08-25 to 09-06 otherwise not read",
       "removedWhen": "#1522: a capture of this URL announces one of the page's own headings; the gate's declared-but-examinable line then flags this entry for removal",
