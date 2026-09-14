@@ -68,10 +68,16 @@ test("guard 3: publishing needs an exact typed string, not a click", () => {
     "the publish step itself must require both, not just the preceding check step");
 });
 
-test("guard 4: access stays restricted until the name is settled", () => {
-  assert.equal(config.access, "restricted",
-    "`.changeset/config.json` access must stay 'restricted' until PLAN.md B5 is closed. A correctly "
-    + "confirmed run still fails at the access check, so no accidental release can claim a name.");
+test("guard 4: access is public now that the name is settled", () => {
+  // Until 2026-09-14 this asserted "restricted": PLAN.md B5 ("the name, and the first publish") was
+  // open, and a correctly confirmed run still failed at the workflow's access check so no accidental
+  // release could claim a name. The name is settled -- the repository is a11ign (README.md:1-6, the
+  // rename record), the six packages are `@a11ign/*`, and the chairman's order for the first publish
+  // (0.1.0 x6, dist-tag `next`) is recorded on #915 (comments 5656137309 and 5659162882). A scoped
+  // package publishes only with access=public, so the flip is what lets that run proceed (#1530).
+  assert.equal(config.access, "public",
+    "`.changeset/config.json` access must read 'public': the name is settled (PLAN.md B5, #1530) and a "
+    + "scoped package cannot publish otherwise. The workflow still refuses on anything but 'public'.");
   assert.match(workflow, /access.*!=.*"public"/,
     "the workflow must read the access setting back and refuse, rather than assuming it");
 });
