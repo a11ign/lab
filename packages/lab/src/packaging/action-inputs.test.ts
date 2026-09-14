@@ -90,3 +90,39 @@ test("every capability flag the CLI takes is reachable from the Action", () => {
       + "context where it matters most unable to use it.");
   }
 });
+
+/**
+ * AN INPUT THAT MIRRORS A `--no-<name>` FLAG MUST KEEP THE CLI'S POLARITY: ON unless the consumer writes `false`.
+ *
+ * The test above proves the name reaches the argv and cannot see which way it points. A `default: "false"`, or a
+ * guard written `= "true"`, still reaches the CLI — and turns a default-ON probe off for every workflow that
+ * never sets the input, silently (reviewer on #1601; `ceo`'s ruling on #1392 is that the probes stay ON).
+ *
+ * Two guard spellings keep the probe ON, and only two: `= "false" ] && args+=(--no-<name>)` (off on an explicit
+ * `false`) and `= "true" ] || args+=(--no-<name>)` (`axe`'s older form: off on anything but `true`). With
+ * `default: "true"` both leave an unset input ON. They differ only on a value that is neither word, which is not the
+ * polarity this checks, so both are accepted rather than one rewritten.
+ *
+ * The population is derived — every declared input the CLI also parses as `--no-<name>` — and pinned by name so
+ * that a parse going blind reads as a failure, not as a clean pass over nothing.
+ */
+test("an input mirroring a --no-<name> flag defaults true and passes the flag only on an explicit false", () => {
+  const mirrored = declaredInputs().filter((name) => CLI.includes(`"--no-${name}"`));
+  assert.deepEqual(mirrored, ["probe-focus", "probe-navigation", "axe"],
+    "the inputs mirroring a CLI --no-<name> flag changed; a new one belongs here only once its polarity is checked");
+
+  for (const name of mirrored) {
+    const entry = new RegExp(`^ {2}${name}:\\n((?:(?: {4}.*)?\\n)*)`, "m").exec(ACTION)?.[1] ?? "";
+    assert.match(entry, /^ {4}default: "true"$/m,
+      `${name} must default "true": the CLI defaults it ON, and a workflow that never sets it gets that default`);
+
+    const passes = ACTION.split("\n").filter((line) => /\bargs\+=\(/.test(line) && line.includes(`inputs.${name} }}`));
+    const onPreserving = [
+      `[ "\${{ inputs.${name} }}" = "false" ] && args+=(--no-${name})`,
+      `[ "\${{ inputs.${name} }}" = "true" ] || args+=(--no-${name})`,
+    ];
+    assert.equal(passes.length, 1, `${name} must reach the argv on exactly one line, found ${passes.length}`);
+    assert.ok(onPreserving.includes(passes[0].trim()),
+      `${name}'s guard ${passes[0].trim()} is not one that leaves the probe ON by default; use ${onPreserving[0]}`);
+  }
+});
