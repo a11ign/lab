@@ -29,7 +29,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { checkBody, bodyFromArgs, armAfterCreate, sendToGitHub, headTreeRefusal, editTreeRefusal } from "../../../../scripts/pr-open.mjs";
+import { checkBody, bodyFromArgs, armAfterCreate, sendToGitHub, headTreeRefusal, editTreeRefusal, main as prOpenMain,
+  EXIT_NOTHING_SENT, EXIT_USAGE, EXIT_LANDED_THEN_FAILED } from "../../../../scripts/pr-open.mjs";
 
 const NEVER_RUN = () => { throw new Error("checkBody must never RUN a command for a body this test expects to refuse"); };
 
@@ -183,10 +184,10 @@ const gitStub = (args: string[]) => (args.includes("--abbrev-ref") ? "agent/my-b
 
 test("#1277: a create that FAILS prints one line with the branch, the head and the cause", () => {
   const lines: string[] = [];
-  const ok = sendToGitHub("create", ["--title", "x"],
+  const code = sendToGitHub("create", ["--title", "x"],
     { run: ghFails(), git: gitStub, err: (l: string) => { lines.push(l); } });
 
-  assert.equal(ok, false, "the caller sets exit 1 from this");
+  assert.equal(code, EXIT_NOTHING_SENT, "main exits with this");
   assert.equal(lines.length, 1, "ONE line -- the whole point is that it is not a stack");
   assert.match(lines[0], /agent\/my-branch/, "the branch, because the retry needs it");
   assert.match(lines[0], /abc1234/, "and the head the acceptance passed against, which a stack never says");
@@ -201,10 +202,10 @@ test("#1277 POSITIVE CONTROL: a create that SUCCEEDS gains no failure line", () 
   // Without this, a build that prints the failure line unconditionally passes the test above perfectly.
   const lines: string[] = [];
   const spawned: string[][] = [];
-  const ok = sendToGitHub("create", ["--title", "x"],
+  const code = sendToGitHub("create", ["--title", "x"],
     { run: (args: string[]) => { spawned.push(args); }, git: gitStub, err: (l: string) => { lines.push(l); } });
 
-  assert.equal(ok, true);
+  assert.equal(code, 0);
   assert.deepEqual(lines, [], "silence on success -- the failure line must move with the outcome");
   assert.equal(spawned[0][0], "pr", "and the command really ran rather than being skipped");
   // The ARM spawn, which no test asserted: `run(args.slice(1))` sent `gh merge --auto --merge` after every
@@ -224,9 +225,9 @@ test("#1348: a ready create with --head ARMS THAT HEAD, in both spellings -- thr
     const label = rest.slice(2).join(" ");
     const lines: string[] = [];
     const spawned: string[][] = [];
-    const ok = sendToGitHub("create", rest,
+    const code = sendToGitHub("create", rest,
       { run: (args: string[]) => { spawned.push(args); }, git: gitStub, err: (l: string) => { lines.push(l); } });
-    assert.equal(ok, true, label);
+    assert.equal(code, 0, label);
     assert.deepEqual(lines, [], `${label}: a create that succeeds prints no failure line`);
     assert.deepEqual(spawned[0], ["pr", "create", ...rest], `${label}: the create carries the head as given`);
     assert.deepEqual(spawned.slice(1), [["pr", "merge", "--auto", "--merge", "agent/x"]],
@@ -351,10 +352,10 @@ test("#1344 case 3: an unpushed B (origin/B unreadable) refuses and says to push
 
 test("#1344 WIRING: main() refuses a mismatched head BEFORE checkBody runs any Acceptance command", () => {
   const source = stripComments(readFileSync(fileURLToPath(new URL("../../../../scripts/pr-open.mjs", import.meta.url)), "utf8"));
-  const start = source.indexOf("function main() {");
+  const start = source.indexOf("function main(");
   const main = source.slice(start, source.indexOf("\n}\n", start));
-  const refusal = main.indexOf("headTreeRefusal(mode, rest)");
-  const check = main.indexOf("checkBody(body)");
+  const refusal = main.indexOf("headTreeRefusal(mode, rest,");
+  const check = main.indexOf("checkBody(body,");
   assert.ok(refusal > 0 && check > 0, "both calls are in main()");
   assert.ok(refusal < check, "the head is compared before checkBody runs the Acceptance in this tree");
 });
@@ -437,10 +438,82 @@ test("#1446: edit must be given a PR NUMBER first, and create asks nothing here"
 
 test("#1446 WIRING: main() refuses an edit off PR N's head BEFORE checkBody runs any Acceptance command", () => {
   const source = stripComments(readFileSync(fileURLToPath(new URL("../../../../scripts/pr-open.mjs", import.meta.url)), "utf8"));
-  const start = source.indexOf("function main() {");
+  const start = source.indexOf("function main(");
   const main = source.slice(start, source.indexOf("\n}\n", start));
-  const refusal = main.indexOf("editTreeRefusal(mode, rest)");
-  const check = main.indexOf("checkBody(body)");
+  const refusal = main.indexOf("editTreeRefusal(mode, rest,");
+  const check = main.indexOf("checkBody(body,");
   assert.ok(refusal > 0 && check > 0, "both calls are in main()");
   assert.ok(refusal < check, "the edit's head is compared before checkBody runs the Acceptance in this tree");
+});
+
+// --- #1479: a failure AFTER the landed create exits with its own code, naming what landed ---------------------
+//
+// `gh pr create` is guarded; the arm that follows it was not, and `main` had no try. A throwing arm left Node to
+// exit 1, the code this script sets when nothing was sent, for a PR that exists. Driven through `main` itself
+// with every spawn injected, so no test reaches GitHub or runs an Acceptance command.
+
+/** `main` on a body that checks clean, with the create's and the arm's outcomes chosen by the test. */
+function driveMain(argv: string[], outcomes: { create: () => void; arm: () => void }) {
+  const spawned: string[][] = [];
+  const errs: string[] = [];
+  let code: number | undefined;
+  let thrown: unknown = null;
+  try {
+    code = prOpenMain(argv, {
+      runAcceptance: () => 0,
+      run: (args: string[]) => { spawned.push(args); (args[1] === "merge" ? outcomes.arm : outcomes.create)(); },
+      git: gitStub,
+      err: (l: string) => { errs.push(l); },
+      out: () => {},
+    });
+  } catch (error) {
+    thrown = error;
+  }
+  return { code, thrown, spawned, errs };
+}
+const succeeds = () => {};
+const armFails = () => { throw new Error("Command failed: gh pr merge --auto --merge"); };
+const READY_CREATE = ["create", "--title", "x", "--body", VALID_BODY];
+
+test("#1479 ACCEPTANCE: a create that LANDS and an arm that then FAILS exits EXIT_LANDED_THEN_FAILED, naming the PR that exists", () => {
+  const r = driveMain(READY_CREATE, { create: succeeds, arm: armFails });
+  assert.equal(r.thrown, null, "the arm's failure is caught, never left to Node's uncaught-throw exit");
+  assert.equal(r.code, EXIT_LANDED_THEN_FAILED);
+  assert.ok(![0, EXIT_NOTHING_SENT, EXIT_USAGE].includes(EXIT_LANDED_THEN_FAILED), "a code no other outcome uses");
+  assert.deepEqual(r.spawned.map((a) => a.slice(0, 2)), [["pr", "create"], ["pr", "merge"]], "the create really ran first");
+  assert.equal(r.errs.length, 1, "one line");
+  assert.match(r.errs[0], /`gh pr create` LANDED/, "it says the write landed");
+  assert.match(r.errs[0], /the PR for `agent\/my-branch` at `abc1234` exists/, "and names the branch whose PR exists");
+  assert.match(r.errs[0], /run only `gh pr merge --auto --merge`/, "the one step to re-run, which is the step that failed");
+  assert.match(r.errs[0], /Command failed: gh pr merge/, "with the spawn's own message");
+  assert.doesNotMatch(r.errs[0], /nothing was created/, "never the pre-write refusal's words");
+});
+
+test("#1479: with --head, the step to re-run carries that branch", () => {
+  // The line's branch is the checkout's: #1344 has already refused a --head that is not the checkout's branch.
+  const r = driveMain([...READY_CREATE, "--head", "agent/my-branch"], { create: succeeds, arm: armFails });
+  assert.equal(r.code, EXIT_LANDED_THEN_FAILED);
+  assert.match(r.errs[0], /run only `gh pr merge --auto --merge agent\/my-branch`/);
+});
+
+test("#1479 CONTROL: a create that FAILS still exits EXIT_NOTHING_SENT and never arms; a run where every call succeeds exits 0", () => {
+  const failed = driveMain(READY_CREATE, { create: ghFails(), arm: succeeds });
+  assert.equal(failed.thrown, null);
+  assert.equal(failed.code, EXIT_NOTHING_SENT);
+  assert.deepEqual(failed.spawned.map((a) => a[1]), ["create"], "nothing is armed after a create that failed");
+  assert.equal(failed.errs.length, 1);
+  assert.match(failed.errs[0], /nothing was created/);
+  const clean = driveMain(READY_CREATE, { create: succeeds, arm: succeeds });
+  assert.equal(clean.thrown, null);
+  assert.equal(clean.code, 0);
+  assert.deepEqual(clean.errs, []);
+  assert.deepEqual(clean.spawned.map((a) => a[1]), ["create", "merge"], "and the arm really ran");
+});
+
+test("#1479: the script's header documents every exit code main returns, each on its own line", () => {
+  const text = readFileSync(fileURLToPath(new URL("../../../../scripts/pr-open.mjs", import.meta.url)), "utf8");
+  const header = text.slice(0, text.indexOf("\nimport "));
+  for (const code of [0, EXIT_NOTHING_SENT, EXIT_USAGE, EXIT_LANDED_THEN_FAILED]) {
+    assert.match(header, new RegExp(`^//\\s+${code}\\s+\\S`, "m"), `exit ${code} has its own line in the header`);
+  }
 });
