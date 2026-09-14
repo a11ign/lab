@@ -8,7 +8,7 @@
  * (via `signalMatches`) against real and synthetic captures to prove each case's `badSignal` fires on
  * the bad page and stays silent on the good one.
  */
-import { parseAnnouncement } from "@a11ign/evidence";
+import { parseAnnouncement, sameControlAnnounced } from "@a11ign/evidence";
 
 function structuralTextParts(/** @type {any} */ capture) {
   return [
@@ -81,16 +81,9 @@ const stateWordOf = (/** @type {any} */ text) => (text.match(STATE_WORD)?.[1] ??
 // all five `disclosure-focus-moves-to-collapsed-sibling` cases -- "Show delivery options, button, collapsed" ->
 // "Show opening hours, button, focused, collapsed" -- where the rule adds nothing. CONTAMINATED, stage 8 refused.
 //
-// A COPY, NOT AN IMPORT, because this file runs under plain `node` and cannot load `rules.ts`, and the judge's built
-// `dist` is how a stale rule was once scored. `cross-boundary-predicate-parity.test.ts` pins the two equal on these
-// pairs. The single shared copy, exported from `@a11ign/evidence`, is #1498, after the publish cut.
-function sameControlAnnounced(/** @type {unknown} */ control, /** @type {unknown} */ after) {
-  const nameIn = (/** @type {unknown} */ raw) => (typeof raw === "string" && raw
-    ? parseAnnouncement(raw, "sweep").objects.map((object) => object.name).find(Boolean) ?? ""
-    : "");
-  const before = nameIn(control);
-  return before !== "" && before === nameIn(after);
-}
+// IMPORTED, NOT COPIED (#1498). `sameControlAnnounced` is defined once, in `@a11ign/evidence`, beside the
+// `parseAnnouncement` this file already loads from there -- so this file still runs under plain `node` without
+// loading `rules.ts`, and the rule and this signal read the same decision rather than two copies kept equal.
 
 function stateChangeIsSilent(/** @type {any} */ capture, /** @type {any} */ signal) {
   const changes = capture.interaction?.stateChanges || [];

@@ -11,6 +11,10 @@
 //   focusRevealUndismissable (judge/rules.ts) <-> focusPanelUndismissable (lab/signal-predicates.mjs)
 //   sameControlAnnounced + addSilentStateChanges (judge/rules.ts) <-> stateChangeIsSilent (lab/signal-predicates.mjs), #1496
 //
+// #1498 DELETED ONE COPY of the third pair's identity step, CLAUDE.md's first-preference remedy: `sameControlAnnounced`
+// is defined once, in `@a11ign/evidence`, and both sides import it. That is asserted by name at the end of this file.
+// The pairs stay, because the STATE step after identity is still two implementations and still pinned equal here.
+//
 // Neither judge-side function is exported -- both are called only through `ruleFindings`, so this drives
 // the SHIPPED entry point rather than reaching into module internals; same for `signalMatches` on the lab
 // side. Same import shape as `media-signal-parity.test.ts`: `../../../judge/src/rules.js` by RELATIVE
@@ -21,6 +25,9 @@
 // boundary is deliberate and ADR-backed (see this file's own citation above).
 import { test } from "node:test";
 import assert from "node:assert/strict";
+
+import { readFileSync } from "node:fs";
+import ts from "typescript";
 
 import { signalMatches } from "./signal-predicates.mjs";
 import { ruleFindings } from "../../../judge/src/rules.js";
@@ -107,8 +114,8 @@ test("focusRevealUndismissable (rule) and focusPanelUndismissable (signal) agree
 // On the GOOD page of all five `disclosure-focus-moves-to-collapsed-sibling` cases, focus moved to a different
 // collapsed control: the rule added nothing, and the signal fired, which is CONTAMINATED. Both sides now ask identity
 // before state. This pins that they AGREE on every shape in STATE_CASES, and NAMES the two shapes where they still
-// differ, each with its reason, so neither side can change alone without this file saying so. The single shared
-// copy is #1498.
+// differ, each with its reason, so neither side can change alone without this file saying so. Since #1498 the identity
+// step is ONE implementation (the last two tests); both differences are in the state step after it.
 
 type StateChange = { control: string; after: string; afterSource: string };
 
@@ -161,12 +168,13 @@ const NAMED_DIVERGENCES: { name: string; change: StateChange; control: string; r
     change: focusRead("Passenger type, combo box, collapsed", "Passenger type, combo box, focused, collapsed"),
     control: "Passenger type", rule: false, signal: true,
     reason: "the rule's ENTER_ACTIVATES role gate -- Enter is not the key that opens a combo box, so staying collapsed "
-      + "is correct behaviour. The lab copy has no role gate. Not #1496's step; aligning it is #1498's single copy." },
+      + "is correct behaviour. The lab copy has no role gate. Not the identity step #1498 moved; aligning it is #1583." },
   { name: "the same control with NO state word after activation",
     change: focusRead("Show delivery options, button, collapsed", "Show delivery options, button, focused"),
     control: "Show delivery options", rule: false, signal: true,
     reason: "the lab copy counts an `after` with no state word as a failure ('nothing was conveyed either way', its "
-      + "own comment); the rule requires an expandable state on BOTH sides before comparing. Not #1496's step; #1498." },
+      + "own comment); the rule requires an expandable state on BOTH sides before comparing. Not the identity step #1498 "
+      + "moved; aligning it is #1583." },
 ];
 
 test("#1496: the two shapes where signal and rule still differ are NAMED, with reasons -- changing either side must update this",
@@ -177,3 +185,54 @@ test("#1496: the two shapes where signal and rule still differ are NAMED, with r
         `${name}: the SIGNAL's answer moved. Known reason: ${reason}`);
     }
   });
+
+// --- #1498: the identity step is ONE implementation, not two agreeing ---
+
+const REPO_ROOT = new URL("../../../../", import.meta.url);
+const CONSUMERS = ["packages/judge/src/rules.ts", "packages/lab/src/training/signal-predicates.mjs"];
+
+/** Every local definition of `sameControlAnnounced` in a file (by line), and whether it imports it from @a11ign/evidence. */
+function sameControlSources(file: string, text: string): { definitions: number[]; imported: boolean } {
+  const kind = file.endsWith(".mjs") ? ts.ScriptKind.JS : ts.ScriptKind.TS;
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, kind);
+  const definitions: number[] = [];
+  let imported = false;
+  const visit = (node: ts.Node) => {
+    const declares = ts.isFunctionDeclaration(node) || ts.isVariableDeclaration(node);
+    if (declares && node.name && ts.isIdentifier(node.name) && node.name.text === "sameControlAnnounced") {
+      definitions.push(source.getLineAndCharacterOfPosition(node.getStart()).line + 1);
+    }
+    const fromEvidence = ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)
+      && node.moduleSpecifier.text === "@a11ign/evidence";
+    const bindings = fromEvidence ? node.importClause?.namedBindings : undefined;
+    if (bindings && ts.isNamedImports(bindings)
+      && bindings.elements.some((element) => (element.propertyName ?? element.name).text === "sameControlAnnounced")) {
+      imported = true;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return { definitions, imported };
+}
+
+test("#1498 CONTROL: a local copy of sameControlAnnounced is found by name, in either language", () => {
+  const copied = 'import { parseAnnouncement } from "@a11ign/evidence";\nfunction sameControlAnnounced(control, after) {}\n';
+  const found = sameControlSources("planted.mjs", copied);
+  assert.equal(found.definitions.length, 1, "a function declaration in a .mjs consumer");
+  assert.equal(found.imported, false);
+  const shadowed = 'import { sameControlAnnounced as shared } from "@a11ign/evidence";\nconst sameControlAnnounced = shared;\n';
+  assert.equal(sameControlSources("planted.ts", shadowed).definitions.length, 1, "a const beside the import, in .ts");
+});
+
+test("#1498: sameControlAnnounced is ONE implementation -- both consumers import it from @a11ign/evidence and define none", () => {
+  for (const file of CONSUMERS) {
+    const { definitions, imported } = sameControlSources(file, readFileSync(new URL(file, REPO_ROOT), "utf8"));
+    assert.deepEqual(definitions, [], `${file} defines its own sameControlAnnounced at line ${definitions.join(", ")}: `
+      + "a DUPLICATE of @a11ign/evidence's -- import it instead (#1498)");
+    assert.equal(imported, true, `${file} no longer imports sameControlAnnounced from @a11ign/evidence`);
+  }
+  // THE POSITIVE CONTROL for the empty lists above: the same reader finds the one real definition.
+  const home = "packages/evidence/src/announcement.ts";
+  assert.equal(sameControlSources(home, readFileSync(new URL(home, REPO_ROOT), "utf8")).definitions.length, 1,
+    `the reader finds the one definition in ${home}`);
+});
