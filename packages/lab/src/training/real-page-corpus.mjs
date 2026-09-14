@@ -838,9 +838,14 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "4.1.3"],
     source: "National Records of Scotland: partially compliant, own statement (https://nrscotland.gov.uk/accessibility/)",
     demonstrates: "statistical publication listing" },
+  // #1610: Network Rail's statement (prepared 2019-08-01, last reviewed 2026-08-06, read 2026-09-14) is "partially
+  // compliant with the Web Content Accessibility Guidelines version 2.1 AA standard". `claimExcludes` is its seven
+  // "fails WCAG" items intersected with SCORED_CRITERIA. It carried only 1.1.1, 1.3.1 and 2.4.4, one item's first three
+  // criteria, so the calibration sweep counted the 4.1.2 that same item discloses as asserted wrongly; the whole
+  // statement also discloses 2.1.1 and 2.4.7. `real-page-corpus.test.ts` holds the read.
   { url: "https://www.networkrail.co.uk/careers/", role: "calibration",
-    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.4"],
-    source: "Network Rail: partially compliant, own statement (https://networkrail.co.uk/accessibility/)",
+    publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.1.1", "2.4.4", "2.4.7", "4.1.2"],
+    source: "Network Rail: partially compliant, own statement (https://www.networkrail.co.uk/accessibility/), prepared 2019-08-01, last reviewed 2026-08-06, read 2026-09-14",
     demonstrates: "careers landing page",
     movedFrom: [{ url: "https://www.networkrail.co.uk/careers/careers-search/",
       when: "2026-08-26", why: "the publisher restructured its URLs; the declaration was corrected in b7dff539, \"the 14% wrong-page rate was seven stale URLs, not a capture fault\"" }] },

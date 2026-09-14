@@ -699,3 +699,107 @@ test("#1515: 2.4.3 stays UNMASKED on both ICO entries although the statement dis
       + "#1514's rotated-Tab-cycle defect on this site's own pages");
   }
 });
+
+/**
+ * #1610: networkrail careers follows NETWORK RAIL'S accessibility STATEMENT, read verbatim here as the fixture -- the
+ * #1508 shape. The calibration sweep 2f9c51aa (2026-09-14, pinned to `2a1c24bc`) counted this page's 4.1.2 as asserted
+ * wrongly because the entry's `claimExcludes` carried only one item's first three criteria; the statement discloses
+ * 4.1.2 in that same item.
+ *
+ * READ WHOLE, as the row requires: seven "This fails WCAG …" items, all under its "Non-compliance with the
+ * accessibility regulations" heading, naming ten criteria. The wording varies ("Success Criterion", "Success Criteria
+ * … and …", "success criterion"), so the parse takes every x.y.z number inside each fail SENTENCE, as #1515's does.
+ * The seventh item is about Network Rail's customer help website, not this one; its only criterion, 4.1.2, is also in
+ * the fifth, so it changes nothing. `claimExcludes` is those failures intersected with `SCORED_CRITERIA` as
+ * `@a11ign/judge/coverage` exports it -- derived below, never retyped.
+ */
+const NETWORKRAIL_STATEMENT_READ = {
+  url: "https://www.networkrail.co.uk/accessibility/",
+  read: "2026-09-14T14:33:45Z (GET, HTTP 200, no redirect; served page 156,740 bytes, sha256 33e6454649865028...)",
+  compliance: "This website is partially compliant with the Web Content Accessibility Guidelines version 2.1 AA standard, due to ‘the non-compliances’ listed below.",
+  dated: "This statement was prepared on 1 August 2019. It was last reviewed on 6 August 2026.",
+  /** Every element holding "fails WCAG", in page order, with its heading. */
+  failing: [
+    ["Non-compliance with the accessibility regulations", "The website navigation menu cannot be fully accessed using a keyboard when viewed at higher zoom levels. This fails WCAG 2.2 Success Criterion 2.1.1 Keyboard (Level A). We plan to fix this by September 2026."],
+    ["Non-compliance with the accessibility regulations", "Keyboard focus is not always visible within interactive elements. Keyboard focus can also become hidden behind website components including the navigation menu, search panel and cookie banner. This fails WCAG 2.2 Success Criteria 2.4.7 Focus Visible (Level AA) and 2.4.11 Focus Not Obscured (Minimum) (Level AA). We plan to fix this by September 2026."],
+    ["Non-compliance with the accessibility regulations", "The Safe Spaces banner does not reflow correctly when viewed at high magnification or on smaller screens. This fails WCAG 2.2 Success Criterion 1.4.10 Reflow (Level AA). We plan to fix this by September 2026."],
+    ["Non-compliance with the accessibility regulations", "The Safe Spaces banner uses an image of text rather than accessible text content. This fails WCAG 2.2 Success Criterion 1.4.5 Images of Text (Level AA). We plan to fix this by September 2026."],
+    ["Non-compliance with the accessibility regulations", "The Safe Spaces banner, website search, website logo and parts of our online suggestion forms do not always provide appropriate alternative text, accessible names or labels. This means some users of assistive technologies may not be able to understand the purpose of content or complete forms successfully. This fails WCAG 2.2 Success Criteria 1.1.1 Non-text Content (Level A), 1.3.1 Info and Relationships (Level A), 2.4.4 Link Purpose (In Context) (Level A) and 4.1.2 Name, Role, Value (Level A). We plan to fix this by September 2026."],
+    ["Non-compliance with the accessibility regulations", "Some elements within the Safe Spaces banner, navigation menu and online forms do not have sufficient colour contrast. This fails WCAG 2.2 Success Criterion 1.4.3 Contrast (Minimum) (Level AA). We plan to fix this by September 2026."],
+    ["Non-compliance with the accessibility regulations", "The file upload button used to attach documents on out customer help website may not be correctly interpreted by screen readers. This fails WCAG 2.2 success criterion 4.1.2 Name, Role Value. We have raised this issue with the supplier and are awaiting confirmation of a remediation date."],
+  ],
+} as const;
+
+/** How many "fails WCAG" items the statement lists, all under "Non-compliance with the accessibility regulations". */
+const NETWORKRAIL_STATEMENT_ITEMS = 7;
+/** How many distinct criteria those seven items name: 4.1.2 appears twice. */
+const NETWORKRAIL_STATEMENT_DISTINCT_FAILS = 10;
+
+/** Every criterion a set of fail items names: every x.y.z number inside each "fails WCAG" sentence. */
+function statementFails(failing: readonly (readonly [string, string])[]): string[] {
+  return [...new Set(failing.flatMap(([, text]) =>
+    [...text.matchAll(/This fails WCAG[^]*?(?<!\d)\.(?=\s+[A-Z]|\s*$)/gi)]
+      .flatMap((sentence) => [...sentence[0].matchAll(/\b([1-4]\.[0-9]\.[0-9]{1,2})\b/g)].map((match) => match[1]))))];
+}
+const networkrailCareers = () => REAL_PAGES.filter((page) => page.url === "https://www.networkrail.co.uk/careers/");
+const scoredOf = (criteria: readonly string[]) => {
+  const scored = new Set<string>(SCORED_CRITERIA);
+  return criteria.filter((criterion) => scored.has(criterion)).sort(byCriterion);
+};
+
+test("#1610: the fixture is Network Rail's statement -- partially compliant, and it discloses 4.1.2 in its own words", () => {
+  assert.match(NETWORKRAIL_STATEMENT_READ.compliance, /partially compliant with the Web Content Accessibility Guidelines/);
+  const fails = statementFails(NETWORKRAIL_STATEMENT_READ.failing);
+  assert.equal(NETWORKRAIL_STATEMENT_READ.failing.length, NETWORKRAIL_STATEMENT_ITEMS, "all seven items the statement lists");
+  assert.equal(fails.length, NETWORKRAIL_STATEMENT_DISTINCT_FAILS, "every fail sentence parsed across its wordings, each criterion once");
+  assert.ok(fails.includes("4.1.2"), "the disclosure the calibration sweep's one asserted-wrongly count rests on");
+});
+
+test("#1610: 4.1.2 is disclosed for THIS website's own search, not only for Network Rail's customer help website", () => {
+  // The sweep's finding is on this site's "Open search" control. The seventh item also names 4.1.2, but for the file
+  // upload button "on out customer help website" -- another site -- so it must not be what licenses masking this page.
+  const itemAbout = (phrase: string) => NETWORKRAIL_STATEMENT_READ.failing.filter(([, text]) => text.includes(phrase));
+  const search = itemAbout("website search");
+  const helpSite = itemAbout("customer help website");
+  assert.equal(search.length, 1, "the one item about this website's search");
+  assert.equal(helpSite.length, 1, "the positive control: the other-site item is in the fixture too");
+  assert.ok(statementFails(search).includes("4.1.2"), "this website's search item discloses 4.1.2 itself");
+  assert.deepEqual(statementFails(helpSite), ["4.1.2"], "the other-site item names 4.1.2 alone, so dropping it moves nothing");
+});
+
+test("#1610: networkrail careers cites the live statement, dated", () => {
+  assert.equal(networkrailCareers().length, 1, "the careers calibration page");
+  for (const page of networkrailCareers()) {
+    assert.ok(page.source.includes(`(${NETWORKRAIL_STATEMENT_READ.url})`), `${page.url} must cite the statement: ${page.source}`);
+    assert.match(page.source, /partially compliant/, `${page.url}: the statement's own words`);
+    assert.match(page.source, /prepared 2019-08-01, last reviewed 2026-08-06, read 2026-09-14/, `${page.url}: dated`);
+  }
+});
+
+test("#1610: networkrail careers excludes exactly the statement's failures that SCORED_CRITERIA covers", () => {
+  const expected = scoredOf(statementFails(NETWORKRAIL_STATEMENT_READ.failing));
+  assert.ok(expected.includes("4.1.2") && expected.includes("1.1.1"), "the positive control: scored disclosures exist at all");
+  for (const page of networkrailCareers()) {
+    assert.deepEqual([...(page.claimExcludes ?? [])].map(String).sort(byCriterion), expected,
+      `${page.url} (${page.role}): the statement's own disclosures a head scores -- no more, no fewer`);
+  }
+});
+
+test("#1610 CONTROL: a criterion planted in the fixture changes the derived set, so the derivation reads the text", () => {
+  const planted = [...NETWORKRAIL_STATEMENT_READ.failing,
+    ["Non-compliance with the accessibility regulations", "Errors are not described. This fails WCAG 2.2 Success Criterion 3.3.1 Error Identification (Level A)."]] as const;
+  const derived = scoredOf(statementFails(planted));
+  assert.ok(derived.includes("3.3.1"), "a planted scored criterion enters the derived set");
+  assert.notDeepEqual(derived, scoredOf(statementFails(NETWORKRAIL_STATEMENT_READ.failing)));
+  assert.notDeepEqual([...(networkrailCareers()[0]?.claimExcludes ?? [])].map(String).sort(byCriterion), derived,
+    "so the entry's claimExcludes would no longer match -- the equality above is not vacuous");
+});
+
+test("#1610 CONTROL: the derivation is about THIS entry -- Sport England's claimExcludes, from its own statement, is unchanged", () => {
+  const sport = REAL_PAGES.filter((page) => page.url === "https://www.sportengland.org/research-and-data/data/active-lives");
+  assert.equal(sport.length, 1, "the neighbouring calibration entry");
+  // Its value at `1247cacf`, the claim-time main: this row derives Network Rail's statement and touches no other entry.
+  assert.deepEqual([...(sport[0].claimExcludes ?? [])].map(String), ["1.3.1", "4.1.2", "4.1.3"]);
+  assert.notDeepEqual([...(sport[0].claimExcludes ?? [])].map(String).sort(byCriterion),
+    scoredOf(statementFails(NETWORKRAIL_STATEMENT_READ.failing)), "the two statements disclose different sets");
+});
