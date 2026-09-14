@@ -213,6 +213,60 @@ test("#1583: signal and rule give the SAME answer on every state-step shape, and
   }
 });
 
+// --- #1583: the signal's COPIES of the rule's two gates are the rule's lists ---
+
+/**
+ * The string members of `const <name> = new Set([...])` in a source file, or null when no such declaration exists.
+ * Parsed, not grepped: a list split across lines and a type annotation (`ReadonlySet<string>`) both have to read.
+ */
+function setLiteral(file: string, text: string, name: string): string[] | null {
+  const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true,
+    file.endsWith(".mjs") ? ts.ScriptKind.JS : ts.ScriptKind.TS);
+  let found: string[] | null = null;
+  const visit = (node: ts.Node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name
+      && node.initializer && ts.isNewExpression(node.initializer) && node.initializer.arguments?.length === 1
+      && ts.isArrayLiteralExpression(node.initializer.arguments[0])) {
+      found = node.initializer.arguments[0].elements.filter(ts.isStringLiteral).map((element) => element.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
+const readRepo = (file: string) => readFileSync(new URL(file, new URL("../../../../", import.meta.url)), "utf8");
+
+/** What one side has that the other does not, both ways, for a failure message that names the entry. */
+function setDifference(rule: readonly string[], signal: readonly string[]): string {
+  const onlyRule = rule.filter((entry) => !signal.includes(entry));
+  const onlySignal = signal.filter((entry) => !rule.includes(entry));
+  return `only in rules.ts: ${JSON.stringify(onlyRule)}; only in signal-predicates.mjs: ${JSON.stringify(onlySignal)}`;
+}
+
+test("#1583 CONTROL: the list reader finds a planted Set in either language, and sees an added entry", () => {
+  assert.deepEqual(setLiteral("p.ts", 'const ENTER_ACTIVATES: ReadonlySet<string> = new Set([\n  "button", "tab",\n]);', "ENTER_ACTIVATES"),
+    ["button", "tab"]);
+  assert.deepEqual(setLiteral("p.mjs", 'const ENTER_ACTIVATES = new Set(["button", "tab", "menu button"]);', "ENTER_ACTIVATES"),
+    ["button", "tab", "menu button"]);
+  assert.equal(setLiteral("p.mjs", "const OTHER = new Set([]);", "ENTER_ACTIVATES"), null, "an absent declaration reads null");
+});
+
+test("#1583: the signal's ENTER_ACTIVATES and EXPANDABLE_STATES are EQUAL, as sets, to the rule's", () => {
+  // The behaviour pins above cover twelve shapes; a role added to ONE copy -- `menu button`, say -- needs no new shape
+  // to be a drift. This pins the lists themselves, read as source because the signal cannot import rules.ts.
+  const rules = readRepo("packages/judge/src/rules.ts");
+  const signal = readRepo("packages/lab/src/training/signal-predicates.mjs");
+  for (const name of ["ENTER_ACTIVATES", "EXPANDABLE_STATES"]) {
+    const ruleList = setLiteral("rules.ts", rules, name);
+    const signalList = setLiteral("signal-predicates.mjs", signal, name);
+    assert.ok(ruleList && ruleList.length > 0, `rules.ts no longer declares ${name} as a Set literal -- this pin reads nothing`);
+    assert.ok(signalList && signalList.length > 0, `signal-predicates.mjs no longer declares ${name} as a Set literal`);
+    assert.deepEqual([...signalList].sort(), [...ruleList].sort(),
+      `${name} drifted between the rule and the signal's copy -- ${setDifference(ruleList, signalList)}`);
+  }
+});
+
 // --- #1498: the identity step is ONE implementation, not two agreeing ---
 
 const REPO_ROOT = new URL("../../../../", import.meta.url);
