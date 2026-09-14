@@ -37,7 +37,7 @@
  */
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { newFindingsVerdict, partitionByOutcome } from "../src/gates/referral-only-verdict.mjs";
-import { scoredCoverage } from "../src/gates/real-page-coverage.mjs";
+import { scoredCoverage, scoredFurniture } from "../src/gates/real-page-coverage.mjs";
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -192,7 +192,12 @@ function reportNotScored(notScored: string[]): void {
   if (!notScored.length) return;
   process.stdout.write(`\n  ${notScored.length} unusable capture(s) are NOT IN THE SCORED SET -- no scored page `
     + "claims them (a superseded page's pre-move URL is one), so they do not reduce coverage (#1524):\n");
-  for (const url of notScored) process.stdout.write(`    not in the scored set: ${url.replace(/^https:\/\//, "")}\n`);
+  // #1529: WITH ITS EVIDENCE. The furniture headline no longer lists an unscored capture, so this is the one place
+  // its census and opening lines print -- a capture that read furniture is still a capture to fix.
+  for (const url of notScored) {
+    process.stdout.write(`    not in the scored set: ${url.replace(/^https:\/\//, "")}\n`);
+    process.stdout.write(`           ${describeEvidence(url)}\n`);
+  }
 }
 
 function reportDeclaredExclusions(unusablePages: string[]): string[] {
@@ -234,8 +239,9 @@ function reportCaptureAges(): void {
  * #428: an undeclared capture that reached only FURNITURE (a cookie/consent overlay or an unrendered
  * shell, never the page's own headings) is a THIRD answer, not folded into either of the above. It is not
  * "no idea what this is" -- the capture-quality check (below, alongside the scored population) answered
- * that -- so it is subtracted from the undeclared count here and reported once, with the scored furniture
- * captures, rather than twice under two different headings.
+ * that -- so it is subtracted from the undeclared count here and reported once, rather than twice under two
+ * different headings. #1529: that once is the NOT IN THE SCORED SET block, with its evidence, because the
+ * furniture headline now counts and lists only scored pages.
  */
 function reportWhatWasNotScored(): void {
   const by = (why: string) => NOT_SCORED.filter((entry) => entry.why === why);
@@ -1139,12 +1145,17 @@ function concludeAgainstBaseline(
 
 function reportAgainstBaseline({ added, scored }: { added: Change[]; scored: string[] }): void {
   const furniture = furnitureCaptures();
-  if (furniture.consent.length || furniture.shell.length) {
-    process.stdout.write(`\n  ${furniture.consent.length} capture(s) opened on a COOKIE/CONSENT overlay `
-      + `and ${furniture.shell.length} on an unrendered SHELL, and reached NONE OF THE PAGE'S OWN `
+  // #1529: THE HEADLINE COUNTS ONLY SCORED PAGES, the same intersection coverage makes below. It counted every
+  // furniture capture, so metoffice's pre-move history capture read "1 on an unrendered SHELL" here and "not in the
+  // scored set" a few lines later. An unscored furniture capture prints once, with its evidence, in `reportNotScored`.
+  // `furniture` itself still feeds `unusable`, so what is withheld and what `scoredCoverage` decides are unchanged.
+  const shown = scoredFurniture({ scored, consent: furniture.consent, shell: furniture.shell });
+  if (shown.consent.length || shown.shell.length) {
+    process.stdout.write(`\n  ${shown.consent.length} capture(s) opened on a COOKIE/CONSENT overlay `
+      + `and ${shown.shell.length} on an unrendered SHELL, and reached NONE OF THE PAGE'S OWN `
       + "HEADINGS — those read the site's furniture, not its page, so anything they say is about this "
       + "tool.\n");
-    for (const url of [...furniture.consent, ...furniture.shell].slice(0, 8)) {
+    for (const url of [...shown.consent, ...shown.shell].slice(0, 8)) {
       process.stdout.write(`    furniture: ${url.replace(/^https:\/\//, "")}\n`);
       process.stdout.write(`           ${describeEvidence(url)}\n`);
     }
