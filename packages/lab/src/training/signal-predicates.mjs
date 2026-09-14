@@ -73,10 +73,31 @@ const stateWordOf = (/** @type {any} */ text) => (text.match(STATE_WORD)?.[1] ??
 // activating it, so `after` always carries a state word and the emptiness test could never
 // fire again -- it silently stopped discriminating and took three cases with it. A probe and
 // its signal are coupled; changing one means revisiting the other.
+//
+// #1496: IDENTITY BEFORE STATE, THE RULE'S ORDER (#812). `after` is a post-activation FOCUS read, so the two sides
+// can name two different controls, and "both say collapsed" is then true of two strings and says nothing about
+// either control. The published rule, `addSilentStateChanges` in `packages/judge/src/rules.ts`, asks
+// `sameControlAnnounced` first; this copy did not, so on the release gate at `3bf5b8a4` it fired on the GOOD page of
+// all five `disclosure-focus-moves-to-collapsed-sibling` cases -- "Show delivery options, button, collapsed" ->
+// "Show opening hours, button, focused, collapsed" -- where the rule adds nothing. CONTAMINATED, stage 8 refused.
+//
+// A COPY, NOT AN IMPORT, because this file runs under plain `node` and cannot load `rules.ts`, and the judge's built
+// `dist` is how a stale rule was once scored. `cross-boundary-predicate-parity.test.ts` pins the two equal on these
+// pairs. The single shared copy, exported from `@a11ign/evidence`, is #1498, after the publish cut.
+function sameControlAnnounced(/** @type {unknown} */ control, /** @type {unknown} */ after) {
+  const nameIn = (/** @type {unknown} */ raw) => (typeof raw === "string" && raw
+    ? parseAnnouncement(raw, "sweep").objects.map((object) => object.name).find(Boolean) ?? ""
+    : "");
+  const before = nameIn(control);
+  return before !== "" && before === nameIn(after);
+}
+
 function stateChangeIsSilent(/** @type {any} */ capture, /** @type {any} */ signal) {
   const changes = capture.interaction?.stateChanges || [];
   return changes.some((/** @type {any} */ { control, after }) => {
     if (!control.toLowerCase().includes(signal.control.toLowerCase())) return false;
+    // #1496: two different controls are not evidence about either one's state -- see `sameControlAnnounced`.
+    if (!sameControlAnnounced(control, after)) return false;
     const before = stateWordOf(control);
     const now = stateWordOf(after);
     // No state word at all is still a failure: nothing was conveyed either way.
