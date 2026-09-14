@@ -9,6 +9,7 @@
 //
 //   contextChanged (judge/rules.ts)          <-> contextChangedOn (lab/signal-predicates.mjs)
 //   focusRevealUndismissable (judge/rules.ts) <-> focusPanelUndismissable (lab/signal-predicates.mjs)
+//   sameControlAnnounced + addSilentStateChanges (judge/rules.ts) <-> stateChangeIsSilent (lab/signal-predicates.mjs), #1496
 //
 // Neither judge-side function is exported -- both are called only through `ruleFindings`, so this drives
 // the SHIPPED entry point rather than reaching into module internals; same for `signalMatches` on the lab
@@ -99,3 +100,80 @@ test("focusRevealUndismissable (rule) and focusPanelUndismissable (signal) agree
       + "labelled a failure the shipped judge will never report, or vice versa");
   }
 });
+
+// --- Pair 3 (#1496): sameControlAnnounced + addSilentStateChanges / stateChangeIsSilent -- 4.1.2 state-change-silent ---
+//
+// The lab release gate at `3bf5b8a4` REFUSED at stage 8 because the lab copy lacked the rule's identity step (#812).
+// On the GOOD page of all five `disclosure-focus-moves-to-collapsed-sibling` cases, focus moved to a different
+// collapsed control: the rule added nothing, and the signal fired, which is CONTAMINATED. Both sides now ask identity
+// before state. This pins that they AGREE on every shape in STATE_CASES, and NAMES the two shapes where they still
+// differ, each with its reason, so neither side can change alone without this file saying so. The single shared
+// copy is #1498.
+
+type StateChange = { control: string; after: string; afterSource: string };
+
+const focusRead = (control: string, after: string): StateChange => ({ control, after, afterSource: "focus" });
+
+function ruleStateChangeSilent(change: StateChange): boolean {
+  const findings = ruleFindings(captureWithInteraction({ stateChanges: [change] }) as never);
+  return findings.some((f) => f.wcag?.startsWith("4.1.2"));
+}
+
+function signalStateChangeSilent(change: StateChange, control: string): boolean {
+  return signalMatches(captureWithInteraction({ stateChanges: [change] }), { type: "state-change-silent", control });
+}
+
+const STATE_CASES: { name: string; change: StateChange; control: string }[] = [
+  { name: "the release gate's GOOD page (recorded, #915): focus moved to a DIFFERENT collapsed control",
+    change: focusRead("Show delivery options, button, collapsed", "Show opening hours, button, focused, collapsed"),
+    control: "Show delivery options" },
+  { name: "the SAME control, still collapsed after activation -- the failure",
+    change: focusRead("Show delivery options, button, collapsed", "Show delivery options, button, focused, collapsed"),
+    control: "Show delivery options" },
+  { name: "+also-fake-heading-unnamed-graphic's second good-page entry (recorded, #915): collapsed -> expanded",
+    change: focusRead("Reference notes archive, button, collapsed", "Reference notes archive, button, focused, expanded"),
+    control: "Reference notes archive" },
+  { name: "the same control, expanded -> expanded",
+    change: focusRead("Show delivery options, button, expanded", "Show delivery options, button, focused, expanded"),
+    control: "Show delivery options" },
+  { name: "unnamed on both sides -- an empty name is not an identity",
+    change: focusRead("button, collapsed", "button, focused, collapsed"), control: "button" },
+  { name: "named before, unnamed after -- identity cannot be established",
+    change: focusRead("Show delivery options, button, collapsed", "button, focused, collapsed"),
+    control: "Show delivery options" },
+  { name: "the same NAME under a different role ('button' -> 'menu button') -- identity is the name, not the role",
+    change: focusRead("Platform, button, collapsed", "Platform, menu button, focused, collapsed"), control: "Platform" },
+];
+
+test("#1496: stateChangeIsSilent (signal) and addSilentStateChanges (rule) agree on every identity shape", () => {
+  for (const { name, change, control } of STATE_CASES) {
+    const rule = ruleStateChangeSilent(change);
+    const signal = signalStateChangeSilent(change, control);
+    assert.equal(signal, rule,
+      `${name}: signal says ${signal}, rule says ${rule} -- a corpus case built from this predicate can be `
+      + "labelled a failure the shipped judge will never report, or vice versa");
+  }
+});
+
+const NAMED_DIVERGENCES: { name: string; change: StateChange; control: string; rule: boolean; signal: boolean;
+  reason: string }[] = [
+  { name: "a combo box that stays collapsed after Enter",
+    change: focusRead("Passenger type, combo box, collapsed", "Passenger type, combo box, focused, collapsed"),
+    control: "Passenger type", rule: false, signal: true,
+    reason: "the rule's ENTER_ACTIVATES role gate -- Enter is not the key that opens a combo box, so staying collapsed "
+      + "is correct behaviour. The lab copy has no role gate. Not #1496's step; aligning it is #1498's single copy." },
+  { name: "the same control with NO state word after activation",
+    change: focusRead("Show delivery options, button, collapsed", "Show delivery options, button, focused"),
+    control: "Show delivery options", rule: false, signal: true,
+    reason: "the lab copy counts an `after` with no state word as a failure ('nothing was conveyed either way', its "
+      + "own comment); the rule requires an expandable state on BOTH sides before comparing. Not #1496's step; #1498." },
+];
+
+test("#1496: the two shapes where signal and rule still differ are NAMED, with reasons -- changing either side must update this",
+  () => {
+    for (const { name, change, control, rule, signal, reason } of NAMED_DIVERGENCES) {
+      assert.equal(ruleStateChangeSilent(change), rule, `${name}: the RULE's answer moved. Known reason: ${reason}`);
+      assert.equal(signalStateChangeSilent(change, control), signal,
+        `${name}: the SIGNAL's answer moved. Known reason: ${reason}`);
+    }
+  });
