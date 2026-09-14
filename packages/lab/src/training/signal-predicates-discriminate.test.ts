@@ -249,9 +249,9 @@ test("the exercised types are the ones with the largest blast radius", () => {
  * verbatim from orchestrator's reading of that run (#915, comment 5657433837), including the second entry
  * `+also-fake-heading-unnamed-graphic` carried. They are recorded evidence, not a model of the probe.
  *
- * The same-control pair is CONSTRUCTED, not recorded: it is the shape the bad variant's authoring guarantees,
- * because its script never moves focus. It is the positive control proving the identity step did not blind the
- * signal.
+ * The BAD pages are recorded too, from the same run's capture files, which orchestrator read from the lab with each
+ * sha256 checked twice (#1496, 2026-09-14T00:53:10Z). Focus stays on the control, so both sides name it, and the
+ * signal must still FIRE -- the positive control that the identity step did not blind it.
  */
 const SIBLING_SIGNAL = { type: "state-change-silent", control: "Show delivery options" };
 const RECORDED_GOOD_PAGE = [
@@ -261,8 +261,13 @@ const RECORDED_GOOD_PAGE_FAKE_HEADING = [
   ...RECORDED_GOOD_PAGE,
   { control: "Reference notes archive, button, collapsed", after: "Reference notes archive, button, focused, expanded", afterSource: "focus" },
 ];
-const SAME_CONTROL_PAGE = [
+const RECORDED_BAD_PAGE = [
   { control: "Show delivery options, button, collapsed", after: "Show delivery options, button, focused, collapsed", afterSource: "focus" },
+  { control: "Show opening hours, button, collapsed", after: "Show opening hours, button, focused, collapsed", afterSource: "focus" },
+];
+const RECORDED_BAD_PAGE_FAKE_HEADING = [
+  ...RECORDED_BAD_PAGE,
+  { control: "Reference notes archive, button, collapsed", after: "Reference notes archive, button, focused, expanded", afterSource: "focus" },
 ];
 
 test("#1496: state-change-silent is SILENT on the good page the release gate recorded, and still FIRES when focus stays on the control",
@@ -272,6 +277,9 @@ test("#1496: state-change-silent is SILENT on the good page the release gate rec
       + "disclosure-focus-moves-to-collapsed-sibling cases read CONTAMINATED again and stage 8 refuses");
     assert.equal(signalMatches({ interaction: { stateChanges: RECORDED_GOOD_PAGE_FAKE_HEADING } }, SIBLING_SIGNAL), false,
       "the +also-fake-heading-unnamed-graphic good page (two entries) must be silent too");
-    assert.equal(signalMatches({ interaction: { stateChanges: SAME_CONTROL_PAGE } }, SIBLING_SIGNAL), true,
-      "the signal no longer fires when the SAME control stays collapsed -- every case using it would be BLIND");
+    assert.equal(signalMatches({ interaction: { stateChanges: RECORDED_BAD_PAGE } }, SIBLING_SIGNAL), true,
+      "the signal no longer fires on the recorded BAD page, where focus stays on the control -- every case using it "
+      + "would be BLIND");
+    assert.equal(signalMatches({ interaction: { stateChanges: RECORDED_BAD_PAGE_FAKE_HEADING } }, SIBLING_SIGNAL), true,
+      "the +also-fake-heading-unnamed-graphic BAD page (three entries) must still fire");
   });
