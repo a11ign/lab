@@ -559,3 +559,98 @@ test("testFilesToRun: the union is deduplicated and sorted, and the package fall
   });
   assert.deepEqual(run, ["a.test.ts", "b.test.ts", "c.test.ts", "packages/lab/src/**/*.test.ts"]);
 });
+
+// --- #1527: a test that READS a changed file as text, or imports it DYNAMICALLY, is selected ---
+//
+// #1526 changed the real-page gate script. CI's selection skipped `capture-age-spread.test.ts`, which pins that
+// script's source through a RELATIVE literal, and `relocated-fixture-key.test.ts`, which loads it with
+// `await import(...)`. The first failed unseen (6/1) and reviewer-2 caught it by running it by hand.
+
+test("#1527 sourceClosure: a DYNAMIC import(\"...\") is walked like a static one", () => {
+  const repo = fakeRepo([{ dir: "lab", name: "@fake/lab", files: {
+    "src/loads-late.test.ts": 'const { value } = await import("./late.ts");\ntest("x", () => {});\n',
+    "src/late.ts": "export const value = 1;\n",
+  } }]);
+  const closure = sourceClosure(join(repo, "packages/lab/src/loads-late.test.ts"), repo, new Map());
+  assert.ok(closure.has(join(repo, "packages/lab/src/late.ts")), `not walked: ${[...closure].join(", ")}`);
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("#1527 selectTests: a test that DYNAMICALLY imports a helper which imports the changed file is selected -- no literal names the file, so only the import walk can find it", () => {
+  // The dynamic-import rule's own reason to exist: on #1526's real line the argument is ALSO a relative literal
+  // naming the script, so the literal rule alone selects relocated-fixture-key.test.ts. One hop further, nothing
+  // names the file, and only walking `import("./helper.ts")` reaches it.
+  const repo = fakeRepo([{ dir: "lab", name: "@fake/lab", files: {
+    "src/loads-helper.test.ts": 'const { run } = await import("./helper.ts");\ntest("x", () => {});\n',
+    "src/helper.ts": 'import { value } from "./changed.js";\nexport const run = () => value;\n',
+    "src/changed.ts": "export const value = 1;\n",
+  } }]);
+  const testFiles = ["packages/lab/src/loads-helper.test.ts"];
+  const closureOf = (testFile: string) => sourceClosure(join(repo, testFile), repo, new Map());
+  const result = selectTests(["packages/lab/src/changed.ts"], { closureOf, testFiles, repoRoot: repo, testPackages: ["lab"] });
+  assert.deepEqual(result.selectedTests, testFiles, "reached through the dynamic import, then the helper's static import");
+  assert.deepEqual(result.fallbackPackages, [], "an import reacher, so no package fallback");
+  rmSync(repo, { recursive: true, force: true });
+});
+
+test("#1527 pathStringReferences: a RELATIVE literal that resolves to the changed file from the test's own directory IS a reference", () => {
+  const dir = mkdtempSync(join(tmpdir(), "select-changed-tests-relref-"));
+  mkdirSync(join(dir, "packages/lab/src/gates"), { recursive: true });
+  const gate = ["packages", "lab", "scripts", "fixture-gate.ts"].join("/");
+  writeFileSync(join(dir, "packages/lab/src/gates/pins-source.test.ts"),
+    'const SOURCE = readFileSync(new URL("../../scripts/fixture-gate.ts", import.meta.url), "utf8");\n');
+  writeFileSync(join(dir, "packages/lab/src/gates/other-script.test.ts"),
+    'const SOURCE = readFileSync(new URL("../../scripts/fixture-other.ts", import.meta.url), "utf8");\n');
+  writeFileSync(join(dir, "packages/lab/src/gates/mentions-in-comment.test.ts"),
+    '// reads "../../scripts/fixture-gate.ts" -- in prose only\ntest("z", () => {});\n');
+  const candidates = ["packages/lab/src/gates/pins-source.test.ts", "packages/lab/src/gates/other-script.test.ts",
+    "packages/lab/src/gates/mentions-in-comment.test.ts"];
+  assert.deepEqual(pathStringReferences(gate, candidates, dir), ["packages/lab/src/gates/pins-source.test.ts"],
+    "only the literal that resolves to this file: not a different script's literal, not a comment");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("#1527 selectTests: a non-package file reached only by IMPORT is selected, and a package file read only BY PATH is selected and still falls back", () => {
+  const repoRoot = "/repo";
+  const importer = "packages/lab/src/gates/imports-gate.test.ts";
+  const reader = "packages/lab/src/gates/reads-module.test.ts";
+  const closureOf = (testFile: string) =>
+    new Set(testFile === importer ? [`${repoRoot}/${importer}`, `${repoRoot}/packages/lab/scripts/gate.ts`] : [`${repoRoot}/${testFile}`]);
+  const referencesPath = (file: string) => (file === "packages/lab/src/module.ts" ? [reader] : []);
+  const gate = selectTests(["packages/lab/scripts/gate.ts"],
+    { closureOf, testFiles: [importer, reader], repoRoot, testPackages: ["lab"], referencesPath });
+  assert.deepEqual(gate.selectedTests, [importer], "the path-string branch now also looks up importers");
+  const moduleChange = selectTests(["packages/lab/src/module.ts"],
+    { closureOf, testFiles: [importer, reader], repoRoot, testPackages: ["lab"], referencesPath });
+  assert.deepEqual(moduleChange.selectedTests, [reader], "a source pin on a package file selects its reader");
+  assert.deepEqual(moduleChange.fallbackPackages, ["lab"], "and the package fallback that fired before still fires");
+});
+
+test("#1527: a non-package file read ONLY through a relative literal selects its reader AND keeps the implicated packages' fallback -- resolving relative literals never narrows a run", () => {
+  // #1525's shape, measured by this row's cost run before the fix: a baseline read as `../../baselines/...` went
+  // from a whole-`lab` fallback to one test, and the tests reaching that file through a script's runtime read
+  // stopped running. The relative reader is added; the fallback is still decided by repo-relative literals.
+  const dir = mkdtempSync(join(tmpdir(), "select-changed-tests-relfallback-"));
+  mkdirSync(join(dir, "packages/lab/src/gates"), { recursive: true });
+  const baseline = ["packages", "lab", "baselines", "fixture-declared.json"].join("/");
+  const reader = "packages/lab/src/gates/reads-baseline.test.ts";
+  writeFileSync(join(dir, reader), 'const DECLARED = readFileSync(new URL("../../baselines/fixture-declared.json", import.meta.url), "utf8");\n');
+  const result = selectTests([baseline], { closureOf: () => new Set(), testFiles: [reader], repoRoot: dir, testPackages: ["lab"] });
+  assert.deepEqual(result.selectedTests, [reader], "the relative reader is selected");
+  assert.deepEqual(result.fallbackPackages, ["lab"], "and the fallback that fired before #1527 still fires");
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("#1527 THE INCIDENT, on the real tree: #1526's changed script selects its source pin and its dynamic importer, and not the five comment-only mentions", () => {
+  // BUILT, NEVER SPELLED: a literal naming the script would make this file a reader of it.
+  const gate = ["packages", "lab", "scripts", "check-real-page-findings.ts"].join("/");
+  const { result } = selectionFor([gate], { repoRoot: REPO_ROOT, allPackages: knownPackages(REPO_ROOT), testPackages: ["lab"] });
+  for (const positive of ["packages/lab/src/gates/capture-age-spread.test.ts", "packages/lab/src/gates/relocated-fixture-key.test.ts"]) {
+    assert.ok(result.selectedTests.includes(positive), `${positive} is not selected: ${result.selectedTests.join(", ")}`);
+  }
+  for (const commentOnly of ["packages/lab/src/packaging/rules-gate-export-divergence.test.ts",
+    "packages/lab/src/training/real-page-fixture-pairs.test.ts", "packages/evidence/src/rule-evidence-covers-what-rules-read.test.ts",
+    "packages/evidence/src/verify.test.ts", "packages/judge/src/rule-evidence-reaches-the-gate.test.ts"]) {
+    assert.equal(result.selectedTests.includes(commentOnly), false, `${commentOnly} names the script only in a comment`);
+  }
+});

@@ -105,8 +105,11 @@ test("a page unusable for TWO reasons is one page, not two", () => {
   assert.match(source, /new Set\(\[\.\.\.furniture\.consent, \.\.\.furniture\.shell, \.\.\.suspectCensus\]\)/,
     "the three lists must be UNIONED into a set of page urls; summing their LENGTHS counts a page once "
     + "per reason");
-  assert.match(source, /examined: pages - unusablePages\.length,/,
-    "and the count must come from that set, not from the lists");
+  // #1524: THE COUNT NOW COMES FROM `scoredCoverage`, which receives that set, keeps only the scored pages in
+  // it and collapses it again (`real-page-coverage.test.ts` drives the collapse). So this follows the set into
+  // the call rather than pinning the arithmetic that moved into the module.
+  assert.match(source, /scoredCoverage\(\{ scored, unusable \}\)/,
+    "and the count must come from that set, through scoredCoverage, not from the lists");
   assert.doesNotMatch(source, /const unusable = .*\.length \+/,
     "the summed form is back, so a page unusable for two reasons is being counted twice again");
 });
