@@ -576,6 +576,23 @@ test("#1527 sourceClosure: a DYNAMIC import(\"...\") is walked like a static one
   rmSync(repo, { recursive: true, force: true });
 });
 
+test("#1527 selectTests: a test that DYNAMICALLY imports a helper which imports the changed file is selected -- no literal names the file, so only the import walk can find it", () => {
+  // The dynamic-import rule's own reason to exist: on #1526's real line the argument is ALSO a relative literal
+  // naming the script, so the literal rule alone selects relocated-fixture-key.test.ts. One hop further, nothing
+  // names the file, and only walking `import("./helper.ts")` reaches it.
+  const repo = fakeRepo([{ dir: "lab", name: "@fake/lab", files: {
+    "src/loads-helper.test.ts": 'const { run } = await import("./helper.ts");\ntest("x", () => {});\n',
+    "src/helper.ts": 'import { value } from "./changed.js";\nexport const run = () => value;\n',
+    "src/changed.ts": "export const value = 1;\n",
+  } }]);
+  const testFiles = ["packages/lab/src/loads-helper.test.ts"];
+  const closureOf = (testFile: string) => sourceClosure(join(repo, testFile), repo, new Map());
+  const result = selectTests(["packages/lab/src/changed.ts"], { closureOf, testFiles, repoRoot: repo, testPackages: ["lab"] });
+  assert.deepEqual(result.selectedTests, testFiles, "reached through the dynamic import, then the helper's static import");
+  assert.deepEqual(result.fallbackPackages, [], "an import reacher, so no package fallback");
+  rmSync(repo, { recursive: true, force: true });
+});
+
 test("#1527 pathStringReferences: a RELATIVE literal that resolves to the changed file from the test's own directory IS a reference", () => {
   const dir = mkdtempSync(join(tmpdir(), "select-changed-tests-relref-"));
   mkdirSync(join(dir, "packages/lab/src/gates"), { recursive: true });
