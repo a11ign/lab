@@ -1,7 +1,7 @@
 /**
  * #905: the nightly doc cross-reference report -- `scripts/doc-cross-reference-report.mjs`.
  *
- * The fourteen checks it runs are the SAME modules the pull-request tests assert on, so this file does not
+ * The fifteen checks it runs are the SAME modules the pull-request tests assert on, so this file does not
  * re-test any check's rule. It tests what only the report adds, and the three ways a report like this lies:
  *
  *   - it names a disagreement without saying WHERE, so nobody can act on it;
@@ -89,9 +89,10 @@ test("every guard retired from the pull-request path is one this report reads, a
     "a check's test went null without being listed here, so nothing asserts its file is actually gone");
 });
 
-test("the registry is the fourteen, and each surviving pull-request test asserts on the same module", () => {
-  assert.equal(CHECKS.length, 14, "product-manager's ruling on #905 names fourteen group-3 checks");
-  assert.equal(new Set(CHECKS.map((c) => c.name)).size, 14, "a check is registered twice");
+test("the registry is the fifteen, and each surviving pull-request test asserts on the same module", () => {
+  assert.equal(CHECKS.length, 15,
+    "product-manager's ruling on #905 names fourteen group-3 checks, and #1602 adds the fifteenth, in-page-anchors");
+  assert.equal(new Set(CHECKS.map((c) => c.name)).size, 15, "a check is registered twice");
   for (const { name, test: testFile } of CHECKS) {
     if (testFile === null) continue; // retired above, and asserted there
     assert.ok(existsSync(join(REPO, testFile)), `${name}: its test ${testFile} does not exist`);
@@ -197,7 +198,10 @@ test("it EXITS 0 with disagreements in it and a check that could not run -- a re
     const run = runReport(root);
     assert.equal(run.status, 0, `exit ${run.status}; stderr:\n${run.stderr}`);
     assert.match(run.stdout, /^## Doc cross-reference report/);
-    assert.match(run.stdout, /\*\*1 could not run\*\*/);
+    // Two: a temporary directory has no git remote (action-reference) and is not a git work tree, so it has no
+    // tracked markdown (in-page-anchors, #1602). Each is named with its reason rather than read as zero.
+    assert.match(run.stdout, /\*\*2 could not run\*\*/);
+    assert.match(run.stdout, /- \*\*in-page-anchors\*\*: not a git work tree at /);
     assert.ok(sectionRows(run.stdout, "doc-references").length > 0, "the disagreement is not in what it printed");
   });
 });
