@@ -38,6 +38,7 @@ import { pathToFileURL } from "node:url";
 
 import { annotateCapture } from "@a11ign/evidence";
 import { sweepOutcomes, truncatedSweeps } from "@a11ign/evidence/conformance";
+import { SCORED_CRITERIA } from "@a11ign/judge/coverage";
 import { criterionOutcomes } from "@a11ign/judge/outcomes";
 import { findingsFromScores } from "@a11ign/judge/internal";
 import { ruleFindings } from "@a11ign/judge/rules";
@@ -237,8 +238,8 @@ function claimExcludesFor(/** @type {any} */ entry) {
  * The criteria this page's publisher actually claims — the unit a false-assertion RATE is over.
  *
  * PER CELL, because per PAGE is not comparable across pages that claim different amounts. A publisher
- * disclosing six of our eight criteria has a quarter of the chances to be counted wrong that a
- * fully-claiming publisher has, so a per-page rate mixes "how often we are wrong" with "how much was
+ * disclosing three quarters of the criteria we score has a quarter of the chances to be counted wrong
+ * that a fully-claiming publisher has, so a per-page rate mixes "how often we are wrong" with "how much was
  * claimed".
  *
  * That non-comparability is why partially-claimed pages were barred from calibration entirely — and the bar
@@ -253,9 +254,6 @@ export function testedCells(/** @type {any} */ page) {
   const disclosed = new Set((page.claimExcludes ?? []).map((/** @type {any} */ entry) => entry.split(":")[0]));
   return SCORED_CRITERIA.filter((criterion) => !disclosed.has(criterion)).length;
 }
-
-/** Read from the report, never hardcoded: a retrain can move which criteria have heads. */
-const SCORED_CRITERIA = ["1.1.1", "1.3.1", "2.4.4", "2.4.6", "3.3.1", "3.3.2", "4.1.2", "4.1.3"];
 
 /**
  * Findings a publisher's own statement CONTRADICTS. Those are the accusations.

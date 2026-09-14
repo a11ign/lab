@@ -82,16 +82,6 @@ const CLASSIFIED: Record<string, { why: string; issue?: number }> = {
       + "red the first time it could see itself. Declared rather than skipped by filename, on the rule "
       + "that a guard exempting its own file is how a guard stops applying to anyone.",
   },
-  "packages/lab/scripts/calibrate-abstention.mjs": {
-    why: "A CONFIRMED STALE COPY, found by this guard on its first run and NOT yet fixed. It declares a "
-      + "local `SCORED_CRITERIA` of 8 under a comment reading `Read from the report, never hardcoded`; "
-      + "the canonical list is 19 and this one is a strict subset of it, still carrying 3.3.2 and "
-      + "lacking 1.4.13/2.4.7 -- the v19 change of 2026-09-06. Its only consumer is `testedCells()`, the "
-      + "abstention calibration's DENOMINATOR. Left in place deliberately: the fix is two lines, but "
-      + "confirming what it does to that measurement needs a lab run, and an unverified change to this "
-      + "project's most important number is worse than a tracked one.",
-    issue: 136,
-  },
 };
 
 /**
@@ -152,6 +142,29 @@ test("a tracked stale duplicate names the issue that will close it", () => {
 });
 
 /**
+ * #1509: THE ABSTENTION CALIBRATION'S DENOMINATOR IS THE EXPORTED LIST, and the stale copy #136 tracked is gone.
+ *
+ * `calibrate-abstention.mjs` held `const SCORED_CRITERIA = [...]` -- eight criteria, under a comment reading
+ * "Read from the report, never hardcoded" -- while the export had moved on (3.3.2 out; 2.1.1, 2.4.7 and
+ * eight more in). Its only consumer is `testedCells()`, the per-cell false-assertion rate's denominator. The
+ * script now imports the export, so the two cannot differ. This test holds that: the import is present and
+ * is what the consumer reads, and the source contains no typed criterion list for it to read instead.
+ *
+ * The file is read as TEXT: importing the script pulls in `dataset-paths.mjs`, which would charge this
+ * suite with the corpus.
+ */
+test("#1509: calibrate-abstention reads SCORED_CRITERIA from @a11ign/judge/coverage and types no copy", () => {
+  const file = "packages/lab/scripts/calibrate-abstention.mjs";
+  const src = read(file);
+  assert.match(src, /import\s*\{[^}]*\bSCORED_CRITERIA\b[^}]*\}\s*from\s*"@a11ign\/judge\/coverage"/,
+    "the positive control: the script imports the canonical list by name");
+  assert.match(src, /\bSCORED_CRITERIA\.filter\(/, "and testedCells() still reads it under that name");
+  assert.doesNotMatch(src, REDECLARES, "a local SCORED_CRITERIA would shadow the import with a typed copy");
+  assert.doesNotMatch(src, RUN, "a typed run of criterion numbers is a list the export cannot keep current");
+  assert.deepEqual(candidates(read, [file]), [], "the guard above no longer finds a list in this file");
+});
+
+/**
  * AND THE PROOF, because a discovery test that finds nothing passes exactly like one that works.
  *
  * The population is real and small, so this suite would go green if the patterns silently stopped
@@ -191,6 +204,6 @@ test("the detector does NOT fire on a criterion-keyed table, or on a file with n
 
 test("the population is not empty, so a green run means the detector ran", () => {
   assert.ok(candidates(read, sourceFiles()).length >= 3,
-    "at least the canonical source, the justified subset and the tracked stale copy must be found; "
+    "at least the canonical source, the justified subset and this file's own fixtures must be found; "
     + "fewer means the patterns have stopped matching real files and this suite is passing vacuously");
 });
