@@ -36,6 +36,7 @@
  * Needs `runs/`, so it SKIPS HONESTLY where the corpus is absent rather than passing quietly.
  */
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
+import { newFindingsVerdict, partitionByOutcome } from "../src/gates/referral-only-verdict.mjs";
 import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -1041,35 +1042,30 @@ export function partitionByExaminability(
  * past the 90-line physical budget; it is a real phase rather than a slice taken to satisfy one, because
  * everything above it decides WHICH findings are examinable and this decides what the examinable ones mean.
  */
-function reportNewFindings(reportable: Change[]): void {
-  if (reportable.length) {
-    process.stdout.write(`\n  ${reportable.length} NEW finding(s) on pages whose publisher declares them `
+function reportNewFindings(findings: NewFinding[]): void {
+  if (findings.length) {
+    process.stdout.write(`\n  ${findings.length} NEW finding(s) on pages whose publisher declares them `
       + "conformant:\n");
   }
-  for (const change of reportable) {
-    process.stdout.write(`    ${change.criterion}  ${change.url.replace(/^https:\/\//, "")}\n`);
+  for (const finding of findings) {
+    process.stdout.write(`    ${finding.criterion}  ${finding.url.replace(/^https:\/\//, "")}\n`);
     // THE EVIDENCE, not just the URL. This told the reader to "read the evidence for each" and then gave
     // them a list of URLs — so reading it meant an ssh session and ad-hoc JSON, which is the step this
     // repo removes everywhere else. The census is the whole basis of the two rules most likely to appear
     // here, and it also settles the question a bare count cannot: a census reading zero for EVERYTHING is
     // a tree that was never built, which is not the same finding as a page that genuinely has none.
-    process.stdout.write(`           ${describeEvidence(change.url)}\n`);
+    process.stdout.write(`           ${finding.evidence}\n`);
   }
-  if (reportable.length) {
+  if (findings.length) {
     // THE HEADLINE SENTENCE, STATED BY THE GATE RATHER THAN COMPUTED BY WHOEVER READS IT. This is the one
     // line that decides whether a batch of new findings is a release blocker or a risk line, and until
     // 2026-09-06 it was worked out by hand, from the captures, by whoever happened to be asked.
-    const assertions = reportable.filter((c) => OUTCOMES.get(`${c.url}|${c.criterion}`)?.asserted);
-    const unrecorded = reportable.filter((c) => !OUTCOMES.has(`${c.url}|${c.criterion}`));
-    process.stdout.write(`\n  OF THOSE ${reportable.length}: ${assertions.length} ASSERTED, `
-      + `${reportable.length - assertions.length - unrecorded.length} REFERRED`
+    // ONE SPLIT, the same one the verdict below reads (#1504): this line and the exit code used to count
+    // separately, and the line said "not a publish blocker" on the run the exit code failed.
+    const { asserted, referred, unrecorded } = partitionByOutcome(findings);
+    process.stdout.write(`\n  OF THOSE ${findings.length}: ${asserted.length} ASSERTED, ${referred.length} REFERRED`
       + `${unrecorded.length ? `, ${unrecorded.length} with no outcome recorded` : ""}.\n`);
-    process.stdout.write(assertions.length
-      ? "  AT LEAST ONE ASSERTION ON A CONFORMANT PAGE. That is this project's central claim -- nothing\n"
-        + "  asserted wrongly on conformant real pages -- and it does not hold while this stands.\n"
-      : "  NOTHING WAS ASSERTED. Every new finding reaches a user as `cantTell`, so this is referral noise\n"
-        + "  on conformant pages rather than a broken conformance claim. Still worth the investigation\n"
-        + "  below, and not a publish blocker.\n");
+    process.stdout.write(headlineFor({ asserted: asserted.length, unrecorded: unrecorded.length }));
     if (unrecorded.length) {
       // NOT A REFERRAL, and saying so matters: it means the baseline holds a finding this run's captures
       // did not reproduce, so nothing was scored for it and the silence is about the corpus, not the page.
@@ -1082,6 +1078,46 @@ function reportNewFindings(reportable: Change[]): void {
       + "    - the finding is right and the publisher's claim is not — which has happened, twice.\n"
       + "  Only the third takes `--update`.\n");
   }
+}
+
+/** A new finding with how it reaches a user and its evidence -- the shape `referral-only-verdict.mjs` decides on. */
+type NewFinding = Change & { outcome: "ASSERTED" | "REFERRED" | "UNRECORDED"; evidence: string };
+
+/** How one new finding reaches a user, or UNRECORDED when this run scored no outcome for it. */
+function outcomeOf(change: Change): NewFinding["outcome"] {
+  const outcome = OUTCOMES.get(`${change.url}|${change.criterion}`);
+  if (!outcome) return "UNRECORDED";
+  return outcome.asserted ? "ASSERTED" : "REFERRED";
+}
+
+/** The sentence under the count line: what this batch is worth, in the same terms the exit code uses. */
+function headlineFor({ asserted, unrecorded }: { asserted: number; unrecorded: number }): string {
+  if (asserted) {
+    return "  AT LEAST ONE ASSERTION ON A CONFORMANT PAGE. That is this project's central claim -- nothing\n"
+      + "  asserted wrongly on conformant real pages -- and it does not hold while this stands.\n";
+  }
+  if (unrecorded) {
+    return "  NOTHING WAS ASSERTED, but a finding with no recorded outcome cannot be called a referral, so\n"
+      + "  this batch still FAILS the gate.\n";
+  }
+  return "  NOTHING WAS ASSERTED. Every new finding reaches a user as `cantTell`, so this is referral noise\n"
+    + "  on conformant pages rather than a broken conformance claim. Still worth the investigation below;\n"
+    + "  it WARNS rather than fails, because a referral is not a publish blocker (#1504).\n";
+}
+
+/**
+ * THE VERDICT AND THE EXIT, from what the new findings are worth -- #1504. The decision lives in
+ * `referral-only-verdict.mjs` so a test can drive it without this file's corpus closure; the verdict and the
+ * exit code stay here, through `coverageVerdict` and `exitCodeFor`, so this script still reads as an adopter
+ * of the shared 0/1/2 contract.
+ */
+function concludeAgainstBaseline(
+  findings: NewFinding[], verdictFor: (failures: number) => ReturnType<typeof gateVerdict>,
+): void {
+  const { verdict, warning } = newFindingsVerdict({ findings, verdictFor });
+  if (warning) process.stdout.write(`\n${warning}`);
+  process.stdout.write(`\n  ${renderVerdict(verdict)}\n`);
+  process.exitCode = exitCodeFor(verdict);
 }
 
 function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: number }): void {
@@ -1127,7 +1163,9 @@ function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: numbe
     }
   }
 
-  reportNewFindings(reportable);
+  const findings: NewFinding[] = reportable.map((change) =>
+    ({ ...change, outcome: outcomeOf(change), evidence: describeEvidence(change.url) }));
+  reportNewFindings(findings);
 
   // A FURNITURE CAPTURE IS NOT AN EXAMINED PAGE, and until now it did not reduce anything. This gate
   // already DETECTS them — captures that opened on a cookie overlay or an unrendered shell and never
@@ -1147,10 +1185,10 @@ function reportAgainstBaseline({ added, pages }: { added: Change[]; pages: numbe
   // `reportable`, NOT `added`: a withheld finding is not a failure of the page, and counting it as one
   // would make an unreadable capture look like a broken conformance claim. It reduces COVERAGE instead --
   // which the verdict below already computes from `unusablePages`, so the withholding is accounted for
-  // once, in the place that says the run could not see enough.
-  const verdict = coverageVerdict({ pages, unusablePages, declaredHere, failures: reportable.length });
-  process.stdout.write(`\n  ${renderVerdict(verdict)}\n`);
-  process.exitCode = exitCodeFor(verdict);
+  // once, in the place that says the run could not see enough. And since #1504 not every reportable
+  // finding is a failure either: only an ASSERTED one, or one with no recorded outcome.
+  concludeAgainstBaseline(findings,
+    (failures) => coverageVerdict({ pages, unusablePages, declaredHere, failures }));
 }
 
 function main(): void {
