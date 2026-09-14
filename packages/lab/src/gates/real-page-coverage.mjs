@@ -62,10 +62,13 @@ export function scoredCoverage({ scored, unusable }) {
  */
 export function scoredFurniture({ scored, consent, shell }) {
   const scoredSet = new Set(scored);
-  const distinct = (/** @type {Iterable<string>} */ urls) => [...new Set(urls)];
+  // READ EACH BUCKET ONCE. Both are used twice below, and a single-use iterable (a generator) is spent by its first
+  // read, which emptied `notScored` and lost every unscored capture (reviewer-2's should-fix on #1546).
+  const consentUrls = [...new Set(consent)];
+  const shellUrls = [...new Set(shell)];
   return {
-    consent: distinct(consent).filter((url) => scoredSet.has(url)),
-    shell: distinct(shell).filter((url) => scoredSet.has(url)),
-    notScored: distinct([...consent, ...shell]).filter((url) => !scoredSet.has(url)),
+    consent: consentUrls.filter((url) => scoredSet.has(url)),
+    shell: shellUrls.filter((url) => scoredSet.has(url)),
+    notScored: [...new Set([...consentUrls, ...shellUrls])].filter((url) => !scoredSet.has(url)),
   };
 }

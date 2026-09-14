@@ -72,6 +72,16 @@ test("#1529: the headline's furniture count equals what coverage subtracts for t
   assert.equal(shown.consent.length + shown.shell.length, 2, "one scored overlay and one scored shell, each once");
 });
 
+test("#1529: single-use iterables are read once, so a generator loses no unscored furniture", () => {
+  // reviewer-2's should-fix on #1546: the contract is `Iterable<string>`, and the first version read each bucket twice.
+  function* once(urls: string[]) { yield* urls; }
+  const shown = scoredFurniture({ scored: SCORED, consent: once([CONSENT_SCORED]), shell: once([MOVED_FROM]) });
+  assert.deepEqual(shown.consent, [CONSENT_SCORED]);
+  assert.deepEqual(shown.shell, []);
+  assert.deepEqual(shown.notScored, [MOVED_FROM],
+    "a second read of a spent generator is empty, and the unscored capture would vanish from the report");
+});
+
 test("#1529: the gate's furniture headline is fed scoredFurniture's result, not furnitureCaptures() as it is", () => {
   assert.match(GATE, /const shown = scoredFurniture\(\{ scored, consent: furniture\.consent, shell: furniture\.shell \}\)/,
     "the headline must be computed through the pure module, the only half a test can drive");
