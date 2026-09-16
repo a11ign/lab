@@ -26,7 +26,7 @@ import {
   calibrationEntries, conformanceLineAnswer, fieldPopulationLines, ruleCoverageAdmits, trainingEntries,
 } from "./real-page-selection.mjs";
 import { discoverRoles } from "./real-page-role-coverage.mjs";
-import { gateVerdicts, worstVerdict } from "../../../../scripts/board-gates.mjs";
+import { gateVerdicts, worstVerdict } from "../../../agent-org/src/board-gates.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const read = (path: string) => readFileSync(resolve(REPO, path), "utf8");

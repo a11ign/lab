@@ -39,7 +39,10 @@ import { fileURLToPath } from "node:url";
  * WHAT THIS GUARD READS, declared so a product diff does not run it -- #929. It walks `scripts/` for the
  * merge-method call sites and nothing else; its own run checks that, and fails if it ever reads wider.
  */
-export const WALK_SCOPE = ["scripts"];
+// Three roots since the org tooling moved to @a11ign/agent-org: every `gh pr merge` call site went with
+// it, so a scope naming scripts/ alone would walk what is left and find none -- an emptiness this test
+// would have reported as compliance.
+export const WALK_SCOPE = ["scripts", "packages/agent-org/src"];
 await declareWalkScope(import.meta.url);
 
 const SCRIPTS_DIR = fileURLToPath(new URL("../../../../scripts/", import.meta.url));

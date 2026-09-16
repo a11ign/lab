@@ -317,7 +317,7 @@ export function liveSeamFindings({ scripts, tests }: { scripts: Source[]; tests:
 /** The real tree: every tracked script under `scripts/`, and every tracked test file. */
 function realTree() {
   const read = (path: string) => ({ path, text: readFileSync(resolve(REPO, path), "utf8") });
-  const scripts = walkTree({ kind: "mjs", roots: ["scripts"], selfPath: SELF })
+  const scripts = walkTree({ kind: "mjs", roots: ["scripts", "packages/agent-org/src"], selfPath: SELF })
     .map((f) => f.path).filter((p) => !/\.test\./.test(p)).map(read);
   const tests = walkTree({ kind: "both", selfPath: SELF })
     .map((f) => f.path).filter((p) => /\.test\.(ts|mjs)$/.test(p)).map(read);
@@ -382,14 +382,14 @@ test("#1401 POPULATION CONTROL: named seams from the enumeration are classified 
   const { live, seams } = liveSeamFindings(realTree());
   const isLive = (file: string, fn: string) => live.some((s) => s.file === file && s.fn === fn);
   const expectedLive: Array<[string, string, string]> = [
-    ["scripts/stranded-branches.mjs", "sweepPullRequests", "a destructured run the function calls with gh"],
-    ["scripts/stranded-branches.mjs", "fetchAllPRHeadRefs", "live only through the undefaulted fetchPRHeadRefPage"],
-    ["scripts/row-claim.mjs", "fetchLabels", "a destructured run, #1406's seam"],
-    ["scripts/arm-pr.mjs", "gh", "a positional default"],
-    ["scripts/arm-pr.mjs", "armMerge", "a body default handed positionally to gh"],
-    ["scripts/ready-label-audit.mjs", "reportReleaseDrift", "a non-injectable alias"],
+    ["packages/agent-org/src/stranded-branches.mjs", "sweepPullRequests", "a destructured run the function calls with gh"],
+    ["packages/agent-org/src/stranded-branches.mjs", "fetchAllPRHeadRefs", "live only through the undefaulted fetchPRHeadRefPage"],
+    ["packages/agent-org/src/row-claim.mjs", "fetchLabels", "a destructured run, #1406's seam"],
+    ["packages/agent-org/src/arm-pr.mjs", "gh", "a positional default"],
+    ["packages/agent-org/src/arm-pr.mjs", "armMerge", "a body default handed positionally to gh"],
+    ["packages/agent-org/src/ready-label-audit.mjs", "reportReleaseDrift", "a non-injectable alias"],
   ];
   for (const [file, fn, why] of expectedLive) assert.ok(isLive(file, fn), `${file} ${fn} should be live: ${why}`);
-  assert.ok(seams.some((s) => s.file === "scripts/prune-worktrees.mjs" && s.fn === "pruneWorktrees" && !s.live),
+  assert.ok(seams.some((s) => s.file === "packages/agent-org/src/prune-worktrees.mjs" && s.fn === "pruneWorktrees" && !s.live),
     "and a seam that spawns only git is collected but not live");
 });

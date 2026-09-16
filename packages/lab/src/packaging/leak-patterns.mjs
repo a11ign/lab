@@ -209,8 +209,12 @@ export const TRACKER_WRITERS = Object.freeze([
   "trunk-revert.mjs",
 ]);
 
-/** Where every declared writer lives. The prefix is here so the registry above holds no path-shaped string. */
-export const TRACKER_WRITER_DIR = "scripts/";
+/** Where a declared writer may live. The prefixes are here so the registry above holds no path-shaped
+ * string -- the reason stated above, unchanged. TWO roots since the org tooling moved to
+ * `@a11ign/agent-org`: ten of the eleven writers went with it and `npm-token-liveness.mjs` did not,
+ * because it guards the publish token rather than the tracker. A single prefix would have silently
+ * stopped finding whichever one it did not name. */
+export const TRACKER_WRITER_DIRS = Object.freeze(["packages/agent-org/src/", "scripts/"]);
 
 /**
  * Does this source text spawn `gh` with a body flag? The population predicate, keyed on the FLAG.

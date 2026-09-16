@@ -81,9 +81,9 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   //
   // (#1014 added the thirteenth import and this assertion caught it, which is the test working. It was
   // an exact `12` then; it is the difference now, for the reason above.)
-  const walked = localImports(`${REPO}scripts/row-claim.mjs`).length;
+  const walked = localImports(`${REPO}packages/agent-org/src/row-claim.mjs`).length;
   const rawSpecifiers = new Set(
-    [...readFileSync(`${REPO}scripts/row-claim.mjs`, "utf8").matchAll(/from\s+"(\.[^"]*)"/g)].map((m) => m[1]),
+    [...readFileSync(`${REPO}packages/agent-org/src/row-claim.mjs`, "utf8").matchAll(/from\s+"(\.[^"]*)"/g)].map((m) => m[1]),
   ).size;
   assert.ok(walked >= 12, `expected row-claim.mjs's imports to be visible, walked ${walked}`);
   assert.equal(rawSpecifiers - walked, 1,
@@ -94,7 +94,7 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   // nothing anywhere.
   assert.equal(localImports(`${REPO}scripts/ci-changed.mjs`).length, 5);
   assert.equal(localImports(`${REPO}scripts/select-changed-tests.mjs`).length, 5);
-  assert.equal(localImports(`${REPO}scripts/arm-pr.mjs`).length, 3,
+  assert.equal(localImports(`${REPO}packages/agent-org/src/arm-pr.mjs`).length, 3,
     "arm-pr.mjs was never blinded -- if this changes, the walk is broken in the other direction");
 });
 

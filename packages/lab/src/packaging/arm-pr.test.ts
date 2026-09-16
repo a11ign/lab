@@ -39,7 +39,7 @@ import {
   armMerge,
   runArmPr,
   EXIT,
-} from "../../../../scripts/arm-pr.mjs";
+} from "../../../agent-org/src/arm-pr.mjs";
 
 /** A fake `run` recording every call it received and returning canned `gh issue view` output. */
 function fakeRun(rowLabelsByNumber: Record<string, string[]>) {
@@ -381,7 +381,7 @@ function typedSessionArrays(source: string, names: string[]): string[] {
 test("#1453 STRUCTURAL: arm-pr.mjs declares no session-name array -- a typed list is refused", () => {
   const file = sessionsFile();
   const names = [...file.live, ...file.retired].map((s) => s.name);
-  const source = readFileSync(new URL("../../../../scripts/arm-pr.mjs", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../../../agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
   assert.deepEqual(typedSessionArrays(source, names), [],
     "arm-pr.mjs types a session list instead of reading docs/roles/sessions.json");
   // POSITIVE CONTROL, built from the file's own names so this test file types no list either: the shape of the line #1453
@@ -495,7 +495,7 @@ test("#1478: a missing --pr exits CANNOT_ASK before any call", () => {
 
 test("#1478: the script's header documents every exit code, the partial-success code included", () => {
   assert.deepEqual(EXIT, { DONE: 0, REFUSED: 1, CANNOT_ASK: 2, ARMED_THEN_LABEL_FAILED: 3 });
-  const source = readFileSync(new URL("../../../../scripts/arm-pr.mjs", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../../../agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
   const header = source.slice(0, source.indexOf("export const EXIT"));
   for (const [name, code] of Object.entries(EXIT)) {
     assert.match(header, new RegExp(`\`${code}\` ${name}:`), `the header documents ${code} ${name}`);

@@ -193,7 +193,7 @@ test("board-data.mjs and row-claim.mjs DERIVE the name rather than restating it 
   // The two runtime consumers this repo already had. Checked by IMPORT rather than by literal, because
   // that is the whole point of the split: these two no longer carry a copy for repo-identity-drift to
   // catch, and a test asserting a literal here would be re-introducing the duplicate this row removes.
-  for (const file of ["scripts/board-data.mjs", "scripts/row-claim.mjs"]) {
+  for (const file of ["packages/agent-org/src/board-data.mjs", "packages/agent-org/src/row-claim.mjs"]) {
     const text = readFileSync(path.join(ROOT, file), "utf8");
     assert.match(text, /from ["']\.\/repo-identity\.mjs["']/,
       `${file} must import REPO from repo-identity.mjs rather than declaring its own copy`);

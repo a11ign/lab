@@ -58,11 +58,11 @@ test("#902: the three deliberate refusals are all in one job the gate needs", ()
   // `merge-guard.mjs --ci-gate` anywhere in the job, and the comment above the step says those words too:
   // deleting the step left the test green on its own explanation. A guard satisfied by prose about itself
   // is the shape this repo has paid for more than once.
-  assert.match(job, /run: node scripts\/merge-guard\.mjs --ci-gate/,
+  assert.match(job, /run: node packages\/agent-org\/src\/merge-guard\.mjs --ci-gate/,
     "the hold refusal left this job; no other workflow in this repo reads a `hold:` label");
-  assert.match(job, /run: node scripts\/closes-mismatch-check\.mjs/,
+  assert.match(job, /run: node packages\/agent-org\/src\/closes-mismatch-check\.mjs/,
     "#549's comparison left this job, and only it has a token");
-  assert.match(job, /run: \|\n[\s\S]*?node scripts\/workflow-lane-check\.mjs/,
+  assert.match(job, /run: \|\n[\s\S]*?node packages\/agent-org\/src\/workflow-lane-check\.mjs/,
     "the lane check left this job; an UNASSIGNED crossing would then merge with no record, which is the "
     + "case ceo's second ruling of 2026-09-11 kept it for");
   assert.ok(KEPT.includes("deliberateRefusals"), "the job carrying all three must be one the gate waits for");

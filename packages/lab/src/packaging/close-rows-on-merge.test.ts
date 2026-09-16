@@ -19,16 +19,16 @@ import { parse as parseYaml } from "yaml";
 import {
   closurePlan, labelsToStrip, applyClosurePlan, EXIT, closeRowsExit, liveClosureEffects, stripClaimLabels,
   LIVE_SETTLE_DEPS,
-} from "../../../../scripts/close-rows-for-merged-pr.mjs";
-import { refusalCause } from "../../../../scripts/settle-closed-status.mjs";
-import { moveProjectStatus } from "../../../../scripts/row-claim.mjs";
-import { scopedStatus } from "../../../../scripts/board-snapshot.mjs";
+} from "../../../agent-org/src/close-rows-for-merged-pr.mjs";
+import { refusalCause } from "../../../agent-org/src/settle-closed-status.mjs";
+import { moveProjectStatus } from "../../../agent-org/src/row-claim.mjs";
+import { scopedStatus } from "../../../agent-org/src/board-snapshot.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 // THE AUDIT'S OWN DEBRIS CHECK, imported rather than re-derived -- #754's own mutation target is that
 // THIS function, unchanged, must go quiet once labelsToStrip has done its work, and must report the
 // finding again the moment it has not. Proving that with a re-implemented predicate would prove nothing
 // about the real audit.
-import { closedDebris } from "../../../../scripts/ready-label-audit.mjs";
+import { closedDebris } from "../../../agent-org/src/ready-label-audit.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOW = `${REPO}.github/workflows/trunk.yml`; // #909: close-rows.yml folded into trunk.yml's closeRows job
@@ -123,7 +123,7 @@ test("#909: the closeRows job actually RUNS the scripts -- a correct plan wired 
     "it runs a script from the repo, so it needs a checkout -- without one the step fails MODULE_NOT_FOUND, "
     + "the #331 shape where a workflow's missing prerequisite reads as a code bug.");
   const runner = steps.find((s) => s.run?.includes("close-rows-for-merged-pr.mjs"));
-  assert.ok(runner, "no step runs scripts/close-rows-for-merged-pr.mjs.");
+  assert.ok(runner, "no step runs packages/agent-org/src/close-rows-for-merged-pr.mjs.");
   assert.equal(runner?.env?.GH_TOKEN, "${{ github.token }}");
   assert.ok(runner?.env?.GITHUB_REPOSITORY, "the script exits CANNOT_ASK without it rather than guessing a repo.");
   assert.equal(runner?.env?.DISPATCH_PR, "${{ github.event.inputs.pr }}",
@@ -352,7 +352,7 @@ test("bridge: the dispatch path exits DONE with ONE DEGRADED line when every ref
 
 /** COMMENTS STRIPPED: commenting the call out IS the mutation a prose search agrees with. */
 test("#1299: the dispatch path's main() EXITS WITH that decision -- worker-capture's M1 on #1357 left it untested", () => {
-  const source = readFileSync(new URL("../../../../scripts/close-rows-for-merged-pr.mjs", import.meta.url), "utf8")
+  const source = readFileSync(new URL("../../../agent-org/src/close-rows-for-merged-pr.mjs", import.meta.url), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const mainBody = source.slice(source.indexOf("function main() {"));
   assert.match(mainBody, /const \{ code, lines \} = closeRowsExit\(applyClosurePlan\(/,
@@ -391,7 +391,7 @@ test("#1400: liveClosureEffects is the ONE place the live effects are named -- m
   assert.deepEqual(Object.keys(live).sort(), ["closeOne", "settle", "strip"]);
   assert.equal(live.strip, stripClaimLabels, "the live strip is the exported gh issue edit");
   for (const effect of Object.values(live)) assert.equal(typeof effect, "function", "each is a function, and none is called here");
-  const source = readFileSync(new URL("../../../../scripts/close-rows-for-merged-pr.mjs", import.meta.url), "utf8")
+  const source = readFileSync(new URL("../../../agent-org/src/close-rows-for-merged-pr.mjs", import.meta.url), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const mainBody = source.slice(source.indexOf("function main() {"));
   assert.match(mainBody, /applyClosurePlan\(plan, \{ prNumber: number, sha, repo \}, liveClosureEffects\(\)\)/,
@@ -411,11 +411,11 @@ test("#1360 BOTH defaults settle with LIVE_SETTLE_DEPS: the per-merge effects an
   // Read from CODE with comments stripped, anchored to the call shape only code can have. Measured before this test:
   // the sweep's own inline default could drop currentStatus and every close-rows test stayed green.
   const code = (rel: string) => stripComments(readFileSync(fileURLToPath(new URL(`../../../../${rel}`, import.meta.url)), "utf8"));
-  assert.match(code("scripts/close-rows-for-merged-pr.mjs"), /settle:\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
+  assert.match(code("packages/agent-org/src/close-rows-for-merged-pr.mjs"), /settle:\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
     "liveClosureEffects' settle must use the one definition");
-  assert.match(code("scripts/close-rows-sweep.mjs"), /settle\s*=\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
+  assert.match(code("packages/agent-org/src/close-rows-sweep.mjs"), /settle\s*=\s*\(\s*n\s*\)\s*=>\s*settleClosedStatus\(n,\s*LIVE_SETTLE_DEPS\)/,
     "closeOnePr's default settle must use the one definition");
-  for (const rel of ["scripts/close-rows-for-merged-pr.mjs", "scripts/close-rows-sweep.mjs"]) {
+  for (const rel of ["packages/agent-org/src/close-rows-for-merged-pr.mjs", "packages/agent-org/src/close-rows-sweep.mjs"]) {
     assert.doesNotMatch(code(rel), /settleClosedStatus\(n,\s*\{/, `${rel} builds its own settle deps inline again`);
   }
 });

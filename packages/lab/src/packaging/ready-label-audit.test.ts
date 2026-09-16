@@ -1,6 +1,6 @@
 /**
  * `ready` must be mutually exclusive with every label that already means "not actually pickable" (#121).
- * See `scripts/ready-label-audit.mjs`'s own header for the incident: `dispatcher` labelled #13 and #75
+ * See `packages/agent-org/src/ready-label-audit.mjs`'s own header for the incident: `dispatcher` labelled #13 and #75
  * `ready` to hit a floor, while one was disputed and the other had no Region or Acceptance at all.
  */
 // no-token: defaultRun
@@ -24,12 +24,12 @@ import {
   criterionStatusesFromSource, criterionOwningRow, coverageTrackerDisagreements, fetchClosedCompletedIssues,
   reachableCriteriaWithoutRow, provenanceVerdicts, provenanceFindings,
   guidanceDrift,
-} from "../../../../scripts/ready-label-audit.mjs";
+} from "../../../agent-org/src/ready-label-audit.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { ARM_LABELS_FROM } from "../../../../scripts/claim-provenance.mjs";
+import { ARM_LABELS_FROM } from "../../../agent-org/src/claim-provenance.mjs";
 // #782: `isClosedDebrisLabel` now DERIVES from this, rather than pinning the two equal with a separate
 // test -- so this import is the proof the derivation actually happened, not a second, parallel check.
-import { labelsToStrip } from "../../../../scripts/close-rows-for-merged-pr.mjs";
+import { labelsToStrip } from "../../../agent-org/src/close-rows-for-merged-pr.mjs";
 
 // --- mutexViolations: pure, no I/O ---
 
@@ -611,7 +611,7 @@ test("#1090: NO hand-set page cap survives in the source — all four call sites
   // Read through `stripComments`, because this file's prose quotes the caps it removed -- the comment
   // directly above this one contains `1000` and `100`, and a bare text scan would count them.
   const source = stripComments(readFileSync(
-    new URL("../../../../scripts/ready-label-audit.mjs", import.meta.url), "utf8"));
+    new URL("../../../agent-org/src/ready-label-audit.mjs", import.meta.url), "utf8"));
   const literalLimits = [...source.matchAll(/"--limit",\s*"(\d+)"/g)].map((m) => m[1]);
   assert.deepEqual(literalLimits, [],
     `hand-set --limit literals survive in ready-label-audit.mjs: ${literalLimits.join(", ")}. `
@@ -883,14 +883,14 @@ test("fetchClosingPrRefs throws on a response missing an expected issue alias, r
 });
 
 test("livesStateLabels: `ready` AND `in-progress` both advertise a live state", async () => {
-  const { livesStateLabels } = await import("../../../../scripts/ready-label-audit.mjs");
+  const { livesStateLabels } = await import("../../../agent-org/src/ready-label-audit.mjs");
   assert.ok(livesStateLabels(["backlog", "ready"]));
   assert.ok(livesStateLabels(["backlog", "in-progress"]));
   assert.ok(!livesStateLabels(["backlog", "fleet-gated"]));
 });
 
 test("claimsNobodyIsWorking: an in-progress row with no PR and a cold branch is flagged, with its session named", async () => {
-  const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
+  const { claimsNobodyIsWorking } = await import("../../../agent-org/src/ready-label-audit.mjs");
   const rows = [
     { number: 1, title: "cold", labels: ["in-progress", "session:worker-config"] },
     { number: 2, title: "has a PR", labels: ["in-progress"] },
@@ -907,7 +907,7 @@ test("claimsNobodyIsWorking: an in-progress row with no PR and a cold branch is 
 });
 
 test("#756 claimsNobodyIsWorking: a COMMENT in the window keeps a claim live, as `ceo`'s rule (#723) says", async () => {
-  const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
+  const { claimsNobodyIsWorking } = await import("../../../agent-org/src/ready-label-audit.mjs");
   // THE LIVE CASE THIS ROW WAS FILED FROM. #426 held `in-progress`, had no open PR and no branch at all,
   // and carried a comment 47 minutes old. The release rule read it live; this check read it DEAD, and
   // `tracker-auditor` had to overrule the tool to follow the rule.
@@ -920,7 +920,7 @@ test("#756 claimsNobodyIsWorking: a COMMENT in the window keeps a claim live, as
 });
 
 test("#756 claimsNobodyIsWorking: a comment OUTSIDE the window does not keep it alive", async () => {
-  const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
+  const { claimsNobodyIsWorking } = await import("../../../agent-org/src/ready-label-audit.mjs");
   // THE MUTATION #756's acceptance names: move the comment out of the window and the row comes back.
   const rows = [{ number: 426, title: "commented long ago", labels: ["in-progress", "session:orchestrator"] }];
   const flagged = claimsNobodyIsWorking(rows, { hasOpenPr: new Map(), lastPushMinutes: new Map(),
@@ -929,7 +929,7 @@ test("#756 claimsNobodyIsWorking: a comment OUTSIDE the window does not keep it 
 });
 
 test("#756 claimsNobodyIsWorking: an ABSENT comment age is not read as fresh", async () => {
-  const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
+  const { claimsNobodyIsWorking } = await import("../../../agent-org/src/ready-label-audit.mjs");
   // A row whose comments could not be read is left ABSENT from the map, and absent must mean "no comment
   // seen", never "commented just now" -- the same discipline the branch age already keeps. The three-fact
   // shape (no `lastCommentMinutes` key at all) is the same case and must decide identically.
@@ -942,7 +942,7 @@ test("#756 claimsNobodyIsWorking: an ABSENT comment age is not read as fresh", a
 });
 
 test("#756 claimsNobodyIsWorking: a comment does not rescue a row claimed ten minutes ago into a push report", async () => {
-  const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
+  const { claimsNobodyIsWorking } = await import("../../../agent-org/src/ready-label-audit.mjs");
   // The reported `minutes` must keep describing the BRANCH. A row kept alive by a comment and one kept
   // alive by a push are different situations, and the line that names one must not silently mean the
   // other -- so a row that IS flagged still reports its push age, comment or no comment.
@@ -954,7 +954,7 @@ test("#756 claimsNobodyIsWorking: a comment does not rescue a row claimed ten mi
 });
 
 test("claimsNobodyIsWorking: NO BRANCH AT ALL is the strongest case, never read as fresh", async () => {
-  const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
+  const { claimsNobodyIsWorking } = await import("../../../agent-org/src/ready-label-audit.mjs");
   // #143 was claimed THIRTY HOURS before anyone noticed, with no branch ever pushed. An absent age read
   // as zero would have reported that row clean -- the worst case reported as the healthiest.
   const rows = [{ number: 143, title: "never started", labels: ["in-progress", "session:orchestrator"] }];
@@ -966,7 +966,7 @@ test("claimsNobodyIsWorking: NO BRANCH AT ALL is the strongest case, never read 
 
 
 test("claimsNobodyIsWorking: a claim made TEN MINUTES ago with no branch is NOT stale", async () => {
-  const { claimsNobodyIsWorking } = await import("../../../../scripts/ready-label-audit.mjs");
+  const { claimsNobodyIsWorking } = await import("../../../agent-org/src/ready-label-audit.mjs");
   // THE FIRST LIVE RUN OF THIS CHECK FLAGGED FIVE ROWS CLAIMED WITHIN THE HOUR. "No branch at all" was
   // treated as the strongest evidence of an unworked claim -- true of a thirty-hour-old claim, false of a
   // ten-minute-old one, and the evidence is IDENTICAL in both. Only the claim's own age separates "not
@@ -981,7 +981,7 @@ test("claimsNobodyIsWorking: a claim made TEN MINUTES ago with no branch is NOT 
 });
 
 test("#755 formatDeadClaimLine: the line names the criterion (#723), the same way the OK line already did", async () => {
-  const { formatDeadClaimLine } = await import("../../../../scripts/ready-label-audit.mjs");
+  const { formatDeadClaimLine } = await import("../../../agent-org/src/ready-label-audit.mjs");
   // #755's own complaint: the clean-path line already said "the same three legs as `ceo`'s release rule
   // (#723)"; the flagged-path line said nothing, so a reader could not tell a criterion change from a
   // state change just by reading the report. This is the regression test for that gap, on #426's own shape.
@@ -1120,7 +1120,7 @@ test("CHECKS names all thirteen, so the partial-audit sentence states a true den
   ]);
 });
 
-// --- #804: the four claim-label literals are declared in EXACTLY ONE place, scripts/claim-labels.mjs ---
+// --- #804: the four claim-label literals are declared in EXACTLY ONE place, packages/agent-org/src/claim-labels.mjs ---
 
 const SCRIPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../../../scripts");
 const CLAIM_LABEL_NAMES = ["READY_LABEL", "WAS_READY_LABEL", "CLAIM_LABEL", "STARTED_LABEL"];

@@ -40,7 +40,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { conflictRegions, decide, linesGained, mergeThreeWay }
-  from "../../../../scripts/rescue-hunk.mjs";
+  from "../../../agent-org/src/rescue-hunk.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));

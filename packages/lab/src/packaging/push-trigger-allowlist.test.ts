@@ -87,7 +87,7 @@ const PUSH_TO_MAIN_ALLOWLIST: Record<string, string> = {};
 // MERGE COMMIT landing on `main` was ever tested -- `ci.yml`'s `pull_request` trigger tests a PR's head,
 // never the commit it produces on merge. That is a genuinely different gap from "did a schedule go
 // silent", and closing it needs the opposite shape from a watchdog: real verification, real action. See
-// `trunk.yml`'s own header for the full reasoning and `scripts/trunk-revert.mjs`'s for the two ways
+// `trunk.yml`'s own header for the full reasoning and `packages/agent-org/src/trunk-revert.mjs`'s for the two ways
 // a naive "revert on red" would be worse than nothing.
 const TRUNK_GATE_ALLOWLIST: Record<string, string> = {
   "trunk.yml": "pipeline unit 3 (#316): the merge commit landing on main after strict=false (#298) "

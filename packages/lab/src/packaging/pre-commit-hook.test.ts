@@ -153,7 +153,7 @@ test("A11Y_COMMIT_ALL=1 bypasses both checks entirely", () => {
 test("a new .sh line piping into head then reading $? is REFUSED, and #180 is named", () => {
   withGitSandbox((sandbox) => {
     writeFileSync(join(sandbox.dir, "deploy.sh"),
-      "node scripts/merge-guard.mjs 148 | head -4; echo EXIT=$?\n");
+      "node packages/agent-org/src/merge-guard.mjs 148 | head -4; echo EXIT=$?\n");
     sandbox.run(["add", "deploy.sh"]);
     const result = runHook(sandbox);
     assert.equal(result.status, 1);
@@ -174,7 +174,7 @@ test("a legitimate `| head` with nothing reading $? is allowed", () => {
 test("the same hazardous line in a .md file is NOT flagged -- it is usually the rule being documented", () => {
   withGitSandbox((sandbox) => {
     writeFileSync(join(sandbox.dir, "NOTES.md"),
-      "Don't do this: `node scripts/merge-guard.mjs 148 | head -4; echo EXIT=$?`\n");
+      "Don't do this: `node packages/agent-org/src/merge-guard.mjs 148 | head -4; echo EXIT=$?`\n");
     sandbox.run(["add", "NOTES.md"]);
     const result = runHook(sandbox);
     assert.equal(result.status, 0, `expected success (docs are exempt), got: ${result.stderr}`);
@@ -184,7 +184,7 @@ test("the same hazardous line in a .md file is NOT flagged -- it is usually the 
 test("A11Y_ALLOW_PIPED_EXIT_STATUS=1 overrides the piped-exit-status refusal specifically", () => {
   withGitSandbox((sandbox) => {
     writeFileSync(join(sandbox.dir, "deploy.sh"),
-      "node scripts/merge-guard.mjs 148 | head -4; echo EXIT=$?\n");
+      "node packages/agent-org/src/merge-guard.mjs 148 | head -4; echo EXIT=$?\n");
     sandbox.run(["add", "deploy.sh"]);
     const result = runHook(sandbox, { A11Y_ALLOW_PIPED_EXIT_STATUS: "1" });
     assert.equal(result.status, 0, `expected the override to allow it, got: ${result.stderr}`);
@@ -257,7 +257,7 @@ test("#535 ACCEPTANCE: the REAL #180 hazard is still caught from a tree with no 
   + "removes a false positive, not the guard's actual job", () => {
   const root = isolatedHookTree();
   try {
-    writeFileSync(join(root, "deploy.sh"), "node scripts/merge-guard.mjs 148 | head -4; echo EXIT=$?\n");
+    writeFileSync(join(root, "deploy.sh"), "node packages/agent-org/src/merge-guard.mjs 148 | head -4; echo EXIT=$?\n");
     execFileSync("git", ["add", "deploy.sh"], { cwd: root, env: sandboxGitEnv() });
     const result = runIsolatedHook(root);
     assert.equal(result.status, 1);

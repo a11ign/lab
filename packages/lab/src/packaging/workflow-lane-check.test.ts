@@ -25,8 +25,8 @@ import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { laneVerdict, loadLanes, inLane, exceptionFor } from "../../../../scripts/workflow-lane-check.mjs";
-import { LIVE_SESSIONS, RETIRED_SESSIONS, unknownSessionLabels } from "../../../../scripts/arm-pr.mjs";
+import { laneVerdict, loadLanes, inLane, exceptionFor } from "../../../agent-org/src/workflow-lane-check.mjs";
+import { LIVE_SESSIONS, RETIRED_SESSIONS, unknownSessionLabels } from "../../../agent-org/src/arm-pr.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const LANES = loadLanes();

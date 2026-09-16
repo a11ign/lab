@@ -26,7 +26,7 @@ import { execFileSync } from "node:child_process";
 import {
   linkState, workspacePackages, packagesImportedByName, distTrapReport, rootPrepareBuildsEverything,
   undecidedRefusal,
-} from "../../../../scripts/control-plane-hygiene.mjs";
+} from "../../../agent-org/src/control-plane-hygiene.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 test("the real repo's dist-trap check finds every package it claims to check, protected by the root's "

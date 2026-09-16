@@ -56,7 +56,7 @@ test("KEY_FILENAME_RE: private-key-shaped filenames match regardless of director
 });
 
 test("KEY_FILENAME_RE: an ordinary source file does not match", () => {
-  for (const path of ["scripts/board-report.mjs", "packages/lab/src/packaging/board-style.test.ts", "README.md"]) {
+  for (const path of ["packages/agent-org/src/board-report.mjs", "packages/lab/src/packaging/board-style.test.ts", "README.md"]) {
     assert.ok(!KEY_FILENAME_RE.test(path), `expected ${path} NOT to match`);
   }
 });

@@ -113,7 +113,7 @@ function trackedSourceFiles(): string[] {
 /**
  * WHAT THIS POPULATION IS NOT, MEASURED 2026-09-09 AFTER IT MISSED A REAL COLLISION (#890).
  *
- * `trunk-revert-guard.test.ts` spawned `node scripts/trunk-revert-guard.mjs` with `cwd` set to the real
+ * `trunk-revert-guard.test.ts` spawned `node packages/agent-org/src/trunk-revert-guard.mjs` with `cwd` set to the real
  * checkout. That script runs `git fetch origin` unconditionally, so a `npm test` in any worktree fetched
  * into the SHARED primary `.git` and could collide with another worktree doing the same on the
  * remote-tracking refs. A test mutating the checkout that drives the fleet.

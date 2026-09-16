@@ -99,7 +99,7 @@ const NOT_A_CHECK: Record<string, string> = {
   "node packages/guards/src/changed-files.mjs":
     "builds lint's path list -- the INPUT to a check, not a check. #939's one helper, so the source side "
     + "of a rename is listed too",
-  "node scripts/merge-guard.mjs":
+  "node packages/agent-org/src/merge-guard.mjs":
     "the #386 armed-PR lookup: refusing to race a merge that can complete underneath the push. It fails "
     + "OPEN and loudly on anything that stops it asking, and never refuses for an unrelated reason",
 };

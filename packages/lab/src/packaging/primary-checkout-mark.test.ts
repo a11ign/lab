@@ -65,6 +65,6 @@ test("the mark is settable by a documented command, so an unmarked primary is fi
   // An opt-in guard that nobody can find the switch for is an off guard. `doctor` reports the gap and this
   // is what closes it; both are named in the hook's own refusal text.
   const scripts = JSON.parse(readFileSync(`${REPO}package.json`, "utf8")).scripts;
-  assert.equal(scripts["primary:mark"], "node scripts/mark-primary-checkout.mjs");
-  assert.ok(existsSync(`${REPO}scripts/mark-primary-checkout.mjs`));
+  assert.equal(scripts["primary:mark"], "node packages/agent-org/src/mark-primary-checkout.mjs");
+  assert.ok(existsSync(`${REPO}packages/agent-org/src/mark-primary-checkout.mjs`));
 });
