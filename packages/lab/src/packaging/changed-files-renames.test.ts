@@ -15,9 +15,9 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { changedFiles } from "../../../../scripts/changed-files.mjs";
+import { changedFiles } from "../../../guards/src/changed-files.mjs";
 import { laneVerdict, loadLanes } from "../../../../scripts/workflow-lane-check.mjs";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 
@@ -132,7 +132,7 @@ test("#939 THE SHAPE: no script or workflow asks git for changed paths without -
     + "the control belongs on the population, not on `unexplained`");
   assert.deepEqual(unexplained, [],
     "these ask `git diff --name-only` without `--no-renames`, so a file moved OUT of a path they watch is "
-    + `invisible to them. Use scripts/changed-files.mjs: ${unexplained.join(", ")}`);
+    + `invisible to them. Use packages/guards/src/changed-files.mjs: ${unexplained.join(", ")}`);
   // And the exemption cannot outlive its site.
   for (const file of Object.keys(BARE_IS_DELIBERATE)) {
     assert.ok(bare.some((site) => site.startsWith(`${file}:`)),
@@ -142,12 +142,12 @@ test("#939 THE SHAPE: no script or workflow asks git for changed paths without -
 
 test("#939 THE READERS: each surviving one goes through the helper, and board-data asks origin/main", () => {
   const source = (path: string) => readFileSync(join(REPO, path), "utf8");
-  for (const reader of ["scripts/ci-changed.mjs", "scripts/changed-packages.mjs", "scripts/changeset-precise.mjs",
+  for (const reader of ["scripts/ci-changed.mjs", "packages/guards/src/changed-packages.mjs",
     "scripts/board-data.mjs", "scripts/select-changed-tests.mjs"]) {
-    assert.match(source(reader), /import \{ changedFiles \} from "\.\/changed-files\.mjs"/,
+    assert.match(source(reader), /import \{ changedFiles \} from "[^"]*changed-files\.mjs"/,
       `${reader} does not import the shared helper`);
   }
-  assert.match(source(".github/workflows/ci.yml"), /node scripts\/changed-files\.mjs origin\/\$\{\{ github\.base_ref \}\}\.\.\.HEAD > \/tmp\/lane-changed\.txt/,
+  assert.match(source(".github/workflows/ci.yml"), /node packages\/guards\/src\/changed-files\.mjs origin\/\$\{\{ github\.base_ref \}\}\.\.\.HEAD > \/tmp\/lane-changed\.txt/,
     "the lane check's own feed must come from the helper");
   // #939's second defect, on the same line: the read-set check compared to LOCAL `main`, which in a shared
   // checkout has been measured over a thousand commits stale.

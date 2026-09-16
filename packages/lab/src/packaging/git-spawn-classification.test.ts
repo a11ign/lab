@@ -56,7 +56,7 @@
  * function names that a new wrapper could slip past.
  *
  * CLASSIFICATION, not a bare pass/fail: a discovered file is SAFE only if it imports one of the three
- * canonical scrubbing helpers (`scripts/git-env.mjs`, `scripts/test-support/git-sandbox.ts`, or
+ * canonical scrubbing helpers (`packages/guards/src/git-env.mjs`, `scripts/test-support/git-sandbox.ts`, or
  * `packages/worker-fleet/src/git-safe-env.mjs` -- the last one a DELIBERATE, disclosed duplicate forced
  * by worker-fleet's publish boundary, see that file's own header) AND actually calls it, not merely
  * imports it unused. A twelfth git-shelling file that imports nothing fails this test by name until
@@ -71,7 +71,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -89,7 +89,7 @@ const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
  */
 const CANONICAL_HELPER_BASENAMES = ["git-env.mjs", "git-safe-env.mjs", "git-sandbox.ts"];
 const CANONICAL_HELPERS = [
-  "scripts/git-env.mjs",
+  "packages/guards/src/git-env.mjs",
   "scripts/test-support/git-sandbox.ts",
   "packages/worker-fleet/src/git-safe-env.mjs",
 ];
@@ -270,7 +270,7 @@ test("MUTATION: a file spawning git with no helper import is CAUGHT, not silentl
 
 test("MUTATION: an import with no actual call is NOT classified SAFE -- 'imported' is not 'used'", () => {
   const fixture = 'import { execFileSync } from "node:child_process";\n'
-    + 'import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";\n'
+    + 'import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";\n'
     // sandboxGitEnv is imported but never called -- the git spawn below is still bare.
     + 'execFileSync("git", ["status"], { cwd: "/tmp" });\n';
   assert.ok(spawnsGit(stripComments(fixture)));
@@ -290,7 +290,7 @@ test("MUTATION: an indirected call through an injected seam is still discovered"
 
 test("CONTROL: a correctly classified file passes", () => {
   const fixture = 'import { execFileSync } from "node:child_process";\n'
-    + 'import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";\n'
+    + 'import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";\n'
     + 'execFileSync("git", ["status"], { cwd: "/tmp", env: sandboxGitEnv() });\n';
   assert.ok(spawnsGit(stripComments(fixture)));
   assert.ok(usesCanonicalHelper(stripComments(fixture)),

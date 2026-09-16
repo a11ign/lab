@@ -197,7 +197,7 @@ const NO_PARTIAL_POPULATION: Record<string, string> = {
   "packages/lab/src/training/capture-real-pages.mjs":
     "DOCUMENTED: \"0 all pages captured; 1 any page failed\" — a capture dispatcher, not a verdict gate "
     + "over evidence that already exists",
-  "scripts/isolation-gate.mjs":
+  "packages/guards/src/isolation-gate.mjs":
     "confirmed by direct read (2026-09-06): enumerates its OWN full target list (`allPackages()`) before "
     + "running, so there is no external population it can fall short of by construction; its only "
     + "non-zero-besides-1 code (2) is a CLI usage error, not a coverage concept. NOT discovered by "

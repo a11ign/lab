@@ -8,7 +8,7 @@
  * identically to a `.length >= N` check: fewer files, no distinguishing signal.
  *
  * So the search itself is asserted here, ONCE, in the helper #716/#727 already built -- not re-derived,
- * worded differently, in 20-odd call sites. See `scripts/tree-wide-guard.mjs`'s own header for the
+ * worded differently, in 20-odd call sites. See `packages/guards/src/tree-wide-guard.mjs`'s own header for the
  * cross-check `walkTree` runs internally (git's own pathspec filter against an independent JS `extname`
  * filter over the same unfiltered listing) and why a count alone is not the same claim.
  */
@@ -17,8 +17,8 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { walkTree, declareTreeWideGuard, _lsFilesSpawnCountForTests } from "../../../../scripts/tree-wide-guard.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { walkTree, declareTreeWideGuard, _lsFilesSpawnCountForTests } from "../../../guards/src/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file.
 declareTreeWideGuard();
@@ -69,7 +69,7 @@ test("#795: kind \"all\" never computes a ScriptKind -- a text-only guard has no
 test("#795 ISOLATED: a FRESH process calling ONLY kind \"all\" never loads typescript at all -- proof, "
   + "not just an undefined field, checked in a real subprocess since this file's OWN earlier tests "
   + "(kind \"ts\"/\"mjs\"/\"both\") have already loaded it by the time this test runs in-process", () => {
-  const helperPath = fileURLToPath(new URL("../../../../scripts/tree-wide-guard.mjs", import.meta.url));
+  const helperPath = fileURLToPath(new URL("../../../guards/src/tree-wide-guard.mjs", import.meta.url));
   const repoRoot = fileURLToPath(new URL("../../../../", import.meta.url));
   const script = `
     import { walkTree, _typescriptLoadedForTests } from ${JSON.stringify(helperPath)};

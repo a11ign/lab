@@ -21,10 +21,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { RSTEST_CONFIG, runnerInvocation } from "../../../../scripts/assert-glob-not-empty.mjs";
+import { RSTEST_CONFIG, runnerInvocation } from "../../../guards/src/assert-glob-not-empty.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
-const FLOOR = fileURLToPath(new URL("../../../../scripts/assert-glob-not-empty.mjs", import.meta.url));
+const FLOOR = fileURLToPath(new URL("../../../guards/src/assert-glob-not-empty.mjs", import.meta.url));
 const CONFIG_URL = new URL("../../../../scripts/rstest/rstest.config.mjs", import.meta.url).href;
 const SCRIPTS = (JSON.parse(readFileSync(`${REPO}package.json`, "utf8")) as { scripts: Record<string, string> }).scripts;
 
@@ -90,7 +90,7 @@ test("#1319 ACCEPTANCE: no step of reusable-build-test.yml runs `tsx --test`, co
 test("#1319: both branches of the scoped step go through the floor to rstest", () => {
   const lines = codeLines(STEPS[stepNamed(SCOPED)].run ?? "");
   const floorLine = (variable: string, flags: string) => lines.filter((line) => new RegExp(
-    `\\bnode scripts/assert-glob-not-empty\\.mjs\\s+"\\$\\{${variable}\\[@\\]\\}"\\s+${flags}\\s*$`).test(line));
+    `\\bnode packages/guards/src/assert-glob-not-empty\\.mjs\\s+"\\$\\{${variable}\\[@\\]\\}"\\s+${flags}\\s*$`).test(line));
   // The broad branch passes one glob per implicated PACKAGE, and a package can legitimately have no tests:
   // `nvda-speech` has none under src, and #1469's first two CI runs were refused on exactly that glob. So that branch
   // names and drops an empty package glob. The selected-files branch keeps the strict floor: a selected file that

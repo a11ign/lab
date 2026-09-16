@@ -18,7 +18,7 @@ import { parse as parseYaml } from "yaml";
 import { classify, knownPackages, readWorkspaceDependencyGraph, dependentsOf, packedFiles, candidatePackedPaths,
   reachesPacked, testDependencyMap, jobsFor }
   from "../../../../scripts/ci-changed.mjs";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOWS = `${REPO}.github/workflows/`;
@@ -211,9 +211,9 @@ test("classify: a root config file touches EVERY known package, never just the o
 });
 
 test("classify: a scripts/*.mjs change also touches EVERY known package, for the identical reason", () => {
-  // `scripts/git-env.mjs` alone is imported by dozens of packaging tests directly -- a scoped-to-nothing
+  // `scripts/repo-identity.mjs` alone is imported by dozens of packaging tests directly -- a scoped-to-nothing
   // run here is exactly the "empty must read as run everything" defect the pre-push hook already names.
-  const result = classify(["scripts/git-env.mjs"], ["lab", "judge"]);
+  const result = classify(["scripts/repo-identity.mjs"], ["lab", "judge"]);
   assert.equal(result.ts, true);
   assert.deepEqual(result.packages, ["judge", "lab"]);
 });

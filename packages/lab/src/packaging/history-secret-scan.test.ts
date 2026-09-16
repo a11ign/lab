@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import { scanBlob, KEY_FILENAME_RE, TEMPLATE_SUFFIX_RE, scanHistory } from "../../../../scripts/history-secret-scan.mjs";
 import { nonStandardRefs } from "../../../../scripts/history-purge-rehearsal.mjs";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 test("scanBlob: an internal address is found and counted", () => {
   const findings = scanBlob("worker at REDACTED-INTERNAL-ADDRESS and also REDACTED-INTERNAL-ADDRESS", "inventory.yml");

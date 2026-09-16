@@ -43,7 +43,7 @@ import { refusalCause, PROJECT_UNREADABLE } from "../../../../scripts/settle-clo
 import { laneReason } from "../../../../scripts/row-claim/runner-rule.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { READY_LABEL, WAS_READY_LABEL } from "../../../../scripts/ready-label-audit.mjs";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 // Every claim/dispatch/decline test above the #400 section stubs `moveStatus: () => ({ moved: true })` --
 // #400 is about the Project Status VIEW specifically, and those tests are about the LABEL, the record.

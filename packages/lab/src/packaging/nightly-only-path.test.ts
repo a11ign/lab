@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
-import { underFloor } from "../../../../scripts/assert-glob-not-empty.mjs";
+import { underFloor } from "../../../guards/src/assert-glob-not-empty.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const PACKAGE_JSON = JSON.parse(readFileSync(`${REPO}package.json`, "utf8")) as { scripts: Record<string, string> };

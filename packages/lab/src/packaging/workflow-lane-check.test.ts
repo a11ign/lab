@@ -192,7 +192,7 @@ test("THE WIRING, not just the logic: the job running this check checks out FULL
     "this test is pinned to deliberateRefusals; if the step moved, move this with it rather than deleting it");
   assert.match(job, /fetch-depth:\s*0/,
     "the job must check out full depth, or the three-dot diff has no merge base and exits 128");
-  // #939 moved the diff itself behind `scripts/changed-files.mjs`, so that the SOURCE side of a rename is
+  // #939 moved the diff itself behind `packages/guards/src/changed-files.mjs`, so that the SOURCE side of a rename is
   // listed too -- a bare `git diff --name-only` prints only the destination, and a PR moving a file OUT of
   // another session's lane was invisible to the check that owns it. The RANGE is what this test pins, and
   // it is unchanged by that move: whatever produces the list must ask for `origin/<base>...HEAD` by name.

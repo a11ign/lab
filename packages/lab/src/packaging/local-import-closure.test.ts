@@ -29,10 +29,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { stripComments, localImports } from "../../../../scripts/local-import-closure.mjs";
+import { stripComments, localImports } from "../../../guards/src/local-import-closure.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 

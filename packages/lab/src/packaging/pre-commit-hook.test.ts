@@ -42,7 +42,7 @@ import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/
 import type { GitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
 
 const HOOK = fileURLToPath(new URL("../../../../scripts/git-hooks/pre-commit", import.meta.url));
-const GUARD_SCRIPT = fileURLToPath(new URL("../../../../scripts/piped-exit-status-guard.mjs", import.meta.url));
+const GUARD_SCRIPT = fileURLToPath(new URL("../../../guards/src/piped-exit-status-guard.mjs", import.meta.url));
 const IS_PRIMARY_CHECKOUT_LIB =
   fileURLToPath(new URL("../../../../scripts/git-hooks/lib/is-primary-checkout.sh", import.meta.url));
 
@@ -211,12 +211,14 @@ test("A11Y_ALLOW_PIPED_EXIT_STATUS=1 overrides the piped-exit-status refusal spe
 function isolatedHookTree(guardScriptContent?: string): string {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "a11y-pre-commit-no-modules-")));
   mkdirSync(join(root, "scripts/git-hooks/lib"), { recursive: true });
+  // The guard moved to @a11ign/guards; the sandbox needs its directory before the copy below.
+  mkdirSync(join(root, "packages/guards/src"), { recursive: true });
   copyFileSync(HOOK, join(root, "scripts/git-hooks/pre-commit"));
   copyFileSync(IS_PRIMARY_CHECKOUT_LIB, join(root, "scripts/git-hooks/lib/is-primary-checkout.sh"));
   if (guardScriptContent === undefined) {
-    copyFileSync(GUARD_SCRIPT, join(root, "scripts/piped-exit-status-guard.mjs"));
+    copyFileSync(GUARD_SCRIPT, join(root, "packages/guards/src/piped-exit-status-guard.mjs"));
   } else {
-    writeFileSync(join(root, "scripts/piped-exit-status-guard.mjs"), guardScriptContent);
+    writeFileSync(join(root, "packages/guards/src/piped-exit-status-guard.mjs"), guardScriptContent);
   }
   execFileSync("git", ["init", "--quiet"], { cwd: root, env: sandboxGitEnv() });
   return root;

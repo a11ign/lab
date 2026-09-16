@@ -1,5 +1,5 @@
 /**
- * `scripts/tree-wide-guards.mjs`'s population -- the guards whose own green run on a PR's diff is not a
+ * `packages/guards/src/tree-wide-guards.mjs`'s population -- the guards whose own green run on a PR's diff is not a
  * prediction, because their population is the whole tree rather than one file (#704). #716 built this
  * discovery so the pre-push hook could run all of them with no name-keyed exclusion list -- naming a
  * guard by how it is written, not what it costs, is the exact defect removed from `prune-worktrees.mjs`
@@ -21,8 +21,8 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { treeWideGuardFiles, MARKER_MODULE } from "../../../../scripts/tree-wide-guards.mjs";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { treeWideGuardFiles, MARKER_MODULE } from "../../../guards/src/tree-wide-guards.mjs";
+import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here rather
 // than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard population must

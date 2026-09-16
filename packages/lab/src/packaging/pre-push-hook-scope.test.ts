@@ -96,7 +96,7 @@ const NOT_A_CHECK: Record<string, string> = {
   "node -e":
     "the millisecond clock (`now_ms`). `date +%s.%N` is a GNU extension a bare BSD date does not have, "
     + "and node is already a hard dependency of every check here",
-  "node scripts/changed-files.mjs":
+  "node packages/guards/src/changed-files.mjs":
     "builds lint's path list -- the INPUT to a check, not a check. #939's one helper, so the source side "
     + "of a rename is listed too",
   "node scripts/merge-guard.mjs":
@@ -147,7 +147,7 @@ test("and nothing ELSE the hook executes is a check -- each non-check names its 
 
 test("LINT IS SCOPED BY PATH, and by the TREE as well as the committed diff", () => {
   const code = codeLines(hook()).join("\n");
-  assert.match(code, /node scripts\/changed-files\.mjs origin\/main\.\.\.HEAD/,
+  assert.match(code, /node packages\/guards\/src\/changed-files\.mjs origin\/main\.\.\.HEAD/,
     "lint's path list must come from the shared changed-files helper, not a second hand-rolled diff");
   // THE TREE TOO, and this is the half that is easy to lose. Every note in this hook says the gate reads
   // the TREE rather than the commits being pushed; a list built from `origin/main...HEAD` alone skips the

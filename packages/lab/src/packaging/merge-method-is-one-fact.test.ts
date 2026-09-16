@@ -27,8 +27,8 @@
  * month is the case a hand-written list cannot cover -- and a fifth is exactly what happened to
  * `newestPerName` (#634 found the fifth call site of a fix applied four times).
  */
-// FIRST, so it observes every read below it -- #929. See `scripts/walk-scope.mjs`.
-import { declareWalkScope } from "../../../../scripts/walk-scope.mjs";
+// FIRST, so it observes every read below it -- #929. See `packages/guards/src/walk-scope.mjs`.
+import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";

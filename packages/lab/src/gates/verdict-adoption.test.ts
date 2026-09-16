@@ -1,10 +1,10 @@
-// FIRST, so it observes every read below it -- #929. See `scripts/walk-scope.mjs`.
-import { declareWalkScope } from "../../../../scripts/walk-scope.mjs";
+// FIRST, so it observes every read below it -- #929. See `packages/guards/src/walk-scope.mjs`.
+import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
 
 /**
  * WHAT THIS GUARD READS, declared so a diff outside it does not run it -- #929. It walks `packages/lab/scripts` for gates adopting the verdict helpers, and reads their sources there and in `packages/lab/src`.

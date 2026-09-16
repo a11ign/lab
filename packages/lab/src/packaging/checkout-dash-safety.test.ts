@@ -18,7 +18,7 @@
  *
  * A COMMENT INSIDE A `.mjs`/`.sh`/`.yml` FILE IS ALSO PROSE, and this is the harder half: of the twelve
  * "in code" mentions measured at filing, all but one turned out to be a comment describing the hazard
- * (`scripts/mutation-check.mjs`, `packages/lab/src/harnesses/capture-fixtures.mjs`,
+ * (`packages/guards/src/mutation-check.mjs`, `packages/lab/src/harnesses/capture-fixtures.mjs`,
  * `packages/control/ansible/lab-reset.yml`'s own six explanatory `#` lines). Comments are stripped before
  * matching — JS-aware `stripComments` for `.mjs`/`.ts` (block comments and string literals both handled
  * correctly), a `#`-to-end-of-line strip for `.sh`/`.yml`, which is the one marker both use.
@@ -61,8 +61,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { declareTreeWideGuard, walkTree } from "../../../../scripts/tree-wide-guard.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { declareTreeWideGuard, walkTree } from "../../../guards/src/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard

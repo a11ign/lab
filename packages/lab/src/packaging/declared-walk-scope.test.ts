@@ -40,16 +40,16 @@ import { stripComments } from "@a11ign/evidence/source-text";
 import {
   runnerOwnedPaths, readsSoFar,
   DECLARER_BUILTINS, ESM_UNSYNCED, NOT_WRAPPED, WHOLE_REPOSITORY, inScope, isObserved, parseWalkScope, readsDuring,
-} from "../../../../scripts/walk-scope.mjs";
+} from "../../../guards/src/walk-scope.mjs";
 import { knownPackages } from "../../../../scripts/ci-changed.mjs";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { withGitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
 import {
   alwaysRunTests, broadReasons, discoverTestFiles, narrowByDeclaredScope, packageIndex, sourceClosure,
 } from "../../../../scripts/select-changed-tests.mjs";
 // #939: the shared reader every "which paths changed" caller now imports.
-import { changedFiles } from "../../../../scripts/changed-files.mjs";
+import { changedFiles } from "../../../guards/src/changed-files.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const W = "WALK" + "_SCOPE";
@@ -174,7 +174,7 @@ function runFixtureGuard(scope: string, body: string) {
   // there compiles as CommonJS, where the top-level `await` a declaring guard needs is a transform error.
   // The first version of this fixture was `.ts` and "failed" for that reason rather than the one asserted.
   const file = join(dir, "fixture.test.mts");
-  const walkScope = pathToFileURL(join(REPO, "scripts/walk-scope.mjs")).href;
+  const walkScope = pathToFileURL(join(REPO, "packages/guards/src/walk-scope.mjs")).href;
   writeFileSync(file, [
     `import { declareWalkScope } from ${JSON.stringify(walkScope)};`,
     `import { test } from "node:test";`,
@@ -652,7 +652,7 @@ test("#1349: a SECOND copy of walk-scope shares one observer state -- it reports
   // A query string makes Node load a distinct module instance: the rstest situation (preloaded copy + bundled
   // copy) without the bundler. With per-copy state, the second copy's record starts empty and this fails.
   readFileSync(join(REPO, MANIFEST));
-  const second = await import(`${pathToFileURL(join(REPO, "scripts/walk-scope.mjs")).href}?second-copy-1349`);
+  const second = await import(`${pathToFileURL(join(REPO, "packages/guards/src/walk-scope.mjs")).href}?second-copy-1349`);
   assert.notEqual(second.readsSoFar, readsSoFar, "the fixture must really be a second instance, or this proves nothing");
   assert.ok(readsSoFar().includes(MANIFEST), "the first copy saw the read");
   assert.deepEqual(second.readsSoFar(), readsSoFar(), "one state per process: both copies report the same reads");

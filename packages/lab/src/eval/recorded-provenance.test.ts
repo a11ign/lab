@@ -54,8 +54,8 @@
  * `"a11y-witness/screenreader-scorer-training"` — a true statement about what produced them, and it must
  * never be swept.
  */
-// FIRST, so it observes every read below it -- #929. See `scripts/walk-scope.mjs`.
-import { declareWalkScope } from "../../../../scripts/walk-scope.mjs";
+// FIRST, so it observes every read below it -- #929. See `packages/guards/src/walk-scope.mjs`.
+import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";

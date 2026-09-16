@@ -16,7 +16,7 @@
  *
  * ## Why the gate that exists for this could not see it
  *
- * `scripts/isolation-gate.mjs` opens by naming this exact failure — *"`exports` subpaths that do not
+ * `packages/guards/src/isolation-gate.mjs` opens by naming this exact failure — *"`exports` subpaths that do not
  * resolve the paths the README tells people to import"* — and it answers it by installing the tarball and
  * running the package's own SMOKE TEST. A smoke test only exercises the subpaths it happens to import, and
  * `cli/isolation-smoke.mjs` never imports `./cli-flags`. So the gate was green over an unresolvable export

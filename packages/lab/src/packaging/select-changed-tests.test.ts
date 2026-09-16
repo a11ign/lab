@@ -40,7 +40,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
 import {
   sourceClosure, discoverTestFiles, selectTests, broadReasons, pathStringReferences,
   discoversFromTree, alwaysRunTests, testFilesToRun, selectionFor,
@@ -430,7 +430,7 @@ test("discoversFromTree: a git ENUMERATION is a tree walk, however it is spawned
   + "a local `run()` seam, so matching `execFileSync`/`spawnSync` by name silently dropped three tests", () => {
   assert.equal(discoversFromTree(realSource("packages/lab/src/packaging/generated-paths.test.ts")), true,
     "a direct `git ls-files` enumeration in a guard that walks the tree");
-  assert.equal(discoversFromTree(realSource("scripts/isolation-gate.mjs"), { asHelper: true }), true,
+  assert.equal(discoversFromTree(realSource("packages/guards/src/isolation-gate.mjs"), { asHelper: true }), true,
     "`run(\"git\", [\"ls-files\"], dir, sandboxGitEnv())` -- the INDIRECTED spawn. If this file stops "
     + "reaching git through a seam, move this assertion to whichever one still does; do not delete it, "
     + "because the seam is the whole reason the pattern is not a list of function names");

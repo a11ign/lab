@@ -41,7 +41,7 @@ import { fileURLToPath } from "node:url";
 
 import { conflictRegions, decide, linesGained, mergeThreeWay }
   from "../../../../scripts/rescue-hunk.mjs";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 

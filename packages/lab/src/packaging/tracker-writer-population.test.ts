@@ -29,8 +29,8 @@ import { fileURLToPath } from "node:url";
 
 import { TRACKER_WRITERS, TRACKER_WRITER_DIR, sendsABody, bodyFromArgv, assertNoLeakInArgv }
   from "../../../../packages/lab/src/packaging/leak-patterns.mjs";
-import { localImports } from "../../../../scripts/local-import-closure.mjs";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { localImports } from "../../../guards/src/local-import-closure.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const GUARD = resolve(REPO, "packages/lab/src/packaging/leak-patterns.mjs");

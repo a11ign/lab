@@ -21,9 +21,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { checkPipedExitStatus, checkPipedExitStatusInText } from "../../../../scripts/piped-exit-status-guard.mjs";
+import { checkPipedExitStatus, checkPipedExitStatusInText } from "../../../guards/src/piped-exit-status-guard.mjs";
 
-const CLI = join(import.meta.dirname, "../../../../scripts/piped-exit-status-guard.mjs");
+const CLI = join(import.meta.dirname, "../../../guards/src/piped-exit-status-guard.mjs");
 const REPO_ROOT = join(import.meta.dirname, "../../../../");
 
 test("the exact shape that cost `dispatcher` an hour is refused", () => {
@@ -152,7 +152,7 @@ test("#375: every existing single-block case behaves identically through checkPi
 });
 
 test("#375: splitIntoBlocks never splits mid-function, only at a new function definition", async () => {
-  const { splitIntoBlocks } = await import("../../../../scripts/piped-exit-status-guard.mjs");
+  const { splitIntoBlocks } = await import("../../../guards/src/piped-exit-status-guard.mjs");
   const blocks = splitIntoBlocks("a() {\n  one\n  two\n}\nb() {\n  three\n}\n");
   assert.equal(blocks.length, 2);
   assert.match(blocks[0], /one/);
