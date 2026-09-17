@@ -388,6 +388,8 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
   ".local": "the XDG user data root -- `~/.local/bin`, where pipx and friends install.",
   ".ansible": "Ansible's own cache, in `requirements.yml`'s documented paths.",
   ".npm": "npm's cache, in `action.yml`'s cache key.",
+  ".config": "the XDG config home -- `~/.config/gh/hosts.yml` is where `gh` itself reads its "
+    + "credentials from, named in a11ign-work-tick.service's comment on why the unit sets HOME.",
   "Library": "macOS's per-user library, in the board scripts' log paths.",
   "Documents": "macOS's Documents folder -- the chairman's board-reports directory lives under it.",
   "AppData": "Windows' per-user application data, in `action.yml` and the guest paths #584 owns.",
