@@ -68,8 +68,8 @@ test("MUTATION TARGET: a file that imports the marker but never CALLS it is NOT 
     imports: (path) => (path === "fake/import-only.test.ts" || path === "fake/import-and-call.test.ts"
       ? [MARKER_MODULE] : []),
     readFile: (path) => (path === "fake/import-and-call.test.ts"
-      ? 'import { declareTreeWideGuard } from "../scripts/tree-wide-guard.mjs";\ndeclareTreeWideGuard();\n'
-      : 'import { declareTreeWideGuard } from "../scripts/tree-wide-guard.mjs";\n// never called\n'),
+      ? 'import { declareTreeWideGuard } from "../packages/guards/src/tree-wide-guard.mjs";\ndeclareTreeWideGuard();\n'
+      : 'import { declareTreeWideGuard } from "../packages/guards/src/tree-wide-guard.mjs";\n// never called\n'),
   });
   assert.deepEqual(files, ["fake/import-and-call.test.ts"],
     "an import with no call must never be classified as a real declaration");

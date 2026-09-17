@@ -12,6 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { TOOLING_ROOTS } from "../../../guards/src/tooling-roots.mjs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -102,7 +103,9 @@ function bareDiffSites(): { sites: string[]; scanned: number } {
       });
     }
   };
-  walk(join(REPO, "scripts"));
+  // Every tooling root plus the workflows: the readers this sweep is about moved into @a11ign/agent-org
+  // and @a11ign/guards, and a walk of scripts/ alone examined 80 files and called that a clean result.
+  for (const root of TOOLING_ROOTS) walk(join(REPO, root));
   walk(join(REPO, ".github/workflows"));
   return { sites: out.sort(), scanned };
 }

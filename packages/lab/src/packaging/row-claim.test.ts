@@ -1557,7 +1557,9 @@ test("#1464: arm-pr's LIVE_SESSIONS is the same list -- derived from the same fi
   assert.deepEqual(source.split("\n").filter((line) => line.includes("SESSIONS.live.map(")),
     ["export const LIVE_SESSIONS = SESSIONS.live.map((s) => s.name);"],
     "arm-pr derives its list from `.live`'s names in exactly one line, as `LIVE` above does");
-  assert.match(source, /readFileSync\(new URL\("\.\.\/docs\/roles\/sessions\.json", import\.meta\.url\)/,
+  // Depth-agnostic: arm-pr moved into @a11ign/agent-org so the prefix is no longer `../`. What this pins
+  // is that it reads THE SAME FILE, not how far up the tree that file happens to sit.
+  assert.match(source, /readFileSync\(new URL\("[^"]*docs\/roles\/sessions\.json", import\.meta\.url\)/,
     "and from the same file");
 });
 

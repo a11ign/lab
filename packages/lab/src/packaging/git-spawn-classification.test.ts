@@ -84,7 +84,7 @@ const read = (path: string) => readFileSync(`${REPO}${path}`, "utf8");
 /**
  * The three modules a git-shelling file may import to be classified SAFE, matched by BASENAME rather
  * than full repo path -- every real call site imports one of these by a RELATIVE specifier (`./git-env.mjs`,
- * `../../../scripts/git-env.mjs`, etc.), so matching the full canonical path would miss every real import.
+ * `../../../packages/guards/src/git-env.mjs`, etc.), so matching the full canonical path would miss every real import.
  * Adding a fourth canonical helper means adding its basename here.
  */
 const CANONICAL_HELPER_BASENAMES = ["git-env.mjs", "git-safe-env.mjs", "git-sandbox.ts"];

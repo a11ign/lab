@@ -20,14 +20,14 @@ import { declaredRegionFiles, directoryReservations, extractLabeledSection, extr
 const FIXTURES = fileURLToPath(new URL("./fixtures", import.meta.url));
 
 test("extracts a backticked path from a Region section", () => {
-  assert.deepEqual(regionPathsFromBody("Region: `packages/agent-org/src/row-claim.mjs`."), ["packages/agent-org/src/row-claim.mjs"]);
+  assert.deepEqual(regionPathsFromBody("Region: `scripts/row-claim.mjs`."), ["scripts/row-claim.mjs"]);
 });
 
 test("extracts more than one path, deduplicated", () => {
-  const body = "Region: `packages/agent-org/src/row-claim.mjs` and `packages/agent-org/src/row-claim.mjs` again, plus "
+  const body = "Region: `scripts/row-claim.mjs` and `scripts/row-claim.mjs` again, plus "
     + "`packages/lab/src/packaging/row-claim.test.ts`.";
   assert.deepEqual(regionPathsFromBody(body),
-    ["packages/agent-org/src/row-claim.mjs", "packages/lab/src/packaging/row-claim.test.ts"]);
+    ["scripts/row-claim.mjs", "packages/lab/src/packaging/row-claim.test.ts"]);
 });
 
 test("prose with no path returns [], not a crash or a guess", () => {
@@ -53,10 +53,10 @@ test("#710 ACCEPTANCE: a body with no Region section at all returns null -- CANN
 
 test("a '## Region' heading section runs until the next heading", () => {
   const body = "## What\n\nSome text mentioning `scripts/unrelated.mjs` as a worked example.\n\n"
-    + "## Region\n\n`packages/agent-org/src/acceptance-commands.mjs`, `packages/lab/src/packaging/acceptance-commands.test.ts`.\n\n"
+    + "## Region\n\n`scripts/acceptance-commands.mjs`, `packages/lab/src/packaging/acceptance-commands.test.ts`.\n\n"
     + "## Acceptance\n\nnpx tsx --test whatever\n";
   assert.deepEqual(declaredRegionFiles(body),
-    ["packages/agent-org/src/acceptance-commands.mjs", "packages/lab/src/packaging/acceptance-commands.test.ts"]);
+    ["scripts/acceptance-commands.mjs", "packages/lab/src/packaging/acceptance-commands.test.ts"]);
 });
 
 test("a '## Region' heading section at the END of the body runs to the end, not forever", () => {
@@ -65,9 +65,9 @@ test("a '## Region' heading section at the END of the body runs to the end, not 
 });
 
 test("a bare inline 'Region:' line -- this issue's own shape -- is read as a single-line section", () => {
-  const body = "Some prose above.\n\nRegion: `packages/agent-org/src/row-claim/file-overlap-rule.mjs`, `packages/agent-org/src/row-claim.mjs`.";
+  const body = "Some prose above.\n\nRegion: `scripts/row-claim/file-overlap-rule.mjs`, `scripts/row-claim.mjs`.";
   assert.deepEqual(declaredRegionFiles(body),
-    ["packages/agent-org/src/row-claim/file-overlap-rule.mjs", "packages/agent-org/src/row-claim.mjs"]);
+    ["scripts/row-claim/file-overlap-rule.mjs", "scripts/row-claim.mjs"]);
 });
 
 test("a Region section that mentions directories only inside a SENTENCE returns [], not null -- a real, " +
@@ -93,9 +93,9 @@ test("#710 REGRESSION FIXTURE: #705's real body, boiled down -- a file cited in 
 
 test("a genuine Region-declared file with an extension is still extracted -- the fix must not become " +
   "\"never find anything\"", () => {
-  const body = "## Region\n\n`packages/agent-org/src/row-claim.mjs` and `packages/lab/src/packaging/row-claim.test.ts`.\n";
+  const body = "## Region\n\n`scripts/row-claim.mjs` and `packages/lab/src/packaging/row-claim.test.ts`.\n";
   assert.deepEqual(declaredRegionFiles(body),
-    ["packages/agent-org/src/row-claim.mjs", "packages/lab/src/packaging/row-claim.test.ts"]);
+    ["scripts/row-claim.mjs", "packages/lab/src/packaging/row-claim.test.ts"]);
 });
 
 // --- #941: a STANDALONE directory line in a Region declares a PREFIX, never nothing ---
@@ -164,7 +164,7 @@ test("#975: a ROOT-LEVEL file the tree has is declared -- on its own line, backt
     assert.deepEqual(declaredRegionFiles(`## Region\n\n${name}\n`), [name], `${name} on its own line vanished`);
     assert.deepEqual(declaredRegionFiles(`## Region\n\n\`${name}\`\n`), [name], `backticked ${name} vanished`);
     assert.deepEqual(declaredRegionFiles(`## Region\n\n\`\`\`\nscripts/row-file.mjs\n${name}\n\`\`\`\n`),
-      ["packages/agent-org/src/row-file.mjs", name], `${name} beside a prefixed path vanished`);
+      ["scripts/row-file.mjs", name], `${name} beside a prefixed path vanished`);
   }
 });
 
@@ -186,7 +186,7 @@ test("#975: a root file named in the Region's PROSE is a declaration, and one na
   // that cites `package.json` in its "What it is" is not declaring it -- `extractRegionSection` bounds this.
   assert.deepEqual(declaredRegionFiles("## Region\n\nThe fix is in `package.json`, one line.\n"), ["package.json"]);
   assert.deepEqual(declaredRegionFiles("## What it is\n\n`package.json` is wrong.\n\n## Region\n\nscripts/row-file.mjs\n"),
-    ["packages/agent-org/src/row-file.mjs"]);
+    ["scripts/row-file.mjs"]);
 });
 
 test("#975: the #941 directory rule still declares its prefixes beside a root file", () => {
@@ -313,7 +313,7 @@ test("#999: a fenced line with anything else on it is prose, not a declaration",
 test("#999: only the REGION's own fence declares -- a fenced block elsewhere in the body does not", () => {
   const body = "## Region\n\n```\nscripts/region-paths.mjs\n```\n\n## Acceptance\n\n```\n"
     + "scripts/git-hooks/pre-push\n```\n";
-  assert.deepEqual(declaredRegionFiles(body), ["packages/agent-org/src/region-paths.mjs"],
+  assert.deepEqual(declaredRegionFiles(body), ["scripts/region-paths.mjs"],
     "a path in the Acceptance block is a command's argument or a worked example, never a declaration of "
     + "intent to change it -- the same line #975 draws for a root file named elsewhere in the body");
 });
