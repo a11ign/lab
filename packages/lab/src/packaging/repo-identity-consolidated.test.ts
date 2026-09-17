@@ -77,7 +77,9 @@ const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
 const SITES: Array<{ file: string; expect: string }> = [
   // #569: AUTO-FETCHED by GitHub's own renderer the instant anyone views this page -- the same "must
   // resolve today" shape as the `uses:` line two lines down, not the static prose PRODUCT_REPO covers.
-  { file: "README.md", expect: `${REPO_URL}/actions/workflows/lint.yml/badge.svg` },
+  // `ci.yml`, not `lint.yml`: there is no lint.yml in .github/workflows and never has been, so the badge
+  // this pinned was permanently broken -- the first image a visitor saw. Lint runs inside ci.
+  { file: "README.md", expect: `${REPO_URL}/actions/workflows/ci.yml/badge.svg` },
   { file: "README.md", expect: `${REPO_URL}/actions/workflows/capture-regression.yml/badge.svg` },
   { file: "README.md", expect: `uses: ${REPO}@main` },
   // A hyperlink a reader consciously clicks, and can recover from (try another reporting channel) if it
