@@ -1,6 +1,14 @@
 // @ts-check
 // command: run axe-core over the corpus's CONFORMANT CALIBRATION pages (#1614's population, 46 pages),
 // writing one JSON per run. Refuses if `install-axe-browser`'s browser is not on disk (#1626).
+// writes: runs/axe-calibration
+//
+// `runsRoot()` is called at module TOP LEVEL (OUT_DIR/RESULTS_PATH below), which is a `corpus`
+// requirement per `acceptance-commands.mjs`'s closure walk -- but this file only ever WRITES under
+// `runs/axe-calibration`, never reads an existing corpus capture from it, so a plain checkout's
+// gitignored `runs/` (empty or absent) costs this file nothing. The `// writes:` line above is that
+// claim, verified against a real `mkdirSync`/`writeFileSync` at the declared path (#731) rather than
+// trusted on its own say-so.
 //
 // Usage:
 //   npm run lab:job -- -e job=axe-calibration       # the real run, on the lab, after install-axe-browser
