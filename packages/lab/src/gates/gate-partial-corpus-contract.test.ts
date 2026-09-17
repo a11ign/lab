@@ -150,6 +150,13 @@ const NO_PARTIAL_POPULATION: Record<string, string> = {
     + "at all exits 2 — so the two states a partial-corpus gate exists to separate are already separate "
     + "here. Same reasoning as `isolation-gate.mjs` above: a gate that enumerates its own targets has no "
     + "denominator to fall short of.",
+  "packages/lab/scripts/axe-calibration.mjs":
+    "ITERATES ITS WHOLE DECLARED POPULATION: `conformantCalibrationPages()` names all 46 conformant "
+    + "calibration pages up front and the run's `for` loop visits every one -- a page axe cannot examine "
+    + "is recorded `failed: true` IN ITS OWN RECORD (exit 1 names this: 'the other pages' results are "
+    + "still written'), never silently dropped from the output, so there is no path where fewer than 46 "
+    + "records land in the file. Exit 2 is a REFUSAL before any page is attempted (no browser installed) -- "
+    + "a precondition, not a partial-coverage measurement of the population itself (#1626).",
   "packages/lab/scripts/build-realism-tier.mjs":
     "DOCUMENTED: \"0 success, including the legitimate 'no training captures, base dataset only' state\" "
     + "— zero training captures is an accepted PASS by design, not flagged as a coverage shortfall; "
@@ -275,6 +282,10 @@ const EXEMPT: Record<string, string> = {
   "python-tests": "NOT A GATE -- runs the whole pytest suite, not a corpus audit",
   "export-acceptance": "NOT A GATE -- an export tool, same class as the exported NO_PARTIAL_POPULATION "
     + "generators, reached through an unresolvable REPEAT=... chain",
+  "install-axe-browser": "NOT THIS TABLE'S LAYER -- its argv runs Playwright's own third-party CLI "
+    + "(node_modules/playwright/cli.js), not a .mjs/.ts file this repo wrote, so there is no source here "
+    + "to read a population contract out of. Its exit code is `playwright install`'s own, the same "
+    + "outside-the-boundary shape as lab-job.mjs passing through ansible-playbook's (#1626).",
 };
 
 test("the job catalogue and the npm gate-script list are not near-empty", () => {

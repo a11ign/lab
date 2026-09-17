@@ -1,6 +1,7 @@
 // @ts-check
 // command: run axe-core over the corpus's CONFORMANT CALIBRATION pages (#1614's population, 46 pages),
-// writing one JSON per run. Refuses if `install-axe-browser`'s browser is not on disk (#1626).
+// writing one JSON per run to runs/axe-calibration/results.json. Refuses if `install-axe-browser`'s
+// browser is not on disk (#1626).
 // writes: runs/axe-calibration
 //
 // `runsRoot()` is called at module TOP LEVEL (OUT_DIR/RESULTS_PATH below), which is a `corpus`
@@ -19,12 +20,13 @@
 // derivation -- npm packages (`@axe-core/playwright`, `playwright`) were already present; the browser and
 // its system libraries were not.
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { pagesFor } from "../src/training/real-page-corpus.mjs";
 import { runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 
 const require = createRequire(import.meta.url);
 
@@ -191,6 +193,7 @@ function printDryRun(pages) {
 }
 
 async function main() {
+  refuseUnknownFlags(["--dry-run"], { entry: import.meta.url, command: "axe-calibration" });
   const refusal = await installRefusal();
   if (refusal) {
     process.stderr.write(`${refusal}\n`);
@@ -213,9 +216,12 @@ async function main() {
 
 /**
  * Run ONLY when this file is the program, never when it is imported -- so a test can reach the functions
- * above without launching a browser. See `entry-points.test.ts`'s sibling check on the CLI's own scripts.
+ * above without launching a browser. `realpathSync` first: `process.argv[1]` is not resolved through a
+ * symlink the way `import.meta.url` is, so a plain comparison is silently false when this file is reached
+ * through one (npm's `.bin`, npx's tmpdir staging) -- `main()` never runs and the process exits 0 with no
+ * error (#1086, `entry-points.test.ts`).
  */
-const isProgram = process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href;
+const isProgram = import.meta.url === pathToFileURL(process.argv[1] ? realpathSync(process.argv[1]) : "").href;
 
 if (isProgram) main().catch((error) => {
   console.error(error);

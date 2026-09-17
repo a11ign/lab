@@ -175,6 +175,13 @@ const DOCUMENTED: Record<string, string> = {
     + "moving target",
   "packages/lab/scripts/audit-size-sensitivity.mjs":
     "2 corpus too small for either of two size checks; 1 a size-dependent accusation found; 0 otherwise",
+  "packages/lab/scripts/axe-calibration.mjs":
+    "0 every one of the 46 conformant calibration pages examined cleanly; 1 at least one page could not "
+    + "be examined (navigation failure, or axe itself throwing) — its own record in the written JSON says "
+    + "which and why, and the other pages' results are still written, so this is a per-item outcome, never "
+    + "a shrunk population; 2 REFUSED before any page was scanned — no Chromium at "
+    + "PLAYWRIGHT_BROWSERS_PATH (install-axe-browser has not run), or a fatal error aborted the run before "
+    + "it could examine anything, so nothing was written (#1626)",
   "packages/lab/scripts/bench-capture.mjs":
     "1 no worker/page given OR every live capture from --from-disk was lost — two causes share one code; "
     + "2 every live capture lost its socket",
