@@ -40,12 +40,13 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
 import {
   sourceClosure, discoverTestFiles, selectTests, broadReasons, pathStringReferences,
   discoversFromTree, alwaysRunTests, testFilesToRun, selectionFor,
 } from "../../../../scripts/select-changed-tests.mjs";
 import { knownPackages } from "../../../../scripts/ci-changed.mjs";
+import { underFloor } from "../../../guards/src/assert-glob-not-empty.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -167,7 +168,7 @@ test("broadReasons: ci.yml itself IS a reason -- a job definition can affect any
 
 test("#A1c NARROWING: a scripts/*.mjs file is NO LONGER a broad reason on its own -- it goes through "
   + "the by-import reference search instead", () => {
-  assert.deepEqual(broadReasons(["scripts/merge-guard.mjs"]), []);
+  assert.deepEqual(broadReasons(["packages/agent-org/src/merge-guard.mjs"]), []);
 });
 
 test("#A1c NARROWING: a hook or non-ci.yml workflow file is NO LONGER a broad reason -- it goes through "
@@ -430,7 +431,7 @@ test("discoversFromTree: a git ENUMERATION is a tree walk, however it is spawned
   + "a local `run()` seam, so matching `execFileSync`/`spawnSync` by name silently dropped three tests", () => {
   assert.equal(discoversFromTree(realSource("packages/lab/src/packaging/generated-paths.test.ts")), true,
     "a direct `git ls-files` enumeration in a guard that walks the tree");
-  assert.equal(discoversFromTree(realSource("scripts/isolation-gate.mjs"), { asHelper: true }), true,
+  assert.equal(discoversFromTree(realSource("packages/guards/src/isolation-gate.mjs"), { asHelper: true }), true,
     "`run(\"git\", [\"ls-files\"], dir, sandboxGitEnv())` -- the INDIRECTED spawn. If this file stops "
     + "reaching git through a seam, move this assertion to whichever one still does; do not delete it, "
     + "because the seam is the whole reason the pattern is not a list of function names");
@@ -494,7 +495,7 @@ test("alwaysRunTests: THE INCIDENT, reproduced -- the diff that added `acceptanc
   const guard = "packages/lab/src/packaging/git-spawn-classification.test.ts";
   // The incident's own diff, quoted rather than re-derived from history: a shallow checkout cannot see
   // `bb0854da`, and a test that skips in CI proves nothing about the job CI runs.
-  const changed = ["packages/lab/src/packaging/acceptance-prose.test.ts", "scripts/acceptance-commands.mjs"];
+  const changed = ["packages/lab/src/packaging/acceptance-prose.test.ts", "packages/agent-org/src/acceptance-commands.mjs"];
   const testFiles = discoverTestFiles(REPO, ["lab"]);
   const selection = selectTests(changed, { closureOf, testFiles, repoRoot: REPO, testPackages: ["lab"] });
   assert.ok(!selection.selectedTests.includes(guard),
@@ -558,6 +559,22 @@ test("testFilesToRun: the union is deduplicated and sorted, and the package fall
     fallbackPackages: ["lab"],
   });
   assert.deepEqual(run, ["a.test.ts", "b.test.ts", "c.test.ts", "packages/lab/src/**/*.test.ts"]);
+});
+
+test("testFilesToRun: #1654 -- agent-org's fallback points at packages/lab/src/packaging/, where its "
+  + "tests actually live, not its own (empty) src/ -- the real, uncovered shape #1648 hit", () => {
+  const run = testFilesToRun({ selectedTests: [], alwaysRun: [], fallbackPackages: ["agent-org"] });
+  assert.deepEqual(run, ["packages/lab/src/packaging/**/*.test.ts"]);
+  // SMOKE, against the real repo: the exact guard `reusable-build-test.yml` runs on this output
+  // (`assert-glob-not-empty.mjs ... --min=1`) must not refuse it -- a resolved glob that is itself empty
+  // would reproduce #1648's failure one level down, with the override doing nothing but relabel it.
+  assert.deepEqual(underFloor(run, 1), [], "the resolved glob must actually match something, not just be renamed");
+});
+
+test("testFilesToRun: #1654 MUTATION, POSITIVE CONTROL -- every OTHER package keeps the plain "
+  + "packages/<pkg>/src/**/*.test.ts fallback, so a genuinely uncovered change there still refuses", () => {
+  const run = testFilesToRun({ selectedTests: [], alwaysRun: [], fallbackPackages: ["lab", "judge"] });
+  assert.deepEqual(run, ["packages/lab/src/**/*.test.ts", "packages/judge/src/**/*.test.ts"]);
 });
 
 // --- #1527: a test that READS a changed file as text, or imports it DYNAMICALLY, is selected ---

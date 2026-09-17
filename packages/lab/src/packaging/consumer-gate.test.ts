@@ -19,7 +19,7 @@ import {
   extractDocumentedJobsBlock, pinActionRef, substituteTarget, extractJobName, extractPinnedSha,
   buildConsumerGateWorkflow, generate, currentHeadSha, README_PATH, OUT,
 } from "../../../../scripts/generate-consumer-gate.mjs";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 

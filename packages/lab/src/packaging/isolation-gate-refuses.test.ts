@@ -28,7 +28,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkIsolation, allPackages, SMOKE } from "../../../../scripts/isolation-gate.mjs";
+import { checkIsolation, allPackages, SMOKE } from "../../../guards/src/isolation-gate.mjs";
 
 // SMOKE is IMPORTED, not restated, and the first version of this file restated it — wrongly, as
 // "smoke-test.mjs" against the gate's "isolation-smoke.mjs". Every assertion below then reduced to "a

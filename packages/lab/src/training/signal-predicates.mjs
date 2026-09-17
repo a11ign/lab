@@ -19,10 +19,12 @@ function structuralTextParts(/** @type {any} */ capture) {
   ];
 }
 
-function interactionTextParts(/** @type {any} */ capture) {
+// Exported for `state-change-after-null.test.ts` (#1616). `@a11ign/lab` is private, so this is not published API.
+export function interactionTextParts(/** @type {any} */ capture) {
   return [
     ...(capture.interaction?.controls || []),
-    ...(capture.interaction?.stateChanges || []).flatMap((/** @type {any} */ { control, after }) => [control, after]),
+    // #1616: a failed re-read records `after: null`. It is dropped here, never carried into the text as a value.
+    ...(capture.interaction?.stateChanges || []).flatMap((/** @type {any} */ { control, after }) => (after === null ? [control] : [control, after])),
     ...(capture.interaction?.formChanges || []).flatMap((/** @type {any} */ { control, after }) => [control, after]),
     ...(capture.interaction?.postSubmitFields || []),
   ];

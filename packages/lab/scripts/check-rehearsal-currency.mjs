@@ -18,7 +18,7 @@ import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { rehearsalCurrencyProblems, rehearsalMarkerSha, REHEARSAL_DOCUMENTS, publishedPackagePaths }
   from "../src/packaging/rehearsal-currency.mjs";
-import { sandboxGitEnv } from "../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../guards/src/git-env.mjs";
 
 refuseUnknownFlags([], { entry: import.meta.url, command: "npm run release:rehearsal-check" });
 

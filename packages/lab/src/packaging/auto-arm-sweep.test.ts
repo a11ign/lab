@@ -25,7 +25,7 @@ import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
 import {
   sweepDecision, EXIT, mergedMeanwhile, MERGED_MEANWHILE_READS, MERGED_MEANWHILE_WAIT_MS, holdLookalikes, decideAndWarn,
-} from "../../../../scripts/auto-arm-sweep.mjs";
+} from "../../../agent-org/src/auto-arm-sweep.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -124,7 +124,7 @@ test("auto-arm.yml actually RUNS the sweep — a correct predicate wired to noth
     "the sweep runs a script from the repo, so it needs a checkout. Without one the step fails with "
     + "MODULE_NOT_FOUND — the #331 shape, where a workflow's own missing prerequisite reads as a code bug.");
   const runner = steps.find((s) => s.run?.includes("auto-arm-sweep.mjs"));
-  assert.ok(runner, "no step runs scripts/auto-arm-sweep.mjs.");
+  assert.ok(runner, "no step runs packages/agent-org/src/auto-arm-sweep.mjs.");
   // #416: GH_TOKEN is no longer a static env: mapping -- it is resolved at runtime (A11IGN_BOT_TOKEN if
   // set, else github.token, see auto-arm-token.test.ts) and exported inside the step's own `run:` script.
   // The gh-token-jobs.test.ts finding this pins is unaffected: the sweep still spawns `gh` with SOME
@@ -230,7 +230,7 @@ test("MUTATION TARGET (#404/#415): removing `reopened` or `synchronize` from the
  */
 test("the sweep's source asks the API whether the PR merged, rather than matching on the error text", () => {
   const src = readFileSync(
-    fileURLToPath(new URL("../../../../scripts/auto-arm-sweep.mjs", import.meta.url)), "utf8");
+    fileURLToPath(new URL("../../../agent-org/src/auto-arm-sweep.mjs", import.meta.url)), "utf8");
   assert.match(src, /function mergedMeanwhile/);
   assert.match(src, /pulls\/\$\{number\}/,
     "it must ASK -- a predicate reading `cause.message` cannot tell a merge from a network fault");
@@ -336,7 +336,7 @@ test("#1595 WIRING: the sweep's per-PR loop asks decideAndWarn, so the warning i
   // main() spawns `gh` and is never invoked here, so the call site is read from the comment-stripped source -- the
   // same approach as the merged-meanwhile source test above. Without it, main() could call sweepDecision directly
   // and every test above would still pass while the sweep printed nothing.
-  const source = stripComments(readFileSync(`${REPO}scripts/auto-arm-sweep.mjs`, "utf8"));
+  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
   const body = source.slice(source.indexOf("function main("));
   assert.ok(body.length > 0 && /const \{ arm, reason \} = decideAndWarn\(\{ number, labels, checkRunCount \}\)/.test(body),
     "main() must decide through decideAndWarn");

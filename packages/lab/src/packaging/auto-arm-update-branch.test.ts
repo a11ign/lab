@@ -3,7 +3,7 @@
  *
  * `queue-stalled.mjs` only REPORTS a PR that drifted into a real conflict against `main`; nothing was
  * pushing an open PR back up after a merge landed underneath it. `update-branch` is the fix half: it rides
- * a `push` to `main` and runs `scripts/update-branch-sweep.mjs`'s decision.
+ * a `push` to `main` and runs `packages/agent-org/src/update-branch-sweep.mjs`'s decision.
  *
  * This file asserts the WORKFLOW's own wiring, the same way `auto-arm-token.test.ts` does for `arm`/
  * `sweep` -- and deliberately does NOT assert the fallback-warning count those two jobs use, because this
@@ -158,7 +158,7 @@ test("the skip warning names the concrete consequence -- synchronize, and #416/C
 test("update-branch runs the real script, and nowhere else in the workflow duplicates its decision", () => {
   const doc = loadDoc();
   const runText = (doc.jobs["update-branch"]?.steps ?? []).map((s) => s.run ?? "").join("\n");
-  assert.match(runText, /node scripts\/update-branch-sweep\.mjs/);
+  assert.match(runText, /node packages\/agent-org\/src\/update-branch-sweep\.mjs/);
 });
 
 test("A11IGN_BOT_TOKEN never appears as a bare CLI argument in update-branch's steps", () => {

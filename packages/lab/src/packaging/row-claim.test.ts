@@ -1,5 +1,5 @@
 /**
- * `scripts/row-claim.mjs` answers "is this row claimed?" by reading the BOARD (issue labels), never git
+ * `packages/agent-org/src/row-claim.mjs` answers "is this row claimed?" by reading the BOARD (issue labels), never git
  * history -- #28 and #30 (2026-09-06) were each pulled twice because the documented collision check
  * (`git log --branches='agent/*' --not origin/main -- <path>`) answers "would I collide in this file",
  * not "is somebody already on this row". See that file's own header for the incident and the reasoning.
@@ -37,13 +37,13 @@ import {
   worktreeTargetReason,
   worktreeFlagsReason,
   claimRecordSession,
-} from "../../../../scripts/row-claim.mjs";
-import { forgetProcessSnapshot, withBoardSnapshot } from "../../../../scripts/board-snapshot.mjs";
-import { refusalCause, PROJECT_UNREADABLE } from "../../../../scripts/settle-closed-status.mjs";
-import { laneReason } from "../../../../scripts/row-claim/runner-rule.mjs";
+} from "../../../agent-org/src/row-claim.mjs";
+import { forgetProcessSnapshot, withBoardSnapshot } from "../../../agent-org/src/board-snapshot.mjs";
+import { refusalCause, PROJECT_UNREADABLE } from "../../../agent-org/src/settle-closed-status.mjs";
+import { laneReason } from "../../../agent-org/src/row-claim/runner-rule.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { READY_LABEL, WAS_READY_LABEL } from "../../../../scripts/ready-label-audit.mjs";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { READY_LABEL, WAS_READY_LABEL } from "../../../agent-org/src/ready-label-audit.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 // Every claim/dispatch/decline test above the #400 section stubs `moveStatus: () => ({ moved: true })` --
 // #400 is about the Project Status VIEW specifically, and those tests are about the LABEL, the record.
@@ -106,7 +106,7 @@ test("multiple session labels are all reported -- a race leaves both visible unt
 });
 
 // --- #656: the claim records the BRANCH, so an escalating session can tell a portable row from a held
-// one before it ever offers to take it (see scripts/carry-branch.mjs's own header for the incident) ---
+// one before it ever offers to take it (see packages/agent-org/src/carry-branch.mjs's own header for the incident) ---
 
 test("claimStatus reads the recorded branch off a branch: label", () => {
   const status = claimStatus(["in-progress", "session:worker-config", "started",
@@ -1534,11 +1534,11 @@ test("#665 MUTATION direction 2 (the issue's own instruction): drop the removal,
 
 // --- #1039: row-claim reads LANE OWNERSHIP, which it never did ---
 
-// #1464: THE LIVE SET IS READ FROM `docs/roles/sessions.json`, ceo's file (#1453), never typed here. The typed copy held
+// #1464: THE LIVE SET IS READ FROM `packages/agent-org/docs/roles/sessions.json`, ceo's file (#1453), never typed here. The typed copy held
 // five names and missed worker-tooling. It is read from the file itself, the one source, and the second test below
 // pins `arm-pr.mjs`'s list to that same file by arm-pr's SOURCE line. (This file already loads arm-pr through
 // `row-claim/runner-rule.mjs`; its `// no-token: defaultRun` header is what keeps that closure exempt.)
-const SESSIONS_FILE = JSON.parse(readFileSync(new URL("../../../../docs/roles/sessions.json", import.meta.url), "utf8")) as
+const SESSIONS_FILE = JSON.parse(readFileSync(new URL("../../../../packages/agent-org/docs/roles/sessions.json", import.meta.url), "utf8")) as
   { live: { name: string }[]; retired: { name: string }[] };
 const LIVE: readonly string[] = SESSIONS_FILE.live.map((s) => s.name);
 /** The retired-session case's roster, INJECTED on purpose (that test says why): a named fixture, not the live set. */
@@ -1553,11 +1553,13 @@ test("#1464: the live set these tests read is sessions.json's -- non-empty, hold
 });
 
 test("#1464: arm-pr's LIVE_SESSIONS is the same list -- derived from the same file, pinned by its SOURCE line", () => {
-  const source = readFileSync(new URL("../../../../scripts/arm-pr.mjs", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../../../agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
   assert.deepEqual(source.split("\n").filter((line) => line.includes("SESSIONS.live.map(")),
     ["export const LIVE_SESSIONS = SESSIONS.live.map((s) => s.name);"],
     "arm-pr derives its list from `.live`'s names in exactly one line, as `LIVE` above does");
-  assert.match(source, /readFileSync\(new URL\("\.\.\/docs\/roles\/sessions\.json", import\.meta\.url\)/,
+  // Depth-agnostic: arm-pr moved into @a11ign/agent-org so the prefix is no longer `../`. What this pins
+  // is that it reads THE SAME FILE, not how far up the tree that file happens to sit.
+  assert.match(source, /readFileSync\(new URL\("[^"]*docs\/roles\/sessions\.json", import\.meta\.url\)/,
     "and from the same file");
 });
 
@@ -1706,7 +1708,7 @@ test("#1063: `renderStatus`'s UNCLAIMED branch calls reportB4 -- the row's deliv
   // SCOPED TO THE BRANCH, so it fails loudly if the call moves rather than passing vacuously somewhere
   // else in the file.
   const source = stripComments(readFileSync(
-    new URL("../../../../scripts/row-claim.mjs", import.meta.url), "utf8"));
+    new URL("../../../agent-org/src/row-claim.mjs", import.meta.url), "utf8"));
   const unclaimedBranch = /if \(!status\.claimed\) \{([\s\S]*?)\n {2}\}/.exec(source);
   assert.ok(unclaimedBranch, "the UNCLAIMED branch must still be findable, or this asserts nothing");
   assert.match(unclaimedBranch[1], /reportB4\(issueNumber\)/,
@@ -1937,7 +1939,7 @@ test("#1399 CONTROL: decline's label read throws -- nothing removed, COULD NOT D
 });
 
 test("#1399 WIRING: the claim/dispatch and decline CLIs report a thrown error through failureReport", () => {
-  const source = stripComments(readFileSync(new URL("../../../../scripts/row-claim.mjs", import.meta.url), "utf8"));
+  const source = stripComments(readFileSync(new URL("../../../agent-org/src/row-claim.mjs", import.meta.url), "utf8"));
   for (const fn of ["runDispatchOrClaim", "runDecline"]) {
     const start = source.indexOf(`function ${fn}(`);
     assert.ok(start >= 0, `${fn} not found`);

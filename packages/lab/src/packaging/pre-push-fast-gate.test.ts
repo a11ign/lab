@@ -4,7 +4,7 @@
  * against `origin/main`. CI (`.github/workflows/ci.yml`) is what runs the full check for a branch now --
  * not on the push itself (agent/lead pushes stopped triggering CI directly the same day `ci.yml` replaced
  * `lint.yml`), but on the PR that follows it, which every unit's workflow now opens immediately after
- * pushing. See the hook's own header and `scripts/changed-packages.mjs`'s header for why.
+ * pushing. See the hook's own header and `packages/guards/src/changed-packages.mjs`'s header for why.
  *
  * DRIVES THE REAL FILES rather than reimplementing their logic, for the reason `pre-commit-hook.test.ts`
  * and `pre-push-git-scrub.test.ts` already state: a second copy of a decision drifts from the first. The
@@ -21,7 +21,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const HOOK = readFileSync(`${REPO}scripts/git-hooks/pre-push`, "utf8");
@@ -176,7 +176,7 @@ function treeExport(): string {
  * claim ("no file this push touches is one npm actually ships") from a check that had examined nothing.
  *
  * The gate is now CI's `changeset` job alone, which is where it always also ran. The class those tests
- * guarded against is held tree-wide by `scripts/piped-exit-status-guard.mjs` and its own test, which is a
+ * guarded against is held tree-wide by `packages/guards/src/piped-exit-status-guard.mjs` and its own test, which is a
  * rule about every reader rather than about this one call site -- so deleting the instance does not delete
  * the lesson. `git log -S"changeset_precise_status"` is where the three tests themselves live now.
  */

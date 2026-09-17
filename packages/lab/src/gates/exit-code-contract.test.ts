@@ -183,6 +183,10 @@ const DOCUMENTED: Record<string, string> = {
     + "capture truncated on a channel the model reads",
   "packages/lab/scripts/calibrate-abstention.mjs":
     "0 success; 2 no calibration captures found",
+  "packages/lab/scripts/claim-excludes-recompute.mjs":
+    "0 the table printed; 2 a refusal with nothing on stdout — the stored rows do not reproduce through "
+    + "`floorRows`, the sweep file is missing or unreadable, a scored page is absent from the corpus, the "
+    + "corpus commit cannot be read, or an `--urls` list names no scored page (#1628)",
   "packages/lab/scripts/corpus-backup.mjs":
     "1 any of several precondition refusals, collapsed to one code",
   "packages/lab/scripts/corpus-snapshot.mjs":

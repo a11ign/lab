@@ -30,7 +30,7 @@ import { readFileSync, writeFileSync, mkdtempSync, rmSync, realpathSync, statSyn
 import { resolve, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { ABSENT_FIXTURE_SYMBOLS, fixtureSymbol } from "../../../../scripts/fixture-symbols.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");

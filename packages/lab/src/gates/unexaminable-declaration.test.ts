@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const DECLARATION = JSON.parse(readFileSync(
   fileURLToPath(new URL("../../baselines/real-page-unexaminable.json", import.meta.url)), "utf8")) as {

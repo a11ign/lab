@@ -4,8 +4,8 @@
  * TWICE in one night on 2026-09-07, the second time an hour after the first was diagnosed and warned
  * about (issue #180):
  *
- *     `worker-capture`   node scripts/row-claim.mjs ... | head        -- exit 0 read for a real exit 2
- *     `dispatcher`       node scripts/merge-guard.mjs $n | head -4    -- exit 0 read on every refusal
+ *     `worker-capture`   node packages/agent-org/src/row-claim.mjs ... | head        -- exit 0 read for a real exit 2
+ *     `dispatcher`       node packages/agent-org/src/merge-guard.mjs $n | head -4    -- exit 0 read on every refusal
  *
  * In both cases the piped command was a GUARD being verified, so the pipe manufactured evidence AGAINST
  * working code — this project's standard response to "the guard did not bite" is to suspect the guard,
@@ -21,14 +21,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
-import { checkPipedExitStatus, checkPipedExitStatusInText } from "../../../../scripts/piped-exit-status-guard.mjs";
+import { checkPipedExitStatus, checkPipedExitStatusInText } from "../../../guards/src/piped-exit-status-guard.mjs";
 
-const CLI = join(import.meta.dirname, "../../../../scripts/piped-exit-status-guard.mjs");
+const CLI = join(import.meta.dirname, "../../../guards/src/piped-exit-status-guard.mjs");
 const REPO_ROOT = join(import.meta.dirname, "../../../../");
 
 test("the exact shape that cost `dispatcher` an hour is refused", () => {
   const { hazard } = checkPipedExitStatus(
-    'node scripts/merge-guard.mjs 148 | head -4; echo EXIT=$?',
+    'node packages/agent-org/src/merge-guard.mjs 148 | head -4; echo EXIT=$?',
   );
   assert.equal(hazard, true);
 });
@@ -78,7 +78,7 @@ test("`$?` read BEFORE the pipeline (a different command's status) is not this h
 
 test("mentioning `pipefail` in the same text is treated as the mitigation being present", () => {
   const { hazard } = checkPipedExitStatus(
-    'set -o pipefail; node scripts/merge-guard.mjs 148 | head -4; echo EXIT=$?',
+    'set -o pipefail; node packages/agent-org/src/merge-guard.mjs 148 | head -4; echo EXIT=$?',
   );
   assert.equal(hazard, false);
 });
@@ -140,7 +140,7 @@ risky() {
 
 test("#375: every existing single-block case behaves identically through checkPipedExitStatusInText", () => {
   assert.equal(
-    checkPipedExitStatusInText('node scripts/merge-guard.mjs 148 | head -4; echo EXIT=$?').hazard,
+    checkPipedExitStatusInText('node packages/agent-org/src/merge-guard.mjs 148 | head -4; echo EXIT=$?').hazard,
     true,
   );
   assert.equal(checkPipedExitStatusInText("cat README.md | head -5").hazard, false);
@@ -152,7 +152,7 @@ test("#375: every existing single-block case behaves identically through checkPi
 });
 
 test("#375: splitIntoBlocks never splits mid-function, only at a new function definition", async () => {
-  const { splitIntoBlocks } = await import("../../../../scripts/piped-exit-status-guard.mjs");
+  const { splitIntoBlocks } = await import("../../../guards/src/piped-exit-status-guard.mjs");
   const blocks = splitIntoBlocks("a() {\n  one\n  two\n}\nb() {\n  three\n}\n");
   assert.equal(blocks.length, 2);
   assert.match(blocks[0], /one/);
@@ -201,7 +201,7 @@ test("#535: a real ALLOW verdict's stdout starts with exactly `ALLOW:`, which is
 test("#535: a real REFUSE verdict's stdout starts with exactly `REFUSE:`, which is the literal prefix "
   + "pre-commit's own classifier matches", () => {
   try {
-    execFileSync("node", [CLI, "node scripts/merge-guard.mjs 148 | head -4; echo EXIT=$?"],
+    execFileSync("node", [CLI, "node packages/agent-org/src/merge-guard.mjs 148 | head -4; echo EXIT=$?"],
       { encoding: "utf8", stdio: "pipe" });
     assert.fail("expected the CLI to exit non-zero on a real hazard");
   } catch (err) {

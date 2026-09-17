@@ -66,8 +66,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { newestPerName, newestConclusionOf } from "../../../scripts/newest-check-run.mjs";
-import { declareTreeWideGuard, walkTree } from "../../../scripts/tree-wide-guard.mjs";
+import { newestPerName, newestConclusionOf } from "../../agent-org/src/newest-check-run.mjs";
+import { declareTreeWideGuard, walkTree } from "../../guards/src/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -151,13 +151,13 @@ function rollupReaders(): string[] {
  * question the count never asked -- what answers this now?
  */
 const EXPECTED_READERS: Record<string, string> = {
-  "scripts/merge-queue.mjs":
+  "packages/agent-org/src/merge-queue.mjs":
     "checksBlocking -- THE site #634 found. If it is not in the population, the guard cannot have caught it",
-  "scripts/queue-stalled.mjs":
+  "packages/agent-org/src/queue-stalled.mjs":
     "head quiet time and the gate's conclusion, both narrowed per name",
-  "scripts/update-branch-sweep.mjs":
+  "packages/agent-org/src/update-branch-sweep.mjs":
     "the same two reads on the sweep's side -- #500 and #517 fixed this file twice",
-  // DEPARTED 2026-09-09 (dispatcher/table-reports-rate-limit): `scripts/queue-table.mjs` read the
+  // DEPARTED 2026-09-09 (dispatcher/table-reports-rate-limit): `packages/agent-org/src/queue-table.mjs` read the
   // rollup through `newestPerName` and now does not read it at all. Its checks moved from
   // `gh pr view --json statusCheckRollup` (GraphQL) to `gh api .../check-runs` (REST), because GraphQL
   // hit 5000/5000 account-wide at 14:41Z and a table that cannot be read during an outage reports

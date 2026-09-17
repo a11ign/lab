@@ -2,7 +2,7 @@
 // `@a11ign/*` import to the PRIMARY's `packages/*/dist`, not the worktree's own — so building in
 // your own worktree changes nothing a cross-package tool reads there. Measured 2026-09-06: a generator
 // read the primary's two-hour-stale `dist` and a worker was nearly dispatched at a defect that did not
-// exist. CLAUDE.md's stale-`dist` warning never said WHOSE, and `docs/roles/worker-loop-orchestrator.md`
+// exist. CLAUDE.md's stale-`dist` warning never said WHOSE, and `packages/agent-org/docs/roles/worker-loop-orchestrator.md`
 // never said the fleet-driving primary checkout should hold nothing checked out at all -- two rules,
 // two files, and a check that fails if either goes missing, per the issue's own acceptance.
 //
@@ -18,7 +18,7 @@ import { resolve } from "node:path";
 // NAMED, not searched: this guard asserts a specific claim is present in the file a session doing CI or
 // hook work actually loads, and "somewhere in the repo" is a weaker question than the one it asks.
 const CLAUDE_MD = ".github/CLAUDE.md";
-const ORCHESTRATOR_ROLE = "docs/roles/worker-loop-orchestrator.md";
+const ORCHESTRATOR_ROLE = "packages/agent-org/docs/roles/worker-loop-orchestrator.md";
 
 const read = (relPath: string) => readFileSync(resolve(process.cwd(), relPath), "utf8");
 

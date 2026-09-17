@@ -57,7 +57,7 @@ import assert from "node:assert/strict";
 // relative to its own location, and a move that silently changes what it resolves is the defect this repo
 // files most" -- so this was re-derived rather than copied, and the assertion below would fail loudly on a
 // wrong specifier rather than quietly examining nothing.
-import { checkIsolation, allPackages } from "../../../scripts/isolation-gate.mjs";
+import { checkIsolation, allPackages } from "../../guards/src/isolation-gate.mjs";
 
 test("every bin the six published packages declare is reachable in a real consumer install", () => {
   // The population, derived rather than typed: this is the assertion that would have caught the live

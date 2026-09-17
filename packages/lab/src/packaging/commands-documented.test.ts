@@ -86,7 +86,9 @@ test("the scripts/ population is real, so this cannot pass having examined nothi
 
 test("every script under scripts/ carries a `// command:` header", () => {
   const missing = commandScripts().filter((file) => {
-    const text = readFileSync(join(REPO, "scripts", file), "utf8");
+    // `file` is repo-relative now -- commandScripts() spans three tooling roots, so a bare basename
+    // could not say which one it came from.
+    const text = readFileSync(join(REPO, file), "utf8");
     return commandHeader(text) === null;
   });
   assert.deepEqual(missing, [],

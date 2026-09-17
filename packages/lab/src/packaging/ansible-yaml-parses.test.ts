@@ -22,7 +22,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const ANSIBLE = "packages/control/ansible/";

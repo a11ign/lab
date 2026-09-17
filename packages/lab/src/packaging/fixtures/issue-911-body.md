@@ -108,7 +108,7 @@ PROGRAM, not the file.** Measured by worker-capture in the #911 worktree at `40e
 | root `tsc --noEmit` program | **953 files** — **534** of them `.test.ts`, **130** top-level `scripts/` |
 | `tsc -p packages/evidence/tsconfig.json` | **0** test files: every package tsconfig carries `"exclude": ["src/**/*.test.ts"]` |
 | top-level `scripts/**/*.mjs` | in the ROOT program only — no package program can contain it |
-| a `scripts/`-only change | `node scripts/changed-packages.mjs` → **`[]`** |
+| a `scripts/`-only change | `node packages/guards/src/changed-packages.mjs` → **`[]`** |
 
 So on the most common row shape in this repo — a change under `scripts/` — "typecheck the changed
 packages" typechecks **nothing and reports clean**. On a package change it typechecks that package's

@@ -15,7 +15,7 @@
  *
  * THIS TEST DRIVES THE BUILT, PACKED, INSTALLED BIN -- not the source file -- because the bug this guards
  * against is exactly the shape `docs/proving-a-gate.md` names: a correct remedy on a path a real user
- * reaches and a test never did. Reusing `scripts/isolation-gate.mjs`'s pack-and-install machinery rather
+ * reaches and a test never did. Reusing `packages/guards/src/isolation-gate.mjs`'s pack-and-install machinery rather
  * than a fresh copy is deliberate for a second reason: a REAL isolated install is the only way to prove
  * `source` resolves to `"default"` without touching `packages/control/ansible/inventory.yml` at all --
  * that file is a shared, tracked, currently-in-use production artefact (a live fleet recapture depends on
@@ -36,7 +36,7 @@ import { mkdtempSync, rmSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { fileURLToPath } from "node:url";
-import { internalDependencies } from "../../../../scripts/isolation-gate.mjs";
+import { internalDependencies } from "../../../guards/src/isolation-gate.mjs";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));

@@ -26,7 +26,7 @@ import {
   METRICS, EXIT, figure, passRate, renderFigure, renderTable, totalCount, mainColour,
   firstFailingAssertion, byConclusion, queueReport, utilisation, boardDeadline, watchReport,
   redWindows, redHoursFigure, runsHaveStopped, weeklyRedHoursFigure, RUNS_PAGE_SIZE,
-} from "../../../../scripts/org-watch.mjs";
+} from "../../../agent-org/src/org-watch.mjs";
 
 const metric = (key: string) => METRICS.find((m) => m.key === key)!;
 
@@ -610,7 +610,7 @@ test("#1072: every declared EXIT value is one some path can produce", () => {
   // satisfy this. All three references in the script today are real assignments; if one ever moves into
   // a message, this needs to narrow to an assignment context rather than a mention.
   const source = stripComments(readFileSync(
-    fileURLToPath(new URL("../../../../scripts/org-watch.mjs", import.meta.url)), "utf8"));
+    fileURLToPath(new URL("../../../agent-org/src/org-watch.mjs", import.meta.url)), "utf8"));
   const produced = new Set([...source.matchAll(/EXIT\.([A-Z_]+)/g)].map((m) => m[1]));
   produced.delete("");
   for (const name of Object.keys(EXIT)) {
@@ -804,7 +804,7 @@ test("#1267: a page that begins mid-red says 'at least' in the weekly VALUE (#10
 });
 
 test("#1267: main() builds the weekly figure ONLY through weeklyRedHoursFigure(colour) -- no second expression", () => {
-  const source = stripComments(readFileSync(new URL("../../../../scripts/org-watch.mjs", import.meta.url), "utf8"));
+  const source = stripComments(readFileSync(new URL("../../../agent-org/src/org-watch.mjs", import.meta.url), "utf8"));
   const start = source.indexOf("function main()");
   assert.ok(start > 0, "main() must still be findable, or this asserts nothing");
   const body = source.slice(start, source.indexOf("\n}\n", start));
