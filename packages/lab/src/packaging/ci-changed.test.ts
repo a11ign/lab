@@ -713,7 +713,18 @@ test("ci.yml has a gate job needing every scoped job, running even when one of t
   // so a NEW job added tomorrow fails here rather than being silently optional.
   // #1065: `docs` is DELETED, not merely dropped -- it went red unread on an environment-only failure and
   // its population runs unscoped in trunk-guard after every merge.
-  const NOT_REQUIRED_BY_GATE = ["board", "acceptance", "ownedPaths"];
+  //
+  // 2026-09-17: `acceptance` AND `ownedPaths` LEFT THIS EXEMPTION and are required again. #902's
+  // measurement held; its remedy had a hole. `gate` is the ONLY required context, so a job outside its
+  // `needs` does not become advisory -- it becomes INVISIBLE, still burning CI minutes and still painting
+  // the PR red while being unable to stop anything. Two pull requests merged red in two days through it,
+  // and on the second the acceptance command had already reported `pass (exit 0)`; the red was its body.
+  // Measured over the following 40 pull-request runs, `acceptance` failed 4 times and caught zero broken
+  // builds -- but a duplicated `Acceptance:` section means the checker CANNOT TELL which command to run,
+  // which is a refusal to verify rather than a verdict on the code, and blocking on "I could not check"
+  // is the whole point of a gate. `edited` is in ci.yml's triggers, so a corrected body re-runs the
+  // check: the body-only deadlock of 2026-09-07 is what made this unsafe before, and it cannot recur.
+  const NOT_REQUIRED_BY_GATE = ["board"];
   const scopedJobs = Object.keys(doc.jobs)
     .filter((name) => name !== "gate" && !NOT_REQUIRED_BY_GATE.includes(name));
   assert.deepEqual([...gate.needs as string[]].sort(), scopedJobs.sort(),
