@@ -1,7 +1,7 @@
 // EVERY ROLE THIS ORGANISATION DEPENDS ON MUST BE READABLE FROM THE REPO ALONE, OR IT DOES NOT SURVIVE
 // THIS MACHINE BEING LOST.
 //
-// `docs/roles/README.md` indexes eight role files -- `ceo`, `orchestrator`, `dispatcher`, and five
+// `packages/agent-org/docs/roles/README.md` indexes eight role files -- `ceo`, `orchestrator`, `dispatcher`, and five
 // workers -- because a board finding on 2026-09-06 was that every one of them except `dispatcher` existed
 // only in session history: nowhere a fresh agent, or a stranger with no context, could read to become that
 // role. This test is the enforcement that keeps the set complete rather than a document that says it is --
@@ -43,7 +43,7 @@ test("the contingency drill section and its GIT_DIR warning both exist", () => {
 
 /**
  * THE MUTATION HALF, against a synthetic roster and synthetic files under `os.tmpdir()` -- never against
- * the real `docs/roles/` tree, because deleting a real agent's file even temporarily is not something a
+ * the real `packages/agent-org/docs/roles/` tree, because deleting a real agent's file even temporarily is not something a
  * shared, git-hooked checkout should risk mid-test-run. Proves every direction the split above depends on:
  * a missing file is REPORTED (never thrown), an incomplete existing file IS thrown, a complete one is
  * clean, and breaking the discovery itself is caught before any per-row check could pass having examined
@@ -59,7 +59,7 @@ test("MUTATION: missing is reported not failed, incomplete fails, and a broken r
   const found = roster(goodReadme);
   assert.equal(found.length, 1, "the roster parser did not find the one well-formed row -- broken baseline");
   assert.equal(found[0].agent, "example-agent");
-  assert.equal(found[0].filePath, "docs/roles/example.md");
+  assert.equal(found[0].filePath, "packages/agent-org/docs/roles/example.md");
   assert.equal(found[0].reporter, "example-boss");
 
   const dir = mkdtempSync(join(tmpdir(), "roles-readme-mutation-"));
@@ -122,7 +122,7 @@ test("#1096 the review-verdict convention is in the README, by its parts, with t
 // ---------------------------------------------------------------------------------------------------
 
 const reviewerBrief = readFileSync(
-  new URL("../../../../docs/roles/reviewer.md", import.meta.url), "utf8");
+  new URL("../../../../packages/agent-org/docs/roles/reviewer.md", import.meta.url), "utf8");
 
 test("#1118: the lift condition is COUNTABLE — a number, a checker, and what counts as held", () => {
   assert.match(reviewerBrief, /\b(five|5)\b[^.]*\bconsecutive\b/i,

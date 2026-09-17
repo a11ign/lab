@@ -77,7 +77,9 @@ const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
 const SITES: Array<{ file: string; expect: string }> = [
   // #569: AUTO-FETCHED by GitHub's own renderer the instant anyone views this page -- the same "must
   // resolve today" shape as the `uses:` line two lines down, not the static prose PRODUCT_REPO covers.
-  { file: "README.md", expect: `${REPO_URL}/actions/workflows/lint.yml/badge.svg` },
+  // `ci.yml`, not `lint.yml`: there is no lint.yml in .github/workflows and never has been, so the badge
+  // this pinned was permanently broken -- the first image a visitor saw. Lint runs inside ci.
+  { file: "README.md", expect: `${REPO_URL}/actions/workflows/ci.yml/badge.svg` },
   { file: "README.md", expect: `${REPO_URL}/actions/workflows/capture-regression.yml/badge.svg` },
   { file: "README.md", expect: `uses: ${REPO}@main` },
   // A hyperlink a reader consciously clicks, and can recover from (try another reporting channel) if it
@@ -128,9 +130,9 @@ const SITES: Array<{ file: string; expect: string }> = [
   // like it verifies something real about a file that does not depend on the repo's name at all. If a
   // future field in this file is ever actually CONSUMED under the repo's name (a computed URL, a value fed
   // to `gh --repo`), add it back as a live site then -- not as a standing anchor with no functional reader.
-  { file: "docs/roles/memory/github-is-the-tracker.md", expect: `GitHub Issues on ${PRODUCT_REPO}` },
-  { file: "docs/roles/README.md", expect: `\`${PRODUCT_REPO}\`` },
-  { file: "docs/roles/memory/org-shape-second-orchestrator.md", expect: `a Project on ${PRODUCT_REPO}` },
+  { file: "packages/agent-org/docs/roles/memory/github-is-the-tracker.md", expect: `GitHub Issues on ${PRODUCT_REPO}` },
+  { file: "packages/agent-org/docs/roles/README.md", expect: `\`${PRODUCT_REPO}\`` },
+  { file: "packages/agent-org/docs/roles/memory/org-shape-second-orchestrator.md", expect: `a Project on ${PRODUCT_REPO}` },
   { file: "examples/workflow.yml", expect: `uses: ${REPO}@main` },
   { file: "packages/nvda-worker/package.json", expect: PRODUCT_GIT_URL },
   // COPY-PASTE-EXECUTE, same shape as docs/getting-started.md above -- see that entry's comment for why
@@ -193,9 +195,11 @@ test("board-data.mjs and row-claim.mjs DERIVE the name rather than restating it 
   // The two runtime consumers this repo already had. Checked by IMPORT rather than by literal, because
   // that is the whole point of the split: these two no longer carry a copy for repo-identity-drift to
   // catch, and a test asserting a literal here would be re-introducing the duplicate this row removes.
-  for (const file of ["scripts/board-data.mjs", "scripts/row-claim.mjs"]) {
+  for (const file of ["packages/agent-org/src/board-data.mjs", "packages/agent-org/src/row-claim.mjs"]) {
     const text = readFileSync(path.join(ROOT, file), "utf8");
-    assert.match(text, /from ["']\.\/repo-identity\.mjs["']/,
+    // The specifier is relative to wherever the consumer lives -- these two moved into @a11ign/agent-org,
+    // so it is no longer `./`. What matters is that the name is IMPORTED, not which depth the path has.
+    assert.match(text, /from ["'][^"']*repo-identity\.mjs["']/,
       `${file} must import REPO from repo-identity.mjs rather than declaring its own copy`);
     assert.ok(!new RegExp(`["']${REPO.replace(/[/.]/g, "\\$&")}["']`).test(text),
       `${file} still declares the repository name as its own string literal`);

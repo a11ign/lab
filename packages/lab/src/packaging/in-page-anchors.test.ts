@@ -17,7 +17,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { check, inPageAnchorLinks, trackedMarkdown } from "../../../../scripts/doc-checks/in-page-anchors.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");

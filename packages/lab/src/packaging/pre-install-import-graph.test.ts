@@ -256,7 +256,7 @@ test("nothing any pre-install entry imports needs node_modules or dist", () => {
 
 test("the walk follows relative imports — or the guard above passes having examined one file", () => {
   const names = [...importGraph("scripts/ci-changed.mjs").files].map((f) => relative(REPO, f));
-  assert.ok(names.includes("scripts/changed-packages.mjs"),
+  assert.ok(names.includes("packages/guards/src/changed-packages.mjs"),
     `the walk did not reach a known dependency; it found: ${names.join(", ")}`);
 });
 

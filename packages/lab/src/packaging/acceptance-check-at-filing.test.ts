@@ -37,9 +37,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { wholeSuiteAcceptanceReason } from "../../../../scripts/row-claim/template-fields-rule.mjs";
-import { fileRefusalReason } from "../../../../scripts/row-file.mjs";
-import { runsTheWholeSuite } from "../../../../scripts/acceptance-commands.mjs";
+import { wholeSuiteAcceptanceReason } from "../../../agent-org/src/row-claim/template-fields-rule.mjs";
+import { fileRefusalReason } from "../../../agent-org/src/row-file.mjs";
+import { runsTheWholeSuite } from "../../../agent-org/src/acceptance-commands.mjs";
 
 const rowWith = (acceptance: string) =>
   `## Region\n\n\`packages/x/y.ts\`\n\n## Acceptance\n\n\`\`\`\n${acceptance}\n\`\`\`\n\n`
@@ -106,7 +106,7 @@ test("the refusal names the tool that refused, so two callers do not read as one
 
 test("the import is the SHARED function, not a second copy", () => {
   const rule = readFileSync(
-    resolve(import.meta.dirname, "../../../../scripts/row-claim/template-fields-rule.mjs"), "utf8");
+    resolve(import.meta.dirname, "../../../agent-org/src/row-claim/template-fields-rule.mjs"), "utf8");
   assert.match(rule, /import \{[^}]*runsTheWholeSuite[^}]*\} from "\.\.\/acceptance-commands\.mjs"/,
     "template-fields-rule must IMPORT the whole-suite test; a local regex here would be the second "
     + "implementation this row exists to avoid");

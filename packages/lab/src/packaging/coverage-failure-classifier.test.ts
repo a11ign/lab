@@ -109,7 +109,7 @@ test("the threshold-miss pattern is checked against c8's OWN source, not a guess
  * Run one deliberately failing test and return exactly what it printed.
  *
  * `reporter: null` IS THE PRODUCTION SPELLING and it is not a convenience. The coverage step runs
- * `scripts/assert-glob-not-empty.mjs ... --run`, whose `refuseUnknownFlags` takes only
+ * `packages/guards/src/assert-glob-not-empty.mjs ... --run`, whose `refuseUnknownFlags` takes only
  * `--min`/`--run`/`--test-concurrency` -- **production cannot be told which reporter to use, and exits
  * on being asked.** So a generator that always passes `--test-reporter` exercises a path production
  * cannot take, which is the `NODE_TEST_CONTEXT` defect one step out: the harness shaping the fixture it

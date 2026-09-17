@@ -29,6 +29,7 @@
  * schedule cannot know a merge just happened, which is exactly why `push` is the right trigger and not a
  * workaround for one.
  */
+import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -36,6 +37,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
+
+// #929: THIS GUARD READS ONLY `packages/agent-org`, `.github/workflows`, so a diff that cannot reach it need not run this file.
+// Undeclared means unbounded, which is why the selector runs 173 always-run guards on every pull
+// request. The declaration is ENFORCED rather than trusted: `declareWalkScope` observes what this
+// file actually reads and fails it here if anything lands outside the scope -- so a scope that is
+// too narrow is loud, never a guard that silently stopped running.
+export const WALK_SCOPE = ["packages/agent-org",".github/workflows"];
+await declareWalkScope(import.meta.url);
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOWS_DIR = `${REPO}.github/workflows/`;
@@ -87,7 +96,7 @@ const PUSH_TO_MAIN_ALLOWLIST: Record<string, string> = {};
 // MERGE COMMIT landing on `main` was ever tested -- `ci.yml`'s `pull_request` trigger tests a PR's head,
 // never the commit it produces on merge. That is a genuinely different gap from "did a schedule go
 // silent", and closing it needs the opposite shape from a watchdog: real verification, real action. See
-// `trunk.yml`'s own header for the full reasoning and `scripts/trunk-revert.mjs`'s for the two ways
+// `trunk.yml`'s own header for the full reasoning and `packages/agent-org/src/trunk-revert.mjs`'s for the two ways
 // a naive "revert on red" would be worse than nothing.
 const TRUNK_GATE_ALLOWLIST: Record<string, string> = {
   "trunk.yml": "pipeline unit 3 (#316): the merge commit landing on main after strict=false (#298) "
@@ -160,7 +169,10 @@ test("the watchdog allowlist is EMPTY since #901 -- a watchdog is a step in trun
   const doc = parseYaml(readWorkflow("trunk.yml")) as { jobs: Record<string, { steps?: Array<Record<string, unknown>> }> };
   const runLines = (doc.jobs.watchdogs?.steps ?? []).map((s) => String(s.run ?? "")).join("\n");
   for (const script of ["board-schedule-liveness.mjs", "npm-token-liveness.mjs", "workflow-run-liveness.mjs"]) {
-    assert.match(runLines, new RegExp(`scripts/${script.replace(".", "\\.")}`),
+    // Matched on the BASENAME: the watchdogs no longer share one directory -- board-schedule-liveness and
+    // workflow-run-liveness moved to @a11ign/agent-org while npm-token-liveness stayed in scripts/, and
+    // pinning a directory here would assert where each lives rather than that it still runs.
+    assert.match(runLines, new RegExp(`/${script.replace(".", "\\.")}`),
       `${script} is no longer a workflow of its own and must therefore be a step in trunk.yml's `
       + "watchdogs job -- a watchdog that is in neither place has silently stopped running");
   }

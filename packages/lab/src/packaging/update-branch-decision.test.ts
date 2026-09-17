@@ -32,8 +32,8 @@ import assert from "node:assert/strict";
 
 import { updateBranchDecision, headQuietSeconds, newestConclusion, HEAD_QUIET_SECONDS, ZERO_DATE,
   redCause, newestRun, newestRunCompletedAt, mainTipCommittedAt }
-  from "../../../../scripts/update-branch-sweep.mjs";
-import { NO_VERDICT } from "../../../../scripts/merge-guard/checks-rule.mjs";
+  from "../../../agent-org/src/update-branch-sweep.mjs";
+import { NO_VERDICT } from "../../../agent-org/src/merge-guard/checks-rule.mjs";
 
 const NOW = new Date("2026-09-08T09:00:00Z");
 const decide = (gateConclusion: string | null, quietSeconds: number | null) =>

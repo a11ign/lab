@@ -27,11 +27,12 @@
  * month is the case a hand-written list cannot cover -- and a fifth is exactly what happened to
  * `newestPerName` (#634 found the fifth call site of a fix applied four times).
  */
-// FIRST, so it observes every read below it -- #929. See `scripts/walk-scope.mjs`.
-import { declareWalkScope } from "../../../../scripts/walk-scope.mjs";
+// FIRST, so it observes every read below it -- #929. See `packages/guards/src/walk-scope.mjs`.
+import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { TOOLING_ROOTS } from "../../../guards/src/tooling-roots.mjs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -39,10 +40,16 @@ import { fileURLToPath } from "node:url";
  * WHAT THIS GUARD READS, declared so a product diff does not run it -- #929. It walks `scripts/` for the
  * merge-method call sites and nothing else; its own run checks that, and fails if it ever reads wider.
  */
-export const WALK_SCOPE = ["scripts"];
+// Three roots since the org tooling moved to @a11ign/agent-org: every `gh pr merge` call site went with
+// it, so a scope naming scripts/ alone would walk what is left and find none -- an emptiness this test
+// would have reported as compliance.
+// LITERALS, because `declareWalkScope` parses this statically and refuses a spread -- it cannot read a
+// value it would have to execute. So the list is spelled, and asserted equal to TOOLING_ROOTS below, which
+// keeps the drift this duplication would otherwise invite catchable rather than silent.
+export const WALK_SCOPE = ["scripts", "packages/agent-org/src", "packages/guards/src"];
 await declareWalkScope(import.meta.url);
 
-const SCRIPTS_DIR = fileURLToPath(new URL("../../../../scripts/", import.meta.url));
+const REPO_DIR = fileURLToPath(new URL("../../../../", import.meta.url));
 
 /** `gh(["pr", "merge", ...])` invocations, with the argument list as written. */
 const GH_PR_MERGE = /gh\(\s*\[\s*"pr"\s*,\s*"merge"\s*,([^\]]*)\]/g;
@@ -57,11 +64,16 @@ function mergeCallSites(): { file: string; args: string }[] {
       if (!entry.name.endsWith(".mjs")) continue;
       const source = readFileSync(path, "utf8");
       for (const m of source.matchAll(GH_PR_MERGE)) {
-        found.push({ file: path.slice(SCRIPTS_DIR.length), args: m[1] });
+        found.push({ file: path.slice(REPO_DIR.length), args: m[1] });
       }
     }
   };
-  walk(SCRIPTS_DIR);
+  // Every tooling root: the `gh pr merge` call sites moved to @a11ign/agent-org, and a walk of
+  // scripts/ alone found zero -- an empty population that passes every assertion below it.
+  for (const root of TOOLING_ROOTS) {
+    const dir = join(REPO_DIR, root);
+    if (existsSync(dir)) walk(dir);
+  }
   return found;
 }
 
@@ -70,9 +82,13 @@ test("the sweep FINDS the call sites -- a floor, because an empty population pas
   assert.ok(sites.length >= 4,
     `expected at least the four known gh pr merge call sites, found ${sites.length}. If the call shape `
     + "changed, this regex now sweeps an empty population and every assertion below passes vacuously.");
-  const files = new Set(sites.map((s) => s.file));
+  // Matched on the path's END, not on equality: `file` is repo-relative since the sweep spans three
+  // tooling roots, and naming the full path here would re-encode WHERE each script lives in a test that
+  // is about WHAT it calls.
+  const files = [...sites.map((s) => s.file)];
   for (const expected of ["arm-pr.mjs", "auto-arm-sweep.mjs", "merge-queue.mjs", "pr-hold.mjs"]) {
-    assert.ok(files.has(expected), `${expected} carries a gh pr merge call and the sweep must reach it`);
+    assert.ok(files.some((f) => f.endsWith(`/${expected}`) || f === expected),
+      `${expected} carries a gh pr merge call and the sweep must reach it`);
   }
 });
 
@@ -114,4 +130,9 @@ test("MUTATION TARGET: a fifth call site added with --squash is caught, and the 
   assert.deepEqual(offenders, ["some-new-script.mjs"],
     "the predicate must name the offending file, not merely fail -- a refusal you cannot act on is one "
     + "you route around");
+});
+
+test("the declared scope is the shared TOOLING_ROOTS, spelled out because the parser needs literals", () => {
+  assert.deepEqual([...WALK_SCOPE], [...TOOLING_ROOTS],
+    "a root added to TOOLING_ROOTS must be spelled here too, or this sweep stops seeing it");
 });

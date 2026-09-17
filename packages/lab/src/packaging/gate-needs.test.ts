@@ -7,9 +7,29 @@
  * `mergeSafety` 10, `docs` 9, `changed`/`ownedPaths` 5 -- two of every three red pull requests were red
  * for something that said nothing about whether the code works.
  *
- * The five are DROPPED FROM `needs`, not deleted. They still run and still report; they stop deciding.
+ * The five were DROPPED FROM `needs`, not deleted. They still run and still report; they stop deciding.
  * That distinction is what this file pins, in both directions: a job that stopped running would be a
- * silent loss of coverage, and a job back in `needs` would quietly restore the policy this row removed.
+ * silent loss of coverage, and a job back in `needs` would quietly restore the policy that row removed.
+ *
+ * `acceptance` AND `ownedPaths` CAME BACK ON 2026-09-17, and this file now pins the reversal.
+ *
+ * #902 was right that two of every three red pull requests said nothing about whether the code worked.
+ * It was the REMEDY that had a hole: `gate` is the only required context (branch protection's contexts
+ * are exactly `["gate"]`, required approvals 0), so a job outside `needs` runs, reports, and is IGNORED.
+ * Two pull requests merged red in two days through that hole, and on the second the acceptance command
+ * had already RUN AND PASSED -- the red was its PR body.
+ *
+ * A check that cannot block is worse than no check: it teaches everyone to scroll past red, and that
+ * habit is what makes the checks that DO matter unreadable. So each job is now one thing or the other.
+ *
+ * These two are worth blocking on, and the measurement says so rather than the intuition. Over the last
+ * 40 pull-request runs `acceptance` failed 4 times and caught ZERO broken builds -- twice a duplicated
+ * `Acceptance:` section, twice a missing `Closes` declaration. Neither is noise in #902's sense: a
+ * duplicated section means the checker CANNOT TELL which command to run, which is a refusal to verify
+ * rather than a verdict on the code; and both are fixable by the author in a minute. `edited` is in this
+ * workflow's triggers, so a corrected body re-runs the check -- the 2026-09-07 deadlock (a body-only
+ * defect with no trigger watching the body) is the condition that made blocking unsafe then, and it does
+ * not hold now.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -38,12 +58,15 @@ function gateBlock(): string {
 // it names today's answer so this file can assert the loop and the needs list against each other. A
 // correctly-added job turns two tests here red until KEPT is edited too; that friction is the price of
 // the second reading, and the edit is one line (worker-capture's review of #1001).
-const KEPT = ["changed", "ts", "python", "ansible", "changeset", "rulesFitness", "deliberateRefusals"];
+const KEPT = ["changed", "ts", "python", "ansible", "changeset", "rulesFitness", "deliberateRefusals",
+  "acceptance", "ownedPaths"];
 // #1065: `docs` left this list when it was deleted outright -- red and unread on an environment-only failure,
 // its population already run unscoped by trunk-guard after every merge.
-const DROPPED = ["board", "acceptance", "ownedPaths"];
+// `acceptance` and `ownedPaths` left this list on 2026-09-17 by moving INTO `KEPT` -- see the header. The
+// population must stay non-empty for the control below to mean anything, and `board` keeps it so.
+const DROPPED = ["board"];
 
-test("#902: the gate waits for the product jobs and nothing else", () => {
+test("the gate waits for exactly the jobs allowed to decide -- #902, amended 2026-09-17", () => {
   const needs = /needs: \[([^\]]+)\]/.exec(gateBlock())?.[1];
   assert.ok(needs, "the gate's `needs` is no longer a single-line list; this guard cannot read it");
   assert.deepEqual(needs!.split(",").map((name) => name.trim()).sort(), [...KEPT].sort());
@@ -58,14 +81,16 @@ test("#902: the three deliberate refusals are all in one job the gate needs", ()
   // `merge-guard.mjs --ci-gate` anywhere in the job, and the comment above the step says those words too:
   // deleting the step left the test green on its own explanation. A guard satisfied by prose about itself
   // is the shape this repo has paid for more than once.
-  assert.match(job, /run: node scripts\/merge-guard\.mjs --ci-gate/,
+  assert.match(job, /run: node packages\/agent-org\/src\/merge-guard\.mjs --ci-gate/,
     "the hold refusal left this job; no other workflow in this repo reads a `hold:` label");
-  assert.match(job, /run: node scripts\/closes-mismatch-check\.mjs/,
+  assert.match(job, /run: node packages\/agent-org\/src\/closes-mismatch-check\.mjs/,
     "#549's comparison left this job, and only it has a token");
-  assert.match(job, /run: \|\n[\s\S]*?node scripts\/workflow-lane-check\.mjs/,
-    "the lane check left this job; an UNASSIGNED crossing would then merge with no record, which is the "
-    + "case ceo's second ruling of 2026-09-11 kept it for");
-  assert.ok(KEPT.includes("deliberateRefusals"), "the job carrying all three must be one the gate waits for");
+  // The lane check was the third refusal here and is RETIRED: docs/lane-ownership.json set its own end
+  // date (#916's CODEOWNERS, 2026-09-15) and that passed unbuilt, and it was the only guard in `gate` an
+  // outside contributor structurally could not satisfy. Its data survives for row-file's lane labels.
+  assert.doesNotMatch(job, /workflow-lane-check/,
+    "the lane check is retired; a step still calling it would refuse PRs on a rule nobody can satisfy");
+  assert.ok(KEPT.includes("deliberateRefusals"), "the job carrying both must be one the gate waits for");
 });
 
 test("#902: each job the gate stopped waiting for STILL RUNS -- dropped from needs, not deleted", () => {

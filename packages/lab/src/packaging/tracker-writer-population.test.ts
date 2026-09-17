@@ -22,22 +22,26 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { TRACKER_WRITERS, TRACKER_WRITER_DIR, sendsABody, bodyFromArgv, assertNoLeakInArgv }
+import { TRACKER_WRITERS, TRACKER_WRITER_DIRS, sendsABody, bodyFromArgv, assertNoLeakInArgv }
   from "../../../../packages/lab/src/packaging/leak-patterns.mjs";
-import { localImports } from "../../../../scripts/local-import-closure.mjs";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { localImports } from "../../../guards/src/local-import-closure.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const GUARD = resolve(REPO, "packages/lab/src/packaging/leak-patterns.mjs");
 
-/** Every `.mjs` under `scripts/`, from git rather than a glob, so an untracked scratch file is not a writer. */
+/** Every `.mjs` a tracker writer could live in, from git rather than a glob, so an untracked scratch file
+ * is not a writer. THREE ROOTS, not one: the org tooling moved to `@a11ign/agent-org` and the repo-hygiene
+ * guards to `@a11ign/guards`, and a census still pointed at `scripts/` alone would walk what is left --
+ * 27 files instead of 100 -- and report a clean population having never looked at the writers. */
 const trackedScripts = () =>
-  execFileSync("git", ["ls-files", "scripts"], { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() })
+  execFileSync("git", ["ls-files", "scripts", "packages/agent-org/src", "packages/guards/src"],
+    { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() })
     .split("\n").filter((f) => f.endsWith(".mjs"));
 
 /** Does `entry`'s local-import closure reach the guard? */
@@ -79,7 +83,12 @@ function writerPopulation(
 const realPopulation = () => writerPopulation({
   root: REPO,
   files: trackedScripts(),
-  declared: TRACKER_WRITERS.map((name) => `${TRACKER_WRITER_DIR}${name}`),
+  declared: TRACKER_WRITERS.map((name) => {
+    // Resolve against each root; a writer must exist in exactly one of them.
+    const hit = TRACKER_WRITER_DIRS.map((d) => `${d}${name}`).find((p) => existsSync(resolve(REPO, p)));
+    assert.ok(hit, `declared writer ${name} is in none of ${TRACKER_WRITER_DIRS.join(", ")}`);
+    return hit as string;
+  }),
   read: (f) => readFileSync(f, "utf8"),
   reaches: (entry) => reachesGuard(entry),
 });

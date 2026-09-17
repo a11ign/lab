@@ -24,7 +24,7 @@ import path from "node:path";
  * no such split between platforms.
  */
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
-const SCRIPT = path.join(REPO, "scripts/mutation-check.mjs");
+const SCRIPT = path.join(REPO, "packages/guards/src/mutation-check.mjs");
 
 /** Run the checker and return its exit code and output, never throwing on a non-zero exit. */
 function check(args: string[]): { code: number; out: string } {

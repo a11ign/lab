@@ -1,12 +1,12 @@
 /**
  * `changedPackages` is the pre-push hook's FAST-gate scope: which `packages/<name>` a branch touched
  * against `origin/main`, so an `agent/*`/`lead/*` push tests only what it changed instead of the whole
- * tree. See `scripts/changed-packages.mjs`'s header for why this is deliberately blunt (not dependency-
+ * tree. See `packages/guards/src/changed-packages.mjs`'s header for why this is deliberately blunt (not dependency-
  * aware) and why an EMPTY result must be read as "run everything", never as "run nothing".
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { changedPackages, changedPackagesAgainstOrigin } from "../../../../scripts/changed-packages.mjs";
+import { changedPackages, changedPackagesAgainstOrigin } from "../../../guards/src/changed-packages.mjs";
 
 test("finds every packages/<name> touched, deduped and sorted", () => {
   const diff = [

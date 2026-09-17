@@ -12,15 +12,15 @@
 
 /**
  * `pr:open`/`pr:edit` (#746) -- check a PR body's Acceptance/Closes with the tree's OWN parser
- * (`scripts/acceptance-commands.mjs`) BEFORE `gh pr create`/`gh pr edit` ever sends it, refusing with the
+ * (`packages/agent-org/src/acceptance-commands.mjs`) BEFORE `gh pr create`/`gh pr edit` ever sends it, refusing with the
  * parser's own message. Four real PRs went red on the body in one day, four authors, four modes, none of
- * them a defect in the change -- see `scripts/pr-open.mjs`'s own header for the full account.
+ * them a defect in the change -- see `packages/agent-org/src/pr-open.mjs`'s own header for the full account.
  *
  * THE FOUR FIXTURES BELOW ARE RECONSTRUCTED, not archived verbatim -- #708/#723/#727/#736 were each
  * edited to fix the body after the fact (confirmed via `gh api graphql`'s `userContentEdits`, which does
  * not cleanly hand back the exact pre-fix text through consecutive diffs), so each fixture here reproduces
  * the SHAPE #746's own summary table names, verified against the REAL, unmodified
- * `scripts/acceptance-commands.mjs` (never guessed): a duplicate Acceptance header (#708), prose under
+ * `packages/agent-org/src/acceptance-commands.mjs` (never guessed): a duplicate Acceptance header (#708), prose under
  * `Acceptance:` with no `Closes` at all (#723), a piped command the file pre-check cannot parse (#727),
  * and the section living under `## Verified` instead of `## Acceptance` (#736).
  */
@@ -33,7 +33,7 @@ import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { acceptanceEnv, checkBody, bodyFromArgs, armAfterCreate, sendToGitHub, headTreeRefusal, editTreeRefusal,
   main as prOpenMain,
-  EXIT_NOTHING_SENT, EXIT_USAGE, EXIT_LANDED_THEN_FAILED } from "../../../../scripts/pr-open.mjs";
+  EXIT_NOTHING_SENT, EXIT_USAGE, EXIT_LANDED_THEN_FAILED } from "../../../agent-org/src/pr-open.mjs";
 
 const NEVER_RUN = () => { throw new Error("checkBody must never RUN a command for a body this test expects to refuse"); };
 
@@ -127,7 +127,7 @@ test("--body wins when both are given, matching gh's own last-flag-wins conventi
 
 test("checkBody's own source imports acceptanceReport and closesDeclarationReport from "
   + "acceptance-commands.mjs, and calls both -- never a local regex re-implementing the question", () => {
-  const path = fileURLToPath(new URL("../../../../scripts/pr-open.mjs", import.meta.url));
+  const path = fileURLToPath(new URL("../../../agent-org/src/pr-open.mjs", import.meta.url));
   const source = stripComments(readFileSync(path, "utf8"));
   assert.match(source, /from\s+["']\.\/acceptance-commands\.mjs["']/);
   assert.match(source, /\bacceptanceReport\s*\(/);
@@ -354,7 +354,7 @@ test("#1344 case 3: an unpushed B (origin/B unreadable) refuses and says to push
 });
 
 test("#1344 WIRING: main() refuses a mismatched head BEFORE checkBody runs any Acceptance command", () => {
-  const source = stripComments(readFileSync(fileURLToPath(new URL("../../../../scripts/pr-open.mjs", import.meta.url)), "utf8"));
+  const source = stripComments(readFileSync(fileURLToPath(new URL("../../../agent-org/src/pr-open.mjs", import.meta.url)), "utf8"));
   const start = source.indexOf("function main(");
   const main = source.slice(start, source.indexOf("\n}\n", start));
   const refusal = main.indexOf("headTreeRefusal(mode, rest,");
@@ -440,7 +440,7 @@ test("#1446: edit must be given a PR NUMBER first, and create asks nothing here"
 });
 
 test("#1446 WIRING: main() refuses an edit off PR N's head BEFORE checkBody runs any Acceptance command", () => {
-  const source = stripComments(readFileSync(fileURLToPath(new URL("../../../../scripts/pr-open.mjs", import.meta.url)), "utf8"));
+  const source = stripComments(readFileSync(fileURLToPath(new URL("../../../agent-org/src/pr-open.mjs", import.meta.url)), "utf8"));
   const start = source.indexOf("function main(");
   const main = source.slice(start, source.indexOf("\n}\n", start));
   const refusal = main.indexOf("editTreeRefusal(mode, rest,");
@@ -514,7 +514,7 @@ test("#1479 CONTROL: a create that FAILS still exits EXIT_NOTHING_SENT and never
 });
 
 test("#1479: the script's header documents every exit code main returns, each on its own line", () => {
-  const text = readFileSync(fileURLToPath(new URL("../../../../scripts/pr-open.mjs", import.meta.url)), "utf8");
+  const text = readFileSync(fileURLToPath(new URL("../../../agent-org/src/pr-open.mjs", import.meta.url)), "utf8");
   const header = text.slice(0, text.indexOf("\nimport "));
   for (const code of [0, EXIT_NOTHING_SENT, EXIT_USAGE, EXIT_LANDED_THEN_FAILED]) {
     assert.match(header, new RegExp(`^//\\s+${code}\\s+\\S`, "m"), `exit ${code} has its own line in the header`);

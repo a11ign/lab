@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import { scanBlob, KEY_FILENAME_RE, TEMPLATE_SUFFIX_RE, scanHistory } from "../../../../scripts/history-secret-scan.mjs";
 import { nonStandardRefs } from "../../../../scripts/history-purge-rehearsal.mjs";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 test("scanBlob: an internal address is found and counted", () => {
   const findings = scanBlob("worker at REDACTED-INTERNAL-ADDRESS and also REDACTED-INTERNAL-ADDRESS", "inventory.yml");
@@ -56,7 +56,7 @@ test("KEY_FILENAME_RE: private-key-shaped filenames match regardless of director
 });
 
 test("KEY_FILENAME_RE: an ordinary source file does not match", () => {
-  for (const path of ["scripts/board-report.mjs", "packages/lab/src/packaging/board-style.test.ts", "README.md"]) {
+  for (const path of ["packages/agent-org/src/board-report.mjs", "packages/lab/src/packaging/board-style.test.ts", "README.md"]) {
     assert.ok(!KEY_FILENAME_RE.test(path), `expected ${path} NOT to match`);
   }
 });

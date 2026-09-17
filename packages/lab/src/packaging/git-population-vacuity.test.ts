@@ -60,8 +60,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { sandboxGitEnv } from "../../../../scripts/git-env.mjs";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard

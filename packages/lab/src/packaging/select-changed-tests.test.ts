@@ -40,7 +40,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { declareTreeWideGuard } from "../../../../scripts/tree-wide-guard.mjs";
+import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
 import {
   sourceClosure, discoverTestFiles, selectTests, broadReasons, pathStringReferences,
   discoversFromTree, alwaysRunTests, testFilesToRun, selectionFor,
@@ -167,7 +167,7 @@ test("broadReasons: ci.yml itself IS a reason -- a job definition can affect any
 
 test("#A1c NARROWING: a scripts/*.mjs file is NO LONGER a broad reason on its own -- it goes through "
   + "the by-import reference search instead", () => {
-  assert.deepEqual(broadReasons(["scripts/merge-guard.mjs"]), []);
+  assert.deepEqual(broadReasons(["packages/agent-org/src/merge-guard.mjs"]), []);
 });
 
 test("#A1c NARROWING: a hook or non-ci.yml workflow file is NO LONGER a broad reason -- it goes through "
@@ -430,7 +430,7 @@ test("discoversFromTree: a git ENUMERATION is a tree walk, however it is spawned
   + "a local `run()` seam, so matching `execFileSync`/`spawnSync` by name silently dropped three tests", () => {
   assert.equal(discoversFromTree(realSource("packages/lab/src/packaging/generated-paths.test.ts")), true,
     "a direct `git ls-files` enumeration in a guard that walks the tree");
-  assert.equal(discoversFromTree(realSource("scripts/isolation-gate.mjs"), { asHelper: true }), true,
+  assert.equal(discoversFromTree(realSource("packages/guards/src/isolation-gate.mjs"), { asHelper: true }), true,
     "`run(\"git\", [\"ls-files\"], dir, sandboxGitEnv())` -- the INDIRECTED spawn. If this file stops "
     + "reaching git through a seam, move this assertion to whichever one still does; do not delete it, "
     + "because the seam is the whole reason the pattern is not a list of function names");
@@ -494,7 +494,7 @@ test("alwaysRunTests: THE INCIDENT, reproduced -- the diff that added `acceptanc
   const guard = "packages/lab/src/packaging/git-spawn-classification.test.ts";
   // The incident's own diff, quoted rather than re-derived from history: a shallow checkout cannot see
   // `bb0854da`, and a test that skips in CI proves nothing about the job CI runs.
-  const changed = ["packages/lab/src/packaging/acceptance-prose.test.ts", "scripts/acceptance-commands.mjs"];
+  const changed = ["packages/lab/src/packaging/acceptance-prose.test.ts", "packages/agent-org/src/acceptance-commands.mjs"];
   const testFiles = discoverTestFiles(REPO, ["lab"]);
   const selection = selectTests(changed, { closureOf, testFiles, repoRoot: REPO, testPackages: ["lab"] });
   assert.ok(!selection.selectedTests.includes(guard),

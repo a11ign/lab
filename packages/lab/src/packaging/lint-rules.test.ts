@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { derivedLocalRule } from "../../../../scripts/uncontrolled-emptiness.mjs";
+import { derivedLocalRule } from "../../../guards/src/uncontrolled-emptiness.mjs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ESLint } from "eslint";
