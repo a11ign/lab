@@ -17,7 +17,6 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { changedFiles } from "../../../guards/src/changed-files.mjs";
-import { laneVerdict, loadLanes } from "../../../agent-org/src/workflow-lane-check.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
@@ -52,11 +51,10 @@ test("#939 REPRODUCED: a bare `git diff --name-only` lists only where the file W
   }
 });
 
-test("#939 THE BYPASS, CLOSED: the lane check sees a file moved OUT of the pipeline lane", () => {
-  // `.github/workflows/` belongs to the pipeline lane. A PR from another lane that moves a workflow file OUT
-  // of it changed a lane-owned path; with only the destination listed, the check had nothing to refuse.
-  const lanes = loadLanes();
-  assert.ok(lanes, "lane-ownership.json must be readable, or this test asserts nothing");
+test("#939 THE BYPASS, CLOSED: a file moved OUT of a directory is still listed against it", () => {
+  // The bypass this closed: with only the destination listed, a reader asking "did this PR touch
+  // .github/workflows/" saw nothing when a file was moved OUT of it. The lane check was the reader at the
+  // time and has since been retired; the listing property is what mattered and is what this pins.
   const root = mkdtempSync(join(tmpdir(), "renames-lane-939-"));
   try {
     const git = (...args: string[]) =>
@@ -72,11 +70,11 @@ test("#939 THE BYPASS, CLOSED: the lane check sees a file moved OUT of the pipel
     git("mv", ".github/workflows/moved.yml", "docs/moved.yml");
     git("commit", "-qm", "take it out of the lane");
     const seen = changedFiles(["HEAD~1", "HEAD"], { repoRoot: root });
-    assert.ok(seen.includes(".github/workflows/moved.yml"), "the source side is what the lane check needs");
-    const asked = { changed: seen, branch: "agent/some-capture-row-1", body: "", lanes };
-    assert.equal(laneVerdict(asked).code, 1, "a lane-owned path moved away must be refused, not waved through");
-    // The control: with only the destination, as before this row, the same PR passes.
-    assert.equal(laneVerdict({ ...asked, changed: ["docs/moved.yml"] }).code, 0);
+    // THE SOURCE SIDE IS LISTED, which is the fact #939 is about. The lane check that consumed it has
+    // since been retired, but the property is not its: a bare `git diff --name-only` prints only where a
+    // file WENT, so any reader asking "did this PR touch X" would miss a file moved OUT of X.
+    assert.ok(seen.includes(".github/workflows/moved.yml"), "the source side of a rename must be listed");
+    assert.ok(seen.includes("docs/moved.yml"), "and so must the destination -- both sides, not one");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -150,8 +148,11 @@ test("#939 THE READERS: each surviving one goes through the helper, and board-da
     assert.match(source(reader), /import \{ changedFiles \} from "[^"]*changed-files\.mjs"/,
       `${reader} does not import the shared helper`);
   }
-  assert.match(source(".github/workflows/ci.yml"), /node packages\/guards\/src\/changed-files\.mjs origin\/\$\{\{ github\.base_ref \}\}\.\.\.HEAD > \/tmp\/lane-changed\.txt/,
-    "the lane check's own feed must come from the helper");
+  // The lane check that consumed /tmp/lane-changed.txt is retired, so there is no longer a workflow feed
+  // to pin here. What survives is the rule above: every READER of a changed-path list imports the helper
+  // rather than rolling its own `git diff`, and that is asserted per-reader, not per-consumer.
+  assert.doesNotMatch(source(".github/workflows/ci.yml"), /lane-changed\.txt/,
+    "the retired lane check must leave no half-removed feed behind in ci.yml");
   // #939's second defect, on the same line: the read-set check compared to LOCAL `main`, which in a shared
   // checkout has been measured over a thousand commits stale.
   assert.match(source("packages/agent-org/src/board-data.mjs"), /changedFiles\(\["origin\/main"\], \{ repoRoot: ROOT, pathspec: \[\.\.\.READ_SET\] \}\)/);
