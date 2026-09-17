@@ -2,7 +2,7 @@
  * #1319, STEP 3 OF THE RSTEST ADOPTION (#1317): CI's `ts` job and trunk's unscoped step run rstest, not `tsx --test`.
  *
  * Both jobs run through `reusable-build-test.yml`. Its scoped step ran `npx tsx --test` on the files
- * `select-changed-tests.mjs` picked, and its unscoped step runs `npm run test:ts`, which reaches the runner through
+ * `select-changed-tests.mjs` picked, and its unscoped step runs `npm run test:all`, which reaches the runner through
  * `assert-glob-not-empty.mjs --run`. So the switch lives in those files, and this one pins it with comments stripped,
  * because a runner named only in a comment runs nothing.
  *
@@ -100,10 +100,16 @@ test("#1319: both branches of the scoped step go through the floor to rstest", (
   assert.equal(floorLine("files", "--min=1 --run --runner=rstest").length, 1, `the selected-files branch:\n${lines.join("\n")}`);
 });
 
-test("#1319: the unscoped step runs `npm run test:ts`, and `test:ts` asks the floor for rstest over the whole glob", () => {
-  assert.deepEqual(codeLines(STEPS[stepNamed(UNSCOPED)].run ?? "").map((line) => line.trim()), ["npm run test:ts"]);
-  assert.match(SCRIPTS["test:ts"],
-    /assert-glob-not-empty\.mjs "packages\/\*\/src\/\*\*\/\*\.test\.ts" --min=300 --run --runner=rstest /);
+test("#1319: the unscoped step runs `npm run test:all`, and it asks the floor for rstest over every package", () => {
+  // `test:all`, not `test:ts`: since the package split `test:ts` is the PRODUCT suite and the org's tests
+  // live in agent-org/guards/lab. "Unscoped" means every merge to main gets the full answer regardless of
+  // the diff, so it must be the glob that covers every package -- `test:ts` here would run a third of the
+  // suite and still read green, which is the defect this whole file exists to pin.
+  assert.deepEqual(codeLines(STEPS[stepNamed(UNSCOPED)].run ?? "").map((line) => line.trim()), ["npm run test:all"]);
+  // The whole-package glob and its floor live on `test:all` now; `test:ts` carries the product brace list.
+  assert.match(SCRIPTS["test:all"],
+    /assert-glob-not-empty\.mjs "packages\/\*\/src\/\*\*\/\*\.test\.ts" --min=500 --run --runner=rstest /);
+  assert.match(SCRIPTS["test:ts"], /assert-glob-not-empty\.mjs "packages\/\{[a-z,-]+\}\/src\/\*\*\/\*\.test\.ts" --min=180 --run --runner=rstest /);
 });
 
 test("#1319: `test:nightly` and `coverage` stay on tsx until step 4 (#1320), by ceo's ruling", () => {
@@ -284,7 +290,9 @@ test("#1319: after both test steps, an EMPTY rstest cache fails the job -- the a
     writeFileSync(join(dir, "node_modules/.cache/rstest-a11y-witness/rstest-development/_meta"), "x");
     const filled = runIn();
     assert.equal(filled.status, 0, `${filled.stdout}${filled.stderr}`);
-    assert.match(filled.stdout, /files under node_modules\/\.cache\/rstest-\* after the tests: 1\b/);
+    // `\s+` not a single space: the workflow echoes `$(... | wc -l)`, and BSD `wc` (macOS) pads the
+    // count with leading spaces where GNU `wc` (the CI runners) does not. The count is still pinned to 1.
+    assert.match(filled.stdout, /files under node_modules\/\.cache\/rstest-\* after the tests:\s+1\b/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
