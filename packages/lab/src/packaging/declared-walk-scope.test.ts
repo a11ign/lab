@@ -110,7 +110,7 @@ const readSource = (rel: string) => SOURCES[rel];
 test("BOTH DIRECTIONS: a guard declaring scripts/ is left out of a judge diff and kept for a scripts diff", () => {
   const product = narrowByDeclaredScope(GUARDS, ["packages/judge/src/rules.ts"], { readSource });
   assert.ok(product.narrowed.some((n) => n.test === "g/declares-scripts.test.ts"));
-  const pipeline = narrowByDeclaredScope(GUARDS, ["packages/agent-org/src/merge-guard.mjs"], { readSource });
+  const pipeline = narrowByDeclaredScope(GUARDS, ["scripts/merge-guard.mjs"], { readSource });
   const kept = pipeline.kept.find((g) => g.test === "g/declares-scripts.test.ts");
   assert.ok(kept, "a diff inside the declared scope must keep the guard");
   assert.match(kept!.why, /declared walk scope \(scripts\) is touched/, "and say why it is running");

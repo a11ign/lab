@@ -195,7 +195,9 @@ test("board-data.mjs and row-claim.mjs DERIVE the name rather than restating it 
   // catch, and a test asserting a literal here would be re-introducing the duplicate this row removes.
   for (const file of ["packages/agent-org/src/board-data.mjs", "packages/agent-org/src/row-claim.mjs"]) {
     const text = readFileSync(path.join(ROOT, file), "utf8");
-    assert.match(text, /from ["']\.\/repo-identity\.mjs["']/,
+    // The specifier is relative to wherever the consumer lives -- these two moved into @a11ign/agent-org,
+    // so it is no longer `./`. What matters is that the name is IMPORTED, not which depth the path has.
+    assert.match(text, /from ["'][^"']*repo-identity\.mjs["']/,
       `${file} must import REPO from repo-identity.mjs rather than declaring its own copy`);
     assert.ok(!new RegExp(`["']${REPO.replace(/[/.]/g, "\\$&")}["']`).test(text),
       `${file} still declares the repository name as its own string literal`);

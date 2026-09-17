@@ -1122,7 +1122,9 @@ test("CHECKS names all thirteen, so the partial-audit sentence states a true den
 
 // --- #804: the four claim-label literals are declared in EXACTLY ONE place, packages/agent-org/src/claim-labels.mjs ---
 
-const SCRIPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../../../scripts");
+// claim-labels.mjs and every consumer of it moved into @a11ign/agent-org, so the census walks there.
+// A scan still pointed at scripts/ would find none of the four literals and report a clean run.
+const SCRIPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../../agent-org/src");
 const CLAIM_LABEL_NAMES = ["READY_LABEL", "WAS_READY_LABEL", "CLAIM_LABEL", "STARTED_LABEL"];
 /** A fresh declaration (`const X = "..."`), never an import or a re-export -- both of those name the
  * identifier too, and only a declaration is the drift risk this test exists to close off. */
@@ -1267,7 +1269,7 @@ test("criterionStatusesFromSource: extracts every criterion/status pair, comment
 
 test("criterionStatusesFromSource: the real file yields all 55 WCAG 2.2 AA criteria", () => {
   const source = readFileSync(
-    join(SCRIPTS_DIR, "..", "packages/judge/src/criterion-coverage.ts"), "utf8");
+    join(SCRIPTS_DIR, "../..", "judge/src/criterion-coverage.ts"), "utf8");
   const statuses = criterionStatusesFromSource(source);
   assert.ok(statuses.size >= 50, `only found ${statuses.size} -- the scan's own shape may have drifted`);
   assert.equal(statuses.get("1.3.5"), "partial", "#869's own fix -- re-read the file if this drifts");
