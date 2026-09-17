@@ -35,7 +35,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 
-import { sandboxGitEnv } from "../../../scripts/git-env.mjs";
+import { sandboxGitEnv } from "../../guards/src/git-env.mjs";
 import { floorRows } from "./calibrate-abstention.mjs";
 import { normaliseUrl, realPageFor } from "../src/training/real-page-corpus.mjs";
 import { REPO_ROOT } from "../src/dataset-paths.mjs";
