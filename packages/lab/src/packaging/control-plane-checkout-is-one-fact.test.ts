@@ -147,11 +147,11 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
     + "renamed",
   "cd": "prose ABOUT the command, in a README's `cd` into ...` sentence -- the pattern catches the word "
     + "following `cd`, and here that word is the next literal in the sentence rather than a directory",
-  "repo": "a PLACEHOLDER in `docs/roles/README.md`'s instructions, the shape `<repo>` would have if the "
+  "repo": "a PLACEHOLDER in `packages/agent-org/docs/roles/README.md`'s instructions, the shape `<repo>` would have if the "
     + "author had written the angle brackets",
   "checkout": "the same, one line down",
   "<dir>": "a PLACEHOLDER for the primary checkout in the role files that tell a session where to work: "
-    + "`docs/roles/product-manager.md`'s resume rules and `docs/roles/reviewer.md`'s worktree steps "
+    + "`packages/agent-org/docs/roles/product-manager.md`'s resume rules and `packages/agent-org/docs/roles/reviewer.md`'s worktree steps "
     + "(`git -C <dir>`, never a bare `cd`). Prose stating the rule this guard enforces, with the angle "
     + "brackets written; not a directory. Widening this population means widening this sentence",
   "a11y-witness/packages/control/ansible": "the copy-paste runbook in `packages/control/ansible/"
@@ -422,7 +422,7 @@ test("THE EXEMPTION IS THE FIELD, NOT THE FILE -- a quoted `command` in a report
   // boundary is not UNLIMITED and say nothing about whether it is NARROW. `npm run mutate` reported
   // exactly that, as THE GUARD DID NOT BITE rather than as a failure -- a pin asserting the wrong half
   // is indistinguishable from a working one until something breaks the half it does not watch.
-  assert.notDeepEqual(entrySitesIn("docs/roles/README.md", `\`${ran}\``), [],
+  assert.notDeepEqual(entrySitesIn("packages/agent-org/docs/roles/README.md", `\`${ran}\``), [],
     "a `cd` in ordinary documentation is still a site to classify");
 
   assert.notDeepEqual(entrySitesIn(record, `{ not json at all: cd /root/whatever &&`), [],

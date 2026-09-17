@@ -83,7 +83,7 @@ export function orphanJobs({ repoRoot, supportsLaunchd, listInstalled }) {
  *   - This is macOS and the job is missing, but nothing has said THIS machine is meant to be running
  *     it -- reported as `not-installed-here`, never failed. Most Macs that clone this repo are not the
  *     control plane, and a check that fails there is the exact "red gate everyone learns to ignore" shape
- *     this repo has been burned by before (docs/roles/roles-readme.test.ts's missing-role-file split is
+ *     this repo has been burned by before (packages/agent-org/docs/roles/roles-readme.test.ts's missing-role-file split is
  *     the precedent this follows).
  *   - This is macOS, the caller has explicitly asserted control-plane status (`assertControlPlane: true`,
  *     driven by `A11Y_ASSERT_CONTROL_PLANE=1` at the CLI), and the job is STILL missing -- that is a real

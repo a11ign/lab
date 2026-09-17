@@ -3,7 +3,7 @@
  * What a public repo must never carry in tracked prose: real internal addresses, named SSH key files, and
  * the retired `pct exec` container-hop idiom (ADR 0013). This repo went public on 2026-09-06.
  *
- * ONE set, shared by every leak guard in this repo. `docs/roles/memory/nvda-worker-vm-access.md`'s own
+ * ONE set, shared by every leak guard in this repo. `packages/agent-org/docs/roles/memory/nvda-worker-vm-access.md`'s own
  * guard (`roles-memory.test.ts`) and this repo-wide sweep (`tracked-prose-leak-guard.test.ts`) both drive
  * these — never a second, independently-typed copy of the same three regexes, which is exactly the
  * "a fact stated twice, and the copies drifted" shape this repo's own CLAUDE.md names as its most

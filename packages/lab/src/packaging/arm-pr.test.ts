@@ -332,12 +332,12 @@ test("#1022: prState returns null rather than a guess when the read fails", () =
   assert.equal(prState({ number: "1", repo: "o/r", run: () => JSON.stringify({ state: "OPEN" }) }), "OPEN");
 });
 
-// --- #1453: the live set is READ from docs/roles/sessions.json, and arm-pr types none ---
+// --- #1453: the live set is READ from packages/agent-org/docs/roles/sessions.json, and arm-pr types none ---
 
-const SESSIONS_FILE = new URL("../../../../docs/roles/sessions.json", import.meta.url);
+const SESSIONS_FILE = new URL("../../../../packages/agent-org/docs/roles/sessions.json", import.meta.url);
 const sessionsFile = () => JSON.parse(readFileSync(SESSIONS_FILE, "utf8")) as { live: { name: string }[]; retired: { name: string }[] };
 
-test("#1453 ACCEPTANCE: arm-pr's live and retired sets EQUAL docs/roles/sessions.json's, worker-tooling included", () => {
+test("#1453 ACCEPTANCE: arm-pr's live and retired sets EQUAL packages/agent-org/docs/roles/sessions.json's, worker-tooling included", () => {
   const file = sessionsFile();
   assert.deepEqual([...LIVE_SESSIONS], file.live.map((s) => s.name), "the live set is the file's, in the file's order");
   assert.deepEqual([...RETIRED_SESSIONS], file.retired.map((s) => s.name), "and so is the retired set");
@@ -383,7 +383,7 @@ test("#1453 STRUCTURAL: arm-pr.mjs declares no session-name array -- a typed lis
   const names = [...file.live, ...file.retired].map((s) => s.name);
   const source = readFileSync(new URL("../../../agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
   assert.deepEqual(typedSessionArrays(source, names), [],
-    "arm-pr.mjs types a session list instead of reading docs/roles/sessions.json");
+    "arm-pr.mjs types a session list instead of reading packages/agent-org/docs/roles/sessions.json");
   // POSITIVE CONTROL, built from the file's own names so this test file types no list either: the shape of the line #1453
   // removed is found by the same predicate.
   const typed = `export const LIVE_SESSIONS = [${file.live.map((s) => JSON.stringify(s.name)).join(", ")}];`;

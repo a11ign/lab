@@ -23,7 +23,7 @@
  *
  * ## Why this reuses `LEAK_PATTERNS` rather than writing a second detector
  *
- * `docs/roles/memory/nvda-worker-vm-access.md` already had a leak guard (`roles-memory.test.ts`) scoped to
+ * `packages/agent-org/docs/roles/memory/nvda-worker-vm-access.md` already had a leak guard (`roles-memory.test.ts`) scoped to
  * one directory. This is the SAME regexes (`packages/lab/src/packaging/leak-patterns.mjs`), walking every
  * tracked `.md` file instead — a second, independently-typed copy of the rule is exactly the "a fact
  * stated twice, and the copies drifted" shape this repo's own CLAUDE.md names as its most expensive

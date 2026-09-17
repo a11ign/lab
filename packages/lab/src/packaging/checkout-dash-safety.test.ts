@@ -257,7 +257,7 @@ test("#637 MUTATION direction 1: `git checkout -- <file>` really discards an unc
 test("#637 MUTATION direction 2: the same string in a `.md` file changes nothing — `tracked()` never "
   + "returns it, so an unclassified prose mention cannot make the classification test above fail", () => {
   // Direct proof against the real discovery function, not a description of the glob: this repository's
-  // OWN docs (CLAUDE.md, docs/operational-lessons.md, six files under docs/roles/) already carry the
+  // OWN docs (CLAUDE.md, docs/operational-lessons.md, six files under packages/agent-org/docs/roles/) already carry the
   // exact string "git checkout --" as a warning, right now, and none of them appears in `tracked()` or
   // in `discoverCheckoutDashSites()`'s result.
   const discovered = discoverCheckoutDashSites();
