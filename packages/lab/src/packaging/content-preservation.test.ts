@@ -89,6 +89,33 @@ function norm(s: string): string {
   return s.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * The contents of many blobs, in ONE `git` process -- `git cat-file --batch` takes the revisions on
+ * stdin and streams each blob back, so reading N files costs one spawn rather than N.
+ *
+ * Reads a BUFFER, never an encoded string: the size in each header is a count of BYTES, and slicing a
+ * utf8-decoded string by a byte offset silently mis-slices the first blob containing a multi-byte
+ * character -- and every blob after it, since the offsets are cumulative.
+ */
+function blobsAt(revs: string[]): string[] {
+  if (revs.length === 0) return [];
+  const out = execFileSync("git", ["cat-file", "--batch"],
+    { cwd: REPO_ROOT, env: sandboxGitEnv(), input: `${revs.join("\n")}\n`, maxBuffer: 1024 * 1024 * 64 });
+  const texts: string[] = [];
+  let at = 0;
+  for (const rev of revs) {
+    const nl = out.indexOf(0x0a, at);
+    if (nl < 0) throw new Error(`git cat-file --batch: output ended before the header for ${rev}`);
+    const header = out.toString("utf8", at, nl);
+    // "<sha> <type> <size>", or "<rev> missing" -- the second is a real answer and must not read as empty.
+    const size = Number(header.split(" ")[2]);
+    if (!Number.isFinite(size)) throw new Error(`git cat-file --batch: ${rev} -> "${header}"`);
+    texts.push(out.toString("utf8", nl + 1, nl + 1 + size));
+    at = nl + 1 + size + 1;  // the blob, then the LF git writes after it
+  }
+  return texts;
+}
+
 /** Every `.md` file under `docs/`, recursively. */
 function allDocsMd(dir: string): string[] {
   const found: string[] = [];
@@ -106,15 +133,32 @@ function allDocsMd(dir: string): string[] {
   return found;
 }
 
-function ensureOriginMain(): void {
+/**
+ * Does `origin/main` resolve HERE? NO NETWORK, deliberately.
+ *
+ * This used to fall back to `git fetch --depth=50` when the ref was missing, which made a unit test a
+ * network client: it can hang, it can fail behind a proxy or an offline runner, and it puts a remote in
+ * the critical path of a suite whose whole subject is local text. It also self-healed the very condition
+ * the tests below are written to report, so a checkout missing the ref silently became one that had it.
+ *
+ * The rule this file already states for missing history applies verbatim: *a guard that cannot see the
+ * history must say so, not compare against what it happens to have.* Fetching is the same error one step
+ * earlier -- going and getting the history rather than reporting its absence. So the callers skip, naming
+ * the remedy, and CI is unaffected: the `ts` job checks out at `fetch-depth: 0`.
+ */
+function originMainResolves(): boolean {
   try {
     execFileSync("git", ["rev-parse", "--verify", "origin/main"],
       { cwd: REPO_ROOT, env: sandboxGitEnv(), stdio: "pipe" });
+    return true;
   } catch {
-    execFileSync("git", ["fetch", "--depth=50", "origin", "main:refs/remotes/origin/main"],
-      { cwd: REPO_ROOT, env: sandboxGitEnv(), stdio: "pipe" });
+    return false;
   }
 }
+
+/** One wording for the skip, so all three sites report the absence and the remedy identically. */
+const NO_ORIGIN_MAIN = "origin/main does not resolve in this checkout -- run `git fetch origin main`. "
+  + "Not run, and not counted as a pass.";
 
 /** Every substantive line the diff marks as REMOVED from CLAUDE.md, whitespace-normalised. */
 export function removedSubstantiveLines(diff: string): string[] {
@@ -236,10 +280,10 @@ export function unpreservedMessage(
     + (missing.length > 20 ? `\n...and ${missing.length - 20} more` : "");
 }
 
-test("origin/main resolves to a real commit -- this test cannot pass having examined nothing", () => {
+test("origin/main resolves to a real commit -- this test cannot pass having examined nothing", (t) => {
   // NOT "the diff is non-empty": trunk-guard runs this SAME suite against main's own tip, where HEAD
   // legitimately equals origin/main. The vacuity risk is `origin/main` failing to RESOLVE at all.
-  ensureOriginMain();
+  if (!originMainResolves()) { t.skip(NO_ORIGIN_MAIN); return; }
   const sha = execFileSync("git", ["rev-parse", "--verify", "origin/main"],
     { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8" }).trim();
   assert.match(sha, /^[0-9a-f]{40}$/, `origin/main resolved to "${sha}", not a real commit SHA`);
@@ -265,7 +309,7 @@ test("origin/main resolves to a real commit -- this test cannot pass having exam
  * behind-main head rather than reasoning about the dots.
  */
 test("every substantive line removed from CLAUDE.md still exists as text somewhere", (t) => {
-  ensureOriginMain();
+  if (!originMainResolves()) { t.skip(NO_ORIGIN_MAIN); return; }
   const git = (...args: string[]) => execFileSync("git", args,
     { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8", maxBuffer: 1024 * 1024 * 64 });
   // A MERGE-BASE NEEDS HISTORY, AND NOT EVERY JOB HAS IT. `ci.yml`'s `acceptance` job runs this suite
@@ -385,8 +429,10 @@ test("#907's diff: the old guard flagged 8 of 9, this flags the 1 whose text rea
   const removed = removedSubstantiveLines(git("diff", BASE, HEAD, "--", "CLAUDE.md"));
   assert.equal(removed.length, 9, "the population is pinned: #907 removed 9 substantive lines");
   const docs = git("ls-tree", "-r", "--name-only", HEAD, "docs/").split("\n").filter((f) => f.endsWith(".md"));
-  const hay = norm(git("show", `${HEAD}:CLAUDE.md`)) + " "
-    + docs.map((f) => norm(git("show", `${HEAD}:${f}`))).join(" ");
+  // ONE git process for all 140 blobs, not one per file. This spawned `git show` once per `docs/*.md`
+  // -- 139 of them at this commit -- and then threw the per-file boundaries away, because the haystack is
+  // a CONCATENATION. The spawns bought nothing the join did not immediately discard.
+  const hay = blobsAt([`${HEAD}:CLAUDE.md`, ...docs.map((f) => `${HEAD}:${f}`)]).map(norm).join(" ");
   const missing = unpreservedLines(removed, hay);
   assert.equal(missing.length, 1,
     `expected exactly the one true positive; got ${missing.length}: `
@@ -412,7 +458,7 @@ test("#907's diff: the old guard flagged 8 of 9, this flags the 1 whose text rea
 test("a branch merely BEHIND main is accused of nothing -- the two-dot trap", (t) => {
   const git = (...args: string[]) => execFileSync("git", args,
     { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8", maxBuffer: 1024 * 1024 * 64 });
-  ensureOriginMain();
+  if (!originMainResolves()) { t.skip(NO_ORIGIN_MAIN); return; }
   // DERIVED, not a magic depth: the parent of the last commit that touched CLAUDE.md is by construction
   // a point where main has since changed the file. My first attempt used `--skip=200` and the guard
   // below caught it -- CLAUDE.md had not moved in 200 commits, so the naive diff reported 0 and the test

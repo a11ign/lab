@@ -29,6 +29,7 @@
  * schedule cannot know a merge just happened, which is exactly why `push` is the right trigger and not a
  * workaround for one.
  */
+import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -36,6 +37,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
+
+// #929: THIS GUARD READS ONLY `packages/agent-org`, `.github/workflows`, so a diff that cannot reach it need not run this file.
+// Undeclared means unbounded, which is why the selector runs 173 always-run guards on every pull
+// request. The declaration is ENFORCED rather than trusted: `declareWalkScope` observes what this
+// file actually reads and fails it here if anything lands outside the scope -- so a scope that is
+// too narrow is loud, never a guard that silently stopped running.
+export const WALK_SCOPE = ["packages/agent-org",".github/workflows"];
+await declareWalkScope(import.meta.url);
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOWS_DIR = `${REPO}.github/workflows/`;
