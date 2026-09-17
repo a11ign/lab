@@ -46,6 +46,7 @@ import {
   discoversFromTree, alwaysRunTests, testFilesToRun, selectionFor,
 } from "../../../../scripts/select-changed-tests.mjs";
 import { knownPackages } from "../../../../scripts/ci-changed.mjs";
+import { underFloor } from "../../../guards/src/assert-glob-not-empty.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard
@@ -558,6 +559,22 @@ test("testFilesToRun: the union is deduplicated and sorted, and the package fall
     fallbackPackages: ["lab"],
   });
   assert.deepEqual(run, ["a.test.ts", "b.test.ts", "c.test.ts", "packages/lab/src/**/*.test.ts"]);
+});
+
+test("testFilesToRun: #1654 -- agent-org's fallback points at packages/lab/src/packaging/, where its "
+  + "tests actually live, not its own (empty) src/ -- the real, uncovered shape #1648 hit", () => {
+  const run = testFilesToRun({ selectedTests: [], alwaysRun: [], fallbackPackages: ["agent-org"] });
+  assert.deepEqual(run, ["packages/lab/src/packaging/**/*.test.ts"]);
+  // SMOKE, against the real repo: the exact guard `reusable-build-test.yml` runs on this output
+  // (`assert-glob-not-empty.mjs ... --min=1`) must not refuse it -- a resolved glob that is itself empty
+  // would reproduce #1648's failure one level down, with the override doing nothing but relabel it.
+  assert.deepEqual(underFloor(run, 1), [], "the resolved glob must actually match something, not just be renamed");
+});
+
+test("testFilesToRun: #1654 MUTATION, POSITIVE CONTROL -- every OTHER package keeps the plain "
+  + "packages/<pkg>/src/**/*.test.ts fallback, so a genuinely uncovered change there still refuses", () => {
+  const run = testFilesToRun({ selectedTests: [], alwaysRun: [], fallbackPackages: ["lab", "judge"] });
+  assert.deepEqual(run, ["packages/lab/src/**/*.test.ts", "packages/judge/src/**/*.test.ts"]);
 });
 
 // --- #1527: a test that READS a changed file as text, or imports it DYNAMICALLY, is selected ---
