@@ -46,10 +46,13 @@ const NIGHTLY_GLOB = globOf(PACKAGE_JSON.scripts["test:nightly"]);
 /** A fixture tree with one test on each path, and a resolver bound to it (the runner's own `globSync`). */
 function fixtureTree() {
   const root = mkdtempSync(join(tmpdir(), "nightly-only-path-"));
-  mkdirSync(join(root, "packages/pkg/src/deep"), { recursive: true });
-  mkdirSync(join(root, "packages/pkg/nightly/deep"), { recursive: true });
-  writeFileSync(join(root, "packages/pkg/src/deep/pr.test.ts"), "");
-  writeFileSync(join(root, "packages/pkg/nightly/deep/night.test.ts"), "");
+  // A REAL product package name: `test:ts` is a brace list of the product packages now, not
+  // `packages/*`, so a made-up `pkg` would be outside the PR glob for a reason that has nothing to do
+  // with the src/-vs-nightly split this fixture is about.
+  mkdirSync(join(root, "packages/judge/src/deep"), { recursive: true });
+  mkdirSync(join(root, "packages/judge/nightly/deep"), { recursive: true });
+  writeFileSync(join(root, "packages/judge/src/deep/pr.test.ts"), "");
+  writeFileSync(join(root, "packages/judge/nightly/deep/night.test.ts"), "");
   const resolve = (pattern: string) => globSync(pattern, { cwd: root });
   return { root, resolve, dispose: () => rmSync(root, { recursive: true, force: true }) };
 }
@@ -89,9 +92,13 @@ test("#1135 clause 3: nightly.yml runs the nightly-only population as a job that
 
 test("#1135 clause 4: the PR suite's floor still holds after the split, on the real tree", () => {
   const min = floorOf(PACKAGE_JSON.scripts["test:ts"]);
-  // EQUALITY, not a floor (#1067): the row states `--min=300`; a different number is a decision this test
-  // should make somebody state, in both directions.
-  assert.equal(min, 300, `the PR floor is the one the row states, not lowered to make room: ${min}`);
+  // EQUALITY, not a floor (#1067): a different number is a decision this test should make somebody state,
+  // in both directions. IT WAS 300 UNTIL THE PACKAGE SPLIT. `test:ts` is the PRODUCT suite now -- 206 files
+  // across evidence/judge/scorer/cli/nvda-worker/worker-fleet -- because the org's 373 tests moved to
+  // @a11ign/agent-org, @a11ign/guards and lab, where `test:org` runs them and `test:all` covers both.
+  // So 180 is the floor for a SMALLER POPULATION, not the old one relaxed: the whole-tree floor lives on
+  // `test:all` at 500, and clause 5 below pins that.
+  assert.equal(min, 180, `the PR floor is the one the row states, not lowered to make room: ${min}`);
   const resolve = (pattern: string) => globSync(pattern, { cwd: REPO });
   assert.deepEqual(underFloor([PR_GLOB], min, resolve), [], "the PR glob resolves at or above its floor");
   assert.deepEqual(underFloor([NIGHTLY_GLOB], 1, resolve), [], "and the nightly population on the real tree is not empty");
@@ -217,4 +224,13 @@ test("#1149 CONTROL: manifest and disk agree today, so a pin that always refuses
     "if these ever differ, one of the two assertions above is the one to read — this control exists so a "
     + "guard that refuses everything cannot look identical to one that works");
   assert.equal(NIGHTLY_TENANTS.length, new Set(NIGHTLY_TENANTS).size, "each tenant is named once");
+});
+
+test("#1135 clause 5: the WHOLE-TREE floor did not move when the product suite narrowed", () => {
+  // The guarantee the 300 used to carry is now `test:all`'s, and it must not be quietly softened either:
+  // if the product floor drops and this one drops with it, the split has been used to lower both.
+  assert.equal(floorOf(PACKAGE_JSON.scripts["test:all"]), 500,
+    "test:all covers every package and is where the tree-wide floor lives since the split");
+  assert.equal(floorOf(PACKAGE_JSON.scripts["test:org"]), 300,
+    "and the org suite keeps the number the PR suite used to carry");
 });
