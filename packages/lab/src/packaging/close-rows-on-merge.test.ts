@@ -1,3 +1,5 @@
+// no-token: gh -- this file's own hit is env.GH_TOKEN, a plain string comparison against a workflow
+// YAML's env-var name (line ~101), never a real gh() call or spawn.
 /**
  * THE FOUR OUTCOMES MUST NEVER COLLAPSE INTO TWO.
  *
