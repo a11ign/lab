@@ -112,11 +112,15 @@ test("#1319: the unscoped step runs `npm run test:all`, and it asks the floor fo
   assert.match(SCRIPTS["test:ts"], /assert-glob-not-empty\.mjs "packages\/\{[a-z,-]+\}\/src\/\*\*\/\*\.test\.ts" --min=180 --run --runner=rstest /);
 });
 
-test("#1319: `test:nightly` and `coverage` stay on tsx until step 4 (#1320), by ceo's ruling", () => {
-  for (const name of ["test:nightly", "coverage"]) {
-    assert.match(SCRIPTS[name], /assert-glob-not-empty\.mjs .*--run\b/, `${name} still runs through the floor`);
-    assert.doesNotMatch(SCRIPTS[name], /--runner=/, `${name} must not choose a runner in this row`);
-  }
+test("#1319: `test:nightly` stays on tsx -- it is nightly-only and out of #1320's scope", () => {
+  assert.match(SCRIPTS["test:nightly"], /assert-glob-not-empty\.mjs .*--run\b/, "test:nightly still runs through the floor");
+  assert.doesNotMatch(SCRIPTS["test:nightly"], /--runner=/, "test:nightly must not choose a runner in this row");
+});
+
+// #1320, step 4: `coverage` moved off this floor's `--run` -- see `coverage-is-rstest.test.ts` for what it runs now.
+test("#1320: `coverage` no longer runs `tsx --test` (or any runner) through this floor's --run", () => {
+  assert.doesNotMatch(SCRIPTS.coverage, /assert-glob-not-empty\.mjs .*--run\b/,
+    "coverage moved to scripts/coverage.mjs in step 4 (#1320); it uses this floor only as a population check");
 });
 
 test("#1319: the command `--run` executes, per runner -- tsx unchanged, rstest with one --include per pattern", () => {
