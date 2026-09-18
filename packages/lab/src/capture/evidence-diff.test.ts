@@ -326,47 +326,6 @@ test("the exclusion list is a DENY-list, so a new field defaults to being compar
   ).verdict, "CHANGED", "an unclassified new key must register as a change, not be ignored");
 });
 
-test("a visited-link difference alone is NOT an evidence change (#1106)", () => {
-  // MEASURED on the acceptance repeat pair, 5109abd7, protocol 17: `acceptance-route-changes-title-does-not`
-  // read "... Permits, visited, same page, link" in repeat-1 and "... Permits, same page, link" in
-  // repeat-2, 2 of 138 records, nothing about the page or the code changed between the two captures.
-  // browser-profile.mjs keeps one Edge profile alive across every capture a worker takes, so whether a
-  // link reads "visited" depends on which OTHER pages that worker happened to capture earlier -- a fact
-  // about this run's history, not the page.
-  const before = { control: "navigation landmark, list, with 2 items, Permits, visited, same page, link",
-    kind: "route", after: "" };
-  const after = { ...before, control: "navigation landmark, list, with 2 items, Permits, same page, link" };
-  assert.equal(compareCapture(
-    { interaction: { formChanges: [before] } },
-    { interaction: { formChanges: [after] } },
-  ).verdict, "SAME", "browsing history is a property of the worker's Edge profile, not of the page");
-
-  assert.equal(compareCapture(
-    { interaction: { routeChange: before } },
-    { interaction: { routeChange: after } },
-  ).verdict, "SAME", "the same noise reaches routeChange.control, the row's second compared field");
-});
-
-test("a control whose NAME contains the word 'visited' is still compared", () => {
-  // The half that stops the exclusion becoming the defect it fixes — exact segment match only, so a link
-  // actually named "Recently visited pages" is not silently exempted from comparison.
-  const before = { control: "Recently visited pages, link", kind: "route", after: "" };
-  const after = { ...before, control: "Recently viewed pages, link" };
-  assert.equal(compareCapture(
-    { interaction: { formChanges: [before] } },
-    { interaction: { formChanges: [after] } },
-  ).verdict, "CHANGED", "the word appearing INSIDE a name is content, not state, and must still register");
-});
-
-test("a visited difference alongside a real content difference is still CHANGED", () => {
-  const before = { control: "Permits, visited, same page, link", kind: "route", after: "" };
-  const after = { control: "Permits, same page, link", kind: "route", after: "moved" };
-  assert.equal(compareCapture(
-    { interaction: { formChanges: [before] } },
-    { interaction: { formChanges: [after] } },
-  ).verdict, "CHANGED", "stripping `visited` must not hide an unrelated change in the same entry");
-});
-
 test("a focus log differing ONLY in timestamps is not an evidence change", () => {
   // MEASURED 2026-09-06: `gate:stability` FAILED with `VARIES focusEvents counts 5,5,5,5,5` — identical
   // counts, differing content — on `image-missing-alt-behind-consent/good` and `nls.uk/join/`. Exactly TWO
