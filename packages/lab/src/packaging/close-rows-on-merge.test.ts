@@ -309,7 +309,7 @@ test("#1299: applyClosurePlan NAMES a closed row whose Status did not move, on b
 
 /** CAPTURED, not composed: the reason `moveProjectStatus` gave for #1299 in trunk run 34769927592 (`02ae7420`). */
 const CAPTURED_PROJECT_UNREADABLE = "could not move #1299's Status to \"Done\" -- board-snapshot: could not read "
-  + "Project 2 items -- refusing to snapshot a partial board. NOT_FOUND (user.projectV2): Could not resolve to a "
+  + "Project 1 items -- refusing to snapshot a partial board. NOT_FOUND (organization.projectV2): Could not resolve to a "
   + "ProjectV2 with the number 2.";
 /** A refusal classified by the real `refusalCause`, never a hand-typed cause. */
 function refusal(row: number, message: string) { return { row, cause: refusalCause(message), message }; }

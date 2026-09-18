@@ -1228,11 +1228,11 @@ test("#1275: moveProjectStatus passes touches: issueNumber, so its snapshot cove
 });
 
 test("#1275: through the real caller, a Project the token cannot read is still reported as project-unreadable", () => {
-  // #546's bridge: CI's token cannot read the user-owned Project, and settle-closed-status.mjs classifies each close
+  // #546's bridge: CI's token cannot read the org Project, and settle-closed-status.mjs classifies each close
   // by the reason moveProjectStatus returns. Captured live 2026-09-13 with TOUCHED_ITEM_QUERY and project 999: gh
   // exited 1 and printed this body -- board-snapshot-scope.test.ts holds the whole capture and pins the response shape.
   forgetProcessSnapshot();
-  const capturedErrors = { errors: [{ type: "NOT_FOUND", path: ["user", "projectV2"], locations: [{ line: 3, column: 27 }],
+  const capturedErrors = { errors: [{ type: "NOT_FOUND", path: ["organization", "projectV2"], locations: [{ line: 3, column: 27 }],
     message: "Could not resolve to a ProjectV2 with the number 999." }] };
   const argv: string[][] = [];
   const run = (_cmd: string, args: string[]): string => {
@@ -1728,9 +1728,9 @@ test("#1275: a Status move reads only the item it touches, through the real call
     const issueArg = args.find((arg) => arg.startsWith("issue="));
     if (!issueArg) return "";
     const issue = Number(issueArg.slice("issue=".length));
-    return JSON.stringify({ data: { user: { projectV2: { id: "PVT_kwHOAsR0u84BinDJ" } }, repository: { issue: {
+    return JSON.stringify({ data: { organization: { projectV2: { id: "PVT_kwHOAsR0u84BinDJ" } }, repository: { issue: {
       number: issue, title: "t", state: "OPEN", projectItems: { totalCount: 1, nodes: [
-        { id: `PVTI_${issue}`, project: { number: 2 }, fieldValueByName: { name: "Ready" } }] } } } } });
+        { id: `PVTI_${issue}`, project: { number: 1 }, fieldValueByName: { name: "Ready" } }] } } } } });
   };
   const results = [1, 2, 3, 3].map((n) => moveProjectStatus(n, "In progress",
     { run, log: () => {}, snapshot: (mutate, deps) => withBoardSnapshot(mutate,

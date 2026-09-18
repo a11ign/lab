@@ -1032,16 +1032,16 @@ test("MUTATION: one refusing check does NOT stop the checks after it -- the whol
 // #849: THE VERBATIM MESSAGE, CAPTURED, NOT TYPED -- from the first real audit run after #849 merged
 // (run 34386872582, 2026-09-09T18:05:19Z). #849's own test proved `isProjectsCredentialGap` true against
 // a HAND-WRITTEN message ("Could not resolve to a ProjectV2") and merged; the very next live run hit
-// GitHub's OTHER real wording -- the GraphQL field path, `user.projectV2` (lowercase p), inside a
+// GitHub's OTHER real wording -- the GraphQL field path, `organization.projectV2` (lowercase p), inside a
 // FORBIDDEN error -- which `.includes("ProjectV2")` does not match case-sensitively, and #849's audit
 // exited 2 printing "1 refused for an unexplained reason: board membership", the exact sentence this
 // ruling exists to end. ceo's own rule, now stated here because this is where the predicate gets edited
 // next: a predicate over a message is verified against a captured real message, never a written one.
-const REAL_PROJECTV2_FORBIDDEN_MESSAGE = "board-snapshot: could not read Project 2 items -- refusing to "
-  + "snapshot a partial board. FORBIDDEN (user.projectV2): Resource not accessible by personal access token";
+const REAL_PROJECTV2_FORBIDDEN_MESSAGE = "board-snapshot: could not read Project 1 items -- refusing to "
+  + "snapshot a partial board. FORBIDDEN (organization.projectV2): Resource not accessible by personal access token";
 
 test("isProjectsCredentialGap: matches GitHub's own THREE measured wordings for the SAME cause -- the "
-  + "GraphQL type name (\"ProjectV2\"), the field path (\"user.projectV2\", the one #849 missed), and "
+  + "GraphQL type name (\"ProjectV2\"), the field path (\"organization.projectV2\", the one #849 missed), and "
   + "\"no permission to see it\" versus \"this does not exist\" all render as the identical text either way", () => {
   assert.ok(isProjectsCredentialGap("no ProjectV2"));
   assert.ok(isProjectsCredentialGap("gh: Could not resolve to a ProjectV2 with the number 2"));
