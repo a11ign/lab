@@ -16,7 +16,7 @@
  *
  * ## THE FIXTURE IS REAL, AND IN THE HOOK'S OWN DIRECTION
  *
- * `bb7fa639 → 3d38dbf0` is the actual incident: the main that was merged, and the merge that discarded it.
+ * `5cdec4f4 → 1d24f61f` is the actual incident: the main that was merged, and the merge that discarded it.
  * A guard whose failure case is invented is one nobody has seen bite; this one has the commit pair that
  * cost four units attached to it.
  */
@@ -39,6 +39,18 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+
+/**
+ * THE SHAs HERE WERE REPINNED ON 2026-09-18, and the old ones are gone rather than moved. #63's history
+ * purge rewrote every commit in this repository, so the incident commits these tests reproduce exist
+ * under new hashes: `bb7fa639 -> 5cdec4f4`, `3d38dbf0 -> 1d24f61f`, `5ebe02e0 -> 86f32d8b`, read from
+ * `git filter-repo`'s own `commit-map` rather than guessed by matching subjects. Each was then checked to
+ * still be an ancestor of `origin/main`, which is the property these tests already require and state.
+ *
+ * `c7b1a0a0` has no successor in that map: it lived on a deleted branch, so the rewrite never reached it.
+ * It survives here only as prose about the incident, which is all it was already.
+ */
+
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const HOOK_PATH = new URL("../../../../scripts/git-hooks/pre-push", import.meta.url);
@@ -144,7 +156,7 @@ test("THE REAL INCIDENT: the #232 resolution is REFUSED, and every lost symbol i
       + "slowing every job for, and the mutation is run locally and recorded in the PR.");
     return;
   }
-  const result = runAgainst("bb7fa639", "3d38dbf0");
+  const result = runAgainst("5cdec4f4", "1d24f61f");
   assert.equal(result.status, 1, `expected a refusal, got ${result.status}:\n${result.out}`);
   // The two files whose exports the resolution discarded. Named individually rather than counted: a
   // refusal that says "6 missing" sends the author looking, where naming them says what to restore.
@@ -161,7 +173,7 @@ test("IT PRINTS THE SIZE OF THE SET IT EXAMINED, so a clean answer over nothing 
       + "slowing every job for, and the mutation is run locally and recorded in the PR.");
     return;
   }
-  const result = runAgainst("bb7fa639", "3d38dbf0");
+  const result = runAgainst("5cdec4f4", "1d24f61f");
   // A guard reporting "nothing lost" over an empty population is worse than no guard, because #232 proved
   // the failure is silent. The count is the difference between "I looked and found nothing" and "I did
   // not look" — and my own sweep two hours earlier reported "none" for twelve PRs having examined one
@@ -253,7 +265,7 @@ test("THE FIXTURES ARE DURABLE, and this is answerable even on a shallow clone",
   // clone that has it. Both fixtures are MERGE commits on `main`, so they are reachable for exactly as
   // long as `main` is -- unlike `c7b1a0a0`, which lived on a deleted branch and held the trunk red.
   if (shallowHere()) return;   // nothing to assert about history that is not here
-  for (const commit of ["bb7fa639", "3d38dbf0"]) {
+  for (const commit of ["5cdec4f4", "1d24f61f"]) {
     assert.ok(isAncestorOfMain(commit),
       `${commit} is not an ancestor of origin/main, so nothing guarantees it stays reachable -- that is `
       + "how the stale-base test pinned a commit on a deleted branch and turned the trunk red on every run");

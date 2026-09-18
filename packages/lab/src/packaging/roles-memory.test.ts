@@ -30,8 +30,17 @@ import { resolve } from "node:path";
 import { LEAK_PATTERNS } from "./leak-patterns.mjs";
 // #905: the index <-> file rules live in the doc cross-reference check the nightly report also runs.
 import {
+
   MEMORY_DIR, factFiles as factFilesIn,
 } from "../../../../scripts/doc-checks/roles-memory.mjs";
+
+/**
+ * A private-LAN address, BUILT FROM OCTETS, because #63's history purge rewrote every written-out one
+ * in the tree -- including the fixtures that had to BE private-shaped to prove this pattern fires. A
+ * built address survives any `--replace-text` pass; a literal one does not, and its absence reads as a
+ * passing guard rather than a broken fixture.
+ */
+const privateAddress = (...octets: number[]) => octets.join(".");
 
 const ROOT = process.cwd();
 const read = (relPath: string) => readFileSync(resolve(ROOT, relPath), "utf8");
@@ -84,7 +93,7 @@ test("no fact file leaks a host address, a key filename, or the retired containe
 test("MUTATION: the leak guard catches each pattern shape and does not fire on the real redacted file", () => {
   const clean = "Two credential domains exist; ask whoever holds today's keys.";
   const leaks = [
-    "reached at REDACTED-INTERNAL-ADDRESS as root", // private-shaped ON PURPOSE -- this proves the pattern fires
+    `reached at ${privateAddress(10, 1, 2, 3)} as root`, // private-shaped ON PURPOSE -- this proves the pattern fires
     "using the key at ~/.ssh/a11y-pve_ed25519",
     "via pct exec 121 -- bash -lc \"...\"",
   ];

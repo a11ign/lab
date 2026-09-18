@@ -15,15 +15,26 @@ import { scanBlob, KEY_FILENAME_RE, TEMPLATE_SUFFIX_RE, scanHistory } from "../.
 import { nonStandardRefs } from "../../../../scripts/history-purge-rehearsal.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
+/**
+ * A private-LAN address, BUILT FROM OCTETS, because #63's history purge rewrote every written-out one
+ * in the tree -- including the fixtures that had to BE private-shaped to prove this pattern fires. A
+ * built address survives any `--replace-text` pass; a literal one does not, and its absence reads as a
+ * passing guard rather than a broken fixture.
+ */
+const privateAddress = (...octets: number[]) => octets.join(".");
+
+
 test("scanBlob: an internal address is found and counted", () => {
-  const findings = scanBlob("worker at REDACTED-INTERNAL-ADDRESS and also REDACTED-INTERNAL-ADDRESS", "inventory.yml");
+  const findings = scanBlob(
+    `worker at ${privateAddress(192, 168, 1, 8)} and also ${privateAddress(10, 0, 0, 3)}`, "inventory.yml");
   const internal = findings.find((f) => f.pattern === "internalAddress");
   assert.ok(internal, "must find the internalAddress pattern");
   assert.equal(internal?.count, 2, "must count BOTH occurrences, not just report presence");
 });
 
 test("scanBlob: a 10.x and a 172.16-31.x address both count as internal, a 172.32.x one does not", () => {
-  assert.equal(scanBlob("REDACTED-INTERNAL-ADDRESS and REDACTED-INTERNAL-ADDRESS", "x").find((f) => f.pattern === "internalAddress")?.count, 2);
+  assert.equal(scanBlob(`${privateAddress(192, 168, 1, 8)} and ${privateAddress(10, 0, 0, 3)}`, "x")
+    .find((f) => f.pattern === "internalAddress")?.count, 2);
   assert.equal(scanBlob("172.32.0.1 is public-range, not RFC 1918", "x")
     .find((f) => f.pattern === "internalAddress"), undefined);
 });
@@ -93,7 +104,7 @@ function disposableRepo() {
   git("init", "--quiet", "-b", "main");
   git("config", "user.email", "t@example.invalid");
   git("config", "user.name", "Fixture");
-  writeFileSync(join(dir, "inventory.yml"), "worker: REDACTED-INTERNAL-ADDRESS\n");
+  writeFileSync(join(dir, "inventory.yml"), `worker: ${privateAddress(192, 168, 1, 8)}\n`);
   git("add", "inventory.yml");
   git("commit", "-q", "-m", "add worker inventory with a real address");
   writeFileSync(join(dir, "inventory.yml"), "worker: ${WORKER_HOST}\n");

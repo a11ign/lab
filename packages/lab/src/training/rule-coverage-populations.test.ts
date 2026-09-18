@@ -70,7 +70,16 @@ test("only captures of live websites count as real evidence — the URL decides,
           return "";
         }
       })();
-      (host && !/^(localhost$|127\.|10\.|192\.168\.|169\.254\.)/.test(host) ? real : authored).push(entry);
+      // `REDACTED-INTERNAL-ADDRESS` IS AN INTERNAL ADDRESS, and has to be read as one. #63's history
+      // purge replaced every RFC 1918 literal in the tree, including the hostnames recorded in these
+      // fixtures -- so the two tutorial pages served from the lab's own page server stopped matching
+      // `192.168.` and started counting as CAPTURES OF LIVE SITES. That is exactly the error the three
+      // assertions below exist to catch, arriving through the redaction rather than through a new
+      // fixture, and the guard caught it.
+      // CASE-INSENSITIVE, because `URL.hostname` lowercases: the placeholder arrives as
+      // `redacted-internal-address`, not as it appears in the fixture.
+      const internal = /^(localhost$|127\.|10\.|192\.168\.|169\.254\.|redacted-internal-address$)/i;
+      (host && !internal.test(host) ? real : authored).push(entry);
     }
   }
   // `books` are `file:///` captures and `tutorials` are authored pages plus two served from the lab's own

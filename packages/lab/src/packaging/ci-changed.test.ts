@@ -316,7 +316,14 @@ test("testDependencyMap: the ANTI-VACUITY check -- a real minimum, not just non-
   // regression (one guard's `file:` sites silently stop being read) without being pinned to today's exact
   // count, which will drift as those guards' own SITES lists grow or shrink.
   const map = testDependencyMap(REPO);
-  assert.ok(map.size >= 50, `only ${map.size} literal->package entries derived -- expected at least 50 `
+  // FLOOR LOWERED 50 -> 40 ON 2026-09-18, and the reason is a population that genuinely shrank rather
+  // than a derivation that broke. `tracked-source-leak-guard.test.ts`'s EXEMPT table contributed about
+  // forty of these entries -- one per file allowed to carry the lab's LAN address. #63's history purge
+  // removed every private address from the tree, so those exemptions became debris and the table is now
+  // empty; its own file asserts that emptiness against the sweep that measures it. The count fell to 46.
+  // 40 keeps a real floor under the remaining contributors instead of pinning a number the tree no
+  // longer supports -- lower it again only with the same kind of reason, never to make a red run green.
+  assert.ok(map.size >= 40, `only ${map.size} literal->package entries derived -- expected at least 40 `
     + "from the known file:-convention guards; either one stopped contributing or the derivation broke");
   // README.md, not docs/board/reported.json -- see this block's own header comment for why that anchor
   // moved. README.md is named by repo-identity-consolidated.test.ts's OWN vacuity-guarded SITES list, so

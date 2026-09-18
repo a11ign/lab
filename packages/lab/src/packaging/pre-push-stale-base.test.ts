@@ -29,6 +29,18 @@ import { fileURLToPath } from "node:url";
 import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
 import type { GitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
 
+/**
+ * THE SHAs HERE WERE REPINNED ON 2026-09-18, and the old ones are gone rather than moved. #63's history
+ * purge rewrote every commit in this repository, so the incident commits these tests reproduce exist
+ * under new hashes: `bb7fa639 -> 5cdec4f4`, `3d38dbf0 -> 1d24f61f`, `5ebe02e0 -> 86f32d8b`, read from
+ * `git filter-repo`'s own `commit-map` rather than guessed by matching subjects. Each was then checked to
+ * still be an ancestor of `origin/main`, which is the property these tests already require and state.
+ *
+ * `c7b1a0a0` has no successor in that map: it lived on a deleted branch, so the rewrite never reached it.
+ * It survives here only as prose about the incident, which is all it was already.
+ */
+
+
 const HOOK_PATH = fileURLToPath(new URL("../../../../scripts/git-hooks/pre-push", import.meta.url));
 const REAL_REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -239,7 +251,7 @@ function isAncestorOf(maybeAncestor: string, descendant: string): boolean {
  *
  * ## What is pinned now, and why it is not the incident commit
  *
- * `5ebe02e0` — the merge commit of PR #359, which is #348's own fix. It is an ANCESTOR of `main`, so it is
+ * `86f32d8b` — the merge commit of PR #359, which is #348's own fix. It is an ANCESTOR of `main`, so it is
  * reachable for as long as `main` is, and it satisfies the property under test: it does not contain
  * `main`'s current tip. It is honestly a different artefact from `c7b1a0a0`: that commit is unrecoverable
  * and no pin can bring it back. What survives is what the test was for — a REAL commit from this
@@ -250,7 +262,7 @@ function isAncestorOf(maybeAncestor: string, descendant: string): boolean {
  */
 
 /** The commit this test stands on: a real, permanently reachable commit that does not contain main's tip. */
-const PINNED_STALE_BASE = "5ebe02e0";
+const PINNED_STALE_BASE = "86f32d8b";
 
 test("REAL ARTEFACT: a permanently reachable commit that does not contain the current origin/main's tip",
   (t) => {

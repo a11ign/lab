@@ -1,3 +1,13 @@
+# RE-RECORDED 2026-09-18 by #63's history purge, which is the ONE thing this file exists to make
+# impossible to do silently. The purge replaced every RFC 1918 address in the tree, and nine recorded
+# captures carried the lab's own bridge address in `diagnostics[0].url`
+# (`http://<bridge>:5052/...` -> `http://REDACTED-INTERNAL-ADDRESS:5052/...`).
+#
+# PASTING A DIGEST HERE ASSERTS THE CAPTURE IS STILL WHAT IT CLAIMS TO BE, so it was checked rather
+# than assumed: each of the nine was diffed against its pre-purge blob (`00abaaab`) with the address
+# substitution applied, and every one came back with ZERO other differences. No capture was re-taken;
+# no environment, timestamp or finding moved. The recorded URL is redacted and nothing else.
+#
 # THE RECORDED PROVENANCE OF THE EVAL FIXTURES -- where each capture came from and what produced it.
 #
 # One SHA-256 per fixture, over that file's `url`/`capturedAt`/`baseUrl`/`cacheKey` values and its
@@ -11,13 +21,13 @@
 # It is not the way to quieten a failing test. If nothing was re-captured, restore the values.
 #
 # NOT `shasum -a 256 <file>` -- these hash the extracted provenance fields, not the file.
-93ebd64b6a7527fa36e71dfd96b42752ad0e65709d40a4b86296c6da3adc62fb  packages/lab/src/eval/fixtures/books/alt-quality-bad.json
-f98801649eae44465d38567d8db7e111eca0dc41342a7d4c3ecc74f44ce88d80  packages/lab/src/eval/fixtures/books/alt-quality-good.json
-3602461ae0baf0f1f47658add43d611147b47e0b547b1cc9f01049dc4154727b  packages/lab/src/eval/fixtures/books/custom-control-bad.json
-040442bdcf63ad9109fd6721cba52d2f0e6f7e4b922d9f99578adaa8652c6415  packages/lab/src/eval/fixtures/books/custom-control-good.json
-cd2658cd4ecf9b73f863b44a9b323a9255b00daf8950b5daf5bb03bf84092315  packages/lab/src/eval/fixtures/books/filter-status-bad.json
+85af12164ad7e72a789050c729d41f5c19b2b9816a0ff46901fa78b16468cf3b  packages/lab/src/eval/fixtures/books/alt-quality-bad.json
+93fdc4d44b7a93c3ead27a037ec07a24e6643f87762c6b40cd5ac7b3d4489ccd  packages/lab/src/eval/fixtures/books/alt-quality-good.json
+d4d8c36b641c38331533df683739ac6a7afdec79ec2724b2ae7fb1f9ccafc93b  packages/lab/src/eval/fixtures/books/custom-control-bad.json
+5c1e6b3256c2fa94744b0b7bea58d4aa9db9caa493815f603c2469d5f4b3dae2  packages/lab/src/eval/fixtures/books/custom-control-good.json
+0b3aaa6d382870a3439de32870ceafe63382be41259886f004a2689ff72d1cb3  packages/lab/src/eval/fixtures/books/filter-status-bad.json
 f6740339f70e2dabdbb9ad8efcb9daabd58183047b4684c850a299ee01c09766  packages/lab/src/eval/fixtures/books/filter-status-good.json
-360d5c9328947e77a2f012d3af340a5f6899bb6e4948ed41dbccb7a8ba124ed2  packages/lab/src/eval/fixtures/books/headings-bad.json
-8e030f33f94fc54164b8d83a77ec178068f3f978c774e2fcc2bb9874ddaf9ea4  packages/lab/src/eval/fixtures/books/headings-good.json
-c1a737ececafa38f826cc93fa500ecfc0eeefa36c3621e4d05c32506f3f44604  packages/lab/src/eval/fixtures/books/links-bad.json
-a5232735745bdd5e019a07f4b9048991981226bc3d33dd516fe6f79ef06385d6  packages/lab/src/eval/fixtures/books/links-good.json
+54343e7e616ca79a914f97e52664a10b7f38ce48a1272f3d200eb380959e1b46  packages/lab/src/eval/fixtures/books/headings-bad.json
+7f0875e43ea88ce3fa83787f94342745629ff28e91015afe7974313277189077  packages/lab/src/eval/fixtures/books/headings-good.json
+156a93a364e8aa49023559dcc732a9fe4e5ca3c0fa545a0527449dabeda99e90  packages/lab/src/eval/fixtures/books/links-bad.json
+5d0ef19eda53bedc942a3598ffadeb5ce73a973241b0c65937a282bbf74b2a05  packages/lab/src/eval/fixtures/books/links-good.json
