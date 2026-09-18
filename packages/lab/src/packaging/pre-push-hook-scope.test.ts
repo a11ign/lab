@@ -102,6 +102,11 @@ const NOT_A_CHECK: Record<string, string> = {
   "node packages/agent-org/src/merge-guard.mjs":
     "the #386 armed-PR lookup: refusing to race a merge that can complete underneath the push. It fails "
     + "OPEN and loudly on anything that stops it asking, and never refuses for an unrelated reason",
+  "node scripts/changeset-untracked-check.mjs":
+    "the #1127 untracked-changeset guard: catches a state CI cannot see BY CONSTRUCTION (`actions/"
+    + "checkout` clones the pushed tree, and an untracked file never survives a push), never runs "
+    + "`npm ci`-dependent code, and refuses only for the exact state `changeset status` itself would "
+    + "otherwise misreport -- not a second copy of CI, the same category as the #386 guard above",
 };
 
 test("THE THREE: the hook's checks are lint, typecheck and the leak scan -- and there is no fourth", () => {
