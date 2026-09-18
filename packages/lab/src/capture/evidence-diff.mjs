@@ -225,15 +225,50 @@ function stripVisitedState(normalisedControl) {
 }
 
 /**
- * A field's comparable value, keyed so the one field this gate must not compare literally — `control` —
- * can be adjusted without a second copy of the `normalise` call at each of `flatten`'s and `fieldValues`'
- * two call sites.
+ * The same browsing-history leak as `control`'s, one hop over (#1726, found running #1106's own fleet
+ * confirmation). `probeRouteChange` (`capture-probes.mjs`) sets `announced: activation?.after ?? ""` and
+ * ALSO records that same activation in the matching `interaction.formChanges[]` entry it writes
+ * (`kind: "route"`) -- so when a route change produces no heading, the whole activation-delta announcement
+ * is nothing but the just-activated link's own visited state, and that one value leaks into both
+ * `routeChange.announced` and `formChanges[].after` at once, exactly as `control` leaked into two fields
+ * for #1106. `capture-probes.mjs`'s own comment names it: "the failing page announced 'visited', NVDA
+ * reporting the link's own state" -- a fact about the guest's browsing history, not the page.
  *
- * @param {string} key @param {unknown} value @returns {string}
+ * WHOLE-VALUE MATCH ONLY, unlike `stripVisitedState`'s comma-segment match: `announced`/`after` hold one
+ * free-text announcement, not `control`'s comma-delimited role/state list, so a real announcement that
+ * happens to CONTAIN "visited" as page content ("Recently visited pages, link") is real evidence and must
+ * still compare -- only the fallback case, where "visited" is the ENTIRE remaining value, is noise.
+ *
+ * SCOPED TO THE `formChanges` ENTRY `probeRouteChange` ITSELF WROTE (`kind: "route"`), not `after` in
+ * general: an unrelated form-submit or toggle probe whose `after` happened to read exactly "visited" is
+ * real page evidence (a "Mark as visited" confirmation, say), not this leak, and must not be normalised
+ * away just because it shares a key name with the field this leak actually reaches.
+ *
+ * @param {string} fieldPath @param {string} key @param {Record<string, unknown> | null | undefined} record
+ *   the object `key` was read from -- `routeChange` itself, or the `formChanges[]` entry -- so the
+ *   `kind` check can be made without a second walk of the capture
+ * @param {string} normalisedValue already run through `normalise`
  */
-function normaliseValue(key, value) {
+function isRouteAnnouncementLeak(fieldPath, key, record, normalisedValue) {
+  if (normalisedValue !== "visited") return false;
+  if (fieldPath === "interaction.routeChange" && key === "announced") return true;
+  return fieldPath === "interaction.formChanges" && key === "after" && record?.kind === "route";
+}
+
+/**
+ * A field's comparable value, keyed so the two fields this gate must not compare literally — `control`
+ * and the route-announcement leak above — can be adjusted without a second copy of the `normalise` call
+ * at each of `flatten`'s and `fieldValues`' two call sites.
+ *
+ * @param {string} key @param {unknown} value @param {string} fieldPath
+ * @param {Record<string, unknown> | null | undefined} record the object `key` was read from
+ * @returns {string}
+ */
+function normaliseValue(key, value, fieldPath, record) {
   const normalised = normalise(value);
-  return key === "control" ? stripVisitedState(normalised) : normalised;
+  if (key === "control") return stripVisitedState(normalised);
+  if (isRouteAnnouncementLeak(fieldPath, key, record, normalised)) return "";
+  return normalised;
 }
 
 /**
@@ -314,14 +349,17 @@ export const NOT_EVIDENCE_KEYS = new Set([
  * is written as the literal `undefined` rather than dropped, because a field that stopped being recorded
  * IS an evidence change and dropping it would hide exactly that.
  *
- * @param {unknown} entry @returns {string}
+ * @param {unknown} entry @param {string} fieldPath the path this entry's array lives at (#1726: needed
+ *   so `normaliseValue` can tell a `formChanges[].after` leak from an unrelated field sharing the key name)
+ * @returns {string}
  */
-function flatten(entry) {
+function flatten(entry, fieldPath) {
   if (!entry || typeof entry !== "object") return normalise(entry);
   return Object.entries(entry)
     .filter(([key]) => !NOT_EVIDENCE_KEYS.has(key))
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${key}=${normaliseValue(key, value)}`)
+    .map(([key, value]) => `${key}=${normaliseValue(key, value, fieldPath,
+      /** @type {Record<string, unknown>} */ (entry))}`)
     .join(" ");
 }
 
@@ -337,7 +375,8 @@ function flatten(entry) {
  */
 export function fieldValues(capture, field) {
   const value = field.reduce((/** @type {any} */ at, key) => at?.[key], capture);
-  if (Array.isArray(value)) return value.map(flatten);
+  const fieldPath = field.join(".");
+  if (Array.isArray(value)) return value.map((entry) => flatten(entry, fieldPath));
   // AN OBJECT, FLATTENED. `routeChange` is `{control, titleBefore, titleAfter, headingBefore,
   // headingAfter}` rather than a list, and the array-only version returned [] for it — so adding it to
   // the table above without this would have compared nothing while appearing to compare something,
@@ -355,7 +394,9 @@ export function fieldValues(capture, field) {
   // an object field, which the object branch never learned.
   if (value && typeof value === "object") {
     return Object.entries(value).map(([key, entry]) =>
-      `${key}=${Array.isArray(entry) ? entry.map(flatten).join(";") : normaliseValue(key, entry)}`);
+      `${key}=${Array.isArray(entry)
+        ? entry.map((e) => flatten(e, fieldPath)).join(";")
+        : normaliseValue(key, entry, fieldPath, value)}`);
   }
   // A SCALAR AT THE END OF A PATH is one value -- `observed.<channel>.asked` (#985) is a boolean, and returning
   // [] for it would compare nothing while appearing to compare something. `null` and absence stay [], exactly
