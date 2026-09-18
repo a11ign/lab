@@ -1,3 +1,5 @@
+// no-token: gh -- this file only imports and calls the pure `coverageVerdictDecision` with injected
+// fixture data; `nightlyCoverageCandidates` (the export that actually spawns `gh`) is never called here.
 /**
  * #1308: the release job's "Coverage — the whole-repo threshold" step re-runs 301s of coverage that
  * `nightly.yml`'s own `coverage` job already spent on the EXACT same sha, when it did. This pins
