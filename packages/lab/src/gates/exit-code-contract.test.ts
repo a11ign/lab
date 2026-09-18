@@ -167,6 +167,14 @@ const DOCUMENTED: Record<string, string> = {
     + "as failed; 0 covers three states on purpose (--list, still-running, and dispatch-succeeded, "
     + "explicitly NOT the same as 'the pipeline passed') — the --follow status exit passes through a "
     + "stage's own code, non-literal the same way lab-job.mjs's 1 is",
+  "packages/control/src/lab-failed-units.mjs":
+    "#866, a REPORT rather than a gate: `--report` exits 0 QUIET when no a11y-job-* unit is failed, 1 "
+    + "ATTENTION when at least one is (named with its own age); 2 usage when neither --list-failed nor "
+    + "--report is given, or an unrecognised flag (refuseUnknownFlags, already documented below)",
+  "packages/control/src/lab-watch.mjs":
+    "#866's unattended half, the same three-state shape org-watch.mjs uses: 0 QUIET nothing needs "
+    + "attention; 1 ATTENTION a failed unit was found and named (posted to #928 only under --post); 2 "
+    + "CANNOT_ASK — lab-status.yml's own JSON report task did not run or produced nothing",
   "packages/lab/scripts/audit-corpus-starvation.mjs":
     "2 a stale export — the featurizer can't read a pre-`parsed`-block record; 0 otherwise",
   "packages/lab/scripts/audit-corpus-urls.mjs":
