@@ -191,6 +191,52 @@ function normalise(phrase) {
 }
 
 /**
+ * The comma-delimited "visited" state token inside a `control` string, and only that token — never a
+ * name that happens to contain the word. #1106: browsing history reaches the evidence.
+ *
+ * `control` holds NVDA's whole announcement for a link or control — role, states and name together, as
+ * one string ("navigation landmark, list, with 2 items, Permits, visited, same page, link") — so unlike
+ * `baselineWaitedMs`/`atMs` below, which are OBJECT KEYS this gate can drop outright, `visited` is a STATE
+ * WORD embedded inside a value this gate must keep comparing. Measured on the acceptance repeat pair,
+ * `5109abd7`, protocol 17, 2 of 138 records (`acceptance-route-changes-title-does-not`, both variants):
+ * the same case read "... Permits, visited, same page, link" in one repeat and "... Permits, same page,
+ * link" in the other, nothing about the page or the code changed between them, and the difference sat
+ * inside BOTH `interaction.formChanges[].control` and `interaction.routeChange.control` at once.
+ *
+ * Visited-link state is not a property of the page under test — `browser-profile.mjs` keeps ONE Edge
+ * profile alive across every capture a worker guest takes (`readOrStampProfileIdentity`, #561), so
+ * whether a link reads "visited" depends on which OTHER pages that worker happened to capture earlier,
+ * not on the page or the capture code. The same shape as `baselineWaitedMs` below: a fact about THIS
+ * RUN's history, not about the page's accessibility.
+ *
+ * EXACT SEGMENT MATCH ONLY, so a control whose NAME contains the word ("Recently visited pages, link") is
+ * untouched — only a bare `visited` segment, delimited by `, ` on both sides (or the start/end of the
+ * string), is state.
+ *
+ * NOT a change to `normalise` above: `normalise` also runs over the transcript, where `visited` is real,
+ * page-relevant evidence for a real page (`capture-probes.mjs`'s own "View cookies, visited, link"
+ * example, testing 2.4.2). This strip applies only where `flatten`/`fieldValues` read a `control` key, so
+ * the transcript and every other channel keep comparing `visited` exactly as before.
+ *
+ * @param {string} normalisedControl already run through `normalise`
+ */
+function stripVisitedState(normalisedControl) {
+  return normalisedControl.split(", ").filter((segment) => segment !== "visited").join(", ");
+}
+
+/**
+ * A field's comparable value, keyed so the one field this gate must not compare literally — `control` —
+ * can be adjusted without a second copy of the `normalise` call at each of `flatten`'s and `fieldValues`'
+ * two call sites.
+ *
+ * @param {string} key @param {unknown} value @returns {string}
+ */
+function normaliseValue(key, value) {
+  const normalised = normalise(value);
+  return key === "control" ? stripVisitedState(normalised) : normalised;
+}
+
+/**
  * Keys that are MEASUREMENTS OF THIS RUN rather than evidence about the page.
  *
  * `baselineWaitedMs` is how long `activateAndCaptureDelta` waited for speech to go quiet before pressing.
@@ -275,7 +321,7 @@ function flatten(entry) {
   return Object.entries(entry)
     .filter(([key]) => !NOT_EVIDENCE_KEYS.has(key))
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, value]) => `${key}=${normalise(value)}`)
+    .map(([key, value]) => `${key}=${normaliseValue(key, value)}`)
     .join(" ");
 }
 
@@ -309,7 +355,7 @@ export function fieldValues(capture, field) {
   // an object field, which the object branch never learned.
   if (value && typeof value === "object") {
     return Object.entries(value).map(([key, entry]) =>
-      `${key}=${Array.isArray(entry) ? entry.map(flatten).join(";") : normalise(entry)}`);
+      `${key}=${Array.isArray(entry) ? entry.map(flatten).join(";") : normaliseValue(key, entry)}`);
   }
   // A SCALAR AT THE END OF A PATH is one value -- `observed.<channel>.asked` (#985) is a boolean, and returning
   // [] for it would compare nothing while appearing to compare something. `null` and absence stay [], exactly
