@@ -1277,7 +1277,7 @@ test("moveProjectStatus NEVER THROWS -- an unexpected gh failure is reported, no
 test("moveProjectStatus recognises gh's real 'not an item in project' wording as notOnBoard, verbatim as "
   + "observed against the real API on issue #393 (closed, never added to Project 2)", () => {
   const run = (): string => {
-    throw new Error("https://github.com/DanBeckDev/a11y-witness/issues/393 is not an item in project 2; "
+    throw new Error("https://github.com/a11ign/a11ign/issues/393 is not an item in project 2; "
       + "add it first with `gh project item-add`");
   };
   const result = moveProjectStatus(393, "Ready", { run, snapshot: noopSnapshot, log: () => {} });

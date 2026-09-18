@@ -228,7 +228,7 @@ test("#776/#791 MUTATION TARGET: applyClosurePlan strips EVERY already-closed ro
   const stripped: Array<[number, string[]]> = [];
   const { failed } = applyClosurePlan(
     { close: [], already: [{ number: 677, labels: ["in-progress", "session:worker-capture"] }] },
-    { prNumber: "769", sha: "abc123", repo: "DanBeckDev/a11y-witness" },
+    { prNumber: "769", sha: "abc123", repo: "a11ign/a11ign" },
     { closeOne: () => true, strip: (n, labels) => { stripped.push([n, labels]); }, settle: settledOk },
   );
   assert.deepEqual(failed, []);
@@ -240,7 +240,7 @@ test("applyClosurePlan still closes and strips a freshly-closing row, exactly as
   const stripped: number[] = [];
   const { failed } = applyClosurePlan(
     { close: [{ number: 344, labels: ["ready"] }], already: [] },
-    { prNumber: "1", sha: "abc", repo: "DanBeckDev/a11y-witness" },
+    { prNumber: "1", sha: "abc", repo: "a11ign/a11ign" },
     { closeOne: (n) => { closedRows.push(n); return true; }, strip: (n) => { stripped.push(n); }, settle: settledOk },
   );
   assert.deepEqual(failed, []);
@@ -253,7 +253,7 @@ test("applyClosurePlan does NOT strip a row whose close failed -- a failed close
   const stripped: number[] = [];
   const { failed } = applyClosurePlan(
     { close: [{ number: 344, labels: ["ready"] }], already: [] },
-    { prNumber: "1", sha: "abc", repo: "DanBeckDev/a11y-witness" },
+    { prNumber: "1", sha: "abc", repo: "a11ign/a11ign" },
     { closeOne: () => false, strip: (n) => { stripped.push(n); }, settle: settledOk },
   );
   assert.deepEqual(failed, [344]);

@@ -11,7 +11,7 @@
  * listing every site that still disagrees — never a silent partial rename found later.
  *
  * TWO CONSTANTS, NOT ONE, SINCE #66 (2026-09-07). `REPO` is where `gh`/git actually resolve TODAY — it
- * stays `DanBeckDev/a11y-witness` until #63 really transfers the repository, because every live GitHub
+ * stays `a11ign/a11ign` until #63 really transfers the repository, because every live GitHub
  * API call (`row-claim.mjs`, `board-data.mjs`) would break the instant it named a repository that does
  * not exist yet. `PRODUCT_REPO` is what the product calls itself NOW — `a11ign/a11ign` — and almost every
  * site below checks against it, since #66 renamed the tree's own static prose ahead of the transfer. The
@@ -119,7 +119,7 @@ const SITES: Array<{ file: string; expect: string }> = [
   // executed, requested or followed; re-adding a pinned literal would verify the prose still narrates the
   // fix rather than that any live reference still agrees with `repo-identity.mjs`.
   // NOT `docs/board/reported.json` -- DELIBERATELY, issue #283. It carried this literal once, inside one
-  // achievement's evidence prose ("GitHub Issues and milestones on DanBeckDev/a11y-witness" -- quoting
+  // achievement's evidence prose ("GitHub Issues and milestones on a11ign/a11ign" -- quoting
   // the achievement's actual wording at the time, before #66; not rewritten to match the present), and #270
   // correctly retired that achievement once its cited issue closed. Unlike every other site in this list,
   // the mention was INCIDENTAL rather than functional: nothing here is executed, requested or followed --

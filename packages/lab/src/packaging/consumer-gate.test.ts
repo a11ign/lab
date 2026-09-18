@@ -36,14 +36,14 @@ test("extractDocumentedJobsBlock: finds the fence containing the action referenc
     "jobs:",
     "  a11y:",
     "    steps:",
-    "      - uses: DanBeckDev/a11y-witness@main",
+    "      - uses: a11ign/a11ign@main",
     "        with:",
     "          url: https://example.com/checkout",
     "          task: Complete the checkout",
     "```",
   ].join("\n");
   const block = extractDocumentedJobsBlock(markdown);
-  assert.match(block, /uses: DanBeckDev\/a11y-witness@main/);
+  assert.match(block, /uses: a11ign\/a11ign@main/);
   assert.doesNotMatch(block, /unrelated: example/);
 });
 
@@ -64,7 +64,7 @@ test("extractDocumentedJobsBlock: REFUSES a fence carrying its own top-level `on
     "  a11y:",
     "    runs-on: windows-2022",
     "    steps:",
-    "      - uses: DanBeckDev/a11y-witness@main",
+    "      - uses: a11ign/a11ign@main",
     "        with:",
     "          url: https://example.com/checkout",
     "          task: Complete the checkout",
@@ -82,7 +82,7 @@ test("extractDocumentedJobsBlock: REFUSES a fence carrying its own top-level `na
     "  a11y:",
     "    runs-on: windows-2022",
     "    steps:",
-    "      - uses: DanBeckDev/a11y-witness@main",
+    "      - uses: a11ign/a11ign@main",
     "        with:",
     "          url: https://example.com/checkout",
     "          task: Complete the checkout",
@@ -96,7 +96,7 @@ test("extractDocumentedJobsBlock: REFUSES a fence carrying its own top-level `na
 /** A Quickstart fence whose `jobs:` block has `above` before it and `below` after it. */
 function fenceWith({ above = "", below = "" }: { above?: string; below?: string }): string {
   return ["```yaml", `${above}jobs:`, "  a11y:", "    runs-on: windows-2022", "    steps:",
-    "      - uses: DanBeckDev/a11y-witness@main", `${below}\`\`\``].join("\n");
+    "      - uses: a11ign/a11ign@main", `${below}\`\`\``].join("\n");
 }
 
 // The top-level keys GitHub's workflow syntax defines besides `jobs:`, `on:` and `name:` (those two have
@@ -185,18 +185,18 @@ test("pinActionRef: pins the a11y-witness ref and leaves other uses: lines (e.g.
     "  a11y:",
     "    steps:",
     "      - uses: actions/checkout@v4",
-    "      - uses: DanBeckDev/a11y-witness@main",
+    "      - uses: a11ign/a11ign@main",
     "        with:",
     "          url: https://example.com",
   ].join("\n");
   const pinned = pinActionRef(yaml, "deadbeef1234567890deadbeef1234567890dead");
-  assert.match(pinned, /uses: DanBeckDev\/a11y-witness@deadbeef1234567890deadbeef1234567890dead/);
+  assert.match(pinned, /uses: a11ign\/a11ign@deadbeef1234567890deadbeef1234567890dead/);
   assert.match(pinned, /uses: actions\/checkout@v4/, "the checkout step's own ref must not be touched");
 });
 
 test("pinActionRef: refuses rather than silently doing nothing when no a11y-witness uses: line exists", () => {
   assert.throws(() => pinActionRef("jobs:\n  a11y:\n    steps:\n      - uses: actions/checkout@v4", "deadbeef"),
-    /no "uses: DanBeckDev\/a11y-witness@<ref>" line/);
+    /no "uses: a11ign\/a11ign@<ref>" line/);
 });
 
 // --- substituteTarget: VALUES only, every key/line/indent preserved ---
@@ -208,7 +208,7 @@ test("substituteTarget: replaces url/task VALUES only, preserving every other li
     "    runs-on: windows-2022",
     "    steps:",
     "      - uses: actions/checkout@v4",
-    "      - uses: DanBeckDev/a11y-witness@main",
+    "      - uses: a11ign/a11ign@main",
     "        with:",
     "          url: https://example.com/checkout",
     "          task: Complete the checkout",
@@ -282,7 +282,7 @@ test("#1305 CONTROL: a single-job block keeps today's answer, with or without th
 // --- extractPinnedSha: read back from the already-pinned uses: line ---
 
 test("extractPinnedSha: reads the sha pinActionRef already baked in", () => {
-  const jobsYaml = "jobs:\n  a11y:\n    steps:\n      - uses: DanBeckDev/a11y-witness@deadbeef1234567890deadbeef1234567890dead";
+  const jobsYaml = "jobs:\n  a11y:\n    steps:\n      - uses: a11ign/a11ign@deadbeef1234567890deadbeef1234567890dead";
   assert.equal(extractPinnedSha(jobsYaml), "deadbeef1234567890deadbeef1234567890dead");
 });
 
@@ -293,7 +293,7 @@ test("extractPinnedSha: refuses rather than returning undefined when there is no
 
 // --- buildConsumerGateWorkflow: no double "jobs:" key, references the REAL job name ---
 
-const PINNED_STEP = "      - uses: DanBeckDev/a11y-witness@deadbeef1234567890deadbeef1234567890dead";
+const PINNED_STEP = "      - uses: a11ign/a11ign@deadbeef1234567890deadbeef1234567890dead";
 
 test("buildConsumerGateWorkflow: does not duplicate the jobs: key the extracted block already carries", () => {
   const jobsYaml = `jobs:\n  a11y:\n    runs-on: windows-2022\n    steps:\n${PINNED_STEP}`;
@@ -379,7 +379,7 @@ test("MUTATION-SHAPED: a documented workflow with NO checkout step generates a g
     "  a11y:",
     "    runs-on: windows-2022",
     "    steps:",
-    "      - uses: DanBeckDev/a11y-witness@main",
+    "      - uses: a11ign/a11ign@main",
     "        with:",
     "          url: https://example.com/checkout",
     "          task: Complete the checkout",
@@ -405,7 +405,7 @@ test("CONTROL: a documented workflow WITH a checkout step generates a gate that 
     "    runs-on: windows-2022",
     "    steps:",
     "      - uses: actions/checkout@v4",
-    "      - uses: DanBeckDev/a11y-witness@main",
+    "      - uses: a11ign/a11ign@main",
     "        with:",
     "          url: https://example.com/checkout",
     "          task: Complete the checkout",
@@ -417,7 +417,7 @@ test("CONTROL: a documented workflow WITH a checkout step generates a gate that 
 
 // --- #1555: the Action's identity comes from README's fence, either side of the transfer ---
 //
-// One constant, "DanBeckDev/a11y-witness", found README's fence and pinned and read back its `uses:` line. The transfer
+// One constant, "a11ign/a11ign", found README's fence and pinned and read back its `uses:` line. The transfer
 // (#63) rewrites that line to `a11ign/a11ign`, and the generator and `--check` would then refuse README outright. The
 // identities are BUILT (PRE_TRANSFER / POST_TRANSFER above), so a transfer sweep cannot rewrite this fixture into agreement.
 /** A full git sha is 40 hex characters -- the length `--check`'s own `\b[0-9a-f]{40}\b` strips. */

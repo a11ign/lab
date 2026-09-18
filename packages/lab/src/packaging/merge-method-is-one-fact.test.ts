@@ -1,7 +1,7 @@
 /**
  * THIS REPOSITORY ALLOWS MERGE COMMITS ONLY, AND NOTHING IN THE CODE SAID SO.
  *
- *     gh api repos/DanBeckDev/a11y-witness -q '.allow_squash_merge, .allow_merge_commit, .allow_rebase_merge'
+ *     gh api repos/a11ign/a11ign -q '.allow_squash_merge, .allow_merge_commit, .allow_rebase_merge'
  *     false   true   false
  *
  * Measured 2026-09-09, when `gh pr merge 706 --auto --squash` returned:

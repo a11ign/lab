@@ -401,7 +401,7 @@ test("#1446 case 2 CONTROL: a tree on PR N's head branch at its commit runs as t
   const { git } = gitFacts({ "rev-parse --abbrev-ref HEAD": "agent/x", "rev-parse HEAD": SHA_A });
   const { prHead, asked } = prHeads({ 1454: { ref: "agent/x", oid: SHA_A } });
   assert.equal(editTreeRefusal("edit", ["1454", "--body-file", "b.md"], { git, prHead }), null);
-  assert.deepEqual(asked, [["DanBeckDev/a11y-witness", "1454"]], "with no --repo, the head is read from this repository");
+  assert.deepEqual(asked, [["a11ign/a11ign", "1454"]], "with no --repo, the head is read from this repository");
 });
 
 test("#1446 case 3: a tree on the head branch but NOT at the PR's head commit refuses, naming both SHAs", () => {

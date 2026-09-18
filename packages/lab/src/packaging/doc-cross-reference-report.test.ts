@@ -63,7 +63,7 @@ function sectionRows(report: string, check: string): string[] {
  * A guard may only be retired if this report reads its rule -- that is #954's whole safety argument, and
  * #928's rule behind it: no watcher retires before its replacement has reported. The first nightly comment
  * posted 2026-09-11T07:22:56Z with all fourteen checks and their examined counts
- * (https://github.com/DanBeckDev/a11y-witness/issues/928#issuecomment-5630944729).
+ * (https://github.com/a11ign/a11ign/issues/928#issuecomment-5630944729).
  *
  * The other eight keep a test on the pull-request path, because each also proves something the report does
  * not: the check's own logic against fixtures, or a rule that is not a cross-reference at all.

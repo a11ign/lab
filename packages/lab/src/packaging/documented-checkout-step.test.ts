@@ -21,7 +21,7 @@ import { parse } from "yaml";
  *
  * DISCOVERED, NOT TYPED. The first version of this file hand-listed three documents. A live review
  * caught the gap the same day: `packages/cli/README.md` carries a fourth genuine `uses:
- * DanBeckDev/a11y-witness` snippet -- also missing the checkout step -- that the hand-written list never
+ * a11ign/a11ign` snippet -- also missing the checkout step -- that the hand-written list never
  * saw, the exact "list nobody updates" shape `cli-flags.test.ts` and `git-spawn-classification.test.ts`
  * were built to end. So this walks every `.md` and `.yml` file in the tree and finds every genuine
  * `uses: <owner>/a11y-witness@<ref>` reference itself, rather than trusting anyone to have listed them
@@ -36,7 +36,7 @@ import { parse } from "yaml";
  * COMMENTS ARE STRIPPED BEFORE MATCHING -- fixed after this file fired a false positive on `#530`
  * within fourteen minutes of merging. `.github/workflows/release.yml` carries a `#` comment describing
  * `consumer-gate.yml`'s own pinned reference (`# #494. \`consumer-gate.yml\`'s own \`uses:
- * DanBeckDev/a11y-witness@<sha>\` step is pinned...`), and the unstripped text match read that PROSE as
+ * a11ign/a11ign@<sha>\` step is pinned...`), and the unstripped text match read that PROSE as
  * a real step, then compared its (nonexistent) position against the file's real, correctly-placed
  * `actions/checkout@v4`, reporting checkout as "too late" for a step that was never actually there. A
  * comment is not a use -- `git-spawn-classification.test.ts` names the identical shape and the identical
@@ -69,7 +69,27 @@ function walkDocs(root: string): string[] {
 }
 
 /** Matches a real `uses:` line naming this Action under any owner -- the reference itself, not a mention. */
-const USES_PATTERN = /uses:\s*\S*\/a11y-witness@\S+/;
+/**
+ * BOTH NAMES, because #63 moved the repository on 2026-09-18 and a consumer's workflow may pin either.
+ * This pattern named only `a11y-witness`, so the identity flip took the population from 5 to 0 and this
+ * file's own vacuity guard is what said so -- which is the guard working, not a stale test.
+ */
+/**
+ * THE TWO PUBLISHED IDENTITIES, BUILT rather than written, so a transfer sweep of repository literals
+ * cannot rewrite the pre-transfer one into agreeing with the new one -- `consumer-gate.test.ts` states
+ * the same reason for its own fixture.
+ */
+const IDENTITIES = [["DanBeckDev", "a11y-witness"].join("/"), ["a11ign", "a11ign"].join("/")];
+
+/**
+ * THE FULL IDENTITY, NOT THE REPOSITORY HALF UNDER ANY OWNER, and #63's rename is what forced that.
+ * This read `\S*\/a11y-witness@`, which was unambiguous while the repository half was distinctive. It
+ * is not any more: ADR 0008's prose placeholder `uses: owner/a11ign@v1` matches `<any owner>/a11ign@`
+ * exactly as a real reference does, and the guard then reported a decision record as undocumented
+ * consumer guidance. Naming both whole identities keeps the population to real references.
+ */
+const ACTION_NAME = new RegExp(IDENTITIES.map((i) => i.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"));
+const USES_PATTERN = new RegExp(`uses:\\s*(?:${ACTION_NAME.source})@\\S+`);
 
 /**
  * Discard everything from an UNQUOTED `#` onward on each line -- YAML's own comment rule, applied only
@@ -135,7 +155,10 @@ function stepsOf(parsed: unknown): Step[] | null {
   const doc = parsed as { steps?: Step[]; jobs?: Record<string, { steps?: Step[] }> };
   if (Array.isArray(doc.steps)) return doc.steps;
   for (const job of Object.values(doc.jobs ?? {})) {
-    if (Array.isArray(job.steps) && job.steps.some((s) => /a11y-witness/.test((s as Step).uses ?? ""))) {
+    // BOTH NAMES, for `USES_PATTERN`'s reason one screen up -- and this second copy is why the fix was
+    // not one edit: the identity lived here too, so the pattern matched the block and then no job in it
+    // "referenced the Action", which reads as "no parseable steps block" for every document at once.
+    if (Array.isArray(job.steps) && job.steps.some((s) => ACTION_NAME.test((s as Step).uses ?? ""))) {
       return job.steps;
     }
   }
@@ -180,7 +203,7 @@ test("every documented workflow snippet checks out the caller's repository befor
       missing.push(`${file}: matched the uses: pattern but no parseable steps block was found around it`);
       continue;
     }
-    const actionIndex = steps.findIndex((s) => /a11y-witness/.test(s.uses ?? ""));
+    const actionIndex = steps.findIndex((s) => ACTION_NAME.test(s.uses ?? ""));
     const checkoutIndex = steps.findIndex((s) => /^actions\/checkout@/.test(s.uses ?? ""));
     if (checkoutIndex === -1) {
       missing.push(`${file}: no actions/checkout step in the documented workflow`);
@@ -195,7 +218,7 @@ test("every documented workflow snippet checks out the caller's repository befor
 });
 
 test("MUTATION TARGET: a snippet missing the checkout step is caught, not silently accepted", () => {
-  const withoutCheckout = `jobs:\n  a11y:\n    steps:\n      - uses: DanBeckDev/a11y-witness@main\n`
+  const withoutCheckout = `jobs:\n  a11y:\n    steps:\n      - uses: a11ign/a11ign@main\n`
     + "        with:\n          url: https://example.com\n";
   const steps = stepsOf(parse(withoutCheckout));
   assert.ok(steps);
@@ -205,10 +228,10 @@ test("MUTATION TARGET: a snippet missing the checkout step is caught, not silent
 
 test("CONTROL: a snippet with the checkout step first passes the same check", () => {
   const withCheckout = "jobs:\n  a11y:\n    steps:\n      - uses: actions/checkout@v4\n"
-    + "      - uses: DanBeckDev/a11y-witness@main\n        with:\n          url: https://example.com\n";
+    + "      - uses: a11ign/a11ign@main\n        with:\n          url: https://example.com\n";
   const steps = stepsOf(parse(withCheckout));
   assert.ok(steps);
-  const actionIndex = steps!.findIndex((s) => /a11y-witness/.test(s.uses ?? ""));
+  const actionIndex = steps!.findIndex((s) => ACTION_NAME.test(s.uses ?? ""));
   const checkoutIndex = steps!.findIndex((s) => /^actions\/checkout@/.test(s.uses ?? ""));
   assert.ok(checkoutIndex !== -1 && checkoutIndex < actionIndex);
 });
@@ -219,10 +242,10 @@ test("#558 MUTATION TARGET: a job that runs BEFORE the action-referencing job, a
   const multiJob = "jobs:\n  check-pin:\n    steps:\n      - uses: actions/checkout@v4\n"
     + "      - run: echo pin check\n"
     + "  a11y:\n    steps:\n      - uses: actions/checkout@v4\n"
-    + "      - uses: DanBeckDev/a11y-witness@main\n        with:\n          url: https://example.com\n";
+    + "      - uses: a11ign/a11ign@main\n        with:\n          url: https://example.com\n";
   const steps = stepsOf(parse(multiJob));
   assert.ok(steps, "must find a steps array at all");
-  const actionIndex = steps!.findIndex((s) => /a11y-witness/.test(s.uses ?? ""));
+  const actionIndex = steps!.findIndex((s) => ACTION_NAME.test(s.uses ?? ""));
   const checkoutIndex = steps!.findIndex((s) => /^actions\/checkout@/.test(s.uses ?? ""));
   assert.ok(actionIndex !== -1, "must be the a11y job's steps, which actually reference the action -- "
     + "not check-pin's, which has a checkout but no a11y-witness reference at all");
@@ -234,7 +257,7 @@ test("MUTATION: a uses: line inside a # comment is not mistaken for a real step 
   // The real text from .github/workflows/release.yml on #530's branch: a comment describing a DIFFERENT
   // file's pinned reference, sitting above this file's own real (and correctly ordered) checkout step.
   const commentOnly = "jobs:\n  release:\n    steps:\n"
-    + "      # #494. `consumer-gate.yml`'s own `uses: DanBeckDev/a11y-witness@<sha>` step is pinned to a "
+    + "      # #494. `consumer-gate.yml`'s own `uses: a11ign/a11ign@<sha>` step is pinned to a "
     + "LITERAL sha\n"
     + "      - uses: actions/checkout@v4\n"
     + "      - run: npm run build\n";

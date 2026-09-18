@@ -45,7 +45,7 @@ test("examples/workflow.yml does not contradict action.yml's declared defaults",
 
   const withBlocks = Object.values(example.jobs)
     .flatMap((job) => job.steps)
-    // BOTH names, deliberately: the `uses:` line itself still says `DanBeckDev/a11y-witness` (#66 keeps
+    // BOTH names, deliberately: the `uses:` line itself still says `a11ign/a11ign` (#66 keeps
     // it pointing at where the Action actually is until #325 moves the repository).
     .filter((step) => /a11ign|a11y-witness/.test(String(step.uses ?? "")))
     .map((step) => step.with ?? {});
