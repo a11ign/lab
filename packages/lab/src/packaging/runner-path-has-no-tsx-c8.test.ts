@@ -42,14 +42,27 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
  *  program-mode use every named entry below is) never matches. */
 const TSX_TEST = /\btsx\s+--test\b/;
 
-/** A `c8` INVOCATION, not a mention -- either the shell shape this repo's manifest/workflow/`.sh` text uses
- *  (`npx c8 ...`), or the call shape `git-spawn-classification.test.ts` already established for the same
- *  reason (`<identifier>("c8", ...)`, broad enough to catch an indirected spawn wrapper). A bare `\bc8\b`
- *  first version matched `scripts/coverage-failure-classifier.mjs`'s own diagnostic STRING -- "this is a TEST
- *  regression, not a coverage regression -- c8 propagates the test runner's own exit code" -- real code, not
- *  a comment, but prose describing c8's old behaviour rather than invoking it. Caught by the positive
- *  control below failing to distinguish the two; word-boundary alone was never going to. */
-const C8_SPAWN = /\bnpx\s+c8\b|[A-Za-z_$][\w$]*\(\s*(['"`])c8\1/;
+/**
+ * A `c8` INVOCATION, not a mention -- TWO DIFFERENT DETECTORS for two different kinds of text, because one
+ * regex broad enough for both is broad enough for neither.
+ *
+ * `SHELL_C8` is for text this repo never writes as prose -- a `package.json` script VALUE, a workflow
+ * `run:` line, a `.sh` file -- so a bare word-bounded `c8` is safe: the repo's own FORMER coverage script
+ * was exactly this shape, `c8 node packages/guards/src/assert-glob-not-empty.mjs ...` (no `npx`, "c8" as
+ * the plain leading command). A first version of this file matched ONLY `npx c8` and a call shape, and
+ * reviewer's mutation (2026-09-18, restoring that exact bare shape) went uncaught -- the real defect this
+ * split fixes.
+ *
+ * `JS_C8_CALL` stays narrow -- `npx c8`, or the call shape `git-spawn-classification.test.ts` already
+ * established (`<identifier>("c8"...`, matching either the whole quoted argument or "c8 " leading a longer
+ * quoted shell string, broad enough to catch an indirected spawn wrapper) -- because JS/TS source under
+ * `scripts/` can embed genuine PROSE in a string literal. A bare `\bc8\b` here matched
+ * `scripts/coverage-failure-classifier.mjs`'s own diagnostic STRING -- "this is a TEST regression, not a
+ * coverage regression -- c8 propagates the test runner's own exit code" -- real code, not a comment, but
+ * prose describing c8's old behaviour rather than invoking it.
+ */
+const SHELL_C8 = /\bc8\b/;
+const JS_C8_CALL = /\bnpx\s+c8\b|[A-Za-z_$][\w$]*\(\s*(['"`])c8(?:\1|[\s])/;
 
 /** Blank and `#`-comment lines dropped, the same shell-comment discipline `runner-is-rstest.test.ts`'s own
  *  `codeLines` uses for a workflow `run:` block -- a runner named only in a comment must never count. Applied
@@ -59,8 +72,14 @@ function bashCodeLines(text: string): string[] {
   return text.split("\n").map((line) => line.trim()).filter((line) => line !== "" && !line.startsWith("#"));
 }
 
-/** One thing whose text this row's Acceptance covers, and the non-blank, comment-stripped lines to search. */
-type Source = { label: string; lines: string[] };
+/**
+ * One thing whose text this row's Acceptance covers, and the non-blank, comment-stripped lines to search.
+ * `kind` picks the `c8` detector: "shell" text (a manifest script value, a workflow `run:` line, a `.sh`
+ * file) never carries prose, so the broad `SHELL_C8` is safe; "js" text (`scripts/`'s `.mjs`/`.cjs`/`.js`/
+ * `.ts` files) can, so it gets the narrower `JS_C8_CALL`. `tsx --test` uses the same detector either way --
+ * its shape is specific enough that no prose has ever produced a false positive for it.
+ */
+type Source = { label: string; kind: "shell" | "js"; lines: string[] };
 
 /** `package.json`'s own `scripts` map -- read once, reused by the tsx-naming test below. */
 function manifestScripts(): Record<string, string> {
@@ -69,13 +88,14 @@ function manifestScripts(): Record<string, string> {
 }
 
 function manifestScriptSources(): Source[] {
-  return Object.entries(manifestScripts()).map(([name, cmd]) => ({ label: `package.json#scripts.${name}`, lines: bashCodeLines(cmd) }));
+  return Object.entries(manifestScripts())
+    .map(([name, cmd]) => ({ label: `package.json#scripts.${name}`, kind: "shell" as const, lines: bashCodeLines(cmd) }));
 }
 
 /** Every tracked `.yml` workflow, whole-file text -- comments stripped the same way as a `run:` step's shell. */
 function workflowSources(): Source[] {
   const files = walkTree({ kind: "all", roots: [".github/workflows"] }).map((f) => f.path).filter((p) => p.endsWith(".yml"));
-  return files.map((file) => ({ label: file, lines: bashCodeLines(readFileSync(join(REPO, file), "utf8")) }));
+  return files.map((file) => ({ label: file, kind: "shell" as const, lines: bashCodeLines(readFileSync(join(REPO, file), "utf8")) }));
 }
 
 /** Every tracked file under `scripts/` whose extension marks it as a program rather than data or a git hook. */
@@ -86,37 +106,53 @@ function scriptsDirectorySources(): Source[] {
   const files = walkTree({ kind: "all", roots: ["scripts"] }).map((f) => f.path).filter((p) => SCRIPT_EXTENSIONS.test(p));
   return files.map((file) => {
     const text = readFileSync(join(REPO, file), "utf8");
+    const isJsLike = JS_LIKE_EXTENSIONS.test(file);
     // JS/TS/CJS/MJS gets the real comment-aware strip (a `//` inside a string literal, e.g. a URL, must
     // survive); a `.sh` file has no such literal risk this repo's shell scripts rely on, so the cheaper
     // line-comment strip is enough for it.
-    const source = JS_LIKE_EXTENSIONS.test(file) ? stripComments(text) : text;
-    return { label: file, lines: bashCodeLines(source) };
+    const source = isJsLike ? stripComments(text) : text;
+    return { label: file, kind: isJsLike ? "js" as const : "shell" as const, lines: bashCodeLines(source) };
   });
 }
 
-function tsxTestSpawns(lines: string[]): string[] {
-  return lines.filter((line) => TSX_TEST.test(line));
+function tsxTestSpawns(source: Source): string[] {
+  return source.lines.filter((line) => TSX_TEST.test(line));
 }
 
-function c8Spawns(lines: string[]): string[] {
-  return lines.filter((line) => C8_SPAWN.test(line));
+function c8Spawns(source: Source): string[] {
+  const detector = source.kind === "shell" ? SHELL_C8 : JS_C8_CALL;
+  return source.lines.filter((line) => detector.test(line));
 }
 
 // --- the detector, proven on a fixture before it is trusted on the real tree ----------------------------
 
 test("positive control: a fixture invocation of `tsx --test` is caught, and the same words in a comment are not", () => {
-  const lines = bashCodeLines('run: npx tsx --test "a.test.ts"\n# npx tsx --test, mentioned in a comment\n'
-    + "run: npx rstest run --include a.test.ts");
-  assert.deepEqual(tsxTestSpawns(lines), ['run: npx tsx --test "a.test.ts"']);
+  const source: Source = { label: "fixture", kind: "shell", lines: bashCodeLines(
+    'run: npx tsx --test "a.test.ts"\n# npx tsx --test, mentioned in a comment\n' + "run: npx rstest run --include a.test.ts") };
+  assert.deepEqual(tsxTestSpawns(source), ['run: npx tsx --test "a.test.ts"']);
 });
 
-test("positive control: a fixture invocation of `c8` (shell or a spawn call) is caught, and prose mentioning "
-  + "it -- a comment, or a diagnostic STRING like coverage-failure-classifier.mjs's own -- is not", () => {
-  const lines = bashCodeLines('run: npx c8 npm test\n# reads .c8rc.json for c8\'s own thresholds\n'
+test("positive control: a bare shell `c8 <cmd>` invocation is caught -- the repo's own FORMER coverage "
+  + "script shape, and reviewer's mutation for this row's exact blocker (2026-09-18)", () => {
+  const source: Source = { label: "fixture", kind: "shell", lines: bashCodeLines(
+    'run: c8 node packages/guards/src/assert-glob-not-empty.mjs "packages/*/src/**/*.test.ts" --min=300 --run\n'
+    + "run: node scripts/coverage.mjs\n"
+    + "run: npx rstest run --config scripts/rstest/rstest.config.mjs") };
+  assert.deepEqual(c8Spawns(source),
+    ['run: c8 node packages/guards/src/assert-glob-not-empty.mjs "packages/*/src/**/*.test.ts" --min=300 --run']);
+});
+
+test("positive control: a fixture invocation of `c8` in JS/TS source (`npx c8`, or a spawn call either shape) "
+  + "is caught, and prose mentioning it -- a comment, or a diagnostic STRING like "
+  + "coverage-failure-classifier.mjs's own -- is not", () => {
+  const source: Source = { label: "fixture", kind: "js", lines: bashCodeLines(
+    'const cmd = "npx c8 npm test";\n# reads .c8rc.json for c8\'s own thresholds\n'
     + 'execFileSync("c8", ["--reporter=json"]);\n'
+    + 'execSync("c8 --reporter=json");\n'
     + 'detail: "not a coverage regression -- c8 propagates the test runner\'s own exit code"\n'
-    + "run: node scripts/coverage.mjs");
-  assert.deepEqual(c8Spawns(lines), ['run: npx c8 npm test', 'execFileSync("c8", ["--reporter=json"]);']);
+    + "run: node scripts/coverage.mjs") };
+  assert.deepEqual(c8Spawns(source),
+    ['const cmd = "npx c8 npm test";', 'execFileSync("c8", ["--reporter=json"]);', 'execSync("c8 --reporter=json");']);
 });
 
 // --- the real tree -------------------------------------------------------------------------------------
@@ -144,16 +180,16 @@ test("ACCEPTANCE: no test or coverage invocation in the manifest scripts, the wo
   + "directory spawns `tsx --test`, comments stripped", () => {
   const sources = [...manifestScriptSources(), ...workflowSources(), ...scriptsDirectorySources()];
   assert.ok(sources.length > 0, "the population is empty -- this would pass vacuously");
-  const offenders = sources.flatMap((source) => tsxTestSpawns(source.lines).map((line) => `${source.label}: ${line}`));
+  const offenders = sources.flatMap((source) => tsxTestSpawns(source).map((line) => `${source.label}: ${line}`));
   assert.deepEqual(offenders, []);
 });
 
-// Same population, same positive control (the second fixture test above), for `c8`.
+// Same population, same positive controls (the two fixture tests above, shell and JS shapes), for `c8`.
 test("ACCEPTANCE: no test or coverage invocation in the manifest scripts, the workflows, or the scripts "
   + "directory spawns `c8`, comments stripped", () => {
   const sources = [...manifestScriptSources(), ...workflowSources(), ...scriptsDirectorySources()];
   assert.ok(sources.length > 0, "the population is empty -- this would pass vacuously");
-  const offenders = sources.flatMap((source) => c8Spawns(source.lines).map((line) => `${source.label}: ${line}`));
+  const offenders = sources.flatMap((source) => c8Spawns(source).map((line) => `${source.label}: ${line}`));
   assert.deepEqual(offenders, []);
 });
 
