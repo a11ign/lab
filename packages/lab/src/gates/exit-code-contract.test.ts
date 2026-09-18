@@ -156,6 +156,11 @@ const DOCUMENTED: Record<string, string> = {
     "its one exit call is a direct, unmodified passthrough of ansible-playbook's own raw exit status — "
     + "0/1/2/3/4/5/99/250 are ANSIBLE's documented codes, not this script's own, and a caller reading them "
     + "as a verdict about the JOB is reading Ansible's verdict about the PLAYBOOK",
+  "packages/control/src/with-control-plane-fleet.mjs":
+    "2 usage error, no <bin> argument given; otherwise a direct, unmodified passthrough of the wrapped "
+    + "worker-fleet bin's own exit status (doctor.mjs/check-worker-code.mjs, already documented under "
+    + "packages/worker-fleet/src/) -- the same passthrough shape as lab-job.mjs's own 0/1/2/... above. A "
+    + "control-plane refusal is a stderr warning, never its own exit code -- the child still runs (#1356)",
   "packages/control/src/lab-pipeline.mjs":
     "2 seven distinct usage/precondition causes share one code; 3 'NOT LOADED' — no pipeline of this name "
     + "has run, a fourth distinct meaning for 3 in this table; 1 the unit's own Result/ExecMainStatus read "
