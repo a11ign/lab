@@ -1,3 +1,5 @@
+// no-token: gh -- this file's own hit is env.GH_TOKEN, a plain string comparison against a workflow
+// YAML's env-var name (line ~101), never a real gh() call or spawn.
 /**
  * THE FOUR OUTCOMES MUST NEVER COLLAPSE INTO TWO.
  *
@@ -18,7 +20,7 @@ import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
 import {
   closurePlan, labelsToStrip, applyClosurePlan, EXIT, closeRowsExit, liveClosureEffects, stripClaimLabels,
-  LIVE_SETTLE_DEPS,
+  LIVE_SETTLE_DEPS, rateLimitHeaders, rateLimitLine, logRateLimit,
 } from "../../../agent-org/src/close-rows-for-merged-pr.mjs";
 import { refusalCause } from "../../../agent-org/src/settle-closed-status.mjs";
 import { moveProjectStatus } from "../../../agent-org/src/row-claim.mjs";
@@ -358,8 +360,11 @@ test("#1299: the dispatch path's main() EXITS WITH that decision -- worker-captu
   assert.match(mainBody, /const \{ code, lines \} = closeRowsExit\(applyClosurePlan\(/,
     "main() takes its exit from closeRowsExit over applyClosurePlan's outcome");
   const afterPlan = mainBody.slice(mainBody.indexOf("closeRowsExit(applyClosurePlan("));
-  assert.match(afterPlan, /^\s*process\.exit\(code\);/m, "and exits with that code");
-  assert.doesNotMatch(afterPlan, /process\.exit\(EXIT\.DONE\)/, "not with DONE, whatever the outcome said");
+  // #1443: exits through `exitAfterSweep`, not a bare `process.exit`, so a rate-limit reading always
+  // pairs with the exit -- still, and only ever, with `code`, the same guarantee this test has pinned
+  // since #1299/#1357.
+  assert.match(afterPlan, /^\s*exitAfterSweep\(code\);/m, "and exits with that code");
+  assert.doesNotMatch(afterPlan, /exitAfterSweep\(EXIT\.DONE\)/, "not with DONE, whatever the outcome said");
 });
 
 /**
@@ -418,4 +423,88 @@ test("#1360 BOTH defaults settle with LIVE_SETTLE_DEPS: the per-merge effects an
   for (const rel of ["packages/agent-org/src/close-rows-for-merged-pr.mjs", "packages/agent-org/src/close-rows-sweep.mjs"]) {
     assert.doesNotMatch(code(rel), /settleClosedStatus\(n,\s*\{/, `${rel} builds its own settle deps inline again`);
   }
+});
+
+// ---------------------------------------------------------------------------------------------------
+// #1443: WAS #1360's SAVING (no Status move for a row already Done) WORTH ANYTHING, MEASURED?
+//
+// The reviewer's `not-convinced` on #1429 named exactly this gap: no before/after `X-Ratelimit-Used`
+// evidence for one sweep. Real headers, captured live via `gh api graphql -f query=... --include`
+// (confirmed live, 2026-09-18: `X-Ratelimit-Used=2361` before a dispatch, `2468` after -- the true cost
+// of a real closeRows dispatch with a Status move to do), never `gh api rate_limit`'s own separately
+// cached body (#1275: "always 5000/5000").
+// ---------------------------------------------------------------------------------------------------
+
+const REAL_HEADER_DUMP = [
+  "HTTP/2.0 200 OK",
+  "Access-Control-Allow-Origin: *",
+  "X-Ratelimit-Limit: 5000",
+  "X-Ratelimit-Remaining: 2680",
+  "X-Ratelimit-Reset: 1789726162",
+  "X-Ratelimit-Resource: graphql",
+  "X-Ratelimit-Used: 2320",
+  "",
+  '{"data":{"rateLimit":{"limit":5000,"cost":1,"remaining":2680,"resetAt":"2026-09-18T10:09:22Z"}}}',
+].join("\n");
+
+test("#1443 rateLimitHeaders reads a REAL gh api ... --include dump, headers and body together", () => {
+  assert.deepEqual(rateLimitHeaders(REAL_HEADER_DUMP), { used: "2320", reset: "1789726162" });
+});
+
+test("#1443 rateLimitHeaders is case-insensitive on the header name -- HTTP headers are", () => {
+  const dump = "HTTP/2.0 200 OK\nx-ratelimit-used: 42\nx-ratelimit-reset: 111\n\n{}";
+  assert.deepEqual(rateLimitHeaders(dump), { used: "42", reset: "111" });
+});
+
+test("#1443 rateLimitHeaders reads null for BOTH fields when the header is genuinely absent", () => {
+  assert.deepEqual(rateLimitHeaders("HTTP/2.0 200 OK\nContent-Type: text/plain\n\n{}"),
+    { used: null, reset: null });
+});
+
+test("#1443 MUTATION TARGET: a body line that happens to contain the words never matches -- header block only", () => {
+  // The blank-line split is the whole point: a mutation that read the WHOLE dump for the pattern would
+  // pass this test by accident (nothing here mentions the words in the body), so it is stated directly.
+  const dump = "HTTP/2.0 200 OK\nContent-Type: text/plain\n\n"
+    + "this body mentions x-ratelimit-used: 999 but is not a header";
+  assert.deepEqual(rateLimitHeaders(dump), { used: null, reset: null });
+});
+
+test("#1443 rateLimitLine names both values when both are present", () => {
+  const line = rateLimitLine("before sweep", REAL_HEADER_DUMP);
+  assert.match(line, /^RATE-LIMIT before sweep:/);
+  assert.match(line, /X-Ratelimit-Used=2320/);
+  assert.match(line, /X-Ratelimit-Reset=1789726162/);
+});
+
+test("#1443 rateLimitLine states COULD NOT READ, never a silently blank line, when the header is absent", () => {
+  const line = rateLimitLine("after sweep", "HTTP/2.0 200 OK\n\n{}");
+  assert.match(line, /^RATE-LIMIT after sweep: COULD NOT READ/);
+});
+
+test("#1443 logRateLimit never throws, and asks with exactly the injected run -- never the live gh", () => {
+  const asked: string[][] = [];
+  const originalLog = console.log;
+  const printed: string[] = [];
+  console.log = (line: string) => printed.push(line);
+  try {
+    logRateLimit("before sweep", (args: string[]) => { asked.push(args); return REAL_HEADER_DUMP; });
+  } finally {
+    console.log = originalLog;
+  }
+  assert.equal(asked.length, 1);
+  assert.deepEqual(asked[0].slice(0, 2), ["api", "graphql"]);
+  assert.ok(asked[0].includes("--include"), "must ask for the response headers, not just the body");
+  assert.ok(printed.some((line) => /X-Ratelimit-Used=2320/.test(line)));
+});
+
+test("#1443 logRateLimit does not throw when the injected run itself throws -- a reading must not take the sweep down", () => {
+  const originalError = console.error;
+  const printed: string[] = [];
+  console.error = (line: string) => printed.push(line);
+  try {
+    assert.doesNotThrow(() => logRateLimit("before sweep", () => { throw new Error("gh: rate-limited"); }));
+  } finally {
+    console.error = originalError;
+  }
+  assert.ok(printed.some((line) => /could not read/.test(line)));
 });
