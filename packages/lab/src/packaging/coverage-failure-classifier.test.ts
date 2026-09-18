@@ -7,24 +7,21 @@
  * exists to catch: "coverage regression tracking" read literally, a test failure or an infra break is not
  * a coverage regression at all.
  *
- * DRIVEN AGAINST REAL C8 OUTPUT SHAPES, not guessed ones — the threshold-miss regex is checked against
- * `checkCoverage()`'s own source in `node_modules/c8/lib/commands/check-coverage.js` below, so a future
- * c8 upgrade that reworks the message is caught here rather than by a silent misclassification in
- * production.
+ * DRIVEN AGAINST REAL OUTPUT SHAPES, not guessed ones. Until #1321, that meant checking the threshold-miss
+ * regex against c8's own installed source; #1321 (rstest adoption step 5/5) removed c8 as a dependency, so
+ * the wording's only remaining producer is `scripts/coverage.mjs`'s `thresholdMissLines` (#1320) -- reading
+ * a `node_modules/c8` file here would test a package that is no longer installed. That end-to-end coupling
+ * (`thresholdMissLines`'s real output, fed through this file's own `classifyCoverageFailure`) is pinned in
+ * `coverage-is-rstest.test.ts`, not duplicated here.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 import { classifyCoverageFailure, commentBody, KIND, testFailuresIn } from "../../../../scripts/coverage-failure-classifier.mjs";
-
-const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 
 test("npm ci failing is INFRA, and the coverage log is never even consulted", () => {
   const v = classifyCoverageFailure({ ciOutcome: "failure", buildOutcome: "success", coverageLog: "anything" });
@@ -94,13 +91,6 @@ test("commentBody names a different headline for each kind, so a reader does not
   assert.equal(new Set(headlines.map((h) => h.split("\n")[0])).size, Object.values(KIND).length,
     "every KIND must produce a DISTINCT headline, or a reader cannot tell them apart at a glance");
   for (const body of headlines) assert.match(body, /http:\/\/example\.invalid/, "the run link must survive");
-});
-
-test("the threshold-miss pattern is checked against c8's OWN source, not a guessed format", () => {
-  const src = readFileSync(path.join(REPO_ROOT, "node_modules/c8/lib/commands/check-coverage.js"), "utf8");
-  assert.match(src, /'ERROR: Coverage for '/,
-    "c8's own error-message construction changed shape -- update classifyCoverageFailure's regex to match "
-    + "before trusting its REGRESSION verdict again");
 });
 
 // --- #1089: the reporter's REAL bytes, generated here, not a fixture typed from a terminal ---
