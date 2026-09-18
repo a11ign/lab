@@ -577,6 +577,31 @@ test("testFilesToRun: #1654 MUTATION, POSITIVE CONTROL -- every OTHER package ke
   assert.deepEqual(run, ["packages/lab/src/**/*.test.ts", "packages/judge/src/**/*.test.ts"]);
 });
 
+test("testFilesToRun: #1695 -- guards shares agent-org's shape: tooling-roots.mjs names it censused "
+  + "from packages/lab/src/packaging/, and its own src/ has no *.test.ts file either", () => {
+  const run = testFilesToRun({ selectedTests: [], alwaysRun: [], fallbackPackages: ["guards"] });
+  assert.deepEqual(run, ["packages/lab/src/packaging/**/*.test.ts"]);
+  assert.deepEqual(underFloor(run, 1), [], "the resolved glob must actually match something, not just be renamed");
+});
+
+test("testFilesToRun: #1695 -- nvda-speech has no src/ at all (a Python package, tested under its own "
+  + "tests/, never by the ts job) -- also empty by construction, same override target as agent-org", () => {
+  const run = testFilesToRun({ selectedTests: [], alwaysRun: [], fallbackPackages: ["nvda-speech"] });
+  assert.deepEqual(run, ["packages/lab/src/packaging/**/*.test.ts"]);
+  assert.deepEqual(underFloor(run, 1), [], "the resolved glob must actually match something, not just be renamed");
+});
+
+test("testFilesToRun: #1695 REGRESSION -- the real shape PR #1695 hit: an uncovered scripts/*.mjs change "
+  + "names every testPackages entry as a fallback, including guards and nvda-speech together", () => {
+  const run = testFilesToRun({
+    selectedTests: [],
+    alwaysRun: [],
+    fallbackPackages: ["guards", "nvda-speech", "lab"],
+  });
+  assert.deepEqual(underFloor(run, 1), [],
+    "every fallback glob this uncovered-change shape can name must resolve to at least one real file");
+});
+
 // --- #1527: a test that READS a changed file as text, or imports it DYNAMICALLY, is selected ---
 //
 // #1526 changed the real-page gate script. CI's selection skipped `capture-age-spread.test.ts`, which pins that
