@@ -37,14 +37,44 @@ import { readFileSync } from "node:fs";
 
 const CI = readFileSync(new URL("../../../../.github/workflows/ci.yml", import.meta.url), "utf8");
 
-/** The `gate` job's own block, from its key to the next job at the same indent. */
-function gateBlock(): string {
-  const start = CI.indexOf("\n  gate:\n");
-  assert.notEqual(start, -1, "ci.yml has no `gate` job -- the required check is named somewhere else now");
+/** A job's own block, from its key to the next job at the same indent (or EOF for the last job). */
+function jobBlock(name: string): string {
+  const start = CI.indexOf(`\n  ${name}:\n`);
+  assert.notEqual(start, -1, `ci.yml has no \`${name}\` job`);
   const rest = CI.slice(start + 1);
   const next = rest.slice(1).search(/\n {2}[A-Za-z][\w-]*:\n/);
   return next === -1 ? rest : rest.slice(0, next + 1);
 }
+
+/** The `gate` job's own block, from its key to the next job at the same indent. */
+function gateBlock(): string {
+  assert.notEqual(CI.indexOf("\n  gate:\n"), -1,
+    "ci.yml has no `gate` job -- the required check is named somewhere else now");
+  return jobBlock("gate");
+}
+
+// #1109: `ci.yml` DECLARES `merge_group` (`on: { ..., merge_group: { branches: [main] } }`), so `gate` --
+// the one required check -- is REACHABLE from the merge queue. Whether it is a real second pass or a
+// weaker one depends on which of the jobs it `needs` actually ran to produce that result, which this pair
+// of tests pins.
+//
+// THE ONE PATTERN THAT EXCLUDES `merge_group` TODAY: an `if:` requiring `github.event_name ==
+// 'pull_request'`. Nothing else in this file's `if:` lines is event-shaped -- the rest gate on
+// `needs.changed.outputs.*`, which answers "did the diff touch this", true or false on ANY event.
+function excludesMergeGroup(block: string): boolean {
+  const ifLine = /\n {4}if: (.+)\n/.exec(block)?.[1] ?? "";
+  return /github\.event_name == 'pull_request'/.test(ifLine);
+}
+
+// JOBS EXEMPT ON `merge_group`, WITH WHY -- #1109's own deliverable ("an exemption table, not a widened
+// condition"). Each reason is echoed as a comment on the job's own `if:` in ci.yml so a reader at either
+// file finds the other; keeping both is the repeated-second-reading trade this file already makes for
+// `KEPT`/`DROPPED` above, not an accident of two people writing the same thing once.
+const EXEMPT_ON_MERGE_GROUP: Record<string, string> = {
+  deliberateRefusals: "reads github.event.pull_request (a hold, #549's Closes check) -- merge_group has none",
+  acceptance: "runs a command out of github.event.pull_request.body -- merge_group has no PR and no body",
+  ownedPaths: "diffs against github.base_ref, empty on merge_group (its base is github.event.merge_group.base_ref)",
+};
 
 // `deliberateRefusals` is what `mergeSafety` became: THREE checks a person's own decision drives -- a
 // `hold:` label, the declared Closes against what GitHub will actually close (#549), and a crossing into
@@ -117,4 +147,26 @@ test("#902: a CANCELLED run reports nothing -- `!cancelled()`, the third instanc
   // PR #996 as red from exactly that on 2026-09-11, twenty minutes apart.
   assert.match(gateBlock(), /if: always\(\) && !cancelled\(\)/,
     "without `!cancelled()` the gate fails whenever a push supersedes its own run, and that red persists");
+});
+
+test("#1109: gate's own `if:` never excludes merge_group", () => {
+  // `always() && !cancelled()` (pinned above) is the whole of it -- no `event_name` clause. If one were
+  // added, `gate` would stop being the merge queue's own second pass rather than merely a weaker one.
+  assert.ok(!excludesMergeGroup(gateBlock()),
+    "gate's `if:` now restricts by event_name -- it would never conclude on merge_group at all");
+});
+
+test("#1109: every job gate needs either runs on merge_group or is named with a reason", () => {
+  for (const name of KEPT) {
+    const excluded = excludesMergeGroup(jobBlock(name));
+    if (name in EXEMPT_ON_MERGE_GROUP) {
+      assert.ok(excluded,
+        `${name} is in EXEMPT_ON_MERGE_GROUP but its \`if:\` no longer excludes merge_group -- ` +
+        "it runs there now, so remove the entry (and ci.yml's matching comment) rather than leave a stale exemption");
+    } else {
+      assert.ok(!excluded,
+        `${name} is skipped on merge_group with no entry in EXEMPT_ON_MERGE_GROUP -- gate would conclude ` +
+        "on a merge_group event having examined less than it does on a pull_request (#1109)");
+    }
+  }
 });
