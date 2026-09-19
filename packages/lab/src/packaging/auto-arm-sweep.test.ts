@@ -25,7 +25,7 @@ import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
 import {
   sweepDecision, EXIT, mergedMeanwhile, MERGED_MEANWHILE_READS, MERGED_MEANWHILE_WAIT_MS, holdLookalikes, decideAndWarn,
-  confirmArmed, CONFIRM_ARMED_READS, CONFIRM_ARMED_WAIT_MS,
+  confirmArmed, CONFIRM_ARMED_READS, CONFIRM_ARMED_WAIT_MS, armedFromApi,
 } from "../../../agent-org/src/auto-arm-sweep.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 
@@ -424,4 +424,37 @@ test("#1729 WIRING: main() calls confirmArmed after `gh pr merge --auto`, and AR
   assert.match(notConfirmedBlock, /failed\.push\(number\)/,
     "an unconfirmed arm must fail the sweep run (COULD_NOT_ARM), per this family's own never-swallow "
     + "convention -- a claim nobody checked is not a clean skip");
+});
+
+/**
+ * THE THIRD ARMED STATE, the one #1729 did not enumerate.
+ *
+ * `auto_merge != null` and `merged` were both counted; a PR SITTING IN THE MERGE QUEUE is neither, and
+ * it is the state a busy queue spends most of its time in. On 2026-09-19 at 14:34Z the sweep exited 1
+ * on #1752, #1751 and #1750 -- "ARM CLAIMED BUT NOT CONFIRMED" -- and all three merged within five
+ * minutes. `gh` had already said so in words on the arm call itself: "already queued to merge".
+ */
+test("a pull request sitting in the merge queue is ARMED, not unconfirmed", () => {
+  // OBSERVED on #1762 at 2026-09-19T14:36Z, copied from the API response rather than imagined.
+  const queued = { merged: false, autoMergeRequest: null,
+    mergeQueueEntry: { state: "AWAITING_CHECKS", position: 1 } };
+  assert.equal(armedFromApi(queued), true,
+    "position 1 of the merge queue is the most armed a PR can be short of landing");
+});
+
+test("the two states #1729 already counted still count", () => {
+  assert.equal(armedFromApi({ merged: false, autoMergeRequest: { enabledAt: "2026-09-19T14:35:31Z" },
+    mergeQueueEntry: null }), true, "a pending auto-merge is armed");
+  assert.equal(armedFromApi({ merged: true, autoMergeRequest: null, mergeQueueEntry: null }), true,
+    "a landed PR is armed -- a fast main can merge it between the arm call and this read (#1306)");
+});
+
+test("and an unarmed pull request is still unarmed", () => {
+  // THE POSITIVE CONTROL FOR THE THREE ABOVE. Widening a predicate is only safe if something still
+  // fails it -- otherwise `confirmArmed` becomes a function that returns true, and the #1729 defect
+  // (believing an arm that never landed) comes back through the door its own fix opened.
+  assert.equal(armedFromApi({ merged: false, autoMergeRequest: null, mergeQueueEntry: null }), false,
+    "nothing pending, not queued, not merged -- the arm genuinely did not take");
+  assert.equal(armedFromApi(null), false, "and a read that returned nothing is not evidence of arming");
+  assert.equal(armedFromApi({}), false, "nor is a response missing every field");
 });
