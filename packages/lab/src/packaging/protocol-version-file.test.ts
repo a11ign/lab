@@ -41,3 +41,12 @@ test("the file the deploy guard scrapes is the file that declares CAPTURE_PROTOC
     `the deploy guard would read ${scraped} from ${PROTOCOL_VERSION_FILE}, but the exported constant is `
     + `${CAPTURE_PROTOCOL_VERSION}. The regex is matching something else in that file.`);
 });
+
+// #1573/product-manager: the two assertions above only pin the scrape and the export to EACH OTHER --
+// both read the same file, so a bump left half-applied (or reverted outright) moves them together and
+// this test suite stays green. Nothing here asserted the number this PR is actually about. Pinned
+// literally so a mutation of the constant (19 -> 18, say) is caught by THIS file rather than relying on
+// whatever else in the corpus happens to expect 19.
+test("CAPTURE_PROTOCOL_VERSION is 19, the value this PR bumps to", () => {
+  assert.equal(CAPTURE_PROTOCOL_VERSION, 19);
+});

@@ -206,17 +206,28 @@ test("#1103 clause 4: the log names a THIRD cause, a gate completing, with the P
   assert.equal(new Set(causes).size, 3, `three distinct causes rendered, got: ${causes.join(" | ")}`);
 });
 
-test("#1103: only update-branch admits workflow_run -- sweep and stalled stay off it, arm too", () => {
+test("#1103: only update-branch and (#1633) stalled admit workflow_run -- sweep and arm stay off it", () => {
   const doc = loadDoc();
   const gateDone = { event_name: "workflow_run", action: "" };
-  for (const job of ["sweep", "stalled", "arm"]) {
+  for (const job of ["sweep", "arm"]) {
     const cond = String(doc.jobs[job]?.if ?? "");
     assert.ok(cond, `${job} has an if:`);
     assert.equal(runsOn(cond, gateDone), false, `${job} does not run when a gate completes`);
   }
+  // #1633: stalled now admits workflow_run -- an absent `if:` (or one permissive enough) runs on every
+  // event, so this reads the condition rather than assuming absence means "runs everywhere".
+  const stalledCond = doc.jobs.stalled?.if;
+  assert.equal(
+    stalledCond === undefined || runsOn(String(stalledCond), gateDone),
+    true,
+    "stalled runs when a gate completes",
+  );
   // and sweep/stalled still run on the events they exist for
   assert.equal(runsOn(String(doc.jobs.sweep?.if), { event_name: "push", action: "" }), true);
-  assert.equal(runsOn(String(doc.jobs.stalled?.if), { event_name: "pull_request", action: "synchronize" }), true);
+  assert.equal(
+    stalledCond === undefined || runsOn(String(stalledCond), { event_name: "pull_request", action: "synchronize" }),
+    true,
+  );
 });
 
 test("#1103 clause 7: the evaluator coerces like GitHub -- an absent draft == false is TRUE, and the base clause is not what keeps arm off a push", () => {
