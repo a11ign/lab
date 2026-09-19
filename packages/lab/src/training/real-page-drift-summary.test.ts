@@ -1,18 +1,17 @@
 /**
- * #781: driven at two layers, matching #780's own pattern (`real-page-identity-summary.test.ts`) -- the
- * pure functions directly, hand-built fixtures for every branch, and the REAL `runs/witness/` captures
- * of the three pre-registered pages when this machine's corpus carries them (honestly skipped otherwise).
+ * #781: the pure functions, driven directly with hand-built fixtures for every branch. The REAL
+ * `runs/witness/` replay of the three pre-registered pages lives in `real-page-drift-summary-corpus.test.ts`
+ * -- split out, not merged here, because THIS file is the CI acceptance command (`packages/lab/CLAUDE.md`'s
+ * "a gate that reads runs/ is not yours to report": `runsRoot()` anywhere in an entry file marks the whole
+ * file corpus-dependent for `acceptance-commands.mjs`'s closure walk, even inside a callback that honestly
+ * skips when the corpus is absent, so a CI runner with no `runs/` would have nothing here it could run).
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import {
   shapeReadingFor, distinctShapes, worstFieldSpreadPercent, driftDistributionsByUrl, driftSummaryLine,
 } from "./real-page-drift-summary.mjs";
-import { runsRoot } from "../dataset-paths.mjs";
-import { corpusReadable, skipLine } from "./corpus-settled.mjs";
 
 /** An array of `n` placeholder entries -- only its LENGTH matters to `fieldValues`. */
 const items = (n: number) => Array.from({ length: n }, (_, i) => `item-${i}`);
@@ -145,20 +144,4 @@ test("driftSummaryLine: REFUSED, few-captures and the normal case are three dist
   assert.match(normal, /n=5 on build build-a/);
   assert.match(normal, /2 distinct shape\(s\)/);
   assert.match(normal, /worst-field spread 2\.5%/);
-});
-
-// REAL FIXTURES, HONESTLY SKIPPED WHEN ABSENT -- exactly #780's own acceptance-4 pattern
-// (`real-page-identity-summary.test.ts`). `runs/` is gitignored, so a CI runner's checkout has none of
-// this; `corpusReadable` also refuses a corpus that is still mid-write, which a plain `existsSync` cannot
-// tell. The command to reproduce this locally, for whoever has the fixture, is the row's own Open-check.
-test("#781: the real hubspot/calendly/ikea witness captures on disk, replayed", (t) => {
-  const dir = join(runsRoot(), "witness");
-  const guard = corpusReadable({ evidenceDirs: [dir], present: existsSync(dir) });
-  if (!guard.read) { t.skip(skipLine(guard)); return; }
-  const files = readdirSync(dir).filter((name) => /hubspot|calendly|ikea/.test(name));
-  if (files.length === 0) { t.skip("no pre-registered real-page captures on this machine's runs/witness/"); return; }
-  const records = files.map((name) => JSON.parse(readFileSync(join(dir, name), "utf8")));
-  const byUrl = driftDistributionsByUrl(records);
-  for (const entry of byUrl) process.stdout.write(driftSummaryLine(entry));
-  assert.ok(byUrl.length > 0);
 });
