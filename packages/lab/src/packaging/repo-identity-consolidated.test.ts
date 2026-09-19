@@ -81,7 +81,7 @@ const SITES: Array<{ file: string; expect: string }> = [
   // this pinned was permanently broken -- the first image a visitor saw. Lint runs inside ci.
   { file: "README.md", expect: `${REPO_URL}/actions/workflows/ci.yml/badge.svg` },
   { file: "README.md", expect: `${REPO_URL}/actions/workflows/capture-regression.yml/badge.svg` },
-  { file: "README.md", expect: `uses: ${REPO}@main` },
+  { file: "README.md", expect: `uses: ${REPO}@v0.1.0` },
   // A hyperlink a reader consciously clicks, and can recover from (try another reporting channel) if it
   // 404s -- PRODUCT_REPO stands, per the header question above.
   { file: "SECURITY.md", expect: `${PRODUCT_REPO_URL}/security/advisories/new` },
@@ -92,7 +92,7 @@ const SITES: Array<{ file: string; expect: string }> = [
     expect: `raw.githubusercontent.com/${REPO}/main/packages/worker-fleet/src/provisioning/`
       + "bootstrap-control-plane.sh" },
   { file: "docs/backlog-ready.md", expect: `${PRODUCT_REPO_URL}/issues` },
-  { file: "docs/try-it.md", expect: `uses: ${REPO}@main` },
+  { file: "docs/try-it.md", expect: `uses: ${REPO}@v0.1.0` },
   // COPY-PASTE-EXECUTE: the getting-started guide's own literal step 1. The `cd a11y-witness` line right
   // after it (the directory `git clone` actually creates) is a real, necessary consequence of this fix
   // but is NOT pinned as its own site here -- a bare `cd <checkout name>` string is exactly the literal
@@ -102,7 +102,7 @@ const SITES: Array<{ file: string; expect: string }> = [
   { file: "docs/getting-started.md",
     expect: `raw.githubusercontent.com/${REPO}/main/packages/worker-fleet/src/provisioning/`
       + "bootstrap-windows-worker.ps1" },
-  { file: "docs/github-action.md", expect: `uses: ${REPO}@main` },
+  { file: "docs/github-action.md", expect: `uses: ${REPO}@v0.1.0` },
   { file: "docs/github-action.md", expect: `uses: ${REPO}@<sha>` },
   // REPO, not PRODUCT_REPO -- docs/backlog.md is one of #66's explicit exclusions (historical narrative,
   // never rewritten to match the present), so this link correctly still points at the pre-rename repo.
