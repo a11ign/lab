@@ -100,16 +100,21 @@ test("#985: a pair differing ONLY in whether a SWEEP was asked is CHANGED -- it 
   assert.equal(compareCapture(asked(true), asked(true)).verdict, "SAME", "the control");
 });
 
-test("#985: an INTERACTION channel's `asked`, and every other part of `observed`, is not compared -- measured first (#984)", () => {
+test("#985: an INTERACTION channel's `asked` is compared for the eight #984 measured stable -- every other part of `observed` is still not", () => {
   const observed = (formChanges: boolean, stop: string) => capture({
     observed: { formChanges: { asked: formChanges, why: "x" }, headings: { asked: true, complete: true, stop: { prev: stop, next: stop } } } });
-  assert.equal(compareCapture(observed(true, "exhausted"), observed(false, "exhausted")).verdict, "SAME",
-    "an interaction channel's asked follows activation, which varies with probe budgets -- #984 measures it");
+  assert.equal(compareCapture(observed(true, "exhausted"), observed(false, "exhausted")).verdict, "CHANGED",
+    "#984 measured 0 flips in 98+138 comparisons, so formChanges.asked moved into the compared set 2026-09-19");
   assert.equal(compareCapture(observed(true, "exhausted"), observed(true, "silent")).verdict, "SAME",
-    "stop reasons vary with NVDA's timing");
+    "stop reasons vary with NVDA's timing and stayed out");
   const sweeps = EVIDENCE_FIELDS.filter((f) => f[0] === "observed").map((f) => f[1]).sort();
   const structure = EVIDENCE_FIELDS.filter((f) => f[0] === "structure").map((f) => f[1]).sort();
-  assert.deepEqual(sweeps, structure, "asked is compared for exactly the structure channels, derived from them");
+  assert.ok(structure.every((c) => sweeps.includes(c)), "every structure channel is still asked-compared");
+  const interactionAsked = sweeps.filter((c) => !structure.includes(c)).sort();
+  assert.deepEqual(interactionAsked,
+    ["arrowNavigation", "dialogEscape", "focusContext", "focusOrder", "formChanges", "postSubmitFields", "routeChange", "typedFeedback"],
+    "asked is compared for exactly the eight interaction channels recordWhatWasAsked reports it for (#984)");
+  assert.equal(sweeps.length, structure.length + interactionAsked.length, "no duplicate or dropped asked entries");
 });
 
 test("#985: every field's key is DISTINCT -- `gate:stability` keys by it, and a collision overwrites a channel in silence", () => {

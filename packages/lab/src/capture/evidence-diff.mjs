@@ -91,6 +91,13 @@ const TABLE = [
   // `typedFeedback` gained `titleBefore`/`titleAfter` in the same protocol for 3.2.2 and is already
   // listed, so the flattening picks those up without a second entry.
   ["interaction", "focusContext"],
+  // ADDED 2026-09-19 (#984): excluded since this table began, on the theory that it "flips with probe
+  // order and even with transient network conditions rather than with the page" -- a reason written
+  // before capture-protocol 16's `checked` discriminant existed. Measured stable instead: 0 flips in 81
+  // adjacent/repeat comparisons across 90 captures on 13 pages (two arms plus the acceptance repeat
+  // pair), 95% upper bound ~3.7-4.8%, `checked: true` on all 379 corpus records that carry it. Mutation:
+  // dropping this entry must make a pair differing only in `navigatedOnSubmit` read SAME.
+  ["interaction", "navigatedOnSubmit"],
   // THE TOP-LEVEL DOM-ONLY CHANNELS -- #977. `media` (1.4.2's rule) and `formInputs` (1.3.5's rule and
   // `inputPurposeInvalid`, #170) sit BESIDE `structure`/`interaction`, not inside them, so a table of
   // `[group, name]` pairs could not name them and this gate read SAME for any change to either -- a
@@ -102,17 +109,33 @@ const TABLE = [
 ];
 
 /**
- * WHETHER EACH SWEEP WAS ASKED -- `observed.<channel>.asked`, for the STRUCTURE channels only (#985, product-manager's
+ * WHETHER EACH SWEEP WAS ASKED -- `observed.<channel>.asked`, for the STRUCTURE channels (#985, product-manager's
  * ruling (b) on worker-judge's review). `asked` feeds `sweepCompleteness` (verify.ts: `asked: false` reads `unknown`,
  * which decides whether an absence is a finding) and the scorer's observation features, so a flip on an EMPTY
  * channel moved findings and model input while every channel compared `[] = []` and read SAME.
  *
- * STRUCTURE ONLY because a sweep's `asked` is fixed by the capture options -- deterministic for a page. An
- * INTERACTION channel's `asked` follows whether a control was ACTIVATED, which varies with probe budgets, so it
- * joins #984's flip-rate measurement before it is compared. Derived from the table's own structure entries, so a
- * sweep added there is asked about here without a second list.
+ * A sweep's `asked` is fixed by the capture options -- deterministic for a page -- which is why STRUCTURE could be
+ * derived straight from the table (`TABLE.filter(([group]) => group === "structure")`, a sweep added there is asked
+ * about here without a second list). An INTERACTION channel's `asked` follows whether a control was ACTIVATED,
+ * which varies with probe budgets, so it stayed out of `EVIDENCE_FIELDS` pending #984's flip-rate measurement --
+ * and that measurement does NOT cover every interaction entry in the table, only the eight channels
+ * `recordWhatWasAsked` (`capture-pure.mjs`) actually reports `asked` for (`controls`, `stateChanges`,
+ * `postSubmitNames`, `focusReveal` and `focusEvents` have no `observed.<channel>` entry at all, so there is
+ * nothing to compare or exclude). Named explicitly rather than filtered from `TABLE`, unlike structure, because
+ * "every interaction entry" would be the wrong population.
  */
-const ASKED_OF_EACH_SWEEP = TABLE.filter(([group]) => group === "structure").map(([, name]) => ["observed", name, "asked"]);
+const INTERACTION_CHANNELS_ASKED_IS_MEASURED = Object.freeze([
+  "formChanges", "postSubmitFields", "focusOrder", "dialogEscape", "arrowNavigation", "typedFeedback",
+  "focusContext", "routeChange",
+]);
+
+const ASKED_OF_EACH_SWEEP = [
+  ...TABLE.filter(([group]) => group === "structure").map(([, name]) => ["observed", name, "asked"]),
+  // ADDED 2026-09-19 (#984): measured 0 flips in 98 adjacent pairs (all eight channels) plus 138 on the
+  // acceptance repeat pair. Mutation: dropping one of these entries must make a pair differing only in
+  // that channel's `observed.<channel>.asked` read SAME.
+  ...INTERACTION_CHANNELS_ASKED_IS_MEASURED.map((name) => ["observed", name, "asked"]),
+];
 
 /** @type {string[][]} */
 export const EVIDENCE_FIELDS = [...TABLE, ...ASKED_OF_EACH_SWEEP];
@@ -138,24 +161,24 @@ export function fieldKey(field) {
  * @type {Readonly<Record<string, string>>}
  */
 export const NOT_COMPARED = Object.freeze({
-  "interaction.navigatedOnSubmit": "a record of what the PROBE did (did currentPageUrl() see a move), "
-    + "not what NVDA announced; it flips with probe order and even with transient network conditions "
-    + "rather than with the page, so comparing it would report drift for a change in how the capture "
-    + "was driven, not in what the page says (whether to compare it anyway is #984, a flip-rate measurement)",
+  // `interaction.navigatedOnSubmit` moved OUT of this list 2026-09-19 (#984): measured stable, 0 flips
+  // in 81 comparisons -- see its entry in `TABLE` above.
   "interaction.leftSite": "where an activation took the browser off the page's site (#1363): a record of what "
-    + "the PROBE did, like `navigatedOnSubmit` above, and the capture ENDS there -- so a capture that left and one "
-    + "that did not already differ in every channel the excursion stopped, which is where evidence:check sees it",
+    + "the PROBE did, like `navigatedOnSubmit` before it moved into the compared set (#984), and the capture "
+    + "ENDS there -- so a capture that left and one that did not already differ in every channel the excursion "
+    + "stopped, which is where evidence:check sees it",
   url: "which page was asked for; the pair is matched on it, and `documentIdentity` compares what was SERVED",
   screenReader: "which screen reader; `isUsableCapture` refuses anything but NVDA, so a difference is not a capture",
   capturedAt: "when; it differs on every capture of every page",
   diagnostics: "the capture's own debugging log, a FORBIDDEN_INPUT_KEY; marks and timings vary run to run",
   // NOT "compared in the channels it describes" -- that was false for `asked` (worker-judge's review of #985).
-  observed: "COMPARED IN PART, so named here for the rest, part by part. `asked` for the STRUCTURE channels IS "
-    + "compared (`observed.<channel>.asked`, EVIDENCE_FIELDS): it is fixed by the capture options, and it feeds "
-    + "`sweepCompleteness` and the scorer's observation features. NOT compared, until measured: `asked` for the "
-    + "INTERACTION channels, which follows whether a control was ACTIVATED and so varies with probe budgets (#984 "
-    + "measures its flip rate); and `stop`, `why`, `activated` and `complete`, which vary with NVDA's timing. "
-    + "product-manager's ruling (b) on #985",
+  observed: "COMPARED IN PART, so named here for the rest, part by part. `asked` for the STRUCTURE channels, and "
+    + "for the eight INTERACTION channels `recordWhatWasAsked` reports it for (`formChanges`, `postSubmitFields`, "
+    + "`focusOrder`, `dialogEscape`, `arrowNavigation`, `typedFeedback`, `focusContext`, `routeChange`), IS "
+    + "compared (`observed.<channel>.asked`, EVIDENCE_FIELDS) -- the interaction half measured stable by #984 "
+    + "(0 flips in 98+138 comparisons) 2026-09-19, after having stayed out because it follows whether a control "
+    + "was ACTIVATED and so varies with probe budgets. NOT compared: `stop`, `why`, `activated` and `complete`, "
+    + "which vary with NVDA's timing. product-manager's ruling (b) on #985",
   // THE ENVELOPE: added around the worker's own capture, so capture-core's typedefs do not declare them.
   task: "the request's task text, added by server.mjs; it is what was asked for, not what NVDA said",
   environment: "which browser, screen reader and worker took it, added by server.mjs; the capture cache keys on "
