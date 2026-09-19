@@ -33,8 +33,9 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const PAGE = resolve(REPO, "docs/try-it.md");
 const page = () => readFileSync(PAGE, "utf8");
 
-/** The runs that REACHED the page, and so the exact size of the checked population (#1060). */
-const REACHING_RUNS = 5;
+/** The runs that REACHED the page, and so the exact size of the checked population (#1060, widened to the
+ * full eleven-run measurement by #311's 2026-09-19 reconciliation with #915). */
+const REACHING_RUNS = 11;
 
 const WORD_NUMBERS: Record<string, number> = {
   one: 1, two: 2, three: 3, four: 4, five: 5, six: 6,
