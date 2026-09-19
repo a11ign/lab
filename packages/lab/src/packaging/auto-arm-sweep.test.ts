@@ -25,6 +25,7 @@ import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
 import {
   sweepDecision, EXIT, mergedMeanwhile, MERGED_MEANWHILE_READS, MERGED_MEANWHILE_WAIT_MS, holdLookalikes, decideAndWarn,
+  confirmArmed, CONFIRM_ARMED_READS, CONFIRM_ARMED_WAIT_MS,
 } from "../../../agent-org/src/auto-arm-sweep.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 
@@ -341,4 +342,86 @@ test("#1595 WIRING: the sweep's per-PR loop asks decideAndWarn, so the warning i
   assert.ok(body.length > 0 && /const \{ arm, reason \} = decideAndWarn\(\{ number, labels, checkRunCount \}\)/.test(body),
     "main() must decide through decideAndWarn");
   assert.ok(!/sweepDecision\(/.test(body), "and must not call sweepDecision beside it");
+});
+
+/**
+ * #1729: NOT THROWING IS NOT ARMED. `gh pr merge --auto` printed "already queued to merge" to stderr and
+ * exited 0 for #1727 -- the success path ran, `ARMED` was logged, and `autoMergeRequest` stayed `null` for
+ * 6+ minutes across two sweeps. These drive `confirmArmed` with an injected reader/sleep/log, the same shape
+ * `mergedMeanwhile`'s own #1306 tests use, so the bound stays at the module's own named constants.
+ */
+function drivenArmed(answers: (boolean | Error)[]) {
+  const reads: number[] = [];
+  const slept: number[] = [];
+  const said: string[] = [];
+  const read = () => {
+    reads.push(reads.length + 1);
+    const answer = answers[Math.min(reads.length - 1, answers.length - 1)];
+    if (answer instanceof Error) throw answer;
+    return answer;
+  };
+  const armed = confirmArmed("7", "o/r",
+    { read, sleep: (ms: number) => { slept.push(ms); }, log: (line: string) => { said.push(line); } });
+  return { armed, reads: reads.length, slept, said };
+}
+
+test("#1729 ACCEPTANCE: an arm confirmed on a LATER read is armed -- the ordinary lag between the mutation "
+  + "and the API reflecting it", () => {
+  const { armed, reads, slept } = drivenArmed([false, true]);
+  assert.equal(armed, true, "the second read is the one that sees the arm actually take");
+  assert.equal(reads, 2, "it stops reading the moment the arm is seen");
+  assert.deepEqual(slept, [CONFIRM_ARMED_WAIT_MS], "one named wait between the two reads");
+});
+
+test("#1729 CONTROL: an arm that never confirms is reported as not armed, after exactly the bound", () => {
+  const { armed, reads, slept } = drivenArmed([false]);
+  assert.equal(armed, false, "the fix cannot be `always confirmed` -- a genuinely unarmed PR must still "
+    + "read as unarmed, or #1727's own failure would still slip through silently");
+  assert.equal(reads, CONFIRM_ARMED_READS, "bounded: exactly the named number of reads, then it believes `false`");
+  assert.deepEqual(slept, Array(CONFIRM_ARMED_READS - 1).fill(CONFIRM_ARMED_WAIT_MS),
+    "a wait between reads, none after the last");
+});
+
+test("#1729: a confirm read that THROWS is printed with its cause, and still counts as not (yet) armed", () => {
+  const cause = new Error("HTTP 502: Bad Gateway (https://api.github.com/repos/o/r/pulls/7)");
+  const failing = drivenArmed([cause]);
+  assert.equal(failing.armed, false, "UNREADABLE IS NOT ARMED -- not knowing is not the same as harmless");
+  assert.equal(failing.said.length, CONFIRM_ARMED_READS, "every failed read is said, not only the first");
+  assert.match(failing.said[0], /^SWEEP: #7 confirm-armed read 1\/\d+ FAILED -- HTTP 502: Bad Gateway/,
+    "the cause itself is printed, the same discipline `mergedMeanwhile` uses for its own reads");
+  const recovered = drivenArmed([cause, true]);
+  assert.equal(recovered.armed, true, "a read that fails once and then sees the arm is still armed");
+});
+
+test("#1729 MUTATION TARGET: `confirmArmed`'s own bound matches `mergedMeanwhile`'s -- the two races are the "
+  + "same shape, and a shrunk window here would re-open exactly what #1306 closed on the mirror path", () => {
+  assert.equal(CONFIRM_ARMED_READS, MERGED_MEANWHILE_READS);
+  assert.equal(CONFIRM_ARMED_WAIT_MS, MERGED_MEANWHILE_WAIT_MS);
+});
+
+test("#1729 WIRING: main() calls confirmArmed after `gh pr merge --auto`, and ARMED is logged only inside "
+  + "that confirmation's true branch -- an unconfirmed arm must report ARM CLAIMED BUT NOT CONFIRMED and "
+  + "join the failed list, not merely skip", () => {
+  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
+  const body = source.slice(source.indexOf("function main("));
+  const mergeCallIndex = body.indexOf('gh(["pr", "merge", "--auto"');
+  const confirmCallIndex = body.indexOf("confirmArmed(number, repo)");
+  assert.ok(mergeCallIndex >= 0, "main() must still call `gh pr merge --auto`");
+  // `indexOf` returns -1 when a mutation deletes the call outright, and -1 > mergeCallIndex would then read
+  // as "found and in order" for a call that is not there at all -- so presence is asserted separately from order.
+  assert.ok(confirmCallIndex >= 0, "main() must call confirmArmed (not sweepDecision-only, not skipped)");
+  assert.ok(confirmCallIndex > mergeCallIndex,
+    "confirmArmed must be asked AFTER the merge call, not before -- there is nothing to confirm before it");
+  const armedLogIndex = body.indexOf("ARMED -- ${reason}");
+  assert.ok(armedLogIndex >= 0 && armedLogIndex > confirmCallIndex,
+    "the ARMED line must be inside confirmArmed's true branch, not printed unconditionally once the shell "
+    + "call merely fails to throw (#1729's own defect)");
+  assert.match(body, /ARM CLAIMED BUT NOT CONFIRMED/,
+    "an unconfirmed arm must say so explicitly, distinct from both ARMED and FAILED TO ARM");
+  const NOT_CONFIRMED_WINDOW_CHARS = 300; // covers the log call plus the `failed.push(number)` line after it
+  const notConfirmedIndex = body.indexOf("ARM CLAIMED BUT NOT CONFIRMED");
+  const notConfirmedBlock = body.slice(notConfirmedIndex, notConfirmedIndex + NOT_CONFIRMED_WINDOW_CHARS);
+  assert.match(notConfirmedBlock, /failed\.push\(number\)/,
+    "an unconfirmed arm must fail the sweep run (COULD_NOT_ARM), per this family's own never-swallow "
+    + "convention -- a claim nobody checked is not a clean skip");
 });
