@@ -182,6 +182,11 @@ const DOCUMENTED: Record<string, string> = {
     + "goes red for somebody else's outage teaches people to ignore it",
   "packages/lab/scripts/audit-observation-ambiguity.mjs":
     "0 in --json mode regardless of findings; 2 no captures found under the given root",
+  "packages/lab/scripts/audit-route-change-identity.mjs":
+    "0 every capture examined, including zero disagreements; 2 no captures found under root — the same "
+      + "EXAMINED NOTHING shape as audit-observation-ambiguity.mjs. Not a gate: it reports a disagreement "
+      + "rate between two identity signals, and there is no commit for that rate to condition a pass/fail "
+      + "on (#1790)",
   "packages/lab/scripts/audit-rule-coverage.ts":
     "0 no captures to examine (an honest skip) or every rule-owned criterion validated; 1 a rule-owned "
     + "criterion has never fired on a real page anywhere; 2 the corpus is mid-run — a refusal to measure a "
