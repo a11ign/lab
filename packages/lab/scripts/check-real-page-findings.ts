@@ -652,18 +652,33 @@ function unnamedGraphicLine(dom: { unnamedGraphics?: unknown; unnamedGraphicCoun
 }
 
 /**
+ * Every heading the DOM carries, reachable or not. `heading` alone undercounts since #1549 split the
+ * worker's count into `heading` (rendered) and `headingHidden` (CSS-hidden, in a closed panel, etc.) -- a
+ * page whose headings are ALL hidden now reads `heading: 0` here exactly like a page that never rendered,
+ * and the two need opposite verdicts (#1811). `undefined` only when the DOM was never counted at all; a
+ * DOM counted with zero hidden headings still returns a number, never `undefined` for that reason alone.
+ */
+export function domHeadingsIncludingHidden(
+  dom: { heading?: number; headingHidden?: number } | null | undefined,
+): number | undefined {
+  if (!dom || typeof dom.heading !== "number") return undefined;
+  return dom.heading + (dom.headingHidden ?? 0);
+}
+
+/**
  * The pair verdict: either count alone is ambiguous, together they say whether a zero-heading tree is the
  * page rendering nothing, exposing nothing, or the two agreeing that neither happened.
  */
 function domCensusVerdict(
-  census: { heading?: number } | null, dom: { heading?: number } | null,
+  census: { heading?: number } | null, dom: { heading?: number; headingHidden?: number } | null,
 ): string {
-  if (!census || !dom || typeof dom.heading !== "number") return "";
-  if (dom.heading > 0 && census.heading === 0) {
-    return "  <- " + dom.heading + " headings in the DOM, 0 in the tree: the page EXPOSES nothing, which "
+  const total = domHeadingsIncludingHidden(dom);
+  if (!census || typeof total !== "number") return "";
+  if (total > 0 && census.heading === 0) {
+    return "  <- " + total + " headings in the DOM, 0 in the tree: the page EXPOSES nothing, which "
       + "is a finding about it, not about this tool";
   }
-  if (dom.heading === 0 && census.heading === 0) {
+  if (total === 0 && census.heading === 0) {
     return "  <- no headings in the DOM either, so the page did not render — OUR defect, not theirs";
   }
   return "";
@@ -916,7 +931,8 @@ function furnitureCaptures(): { consent: string[]; shell: string[] } {
     // A capture that reached the page's own headings is not furniture whatever else it opened on; one whose
     // every heading is the overlay's never left the overlay, and falls through to be classified below.
     const headingNames = HEADINGS.get(url) ?? [];
-    const domHeadings = DOM_CENSUS.get(url)?.heading;
+    const dom = DOM_CENSUS.get(url);
+    const domHeadings = dom?.heading;
     const stoppedInTheFurniture = reachedOnlyFurnitureHeadings({ headingNames, domHeadings });
     if (headingNames.length > 0 && !stoppedInTheFurniture) continue;
     // AND THE DOM HAS TO AGREE, or this bucket accuses the tool of the page's defect.
@@ -940,7 +956,11 @@ function furnitureCaptures(): { consent: string[]; shell: string[] } {
     // the DOM carries headings this capture never reached, so applying it here would discard exactly the
     // case above -- the gate written to stop us blaming ourselves for the page's defect, cancelling the
     // one that stops us blaming the page for ours.
-    if (!stoppedInTheFurniture && typeof domHeadings === "number" && domHeadings > 0) continue;
+    //
+    // READS `heading + headingHidden`, NOT `heading` ALONE (#1811). Since #1549 a page whose headings are
+    // all CSS-hidden reads `heading: 0` -- exactly the "never rendered" shape -- unless the hidden ones are
+    // added back in. The metoffice page this comment names above is that exact shape today.
+    if (!stoppedInTheFurniture && (domHeadingsIncludingHidden(dom) ?? 0) > 0) continue;
     const text = opening.join(" ").toLowerCase();
     if (FURNITURE_TEXT.test(text)) consent.push(url);
     else if (opening[0]?.trim().toLowerCase() === "blank") shell.push(url);
@@ -1023,7 +1043,7 @@ function suspectCensusCaptures(): string[] {
  * Recorded separately from `CENSUS` because they answer different things and the difference IS the
  * verdict: the tree is what a screen reader can reach, the DOM is what the page put there.
  */
-const DOM_CENSUS = new Map<string, { heading?: number }>();
+const DOM_CENSUS = new Map<string, { heading?: number; headingHidden?: number }>();
 
 /** url -> its opening announcements, kept so the summary above can be computed without a second read. */
 const OPENINGS = new Map<string, string[]>();
