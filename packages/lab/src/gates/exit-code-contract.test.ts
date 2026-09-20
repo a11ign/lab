@@ -175,6 +175,10 @@ const DOCUMENTED: Record<string, string> = {
     "#866's unattended half, the same three-state shape org-watch.mjs uses: 0 QUIET nothing needs "
     + "attention; 1 ATTENTION a failed unit was found and named (posted to #928 only under --post); 2 "
     + "CANNOT_ASK — lab-status.yml's own JSON report task did not run or produced nothing",
+  "packages/control/src/fleet-watch.mjs":
+    "#1815, lab-watch.mjs's identical three-state shape one subsystem over: 0 QUIET no worker has been "
+    + "non-ready past the threshold; 1 ATTENTION at least one has, named with its own age and reason "
+    + "(posted to #928 only under --post); 2 CANNOT_ASK — fleet:status itself could not be read",
   "packages/lab/scripts/audit-corpus-starvation.mjs":
     "2 a stale export — the featurizer can't read a pre-`parsed`-block record; 0 otherwise",
   "packages/lab/scripts/audit-corpus-urls.mjs":

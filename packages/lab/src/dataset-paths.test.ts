@@ -187,6 +187,15 @@ const EXEMPT: Record<string, string> = {
     "#1406: it RECORDS gh's stdout for issues #737 and #758 byte for byte, and those issue bodies quote "
     + "runs/witness/ capture paths as the prose of the rows they are -- recorded text the test reads "
     + "filedByLine against, never a path this file resolves or reads.",
+  "packages/control/src/fleet-watch.mjs":
+    "ADR 0012: @a11ign/control is deliberately dependency-free and cannot import @a11ign/lab -- the same "
+    + "direction dataset-paths.mjs's own header already exempts lab-job.mjs/lab-pipeline.mjs for. Its "
+    + "runs/fleet-watch-state.json is not a dataset root this module owns at all: a tiny local ledger of "
+    + "how long each worker has been non-ready between one fleet-watch tick and the next, unrelated to "
+    + "the training corpus.",
+  "packages/control/src/fleet-watch.test.ts":
+    "Same reason as fleet-watch.mjs: the literal is the fixture state path these tests drive through an "
+    + "injected in-memory read/write, never a real file under the dataset's runs root.",
 };
 
 test("the discovery walk finds a realistic slice of the repo's own source", () => {
