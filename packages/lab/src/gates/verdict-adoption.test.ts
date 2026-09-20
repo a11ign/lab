@@ -78,6 +78,12 @@ const EXEMPT: Record<string, { category: "owed" | "not-a-gate" | "deliberate"; w
   "audit-rule-coverage.ts": { category: "not-a-gate",
     why: "audits which criteria have never fired. Its population is every rule there is and cannot be "
       + "short — `fired 0x` is its finding, not a coverage gap" },
+  "audit-route-change-identity.mjs": { category: "not-a-gate",
+    why: "#1790: measures how often a document-identity signal would classify a routeChange result "
+      + "differently from the heading-change proxy. Its own header says so -- 'IT REPORTS AND NEVER "
+      + "BLOCKS -- this row is read-only against runs/real-page-corpus by design'. There is no commit for "
+      + "a disagreement rate to condition pass/fail on; it exits 2 only when the corpus it read was empty, "
+      + "which is the coverage half this shape exists for" },
   "emit-unclosable-vetoes.mjs": { category: "not-a-gate",
     why: "emits data for another program to read; it has no verdict" },
   "emit-grants-map.mjs": { category: "not-a-gate",
