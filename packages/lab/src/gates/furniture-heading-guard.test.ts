@@ -18,7 +18,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { reachedOnlyFurnitureHeadings, headingsAnnouncedIn, partitionByExaminability }
+import { reachedOnlyFurnitureHeadings, headingsAnnouncedIn, partitionByExaminability, domHeadingsIncludingHidden }
   from "../../scripts/check-real-page-findings.ts";
 
 /** The real transcript, verbatim from the capture that passed the old guard. */
@@ -50,6 +50,35 @@ test("THE MET OFFICE CASE, which a count-based or ratio-based fix would get wron
   assert.equal(reachedOnlyFurnitureHeadings({ headingNames: [], domHeadings: 55 }), false,
     "reaching NO headings is a different case, decided by the DOM gate -- this predicate must not claim "
     + "it, or the remedy for one direction of blame cancels the remedy for the other");
+});
+
+/**
+ * THE MET OFFICE CASE, UPDATED TO THE POST-#1549 SHAPE THE PIPELINE NOW ACTUALLY EMITS -- #1811.
+ *
+ * The test above still passes with the pre-#1549 hand-fed `domHeadings: 55` -- that early return only
+ * proves `headingNames: []` short-circuits `reachedOnlyFurnitureHeadings`, which is true whatever
+ * `domHeadings` is. It never exercised the DOM GATE at `furnitureCaptures()` line ~958, which is where
+ * this page's own bug lives: #1549 split the worker's heading count into `heading` (rendered) and
+ * `headingHidden` (CSS-hidden below a breakpoint, in a closed panel, always-hidden). The real #1811
+ * evidence for this exact page now reads `heading: 0, headingHidden: 40`, not `domHeadings: 55` -- and a
+ * gate reading `heading` alone sees 0, the same number a page that never rendered would produce.
+ */
+test("domHeadingsIncludingHidden sums heading + headingHidden -- the Met Office shape after #1549", () => {
+  assert.equal(domHeadingsIncludingHidden({ heading: 0, headingHidden: 40 }), 40,
+    "MUTATION: reverting to `dom.heading` alone (ignoring headingHidden) reads 0 here -- exactly the "
+    + "number that routed this page into `shell` before this row's fix");
+});
+
+test("domHeadingsIncludingHidden treats an uncounted DOM as undefined, never as a fabricated zero", () => {
+  assert.equal(domHeadingsIncludingHidden(null), undefined);
+  assert.equal(domHeadingsIncludingHidden(undefined), undefined);
+  assert.equal(domHeadingsIncludingHidden({}), undefined,
+    "no `heading` at all means the DOM was never counted -- not that it counted zero");
+});
+
+test("domHeadingsIncludingHidden with no hidden headings at all still returns the rendered count", () => {
+  assert.equal(domHeadingsIncludingHidden({ heading: 5 }), 5,
+    "a capture predating #1549, or a page with nothing hidden, must not read as 'cannot say'");
 });
 
 test("a capture that reached the PAGE's headings is not furniture, whatever it opened on", () => {
