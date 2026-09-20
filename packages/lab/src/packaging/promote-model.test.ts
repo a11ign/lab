@@ -21,7 +21,8 @@ import { promote, promotionLevel, publicPackageVersions } from "../../scripts/pr
 
 /** Every public package before version one, as the tree reads during the first publish. */
 const ALL_ZERO = { "a11ign": "0.0.0", "@a11ign/evidence": "0.0.0", "@a11ign/judge": "0.0.0",
-  "@a11ign/nvda-worker": "0.0.0", "@a11ign/scorer": "0.0.0", "@a11ign/worker-fleet": "0.0.0" };
+  "@a11ign/nvda-worker": "0.0.0", "@a11ign/pdf": "0.0.0", "@a11ign/scorer": "0.0.0",
+  "@a11ign/worker-fleet": "0.0.0" };
 
 /** The real `.changeset/`, because the name used to be computed from what is in it. */
 const CHANGESET_DIR = new URL("../../../../.changeset/", import.meta.url).pathname;

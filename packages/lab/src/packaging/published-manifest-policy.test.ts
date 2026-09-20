@@ -72,7 +72,8 @@ test("the published population is non-empty and is the one the isolation gate in
   assert.ok(published.length >= 1, "no published packages found -- the derivation is broken, not the tree");
   assert.deepEqual(
     published.map((p) => p.name).sort(),
-    ["@a11ign/evidence", "@a11ign/judge", "@a11ign/nvda-worker", "@a11ign/scorer", "@a11ign/worker-fleet", "a11ign"],
+    ["@a11ign/evidence", "@a11ign/judge", "@a11ign/nvda-worker", "@a11ign/pdf", "@a11ign/scorer",
+      "@a11ign/worker-fleet", "a11ign"],
     "the published set changed -- if that is intended, this list is where it is recorded");
 });
 

@@ -65,8 +65,10 @@ test("#1536: a manifest with no repository URL is refused, never passed for havi
 test("#1536 THE INCIDENT, on the real manifests: from run 34816466408's repository all six are refused; from the repository they name, none is", () => {
   const manifests = publishedManifests(REPO);
   assert.deepEqual(manifests.map((m) => m.name),
-    ["a11ign", "@a11ign/evidence", "@a11ign/judge", "@a11ign/nvda-worker", "@a11ign/scorer", "@a11ign/worker-fleet"],
-    "the six packages Changesets publishes -- lab, control and nvda-speech are private");
+    ["a11ign", "@a11ign/evidence", "@a11ign/judge", "@a11ign/nvda-worker", "@a11ign/pdf", "@a11ign/scorer",
+      "@a11ign/worker-fleet"],
+    "the seven packages Changesets publishes -- lab, control, guards, agent-org and nvda-speech are private "
+      + "(@a11ign/pdf is #68's addition, the first since this test was written)");
   const fromIncident = manifestRepositoryMismatches({ manifests, repository: INCIDENT_RUN_REPOSITORY });
   assert.equal(fromIncident.length, manifests.length, "run 34816466408's shape: every manifest names a different repository");
   const named = new Set(manifests.map((m) => repositorySlugOf(String((m.repository as { url?: string } | undefined)?.url ?? ""))));

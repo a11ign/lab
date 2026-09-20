@@ -113,6 +113,13 @@ const EXEMPT: { file: string; count: number; reason: string }[] = [
     reason: "a rented LLM's chat-completions endpoint (JUDGE_BASE_URL), for the codex/anthropic/openai "
       + "judge backends -- a different external service entirely, not a capture worker.",
   },
+  {
+    file: "packages/pdf/src/index.ts", count: 1,
+    reason: "the PDF a user asked to scan -- an arbitrary external URL, the same shape as "
+      + "packages/cli/src/scan/page-title.ts's exemption above. Structurally never a capture worker "
+      + "either: #68's whole point is that this layer needs no fleet at all, so depending on "
+      + "worker-fleet for requestJson would be exactly the dependency this layer exists to avoid.",
+  },
 ];
 
 test("every raw fetch( in the tree is CONVERTED, EXEMPT with a reason, or fails this test", () => {
