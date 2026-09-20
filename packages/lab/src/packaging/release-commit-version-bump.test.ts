@@ -17,6 +17,8 @@ import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { versionBumpPaths } from "../../../../scripts/release-commit-version-bump.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -70,6 +72,21 @@ test("#1824 on the real repository: every package directory contributes package.
   assert.deepEqual(paths.filter((p) => p.endsWith("CHANGELOG.md")), [],
     "no package here has a CHANGELOG.md yet -- if this fails, `changeset version` has run for real and the "
     + "glob-pathspec trap this function avoids is worth re-testing against the real tree it describes");
+});
+
+test("#1824 THE SCRIPT ITSELF, run for real against this repository: nothing pending, nothing touched", () => {
+  // SAFE TO RUN FOR REAL, and only because of what it proves: this worktree's own tracked-path diff (see
+  // the previous test) is empty, so the un-mutated script takes its early-return path and never reaches
+  // `git config`/`add`/`commit`/`push`. Asserting `git status --porcelain` is byte-identical before and
+  // after is what makes that a claim this test checks rather than one it assumes -- a mutation that
+  // deleted the early return would still print nothing obviously wrong, but would either dirty the tree
+  // (a stray `git add` outside a commit) or exit non-zero (`git commit` with nothing staged refuses with
+  // "nothing to commit"), and this test is what would catch either.
+  const statusBefore = execFileSync("git", ["status", "--porcelain"], { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() });
+  const result = execFileSync("node", ["scripts/release-commit-version-bump.mjs"], { cwd: REPO, encoding: "utf8" });
+  const statusAfter = execFileSync("git", ["status", "--porcelain"], { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() });
+  assert.match(result, /nothing pending/, "with nothing to bump the script must say so and stop, not proceed");
+  assert.equal(statusAfter, statusBefore, "the script touched the working tree despite finding nothing pending");
 });
 
 test("#1824 THE WORKFLOW CALLS IT: right after Publish, gated on the identical if:", () => {
