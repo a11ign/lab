@@ -146,13 +146,24 @@ function describe() {
   return { present, missing, captures };
 }
 
+/**
+ * The ONE call site that writes the missing-member note, shared by `WANTED` and `WANTED_SIBLINGS` -- #1798:
+ * before this, `WANTED_SIBLINGS.filter(...)` dropped an absent sibling with no note at all, unlike `WANTED`,
+ * so a lab-dispatched run reported success while protecting zero of `runs/board-snapshots`, silently.
+ * A no-op when nothing is missing.
+ * @param {string[]} missing
+ */
+export function noteMissing(missing) {
+  if (missing.length) process.stderr.write(`note: ${missing.join(", ")} absent, archiving the rest\n`);
+}
+
 async function main() {
   const { present, missing, captures } = describe();
   if (!present.length) {
     process.stderr.write(`nothing to snapshot: no captures or manifest under ${DATASET}\n`);
     process.exit(2);
   }
-  if (missing.length) process.stderr.write(`note: ${missing.join(", ")} absent, archiving the rest\n`);
+  noteMissing(missing);
 
   // Timestamp comes from the clock at run time, and is the only thing distinguishing two snapshots, so it
   // carries seconds: two archives in one minute is a normal thing to want when a recapture is in doubt.
@@ -161,12 +172,7 @@ async function main() {
   const archive = resolve(outDir, `corpus-${stamp}.tar.gz`);
 
   const { present: siblings, missing: missingSiblings } = presentMissing(RUNS, WANTED_SIBLINGS);
-  // Same behaviour as the WANTED branch above (line ~145), and for the same reason: an absent sibling
-  // used to be dropped by the `.filter()` with no note anywhere, so a lab-dispatched run -- where
-  // `board-snapshots` never exists at all -- reported success while protecting zero of it (#1798).
-  if (missingSiblings.length) {
-    process.stderr.write(`note: ${missingSiblings.join(", ")} absent, archiving the rest\n`);
-  }
+  noteMissing(missingSiblings);
   process.stdout.write(`Archiving ${captures} capture(s) from ${DATASET}`
     + (siblings.length ? `, plus ${siblings.join(" and ")}\n` : "\n"));
   // Two -C flags: the dataset's members are relative to DATASET, the siblings to RUNS. tar applies each
