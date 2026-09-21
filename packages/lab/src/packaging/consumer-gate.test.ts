@@ -469,16 +469,24 @@ for (const [label, statusLine, offender] of [
   ["README.md, modified", " M README.md", "README.md"],
   ["README.md, staged", "M  README.md", "README.md"],
   ["the generator, untracked", "?? scripts/generate-consumer-gate.mjs", "scripts/generate-consumer-gate.mjs"],
+  // reviewer-2's not-convinced (#1838): a rename/copy porcelain record is "SRC -> DST", not a single
+  // path -- `line.slice(3) === input` and `.endsWith(\`/${input}\`)` both miss it on EITHER side, so a
+  // staged rename of a generation input slipped through silently. Both directions, both statuses.
+  ["README.md, renamed AWAY (source side)", "R  README.md -> README-renamed.md", "README.md"],
+  ["some other file renamed TO README.md (destination side)", "R  notes.md -> README.md", "README.md"],
+  ["some other file copied TO the generator (destination side)",
+    "C  scripts/other.mjs -> scripts/generate-consumer-gate.mjs", "scripts/generate-consumer-gate.mjs"],
 ] as const) {
   test(`refuseDirtyGenerationInputs: refuses when ${label} is dirty, naming the file`, () => {
     assert.throws(() => refuseDirtyGenerationInputs(`${statusLine}\n`), new RegExp(`${offender.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} has an uncommitted or staged change`));
   });
 }
 
-test("refuseDirtyGenerationInputs CONTROL: a clean status, or one naming only an unrelated file, does not "
-  + "refuse -- the positive control an emptiness assertion needs", () => {
+test("refuseDirtyGenerationInputs CONTROL: a clean status, a status naming only an unrelated file, or a "
+  + "rename between two unrelated files, does not refuse -- the positive control an emptiness assertion needs", () => {
   assert.doesNotThrow(() => refuseDirtyGenerationInputs(""));
   assert.doesNotThrow(() => refuseDirtyGenerationInputs(" M packages/lab/src/packaging/consumer-gate.test.ts\n"));
+  assert.doesNotThrow(() => refuseDirtyGenerationInputs("R  notes.md -> notes-renamed.md\n"));
 });
 
 test("main(): the write path refuses when README.md has an uncommitted change at generation time -- "
