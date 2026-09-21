@@ -27,14 +27,23 @@ const LAB_JOB_YML = resolve(REPO, "packages/control/ansible/lab-job.yml");
 const NAMES_THE_ROUTE = (text: string) =>
   text.includes("corpus:release") && text.includes("a11ign/corpus-backups");
 
+// SCOPED TO THE `refuse()` CALL'S OWN MESSAGE, never the whole file -- a whole-file scan (the shape this
+// used to be) passes when the route names land in a COMMENT nobody reads at the refusal site, which is
+// not the same claim as "the text a reader actually sees names the route". Caught in review (reviewer-2
+// on #1860): removing both names from the message and leaving them only in a comment still passed a
+// whole-file version of this assertion, all 3 tests green.
+const REMOTE_REFUSAL = /refuse\(\s*"REFUSING: no A11Y_CORPUS_REMOTE set[\s\S]*?\);/;
+
 test("#1042: corpus-backup.mjs's no-A11Y_CORPUS_REMOTE refusal names corpus:release", () => {
   const source = readFileSync(BACKUP_SCRIPT, "utf8");
-  assert.ok(source.includes("REFUSING: no A11Y_CORPUS_REMOTE set"),
+  const refusal = REMOTE_REFUSAL.exec(source);
+  assert.ok(refusal,
     "the refusal text this test targets has moved or been reworded -- update the assertion below to match");
-  assert.ok(NAMES_THE_ROUTE(source),
-    "corpus-backup.mjs's refusal must name `corpus:release` and `a11ign/corpus-backups` as the existing, "
-    + "already-working route -- otherwise a reader who hits this refusal concludes the corpus has no "
-    + "backup destination at all, which is exactly what produced #1042's chairman escalation");
+  assert.ok(NAMES_THE_ROUTE(refusal[0]),
+    "corpus-backup.mjs's refusal MESSAGE (not merely its file) must name `corpus:release` and "
+    + "`a11ign/corpus-backups` as the existing, already-working route -- otherwise a reader who hits this "
+    + "refusal concludes the corpus has no backup destination at all, which is exactly what produced "
+    + "#1042's chairman escalation");
 });
 
 test("#1042: lab-job.yml's corpus-backup job names corpus:release in its exit-1 gloss", () => {
