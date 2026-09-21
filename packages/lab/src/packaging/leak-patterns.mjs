@@ -200,6 +200,7 @@ export const TRACKER_WRITERS = Object.freeze([
   "board-schedule-liveness.mjs",
   "board-summary-check.mjs",
   "carry-branch.mjs",
+  "fleet-gated-nightly.mjs",
   "npm-token-liveness.mjs",
   "pr-open.mjs",
   "row-claim.mjs",
