@@ -5,6 +5,12 @@
 // literal, not a spawn -- and `defaultGh` does spawn `gh`, but nothing here reaches it: `checkBody`,
 // `bodyFromArgs` and `armAfterCreate` are pure, and `sendToGitHub` takes `run` and `git` injected.
 //
+// #1846 ADDED TWO EDGES TO THAT CLOSURE and neither reaches a spawn either. `labelAfterCreate` returns a
+// `["pr", "edit", ...]` argv, the same shape of data literal; `sendToGitHub` now also takes `owner`
+// injected, so its default (`ownerOfTree`, a `.a11y-owner` read) is never called from here. `pr-open.mjs`
+// now imports `arm-pr.mjs` for `LIVE_SESSIONS`, which at import time reads `docs/roles/sessions.json` and
+// nothing else -- arm-pr's `gh` spawns all sit inside functions this file never calls.
+//
 // Checked with an instrument rather than by reading: a `gh` on PATH that exits 1 with a loud message,
 // run against this whole suite. If any test spawned `gh` it would fail. 17 pass / 0 fail, and the shim
 // was confirmed reachable first (`gh --version` -> exit 1) so a silent PATH miss could not read as a
@@ -31,7 +37,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { acceptanceEnv, checkBody, bodyFromArgs, armAfterCreate, sendToGitHub, headTreeRefusal, editTreeRefusal,
+import { acceptanceEnv, checkBody, bodyFromArgs, armAfterCreate, labelAfterCreate, sendToGitHub,
+  headTreeRefusal, editTreeRefusal,
   main as prOpenMain,
   EXIT_NOTHING_SENT, EXIT_USAGE, EXIT_LANDED_THEN_FAILED } from "../../../agent-org/src/pr-open.mjs";
 
@@ -185,6 +192,13 @@ const ghFails = () => () => {
 };
 const gitStub = (args: string[]) => (args.includes("--abbrev-ref") ? "agent/my-branch" : "abc1234");
 
+// THE OWNER IS INJECTED IN EVERY SPAWN-COUNTING TEST, never left to `ownerOfTree`'s real `process.cwd()`.
+// `sendToGitHub`'s default reads `.a11y-owner` from whatever tree the suite runs in, so a suite that left
+// it alone would spawn a label step on the agent host (84 of its 93 worktrees are stamped) and none here --
+// the two `deepEqual(spawned.slice(1), ...)` assertions below would pass on a laptop and fail on the box
+// that matters. Ambient filesystem state deciding an assertion is the defect this repo keeps paying for.
+const UNSTAMPED = () => null;
+
 test("#1277: a create that FAILS prints one line with the branch, the head and the cause", () => {
   const lines: string[] = [];
   const code = sendToGitHub("create", ["--title", "x"],
@@ -206,7 +220,8 @@ test("#1277 POSITIVE CONTROL: a create that SUCCEEDS gains no failure line", () 
   const lines: string[] = [];
   const spawned: string[][] = [];
   const code = sendToGitHub("create", ["--title", "x"],
-    { run: (args: string[]) => { spawned.push(args); }, git: gitStub, err: (l: string) => { lines.push(l); } });
+    { run: (args: string[]) => { spawned.push(args); }, git: gitStub, err: (l: string) => { lines.push(l); },
+      owner: UNSTAMPED });
 
   assert.equal(code, 0);
   assert.deepEqual(lines, [], "silence on success -- the failure line must move with the outcome");
@@ -229,7 +244,8 @@ test("#1348: a ready create with --head ARMS THAT HEAD, in both spellings -- thr
     const lines: string[] = [];
     const spawned: string[][] = [];
     const code = sendToGitHub("create", rest,
-      { run: (args: string[]) => { spawned.push(args); }, git: gitStub, err: (l: string) => { lines.push(l); } });
+      { run: (args: string[]) => { spawned.push(args); }, git: gitStub, err: (l: string) => { lines.push(l); },
+        owner: UNSTAMPED });
     assert.equal(code, 0, label);
     assert.deepEqual(lines, [], `${label}: a create that succeeds prints no failure line`);
     assert.deepEqual(spawned[0], ["pr", "create", ...rest], `${label}: the create carries the head as given`);
@@ -572,4 +588,88 @@ test("#1578 ACCEPTANCE, MUTATION TARGET: driven through main(), the Acceptance r
   assert.equal(code, 0, "the body checked clean and the create was sent");
   assert.deepEqual(spawned.map((args) => args.slice(0, 2)), [["pr", "create"]],
     "pr-open's own create still went through its injected `gh`, untouched by the override");
+});
+
+// --- #1846: the PR carries its author's session label FROM CREATION, not from arming ------------------
+//
+// `arm-pr.mjs`'s `labelArmedPr` copies a row's `session:*` onto the PR, but only when the PR is ARMED
+// (green AND convinced) and only via `closedRowNumbers(prBody)`. Both conditions miss exactly the
+// population that needs routing, and the measurement is one PR:
+//
+//   #1844, `orchestrator`'s own nightly-batch scheduler, went RED before it was ever armed and declared
+//   `Closes: none -- <reason>`. It carried no label, so `work-gate.mjs`'s `failingChecksOrder` fell back
+//   to `product-manager`, whose whole job on that order was to find out whose PR it was and hand it back.
+//   `wt-1830/.a11y-owner` had said `orchestrator` the entire time.
+//
+// 11 of the 20 merged PRs before it carried no `session:*` label either.
+
+test("#1846: a ready create labels the PR with the worktree's own session, by branch", () => {
+  const argv = labelAfterCreate("create",
+    ["--title", "t", "--body-file", "b.md", "--base", "main", "--head", "agent/x"], "orchestrator");
+  assert.deepEqual(argv, [["pr", "edit", "agent/x", "--add-label", "session:orchestrator"]]);
+  const eq = labelAfterCreate("create", ["--head=agent/y", "--body", "x"], "worker-capture");
+  assert.deepEqual(eq, [["pr", "edit", "agent/y", "--add-label", "session:worker-capture"]],
+    "--head=value is read too, as armAfterCreate reads it");
+});
+
+test("#1846: A DRAFT IS LABELLED TOO -- the opposite of arming, and the whole reason this is not in armAfterCreate", () => {
+  // `armAfterCreate` deliberately skips a draft: GitHub refuses auto-merge on one. Routing has the
+  // reverse need. A draft is the state a PR sits in while it is red, so a draft that carries no session
+  // label is precisely the PR whose failing checks wake the wrong session. #1844 was a draft.
+  assert.deepEqual(labelAfterCreate("create", ["--draft", "--head", "agent/x"], "orchestrator"),
+    [["pr", "edit", "agent/x", "--add-label", "session:orchestrator"]]);
+  assert.deepEqual(armAfterCreate("create", ["--draft", "--head", "agent/x"]), [],
+    "POSITIVE CONTROL: the same argv arms nothing, so the two really do disagree about drafts");
+});
+
+test("#1846: NOTHING IS INVENTED -- an unstamped tree, an unknown session and `edit` each yield no label", () => {
+  assert.deepEqual(labelAfterCreate("create", ["--head", "agent/x"], null), [],
+    "an unstamped tree gets no label: worktree-owner.mjs's own ruling that a stamp naming nobody is "
+    + "worse than no stamp, and here the cost of guessing is waking a session that did not write the code");
+  assert.deepEqual(labelAfterCreate("create", ["--head", "agent/x"], "dispatcher"), [],
+    "#1000: `dispatcher` is RETIRED -- its label still exists as attribution on merged PRs, and applying "
+    + "it would put a claim on the record that no live session can answer for");
+  assert.deepEqual(labelAfterCreate("create", ["--head", "agent/x"], "nobody-at-all"), [],
+    "a session this repository does not know is refused for the same reason");
+  assert.deepEqual(labelAfterCreate("edit", ["--body", "x"], "orchestrator"), [],
+    "`edit` never labels -- the label belongs to the act of creating, and re-applying it on every body "
+    + "edit would churn a label that is already idempotently present");
+});
+
+test("#1846: the label is really SPAWNED after a successful create, after the arm", () => {
+  const spawned: string[][] = [];
+  const lines: string[] = [];
+  const code = sendToGitHub("create", ["--title", "x", "--head", "agent/x"],
+    { run: (args: string[]) => { spawned.push(args); }, git: gitStub, err: (l: string) => { lines.push(l); },
+      owner: () => "worker-judge" });
+
+  assert.equal(code, 0);
+  assert.deepEqual(lines, [], "a create that succeeds says nothing");
+  assert.deepEqual(spawned, [
+    ["pr", "create", "--title", "x", "--head", "agent/x"],
+    ["pr", "merge", "--auto", "--merge", "agent/x"],
+    ["pr", "edit", "agent/x", "--add-label", "session:worker-judge"],
+  ], "create, then arm, then label -- the argv pr-open actually SPAWNS, not what labelAfterCreate returns");
+});
+
+test("#1846: a label that FAILS warns and still exits 0 -- it must not turn a good create into a retry", () => {
+  // The asymmetry with the arm is deliberate. An arm that fails leaves a PR that will not merge, so
+  // `sendToGitHub` returns EXIT_LANDED_THEN_FAILED and the author must act. A label that fails leaves a
+  // PR that is merely unroutable -- the state EVERY PR was in before this existed. Returning 3 there
+  // would make an author retry, or hand-fix, a create that entirely succeeded.
+  const lines: string[] = [];
+  const code = sendToGitHub("create", ["--title", "x", "--head", "agent/x"], {
+    run: (args: string[]) => {
+      if (args[1] === "edit") throw new Error("Command failed: gh pr edit (label not found)");
+    },
+    git: gitStub,
+    err: (l: string) => { lines.push(l); },
+    owner: () => "ceo",
+  });
+
+  assert.equal(code, 0, "NOT EXIT_LANDED_THEN_FAILED -- the PR exists and is armed; only routing is missing");
+  assert.equal(lines.length, 1, "one line, like every other refusal in this file");
+  assert.match(lines[0], /session:ceo/, "and it names the label to apply by hand");
+  assert.match(lines[0], /product-manager/,
+    "and says what it costs -- a silently unlabelled PR is how this survived 20 merges unnoticed");
 });
