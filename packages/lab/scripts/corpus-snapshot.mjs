@@ -127,13 +127,34 @@ function walkBelow(start, score) {
   return total;
 }
 
+/**
+ * Which of `names` exist under `root`, and which do not -- shared by `WANTED` (against `DATASET`) and
+ * `WANTED_SIBLINGS` (against `RUNS`), so a missing member is reported the same way in both.
+ * @param {string} root @param {string[]} names
+ */
+export function presentMissing(root, names) {
+  const present = names.filter((name) => existsSync(resolve(root, name)));
+  const missing = names.filter((name) => !present.includes(name));
+  return { present, missing };
+}
+
 function describe() {
-  const present = WANTED.filter((name) => existsSync(resolve(DATASET, name)));
-  const missing = WANTED.filter((name) => !present.includes(name));
+  const { present, missing } = presentMissing(DATASET, WANTED);
   const captures = existsSync(resolve(DATASET, "captures"))
     ? readdirSync(resolve(DATASET, "captures")).filter((f) => f.endsWith(".json")).length
     : 0;
   return { present, missing, captures };
+}
+
+/**
+ * The ONE call site that writes the missing-member note, shared by `WANTED` and `WANTED_SIBLINGS` -- #1798:
+ * before this, `WANTED_SIBLINGS.filter(...)` dropped an absent sibling with no note at all, unlike `WANTED`,
+ * so a lab-dispatched run reported success while protecting zero of `runs/board-snapshots`, silently.
+ * A no-op when nothing is missing.
+ * @param {string[]} missing
+ */
+export function noteMissing(missing) {
+  if (missing.length) process.stderr.write(`note: ${missing.join(", ")} absent, archiving the rest\n`);
 }
 
 async function main() {
@@ -142,7 +163,7 @@ async function main() {
     process.stderr.write(`nothing to snapshot: no captures or manifest under ${DATASET}\n`);
     process.exit(2);
   }
-  if (missing.length) process.stderr.write(`note: ${missing.join(", ")} absent, archiving the rest\n`);
+  noteMissing(missing);
 
   // Timestamp comes from the clock at run time, and is the only thing distinguishing two snapshots, so it
   // carries seconds: two archives in one minute is a normal thing to want when a recapture is in doubt.
@@ -150,7 +171,8 @@ async function main() {
   mkdirSync(outDir, { recursive: true });
   const archive = resolve(outDir, `corpus-${stamp}.tar.gz`);
 
-  const siblings = WANTED_SIBLINGS.filter((name) => existsSync(resolve(RUNS, name)));
+  const { present: siblings, missing: missingSiblings } = presentMissing(RUNS, WANTED_SIBLINGS);
+  noteMissing(missingSiblings);
   process.stdout.write(`Archiving ${captures} capture(s) from ${DATASET}`
     + (siblings.length ? `, plus ${siblings.join(" and ")}\n` : "\n"));
   // Two -C flags: the dataset's members are relative to DATASET, the siblings to RUNS. tar applies each
