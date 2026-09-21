@@ -116,14 +116,20 @@ function refuse(message) {
 async function main() {
   if (!REMOTE) {
     refuse(
-      "REFUSING: no A11Y_CORPUS_REMOTE set, so there is nowhere durable to put the corpus.\n" +
+      "REFUSING: no A11Y_CORPUS_REMOTE set, so this tool has nowhere durable to put the corpus.\n" +
       "\n" +
       "  A11Y_CORPUS_REMOTE=user@nas:/backups/a11y   npm run corpus:backup\n" +
       "  A11Y_CORPUS_REMOTE=/mnt/pve/backup/a11y     npm run corpus:backup\n" +
       "\n" +
       "This exits non-zero rather than writing a local archive and calling it a backup. The corpus is\n" +
       "~3h46m of fleet time and cannot be recaptured identically once the browser updates — a tool that\n" +
-      "reported success while leaving one copy on one disk would turn a known risk into an assumed safety.");
+      "reported success while leaving one copy on one disk would turn a known risk into an assumed safety.\n" +
+      "\n" +
+      "THIS IS NOT THE ONLY BACKUP ROUTE. `npm run corpus:release -- --archive=<path>` already publishes\n" +
+      "the corpus to GitHub Releases on `a11ign/corpus-backups` (private) and verifies it by downloading\n" +
+      "the release back — no A11Y_CORPUS_REMOTE, no ssh/mount destination, and it has been the corpus's\n" +
+      "real off-machine copy since 2026-09-06 (#1042). This refusal is about THIS route (scp/mount) alone;\n" +
+      "read it as \"this particular destination isn't configured\", not as \"the corpus has no backup\".");
   }
 
   const archive = newestArchive();
