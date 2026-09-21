@@ -9,6 +9,7 @@
 // -- `defaultRun`, the module-scope const that actually spawns `gh`, is never referenced by name in this
 // file. The #827 closure walk still reaches it because these functions are imported from the shared
 // ready-label-audit.mjs module, whose own real-`gh` fetchers this file's tests never invoke.
+import { invisibleRows } from "../../../agent-org/src/ready-label-audit.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
@@ -1106,19 +1107,19 @@ test("#546: notRun defaults to a fresh array when the caller does not pass one -
     + "refusal -- it is simply not recorded anywhere the caller can see, same as before this test existed");
 });
 
-test("CHECKS names all fourteen, so the partial-audit sentence states a true denominator", () => {
+test("CHECKS names all fifteen, so the partial-audit sentence states a true denominator", () => {
   // #1130 added the twelfth, #1163 the thirteenth, and the waits-in-prose witness the fourteenth. This pin is why: the audit's own "N of M check(s) did
   // not answer" sentence reads M from `CHECKS.length`, so a check added without updating the denominator
   // would make every partial-audit report understate what it failed to examine.
   //
   // It caught #1163's entry within a minute of it being added, and the fourteenth the same way,
   // which is the whole of its job.
-  assert.equal(CHECKS.length, 14);
+  assert.equal(CHECKS.length, 15);
   assert.deepEqual(CHECKS.map(([what]) => what), [
     "open issues", "hand claims", "labelless rows", "declined rows", "closed issues",
     "board membership", "closing PR references", "claim activity", "closed-row provenance",
     "closing PR never merged", "coverage vs tracker", "release declaration", "filing guidance",
-    "waits stated in prose",
+    "waits stated in prose", "rows no cause can reach",
   ]);
 });
 
@@ -1538,4 +1539,42 @@ test("#1163: a faithful REWORDING reads as every rule deleted -- the false red, 
     "maximal sensitivity to wording is the same property as maximal insensitivity to meaning -- the cost "
     + "is that an editorial pass on either copy reddens the nightly audit until the phrase is re-synced, "
     + "and the remedy is to re-sync it, never to loosen a pattern");
+});
+
+/**
+ * A ROW REACHED BY NOTHING IS INVISIBLE, NOT UNTIDY.
+ *
+ * `reportLabelless` catches a row with ZERO labels. This catches the commoner, quieter case: a row that
+ * is carefully labelled and still cannot be reached, because `work-gate.mjs` reads `--label backlog` and
+ * `--label ready` SERVER-SIDE. A row in neither set is read by no cause.
+ *
+ * MEASURED 2026-09-21 and it was the most expensive row on the board. #1830 -- "#914's nightly capture
+ * batch can only be dispatched by a session remembering", the scheduler that would make the fleet run --
+ * carried `fleet-gated` and `lane:any` and no `backlog`. `orchestrator` could see it (it reads the
+ * tracker directly) and called it "open/unclaimed and pickable" in the same turn it moved past it. The
+ * gate could not see it at all. Adding one label routed it to two sessions immediately.
+ */
+test("a row with labels but neither backlog nor ready is reported", () => {
+  const found = invisibleRows([
+    { number: 1830, title: "the scheduler", labels: ["fleet-gated", "lane:any"] },
+    { number: 1, title: "fine", labels: ["backlog", "fleet-gated"] },
+    { number: 2, title: "fine", labels: ["ready"] },
+  ]);
+  assert.deepEqual(found.map((r) => r.number), [1830]);
+});
+
+test("an epic or a meta row is reached by something, and is not a finding", () => {
+  // `readEpics` reads `--label epic` on its own; a `meta` row is a process thread nobody promotes.
+  // Reporting them would make this check cry wolf on rows that are working exactly as intended.
+  assert.deepEqual(invisibleRows([
+    { number: 3, title: "e", labels: ["epic", "fleet-gated"] },
+    { number: 4, title: "m", labels: ["meta", "out-of-release"] },
+  ]), []);
+});
+
+test("a row with NO labels is the other check's finding, not this one", () => {
+  // Reporting it twice would make two checks disagree about whose it is the first time one changes.
+  assert.deepEqual(invisibleRows([{ number: 5, title: "bare", labels: [] }]), []);
+  assert.deepEqual(invisibleRows([]), []);
+  assert.deepEqual(invisibleRows(undefined as never), []);
 });
