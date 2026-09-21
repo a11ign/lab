@@ -127,9 +127,19 @@ function walkBelow(start, score) {
   return total;
 }
 
+/**
+ * Which of `names` exist under `root`, and which do not -- shared by `WANTED` (against `DATASET`) and
+ * `WANTED_SIBLINGS` (against `RUNS`), so a missing member is reported the same way in both.
+ * @param {string} root @param {string[]} names
+ */
+export function presentMissing(root, names) {
+  const present = names.filter((name) => existsSync(resolve(root, name)));
+  const missing = names.filter((name) => !present.includes(name));
+  return { present, missing };
+}
+
 function describe() {
-  const present = WANTED.filter((name) => existsSync(resolve(DATASET, name)));
-  const missing = WANTED.filter((name) => !present.includes(name));
+  const { present, missing } = presentMissing(DATASET, WANTED);
   const captures = existsSync(resolve(DATASET, "captures"))
     ? readdirSync(resolve(DATASET, "captures")).filter((f) => f.endsWith(".json")).length
     : 0;
@@ -150,7 +160,13 @@ async function main() {
   mkdirSync(outDir, { recursive: true });
   const archive = resolve(outDir, `corpus-${stamp}.tar.gz`);
 
-  const siblings = WANTED_SIBLINGS.filter((name) => existsSync(resolve(RUNS, name)));
+  const { present: siblings, missing: missingSiblings } = presentMissing(RUNS, WANTED_SIBLINGS);
+  // Same behaviour as the WANTED branch above (line ~145), and for the same reason: an absent sibling
+  // used to be dropped by the `.filter()` with no note anywhere, so a lab-dispatched run -- where
+  // `board-snapshots` never exists at all -- reported success while protecting zero of it (#1798).
+  if (missingSiblings.length) {
+    process.stderr.write(`note: ${missingSiblings.join(", ")} absent, archiving the rest\n`);
+  }
   process.stdout.write(`Archiving ${captures} capture(s) from ${DATASET}`
     + (siblings.length ? `, plus ${siblings.join(" and ")}\n` : "\n"));
   // Two -C flags: the dataset's members are relative to DATASET, the siblings to RUNS. tar applies each
