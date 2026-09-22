@@ -304,8 +304,16 @@ export function resultRow({ testCase, variant, worker, comparison }) {
 /**
  * Account for every capture that was ASKED for, so one that never happened reduces coverage instead of
  * disappearing from it.
+ *
+ * Takes the same `io` as `caseComparer` and for the same reason: this is the FOURTH `resultRow` site and
+ * the only one that passes `worker: null` correctly, so it cannot be guarded by a rule over the pushes —
+ * a "no site passes null" scan would turn exactly this line red. It is guarded by being run, and the
+ * mutant it has to stop is `null` becoming `worker`, which here resolves to the module-level `workers[0]`
+ * and would name a box that captured nothing for the row that exists BECAUSE nothing captured it.
+ *
+ * @param {{selected: any[], results: any[], io: {baselineFor: Function, write: Function}}} args
  */
-function countUncomparedAgainstCoverage(/** @type {any} */ selected, /** @type {any} */ results) {
+export function countUncomparedAgainstCoverage({ selected, results, io }) {
 // A capture that failed left no result at all, so it vanished from the DENOMINATOR: measured on this run,
 // one worker answered `NVDA is running but not speaking`, that case's second variant was never attempted,
 // and the verdict read `46 compared: 46 same ... safe to ship` — complete coverage of a sample two smaller
@@ -321,15 +329,99 @@ function countUncomparedAgainstCoverage(/** @type {any} */ selected, /** @type {
 // are the same thing to this tool — we have no opinion about that family, and must not imply one.
 for (const testCase of selected) {
   for (const variant of ["good", "bad"]) {
-    if (!readCapture(BASELINE, testCase.id, variant)) continue; // never asked for; not missing
+    if (!io.baselineFor(testCase, variant)) continue; // never asked for; not missing
     if (results.some((/** @type {any} */ r) => r.id === testCase.id && r.variant === variant)) continue;
     results.push(resultRow({
       testCase, variant, worker: null,
       comparison: { verdict: "REJECTED", changes: [], phrases: null },
     }));
-    process.stdout.write(`  UNCOMPARED  ${testCase.id}.${variant}  no usable capture; counted against coverage\n`);
+    io.write(`  UNCOMPARED  ${testCase.id}.${variant}  no usable capture; counted against coverage\n`);
   }
 }
+}
+
+/**
+ * THE POOL'S HANDLER: one case, both variants, on the one worker the pool leased for it.
+ *
+ * Its I/O arrives as a parameter and the handler is built at module scope, rather than the whole thing
+ * being an arrow closed over `compareAcrossPool`. That is this row's attribution guard and not a shape
+ * preference. Three of the four `resultRow` sites are in here, each recording the worker that CAPTURED,
+ * and a source read cannot tell them apart from the defect: `worker` also names a module-level
+ * `workers[0]` two scopes up (`:82`, still live for `pagesBase` and the usage line), so deleting the
+ * `{ worker }` parameter leaves every line below reading and every row naming the first url on the argv
+ * — the exact constant #1948 removed, restored silently. Driven by `evidence-check-aim.test.ts` with
+ * stub I/O, both bindings are in scope at once and only the parameter answers.
+ *
+ * `io` is bundled rather than four positional collaborators (`max-params`), and holds only what touches
+ * the world: `isEvidence` and `compareCapture` are pure and stay imported, so a test drives the real
+ * gates rather than its own opinion of them.
+ *
+ * @param {{results: any[], io: {baselineFor: Function, captureOn: Function, titleFor: Function, write: Function}}} deps
+ */
+export function caseComparer({ results, io }) {
+  return async (/** @type {any} */ testCase, /** @type {any} */ { worker }) => {
+    for (const variant of ["good", "bad"]) {
+      const baseline = io.baselineFor(testCase, variant);
+      if (!baseline) {
+        io.write(`  SKIP        ${testCase.id}.${variant} (no baseline capture)\n`);
+        continue;
+      }
+      let candidate;
+      try {
+        candidate = await io.captureOn(testCase, variant, worker);
+      } catch (error) {
+        io.write(`  FAILED      ${testCase.id}.${variant}: ${/** @type {any} */ (error).message}\n`);
+        // Rethrown so the POOL sees it: a worker that fails three cases running is evicted and its work is
+        // handed back, which is the entire reason for using the pool rather than a plain loop. Swallowing it
+        // here would leave a dead guest quietly failing everything it touched.
+        throw error;
+      }
+      // Apply the pipeline's OWN gates before comparing. A capture a real run would reject and retry is
+      // not evidence, so diffing it produces a false CHANGED and blames the change for a bad capture.
+      const title = await io.titleFor(testCase, variant);
+      if (title === null) {
+        // Preflight proved the server is up, so this is a per-page failure. Skip it: comparing a
+        // capture we cannot gate is how an error page came to read as changed evidence.
+        results.push(resultRow({
+          testCase, variant, worker, comparison: { verdict: "SKIPPED", changes: [], phrases: null },
+        }));
+        io.write(`  SKIPPED     ${testCase.id}.${variant}  page title unreadable; cannot gate, so not compared\n`);
+        continue;
+      }
+      if (!isEvidence(candidate, title)) {
+        results.push(resultRow({
+          testCase, variant, worker, comparison: { verdict: "REJECTED", changes: [], phrases: null },
+        }));
+        io.write(`  REJECTED    ${testCase.id}.${variant}  the pipeline would reject this capture; excluded\n`);
+        continue;
+      }
+      const comparison = compareCapture(baseline, candidate);
+      results.push(resultRow({ testCase, variant, worker, comparison }));
+      io.write(`  ${comparison.verdict.padEnd(18)} ${testCase.id}.${variant}  ${comparisonDetail(comparison)}\n`);
+    }
+  };
+}
+
+/** What to say about a comparison beyond its verdict; "" when the verdict already says everything. */
+function comparisonDetail(/** @type {any} */ comparison) {
+  if (comparison.verdict === "DIFFERENT_DOCUMENT") {
+    // THE TWO DOCUMENTS, not the fields. A field list here would be true and would send the reader
+    // after the capture pipeline when the cause is that the server sent another page (#687).
+    return comparison.identity.differing
+      .map((/** @type {any} */ d) => `${d.component} ${JSON.stringify(d.before)} -> ${JSON.stringify(d.after)}`)
+      .join("; ");
+  }
+  if (comparison.verdict === "CHANGED") {
+    return comparison.changes.map((/** @type {any} */ c) => `${c.field} ${c.before}->${c.after}`).join(", ");
+  }
+  // `&& comparison.phrases` is not belt-and-braces: `compareCapture` returns `phrases: null` for a
+  // DIFFERENT_DOCUMENT, because a transcript comparison that did not happen must not render as
+  // "nothing drifted", and the compiler is right to make every reader say what it does about that.
+  if (comparison.verdict === "DRIFT" && comparison.phrases) {
+    return `phrases ${comparison.phrases.before}->${comparison.phrases.after}`
+      + (comparison.phrases.lost.length ? ` lost: ${JSON.stringify(comparison.phrases.lost.slice(0, 2))}` : "");
+  }
+  return "";
 }
 
 /**
@@ -350,62 +442,16 @@ async function compareAcrossPool(/** @type {any} */ selected) {
 // if both halves came from the same screen reader on the same machine.
 /** @type {any[]} */
 const results = [];
-const compareCase = async (/** @type {any} */ testCase, /** @type {any} */ { worker }) => {
-  for (const variant of ["good", "bad"]) {
-    const baseline = readCapture(BASELINE, testCase.id, variant);
-    if (!baseline) {
-      process.stdout.write(`  SKIP        ${testCase.id}.${variant} (no baseline capture)\n`);
-      continue;
-    }
-    let candidate;
-    try {
-      candidate = await capture(testCase, variant, worker);
-    } catch (error) {
-      process.stdout.write(`  FAILED      ${testCase.id}.${variant}: ${/** @type {any} */ (error).message}\n`);
-      // Rethrown so the POOL sees it: a worker that fails three cases running is evicted and its work is
-      // handed back, which is the entire reason for using the pool rather than a plain loop. Swallowing it
-      // here would leave a dead guest quietly failing everything it touched.
-      throw error;
-    }
-    // Apply the pipeline's OWN gates before comparing. A capture a real run would reject and retry is
-    // not evidence, so diffing it produces a false CHANGED and blames the change for a bad capture.
-    const title = await pageTitle(testCase, variant);
-    if (title === null) {
-      // Preflight proved the server is up, so this is a per-page failure. Skip it: comparing a
-      // capture we cannot gate is how an error page came to read as changed evidence.
-      results.push(resultRow({
-        testCase, variant, worker, comparison: { verdict: "SKIPPED", changes: [], phrases: null },
-      }));
-      process.stdout.write(`  SKIPPED     ${testCase.id}.${variant}  page title unreadable; cannot gate, so not compared\n`);
-      continue;
-    }
-    if (!isEvidence(candidate, title)) {
-      results.push(resultRow({
-        testCase, variant, worker, comparison: { verdict: "REJECTED", changes: [], phrases: null },
-      }));
-      process.stdout.write(`  REJECTED    ${testCase.id}.${variant}  the pipeline would reject this capture; excluded\n`);
-      continue;
-    }
-    const comparison = compareCapture(baseline, candidate);
-    results.push(resultRow({ testCase, variant, worker, comparison }));
-    const detail = comparison.verdict === "DIFFERENT_DOCUMENT"
-      // THE TWO DOCUMENTS, not the fields. A field list here would be true and would send the reader
-      // after the capture pipeline when the cause is that the server sent another page (#687).
-      ? comparison.identity.differing
-        .map((/** @type {any} */ d) => `${d.component} ${JSON.stringify(d.before)} -> ${JSON.stringify(d.after)}`)
-        .join("; ")
-      : comparison.verdict === "CHANGED"
-      ? comparison.changes.map((c) => `${c.field} ${c.before}->${c.after}`).join(", ")
-      // `&& comparison.phrases` is not belt-and-braces: `compareCapture` returns `phrases: null` for a
-      // DIFFERENT_DOCUMENT, because a transcript comparison that did not happen must not render as
-      // "nothing drifted", and the compiler is right to make every reader say what it does about that.
-      : comparison.verdict === "DRIFT" && comparison.phrases
-        ? `phrases ${comparison.phrases.before}->${comparison.phrases.after}` +
-          (comparison.phrases.lost.length ? ` lost: ${JSON.stringify(comparison.phrases.lost.slice(0, 2))}` : "")
-        : "";
-    process.stdout.write(`  ${comparison.verdict.padEnd(18)} ${testCase.id}.${variant}  ${detail}\n`);
-  }
+// ONE `io` for the phase: the comparer and the reconciliation below read the same baselines and write to
+// the same stream, and handing them one object is what lets a test drive both halves of the report.
+const io = {
+  baselineFor: (/** @type {any} */ testCase, /** @type {any} */ variant) =>
+    readCapture(BASELINE, testCase.id, variant),
+  captureOn: capture,
+  titleFor: pageTitle,
+  write: (/** @type {any} */ line) => process.stdout.write(line),
 };
+const compareCase = caseComparer({ results, io });
 
 const pooled = await drainAcrossPool({
   workers,
@@ -425,7 +471,7 @@ const pooled = await drainAcrossPool({
         + `${handedBack} case(s) go back to the queue\n`),
   },
 });
-  countUncomparedAgainstCoverage(selected, results);
+  countUncomparedAgainstCoverage({ selected, results, io });
   return { results, evicted: pooled.evicted };
 }
 

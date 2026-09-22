@@ -17,11 +17,43 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { CASES } from "./case-matrix.mjs";
 import { drainAcrossPool } from "./worker-pool.mjs";
-import { narrowTo, stratify, resultRow } from "../../scripts/evidence-check.mjs";
+import {
+  narrowTo, stratify, resultRow, caseComparer, countUncomparedAgainstCoverage,
+} from "../../scripts/evidence-check.mjs";
 
 /** #1908's family, and the string its seven cases embed. */
 const FAMILY = "media-autoplay-audio";
 const WAV = "data:audio/wav";
+
+/**
+ * A capture the pipeline's own gates ACCEPT, and the title it was taken against.
+ *
+ * Borrowed in shape from `capture-decisions.test.ts`, deliberately: the handler below runs the real
+ * `isEvidence` and the real `compareCapture` rather than stubs of them, so the branch a row lands in is
+ * decided by the production gates and a fixture that stopped satisfying them would show up as a changed
+ * verdict rather than as a silent pass.
+ */
+const TITLE = "Aquarium 001 schedule";
+const EMPTY_STRUCTURE = { headings: [], landmarks: [], formFields: [] };
+const EVIDENCE = {
+  transcript: ["heading, level 1, Aquarium 001 schedule", "Departures from Central station"],
+  structure: { ...EMPTY_STRUCTURE, headings: ["Aquarium 001 schedule, heading, level 1"] },
+};
+/** The wrong page: reaches the handler, and `isEvidence` refuses it. */
+const NOT_EVIDENCE = { transcript: ["Cannot reach this site", "Try again"], structure: EMPTY_STRUCTURE };
+
+/** The pool's real handler over stub I/O, with the rows it pushes. */
+function driveOneCase(io: {
+  captureOn: (testCase: unknown, variant: string, worker: string) => Promise<unknown>;
+  titleFor: () => Promise<string | null>;
+}) {
+  const results: { id: string; variant: string; worker: string | null; comparison: { verdict: string } }[] = [];
+  const handle = caseComparer({
+    results,
+    io: { baselineFor: () => EVIDENCE, write: () => {}, ...io },
+  });
+  return { results, handle };
+}
 
 test("--only= matches the FAMILY first, so one family is one case and six siblings are invisible", () => {
   // DERIVED, never pinned as a number in prose: the row that needed this said "14 variants" from a test
@@ -107,11 +139,82 @@ test("a case no worker captured names no worker, rather than inventing one", () 
   assert.deepEqual(Object.keys(row), ["id", "variant", "worker", "comparison"]);
 });
 
+test("the reconciliation site writes that null too, and does not reach for workers[0]", () => {
+  // THE FOURTH production call site, executed — the other direction of the same defect. Its `null` is
+  // correct, so the guard cannot be a rule over the pushes; run it instead. The mutant this kills is
+  // `worker: null` becoming `worker`, which inside this function resolves to the module-level
+  // `workers[0]`: a row that exists because NOTHING captured it, stamped with the first url on the argv.
+  const selected = [{ id: "never-ran", family: "stub" }, { id: "already-has-rows", family: "stub" }];
+  const captured = resultRow({
+    testCase: selected[1], variant: "good", worker: "http://203.0.113.42:8765",
+    comparison: { verdict: "SAME", changes: [], phrases: null },
+  });
+  const results = [captured];
+
+  countUncomparedAgainstCoverage({
+    selected, results,
+    // Every variant was ASKED for — a baseline exists — so the ones with no row are missing rather than
+    // never requested. That distinction is the function's first line, and stubbing it away would make the
+    // reconciliation examine nothing.
+    io: { baselineFor: () => ({ transcript: [], structure: {} }), write: () => {} },
+  });
+
+  const added = results.filter((row) => row !== captured);
+  assert.equal(added.length, 3, "three asked-for variants had no row: both of the first case, and the "
+    + "second case's `bad`. The control for the assertion below — with none added it would pass empty.");
+  assert.deepEqual(added.map((row) => row.worker), [null, null, null]);
+  // And the row that WAS captured keeps its box: reconciliation adds, it does not restamp.
+  assert.equal(captured.worker, "http://203.0.113.42:8765");
+});
+
+test("every capture path records the worker the pool HANDED it, on all three of its verdicts", async () => {
+  // THE PRODUCTION CALL SITES, executed. The three `resultRow` pushes inside the pool's handler
+  // (`evidence-check.mjs` SKIPPED / REJECTED / compared) are the whole of done-when 2, and until this test
+  // they were guarded only by a source scan that could not reach their arguments: `worker: null` on the
+  // compared site left the focused suite green while a real run printed `Captured by 0 of the 3 worker(s)
+  // named: none`. Worse than a stale row — `capturedBy` drops a box that did the work, and #1908's ten
+  // reads would be posted with no box against them.
+  //
+  // A source read cannot fix that, because the defect and the correct code SPELL THE SAME: `worker` is
+  // also a module-level `const worker = workers[0]` (`:82`), so deleting the handler's `{ worker }`
+  // parameter restores #1948's original constant with every line below unchanged. Here both bindings are
+  // in scope and only the parameter can produce the address asserted.
+  const HANDED = "http://203.0.113.42:8765";
+  const stubCase = { id: "stub-case", family: "stub" };
+
+  const compared = driveOneCase({ captureOn: async () => EVIDENCE, titleFor: async () => TITLE });
+  await compared.handle(stubCase, { worker: HANDED });
+  assert.deepEqual(compared.results.map((r) => r.comparison.verdict), ["SAME", "SAME"],
+    "the control for the two assertions below: a fixture the real gates stopped accepting would land these "
+    + "rows on another branch, and an attribution assertion over the wrong branch examines nothing");
+  assert.deepEqual(compared.results.map((r) => r.worker), [HANDED, HANDED]);
+
+  const skipped = driveOneCase({ captureOn: async () => EVIDENCE, titleFor: async () => null });
+  await skipped.handle(stubCase, { worker: HANDED });
+  assert.deepEqual(skipped.results.map((r) => r.comparison.verdict), ["SKIPPED", "SKIPPED"]);
+  assert.deepEqual(skipped.results.map((r) => r.worker), [HANDED, HANDED]);
+
+  const rejected = driveOneCase({ captureOn: async () => NOT_EVIDENCE, titleFor: async () => TITLE });
+  await rejected.handle(stubCase, { worker: HANDED });
+  assert.deepEqual(rejected.results.map((r) => r.comparison.verdict), ["REJECTED", "REJECTED"]);
+  assert.deepEqual(rejected.results.map((r) => r.worker), [HANDED, HANDED]);
+
+  // And it VARIES with what it is handed, so none of the above can be satisfied by a constant that happens
+  // to read like an address — which is precisely the failure this row exists about.
+  const second = driveOneCase({ captureOn: async () => EVIDENCE, titleFor: async () => TITLE });
+  await second.handle(stubCase, { worker: "http://203.0.113.43:8765" });
+  assert.deepEqual(second.results.map((r) => r.worker),
+    ["http://203.0.113.43:8765", "http://203.0.113.43:8765"]);
+});
+
 test("every report row is built by resultRow, so no path can record one without a worker", () => {
-  // A SOURCE READ, like `probe-chain.test.ts`'s rule for this same file, and for the same reason: what is
-  // being guarded is that four scattered call sites keep going through one builder. The alternative —
-  // extracting a helper that returns its own arguments so a test can call it — is the extraction CLAUDE.md
-  // names as not being progress.
+  // A SOURCE READ, like `probe-chain.test.ts`'s rule for this same file. Its claim is narrower than it
+  // looks and is worth stating: that every push goes through the ONE builder, not that any of them passes
+  // the right thing — the window ends inside `resultRow(` and every argument is outside it. What the three
+  // CAPTURE sites pass is asserted by executing them, in the test above. The fourth, the uncompared
+  // reconciliation, is the one site that passes `null` correctly, so what guards it is the builder test
+  // two above rather than a rule over the pushes — a "no site passes null" scan would turn it red and
+  // delete the honest answer.
   const source = readFileSync(resolve(process.cwd(), "packages/lab/scripts/evidence-check.mjs"), "utf8");
   const pushes = [...source.matchAll(/results\.push\(([\s\S]{0,12})/g)].map(([, tail]) => tail.trim());
   assert.ok(pushes.length >= 4, `only ${pushes.length} results.push( call(s) found; this scan has broken`);
