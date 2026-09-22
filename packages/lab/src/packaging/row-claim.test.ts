@@ -2119,15 +2119,23 @@ const OTHER_SESSIONS_HEADS = [
 
 test("#2014 ACCEPTANCE: origin holding a branch for THIS ROW under a DIFFERENT slug refuses before any write", () => {
   const record = claimRecordComment({ session: "worker-judge", branch: "agent/prune-timer-1432" });
-  const run = worktreeClaim(worktreeClaimRun({ originHeads: OTHER_SESSIONS_HEADS, recordComments: [record] }));
+  const stub = worktreeClaimRun({ originHeads: OTHER_SESSIONS_HEADS, recordComments: [record] });
+  const run = worktreeClaim(stub);
   const result = run.call();
   assert.equal(result.claimed, false);
   const reason = (result as { reason: string }).reason;
   assert.match(reason, /origin ALREADY HOLDS a branch for row #1432/);
   assert.match(reason, /`agent\/prune-timer-1432` at d77e47a2900000000000000000000000000000ff/,
     "the refusal names the branch AND its head, so the reader can go and look without a second command");
-  assert.match(reason, /row #1432's claim record names `worker-judge`/);
   assert.deepEqual(run.order, [], "no fetch, no worktree add, no stamp, no claim");
+  // reviewer-2 at `47d9c128`: the refusal USED TO name the branch's owner here, via `branchOwnerText` ->
+  // `gh issue view --json comments` -- GraphQL, on the one path whose premise is an exhausted GraphQL pool.
+  // The record above IS readable in this stub, so a refusal that still read it would say so: this is the
+  // control that the read is gone rather than merely unreachable.
+  assert.doesNotMatch(reason, /worker-judge/,
+    "and it names NO owner: reading one would spend the pool this guard exists because it is gone");
+  assert.deepEqual(stub.calls.filter((c) => c[0] === "gh"), [],
+    "no `gh` command at all on this path -- not 'no --jq', which is what let the GraphQL read through before");
 });
 
 test("#2014: the refusal is FOLLOWABLE -- it names the three exits, including a coincidental trailing number", () => {
@@ -2155,15 +2163,42 @@ test("#2014 ACCEPTANCE: a row with NO branch on origin still claims cleanly -- t
   // `-11432` ends in the digits of 1432 and is a different row: the check reads the trailing number, not a suffix.
 });
 
-test("#2014: the row check asks origin INDEPENDENTLY of --branch, and spends no GraphQL to find the branch", () => {
+test("#2014: the row check asks origin INDEPENDENTLY of --branch, and spends NO GraphQL -- detection AND refusal", () => {
   const stub = worktreeClaimRun({ originHeads: OTHER_SESSIONS_HEADS });
   const before = stub.calls.length;
   worktreeTargetReason(ROW_TARGET, { run: stub.run as never, exists: () => false, owner: () => null });
-  const listing = stub.calls.slice(before).find((c) => c.join(" ") === "git ls-remote --heads origin");
+  const after = stub.calls.slice(before);
+  const listing = after.find((c) => c.join(" ") === "git ls-remote --heads origin");
   assert.ok(listing, "the row reading is a plain head listing");
   assert.ok(!listing!.some((arg) => arg.includes("1432")), "it names no row and no branch -- it asks origin for everything and filters here");
-  assert.ok(!stub.calls.some((c) => c[0] === "gh" && c.includes("--jq")),
-    "the DETECTION spends no pool: the board goes stale exactly when GraphQL is gone, so a detector that spent it would be blind then");
+  // THE ASSERTION THAT USED TO STAND HERE WAS `c[0] === "gh" && c.includes("--jq")`, and reviewer-2 showed it
+  // vacuous at `47d9c128`: the read it had to catch is `gh issue view <row> --repo <r> --json comments`, which
+  // carries `--json`, never `--jq`. It passed while the guard spent GraphQL. Every `gh`, no substring.
+  // POSITIVE CONTROL that this stub CAN record a `gh` call, so the emptiness is a finding and not a silence:
+  // the two #1432 tests above ("an existing LOCAL branch ..." / "a branch that exists only ON ORIGIN ...") drive
+  // the same `worktreeClaimRun` down the branch-NAME paths, where `branchOwnerText`'s `gh issue view` does run
+  // and its output is asserted verbatim in the refusal.
+  assert.deepEqual(after.filter((c) => c[0] === "gh"), [],
+    "the whole path spends no pool: the board goes stale exactly when GraphQL is gone, so a guard that spent it would be blind then");
+  assert.deepEqual([...new Set(after.map((c) => c[0]))], ["git"], "and nothing but git is spawned at all");
+});
+
+test("#2014: a `gh` that THROWS changes nothing -- the refusal is whole, so the guard holds during the outage it is for", () => {
+  // The call-site control for the assertion above. `worktreeTargetReason` never calls `gh` on this path today;
+  // this pins that it never NEEDS to, so a future edit that reads a claim record back in fails here rather than
+  // degrading silently to "row #1432's claim record could not be read" in the middle of a real pool outage.
+  const heads = OTHER_SESSIONS_HEADS.join("\n");
+  const run = (cmd: string, args: string[]) => {
+    if (cmd === "gh") throw new Error("gh: API rate limit exceeded for this token (GraphQL)");
+    if (args[0] === "rev-parse") throw Object.assign(new Error("no such ref"), { status: 1 });
+    if (args[0] === "ls-remote" && args.includes("--exit-code")) throw Object.assign(new Error("absent"), { status: 2 });
+    return heads;
+  };
+  const reason = worktreeTargetReason(ROW_TARGET, { run: run as never, exists: () => false, owner: () => null }) ?? "";
+  assert.match(reason, /origin ALREADY HOLDS a branch for row #1432: `agent\/prune-timer-1432` at d77e47a29/);
+  assert.match(reason, /This refusal therefore reads no claim record and asks no API/);
+  assert.doesNotMatch(reason, /could not be read|rate limit/,
+    "no half-read apology reaches the reader, because nothing was half-read");
 });
 
 test("#2014: origin that cannot be LISTED is a refusal to claim, never 'the row has no branch'", () => {
