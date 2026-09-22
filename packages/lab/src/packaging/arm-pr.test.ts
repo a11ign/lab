@@ -335,7 +335,9 @@ test("#1022: prState returns null rather than a guess when the read fails", () =
 // --- #1453: the live set is READ from packages/agent-org/docs/roles/sessions.json, and arm-pr types none ---
 
 const SESSIONS_FILE = new URL("../../../../packages/agent-org/docs/roles/sessions.json", import.meta.url);
-const sessionsFile = () => JSON.parse(readFileSync(SESSIONS_FILE, "utf8")) as { live: { name: string }[]; retired: { name: string }[] };
+/** A `live` entry, read wide enough to see the keys it carries as well as its name (#1951's question). */
+type SessionEntry = { name: string } & Record<string, unknown>;
+const sessionsFile = () => JSON.parse(readFileSync(SESSIONS_FILE, "utf8")) as { live: SessionEntry[]; retired: { name: string }[] };
 
 test("#1453 ACCEPTANCE: arm-pr's live and retired sets EQUAL packages/agent-org/docs/roles/sessions.json's, worker-tooling included", () => {
   const file = sessionsFile();
@@ -344,6 +346,41 @@ test("#1453 ACCEPTANCE: arm-pr's live and retired sets EQUAL packages/agent-org/
   assert.ok(LIVE_SESSIONS.includes("worker-tooling"), "the session the typed list predated");
   assert.deepEqual(unknownSessionLabels(["session:worker-tooling"]), [],
     "the label the auto-arm job refused on #1412 now passes");
+});
+
+// #1951: A `live` ENTRY IS A ROLE. `session:<name>` is a ROUTING ADDRESS, and every enforcement path around
+// it already compares strings -- `runnerReason`/`laneReason` compare a label's suffix against `mySession`,
+// `LIVE_SESSIONS` is `.live.map((s) => s.name)`, `work-gate.mjs`'s `ROUTED_TO` is a frozen array of names.
+// The one exception was this file: six of six entries carried `workspace: { herdr: "w6", primary: "…" }`, a
+// tmux pane id, which NOTHING in the tree read -- so the roster lied the moment a pane moved. The runtime
+// registry is herdr itself (`wake.mjs`'s `readAgents` asks it for the workspace list, and `route` matches by
+// LABEL), so there was no second reader to move the field to and it was dropped.
+//
+// An ALLOWLIST rather than a denylist of suspicious key names, deliberately: a rule that infers whether a
+// key smells like a process handle is the defect this row is about one level up. Adding a genuine role fact
+// here is one line, and it makes the writer say which of the two it is.
+const ROLE_ENTRY_KEYS = ["name", "role", "brief", "started"];
+
+/** The `live` entries carrying a key that is not a role fact, each with the keys that offend. */
+function processBoundEntries(live: SessionEntry[]): { name: unknown; keys: string[] }[] {
+  return live
+    .map((entry) => ({ name: entry.name, keys: Object.keys(entry).filter((k) => !ROLE_ENTRY_KEYS.includes(k)) }))
+    .filter((entry) => entry.keys.length > 0);
+}
+
+test("#1951: a `live` entry is a ROLE -- it carries no pane, pid or other process handle", () => {
+  const file = sessionsFile();
+  assert.ok(file.live.length > 0, "the population this asserts empty of offenders is not itself empty");
+  assert.deepEqual(processBoundEntries(file.live), [],
+    `sessions.json binds a role to a process again. A \`live\` entry may carry ${ROLE_ENTRY_KEYS.join(", ")} and `
+    + "nothing else: `session:<name>` is a routing address, and the pane herdr currently gives a session is "
+    + "herdr's to answer at runtime (`wake.mjs`), not this file's to remember. If the new key really is a role "
+    + "fact, add it to ROLE_ENTRY_KEYS and say why in the file's `_rolesNotProcesses`.");
+  // POSITIVE CONTROL, built from the file's own first entry so this test types no roster: the exact shape
+  // #1951 removed is found by the same predicate.
+  const asItWas = [{ ...file.live[0], workspace: { herdr: "w4", primary: "/home/agent/repos/a11y-witness" } }];
+  assert.deepEqual(processBoundEntries(asItWas), [{ name: file.live[0].name, keys: ["workspace"] }],
+    "the predicate finds the pane binding this row removed");
 });
 
 test("#1453: a retired session is refused because it is ABSENT from `live`, and `retired` only words the refusal", () => {
