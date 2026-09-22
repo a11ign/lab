@@ -83,7 +83,7 @@ export function missingFleetEnvRefusal(env) {
   if (env.A11Y_PVE_KEY) return null;
   return "REFUSING: A11Y_PVE_KEY is not set, so lab:fetch cannot reach the lab -- nothing to release.\n"
     + "Under systemd it comes from ~/.config/a11ign/fleet.env (the unit's EnvironmentFile=), never from "
-    + "~/.zshenv: a unit reads no shell startup file. Put A11Y_PVE_KEY and A11Y_CONTROL_HOST_FILE there.\n";
+    + "the shell's .zshenv: a unit reads no shell startup file. Put A11Y_PVE_KEY and A11Y_CONTROL_HOST_FILE there.\n";
 }
 
 // Enough of Ansible's stdout to include the failing task's own `fatal:` message and the PLAY RECAP.

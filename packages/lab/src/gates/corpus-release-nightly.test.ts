@@ -116,7 +116,7 @@ test("#1911: the real script exits 2 naming fleet.env when A11Y_PVE_KEY is absen
     assert.equal(result.status, 2, `expected the refusal's exit 2; stderr was:\n${result.stderr}`);
     assert.match(result.stderr, /A11Y_PVE_KEY is not set/);
     assert.match(result.stderr, /~\/\.config\/a11ign\/fleet\.env/, "it names the file the unit reads");
-    assert.match(result.stderr, /never from ~\/\.zshenv/, "and says why the shell's copy does not count");
+    assert.match(result.stderr, /never from the shell's \.zshenv/, "and says why the shell's copy does not count");
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
