@@ -471,19 +471,25 @@ function hasUnnamedFormField(/** @type {any} */ capture) {
  * nothing about where the user now is, so a rule keyed on silence would never fire on the page it was
  * written for. The measurable difference is that the view moved and the title did not follow.
  *
+ * #1867: a held-steady heading alone is not "nothing navigated" -- the site chrome's own top-of-page
+ * heading does not change across a real navigation on GOV.UK/mygov.scot pages. A heading that DID change
+ * is evidence enough on its own; a heading that didn't needs NVDA's own document-change confirmation
+ * (`route.navigated`, real since #1850 -- no longer the unconditional `true` literal this comment used to
+ * warn was a tautology) to say a transition happened at all. Mirrors `headingAloneCannotSayNothingNavigated`
+ * in `packages/judge/src/rules.ts`'s `addStaleRouteTitle` -- pinned equal, not unified, by
+ * `cross-boundary-predicate-parity.test.ts` (that file's own note explains why the package boundary stays).
+ *
  * An unprobed or errored capture is NOT a finding. `routeChange` is absent unless asked for and carries an
  * `error` when the measurement failed, and both are distinguishable from a page that navigated silently.
  */
 function routeTitleIsStale(/** @type {any} */ capture) {
   const route = (capture.interaction || {}).routeChange;
   // `route.control === null` is the applicability gate -- not probed, errored, or quick-nav reached the
-  // end of the links with nothing to activate. `routeChange.navigated` looks like the same check and is
-  // NOT: `probeRouteChange` sets it `true` on every successful activation regardless of whether the view
-  // actually moved, so it is a tautology relative to what this predicate exists to establish (#250). Kept
-  // identical to `addStaleRouteTitle` in `rules.ts`, the same fix applied there.
+  // end of the links with nothing to activate.
   if (!route || route.error || route.control === null) return false;
-  const viewMoved = route.headingBefore !== route.headingAfter;
-  return viewMoved && route.titleBefore === route.titleAfter;
+  // See this function's comment: a held-steady heading needs `route.navigated` to say anything moved at all.
+  if (route.headingBefore === route.headingAfter && !route.navigated) return false;
+  return route.titleBefore === route.titleAfter;
 }
 
 /**
@@ -540,8 +546,9 @@ function controlUnreachableByKeyboard(/** @type {any} */ capture) {
 
 function skipLinkIsInert(/** @type {any} */ capture) {
   const route = (capture.interaction || {}).routeChange;
-  // See `routeTitleIsStale`'s comment: `route.control === null` is the correct applicability gate, and
-  // `routeChange.navigated` is a tautology that must not be read as evidence (#250).
+  // See `routeTitleIsStale`'s comment: `route.control === null` is the correct applicability gate. This
+  // predicate has its own evidence for "something moved" (`nextFocusAfter` landing back in the ordinary tab
+  // order below) and does not need `route.navigated`, so #1867's fix there does not touch this function.
   if (!route || route.error || route.control === null) return false;
   if (!/\b(skip|jump)\b/i.test(String(route.control ?? ""))) return false;
   const landed = route.nextFocusAfter;

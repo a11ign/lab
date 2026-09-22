@@ -10,6 +10,7 @@
 //   contextChanged (judge/rules.ts)          <-> contextChangedOn (lab/signal-predicates.mjs)
 //   focusRevealUndismissable (judge/rules.ts) <-> focusPanelUndismissable (lab/signal-predicates.mjs)
 //   sameControlAnnounced + addSilentStateChanges (judge/rules.ts) <-> stateChangeIsSilent (lab/signal-predicates.mjs), #1496
+//   addStaleRouteTitle (judge/rules.ts) <-> routeTitleIsStale (lab/signal-predicates.mjs), #1867
 //
 // #1498 DELETED ONE COPY of the third pair's identity step, CLAUDE.md's first-preference remedy: `sameControlAnnounced`
 // is defined once, in `@a11ign/evidence`, and both sides import it. That is asserted by name at the end of this file.
@@ -209,6 +210,62 @@ test("#1583: signal and rule give the SAME answer on every state-step shape, and
     assert.equal(ruleStateChangeSilent(change), silent, `${name}: the RULE's answer moved`);
     assert.equal(signalStateChangeSilent(change, control), silent,
       `${name}: the signal says ${!silent}, the rule says ${silent} -- a corpus case built from this predicate can be `
+      + "labelled a failure the shipped judge will never report, or vice versa");
+  }
+});
+
+// --- Pair 4 (#1867): addStaleRouteTitle / routeTitleIsStale -- drives 2.4.2 Page Titled ---
+//
+// The heading-equality guard both sides used to trust alone: a held-steady SITE-CHROME heading read as
+// "nothing navigated" even when the title differed and NVDA's own document-change confirmation
+// (`route.navigated`, real since #1850) said otherwise. #1867 fixed `rules.ts`; the reviewer on PR #1871
+// found `signal-predicates.mjs`'s independently-maintained twin still trusted the heading proxy alone on
+// the exact same shape, so product-manager widened the Region to cover it too. This pins the two agree.
+
+type RouteChange = {
+  control?: string | null; titleBefore?: string | null; titleAfter?: string | null;
+  headingBefore?: string | null; headingAfter?: string | null; navigated?: boolean; error?: string;
+} | undefined;
+
+function ruleStaleRouteTitle(route: RouteChange): boolean {
+  const findings = ruleFindings(captureWithInteraction({ routeChange: route }) as never);
+  return findings.some((f) => f.wcag?.startsWith("2.4.2"));
+}
+
+function signalStaleRouteTitle(route: RouteChange): boolean {
+  return signalMatches(captureWithInteraction({ routeChange: route }), { type: "route-title-stale" });
+}
+
+const ROUTE_CASES: { name: string; route: RouteChange }[] = [
+  { name: "heading changed, title stale -- the original failing shape",
+    route: { control: "Next", headingBefore: "Welcome", headingAfter: "Account", titleBefore: "Home", titleAfter: "Home" } },
+  { name: "heading changed, title also changed -- no failure",
+    route: { control: "Next", headingBefore: "Welcome", headingAfter: "Account", titleBefore: "Home", titleAfter: "Account" } },
+  { name: "#1867: heading held steady, navigation confirmed, title stale -- the missed finding",
+    route: { control: "Continue", headingBefore: "Vehicle tax", headingAfter: "Vehicle tax",
+      titleBefore: "Tax your vehicle", titleAfter: "Tax your vehicle", navigated: true } },
+  { name: "heading held steady, navigation confirmed, title DID change -- not a failure",
+    route: { control: "Continue", headingBefore: "Vehicle tax", headingAfter: "Vehicle tax",
+      titleBefore: "Tax your vehicle", titleAfter: "Confirm details", navigated: true } },
+  { name: "heading held steady, navigation NOT confirmed -- a same-page control, nothing to judge",
+    route: { control: "Show details", headingBefore: "Vehicle tax", headingAfter: "Vehicle tax",
+      titleBefore: "Tax your vehicle", titleAfter: "Tax your vehicle", navigated: false } },
+  { name: "heading held steady, navigated unset (unprobed for it) -- same as false, nothing to judge",
+    route: { control: "Show details", headingBefore: "Vehicle tax", headingAfter: "Vehicle tax",
+      titleBefore: "Tax your vehicle", titleAfter: "Tax your vehicle" } },
+  { name: "route absent entirely -- the probe never ran", route: undefined },
+  { name: "route carries an error -- not a stable measurement",
+    route: { control: "Next", headingBefore: "A", headingAfter: "B", titleBefore: "T", titleAfter: "T", error: "timeout" } },
+  { name: "control is the null sentinel -- probe reached the end of the links",
+    route: { control: null, headingBefore: "A", headingAfter: "B", titleBefore: "T", titleAfter: "T" } },
+];
+
+test("#1867: addStaleRouteTitle (rule) and routeTitleIsStale (signal) agree on every route-change shape", () => {
+  for (const { name, route } of ROUTE_CASES) {
+    const rule = ruleStaleRouteTitle(route);
+    const signal = signalStaleRouteTitle(route);
+    assert.equal(signal, rule,
+      `${name}: signal says ${signal}, rule says ${rule} -- a corpus case built from this predicate can be `
       + "labelled a failure the shipped judge will never report, or vice versa");
   }
 });
