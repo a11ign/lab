@@ -98,7 +98,23 @@ function manifestCases() {
   assertManifestMatchesCases(manifest, {
     consequence: "this would compare evidence over a case set the code no longer defines",
   });
-  return manifest.cases.filter((/** @type {any} */ c) => !only || (c.family ?? c.id).includes(only));
+  return narrowTo(manifest.cases, only);
+}
+
+/**
+ * The `--only=` filter: a FAMILY name, or a case id, matched on `family ?? id`.
+ *
+ * Exported so what this narrowing actually selects can be asserted rather than read. It matches on the
+ * family FIRST, so a case whose id begins `media-autoplay-audio+` but whose family is
+ * `multi-defect-1.4.2` is NOT selected by `--only=media-autoplay-audio` — measured 2026-09-22 on #1908,
+ * where 7 cases embed the WAV under test and this filter reaches exactly 1 of them. That is the intended
+ * population for that row (`ceo`'s condition 1 is about the single case), and the surprise is expensive
+ * enough to pin: a reader who assumes the filter is by id would report ten clean reads of seven cases.
+ *
+ * @param {any[]} cases @param {string | null} only
+ */
+export function narrowTo(cases, only) {
+  return cases.filter((/** @type {any} */ c) => !only || (c.family ?? c.id).includes(only));
 }
 
 /**
@@ -159,8 +175,14 @@ function optionsUnchanged(/** @type {any} */ testCase) {
   });
 }
 
-/** One case per family until the sample is full, so no family can be silently absent. */
-function stratify(/** @type {any} */ cases, /** @type {any} */ limit) {
+/**
+ * One case per family until the sample is full, so no family can be silently absent.
+ *
+ * Exported for the same reason `narrowTo` is, and the two compose into the fact an operator most needs
+ * before dispatching: under `--only=<one family>` the stratified set is ONE case whatever `--sample` says,
+ * because one case per family is one case. `--sample=1` and `--sample=200` then do identical work.
+ */
+export function stratify(/** @type {any} */ cases, /** @type {any} */ limit) {
   const byFamily = new Map();
   for (const testCase of cases) {
     const family = testCase.family ?? testCase.id;
@@ -262,6 +284,24 @@ async function requirePagesServed(/** @type {any} */ cases) {
  * by a CALLER, and there is no caller when a file is merely imported.
  */
 /**
+ * ONE ROW OF THE REPORT, and the only place that decides what a row holds.
+ *
+ * `worker` is the box that actually produced this capture, taken from the pool's own context — never the
+ * first url on the argv. The report used to carry a single top-level `worker` set to `workers[0]`, which
+ * on a fleet dispatch names the same box whether or not it did any of the work: a CONSTANT read as a
+ * measurement (#1948). A pooled run hands a case to whichever worker takes it off the shared queue, so
+ * the capturing box is knowable only here, at the moment the case is handled.
+ *
+ * `null` for a case no worker ever captured — an UNCOMPARED row exists precisely because nothing ran, and
+ * naming a worker on it would invent the very attribution this row is about.
+ *
+ * @param {{testCase: any, variant: string, worker: string | null, comparison: any}} row
+ */
+export function resultRow({ testCase, variant, worker, comparison }) {
+  return { id: testCase.id, variant, worker, comparison };
+}
+
+/**
  * Account for every capture that was ASKED for, so one that never happened reduces coverage instead of
  * disappearing from it.
  */
@@ -283,7 +323,10 @@ for (const testCase of selected) {
   for (const variant of ["good", "bad"]) {
     if (!readCapture(BASELINE, testCase.id, variant)) continue; // never asked for; not missing
     if (results.some((/** @type {any} */ r) => r.id === testCase.id && r.variant === variant)) continue;
-    results.push({ id: testCase.id, variant, comparison: { verdict: "REJECTED", changes: [], phrases: null } });
+    results.push(resultRow({
+      testCase, variant, worker: null,
+      comparison: { verdict: "REJECTED", changes: [], phrases: null },
+    }));
     process.stdout.write(`  UNCOMPARED  ${testCase.id}.${variant}  no usable capture; counted against coverage\n`);
   }
 }
@@ -330,17 +373,21 @@ const compareCase = async (/** @type {any} */ testCase, /** @type {any} */ { wor
     if (title === null) {
       // Preflight proved the server is up, so this is a per-page failure. Skip it: comparing a
       // capture we cannot gate is how an error page came to read as changed evidence.
-      results.push({ id: testCase.id, variant, comparison: { verdict: "SKIPPED", changes: [], phrases: null } });
+      results.push(resultRow({
+        testCase, variant, worker, comparison: { verdict: "SKIPPED", changes: [], phrases: null },
+      }));
       process.stdout.write(`  SKIPPED     ${testCase.id}.${variant}  page title unreadable; cannot gate, so not compared\n`);
       continue;
     }
     if (!isEvidence(candidate, title)) {
-      results.push({ id: testCase.id, variant, comparison: { verdict: "REJECTED", changes: [], phrases: null } });
+      results.push(resultRow({
+        testCase, variant, worker, comparison: { verdict: "REJECTED", changes: [], phrases: null },
+      }));
       process.stdout.write(`  REJECTED    ${testCase.id}.${variant}  the pipeline would reject this capture; excluded\n`);
       continue;
     }
     const comparison = compareCapture(baseline, candidate);
-    results.push({ id: testCase.id, variant, comparison });
+    results.push(resultRow({ testCase, variant, worker, comparison }));
     const detail = comparison.verdict === "DIFFERENT_DOCUMENT"
       // THE TWO DOCUMENTS, not the fields. A field list here would be true and would send the reader
       // after the capture pipeline when the cause is that the server sent another page (#687).
@@ -423,9 +470,22 @@ async function main() {
 
   const summary = summarise(results);
   mkdirSync(OUT, { recursive: true });
-  writeFileSync(REPORT, JSON.stringify({ worker, results, summary }, null, 2) + "\n", "utf8");
+  // `workers` — THE POOL AS DISPATCHED — and a `worker` on every row, which is the box that captured it.
+  // This wrote `worker: workers[0]` for the whole run: the first url on the argv, not the one that did the
+  // work. On a fleet dispatch that field named the same box whether or not it captured anything, so a
+  // verdict quoting it reported a constant as a measurement (#1948). The singular key is GONE rather than
+  // kept truthful, because a reader who has seen it cannot tell which of the two meanings a given report
+  // carries; nothing in the repository reads it (`lab-fetch.yml` fetches the file, not a field).
+  writeFileSync(REPORT, JSON.stringify({ workers, results, summary }, null, 2) + "\n", "utf8");
 
-  process.stdout.write(`\n${summary.compared} compared: ` +
+  // WHICH BOXES ACTUALLY CAPTURED, on the run's own output rather than only in the fetched report:
+  // #1908's acceptance is ten reads posted with the worker each came from, and an operator reading a
+  // dispatch log had no way to answer that at all.
+  const capturedBy = [...new Set(results.map((/** @type {any} */ r) => r.worker).filter(Boolean))];
+  process.stdout.write(`\nCaptured by ${capturedBy.length} of the ${workers.length} worker(s) named: `
+    + `${capturedBy.join(", ") || "none"}\n`);
+
+  process.stdout.write(`${summary.compared} compared: ` +
     `${summary.counts.SAME} same, ${summary.counts.DRIFT} drift, ${summary.counts.CHANGED} changed` +
     (summary.counts.REJECTED ? `, ${summary.counts.REJECTED} rejected (excluded)` : "") + "\n");
   process.stdout.write(`${summary.recommendation}\n`);
@@ -464,12 +524,6 @@ function selectComparable()
       `${optionSkipped} case(s) excluded: the manifest now asks for different PROBES than the recorded capture `
       + `used, so the fresh capture would be asked a different question. Regenerate the manifest `
       + `(npm run training:generate) and recapture them.\n`);
-  }
-  if (!comparable.length) {
-    // Refusing is the honest answer. Reporting SAME over nothing examined is how "verified" comes to mean
-    // "unexamined", which is the failure this repo keeps meeting.
-    process.stderr.write("no case has a capture taken against its CURRENT page — nothing can be compared.\n");
-    process.exit(2);
   }
   if (!comparable.length) {
     // Refusing is the honest answer. Reporting SAME over nothing examined is how "verified" comes to mean
