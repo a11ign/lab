@@ -197,6 +197,8 @@ const gitStub = (args: string[]) => (args.includes("--abbrev-ref") ? "agent/my-b
 // it alone would spawn a label step on the agent host (84 of its 93 worktrees are stamped) and none here --
 // the two `deepEqual(spawned.slice(1), ...)` assertions below would pass on a laptop and fail on the box
 // that matters. Ambient filesystem state deciding an assertion is the defect this repo keeps paying for.
+// That includes the tests driven through `main()`, which forwards its own `owner` to `sendToGitHub`: two of
+// them left it out and failed in every tree `row-claim` stamps while passing in CI's unstamped one (#1925).
 const UNSTAMPED = () => null;
 
 test("#1277: a create that FAILS prints one line with the branch, the head and the cause", () => {
@@ -482,6 +484,7 @@ function driveMain(argv: string[], outcomes: { create: () => void; arm: () => vo
       runAcceptance: () => 0,
       run: (args: string[]) => { spawned.push(args); (args[1] === "merge" ? outcomes.arm : outcomes.create)(); },
       git: gitStub,
+      owner: UNSTAMPED,
       err: (l: string) => { errs.push(l); },
       out: () => {},
     });
@@ -577,7 +580,7 @@ test("#1578 ACCEPTANCE, MUTATION TARGET: driven through main(), the Acceptance r
   try {
     code = prOpenMain(["create", "--draft", "--body", body], {
       run: (args: string[]) => { spawned.push(args); },
-      git: () => "agent/x", out: () => {}, err: () => {},
+      git: () => "agent/x", owner: UNSTAMPED, out: () => {}, err: () => {},
     });
   } finally {
     if (saved === undefined) delete process.env.A11Y_ACCEPTANCE_PATH; else process.env.A11Y_ACCEPTANCE_PATH = saved;
