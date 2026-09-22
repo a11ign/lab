@@ -111,13 +111,21 @@ test("#1042 REGRESSION (reviewer-2 on #1860, three verdicts: `0ece3e54`, `1f91f0
   // Written BESIDE the real script, not under `os.tmpdir()`: `corpus-backup.mjs` imports
   // `@a11ign/worker-fleet/cli-flags` by bare specifier, and Node resolves that by walking up from the
   // running file to find `node_modules` -- a copy outside this repo's tree has nothing to walk up to and
-  // fails with `ERR_MODULE_NOT_FOUND` before the refusal this test wants ever runs.
-  const dir = mkdtempSync(join(REPO, "packages/lab/scripts/.corpus-backup-mutation-"));
+  // fails with `ERR_MODULE_NOT_FOUND` before the refusal this test wants ever runs. At the package ROOT,
+  // not in `scripts/`: `runs-write-guard.test.ts` and `dataset-paths.test.ts` walk `packages/*/{src,scripts}`
+  // concurrently and read every file they list, so a copy deleted between their listing and their read
+  // failed them with ENOENT (#1919, #944's shape). The script's other paths resolve from `process.cwd()`,
+  // so nothing else depends on where the copy sits.
+  const dir = mkdtempSync(join(REPO, "packages/lab/.corpus-backup-mutation-"));
   try {
     const mutatedScript = join(dir, "corpus-backup.mjs");
     writeFileSync(mutatedScript, mutated);
     const { code, stderr } = runWithNoRemote(mutatedScript);
     assert.equal(code, 1, `expected the mutated script's refusal to still exit 1; got ${code}: ${stderr}`);
+    // Exit 1 alone is also what an unresolvable import gives, so a copy that moved somewhere Node cannot
+    // find `node_modules` from would pass the line above without ever reaching the refusal (#1919).
+    assert.match(stderr, /REFUSING: no A11Y_CORPUS_REMOTE set/,
+      `the mutated copy exited 1 without reaching its refusal: ${stderr}`);
     assert.ok(!NAMES_THE_ROUTE(stderr),
       "a comment beside the refusal satisfied the guard -- the mutated script's real stderr must lack both "
       + "route names for this regression to mean anything");
