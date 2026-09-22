@@ -29,6 +29,14 @@
  *     captures spanning four worker builds produced a ratio that changed SIGN, read as a finding about
  *     the page twice, before anyone checked the builds. A comparison across a code change measures the
  *     worker, not the drift.
+ *
+ * A THIRD, PER FIELD (#1905): the header's "a completed sweep counts every element" is a CONDITION, and a
+ * capture records whether it held -- `observed.<field>.complete`. A field any matched capture of the page
+ * swept with `complete: false` is NOT COMPARABLE for that page and is left out of every vector before the
+ * shapes and the spread are read, with how many sweeps stopped short named on the line. Measured on
+ * ikea.com/de/de, one build, four matched captures: `formFields` read 297, 289, 293 and 19, the last two
+ * sweeps stopping for different reasons (`cap`, then `silent`/`exhausted`) -- and the tool reported that as a
+ * 96% "drift" of the page. A change in why a sweep STOPPED is not the page moving.
  */
 import { EVIDENCE_FIELDS, fieldKey, fieldValues } from "../capture/evidence-diff.mjs";
 import { captureIn } from "../capture/sweep-costs.mjs";
@@ -45,7 +53,8 @@ import { documentIdentity } from "@a11ign/evidence/document-identity";
 const STRUCTURE_FIELDS = EVIDENCE_FIELDS.filter((field) => field.length === 2 && field[0] === "structure");
 
 /**
- * @typedef {{ url: string, capturedAt: string | null, workerCode: string | null, targetMatch: string | null, vector: Record<string, number> }} ShapeReading
+ * @typedef {{ url: string, capturedAt: string | null, workerCode: string | null, targetMatch: string | null,
+ *   vector: Record<string, number>, incomplete: string[] }} ShapeReading
  */
 
 /**
@@ -62,13 +71,38 @@ export function shapeReadingFor(record) {
   /** @type {Record<string, number>} */
   const vector = {};
   for (const field of STRUCTURE_FIELDS) vector[fieldKey(field)] = fieldValues(capture, field).length;
+  // Only an explicit `false`: an absent verdict (older captures) or a channel with no exhaustion signal
+  // is not a sweep that said it stopped short, and excluding it would drop every pre-#985 capture.
+  const incomplete = STRUCTURE_FIELDS.map(fieldKey).filter((key) => capture.observed?.[key]?.complete === false);
   return {
     url: capture.url ?? null,
     capturedAt: capture.capturedAt ?? null,
     workerCode: capture.environment?.workerCode ?? null,
     targetMatch: documentIdentity(capture).targetMatch,
     vector,
+    incomplete,
   };
+}
+
+/**
+ * Per field, how many of `readings` swept it incompletely -- only fields with at least one, in
+ * `STRUCTURE_FIELDS` order. One incomplete sweep is enough to rule a field out for the page: comparing a
+ * complete count against a stopped-short one measures the stop just as surely as two stopped-short ones do.
+ *
+ * @param {ShapeReading[]} readings @returns {{ field: string, incompleteCount: number }[]}
+ */
+export function incompleteFields(readings) {
+  return STRUCTURE_FIELDS.map(fieldKey)
+    .map((field) => ({ field, incompleteCount: readings.filter((r) => r.incomplete.includes(field)).length }))
+    .filter(({ incompleteCount }) => incompleteCount > 0);
+}
+
+/** `readings` with `fields` removed from every vector, so neither the shapes nor the spread can see them. */
+function withoutFields(/** @type {ShapeReading[]} */ readings, /** @type {string[]} */ fields) {
+  return readings.map((reading) => ({
+    ...reading,
+    vector: Object.fromEntries(Object.entries(reading.vector).filter(([key]) => !fields.includes(key))),
+  }));
 }
 
 /** Stable key for exact vector equality -- object key order is fixed by `STRUCTURE_FIELDS` above. */
@@ -117,7 +151,8 @@ export function worstFieldSpreadPercent(readings) {
 
 /**
  * @typedef {{ url: string, n: number, excludedCount: number, refused: string | null, build?: string | null,
- *   shapes?: ReturnType<typeof distinctShapes>, spreadPercent?: number }} PageDrift
+ *   shapes?: ReturnType<typeof distinctShapes>, spreadPercent?: number,
+ *   notComparable?: ReturnType<typeof incompleteFields> }} PageDrift
  */
 
 /**
@@ -152,9 +187,11 @@ export function driftDistributionsByUrl(records) {
       });
       continue;
     }
+    const notComparable = incompleteFields(matched);
+    const comparable = withoutFields(matched, notComparable.map(({ field }) => field));
     out.push({
       url, n: matched.length, excludedCount, refused: null, build: builds[0] ?? null,
-      shapes: distinctShapes(matched), spreadPercent: worstFieldSpreadPercent(matched),
+      shapes: distinctShapes(comparable), spreadPercent: worstFieldSpreadPercent(comparable), notComparable,
     });
   }
   return out;
@@ -177,6 +214,10 @@ export function driftSummaryLine(entry) {
   const shapes = /** @type {NonNullable<PageDrift["shapes"]>} */ (entry.shapes);
   const spreadPercent = /** @type {number} */ (entry.spreadPercent);
   const at = shapes.map((shape) => `${shape.count}x at ${shape.capturedAt.join(", ")}`).join("; ");
+  const notComparable = entry.notComparable ?? [];
+  const notComparableNote = notComparable.length
+    ? ` Not comparable on ${notComparable.map(({ field, incompleteCount }) =>
+      `${field} (${incompleteCount} of ${entry.n} sweeps incomplete)`).join(", ")} -- left out of both.` : "";
   return `${entry.url}: n=${entry.n} on build ${entry.build}, ${shapes.length} distinct shape(s) `
-    + `(${at}), worst-field spread ${spreadPercent.toFixed(1)}%.${excludedNote}\n`;
+    + `(${at}), worst-field spread ${spreadPercent.toFixed(1)}%.${notComparableNote}${excludedNote}\n`;
 }

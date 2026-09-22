@@ -11,12 +11,17 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { execFile, spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { REPO_ROOT } from "../dataset-paths.mjs";
 import {
   sourceBasenameFromFetchOutput,
   flattenedFetchPath,
+  missingFleetEnvRefusal,
+  fetchFailureRefusal,
 } from "../../scripts/corpus-release-nightly.mjs";
 
 test("recovers the real snapshot name from lab-fetch.yml's own debug line", () => {
@@ -92,4 +97,58 @@ test("the destination formula this script assumes still matches lab-fetch.yml's 
   assert.match(task, /\|\s*splitext/,
     "the playbook no longer derives the destination's extension with splitext (strips only the LAST "
     + "dot, like node:path's extname) -- flattenedFetchPath() assumes the two agree");
+});
+
+/**
+ * #1911: THE UNIT FAILED EVERY FIRING, AND ITS JOURNAL NEVER SAID WHY. `A11Y_PVE_KEY` was exported only by
+ * `~/.zshenv`, which a systemd unit never reads, and Ansible's "A11Y_PVE_KEY is not set" went to stdout
+ * while the refusal printed stderr alone -- a harmless inventory warning. Both halves are pinned here.
+ */
+test("#1911: the real script exits 2 naming fleet.env when A11Y_PVE_KEY is absent, before any fetch", () => {
+  // Run from an empty directory, so a mutant that skipped the check and reached ansible-playbook could
+  // not find the playbook and touch nothing -- and would still fail the stderr assertion below.
+  const cwd = mkdtempSync(join(tmpdir(), "corpus-nightly-"));
+  try {
+    const env = { ...process.env };
+    delete env.A11Y_PVE_KEY;
+    const result = spawnSync(process.execPath,
+      [resolve(REPO_ROOT, "packages/lab/scripts/corpus-release-nightly.mjs")], { cwd, env, encoding: "utf8" });
+    assert.equal(result.status, 2, `expected the refusal's exit 2; stderr was:\n${result.stderr}`);
+    assert.match(result.stderr, /A11Y_PVE_KEY is not set/);
+    assert.match(result.stderr, /~\/\.config\/a11ign\/fleet\.env/, "it names the file the unit reads");
+    assert.match(result.stderr, /never from the shell's \.zshenv/, "and says why the shell's copy does not count");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("#1911: an EMPTY A11Y_PVE_KEY refuses too; a set one does not -- the positive control", () => {
+  assert.match(missingFleetEnvRefusal({ A11Y_PVE_KEY: "" }) ?? "", /fleet\.env/,
+    "`A11Y_PVE_KEY=` in fleet.env is as unusable as no line at all");
+  assert.equal(missingFleetEnvRefusal({ A11Y_PVE_KEY: "/home/agent/.ssh/pve" }), null);
+});
+
+test("#1911: the fetch-failure refusal carries what the failing command wrote ONLY to stdout", async () => {
+  // A REAL execFile rejection, not a hand-built object: the refusal reads the fields execFile actually
+  // attaches, so a stub with the wrong shape cannot pass here and fail on the host. The shape of the
+  // 2026-09-22T09:26:49Z firing: the cause on stdout, a harmless warning on stderr, exit 2.
+  const failing = [
+    'process.stdout.write("fatal: [a11y-lab]: FAILED! => A11Y_PVE_KEY is not set, and it has no default\\n");',
+    'process.stderr.write("[WARNING]: Invalid characters were found in group names\\n");',
+    "process.exit(2);",
+  ].join("");
+  const error = await promisify(execFile)(process.execPath, ["-e", failing]).then(
+    () => assert.fail("the stand-in command was meant to fail"), (e: unknown) => e);
+  const refusal = fetchFailureRefusal(error);
+  assert.match(refusal, /REFUSING: lab:fetch -e artifact=corpus-archive failed/);
+  assert.match(refusal, /A11Y_PVE_KEY is not set, and it has no default/,
+    "the stdout-only cause reaches the journal -- the half the old refusal dropped");
+  assert.match(refusal, /Invalid characters were found in group names/, "stderr is still printed beside it");
+});
+
+test("#1911: a long Ansible stdout is cut to its tail, where the failing task and the recap are", () => {
+  const stdout = Array.from({ length: 500 }, (_, i) => `line ${i}`).join("\n");
+  const refusal = fetchFailureRefusal({ stdout, stderr: "" });
+  assert.match(refusal, /line 499/);
+  assert.doesNotMatch(refusal, /line 0\n/);
 });

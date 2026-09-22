@@ -28,6 +28,37 @@ import {
 } from "./page-templates.mjs";
 import { fnv1a, withRealisticScale } from "./page-furniture.mjs";
 
+// The audio `media-autoplay-audio` embeds: 0.1 s of silent 8-bit mono 8 kHz PCM, BUILT rather than typed,
+// because the hand-typed base64 it replaces was a malformed WAV (#1866). A stray 0x00 after the RIFF size
+// field put every chunk tag one byte late, so the media never decoded; `.good`'s native play button then
+// announced "unable to play media." on every capture after a worker's first, which read SAME on run 1 and
+// CHANGED on runs 2-5 on three warm workers -- a race whose early side the baseline had recorded.
+// Neither rule nor signal reads the audio itself, so any well-formed clip serves; it only has to decode.
+const WAV_SAMPLE_RATE = 8000;
+const WAV_SILENT_SAMPLES = 800;
+const PCM_8BIT_SILENCE = 0x80;
+
+/** @param {number} sampleCount */
+function silentWav(sampleCount) {
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0, "ascii");
+  header.writeUInt32LE(36 + sampleCount, 4);
+  header.write("WAVE", 8, "ascii");
+  header.write("fmt ", 12, "ascii");
+  header.writeUInt32LE(16, 16); // fmt chunk size for PCM
+  header.writeUInt16LE(1, 20); // PCM
+  header.writeUInt16LE(1, 22); // mono
+  header.writeUInt32LE(WAV_SAMPLE_RATE, 24);
+  header.writeUInt32LE(WAV_SAMPLE_RATE, 28); // byte rate: one byte per sample
+  header.writeUInt16LE(1, 32); // block align
+  header.writeUInt16LE(8, 34); // bits per sample
+  header.write("data", 36, "ascii");
+  header.writeUInt32LE(sampleCount, 40);
+  return Buffer.concat([header, Buffer.alloc(sampleCount, PCM_8BIT_SILENCE)]);
+}
+
+const SILENT_WAV_DATA_URI = `data:audio/wav;base64,${silentWav(WAV_SILENT_SAMPLES).toString("base64")}`;
+
 function defaultSubtype(/** @type {any} */ { id, criterion, badSignal }) {
   if (criterion === "1.1.1") {
     if (id.includes("missing")) return "missing-alt";
@@ -833,14 +864,14 @@ const cases = [
       heading: "Welcome message",
       body: "<p>A short welcome message plays automatically and can be paused or stopped at any time.</p>"
         + "<audio autoplay controls "
-        + "src=\"data:audio/wav;base64,UklGRiQAAAAAV0FWRWZtdCAQAAAAAQABAEANDgAgTgAAAgAQAGRhdGEAAAAA\"></audio>",
+        + "src=\"" + SILENT_WAV_DATA_URI + "\"></audio>",
     }),
     bad: page({
       title: "Welcome message",
       heading: "Welcome message",
       body: "<p>A short welcome message plays automatically and can be paused or stopped at any time.</p>"
         + "<audio autoplay "
-        + "src=\"data:audio/wav;base64,UklGRiQAAAAAV0FWRWZtdCAQAAAAAQABAEANDgAgTgAAAgAQAGRhdGEAAAAA\"></audio>",
+        + "src=\"" + SILENT_WAV_DATA_URI + "\"></audio>",
     }),
   }),
   // 1.3.5 Identify Input Purpose -- issue #79, the F107 failure mode ("incorrect autocomplete attribute
