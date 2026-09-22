@@ -70,6 +70,41 @@ export function flattenedFetchPath(sourceBasename) {
   return resolve("runs", "fetched", `candidate.corpus-archive${extname(sourceBasename)}`);
 }
 
+/**
+ * The refusal for a firing with no `A11Y_PVE_KEY`, or null when it is set. #1911: the unit failed every
+ * firing because this variable (and `A11Y_CONTROL_HOST_FILE`) were exported only by `~/.zshenv`, which a
+ * systemd unit never reads -- and Ansible's own complaint went to stdout, so the journal never said so.
+ * Checked HERE rather than left to Ansible so the refusal names the file the unit does read.
+ *
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string | null}
+ */
+export function missingFleetEnvRefusal(env) {
+  if (env.A11Y_PVE_KEY) return null;
+  return "REFUSING: A11Y_PVE_KEY is not set, so lab:fetch cannot reach the lab -- nothing to release.\n"
+    + "Under systemd it comes from ~/.config/a11ign/fleet.env (the unit's EnvironmentFile=), never from "
+    + "~/.zshenv: a unit reads no shell startup file. Put A11Y_PVE_KEY and A11Y_CONTROL_HOST_FILE there.\n";
+}
+
+// Enough of Ansible's stdout to include the failing task's own `fatal:` message and the PLAY RECAP.
+const FETCH_STDOUT_TAIL_LINES = 40;
+
+/**
+ * The refusal for a failed fetch. Ansible writes the failing task's message to STDOUT; stderr carries only
+ * its warnings (an inventory warning, on the 2026-09-22 firing), so a refusal printing stderr alone showed
+ * the harmless line and hid the cause (#1911).
+ *
+ * @param {any} error what `execFile` rejected with
+ * @returns {string}
+ */
+export function fetchFailureRefusal(error) {
+  const stdoutTail = String(error?.stdout ?? "").trimEnd().split("\n").slice(-FETCH_STDOUT_TAIL_LINES).join("\n");
+  const stderr = String(error?.stderr ?? "").trimEnd() || String(error?.message ?? error);
+  return "REFUSING: lab:fetch -e artifact=corpus-archive failed -- nothing to release.\n"
+    + (stdoutTail ? `--- stdout (last ${FETCH_STDOUT_TAIL_LINES} lines) ---\n${stdoutTail}\n` : "")
+    + `--- stderr ---\n${stderr}\n`;
+}
+
 async function fetchLatestArchive() {
   return await run("ansible-playbook",
     ["packages/control/ansible/lab-fetch.yml", "-e", "artifact=corpus-archive"],
@@ -78,9 +113,13 @@ async function fetchLatestArchive() {
 }
 
 async function main() {
+  const refusal = missingFleetEnvRefusal(process.env);
+  if (refusal) {
+    process.stderr.write(refusal);
+    process.exit(2);
+  }
   const fetched = await fetchLatestArchive().catch((/** @type {any} */ e) => {
-    process.stderr.write("REFUSING: lab:fetch -e artifact=corpus-archive failed -- nothing to release.\n"
-      + `${e?.stderr ?? e?.message ?? e}\n`);
+    process.stderr.write(fetchFailureRefusal(e));
     process.exit(2);
   });
   const sourceBasename = sourceBasenameFromFetchOutput(fetched.stdout);
