@@ -403,6 +403,12 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
     + "nobody has measured, under a placeholder account -- see the boundary in this file's header.",
   "g": "`~/g` in a `claude-md-links.test.ts` fixture, a two-character stand-in for a path, not a "
     + "directory anybody has.",
+  "repos": "the AGENT host's worktree root -- where `row-claim claim` puts a worktree per claim (#1432) "
+    + "and where the primary checkout itself lives, on the box the org's sessions run on rather than on "
+    + "the control plane. Named in a11ign-worktree-prune.service's comment, which states the measurement "
+    + "that unit exists for: 143 worktrees and 16G on 2026-09-22 (#2000). A MEASURED machine, which is "
+    + "what this file's boundary asks for -- the entry says WHICH box, so the path is classified rather "
+    + "than assumed to be this one.",
 };
 
 test("THE EXEMPTION IS THE FIELD, NOT THE FILE -- a quoted `command` in a reported record is not a use, "
