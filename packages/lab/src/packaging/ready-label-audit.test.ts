@@ -23,7 +23,7 @@ import {
   readyRowsAlreadyMerged, fetchClosingPrRefs, fetchLatestReopenedAt, CHECKS, runCheck, isProjectsCredentialGap,
   fetchClosedUnmergedPrs, fetchClosingIssueRefs, soleUnmergedCloserRows,
   criterionStatusesFromSource, criterionOwningRow, coverageTrackerDisagreements, fetchClosedCompletedIssues,
-  reachableCriteriaWithoutRow, provenanceVerdicts, provenanceFindings, provenanceRemedySummary,
+  reachableCriteriaWithoutRow, provenanceVerdicts, provenanceFindings, provenanceRemedySummary, reportProvenanceOf,
   guidanceDrift,
 } from "../../../agent-org/src/ready-label-audit.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
@@ -1446,6 +1446,26 @@ test("#1960: only undeclared rows get a remedy, and every undeclared row gets ex
   // population, so an assertion that nothing mentions them passes for a reason.
   assert.equal(provenanceFindings(verdicts).length, 3);
   assert.equal(verdicts.length, 5, "887 and 900 are present and deliberately un-remedied");
+});
+
+test("#1960: the AUDIT'S OWN OUTPUT carries the remedy -- not merely the helper that builds it", () => {
+  // THE MUTANT THE THREE TESTS ABOVE DO NOT CATCH. They call `provenanceRemedySummary` directly, so
+  // `reportProvenanceOf` -- its only caller, and the function the row names -- could be reverted to write
+  // the old unfollowable sentence itself and all 151 tests stayed green: the audit printed exactly what
+  // #1960 exists to remove, and the suite agreed. Proving the string is right proves nothing about
+  // whether anything emits it. This reads what the audit WRITES.
+  const err: string[] = [];
+  const out: string[] = [];
+  const found = reportProvenanceOf(
+    [887, 853, 900, 912, 919].map(REMEDY_ROW) as never,
+    { closingPrFor: ((n: number) => REMEDY_CLOSERS[n]) as never, out: (t) => out.push(t), err: (t) => err.push(t) });
+  assert.equal(found, 3, "the audit's own exit count");
+  assert.match(err.join(""), /#912:\s+gh pr edit 913 --add-label session:/,
+    "the emitted summary must name the closing pull request, not the row");
+  assert.ok(!err.join("").includes("row-claim"),
+    "the audit must not print a command that cannot change what it reads");
+  assert.ok(out.join("").includes(`NEEDS A PERSON  #912`),
+    "control: the per-row lines still go to stdout, so `out` really is being written to");
 });
 
 test("#1960: no undeclared rows, no remedy paragraph -- and the control that one is produced", () => {
