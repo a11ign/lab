@@ -147,6 +147,95 @@ function describe() {
 }
 
 /**
+ * GNU TAR'S `-tzvf` LAYOUT, WHICH IS NOT `ls -l`'S. Real output from the lab's 2026-09-22 03:00Z snapshot:
+ *
+ *     -rw-r--r-- root/root     25860 2026-09-19 21:53 captures/image-filename-...-019.good.json
+ *      perms     owner/group    SIZE   date       time  name
+ *        0            1          2       3         4     5
+ *
+ * tar joins owner and group into ONE field and prints no link count, so there are six fields, not seven.
+ * This file's comment used to claim `perms links owner group SIZE date name` and read field 4 -- the
+ * TIME. `Number("21:53")` is `NaN`, one `NaN` poisons a reduce, and `NaN < onDiskBytes` is `false`, so
+ * the hollow-archive refusal was unreachable from the commit that wrote it until #1936.
+ */
+const TAR_SIZE_FIELD = 2;
+
+/** How many unparsable listing lines the refusal quotes: enough to recognise the shape, not a second listing. */
+const SAMPLE_UNREADABLE = 3;
+
+/** @param {string} line one `-tzvf` entry @returns {number} its size in bytes, `NaN` if that field is not one */
+function entryBytes(line) {
+  return Number(line.trim().split(/\s+/)[TAR_SIZE_FIELD]);
+}
+
+/**
+ * What the archive says it holds, read back out of `tar -tzvf` -- the count and the byte total together,
+ * from ONE parse of ONE listing, so the two numbers can never describe different sets of entries.
+ *
+ * `unreadable` exists because of how #1936 hid: an unparsable size became `NaN`, `NaN` propagated through
+ * the sum, and every comparison against the sum was then `false` -- a guard that is off and silent. A size
+ * that does not parse is now COLLECTED and refused by name rather than summed, so the total is either a
+ * number the guards can compare or a refusal the operator can read. (The old `?? 0` had the same shape
+ * the other way: a missing field would have counted as zero bytes and quietly shrunk the total.)
+ *
+ * Directories are dropped, as they always were: `tar` prints them with a size of 0 and they hold no bytes.
+ *
+ * @param {string} listing `tar -tzvf` stdout
+ */
+export function archiveTotals(listing) {
+  const rows = String(listing).split("\n").filter((line) => line && !line.startsWith("d"));
+  const sized = rows.map((line) => ({ line, bytes: entryBytes(line) }));
+  return {
+    jsonFiles: rows.filter((line) => line.endsWith(".json")).length,
+    bytes: sized.filter((e) => Number.isFinite(e.bytes)).reduce((n, e) => n + e.bytes, 0),
+    unreadable: sized.filter((e) => !Number.isFinite(e.bytes)).map((e) => e.line),
+  };
+}
+
+/**
+ * Whether the archive holds what the disk holds -- the refusal to print, or `null`.
+ *
+ * Three questions in the order they have to be asked, each with its OWN message so two causes never share
+ * one investigation:
+ *
+ *   UNREADABLE first, because a total that could not be built cannot be compared. This is #1936's own
+ *     shape, and asking it first is what stops a parse failure from reading as a healthy archive again.
+ *   BYTES before NAMES, because a shortfall in bytes is the failure a count CANNOT see: an archive of
+ *     correctly-named EMPTY files passes the count perfectly, and that is the shape a truncated or
+ *     mid-write archive actually takes.
+ *
+ * @param {{ archive: string, archived: ReturnType<typeof archiveTotals>, onDisk: number, onDiskBytes: number }} state
+ * @returns {string | null}
+ */
+export function archiveRefusal({ archive, archived, onDisk, onDiskBytes }) {
+  if (archived.unreadable.length) {
+    return `REFUSING: ${archived.unreadable.length} line(s) of the archive's own listing carry no readable `
+      + `byte size, so the ${archived.bytes} byte(s) counted from the rest are not the archive's total.\n`
+      + `  ${archive}\n`
+      + `  the first ${Math.min(archived.unreadable.length, SAMPLE_UNREADABLE)} of them:\n  `
+      + `${archived.unreadable.slice(0, SAMPLE_UNREADABLE).join("\n  ")}\n`
+      + "The size is tar's THIRD column (index 2). A total with an unreadable entry in it compares FALSE\n"
+      + "against everything, which is a byte check that is off rather than one that passed (#1936).\n";
+  }
+  if (archived.bytes < onDiskBytes) {
+    return `REFUSING: the archive holds ${archived.bytes} byte(s) and ${onDiskBytes} were on disk — `
+      + `${onDiskBytes - archived.bytes} did not make it in, across ${archived.jsonFiles} file(s) that ARE named.\n`
+      + `  ${archive}\n`
+      + "The names are right and the contents are not, which a file count cannot see. A restore from this\n"
+      + "would produce a corpus of the correct shape and the wrong evidence. LEFT IN PLACE to inspect.\n";
+  }
+  if (archived.jsonFiles < onDisk) {
+    return `REFUSING: the archive holds ${archived.jsonFiles} JSON file(s) and ${onDisk} were on disk — `
+      + `${onDisk - archived.jsonFiles} did not make it in.\n`
+      + `  ${archive}\n`
+      + "A short archive restores as a corpus that looks complete and is not, which is worse than an\n"
+      + "absent one because nothing downstream can tell. The archive is LEFT IN PLACE so it can be\n"
+      + "inspected; delete it once you know why it is short.\n";
+  }
+  return null;
+}
+
+/**
  * The ONE call site that writes the missing-member note, shared by `WANTED` and `WANTED_SIBLINGS` -- #1798:
  * before this, `WANTED_SIBLINGS.filter(...)` dropped an absent sibling with no note at all, unlike `WANTED`,
  * so a lab-dispatched run reported success while protecting zero of `runs/board-snapshots`, silently.
@@ -199,40 +288,18 @@ async function main() {
   // and reported SAME for a changed validation message. Caught here by reading `promisify`'s contract
   // rather than by running it, which is the only reason it is not in the commit.
   const { stdout: listed } = await run("tar", ["-tzvf", archive], { maxBuffer: 1 << 28 });
-  const rows = String(listed).split("\n").filter((line) => line && !line.startsWith("d"));
-  const archivedJson = rows.filter((line) => line.endsWith(".json")).length;
-  // `-tzvf` prints `perms links owner group SIZE date name`, so the byte total is field 5. Read from the
-  // FILE that was written rather than from what tar was asked to write, which is the whole point.
-  const archivedBytes = rows.reduce((n, line) => n + Number(line.trim().split(/\s+/)[4] ?? 0), 0);
+  const archived = archiveTotals(listed);
   const onDisk = jsonUnder(DATASET, present) + siblings.reduce((n, name) => n + jsonUnder(RUNS, [name]), 0);
   const onDiskBytes = bytesUnder(DATASET, present)
     + siblings.reduce((n, name) => n + bytesUnder(RUNS, [name]), 0);
-  // BYTES BEFORE NAMES, because a shortfall in bytes is the failure a count CANNOT see: an archive of
-  // correctly-named EMPTY files passes the count perfectly, and that is the shape a truncated or
-  // mid-write archive actually takes. Its own refusal, so the two causes never share a message —
-  // missing files and hollow files need different investigations.
-  if (archivedBytes < onDiskBytes) {
-    process.stderr.write(
-      `REFUSING: the archive holds ${archivedBytes} byte(s) and ${onDiskBytes} were on disk — `
-      + `${onDiskBytes - archivedBytes} did not make it in, across ${archivedJson} file(s) that ARE named.\n`
-      + `  ${archive}\n`
-      + "The names are right and the contents are not, which a file count cannot see. A restore from this\n"
-      + "would produce a corpus of the correct shape and the wrong evidence. LEFT IN PLACE to inspect.\n");
-    process.exit(2);
-  }
-  if (archivedJson < onDisk) {
-    process.stderr.write(
-      `REFUSING: the archive holds ${archivedJson} JSON file(s) and ${onDisk} were on disk — ${onDisk - archivedJson} `
-      + "did not make it in.\n"
-      + `  ${archive}\n`
-      + "A short archive restores as a corpus that looks complete and is not, which is worse than an\n"
-      + "absent one because nothing downstream can tell. The archive is LEFT IN PLACE so it can be\n"
-      + "inspected; delete it once you know why it is short.\n");
+  const refusal = archiveRefusal({ archive, archived, onDisk, onDiskBytes });
+  if (refusal) {
+    process.stderr.write(refusal);
     process.exit(2);
   }
   process.stdout.write(`Wrote ${archive} (${(size / (1024 * 1024)).toFixed(1)} MB)\n`);
-  process.stdout.write(`Read back ${archivedJson} JSON file(s), matching the ${onDisk} on disk, `
-    + `and ${(archivedBytes / (1024 * 1024)).toFixed(1)} MB uncompressed against `
+  process.stdout.write(`Read back ${archived.jsonFiles} JSON file(s), matching the ${onDisk} on disk, `
+    + `and ${(archived.bytes / (1024 * 1024)).toFixed(1)} MB uncompressed against `
     + `${(onDiskBytes / (1024 * 1024)).toFixed(1)} MB on disk.\n`);
   process.stdout.write(
     "This is on the SAME DISK as the corpus, so it is not yet a backup — it defends against\n" +
