@@ -19,6 +19,11 @@ import { probeKindFor } from "@a11ign/nvda-worker/capture-pure";
  * exists to mark a NON-SUBMIT button the task names, and accepting it is how apache.org's search toggle
  * came to be reported as a form submitted with invalid input and no error announced.
  *
+ * #1918 (protocol 21): a real submit the name misses is now also recognised by the `submit` event it
+ * dispatches (`formChanges[].submitted`, `isSubmitActivation`). That covers the held-out and real pages this
+ * file cannot author. It does not replace this check: the training corpus should still probe its submits as
+ * submits, and a capture that could not measure the event keeps reading the name alone.
+ *
  * So the constraint belongs at authoring time. This runs offline in milliseconds against the real
  * `probeKindFor` — not a copy of `SUBMIT_RE`, which would be the same fact written twice.
  */
