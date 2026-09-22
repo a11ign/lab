@@ -61,7 +61,8 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const MIN_TRACKED_MARKDOWN_FILES = 50;
 
 /** The IPv4 pattern is `tracked-source-leak-guard.test.ts`'s job now — see this file's header (#119). */
-const IN_SCOPE = ["a named SSH private key file", "a live pct exec container-hop command"];
+const IN_SCOPE = ["a named SSH private key file", "a named credential file on a fleet host",
+  "a live pct exec container-hop command"];
 
 function trackedMarkdownFiles(): string[] {
   return walkTree({ kind: "all", roots: [] }).map((f) => f.path).filter((f) => f.endsWith(".md"));
@@ -96,6 +97,7 @@ test("no tracked .md file carries a named SSH key file or a pct-exec idiom", () 
 test("MUTATION: each in-scope pattern fires on a synthetic leak of its own shape", () => {
   const samples: Record<string, string> = {
     "a named SSH private key file": "load ~/.ssh/a11y-fixture_ed25519 first",
+    "a named credential file on a fleet host": "write it to ~/.config/a11y-witness/fixture-token first",
     "a live pct exec container-hop command": "run pct exec 121 -- bash -lc 'echo hi'",
   };
   for (const name of IN_SCOPE) {
