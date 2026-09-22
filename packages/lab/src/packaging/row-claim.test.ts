@@ -1830,7 +1830,10 @@ function claimRunFailingAt(failAt: (args: string[], labelReads: number) => boole
   let labelReads = 0;
   const run = (_cmd: string, args: string[]) => {
     calls.push(args);
-    const isLabelRead = args[1] === "view" && !args.includes("body");
+    // Exactly `fetchLabels`'s own field list (`before` and the post-write `after` verify both call it,
+    // and only it): "not body" also matched #1886's new `--json blockedBy` eligibility read, which sits
+    // between the two and would otherwise be miscounted as one of them.
+    const isLabelRead = args[1] === "view" && args.includes("number,title,labels,state");
     if (isLabelRead) labelReads += 1;
     if (failAt(args, labelReads)) throw new Error(`simulated: gh ${args.slice(0, 2).join(" ")} failed`);
     if (args[1] === "view" && args.includes("body")) return JSON.stringify({ body: TEMPLATE_BODY });

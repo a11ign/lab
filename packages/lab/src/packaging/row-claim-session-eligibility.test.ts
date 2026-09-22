@@ -1,11 +1,13 @@
 /**
- * B2 (#476) + B4 (#462), COMPOSED, THROUGH `sessionEligibilityReason` AND `claimRow` END TO END.
+ * B2 (#476) + B4 (#462) + THE ROW'S OWN `blockedBy` EDGE (#1886), COMPOSED, THROUGH
+ * `sessionEligibilityReason` AND `claimRow` END TO END.
  *
  * `decideClaim` answers "is this ROW somebody else's"; `sessionEligibilityReason` answers "should THIS
- * SESSION start a NEW row right now" -- a session's own PR health, and whether its region overlaps
- * another open PR -- independent of who (if anyone) already holds the row being claimed. Both fail OPEN
- * on a lookup failure, the opposite of `decideClaim`'s own "unclaimed must be earned" rule: this protects
- * a session's ability to claim ANYTHING when the network is down, the identical reasoning
+ * SESSION start a NEW row right now" (a session's own PR health, and whether its region overlaps another
+ * open PR) and, since #1886, "is THIS row startable at all right now" (does it carry an open `blockedBy`
+ * edge) -- independent of who (if anyone) already holds the row being claimed. All three fail OPEN on a
+ * lookup failure, the opposite of `decideClaim`'s own "unclaimed must be earned" rule: this protects a
+ * session's ability to claim ANYTHING when the network is down, the identical reasoning
  * `merge-guard.mjs`'s `racesAnArmedMerge` states for the same choice made the same way.
  */
 import { test } from "node:test";
@@ -18,7 +20,7 @@ import { sessionEligibilityReason, claimRow, CLAIM_LABEL } from "../../../agent-
  */
 interface Routes {
   issueList?: string; graphql?: string; issueViewBody?: string; prList?: string;
-  heldRowBody?: string; subIssues?: string;
+  heldRowBody?: string; subIssues?: string; blockedBy?: string;
 }
 
 /** The CLAIMED row's own body (B4 reads its Region); any other issue is a row this session HOLDS (#989). */
@@ -34,6 +36,14 @@ function heldRowRoute(routes: Routes, args: string[]): string | null {
   return null;
 }
 
+/** The CLAIMED row's own `issue view` call, routed by its REQUESTED `--json` field: #1886's
+ * `blockedBy`-edge check and B4's Region-body read ask for different fields of the same issue. */
+function claimedRowViewRoute(routes: Routes, args: string[]): string {
+  const fields = args[args.indexOf("--json") + 1];
+  if (fields === "blockedBy") return routes.blockedBy ?? JSON.stringify({ blockedBy: { nodes: [] } });
+  return JSON.stringify({ body: routes.issueViewBody ?? "" });
+}
+
 function routedRun(routes: Routes) {
   return (_cmd: string, args: string[]): string => {
     const held = heldRowRoute(routes, args);
@@ -43,7 +53,7 @@ function routedRun(routes: Routes) {
       return routes.graphql ?? JSON.stringify({ data: { repository: { issue: {
         closedByPullRequestsReferences: { nodes: [] } } } } });
     }
-    if (args[0] === "issue" && args[1] === "view") return JSON.stringify({ body: routes.issueViewBody ?? "" });
+    if (args[0] === "issue" && args[1] === "view") return claimedRowViewRoute(routes, args);
     if (args[0] === "pr" && args[1] === "list") return routes.prList ?? "[]";
     return "";
   };
@@ -114,6 +124,71 @@ test("B2 is checked BEFORE B4 -- a row IN BUILD is reported without even asking 
   assert.ok(reason);
   assert.equal(prListAsked, false, "B4's lookup is a separate round trip and should not run once B2 has "
     + "already decided to refuse");
+});
+
+// --- #1886: the ROW BEING CLAIMED may itself carry an open `blockedBy` edge -- see
+// `row-claim-blocked-by-edge-rule.test.ts` for the pure-function coverage of `blocked-by-edge-rule.mjs`
+// itself; these prove the WIRING into `sessionEligibilityReason`, end to end. ---
+
+// #1852 is the real reproduction (see #1886's own Region), but this file's `routedRun` fixture treats
+// issue 455/705 as the row being claimed and reads any OTHER issue number in an `issue view` call as a
+// HELD row `sessionEligibilityReason` is asking about on B2's behalf -- so these tests use 455, matching
+// every other test in this file, rather than the literal #1852.
+test("#1886's own acceptance shape: an open blockedBy edge on the row being claimed refuses it, naming "
+  + "the blocking issue(s)", () => {
+  const run = routedRun({
+    blockedBy: JSON.stringify({ blockedBy: { nodes: [{ number: 1878, state: "OPEN" },
+      { number: 1883, state: "OPEN" }] } }),
+  });
+  const reason = sessionEligibilityReason(455, "worker-judge", { run });
+  assert.ok(reason, "#1852's own reproduction: an open blockedBy edge must refuse, not read as startable");
+  assert.match(reason as string, /#1878/);
+  assert.match(reason as string, /#1883/);
+});
+
+test("#1886's own POSITIVE CONTROL: a CLOSED blockedBy edge is a wait that has cleared -- goes quiet", () => {
+  const run = routedRun({
+    blockedBy: JSON.stringify({ blockedBy: { nodes: [{ number: 1878, state: "CLOSED" }] } }),
+  });
+  assert.equal(sessionEligibilityReason(455, "worker-judge", { run }), null);
+});
+
+test("the blockedBy-edge check runs BEFORE B4 -- refused without even asking about files", () => {
+  let prListAsked = false;
+  const base = routedRun({
+    blockedBy: JSON.stringify({ blockedBy: { nodes: [{ number: 1878, state: "OPEN" }] } }),
+  });
+  const run = (cmd: string, args: string[]) => {
+    if (args[0] === "pr" && args[1] === "list") prListAsked = true;
+    return base(cmd, args);
+  };
+  const reason = sessionEligibilityReason(455, "worker-judge", { run });
+  assert.ok(reason);
+  assert.equal(prListAsked, false, "B4's lookup is a separate round trip and should not run once the "
+    + "row's own blockedBy edge has already decided to refuse");
+});
+
+test("MUTATION TARGET: --blocked-by=#N must not silently release a blockedBy-edge refusal -- it is scoped "
+  + "to B2 only, a different claim about a different thing", () => {
+  // A custom `run`, not `routedRun`: `claimRow` also calls `fetchLabels` (`--json number,title,labels,state`)
+  // ahead of `sessionEligibilityReason`, which `routedRun` (built for that function alone) does not answer.
+  const run = (cmd: string, args: string[]): string => {
+    if (args[0] === "issue" && args[1] === "view") {
+      const fields = args[args.indexOf("--json") + 1];
+      if (fields === "blockedBy") {
+        return JSON.stringify({ blockedBy: { nodes: [{ number: 1878, state: "OPEN" }] } });
+      }
+      return JSON.stringify({ number: 1852, title: "A row", labels: [] });
+    }
+    return "[]";
+  };
+  const result = claimRow(1852, "nobody-holds-this-row",
+    { run, moveStatus: () => ({ moved: true }), blockedBy: "#731" });
+  assert.equal(result.claimed, false);
+  assert.match((result as { reason: string }).reason, /#1878/,
+    "the blockedBy-edge refusal must still be the reason -- --blocked-by has no subject here");
+  assert.doesNotMatch((result as { reason: string }).reason, /--blocked-by=#731 did not apply/,
+    "that message is B2's own override failure text; this refusal was never B2's to release");
 });
 
 // --- #710: the overlap check reads the DECLARED Region section, never every path the row's prose
@@ -199,6 +274,37 @@ test("RESUMING a row this session already holds skips eligibility entirely -- no
   assert.equal(result.claimed, true);
   assert.equal(listAsked, false, "resuming a row already yours must not spend a round trip re-checking "
     + "eligibility for a front that was never new");
+});
+
+test("RESUMING a row this session already holds still refuses on the row's own open blockedBy edge", () => {
+  // PR #1891 NOT CONVINCED (reviewer, 576a678b): the fix that shipped put the row-owned `blockedBy` read
+  // inside `sessionEligibilityReason`, called only from the `!alreadyMine` branch -- so this exact
+  // resumed-claim path (the one the test just above proves skips B2/B4) never read the edge at all, and
+  // `claimRow` returned `claimed: true` against a still-open blocker. This is the same reproduction
+  // reviewer gave against #1883, replayed here as a positive assertion rather than a manual repro.
+  let listAsked = false;
+  let editCalled = false;
+  const run = (cmd: string, args: string[]) => {
+    if (args[0] === "issue" && args[1] === "list") { listAsked = true; return "[]"; }
+    if (args[0] === "issue" && args[1] === "edit") { editCalled = true; return ""; }
+    if (args[0] === "issue" && args[1] === "view") {
+      const fields = args[args.indexOf("--json") + 1];
+      if (fields === "blockedBy") {
+        return JSON.stringify({ blockedBy: { nodes: [{ number: 999, state: "OPEN" }] } });
+      }
+      return JSON.stringify({ number: 461, title: "A row",
+        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-judge" }] });
+    }
+    return "";
+  };
+  const result = claimRow(461, "worker-judge", { run, moveStatus: () => ({ moved: true }) });
+  assert.equal(result.claimed, false);
+  assert.match((result as { reason: string }).reason, /#999/,
+    "the row's own open blockedBy edge must refuse a resumed claim exactly as it refuses a new one -- "
+    + "it is a property of the row, not of whether this session already holds it");
+  assert.equal(editCalled, false, "must never write a claim it has already decided to refuse");
+  assert.equal(listAsked, false, "the row-owned blockedBy check costs no B2 round trip -- B2/B4's own "
+    + "alreadyMine skip is unaffected by this fix");
 });
 
 /**
