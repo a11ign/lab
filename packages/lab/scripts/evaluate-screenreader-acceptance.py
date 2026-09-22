@@ -192,21 +192,36 @@ def metrics(scores: Any, labels: Any, threshold: float, identities: list[str] | 
     }
 
 
-def stability(scores: Any, records: list[dict[str, Any]], threshold: float) -> dict[str, Any]:
-    groups: dict[tuple[str, str], list[float]] = defaultdict(list)
+def stability(subtype: str, scores: Any, records: list[dict[str, Any]], threshold: float) -> dict[str, Any]:
+    """Did this head DECIDE the same way on every capture of one page?
+
+    Decided by `applicability.decide`, the same definition the criterion metrics above use. This compared
+    raw scores against the cut, so a capture the product rules INAPPLICABLE still counted as firing when
+    its score crossed: on `acceptance-b3-button-market/bad` (#1921) one repeat read the submit's outcome and
+    the other got `afterUnresolved`, `_no_unread_activation` made 3.3.1 inapplicable on the second, and the
+    product said "no finding" on both -- while this reported 0.075 and 0.485 against a 0.452 cut as a head
+    that flips. The second copy of the predicate `applicability.decide`'s own docstring records (#1927).
+
+    The raw score range stays in `details`: it is still the number that shows a head moving, even when the
+    decision it feeds did not.
+    """
+    groups: dict[tuple[str, str], list[tuple[float, bool]]] = defaultdict(list)
     for index, record in enumerate(records):
         key = (record["provenance"]["caseId"], record["provenance"]["variant"])
-        groups[key].append(float(scores[index]))
+        score = float(scores[index])
+        groups[key].append((score, applicability.decide(subtype, score, threshold, record)))
     repeated = {}
-    for key, values in groups.items():
-        if len(values) < 2:
+    for key, captures in groups.items():
+        if len(captures) < 2:
             continue
-        predictions = {value >= threshold for value in values}
+        values = [score for score, _ in captures]
+        fired = [decision for _, decision in captures]
         repeated["/".join(key)] = {
-            "captures": len(values),
+            "captures": len(captures),
+            "fired": sum(fired),
             "scoreMinimum": min(values),
             "scoreMaximum": max(values),
-            "unstable": len(predictions) > 1,
+            "unstable": len(set(fired)) > 1,
         }
     unstable = sum(1 for result in repeated.values() if result["unstable"])
     return {
@@ -618,7 +633,7 @@ def main() -> None:
     # score range meaningful -- a decided 0/1 array has a min of 0 and a max of 1 and says nothing.
     result["stability"] = {
         criterion: merge_stability({
-            subtype: stability(scores, stability_records[criterion], threshold)
+            subtype: stability(subtype, scores, stability_records[criterion], threshold)
             for subtype, scores, threshold in subtypes
         })
         for criterion, subtypes in stability_inputs.items()
