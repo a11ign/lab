@@ -487,6 +487,12 @@ function routeTitleIsStale(/** @type {any} */ capture) {
   // `route.control === null` is the applicability gate -- not probed, errored, or quick-nav reached the
   // end of the links with nothing to activate.
   if (!route || route.error || route.control === null) return false;
+  // BOTH HEADINGS MUST HAVE BEEN READ, mirroring rules.ts:1402. `headingAfter`/`headingBefore` are
+  // `string | null`, and a failed read (`null` or `""`) is not evidence that the heading changed -- without
+  // this guard `{headingBefore: "", headingAfter: ""}` and `{headingBefore: null, headingAfter: "X"}` both
+  // fall through to the heading-equality check below and can read a failed read as "the heading changed,"
+  // the exact invented-evidence direction this file must not fail in.
+  if (!route.headingBefore || !route.headingAfter) return false;
   // See this function's comment: a held-steady heading needs `route.navigated` to say anything moved at all.
   if (route.headingBefore === route.headingAfter && !route.navigated) return false;
   return route.titleBefore === route.titleAfter;

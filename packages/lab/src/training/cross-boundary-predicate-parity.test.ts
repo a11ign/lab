@@ -258,6 +258,24 @@ const ROUTE_CASES: { name: string; route: RouteChange }[] = [
     route: { control: "Next", headingBefore: "A", headingAfter: "B", titleBefore: "T", titleAfter: "T", error: "timeout" } },
   { name: "control is the null sentinel -- probe reached the end of the links",
     route: { control: null, headingBefore: "A", headingAfter: "B", titleBefore: "T", titleAfter: "T" } },
+  // #1867 round 2 (reviewer's second NOT CONVINCED, PR #1871 at 91fd865e): both headings unread must not
+  // read as "the heading changed" -- a reachable shape since `headingBefore`/`headingAfter` are
+  // `string | null` and an empty string is a plain falsy read, not a sentinel unique to a fixture.
+  // Positive control for the case below: the "#1867: heading held steady, navigation confirmed, title
+  // stale" case just above is the identical shape with both headings actually read, and it still reaches
+  // the stale-title finding -- proving the guard below is reachable rather than vacuously always-false.
+  { name: "#1867 round 2: both headings are empty strings, navigation confirmed, title stale -- an unread "
+      + "heading is not evidence a navigation happened",
+    route: { control: "Continue", headingBefore: "", headingAfter: "", titleBefore: "Tax your vehicle",
+      titleAfter: "Tax your vehicle", navigated: true } },
+  { name: "#1867 round 2: headingBefore is the null sentinel, navigation NOT confirmed, title stale -- a "
+      + "failed before-read must not be read as 'the heading changed'",
+    route: { control: "Continue", headingBefore: null, headingAfter: "Vehicle tax",
+      titleBefore: "Tax your vehicle", titleAfter: "Tax your vehicle", navigated: false } },
+  { name: "#1867 round 2 POSITIVE CONTROL: same shape with a REAL heading change instead of a null read -- "
+      + "a heading that actually changed is evidence enough on its own, no navigated needed",
+    route: { control: "Continue", headingBefore: "Welcome", headingAfter: "Vehicle tax",
+      titleBefore: "Tax your vehicle", titleAfter: "Tax your vehicle", navigated: false } },
 ];
 
 test("#1867: addStaleRouteTitle (rule) and routeTitleIsStale (signal) agree on every route-change shape", () => {
