@@ -417,6 +417,17 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "so it must spawn git itself rather than call `walkTree` (which would make the cross-check "
       + "meaningless, comparing the helper against itself). Guarded on its own vacuity floor.",
   },
+  "packages/lab/src/packaging/powershell-parses.test.ts": {
+    guard: "population.length, EXPECTED_FILES",
+    note: "#2006: spawns `git ls-files '*.ps1' '*.psm1'` and asserts that none of them fails to parse "
+      + "under a real PowerShell -- an emptiness assertion whose population, on a clean tree, is EXPECTED "
+      + "to produce no offenders, so 'every script parses' and 'the walk found no scripts' are otherwise "
+      + "the same observation. The pin is an EQUALITY, not a floor: the count IS a claim about the class "
+      + "(every tracked PowerShell file, minus this guard's own deliberately broken control, which is "
+      + "itself asserted to be exactly one file), and a floor cannot hold a count (#1067). It is written "
+      + "with `cwd` rather than a leading `-C` ON PURPOSE, so that this table finds it -- see the comment "
+      + "at its own spawn, and #2028 for the sibling that escapes this census on argument order.",
+  },
 };
 
 /**
