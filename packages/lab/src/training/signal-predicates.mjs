@@ -479,14 +479,37 @@ function hasUnnamedFormField(/** @type {any} */ capture) {
  * in `packages/judge/src/rules.ts`'s `addStaleRouteTitle` -- pinned equal, not unified, by
  * `cross-boundary-predicate-parity.test.ts` (that file's own note explains why the package boundary stays).
  *
+ * #1867 round 3: neither a missing title read nor page furniture is evidence the title held steady.
+ * `titleBefore`/`titleAfter` are `string | null` exactly like the headings, so an unread title must not
+ * fall through to the equality check below and read as "stale" -- mirrors `rules.ts:1386`. And a control
+ * announced as opening elsewhere, or a heading read from inside a dialog, means this document never moved
+ * at all -- mirrors `looksLikeFurnitureNotNavigation` in `rules.ts` (#253/#142's own measured fixture).
+ *
  * An unprobed or errored capture is NOT a finding. `routeChange` is absent unless asked for and carries an
  * `error` when the measurement failed, and both are distinguishable from a page that navigated silently.
  */
+const OPENS_ELSEWHERE = /opens? in a new (window|tab)/i;
+
+// Mirrors `looksLikeFurnitureNotNavigation` in `rules.ts`: a new-tab/new-window link, or a heading read
+// from inside a dialog (a consent overlay switching panels, a modal opening), reads as a route change
+// under the guards above without the document itself ever moving.
+function looksLikeFurnitureNotNavigation(/** @type {string} */ control, /** @type {string} */ headingBefore, /** @type {string} */ headingAfter) {
+  if (OPENS_ELSEWHERE.test(control)) return true;
+  const insideDialog = (/** @type {string} */ heading) => parseAnnouncement(heading, "sweep")
+    .containers.some((/** @type {any} */ c) => c.role === "dialog");
+  return insideDialog(headingBefore) || insideDialog(headingAfter);
+}
+
 function routeTitleIsStale(/** @type {any} */ capture) {
   const route = (capture.interaction || {}).routeChange;
   // `route.control === null` is the applicability gate -- not probed, errored, or quick-nav reached the
   // end of the links with nothing to activate.
   if (!route || route.error || route.control === null) return false;
+  // BOTH TITLES MUST HAVE BEEN READ, mirroring rules.ts:1386. A failed read (`null` or `""`) is not
+  // evidence the title held steady -- without this guard a title that was never read falls through to the
+  // equality check below and reads as "stale," the same invented-evidence direction the heading guard
+  // below exists to close.
+  if (!route.titleBefore || !route.titleAfter) return false;
   // BOTH HEADINGS MUST HAVE BEEN READ, mirroring rules.ts:1402. `headingAfter`/`headingBefore` are
   // `string | null`, and a failed read (`null` or `""`) is not evidence that the heading changed -- without
   // this guard `{headingBefore: "", headingAfter: ""}` and `{headingBefore: null, headingAfter: "X"}` both
@@ -495,6 +518,8 @@ function routeTitleIsStale(/** @type {any} */ capture) {
   if (!route.headingBefore || !route.headingAfter) return false;
   // See this function's comment: a held-steady heading needs `route.navigated` to say anything moved at all.
   if (route.headingBefore === route.headingAfter && !route.navigated) return false;
+  // See `looksLikeFurnitureNotNavigation`.
+  if (looksLikeFurnitureNotNavigation(String(route.control ?? ""), route.headingBefore, route.headingAfter)) return false;
   return route.titleBefore === route.titleAfter;
 }
 

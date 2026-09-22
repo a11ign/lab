@@ -276,6 +276,28 @@ const ROUTE_CASES: { name: string; route: RouteChange }[] = [
       + "a heading that actually changed is evidence enough on its own, no navigated needed",
     route: { control: "Continue", headingBefore: "Welcome", headingAfter: "Vehicle tax",
       titleBefore: "Tax your vehicle", titleAfter: "Tax your vehicle", navigated: false } },
+  // #1867 round 3 (reviewer's third NOT CONVINCED, PR #1871 at 3f2ff8f9): neither a missing title read nor
+  // page furniture is evidence the title held steady -- `routeTitleIsStale` had no equivalent to
+  // `rules.ts`'s title-read guard or its furniture guard (`looksLikeFurnitureNotNavigation`) until this
+  // round. Positive control for all three cases below: the reviewer's own reproduction shape with an
+  // ordinary control and both titles actually read, which still reaches the stale-title finding.
+  { name: "#1867 round 3 POSITIVE CONTROL: an ordinary control, both titles read and equal -- a real stale "
+      + "title must still be asserted, this is a narrowing, not a mute",
+    route: { control: "Next", headingBefore: "Welcome", headingAfter: "Latest",
+      titleBefore: "Home", titleAfter: "Home", navigated: true } },
+  { name: "#1867 round 3: control announces \"opens in a new tab\", title stale -- a new-tab link is not "
+      + "evidence THIS document navigated (reviewer's reproduction, PR #1871 at 3f2ff8f9)",
+    route: { control: "Cookie policy, opens in a new tab, link", headingBefore: "Welcome", headingAfter: "Latest",
+      titleBefore: "Home", titleAfter: "Home", navigated: true } },
+  { name: "#1867 round 3: a heading inside a dialog container, title stale -- a modal opening is not "
+      + "evidence THIS document navigated",
+    route: { control: "Manage cookies, link", headingBefore: "Welcome",
+      headingAfter: "dialog, Manage your cookie preferences, heading, level 1",
+      titleBefore: "Home", titleAfter: "Home", navigated: true } },
+  { name: "#1867 round 3: both titles are the null sentinel, heading changed -- an unread title is not "
+      + "evidence it held steady (reviewer's title-read reproduction, PR #1871 at 3f2ff8f9)",
+    route: { control: "Next", headingBefore: "Welcome", headingAfter: "Latest",
+      titleBefore: null, titleAfter: null, navigated: true } },
 ];
 
 test("#1867: addStaleRouteTitle (rule) and routeTitleIsStale (signal) agree on every route-change shape", () => {
