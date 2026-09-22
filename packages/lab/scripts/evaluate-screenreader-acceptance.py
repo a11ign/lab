@@ -403,6 +403,52 @@ def stamp_generalisation(report_path: Path, passed: bool, reasons: list[str], di
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
+# The z of a two-sided 95% interval. Named because #37's Acceptance is stated at 95% and a reader of the
+# report must be able to see which confidence the bound below was computed at.
+RESOLUTION_CONFIDENCE = 0.95
+RESOLUTION_Z = 1.96
+
+
+def resolution(record_counts: list[int]) -> dict[str, Any]:
+    """The smallest false-positive rate this acceptance set can express: the Wilson upper bound at 0 observed.
+
+    #37's Acceptance asks the REPORT to state this, and until #1922 nothing did -- it was worked out by hand
+    in a comment (`z²/(n+z²) = 3.8416/439.84`), and every later growth decision would have had to redo it.
+
+    `records` is the SMALLER repeat, not the sum: a repeat captures the same pages again, so two repeats of
+    436 are 436 independent observations, not 872, and counting both would claim a resolution the set does
+    not have. Stated once for the whole set rather than per criterion, because the per-criterion `clean`
+    counts span both repeats and would carry exactly that double count.
+    """
+    records = min(record_counts, default=0)
+    z_squared = RESOLUTION_Z ** 2
+    return {
+        "records": records,
+        "confidence": RESOLUTION_CONFIDENCE,
+        # The bound assumes NONE were observed, and says so: with any false positive the report has already
+        # failed, and this number is then the set's resolution rather than the model's measured rate.
+        "atObservedFalsePositives": 0,
+        "falsePositiveUpperBound": z_squared / (records + z_squared),
+    }
+
+
+def report_skeleton(record_counts: dict[str, int], artifact: dict[str, Any], diagnostic: bool) -> dict[str, Any]:
+    """The report before any criterion is measured: what was read, from which weights, at what resolution."""
+    return {
+        "schema": "a11ign/screenreader-scorer-acceptance",
+        "data": [{"path": path, "records": count} for path, count in record_counts.items()],
+        "artifact": artifact,
+        "resolution": resolution(list(record_counts.values())),
+        "criteria": {},
+        "stability": {},
+        "passed": False,
+        "failureReasons": [],
+        # Recorded, so a measurement taken on rejected weights can never be mistaken for a release
+        # verdict by anything reading this file later.
+        "diagnostic": diagnostic,
+    }
+
+
 def main() -> None:
     args = parse_args()
     training = load_training_module()
@@ -430,18 +476,11 @@ def main() -> None:
     }
     import numpy as np
 
-    result: dict[str, Any] = {
-        "schema": "a11ign/screenreader-scorer-acceptance",
-        "data": [{"path": str(path), "records": len(training.read_records(path))} for path in args.data],
-        "artifact": artifact,
-        "criteria": {},
-        "stability": {},
-        "passed": False,
-        "failureReasons": [],
-        # Recorded, so a measurement taken on rejected weights can never be mistaken for a release
-        # verdict by anything reading this file later.
-        "diagnostic": bool(args.allow_ineligible),
-    }
+    result = report_skeleton(
+        {str(path): len(training.read_records(path)) for path in args.data},
+        artifact,
+        diagnostic=bool(args.allow_ineligible),
+    )
     stability_inputs: dict[str, list[tuple[str, Any, float]]] = {}
     stability_records: dict[str, list[dict[str, Any]]] = {}
     for criterion, criterion_report in report["criteria"].items():
