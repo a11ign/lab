@@ -95,6 +95,7 @@ test("MUTATION: the leak guard catches each pattern shape and does not fire on t
   const leaks = [
     `reached at ${privateAddress(10, 1, 2, 3)} as root`, // private-shaped ON PURPOSE -- this proves the pattern fires
     "using the key at ~/.ssh/a11y-pve_ed25519",
+    "reading the token at ~/.config/a11y-witness/fixture-token",
     "via pct exec 121 -- bash -lc \"...\"",
   ];
   for (const text of [clean]) {
