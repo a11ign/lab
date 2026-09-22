@@ -4378,6 +4378,64 @@ cases.push(
     });
   }),
 );
+// #1865 (fleet half of #31): THE SAME MECHANISM, THE TRIGGER AT A DIFFERENT TAB DEPTH.
+//
+// Every one of the three cases above puts the panel trigger second in tab order, and #1205's own guard
+// (`tab-probe-start-position.test.ts`) proves only that `walkToReveal` now STARTS at document start on
+// every capture -- not that the walk still finds a panel that is not two Tabs from there. `FOCUS_REVEAL_STOPS`
+// bounds the walk at 8 stops, so the corpus has never exercised anything past stop 1.
+//
+// FIRST CONTROL ON THE PAGE, the other extreme from "second": `tabs` must read 1 and `revealedAt` 0, where
+// the three siblings read 2 and 1. `id` is a `+` variant of `focus-panel-undismissable-help` on purpose --
+// `selectCases` treats a trailing `+` as "this case and its variants", so `--only=focus-panel-undismissable-help+`
+// (this row's own Acceptance command) captures both without naming two selectors.
+cases.push(
+  pair({
+    id: "focus-panel-undismissable-help+first-tab-stop",
+    family: "focus-reveal",
+    criterion: "1.4.13",
+    subtype: "focus-panel-undismissable",
+    task: "Focus the security question -- now the very first control on the page -- and try to dismiss "
+      + "the help panel it opens.",
+    source: "WCAG 1.4.13 Understanding",
+    mutation: "Same mechanism as focus-panel-undismissable-help: focusing the field opens a panel over "
+      + "the content below it, and Escape does not close it. What differs is ORDER ONLY -- the trigger is "
+      + "the first tabbable control rather than the second, so a walk that only ever proved it starts at "
+      + "position zero and then always happens to find the panel one Tab later cannot be credited with "
+      + "reaching it from anywhere else.",
+    badSignal: { type: "focus-panel-undismissable" },
+    good: page({
+      title: "Account settings", heading: "Account settings",
+      body: "<form>"
+        + "<p><label for=\"trigger\">Security question</label><input id=\"trigger\"></p>"
+        + "<div id=\"panel\" hidden><p>Additional guidance for this field.</p>"
+        + "<a href=\"/help\">Read the full guidance</a></div>"
+        + "<p><label for=\"second\">Contact name</label><input id=\"second\"></p>"
+        + "<p><label for=\"last\">Daytime telephone</label><input id=\"last\"></p>"
+        + "</form>",
+      script: "var p=document.getElementById('panel');"
+        + "document.getElementById('trigger').addEventListener('focus', function(){ p.hidden = false; });"
+        + "document.addEventListener('keydown', function(e){"
+        + "  if (e.key === 'Escape') { p.hidden = true; }"
+        + "});",
+    }),
+    bad: page({
+      title: "Account settings", heading: "Account settings",
+      body: "<form>"
+        + "<p><label for=\"trigger\">Security question</label><input id=\"trigger\"></p>"
+        + "<div id=\"panel\" hidden><p>Additional guidance for this field.</p>"
+        + "<a href=\"/help\">Read the full guidance</a></div>"
+        + "<p><label for=\"second\">Contact name</label><input id=\"second\"></p>"
+        + "<p><label for=\"last\">Daytime telephone</label><input id=\"last\"></p>"
+        + "</form>",
+      script: "var p=document.getElementById('panel');"
+        + "document.getElementById('trigger').addEventListener('focus', function(){ p.hidden = false; });",
+    }),
+    probeFocus: true,
+    probeFocusReveal: true,
+    probeOrder: "focus-first",
+  }),
+);
 // **WITHDRAWN 2026-09-05, PENDING ITS PROBE — the case was merged before the probe had ever captured.**
 //
 // Fifteen `focus-removed-on-receipt-*` cases for 2.4.7 stood here and came back BLIND on their first
