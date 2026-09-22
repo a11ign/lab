@@ -49,6 +49,7 @@ test("the file the deploy guard scrapes is the file that declares CAPTURE_PROTOC
 // whatever else in the corpus happens to expect 20.
 // #1105 moved this 19 -> 20 (`waitPastUnresolvedTitle`'s retry and the new `afterUnresolved` field on
 // `formChanges[].after`) -- the author-moves-its-own-pin rule this file's own history is an instance of.
-test("CAPTURE_PROTOCOL_VERSION is 20, the value this PR bumps to", () => {
-  assert.equal(CAPTURE_PROTOCOL_VERSION, 20);
+// #1918 moved it 20 -> 21 (`formChanges[].submitted`, whether the activation dispatched a form submit).
+test("CAPTURE_PROTOCOL_VERSION is 21, the value this PR bumps to", () => {
+  assert.equal(CAPTURE_PROTOCOL_VERSION, 21);
 });
