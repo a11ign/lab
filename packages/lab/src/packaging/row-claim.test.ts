@@ -1959,14 +1959,22 @@ test("#1399 WIRING: the claim/dispatch and decline CLIs report a thrown error th
 // acted inside the peer's worktree. These drive `claimWithWorktree` with an injected git/gh `run`, filesystem check,
 // stamp reader and writer, and claim, and read the ORDER of what it did.
 
-/** The git/gh a worktree claim meets: a local branch, an origin branch, and row #1432's claim-record comments. */
-function worktreeClaimRun({ localBranch = false, remoteBranch = false, remoteStatus = 2, recordComments = [] as string[] } = {}) {
+/**
+ * The git/gh a worktree claim meets: a local branch, an origin branch, row #1432's claim-record comments, and
+ * (#2014) origin's FULL head listing -- the `ls-remote` with no `--exit-code`, which the row check reads.
+ */
+function worktreeClaimRun({ localBranch = false, remoteBranch = false, remoteStatus = 2, recordComments = [] as string[],
+  originHeads = [] as string[], listingThrows = false } = {}) {
   const calls: string[][] = [];
   const run = (cmd: string, args: string[]) => {
     calls.push([cmd, ...args]);
     if (cmd === "git" && args[0] === "rev-parse") {
       if (localBranch) return "abc123";
       throw Object.assign(new Error("git rev-parse: no such ref"), { status: 1 });
+    }
+    if (cmd === "git" && args[0] === "ls-remote" && !args.includes("--exit-code")) {
+      if (listingThrows) throw Object.assign(new Error("git ls-remote: Could not read from remote repository"), { status: 128 });
+      return originHeads.join("\n");
     }
     if (cmd === "git" && args[0] === "ls-remote") {
       if (remoteBranch) return "abc123\trefs/heads/agent/x-1432";
@@ -1981,6 +1989,7 @@ function worktreeClaimRun({ localBranch = false, remoteBranch = false, remoteSta
 }
 
 const TARGET = { branch: "agent/x-1432", worktree: "/repos/wt-1432" };
+const ROW_TARGET = { ...TARGET, issueNumber: 1432 };
 
 /** Runs a worktree claim with every seam injected, recording the order of git calls, stamps and the claim itself. */
 function worktreeClaim(stub: ReturnType<typeof worktreeClaimRun>, { pathExists = false, stampedBy = null as string | null,
@@ -2088,7 +2097,123 @@ test("#1432: claimRecordSession reads the newest record's claimant, and a RELEAS
   assert.equal(claimRecordSession([claim]), "worker-judge");
   assert.equal(claimRecordSession([claim, release]), null);
   assert.equal(claimRecordSession(["unrelated comment"]), null);
-  assert.equal(worktreeTargetReason(TARGET, { run: worktreeClaimRun().run as never, exists: () => false, owner: () => null }), null,
+  assert.equal(worktreeTargetReason(ROW_TARGET, { run: worktreeClaimRun().run as never, exists: () => false, owner: () => null }), null,
     "POSITIVE CONTROL: nothing exists, so nothing is refused");
+});
+
+// --- #2014: THE ROW, NOT THE NAME THE CLAIMER TYPED ------------------------------------------------------------------
+//
+// 2026-09-22: #2000's whole deliverable sat on `origin` for twenty minutes while the row read `ready` with no
+// `session:` label and `gh pr list --head <branch>` returned `[]` -- the PR was never opened because opening one
+// spends GraphQL and the pool was exhausted. A second session was routed into the same three Region paths and was
+// stopped only by a worktree-PATH collision, which is not a guard aimed at this. All three pre-existing checks
+// interrogate the branch NAME the claimer chose, and the slug in `agent/<slug>-<row>` is free; the one stable fact
+// is the trailing `-<row>`. These drive the fourth check, which asks `origin` about the ROW.
+
+/** origin's listing for row #1432: one branch under a slug nobody here chose, plus unrelated heads. */
+const OTHER_SESSIONS_HEADS = [
+  "1111111111111111111111111111111111111111\trefs/heads/main",
+  "d77e47a2900000000000000000000000000000ff\trefs/heads/agent/prune-timer-1432",
+  "2222222222222222222222222222222222222222\trefs/heads/agent/unrelated-999",
+];
+
+test("#2014 ACCEPTANCE: origin holding a branch for THIS ROW under a DIFFERENT slug refuses before any write", () => {
+  const record = claimRecordComment({ session: "worker-judge", branch: "agent/prune-timer-1432" });
+  const stub = worktreeClaimRun({ originHeads: OTHER_SESSIONS_HEADS, recordComments: [record] });
+  const run = worktreeClaim(stub);
+  const result = run.call();
+  assert.equal(result.claimed, false);
+  const reason = (result as { reason: string }).reason;
+  assert.match(reason, /origin ALREADY HOLDS a branch for row #1432/);
+  assert.match(reason, /`agent\/prune-timer-1432` at d77e47a2900000000000000000000000000000ff/,
+    "the refusal names the branch AND its head, so the reader can go and look without a second command");
+  assert.deepEqual(run.order, [], "no fetch, no worktree add, no stamp, no claim");
+  // reviewer-2 at `47d9c128`: the refusal USED TO name the branch's owner here, via `branchOwnerText` ->
+  // `gh issue view --json comments` -- GraphQL, on the one path whose premise is an exhausted GraphQL pool.
+  // The record above IS readable in this stub, so a refusal that still read it would say so: this is the
+  // control that the read is gone rather than merely unreachable.
+  assert.doesNotMatch(reason, /worker-judge/,
+    "and it names NO owner: reading one would spend the pool this guard exists because it is gone");
+  assert.deepEqual(stub.calls.filter((c) => c[0] === "gh"), [],
+    "no `gh` command at all on this path -- not 'no --jq', which is what let the GraphQL read through before");
+});
+
+test("#2014: the refusal is FOLLOWABLE -- it names the three exits, including a coincidental trailing number", () => {
+  const reason = worktreeTargetReason(ROW_TARGET, { run: worktreeClaimRun({ originHeads: OTHER_SESSIONS_HEADS }).run as never,
+    exists: () => false, owner: () => null }) ?? "";
+  assert.match(reason, /if it is YOUR OWN earlier work, finish it on that branch and open its PR -- you do not need a fresh claim/);
+  assert.match(reason, /if it is another session's, leave this row alone/);
+  assert.match(reason, /if its trailing -1432 is a coincidence rather than this row's work, delete that branch on origin and claim again/);
+  assert.doesNotMatch(reason, /--branch=agent\/prune-timer-1432/,
+    "NOT 'claim again with that branch': the check one line up refuses a branch that exists on origin, so that exit is not followable");
+  assert.match(reason, /git diff origin\/main\.\.\.origin\/agent\/prune-timer-1432/, "and it hands over the command that reads the work");
+});
+
+test("#2014 ACCEPTANCE: a row with NO branch on origin still claims cleanly -- the head listing is read, not just tolerated", () => {
+  const stub = worktreeClaimRun({ originHeads: [
+    "1111111111111111111111111111111111111111\trefs/heads/main",
+    "2222222222222222222222222222222222222222\trefs/heads/agent/unrelated-999",
+    "3333333333333333333333333333333333333333\trefs/heads/agent/near-miss-11432",
+  ] });
+  const run = worktreeClaim(stub);
+  assert.deepEqual(run.call(), { claimed: true, statusMoved: true });
+  assert.deepEqual(run.order, ["git fetch --quiet", "git worktree add", "stamp", "claim"]);
+  assert.ok(stub.calls.some((c) => c.join(" ") === "git ls-remote --heads origin"),
+    "NEGATIVE CONTROL for the two above: the listing WAS asked for, so their refusals come from its contents");
+  // `-11432` ends in the digits of 1432 and is a different row: the check reads the trailing number, not a suffix.
+});
+
+test("#2014: the row check asks origin INDEPENDENTLY of --branch, and spends NO GraphQL -- detection AND refusal", () => {
+  const stub = worktreeClaimRun({ originHeads: OTHER_SESSIONS_HEADS });
+  const before = stub.calls.length;
+  worktreeTargetReason(ROW_TARGET, { run: stub.run as never, exists: () => false, owner: () => null });
+  const after = stub.calls.slice(before);
+  const listing = after.find((c) => c.join(" ") === "git ls-remote --heads origin");
+  assert.ok(listing, "the row reading is a plain head listing");
+  assert.ok(!listing!.some((arg) => arg.includes("1432")), "it names no row and no branch -- it asks origin for everything and filters here");
+  // THE ASSERTION THAT USED TO STAND HERE WAS `c[0] === "gh" && c.includes("--jq")`, and reviewer-2 showed it
+  // vacuous at `47d9c128`: the read it had to catch is `gh issue view <row> --repo <r> --json comments`, which
+  // carries `--json`, never `--jq`. It passed while the guard spent GraphQL. Every `gh`, no substring.
+  // POSITIVE CONTROL that this stub CAN record a `gh` call, so the emptiness is a finding and not a silence:
+  // the two #1432 tests above ("an existing LOCAL branch ..." / "a branch that exists only ON ORIGIN ...") drive
+  // the same `worktreeClaimRun` down the branch-NAME paths, where `branchOwnerText`'s `gh issue view` does run
+  // and its output is asserted verbatim in the refusal.
+  assert.deepEqual(after.filter((c) => c[0] === "gh"), [],
+    "the whole path spends no pool: the board goes stale exactly when GraphQL is gone, so a guard that spent it would be blind then");
+  assert.deepEqual([...new Set(after.map((c) => c[0]))], ["git"], "and nothing but git is spawned at all");
+});
+
+test("#2014: a `gh` that THROWS changes nothing -- the refusal is whole, so the guard holds during the outage it is for", () => {
+  // The call-site control for the assertion above. `worktreeTargetReason` never calls `gh` on this path today;
+  // this pins that it never NEEDS to, so a future edit that reads a claim record back in fails here rather than
+  // degrading silently to "row #1432's claim record could not be read" in the middle of a real pool outage.
+  const heads = OTHER_SESSIONS_HEADS.join("\n");
+  const run = (cmd: string, args: string[]) => {
+    if (cmd === "gh") throw new Error("gh: API rate limit exceeded for this token (GraphQL)");
+    if (args[0] === "rev-parse") throw Object.assign(new Error("no such ref"), { status: 1 });
+    if (args[0] === "ls-remote" && args.includes("--exit-code")) throw Object.assign(new Error("absent"), { status: 2 });
+    return heads;
+  };
+  const reason = worktreeTargetReason(ROW_TARGET, { run: run as never, exists: () => false, owner: () => null }) ?? "";
+  assert.match(reason, /origin ALREADY HOLDS a branch for row #1432: `agent\/prune-timer-1432` at d77e47a29/);
+  assert.match(reason, /This refusal therefore reads no claim record and asks no API/);
+  assert.doesNotMatch(reason, /could not be read|rate limit/,
+    "no half-read apology reaches the reader, because nothing was half-read");
+});
+
+test("#2014: origin that cannot be LISTED is a refusal to claim, never 'the row has no branch'", () => {
+  assert.throws(() => worktreeTargetReason(ROW_TARGET, { run: worktreeClaimRun({ listingThrows: true }).run as never,
+    exists: () => false, owner: () => null }),
+  /could not ask origin which branches it holds for row #1432 -- refusing to claim on a guess/);
+});
+
+test("#2014: several branches for one row are ALL named, so nobody resumes the wrong one", () => {
+  const reason = worktreeTargetReason(ROW_TARGET, { run: worktreeClaimRun({ originHeads: [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\trefs/heads/agent/first-try-1432",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/heads/agent/second-try-1432",
+  ] }).run as never, exists: () => false, owner: () => null }) ?? "";
+  assert.match(reason, /origin ALREADY HOLDS 2 branches for row #1432/);
+  assert.match(reason, /`agent\/first-try-1432` at aaaaaaaa/);
+  assert.match(reason, /`agent\/second-try-1432` at bbbbbbbb/);
 });
 
