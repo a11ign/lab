@@ -19,6 +19,7 @@ const items = (n: number) => Array.from({ length: n }, (_, i) => `item-${i}`);
 interface CaptureOpts {
   url?: string; capturedAt?: string; workerCode?: string; targetMatch?: string | null;
   structure?: Record<string, number>; interaction?: Record<string, number>;
+  observed?: Record<string, { asked: boolean; complete?: boolean; stop?: Record<string, string> }>;
 }
 
 const DEFAULT_STRUCTURE = { headings: 1, landmarks: 1, formFields: 1, tableCells: 1, links: 1, lists: 1, graphics: 1, frames: 0 };
@@ -30,7 +31,7 @@ const DEFAULT_STRUCTURE = { headings: 1, landmarks: 1, formFields: 1, tableCells
 function capture(opts: CaptureOpts = {}) {
   const {
     url = "https://example.com/", capturedAt = "2026-09-09T07:19:00.000Z", workerCode = "build-a",
-    targetMatch = "matched", structure = DEFAULT_STRUCTURE, interaction = { controls: 1 },
+    targetMatch = "matched", structure = DEFAULT_STRUCTURE, interaction = { controls: 1 }, observed,
   } = opts;
   const diagnostics: unknown[] = [];
   if (targetMatch !== null) diagnostics.push({ event: "domCensus", targetMatch });
@@ -39,6 +40,7 @@ function capture(opts: CaptureOpts = {}) {
     structure: Object.fromEntries(Object.entries(structure).map(([k, n]) => [k, items(n)])),
     interaction: Object.fromEntries(Object.entries(interaction).map(([k, n]) => [k, items(n)])),
     diagnostics,
+    ...(observed ? { observed } : {}),
   };
 }
 
@@ -63,7 +65,7 @@ test("shapeReadingFor ignores interaction fields entirely -- two captures differ
 
 /** A full `ShapeReading`-shaped fixture, so a hand-built distribution needs no `any`. */
 const reading = (vector: Record<string, number>, capturedAt: string | null = null) =>
-  ({ url: "https://example.com/", capturedAt, workerCode: "build-a", targetMatch: "matched", vector });
+  ({ url: "https://example.com/", capturedAt, workerCode: "build-a", targetMatch: "matched", vector, incomplete: [] as string[] });
 
 test("distinctShapes: hubspot's own worked case -- three readings of one vector, two of another, is TWO "
   + "shapes, never five singletons and never one blurred by tolerance", () => {
@@ -144,4 +146,51 @@ test("driftSummaryLine: REFUSED, few-captures and the normal case are three dist
   assert.match(normal, /n=5 on build build-a/);
   assert.match(normal, /2 distinct shape\(s\)/);
   assert.match(normal, /worst-field spread 2\.5%/);
+});
+
+/** ikea.com/de/de's own #1905 shape: `formFields` swept to a stop, then to a different stop. */
+const stoppedShort = (stop: Record<string, string>) => ({ asked: true, complete: false, stop });
+
+test("#1905: two readings that differ ONLY in an incompletely swept field are one shape with a spread of "
+  + "0, and the field is NAMED as not comparable -- a changed sweep stop is not the page drifting", () => {
+  const [entry] = driftDistributionsByUrl([
+    capture({ structure: { ...DEFAULT_STRUCTURE, formFields: 293 }, observed: { formFields: stoppedShort({ prev: "cap", next: "cap" }) } }),
+    capture({ structure: { ...DEFAULT_STRUCTURE, formFields: 19 }, observed: { formFields: stoppedShort({ prev: "silent", next: "exhausted" }) } }),
+  ]);
+  assert.equal(entry.spreadPercent, 0);
+  assert.equal(entry.shapes?.length, 1);
+  assert.deepEqual(entry.notComparable, [{ field: "formFields", incompleteCount: 2 }]);
+  assert.match(driftSummaryLine(entry), /Not comparable on formFields \(2 of 2 sweeps incomplete\)/);
+});
+
+test("#1905: ONE incomplete sweep rules the field out for the page -- a complete 297 against a "
+  + "stopped-short 19 still measures the stop", () => {
+  const [entry] = driftDistributionsByUrl([
+    capture({ structure: { ...DEFAULT_STRUCTURE, formFields: 297 }, observed: { formFields: { asked: true, complete: true } } }),
+    capture({ structure: { ...DEFAULT_STRUCTURE, formFields: 19 }, observed: { formFields: stoppedShort({ prev: "silent", next: "exhausted" }) } }),
+  ]);
+  assert.equal(entry.spreadPercent, 0);
+  assert.deepEqual(entry.notComparable, [{ field: "formFields", incompleteCount: 1 }]);
+});
+
+test("#1905 positive control: a COMPLETE field that differs still reports its spread, beside an "
+  + "incomplete one that is left out", () => {
+  const [entry] = driftDistributionsByUrl([
+    capture({ structure: { ...DEFAULT_STRUCTURE, formFields: 293, links: 10 }, observed: { formFields: stoppedShort({ prev: "cap", next: "cap" }), links: { asked: true, complete: true } } }),
+    capture({ structure: { ...DEFAULT_STRUCTURE, formFields: 19, links: 5 }, observed: { formFields: stoppedShort({ prev: "silent", next: "exhausted" }), links: { asked: true, complete: true } } }),
+  ]);
+  assert.equal(entry.spreadPercent, 50, "links: (10-5)/10 -- the complete field's drift is still measured");
+  assert.equal(entry.shapes?.length, 2);
+  assert.deepEqual(entry.notComparable, [{ field: "formFields", incompleteCount: 2 }]);
+});
+
+test("#1905: a capture with no `observed` verdict at all (pre-#985) is compared as before -- only an "
+  + "explicit `complete: false` rules a field out", () => {
+  const [entry] = driftDistributionsByUrl([
+    capture({ structure: { ...DEFAULT_STRUCTURE, formFields: 10 } }),
+    capture({ structure: { ...DEFAULT_STRUCTURE, formFields: 5 }, observed: { formFields: { asked: true } } }),
+  ]);
+  assert.equal(entry.spreadPercent, 50);
+  assert.deepEqual(entry.notComparable, []);
+  assert.doesNotMatch(driftSummaryLine(entry), /Not comparable/);
 });
