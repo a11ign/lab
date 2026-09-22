@@ -35,14 +35,23 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { wholeSuiteAcceptanceReason } from "../../../agent-org/src/row-claim/template-fields-rule.mjs";
 import { fileRefusalReason } from "../../../agent-org/src/row-file.mjs";
-import { runsTheWholeSuite } from "../../../agent-org/src/acceptance-commands.mjs";
+import {
+  acceptancePathTokens, acceptancePathsReason, runsTheWholeSuite, testFileArgumentsResolve,
+  unresolvedAcceptancePaths,
+} from "../../../agent-org/src/acceptance-commands.mjs";
+import { trackedTopLevelDirs } from "../../../agent-org/src/region-paths.mjs";
 
+// #1943: THE REGION DECLARES THE TEST FILE TOO, and that is not fixture housekeeping. This body used to
+// declare `packages/x/y.ts` while its Acceptance ran `packages/x/y.test.ts` — a row that names a file it
+// neither has nor reserves, which is exactly what the path check added below refuses. The fixture was
+// internally inconsistent in the one way a real row must not be, so it is stated consistently instead.
 const rowWith = (acceptance: string) =>
-  `## Region\n\n\`packages/x/y.ts\`\n\n## Acceptance\n\n\`\`\`\n${acceptance}\n\`\`\`\n\n`
+  "## Region\n\n`packages/x/y.ts`, `packages/x/y.test.ts`\n\n"
+  + `## Acceptance\n\n\`\`\`\n${acceptance}\n\`\`\`\n\n`
   + "## Open-check\n\n`grep -n foo y.ts`\n";
 
 test("a row whose Acceptance says `npm test` is refused at FILING", () => {
@@ -132,4 +141,177 @@ test("neither row tool is a pre-install entry, which is why the direct import is
   assert.deepEqual(invoking, [],
     "a workflow now invokes a row tool. If it runs before `npm ci`, the import added by #879 has to "
     + "become an extraction — see `region-paths.mjs` for the shape.");
+});
+
+/**
+ * ## AND THE SECOND HALF THAT LIFTS: THE PATHS THE COMMAND NAMES — #1943.
+ *
+ * The header above says the requirement half stayed at PR time because *"at filing time there is no PR
+ * and no job"*. **That reasoning is right about job capabilities and wrong about paths.** Whether
+ * `packages/lab/rstest.config.ts` exists is not a fact about a PR or a job; it is a fact about the
+ * checkout the filer is standing in, available at filing time for the cost of a `stat`.
+ *
+ * It was measured twice in one day, 2026-09-22, and both rows passed `row-file` cleanly:
+ *
+ *   #1939  `npx rstest run --config packages/lab/rstest.config.ts packages/lab/src/packaging/lab-job-params.test.ts`
+ *          NEITHER path exists. The row was the front of the capture chain.
+ *   #1936  `npx vitest run …`, and `vitest` is in no `package.json` — it only appeared to pass because
+ *          `npx` downloaded it from the network. (That one is the EXECUTABLE half, not this path half.)
+ *
+ * The rule is not "the path must exist": a row legitimately names files it will CREATE, which is most
+ * rows. It is **exist on disk, OR be declared in the row's own `## Region`** — the separation this
+ * repository already runs on, since B4 reserves what a Region declares.
+ */
+
+const rowWithRegion = (region: string, acceptance: string) =>
+  `## Region\n\n\`\`\`\n${region}\n\`\`\`\n\n## Acceptance\n\n\`\`\`\n${acceptance}\n\`\`\`\n\n`
+  + "## Open-check\n\n`grep -n foo y.ts`\n";
+
+/** #1939's Acceptance as filed, verbatim. Both paths are absent from this tree. */
+const AS_FILED_1939 =
+  "npx rstest run --config packages/lab/rstest.config.ts packages/lab/src/packaging/lab-job-params.test.ts";
+/** And as `product-manager` corrected it by hand while promoting. Both paths are real. */
+const CORRECTED_1939 = "npx rstest run --config scripts/rstest/rstest.config.mjs --include "
+  + "packages/worker-fleet/src/lab-job-params-reach-the-command.test.ts";
+
+test("THE POSITIVE CONTROL: #1939's Acceptance as filed is REFUSED, and its correction is FILED", () => {
+  // THE CONTROL EXISTS BECAUSE THE CALIBRATION BELOW ASSERTS AN EMPTINESS. `assert.deepEqual(offenders,
+  // [])` passes when the population is empty, so there has to be an assertion somewhere that it is not,
+  // and the writer has to be able to point at it. This is it, and it is the real string off the real row.
+  assert.ok(existsSync("package.json") && existsSync("scripts/rstest/rstest.config.mjs"),
+    "this test reads the real tree with repo-relative paths, so it must run from the repository root — "
+    + "if it does not, every path reads as absent and the refusal below is vacuous");
+
+  const reason = fileRefusalReason(rowWithRegion("packages/agent-org/src/evidence-check.mjs", AS_FILED_1939));
+  assert.ok(reason, "#1939 reached an engineer with two paths that do not exist; it must not file again");
+  assert.match(reason, /packages\/lab\/rstest\.config\.ts/, "the refusal must quote the path, not describe it");
+  assert.match(reason, /packages\/lab\/src\/packaging\/lab-job-params\.test\.ts/,
+    "and BOTH of them — reporting the first alone sends the filer back for a second refusal");
+
+  assert.equal(fileRefusalReason(rowWithRegion("packages/agent-org/src/evidence-check.mjs", CORRECTED_1939)), null,
+    "the corrected form names two files that are both on disk, and the check must not refuse the shape "
+    + "it is asking for");
+});
+
+test("the refusal names BOTH ways to satisfy it, so a filer can follow it exactly", () => {
+  // #741: a refusal that states no way forward is not one a filer can act on. This rule has exactly two
+  // arms, so it owes exactly two remedies.
+  const reason = acceptancePathsReason(rowWithRegion("packages/x/y.ts", AS_FILED_1939), "row-file");
+  assert.match(reason!, /^row-file: /, "a filer reading the wrong tool's name looks in the wrong place");
+  assert.match(reason!, /spelling/i, "arm one: the file exists under another name");
+  assert.match(reason!, /Region/, "arm two: the row is going to create it, so it declares it");
+});
+
+test("ONE IMPLEMENTATION: filing time and the shared predicate agree on every row body", () => {
+  // The row's own acceptance, and the same property the whole-suite half asserts above: not "both refuse
+  // #1939" but that a SINGLE function decides it, so the two cannot drift by one being updated.
+  const bodies = [
+    rowWithRegion("packages/x/y.ts", AS_FILED_1939),
+    rowWithRegion("packages/x/y.ts", CORRECTED_1939),
+    rowWithRegion("packages/lab/rstest.config.ts", AS_FILED_1939),
+    rowWithRegion("packages/x/y.ts", "npx tsx --test packages/lab/src/packaging/does-not-exist.test.ts"),
+    rowWithRegion("packages/x/y.ts", "npm run lint"),
+    rowWithRegion("packages/x/y.ts", "npx rstest run --config scripts/rstest/rstest.config.mjs"),
+  ];
+  // THE SET MUST CONTAIN BOTH ANSWERS, or the agreement is satisfied by a list nothing refuses.
+  assert.ok(bodies.some((b) => unresolvedAcceptancePaths(b).length > 0)
+    && bodies.some((b) => unresolvedAcceptancePaths(b).length === 0),
+    "this list must exercise both verdicts, or the agreement it asserts is vacuous");
+  for (const body of bodies) {
+    assert.equal(fileRefusalReason(body) !== null, unresolvedAcceptancePaths(body).length > 0,
+      `filing time and \`unresolvedAcceptancePaths\` disagree about ${JSON.stringify(body)} — which means `
+      + "there are two answers to one question, and the copy that drifts is the one that decides whether "
+      + "a row can be filed");
+  }
+});
+
+test("THE REGION ESCAPE: an absent path the row DECLARES is filed, because that is what a Region is for", () => {
+  // MUTATION TARGET. Drop the Region arm from `unresolvedAcceptancePaths` and this test is the one that
+  // fails — the rule becomes "the path must exist", which refuses most rows in this repository, since a
+  // row's test file is written by the row.
+  const willBeCreated = "packages/agent-org/src/row-claim/not-yet-written.test.ts";
+  assert.ok(!existsSync(willBeCreated), "this fixture is only a control while the file is genuinely absent");
+  assert.equal(fileRefusalReason(rowWithRegion(willBeCreated, `npx tsx --test ${willBeCreated}`)), null,
+    "a row that declares the file it is about to create has said exactly what the refusal would ask for");
+  // And the same string with a DIFFERENT Region is refused, so the pass above is the Region's doing and
+  // not something about the path.
+  assert.ok(fileRefusalReason(rowWithRegion("packages/x/y.ts", `npx tsx --test ${willBeCreated}`)),
+    "undeclared, the identical path must refuse — otherwise the test above proves nothing about the Region");
+});
+
+test("A DIRECTORY entry in the Region covers the file beneath it, the one way `regionCovers` already reads it", () => {
+  const under = "packages/agent-org/src/row-claim/not-yet-written.test.ts";
+  assert.equal(fileRefusalReason(rowWithRegion("packages/agent-org/src/row-claim/", `npx tsx --test ${under}`)), null,
+    "B4 reserves everything under a `/`-terminated entry, so the Acceptance check must read it the same "
+    + "way or the two disagree about what one Region declared");
+});
+
+test("THE GLOB EXEMPTION: a pattern is matched by a runner, not opened — so it is not path-checked", () => {
+  // MUTATION TARGET. The token grammar admits `*`, `?`, `[`, `]`, `{` and `}` precisely so that dropping
+  // this exemption CHANGES THE ANSWER and this test fails. Had the grammar excluded them, globs would be
+  // exempt by accident and the exemption could be deleted with nothing to show for it.
+  const glob = "packages/lab/src/packaging/nothing-here-matches-*.test.ts";
+  assert.deepEqual(acceptancePathTokens(`npx tsx --test ${glob}`), [],
+    "a glob has no single file to stat, and neither remedy the refusal offers applies to one");
+  assert.equal(fileRefusalReason(rowWithRegion("packages/x/y.ts", `npx tsx --test ${glob}`)), null);
+  // Whether that glob matches anything is `testFileArgumentsResolve`'s question, at PR time, unchanged.
+  assert.equal(testFileArgumentsResolve(`npx tsx --test ${glob}`).ok, false,
+    "the glob is still caught — by the check that owns globs, which is the reason this one may skip them");
+});
+
+test("an UNTRACKED top-level directory is not path-checked: #1929's `runs/` report is produced, not committed", () => {
+  // `runs/` is gitignored, so a path under it can never exist in a fresh checkout AND can never be
+  // declared in a `## Region`, which declares tracked files a PR will touch. Both remedies unavailable is
+  // the unfollowable refusal #741 ruled against. Measured on #1929, whose Acceptance dispatches the lab
+  // job that WRITES the file two lines before reading it.
+  const produced = "jq -e '.resolution.records >= 381' runs/model-candidate/acceptance-report.json";
+  assert.deepEqual(acceptancePathTokens(produced), [],
+    "a path under a directory git does not track is an artefact, not a file the filer typed wrong");
+  assert.ok(trackedTopLevelDirs().includes("packages") && !trackedTopLevelDirs().includes("runs"),
+    "this exemption is derived from the tree (#1158's rule), so the assertion above has to check that "
+    + "the derivation actually separates the two — a `trackedTopLevelDirs` returning everything, or "
+    + "nothing, would make the test pass having examined nothing");
+});
+
+test("a REF and an EXTENSIONLESS path are not files: `origin/main`, `a11ign/a11ign`, `.venv/bin/python`", () => {
+  assert.deepEqual(acceptancePathTokens("git diff origin/main -- packages/lab"), []);
+  assert.deepEqual(acceptancePathTokens("gh issue list --repo a11ign/a11ign"), []);
+  assert.deepEqual(acceptancePathTokens("A11Y_PYTHON=.venv/bin/python npm run test:python"), []);
+  // But an `=`-assigned value that IS a repo file is still seen, which is why the assignment is split
+  // rather than the whole token discarded.
+  assert.deepEqual(acceptancePathTokens("npx rstest run --config=scripts/rstest/rstest.config.mjs"),
+    ["scripts/rstest/rstest.config.mjs"]);
+});
+
+test("CALIBRATION: the rule refuses ONE of the Acceptance sections on `main`'s own open-row fixtures", () => {
+  // Measured 2026-09-22 over the 28 open rows then carrying an Acceptance section: one refusal, #20,
+  // which names `board-summary-origin.test.ts` against the real `board-summary-check.test.ts`. The
+  // fixtures below are the real strings; the emptiness this asserts is controlled by the #1939 test above.
+  const clean = [
+    "npx rstest run --config scripts/rstest/rstest.config.mjs --include packages/lab/src/packaging/acceptance-check-at-filing.test.ts",
+    "npm run lab:job -- -e job=acceptance",
+    "npx tsx --test packages/lab/src/packaging/acceptance-commands.test.ts",
+    "node packages/guards/src/tree-wide-guards.mjs",
+  ];
+  assert.ok(clean.length > 0, "the population this filters must not be empty, or the emptiness below is "
+    + "satisfied by having examined nothing");
+  const offenders = clean.flatMap((command) =>
+    unresolvedAcceptancePaths(rowWithRegion("packages/x/y.ts", command)).map((hit) => hit.path));
+  assert.deepEqual(offenders, [],
+    "a real Acceptance command naming only real files must file — two offenders in twenty-eight is a "
+    + "guard, and four false ones would be a wall");
+  assert.deepEqual(
+    unresolvedAcceptancePaths(rowWithRegion("packages/x/y.ts",
+      "npx tsx --test packages/lab/src/packaging/board-summary-origin.test.ts")).map((hit) => hit.path),
+    ["packages/lab/src/packaging/board-summary-origin.test.ts"],
+    "#20's own string, which is what the calibration found");
+});
+
+test("the path check is the SHARED function in `row-file`, not a second copy", () => {
+  const tool = readFileSync(resolve(import.meta.dirname, "../../../agent-org/src/row-file.mjs"), "utf8");
+  assert.match(tool, /import \{[^}]*acceptancePathsReason[^}]*\} from "\.\/acceptance-commands\.mjs"/s,
+    "row-file must IMPORT the path check; a local `existsSync` loop here would be the second "
+    + "implementation this row exists to avoid");
+  assert.doesNotMatch(tool, /existsSync/,
+    "no hand-written filesystem check over acceptance tokens in the filing tool");
 });
