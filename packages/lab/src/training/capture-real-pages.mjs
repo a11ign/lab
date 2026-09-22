@@ -30,7 +30,7 @@ import { configuredWorkers, inventoryWorkerUrls } from "@a11ign/worker-fleet/fle
 import { leasePageServer } from "./page-server.mjs";
 import { realCorpusRoot, datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 import { hostAddressForWorker } from "@a11ign/worker-fleet";
-import { fleetConsistency, describeMismatches } from "@a11ign/worker-fleet/fleet-consistency";
+import { assertOneBrowserAcross as refuseSplitFleet } from "./capture-fleet-guard.mjs";
 import { assertFleetRunsThisCheckout } from "@a11ign/worker-fleet/worker-code-check";
 import { drainAcrossPool } from "./worker-pool.mjs";
 import { createHostThrottle, hostOf } from "./host-throttle.mjs";
@@ -379,42 +379,20 @@ async function captureAcrossPool(/** @type {any} */ pages, /** @type {any} */ wo
 }
 
 /**
- * Refuse to build ONE corpus out of workers running different browsers.
+ * `--allow-mixed-browsers`, applied where the flags are parsed.
  *
- * `browserVersion` is in the capture cache key precisely because a fleet can run more than one image, and
- * `fleet:status` has reported INCONSISTENT for a long time — but only when a human ran it, and only
- * before a run rather than during one.
+ * The check itself is `capture-fleet-guard.mjs` — moved out of this file in #2018 so a test can import it
+ * without importing the corpus reader above it, which is what kept CI from ever running one. What stays
+ * here is the only part that belongs to this script: the flag that says build one corpus from two browser
+ * builds anyway. One wrapper rather than the condition at both call sites, so a third call site cannot
+ * quietly forget it.
  *
- * Measured 2026-08-24: a worker that had been down came back with Edge auto-updated from the pinned
- * .101 to .107 while a corpus run was in flight. The fleet was consistent when the run started and was
- * not when it finished, and nothing noticed. Fifteen pages were captured under the wrong build before I
- * happened to look.
- *
- * Checked HERE, at the boundary, for the same reason `assertWorkerUrl` is: the alternative is discovering
- * it in the evidence weeks later, where a split fleet looks like a page that changed. And re-checked
- * after the run, because "consistent when it started" is exactly the claim that failed.
- *
- * `--allow-mixed-browsers` exists for the case where you know something the check does not, and it says
- * so in the output rather than passing quietly.
+ * @param {string[]} workers
+ * @param {string} when
  */
-async function assertOneBrowserAcross(/** @type {any} */ workers, /** @type {any} */ when) {
+async function assertOneBrowserAcross(workers, when) {
   if (ALLOW_MIXED) return;
-  const guests = await Promise.all(workers.map(async (/** @type {any} */ url) => {
-    try {
-      return (await requestJson(`${url}/health`, { timeoutMs: 10_000 })).json ?? null;
-    } catch {
-      // Unreachable is not INCONSISTENT. A box that is asleep contributes no evidence and no mismatch,
-      // and treating silence as a fault is how a check earns a reputation for crying wolf.
-      return null;
-    }
-  }));
-  const verdict = fleetConsistency(guests.filter(Boolean));
-  if (verdict.consistent) return;
-  process.stderr.write(`\nFLEET INCONSISTENT ${when}: ${describeMismatches(verdict.mismatches)}\n`
-    + "Two browser builds must never write into one corpus — `browserVersion` is in the capture cache\n"
-    + "key for exactly this reason, and a split shows up later as evidence that cannot be compared.\n"
-    + "Pin the fleet (`provision-role.yml --tags edge`) or run with --allow-mixed-browsers.\n");
-  process.exit(3);
+  await refuseSplitFleet(workers, when);
 }
 
 /**
