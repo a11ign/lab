@@ -62,7 +62,7 @@ test("one case is one worker, and the row names the one that captured it", async
   // same machine), so a one-case run is one worker's work however many boxes are named. Ten stub workers,
   // one item: nine drain an empty queue. Which box that leaves is not a choice anyone made — which is why
   // the report has to record it rather than assume it.
-  const workers = Array.from({ length: 10 }, (_unused, index) => `http://10.0.0.${index}:8765`);
+  const workers = Array.from({ length: 10 }, (_unused, index) => `http://203.0.113.${index}:8765`);
   const testCase = { id: "stub-case", family: "stub" };
   const rows: { id: string; worker: string | null }[] = [];
   const handledBy: string[] = [];
