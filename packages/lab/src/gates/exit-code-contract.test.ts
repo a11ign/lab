@@ -226,6 +226,12 @@ const DOCUMENTED: Record<string, string> = {
     + "files = truncated, MORE = the tag names a different snapshot, which restores cleanly as the wrong "
     + "corpus); 2 a USAGE refusal before anything is uploaded. 1 and 2 are deliberately apart: 2 means "
     + "nothing was attempted, 1 means a backup exists and cannot be trusted",
+  "packages/lab/scripts/corpus-release-nightly.mjs":
+    "#1042 item 3: 2 a refusal in THIS script's own fetch/naming step, before corpus-release.mjs ever runs "
+    + "— the fetch itself failed, or its output did not name a source file this script could restore the "
+    + "snapshot's identity from; once corpus-release.mjs is invoked, its own exit code (0 uploaded and "
+    + "verified, 1 the round trip failed, 2 its own usage refusal) is passed through UNMODIFIED, the same "
+    + "passthrough shape lab-job.mjs uses for Ansible's own codes",
   "packages/lab/scripts/everything-pipeline.mjs":
     "0 every stage succeeded; 1 any stage failed OR crashed for an unrelated reason — two causes share one "
     + "code via its own pipeline() helper, not verdict.mjs",
