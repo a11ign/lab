@@ -217,3 +217,128 @@ test("the normaliser turns every placeholder shape into `*` -- or two defaults w
   assert.equal(normalise(`runs/c/${PARAM}.${PARAM}.json`), "runs/c/*.json");
   assert.equal(normalise(`runs/r/${PARAM}.json`), "runs/r/*.json");
 });
+
+/**
+ * AND THE DESTINATION DIRECTORY MUST EXIST BEFORE ANYTHING TOUCHES IT -- #1979.
+ *
+ * `runs/` is gitignored, so `runs/fetched/` is present in the primary checkout and in every worktree that
+ * has fetched once, and absent in exactly the case a new session is in. The stale-sibling task runs `find`
+ * over that directory and `find` exits 1 when it is not there, so the FIRST fetch in a checkout failed
+ * AFTER the slurp had already succeeded: the artefact was read off the lab and then thrown away. Measured
+ * 2026-09-22 in a fresh worktree; `copy` to a dest whose parent is absent is the next failure in line, so
+ * guarding the `find` alone would only move the error.
+ *
+ * This is a PARSE of the checked-in playbook, so it needs no lab and no ansible. It reads the task list of
+ * the fetch play and asks three things of it, each with its own refusal and its own control below:
+ * the directory is created at all; it is created before the first task that names the destination; and it
+ * is created on `localhost`, because this play's hosts are the LAB and the destination is under this
+ * checkout.
+ */
+const DEST = "lab_fetch_dest";
+
+type Task = Record<string, unknown>;
+
+/** Ansible's own task keywords; whatever key is left is the module, and its value the module's arguments. */
+const TASK_KEYWORDS = new Set([
+  "name", "when", "register", "delegate_to", "changed_when", "failed_when", "loop", "with_items",
+  "vars", "become", "tags", "notify", "ignore_errors", "no_log", "run_once",
+]);
+
+/** The fetch play's tasks -- the same play `fetchMap()` reads, parsed rather than grepped. */
+function fetchPlayTasks(): Task[] {
+  const plays = parse(read("packages/control/ansible/lab-fetch.yml")) as { vars?: { lab_artifacts?: unknown }; tasks?: unknown }[];
+  const tasks = plays.find((play) => play.vars?.lab_artifacts)?.tasks;
+  assert.ok(Array.isArray(tasks) && tasks.length > 0, "the fetch play has no tasks -- lab-fetch.yml's shape changed");
+  return tasks as Task[];
+}
+
+/** A task's module name and arguments, with the keywords Ansible owns stripped off. */
+function moduleOf(task: Task): { module: string; args: unknown } {
+  const module = Object.keys(task).find((key) => !TASK_KEYWORDS.has(key));
+  assert.ok(module, `task \`${String(task.name)}\` has no module key`);
+  return { module, args: task[module] };
+}
+
+/** The set_fact that computes the destination path: everything after it may name it, nothing before it can. */
+function definesDest(task: Task): boolean {
+  const { module, args } = moduleOf(task);
+  return module.endsWith("set_fact") && !!args && typeof args === "object" && DEST in (args as object);
+}
+
+/** A task whose module ARGUMENTS name the destination -- so a read or a write at that path. */
+const namesDest = (task: Task): boolean => JSON.stringify(moduleOf(task).args ?? null).includes(DEST);
+
+/** A task that makes the destination's parent directory. */
+function createsDestDir(task: Task): boolean {
+  const { module, args } = moduleOf(task);
+  if (!module.endsWith("file") || !args || typeof args !== "object") return false;
+  const { state, path } = args as { state?: unknown; path?: unknown };
+  return state === "directory" && typeof path === "string" && path.includes(DEST);
+}
+
+/**
+ * What is wrong with this task list, in the playbook's own terms. Empty is the passing answer, and the
+ * shipped playbook below is the control that says the population is not empty by construction.
+ */
+function creationOffenders(tasks: Task[]): string[] {
+  const definedAt = tasks.findIndex(definesDest);
+  assert.ok(definedAt >= 0, `no task defines \`${DEST}\` -- the playbook's shape changed, not its directory handling`);
+  const after = tasks.slice(definedAt + 1);
+  const creates = after.findIndex(createsDestDir);
+  const firstUse = after.findIndex(namesDest);
+  if (creates < 0) {
+    return [`nothing creates \`${DEST} | dirname\`: add an \`ansible.builtin.file\` task with `
+      + `\`state: directory\` before \`${String(after[firstUse]?.name)}\`, which is the first task to name `
+      + "the destination and fails on a checkout that has never fetched"];
+  }
+  const offenders: string[] = [];
+  if (creates !== firstUse) {
+    offenders.push(`the directory is created by \`${String(after[creates].name)}\`, but `
+      + `\`${String(after[firstUse].name)}\` names the destination first -- it runs against a directory `
+      + "that does not exist yet");
+  }
+  if (after[creates].delegate_to !== "localhost") {
+    offenders.push(`\`${String(after[creates].name)}\` has no \`delegate_to: localhost\`, so it would `
+      + "create the directory on the LAB; this play's hosts are `a11y_lab` and the destination is under "
+      + "this checkout");
+  }
+  return offenders;
+}
+
+/** A deep copy of the shipped task list, so a control mutates a fixture and never the parsed playbook. */
+const shippedTasks = (): Task[] => structuredClone(fetchPlayTasks());
+
+test("#1979: the shipped playbook creates runs/fetched/ before anything reads or writes inside it", () => {
+  assert.deepEqual(creationOffenders(fetchPlayTasks()), [],
+    "lab-fetch.yml's first fetch in a fresh checkout would fail; see the offenders above");
+});
+
+test("#1979 positive control: the playbook with its directory task REMOVED is refused, by name", () => {
+  const withoutIt = shippedTasks().filter((task) => !createsDestDir(task));
+  assert.equal(withoutIt.length, fetchPlayTasks().length - 1, "the control removed no task -- it is not a control");
+  const offenders = creationOffenders(withoutIt);
+  assert.equal(offenders.length, 1, `expected one refusal, got: ${offenders.join(" | ")}`);
+  assert.match(offenders[0], /nothing creates/);
+  // AND IT NAMES THE TASK THAT WOULD HAVE FAILED, because "add a directory task" with no `find` in it
+  // reads as tidiness rather than the outage it prevents.
+  assert.match(offenders[0], /stale copy/i);
+});
+
+test("#1979 positive control: creating the directory AFTER the task that uses it is refused", () => {
+  const tasks = shippedTasks();
+  const creating = tasks.splice(tasks.findIndex(createsDestDir), 1)[0];
+  const definedAt = tasks.findIndex(definesDest);
+  const firstUse = definedAt + 1 + tasks.slice(definedAt + 1).findIndex(namesDest);
+  tasks.splice(firstUse + 1, 0, creating);
+  const offenders = creationOffenders(tasks);
+  assert.equal(offenders.length, 1, `expected one refusal, got: ${offenders.join(" | ")}`);
+  assert.match(offenders[0], /names the destination first/);
+});
+
+test("#1979 positive control: creating the directory on the LAB rather than locally is refused", () => {
+  const tasks = shippedTasks();
+  delete tasks[tasks.findIndex(createsDestDir)].delegate_to;
+  const offenders = creationOffenders(tasks);
+  assert.equal(offenders.length, 1, `expected one refusal, got: ${offenders.join(" | ")}`);
+  assert.match(offenders[0], /delegate_to: localhost/);
+});

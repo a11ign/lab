@@ -19,7 +19,10 @@
 // not because anything here calls it -- `main()` is never invoked.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdtempSync, writeFileSync, chmodSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
@@ -457,4 +460,142 @@ test("and an unarmed pull request is still unarmed", () => {
     "nothing pending, not queued, not merged -- the arm genuinely did not take");
   assert.equal(armedFromApi(null), false, "and a read that returned nothing is not evidence of arming");
   assert.equal(armedFromApi({}), false, "nor is a response missing every field");
+});
+
+/**
+ * #1970: A SWEEP THAT COULD NOT LOOK MUST NOT RED-CHECK A PULL REQUEST IT NEVER EXAMINED.
+ *
+ * `sweep` asks one repo-wide question and rides whichever `pull_request` event happened to fire, so
+ * `EXIT.CANNOT_ASK` -- "I could not look" -- was rendered as a failed check on a PR the sweep never
+ * listed, never read and never decided anything about. Measured 2026-09-22: `A11IGN_BOT_TOKEN`'s identity
+ * had its GraphQL pool exhausted, the first `gh pr list` failed, and ten runs between 18:45:53Z and
+ * 19:10:08Z charged a red `sweep` to seven distinct heads including a push on `main`.
+ *
+ * `ceo` ruled the remedy into `auto-arm.yml` and refused the one in the script (#1970, 2026-09-22): the
+ * script is handed no event and no PR number, so it structurally cannot know it is running inside a check
+ * context. THE SCRIPT IS EXPECTED TO BE UNCHANGED, which is why the first test below pins that it still
+ * exits 2 -- a remedy that quietly moved down into the `.mjs` would otherwise pass everything here while
+ * making "I could not look" and "the queue is drained" the same observable to every other caller.
+ *
+ * These tests EXECUTE THE STEP'S OWN `run:` TEXT under `bash -e` (the default shell for a `run:` block)
+ * with `node` stubbed to exit with a chosen code, rather than asserting on the shape of the bash. What is
+ * at stake is a behaviour -- which exit codes become a red check -- and the two halves of the done-when
+ * are both load-bearing: a `|| true` that swallows the outage silently must FAIL these, not pass them.
+ */
+const sweepStepRun = (): string => {
+  const doc = parseYaml(readFileSync(WORKFLOW, "utf8")) as {
+    jobs: Record<string, { steps: Array<{ run?: string }> }>,
+  };
+  const step = (doc.jobs.sweep?.steps ?? []).find((s) => s.run?.includes("auto-arm-sweep.mjs"));
+  assert.ok(step?.run, "the sweep job must still have a step that runs auto-arm-sweep.mjs");
+  return step.run as string;
+};
+
+const shellQuote = (s: string) => `'${s.replaceAll("'", `'\\''`)}'`;
+
+const STUB_EXECUTABLE_MODE = 0o755; // the step invokes `node` as a command; it has to be runnable
+
+/**
+ * The stub stands in for `node`, so no `gh` call and no network is reachable from here -- and it prints
+ * a marker, so a mutation that DELETES the script invocation altogether fails rather than reading as a
+ * clean run. `A11IGN_BOT_TOKEN` is set to an obvious non-secret so the step takes its normal branch
+ * instead of the fallback warning; the value never leaves this process.
+ */
+function runSweepStep({ exitCode, says }: { exitCode: number, says: string }) {
+  const dir = mkdtempSync(join(tmpdir(), "auto-arm-sweep-step-"));
+  try {
+    const stub = join(dir, "node");
+    writeFileSync(stub, `#!/bin/sh\nprintf '%s\\n' ${shellQuote(says)} >&2\n`
+      + `printf 'STUB NODE RAN: %s\\n' "$*"\nexit ${exitCode}\n`);
+    chmodSync(stub, STUB_EXECUTABLE_MODE);
+    const r = spawnSync("bash", ["-e", "-c", sweepStepRun()], {
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${dir}:${process.env.PATH ?? ""}`,
+        A11IGN_BOT_TOKEN: "not-a-secret-stub-token", FALLBACK_TOKEN: "not-a-secret-stub-fallback" },
+    });
+    return { status: r.status, stdout: r.stdout, stderr: r.stderr };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// The real first line of each case, copied from `auto-arm-sweep.mjs` and from run 35769346101's own log
+// rather than invented -- see `a-number-from-the-apparatus`: a plausible-looking fixture is not evidence.
+const RATE_LIMITED = "CANNOT ASK: listing open PRs failed -- Command failed: gh pr list --repo a11ign/a11ign "
+  + "--state open --base main --limit 100 ... GraphQL: API rate limit already exceeded for user ID 46429371.";
+const UNSET_REPO = "CANNOT ASK: GITHUB_REPOSITORY is unset, so there is no repo to sweep.";
+
+test("#1970: the SCRIPT still exits CANNOT_ASK -- the remedy is in the workflow, and a version that moved "
+  + "it down here would make `I could not look` and `the queue is drained` one observable to every caller", () => {
+  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
+  const exits = [...source.matchAll(/process\.exit\(EXIT\.CANNOT_ASK\)/g)];
+  assert.equal(exits.length, 2, "both lookup failures -- an unset GITHUB_REPOSITORY and a failed `gh pr "
+    + "list` -- must still exit CANNOT_ASK, not 0. ceo refused remedy 1 on #1970 precisely because one of "
+    + "the two is a MISCONFIGURED JOB, where a green run is a lie.");
+  assert.doesNotMatch(source, /process\.exit\(EXIT\.DRAINED\);?\s*\/\/\s*cannot ask/i);
+});
+
+test("#1970 ACCEPTANCE: exit 2 does NOT fail the step -- the PR whose event triggered this run was never "
+  + "examined, so nothing about it has been decided", () => {
+  const run = runSweepStep({ exitCode: 2, says: RATE_LIMITED });
+  assert.equal(run.status, 0,
+    "a repo-wide CANNOT_ASK must not land as a red check on whichever head happened to trigger the sweep "
+    + "-- ten runs did that across seven heads, `main` among them, on 2026-09-22");
+  assert.match(run.stdout, /STUB NODE RAN: /,
+    "POSITIVE CONTROL: the step must still actually RUN the sweep. A step that stopped invoking it would "
+    + "otherwise exit 0 here for the wrong reason and read as this fix working.");
+});
+
+test("#1970 ACCEPTANCE, THE OTHER HALF: the outage is still reported where somebody sees it -- an "
+  + "`::error::` naming what could not be done, emitted BEFORE the zero exit", () => {
+  const run = runSweepStep({ exitCode: 2, says: RATE_LIMITED });
+  const annotations = [...run.stdout.matchAll(/^::error::[^\n]*/gm)];
+  assert.equal(annotations.length, 1, "exactly one `::error::` -- a bare `|| true`, which is the shape "
+    + "this test exists to refuse, produces none. #382: a job that cannot do its intended work must say "
+    + "which path it took, not go silent.");
+  const [[annotation]] = annotations;
+  assert.match(annotation, /CANNOT_ASK/, "the annotation must name the state, not merely say something failed");
+  assert.match(annotation, /examined NO pull request|never examined/i,
+    "it must say WHY this is not the triggering PR's problem, or the next reader re-derives it from the log");
+  assert.match(annotation, /#1970/, "and point at the reasoning, the way every other line in this file does");
+  assert.match(run.stderr, /CANNOT ASK: listing open PRs failed/,
+    "the script's own diagnosis is still passed through -- the annotation is added to it, not substituted "
+    + "for it, so the person reading the run still learns WHICH lookup failed");
+});
+
+test("#1970 MUTATION TARGET: the distinction is made on the EXIT CODE, never on the log text -- an unset "
+  + "GITHUB_REPOSITORY says nothing about a rate limit and must be handled identically", () => {
+  // CANNOT_ASK's second producer, which `ceo`'s ruling names: a misconfigured job rather than a credential
+  // outage. An implementation that grepped `rate limit` out of stderr would pass the test above and fail
+  // this one -- which is the whole reason this case is here and not folded into it. `mergedMeanwhile`
+  // states the same rule for the mirror case: the message text cannot be trusted to tell states apart.
+  assert.doesNotMatch(UNSET_REPO, /rate limit/i, "the fixture's own premise: this message has no rate "
+    + "limit in it, so a text matcher has nothing to find");
+  const run = runSweepStep({ exitCode: 2, says: UNSET_REPO });
+  assert.equal(run.status, 0, "exit 2 is exit 2 -- it is still not a claim about the triggering PR");
+  assert.match(run.stdout, /^::error::/m, "and it is still reported, loudly");
+});
+
+test("#1970 MUTATION TARGET, THE OTHER DIRECTION: exit 1 (COULD_NOT_ARM) stays RED even when its own "
+  + "message mentions a rate limit -- it NAMES PRs, and red is how this repo makes an unarmed PR loud", () => {
+  // The pair to the test above, and the reason neither is sufficient alone: a text matcher would swallow
+  // THIS -- a real finding somebody must act on -- while a code reader cannot. #1970 was deliberately not
+  // widened into exit 1's own (real) misattribution; this test is what stops this change from doing so
+  // by accident.
+  const armFailed = "SWEEP: FAILED TO ARM #1752 -- GraphQL: API rate limit already exceeded for user ID 46429371.";
+  assert.match(armFailed, /rate limit/i, "the fixture's own premise: a text matcher WOULD match this one");
+  const run = runSweepStep({ exitCode: 1, says: armFailed });
+  assert.equal(run.status, 1, "COULD_NOT_ARM must still fail the step -- it is a finding with PRs in it");
+  assert.doesNotMatch(run.stdout, /^::error::/m,
+    "and it must not be converted into an annotation-and-green either: exit 1 comes out of this change "
+    + "untouched");
+});
+
+test("#1970: a drained sweep is still a clean pass, and says nothing", () => {
+  // THE POSITIVE CONTROL FOR EVERY STATUS ASSERTION ABOVE. Without it, a step rewritten to `exit 0`
+  // unconditionally satisfies two of the three exit-code tests, and only this one and the exit-1 test
+  // above stand between that and green.
+  const run = runSweepStep({ exitCode: 0, says: "SWEEP: every open non-draft PR against main is already armed." });
+  assert.equal(run.status, 0);
+  assert.doesNotMatch(run.stdout, /^::error::/m, "nothing failed, so nothing is annotated");
 });

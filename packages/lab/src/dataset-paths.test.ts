@@ -196,6 +196,17 @@ const EXEMPT: Record<string, string> = {
   "packages/control/src/fleet-watch.test.ts":
     "Same reason as fleet-watch.mjs: the literal is the fixture state path these tests drive through an "
     + "injected in-memory read/write, never a real file under the dataset's runs root.",
+  "packages/agent-org/src/acceptance-commands.mjs":
+    "#1973: `runs/fetched/<out>.<artifact><ext>` is QUOTED FROM lab-fetch.yml's own \"Name it after what "
+    + "it actually is\" task, to tell a row filer which path their Acceptance meant -- a string in a "
+    + "refusal message, never a path this module resolves, opens or writes. It cannot be read from "
+    + "dataset-paths.mjs in any case: that destination is the PLAYBOOK's rule rather than the dataset's, "
+    + "and @a11ign/agent-org declares no dependencies at all, the same direction fleet-watch.mjs is "
+    + "exempted for one package along.",
+  "packages/lab/src/packaging/acceptance-check-at-filing.test.ts":
+    "#1973: the same literals, as the expected VALUES the refusal above must name -- a test that read "
+    + "them from dataset-paths.mjs would be asserting the checker against its own source and could not "
+    + "fail. They are pinned against lab-fetch.yml instead, which is the file that actually decides them.",
 };
 
 test("the discovery walk finds a realistic slice of the repo's own source", () => {
