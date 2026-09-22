@@ -33,7 +33,7 @@
 // the download. So firing this nightly against an unchanged snapshot is a no-op with a fresh verification,
 // not a duplicate -- there is deliberately no separate "is this new" check here to skip.
 import { execFile } from "node:child_process";
-import { copyFileSync, existsSync, realpathSync } from "node:fs";
+import { copyFileSync, existsSync, realpathSync, unlinkSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
@@ -107,6 +107,12 @@ async function main() {
     .catch((/** @type {any} */ e) => ({ stdout: e?.stdout ?? "", stderr: e?.stderr ?? String(e), code: e?.code ?? 1 }));
   process.stdout.write(child.stdout);
   if (child.stderr) process.stderr.write(child.stderr);
+
+  // ONLY ON SUCCESS. Unlike the fixed `candidate.corpus-archive.gz` name lab:fetch overwrites every run,
+  // `named` carries the snapshot's own timestamp and a new one lands beside it daily -- left in place
+  // this control checkout accumulates one corpus archive a day forever. A FAILED release keeps its
+  // archive, the same reason corpus-snapshot.mjs leaves a short archive in place: something to inspect.
+  if (child.code === 0) unlinkSync(named);
   process.exit(child.code);
 }
 
