@@ -8,20 +8,20 @@
  * read `1` while the rule was absent on roughly half of the merges. A requirement that covers one arming
  * path and exempts the other is worse than either arm of the row.
  *
- * THE BEHAVIOURAL READ IS `reviewDecision`, AND ITS PRE-CHANGE VALUE IS MEASURED, NOT ASSUMED.
- * GitHub computes no review decision at all when the base branch requires none. Measured 2026-09-23 at
- * `6eac64880`, before the change, on #1968 -- the PR whose real approving review met #1761's clearing
- * condition:
+ * THE BEHAVIOURAL READ IS `reviewDecision`, AND IT WAS WATCHED CHANGING.
+ * GitHub computes no review decision at all when the base branch requires none. Measured 2026-09-22T23:05Z
+ * at `6eac64880`, BEFORE the requirement was applied, on #1968 -- the PR whose real approving review met
+ * #1761's clearing condition:
  *
  *     $ gh pr view 1968 --json reviewDecision,reviews
  *     {"reviewDecision":"","states":["CHANGES_REQUESTED","CHANGES_REQUESTED","APPROVED"]}
  *
- * Three reviews, one of them APPROVED, and an EMPTY decision. That is the decorative state as an
- * observation: the reviews existed and decided nothing. So `reviewDecision` is the field that changes
- * when the rule starts biting, it is readable WITHOUT repository-admin rights, and its failing value is
- * the one this repository actually had.
+ * Three reviews, one of them APPROVED, and an EMPTY decision: the reviews existed and decided nothing.
+ * Re-read at 2026-09-23T00:05Z, AFTER the requirement went live, the same PR reads `APPROVED`, and every
+ * PR on the first page carries a decision where all of them were empty an hour earlier. The field is not
+ * merely the one this pin argues for -- it is the one that actually moved, and it needs no admin rights.
  *
- * WHAT THIS TOKEN CANNOT SEE, IT SAYS SO ABOUT. Measured the same day, as `a11ign-ai-workers`:
+ * WHAT THIS TOKEN CANNOT SEE, IT SAYS SO ABOUT. Measured the same night, as `a11ign-ai-workers`:
  * `repos/a11ign/a11ign.permissions.admin` is `false`, and `branches/main/protection` answers 404 while
  * `branches/main.protected` answers `true`. The row names that trap by hand -- a 404 means absent OR
  * forbidden -- and here it is demonstrably FORBIDDEN. `branches/main.protected` is the discriminator,
@@ -36,6 +36,14 @@ import { execFileSync } from "node:child_process";
 const VERDICT = { REQUIRED: "REQUIRED", DECORATIVE: "DECORATIVE", CANNOT_TELL: "CANNOT_TELL" } as const;
 type Code = (typeof VERDICT)[keyof typeof VERDICT];
 
+/**
+ * A SEPARATE VOCABULARY, because the first version of this file reused `VERDICT.REQUIRED` to mean "the
+ * protection object was readable" and the caller then treated every non-`CANNOT_TELL` read as a success.
+ * An `ABSENT` read fell straight through to `REQUIRED`: an UNPROTECTED branch reported as protected.
+ * Found in review of #2045 at `48ef0d20`, with the mutation that proves it below.
+ */
+const READ = { READABLE: "READABLE", ABSENT: "ABSENT", CANNOT_TELL: "CANNOT_TELL" } as const;
+
 const HTTP_OK = 200;
 const HTTP_FORBIDDEN = 403;
 const HTTP_NOT_FOUND = 404;
@@ -46,9 +54,10 @@ type ProtectionRead = {
   /** `.protected` from `GET /repos/{o}/{r}/branches/main` -- readable by any token that can read the repo. */
   protectedFlag: boolean | null;
   /** The protection body when status is 200, else null. */
-  body: { required_pull_request_reviews?: { bypass_pull_request_allowances?: BypassAllowances } } | null;
+  body: { required_pull_request_reviews?: ReviewRule } | null;
 };
 type BypassAllowances = { users?: unknown[]; teams?: unknown[]; apps?: unknown[] };
+type ReviewRule = { required_approving_review_count?: number; bypass_pull_request_allowances?: BypassAllowances };
 
 /**
  * THE 404 TRAP, AS A FUNCTION. Absent and forbidden are the same status code, and only
@@ -56,25 +65,31 @@ type BypassAllowances = { users?: unknown[]; teams?: unknown[]; apps?: unknown[]
  * the row forbids by name.
  */
 function protectionReadVerdict({ status, protectedFlag }: Pick<ProtectionRead, "status" | "protectedFlag">) {
-  if (status === HTTP_OK) return { code: VERDICT.REQUIRED, why: "the protection object was readable" };
+  if (status === HTTP_OK) return { code: READ.READABLE, why: "the protection object was readable" };
   if (status !== HTTP_NOT_FOUND && status !== HTTP_FORBIDDEN) {
-    return { code: VERDICT.CANNOT_TELL, why: `the protection endpoint answered ${status}, which is neither a read nor a refusal` };
+    return { code: READ.CANNOT_TELL, why: `the protection endpoint answered ${status}, which is neither a read nor a refusal` };
   }
   if (protectedFlag === true) {
-    return { code: VERDICT.CANNOT_TELL,
+    return { code: READ.CANNOT_TELL,
       why: `the protection endpoint answered ${status} but \`branches/main.protected\` is true: FORBIDDEN to this token, NOT absent` };
   }
   if (protectedFlag === false) {
-    return { code: VERDICT.DECORATIVE,
+    return { code: READ.ABSENT,
       why: "`branches/main.protected` is false: main carries no protection at all" };
   }
-  return { code: VERDICT.CANNOT_TELL,
+  return { code: READ.CANNOT_TELL,
     why: `the protection endpoint answered ${status} and \`branches/main.protected\` could not be read either` };
 }
 
-/** Everyone named here may merge without the approval the rule demands. */
-function exemptIdentities(body: ProtectionRead["body"]): string[] {
-  const allow: BypassAllowances = body?.required_pull_request_reviews?.bypass_pull_request_allowances ?? {};
+/**
+ * Everyone named here may merge without the approval the rule demands. `null` means the key was ABSENT,
+ * which is NOT the same as empty and is deliberately not read as it: GitHub is documented to omit the key
+ * when no actor may bypass, but this session holds no admin token and so could not confirm that against a
+ * live body. Reading absence as "nobody is exempt" is the shape that turns a missing field into a pass.
+ */
+function exemptIdentities(reviews: ReviewRule | undefined): string[] | null {
+  const allow = reviews?.bypass_pull_request_allowances;
+  if (!allow) return null;
   return [...(allow.users ?? []), ...(allow.teams ?? []), ...(allow.apps ?? [])]
     .map((a) => (typeof a === "string" ? a : String((a as { login?: string; slug?: string })?.login
       ?? (a as { slug?: string })?.slug ?? JSON.stringify(a))));
@@ -91,11 +106,35 @@ function reviewRequirementVerdict({ reviewDecision, protection }: { reviewDecisi
       why: "`reviewDecision` is empty: the base branch computes no decision, so it requires no approval -- the #1968 state" };
   }
   const read = protectionReadVerdict(protection);
-  if (read.code === VERDICT.CANNOT_TELL) {
+  // EVERY non-readable outcome is handled by name. The first version tested only for CANNOT_TELL and let
+  // ABSENT fall through to REQUIRED, which reported an unprotected branch as protected.
+  if (read.code === READ.CANNOT_TELL) {
     return { code: VERDICT.CANNOT_TELL as Code,
       why: `the rule bites (reviewDecision=${reviewDecision}) but the exemption list is unreadable: ${read.why}` };
   }
-  const exempt = exemptIdentities(protection.body);
+  if (read.code === READ.ABSENT) {
+    return { code: VERDICT.DECORATIVE as Code, why: `${read.why}, so nothing requires a review` };
+  }
+  return reviewRuleVerdict(protection.body?.required_pull_request_reviews, reviewDecision);
+}
+
+/** The readable-protection half: the rule must exist, demand at least one approval, and exempt nobody. */
+function reviewRuleVerdict(reviews: ReviewRule | undefined, reviewDecision: string) {
+  if (!reviews) {
+    return { code: VERDICT.DECORATIVE as Code,
+      why: "the protection object carries no `required_pull_request_reviews` at all, so no approval is required" };
+  }
+  const count = reviews.required_approving_review_count ?? 0;
+  if (count < 1) {
+    return { code: VERDICT.DECORATIVE as Code,
+      why: `\`required_approving_review_count\` is ${count}: the rule exists and demands nothing` };
+  }
+  const exempt = exemptIdentities(reviews);
+  if (exempt === null) {
+    return { code: VERDICT.CANNOT_TELL as Code,
+      why: "`bypass_pull_request_allowances` is ABSENT from the body. GitHub omits the key when nobody may "
+        + "bypass, but absence is not read as empty here -- confirm it against a live body with an admin token" };
+  }
   if (exempt.length > 0) {
     return { code: VERDICT.DECORATIVE as Code,
       why: `the rule bites but these identities bypass it: ${exempt.join(", ")}` };
@@ -112,8 +151,8 @@ test("#2022: 404 with `protected: true` is FORBIDDEN, never read as unprotected 
   // the CI job here authenticates as. If this collapsed to "unprotected" the pin would report the
   // requirement missing on every ordinary run, forever.
   const v = protectionReadVerdict(FORBIDDEN_HERE);
-  assert.equal(v.code, VERDICT.CANNOT_TELL);
-  assert.notEqual(v.code, VERDICT.DECORATIVE, "the trap the row forbids by name");
+  assert.equal(v.code, READ.CANNOT_TELL);
+  assert.notEqual(v.code, READ.ABSENT, "the trap the row forbids by name");
   assert.match(v.why, /FORBIDDEN to this token, NOT absent/);
 });
 
@@ -121,31 +160,31 @@ test("#2022: 404 with `protected: false` IS absent, and says so -- the other hal
   // The positive control for the test above: if `protectedFlag` could never be false, CANNOT_TELL would
   // be the only reachable answer and the discriminator would be decorative itself.
   const v = protectionReadVerdict({ status: HTTP_NOT_FOUND, protectedFlag: false });
-  assert.equal(v.code, VERDICT.DECORATIVE);
+  assert.equal(v.code, READ.ABSENT);
   assert.match(v.why, /no protection at all/);
 });
 
 test("#2022: 403 is treated exactly as 404 -- GitHub uses both for a refusal", () => {
-  assert.equal(protectionReadVerdict({ status: HTTP_FORBIDDEN, protectedFlag: true }).code, VERDICT.CANNOT_TELL);
+  assert.equal(protectionReadVerdict({ status: HTTP_FORBIDDEN, protectedFlag: true }).code, READ.CANNOT_TELL);
 });
 
 test("#2022: a 404 with NEITHER endpoint readable is CANNOT_TELL, not a guess in either direction", () => {
   const v = protectionReadVerdict({ status: HTTP_NOT_FOUND, protectedFlag: null });
-  assert.equal(v.code, VERDICT.CANNOT_TELL);
+  assert.equal(v.code, READ.CANNOT_TELL);
   assert.match(v.why, /could not be read either/);
 });
 
 test("#2022: an unexpected status is its own CANNOT_TELL rather than falling through to a read", () => {
   const v = protectionReadVerdict({ status: 500, protectedFlag: true });
-  assert.equal(v.code, VERDICT.CANNOT_TELL);
+  assert.equal(v.code, READ.CANNOT_TELL);
   assert.match(v.why, /neither a read nor a refusal/);
 });
 
 // --- the behavioural judgement ----------------------------------------------------------------------
 
-const READABLE = (allow: BypassAllowances = {}): ProtectionRead => ({
+const READABLE = (allow: BypassAllowances = {}, count = 1): ProtectionRead => ({
   status: HTTP_OK, protectedFlag: true,
-  body: { required_pull_request_reviews: { bypass_pull_request_allowances: allow } },
+  body: { required_pull_request_reviews: { required_approving_review_count: count, bypass_pull_request_allowances: allow } },
 });
 
 test("#2022 THE #1968 STATE: an APPROVED review with an EMPTY decision is DECORATIVE, as measured", () => {
@@ -198,6 +237,41 @@ test("#2022: a biting rule whose exemption list is FORBIDDEN is CANNOT_TELL, nev
   assert.match(v.why, /exemption list is unreadable/);
 });
 
+test("#2045 BLOCKER: a READABLE-but-ABSENT protection is DECORATIVE, never REQUIRED", () => {
+  // The review finding. `protectionReadVerdict` answering ABSENT used to fall through the single
+  // CANNOT_TELL check and return REQUIRED: an UNPROTECTED branch reported as protected, with a biting
+  // `reviewDecision` supplying the only evidence. Every non-readable code is now handled by name.
+  const v = reviewRequirementVerdict({ reviewDecision: "REVIEW_REQUIRED",
+    protection: { status: HTTP_NOT_FOUND, protectedFlag: false, body: null } });
+  assert.equal(v.code, VERDICT.DECORATIVE);
+  assert.notEqual(v.code, VERDICT.REQUIRED, "an unprotected branch must never read as protected");
+  assert.match(v.why, /nothing requires a review/);
+});
+
+test("#2045 BLOCKER: a readable body with NO `required_pull_request_reviews` is DECORATIVE", () => {
+  const v = reviewRequirementVerdict({ reviewDecision: "APPROVED",
+    protection: { status: HTTP_OK, protectedFlag: true, body: {} } });
+  assert.equal(v.code, VERDICT.DECORATIVE);
+  assert.match(v.why, /no `required_pull_request_reviews` at all/);
+});
+
+test("#2045 BLOCKER: `required_approving_review_count: 0` is DECORATIVE -- the pre-change field value", () => {
+  // The exact state `ceo` measured on 2026-09-22: the mechanism configured, the count at zero.
+  const v = reviewRequirementVerdict({ reviewDecision: "APPROVED", protection: READABLE({ users: [] }, 0) });
+  assert.equal(v.code, VERDICT.DECORATIVE);
+  assert.match(v.why, /demands nothing/);
+});
+
+test("#2045 BLOCKER: an ABSENT `bypass_pull_request_allowances` is CANNOT_TELL, not an empty list", () => {
+  // Absence is not emptiness. A missing key read as "nobody is exempt" is how a field that was never
+  // checked becomes a pass; this repository has the `absence vs broken` rule for exactly that shape.
+  const v = reviewRequirementVerdict({ reviewDecision: "APPROVED",
+    protection: { status: HTTP_OK, protectedFlag: true, body: { required_pull_request_reviews: { required_approving_review_count: 1 } } } });
+  assert.equal(v.code, VERDICT.CANNOT_TELL);
+  assert.notEqual(v.code, VERDICT.REQUIRED);
+  assert.match(v.why, /ABSENT from the body/);
+});
+
 test("#2022: the three verdicts are genuinely distinct -- none is a spelling of another", () => {
   assert.equal(new Set([VERDICT.REQUIRED, VERDICT.DECORATIVE, VERDICT.CANNOT_TELL]).size, 3);
 });
@@ -229,12 +303,14 @@ test("#2022 LIVE: `main` requires an approving review, asked of GitHub", () => {
   }
   const protection = liveProtection(gh);
   const v = reviewRequirementVerdict({ reviewDecision: openPr.reviewDecision, protection });
-  assert.notEqual(v.code, VERDICT.DECORATIVE,
-    `#${openPr.number}: the review requirement is not biting -- ${v.why}`);
-  if (v.code === VERDICT.CANNOT_TELL) {
-    console.log(`  CANNOT TELL, and that is not a pass: ${v.why}. Re-run with a token holding repository admin to `
-      + "read `bypass_pull_request_allowances`; #2022's ruling requires it empty.");
-  }
+  // CANNOT_TELL FAILS HERE, and that is the point. An earlier version asserted only `!== DECORATIVE`, so
+  // the one state this repository's own token actually reaches -- the exemption list forbidden -- exited
+  // green and the pin established nothing about `bypass_pull_request_allowances`. #2022 requires it empty,
+  // and "I could not look" is not "it is empty". Satisfying this needs a token with repository admin,
+  // which is a true statement about the requirement rather than a limitation of the test.
+  assert.equal(v.code, VERDICT.REQUIRED,
+    `#${openPr.number}: ${v.why}.${v.code === VERDICT.CANNOT_TELL
+      ? " Re-run with a token holding repository admin -- this session's `a11ign-ai-workers` has `permissions.admin: false`." : ""}`);
 });
 
 /** Reads both halves of the protection state, keeping "forbidden" distinguishable from "absent". */
