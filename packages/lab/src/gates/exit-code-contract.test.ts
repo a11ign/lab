@@ -123,6 +123,11 @@ const INFRASTRUCTURE: Record<string, string> = {
     + "produces 2 — self-documented as the honest INCONCLUSIVE for a dispatch that died, and the reason a "
     + "bare 2 from anything using this helper is ambiguous between three distinct causes. See the doc's "
     + "'gave up observing' section",
+  "packages/lab/src/training/capture-fleet-guard.mjs":
+    "`assertOneBrowserAcross` exits 3 on a fleet split across two browser builds and has no `main` of its "
+    + "own — `capture-real-pages.mjs` inherits it directly, and that script's own entry below already "
+    + "documents 3 as 'fleet browser-version inconsistency'. The same shape as `code-drift.mjs` one entry "
+    + "down, for the neighbouring question about the same fleet",
   "packages/worker-fleet/src/cli-flags.mjs":
     "`refuseUnknownFlags` exits 2 on an unrecognised flag — the one place in this repo code 2 means exactly "
     + "one thing by design, inherited by every one of its ~30 callers rather than chosen by them",

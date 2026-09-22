@@ -11,10 +11,15 @@
 // a split fleet must be refused, and a matched one must still pass. Driven through the REAL
 // `fleetConsistency` — the defect was the shape crossing that boundary, so a stub would take the boundary
 // out of the test along with the bug.
+//
+// IT IMPORTS `capture-fleet-guard.mjs`, NOT THE CAPTURE SCRIPT, and that is part of the same fix: the
+// guard used to live inside `capture-real-pages.mjs`, whose import closure reaches `dataset-paths.mjs`
+// and therefore the corpus — so the acceptance job, which has no `runs/`, refuses to run any test that
+// imports it. A guard no CI job could exercise is how this one shipped unable to fire.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { assertOneBrowserAcross } from "./capture-real-pages.mjs";
+import { assertOneBrowserAcross } from "./capture-fleet-guard.mjs";
 import { fleetConsistency } from "@a11ign/worker-fleet/fleet-consistency";
 
 /**

@@ -30,7 +30,7 @@ import { configuredWorkers, inventoryWorkerUrls } from "@a11ign/worker-fleet/fle
 import { leasePageServer } from "./page-server.mjs";
 import { realCorpusRoot, datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 import { hostAddressForWorker } from "@a11ign/worker-fleet";
-import { fleetConsistency, describeMismatches } from "@a11ign/worker-fleet/fleet-consistency";
+import { assertOneBrowserAcross as refuseSplitFleet } from "./capture-fleet-guard.mjs";
 import { assertFleetRunsThisCheckout } from "@a11ign/worker-fleet/worker-code-check";
 import { drainAcrossPool } from "./worker-pool.mjs";
 import { createHostThrottle, hostOf } from "./host-throttle.mjs";
@@ -379,79 +379,20 @@ async function captureAcrossPool(/** @type {any} */ pages, /** @type {any} */ wo
 }
 
 /**
- * Refuse to build ONE corpus out of workers running different browsers.
+ * `--allow-mixed-browsers`, applied where the flags are parsed.
  *
- * `browserVersion` is in the capture cache key precisely because a fleet can run more than one image, and
- * `fleet:status` has reported INCONSISTENT for a long time — but only when a human ran it, and only
- * before a run rather than during one.
- *
- * Measured 2026-08-24: a worker that had been down came back with Edge auto-updated from the pinned
- * .101 to .107 while a corpus run was in flight. The fleet was consistent when the run started and was
- * not when it finished, and nothing noticed. Fifteen pages were captured under the wrong build before I
- * happened to look.
- *
- * Checked HERE, at the boundary, for the same reason `assertWorkerUrl` is: the alternative is discovering
- * it in the evidence weeks later, where a split fleet looks like a page that changed. And re-checked
- * after the run, because "consistent when it started" is exactly the claim that failed.
- *
- * `--allow-mixed-browsers` exists for the case where you know something the check does not, and it says
- * so in the output rather than passing quietly.
- *
- * FOR TWO MONTHS IT COULD NOT FIRE (#2018). This passed each guest's raw `/health` payload straight to
- * `fleetConsistency`, and `/health` answers `{ ok, screenReader, busy, code, environment }` — no `worker`
- * key. `check()` stores every value as `values[guest.worker]`, so ten guests landed on the single key
- * `undefined`, the map held one entry however many reported, and `consistent` was true for any fleet at
- * all — including the 151-against-150 split this function exists for, and which it had already caught
- * once by hand. Nothing typed it: `fleetConsistency` documents `{worker, environment, policy}` in JSDoc,
- * and a `.mjs` caller is not checked against a `@param`. `fleet-status.mjs` and `doctor.mjs` both build
- * the documented shape; this was the odd one out, so the fix is to join them rather than to loosen the
- * callee.
- *
- * `deps` exists so a test can drive THIS FUNCTION rather than a pure helper beside it — the same reason
- * `fleetStatus` takes one. The defect lived entirely in the object built out of a `/health` payload, so a
- * test that stubs `fleetConsistency`, or re-derives the guests itself, holds everything except the line
- * that was wrong. Production passes nothing and the defaults are the real probe, stderr and exit.
+ * The check itself is `capture-fleet-guard.mjs` — moved out of this file in #2018 so a test can import it
+ * without importing the corpus reader above it, which is what kept CI from ever running one. What stays
+ * here is the only part that belongs to this script: the flag that says build one corpus from two browser
+ * builds anyway. One wrapper rather than the condition at both call sites, so a third call site cannot
+ * quietly forget it.
  *
  * @param {string[]} workers
  * @param {string} when
- * @param {{probe?: (url: string) => Promise<any>, report?: (text: string) => void,
- *   exit?: (code: number) => void}} [deps]
  */
-export async function assertOneBrowserAcross(workers, when, deps = {}) {
+async function assertOneBrowserAcross(workers, when) {
   if (ALLOW_MIXED) return;
-  const probe = deps.probe ?? healthOfGuest;
-  const report = deps.report ?? ((/** @type {string} */ text) => void process.stderr.write(text));
-  const exit = deps.exit ?? ((/** @type {number} */ code) => process.exit(code));
-  const guests = await Promise.all(workers.map(async (url) => {
-    try {
-      const health = await probe(url);
-      // NAMED BY WORKER, which is what makes a verdict possible at all: the values `fleetConsistency`
-      // compares are keyed by `worker`, and `describeMismatches` reads those same keys to say WHICH box
-      // drifted. `policy: undefined` rather than null, exactly as `fleet-status.mjs` passes it — the
-      // field is optional and means "this probe collected no policy block", which is true here since
-      // `/health` carries none. `null` would claim we collected an empty one.
-      return health ? { worker: url, environment: health.environment, policy: undefined } : null;
-    } catch {
-      // Unreachable is not INCONSISTENT. A box that is asleep contributes no evidence and no mismatch,
-      // and treating silence as a fault is how a check earns a reputation for crying wolf.
-      return null;
-    }
-  }));
-  // `!== null` rather than `Boolean`: a filter cannot narrow unless it says what it tests, and typing the
-  // guests is the whole point of this fix — a `.filter(Boolean)` here leaves the array `(guest|null)[]`,
-  // which is how a wrongly-shaped guest reached `fleetConsistency` unchecked in the first place.
-  const verdict = fleetConsistency(guests.filter((guest) => guest !== null));
-  if (verdict.consistent) return;
-  report(`\nFLEET INCONSISTENT ${when}: ${describeMismatches(verdict.mismatches)}\n`
-    + "Two browser builds must never write into one corpus — `browserVersion` is in the capture cache\n"
-    + "key for exactly this reason, and a split shows up later as evidence that cannot be compared.\n"
-    + "Pin the fleet (`provision-role.yml --tags edge`) or run with --allow-mixed-browsers.\n");
-  exit(3);
-}
-
-/** The real `/health` read, kept beside its only caller. @param {string} url */
-async function healthOfGuest(url) {
-  return (await requestJson(`${url}/health`, { timeoutMs: 10_000 })).json ?? null;
+  await refuseSplitFleet(workers, when);
 }
 
 /**
