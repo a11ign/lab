@@ -38,6 +38,7 @@ const WAV_SAMPLE_RATE = 8000;
 const WAV_SILENT_SAMPLES = 800;
 const PCM_8BIT_SILENCE = 0x80;
 
+/** @param {number} sampleCount */
 function silentWav(sampleCount) {
   const header = Buffer.alloc(44);
   header.write("RIFF", 0, "ascii");
