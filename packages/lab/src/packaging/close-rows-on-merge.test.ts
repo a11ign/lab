@@ -77,6 +77,72 @@ test("a mixed set is split, not decided by its first member", () => {
   assert.deepEqual(plan.already, [{ number: 1, labels: [] }]);
 });
 
+// --- #1877: an OPEN row reopened AFTER this PR merged is `skip`, not `close` ---
+
+test("#1877 ACCEPTANCE: an OPEN row reopened after the PR's own mergedAt is skipped, not closed -- "
+  + "the exact #1865 shape: orchestrator's reopen must outrank the sweep's re-close", () => {
+  const plan = closurePlan(
+    [{ number: 1865, state: "OPEN", reopenedAt: "2026-09-22T01:12:43Z" }],
+    { prMergedAt: "2026-09-22T01:00:24Z" },
+  );
+  assert.deepEqual(plan.close, []);
+  assert.deepEqual(plan.skip, [{ number: 1865, labels: [] }]);
+  assert.deepEqual(plan.already, []);
+});
+
+test("#1877: a reopen that PREDATES the merge is an ordinary close -- the PR's own Closes is deciding "
+  + "what happens to a row reopened before it, not overriding a reason written after", () => {
+  const plan = closurePlan(
+    [{ number: 5, state: "OPEN", reopenedAt: "2026-09-20T00:00:00Z" }],
+    { prMergedAt: "2026-09-22T01:00:24Z" },
+  );
+  assert.deepEqual(plan.close, [{ number: 5, labels: [] }]);
+  assert.deepEqual(plan.skip, []);
+});
+
+test("#1877: an OPEN row with no ReopenedEvent at all (the ordinary never-closed-yet row) closes exactly "
+  + "as before -- the new bucket must not swallow the common case", () => {
+  const plan = closurePlan([{ number: 6, state: "OPEN" }], { prMergedAt: "2026-09-22T01:00:24Z" });
+  assert.deepEqual(plan.close, [{ number: 6, labels: [] }]);
+  assert.deepEqual(plan.skip, []);
+});
+
+test("#1877: with no prMergedAt given at all (an older caller), nothing is ever skipped -- the new bucket "
+  + "is inert unless a caller actually supplies the merge time to weigh a reopen against", () => {
+  const plan = closurePlan([{ number: 7, state: "OPEN", reopenedAt: "2026-09-22T09:00:00Z" }]);
+  assert.deepEqual(plan.close, [{ number: 7, labels: [] }]);
+  assert.deepEqual(plan.skip, []);
+});
+
+test("#1877 MUTATION TARGET: applyClosurePlan closes/strips/settles nothing for a skipped row, and reports "
+  + "its number in `skipped` rather than dropping it", () => {
+  const closed: number[] = [];
+  const stripped: number[] = [];
+  const settled: number[] = [];
+  const result = applyClosurePlan(
+    { close: [], already: [], skip: [{ number: 1865, labels: ["was-ready"] }] },
+    { prNumber: "1868", sha: "abc123", repo: "a11ign/a11ign" },
+    {
+      closeOne: (n) => { closed.push(n); return true; },
+      strip: (n) => { stripped.push(n); },
+      settle: (n) => { settled.push(n); return { settled: true, refused: [] }; },
+    },
+  );
+  assert.deepEqual(result, { failed: [], unsettled: [], skipped: [1865] });
+  assert.deepEqual(closed, [], "a skipped row is never closed");
+  assert.deepEqual(stripped, [], "a skipped row's claim/labels are left exactly as they were");
+  assert.deepEqual(settled, [], "a skipped row's Status is never touched");
+});
+
+test("#1877: a plan with no `skip` at all (an older caller) applies exactly as before -- `skipped` is just empty", () => {
+  const result = applyClosurePlan(
+    { close: [{ number: 344, labels: [] }], already: [] },
+    { prNumber: "1", sha: "abc", repo: "o/r" },
+    { closeOne: () => true, strip: () => {}, settle: () => ({ settled: true, refused: [] }) },
+  );
+  assert.deepEqual(result, { failed: [], unsettled: [], skipped: [] });
+});
+
 test("the exit codes are the contract, and CANNOT_ASK is distinct from a clean run", () => {
   assert.deepEqual(EXIT, { DONE: 0, COULD_NOT_CLOSE: 1, CANNOT_ASK: 2, STATUS_NOT_MOVED: 3 });
 });
@@ -300,11 +366,11 @@ test("#1299: applyClosurePlan NAMES a closed row whose Status did not move, on b
   const ctx = { prNumber: "1", sha: "abc", repo: "o/r" };
   const deps = { closeOne: () => true, strip: () => {} };
   assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: refuseOnly(30, "HTTP 500") }),
-    { failed: [], unsettled: [refusal(30, "HTTP 500")] }, "the already-closed path");
+    { failed: [], unsettled: [refusal(30, "HTTP 500")], skipped: [] }, "the already-closed path");
   assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: refuseOnly(31, "HTTP 500") }),
-    { failed: [], unsettled: [refusal(31, "HTTP 500")] }, "the just-closed path");
-  assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: () => ({ settled: true, refused: [] }) }), { failed: [], unsettled: [] },
-    "the positive control: a run whose every move settled names nobody");
+    { failed: [], unsettled: [refusal(31, "HTTP 500")], skipped: [] }, "the just-closed path");
+  assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: () => ({ settled: true, refused: [] }) }),
+    { failed: [], unsettled: [], skipped: [] }, "the positive control: a run whose every move settled names nobody");
 });
 
 /** CAPTURED, not composed: the reason `moveProjectStatus` gave for #1299 in trunk run 34769927592 (`02ae7420`). */
