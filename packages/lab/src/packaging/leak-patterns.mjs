@@ -23,6 +23,10 @@ export const LEAK_PATTERNS = [
   { name: "private LAN IPv4 address", pattern:
     /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3})\b/ },
   { name: "a named SSH private key file", pattern: /~?\/?\.ssh\/[\w.-]+_ed25519\b|~?\/?\.ssh\/id_\w+\b/ },
+  // #1875: the control plane's GitHub token file, beside the fleet key and guarded for the same reason --
+  // where a credential sits on a real box is somebody's infrastructure written down. The code that reads
+  // it (`fleet-playbook.mjs`'s `GH_TOKEN_FILE`) is outside every population this set is swept over in prose.
+  { name: "a named credential file on a fleet host", pattern: /\.config\/a11y-witness\/[\w.-]+/ },
   { name: "a live pct exec container-hop command", pattern: /\bpct exec \d/ },
 ];
 
