@@ -23,7 +23,7 @@ import {
   readyRowsAlreadyMerged, fetchClosingPrRefs, fetchLatestReopenedAt, CHECKS, runCheck, isProjectsCredentialGap,
   fetchClosedUnmergedPrs, fetchClosingIssueRefs, soleUnmergedCloserRows,
   criterionStatusesFromSource, criterionOwningRow, coverageTrackerDisagreements, fetchClosedCompletedIssues,
-  reachableCriteriaWithoutRow, provenanceVerdicts, provenanceFindings,
+  reachableCriteriaWithoutRow, provenanceVerdicts, provenanceFindings, provenanceRemedySummary,
   guidanceDrift,
 } from "../../../agent-org/src/ready-label-audit.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
@@ -1390,6 +1390,71 @@ test("#848: the provenance finding counts ONLY undeclared rows -- a pre-#839 clo
   assert.deepEqual(verdicts.map((v) => [v.number, v.verdict]),
     [[887, "work"], [853, "undeclared"], [900, "worker"], [912, "undeclared"]]);
   assert.deepEqual(provenanceFindings(verdicts), [853, 912], "the count the audit exits with");
+});
+
+// ---------------------------------------------------------------------------------------------------
+// #1960: THE REMEDY THE SUMMARY NAMES MUST BE ONE THAT CHANGES THE NEXT RUN'S VERDICT.
+//
+// It used to say "have whoever pushed it re-run `row-claim.mjs claim`" over a list 68 rows long.
+// `row-claim.mjs claim` labels the ROW; `attributionFor` reads the merged PULL REQUEST's labels, which
+// only `arm-pr` writes. Following that sentence exactly left every subsequent run reading exactly what
+// the last one read. These fixtures are #848's four shapes plus the closed-UNMERGED closer, because
+// `merged: false` is the other way a row reaches `undeclared` with a pull request in hand.
+const REMEDY_ROW = (number: number) =>
+  ({ number, title: `row ${number}`, closedAt: "2026-09-09T18:00:00Z", events: [] });
+const REMEDY_CLOSERS: Record<number, unknown> = {
+  887: { number: 894, headRefName: "agent/exhausted-over-a-gap-887", merged: true, createdAt: "2026-09-09T16:00:00Z", sessionLabels: [] },
+  853: null,
+  900: { number: 905, headRefName: "agent/x-900", merged: true, createdAt: ARM_LABELS_FROM, sessionLabels: ["session:worker-capture"] },
+  912: { number: 913, headRefName: "agent/unclaimed-912", merged: true, createdAt: ARM_LABELS_FROM, sessionLabels: [] },
+  919: { number: 920, headRefName: "agent/never-landed-919", merged: false, createdAt: ARM_LABELS_FROM, sessionLabels: [] },
+};
+const remedyVerdicts = () => provenanceVerdicts(
+  [887, 853, 900, 912, 919].map(REMEDY_ROW) as never, (n: number) => REMEDY_CLOSERS[n] as never);
+
+test("#1960: the merged-PR sub-case names that pull request's own number, and never row-claim", () => {
+  const summary = provenanceRemedySummary(remedyVerdicts());
+  // #912's verdict is decided by PR #913's labels, so #913 is the number a follower has to type. Naming
+  // the ROW instead is the defect this row exists for: a reader who edits #912 changes nothing.
+  assert.match(summary, /#912:\s+gh pr edit 913 --add-label session:/,
+    "the merged-PR sub-case must name the closing pull request the verdict is read from");
+  assert.ok(!summary.includes("row-claim"),
+    "row-claim writes the ROW's labels, which this verdict never reads -- naming it is unfollowable");
+  // The other sub-case: nothing carries a label, so there is no command, and the summary must not
+  // invent one against a pull request that never merged.
+  assert.ok(!summary.includes("gh pr edit 920"),
+    "#919's closer never merged, so labelling it would not change the verdict either");
+  assert.match(summary, /#853, #919 need somebody who knows who did the work/,
+    "the unrecoverable sub-case says what it needs instead of naming a command");
+});
+
+test("#1960: only undeclared rows get a remedy, and every undeclared row gets exactly one", () => {
+  const verdicts = remedyVerdicts();
+  const summary = provenanceRemedySummary(verdicts);
+  // The agreement pin for the second copy of `attributionFor`'s "is there a merged closer" clause that
+  // `labellablePr` carries: for each fixture, whether a `gh pr edit <pr>` line appears is derived HERE
+  // from `attributionFor`'s own verdict and the fixture's `merged`, not from the summary's grouping.
+  for (const v of verdicts) {
+    const pr = REMEDY_CLOSERS[v.number] as { number: number, merged: boolean } | null;
+    const earned = v.verdict === "undeclared" && pr !== null && pr.merged;
+    assert.equal(summary.includes(`gh pr edit ${pr?.number ?? "none"} `), earned,
+      `#${v.number} (${v.verdict}): a pr-edit remedy must appear exactly when the verdict is read off a merged PR`);
+  }
+  assert.match(summary, /^\n3 row\(s\) closed since .* cannot name their worker\./,
+    "the count is the finding count: 853, 912, 919");
+  // Positive control for the two `!summary.includes` assertions above: the attributed rows are in this
+  // population, so an assertion that nothing mentions them passes for a reason.
+  assert.equal(provenanceFindings(verdicts).length, 3);
+  assert.equal(verdicts.length, 5, "887 and 900 are present and deliberately un-remedied");
+});
+
+test("#1960: no undeclared rows, no remedy paragraph -- and the control that one is produced", () => {
+  const attributed = provenanceVerdicts([REMEDY_ROW(900)] as never, () => REMEDY_CLOSERS[900] as never);
+  assert.equal(provenanceRemedySummary(attributed), "\n0 row(s) closed since "
+    + "2026-09-09T13:00:00Z cannot name their worker. A branch name identifies the WORK, never the worker.\n",
+    "with nothing undeclared there is no sub-case and so no command");
+  assert.ok(provenanceRemedySummary(remedyVerdicts()).includes("gh pr edit"),
+    "control: the same function does emit a command when a row has earned one");
 });
 
 
