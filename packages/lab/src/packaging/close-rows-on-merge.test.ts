@@ -21,6 +21,7 @@ import { parse as parseYaml } from "yaml";
 import {
   closurePlan, labelsToStrip, applyClosurePlan, EXIT, closeRowsExit, liveClosureEffects, stripClaimLabels,
   LIVE_SETTLE_DEPS, rateLimitHeaders, rateLimitLine, logRateLimit,
+  rowNumberFromBranch, orphanedRowReport, reportOrphanedRow,
 } from "../../../agent-org/src/close-rows-for-merged-pr.mjs";
 import { refusalCause } from "../../../agent-org/src/settle-closed-status.mjs";
 import { moveProjectStatus } from "../../../agent-org/src/row-claim.mjs";
@@ -573,4 +574,100 @@ test("#1443 logRateLimit does not throw when the injected run itself throws -- a
     console.error = originalError;
   }
   assert.ok(printed.some((line) => /could not read/.test(line)));
+});
+
+// ---------------------------------------------------------------------------------------------------
+// #2036: A MERGED PR CAN DECLARE `Closes: none`, MERGE GREEN, AND LEAVE THE ROW IT WAS BUILT FOR OPEN.
+//
+// Every component behaves as designed. The declaration is well-formed, so `gate` passes it; GitHub
+// resolves no issue, so the declared-vs-resolved check sees both sides AGREE and reads that as healthy;
+// and `applyClosurePlan` correctly closes nothing. Measured 2026-09-22 on #2011 (branch
+// `agent/worktree-prune-unit-2000`), which merged at 22:43:48Z carrying #2000's own body text as its
+// `Closes: none` reason. #2000 sat `in-progress` with its work on `main` until a session closed it by
+// hand fifteen minutes later; nothing would have closed it, because no cause fires for a row whose PR
+// has already merged.
+//
+// THE NEGATIVE HALF IS THE HALF THAT MATTERS. Over the last 120 merged PRs whose branch ends in a row
+// number, 18 did not close that row and all declared `Closes: none` -- most of them CORRECTLY, because a
+// row that takes several PRs declares it on every PR but the last. A check that refused this shape would
+// refuse the normal case, which is the failure this repo has measured repeatedly. So the three legitimate
+// shapes each get their own assertion below, and they outnumber the positive one on purpose.
+// ---------------------------------------------------------------------------------------------------
+
+const ORPHAN_PR = { prNumber: "2011", sha: "deadbee", branch: "agent/worktree-prune-unit-2000",
+  declaration: "`Closes: none -- filed out of ceo's amendment ruling`" };
+const CLAIMED_OPEN = { number: 2000, state: "OPEN", labels: ["in-progress", "session:worker-judge"] };
+
+test("#2036 ACCEPTANCE: an OPEN, CLAIMED row whose PR merged closing nothing is reported -- once, naming the PR, the sha and the declaration", () => {
+  const report = orphanedRowReport({ ...ORPHAN_PR, row: CLAIMED_OPEN });
+  assert.equal(report?.number, 2000, "the row the BRANCH names, never a closing reference");
+  assert.match(report?.comment ?? "", /#2011/, "the PR");
+  assert.match(report?.comment ?? "", /`deadbee`/, "the merge sha, so `git show` can be asked what landed");
+  assert.match(report?.comment ?? "", /Closes: none -- filed out of ceo's amendment ruling/,
+    "and the author's own declaration, so the reader can see whether the reason still holds");
+  assert.match(report?.comment ?? "", /agent\/worktree-prune-unit-2000/, "and the branch that names the row");
+  // NOT a grep for tone -- a grep over prose fails both ways, and reshaping the sentence to flip it
+  // would prove nothing. This asserts the one thing the reader must be told: that what they did is
+  // legitimate, so a report on a correct multi-PR row does not read as an accusation.
+  assert.match(report?.comment ?? "", /legitimate and common/,
+    "the reader is told `Closes: none` is normal -- 18 of the last 120 did it and most were right");
+  assert.match(report?.comment ?? "", /If it stays open, say why here/,
+    "and is given the second door, so a row that SHOULD stay open has an answer other than closing it");
+});
+
+test("#2036 NEGATIVE (shape 1 of 3): a branch with NO trailing row number reports nothing", () => {
+  const said: string[] = [];
+  const reported = reportOrphanedRow({ ...ORPHAN_PR, branch: "agent/rstest-spike" },
+    { lookupRow: () => { said.push("LOOKED UP"); return CLAIMED_OPEN; },
+      comment: () => { said.push("COMMENTED"); } });
+  assert.equal(reported, null);
+  assert.deepEqual(said, [], "and it does not even ask -- no row number means no row to ask about");
+});
+
+test("#2036 NEGATIVE (shape 2 of 3): a row already CLOSED reports nothing -- the 9 of the 18 that were handled", () => {
+  assert.equal(orphanedRowReport({ ...ORPHAN_PR, row: { ...CLAIMED_OPEN, state: "CLOSED" } }), null);
+});
+
+test("#2036 NEGATIVE (shape 3 of 3): `Closes #N` honoured never reaches here -- the plan is not `none`", () => {
+  // The report is wired inside `main`'s `plan.none` branch, so a PR that closed a row cannot reach it.
+  // Asserted on the PLAN rather than on the report, because that is where the exclusion actually lives.
+  const plan = closurePlan([{ number: 2000, state: "OPEN" }]);
+  assert.equal(plan.none, false, "a resolved closing reference makes this a closing run, not a silent one");
+  assert.deepEqual(plan.close, [{ number: 2000, labels: [] }], "and the row is CLOSED, not reported on");
+});
+
+test("#2036 NEGATIVE: an OPEN but UNCLAIMED row reports nothing -- nobody is holding it to speak to", () => {
+  assert.equal(orphanedRowReport({ ...ORPHAN_PR, row: { ...CLAIMED_OPEN, labels: ["ready"] } }), null);
+  assert.equal(orphanedRowReport({ ...ORPHAN_PR, row: { ...CLAIMED_OPEN, labels: [] } }), null);
+});
+
+test("#2036 NEGATIVE: a row the lookup COULD NOT READ is silent -- `could not ask` is never `nothing to say`", () => {
+  const said: string[] = [];
+  const reported = reportOrphanedRow(ORPHAN_PR,
+    { lookupRow: () => null, comment: () => { said.push("COMMENTED"); } });
+  assert.equal(reported, null);
+  assert.deepEqual(said, [], "a failed lookup must not be reported as a healthy, unclaimed row");
+});
+
+test("#2036: rowNumberFromBranch reads the trailing number, and only a TRAILING one", () => {
+  assert.equal(rowNumberFromBranch("agent/worktree-prune-unit-2000"), 2000);
+  assert.equal(rowNumberFromBranch("agent/row-file-release-pair-1962"), 1962);
+  assert.equal(rowNumberFromBranch("agent/main-to-v0-1-0-pin-1346"), 1346, "a branch full of digits still ends in its row");
+  assert.equal(rowNumberFromBranch("agent/rstest-spike"), null);
+  assert.equal(rowNumberFromBranch("agent/1962-release-pair"), null, "a LEADING number is not the convention and is not guessed at");
+  assert.equal(rowNumberFromBranch(null), null);
+  assert.equal(rowNumberFromBranch(""), null);
+});
+
+test("#2036 WIRING: the report posts exactly one comment, on the row the branch names", () => {
+  const posted: { n: number, text: string }[] = [];
+  const askedFor: number[] = [];
+  const reported = reportOrphanedRow(ORPHAN_PR, {
+    lookupRow: (n) => { askedFor.push(n); return CLAIMED_OPEN; },
+    comment: (n, text) => { posted.push({ n, text }); },
+  });
+  assert.equal(reported, 2000);
+  assert.deepEqual(askedFor, [2000], "ONE row lookup -- the row's own budget line: no new API call beyond it");
+  assert.equal(posted.length, 1, "exactly one comment");
+  assert.equal(posted[0].n, 2000);
 });
