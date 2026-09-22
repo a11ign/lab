@@ -15,8 +15,14 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+// #2008's two evidence imports. `NOT_STARTABLE` is READ from `work-gate.mjs`, never retyped: it is the
+// fact the claimed-row change rests on, and a copy of it here could agree with itself while disagreeing
+// with the gate. `CLAIM_LABEL` comes from the claim path's own module for the same reason.
+import { NOT_STARTABLE } from "../../../agent-org/src/work-gate.mjs";
+import { CLAIM_LABEL } from "../../../agent-org/src/claim-labels.mjs";
 import {
   READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, handClaims, strandedByIncompleteDecline,
+  claimsNobodyIsWorking,
   releaseDeclarationDrift,
   fetchOpenIssues, fetchOpenIssuesChecked, fetchReportedOpenIssueNumbers, openIssueSetSummary, fetchAllIssues, fetchIssues, closedDebris,
   isClosedDebrisLabel, openRowsAbsentFromBoard, labellessRows,
@@ -1662,4 +1668,62 @@ test("a row with NO labels is the other check's finding, not this one", () => {
   assert.deepEqual(invisibleRows([{ number: 5, title: "bare", labels: [] }]), []);
   assert.deepEqual(invisibleRows([]), []);
   assert.deepEqual(invisibleRows(undefined as never), []);
+});
+
+/**
+ * #2008: A CLAIMED ROW IS REACHED BY ITS OWNER, AND EVERY FINDING THIS CHECK HAD WAS ONE.
+ *
+ * Measured 2026-09-22 at `2c34bd8db` over all 48 open rows: `invisibleRows` reported exactly 3, and all
+ * 3 were claimed -- #1996 (worker-judge), #1966 (worker-tooling), #1955 (orchestrator), one of them with
+ * an open PR and a reviewer mid-review. `product-manager` found it while about to remove a stale
+ * `backlog` from #1948 and #1908, the 2 claimed rows that still carried it: that tidy-up would have made
+ * them findings 4 and 5, because for a claimed row the two label states are equally meaningless.
+ *
+ * THE POSITIVE CONTROL FOR EVERY EMPTINESS ASSERTION BELOW is the `#1830` test above -- `fleet-gated` +
+ * `lane:any`, unclaimed, no `backlog`: the scheduler that would make the fleet run, which no cause could
+ * see for a day. If this change had been made by widening the reached-by set instead, that test would
+ * have gone quiet, which is the one thing it must never do.
+ */
+test("#2008: a claimed row is not unreachable, with or without backlog or ready", () => {
+  // All four label states a claimed row is found in. None is a finding; none is more reachable than
+  // another; the row is held by a named session that is working it right now.
+  assert.deepEqual(invisibleRows([
+    { number: 1996, title: "claimed, no promotable label", labels: ["in-progress", "session:worker-judge", "started", "out-of-release", "was-ready", "lane:any"] },
+    { number: 1955, title: "claimed in a lane", labels: ["in-progress", "session:orchestrator", "started", "was-ready", "lane:orchestrator"] },
+    { number: 1948, title: "claimed, stale backlog still on it", labels: ["in-progress", "session:worker-tooling", "started", "backlog"] },
+    { number: 9, title: "claimed, stale ready still on it", labels: ["in-progress", "session:worker-tooling", "ready"] },
+  ]), [], "the positive control is the #1830 test above, which must still report");
+});
+
+test("#2008: work-gate's NOT_STARTABLE contains the claim label -- the fact the change rests on", () => {
+  // Not a restatement of the source: this is WHY adding `backlog` to a claimed row cannot help.
+  // `readPromotableRows` filters `NOT_STARTABLE` out AFTER the server-side `--label backlog` read, so a
+  // claimed row carrying `backlog` is dropped anyway -- there is no state in which a claimed row needs a
+  // promotable cause to be seen. If this ever stops holding, the predicate above needs rethinking rather
+  // than the three rows relabelling, and this assertion is what says so.
+  assert.ok(NOT_STARTABLE.includes(CLAIM_LABEL),
+    `\`${CLAIM_LABEL}\` must stay in NOT_STARTABLE: ${NOT_STARTABLE.join(", ")}`);
+});
+
+test("#2008: a claim whose holder has gone is reportDeadClaims' finding, handed over deliberately", () => {
+  // Done-when 3 of the row: this change must not drop the dead-claim case between two predicates.
+  // `reportDeadClaims` enumerates `in-progress` on its own label, independently of every label this
+  // check reads, and reports the ones failing all three of `ceo`'s legs (#723): no open PR, no push, no
+  // comment in the window. A label cannot say whether the session behind it is alive, which is exactly
+  // why this check never could own that case and that one can.
+  const claimedButDead = { number: 1966, title: "held by a session that has gone",
+    labels: ["in-progress", "session:worker-tooling", "started"] };
+  assert.deepEqual(invisibleRows([claimedButDead]), [],
+    "reachability is not liveness -- see the dead-claim assertion on the next line");
+  // The claim is 30 hours old with no PR, no branch and no comment -- all three legs absent.
+  const STALE_CLAIM_MINUTES = 30 * 60;
+  assert.deepEqual(
+    claimsNobodyIsWorking([claimedButDead], {
+      hasOpenPr: new Map(),
+      lastPushMinutes: new Map(),
+      claimedMinutes: new Map([[1966, STALE_CLAIM_MINUTES]]),
+      lastCommentMinutes: new Map(),
+    }).map((c) => c.number),
+    [1966],
+    "and reportDeadClaims still sees it, on the `in-progress` label this check now skips");
 });
