@@ -219,6 +219,73 @@ test("#1157: the reviewer's entry says what a reviewer DOES, not that the proper
     + "exists rather than a rule");
 });
 
+// --- #1967: the broken gauge, stated where a session loads it rather than in two code comments ---------
+//
+// `gh api rate_limit` reported a full pool and a reset 49 minutes late during a real GraphQL outage of the
+// same token. The knowledge already existed -- in `close-rows-for-merged-pr.mjs:206` and
+// `queue-table.mjs:639` -- and TWO SESSIONS STILL BURNED A CYCLE ON IT on 2026-09-22, because a code
+// comment is not something anyone reads before typing a command. So it moves to the file every session
+// loads, and these tests are what keeps it there.
+//
+// BOTH DIRECTIONS ARE PINNED, because the two ways this line dies are opposites: the instrument can be
+// dropped (nobody is told what to read instead), or the endpoint can be quietly reinstated as the thing to
+// consult (the correction is inverted back into the defect). A guard that only checks the prohibition is
+// still passing the day someone writes "check `gh api rate_limit` first" underneath it.
+
+const NEVER_THE_ENDPOINT = /never decide anything from `gh api rate_limit`/i;
+const THE_INSTRUMENT = /read `X-Ratelimit-\*` off a real call/i;
+
+test("#1967: the practices file names the broken gauge AND the instrument that replaces it", () => {
+  const text = flat(agentPractices);
+
+  assert.match(text, NEVER_THE_ENDPOINT,
+    "the prohibition itself -- the endpoint has now been measured lying twice, three weeks apart, and "
+    + "until this landed the only record of it was two code comments nobody reads before typing a command");
+  assert.match(text, THE_INSTRUMENT,
+    "and what to read INSTEAD: a prohibition with no replacement instrument sends the reader back to the "
+    + "endpoint, because they still need the number");
+  assert.match(text, /gh api graphql[^`]*-i/,
+    "with the command that produces it, or 'read the headers' is an instruction the reader cannot follow");
+  assert.match(text, /headers come back on the 403/i,
+    "and the half that makes it work during the outage it exists to report -- an instrument that fails "
+    + "exactly when its subject fails reports the alarming state as no state");
+});
+
+test("#1967: per TOKEN and per RESOURCE, with why a sanity check on core is not one", () => {
+  const text = flat(agentPractices);
+
+  assert.match(text, /per TOKEN and per RESOURCE/i,
+    "both axes: one token's pools are separate from each other, and separate from another token's");
+  assert.match(text, /spend GRAPHQL|spends CORE/,
+    "and which commands spend which pool, so 'check the pool you care about' names a pool");
+  assert.match(text, /a sanity check on core is not a sanity check/i,
+    "THE SHARPEST HALF, and the one the row did not have: on 2026-09-22 the endpoint was accurate on "
+    + "core to within one call and wrong by 1360 on graphql -- so the obvious way to test the gauge "
+    + "returns that it works");
+  assert.match(text, /same token, same second/i,
+    "and that the disagreement was read from ONE moment, not two readings minutes apart, which is the "
+    + "only reading that rules out the pool simply having moved");
+});
+
+test("#1967 MUTATION: dropping the instrument and reinstating the endpoint must EACH go red", () => {
+  const text = flat(agentPractices);
+
+  // Direction 1 -- the instrument is dropped. The prohibition survives; nobody is told what to read.
+  const withoutInstrument = text.replace(THE_INSTRUMENT, "consult the usual place");
+  assert.notEqual(withoutInstrument, text, "the instrument mutation must LAND, or this proves nothing");
+  assert.doesNotMatch(withoutInstrument, THE_INSTRUMENT,
+    "a file that prohibits the endpoint without naming the headers must fail the assertion above");
+
+  // Direction 2 -- the correction is inverted back into the defect. This is the mutation that a guard
+  // checking only for the string `gh api rate_limit` would survive: the endpoint is still named, and the
+  // sentence now recommends it.
+  const reinstated = text.replace(NEVER_THE_ENDPOINT, "always decide from `gh api rate_limit`");
+  assert.notEqual(reinstated, text, "the reinstatement mutation must LAND, or this proves nothing");
+  assert.doesNotMatch(reinstated, NEVER_THE_ENDPOINT,
+    "a file that recommends the endpoint must fail the assertion above -- the endpoint's NAME being "
+    + "present is not the property under test, its being DISOWNED is");
+});
+
 test("#1157 MUTATION: removing the line from EITHER file must go red, not just from both", () => {
   // The row's clause 3, driven rather than asserted. Two copies with a check that accepts either would
   // let one drift away silently -- and the drift would be invisible precisely because the other copy
