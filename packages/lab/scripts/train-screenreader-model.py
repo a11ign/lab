@@ -429,20 +429,45 @@ def float32_above(value: float) -> float:
 
     return float(numpy.nextafter(numpy.float32(value), numpy.float32(numpy.inf)))
 
-def raise_to_same_power(floor: float, positive_scores: list[float] | None) -> float:
-    """The highest cut that admits exactly the positives `floor` admits. PURE.
+def raise_to_same_power(floor: float, positive_scores: list[float] | None,
+                        negative_scores: list[float] | None = None) -> float:
+    """The LOWEST cut that admits exactly the negatives and positives the raise can clear. PURE.
 
-    Inference compares ``score >= threshold``, so the count of admitted positives is unchanged for every
-    cut up to and including the smallest positive score at or above the floor. Raising to exactly that
-    value keeps it (``p >= p``) and drops every negative below it.
+    The raise exists to stop spending false-positive budget that buys no recall: between the floor and
+    the lowest positive above it, lowering the cut admits negatives and no positives. So raise -- but
+    only as far as clearing those negatives requires.
 
-    With no positives at or above the floor there is nothing to preserve and nothing to gain: the cut
-    stays where the bound put it rather than being raised to an arbitrary place.
+    THIS USED TO RAISE ONTO THE LOWEST ADMITTED POSITIVE ITSELF, AND THAT CUT IS STRICTLY DOMINATED, by
+    the raise's own argument one step further along. One ulp above the highest negative below that
+    positive excludes exactly the same negatives -- there is nothing between the two to admit -- while
+    leaving every point in between on the firing side. Both cuts score identically on the development
+    set; the lower one does not sit on a single training observation.
+
+    That mattered. Measured 2026-09-23 (#2152) on `4.1.3:form-activation-silent`: floor 0.9344, cut
+    0.9639 -- which is exactly the 117th of 134 development positives -- and all four of the criterion's
+    held-out missed records scored 0.9442 and 0.9608, inside the band the raise had vacated. A held-out
+    positive has no reason to respect a boundary drawn through one development positive, and the report
+    called the result a miss by the head.
+
+    ``np_threshold``'s docstring says the positives play no part in choosing the cut. They still CAP the
+    raise -- they must, or it would climb through real recall -- but the value returned now comes from
+    the negative distribution, which is where the bound's whole argument lives.
+
+    With no positives above the floor there is nothing to cap the raise, and with no negatives above it
+    there is nothing to clear: either way the cut stays where the bound put it rather than being raised
+    to an arbitrary place.
     """
-    if not positive_scores:
+    admitted = [score for score in (positive_scores or []) if score >= floor]
+    if not admitted:
         return floor
-    admitted = [score for score in positive_scores if score >= floor]
-    return min(admitted) if admitted else floor
+    ceiling = min(admitted)
+    cleared = [score for score in (negative_scores or []) if floor <= score < ceiling]
+    if not cleared:
+        return floor
+    # Clamped at the ceiling because the nudge is a float32 step and these scores need not be: if the
+    # highest cleared negative sits less than one float32 ulp below the positive, stepping past it would
+    # step past the positive too and the raise would cost the recall it exists to preserve.
+    return min(float32_above(max(cleared)), ceiling)
 
 
 def np_threshold(negative_scores: list[float], criterion: str,
@@ -497,12 +522,16 @@ def np_threshold(negative_scores: list[float], criterion: str,
     # That head then fired 2.4.4 on `acceptance-b2-generic-kiln/good`, a page with NO LINK ON IT, and
     # failed the held-out gate.
     #
-    # So the cut is raised to the highest value that admits the same positives. The guarantee survives a
-    # fortiori: a higher cut admits weakly fewer negatives, so `P[type-I error > alpha] <= delta` still
+    # So the cut is raised just clear of the negatives that buys, and no further. The guarantee survives
+    # a fortiori: a higher cut admits weakly fewer negatives, so `P[type-I error > alpha] <= delta` still
     # holds, and `permittedFalsePositives` still reports what the BOUND allows rather than what this cut
     # spends. This is the same call the fallback path already made -- "the fewest-false-positive cut, ties
     # broken by recall" -- applied to the main path, which kept the flaw.
-    cut = raise_to_same_power(floor, positive_scores)
+    #
+    # "JUST CLEAR OF" AND NOT "UP TO THE LOWEST ADMITTED POSITIVE", which is what this did until #2152 and
+    # is itself strictly dominated -- same negatives excluded, same positives admitted, and a cut drawn
+    # through a single development observation. `raise_to_same_power` carries the measurement.
+    cut = raise_to_same_power(floor, positive_scores, ordered)
     # Verified by COUNTING, not by trusting the arithmetic that produced it. The float32 trap above
     # defeated a `nextafter` that reads correctly, and the released weights would have carried a cut
     # that quietly admitted one more negative than it promised.
@@ -1007,10 +1036,15 @@ def main() -> None:
             # of one of them being invisible.
             subtype_development_scores = oof_scores[subtype_indices]
             sweep = threshold_sweep(subtype_development_scores, subtype_development_labels)
-            # The cut is an order statistic of the NEGATIVE scores only -- the positives play no part in
-            # choosing it. That is what makes the type I error bound hold without knowing anything about
-            # how the positives are distributed, and it is why recall is now an OUTCOME to be reported
-            # rather than something the threshold was traded against.
+            # The cut is a value from the NEGATIVE scores -- the order statistic, or a step above one of
+            # the negatives it clears. That is what makes the type I error bound hold without knowing
+            # anything about how the positives are distributed, and it is why recall is an OUTCOME to be
+            # reported rather than something the threshold was traded against.
+            #
+            # The positives are passed in and they do one thing: CAP the raise, so it cannot climb through
+            # a positive it was meant to keep. They never supply the value. Until #2152 they did -- the cut
+            # was the lowest admitted positive itself -- and four held-out records of
+            # `4.1.3:form-activation-silent` were refused by the band that drew, not by their head.
             negative_scores = [
                 float(score) for score, label
                 in zip(subtype_development_scores.tolist(), subtype_development_labels.tolist())
