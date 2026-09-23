@@ -39,7 +39,7 @@ import { RETRAIN_TRANSCRIPT } from "../../scripts/retrain-pipeline.mjs";
 // `refuseUnknownFlags` calls take the same guard as `entry`. Driven rather than assumed: imported under a
 // bare argv and under an argv carrying flags neither script declares, both load clean with exitCode 0.
 import { OUT as UNCLOSABLE_VETOES } from "../../scripts/emit-unclosable-vetoes.mjs";
-import { REPORT as EVIDENCE_CHECK_REPORT } from "../../scripts/evidence-check.mjs";
+import { REPORT as EVIDENCE_CHECK_REPORT, RUN_REPORTS } from "../../scripts/evidence-check.mjs";
 
 /** The env overrides `dataset-paths.mjs` reads at call time. The lab runs with none, so neither does this. */
 const PATH_OVERRIDES = ["DATASET_ROOT", "DATASET_CAPTURE_ROOT", "DATASET_EXPORT", "REAL_CORPUS_ROOT"];
@@ -117,6 +117,10 @@ const RESOLVED: Record<string, () => Resolution> = {
   // drift #959 exists to stop rather than a tidier spelling of it.
   "unclosable-vetoes": () => exported(UNCLOSABLE_VETOES),
   "evidence-check": () => exported(EVIDENCE_CHECK_REPORT),
+  // #2122: the run-scoped sibling. The NAME carries a timestamp and a pid, so the entry is a glob and the
+  // producer's half of the comparison is its directory plus the `.json` every run-scoped file ends in --
+  // `PARAM` normalises to `*` on both sides, which is how every other parameterised entry here resolves.
+  "evidence-check-run": () => exported(resolve(RUN_REPORTS, `${PARAM}.json`)),
   "acceptance-report": () => ({ how: "invoked", path: argvAfter("acceptance", "--out") }),
   "false-positives": () => ({ how: "invoked", path: argvAfter("false-positives", "--out") }),
   "shipped-acceptance": () => ({ how: "invoked", path: argvAfter("acceptance-shipped", "--out") }),

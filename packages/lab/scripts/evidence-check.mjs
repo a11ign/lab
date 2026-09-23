@@ -22,11 +22,15 @@
 // was not in the sample. One case per family, both variants, is the cheapest sample that cannot repeat
 // that: absence-is-the-finding families (custom-control) and probe-dependent ones (table-*) are
 // present by construction.
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { compareCapture, readCapture, summarise } from "../src/capture/evidence-diff.mjs";
-import { datasetRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, datasetRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
+// #1185: every `git` spawn in this tree goes through a GIT_* scrubbing helper, and a read-only one is
+// no exception -- a hook exports `GIT_DIR`, so an inherited environment reads another repository.
+import { sandboxGitEnv } from "../../guards/src/git-env.mjs";
 import { isEvidence } from "../src/training/capture-decisions.mjs";
 import { titleOf } from "@a11ign/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";
@@ -64,7 +68,98 @@ export const OUT = resolve(DATASET, "evidence-check");
  * the test would be a second copy of the fact, which is the drift #959 exists to stop rather than a
  * tidier spelling of it.
  */
-export const REPORT = resolve(OUT, "report.json");
+export const REPORT = latestReportPath();
+
+/**
+ * `report.json` under whatever directory is passed. `REPORT` is this at the real `OUT`; `writeReports` is
+ * this at whatever directory it was handed -- so the file name still has exactly ONE spelling in the tree
+ * after #2122 gave the writer a directory it can be pointed at.
+ *
+ * @param {string} dir
+ */
+export function latestReportPath(dir = OUT) {
+  return resolve(dir, "report.json");
+}
+
+/**
+ * #2122: WHERE EVERY RUN'S REPORT SURVIVES, beside the one that names the latest.
+ *
+ * `REPORT` is a single fixed path with no run id, no timestamp and no append, so run N+1 OVERWROTE run N.
+ * A repeated-read protocol -- the exact shape this repo uses to decide DRIFT versus SAME -- therefore left
+ * an apparatus artefact for its LAST read only. #1908's acceptance was ten reads at one pin; on the lab,
+ * read 10 was the only one with a file, and reads 1-9 survived solely in `a11y-lab`'s systemd journal,
+ * which rotates. A verdict whose evidence exists only in a rotating journal cannot be re-derived once it
+ * ages out -- it can only be believed, which is the one thing a reading in this project may not ask for.
+ *
+ * ADDITIONAL, never a rename. `lab-fetch.yml` fetches `report.json` by a fixed path and it is the only
+ * fetch entry this tool has; moving it is the failure #968 already recorded once for this same file.
+ *
+ * A DIRECTORY rather than a `report-*.json` sibling, and that is forced rather than tidy:
+ * `lab-fetch.yml` resolves a globbed entry with `find` over the PATTERN'S OWN `dirname`, so a glob sitting
+ * beside `report.json` would be one whose directory also holds the file it must never match.
+ */
+export const RUN_REPORTS = resolve(OUT, "runs");
+
+/**
+ * One run's own file name: the instant it finished, and which process wrote it.
+ *
+ * BOTH halves, because either alone collides on the population this exists for. Two dispatches queued back
+ * to back share a stamp at anything coarser than milliseconds, and a pid alone repeats inside a day on a
+ * box that has been up for weeks. `:` and `.` become `-` for the reason every other run-scoped name in
+ * this repo does it (`runs/board-snapshots/`): a colon is not portable in a path, and these files are read
+ * on whatever machine the operator is sitting at, not only on the lab.
+ *
+ * @param {{ at: Date, runId: string }} run
+ */
+export function runReportName({ at, runId }) {
+  return `${at.toISOString().replace(/[:.]/g, "-")}-${runId}.json`;
+}
+
+/**
+ * Write one run's report where the next run cannot reach it, and REFUSE rather than replace.
+ *
+ * The refusal IS the fix stated as behaviour. Silently replacing the previous run's artefact is the defect
+ * this path exists to remove, so doing it here -- even by accident, even under a name that is supposed to
+ * be unique -- must stop and name both runs rather than leave a reader believing there was only ever one.
+ * It is also the positive control for the test: make the name constant and two writes collide by name
+ * instead of passing by comparing a directory to itself.
+ *
+ * @param {{ dir: string, at: Date, runId: string, report: unknown }} run
+ * @returns {string} the path it wrote
+ */
+export function writeRunReport({ dir, at, runId, report }) {
+  const path = resolve(dir, runReportName({ at, runId }));
+  mkdirSync(dir, { recursive: true });
+  if (existsSync(path)) {
+    throw new Error(`evidence-check: ${path} already exists. A second run would replace the first run's `
+      + `report, which is the thing this file exists to prevent -- the run identity `
+      + `(${at.toISOString()}, ${runId}) is not unique.`);
+  }
+  writeFileSync(path, JSON.stringify(report, null, 2) + "\n", "utf8");
+  return path;
+}
+
+/**
+ * The commit this checkout was on, or why it could not be read.
+ *
+ * PROVENANCE, not the verdict: a run whose git is unreadable still has a real answer about the evidence,
+ * so the failure is recorded IN the artefact rather than ending the run. It is not swallowed either --
+ * `commitError` is what a reader sees instead of a commit, and a report carrying neither is impossible.
+ *
+ * `-C REPO_ROOT` because the lab runs jobs from a checkout whose cwd is not guaranteed, and a scrubbed
+ * environment for #1185's reason: git exports `GIT_DIR` into every hook environment.
+ *
+ * @returns {{ commit: string, commitError?: undefined } | { commit: null, commitError: string }}
+ */
+export function checkoutCommit() {
+  try {
+    const commit = execFileSync("git", ["-C", REPO_ROOT, "rev-parse", "HEAD"],
+      { env: sandboxGitEnv(), encoding: "utf8" }).trim();
+    return { commit };
+  } catch (error) {
+    return { commit: null, commitError: /** @type {Error} */ (error).message };
+  }
+}
 // `requestJson`, not `fetch`: undici stops waiting for response HEADERS at 300 s whatever the
 // AbortSignal says, and the worker writes its status and body together at the END of a capture.
 // See worker-http.mjs -- this budget sits at or above that cap, so it never applied.
@@ -475,6 +570,45 @@ const pooled = await drainAcrossPool({
   return { results, evicted: pooled.evicted };
 }
 
+/**
+ * BOTH artefacts, from one object: the file `lab-fetch.yml` names, and the file the next run cannot touch.
+ *
+ * The SAME report goes to both, so `report.json` gains `at`, `runId` and `commit` as well -- that is what
+ * lets a reader holding the fetched copy say WHICH run-scoped file it duplicates. Nothing in the
+ * repository reads a field of this report (`lab-fetch.yml` fetches the file, not a field), so the addition
+ * costs no reader; the absence cost #1908 nine tenths of its evidence.
+ *
+ * `report.json` is written FIRST and unconditionally, so a run-scoped refusal cannot cost the run the
+ * answer it just spent hours of fleet time computing.
+ *
+ * `at`, `runId`, `out` and `runs` DEFAULT rather than being read inside, so the whole composition -- not
+ * two halves of it joined by a test -- can be driven into a temporary directory at two chosen identities.
+ * The row this was filed for is about what two successive runs leave behind, and a test that cannot run
+ * this function twice is a test of something else.
+ *
+ * @param {{ workers: string[], results: any[], summary: any, at?: Date, runId?: string, out?: string,
+ *   runs?: string }} run
+ * @returns {{ report: any, latest: string, runReport: string }}
+ */
+export function writeReports({ workers, results, summary,
+  at = new Date(), runId = String(process.pid), out = OUT, runs = RUN_REPORTS }) {
+  // `workers` — THE POOL AS DISPATCHED — and a `worker` on every row, which is the box that captured it.
+  // This wrote `worker: workers[0]` for the whole run: the first url on the argv, not the one that did the
+  // work. On a fleet dispatch that field named the same box whether or not it captured anything, so a
+  // verdict quoting it reported a constant as a measurement (#1948). The singular key is GONE rather than
+  // kept truthful, because a reader who has seen it cannot tell which of the two meanings a given report
+  // carries.
+  //
+  // #2122: `commit` joins them for the same reason `worker` did. A verdict is re-derivable only against
+  // the code that produced it, and "ten reads at pin 8fd25e80c" was a sentence a session typed rather than
+  // a field the instrument wrote.
+  const report = { at: at.toISOString(), runId, ...checkoutCommit(), workers, results, summary };
+  const latest = latestReportPath(out);
+  mkdirSync(out, { recursive: true });
+  writeFileSync(latest, JSON.stringify(report, null, 2) + "\n", "utf8");
+  return { report, latest, runReport: writeRunReport({ dir: runs, at, runId, report }) };
+}
+
 async function main() {
   refuseIfRunsReadonly(OUT);
   if (!worker) {
@@ -515,14 +649,7 @@ async function main() {
   await pagesLease.release();
 
   const summary = summarise(results);
-  mkdirSync(OUT, { recursive: true });
-  // `workers` — THE POOL AS DISPATCHED — and a `worker` on every row, which is the box that captured it.
-  // This wrote `worker: workers[0]` for the whole run: the first url on the argv, not the one that did the
-  // work. On a fleet dispatch that field named the same box whether or not it captured anything, so a
-  // verdict quoting it reported a constant as a measurement (#1948). The singular key is GONE rather than
-  // kept truthful, because a reader who has seen it cannot tell which of the two meanings a given report
-  // carries; nothing in the repository reads it (`lab-fetch.yml` fetches the file, not a field).
-  writeFileSync(REPORT, JSON.stringify({ workers, results, summary }, null, 2) + "\n", "utf8");
+  const { runReport } = writeReports({ workers, results, summary });
 
   // WHICH BOXES ACTUALLY CAPTURED, on the run's own output rather than only in the fetched report:
   // #1908's acceptance is ten reads posted with the worker each came from, and an operator reading a
@@ -536,6 +663,9 @@ async function main() {
     (summary.counts.REJECTED ? `, ${summary.counts.REJECTED} rejected (excluded)` : "") + "\n");
   process.stdout.write(`${summary.recommendation}\n`);
   process.stdout.write(`Report: ${REPORT}\n`);
+  // #2122: NAMED ON THE RUN'S OWN OUTPUT, not only on disk. The durable copy is worth nothing to an
+  // operator reading a dispatch log who cannot tell which file this read became.
+  process.stdout.write(`This run: ${runReport}\n`);
   // Exit code is the contract, same as the other gates: 0 safe to ship, 1 evidence changed,
   // 2 could not answer. `inconclusive` MUST NOT exit 0, and that now covers PARTIAL coverage as well as
   // none: this exited 0 with "safe to ship" having compared 2 of 48, because a concurrent run stopped the
