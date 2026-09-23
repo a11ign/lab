@@ -88,7 +88,27 @@ function main() {
     version: 1,
     generatedAt: new Date().toISOString(),
     captureBoundary: "NVDA announcements and NVDA-derived navigation/interaction output only",
-    trainingExcluded: true,
+    // `trainingExcluded: true` STOOD HERE AS A HARDCODED LITERAL AND IS DELETED, NOT DERIVED (#2114).
+    //
+    // Nothing computed it and nothing read it — one occurrence in the whole repository, this write — so
+    // for as long as the acceptance corpus has existed the manifest asserted a property no code evaluated.
+    // It was false when it was written: two original cases repeated a training case's exercise verbatim
+    // (`acceptance-placeholder-postcode`, `acceptance-status-progress-application`), and the first thing
+    // that ever tested the claim was #2100's `held-out-is-disjoint-from-training.test.ts`.
+    //
+    // DELETED RATHER THAN DERIVED because the property now has a real evaluator and a stored copy would be
+    // weaker than it. The guard recomputes disjointness from the case definitions on every CI run — the
+    // one place it can actually fail — while a value written into a manifest is, to every later reader,
+    // a claim it cannot recompute: the same defect one level down, and the defect this deletion is about.
+    // `manifestDrift` already refuses a manifest whose case definitions differ from the code's, so for the
+    // real corpus "this manifest matches CASES" plus "CASES is disjoint" is the fact the field was standing
+    // in for, with no second copy to keep true.
+    //
+    // `captureBoundary` above is left alone deliberately, and the difference is not that it has readers
+    // (measured 2026-09-23: it has two occurrences and both are writes, here and in
+    // `generate-screenreader-dataset.mjs`; so does `generatedAt`). It is that it DESCRIBES what a capture
+    // contains, where `trainingExcluded: true` ASSERTED a property of the corpus that could be — and was
+    // — false. A description cannot be wrong in the way an unchecked assertion can.
     cases,
   };
   const manifestPath = resolve(ROOT, "manifest.json");
