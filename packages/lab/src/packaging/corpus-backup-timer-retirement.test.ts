@@ -59,6 +59,23 @@
  * list. Two of those three were unmeasured siblings, and one of them (`printf reset-failed …`) is the
  * row's own second Mutation wearing a disguise: a reset that silently does nothing.
  *
+ * ## A gate that reads a register ALREADY FILLED — reviewer-2's sixth refusal, on `19cb1445`
+ *
+ * Every gate above was read for what it tests and for whose answer it tests; none was read for WHEN it is
+ * evaluated. **Moving the real `reset-failed` task in front of the real `is-failed` probe left all 50 tests
+ * green** — a `when` that reads `corpus_backup_job_state.stdout` before anything has registered it, which
+ * Ansible fails on with an undefined-variable error part-way through a retirement, after the timer is
+ * stopped and the files are gone.
+ *
+ * Order was already half of what this file checks (`order`, disable-after-delete), but it was one
+ * hard-coded pair. A register is a PRODUCER AND A CONSUMER, and this play has four such edges — the `stat`
+ * before the stop's guard, the `is-failed` probe before the reset's gate, the removal before the
+ * daemon-reload, and the `list-timers` read-back before the closing assert. Only one of the four was
+ * measured, so `register-order` is written as the general property instead: **no task may evaluate a
+ * register that a LATER task fills**, over every `when`, `loop` and assert clause in the play. Three
+ * controls below move a real task across a real edge; the fourth edge is the same code path with no mutant
+ * of its own, which is what makes this a property rather than three more hard-coded pairs.
+ *
  * ## Why the contract is between tasks, rather than inside any one of them
  *
  * Every trap `corpus-schedule.yml`'s own header names is a relationship a single task cannot state:
@@ -142,6 +159,7 @@ const CLAUSES = {
   failedStateProbe: "failed-state-probe",
   resetFailedGated: "reset-failed-gated",
   checkModeRead: "check-mode-read",
+  registerOrder: "register-order",
   timersReadBack: "timers-read-back",
   assertSnapshotPresent: "assert-snapshot-present",
   assertBackupAbsent: "assert-backup-absent",
@@ -449,6 +467,47 @@ function checkModeFindings(steps: Step[]): Finding[] {
 }
 
 /**
+ * Everything a task EVALUATES before it acts, joined as one expression: its own `when`, the `loop` it
+ * iterates, and — for an assert — the clauses it asserts. These are the places a register is consumed;
+ * `fail_msg` and `success_msg` are deliberately not among them, because a message rendered after the
+ * decision cannot change what the play did.
+ */
+const evaluates = (step: Step): string =>
+  [whenText(step.task.when), asText(step.task.loop),
+    ...(step.module === "ansible.builtin.assert" ? asList(step.args.that).map(asText) : [])]
+    .filter(Boolean).join(" and ");
+
+/** Which task fills each register, keeping the index — this whole clause is about the index. */
+const registersFilled = (steps: Step[]): { register: string; producer: Step }[] =>
+  steps.filter((step) => asText(step.task.register))
+    .map((step) => ({ register: asText(step.task.register), producer: step }));
+
+/**
+ * Trap 6: a gate is READ AT A MOMENT, and every gate in this file was read for what it tests without
+ * anyone asking whether the thing it tests exists yet. reviewer-2's refusal of `19cb1445` is the
+ * measurement — the real `reset-failed` moved in front of the real `is-failed` probe, 50/50 green, and a
+ * `when` that reads `corpus_backup_job_state.stdout` before anything registers it fails the run part-way
+ * through a retirement rather than at the top of it.
+ *
+ * Stated as the general property rather than as a fifth hard-coded pair: no task may evaluate a register a
+ * LATER task fills. `producer.index === step.index` is included on purpose — a task whose own gate reads
+ * its own register is the same defect with the two tasks collapsed into one.
+ */
+function registerOrderFindings(steps: Step[]): Finding[] {
+  const filled = registersFilled(steps);
+  return steps.flatMap((step) => {
+    const expression = evaluates(step);
+    return filled
+      .filter(({ register, producer }) => producer.index >= step.index && mentions(expression, [register]))
+      .map(({ register, producer }) => ({ clause: CLAUSES.registerOrder,
+        detail: `"${asText(step.task.name)}" evaluates \`${register}\`, which "${asText(producer.task.name)}"`
+          + ` registers ${producer.index === step.index ? "in the same task" : "LATER in the same play"}; `
+          + "the register is undefined when it is read, so the play errors out mid-retirement -- after the "
+          + "timer is stopped and its files are gone, which is the worst moment to stop" }));
+  });
+}
+
+/**
  * Does this clause test THIS unit's membership of what systemd actually said, in THIS direction?
  *
  * Three things, and the checker used to ask only the first two. The unit must be the thing looked FOR, so
@@ -512,6 +571,7 @@ function retirementFindings(source: string): Finding[] {
     ...removalFindings(steps, vars),
     ...resetFailedFindings(steps, vars),
     ...checkModeFindings(steps),
+    ...registerOrderFindings(steps),
     ...assertionFindings(steps, vars),
   ];
 }
@@ -678,6 +738,51 @@ test("#2060 CONTROL: a registered read that --check would skip is caught", () =>
     delete taskAt(play, read.index).check_mode;
   });
   provenBy(mutated, CLAUSES.checkModeRead, "a registered read with no check_mode: false passed.");
+});
+
+/**
+ * Move one REAL task to sit just before another, leaving both tasks otherwise exactly as they are — the
+ * order mutation in the form that matters, since a reorder changes nothing a task SAYS.
+ */
+function moveTaskBefore(play: Task, moved: Step, anchor: Step): void {
+  const tasks = asList(play.tasks);
+  const anchorTask = tasks[anchor.index];
+  const [task] = tasks.splice(moved.index, 1);
+  tasks.splice(tasks.indexOf(anchorTask), 0, task);
+  play.tasks = tasks;
+}
+
+test("#2060 CONTROL: a reset that runs BEFORE its probe is caught -- reviewer-2's refusal on `19cb1445`", () => {
+  // "I applied the reorder to the real playbook, confirmed it on disk, and the retirement test still passed
+  // 27/27. Evaluating `corpus_backup_job_state.stdout` before the probe has run can fail before the
+  // retirement is completed."
+  const mutated = mutate((play, steps, vars) =>
+    moveTaskBefore(play, commandDoing(steps, "reset-failed", vars)!, commandDoing(steps, "is-failed", vars)!));
+  provenBy(mutated, CLAUSES.registerOrder,
+    "a reset gated on a probe that has not run yet passed, and the play dies on an undefined register "
+    + "after the timer is stopped and its unit files are already gone.");
+});
+
+test("#2060 CONTROL: a closing assert that runs BEFORE the read-back is caught", () => {
+  // The second edge, unmeasured. The assert's clauses are as carefully written as ever and name a register
+  // systemd has not filled yet -- the retirement's own proof, evaluated too early to be a proof of anything.
+  const mutated = mutate((play, steps, vars) => {
+    const closing = steps.find((step) => step.module === "ansible.builtin.assert")!;
+    moveTaskBefore(play, closing, timersReadBackStep(steps, vars)!);
+  });
+  provenBy(mutated, CLAUSES.registerOrder,
+    "an assert evaluated before the read-back it reads passed, so the schedule is checked against a "
+    + "register nothing has set.");
+});
+
+test("#2060 CONTROL: a stop whose unit-file guard has not been answered yet is caught", () => {
+  // The third edge, also unmeasured, and the one that breaks the guard three refusals went into building:
+  // `when: corpus_backup_timer_file.stat.exists` reads the right register, in the right direction, for the
+  // right reason -- one task too early.
+  const mutated = mutate((play, steps, vars) =>
+    moveTaskBefore(play, stopStep(steps, vars)!, unitFileProbeStep(steps, vars)!));
+  provenBy(mutated, CLAUSES.registerOrder,
+    "the retirement's guard was evaluated before the stat that answers it passed.");
 });
 
 test("#2060 CONTROL: an assert that checks only the installation is caught", () => {
