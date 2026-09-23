@@ -119,12 +119,21 @@ test("#2120: the step ASSERTS the `LIVE PASS` line was printed -- a green exit i
     "the runner's output must be captured to a file for that grep to read");
 });
 
+/**
+ * The step's refusal arms, named so the count is a statement rather than a number: the missing secret, an
+ * unreadable runner config, and a run that never printed its `LIVE PASS` line. An EXACT count, not a floor,
+ * because a fourth arm added without a reason to expect it is the kind of thing to notice, and each of the
+ * three is exercised end to end against the committed shell (the table in this row's PR body).
+ */
+const REFUSAL_ARMS = 3;
+
 test("#2120: a failure is CANNOT_TELL and LOUD, and names where to look for which read was unavailable", () => {
   // `ceo`'s 2026-09-22 rule: a verdict that cannot read the exemption surface is CANNOT_TELL, loudly --
   // never a pass. `::error::` is what makes it loud in the Actions UI rather than one line of log.
   const run = readStep().run ?? "";
   const errors = codeLines(run).filter((line) => line.includes("::error::"));
-  assert.equal(errors.length, 2, "both refusal arms -- the missing secret and the missing LIVE PASS line -- must be loud");
+  assert.equal(errors.length, REFUSAL_ARMS, "every refusal arm -- the missing secret, an unreadable runner config, and "
+    + "the missing LIVE PASS line -- must be loud");
   for (const line of errors) {
     assert.match(line, /CANNOT_TELL/, "a refusal must say which verdict it is, not merely that something went wrong");
   }
@@ -189,6 +198,92 @@ test("#2120: there is NO fallback to `github.token` -- a swapped subject is wors
     "every `GH_TOKEN` the step sets must come from the merging identity's secret and from nothing else");
   assert.match(step.run ?? "", /if \[ -z "\$A11IGN_BOT_TOKEN" \]/,
     "and it must check for the secret explicitly, so an absent one is a named refusal rather than a `gh` error");
+});
+
+// --- the runner's config path: read out of its owner, never spelled in a workflow -------------------------
+
+/**
+ * THE FILE THAT OWNS rstest's CONFIG PATH, and the reason the workflow asks it rather than re-typing it.
+ *
+ * `entry-points.test.ts` scans every workflow's text -- UNSTRIPPED, so comments count -- for a
+ * whitespace-preceded `scripts/….mjs` and reads each hit as something the workflow EXECUTES, demanding an
+ * entry guard on it. rstest's config module is meant to be IMPORTED, not run, so it has no such guard and
+ * never should: measured on this row's own branch, `--config <that path>` turned `ts / run` red at
+ * `26f4d80f8` (run 35854391590) on exactly that assertion, having been green on every other check.
+ *
+ * `reusable-board.yml` hit the same wall and its own comment rules on it -- "guarding it the way an entry
+ * point is guarded would be the wrong fix … Keeping its path OUT of this file entirely is the real one".
+ * This job needs flags that floor script refuses (`--disableConsoleIntercept`, above), so it reads the path
+ * from the floor's exported `RSTEST_CONFIG` instead of going through its `--run`. Same ruling, same answer:
+ * the literal appears in one file, and the two cannot drift apart.
+ */
+const FLOOR = "packages/guards/src/assert-glob-not-empty.mjs";
+/** Exactly what `entry-points.test.ts` matches, so this cannot disagree with the guard it exists to satisfy. */
+const WORKFLOW_SCRIPT_INVOCATION = /(?:^|\s)((?:packages|scripts)\/[^\s]+\.(?:mjs|ts))/g;
+
+test("positive control: the entry-point pattern DOES fire on the spelling that turned this branch red", () => {
+  // The emptiness asserted below is worth nothing unless this same regex catches the real thing. The first
+  // is the exact text committed at `26f4d80f8`; the second is a comment, because the scan does not strip
+  // them and a prose mention is matched on identical terms.
+  const asCommitted = '          A11Y_CHECK_MAIN_RULESET=1 npx rstest run --config scripts/rstest/rstest.config.mjs \\';
+  const inAComment = "  # the runner reads scripts/rstest/rstest.config.mjs, which is imported and not run";
+  for (const text of [asCommitted, inAComment]) {
+    assert.deepEqual([...text.matchAll(WORKFLOW_SCRIPT_INVOCATION)].map((m) => m[1]),
+      ["scripts/rstest/rstest.config.mjs"], `the pattern stopped matching: ${text}`);
+  }
+  // THE ONE SPELLING IT DOES NOT SEE, and `reusable-build-test.yml` depends on it: the match must be
+  // preceded by whitespace or line start, so a path wrapped in backticks -- how this repo writes a path in
+  // prose -- is invisible to it. That is not a loophole to exploit, it is why the workflow comment above
+  // names rstest's config DIRECTORY rather than trusting a punctuation mark to stay put.
+  const backticked = "  # `scripts/rstest/rstest.config.mjs` turns `performance.buildCache` on only when `CI` is set";
+  assert.deepEqual([...backticked.matchAll(WORKFLOW_SCRIPT_INVOCATION)].map((m) => m[1]), []);
+});
+
+test("#2120: the nightly never spells rstest's config path -- not in the step, not in a comment", () => {
+  const text = readFileSync(join(REPO, NIGHTLY), "utf8");
+  const invoked = [...text.matchAll(WORKFLOW_SCRIPT_INVOCATION)].map((m) => m[1]);
+  // Named, not counted: the offence is this one path, and nothing else this file names is at issue.
+  assert.deepEqual(invoked.filter((path) => path.endsWith("rstest.config.mjs")), [],
+    `${NIGHTLY} spells rstest's config path, which \`entry-points.test.ts\` reads as an unguarded entry `
+    + `point -- read it from ${FLOOR}'s RSTEST_CONFIG export instead, as the step already does`);
+});
+
+test("#2120: the step reads RSTEST_CONFIG from the floor script, which really exports it", () => {
+  // THE CROSS-FILE LINK, the same shape as the LIVE PASS one below: a shell that reads a named export and
+  // a module that provides it drift silently, and the direction that matters here is the quiet one --
+  // rename the export and the step gets an empty string, which is why it also refuses one (above).
+  const lines = codeLines(readStep().run ?? "");
+  const derived = lines.find((line) => line.includes("RSTEST_CONFIG=") && line.includes(FLOOR));
+  assert.ok(derived, `the step must derive the runner config from ${FLOOR}, not spell it`);
+  assert.match(derived, /m\.RSTEST_CONFIG/, "and it must read that module's RSTEST_CONFIG export");
+  assert.ok(readFileSync(join(REPO, FLOOR), "utf8").includes("export const RSTEST_CONFIG"),
+    `${FLOOR} no longer exports RSTEST_CONFIG, so the nightly would run with an empty --config`);
+  // THE EXIT CODE, NOT THE EMPTY STRING -- measured, not assumed. A renamed export makes `console.log`
+  // print the four characters `undefined`, which passes `[ -z ]`; the step died on rstest's own
+  // `Cannot find config file: <repo>/undefined`, red but naming neither the cause nor this job. So the
+  // reader must exit non-zero on a missing export, and the assignment must convert that into the empty
+  // string the refusal is written for -- without the `||` arm, `bash -e` aborts before it can print.
+  assert.match(derived, /process\.exit\(1\)/,
+    "the reader must exit non-zero on a missing export; `undefined` is not an empty string");
+  assert.match(derived, /\|\|\s*RSTEST_CONFIG=""\s*$/,
+    "and a failed read must become the empty string, or `bash -e` kills the step before the loud refusal");
+  // And the runner must actually USE the variable, rather than derive it and ignore it.
+  const runner = lines.find((line) => line.includes("rstest run"));
+  assert.match(runner ?? "", /--config "\$RSTEST_CONFIG"/,
+    "the derived path must be the one handed to rstest, quoted so a path with a space cannot split");
+});
+
+test("#2120: the job BUILDS before that read, because the module it imports resolves to `dist/`", () => {
+  // The guard itself imports nothing built, so this step is easy to drop as dead weight. It is not:
+  // `assert-glob-not-empty.mjs` imports `@a11ign/worker-fleet/cli-flags`, a package export resolving to
+  // `dist/cli-flags.mjs`, which `npm ci --ignore-scripts` does not produce and this repo does not track.
+  // Without the build the derivation fails and the nightly reports CANNOT_TELL every night -- loud and
+  // honest, but about the wrong thing. Every other nightly job that runs tests builds for the same reason.
+  const steps = readJob().steps ?? [];
+  const build = steps.findIndex((s) => (s.run ?? "").trim() === "npm run build");
+  const read = steps.findIndex((s) => (s.run ?? "").includes(GUARD));
+  assert.ok(build >= 0, `\`${JOB}\` must run \`npm run build\`; without it ${FLOOR} cannot be imported`);
+  assert.ok(build < read, "and it must build BEFORE the step that imports it");
 });
 
 // --- the admin-only half stays out ------------------------------------------------------------------------
