@@ -47,8 +47,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { resolve, join } from "node:path";
+import { tmpdir } from "node:os";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 
@@ -68,6 +69,13 @@ const SEVEN_GATES = Array.from({ length: GATE_COUNT }, (_unused, index) => index
  * by checking nothing.
  */
 const FEWEST_PLAUSIBLE_MACHINERY_FILES = 10;
+
+/**
+ * The same kind of floor for `packages/`, which the changelog walk below must be SEEN to reach. Twelve
+ * package directories carry a manifest today; a run that enumerates fewer than this has lost the
+ * directory, and the emptiness assertion it feeds would then be reporting a walk that never looked.
+ */
+const FEWEST_PLAUSIBLE_PACKAGES = 10;
 
 /**
  * The three files #2052 measured as carrying a stale claim, and therefore the three that must still be
@@ -419,6 +427,66 @@ test("#2058: item 3's promotion count is today's, read from the directory it des
     "the 2026-08-31 count must not survive as a present-tense claim");
 });
 
+/**
+ * Directories whose contents are not THIS tree's record: `node_modules` is a dependency install holding
+ * thousands of third-party changelogs, and the rest are derived, cached or version-control output. The
+ * same prune list the other sweeps in this package use (`derived-artifact-sweep.test.ts`).
+ */
+const SKIP_DIRS = new Set(["node_modules", "dist", ".git", "runs", "__pycache__", ".venv", "coverage"]);
+
+/**
+ * Every file named `name` under `root`, root-relative and sorted.
+ *
+ * WHOLE-TREE, BECAUSE THE CLAIM IS WHOLE-TREE — reviewer's refusal of #2159 at `12c2d579`. This shipped
+ * as `readdirSync(REPO + "/packages")` filtered by `existsSync`, i.e. a scan of the immediate children of
+ * ONE directory, under a document sentence saying no `CHANGELOG.md` existed anywhere in the tree. A
+ * changelog at the repository root, under `scripts/`, or in a package nested one level deeper would have
+ * left that sentence reading as verified when nothing had looked at it. The walk and the sentence now
+ * name the same boundary — the tree, `node_modules` and the derived directories aside.
+ */
+function filesNamed(root: string, name: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (SKIP_DIRS.has(entry.name)) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (entry.name === name) out.push(full.slice(root.length + 1));
+    }
+  };
+  walk(root);
+  return out.sort();
+}
+
+/**
+ * THE POSITIVE CONTROL FOR THE EMPTY-CHANGELOG ASSERTION BELOW, AND WHERE THE ASSERTION SAYS IT LIVES.
+ *
+ * `assert.deepEqual(changelogs, [])` passes when the population is genuinely empty and equally when the
+ * walk returned nothing because it never looked — and this repository's rule is that the writer has to be
+ * able to POINT at the assertion that tells those apart. This is that assertion, and the reach floor in
+ * the test below is its other half: this one proves the walker returns a `CHANGELOG.md` that exists, that
+ * one proves the walker visited the real directories a publish would write one into.
+ *
+ * The fixture plants one two directories down and one inside a pruned directory, so a walker that stopped
+ * descending and a prune list that swallowed the whole tree both fail here rather than reading as an
+ * empty repository.
+ */
+test("#2159: the changelog walk returns a CHANGELOG.md that is there, and prunes the ones that are not this tree's", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "changelog-walk-"));
+  try {
+    mkdirSync(join(fixture, "packages", "scorer"), { recursive: true });
+    writeFileSync(join(fixture, "packages", "scorer", "CHANGELOG.md"), "## 0.1.0\n");
+    mkdirSync(join(fixture, "node_modules", "left-pad"), { recursive: true });
+    writeFileSync(join(fixture, "node_modules", "left-pad", "CHANGELOG.md"), "## 1.3.0\n");
+
+    assert.deepEqual(filesNamed(fixture, "CHANGELOG.md"), [join("packages", "scorer", "CHANGELOG.md")],
+      "the walk must descend past the root to find a package's changelog, and must not count a "
+      + "dependency's — if this is empty, the emptiness asserted below means nothing");
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 test("#2058: the successor's own numbers are the tree's — six first-publish entries, no CHANGELOG", () => {
   const list = decisionList();
   assert.equal(countOf("first-publish-"), 6,
@@ -430,9 +498,26 @@ test("#2058: the successor's own numbers are the tree's — six first-publish en
   // The document says the first CHANGELOG was never written. That is a live claim, and the release that
   // falsifies it is the one this section exists to inform — so it fails here rather than misleading a
   // reader at publish time.
-  const changelogs = readdirSync(resolve(REPO, "packages"))
-    .filter((pkg) => existsSync(resolve(REPO, "packages", pkg, "CHANGELOG.md")));
-  assert.deepEqual(changelogs, [],
-    "docs/reliability-plan.md states that no CHANGELOG.md exists anywhere in the tree and that the "
-    + "pending set has never been consumed; these packages now carry one, so that paragraph is wrong");
+  //
+  // THE EMPTINESS HAS TWO CONTROLS AND THIS NAMES BOTH. The test above proves this walker returns a
+  // `CHANGELOG.md` that exists; the loop below proves that in THIS run it reached every directory
+  // `changeset version` would write one into, enumerated independently of the walk. Without them a walk
+  // that lost `packages/` and a tree that truly has no changelog are the same green.
+  const manifests = filesNamed(REPO, "package.json");
+  const packageDirs = readdirSync(resolve(REPO, "packages"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && existsSync(resolve(REPO, "packages", entry.name, "package.json")))
+    .map((entry) => entry.name);
+  assert.ok(packageDirs.length >= FEWEST_PLAUSIBLE_PACKAGES,
+    `only ${packageDirs.length} package directories were enumerated — the directory has been lost, and `
+    + "the changelog population below would be empty for that reason rather than because none exists");
+  for (const pkg of packageDirs) {
+    assert.ok(manifests.includes(join("packages", pkg, "package.json")),
+      `the walk did not reach packages/${pkg}, which is where changeset version writes its CHANGELOG — `
+      + "so its absence from the changelog population says nothing");
+  }
+
+  assert.deepEqual(filesNamed(REPO, "CHANGELOG.md"), [],
+    "docs/reliability-plan.md states that a walk of this tree finds no CHANGELOG.md outside node_modules "
+    + "and that the pending set has never been consumed; the tree now carries one, so that paragraph is "
+    + "wrong");
 });
