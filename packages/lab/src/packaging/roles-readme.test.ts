@@ -27,6 +27,10 @@ import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+// #2076's tree scan spawns `git ls-files`, and every git spawn in this repo strips the environment through
+// this one function -- see the file's own header for the 2026-09-06 incident that made it a rule.
+import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 // #905: the roster parser and the per-file check live in the doc cross-reference check the nightly report
 // also runs -- one copy, which is what this file's own "exercise the exact same logic" comment asked for.
 import { README_PATH, checkRoster, roster } from "../../../../scripts/doc-checks/roles-readme.mjs";
@@ -315,6 +319,15 @@ test("#1157 MUTATION: removing the line from EITHER file must go red, not just f
 // principle survives, nobody is told what to type, and the reader is left with the override as the only
 // move they know. Or it can be INVERTED -- the override reinstated as the answer, which is the defect the
 // rule exists to name, and which a guard checking only for the string `:?` would sail straight past.
+//
+// #2104's REVIEW FOUND THE FIRST VERSION OF THE MUTATION BLOCK TAUTOLOGICAL, AND IT WAS. It read
+// `text.replace(RE, x)` and then `assert.doesNotMatch(mutated, RE)` -- which proves that `String.replace`
+// removed what it matched, a property of the standard library, and says nothing about whether the
+// assertions above would REJECT the mutated file. Every direction could have been weakened with that block
+// still green. So the positive assertions are now FUNCTIONS, the tests call them against the real file, and
+// the mutation test calls the same functions against each mutated subject and requires an `AssertionError`.
+// The same tautology is present in the `#1967` and `#1157` mutation blocks above, which this row did not
+// buy and does not touch; it is filed separately rather than fixed in passing.
 
 const CLICK_THROUGH = /an approval prompt a human learns to click through is worse than no prompt/i;
 const THE_EMPTY_GUARD = /rm -f "\$\{D:\?\}"\/\*\.md/;
@@ -322,10 +335,15 @@ const SHAPE_NOT_EFFECT =
   /when a command is refused for its SHAPE rather than its EFFECT, change the shape/i;
 const NOT_AN_OVERRIDE =
   /reaching for an override, or asking a human to approve it again, both leave the next session to rediscover the same refusal/i;
+const QUOTING_IS_HALF = /quoting alone defuses the BARE-VARIABLE case, and buys nothing once a glob is attached/i;
+const GREP_UNDERCOUNTS = /puts a `--` where the regex expects the target/i;
 
-test("#2076: the practices file states the principle AND the command that satisfies it", () => {
-  const text = flat(agentPractices);
-
+/**
+ * THE THREE POSITIVE CHECKS, AS FUNCTIONS RATHER THAN TEST BODIES. A mutation test can only prove a guard
+ * bites by running THE GUARD against the mutated subject; anything else re-tests the mutation itself. Each
+ * is called twice -- once by its own test against the real file, and once per mutation below.
+ */
+const assertsThePrincipleAndItsRemedy = (text: string) => {
   assert.match(text, CLICK_THROUGH,
     "the principle itself -- without it `:?` reads as a style preference, and a style preference is not "
     + "what stops the next avoidable prompt being filed");
@@ -338,11 +356,9 @@ test("#2076: the practices file states the principle AND the command that satisf
   assert.match(text, /dangerously-skip-permissions/,
     "and the fact that makes it unavoidable: bypass is already on and this guard survives it, so "
     + "'turn the prompts off' is not an available answer and the reader should not go looking for it");
-});
+};
 
-test("#2076: the general form is stated, and the override is disowned rather than merely unmentioned", () => {
-  const text = flat(agentPractices);
-
+const assertsTheGeneralForm = (text: string) => {
   assert.match(text, SHAPE_NOT_EFFECT,
     "THE TRANSFERABLE HALF -- `rm` is one instance, and a rule that names only the instance leaves the "
     + "next refused shape to be solved by an override again");
@@ -354,43 +370,239 @@ test("#2076: the general form is stated, and the override is disowned rather tha
   assert.match(text, /makes the unavoidable ones cheaper to ignore/i,
     "and the consequence that makes this a safety rule rather than a courtesy -- the harm lands on the "
     + "NEXT prompt, which is the one that will be real");
+};
+
+const assertsThePopulationReading = (text: string) => {
+  assert.match(text, /prevention rather than cleanup/i,
+    "the row's own claim: nothing tracked has the pattern, so a reader does not go hunting for offenders");
+  assert.match(text, QUOTING_IS_HALF,
+    "and WHICH property each tracked call site already has, stated precisely: the nine `rm \"$VAR\"` sites "
+    + "are quoted with no glob, and quoting is what saves THEM -- it saves nothing once a glob is attached, "
+    + "which is the distinction that makes `:?` load-bearing rather than tidy");
+  assert.match(text, /the moment a glob joins the variable/i,
+    "and the trigger for applying it, so the reader can tell their own next command apart from those nine");
+  assert.match(text, GREP_UNDERCOUNTS,
+    "and why the grep undercounts -- a population read with the wrong instrument is the defect one level "
+    + "up from the one this rule is about, and the reader needs to know which reading to trust");
+};
+
+test("#2076: the practices file states the principle AND the command that satisfies it", () => {
+  assertsThePrincipleAndItsRemedy(flat(agentPractices));
+});
+
+test("#2076: the general form is stated, and the override is disowned rather than merely unmentioned", () => {
+  assertsTheGeneralForm(flat(agentPractices));
 });
 
 test("#2076: the population is stated as already-clean, with what would make a call site unsafe", () => {
-  const text = flat(agentPractices);
-
-  assert.match(text, /prevention rather than cleanup/i,
-    "the row's own claim: nothing tracked has the pattern, so a reader does not go hunting for offenders");
-  assert.match(text, /quoting alone defuses the catastrophe/i,
-    "and WHICH property each tracked call site already has -- the eight `rm \"$VAR\"` sites are quoted "
-    + "with no glob, and a rule that called them offenders would be asking for a change that buys nothing");
-  assert.match(text, /the moment a glob joins the variable/i,
-    "and the trigger for applying it, so the reader can tell their own next command apart from those eight");
+  assertsThePopulationReading(flat(agentPractices));
 });
 
-test("#2076 MUTATION: losing the remedy and reinstating the override must EACH go red", () => {
+/** One mutation: a sentence removed or inverted, and the check that must reject the result. */
+const MUTATIONS: readonly { what: string; pattern: RegExp; into: string; rejects: (text: string) => void; why: string }[] = [
+  {
+    what: "remedy dropped", pattern: THE_EMPTY_GUARD, into: "the usual removal",
+    rejects: assertsThePrincipleAndItsRemedy,
+    why: "the principle survives and the reader has no command, so the override is the only move they know",
+  },
+  {
+    what: "principle dropped", pattern: CLICK_THROUGH, into: "avoidable prompts are untidy",
+    rejects: assertsThePrincipleAndItsRemedy,
+    why: "the command survives as a style note, and a style note does not stop the next prompt being filed",
+  },
+  {
+    what: "override reinstated", pattern: NOT_AN_OVERRIDE,
+    into: "reaching for an override is the quicker fix and is fine here",
+    rejects: assertsTheGeneralForm,
+    why: "THE MUTATION A `:?`-ONLY GUARD SURVIVES -- the remedy is still on the page and the sentence now "
+      + "points past it. The override being NAMED is not the property under test; its being DISOWNED is",
+  },
+  {
+    what: "general form narrowed", pattern: SHAPE_NOT_EFFECT, into: "always write `rm` this way",
+    rejects: assertsTheGeneralForm,
+    why: "it still reads correctly about the one command it was born from, and says nothing to the next "
+      + "session meeting a different refused shape",
+  },
+  {
+    what: "instrument correction dropped", pattern: GREP_UNDERCOUNTS,
+    into: "is what the grep reads",
+    rejects: assertsThePopulationReading,
+    why: "the numbers are corrected and the reason is gone, so the next session re-derives the population "
+      + "with the same regex, gets 8 and 11 again, and concludes the rule is stale rather than the grep",
+  },
+  {
+    what: "population reading dropped", pattern: QUOTING_IS_HALF,
+    into: "those nine are offenders too",
+    rejects: assertsThePopulationReading,
+    why: "a rule that calls nine already-safe call sites offenders asks for a change that buys nothing, "
+      + "and the next session learns to ignore it -- the same defect one level up",
+  },
+];
+
+test("#2076 MUTATION: each direction must make the assertions THEMSELVES throw, not merely stop matching", () => {
   const text = flat(agentPractices);
 
-  // Direction 1 -- the remedy is dropped. The principle survives and the reader has no command.
-  const withoutRemedy = text.replace(THE_EMPTY_GUARD, "the usual removal");
-  assert.notEqual(withoutRemedy, text, "the remedy mutation must LAND, or this proves nothing");
-  assert.doesNotMatch(withoutRemedy, THE_EMPTY_GUARD,
-    "a file that states the principle without the command must fail the assertion above");
+  // THE RESTORED CONTROL, RUN FIRST. Five `assert.throws` in a row is a green test on a file that fails
+  // every check, so the unmutated subject has to be shown passing all three before any throw means
+  // anything. This is the half the first version of this block was missing.
+  for (const check of [assertsThePrincipleAndItsRemedy, assertsTheGeneralForm, assertsThePopulationReading]) {
+    check(text);
+  }
 
-  // Direction 2 -- the override is reinstated as the answer. This is the mutation a guard that only
-  // looked for `:?` would survive: the remedy is still on the page, and the sentence now points past it.
-  const overrideReinstated = text.replace(NOT_AN_OVERRIDE,
-    "reaching for an override is the quicker fix and is fine here");
-  assert.notEqual(overrideReinstated, text, "the override mutation must LAND, or this proves nothing");
-  assert.doesNotMatch(overrideReinstated, NOT_AN_OVERRIDE,
-    "a file that offers the override must fail the assertion above -- the override being NAMED is not "
-    + "the property under test, its being DISOWNED is");
+  for (const { what, pattern, into, rejects, why } of MUTATIONS) {
+    const mutated = text.replace(pattern, into);
+    assert.notEqual(mutated, text, `the ${what} mutation must LAND, or this proves nothing`);
+    assert.throws(() => rejects(mutated), assert.AssertionError,
+      `the practices file with the ${what} must FAIL the check above, and did not -- ${why}`);
+  }
+});
 
-  // Direction 3 -- the rule is narrowed back to `rm`. It still reads correctly about the one command it
-  // was born from, and says nothing to the next session meeting a different refused shape.
-  const narrowed = text.replace(SHAPE_NOT_EFFECT, "always write `rm` this way");
-  assert.notEqual(narrowed, text, "the narrowing mutation must LAND, or this proves nothing");
-  assert.doesNotMatch(narrowed, SHAPE_NOT_EFFECT,
-    "a file carrying only the `rm` instance must fail the assertion above -- the general form is the "
-    + "part the row said was worth keeping");
+/**
+ * THE POPULATION HALF, WHICH IS AN EMPTINESS AND THEREFORE NEEDS A POSITIVE CONTROL -- #2104's review
+ * found the first version had none, and it was right: the row's claim was `git grep … # empty`, quoted from
+ * a past commit, with nothing anywhere in the tree that the pattern was shown to MATCH. An emptiness whose
+ * detector has never fired is indistinguishable from a detector that cannot fire.
+ *
+ * So the detector lives here, is exercised against both halves of a fixture table below, and the emptiness
+ * is COMPUTED at run time rather than quoted. Written as a classifier over the ARGUMENTS rather than a
+ * regex over the line, because that is what the grep got wrong: `rm -f -- "$path"` in
+ * `packages/control/ansible/lab-reset.yml` puts a `--` where a line-anchored pattern expects the target, so
+ * the row's reading of "8 files / 11 lines" was two lines and one file short of the real 9 / 13.
+ */
+const UNGUARDED_EXPANSION = /\$\{?[A-Za-z_][A-Za-z0-9_]*\}?/;
+const GUARDED_EXPANSION = /\$\{[A-Za-z_][A-Za-z0-9_]*:[?+-]/;
+
+/** The `rm` targets on a line: everything after the first `rm`, up to a separator, minus the flags. */
+const rmTargets = (line: string): string[] => {
+  const invocation = /\brm\s+([^;&|)]*)/.exec(line);
+  if (invocation === null) return [];
+  return invocation[1].split(/\s+/).filter((word) => word.length > 0 && !word.startsWith("-"));
+};
+
+/**
+ * The shape the rule is about. Only `*` counts as the glob: `?` is a glob too, but `:?` is the remedy's own
+ * spelling, and a detector that read the remedy as an offender would be the #804 shape -- a guard charging
+ * a document for quoting the pattern it warns about.
+ */
+const globbedThroughAnUnguardedVariable = (line: string): boolean =>
+  rmTargets(line).some((target) =>
+    target.includes("*") && UNGUARDED_EXPANSION.test(target) && !GUARDED_EXPANSION.test(target));
+
+/** The wider, already-clean population: an `rm` whose target expands a variable at all. */
+const removesThroughAVariable = (line: string): boolean =>
+  rmTargets(line).some((target) => target.includes("$"));
+
+test("#2076 CONTROL: the detector fires on the dangerous shape and declines the remedy", () => {
+  const dangerous = [
+    'rm -f $D/*.md',
+    'rm -rf $dir/*',
+    'D=/tmp/x/comments && rm -f $D/*.md',
+    // QUOTING DOES NOT SAVE THIS ONE, and it is the reason the rule's own sentence had to be narrowed: the
+    // glob sits outside the quotes, so an empty `D` still expands the word to `/*.md`.
+    'rm -f "$D"/*.md',
+    'rm -f "${D}"/*.md',
+  ];
+  for (const line of dangerous) {
+    assert.equal(globbedThroughAnUnguardedVariable(line), true,
+      `${line} is the shape this rule exists to prevent and the detector missed it -- an emptiness read `
+      + "with this detector would then be empty for the wrong reason");
+  }
+
+  const safe = [
+    'rm -f "${D:?}"/*.md',        // the remedy the rule names
+    'rm -f "${D:-/tmp/fallback}"/*.md',
+    'rm -rf "$STAGE"',            // a bare variable, quoted, no glob: eight of the nine call sites
+    'rm -f -- "$path"',           // the ninth, and the one the grep could not see
+    'rm -f /tmp/fixed/*.md',      // a glob with no variable
+    'rm -rf node_modules/${name}', // printed advice in a JS template literal, not a shell call site
+  ];
+  for (const line of safe) {
+    assert.equal(globbedThroughAnUnguardedVariable(line), false,
+      `${line} is not the shape, and a detector that charges it would make this rule ask for changes that `
+      + "buy nothing -- which is the failure the rule itself names");
+  }
+});
+
+/**
+ * The nine call sites, PINNED BY NAME rather than by count, because the count is what rots: an unrelated
+ * change to `fetch-windows-iso.sh` moves it, and a guard that demands a document be re-numbered for
+ * somebody else's refactor is noise. What is asserted is the PROPERTY -- every one of them removes through
+ * a variable (so the population is real, not a list of files that happen to exist) and not one of them is
+ * dangerous.
+ */
+const CALL_SITES = [
+  "packages/control/ansible/lab-reset.yml",
+  "packages/judge/src/codex-backend.test.ts",
+  "packages/worker-fleet/src/lab-job-lock-two-rows.test.ts",
+  "packages/worker-fleet/src/local-worker/build-vm.sh",
+  "packages/worker-fleet/src/local-worker/create-utm-vm.sh",
+  "packages/worker-fleet/src/local-worker/fetch-windows-iso.sh",
+  "packages/worker-fleet/src/provisioning/bare-metal/serve-bootstrap.sh",
+  "scripts/git-hooks/pre-commit",
+  "scripts/git-hooks/pre-push",
+] as const;
+
+/** 13 `rm`-through-a-variable lines across the nine at `67f30071f`, and 16 shell-executed tracked files. */
+const MEASURED_CALL_SITE_LINES = 13;
+const SHELL_FILE_FLOOR = 10;
+
+const REPO_ROOT = resolve(import.meta.dirname, "../../../..");
+const lines = (path: string) => readFileSync(resolve(REPO_ROOT, path), "utf8").split("\n");
+
+test("#2076: the nine tracked call sites are a real, non-empty population and none of them is the shape", () => {
+  let found = 0;
+  for (const path of CALL_SITES) {
+    const throughAVariable = lines(path).filter(removesThroughAVariable);
+    assert.ok(throughAVariable.length > 0,
+      `${path} is pinned as an \`rm\`-through-a-variable call site and no longer has one -- either the `
+      + "line moved, in which case update this list and the count in the rule, or the detector is broken");
+    found += throughAVariable.length;
+    for (const line of throughAVariable) {
+      assert.equal(globbedThroughAnUnguardedVariable(line), false,
+        `${path} now attaches a glob to a variable: ${line.trim()} -- this is the shape `
+        + '`.claude/rules/agent-practices.md` says to write as `"${VAR:?}"/*`');
+    }
+  }
+  // A FLOOR, NOT A PIN -- 13 at `67f30071f`, and a tenth legitimate call site raises it. The floor exists
+  // only to catch the other failure: `removesThroughAVariable` breaking and finding nothing, which would
+  // make every assertion in the loop above pass having examined no lines.
+  assert.ok(found >= MEASURED_CALL_SITE_LINES,
+    `only ${found} \`rm\`-through-a-variable lines across the nine pinned files, fewer than the 13 measured `
+    + "at `67f30071f` -- the detector is more likely broken than the population shrinking");
+});
+
+/**
+ * THE STANDING HALF: the rule's claim computed against the tree rather than quoted from a grep.
+ *
+ * SCOPED TO FILES A SHELL EXECUTES, and the bound is deliberate. Markdown and TS/MJS are excluded because
+ * in those files the shape appears as PROSE -- `.claude/rules/agent-practices.md` quotes it to warn about
+ * it, and so does the comment at the top of this block. A scan that charged them would be #804's defect
+ * exactly: a guard flagging a note ABOUT the pattern. The cost of the bound is that shell embedded in a
+ * template literal or an Ansible `shell:` block is not scanned here, which is why the two `.test.ts` sites
+ * and the one `.yml` site are pinned by name in the test above instead.
+ */
+const shellExecutedFiles = () =>
+  execFileSync("git", ["-C", REPO_ROOT, "ls-files"],
+    // `sandboxGitEnv()` is CALLED, not merely imported: git exports GIT_DIR into every hook environment,
+    // and this file's tests run under `pre-push`, so an inherited env would walk whatever repository the
+    // hook was invoked from rather than this one.
+    { encoding: "utf8", env: sandboxGitEnv() })
+    .split("\n")
+    .filter((path) => path.endsWith(".sh") || path.startsWith("scripts/git-hooks/"));
+
+test("#2076: no tracked file a shell executes runs `rm` on a glob beneath an unguarded variable", () => {
+  const files = shellExecutedFiles();
+  assert.ok(files.length >= SHELL_FILE_FLOOR,
+    `only ${files.length} shell-executed tracked files found, against 16 at \`67f30071f\` -- the `
+    + "`ls-files` walk is broken, and an emptiness over nothing is not a reading");
+  assert.ok(files.includes("packages/worker-fleet/src/local-worker/fetch-windows-iso.sh"),
+    "the walk must reach the file with the most `rm`-through-a-variable lines in the tree, or its scope "
+    + "is not what this test claims");
+
+  const offenders = files.flatMap((path) =>
+    lines(path).filter(globbedThroughAnUnguardedVariable).map((line) => `${path}: ${line.trim()}`));
+  assert.deepEqual(offenders, [],
+    "a shell script now attaches a glob to an unguarded variable. The positive control for this emptiness "
+    + "is the CONTROL test above, which fires the same detector on five dangerous forms; the non-empty "
+    + `complement is the nine pinned call sites. Write \`"\${VAR:?}"/*\`:\n${offenders.join("\n")}`);
 });
