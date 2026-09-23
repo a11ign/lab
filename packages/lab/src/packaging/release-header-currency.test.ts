@@ -48,7 +48,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { resolve, join, sep } from "node:path";
 import { tmpdir } from "node:os";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
@@ -527,4 +527,79 @@ test("#2058: the successor's own numbers are the tree's — six first-publish en
     "docs/reliability-plan.md states that a walk of this tree finds no CHANGELOG.md outside node_modules "
     + "and that the pending set has never been consumed; the tree now carries one, so that paragraph is "
     + "wrong");
+});
+
+/**
+ * Every workspace manifest, with the two fields the version claim turns on.
+ *
+ * The population comes from the walk above — which has its own control — narrowed to the ROOT
+ * `workspaces` glob, read from the root manifest rather than hard-coded. That narrowing is the point:
+ * `scripts/isolation-fixtures/` holds seven more `package.json` files, several of them public and at
+ * `0.0.0`, and they are deliberately not workspace members. A guard that counted them would give the
+ * right answer about the wrong population, and would keep giving it after a fixture changed.
+ */
+function workspaceManifests(): { path: string; name: string; version: string; isPrivate: boolean }[] {
+  const globs = JSON.parse(read("package.json")).workspaces as string[];
+  assert.deepEqual(globs, ["packages/*"],
+    "this guard narrows the walk to the workspace glob; if the glob has changed, the narrowing below "
+    + "reads a population the release no longer versions");
+  return filesNamed(REPO, "package.json")
+    .filter((file) => /^packages\/[^/]+\/package\.json$/.test(file.split(sep).join("/")))
+    .map((file) => {
+      const manifest = JSON.parse(read(file));
+      return { path: file, name: manifest.name, version: manifest.version, isPrivate: manifest.private === true };
+    });
+}
+
+/** The decision list with its hand-wrapping collapsed, so a phrase may be asserted across a line break. */
+const unwrapped = (text: string): string => text.replace(/\s+/g, " ");
+
+/**
+ * #2159, reviewer's refusal at `ff88e9ea`: the document said "every `package.json` still reads `0.0.0`",
+ * and two of them read `0.1.0`.
+ *
+ * THE EMPTINESS AND ITS POSITIVE CONTROL ARE THE TWO HALVES OF ONE PARTITION, COMPUTED IN ONE RUN.
+ * `public and not 0.0.0` must be empty — that is the document's claim. `private and not 0.0.0` must be
+ * exactly `@a11ign/control` and `@a11ign/lab` — a NON-EMPTY population produced by the same read of the
+ * same files, so a walk that returned nothing, a narrowing that matched nothing, or a `version` field
+ * this code failed to read turns the second assertion red rather than letting the first pass by vacuity.
+ * That is the assertion this file can point at, and it is why the two live in one test rather than two.
+ *
+ * The private pair is pinned by NAME and not merely counted, because the defect being guarded is a
+ * sentence that named the wrong SET: a count of two is satisfied by any two manifests drifting off
+ * `0.0.0`, including a public one, which is the case that has to be loudest.
+ */
+test("#2159: the 0.0.0 claim is true of the set changesets versions, and the private pair is why it needs saying", () => {
+  const manifests = workspaceManifests();
+  assert.ok(manifests.length >= FEWEST_PLAUSIBLE_PACKAGES,
+    `only ${manifests.length} workspace manifests were read — the population is broken, and both halves `
+    + "of the partition below would be empty for that reason rather than because the tree says so");
+
+  const notAtZero = manifests.filter((manifest) => manifest.version !== "0.0.0");
+  assert.deepEqual(notAtZero.filter((manifest) => !manifest.isPrivate).map((manifest) => manifest.path), [],
+    "docs/reliability-plan.md states that every manifest `changeset version` writes still reads 0.0.0, "
+    + "because the 2026-09-19 publish never committed its bump back. A public manifest above 0.0.0 means "
+    + "a version has landed since, and the successor decision's premise is stale");
+  assert.deepEqual(notAtZero.map((manifest) => manifest.name).sort(), ["@a11ign/control", "@a11ign/lab"],
+    "THE POSITIVE CONTROL for the emptiness above: these two private manifests are hand-set to 0.1.0 and "
+    + "changesets never touches them, so this list is non-empty in any run where the manifests were "
+    + "actually read. If it is empty, the assertion above proved nothing");
+
+  const versioned = manifests.filter((manifest) => !manifest.isPrivate);
+  assert.equal(versioned.length, 7,
+    `the document says SEVEN versioned manifests and this tree has ${versioned.length} — a package added, `
+    + "published or made private changes the sentence, and it is corrected here rather than left to rot");
+
+  const list = unwrapped(decisionList());
+  assert.ok(list.includes("all seven versioned manifests still read `0.0.0`"),
+    "the document must state the claim over the set it is true of — the reviewer refused the unqualified "
+    + "form, and a narrowing that is not in the document narrows nothing");
+  assert.ok(!/every `package\.json`[^.]{0,40}reads `0\.0\.0`/.test(list),
+    "the unqualified sentence must not come back. It was false in this tree from the day @a11ign/control "
+    + "was extracted, and it read as verified because nothing had looked at the manifests");
+  for (const name of ["@a11ign/control", "@a11ign/lab"]) {
+    assert.ok(list.includes(name),
+      `the document must name ${name} as a manifest the claim does NOT cover — a narrowing that hides its `
+      + "own exceptions is the same defect one step quieter");
+  }
 });
