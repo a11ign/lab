@@ -207,6 +207,10 @@ export const TRACKER_WRITERS = Object.freeze([
   "close-rows-for-merged-pr.mjs",
   "fleet-gated-nightly.mjs",
   "npm-token-liveness.mjs",
+  // #2126: B2's review-health clause posts the review DISPUTE on the row it labels `answer:ceo`, so this
+  // rule module became a body sender. It reaches this guard through `merge-guard/lookups.mjs`'s own `gh`
+  // helper, which is the reachability the second test asserts -- the call site adds nothing.
+  "own-pr-health-rule.mjs",
   "pr-open.mjs",
   "row-claim.mjs",
   "row-file.mjs",
@@ -220,7 +224,14 @@ export const TRACKER_WRITERS = Object.freeze([
  * `@a11ign/agent-org`: ten of the eleven writers went with it and `npm-token-liveness.mjs` did not,
  * because it guards the publish token rather than the tracker. A single prefix would have silently
  * stopped finding whichever one it did not name. */
-export const TRACKER_WRITER_DIRS = Object.freeze(["packages/agent-org/src/", "scripts/"]);
+export const TRACKER_WRITER_DIRS = Object.freeze([
+  "packages/agent-org/src/", "scripts/",
+  // #2126: THREE roots now, for the reason the paragraph above gives about two. `own-pr-health-rule.mjs`
+  // lives a directory deeper than every other declared writer, and the registry holds BARE NAMES -- so
+  // `row-claim/own-pr-health-rule.mjs` cannot go in the list without reintroducing the path-shaped string
+  // that fired `spawned-paths.test.ts` eleven times. The prefix carries the directory instead.
+  "packages/agent-org/src/row-claim/",
+]);
 
 /**
  * Does this source text spawn `gh` with a body flag? The population predicate, keyed on the FLAG.
