@@ -32,10 +32,14 @@
 import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { STEPS } from "../../scripts/everything-pipeline.mjs";
+
+// #2171: shared, because four private copies of this walk descended a directory symlink and threw ELOOP.
+// It reads nothing of its own -- the roots below are this guard's, so WALK_SCOPE above still holds.
+import { filesUnder } from "../../../guards/src/files-under.mjs";
 
 // #929: THIS GUARD READS ONLY `packages/lab`, so a diff that cannot reach it need not run this file.
 // Undeclared means unbounded, which is why the selector runs 173 always-run guards on every pull
@@ -66,14 +70,11 @@ const MAY_APPEND = new Map([
     "the run transcript, truncated by rmSync at the start of each run so it cannot accumulate across runs"],
 ]);
 
-function sourceFiles(dir: string, found: string[] = []): string[] {
-  for (const entry of readdirSync(join(REPO, dir))) {
-    if (entry === "node_modules" || entry === "dist") continue;
-    const rel = `${dir}/${entry}`;
-    if (statSync(join(REPO, rel)).isDirectory()) sourceFiles(rel, found);
-    else if (/\.(mjs|ts)$/.test(entry) && !entry.includes(".test.")) found.push(rel);
-  }
-  return found;
+function sourceFiles(dir: string): string[] {
+  return filesUnder(join(REPO, dir), {
+    skipDirectory: (name) => name === "node_modules" || name === "dist",
+    keepFile: (name) => /\.(mjs|ts)$/.test(name) && !name.includes(".test."),
+  }).map((full) => full.slice(REPO.length));
 }
 
 test("no pipeline stage APPENDS to its output", () => {
