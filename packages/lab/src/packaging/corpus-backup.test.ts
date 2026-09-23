@@ -10,6 +10,12 @@
  * the same job ever named it, so the refusal read as "nowhere durable exists" rather than "this one
  * destination isn't configured". That read produced a chairman escalation nine days later (#1042 itself).
  *
+ * #2050 adds the THIRD file with the same defect, and the one a reader is most likely to meet:
+ * `corpus-snapshot.mjs`'s closing advisory, printed at the end of every snapshot including the lab's
+ * unattended 03:00Z firing, named only the unconfigured scp/mount route. Same assertion, same
+ * process-spawn approach, and the same warning kept intact -- at the instant it prints, the archive
+ * really is on one disk, because the release nightly does not fire until 04:00Z.
+ *
  * The YAML check reads `lab-job.yml`'s parsed source, which needs no destination, lab, or fleet.
  *
  * THE SCRIPT CHECK RUNS THE REAL SCRIPT AND READS ITS ACTUAL STDERR, rather than scanning
@@ -30,13 +36,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { parse as parseYaml } from "yaml";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const BACKUP_SCRIPT = resolve(REPO, "packages/lab/scripts/corpus-backup.mjs");
 const LAB_JOB_YML = resolve(REPO, "packages/control/ansible/lab-job.yml");
+const SNAPSHOT_SCRIPT = resolve(REPO, "packages/lab/scripts/corpus-snapshot.mjs");
+const DATASET_PATHS = resolve(REPO, "packages/lab/src/dataset-paths.mjs");
 
 /** Both files must name the working route by name, not just gesture at "another way". */
 const NAMES_THE_ROUTE = (text: string) =>
@@ -148,6 +158,124 @@ test("#1042 REGRESSION (reviewer-2 on #1860, three verdicts: `0ece3e54`, `1f91f0
     assert.ok(!NAMES_THE_ROUTE(stderr),
       "a comment beside the refusal satisfied the guard -- the mutated script's real stderr must lack both "
       + "route names for this regression to mean anything");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/**
+ * Builds a one-file corpus in a temp tree and runs the REAL `corpus-snapshot.mjs` against it, returning
+ * what a reader actually sees. `RUNS_ROOT`/`DATASET_ROOT` are what `dataset-paths.mjs` reads, and `--out`
+ * keeps the archive out of the repo's own `backups/`, so this touches no corpus, lab or fleet and costs
+ * about a second — the same price as the source scan it replaces.
+ *
+ * The corpus tree goes under `os.tmpdir()`, unlike the mutated SCRIPT copy above: only a script has to sit
+ * inside the repo to resolve `@a11ign/worker-fleet` by walking up to `node_modules`. Data read through an
+ * env var has nowhere to walk.
+ */
+function runSnapshot(scriptPath: string, { withCaptures }: { withCaptures: boolean }) {
+  const dir = mkdtempSync(join(tmpdir(), "corpus-snapshot-advisory-"));
+  // NEITHER NAME IS `runs/` OR `screenreader-dataset`, deliberately. Both roots reach the script only
+  // through `RUNS_ROOT`/`DATASET_ROOT`, which `dataset-paths.mjs` honours as absolute overrides, so the
+  // realistic spellings bought this file nothing -- and spelling them made `dataset-paths.test.ts` read
+  // it as a file resolving the repo's own corpus root independently, which it is not. Kept neutral rather
+  // than added to that guard's EXEMPT list: an exemption is for a literal a file cannot avoid, and this
+  // one it can.
+  const dataset = join(dir, "corpus/dataset");
+  try {
+    // `describe()` asks whether each WANTED member EXISTS, not whether it holds anything -- so an empty
+    // `captures/` is a present member and snapshots happily. The no-captures tree therefore has to omit
+    // the directory outright to reach the nothing-to-snapshot branch, which is what caught this: the
+    // control exited 0 on a corpus it was meant to find empty.
+    mkdirSync(dataset, { recursive: true });
+    if (withCaptures) {
+      mkdirSync(join(dataset, "captures"), { recursive: true });
+      writeFileSync(join(dataset, "captures/one.json"), '{"id":"one"}');
+      writeFileSync(join(dataset, "manifest.json"), "{}");
+    }
+    const env = { ...process.env, RUNS_ROOT: join(dir, "corpus"), DATASET_ROOT: dataset };
+    const args = [scriptPath, `--out=${join(dir, "out")}`];
+    try {
+      const stdout = execFileSync(process.execPath, args, { encoding: "utf8", env, stdio: "pipe" });
+      return { code: 0, stdout, stderr: "" };
+    } catch (error) {
+      const failure = error as { status?: number; stdout?: string; stderr?: string };
+      return { code: failure.status ?? -1, stdout: failure.stdout ?? "", stderr: failure.stderr ?? "" };
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("#2050: corpus-snapshot.mjs's closing advisory names corpus:release, on real stdout", () => {
+  // THE SAME DEFECT AS #1042'S TWO MESSAGES, IN THE FILE A READER IS MOST LIKELY TO MEET IT IN: this
+  // advisory is printed at the end of EVERY snapshot, including the lab's unattended 03:00Z firing, and
+  // the only route it named was `corpus:backup`'s scp/mount one, which has never been configured on any
+  // machine. #1042's two messages appeared only when somebody ran a command; this one arrives nightly.
+  const { code, stdout } = runSnapshot(SNAPSHOT_SCRIPT, { withCaptures: true });
+  assert.equal(code, 0, `expected a healthy snapshot to exit 0; got ${code}`);
+  assert.match(stdout, /not yet a backup/,
+    `the snapshot ran without reaching its closing advisory: ${stdout}`);
+  assert.ok(NAMES_THE_ROUTE(stdout),
+    "corpus-snapshot.mjs's closing advisory, on stdout, must name `corpus:release` and "
+    + "`a11ign/corpus-backups` as the route that already works -- otherwise the one message the lab "
+    + "prints every night sends its reader to the unconfigured destination and nowhere else, which is "
+    + "the reading that produced #1042's chairman escalation");
+  assert.match(stdout, /SAME DISK as the corpus, so it is not yet a backup/,
+    "the accurate warning must SURVIVE the fix: at the instant this prints, the archive really is on one "
+    + "disk -- the release nightly does not fire until an hour later. A message that claimed the snapshot "
+    + "was already safe would be a false statement in a verification message, which is worse than the "
+    + "silence #2050 was filed about");
+});
+
+test("#2050 POSITIVE CONTROL: corpus-snapshot.mjs's nothing-to-snapshot refusal does NOT name "
+  + "corpus:release", () => {
+  // Without this, an assertion that matched anywhere in anything the process printed -- rather than in
+  // the advisory a reader lands on -- would pass on a script that named the route in some unrelated line.
+  // This is the same script and the same run shape, one branch over: an empty dataset exits 2 before any
+  // archive exists, where naming a backup route would be noise.
+  const { code, stdout, stderr } = runSnapshot(SNAPSHOT_SCRIPT, { withCaptures: false });
+  assert.equal(code, 2, `expected the empty-corpus refusal to exit 2; got ${code}: ${stderr}`);
+  assert.match(stderr, /nothing to snapshot/, `not the refusal this control targets: ${stderr}`);
+  assert.ok(!NAMES_THE_ROUTE(stdout + stderr),
+    "corpus-snapshot.mjs's nothing-to-snapshot refusal unexpectedly names corpus:release -- the positive "
+    + "control no longer distinguishes 'the closing advisory' from 'anything this script prints'");
+});
+
+test("#2050 REGRESSION: moving the route names out of the advisory and into a comment beside it must "
+  + "NOT pass", () => {
+  // The shape three rounds of source-scanning missed on `corpus-backup.mjs` (see the regression above),
+  // asserted here for the new case rather than assumed to be inherited: both route tokens removed from
+  // the strings `process.stdout.write` is given and left only in a comment sitting beside the call. Run
+  // for real, the advisory a reader sees genuinely lacks both names and the check above fails it.
+  const source = readFileSync(SNAPSHOT_SCRIPT, "utf8");
+  const original = '"`corpus:release`, which publishes it to GitHub Releases on `a11ign/corpus-backups`\\n" +';
+  assert.ok(source.includes(original),
+    "the advisory text this regression targets has moved or been reworded -- update `original` to match");
+  const mutated = source
+    .replace(original, '// `corpus:release` publishes to `a11ign/corpus-backups` -- the working route\n    "a job on the control plane, which publishes it somewhere durable\\n" +')
+    .replace("`  npm run corpus:release -- --archive=${archive}\\n\\n`", '"  (ask the control plane to publish it)\\n\\n" +')
+    // The copy sits at a different depth from the real script, so its ONE relative import is rewritten to
+    // an absolute path. Everything else it needs -- `@a11ign/worker-fleet` -- resolves by walking up to
+    // this repo's `node_modules`, which is why the copy stays inside the repo at all.
+    .replace('"../src/dataset-paths.mjs"', JSON.stringify(pathToFileURL(DATASET_PATHS).href));
+
+  // Beside the real script but NOT under `packages/lab/scripts/`: `runs-write-guard.test.ts` and
+  // `dataset-paths.test.ts` walk `packages/*/{src,scripts}` concurrently and read every file they list,
+  // so a copy deleted between their listing and their read fails them with ENOENT (#1919).
+  const dir = mkdtempSync(join(REPO, "packages/lab/.corpus-snapshot-mutation-"));
+  try {
+    const mutatedScript = join(dir, "corpus-snapshot.mjs");
+    writeFileSync(mutatedScript, mutated);
+    const { code, stdout, stderr } = runSnapshot(mutatedScript, { withCaptures: true });
+    assert.equal(code, 0, `expected the mutated script to still exit 0; got ${code}: ${stderr}`);
+    // Exit 0 alone cannot distinguish "ran and printed a route-free advisory" from a script that never
+    // got that far, so the advisory's surviving half is what proves the mutation reached the real call.
+    assert.match(stdout, /not yet a backup/,
+      `the mutated copy exited 0 without reaching its advisory: ${stdout}${stderr}`);
+    assert.ok(!NAMES_THE_ROUTE(stdout),
+      "a comment beside the advisory satisfied the guard -- the mutated script's real stdout must lack "
+      + "both route names for this regression to mean anything");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
