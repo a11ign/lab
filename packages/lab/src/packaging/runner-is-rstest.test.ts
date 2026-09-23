@@ -150,7 +150,12 @@ test("#1319: under --runner=rstest a glob matching nothing is refused BEFORE rst
   const { status, output } = floor(["packages/lab/src/packaging/nothing-matches-*.test.ts", "--run", "--runner=rstest"]);
   assert.equal(status, 1);
   assert.match(output, /matched 0, need at least 1/);
-  assert.doesNotMatch(output, /rstest|Test Files|No test files found/i, "the floor refused; rstest never ran");
+  // #2165: `/rstest/` ALONE WAS A PROXY FOR "rstest ran", AND THE REFUSAL'S OWN TEXT NOW TRIPS IT. The floor's
+  // message names the runner deliberately -- it says rstest exits non-zero on a zero-match while REPORTING
+  // `"status": "pass"` -- so a bare word match can no longer tell "rstest ran" from "the refusal explained rstest".
+  // The markers below are things only a real rstest run prints, which is what this assertion always meant.
+  assert.doesNotMatch(output, /# Rstest Test Execution Report|@rstest\/core@|Test Files|No test files found/i,
+    "the floor refused; rstest never ran");
 });
 
 test("#1319: --drop-empty names an empty glob and drops it, and runs the rest", () => {
