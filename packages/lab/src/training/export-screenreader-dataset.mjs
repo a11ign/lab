@@ -156,6 +156,19 @@ export function captureEnvironment(/** @type {any} */ capture) {
     nodeVersion: knownOr(worker.nodeVersion, null),
     windowsVersion: knownOr(worker.windowsVersion, null),
     workerCode: knownOr(worker.workerCode, null),
+    // WHAT THE EVIDENCE MEANS. `captureProtocol` is already a capture-cache key, so a v21 capture can
+    // never be served from a v20 cache entry -- but the cache lives on the lab and the RECORD travels.
+    // Without this stamp a corpus that HAS been mixed across a protocol bump is indistinguishable from
+    // one that has not: measured 2026-09-22, 3,742 of 3,742 exported records carried no protocol at all,
+    // and `workerCode` (the only build-ish field that survived export) is uniform across the training
+    // corpus and requires re-hashing `packages/nvda-worker/src` at past commits to turn into a number.
+    // The whole purpose of the field is to separate populations after the fact, which is why it must
+    // read from the capture and must never fall back to a default.
+    //
+    // `??` and not `knownOr`: `knownOr` is `||`, which would export a RECORDED protocol `0` as `null` --
+    // turning "captured under this protocol" into "protocol not recorded". Those are the two populations
+    // this field exists to keep apart, so the one operator that can confuse them is the wrong one here.
+    captureProtocol: worker.captureProtocol ?? null,
     // WHICH BOX TOOK THIS CAPTURE, read from the capture rather than from the exporter's environment.
     //
     // Every other field here comes from `capture.environment` -- the machine that did the work. This one
