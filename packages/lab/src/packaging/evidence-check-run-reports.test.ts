@@ -16,7 +16,8 @@
  *
  * `lab-fetch-paths.test.ts` owns the tree-wide comparison of every fetch entry against its producer, and
  * that is where `evidence-check` and `evidence-check-run` are resolved. This file asserts the two facts
- * that are specific to the fix: that two runs leave two files, and that adding the run-scoped sibling did
+ * that are specific to the fix: that two runs leave two files, that a REFUSED run leaves the fetched
+ * `report.json` naming the run whose file is actually on disk, and that adding the run-scoped sibling did
  * not move the path `lab-fetch.yml` has always fetched -- the rename that #968 already recorded once for
  * this same file.
  *
@@ -101,6 +102,37 @@ test("#2122: a repeated run identity is REFUSED by name -- the control for a con
       + "artefact is the defect this file exists to remove, so doing it here would be doing it anyway.");
     assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), { first: true },
       "and the refusal left the first run's file untouched rather than half-written");
+  } finally {
+    clean();
+  }
+});
+
+test("#2122: a REFUSED run leaves `report.json` naming the run whose file is actually on disk", () => {
+  const { out, runs, clean } = scratch();
+  try {
+    const at = new Date("2026-09-22T23:40:00.000Z");
+    const first = writeReports({ ...RUN("http://worker-2:7331"), at, runId: "111", out, runs });
+
+    // The SAME identity twice -- the shape a repeated dispatch takes, and the one the refusal exists for.
+    assert.throws(() => writeReports({ ...RUN("http://worker-3:7331"), at, runId: "111", out, runs }),
+      /already exists/,
+      "the second run is refused, because writing it would replace the first run's artefact");
+
+    // THE POINT OF THE ORDER, found by reviewer-2 on #2136 (2026-09-23). While `report.json` was written
+    // first and unconditionally, this refusal left the fetched report naming run two and the run-scoped
+    // store holding run one: the one entry `lab-fetch.yml` fetches pointed at a run with no durable
+    // artefact anywhere, and the two files disagreed silently. Both reads below are of the SAME run, and
+    // they disagree the moment the writes are put back in the other order.
+    const latest = JSON.parse(readFileSync(first.latest, "utf8"));
+    const kept = JSON.parse(readFileSync(first.runReport, "utf8"));
+    assert.equal(latest.results[0].worker, "http://worker-2:7331",
+      "`report.json` still names the FIRST run -- the refused one never reached it");
+    assert.deepEqual(latest.workers, kept.workers,
+      "and it names the run whose run-scoped file is on disk: the fetched report and its sibling are one "
+      + "run, never two. The two runs were given different workers precisely so this cannot pass by "
+      + "comparing a file to itself.");
+    assert.deepEqual(readdirSync(runs), ["2026-09-22T23-40-00-000Z-111.json"],
+      "and the refusal added no second file");
   } finally {
     clean();
   }

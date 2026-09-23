@@ -22,7 +22,7 @@
 // was not in the sample. One case per family, both variants, is the cheapest sample that cannot repeat
 // that: absence-is-the-finding families (custom-control) and probe-dependent ones (table-*) are
 // present by construction.
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
@@ -124,18 +124,27 @@ export function runReportName({ at, runId }) {
  * It is also the positive control for the test: make the name constant and two writes collide by name
  * instead of passing by comparing a directory to itself.
  *
+ * `flag: "wx"` rather than `existsSync` then write: the kernel decides, in one call, whether this run is
+ * the first to claim the name. The check-then-write it replaces had a window between the two in which a
+ * second process could claim the same path -- small, and exactly the case this refusal exists for, since
+ * a repeated identity is most likely to arise from two dispatches running at once rather than from one
+ * running twice.
+ *
  * @param {{ dir: string, at: Date, runId: string, report: unknown }} run
  * @returns {string} the path it wrote
  */
 export function writeRunReport({ dir, at, runId, report }) {
   const path = resolve(dir, runReportName({ at, runId }));
   mkdirSync(dir, { recursive: true });
-  if (existsSync(path)) {
+  try {
+    writeFileSync(path, JSON.stringify(report, null, 2) + "\n", { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    if (/** @type {NodeJS.ErrnoException} */ (error).code !== "EEXIST") throw error;
     throw new Error(`evidence-check: ${path} already exists. A second run would replace the first run's `
       + `report, which is the thing this file exists to prevent -- the run identity `
-      + `(${at.toISOString()}, ${runId}) is not unique.`);
+      + `(${at.toISOString()}, ${runId}) is not unique. Nothing was written: `
+      + `report.json still names the run whose file is already there.`, { cause: error });
   }
-  writeFileSync(path, JSON.stringify(report, null, 2) + "\n", "utf8");
   return path;
 }
 
@@ -578,8 +587,16 @@ const pooled = await drainAcrossPool({
  * repository reads a field of this report (`lab-fetch.yml` fetches the file, not a field), so the addition
  * costs no reader; the absence cost #1908 nine tenths of its evidence.
  *
- * `report.json` is written FIRST and unconditionally, so a run-scoped refusal cannot cost the run the
- * answer it just spent hours of fleet time computing.
+ * THE DURABLE FILE IS WRITTEN FIRST, and that order is the whole of the guarantee (reviewer-2 on #2136,
+ * 2026-09-23). It used to be the other way round -- `report.json` first and unconditionally, so that a
+ * run-scoped refusal could not cost the run the answer it had just spent hours of fleet time computing.
+ * That ordering bought the answer at the price of the only thing a reader can check: on a refusal,
+ * `report.json` held the SECOND run while `runs/<identity>.json` still held the FIRST, so the one entry
+ * `lab-fetch.yml` fetches named a run with no run-scoped artefact anywhere, and the two files disagreed
+ * SILENTLY. Two artefacts that disagree are worse than one run's answer lost, because the disagreement
+ * reaches a reader looking like evidence while the loss is loud -- the refusal names both runs and the run
+ * exits non-zero. So the run-scoped write goes first and `report.json` is only replaced once the file it
+ * will name is on disk; anything that stops the first write stops the second.
  *
  * `at`, `runId`, `out` and `runs` DEFAULT rather than being read inside, so the whole composition -- not
  * two halves of it joined by a test -- can be driven into a temporary directory at two chosen identities.
@@ -603,10 +620,11 @@ export function writeReports({ workers, results, summary,
   // the code that produced it, and "ten reads at pin 8fd25e80c" was a sentence a session typed rather than
   // a field the instrument wrote.
   const report = { at: at.toISOString(), runId, ...checkoutCommit(), workers, results, summary };
+  const runReport = writeRunReport({ dir: runs, at, runId, report });
   const latest = latestReportPath(out);
   mkdirSync(out, { recursive: true });
   writeFileSync(latest, JSON.stringify(report, null, 2) + "\n", "utf8");
-  return { report, latest, runReport: writeRunReport({ dir: runs, at, runId, report }) };
+  return { report, latest, runReport };
 }
 
 async function main() {
