@@ -206,9 +206,16 @@ test("A DECLARATION NARROWER THAN THE WALK FAILS THE GUARD'S OWN RUN", () => {
   // The row's mutation, made permanent: declared `docs`, read a product file.
   const run = runFixtureGuard(`["docs"]`, reading(["packages/judge/src/rules.ts"]));
   assert.notEqual(run.status, 0, "a guard that reads outside its declaration must fail");
-  assert.match(`${run.stdout}${run.stderr}`,
+  const said = `${run.stdout}${run.stderr}`;
+  assert.match(said,
     /declares WALK_SCOPE \["docs"\] and read 1 path\(s\) outside it: packages\/judge\/src\/rules\.ts/,
     "and the failure must name what it read, so the fix is followable");
+  // #2007's second done-when, and the one it would have been easy to trade the first for: where every
+  // outside path is an ORDINARY file, widening IS a real remedy and must still be offered, unchanged.
+  assert.match(said, /widen WALK_SCOPE to cover these, or remove it\./,
+    "an ordinary path can be covered by a wider scope, so the widen remedy stands");
+  assert.doesNotMatch(said, /the walk left the process for/,
+    "and nothing here left the process, so the unbounded remedy must not appear");
 });
 
 test("...and a declaration that covers the walk passes — or the check above could be failing on everything", () => {
@@ -238,6 +245,57 @@ test("THE REVIEW'S FIXTURE: a guard declaring docs that reads the whole reposito
   assert.match(said, /\(the whole repository\) -- git ls-files/, "the pathspec magic, named");
   assert.match(said, /pointed back at this checkout/, "the --git-dir from elsewhere, named");
   assert.match(said, /packages\/judge\/src\/rules\.ts/, "the copied file, named");
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// A REFUSAL MAY NOT OFFER A REMEDY THE CODE IT COMES FROM CANNOT HONOUR — #2007.
+//
+// `readsOutsideScope` refuses the `(the whole repository)` marker WHATEVER the scope, so no value of
+// `WALK_SCOPE` covers one. The message used to say "widen WALK_SCOPE to cover these, or remove it"
+// unconditionally: a reader who followed the first remedy exactly widened to the repository root and was
+// refused again, identically, with no hint that the loop was by design. #1968 paid that round on
+// `display-mode.test.ts`, whose declaration had to be DELETED because the file spawns `pwsh`.
+//
+// Failing closed on a child process is correct and none of this touches it. What changes is only what the
+// refusal SAYS; which walks are refused is unchanged, which is why the fixtures below still fail.
+// ---------------------------------------------------------------------------------------------------------
+
+/** A fixture body that leaves the process, which the observer records as the unbounded marker by design. */
+const leavesTheProcess = `spawnSync(process.execPath, ["-e", "0"], { cwd: REPO });`;
+
+test("WHERE THE ONLY OUTSIDE READ IS UNBOUNDED, the refusal offers removal ALONE and says why widening cannot reach it", () => {
+  const run = runFixtureGuard(`["docs"]`, leavesTheProcess);
+  const said = `${run.stdout}${run.stderr}`;
+  assert.notEqual(run.status, 0, `a spawn is outside every scope, so this must still fail:\n${said.slice(-1500)}`);
+  assert.match(said, /read 1 path\(s\) outside it: \(the whole repository\) --/, "the marker is named, not elided");
+  // The remedy that exists.
+  assert.match(said, /Remove the declaration/);
+  // ...and the reason, which is the whole point: without it "remove it" reads as the lesser of two options
+  // rather than the only one, and the reader tries widening first exactly as #1968 did.
+  assert.match(said, /the walk left the process for 1 of these, so nothing can bound what it read there/);
+  assert.match(said, /NO value of WALK_SCOPE covers \(the whole repository\)/);
+  // The remedy that does not. Asserted as an ABSENCE because offering it is the defect itself.
+  assert.doesNotMatch(said, /widen WALK_SCOPE to cover these/,
+    "widening is refused identically at every width here, so offering it sends the reader round a loop");
+});
+
+test("MIXED: one marker and one ordinary path is decided BY THE MARKER — removal, with what widening would have covered", () => {
+  // The ruling, stated rather than left to branch order: a remedy has to clear EVERY path in the list, and
+  // widening leaves the marker refused however far it is widened. So the presence of ONE unbounded read
+  // decides the remedy for the whole list. The ordinary path is not hidden — the message says widening
+  // would have covered it — because a reader who removes the declaration should know what it cost.
+  const run = runFixtureGuard(`["docs"]`, `${leavesTheProcess} ${reading(["packages/judge/src/rules.ts"])}`);
+  const said = `${run.stdout}${run.stderr}`;
+  assert.notEqual(run.status, 0, `both reads are outside "docs", so this must fail:\n${said.slice(-1500)}`);
+  assert.match(said, /read 2 path\(s\) outside it/);
+  assert.match(said, /Remove the declaration/, "the marker decides the remedy");
+  assert.doesNotMatch(said, /widen WALK_SCOPE to cover these/, "and widening is not offered as a way out");
+  assert.match(said, /Widening would cover the other 1 path\(s\) and leave the unbounded one\(s\) refused unchanged\./,
+    "the ordinary path is accounted for rather than dropped");
+  // AND THE MARKER IS IN THE NAMED SAMPLE, which is truncated at eight: a message whose remedy turns on an
+  // unbounded read must show one, or it is unfollowable for the reason #2007 filed. It is, without any
+  // sorting in the message: `readsSoFar` returns the reads sorted and every marker begins `(`.
+  assert.match(said, /outside it: \(the whole repository\) --/, "the marker leads the named sample");
 });
 
 // ---------------------------------------------------------------------------------------------------------
