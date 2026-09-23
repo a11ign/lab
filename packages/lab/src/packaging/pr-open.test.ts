@@ -559,20 +559,31 @@ test("#1578: the override is prepended to the child's PATH and nothing else chan
 /** Owner read/write/execute, group and others read/execute: a script `PATH` can run. */
 const EXECUTABLE = 0o755;
 
-/** A directory holding a `gh` that records its argv and exits 0. */
-function recordingGh(): { dir: string; marker: string } {
+// #2099: THE SHIM IS NO LONGER NAMED `gh`, AND THE REASON IS THE MECHANISM ITSELF.
+//
+// `classifyCommand` now refuses a bare `gh` Acceptance for `token` -- the acceptance job is given no
+// credential, so `pr-open` refusing it here is that job's verdict delivered early, which is the whole
+// contract this wrapper states in its own header ("a body that passes this wrapper and fails in CI,
+// exactly the situation being fixed"). An author whose `gh` line really is hand-run declares
+// `Hand-run: <who runs it and why>` and both report `NOT RUN`.
+//
+// So `gh --version` can no longer reach the child at all, and this test would prove nothing by asserting
+// it does. `node` carries #1578's two required properties unchanged: it is on the PARENT's `PATH` (so
+// `classifyCommand`, which resolves against pr-open's own environment rather than the child's, says
+// `runnable`), and `node --version` makes no network call, so a regression cannot become a live call.
+/** A directory holding an executable named `name` that records its argv and exits 0. */
+function recordingShim(name: string): { dir: string; marker: string } {
   const dir = mkdtempSync(join(tmpdir(), "a11y-1578-"));
   const marker = join(dir, "calls");
-  writeFileSync(join(dir, "gh"), `#!/bin/sh\necho "$*" >> "${marker}"\nexit 0\n`);
-  chmodSync(join(dir, "gh"), EXECUTABLE);
+  writeFileSync(join(dir, name), `#!/bin/sh\necho "$*" >> "${marker}"\nexit 0\n`);
+  chmodSync(join(dir, name), EXECUTABLE);
   return { dir, marker };
 }
 
-test("#1578 ACCEPTANCE, MUTATION TARGET: driven through main(), the Acceptance reaches the override's gh while create still gets its call", () => {
-  // `gh --version` makes no network call even from a real `gh`, so a regression here cannot become a live tracker
-  // call: it would only fail to reach the recorder, which is exactly what this asserts against.
-  const body = "## Acceptance\n\ngh --version\n\nCloses #1\n";
-  const { dir, marker } = recordingGh();
+test("#1578 ACCEPTANCE, MUTATION TARGET: driven through main(), the Acceptance reaches the override's executable "
+  + "while create still gets its call", () => {
+  const body = "## Acceptance\n\nnode --version\n\nCloses #1\n";
+  const { dir, marker } = recordingShim("node");
   const spawned: string[][] = [];
   const saved = process.env.A11Y_ACCEPTANCE_PATH;
   process.env.A11Y_ACCEPTANCE_PATH = dir;
@@ -587,10 +598,70 @@ test("#1578 ACCEPTANCE, MUTATION TARGET: driven through main(), the Acceptance r
   }
   const recorded = existsSync(marker) ? readFileSync(marker, "utf8").trim() : "";
   rmSync(dir, { recursive: true, force: true });
-  assert.equal(recorded, "--version", "the Acceptance child resolved `gh` from A11Y_ACCEPTANCE_PATH");
+  assert.equal(recorded, "--version", "the Acceptance child resolved `node` from A11Y_ACCEPTANCE_PATH");
   assert.equal(code, 0, "the body checked clean and the create was sent");
   assert.deepEqual(spawned.map((args) => args.slice(0, 2)), [["pr", "create"]],
     "pr-open's own create still went through its injected `gh`, untouched by the override");
+});
+
+// --- #2099: A BARE `gh` ACCEPTANCE IS THE ACCEPTANCE JOB'S REFUSAL, DELIVERED HERE ---
+//
+// The pair above and below is the point: the SAME body differs only in the declaration line, and the
+// change to #1578's shim above is not this rule being worked around but its consequence.
+
+test("#2099: a bare `gh` Acceptance is refused here and NOTHING is sent -- the acceptance job has no "
+  + "credential, and this wrapper exists to say so before the CI round rather than after it", () => {
+  const spawned: string[][] = [];
+  const said: string[] = [];
+  const code = prOpenMain(["create", "--draft", "--body", "## Acceptance\n\ngh pr view 1\n\nCloses #1\n"], {
+    run: (args: string[]) => { spawned.push(args); },
+    git: () => "agent/x", owner: UNSTAMPED,
+    out: (line: string) => { said.push(line); }, err: (line: string) => { said.push(line); },
+  });
+  assert.equal(code, EXIT_NOTHING_SENT);
+  assert.deepEqual(spawned, [], "nothing was sent");
+  // The REPORT carries the reason and the remedy; the final line is the wrapper's own verdict. Both are
+  // asserted, because a refusal a reader cannot follow is one they route around (#1116).
+  assert.match(said.join("\n"), /needs `token`/);
+  assert.match(said.join("\n"), /Hand-run:/);
+  assert.match(said.join("\n"), /would fail CI's own acceptance job/);
+});
+
+test("#2099 CONTROL: the SAME body carrying the declaration is SENT, and reports NOT RUN rather than running "
+  + "a command this job cannot honestly attempt", () => {
+  const spawned: string[][] = [];
+  const outs: string[] = [];
+  // #2118: the body carries its pasted run. The declaration alone no longer passes -- `acceptanceReport`
+  // refuses a body whose Acceptance is entirely declared hand-runs and which pastes nothing, because
+  // `Hand-run:` asserts a human DID run something and nothing used to require the output to exist. This
+  // test's own subject is unchanged: the create is SENT and the line reads NOT RUN rather than running a
+  // command this job cannot honestly attempt. The unevidenced half is pinned in the test below.
+  const body = "## Acceptance\n\nHand-run: whoever holds the credential\n\ngh pr view 1\n\nCloses #1\n"
+    + '\n## Hand-run output\n\n```\n$ gh pr view 1\n"ok"\n```\n';
+  const code = prOpenMain(["create", "--draft", "--body", body], {
+    run: (args: string[]) => { spawned.push(args); },
+    git: () => "agent/x", owner: UNSTAMPED, out: (line: string) => { outs.push(line); }, err: () => {},
+  });
+  assert.equal(code, 0);
+  assert.deepEqual(spawned.map((args) => args.slice(0, 2)), [["pr", "create"]], "the create was sent");
+  assert.match(outs.join("\n"), /ACCEPTANCE: NOT RUN/);
+});
+
+test("#2118: the SAME body with the declaration and NO pasted output is REFUSED at `pr-open` -- the create is "
+  + "not sent, which is the half #2099 left open reaching the command that opens the PR", () => {
+  const spawned: string[][] = [];
+  const outs: string[] = [];
+  const body = "## Acceptance\n\nHand-run: whoever holds the credential\n\ngh pr view 1\n\nCloses #1\n";
+  const code = prOpenMain(["create", "--draft", "--body", body], {
+    run: (args: string[]) => { spawned.push(args); },
+    git: () => "agent/x", owner: UNSTAMPED, out: (line: string) => { outs.push(line); }, err: () => {},
+  });
+  assert.equal(code, 1, outs.join("\n"));
+  assert.deepEqual(spawned, [], "nothing was sent -- the refusal is before the create, as every other one is");
+  assert.match(outs.join("\n"), /NO HAND-RUN OUTPUT/);
+  // FOLLOWABLE HERE TOO (#1116): a refusal met at `pr-open` is the one that costs a rewrite, so the
+  // heading has to be nameable from this output alone.
+  assert.ok(outs.join("\n").includes("## Hand-run output"), outs.join("\n"));
 });
 
 // --- #1846: the PR carries its author's session label FROM CREATION, not from arming ------------------

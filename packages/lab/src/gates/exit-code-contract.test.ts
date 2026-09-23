@@ -487,9 +487,11 @@ const DOCUMENTED_PY: Record<string, string> = {
     + "(#11: printing {\"records\": 0} and exiting 0 was indistinguishable from 'examined everything, "
     + "found nothing'). Still no gate or promotion decision reads this script's exit code",
   "packages/lab/scripts/evaluate-screenreader-acceptance.py":
-    "0 held-out acceptance passed; 1 the acceptance result failed OR a precondition refusal -- three "
+    "0 held-out acceptance passed; 1 the acceptance result failed OR a precondition refusal -- five "
     + "distinct causes share 1: stamping a verdict into tracked source, a record naming a case "
-    + "ALL_ACCEPTANCE_CASES does not define (#2094), and being unable to read those definitions at all "
+    + "ALL_ACCEPTANCE_CASES does not define (#2094), a record whose case has been REDEFINED since it was "
+    + "captured (#2129), no manifest beside the records to say what they WERE captured under (#2129, "
+    + "CANNOT-TELL), and being unable to read those definitions at all "
     + "(node absent or failing -- CANNOT-TELL, deliberately not a pass); the bare code cannot itself "
     + "distinguish 'could not measure stability' from a real regression, only the JSON/message can",
   "packages/lab/scripts/train-screenreader-model.py":
