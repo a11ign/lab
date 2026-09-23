@@ -43,6 +43,27 @@
  * lines below, as a thing to run, not as where the number came from. So the only non-date attestation is
  * `manifest.json`: a FILE that holds the number, which a reader can open.
  *
+ * ## THE HOLE THIS LEAVES: PROXIMITY IS A PROXY FOR ATTRIBUTION, AND IT CANNOT SAY WHICH FIGURE
+ *
+ * **AN ATTESTATION INSIDE THE WINDOW ATTESTS EVERY FIGURE INSIDE THE WINDOW.** A date says when SOMETHING
+ * was read; nothing in the text says which number it is about. So a stale figure retyped into a paragraph
+ * that already carries a date rides that date and passes. `reviewer-2` found this on #2242 by restoring
+ * `capture-cache.mjs`'s line 4 alone to main's `"1,061 pairs"`, leaving the next line's
+ * `read 2026-09-23T14:26Z` and `manifest.json` in place: the guard stays GREEN. Reproduced at
+ * `fbd46362d`, and pinned below as `LIMIT: an attestation in the window attests every figure in it`, so
+ * it is a measured boundary rather than a hole nobody has walked into. The mutation that DOES reach the
+ * main assertion is the whole block -- attestations and all -- which is what was actually run.
+ *
+ * **NARROWING THE WINDOW DOES NOT CLOSE IT, AND BINDING THE ATTESTATION TO ONE FIGURE COSTS MORE THAN IT
+ * BUYS.** The date in that mutation sits ~60 characters away, inside any window the legitimate 12 survive.
+ * The other candidate rule -- an attestation attests only the corpus figure NEAREST to it -- was written
+ * and run over these five files before being rejected: it flags 2 of today's 12, both in one README
+ * sentence where a single `read 2026-09-23T14:26Z` covers `1,715 cases`, `4,500 captures` and
+ * `2,327 page dirs` read at the same moment, and it would demand that one date be retyped three times in
+ * three clauses. It does not even close the reported case, where the stale figure is the only figure
+ * left in the paragraph and so is its own nearest. A guard that flags correct dated prose is the guard
+ * somebody turns off -- the same argument the file list is built on.
+ *
  * ## THE POSITIVE CONTROL
  *
  * `flagged` returns [] when every figure is attested, which is the state this file will sit in for the
@@ -197,6 +218,30 @@ test("CONTROL: the floor, the noun and the window each decide a case on their ow
   const far = `read 2026-07-26.${" ".repeat(ATTESTATION_WINDOW + 1)}A full run is 1,061 pairs.`;
   assert.deepEqual(flagged("fixture.md", far).map((f) => f.figure), ["1,061 pairs"],
     "an attestation a paragraph away is the false negative the window was narrowed to 120 to stop");
+});
+
+/**
+ * THE LIMIT ABOVE, PINNED IN BOTH DIRECTIONS. An assertion that something is NOT flagged is an emptiness
+ * one, so the second half removes the attestation and requires the same figure to BE flagged: what is
+ * pinned is proximity failing to ATTRIBUTE, not the scan failing to SEE. If a later rule ever binds an
+ * attestation to one figure, this test goes red and is the right place to record what replaced it.
+ */
+test("LIMIT: an attestation in the window attests every figure in it, so a stale figure beside a date survives", () => {
+  // `reviewer-2`'s mutation on #2242, verbatim: `capture-cache.mjs`'s line 4 back to main's text, with the
+  // line below it -- the attestation for a figure that this edit has just deleted -- left in place.
+  const retyped = [
+    "// A full dataset run is 1,061 pairs and ~1.5 h across three workers, and almost all of it is",
+    "// `cases`, read 2026-09-23T14:26Z on the lab), and almost all of it is usually unchanged.",
+  ].join("\n");
+  assert.deepEqual(flagged("fixture.mjs", retyped), [],
+    "the known limit: this guard asks whether a date sits beside the number, and cannot ask whether the "
+    + "date is ABOUT that number. If this line goes red, the rule changed -- update the header with it");
+
+  // The same text with the attestation gone IS flagged, so the figure is one this scan can see.
+  const unattested = retyped.replace("read 2026-09-23T14:26Z on the lab", "read on the lab");
+  assert.deepEqual(flagged("fixture.mjs", unattested).map((f) => f.figure), ["1,061 pairs"],
+    "with the neighbouring date removed the retyped figure is flagged -- the miss above is attribution, "
+    + "not blindness");
 });
 
 /**
