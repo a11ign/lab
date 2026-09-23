@@ -463,6 +463,38 @@ test("and an unarmed pull request is still unarmed", () => {
 });
 
 /**
+ * #2046: THE RULE ABOVE MOVED OUT OF THIS FILE, AND THE TESTS ABOVE DID NOT.
+ *
+ * They still pass because `armedFromApi` is RE-EXPORTED here -- one definition, reached by two spellings,
+ * which is the opposite of the second-copy shape and not to be confused with it. The re-export exists
+ * because `work-gate.mjs` imports the predicate from this file and its own header reasons about the shape
+ * of that import graph; `pr-armed-state.mjs` imports nothing at all, so the property the gate states about
+ * itself survives the hop.
+ *
+ * The move is this row's whole point. The rule was written here, exported here and tested here, and three
+ * separate deciding reads did not call it: `confirmArmed`'s (#1729), the candidate read's (#2004), and
+ * `arm-pr.mjs`'s refusal path (#2046). A rule that lives inside one of its callers is a rule the other
+ * callers have to REMEMBER to import, and this repository's record is that they do not.
+ */
+test("#2046: the armed predicate is DEFINED in `pr-armed-state.mjs` and only re-exported here -- the "
+  + "sweep is one of its readers, not its owner", () => {
+  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
+  assert.match(source, /from "\.\/pr-armed-state\.mjs"/,
+    "read from the shared module, the way `pr-hold-state.mjs` is on the line above it");
+  assert.doesNotMatch(source, /export function armedFromApi/,
+    "and NOT defined here: a definition inside one caller is what let the other two miss it");
+  assert.doesNotMatch(source, /pr\.merged === true \|\| pr\.autoMergeRequest != null/,
+    "nor may the three-state rule be re-spelled here -- a second copy is the shape #1729, #2004 and "
+    + "#2046 are each an instance of");
+  const shared = stripComments(readFileSync(`${REPO}packages/agent-org/src/pr-armed-state.mjs`, "utf8"));
+  assert.match(shared, /export function armedFromApi/, "the one definition lives there");
+  assert.doesNotMatch(shared, /^\s*import /m,
+    "and it imports NOTHING: both callers state as a property of themselves that they run under a bare "
+    + "`actions/checkout` with no `npm ci` and no build (#330/#331), and a shared predicate must not be "
+    + "the thing that takes that property away");
+});
+
+/**
  * #2004: THE CANDIDATE LIST COULD NOT SEE THE MERGE QUEUE, SO IT SWEPT A QUEUED PR AS UNARMED.
  *
  * `armedFromApi` above knows three armed states, and its own comment says the third is GraphQL-only:
