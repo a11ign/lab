@@ -72,6 +72,13 @@
  * drives the same scan over `d9521699e`'s real text. The floor assertion is the other half: a scan that
  * matched nothing would pass having examined nothing.
  */
+
+// requires: history
+// `CONTROL ON REAL HISTORY` reads `d9521699e` out of git, and skips honestly without it. Declared here
+// rather than left to `deriveClosureRequirements` to infer, because the `History: full` line in the pull
+// request body is checked against THIS marker: without it the deepening reads as time spent for nothing
+// (`anyCommandUsesHistory`, #497/#621). Unlike `content-preservation`'s pinned pair (#2252), `d9521699e`
+// IS an ancestor of `origin/main`, so `git fetch --unshallow origin main` really does reach it.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
