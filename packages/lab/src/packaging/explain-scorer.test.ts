@@ -60,3 +60,48 @@ test("a rule-decided criterion says who owns it rather than reporting model numb
   assert.match(out, /not model-evaluated/);
   assert.match(out, /deterministic-rules/);
 });
+
+test("a miss the RAISE refused is annotated, and a miss the head lost is not", () => {
+  // Two misses on one criterion, printed as one line each. Without the annotation they are the same
+  // line and a reader has no way to tell them apart — which is how #2152's two cases came to be given
+  // opposite diagnoses: 0.0031 under the cut was called threshold variance, 0.0197 under "not a
+  // threshold-variance candidate at all". Both had cleared the head's own Neyman-Pearson floor.
+  const detail = criterionDetail(report({
+    "4.1.3": {
+      truePositive: 14, falseNegative: 2,
+      falseNegativeCases: ["b3-status-taxi/bad", "b3-fake-miss/bad"],
+      subtypeThresholds: { "4.1.3:form-activation-silent": 0.9639 },
+      subtypeThresholdFloors: { "4.1.3:form-activation-silent": 0.9344 },
+      falseNegativesAboveFloor: { "b3-status-taxi/bad": ["4.1.3:form-activation-silent"] },
+    },
+  }), "4.1.3").join("\n");
+
+  const [raised, lost] = detail.split("\n").filter((l) => l.includes("MISS"));
+  assert.match(raised, /b3-status-taxi\/bad.*above the NP floor.*form-activation-silent.*raise refused it/,
+    "a miss inside [floor, cut) must say the raise refused it, not the head");
+  assert.doesNotMatch(lost, /NP floor/,
+    "a head that genuinely lost the case must not be excused by the same line");
+});
+
+test("a report written before the floors were recorded prints an unannotated miss, not a claim", () => {
+  // Absent and clean must not look alike, and neither must absent and 'the head lost it'.
+  const detail = criterionDetail(report({
+    "4.1.3": { falseNegative: 1, falseNegativeCases: ["b3-status-taxi/bad"] },
+  }), "4.1.3").join("\n");
+  assert.match(detail, /MISS\s+b3-status-taxi\/bad\s*$/m);
+});
+
+test("a FALSE ALARM is never annotated with a floor, whatever the miss list says about that id", () => {
+  // The annotation answers "which side of its own cut did this score land", and a false alarm fired —
+  // no cut refused it. Keyed off the list being walked, not off the two lists never sharing an id.
+  const detail = criterionDetail(report({
+    "4.1.3": {
+      falsePositive: 1, falsePositiveCases: ["shared-id"],
+      falseNegative: 1, falseNegativeCases: ["shared-id"],
+      falseNegativesAboveFloor: { "shared-id": ["4.1.3:form-activation-silent"] },
+    },
+  }), "4.1.3");
+
+  assert.match(detail.find((l) => l.includes("FALSE ALARM")) ?? "", /shared-id\s*$/);
+  assert.match(detail.find((l) => l.includes("MISS")) ?? "", /the raise refused it/);
+});
