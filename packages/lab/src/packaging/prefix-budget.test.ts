@@ -131,6 +131,9 @@ const PINNED_HEADING_COUNT = 13;
 /** A floor on the lines actually read, so a haystack that came back near-empty cannot pass vacuously. */
 const MIN_LINES_READ = 100;
 
+/** The same floor for the collapsed-prose haystack the directive test reads. */
+const MIN_PROSE_CHARS = 5_000;
+
 const HEADINGS_ADDED_SINCE = [
   "## A review OUTLIVES the head it was posted on, and the org now READS that (2026-09-23, #2084)",
 ] as const;
@@ -216,4 +219,143 @@ test("the preservation assertion is REACHABLE -- a heading that was never writte
   const renamedOnly = new Set(["## Some Heading-RENAMED"]);
   assert.equal(renamedOnly.has("## Some Heading"), false, "a line set must not match a mere prefix");
   assert.ok("## Some Heading-RENAMED".includes("## Some Heading"), "…which a substring match WOULD match");
+});
+
+/**
+ * THE DIRECTIVE, NOT ONLY THE HEADING -- and this is the control the first draft of this guard did not
+ * have. `reviewer-2` applied a mutant to `.claude/rules/agent-practices.md` turning
+ * "Do not create a cron to check for work." into "Consider creating a cron to check for work.", ran the
+ * five tests above, and **all five stayed green**: a section can keep its heading while the rule under it
+ * is reversed. A heading census answers "was this subject dropped"; it cannot answer "does it still say
+ * the same thing", which is what done-when 2 actually claims.
+ *
+ * ## MATCHED AGAINST THE **LOADED** FILES ONLY, AND THAT IS DELIBERATE
+ *
+ * A heading may satisfy the census from `docs/operational-lessons.md`, because the row's remedy is to move
+ * the NARRATIVE there and link it. A DIRECTIVE may not. **A rule that exists only in a file nothing loads
+ * is a rule that was lost**, however faithfully it was archived -- and the audit that found this blocker
+ * found exactly that shape three times: `Model routing`, `Context` and `Web research` had their
+ * measurements deleted outright while their headings survived in the loaded file, and the Web-research
+ * exception ("One fetch that the main session must read itself is the exception, not the habit.") was
+ * gone from all three files. So the haystack here is `CLAUDE.md` + `agent-practices.md`, and nothing else.
+ *
+ * ## WHY NORMALISED SUBSTRING HERE, WHERE THE HEADING CENSUS USES WHOLE LINES
+ *
+ * A heading IS a line, so a line set is the exact instrument and it refuses the prefix mutant
+ * (`## Assertions` vs `## Assertions-RENAMED`). A directive is wrapped across lines by the formatter and
+ * is never a line, so the haystack collapses all whitespace and the needle is written collapsed. The
+ * mutant that motivated this test dies on it: "Consider creating a cron…" does not contain
+ * "Do not create a cron to check for work.", and the control below asserts that on a local fixture rather
+ * than on today's tree.
+ *
+ * **THE LIMIT, STATED RATHER THAN IMPLIED.** A literal pin decides whether a sentence SURVIVED, not
+ * whether the section around it still means what it meant. A weakening that leaves the pinned sentence
+ * intact and adds a contradicting one after it passes this test. Refusing that would need a guard that
+ * infers intent, which is the defect this repository's own Assertions rule names one level up; the
+ * control for it is review, and it is named here so nobody reads a green run as more than it is.
+ */
+const DIRECTIVES_BY_SECTION: Readonly<Record<string, readonly string[]>> = {
+  "## Model routing for subagents": ["**Every subagent call names its model.**"],
+  "## Context": ["`/clear` between unrelated topics; a fresh window beats stale history."],
+  "## Web research": ["**One fetch that the main session must read itself is the exception, not the habit.**"],
+  "## Timers and state": [
+    "**No session holds a standing cron.**",
+    "**Do not create a cron to check for work.**",
+    "**The row is the state.**",
+    "**Nobody merges by hand.**",
+    "**`Acceptance:` and `Closes` are MERGE-BLOCKING**",
+  ],
+  "## The API budget — `gh api rate_limit` is a broken gauge (measured 2026-09-22, #1967)": [
+    "**Never decide anything from `gh api rate_limit`.**",
+    "**you must not switch to the other config to get past your own limit.**",
+    "**Run `gh api user --jq .login` first, then the headers**",
+  ],
+  "## `lane:ceo` protects review, not authorship (ceo's ruling, 2026-09-18)": [
+    "**A `lane:<owner>` label refuses any OTHER session unconditionally**",
+  ],
+  "## `main` REQUIRES an approving review (ceo's ruling, 2026-09-22, #2022)": [
+    "**One approving review, and `bypass_pull_request_allowances` EMPTY**",
+    '**A 404 from `branches/main/protection` means absent OR forbidden, never "unprotected".**',
+  ],
+  "## A review OUTLIVES the head it was posted on, and the org now READS that (2026-09-23, #2084)": [
+    "**A grep count in a row body is a reading at a moment: re-run it at YOUR commit.**",
+  ],
+  "## A waiting condition is DATA, not a sentence (chairman's direction, 2026-09-19)": [
+    "**If a conclusion changes what should happen next, it goes in a FIELD, not a comment.**",
+    "**Nothing in this org reads comments.**",
+    "Removing the label IS the act of answering",
+  ],
+  "## Routing — who reads what (chairman's direction, 2026-09-14)": [
+    "An engineer's report goes there, never to `ceo`.",
+    "**Both halves, or it is unrecorded or undelivered.**",
+    "**Do not retry and do not poll:**",
+  ],
+  "## An approval prompt a human learns to click through is worse than no prompt (2026-09-23, #2076)": [
+    '**Write `rm -f "${D:?}"/*.md`, never `rm -f $D/*.md`.**',
+    "when a command is refused for its SHAPE rather than its EFFECT, change the shape.",
+  ],
+  "## Assertions": [
+    "**An emptiness assertion names where its positive control lives.**",
+    "**A control you believe in is not one you can point at.**",
+  ],
+};
+
+/** Collapse every run of whitespace, so a needle written on one line matches text the formatter wrapped. */
+const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
+
+/** The LOADED set only -- see the header for why `docs/` is not in this haystack. */
+function loadedProse() {
+  return collapse(LOADED.map((f) => readFileSync(join(REPO_ROOT, f), "utf8")).join("\n"));
+}
+
+test("every pinned section names at least one directive, so a new section cannot arrive unguarded", () => {
+  // The H1 title carries no rule of its own; every `##` section must have one.
+  const sections: string[] = [...HEADINGS_AT_AAE2C3C9E, ...HEADINGS_ADDED_SINCE].filter((h) => h.startsWith("## "));
+  const keys = Object.keys(DIRECTIVES_BY_SECTION);
+  assert.deepEqual(
+    sections.filter((h) => !keys.includes(h)),
+    [],
+    "a pinned heading has no pinned directive -- add its load-bearing sentence to DIRECTIVES_BY_SECTION",
+  );
+  assert.deepEqual(
+    keys.filter((k) => !sections.includes(k)),
+    [],
+    "DIRECTIVES_BY_SECTION names a section that is not in the pinned heading list",
+  );
+  for (const [section, directives] of Object.entries(DIRECTIVES_BY_SECTION)) {
+    assert.ok(directives.length > 0, `${section} pins an EMPTY directive list, which asserts nothing`);
+  }
+});
+
+test("no rule was WEAKENED: every pinned directive is still in the LOADED set, verbatim", () => {
+  const prose = loadedProse();
+  assert.ok(prose.length > MIN_PROSE_CHARS, `read only ${prose.length} chars of loaded prose`);
+  const missing: string[] = [];
+  for (const [section, directives] of Object.entries(DIRECTIVES_BY_SECTION)) {
+    for (const d of directives) if (!prose.includes(collapse(d))) missing.push(`${section}\n    ${d}`);
+  }
+  assert.deepEqual(
+    missing,
+    [],
+    `${missing.length} pinned directive(s) no longer appear in CLAUDE.md or the loaded rules file:\n  `
+    + `${missing.join("\n  ")}\n\n${REMEDY}\n\nA directive that now lives only in docs/ has been LOST: `
+    + "the narrative moves, the rule stays loaded.",
+  );
+});
+
+test("the directive assertion is REACHABLE, and it kills the mutant that motivated it", () => {
+  const prose = loadedProse();
+  // Control 1: a directive nobody ever wrote reads as missing, so the emptiness above is not vacuous.
+  const invented = "**Every session must file a row before breakfast.**";
+  assert.equal(prose.includes(collapse(invented)), false, "the fixture names text the loaded set contains");
+  assert.deepEqual([invented].filter((d) => !prose.includes(collapse(d))), [invented]);
+  // Control 2: `reviewer-2`'s EXACT mutant on #2236, pinned on a local fixture so it is a property of the
+  // matcher rather than of today's tree. The heading census stayed green on this; this must not.
+  const weakened = collapse("## Timers and state - **Consider creating a cron to check for work.** If you want one, the gate is missing a question.");
+  const directive = collapse("**Do not create a cron to check for work.**");
+  assert.equal(weakened.includes(directive), false, "the weakened text must NOT satisfy the directive");
+  assert.ok(weakened.includes("## Timers and state"), "…while its heading survives, which is why headings alone are not enough");
+  // Control 3: the whitespace collapse is load-bearing -- the directive is wrapped in the real file.
+  const wrapped = collapse("**Do not create a cron\n  to check for work.**");
+  assert.equal(wrapped, directive, "a directive wrapped across lines must still match");
 });
