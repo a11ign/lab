@@ -25,6 +25,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { stripComments } from "@a11ign/evidence/source-text";
+// #2046: the armed predicate now lives beside the hold predicate, in its own leaf module.
+import { armedQueryArgs, armedReason } from "../../../agent-org/src/pr-armed-state.mjs";
 import {
   closedRowNumbers,
   sessionLabelsOf,
@@ -40,6 +44,8 @@ import {
   runArmPr,
   EXIT,
 } from "../../../agent-org/src/arm-pr.mjs";
+
+const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
 /** A fake `run` recording every call it received and returning canned `gh issue view` output. */
 function fakeRun(rowLabelsByNumber: Record<string, string[]>) {
@@ -230,9 +236,23 @@ test("#1000: a row carrying only LIVE labels arms exactly as it does today -- bo
 // exit code lies about SUCCESS; arming was read from the exit code, which lies about FAILURE. One half of
 // the class was fixed. These tests are the other half.
 
-/** A `gh` stub: `pr view --json state` answers `state`, `pr merge` fails with `mergeError` if given. */
-function ghStub({ state, mergeError, states }: {
-  state?: string; mergeError?: string; states?: (string | undefined)[];
+/**
+ * The three shapes the GraphQL armed read can come back with, as the API really returns them.
+ * `QUEUED` is #2044's own, read at 2026-09-22T23:5xZ while the red `arm` check still stood (#2046).
+ */
+const QUEUED_PR = { merged: false, autoMergeRequest: null, mergeQueueEntry: { state: "AWAITING_CHECKS" } };
+const AUTO_MERGING_PR = { merged: false, autoMergeRequest: { enabledAt: "2026-09-22T23:49:40Z" }, mergeQueueEntry: null };
+const UNARMED_PR = { merged: false, autoMergeRequest: null, mergeQueueEntry: null };
+
+/**
+ * A `gh` stub: `pr view --json state` answers `state`, `pr merge` fails with `mergeError` if given, and
+ * (#2046) `api graphql` answers `armed` -- UNARMED by default, which is the answer that makes a refused
+ * merge a real fault. The string `"unreadable"` makes the read itself FAIL, which is not the same as
+ * "not armed" and is tested as its own case; a sentinel rather than `undefined`, because `undefined`
+ * would hit the parameter default above and quietly answer UNARMED instead.
+ */
+function ghStub({ state, mergeError, states, armed = UNARMED_PR }: {
+  state?: string; mergeError?: string; states?: (string | undefined)[]; armed?: object | null | "unreadable";
 }) {
   const calls: string[][] = [];
   let reads = 0;
@@ -248,10 +268,17 @@ function ghStub({ state, mergeError, states }: {
       if (answer === undefined) throw new Error("gh: HTTP 502");
       return JSON.stringify({ state: answer });
     }
+    if (args[0] === "api") {
+      if (armed === "unreadable") throw new Error("gh: HTTP 502");
+      return JSON.stringify(armed);
+    }
     return "";
   };
   return { run, calls };
 }
+
+/** Swallows the stderr line `armedAlready` prints when its read fails -- asserted where it matters. */
+const QUIET = { sleep: () => "ok" as const, error: () => {} };
 
 test("#1022 ACCEPTANCE: a merge refused because the PR ALREADY MERGED is a success, not a failure -- and "
   + "the verdict names the STATE it read", () => {
@@ -330,6 +357,163 @@ test("#1022: prState returns null rather than a guess when the read fails", () =
   assert.equal(prState({ number: "1", repo: "o/r", run: () => "not json" }), null);
   assert.equal(prState({ number: "1", repo: "o/r", run: () => JSON.stringify({}) }), null);
   assert.equal(prState({ number: "1", repo: "o/r", run: () => JSON.stringify({ state: "OPEN" }) }), "OPEN");
+});
+
+/**
+ * #2046: `MERGED` AND `CLOSED` WERE TWO OF THE THREE STATES IN WHICH THERE IS NOTHING LEFT TO ARM.
+ *
+ * The third is the one a busy queue spends most of its time in, and `waitForSettled` above reads it as
+ * `OPEN` five times in a row: a pull request that has been ARMED INTO THE MERGE QUEUE is `OPEN`, with
+ * `autoMergeRequest: null` and `mergeQueueEntry` non-null. So when the SWEEP in `arm-pr`'s own workflow run
+ * won the race to arm the PR, the `arm` job's merge call was refused, five state reads all answered `OPEN`,
+ * and the original error was re-thrown uncaught -- a RED check on a pull request that was correctly armed
+ * and sitting at position 1.
+ *
+ * MEASURED, NOT INFERRED -- #2044, run 35799243526, one `ready_for_review` event at 2026-09-22T23:49:28Z:
+ *
+ *   23:49:40.69  sweep: SWEEP: #2044 ARMED -- 52 check run(s) on its head     <- sweep won
+ *   23:49:50.72  arm:   GraphQL: Pull request Auto merge is already enabled    <- arm refused
+ *   23:49:50.72  arm:   -> uncaught -> exit 1                                  <- arm went RED
+ *
+ * and the PR read back the same night, while the red check still stood:
+ *
+ *   {"isInMergeQueue": true, "mergeQueueEntry": {"position": 1, "state": "AWAITING_CHECKS"}, "state": "OPEN"}
+ *
+ * `armedFromApi` on that object answers TRUE and `settledReason("OPEN")` answers NULL -- two predicates
+ * disagreeing about the same pull request at the same moment, which is the whole row. The right one was
+ * already written, already exported and already tested in `auto-arm-sweep.mjs`, and this path did not call
+ * it: the same second-copy-of-a-predicate shape this file's own header records about the HOLD predicate
+ * (#645), and the third row it has cost (#1729, #2004, #2046). It now lives in `pr-armed-state.mjs`.
+ */
+
+test("#2046 ACCEPTANCE: a merge refused because SOMEBODY ELSE ARMED IT FIRST is a success, not a failure "
+  + "-- it RETURNS, and the reason names the merge queue", () => {
+  const { run, calls } = ghStub({
+    mergeError: "GraphQL: Pull request Auto merge is already enabled (enablePullRequestAutoMerge)",
+    state: "OPEN", armed: QUEUED_PR });
+  const outcome = armMerge({ number: "2044", repo: "a11ign/a11ign" }, { run, ...QUIET });
+  assert.equal(outcome.armed, false, "this run armed nothing -- and that is the correct outcome here");
+  assert.match(outcome.reason, /already queued to merge/,
+    "the reason must name the state, so a reader can tell this from a swallowed error");
+  assert.ok(calls.some((c) => c[1] === "api" && c.includes("graphql")),
+    "the verdict must come from the GraphQL read: `mergeQueueEntry` exists on neither `gh pr view --json` "
+    + "nor the REST pulls endpoint, so a state read structurally cannot answer this");
+});
+
+test("#2046 ACCEPTANCE (the direction that must not be lost): a PR that NOBODY has armed still RE-THROWS "
+  + "-- an un-armed PR nobody merged is a real fault, and this row must not become `ignore the error`", () => {
+  const { run } = ghStub({ mergeError: "GraphQL: Base branch was modified", state: "OPEN", armed: UNARMED_PR });
+  assert.throws(
+    () => armMerge({ number: "1020", repo: "o/r" }, { run, ...QUIET, attempts: 2 }),
+    /Base branch was modified/,
+    "the ORIGINAL error must reach the caller unchanged");
+});
+
+test("#2046: UNREADABLE IS NOT ARMED -- a failed armed read re-throws rather than resolving to `nothing "
+  + "left to arm`, and it SAYS the read failed", () => {
+  const { run } = ghStub({ mergeError: "GraphQL: Base branch was modified", state: "OPEN", armed: "unreadable" });
+  const said: string[] = [];
+  assert.throws(
+    () => armMerge({ number: "1020", repo: "o/r" },
+      { run, sleep: () => "ok" as const, attempts: 2, error: (l: string) => said.push(l) }),
+    /Base branch was modified/,
+    "`armDecision`'s `Unreadable is not unheld`, pointed at the other predicate: a false `armed` hides a "
+    + "pull request nobody is merging, which is the worse direction");
+  assert.ok(said.some((l) => /could not read whether #1020 is already armed/.test(l)),
+    "and the failed read is NAMED -- a silent one makes `not armed` and `could not ask` the same line");
+});
+
+test("#2046: each of the three armed states RETURNS and names ITSELF, because they are not "
+  + "interchangeable to the reader of a green `arm` step", () => {
+  const cases: [object, RegExp][] = [
+    [QUEUED_PR, /already queued to merge/],
+    [AUTO_MERGING_PR, /auto-merge is already enabled/],
+    [{ merged: true, autoMergeRequest: null, mergeQueueEntry: null }, /already merged/],
+  ];
+  for (const [armed, expected] of cases) {
+    const { run } = ghStub({ mergeError: "GraphQL: whatever GitHub said", state: "OPEN", armed });
+    const outcome = armMerge({ number: "2044", repo: "o/r" }, { run, ...QUIET, attempts: 1 });
+    assert.equal(outcome.armed, false);
+    assert.match(outcome.reason, expected);
+    assert.match(outcome.reason, /nothing was left to arm/);
+  }
+});
+
+test("#2046: the verdict is read from the ARMED STATE, not from the message text -- a reworded GraphQL "
+  + "string must change nothing, the same rule #1022 pins for the settled states", () => {
+  for (const wording of ["GraphQL: Pull request Auto merge is already enabled (enablePullRequestAutoMerge)",
+    "! Pull request #2044 is already queued to merge", "something GitHub has not said yet"]) {
+    const { run } = ghStub({ mergeError: wording, state: "OPEN", armed: QUEUED_PR });
+    assert.match(armMerge({ number: "2044", repo: "o/r" }, { run, ...QUIET, attempts: 1 }).reason,
+      /already queued to merge/, `wording "${wording}" must not change the verdict`);
+    const unarmed = ghStub({ mergeError: wording, state: "OPEN", armed: UNARMED_PR });
+    assert.throws(() => armMerge({ number: "2044", repo: "o/r" }, { run: unarmed.run, ...QUIET, attempts: 1 }),
+      /./, `and "${wording}" must not EXCUSE an unarmed PR either -- the state decides both ways`);
+  }
+});
+
+test("#2046: the settled path is unchanged and still costs no armed read -- a MERGED PR is answered by "
+  + "`waitForSettled` and never reaches the GraphQL call", () => {
+  const { run, calls } = ghStub({ mergeError: "GraphQL: Merge already in progress (mergePullRequest)",
+    state: "MERGED", armed: QUEUED_PR });
+  assert.match(armMerge({ number: "1020", repo: "o/r" }, { run, ...QUIET }).reason, /already merged/);
+  assert.deepEqual(calls.filter((c) => c[1] === "api"), [],
+    "#1022's two states are answered before this row's read is bought at all");
+});
+
+test("#2046: a merge that SUCCEEDS reads neither the state nor the armed state", () => {
+  const { run, calls } = ghStub({ state: "OPEN", armed: QUEUED_PR });
+  assert.deepEqual(armMerge({ number: "999", repo: "o/r" }, { run, ...QUIET }),
+    { armed: true, reason: "auto-merge enabled" });
+  assert.deepEqual(calls.filter((c) => c[1] === "view" || c[1] === "api"), [],
+    "the happy path must cost no extra call -- every read here happens only after a refusal");
+});
+
+test("#2046 PURE: armedReason names the state `armedFromApi` decided, and answers null for a PR nobody "
+  + "armed or a read that came back empty", () => {
+  assert.match(armedReason(QUEUED_PR)!, /already queued to merge/);
+  assert.match(armedReason(AUTO_MERGING_PR)!, /auto-merge is already enabled/);
+  assert.match(armedReason({ merged: true, autoMergeRequest: null, mergeQueueEntry: null })!, /already merged/);
+  assert.match(armedReason({ merged: true, autoMergeRequest: null,
+    mergeQueueEntry: { state: "MERGEABLE" } })!, /already merged/,
+    "most-advanced-first: a landed PR carrying a stale entry reads as merged, not as queued");
+  assert.equal(armedReason(UNARMED_PR), null);
+  assert.equal(armedReason(null), null, "a read that returned nothing is not evidence of arming");
+  assert.equal(armedReason({}), null, "nor is a response missing every field");
+  // CAST DELIBERATELY. TypeScript already refuses this shape at the call, which is half a guard and
+  // covers none of the `.mjs` callers, where no type exists to refuse anything. The runtime answer is
+  // the one this row is about: `{state: "OPEN"}` is exactly what a `gh pr view --json state` read hands
+  // back for a pull request at position 1 of the queue, and it must read as NOT ARMED here.
+  assert.equal(armedReason({ state: "OPEN" } as Parameters<typeof armedReason>[0]), null,
+    "and `state` is not one of the fields it decides on -- the whole point is that state cannot answer this");
+});
+
+test("#2046 ONE PREDICATE, ONE MODULE: arm-pr reads the armed rule from `pr-armed-state.mjs` and spells "
+  + "no copy of it -- the shape this row is the third instance of", () => {
+  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/arm-pr.mjs`, "utf8"));
+  assert.match(source, /from "\.\/pr-armed-state\.mjs"/,
+    "the predicate is IMPORTED, the way `pr-hold-state.mjs` already is on the line above it");
+  assert.doesNotMatch(source, /mergeQueueEntry/,
+    "and the three-state rule must not be re-spelled here: a second copy is how #1729, #2004 and #2046 "
+    + "each happened, and `arm-pr.mjs`'s own header says so about the hold predicate");
+  assert.doesNotMatch(source, /pullRequest\(number/,
+    "nor may the GraphQL query be re-assembled here -- `armedQueryArgs` is what makes both callers ask "
+    + "the identical question");
+});
+
+test("#2046 WIRING: both callers of the armed read build it from the SAME `armedQueryArgs`, so the "
+  + "sweep and the arm job cannot drift into asking different questions", () => {
+  const queued = armedQueryArgs({ number: "2044", repo: "a11ign/a11ign" });
+  assert.deepEqual(queued.slice(0, 2), ["api", "graphql"],
+    "REST structurally cannot see the merge queue -- this must be the GraphQL read");
+  assert.ok(queued.some((a) => a.includes("mergeQueueEntry")),
+    "and it must ask for every field `armedFromApi` decides on, `mergeQueueEntry` above all");
+  assert.ok(queued.includes("o=a11ign") && queued.includes("r=a11ign") && queued.includes("n=2044"),
+    "the owner, repo and number are variables, never interpolated into the query text");
+  for (const caller of ["arm-pr.mjs", "auto-arm-sweep.mjs"]) {
+    assert.match(stripComments(readFileSync(`${REPO}packages/agent-org/src/${caller}`, "utf8")),
+      /armedQueryArgs\(\{ number, repo \}\)/, `${caller} must build the read from the shared argv`);
+  }
 });
 
 // --- #1453: the live set is READ from packages/agent-org/docs/roles/sessions.json, and arm-pr types none ---
