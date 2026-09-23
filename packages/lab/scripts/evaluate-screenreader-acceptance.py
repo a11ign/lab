@@ -726,8 +726,8 @@ def refused_only_by_the_raise(subtype: str, score: float, subtype_report: dict[s
 
 
 def missed_cases(records: list[dict[str, Any]], missed_indices: list[int],
-                 subtype_scores: dict[str, Any]) -> dict[str, tuple[dict[str, Any], dict[str, float]]]:
-    """Every missed record, keyed by case identity, with its own capture beside every head's score. PURE.
+                 subtype_scores: dict[str, Any]) -> dict[str, list[tuple[dict[str, Any], dict[str, float]]]]:
+    """EVERY missed capture, grouped by case identity, each beside the scores computed FROM IT. PURE.
 
     NAMED AND EXTRACTED so the pairing can be tested. It was a comprehension inline in `main`, which no
     unit can reach without a model and a corpus: replacing `records[index]` there with `{}` left the
@@ -736,24 +736,51 @@ def missed_cases(records: list[dict[str, Any]], missed_indices: list[int],
     that pairs a score with the wrong record -- or with none -- answers about a different page and says
     nothing while doing it.
 
+    A LIST PER IDENTITY, not one capture. `case_identity` is `caseId/variant` and the acceptance corpus
+    captures each case more than once, so a dict comprehension keyed on it silently kept the LAST repeat
+    and discarded the rest. Repeats of one case are not interchangeable here: `test_acceptance_stability`
+    pins the population this fails on -- `acceptance-b3-button-market/bad` read its form change on
+    repeat-1 and got `afterUnresolved` on repeat-2, so one capture is applicable and the other is not at
+    the same score. Reproduced at `778cff51d` before this fix, equal score/floor/cut: `[READ, UNREAD]`
+    annotated nothing and `[UNREAD, READ]` annotated the case, off the file order alone. Refused in
+    review by `reviewer-2`; the controls are the two `..._in_either_capture_order` tests.
+
     Scores are float-ed here, not rounded: `falseNegativeSubtypeScores` rounds to 4dp for a human, while
     the classification compares against a float32 floor, and a miss 0.00005 above its floor must not be
-    classified off a rounded copy of its own score. Both fields come off this one mapping so they cannot
-    disagree -- including about WHICH repeat, since `case_identity` is `caseId/variant` and repeats of a
-    case collapse onto one key.
+    classified off a rounded copy of its own score. Both report fields are derived from this one mapping
+    so they cannot disagree about which captures they describe.
     """
-    return {
-        case_identity(records[index]): (
+    grouped: dict[str, list[tuple[dict[str, Any], dict[str, float]]]] = {}
+    for index in missed_indices:
+        grouped.setdefault(case_identity(records[index]), []).append((
             records[index],
             {subtype: float(scores[index]) for subtype, scores in subtype_scores.items()},
-        )
-        for index in missed_indices
-    }
+        ))
+    return grouped
 
 
-def misses_the_raise_refused(missed: dict[str, tuple[dict[str, Any], dict[str, float]]],
+def weakest_miss_scores(captures: list[tuple[dict[str, Any], dict[str, float]]]) -> dict[str, float]:
+    """The LOWEST score each head gave any capture of this case. PURE.
+
+    One number per head for a case captured more than once, and the choice is explicit because the
+    alternative was implicit: the comprehension this replaces kept whichever repeat came last in the
+    file. The weakest capture, because this field exists to answer "did the head lose this case, or did
+    the cut refuse it" -- and a case is only ship-able on the repeat that went worst. It also keeps the
+    number honest beside `falseNegativesAboveFloor`, which is unanimous over the same captures: a case
+    annotated as refused by the raise fired at its floor on EVERY capture, so its weakest score is at or
+    above that floor and `describe_miss` cannot print a sub-floor score beside "above its NP floor".
+
+    The spread this collapses is not lost -- `stability` reports `scoreMinimum` and `scoreMaximum` per
+    identity group, which is the field that exists to say a head moved between captures.
+    """
+    subtypes = {subtype for _, scores in captures for subtype in scores}
+    return {subtype: min(scores[subtype] for _, scores in captures if subtype in scores)
+            for subtype in subtypes}
+
+
+def misses_the_raise_refused(missed: dict[str, list[tuple[dict[str, Any], dict[str, float]]]],
                              model_subtypes: dict[str, Any]) -> dict[str, list[str]]:
-    """Per missed case, the heads that would have fired at their own floor. PURE.
+    """Per missed case, the heads that would have fired at their own floor on EVERY capture of it. PURE.
 
     THE THIRD STATE THE MISS SCORES CANNOT EXPRESS. `falseNegativeSubtypeScores` was added so a reader
     could tell "0.90 against a 0.9153 cut" (threshold variance) from "near zero" (the head lost it).
@@ -762,17 +789,25 @@ def misses_the_raise_refused(missed: dict[str, tuple[dict[str, Any], dict[str, f
     look like different diagnoses, and they were read that way: one was called threshold variance and
     the other "no longer a threshold-variance candidate at all". They are the same state.
 
-    `missed` carries the RECORD beside the scores because the classification needs it: the gate is asked
-    at the floor and cannot be, from a score alone. Keyed by `case_identity` exactly as
-    `falseNegativeSubtypeScores` is, off the same mapping, so a repeat collapses identically in both and
-    the two fields cannot describe different records under one name.
+    `missed` carries the RECORDS beside the scores because the classification needs them: the gate is
+    asked at the floor and cannot be, from a score alone.
+
+    UNANIMOUS OVER THE CAPTURES, and that is a policy rather than an accident -- the shape it replaces
+    had no policy at all, it read whichever repeat the file ended with. This field is a claim that NO
+    features work is owed on the case, so one capture the raise did not refuse falsifies it: a repeat
+    that scored under the floor is the head losing that capture, and a repeat the GATE vetoed is a case
+    whose captures do not agree on whether it can be judged at all. Unanimity can only ever narrow the
+    annotation, never add to it, which is the direction an excuse must fail in. `captures and` is not
+    redundant: `all([])` is true, and a vacuous annotation is exactly what this field must not emit.
     """
     refused = {}
-    for case, (record, scores) in missed.items():
+    for case, captures in missed.items():
         subtypes = sorted(
-            subtype for subtype, score in scores.items()
-            if subtype in model_subtypes
-            and refused_only_by_the_raise(subtype, score, model_subtypes[subtype], record)
+            subtype for subtype, subtype_report in model_subtypes.items()
+            if captures and all(
+                subtype in scores
+                and refused_only_by_the_raise(subtype, scores[subtype], subtype_report, record)
+                for record, scores in captures)
         )
         if subtypes:
             refused[case] = subtypes
@@ -1074,7 +1109,7 @@ def main() -> None:
         missed_indices = [index for position, index in enumerate(included_indices)
                           if included_labels[position] and not decided[index]]
         missed = missed_cases(records, missed_indices, subtype_scores)
-        miss_scores = {case: scores for case, (_, scores) in missed.items()}
+        miss_scores = {case: weakest_miss_scores(captures) for case, captures in missed.items()}
         result["criteria"][criterion] = {
             "decisionOwner": model_decision_owner(criterion_report),
             "modelEvaluated": True,
@@ -1122,6 +1157,10 @@ def main() -> None:
             # This is the sibling of `falsePositivesBySubtype` directly above, whose comment records what
             # not having it cost: "three wrong theories on 2026-08-25 came from not knowing which [head],
             # and each cost a round trip to the lab to find out by hand."
+            #
+            # The WEAKEST capture of a case captured more than once -- see `weakest_miss_scores`. Keyed
+            # by case identity, which repeats collapse onto, so the summary has to be chosen rather than
+            # fallen into: this read whichever repeat came last in the file until #2152's review.
             "falseNegativeSubtypeScores": {
                 case: {subtype: round(score, 4) for subtype, score in scores.items()}
                 for case, scores in miss_scores.items()
@@ -1138,6 +1177,9 @@ def main() -> None:
             # refused lands in the same band and would be excused here for a reason that is not true of
             # it. This field is a claim that no features work is owed; making it about a record whose
             # subtype the page cannot even be judged on is worse than printing nothing.
+            #
+            # Unanimous over the captures of a case, for the same reason and in the same direction: one
+            # repeat the raise did not refuse falsifies the claim, so it can only narrow.
             "falseNegativesAboveFloor": misses_the_raise_refused(missed, model_subtypes),
             **metrics(decided[included_indices].astype(float), included_labels, DECIDED,
                       identities=[case_identity(records[index]) for index in included_indices]),

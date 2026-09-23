@@ -20,6 +20,15 @@ applicability gate vetoes independently of the cut, so a record the GATE refused
 classification therefore asks `applicability.decide` at the floor rather than comparing the score --
 the counterfactual the annotation actually claims. Refused in review at `476547a0`; the control is
 `test_a_gate_vetoed_miss_INSIDE_the_band_is_not_blamed_on_the_raise`.
+
+AND IT IS ASKED OF EVERY CAPTURE, NOT OF WHICHEVER REPEAT CAME LAST. `case_identity` is
+`caseId/variant`, the acceptance corpus captures each case twice, and both report fields are keyed on
+that identity -- so the mapping they are derived from was dropping one repeat of every case. At equal
+score, floor and cut, `[READ, UNREAD]` annotated nothing and `[UNREAD, READ]` annotated the case.
+`test_acceptance_stability` already pins that a real identity has one applicable and one inapplicable
+capture, so this is a population the corpus produces rather than one a fixture invents. Refused in
+review at `778cff51d`; the controls are `test_the_annotation_is_THE_SAME_IN_EITHER_CAPTURE_ORDER` and
+`test_the_annotation_is_UNANIMOUS_over_the_captures_and_the_positive_control_for_it`.
 """
 import importlib.util
 import json
@@ -72,8 +81,13 @@ def unread() -> dict:
 
 
 def missed(case: str, scores: dict, record: dict | None = None) -> dict:
-    """One missed case as the evaluator hands it over: the record beside the scores, keyed by identity."""
-    return {case: (measured() if record is None else record, scores)}
+    """One missed case, singly captured, as the evaluator hands it over: a LIST of (record, scores)."""
+    return {case: [(measured() if record is None else record, scores)]}
+
+
+def repeats(case: str, *captures: tuple[dict, dict]) -> dict:
+    """One missed case captured more than once -- the shape a dict keyed on identity used to discard."""
+    return {case: list(captures)}
 
 
 def test_both_of_the_2152_misses_are_reported_as_the_raise_refusing_them():
@@ -223,9 +237,95 @@ def test_the_missed_cases_carry_the_RECORD_each_score_was_computed_FROM():
     missed_cases = evaluator.missed_cases(records, [1], scores)
 
     assert list(missed_cases) == [PLOT], "only the missed records, keyed as the rest of the report keys them"
-    record, head_scores = missed_cases[PLOT]
+    (record, head_scores), = missed_cases[PLOT]
     assert record is records[1], "the capture this score was computed from, not another record"
     assert head_scores == {SILENT: 0.9441697001457214}, "unrounded -- the floor is a float32 comparison"
+
+
+def test_missed_cases_KEEPS_EVERY_REPEAT_of_a_case_rather_than_the_last_one_in_the_file():
+    """THE DEFECT THIS FILE SHIPPED WITH at `778cff51d`, refused in review by `reviewer-2`.
+
+    `case_identity` is `caseId/variant` and the corpus captures each case more than once, so a dict
+    comprehension keyed on it kept the LAST repeat and dropped the rest -- silently, because the result
+    is a well-formed mapping of exactly the right identities. Identity and not equality on the members:
+    two captures of one case differ only in their interaction, and `==` would accept either for both.
+    """
+    evaluator = load()
+    first = {"provenance": {"caseId": "acceptance-b3-status-plot", "variant": "bad"}, **measured()}
+    second = {"provenance": {"caseId": "acceptance-b3-status-plot", "variant": "bad"}, **unread()}
+    scores = {SILENT: [0.9441697001457214, 0.9607574939727783]}
+
+    grouped = evaluator.missed_cases([first, second], [0, 1], scores)
+
+    assert list(grouped) == [PLOT], "one key, because it is one case"
+    assert [record for record, _ in grouped[PLOT]] == [first, second]
+    assert grouped[PLOT][0][0] is first and grouped[PLOT][1][0] is second, "both captures, each with its own"
+    assert [scores_[SILENT] for _, scores_ in grouped[PLOT]] == [0.9441697001457214, 0.9607574939727783]
+
+
+def test_the_annotation_is_THE_SAME_IN_EITHER_CAPTURE_ORDER():
+    """The reviewer's counterexample at `778cff51d`, run in both orders at ONE score, floor and cut.
+
+    `test_acceptance_stability` pins that this population is real rather than hypothetical:
+    `acceptance-b3-button-market/bad` read its form change on repeat-1 and got `afterUnresolved` on
+    repeat-2, so one capture of an identity is applicable and the other is not. Before the fix
+    `[READ, UNREAD]` annotated nothing and `[UNREAD, READ]` annotated the case -- the report depended on
+    the file order, and could either omit a genuinely raise-refused capture or excuse a gate-vetoed one.
+
+    The answer is the same both ways AND it is the narrow one: the captures disagree about whether the
+    page can be judged at all, so the case is not excused.
+    """
+    evaluator = load()
+    score = 0.9607574939727783
+    read, unread_ = (measured(), {SILENT: score}), (unread(), {SILENT: score})
+
+    forwards = evaluator.misses_the_raise_refused(repeats(TAXI, read, unread_), SUBTYPES)
+    backwards = evaluator.misses_the_raise_refused(repeats(TAXI, unread_, read), SUBTYPES)
+
+    assert forwards == backwards, "the report must not depend on which repeat the corpus wrote last"
+    assert forwards == {}, "one capture the gate vetoed means the case is not excused"
+
+
+def test_the_annotation_is_UNANIMOUS_over_the_captures_and_the_positive_control_for_it():
+    """A case is excused only if EVERY capture of it would have fired at the floor.
+
+    Both captures applicable here, so nothing but the SCORES can produce the difference -- the sibling
+    of the gate-vetoed pair above, and the half that says the rule is about the claim rather than about
+    applicability. The positive control is in the same test: two captures that both clear the floor ARE
+    annotated, in both orders, so the emptiness above is not passing by refusing everything.
+    """
+    evaluator = load()
+    above = (measured(), {SILENT: 0.9607574939727783})
+    lost = (measured(), {SILENT: 0.10})
+    other = (measured(), {SILENT: 0.9441697001457214})
+
+    assert evaluator.misses_the_raise_refused(repeats(TAXI, above, lost), SUBTYPES) == {}
+    assert evaluator.misses_the_raise_refused(repeats(TAXI, lost, above), SUBTYPES) == {}
+    assert evaluator.misses_the_raise_refused(repeats(TAXI, above, other), SUBTYPES) == {TAXI: [SILENT]}
+    assert evaluator.misses_the_raise_refused(repeats(TAXI, other, above), SUBTYPES) == {TAXI: [SILENT]}
+    assert evaluator.misses_the_raise_refused({TAXI: []}, SUBTYPES) == {}, (
+        "`all([])` is true; a case with no captures must not be excused vacuously")
+
+
+def test_the_reported_score_is_the_weakest_capture_and_cannot_contradict_the_annotation():
+    """`falseNegativeSubtypeScores` is keyed by identity too, so it had the same last-repeat-wins defect.
+
+    The weakest capture, chosen rather than fallen into, and the invariant it buys: because the
+    annotation is unanimous, an excused case cleared its floor on every capture, so the number
+    `describe_miss` prints beside "above its NP floor" is itself at or above that floor. A summary that
+    could sit below the floor it is annotated as clearing would be the same class of defect one level on.
+    """
+    evaluator = load()
+    strong, weak = (measured(), {SILENT: 0.96, "1.1.1:missing-alt": 0.4}), (measured(), {SILENT: 0.10})
+
+    assert evaluator.weakest_miss_scores([strong, weak]) == {SILENT: 0.10, "1.1.1:missing-alt": 0.4}
+    assert evaluator.weakest_miss_scores([weak, strong]) == {SILENT: 0.10, "1.1.1:missing-alt": 0.4}
+    assert evaluator.weakest_miss_scores([strong]) == {SILENT: 0.96, "1.1.1:missing-alt": 0.4}
+
+    excused = repeats(TAXI, (measured(), {SILENT: 0.9607574939727783}),
+                      (measured(), {SILENT: 0.9441697001457214}))
+    assert evaluator.misses_the_raise_refused(excused, SUBTYPES) == {TAXI: [SILENT]}
+    assert evaluator.weakest_miss_scores(excused[TAXI])[SILENT] >= evaluator.threshold_floor(SUBTYPES[SILENT])
 
 
 def test_the_pairing_reaches_the_classification_rather_than_only_the_report():
@@ -248,3 +348,24 @@ def test_the_pairing_reaches_the_classification_rather_than_only_the_report():
 
     assert classified == {PLOT: [SILENT]}, (
         "the raise refused the applicable capture and the GATE refused the other, at one score")
+
+
+def test_the_pairing_reaches_the_classification_for_REPEATS_OF_ONE_CASE_in_either_order():
+    """The same join where the two records share an identity, which is where the grouping earns its keep.
+
+    The test above uses two different cases, so a mapping that kept one capture per identity passed it.
+    Here both captures are the same case: at `778cff51d` the classification read whichever the corpus
+    wrote last, and the two orders disagreed. Same score in both; only the gate differs.
+    """
+    evaluator = load()
+    identity = {"caseId": "acceptance-b3-status-plot", "variant": "bad"}
+    applicable = {"provenance": identity, **measured()}
+    vetoed = {"provenance": identity, **unread()}
+    scores = {SILENT: [0.9441697001457214, 0.9441697001457214]}
+
+    forwards = evaluator.misses_the_raise_refused(
+        evaluator.missed_cases([applicable, vetoed], [0, 1], scores), SUBTYPES)
+    backwards = evaluator.misses_the_raise_refused(
+        evaluator.missed_cases([vetoed, applicable], [0, 1], scores), SUBTYPES)
+
+    assert forwards == backwards == {}, "end to end, the report does not depend on the corpus file order"
