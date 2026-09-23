@@ -503,6 +503,13 @@ test("#2058: the successor's own numbers are the tree's — six first-publish en
   // `CHANGELOG.md` that exists; the loop below proves that in THIS run it reached every directory
   // `changeset version` would write one into, enumerated independently of the walk. Without them a walk
   // that lost `packages/` and a tree that truly has no changelog are the same green.
+  // AND THE CLAIM IS PINNED TO THE WALK'S SCOPE, because the two drifted once already: the sentence read
+  // "anywhere in this tree" while the walk read the immediate children of one directory. The prune list
+  // is part of what the reader is told, not an implementation detail of the guard, so a reversion to the
+  // unscoped wording is red here rather than quietly re-opening the gap.
+  assert.ok(list.includes("a walk of this tree finds no `CHANGELOG.md` at all outside `node_modules`"),
+    "the document must state the scope this test actually walks");
+
   const manifests = filesNamed(REPO, "package.json");
   const packageDirs = readdirSync(resolve(REPO, "packages"), { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && existsSync(resolve(REPO, "packages", entry.name, "package.json")))
