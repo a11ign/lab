@@ -428,11 +428,19 @@ test("#2058: item 3's promotion count is today's, read from the directory it des
 });
 
 /**
- * Directories whose contents are not THIS tree's record: `node_modules` is a dependency install holding
- * thousands of third-party changelogs, and the rest are derived, cached or version-control output. The
- * same prune list the other sweeps in this package use (`derived-artifact-sweep.test.ts`).
+ * Directories whose contents are not THIS tree's record: `node_modules` and `.venv` are dependency
+ * installs holding third-party changelogs, and the rest are caches, run records or version-control
+ * output. `derived-artifact-sweep.test.ts` prunes the same names for the same reason.
+ *
+ * `dist` IS DELIBERATELY NOT AMONG THEM, and it is the one name this list drops from that sweep's.
+ * Everything else here belongs to something other than this repository; `dist` is this repository's own
+ * build output, and `npm pack` puts a package's `CHANGELOG.md` into what it ships. Reviewer's refusal of
+ * #2159 at `fa72a9bf` planted `dist/CHANGELOG.md` and nothing went red. A changelog there means one was
+ * written or copied, which is exactly the event the paragraph below claims has not happened — so the walk
+ * reaches it rather than the document carving it out. No `package.json` lives under any `dist` in this
+ * tree, so the manifest population this same walk feeds is unchanged by including them.
  */
-const SKIP_DIRS = new Set(["node_modules", "dist", ".git", "runs", "__pycache__", ".venv", "coverage"]);
+const SKIP_DIRS = new Set(["node_modules", ".git", "runs", "__pycache__", ".venv", "coverage"]);
 
 /**
  * Every file named `name` under `root`, root-relative and sorted.
@@ -476,12 +484,26 @@ test("#2159: the changelog walk returns a CHANGELOG.md that is there, and prunes
   try {
     mkdirSync(join(fixture, "packages", "scorer"), { recursive: true });
     writeFileSync(join(fixture, "packages", "scorer", "CHANGELOG.md"), "## 0.1.0\n");
-    mkdirSync(join(fixture, "node_modules", "left-pad"), { recursive: true });
-    writeFileSync(join(fixture, "node_modules", "left-pad", "CHANGELOG.md"), "## 1.3.0\n");
+    // One in EVERY pruned directory, not only `node_modules` — reviewer's refusal of #2159 at
+    // `fa72a9bf` planted `dist/CHANGELOG.md` and no test moved, because the control exercised one
+    // name out of seven. The prune list is the boundary the document now states, so each member of it
+    // is a case here rather than an implementation detail nothing looks at.
+    for (const pruned of SKIP_DIRS) {
+      mkdirSync(join(fixture, pruned, "left-pad"), { recursive: true });
+      writeFileSync(join(fixture, pruned, "left-pad", "CHANGELOG.md"), "## 1.3.0\n");
+    }
+    // AND ONE IN `dist`, WHICH MUST COME BACK. This is the mutant reviewer planted at `fa72a9bf`, as a
+    // case rather than as an argument: `dist` is this repository's own build output, so a changelog
+    // there is this tree's and the walk has to see it.
+    assert.ok(!SKIP_DIRS.has("dist"), "dist is this repository's own output and is walked, not pruned");
+    mkdirSync(join(fixture, "packages", "cli", "dist"), { recursive: true });
+    writeFileSync(join(fixture, "packages", "cli", "dist", "CHANGELOG.md"), "## 0.1.0\n");
 
-    assert.deepEqual(filesNamed(fixture, "CHANGELOG.md"), [join("packages", "scorer", "CHANGELOG.md")],
-      "the walk must descend past the root to find a package's changelog, and must not count a "
-      + "dependency's — if this is empty, the emptiness asserted below means nothing");
+    assert.deepEqual(filesNamed(fixture, "CHANGELOG.md"),
+      [join("packages", "cli", "dist", "CHANGELOG.md"), join("packages", "scorer", "CHANGELOG.md")],
+      "the walk must descend past the root to find a package's changelog and the copy `npm pack` would "
+      + "ship, and must not count one from any pruned directory — if this is empty, the emptiness "
+      + "asserted below means nothing");
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -507,8 +529,18 @@ test("#2058: the successor's own numbers are the tree's — six first-publish en
   // "anywhere in this tree" while the walk read the immediate children of one directory. The prune list
   // is part of what the reader is told, not an implementation detail of the guard, so a reversion to the
   // unscoped wording is red here rather than quietly re-opening the gap.
-  assert.ok(list.includes("a walk of this tree finds no `CHANGELOG.md` at all outside `node_modules`"),
+  const flat = unwrapped(list);
+  assert.ok(flat.includes("a walk of this tree finds no `CHANGELOG.md` at all outside"),
     "the document must state the scope this test actually walks");
+  // THE BOUNDARY IS DERIVED FROM THE PRUNE LIST, NOT RETYPED BESIDE IT. The sentence said "outside
+  // `node_modules`" while the walk skipped seven directories, so a `dist/CHANGELOG.md` left every
+  // assertion green while falsifying the sentence — reviewer's refusal of #2159 at `fa72a9bf`, whose
+  // mutant survived. Adding a directory to SKIP_DIRS without saying so in the document is red here.
+  for (const pruned of SKIP_DIRS) {
+    assert.ok(flat.includes(`\`${pruned}\``),
+      `the document's changelog sentence does not name \`${pruned}\`, which the walk skips — a `
+      + `CHANGELOG.md under it would leave this test green while the sentence reads as verified`);
+  }
 
   const manifests = filesNamed(REPO, "package.json");
   const packageDirs = readdirSync(resolve(REPO, "packages"), { withFileTypes: true })
