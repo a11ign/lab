@@ -9,9 +9,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+// #2171: shared, because four private copies of this walk descended a directory symlink and threw ELOOP.
+import { filesUnder } from "../../../guards/src/files-under.mjs";
 
 import {
   assertDisjoint, isFixture, pagesFor, realPageFor, REAL_PAGES, UNWITNESSABLE_ON_REAL_PAGES, unreachableDeclarations,
@@ -24,18 +27,12 @@ function testSetUrls(): string[] {
   const here = dirname(fileURLToPath(import.meta.url));
   const root = join(here, "..", "eval", "fixtures");
   const urls: string[] = [];
-  const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir)) {
-      const path = join(dir, entry);
-      if (statSync(path).isDirectory()) { walk(path); continue; }
-      if (!entry.endsWith(".json")) continue;
-      try {
-        const url = (JSON.parse(readFileSync(path, "utf8")) as { url?: string }).url;
-        if (typeof url === "string") urls.push(url);
-      } catch { /* a fixture that is not a capture is not a test page */ }
-    }
-  };
-  walk(root);
+  for (const path of filesUnder(root, { keepFile: (name) => name.endsWith(".json") })) {
+    try {
+      const url = (JSON.parse(readFileSync(path, "utf8")) as { url?: string }).url;
+      if (typeof url === "string") urls.push(url);
+    } catch { /* a fixture that is not a capture is not a test page */ }
+  }
   return urls;
 }
 
