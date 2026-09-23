@@ -16,6 +16,19 @@ failure being fixed — a check that cannot see the thing it is for.
 `defined_case_ids()` is exercised separately and for its own reason: it shells out to node, and a
 silently empty result would make every record unknown and fire this refusal over the whole corpus. That
 reads as a corpus defect when the fault is that node did not run.
+
+**UPDATE, #2100 (2026-09-23): those 146 pairs are now DEFINED, landed through the reviewed pull request
+they never had.** The history above stands exactly as written — it is why this guard exists — but two
+things about this file changed with it, and both are the kind of thing that rots quietly:
+
+* **The absence pin became a PRESENCE pin.** `test_the_146_reviewed_held_out_pairs_are_defined` used to
+  assert `b3 == []` so that landing these pairs had to be deliberate. It was, so the pin flips rather
+  than being deleted: a silent SHRINK of the held-out set is the same defect from the other side.
+* **A fixture id must not name a case the project intends to create.** Every "does not exist" fixture
+  here named a real `acceptance-b3-*` id, and landing the pairs turned the integration test's unknown
+  case into a known one — the test went green-by-absence-of-refusal and had to be repaired in the same
+  pull request that broke it. They are `acceptance-sentinel-*` now: ids nothing will ever define, so
+  what they stand for cannot be falsified by a later corpus change.
 """
 import importlib.util
 import json
@@ -43,7 +56,7 @@ def record(case_id, variant="bad"):
 
 
 KNOWN = [record("acceptance-generic-lantern"), record("acceptance-filename-orchard")]
-UNKNOWN = record("acceptance-b3-error-badge")
+UNKNOWN = record("acceptance-sentinel-badge")
 
 
 def test_a_record_naming_an_undefined_case_is_named_in_the_refusal():
@@ -51,7 +64,7 @@ def test_a_record_naming_an_undefined_case_is_named_in_the_refusal():
     with pytest.raises(SystemExit) as refusal:
         evaluator.assert_cases_exist({"repeat-1.jsonl": KNOWN + [UNKNOWN]}, DEFINED)
     message = str(refusal.value)
-    assert "acceptance-b3-error-badge" in message, (
+    assert "acceptance-sentinel-badge" in message, (
         f"the refusal must name the case that does not exist, or it cannot be acted on: {message}")
     assert "repeat-1.jsonl" in message, "and which file the records came from"
     assert "1 of 3 records" in message, f"and how much of that file it is: {message}"
@@ -129,13 +142,13 @@ def test_the_chain_refuses_an_unknown_case_through_the_real_loader(tmp_path):
     """
     data = write_jsonl(tmp_path, "repeat-1.jsonl",
                        [stored_record("acceptance-filename-orchard"),
-                        stored_record("acceptance-b3-error-badge", family="acceptance-b3-badge")])
+                        stored_record("acceptance-sentinel-badge", family="acceptance-sentinel-badge")])
     by_path = evaluator.load_records_by_path(training, [data])
     assert sum(len(records) for records in by_path.values()) == 2, "the loader accepted both records"
     with pytest.raises(SystemExit) as refusal:
         evaluator.assert_cases_exist(by_path, evaluator.defined_case_ids())
     message = str(refusal.value)
-    assert "acceptance-b3-error-badge" in message and "1 of 2 records" in message, message
+    assert "acceptance-sentinel-badge" in message and "1 of 2 records" in message, message
     assert "acceptance-filename-orchard" not in message, (
         f"the case that DOES exist must not be named — that is the difference between checking and "
         f"counting: {message}")
@@ -160,9 +173,9 @@ def test_the_loader_refuses_a_null_provenance_by_name_before_the_guard_is_reache
 def test_unknown_ids_are_counted_per_id():
     """The predicate itself: id -> how many records name it, so a refusal can say whether one case
     drifted or a whole family did."""
-    counts = evaluator.unknown_case_ids(KNOWN + [UNKNOWN, UNKNOWN, record("acceptance-b3-error-taxi")],
+    counts = evaluator.unknown_case_ids(KNOWN + [UNKNOWN, UNKNOWN, record("acceptance-sentinel-taxi")],
                                         DEFINED)
-    assert counts == {"acceptance-b3-error-badge": 2, "acceptance-b3-error-taxi": 1}
+    assert counts == {"acceptance-sentinel-badge": 2, "acceptance-sentinel-taxi": 1}
 
 
 def test_many_unknown_ids_are_truncated_with_the_remainder_stated():
@@ -170,7 +183,7 @@ def test_many_unknown_ids_are_truncated_with_the_remainder_stated():
     extra = evaluator.NAMED_UNKNOWN_CASES + 3
     with pytest.raises(SystemExit) as refusal:
         evaluator.assert_cases_exist(
-            {"repeat-1.jsonl": [record(f"acceptance-b3-{n}") for n in range(extra)]}, DEFINED)
+            {"repeat-1.jsonl": [record(f"acceptance-sentinel-{n}") for n in range(extra)]}, DEFINED)
     message = str(refusal.value)
     assert f"... and {extra - evaluator.NAMED_UNKNOWN_CASES} more" in message, message
 
@@ -187,15 +200,26 @@ def test_the_defined_set_is_read_from_the_javascript_that_declares_it():
     assert all(case_id.startswith("acceptance-") for case_id in defined), sorted(defined)[:5]
 
 
-def test_the_corpus_the_gate_reads_is_judged_against_that_set_and_not_a_copy():
-    """No `acceptance-b3-*` id is defined at this commit, which is the fact #2094 was filed on.
+def test_the_146_reviewed_held_out_pairs_are_defined():
+    """The 146 pairs are defined HERE, and a silent SHRINK is #2094 from the other direction.
 
-    Stated here rather than only in the row, because a later branch that lands those 146 pairs must make
-    this test fail loudly and be updated deliberately — that is the review this corpus growth never got.
+    THIS TEST WAS AN ABSENCE PIN AND ITS OWN INSTRUCTION WAS TO DELETE IT. Until #2100 it asserted
+    `b3 == []`, deliberately, so that landing these pairs could not happen by accident — *"that is the
+    review this corpus growth never got"*. #2100 is that review, so the condition is spent and the test
+    could have gone. **It flips instead, because the mirror failure is live and nothing else would catch
+    it:** if these ids are ever removed, `ALL_ACCEPTANCE_CASES` returns to 83, the held-out set returns to
+    146 records at a ~2.6% Wilson bound, and **every stored capture in `runs/screenreader-acceptance/`
+    still names them** — so `job=acceptance` starts refusing 290 records per repeat again and reads as a
+    corpus defect rather than as a deletion. That is the exact shape #2094 was filed on, and the sign of
+    the change is the only difference.
+
+    Deleting it and pinning the count in `acceptance-matrix.test.ts` instead would be equivalent and is
+    not better: the reason the number matters is what the EVALUATOR does when the definitions and the
+    stored records disagree, which is this file's subject.
     """
     defined = evaluator.defined_case_ids()
     b3 = sorted(case_id for case_id in defined if case_id.startswith("acceptance-b3-"))
-    assert b3 == [], (
-        f"`acceptance-b3-*` cases are defined now ({len(b3)}): {b3[:5]}. If they were landed through a "
-        "reviewed pull request, delete this test and say so in the commit; if they arrived any other way, "
-        "that is #2094 happening again.")
+    assert len(b3) == 146, (
+        f"expected the 146 held-out pairs #2100 landed, got {len(b3)}. If pairs were added or removed "
+        "deliberately, update this count in the same commit and say what it does to #1852's floor (>= 381 "
+        f"records at `main`); if they vanished any other way, the stored captures still name them: {b3[:5]}")
