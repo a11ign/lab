@@ -1,9 +1,14 @@
 // @ts-check
 // Should this case be captured again, or is the evidence on disk still valid?
 //
-// A full dataset run is 1,061 pairs and ~1.5 h across three workers, and almost all of it is
-// usually unchanged. `--resume` now validates the pair against the current page hash (and, for
-// legacy captures, recomputes the old cache key from the stored worker environment and options).
+// A full dataset run is 1,715 cases, two captures each (`screenreader-dataset/manifest.json` ->
+// `cases`, read 2026-09-23T14:26Z on the lab), and almost all of it is usually unchanged. The wall-clock
+// estimate that used to sit here -- "~1.5 h across three workers" -- is gone rather than retyped: it was
+// that population against a three-worker fleet, and both inputs have moved (#2155). Time a run, do not
+// quote one.
+//
+// `--resume` now validates the pair against the current page hash (and, for legacy captures,
+// recomputes the old cache key from the stored worker environment and options).
 // That prevents evidence being reused after the PAGE changed, after the capture options changed,
 // or after NVDA or Edge was updated underneath it — which is exactly how a dataset quietly stops
 // describing the thing it claims to describe.
@@ -17,8 +22,10 @@
 //   provisioning revision NVDA config, Edge policy and ForegroundLockTimeout all shape the output
 //
 // Deliberately NOT keyed on the worker's code hash. That hash changes when a comment changes, and
-// invalidating 1,061 pairs over a reworded comment is how a cache becomes something people turn
-// off. The hash is still recorded, and a hit whose hash differs is reported rather than hidden.
+// invalidating the WHOLE corpus over a reworded comment is how a cache becomes something people turn
+// off. (No figure here on purpose: the argument is "all of it", and a number would rot while the
+// argument did not.) The hash is still recorded, and a hit whose hash differs is reported rather
+// than hidden.
 //
 // The key lives inside each capture JSON, not in a side index: an index can drift from the files
 // it describes, and this cache exists to stop us trusting stale things.
@@ -51,9 +58,10 @@ const sha256 = (/** @type {string} */ input) => createHash("sha256").update(inpu
 /**
  * Hash every file in a case's page directory.
  *
- * The whole directory rather than just good.html/bad.html: there are no asset files today (all
- * 2,122 page files are HTML) but a fixture that gains an image must invalidate its evidence, and
- * a cache that silently ignores new files is worse than no cache.
+ * The whole directory rather than just good.html/bad.html: there are no asset files today (every page
+ * file was HTML at the last lab read -- 4,654 of them across 2,327 page dirs, 2026-09-23T14:26Z) but a
+ * fixture that gains an image must invalidate its evidence, and a cache that silently ignores new files
+ * is worse than no cache.
  */
 /** @param {string} pageDir */
 export function hashPageDir(pageDir) {
@@ -189,7 +197,7 @@ export function cacheKey({ caseId, pageHash, options, environment }) {
  *
  * `workerCode` is on the ENVIRONMENT here and deliberately not on `environmentKey`'s input: it is
  * recorded and never keyed, for the reason the header gives -- it changes when a comment changes, and
- * invalidating 1,061 pairs over a reworded comment is how a cache gets switched off. The type says which
+ * invalidating the whole corpus over a reworded comment is how a cache gets switched off. The type says which
  * side of that line each field is on.
  */
 export function stampProvenance(capture, { key, pageHash = null, options, environment, worker = null }) {
