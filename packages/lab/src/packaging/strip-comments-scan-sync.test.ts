@@ -41,6 +41,14 @@
  * | files losing a character the parser keeps | 56 | **0 — asserted below** |
  * | agrees with the parser character for character | 838 | 994 |
  *
+ * **THE POSTFIX-OPERATOR DEFECT MOVED NONE OF THESE NUMBERS, AND THAT IS THE POINT.** `reviewer`'s
+ * blocker at `fbac7004` -- `a++ / 2` read as a regex, so a real trailing comment survived -- was fixed
+ * after this table was taken, and the census re-read at `bc4da661b` is the same row for row: 1050 files,
+ * 994 exact, 0 keeping, 0 losing. **No tracked file in this tree writes that shape**, so a tree-wide
+ * reading could not have found the defect and cannot be the evidence that it is gone. The isolated cases
+ * in `source-text.test.ts` are what hold it; this file's population is the OTHER half of the argument --
+ * that the fix broke nothing standing -- and the two do not substitute for each other.
+ *
  * The `before` column is a historical reading of code that is no longer in the tree (`def6aef9^`'s
  * `stripComments`, driven over `d269bf9d4`'s files), so it can only ever be a stamped reading — but it is
  * reproducible from the repository, which is the property the withdrawn figures lacked: check that file
