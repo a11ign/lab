@@ -33,10 +33,21 @@
  * exists to stop. So the population here is MACHINERY — the files that instruct the next publish, where a
  * stale claim misdirects a run — and `.changeset/` plus `.github/workflows/` are walked rather than listed
  * so a new workflow or changeset document joins the population by existing.
+ *
+ * ONE `docs/` FILE JOINED IT AFTERWARDS, AND THE EXCLUSION ABOVE IS THE REASON IT COULD — #2058.
+ * That exclusion rests on a PROPERTY, not on a directory: those files carry their dates in headings and
+ * closed-row blockquotes, so no line-level rule can tell their records from the defect.
+ * `docs/reliability-plan.md` does not have the property. Measured at `621425d3a`: its two B3 sections
+ * carried no `checked <date>` heading and no closed-row blockquote, its three quotations of the access
+ * setting were all present-tense — two of them reading `restricted` nine days after the config said
+ * otherwise — and it holds a live instruction to whoever publishes ("Before a real publish, run the full
+ * gate on the lab"). #2058 corrected it on exactly #2052's record-versus-present-tense line, which is what
+ * puts it here. It is NAMED and not reached by widening the walk, because `docs/` also holds the records
+ * that must not be touched and a walk would collect them too.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
@@ -70,6 +81,16 @@ const CORRECTED_BY_2052 = [
   "packages/lab/src/packaging/release-safety.test.ts",
 ];
 
+/** The one `docs/` file in the population — see the docblock for the property that lets it in (#2058). */
+const RELIABILITY_PLAN = "docs/reliability-plan.md";
+
+/**
+ * Every file MEASURED to quote the access setting in the present tense, and therefore every file the
+ * comparison below must be seen to reach. The floor is per file rather than a count, because a rule that
+ * quietly stopped matching one of them would report an agreement it never checked.
+ */
+const MUST_BE_COMPARED = [...CORRECTED_BY_2052, RELIABILITY_PLAN];
+
 /**
  * Files that INSTRUCT the next publish, as opposed to recording a past one.
  *
@@ -83,7 +104,7 @@ function machineryFiles(): string[] {
     readdirSync(resolve(REPO, dir))
       .filter((name) => /\.(ya?ml|md)$/.test(name))
       .map((name) => join(dir, name)));
-  return [...walked, "packages/lab/src/packaging/release-safety.test.ts"].sort();
+  return [...walked, "packages/lab/src/packaging/release-safety.test.ts", RELIABILITY_PLAN].sort();
 }
 
 export type Quotation = { file: string; line: number; value: string; text: string };
@@ -201,8 +222,8 @@ test("every quoted access value in the publish machinery matches the config file
 
   // THE POSITIVE CONTROL FOR THE EMPTINESS ASSERTION BELOW. `accessMismatches(…, CONFIG_ACCESS)` passes
   // when there is nothing to check, so the population itself is asserted non-empty first, per file that
-  // #2052 measured as carrying one.
-  for (const file of CORRECTED_BY_2052) {
+  // #2052 or #2058 measured as carrying one.
+  for (const file of MUST_BE_COMPARED) {
     assert.ok(quotations.some((quotation) => quotation.file === file),
       `${file} quotes the access setting and must appear in the population — a rule that stopped finding `
       + "it would report agreement it never checked");
@@ -220,7 +241,7 @@ test("POSITIVE CONTROL: flipping the config value makes every quoting site fail,
   const filesThatNotice = machineryFiles()
     .filter((file) => accessMismatches(accessQuotations(file, read(file)), other).length > 0);
 
-  for (const file of CORRECTED_BY_2052) {
+  for (const file of MUST_BE_COMPARED) {
     assert.ok(filesThatNotice.includes(file),
       `against a config reading "${other}", ${file} must report a mismatch. It does not, which means this `
       + "file's quotations are not being compared to the config at all");
@@ -335,4 +356,83 @@ test("the dated records #2052 ruled OUT are untouched", () => {
     assert.ok(read(file).includes(record),
       `${file} is a record of its own moment and must keep saying what it said: ${record}`);
   }
+});
+
+/**
+ * #2058: THE COUNTS ITEM 3 IS ABOUT, READ FROM `.changeset/` RATHER THAN QUOTED.
+ *
+ * Only the counts that HOLD STILL are pinned. The number of pending changesets moves with every merged
+ * pull request, so the document states it as a dated reading and this file does not compare it — pinning
+ * it would make an ordinary changeset turn the trunk red, which is the guard failing in the direction
+ * that gets it deleted. The promotion count and the `first-publish-*` count do not move: `promote:model`
+ * replaces the standing promotion changeset each time it promotes, and no new `first-publish-*` entry can
+ * be written for a package that has already published.
+ */
+function changesetNames(): string[] {
+  return readdirSync(resolve(REPO, ".changeset"))
+    .filter((name) => name.endsWith(".md") && name !== "README.md");
+}
+
+const countOf = (prefix: string): number => changesetNames().filter((name) => name.startsWith(prefix)).length;
+
+/**
+ * The decision list ITSELF, sliced out of the document — not the whole file.
+ *
+ * Measured while writing this: every phrase below appears a second time in the `B3 (as originally
+ * scoped)` section further down, so a whole-file `includes` passes with the list deleted. The assertion
+ * has to be about the section the row is about, or it is satisfied by a copy of the reasoning in a
+ * section the row never touched.
+ */
+function decisionList(): string {
+  const text = read(RELIABILITY_PLAN);
+  const start = text.indexOf("**Three decisions remained when this list was written");
+  assert.notEqual(start, -1, "the decision list must still be in the document — #2058 is a correction, not a cull");
+  const end = text.indexOf("\n---", start);
+  assert.notEqual(end, -1, "the decision list must still end at a section break");
+  return text.slice(start, end);
+}
+
+test("#2058: the three-decisions list survives the correction, and each item says what decided it", () => {
+  // A diff that deletes the list to make the currency assertions pass has removed the record of why the
+  // publish waited. #2052's shape: a correction, not a cull.
+  const list = decisionList();
+  for (const reasoning of [
+    "ADR 0006's AGPL/Apache split is gated on it and is effectively irreversible",
+    "ADR 0007 makes the weights the API",
+    "is a call about what a first release says, not a tidy-up",
+  ]) {
+    assert.ok(list.includes(reasoning), `the reasoning must survive inside the list itself: ${reasoning}`);
+  }
+  assert.equal((list.match(/\*\*DECIDED/g) ?? []).length, 3,
+    "each of the three items must say that it was decided — a list that merely drops the stale numbers "
+    + "leaves a reader unable to tell a settled item from an open one");
+});
+
+test("#2058: item 3's promotion count is today's, read from the directory it describes", () => {
+  const list = decisionList();
+  assert.equal(countOf("promote-"), 1,
+    "the standing shape is one promotion changeset — if this is no longer 1, the sentence below is stale "
+    + "and the document must say what the new shape is");
+  assert.ok(list.includes("holds **one** promotion changeset today"),
+    "item 3 must state the count that is true now, not the five it was filed with");
+  assert.ok(!list.includes("five promotion changesets are pending"),
+    "the 2026-08-31 count must not survive as a present-tense claim");
+});
+
+test("#2058: the successor's own numbers are the tree's — six first-publish entries, no CHANGELOG", () => {
+  const list = decisionList();
+  assert.equal(countOf("first-publish-"), 6,
+    "six first-publish entries were pending when #2058 measured; a different number makes the paragraph "
+    + "below wrong rather than merely old");
+  assert.ok(list.includes("Six of those 85 are `first-publish-*.md`"),
+    "the successor decision must name how many of the pending entries announce a publish that happened");
+
+  // The document says the first CHANGELOG was never written. That is a live claim, and the release that
+  // falsifies it is the one this section exists to inform — so it fails here rather than misleading a
+  // reader at publish time.
+  const changelogs = readdirSync(resolve(REPO, "packages"))
+    .filter((pkg) => existsSync(resolve(REPO, "packages", pkg, "CHANGELOG.md")));
+  assert.deepEqual(changelogs, [],
+    "docs/reliability-plan.md states that no CHANGELOG.md exists anywhere in the tree and that the "
+    + "pending set has never been consumed; these packages now carry one, so that paragraph is wrong");
 });
