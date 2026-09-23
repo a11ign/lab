@@ -631,7 +631,13 @@ test("#2099 CONTROL: the SAME body carrying the declaration is SENT, and reports
   + "a command this job cannot honestly attempt", () => {
   const spawned: string[][] = [];
   const outs: string[] = [];
-  const body = "## Acceptance\n\nHand-run: whoever holds the credential\n\ngh pr view 1\n\nCloses #1\n";
+  // #2118: the body carries its pasted run. The declaration alone no longer passes -- `acceptanceReport`
+  // refuses a body whose Acceptance is entirely declared hand-runs and which pastes nothing, because
+  // `Hand-run:` asserts a human DID run something and nothing used to require the output to exist. This
+  // test's own subject is unchanged: the create is SENT and the line reads NOT RUN rather than running a
+  // command this job cannot honestly attempt. The unevidenced half is pinned in the test below.
+  const body = "## Acceptance\n\nHand-run: whoever holds the credential\n\ngh pr view 1\n\nCloses #1\n"
+    + '\n## Hand-run output\n\n```\n$ gh pr view 1\n"ok"\n```\n';
   const code = prOpenMain(["create", "--draft", "--body", body], {
     run: (args: string[]) => { spawned.push(args); },
     git: () => "agent/x", owner: UNSTAMPED, out: (line: string) => { outs.push(line); }, err: () => {},
@@ -639,6 +645,23 @@ test("#2099 CONTROL: the SAME body carrying the declaration is SENT, and reports
   assert.equal(code, 0);
   assert.deepEqual(spawned.map((args) => args.slice(0, 2)), [["pr", "create"]], "the create was sent");
   assert.match(outs.join("\n"), /ACCEPTANCE: NOT RUN/);
+});
+
+test("#2118: the SAME body with the declaration and NO pasted output is REFUSED at `pr-open` -- the create is "
+  + "not sent, which is the half #2099 left open reaching the command that opens the PR", () => {
+  const spawned: string[][] = [];
+  const outs: string[] = [];
+  const body = "## Acceptance\n\nHand-run: whoever holds the credential\n\ngh pr view 1\n\nCloses #1\n";
+  const code = prOpenMain(["create", "--draft", "--body", body], {
+    run: (args: string[]) => { spawned.push(args); },
+    git: () => "agent/x", owner: UNSTAMPED, out: (line: string) => { outs.push(line); }, err: () => {},
+  });
+  assert.equal(code, 1, outs.join("\n"));
+  assert.deepEqual(spawned, [], "nothing was sent -- the refusal is before the create, as every other one is");
+  assert.match(outs.join("\n"), /NO HAND-RUN OUTPUT/);
+  // FOLLOWABLE HERE TOO (#1116): a refusal met at `pr-open` is the one that costs a rewrite, so the
+  // heading has to be nameable from this output alone.
+  assert.ok(outs.join("\n").includes("## Hand-run output"), outs.join("\n"));
 });
 
 // --- #1846: the PR carries its author's session label FROM CREATION, not from arming ------------------
