@@ -667,6 +667,167 @@ def eligible_records(criterion: str, model_subtypes: dict[str, Any], records: li
     return indices, excluded
 
 
+def threshold_floor(subtype_report: dict[str, Any] | None) -> float | None:
+    """The Neyman-Pearson order statistic this head's guarantee actually rests on, or None if unrecorded.
+
+    `threshold` is the cut that was APPLIED; `guarantee.floor` is the cut the bound REQUIRES. They are
+    not the same number, because `raise_to_same_power` lifts the applied cut off the floor through the
+    negatives it can clear for free. Everything between the two is conservatism the guarantee does not
+    ask for -- and a miss that lands there is one NO amount of work on the features was owed for,
+    PROVIDED the applicability gate would have let it fire at all. The floor answers the threshold
+    question only; `refused_only_by_the_raise` is where the two are put together.
+
+    None for an artifact trained before `guarantee` was recorded, which is a different state from "the
+    floor is the threshold" and must not be collapsed into it.
+    """
+    floor = (subtype_report or {}).get("guarantee", {}).get("floor")
+    return None if floor is None else float(floor)
+
+
+def threshold_floors(model_subtypes: dict[str, Any]) -> dict[str, float]:
+    """Every head's floor, by subtype, OMITTING the heads that do not record one.
+
+    Omitted rather than defaulted to the threshold: an artifact trained before `guarantee` existed has
+    no floor, and "unrecorded" reading as "the cut is the floor" would report every one of its misses as
+    the head's own -- the exact conflation this field was added to end.
+    """
+    floors = {}
+    for subtype, subtype_report in model_subtypes.items():
+        floor = threshold_floor(subtype_report)
+        if floor is not None:
+            floors[subtype] = floor
+    return floors
+
+
+def refused_only_by_the_raise(subtype: str, score: float, subtype_report: dict[str, Any],
+                              record: dict[str, Any]) -> bool:
+    """WOULD this record have fired at the cut the guarantee requires, having not fired at the cut applied?
+
+    THE COUNTERFACTUAL, NOT THE BAND, and both halves are `applicability.decide` -- the one definition,
+    asked twice at two cuts. `floor <= score < threshold` was wrong, and wrong in the direction that
+    makes a reader stop work: `falseNegativeSubtypeScores` is ungated on purpose, and
+    `applicability.decide` vetoes INDEPENDENTLY of the cut, so a record the GATE refused lands in that
+    band exactly like one the raise refused. `4.1.3:form-activation-silent` on a capture whose only form
+    change was never read (`afterUnresolved`, #1105) is inapplicable at EVERY cut -- lowering the
+    threshold to the floor recovers nothing -- and the band reported it as the raise's, which is a
+    failure reason stating a comparison it never made.
+
+    Asking the gate at the floor answers both halves at once and needs no private comparison: a record
+    that fires at the floor and not at the applied cut lost to the distance between them and to nothing
+    else. The second half is not redundant even though every input is a miss -- it keeps the answer true
+    of any record, rather than true only while the caller's filter holds.
+    """
+    floor = threshold_floor(subtype_report)
+    if floor is None:
+        return False
+    applied = float(subtype_report["threshold"])
+    return (applicability.decide(subtype, score, floor, record)
+            and not applicability.decide(subtype, score, applied, record))
+
+
+def missed_cases(records: list[dict[str, Any]], missed_indices: list[int],
+                 subtype_scores: dict[str, Any]) -> dict[str, list[tuple[dict[str, Any], dict[str, float]]]]:
+    """EVERY missed capture, grouped by case identity, each beside the scores computed FROM IT. PURE.
+
+    NAMED AND EXTRACTED so the pairing can be tested. It was a comprehension inline in `main`, which no
+    unit can reach without a model and a corpus: replacing `records[index]` there with `{}` left the
+    whole of `packages/lab/tests` green, because every test of the classifier hands the record in by
+    hand. The classification asks the applicability gate and the gate READS the capture, so a caller
+    that pairs a score with the wrong record -- or with none -- answers about a different page and says
+    nothing while doing it.
+
+    A LIST PER IDENTITY, not one capture. `case_identity` is `caseId/variant` and the acceptance corpus
+    captures each case more than once, so a dict comprehension keyed on it silently kept the LAST repeat
+    and discarded the rest. Repeats of one case are not interchangeable here: `test_acceptance_stability`
+    pins the population this fails on -- `acceptance-b3-button-market/bad` read its form change on
+    repeat-1 and got `afterUnresolved` on repeat-2, so one capture is applicable and the other is not at
+    the same score. Reproduced at `778cff51d` before this fix, equal score/floor/cut: `[READ, UNREAD]`
+    annotated nothing and `[UNREAD, READ]` annotated the case, off the file order alone. Refused in
+    review by `reviewer-2`; the controls are the two `..._in_either_capture_order` tests.
+
+    Scores are float-ed here, not rounded: `falseNegativeSubtypeScores` rounds to 4dp for a human, while
+    the classification compares against a float32 floor, and a miss 0.00005 above its floor must not be
+    classified off a rounded copy of its own score. Both report fields are derived from this one mapping
+    so they cannot disagree about which captures they describe.
+    """
+    grouped: dict[str, list[tuple[dict[str, Any], dict[str, float]]]] = {}
+    for index in missed_indices:
+        grouped.setdefault(case_identity(records[index]), []).append((
+            records[index],
+            {subtype: float(scores[index]) for subtype, scores in subtype_scores.items()},
+        ))
+    return grouped
+
+
+def weakest_miss_scores(captures: list[tuple[dict[str, Any], dict[str, float]]]) -> dict[str, float]:
+    """The LOWEST score each head gave any capture of this case. PURE.
+
+    One number per head for a case captured more than once, and the choice is explicit because the
+    alternative was implicit: the comprehension this replaces kept whichever repeat came last in the
+    file. The weakest capture, because this field exists to answer "did the head lose this case, or did
+    the cut refuse it" -- and a case is only ship-able on the repeat that went worst. It also keeps the
+    number honest beside `falseNegativesAboveFloor`, which is unanimous over the same captures: a case
+    annotated as refused by the raise fired at its floor on EVERY capture, so its weakest score is at or
+    above that floor and `describe_miss` cannot print a sub-floor score beside "above its NP floor".
+
+    The spread this collapses is not lost -- `stability` reports `scoreMinimum` and `scoreMaximum` per
+    identity group, which is the field that exists to say a head moved between captures.
+    """
+    subtypes = {subtype for _, scores in captures for subtype in scores}
+    return {subtype: min(scores[subtype] for _, scores in captures if subtype in scores)
+            for subtype in subtypes}
+
+
+def misses_the_raise_refused(missed: dict[str, list[tuple[dict[str, Any], dict[str, float]]]],
+                             model_subtypes: dict[str, Any]) -> dict[str, list[str]]:
+    """Per missed case, the heads that would have fired at their own floor on EVERY capture of it. PURE.
+
+    THE THIRD STATE THE MISS SCORES CANNOT EXPRESS. `falseNegativeSubtypeScores` was added so a reader
+    could tell "0.90 against a 0.9153 cut" (threshold variance) from "near zero" (the head lost it).
+    Measured 2026-09-23 on 4.1.3:form-activation-silent, all four of its missed records scored ABOVE the
+    head's 0.9344 floor -- 0.9608 and 0.9442 against a 0.9639 cut. Read against the cut alone those two
+    look like different diagnoses, and they were read that way: one was called threshold variance and
+    the other "no longer a threshold-variance candidate at all". They are the same state.
+
+    `missed` carries the RECORDS beside the scores because the classification needs them: the gate is
+    asked at the floor and cannot be, from a score alone.
+
+    UNANIMOUS OVER THE CAPTURES, and that is a policy rather than an accident -- the shape it replaces
+    had no policy at all, it read whichever repeat the file ended with. This field is a claim that NO
+    features work is owed on the case, so one capture the raise did not refuse falsifies it: a repeat
+    that scored under the floor is the head losing that capture, and a repeat the GATE vetoed is a case
+    whose captures do not agree on whether it can be judged at all. Unanimity can only ever narrow the
+    annotation, never add to it, which is the direction an excuse must fail in. `captures and` is not
+    redundant: `all([])` is true, and a vacuous annotation is exactly what this field must not emit.
+    """
+    refused = {}
+    for case, captures in missed.items():
+        subtypes = sorted(
+            subtype for subtype, subtype_report in model_subtypes.items()
+            if captures and all(
+                subtype in scores
+                and refused_only_by_the_raise(subtype, scores[subtype], subtype_report, record)
+                for record, scores in captures)
+        )
+        if subtypes:
+            refused[case] = subtypes
+    return refused
+
+
+def describe_miss(name: str, block: dict[str, Any]) -> str:
+    """One missed case as a failure reason reads it: every head's score, its cut, and who refused it."""
+    scores = block.get("falseNegativeSubtypeScores", {}).get(name, {})
+    raised = set(block.get("falseNegativesAboveFloor", {}).get(name, []))
+    parts = []
+    for subtype, score in sorted(scores.items()):
+        cut = block.get("subtypeThresholds", {}).get(subtype, float("nan"))
+        floor = block.get("subtypeThresholdFloors", {}).get(subtype)
+        note = (f", above its {floor:.3f} NP floor -- refused by the raise, not the head"
+                if subtype in raised and floor is not None else "")
+        parts.append(f"[{subtype} {score:.3f} vs cut {cut:.3f}{note}]")
+    return " ".join([name] + parts)
+
+
 def model_decision_owner(criterion_report: dict[str, Any]) -> str:
     # Reports produced before decision ownership was recorded remain learned
     # scorer reports for backwards compatibility.
@@ -942,12 +1103,27 @@ def main() -> None:
             subtype_fired[subtype] = fired
             decided |= fired
         included_labels = labels[included_indices]
+        # A LABELLED RECORD THIS CRITERION WAS CHARGED FOR AND NO HEAD DECIDED. Hoisted out of the two
+        # literals below because both read it and they must not disagree -- see `missed_cases`, which
+        # is a named function rather than a comprehension here precisely so that pairing is testable.
+        missed_indices = [index for position, index in enumerate(included_indices)
+                          if included_labels[position] and not decided[index]]
+        missed = missed_cases(records, missed_indices, subtype_scores)
+        miss_scores = {case: weakest_miss_scores(captures) for case, captures in missed.items()}
         result["criteria"][criterion] = {
             "decisionOwner": model_decision_owner(criterion_report),
             "modelEvaluated": True,
             # No criterion-level threshold, deliberately: there is no single number that means anything
             # once each head is cut on its own scale. The cuts that were actually applied, instead.
             "subtypeThresholds": {s: float(r["threshold"]) for s, r in model_subtypes.items()},
+            # AND THE CUT EACH GUARANTEE ACTUALLY REQUIRES, which is not the same number. The applied
+            # cut is raised off this floor through whatever negatives that buys for free, so the gap
+            # between the two is conservatism nothing bounds -- and a report that prints only the
+            # applied cut cannot tell a head that lost a case from a raise that refused one.
+            #
+            # Omitted per subtype rather than defaulted: an artifact trained before `guarantee` was
+            # recorded has no floor, and "unrecorded" must not read as "equal to the threshold".
+            "subtypeThresholdFloors": threshold_floors(model_subtypes),
             "ruleDecidedSubtypes": sorted(set(criterion_report["subtypes"]) - set(model_subtypes)),
             "excluded": excluded,
             # WHICH HEAD produced each false positive. The criterion-level list names a page and leaves
@@ -981,13 +1157,30 @@ def main() -> None:
             # This is the sibling of `falsePositivesBySubtype` directly above, whose comment records what
             # not having it cost: "three wrong theories on 2026-08-25 came from not knowing which [head],
             # and each cost a round trip to the lab to find out by hand."
+            #
+            # The WEAKEST capture of a case captured more than once -- see `weakest_miss_scores`. Keyed
+            # by case identity, which repeats collapse onto, so the summary has to be chosen rather than
+            # fallen into: this read whichever repeat came last in the file until #2152's review.
             "falseNegativeSubtypeScores": {
-                case_identity(records[index]): {
-                    subtype: round(float(scores[index]), 4) for subtype, scores in subtype_scores.items()
-                }
-                for position, index in enumerate(included_indices)
-                if included_labels[position] and not decided[index]
+                case: {subtype: round(score, 4) for subtype, score in scores.items()}
+                for case, scores in miss_scores.items()
             },
+            # WHICH MISSES THE HEAD DID NOT LOSE. A record that WOULD HAVE FIRED at the cut its own
+            # Neyman-Pearson bound requires was refused by the raise above it, so no amount of work on
+            # the features would recover it and none is owed. Measured 2026-09-23 (#2152): every one of
+            # 4.1.3's four missed records cleared that floor, and read against the applied cut alone the
+            # two cases looked like different diagnoses -- 0.9608 "threshold variance", 0.9442 "not a
+            # threshold-variance candidate at all". Both were the raise.
+            #
+            # "Would have fired", not "sits in [floor, threshold)": the band reads the cut and nothing
+            # else, while the applicability gate vetoes independently of it, so a record the GATE
+            # refused lands in the same band and would be excused here for a reason that is not true of
+            # it. This field is a claim that no features work is owed; making it about a record whose
+            # subtype the page cannot even be judged on is worse than printing nothing.
+            #
+            # Unanimous over the captures of a case, for the same reason and in the same direction: one
+            # repeat the raise did not refuse falsifies the claim, so it can only narrow.
+            "falseNegativesAboveFloor": misses_the_raise_refused(missed, model_subtypes),
             **metrics(decided[included_indices].astype(float), included_labels, DECIDED,
                       identities=[case_identity(records[index]) for index in included_indices]),
         }
@@ -1011,13 +1204,9 @@ def main() -> None:
         if block["falseNegative"]:
             result["failureReasons"].append(
                 f"{criterion}: {block['falseNegative']} acceptance false negative(s)"
-                + (": " + ", ".join(
-                    name + " " + " ".join(
-                        f"[{subtype} {score:.3f} vs cut "
-                        f"{block.get('subtypeThresholds', {}).get(subtype, float('nan')):.3f}]"
-                        for subtype, score in sorted(
-                            block.get("falseNegativeSubtypeScores", {}).get(name, {}).items()))
-                    for name in block.get("falseNegativeCases", [])) if block.get("falseNegativeCases") else "")
+                + (": " + ", ".join(describe_miss(name, block)
+                                     for name in block.get("falseNegativeCases", []))
+                   if block.get("falseNegativeCases") else "")
             )
         stability_records[criterion] = included_records
 
