@@ -161,8 +161,14 @@ function protectionReadVerdict({ status, protectedFlag }: Pick<ProtectionRead, "
  * Same repo, same endpoint, same permission level: GitHub emits the key when an actor is configured and
  * omits it when none is. So absence here is the CLEARED state, not an unknown one. This is a narrow
  * exception to this repository's `absence vs broken` rule, and it is narrow because it is measured on both
- * sides -- contrast the ruleset's `bypass_actors`, whose absence is permission-dependent and therefore
- * still unreadable; see "the other exemption surfaces" at the foot of this file.
+ * sides AT A FIXED PERMISSION LEVEL -- the permission held still and the key moved.
+ *
+ * THE SIBLING KEY WHOSE ABSENCE MEANS THE OPPOSITE, and why one guard may hold both rules (#2119). The
+ * ruleset's `bypass_actors` was measured the other way round: one object, one moment, two permission
+ * levels, key present to one and absent to the other. So absence there is the view being WITHHELD, and
+ * `bypassActorsVerdict` below refuses to clear on it. Neither rule is a general rule about absence -- each
+ * is keyed on ITS OWN FIELD's measurement, which is what stops the pair being a contradiction. Keying
+ * either on the TOKEN would be the contradiction, and is what that verdict's own tests forbid.
  */
 function exemptIdentities(reviews: ReviewRule): string[] {
   const allow = reviews.bypass_pull_request_allowances ?? {};
@@ -547,6 +553,15 @@ type RulesetMeta = {
   enforcement: string | null;
   /** `current_user_can_bypass`: "always" | "pull_requests_only" | "never" | "exempt"; null when unreadable. */
   canBypass: string | null;
+  /**
+   * #2119: `bypass_actors`'s PRESENCE and value, taken from the same object, so it costs no extra call.
+   *
+   * OPTIONAL, AND READ BY NOTHING IN THE BINDING VERDICT BELOW -- which is the point rather than an
+   * omission. It answers "who ELSE is exempt", and `BINDS_ME` must never claim that; feeding it in would
+   * drop the CI identity, which can never read the field, from `BINDS_ME` to `CANNOT_TELL` and take the
+   * unattended check down with it. Synthetic binding fixtures leave it out and get the same verdict.
+   */
+  exemptions?: ExemptionRead | null;
 };
 type RulesetBinding = {
   /** `GET /repos/{o}/{r}/rules/branches/main` -- any token that can read the repo; null when unreadable. */
@@ -888,6 +903,8 @@ test("#2086 LIVE: the `pull_request` rule applies to `main` and this identity ca
   // A pass prints WHAT it read, and what it did NOT establish. `ok 30` alone would be quoted as proof
   // that nobody can bypass the requirement, which is the one thing this check cannot say.
   console.log(`  LIVE PASS (no admin required): ${v.why}`);
+  // #2119: and the third surface, named rather than eyeballed. On this token it prints WITHHELD.
+  reportExemptionSurface(binding, "LIVE");
 });
 
 /**
@@ -928,7 +945,9 @@ function liveRulesetBinding(): RulesetBinding {
 function liveRulesetMeta(id: number): RulesetMeta | null {
   try {
     const ruleset = JSON.parse(gh(["api", `repos/a11ign/a11ign/rulesets/${id}`]));
-    return { enforcement: ruleset.enforcement ?? null, canBypass: ruleset.current_user_can_bypass ?? null };
+    // The whole object, deliberately unprojected: `--jq` would flatten the one thing #2119 is about.
+    return { enforcement: ruleset.enforcement ?? null, canBypass: ruleset.current_user_can_bypass ?? null,
+      exemptions: exemptionRead(ruleset) };
   } catch (cause) {
     // Never an empty catch, and deliberately NOT an entry in the map: an unread ruleset is unexamined,
     // which the verdict reports as CANNOT_TELL rather than letting the readable rulesets answer for it.
@@ -937,6 +956,239 @@ function liveRulesetMeta(id: number): RulesetMeta | null {
   }
 }
 
+// --- #2119: the THIRD exemption surface, whose absence rule is the OPPOSITE of the first ------------
+
+/**
+ * #2119: `bypass_actors` ON THE RULESET -- PINNED AS A DISCRIMINATOR, NOT AS AN ASSERTION.
+ *
+ * `main` has three exemption surfaces and this file now judges all three. This one is pinned last and
+ * pinned DIFFERENTLY, because its absence means the opposite of `bypass_pull_request_allowances`'s, and
+ * getting that wrong is not a theoretical risk: `assert.deepEqual(ruleset.bypass_actors ?? [], [])` is a
+ * plausible line to write, it passes on every unattended run, and what it certifies is that nobody looked.
+ *
+ * THE TWO READINGS THIS IS KEYED ON. One ruleset (23681721), one moment, two identities -- measured by
+ * `product-manager` on 2026-09-23 at `1a8f1c101`, the non-admin half re-measured here at 11:08:41Z:
+ *
+ *     as `DanBeckDev`        (admin:true)   {"bypass_actors":[],  "can_bypass":"never","has_bypass_key":true}
+ *     as `a11ign-ai-workers` (admin:false)  {"bypass_actors":null,"can_bypass":"never","has_bypass_key":false}
+ *
+ * THE KEY IS PRESENT TO ONE AND ABSENT TO THE OTHER, FROM THE SAME OBJECT AT THE SAME MOMENT. GitHub
+ * documents exactly that -- "to prevent leaking sensitive information, the `bypass_actors` property is only
+ * returned if the user making the API request has write access to the ruleset" -- so schema and measurement
+ * agree, and on THIS field absence can never be read as emptiness.
+ *
+ * WHY THAT DOES NOT CONTRADICT `exemptIdentities`, WHICH READS ITS OWN ABSENCE AS EMPTINESS. Each rule is
+ * keyed on the FIELD, and each field earned its own measurement by holding a different thing still:
+ *
+ *   - `bypass_pull_request_allowances` was read at a FIXED permission level, on BOTH SIDES of a real change:
+ *     key present with `DanBeckDev` in it on 09-22, key absent on 09-23 with the count still 1. The
+ *     permission held still and the key moved, so absence there is the CLEARED state.
+ *   - `bypass_actors` was read at ONE MOMENT by TWO permission levels. The object held still and the
+ *     permission moved, and the key moved with it -- so absence here is the VIEW being WITHHELD.
+ *
+ * Both are measurements, and neither is a general rule about absence. A guard keyed on the TOKEN instead
+ * ("I hold admin, so absence means empty") would be reading its own credentials rather than GitHub's
+ * answer, which is the shape this whole file exists to refuse. So `exemptIdentities` is left EXACTLY as it
+ * is, and this is a separate vocabulary rather than a branch inside it.
+ *
+ * AND `has()` IS THE ONLY HONEST DISCRIMINATOR, AT THE COMMAND LINE TOO. The non-admin reading above prints
+ * `"bypass_actors":null`: jq's `{bypass_actors}` shorthand emits the key for a field that is not there, so
+ * even the hand-run command quoted in #2119 shows `null` rather than a gap, and only its `has_bypass_key`
+ * line says which state it is in. TypeScript's `??` collapses those same two states the same way. The
+ * extractor below therefore reads key PRESENCE, and never the value's nullishness.
+ *
+ * WHAT THIS BUYS, AS THE ROW ITSELF PUTS IT: nothing the unattended check could not do before, because the
+ * CI identity can never read the field. The admin-run read stops being eyeballed and becomes a verdict with
+ * a name, and the trap above is closed by a test instead of by this paragraph.
+ */
+const EXEMPTIONS = {
+  /** The key was returned AND the list is empty: no actor bypasses this ruleset. Needs write access. */
+  CLEARED: "CLEARED",
+  /** The key was returned and names actors: the holes ARE enumerable here, so the verdict prints them. */
+  EXEMPTED: "EXEMPTED",
+  /** The key was not returned. Its own named state -- "you may not look", never "the list is empty". */
+  WITHHELD: "WITHHELD",
+  /** The ruleset was never read, or the key came back as a shape nobody here has measured. */
+  CANNOT_TELL: "CANNOT_TELL",
+} as const;
+type ExemptionCode = (typeof EXEMPTIONS)[keyof typeof EXEMPTIONS];
+
+/**
+ * Key presence carried SEPARATELY from the value, because that separation is the whole discriminator.
+ *
+ * `value` is `unknown` on purpose: a present key holding something other than a list is a shape nobody has
+ * measured here, and typing it as an array would be the assumption this row exists to refuse.
+ */
+type ExemptionRead = { present: boolean; value: unknown };
+
+/** null in, null out: a ruleset nobody could read has no exemption state to extract, not an empty one. */
+function exemptionRead(ruleset: object | null): ExemptionRead | null {
+  if (ruleset === null) return null;
+  return {
+    present: Object.hasOwn(ruleset, "bypass_actors"),
+    value: (ruleset as { bypass_actors?: unknown }).bypass_actors,
+  };
+}
+
+/** A count is where an investigation stops; the verdict names who, in GitHub's own actor vocabulary. */
+function describeActor(actor: unknown): string {
+  const { actor_type: type, actor_id: id, bypass_mode: mode } = (actor ?? {}) as
+    { actor_type?: string; actor_id?: number; bypass_mode?: string };
+  if (type === undefined && id === undefined) return JSON.stringify(actor) ?? String(actor);
+  return `${type ?? "actor"}#${id ?? "?"}${mode === undefined ? "" : ` (${mode})`}`;
+}
+
+/** The third surface's verdict, decided on whether the KEY came back -- never on who is asking. */
+function bypassActorsVerdict(read: ExemptionRead | null) {
+  const none: string[] = [];
+  if (read === null) {
+    return { code: EXEMPTIONS.CANNOT_TELL as ExemptionCode, actors: none,
+      why: "the ruleset object was never read, so its exemption list was never examined" };
+  }
+  if (!read.present) {
+    return { code: EXEMPTIONS.WITHHELD as ExemptionCode, actors: none,
+      why: "`bypass_actors` is absent from the ruleset object: GitHub returns it only to a token with write "
+        + "access to the ruleset, so this is the view being withheld and NOT an empty list" };
+  }
+  if (!Array.isArray(read.value)) {
+    return { code: EXEMPTIONS.CANNOT_TELL as ExemptionCode, actors: none,
+      why: `\`bypass_actors\` is present but reads ${JSON.stringify(read.value)} rather than a list: an `
+        + "unrecognised shape rather than a cleared field" };
+  }
+  const actors = read.value.map(describeActor);
+  if (actors.length > 0) {
+    return { code: EXEMPTIONS.EXEMPTED as ExemptionCode, actors,
+      why: `\`bypass_actors\` was returned and names ${actors.length}: ${actors.join(", ")}` };
+  }
+  return { code: EXEMPTIONS.CLEARED as ExemptionCode, actors,
+    why: "`bypass_actors` was returned and is empty: no actor bypasses this ruleset" };
+}
+
+/**
+ * THE TWO READINGS AS JSON TEXT, and not as object literals, because the finding IS which key is in the
+ * text. `{ bypass_actors: undefined }` reads as PRESENT to `Object.hasOwn` and as ABSENT to `??` -- a
+ * fixture that quietly picks a side of the very question under test. Parsing the bytes cannot do that.
+ *
+ * Fields other than the three at issue are elided. `has_bypass_key` in the quoted output above is jq's own
+ * `has()` and not a field GitHub returns, so it is deliberately absent from both fixtures.
+ */
+const RULESET_AS_ADMIN = '{"id":23681721,"enforcement":"active","current_user_can_bypass":"never","bypass_actors":[]}';
+const RULESET_AS_CI = '{"id":23681721,"enforcement":"active","current_user_can_bypass":"never"}';
+
+test("#2119: the ADMIN reading reaches CLEARED and the CI reading MUST NOT -- one object, one moment", () => {
+  // DONE-WHEN 3, both halves in one test on purpose. The refusal is what the row asks for; the admin half
+  // beside it is this file's own positive-control shape -- "the state this guard exists to certify must be
+  // reachable" -- without which the row would ship a verdict whose pass nobody has ever seen.
+  const admin = bypassActorsVerdict(exemptionRead(JSON.parse(RULESET_AS_ADMIN)));
+  assert.equal(admin.code, EXEMPTIONS.CLEARED);
+  assert.match(admin.why, /was returned and is empty/);
+
+  const ci = bypassActorsVerdict(exemptionRead(JSON.parse(RULESET_AS_CI)));
+  assert.equal(ci.code, EXEMPTIONS.WITHHELD);
+  assert.notEqual(ci.code, EXEMPTIONS.CLEARED, "the CI identity cannot see the list, so it must never clear it");
+  assert.match(ci.why, /NOT an empty list/);
+});
+
+test("#2119 THE TRAP THIS ROW CLOSES: `bypass_actors ?? []` reads the WITHHELD state as an empty list", () => {
+  // WRITTEN AS THE MUTATION RATHER THAN DESCRIBED, because a paragraph was the only thing stopping it.
+  // The first assertion is the defect, demonstrated on the real CI reading: the naive line passes, silently
+  // and wrongly, on every unattended run. The second is the discriminator refusing the same input.
+  const ruleset = JSON.parse(RULESET_AS_CI);
+  assert.deepEqual((ruleset as { bypass_actors?: unknown[] }).bypass_actors ?? [], [],
+    "the naive assertion DOES pass on a reading that saw nothing -- that is the trap, pinned so it cannot "
+    + "be written back in by accident");
+  assert.equal(bypassActorsVerdict(exemptionRead(ruleset)).code, EXEMPTIONS.WITHHELD,
+    "and the discriminator, keyed on the KEY rather than on the value, refuses it");
+});
+
+test("#2119: a NON-EMPTY `bypass_actors` is EXEMPTED and NAMES the holes", () => {
+  // The surface's whole reason for existing: unlike `enforce_admins`, this hole has identities to print,
+  // and unlike `current_user_can_bypass` it can name someone other than the caller.
+  const v = bypassActorsVerdict(exemptionRead(JSON.parse(
+    '{"bypass_actors":[{"actor_id":5,"actor_type":"RepositoryRole","bypass_mode":"always"}]}')));
+  assert.equal(v.code, EXEMPTIONS.EXEMPTED);
+  assert.notEqual(v.code, EXEMPTIONS.CLEARED, "a list with someone in it is not a cleared one");
+  assert.match(v.why, /RepositoryRole#5 \(always\)/, "a count is where an investigation stops");
+});
+
+test("#2119: an unread ruleset and a present-but-unrecognised value are CANNOT_TELL, and neither is WITHHELD", () => {
+  // PRESENT-AND-NULL IS NOT ABSENT, and it is the one pair `??` genuinely cannot tell apart. Nobody here
+  // has seen GitHub return it, so it gets the discipline `enforce_admins` gets above: a shape nobody has
+  // measured is unrecognised, not cleared, and not the documented withholding either.
+  assert.equal(bypassActorsVerdict(null).code, EXEMPTIONS.CANNOT_TELL);
+  const odd = bypassActorsVerdict(exemptionRead(JSON.parse('{"bypass_actors":null}')));
+  assert.equal(odd.code, EXEMPTIONS.CANNOT_TELL);
+  assert.notEqual(odd.code, EXEMPTIONS.WITHHELD, "the key came back; it just came back as a shape nobody has seen");
+  assert.notEqual(odd.code, EXEMPTIONS.CLEARED);
+});
+
+test("#2119: WITHHELD is its own state, and no member of this vocabulary spells REQUIRED or BINDS_ME", () => {
+  // The same guard the other two vocabularies carry. A later edit wanting "one verdict type for all three
+  // surfaces" is how the overclaim gets in, and collapsing WITHHELD into CANNOT_TELL is how this row's
+  // finding gets forgotten: the view being withheld is DOCUMENTED and MEASURED, not merely unknown.
+  assert.equal(new Set(Object.values(EXEMPTIONS)).size, 4, "and the four are genuinely distinct");
+  assert.notEqual(EXEMPTIONS.WITHHELD as string, EXEMPTIONS.CANNOT_TELL as string);
+  assert.equal(Object.values(EXEMPTIONS).includes(VERDICT.REQUIRED as never), false);
+  assert.equal(Object.values(EXEMPTIONS).includes(BINDING.BINDS_ME as never), false);
+});
+
+test("#2119 DONE-WHEN 4: reading the exemption surface leaves `BINDS_ME` alone, on BOTH real readings", () => {
+  // THE ONE THING THIS ROW MAY NOT DO. If `bypass_actors` fed back into the binding verdict, the CI
+  // identity -- which can never read the field -- would drop from BINDS_ME to CANNOT_TELL, and the
+  // unattended check `ceo` ruled in on #2086 would go red for the whole of this row's benefit. Both
+  // readings are carried through the same path the live reader uses, and both must still bind.
+  for (const text of [RULESET_AS_ADMIN, RULESET_AS_CI]) {
+    const ruleset = JSON.parse(text);
+    const meta: RulesetMeta = { enforcement: ruleset.enforcement, canBypass: ruleset.current_user_can_bypass,
+      exemptions: exemptionRead(ruleset) };
+    const v = ruleAppliesVerdict({ branchRules: LIVE_RULES, rulesets: { 23681721: meta } });
+    assert.equal(v.code, BINDING.BINDS_ME, `the ${Object.hasOwn(ruleset, "bypass_actors") ? "admin" : "CI"} reading: ${v.why}`);
+  }
+});
+
+/**
+ * #2119: the exemption surface, printed beside the binding verdict on a live run.
+ *
+ * IT ASSERTS ONLY `!== EXEMPTED`, and that is the strongest honest assertion available here. On the CI
+ * identity the field is WITHHELD and there is nothing to assert; on an admin run it is CLEARED and the
+ * assertion holds; if an actor is ever added, an admin run goes red and names it. Asserting CLEARED instead
+ * would make the unattended check unpassable on the only token that ever runs it -- done-when 4 again, from
+ * the other side. The printed line is what an admin run gets quoted from, replacing an eyeballed `--jq`.
+ */
+function reportExemptionSurface({ rulesets }: RulesetBinding, source: string) {
+  for (const [id, meta] of Object.entries(rulesets)) {
+    const v = bypassActorsVerdict(meta.exemptions ?? null);
+    // `source` IS NOT DECORATION. The fixtures below carry the real ruleset id, because they ARE readings
+    // of it -- so without this prefix the test transcript prints four "ruleset 23681721 exemption surface"
+    // lines, one live and three synthetic, and a reader quoting CLEARED out of it would be quoting a
+    // fixture as a measurement. That is this repository's own apparatus-reading failure, one line wide.
+    console.log(`  ${source} ruleset ${id} exemption surface: ${v.code} -- ${v.why}`);
+    assert.notEqual(v.code, EXEMPTIONS.EXEMPTED,
+      `ruleset ${id}: ${v.why}. Those actors walk past the \`pull_request\` rule this check just certified.`);
+  }
+}
+
+test("#2119: the live run's own assertion, driven WITHOUT the network -- EXEMPTED is its only failing state", () => {
+  // `reportExemptionSurface` is reached only from the opt-in live test above, and neither live read has
+  // ever run unattended (#2120). Without this it would ship an assertion whose failing state nobody has
+  // seen -- and "all mutants red" is not the same as "the pass is reachable", so both are driven here.
+  const surface = (text: string): RulesetBinding => ({
+    branchRules: LIVE_RULES,
+    rulesets: {
+      23681721: { enforcement: "active", canBypass: NOT_BYPASSABLE, exemptions: exemptionRead(JSON.parse(text)) },
+    },
+  });
+  // The CI reading passes because there is nothing it may assert; the admin reading because it CLEARED.
+  reportExemptionSurface(surface(RULESET_AS_CI), "FIXTURE(read as a11ign-ai-workers)");
+  reportExemptionSurface(surface(RULESET_AS_ADMIN), "FIXTURE(read as DanBeckDev)");
+  assert.throws(
+    () => reportExemptionSurface(
+      surface('{"bypass_actors":[{"actor_id":5,"actor_type":"Team","bypass_mode":"always"}]}'),
+      "FIXTURE(a hole nobody has measured here)"),
+    /Team#5/,
+    "an actor added to the ruleset must fail an admin run, and the failure must NAME it rather than count it");
+});
+
 /**
  * THE OTHER EXEMPTION SURFACES, AND WHICH OF THEM THIS FILE PINS.
  *
@@ -944,8 +1196,8 @@ function liveRulesetMeta(id: number): RulesetMeta | null {
  * cheap" (#2022, comment 5787499206). `enforce_admins` is cheap and is pinned above: it arrives inside the
  * protection body this guard already reads, so it costs no call and one branch.
  *
- * THE RULESET'S `bypass_actors` IS STILL NOT PINNED, AND THE REASON IS A MEASUREMENT RATHER THAN AN
- * ESTIMATE OF EFFORT. Read on 2026-09-23 against the same ruleset, seconds apart, by two identities:
+ * THE RULESET'S `bypass_actors` IS NOW PINNED TOO, AS OF #2119 -- AS A DISCRIMINATOR RATHER THAN AS AN
+ * ASSERTION. Read on 2026-09-23 against the same ruleset, seconds apart, by two identities:
  *
  *     as `DanBeckDev`        (admin:true)   {"bypass_actors":[], "current_user_can_bypass":"never"}
  *     as `a11ign-ai-workers` (admin:false)  has("bypass_actors") => false        # the key is ABSENT
@@ -956,9 +1208,15 @@ function liveRulesetMeta(id: number): RulesetMeta | null {
  * request has write access to the ruleset" -- so the measurement and the schema agree, and the absence
  * can never be read as emptiness on the CI token. That is the exact opposite of the
  * `bypass_pull_request_allowances` finding above, where absence was measured as the cleared state at a
- * FIXED permission level on both sides of a real change. Pinning it would put two contradictory absence
- * rules in one guard, keyed on the token rather than on the field -- the shape this whole file exists to
- * refuse.
+ * FIXED permission level on both sides of a real change.
+ *
+ * UNTIL #2119 THAT WAS THE REASON NOT TO PIN IT, and the reason was half right. A naive assertion WOULD
+ * have put two contradictory absence rules in one guard keyed on the TOKEN -- but the fix for that is to
+ * key the verdict on the FIELD, which `EXEMPTIONS`/`bypassActorsVerdict` above do: a returned-and-empty
+ * list CLEARS, a returned list with actors in it is EXEMPTED and names them, and an ABSENT key is its own
+ * WITHHELD state that can never clear. What the row bought is bounded and it is worth saying plainly:
+ * nothing the unattended check could not do before, because the CI identity can never read the field. The
+ * admin-run read became a named verdict, and the trap became a test instead of this paragraph.
  *
  * WHAT #2086 ADDED INSTEAD, AND THE ONE LINE OF THIS BLOCK THAT WENT STALE. Until `ceo`'s ruling this
  * paragraph ended "the review requirement lives in classic branch protection, not here", and that is no
@@ -967,8 +1225,8 @@ function liveRulesetMeta(id: number): RulesetMeta | null {
  * `current_user_can_bypass` answers the exemption question PER IDENTITY and needs no admin, and it is
  * still not a substitute for the admin read above, only a cheaper instrument that certifies less.
  *
- * TWO THINGS THIS FILE DELIBERATELY DOES NOT ASSERT, so that a later reader does not mistake the silence
- * for an oversight:
+ * TWO THINGS THIS FILE STILL DELIBERATELY DOES NOT ASSERT, so that a later reader does not mistake the
+ * silence for an oversight:
  *
  *   - `require_extra_approval_for_unattributed_changes`. GitHub defaulted it to `true` when the rule was
  *     created and `ceo` set it to `false` explicitly, because most commits here are authored by
@@ -979,5 +1237,7 @@ function liveRulesetMeta(id: number): RulesetMeta | null {
  *   - Whether the check runs UNATTENDED. `A11Y_CHECK_MAIN_RULESET=1` makes the read possible on the CI
  *     token; it does not schedule it. A workflow step that sets it -- and that asserts the `LIVE PASS`
  *     line was actually printed, since a skip is green -- lives in `.github/workflows/` and so outside
- *     #2086's Region of one file. Reported to `product-manager` as the follow-up rather than smuggled in.
+ *     the Region of this file. Reported to `product-manager` rather than smuggled in, and filed as #2120;
+ *     #2119 restates it as out of scope for the same reason. NEITHER live read has ever run unattended,
+ *     so nothing above should be quoted as something CI checks until that row lands.
  */
