@@ -1761,6 +1761,60 @@ const expandedCases = [
     ["form-error-silent-solar", "Energy tour", "Energy tour", "Organisation", "Book tour", "Enter the organisation before booking.", "Submit the energy tour without an organisation."],
     ["form-error-silent-clinic", "Clinic booking", "Clinic booking", "Patient identifier", "Save booking", "Enter the patient identifier before confirming.", "Submit the clinic booking without an identifier."],
   ].map(([id, title, heading, field, submit, message, task]) => independent(errorVariant({ id, title, heading, field, submit, message, task }))),
+  // -------------------------------------------------------------------------------------------------
+  // #2070: 3.3.1 WHOSE SUBMIT IS NOT NAMED LIKE A SUBMIT -- the shape training held 0 of.
+  //
+  // Measured 2026-09-23 at `abbaa6adc`: 143 of 143 `3.3.1:validation-error-silent` training cases were
+  // probed `submit`, while the acceptance set carries the other shape at 1 in 6
+  // (`acceptance-b2-error-vessel`, "Apply for a berth"). A held-out case tests GENERALISATION only when
+  // the training distribution contains the thing it generalises from; a shape present nowhere in
+  // training is not held out, it is unseen.
+  //
+  // TWENTY-FOUR, not a round number picked for looking like one: the acceptance rate is 1 in 6 and
+  // 143 x 1/6 = 23.8. The row rules a 20-30 band because these land in family groups.
+  //
+  // EVERY CONTROL BELOW MISSES ALL SIXTEEN `SUBMIT_RE` ALTERNATIVES AND SHARES A WORD WITH ITS TASK, so
+  // `probeKindFor` returns "task" and the capture stamps `kind: "taskButton"`. That is asserted by
+  // calling the real decider (`case-matrix.test.ts`, `submit-is-recognised.test.ts`) rather than by a
+  // name pattern, which would pass on names the capture still classifies `submit`.
+  //
+  // NOT ONE OF THESE REUSES AN ACCEPTANCE CONTROL STRING. Reaching for "Apply for a berth" is the obvious
+  // way to write a task-named variant and it would destroy the only held-out case this criterion has;
+  // the intersection is pinned empty in `case-matrix.test.ts`.
+  //
+  // THESE CARRY NO SIGNAL UNTIL THE CORPUS IS RECAPTURED UNDER PROTOCOL 21 (#1926), and that is an
+  // argument for landing them now rather than a defect. `screenreader_features.py:1015-1017` refuses to
+  // accept `taskButton` alone -- 26 silent `4.1.3:form-activation-silent` positives are `taskButton` and
+  // would read as silent validation errors -- so a task-named 3.3.1 case is separable from those only by
+  // `formChanges[].submitted`, which protocol 21 records. Landing the matrix work first means the
+  // recapture captures the right corpus rather than the current one plus a later amendment.
+  ...[
+    ["form-error-taskname-licence", "Vehicle licence", "Vehicle licence", "Vehicle registration", "Apply for a licence", "Enter the vehicle registration before applying.", "Submit the licence application without a vehicle registration."],
+    ["form-error-taskname-appointment", "Health appointment", "Health appointment", "Preferred date", "Confirm the appointment", "Enter a preferred date before confirming.", "Submit the appointment form without a preferred date."],
+    ["form-error-taskname-membership", "Leisure membership", "Leisure membership", "Member number", "Renew the membership", "Enter the member number before renewing.", "Submit the membership renewal without a member number."],
+    ["form-error-taskname-tenancy", "Tenancy details", "Tenancy details", "Contact number", "Update the tenancy details", "Enter a contact number before updating.", "Submit the tenancy update without a contact number."],
+    ["form-error-taskname-replacement", "Replacement card", "Replacement card", "Delivery address", "Order a replacement card", "Enter the delivery address before ordering.", "Submit the replacement card order without a delivery address."],
+    ["form-error-taskname-fault", "Street fault", "Street fault", "Fault location", "Report the fault", "Enter the fault location before reporting.", "Submit the fault report without a location."],
+    ["form-error-taskname-evidence", "Evidence upload", "Evidence upload", "File reference", "Upload the evidence", "Enter the file reference before uploading.", "Submit the evidence upload without a file reference."],
+    ["form-error-taskname-expenses", "Travel expenses", "Travel expenses", "Journey date", "Claim the travel expenses", "Enter the journey date before claiming.", "Submit the travel expenses claim without a journey date."],
+    ["form-error-taskname-course", "Adult course", "Adult course", "Learner number", "Enrol on the course", "Enter the learner number before enrolling.", "Submit the course enrolment without a learner number."],
+    ["form-error-taskname-pitch", "Market pitch fee", "Market pitch fee", "Card holder name", "Pay the pitch fee", "Enter the card holder name before paying.", "Submit the pitch fee payment without a card holder name."],
+    ["form-error-taskname-assessment", "Support assessment", "Support assessment", "Household size", "Start the assessment", "Enter the household size before starting.", "Submit the assessment without a household size."],
+    ["form-error-taskname-objection", "Planning objection", "Planning objection", "Planning reference", "Lodge the objection", "Enter the planning reference before lodging.", "Submit the objection without a planning reference."],
+    ["form-error-taskname-visitor", "Visitor pass", "Visitor pass", "Photograph reference", "Create the visitor pass", "Enter the photograph reference before creating the pass.", "Submit the visitor pass details without a photograph reference."],
+    ["form-error-taskname-rota", "Volunteer rota", "Volunteer rota", "Shift date", "Amend the rota", "Enter the shift date before amending.", "Submit the rota amendment without a shift date."],
+    ["form-error-taskname-collection", "Bulky collection", "Bulky collection", "Collection date", "Cancel the collection", "Enter the collection date before cancelling.", "Submit the collection cancellation without a collection date."],
+    ["form-error-taskname-trustee", "Trustee nomination", "Trustee nomination", "Nominee address", "Nominate a trustee", "Enter the nominee address before nominating.", "Submit the trustee nomination without a nominee address."],
+    ["form-error-taskname-appeal", "Winter appeal", "Winter appeal", "Donation amount", "Donate to the appeal", "Enter the donation amount before donating.", "Submit the appeal donation without an amount."],
+    ["form-error-taskname-parking", "Parking permit", "Parking permit", "Vehicle make", "Issue the parking permit", "Enter the vehicle make before issuing the permit.", "Submit the parking permit form without a vehicle make."],
+    ["form-error-taskname-listing", "Trader listing", "Trader listing", "Trading name", "Publish the listing", "Enter the trading name before publishing.", "Submit the listing without a trading name."],
+    ["form-error-taskname-withdrawal", "Application withdrawal", "Application withdrawal", "Case number", "Withdraw the application", "Enter the case number before withdrawing.", "Submit the application withdrawal without a case number."],
+    ["form-error-taskname-offer", "Tenancy offer", "Tenancy offer", "Signature name", "Accept the offer", "Enter the signature name before accepting.", "Submit the offer acceptance without a signature name."],
+    ["form-error-taskname-dependant", "Dependant details", "Dependant details", "Date of birth", "Add a dependant", "Enter the date of birth before adding the dependant.", "Submit the dependant details without a date of birth."],
+    ["form-error-taskname-notice", "Community notice", "Community notice", "Noticeboard location", "Post the notice", "Enter the noticeboard location before posting.", "Submit the notice without a noticeboard location."],
+    ["form-error-taskname-income", "Income declaration", "Income declaration", "Tax year", "Declare the income", "Enter the tax year before declaring.", "Submit the income declaration without a tax year."],
+  ].map(([id, title, heading, field, submit, message, task]) =>
+    independent(errorVariant({ id, title, heading, field, submit, message, task }))),
   // 3.3.3 Error Suggestion. Both variants announce correctly; only the MESSAGE differs, so a case can
   // never be a 3.3.1 positive in disguise.
   // 3.3.3 Error Suggestion. Both variants announce correctly; only the MESSAGE differs, so a case can
