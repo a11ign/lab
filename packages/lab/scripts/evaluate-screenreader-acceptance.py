@@ -178,7 +178,10 @@ def unknown_case_ids(records: list[dict[str, Any]], defined: set[str]) -> dict[s
     """
     counts: dict[str, int] = defaultdict(int)
     for record in records:
-        case_id = record.get("provenance", {}).get("caseId") or NO_CASE_ID
+        # `or {}` and not a default, because a record CAN carry `"provenance": null` -- a default only
+        # covers the absent key, and this guard runs before anything else touches the records, so an
+        # AttributeError here would replace the refusal with a traceback on the very record it is for.
+        case_id = (record.get("provenance") or {}).get("caseId") or NO_CASE_ID
         if case_id not in defined:
             counts[case_id] += 1
     return dict(counts)

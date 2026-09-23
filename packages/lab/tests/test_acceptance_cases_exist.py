@@ -80,6 +80,17 @@ def test_a_record_with_no_case_id_is_a_finding_and_not_a_skip():
     assert evaluator.NO_CASE_ID in str(refusal.value)
 
 
+def test_a_null_provenance_is_reported_and_not_a_traceback():
+    """`"provenance": null` is a DIFFERENT shape from an absent key, and a default covers only the second.
+
+    This guard runs before anything else touches the records, so getting it wrong replaces the refusal
+    with an AttributeError on the very record the refusal is for — a crash where a finding belongs.
+    """
+    with pytest.raises(SystemExit) as refusal:
+        evaluator.assert_cases_exist({"repeat-1.jsonl": KNOWN + [{"provenance": None}]}, DEFINED)
+    assert evaluator.NO_CASE_ID in str(refusal.value)
+
+
 def test_unknown_ids_are_counted_per_id():
     """The predicate itself: id -> how many records name it, so a refusal can say whether one case
     drifted or a whole family did."""
