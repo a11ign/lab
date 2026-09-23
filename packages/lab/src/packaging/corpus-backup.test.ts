@@ -78,6 +78,25 @@ test("#1042: lab-job.yml's corpus-backup job names corpus:release in its exit-1 
     + "as the other, working route -- the same reason as the script's own refusal above");
 });
 
+test("#2061: lab-job.yml's corpus-backup-verify job names corpus:release in its exit-1 gloss too", () => {
+  // The SAME defect one catalogue entry over, and it cost eleven days of a red `lab:status` line. #1042
+  // fixed `corpus-backup`'s gloss and the script's own refusal; `corpus-backup-verify` runs that same
+  // script (`corpus:backup -- --verify-only`), hits that same refusal, and its gloss named no route -- so
+  // a reader who dispatched it against an unconfigured destination (twice: 2026-09-10 and 2026-09-12)
+  // was left reading "the last backup is not readable" about a corpus that has a working, verified
+  // off-machine copy. Held by the same assertion rather than a new one precisely because it is the same
+  // claim: the message a reader lands on must name the route that works.
+  const jobs = parseYaml(readFileSync(LAB_JOB_YML, "utf8"))[1].vars.lab_jobs;
+  assert.ok(jobs["corpus-backup-verify"],
+    "the corpus-backup-verify job entry moved or was renamed in lab-job.yml");
+  const exit1 = jobs["corpus-backup-verify"].exitMeanings["1"];
+  assert.ok(NAMES_THE_ROUTE(exit1),
+    "lab-job.yml's corpus-backup-verify exitMeanings['1'] must name `corpus:release` and "
+    + "`a11ign/corpus-backups` as the other, working route -- its 'no destination is configured' half is "
+    + "reached by exactly the refusal #1042 was filed about, so leaving it unnamed here reproduces #1042 "
+    + "one entry over");
+});
+
 test("#1042 POSITIVE CONTROL: an unrelated exit-code gloss does NOT name corpus:release", () => {
   // Without this, a check that matched on ANY occurrence of the string anywhere in the file -- rather
   // than in the specific message a reader actually sees -- would pass even if the naming landed in a
