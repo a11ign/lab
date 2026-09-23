@@ -86,7 +86,7 @@ export function hashPageDir(pageDir) {
  * @param {{ screenReader?: string, screenReaderVersion?: string, guidepupVersion?: string,
  *           browser?: string, browserVersion?: string, windowsVersion?: string, architecture?: string,
  *           captureProtocol?: string|number, screenReaderSettings?: string,
- *           provisionRevision?: string, browserProfile?: string }} [environment]
+ *           provisionRevision?: string, browserProfile?: string, windowSize?: string }} [environment]
  *
  * EVERY FIELD LISTED, because each is a cache key and an absent one silently becomes `"unknown"` -- which
  * is a value two different guests can share. The comments below record what each costs when it is wrong;
@@ -142,6 +142,24 @@ export function environmentKey(environment = {}) {
     // no information. Same device as `screenReaderSettings: "default"` one field up: the absent value is
     // a FACT about how those captures were taken, not an admission that we cannot tell.
     browserProfile: environment.browserProfile ?? "adopted",
+    // THE WINDOW THE PAGE WAS READ IN (#1561), and it is here for the reason `os` is: a page's CSS can
+    // hide content below a width. `caselaw` matched a `<768px` layout on one worker and a `>=992px`
+    // layout on another and yielded different findings (#1043); weather.metoffice.gov.uk hides its `h1`
+    // below 1280px (#1522). Until the pin, the width was whatever each guest's desktop gave and the cache
+    // treated two widths' evidence as interchangeable.
+    //
+    // `"maximized"` for a capture that predates the pin -- NOT `"unknown"`, and the difference is the same
+    // one `browserProfile: "adopted"` records one field up: the absent value is a FACT about how those
+    // captures were taken. Every capture on disk was taken under `--start-maximized`, and saying so is
+    // more useful than saying we cannot tell. It is still a different value from any `WxH`, so nothing
+    // blends -- a pinned capture and a maximized one cannot share an entry, which is the whole point.
+    //
+    // NOT `displayMode`. That field is the DESKTOP (`server.mjs`, #1953) and is deliberately not a cache
+    // key; this one is what the browser was asked for, and the two are different numbers the moment a pin
+    // is narrower than the screen. `innerWidth` (#1513) is the third: what the page was actually read at,
+    // recorded per capture and not keyed, because it is an OUTCOME of this field rather than an input a
+    // lookup can know before the capture exists.
+    windowSize: environment.windowSize ?? "maximized",
   };
 }
 
