@@ -28,7 +28,7 @@ import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
 import {
   sweepDecision, EXIT, mergedMeanwhile, MERGED_MEANWHILE_READS, MERGED_MEANWHILE_WAIT_MS, holdLookalikes, decideAndWarn,
-  confirmArmed, CONFIRM_ARMED_READS, CONFIRM_ARMED_WAIT_MS, armedFromApi,
+  confirmArmed, CONFIRM_ARMED_READS, CONFIRM_ARMED_WAIT_MS, armedFromApi, unarmedCandidates, armFailureVerdict,
 } from "../../../agent-org/src/auto-arm-sweep.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 
@@ -460,6 +460,171 @@ test("and an unarmed pull request is still unarmed", () => {
     "nothing pending, not queued, not merged -- the arm genuinely did not take");
   assert.equal(armedFromApi(null), false, "and a read that returned nothing is not evidence of arming");
   assert.equal(armedFromApi({}), false, "nor is a response missing every field");
+});
+
+/**
+ * #2004: THE CANDIDATE LIST COULD NOT SEE THE MERGE QUEUE, SO IT SWEPT A QUEUED PR AS UNARMED.
+ *
+ * `armedFromApi` above knows three armed states, and its own comment says the third is GraphQL-only:
+ * "`mergeQueueEntry` exists on neither `repos/:o/:r/pulls/:n` nor `gh pr view --json`". The candidate read
+ * was exactly that read — `gh pr list --json number,isDraft,autoMergeRequest` with a `--jq` predicate — so
+ * #1729's three-state rule was written, exported and tested while the read that decides WHO IS SWEPT AT ALL
+ * never called it. The second-copy-of-a-predicate shape, with only one copy correct.
+ *
+ * Measured 2026-09-22 against #1999, both reads in the same minute: GraphQL said
+ * `{"autoMergeRequest": null, "mergeQueueEntry": {"position": 1, "state": "AWAITING_CHECKS"}, "merged": false}`
+ * while the candidate read answered `1999`. Deterministic, not a race — it repeated every sweep for as long
+ * as the PR sat in the queue, and run 35781830875 charged `SWEEP: #1999 FAILED TO ARM` to its head.
+ */
+
+/** #1999 at ~21:5xZ on 2026-09-22, copied from the API response in the row rather than imagined. */
+const QUEUED_1999 = { number: 1999, isDraft: false, merged: false, autoMergeRequest: null,
+  mergeQueueEntry: { state: "AWAITING_CHECKS", position: 1 } };
+/** #1762's shape one step earlier: auto-merge pending, not yet handed to the queue. */
+const PENDING_AUTO_MERGE = { number: 1762, isDraft: false, merged: false,
+  autoMergeRequest: { enabledAt: "2026-09-19T14:35:31Z" }, mergeQueueEntry: null };
+/** THE POSITIVE CONTROL for every emptiness assertion below — the PR this sweep exists to arm. */
+const UNARMED = { number: 344, isDraft: false, merged: false, autoMergeRequest: null, mergeQueueEntry: null };
+
+test("#2004 ACCEPTANCE: a pull request sitting in the merge queue is NOT a candidate — it is armed, and "
+  + "sweeping it spends an arm call whose non-zero exit reddens a PR that did exactly what it should", () => {
+  assert.deepEqual(unarmedCandidates([QUEUED_1999]), [],
+    "#1999's own observed shape: `mergeQueueEntry` non-null is the most armed a PR can be short of landing");
+  // THE NON-EMPTY CONTROL THIS ROW ASKS BE NAMED: `unarmedCandidates([UNARMED])` in the test below, and
+  // again in the agreement test after it. Without one, `unarmedCandidates` returning `[]` for everything
+  // passes the assertion above and silently stops the sweep doing the only thing it exists for.
+  assert.deepEqual(unarmedCandidates([UNARMED]), ["344"],
+    "and the ordinary unarmed PR is still swept — #344's own population, the reason this job exists");
+});
+
+test("#2004: the candidate read and `armedFromApi` agree on every state, because the candidate read IS "
+  + "`armedFromApi` — one predicate, not a second `--jq` copy of it", () => {
+  const states = [QUEUED_1999, PENDING_AUTO_MERGE,
+    { number: 845, isDraft: false, merged: true, autoMergeRequest: null, mergeQueueEntry: null }, UNARMED];
+  for (const pr of states) {
+    assert.equal(unarmedCandidates([pr]).length, armedFromApi(pr) ? 0 : 1,
+      `#${pr.number}: armedFromApi says ${armedFromApi(pr)}, so the candidate list must ${
+        armedFromApi(pr) ? "not " : ""}contain it`);
+  }
+  // The agreement is only worth asserting if the two answers are not both constant: three armed, one not.
+  assert.deepEqual(states.filter((pr) => !armedFromApi(pr)).map((pr) => String(pr.number)), ["344"],
+    "the fixture set must contain both answers, or the loop above compares two constants");
+  assert.deepEqual(unarmedCandidates(states), ["344"], "and all four together read the same way");
+});
+
+test("#2004: a DRAFT is not a candidate even unarmed — `gh pr merge --auto` refuses a draft, and that is "
+  + "the sweep's own precondition rather than part of what `armed` means", () => {
+  assert.deepEqual(unarmedCandidates([{ ...UNARMED, isDraft: true }]), []);
+  assert.deepEqual(unarmedCandidates([{ ...UNARMED, isDraft: false }]), ["344"], "the control for the line above");
+});
+
+test("#2004: a read that returned nothing yields no candidates rather than throwing — CANNOT_ASK is the "
+  + "failed-lookup path, and an empty repository is not a failed lookup", () => {
+  assert.deepEqual(unarmedCandidates([]), []);
+  assert.deepEqual(unarmedCandidates(null), []);
+});
+
+test("#2004 MUTATION TARGET: the sweep's candidate read is the GraphQL one, asks for `mergeQueueEntry`, "
+  + "and no REST `--jq` predicate survives beside it", () => {
+  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
+  assert.match(source, /pullRequests\(states:OPEN,baseRefName:\$b,first:\$limit\)/,
+    "the candidate population must be asked of GraphQL — REST structurally cannot see the merge queue");
+  assert.match(source, /nodes\{number isDraft merged autoMergeRequest\{enabledAt\} mergeQueueEntry\{state\}\}/,
+    "and it must fetch every field `armedFromApi` decides on, `mergeQueueEntry` above all");
+  assert.doesNotMatch(source, /"pr", "list"/,
+    "the `gh pr list` candidate read is the defect itself: it cannot see the queue, so it cannot be left "
+    + "in place beside the fix");
+  assert.doesNotMatch(source, /autoMergeRequest == null/,
+    "and the `--jq` predicate that decided armedness inside a shell argument must be gone — a second copy "
+    + "of `armedFromApi` in a string is how this row happened");
+});
+
+test("#2004 WIRING: main() builds its candidates through `unarmedCandidates`, so the predicate the tests "
+  + "above pin is the one the sweep actually runs", () => {
+  // main() spawns `gh` and is never invoked here, so the call site is read from the comment-stripped
+  // source — the same approach the #1595 and #1729 wiring tests above take. Without it, `unarmedCandidates`
+  // could be a correct, exported, fully tested function that nothing calls: `refreshBrowseBuffer`'s shape.
+  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
+  const body = source.slice(source.indexOf("function main("));
+  assert.ok(body.length > 0, "main() must still exist");
+  assert.match(body, /candidates = unarmedCandidates\(readOpenPullRequests\(repo\)\)/,
+    "main() must decide its population through unarmedCandidates, not a predicate of its own");
+});
+
+/**
+ * #2004, THE OTHER HALF: FIXING THE CANDIDATE READ ALONE LEAVES THE GENUINE RACE RED.
+ *
+ * A PR that arms between the candidate read and the arm call is QUEUED, not merged — so `mergedMeanwhile`
+ * answers `false`, the catch falls through, and `sweep` reports FAILED TO ARM on a correctly armed PR. That
+ * catch's own rule, "THE STATE IS READ, NEVER THE EXIT CODE", was right and simply not applied to this
+ * state. These drive `armFailureVerdict` with both readers injected, so no `gh` call is reachable.
+ */
+const ARM_CAUSE = new Error("Command failed: gh pr merge --auto --merge 1999 --repo a11ign/a11ign");
+const verdictWith = ({ merged, armed }: { merged: boolean, armed: boolean }) =>
+  armFailureVerdict({ number: "1999", repo: "a11ign/a11ign", cause: ARM_CAUSE },
+    { merged: () => merged, armed: () => armed });
+
+test("#2004 ACCEPTANCE: an arm that threw because the PR is ALREADY ARMED is SKIPPED, not FAILED TO ARM", () => {
+  const verdict = verdictWith({ merged: false, armed: true });
+  assert.equal(verdict.failed, false, "a queued PR must not redden the run — it is armed, which is the goal");
+  assert.match(verdict.line, /^SWEEP: #1999 SKIPPED -- armed meanwhile/);
+  assert.doesNotMatch(verdict.line, /FAILED TO ARM/);
+  assert.match(verdict.line, /merge queue/,
+    "the reason must name the state it read, or the next reader cannot tell this from `merged meanwhile`");
+});
+
+test("#2004: `merged meanwhile` is still asked FIRST and still says so in its own words (#1306/#845)", () => {
+  const verdict = verdictWith({ merged: true, armed: false });
+  assert.equal(verdict.failed, false);
+  assert.match(verdict.line, /^SWEEP: #1999 SKIPPED -- merged meanwhile/,
+    "a landed PR keeps its own wording — `merged` and `queued` need different answers from a human reading "
+    + "the log, so the two must never print the same line");
+});
+
+test("#2004 CONTROL: an arm that failed for a REAL reason still reports FAILED TO ARM with its cause — the "
+  + "fix cannot be `never fail`", () => {
+  // Without this, `armFailureVerdict` returning `{failed: false}` unconditionally passes both tests above
+  // and makes `sweep` a job that can never go red: #1729's own defect (believing an arm that never landed)
+  // back through the door its fix opened.
+  const verdict = verdictWith({ merged: false, armed: false });
+  assert.equal(verdict.failed, true, "neither merged nor armed is a genuine failure, and red is how this "
+    + "repo makes an unarmed PR loud");
+  assert.match(verdict.line, /^SWEEP: #1999 FAILED TO ARM -- Command failed: gh pr merge --auto/,
+    "and the cause itself is printed, never swallowed");
+});
+
+test("#2004: the two reads SHORT-CIRCUIT, so only the genuinely failing path pays for the second one", () => {
+  const asked: string[] = [];
+  const verdict = armFailureVerdict({ number: "1999", repo: "o/r", cause: ARM_CAUSE }, {
+    merged: () => { asked.push("merged"); return true; },
+    armed: () => { asked.push("armed"); return true; },
+  });
+  assert.deepEqual(asked, ["merged"], "a PR that merged meanwhile is never re-read for armedness");
+  assert.equal(verdict.failed, false);
+  const both: string[] = [];
+  armFailureVerdict({ number: "1999", repo: "o/r", cause: ARM_CAUSE }, {
+    merged: () => { both.push("merged"); return false; },
+    armed: () => { both.push("armed"); return false; },
+  });
+  assert.deepEqual(both, ["merged", "armed"],
+    "and a genuine failure must have asked BOTH questions before it is believed — the control for the "
+    + "short-circuit above, which would otherwise pass by never asking the second at all");
+});
+
+test("#2004 WIRING: main()'s catch decides through `armFailureVerdict`, and adds the PR to `failed` only "
+  + "when that verdict says it failed", () => {
+  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
+  const body = source.slice(source.indexOf("function main("));
+  const mergeCallIndex = body.indexOf('gh(["pr", "merge", "--auto"');
+  const verdictIndex = body.indexOf("armFailureVerdict({ number, repo, cause })");
+  assert.ok(mergeCallIndex >= 0, "main() must still call `gh pr merge --auto`");
+  assert.ok(verdictIndex >= 0, "main()'s catch must ask armFailureVerdict, not re-derive the states");
+  assert.ok(verdictIndex > mergeCallIndex, "and it must be asked AFTER the arm call, in its catch");
+  assert.match(body, /if \(verdict\.failed\) failed\.push\(number\)/,
+    "only a verdict of `failed` may push — an unconditional push makes SKIPPED and FAILED one exit code");
+  assert.ok(!/mergedMeanwhile\(number, repo\)/.test(body),
+    "and main() must not keep its own copy of the merged-meanwhile branch beside the verdict: that is the "
+    + "fact-stated-twice shape this row is one instance of");
 });
 
 /**
