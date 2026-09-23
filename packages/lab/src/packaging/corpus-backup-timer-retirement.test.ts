@@ -10,6 +10,26 @@
  *
  * That mutant is the first positive control below.
  *
+ * ## `when:` PRESENT is not `when:` MEANINGFUL — reviewer-2's third refusal, on `5781567e`
+ *
+ * The first version of this file asked only whether the stop-and-disable carried a `when` at all. It does,
+ * so the clause never fired, and **`when: corpus_backup_timer_file.stat.exists` -> `when: false` left all
+ * 37 tests green** — a retirement skipped on every host, an enabled timer still firing, and a guard
+ * reporting success. That is the SAME defect one level up: a check that reads the shape of a field instead
+ * of what the field says, which is what this file exists to refuse in the playbook.
+ *
+ * So every gate here is now read for what it TESTS, not for whether it is written:
+ *
+ *   - the stop's `when` must positively read the `stat` register of the retired timer's own unit file
+ *     (`unit-file-probe` / `absent-unit-guard-tests-the-file`), so a constant or an inversion is refused;
+ *   - the reset's `when` must read the is-failed probe's `stdout` AND compare it to `"failed"`
+ *     (`reset-failed-gated`), so a gate gated on the probe having merely RUN is refused;
+ *   - the assert's surviving-timer clause must be a POSITIVE membership test (`assert-snapshot-present`),
+ *     so an assert demanding the snapshot timer be absent too is refused.
+ *
+ * All three had the same weakness and only the first was measured; fixing one and leaving its siblings
+ * would have been answering the mutant rather than the finding.
+ *
  * ## Why the contract is between tasks, rather than inside any one of them
  *
  * Every trap `corpus-schedule.yml`'s own header names is a relationship a single task cannot state:
@@ -84,6 +104,8 @@ const CLAUSES = {
   disable: "disable",
   stop: "stop",
   absentUnitGuard: "absent-unit-guard",
+  unitFileProbe: "unit-file-probe",
+  absentUnitGuardTests: "absent-unit-guard-tests-the-file",
   order: "order",
   removeUnitFiles: "remove-unit-files",
   notReinstalled: "not-reinstalled",
@@ -149,6 +171,41 @@ const mentions = (expression: string, names: string[]): boolean =>
   names.some((name) => new RegExp(`(^|[^\\w.-])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^\\w-]|$)`)
     .test(expression));
 
+/**
+ * A PATH with its `{{ var }}` occurrences resolved in place, which `expand` deliberately will not do: a
+ * unit file is named inside a larger string (`/etc/systemd/system/{{ corpus_backup_timer }}`), so the only
+ * way to know which unit a `stat` asks about is to substitute. `{{ item }}` has no value here and survives
+ * as itself, which is what keeps a loop's path from reading as a unit name it is not.
+ */
+function interpolate(value: unknown, vars: Vars): string {
+  let text = asText(value);
+  for (let depth = 0; depth < MAX_EXPANSIONS && text.includes("{{"); depth += 1) {
+    const next = text.replace(/\{\{\s*([A-Za-z_]\w*)\s*\}\}/g, (whole, name: string) =>
+      typeof vars[name] === "string" ? (vars[name] as string) : whole);
+    if (next === text) break;
+    text = next;
+  }
+  return text;
+}
+
+/** A `when:` as Ansible evaluates it: one expression, or a LIST of expressions it ANDs together. */
+const whenText = (value: unknown): string =>
+  Array.isArray(value) ? value.map(asText).join(" and ") : asText(value);
+
+/** Does this expression read `<register>.<field>` as a whole term? `.` separates, so it is not a word char. */
+const reads = (expression: string, register: string, field: string): boolean =>
+  new RegExp(`(^|[^\\w.-])${register}\\.${field}([^\\w-]|$)`).test(expression);
+
+/**
+ * POSITIVELY. `when: false` reads nothing and `when: not <probe>.stat.exists` reads it backwards; both skip
+ * the retirement on every host with every task reporting success, which is the mutation reviewer-2 measured
+ * surviving. A `not` anywhere in the expression is refused rather than parsed: a guard that needs one is a
+ * guard worth a second look, and a false finding here is one line to exempt where a false pass is a timer
+ * still firing.
+ */
+const testsPositively = (expression: string, register: string, field: string): boolean =>
+  reads(expression, register, field) && !/(^|\W)not(\W|$)/.test(expression);
+
 /** The argv of an `ansible.builtin.command`, which this playbook always writes as a list rather than a string. */
 const argvOf = (step: Step, vars: Vars): string[] => unitNames(step.args.argv, vars);
 
@@ -162,10 +219,45 @@ const stopStep = (steps: Step[], vars: Vars): Step | undefined =>
   steps.find((step) => step.module === "ansible.builtin.systemd"
     && unitNames(step.args.name, vars).includes(BACKUP_TIMER));
 
+/** The `ansible.builtin.stat` that asks whether the retired timer's unit file is still on this lab. */
+const unitFileProbeStep = (steps: Step[], vars: Vars): Step | undefined =>
+  steps.find((step) => step.module === "ansible.builtin.stat"
+    && interpolate(step.args.path, vars).endsWith(`/${BACKUP_TIMER}`));
+
 /** The `ansible.builtin.file` task that deletes the retired unit files. */
 const removalStep = (steps: Step[], vars: Vars): Step | undefined =>
   steps.find((step) => step.module === "ansible.builtin.file" && step.args.state === "absent"
     && unitNames(step.task.loop ?? step.args.path, vars).includes(BACKUP_TIMER));
+
+/**
+ * The guard on the stop, read for what it TESTS. `ansible.builtin.systemd` errors on a unit it cannot
+ * find, so the stop must be guarded -- but a guard is not a `when` key, it is a `when` that asks whether
+ * THIS unit file is on THIS lab. reviewer-2's refusal on `5781567e` is the measurement: `when: false`
+ * satisfied a presence check, skipped the retirement on every host, and left the timer enabled and firing.
+ */
+function guardFindings(stop: Step, steps: Step[], vars: Vars): Finding[] {
+  if (stop.task.when === undefined) {
+    return [{ clause: CLAUSES.absentUnitGuard,
+      detail: "ansible.builtin.systemd ERRORS on a unit it cannot find, so the stop needs a `when` -- "
+        + "without one, a fresh lab and every second run fail on the absence that means the work is done" }];
+  }
+  const probe = unitFileProbeStep(steps, vars);
+  const register = asText(probe?.task.register);
+  if (!register) {
+    return [{ clause: CLAUSES.unitFileProbe,
+      detail: `no ansible.builtin.stat registers a read of /etc/systemd/system/${BACKUP_TIMER}, so the `
+        + "guard on the stop has nothing to ask whether this lab has the unit -- and a guard that cannot "
+        + "be answered from the host is a constant wearing a condition's clothes" }];
+  }
+  if (!testsPositively(whenText(stop.task.when), register, "stat.exists")) {
+    return [{ clause: CLAUSES.absentUnitGuardTests,
+      detail: `the stop's \`when\` (${JSON.stringify(stop.task.when)}) does not positively read `
+        + `\`${register}.stat.exists\`, so it is a constant, an inversion or an unrelated condition. A `
+        + "guard that is never true SKIPS the whole retirement on every lab that has the timer, leaves it "
+        + "enabled and firing, and reports success from every task in this play" }];
+  }
+  return [];
+}
 
 /** Trap 1: the stop-and-disable, what it must say, and that it still has a file to disable when it runs. */
 function stopAndDisableFindings(steps: Step[], vars: Vars): Finding[] {
@@ -185,11 +277,7 @@ function stopAndDisableFindings(steps: Step[], vars: Vars): Finding[] {
       detail: `the task naming ${BACKUP_TIMER} must set \`state: stopped\`; it sets `
         + `${JSON.stringify(stop.args.state)}` });
   }
-  if (stop.task.when === undefined) {
-    findings.push({ clause: CLAUSES.absentUnitGuard,
-      detail: "ansible.builtin.systemd ERRORS on a unit it cannot find, so the stop needs a `when` -- "
-        + "without one, a fresh lab and every second run fail on the absence that means the work is done" });
-  }
+  findings.push(...guardFindings(stop, steps, vars));
   const removal = removalStep(steps, vars);
   if (removal && stop.index > removal.index) {
     findings.push({ clause: CLAUSES.order,
@@ -243,12 +331,18 @@ function resetFailedFindings(steps: Step[], vars: Vars): Finding[] {
       detail: `nothing runs \`systemctl is-failed ${BACKUP_JOB_UNIT}\`, so the reset cannot be gated on the `
         + "state it exists to clear and must instead be forced with `failed_when: false`" }];
   }
+  // READ FOR WHAT IT TESTS, for the same reason the stop's guard is: `when: <register> is defined` MENTIONS
+  // the probe and gates on nothing, because a registered command is always defined once it has run. The
+  // gate has to read what the probe SAID -- its stdout, against the one word that means there is something
+  // to clear.
   const register = asText(probe.task.register);
-  if (!register || !asText(reset.task.when).includes(register)) {
+  const when = whenText(reset.task.when);
+  if (!register || !reads(when, register, "stdout") || !/["']failed["']/.test(when)) {
     return [{ clause: CLAUSES.resetFailedGated,
-      detail: `the reset's \`when\` (${JSON.stringify(reset.task.when)}) does not read the is-failed probe's `
-        + `register (${JSON.stringify(probe.task.register)}), so it runs unconditionally -- a task that can `
-        + "neither fail nor honestly report `changed` breaks the playbook's own idempotence claim" }];
+      detail: `the reset's \`when\` (${JSON.stringify(reset.task.when)}) does not compare the is-failed `
+        + `probe's \`${register || "<unregistered>"}.stdout\` against "failed", so it runs whenever the probe `
+        + "ran, which is always -- a task that can neither fail nor honestly report `changed` breaks the "
+        + "playbook's own idempotence claim" }];
   }
   return [];
 }
@@ -276,13 +370,20 @@ function assertionFindings(steps: Step[], vars: Vars): Finding[] {
     return [{ clause: CLAUSES.assertBackupAbsent, detail: "the play asserts nothing at all" }];
   }
   const clauses = asList(closing.args.that).map(asText);
+  // PRESENT means a POSITIVE membership test. `'…snapshot.timer' not in …` names the surviving timer just
+  // as loudly and asserts the opposite of what this play is for -- the same read-the-shape-not-the-meaning
+  // weakness as the stop's guard, and it has to be refused in the same breath rather than after someone
+  // measures it too.
+  const asserts = (unit: string, sense: "in" | "not in") => clauses.some((clause) =>
+    mentions(clause, aliasesFor(unit, vars)) && clause.includes(" in ")
+      && clause.includes(" not in ") === (sense === "not in"));
   const findings: Finding[] = [];
-  if (!clauses.some((clause) => mentions(clause, aliasesFor(SNAPSHOT_TIMER, vars)))) {
+  if (!asserts(SNAPSHOT_TIMER, "in")) {
     findings.push({ clause: CLAUSES.assertSnapshotPresent,
-      detail: `no assert clause names ${SNAPSHOT_TIMER}; this retirement stops one timer of the pair, and `
-        + "nothing would notice if it took the surviving one with it" });
+      detail: `no assert clause requires ${SNAPSHOT_TIMER} to be PRESENT in the read-back; this retirement `
+        + "stops one timer of the pair, and nothing would notice if it took the surviving one with it" });
   }
-  if (!clauses.some((clause) => clause.includes("not in") && mentions(clause, aliasesFor(BACKUP_TIMER, vars)))) {
+  if (!asserts(BACKUP_TIMER, "not in")) {
     findings.push({ clause: CLAUSES.assertBackupAbsent,
       detail: `no assert clause requires ${BACKUP_TIMER} to be ABSENT from the read-back; the removal is `
         + "then checked only by the task that performed it" });
@@ -361,6 +462,34 @@ test("#2060 CONTROL: dropping the absent-unit guard is caught", () => {
     "an unguarded systemd task passed, and it errors on every lab that never had the unit.");
 });
 
+test("#2060 CONTROL: a guard that is always false is caught -- reviewer-2's refusal on `5781567e`", () => {
+  // "I applied `when: false` to the real playbook, confirmed the changed line on disk, and the full
+  // five-file Acceptance still passed 5/37. That mutation skips stop/disable on every host, leaving an
+  // existing enabled timer running while the new guard reports success."
+  const mutated = mutate((play, steps, vars) => { taskAt(play, stopStep(steps, vars)!.index).when = false; });
+  provenBy(mutated, CLAUSES.absentUnitGuardTests,
+    "a retirement skipped on every host passed, and the timer it exists to stop keeps firing.");
+});
+
+test("#2060 CONTROL: a guard that is INVERTED is caught", () => {
+  // The other half of the same hole: a `when` that reads the right register and acts on it backwards runs
+  // the stop only where the unit is already gone -- an error where it is absent, silence where it is not.
+  const mutated = mutate((play, steps, vars) => {
+    const stop = stopStep(steps, vars)!;
+    taskAt(play, stop.index).when = `not ${whenText(stop.task.when)}`;
+  });
+  provenBy(mutated, CLAUSES.absentUnitGuardTests, "a guard that fires only where there is nothing to do passed.");
+});
+
+test("#2060 CONTROL: dropping the unit-file probe leaves the guard unanswerable, and is caught", () => {
+  const mutated = mutate((play, steps, vars) => {
+    const probe = unitFileProbeStep(steps, vars)!;
+    play.tasks = asList(play.tasks).filter((_, index) => index !== probe.index);
+  });
+  provenBy(mutated, CLAUSES.unitFileProbe,
+    "the stop's `when` names a register nothing sets, so it is undefined on every host.");
+});
+
 test("#2060 CONTROL: removing the files BEFORE disabling them is caught", () => {
   // The order trap in full: `systemctl disable` needs the unit file, so this leaves an enabled timer with
   // no file -- and every task in the play still reports success.
@@ -408,6 +537,18 @@ test("#2060 CONTROL: an ungated reset-failed is caught", () => {
   provenBy(mutated, CLAUSES.resetFailedGated, "an unconditional reset-failed passed.");
 });
 
+test("#2060 CONTROL: a reset gated on the probe having RUN, rather than on what it said, is caught", () => {
+  // The stop's guard was not the only gate read for its shape. `<register> is defined` MENTIONS the probe
+  // and gates on nothing: a registered command is always defined once it has run, so this reset fires on
+  // every lab, including the ones with nothing failed to clear.
+  const mutated = mutate((play, steps, vars) => {
+    const probe = commandDoing(steps, "is-failed", vars)!;
+    taskAt(play, commandDoing(steps, "reset-failed", vars)!.index).when =
+      `${asText(probe.task.register)} is defined`;
+  });
+  provenBy(mutated, CLAUSES.resetFailedGated, "an unconditional reset wearing the probe's name passed.");
+});
+
 test("#2060 CONTROL: dropping the is-failed probe is caught", () => {
   const mutated = mutate((play, steps, vars) => {
     const probe = commandDoing(steps, "is-failed", vars)!;
@@ -444,6 +585,20 @@ test("#2060 CONTROL: an assert that forgets the SURVIVING timer is caught", () =
   });
   provenBy(mutated, CLAUSES.assertSnapshotPresent,
     "the play could remove BOTH timers and still report success.");
+});
+
+test("#2060 CONTROL: an assert demanding the SURVIVING timer be gone too is caught", () => {
+  // Third sibling of the same weakness: this clause names the snapshot timer as loudly as the real one and
+  // asserts the opposite, so a check that asked only whether the name appears would pass a play that has
+  // to remove the surviving timer to succeed.
+  const mutated = mutate((play, steps) => {
+    const closing = steps.find((step) => step.module === "ansible.builtin.assert")!;
+    const args = moduleAt(play, closing);
+    args.that = asList(args.that).map(asText)
+      .map((clause) => clause.includes(" not in ") ? clause : clause.replace(" in ", " not in "));
+  });
+  provenBy(mutated, CLAUSES.assertSnapshotPresent,
+    "an assert that succeeds only when the SURVIVING timer is also gone passed.");
 });
 
 /**
