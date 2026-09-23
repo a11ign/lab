@@ -1692,6 +1692,29 @@ test("#1063: the PRINTING is held too -- `b4Lines` perfect and never reached was
     "and it is the CLEAR sentence, not the refusal -- the control, without which one message passes for all");
 });
 
+// --- #2101: `check` and `claim` must agree about a row's OWN pull request ---
+
+test("#2101: `check` on a row whose own PR holds its Region reports CLEAR, and the row NUMBER is what "
+  + "makes it so -- without it `check` predicts a refusal `claim` would not make", () => {
+  const ownPr = [{ number: 2077, files: ["docs/guide.md"], changedFiles: 1, closes: [2076] }];
+  assert.match(b4Lines(["docs/"], ownPr, 2076).join("\n"), /B4: no open pull request holds any file/);
+  assert.match(b4Lines(["docs/"], ownPr, 2084).join("\n"), /B4 REFUSES THIS CLAIM: overlaps #2077/,
+    "THE CONTROL: the same PR against a DIFFERENT row still refuses, so this is an exclusion by "
+    + "declaration and not `check` having quietly stopped running B4");
+});
+
+test("#2101: `reportB4` PASSES THE ROW NUMBER DOWN -- dropping it is a silent divergence between the "
+  + "command an agent runs to decide and the command that decides", () => {
+  // The mutation this exists for: `b4Lines(mine(issueNumber), others())`. Every assertion above stays
+  // green under it, because they call `b4Lines` directly; only the wiring changes, and only here.
+  const said: string[] = [];
+  reportB4(2076, { write: (text: string) => said.push(text), mine: () => ["docs/"],
+    others: () => [{ number: 2077, files: ["docs/guide.md"], changedFiles: 1, closes: [2076] }] });
+  assert.match(said[0], /B4: no open pull request holds any file/);
+  assert.doesNotMatch(said[0], /REFUSES/, "#2077 IS #2076 -- `claim` grants this, so `check` must not "
+    + "tell the reader it is refused");
+});
+
 test("#1063: `renderStatus`'s UNCLAIMED branch calls reportB4 -- the row's deliverable, held", () => {
   // THE LAST UNHELD LINE, and worker-capture's answer to it: assert the CALL EXISTS rather than that it
   // ran. Everything else here could be perfect and `check` could stop running B4 with a green suite --
