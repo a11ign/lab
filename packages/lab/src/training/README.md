@@ -12,10 +12,14 @@ in the bad NVDA capture and absent from the good capture. This prevents a
 known HTML mutation from being treated as evidence when NVDA did not actually
 announce it.
 
-The current matrix contains 1,061 pairs across image, link, heading, landmark,
-form, control, dynamic-feedback, and table families: 45 seed pairs, 128
-initial independent variants, 627 bulk variants, 36 targeted follow-ups, and
-225 targeted calibration variants. The exporter deliberately excludes the
+The matrix is **1,715 cases** (`screenreader-dataset/manifest.json` -> `cases`, read
+2026-09-23T14:26Z on the lab `a11y-lab`, `/srv/a11y-runs`, which owns the authoritative
+corpus), across image, link, heading, landmark, form, control, dynamic-feedback and
+table families. The per-family breakdown that used to stand here is
+gone rather than retyped: it was arithmetic over a total that has since doubled, and
+the manifest it would have to be re-derived from is the single source anyway. Copy a
+figure out of it and write the date you read it beside the number (#2155). The
+exporter deliberately excludes the
 observable `1.3.1:missing-landmark` pairs from the local scorer: the expected
 landmark is a structural expectation, not a reliably inferable screen-reader
 announcement. Those cases remain available to the signal/static layer.
@@ -68,8 +72,11 @@ DATASET_BASE_URL still wins if you set it, but a `localhost` value is rewritten
 to the host's address on the VM's subnet, because `localhost` inside the guest
 is the guest.
 
-A full matrix run is ~2122 NVDA captures, so it publishes its state instead
-of expecting you to watch a log:
+A full matrix run is two NVDA captures per case -- **3,430** at the manifest's
+1,715 cases, read 2026-09-23T14:26Z. The disk carries more, **4,500 captures**, because
+612 of its 2,327 page dirs are not in the manifest: a recapture prices off the manifest
+and a cache invalidation prices off the disk, and they are not the same number. Either
+way it publishes its state instead of expecting you to watch a log:
 
 ~~~sh
 npm run training:status
@@ -84,6 +91,11 @@ current:  finished
 last update: recently
 worker now: idle
 ~~~
+
+Those totals are **that run's** -- the 1,061-case matrix of 2026-07-26, kept because the
+block is here to show the SHAPE of the output and a real run is the honest way to show it.
+They are not today's corpus. Read the count off `training:status` or the manifest, never
+off this page.
 
 Run across several workers to cut wall-clock, and **set nothing to get it**: with neither
 `A11Y_WORKER` nor `A11Y_WORKERS` set, the run discovers every local worker VM, starts what is
