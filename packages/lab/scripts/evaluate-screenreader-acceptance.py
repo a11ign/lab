@@ -117,21 +117,28 @@ def flatten(by_path: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
 ACCEPTANCE_MATRIX = "./packages/lab/src/training/acceptance-matrix.mjs"
 
 
-def defined_case_ids() -> set[str]:
-    """Every case id `ALL_ACCEPTANCE_CASES` defines RIGHT NOW, at the commit this is running from.
+def defined_cases() -> dict[str, dict[str, Any]]:
+    """Every case `ALL_ACCEPTANCE_CASES` defines RIGHT NOW, WHOLE — the id and every other field.
+
+    IT ASKED FOR `.id` ALONE UNTIL #2129, AND THAT ONE PROJECTION WAS THE WHOLE BLIND SPOT: a case can be
+    REDEFINED while keeping its id, and every stored record of it still reads as valid. The capture path
+    has compared definitions since #958 (`manifest-matches-cases.mjs`); this evaluator compared names.
+    Widening it here rather than at the call site, because a caller that asks for ids cannot later decide
+    it wanted more.
 
     Derived at evaluation time and never cached to a file on purpose. A generated artefact under `runs/`
     would be the transport `corpus:grants-audit` uses — and `lab-job.yml` records what that costs:
     "The audit refuses an ABSENT map and cannot see a STALE one, so the failure is silent by
     construction." A stale copy of exactly this fact is what this row is about, so the copy does not exist.
 
-    LOUD ON FAILURE, never an empty set. An empty set makes every stored record unknown and the refusal
+    LOUD ON FAILURE, never an empty result. An empty set makes every stored record unknown and the refusal
     below fires on the whole corpus, which reads as a corpus defect when the real fault is that node did
     not run. `CANNOT_TELL` loudly beats a wrong verdict in either direction.
     """
     script = (
         f'import {{ ALL_ACCEPTANCE_CASES }} from "{ACCEPTANCE_MATRIX}";'
-        'process.stdout.write(JSON.stringify(ALL_ACCEPTANCE_CASES.map((testCase) => testCase.id)));'
+        'process.stdout.write(JSON.stringify(Object.fromEntries('
+        'ALL_ACCEPTANCE_CASES.map((testCase) => [testCase.id, testCase]))));'
     )
     try:
         result = subprocess.run(
@@ -152,13 +159,24 @@ def defined_case_ids() -> set[str]:
             "This evaluator refuses rather than scoring without them: it cannot tell a record whose case "
             "was deleted from one whose case is merely unreadable, and those need opposite responses."
         )
-    ids = set(json.loads(result.stdout))
-    if not ids:
+    cases = json.loads(result.stdout)
+    if not cases:
         raise SystemExit(
             f"{ACCEPTANCE_MATRIX} defines no acceptance cases. That is not a corpus this evaluator can "
             "judge anything against — every stored record would read as unknown."
         )
-    return ids
+    return cases
+
+
+def defined_case_ids() -> set[str]:
+    """The id-only view of `defined_cases`, which is all `assert_cases_exist` needs.
+
+    KEPT AS ITS OWN NAME, and derived rather than asked for separately: #2098's question is "does this
+    case exist", #2129's is "is it the same case", and the second subsumes the first without replacing
+    it. `main()` calls `defined_cases()` once and passes both views on, so the node subprocess runs once
+    per evaluation whichever question is being asked.
+    """
+    return set(defined_cases())
 
 
 # What an absent `provenance.caseId` is reported as. A name, not `None`, so the message reads as a finding
@@ -236,6 +254,184 @@ def assert_cases_exist(by_path: dict[str, list[dict[str, Any]]], defined: set[st
         "Both are the same problem for a held-out number: it cannot be re-derived. Land the definitions, "
         "or recapture at this commit — never evaluate the subset, because a floor or a false-positive "
         "bound stated over an unknown denominator is not a measurement."
+    )
+
+
+# WHERE A STORED CORPUS RECORDS WHAT IT WAS CAPTURED UNDER. Two files, because one case definition is
+# written to disk in two pieces and neither piece alone is the definition:
+#
+#   manifest.json        every field of the case EXCEPT the two page bodies, plus `pages` (their paths)
+#   pages/<id>/*.html    the page bodies, written byte-for-byte from the case's own `good` and `bad`
+#                        (`writeCasePages`: `writeFileSync(path, testCase[variant], "utf8")`)
+#
+# THE UNION IS THE WHOLE DEFINITION, and that is not a convenience — it is why this guard can see the
+# redefinition #2129 was filed on. `title`, `field` and `submit` reach neither `provenance` nor the
+# manifest: they exist on disk only inside the rendered HTML. #1918's control rests on
+# `acceptance-b2-error-plot`'s `submit`, and renaming it changes `badSignal.control` in the manifest AND
+# both page bodies, while every stored record stays byte-identical. A guard that read the manifest alone
+# would catch that one by luck, through `badSignal`; it would not catch a changed `title` at all.
+MANIFEST_NAME = "manifest.json"
+
+# `pages` is the manifest's own bookkeeping — where the page bodies were written, relative to the run
+# root. It is not part of the case (`ALL_ACCEPTANCE_CASES` has no such field) and comparing it would
+# report every case as drifted. `manifestDrift` excepts it for the same reason and says so.
+MANIFEST_ONLY_FIELDS = frozenset({"pages"})
+
+# What a case is reported as when the corpus records no definition for it at all -- the manifest beside
+# the records does not list it, so there is nothing to compare and nothing that can be concluded. A named
+# finding rather than a silent skip: a record whose captured definition is unrecoverable is exactly the
+# thing this evaluator must not quietly leave in a denominator.
+UNRECORDED_DEFINITION = "<not in the manifest beside these records>"
+
+
+def captured_definitions(data_path: Path) -> dict[str, dict[str, Any]]:
+    """The case definitions the corpus beside `data_path` was captured under, id -> definition.
+
+    REFUSES AN ABSENT MANIFEST rather than skipping the check. A missing manifest is not "nothing
+    drifted", it is "this evaluator cannot tell" — and those need opposite responses. The same reading
+    `defined_cases` refuses node's silence for.
+
+    A page file that is missing reads as `None` for that variant, which differs from any string the code
+    can define, so it surfaces as drift naming that variant rather than as a traceback.
+    """
+    root = data_path.parent
+    manifest_path = root / MANIFEST_NAME
+    if not manifest_path.is_file():
+        raise SystemExit(
+            f"refusing to score: {data_path} has no {MANIFEST_NAME} beside it, so there is no record of "
+            "the case definitions these captures were taken under.\n"
+            "The evaluator can tell that a case still EXISTS (#2094) but not that it is still the SAME "
+            "case, and a held-out number computed over silently redefined cases is not reproducible.\n"
+            f"Point --data at a run directory written by `training:generate-acceptance` (it writes "
+            f"{MANIFEST_NAME} at the run root), or regenerate and recapture."
+        )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    captured: dict[str, dict[str, Any]] = {}
+    for entry in manifest.get("cases", []):
+        definition = {field: value for field, value in entry.items() if field not in MANIFEST_ONLY_FIELDS}
+        for variant, relative_path in (entry.get("pages") or {}).items():
+            page = root / relative_path
+            definition[variant] = page.read_text(encoding="utf-8") if page.is_file() else None
+        captured[entry["id"]] = definition
+    return captured
+
+
+def _canonical(value: Any) -> str:
+    """Key-sorted JSON, so two definitions differing only in key order compare equal.
+
+    Both sides arrive as parsed JSON — the manifest from disk, the current cases from node — so this is a
+    like-for-like comparison of content and not a second implementation of anyone's serialisation.
+    """
+    return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def changed_case_definitions(records: list[dict[str, Any]], captured: dict[str, dict[str, Any]],
+                             current: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Which cases these records name whose DEFINITION has changed since they were captured, and how.
+
+    Pure, and separate from both the node call above and the refusal below, exactly as
+    `unknown_case_ids` is: records + what they were captured under + what the code means now -> id ->
+    the fields that differ and how many records carry it.
+
+    A FIELD THE CURRENT CASE HAS AND THE CAPTURED ONE DOES NOT IS DRIFT, not a gap to skip. That is what
+    makes the coverage claim above self-enforcing rather than a comment: add a field to a case that the
+    manifest does not carry and every case reads as drifted on it, loudly, instead of the new field
+    silently escaping comparison for ever.
+
+    CASES WHOSE ID IS NOT DEFINED AT ALL ARE LEFT ALONE — that is `assert_cases_exist`'s refusal (#2094),
+    it fires first, and reporting them twice would describe one corpus defect as two.
+    """
+    counts: dict[str, int] = defaultdict(int)
+    for record in records:
+        # `or {}` and not a default, for the reason `unknown_case_ids` states: a record CAN carry
+        # `"provenance": null`.
+        case_id = (record.get("provenance") or {}).get("caseId")
+        if case_id:
+            counts[case_id] += 1
+    changed: dict[str, dict[str, Any]] = {}
+    for case_id, count in counts.items():
+        now = current.get(case_id)
+        if now is None:
+            continue
+        was = captured.get(case_id)
+        fields = ([UNRECORDED_DEFINITION] if was is None else
+                  sorted(field for field in set(was) | set(now)
+                         if _canonical(was.get(field)) != _canonical(now.get(field))))
+        if fields:
+            changed[case_id] = {"records": count, "fields": fields}
+    return changed
+
+
+# How much of a differing value to show. Enough to recognise WHICH change it is -- a renamed control, a
+# reworded task -- without printing a page body: `good` and `bad` are whole HTML documents, and a refusal
+# that dumps two of them per case is one nobody reads.
+SHOWN_VALUE = 60
+
+# Enough fields per case to see whether one string moved or the whole case was rewritten.
+NAMED_CHANGED_FIELDS = 6
+
+
+def _shown(value: Any) -> str:
+    text = _canonical(value)
+    return text if len(text) <= SHOWN_VALUE else text[:SHOWN_VALUE] + f"… ({len(text)} chars)"
+
+
+def _changed_field_lines(case_id: str, fields: list[str], captured: dict[str, dict[str, Any]],
+                         current: dict[str, dict[str, Any]]) -> list[str]:
+    lines = []
+    for field in fields[:NAMED_CHANGED_FIELDS]:
+        if field == UNRECORDED_DEFINITION:
+            lines.append(f"      {UNRECORDED_DEFINITION}")
+            continue
+        was = captured.get(case_id, {}).get(field)
+        now = current.get(case_id, {}).get(field)
+        lines.append(f"      {field}: captured={_shown(was)} CASES={_shown(now)}")
+    if len(fields) > NAMED_CHANGED_FIELDS:
+        lines.append(f"      ... and {len(fields) - NAMED_CHANGED_FIELDS} more field(s)")
+    return lines
+
+
+def assert_case_definitions_unchanged(by_path: dict[str, list[dict[str, Any]]],
+                                      captured_by_path: dict[str, dict[str, dict[str, Any]]],
+                                      current: dict[str, dict[str, Any]]) -> None:
+    """REFUSE to score records whose case definitions have CHANGED since they were captured.
+
+    `assert_cases_exist` refuses a record whose case the code no longer has; this refuses one whose case
+    the code still has under the same id and no longer means the same thing. The second is the quieter
+    failure of the two: nothing about the record, the id or the count looks wrong, and the number comes
+    out — computed over pages the model never saw, or labelled against a `badSignal` that has moved.
+
+    PER FILE and fail-closed, for the reasons `assert_cases_exist` states: the number that matters is per
+    repeat, and a subset scored silently is the defect this whole family exists to close.
+    """
+    changed_by_path = {path: changed_case_definitions(records, captured_by_path.get(path, {}), current)
+                       for path, records in by_path.items()}
+    if not any(changed_by_path.values()):
+        return
+    lines = []
+    for path, changed in changed_by_path.items():
+        if not changed:
+            continue
+        affected = sum(case["records"] for case in changed.values())
+        lines.append(f"  {path}: {affected} of {len(by_path[path])} records, "
+                     f"{len(changed)} redefined case(s)")
+        for case_id in sorted(changed)[:NAMED_UNKNOWN_CASES]:
+            case = changed[case_id]
+            lines.append(f"    {case_id}: {case['records']} record(s), "
+                         f"{len(case['fields'])} field(s) differ")
+            lines.extend(_changed_field_lines(case_id, case["fields"],
+                                              captured_by_path.get(path, {}), current))
+        if len(changed) > NAMED_UNKNOWN_CASES:
+            lines.append(f"    ... and {len(changed) - NAMED_UNKNOWN_CASES} more")
+    raise SystemExit(
+        "refusing to score: these acceptance records were captured under case definitions that no longer "
+        "match the ones this code has, so the report would grade captures of one page against the labels "
+        "of another.\n"
+        + "\n".join(lines)
+        + "\nRecapture the cases named above at this commit, on the box that owns the corpus:"
+        "\n  npm run lab:job -- -e job=generate   then   npm run lab:job -- -e job=capture"
+        "\nNever evaluate the rest and report a number: a held-out reading states what the corpus IS, and "
+        "a corpus the repository cannot reproduce states nothing."
     )
 
 
@@ -615,7 +811,14 @@ def main() -> None:
     # FIRST, before the weights are even opened. Whether these records describe cases the code has is a
     # question about the corpus, not about the model, and answering it after scoring would mean the run
     # that refuses and the run that passes do the same half-hour of work.
-    assert_cases_exist(by_path, defined_case_ids())
+    #
+    # ONE node CALL, TWO QUESTIONS, AND IN THIS ORDER. "Does this case exist" (#2094) has to be answered
+    # before "is it the same case" (#2129): a record naming a case the code lacks has no current
+    # definition to differ from, so asking the second first would report one corpus defect as silence.
+    current_cases = defined_cases()
+    assert_cases_exist(by_path, set(current_cases))
+    assert_case_definitions_unchanged(
+        by_path, {str(path): captured_definitions(path) for path in args.data}, current_cases)
     assert_disjoint(training, records, args.training_data)
     report, weights, artifact = scorer.verify_artifact(
         argparse.Namespace(
