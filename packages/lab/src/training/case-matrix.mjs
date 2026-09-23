@@ -4521,6 +4521,87 @@ cases.push(
     probeOrder: "focus-first",
   }),
 );
+// #2142 (#1926's offline authoring half, unfolding #2055): THE TRIGGER FIVE CONTROLS IN.
+//
+// `FOCUS_REVEAL_STOPS = 8` (`packages/nvda-worker/src/capture-probes.mjs`) bounds `walkToReveal`, and
+// until this case the corpus asked it for stops 0 and 1 only -- distance 0 from `+first-tab-stop` above,
+// distance 1 from every other focus-reveal case. Stops 2-7 had never been asked of the walk by any case
+// that exists, so eight stops of budget were justified by two of them.
+//
+// DEPTH 5, AND DELIBERATELY NOT 8. A case sitting AT the bound cannot distinguish "the walk reached stop
+// 7" from "the walk ran out", and those are two different claims about the same `revealed: false`. Five
+// leaves the walk three stops of headroom, so a reveal found here is found because the walk kept going
+// rather than because it had nowhere left to stop.
+//
+// THE FIVE MUST REVEAL NOTHING. Only `#trigger` carries the `focus` listener: a walk that stopped early
+// on a control that opened the panel by itself would read exactly like a walk that reached stop 5, and
+// the case would credit the probe with a distance it never travelled. `tab-probe-start-position.test.ts`
+// asserts that rather than leaving it to the eye.
+//
+// ONE `body`, SHARED BY BOTH VARIANTS, so the pair cannot drift apart at the trap #2053 names: adding the
+// five controls to `bad` alone would make the pair measure tab depth as well as the dismissal mechanism,
+// with nothing in the label saying so. Here that is impossible by construction rather than by guard.
+//
+// WHAT IT COSTS THE RECAPTURE, measured rather than reasoned from `bucketFor`: appending this case adds
+// 4 cases (itself plus the three `+also-` variants `multiDefectCases` builds from it) and CHANGES the
+// generated HTML of 15 existing `1.4.13` cases -- 19 x 2 variants = 38 captures, and nothing outside
+// this subtype moves. Buckets are dealt by `indexInSubtype`, so a reader who checks only `bucketFor`
+// concludes an append leaves indices 0..18 alone and costs 8; it does leave them alone, and it costs
+// nearly five times that, because `multiDefectCases` re-derives the variants from the whole host list.
+//
+// NO CAPTURE OF THIS CASE EXISTS AND NONE IS CLAIMED HERE. `probeFocusReveal` puts `tabs` and
+// `revealedAt` on the diagnostic MARK, not on the record, so nothing offline can read the depth back --
+// the reading from stop 5 comes with #1926's uniform recapture. A flat `revealed: null` before that is
+// this case never having been captured, not this case having failed.
+const DEEP_TRIGGER_BODY = "<form>"
+  + "<p><label for=\"first\">Contact name</label><input id=\"first\"></p>"
+  + "<p><label for=\"email\">Email address</label><input id=\"email\" type=\"email\"></p>"
+  + "<p><label for=\"phone\">Daytime telephone</label><input id=\"phone\" type=\"tel\"></p>"
+  + "<p><label for=\"postcode\">Postcode</label><input id=\"postcode\"></p>"
+  + "<p><label for=\"country\">Country</label><select id=\"country\">"
+  + "<option>United Kingdom</option><option>Ireland</option></select></p>"
+  + "<p><label for=\"trigger\">Security question</label><input id=\"trigger\"></p>"
+  + "<div id=\"panel\" hidden><p>Additional guidance for this field.</p>"
+  + "<a href=\"/help\">Read the full guidance</a></div>"
+  + "<p><label for=\"last\">Memorable word</label><input id=\"last\"></p>"
+  + "</form>";
+const DEEP_TRIGGER_REVEAL = "var p=document.getElementById('panel');"
+  + "document.getElementById('trigger').addEventListener('focus', function(){ p.hidden = false; });";
+const DEEP_TRIGGER_DISMISS = "document.addEventListener('keydown', function(e){"
+  + "  if (e.key === 'Escape') { p.hidden = true; }"
+  + "});";
+cases.push(
+  pair({
+    // A `+` variant of `focus-panel-undismissable-help` for the reason `+first-tab-stop` already gives:
+    // `selectCases` treats a trailing `+` as "this case and its variants", so the one selector
+    // `--only=focus-panel-undismissable-help+` still captures every depth the corpus exercises.
+    id: "focus-panel-undismissable-help+sixth-tab-stop",
+    family: "focus-reveal",
+    criterion: "1.4.13",
+    subtype: "focus-panel-undismissable",
+    task: "Focus the security question -- the sixth control on the page, five ordinary fields in -- and "
+      + "try to dismiss the help panel it opens.",
+    source: "WCAG 1.4.13 Understanding",
+    mutation: "Same mechanism as focus-panel-undismissable-help: focusing the field opens a panel over "
+      + "the content below it, and Escape does not close it. What differs is DEPTH ONLY -- five ordinary "
+      + "fields stand between document start and the trigger, none of which reveals anything, so a walk "
+      + "that finds the panel here found it five stops in rather than one.",
+    badSignal: { type: "focus-panel-undismissable" },
+    good: page({
+      title: "Account settings", heading: "Account settings",
+      body: DEEP_TRIGGER_BODY,
+      script: DEEP_TRIGGER_REVEAL + DEEP_TRIGGER_DISMISS,
+    }),
+    bad: page({
+      title: "Account settings", heading: "Account settings",
+      body: DEEP_TRIGGER_BODY,
+      script: DEEP_TRIGGER_REVEAL,
+    }),
+    probeFocus: true,
+    probeFocusReveal: true,
+    probeOrder: "focus-first",
+  }),
+);
 // **WITHDRAWN 2026-09-05, PENDING ITS PROBE — the case was merged before the probe had ever captured.**
 //
 // Fifteen `focus-removed-on-receipt-*` cases for 2.4.7 stood here and came back BLIND on their first
