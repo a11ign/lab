@@ -33,11 +33,23 @@
  * exists to stop. So the population here is MACHINERY — the files that instruct the next publish, where a
  * stale claim misdirects a run — and `.changeset/` plus `.github/workflows/` are walked rather than listed
  * so a new workflow or changeset document joins the population by existing.
+ *
+ * ONE `docs/` FILE JOINED IT AFTERWARDS, AND THE EXCLUSION ABOVE IS THE REASON IT COULD — #2058.
+ * That exclusion rests on a PROPERTY, not on a directory: those files carry their dates in headings and
+ * closed-row blockquotes, so no line-level rule can tell their records from the defect.
+ * `docs/reliability-plan.md` does not have the property. Measured at `621425d3a`: its two B3 sections
+ * carried no `checked <date>` heading and no closed-row blockquote, its three quotations of the access
+ * setting were all present-tense — two of them reading `restricted` nine days after the config said
+ * otherwise — and it holds a live instruction to whoever publishes ("Before a real publish, run the full
+ * gate on the lab"). #2058 corrected it on exactly #2052's record-versus-present-tense line, which is what
+ * puts it here. It is NAMED and not reached by widening the walk, because `docs/` also holds the records
+ * that must not be touched and a walk would collect them too.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { resolve, join, sep } from "node:path";
+import { tmpdir } from "node:os";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 
@@ -59,6 +71,13 @@ const SEVEN_GATES = Array.from({ length: GATE_COUNT }, (_unused, index) => index
 const FEWEST_PLAUSIBLE_MACHINERY_FILES = 10;
 
 /**
+ * The same kind of floor for `packages/`, which the changelog walk below must be SEEN to reach. Twelve
+ * package directories carry a manifest today; a run that enumerates fewer than this has lost the
+ * directory, and the emptiness assertion it feeds would then be reporting a walk that never looked.
+ */
+const FEWEST_PLAUSIBLE_PACKAGES = 10;
+
+/**
  * The three files #2052 measured as carrying a stale claim, and therefore the three that must still be
  * REACHED by the rules below. This is the named half of the population: the walk finds sites, this names
  * the files whose coverage was proven by measurement, so a rule that quietly stopped matching any of them
@@ -69,6 +88,16 @@ const CORRECTED_BY_2052 = [
   ".changeset/README.md",
   "packages/lab/src/packaging/release-safety.test.ts",
 ];
+
+/** The one `docs/` file in the population — see the docblock for the property that lets it in (#2058). */
+const RELIABILITY_PLAN = "docs/reliability-plan.md";
+
+/**
+ * Every file MEASURED to quote the access setting in the present tense, and therefore every file the
+ * comparison below must be seen to reach. The floor is per file rather than a count, because a rule that
+ * quietly stopped matching one of them would report an agreement it never checked.
+ */
+const MUST_BE_COMPARED = [...CORRECTED_BY_2052, RELIABILITY_PLAN];
 
 /**
  * Files that INSTRUCT the next publish, as opposed to recording a past one.
@@ -83,7 +112,7 @@ function machineryFiles(): string[] {
     readdirSync(resolve(REPO, dir))
       .filter((name) => /\.(ya?ml|md)$/.test(name))
       .map((name) => join(dir, name)));
-  return [...walked, "packages/lab/src/packaging/release-safety.test.ts"].sort();
+  return [...walked, "packages/lab/src/packaging/release-safety.test.ts", RELIABILITY_PLAN].sort();
 }
 
 export type Quotation = { file: string; line: number; value: string; text: string };
@@ -201,8 +230,8 @@ test("every quoted access value in the publish machinery matches the config file
 
   // THE POSITIVE CONTROL FOR THE EMPTINESS ASSERTION BELOW. `accessMismatches(…, CONFIG_ACCESS)` passes
   // when there is nothing to check, so the population itself is asserted non-empty first, per file that
-  // #2052 measured as carrying one.
-  for (const file of CORRECTED_BY_2052) {
+  // #2052 or #2058 measured as carrying one.
+  for (const file of MUST_BE_COMPARED) {
     assert.ok(quotations.some((quotation) => quotation.file === file),
       `${file} quotes the access setting and must appear in the population — a rule that stopped finding `
       + "it would report agreement it never checked");
@@ -220,7 +249,7 @@ test("POSITIVE CONTROL: flipping the config value makes every quoting site fail,
   const filesThatNotice = machineryFiles()
     .filter((file) => accessMismatches(accessQuotations(file, read(file)), other).length > 0);
 
-  for (const file of CORRECTED_BY_2052) {
+  for (const file of MUST_BE_COMPARED) {
     assert.ok(filesThatNotice.includes(file),
       `against a config reading "${other}", ${file} must report a mismatch. It does not, which means this `
       + "file's quotations are not being compared to the config at all");
@@ -334,5 +363,275 @@ test("the dated records #2052 ruled OUT are untouched", () => {
   for (const [file, record] of records) {
     assert.ok(read(file).includes(record),
       `${file} is a record of its own moment and must keep saying what it said: ${record}`);
+  }
+});
+
+/**
+ * #2058: THE COUNTS ITEM 3 IS ABOUT, READ FROM `.changeset/` RATHER THAN QUOTED.
+ *
+ * Only the counts that HOLD STILL are pinned. The number of pending changesets moves with every merged
+ * pull request, so the document states it as a dated reading and this file does not compare it — pinning
+ * it would make an ordinary changeset turn the trunk red, which is the guard failing in the direction
+ * that gets it deleted. The promotion count and the `first-publish-*` count do not move: `promote:model`
+ * replaces the standing promotion changeset each time it promotes, and no new `first-publish-*` entry can
+ * be written for a package that has already published.
+ */
+function changesetNames(): string[] {
+  return readdirSync(resolve(REPO, ".changeset"))
+    .filter((name) => name.endsWith(".md") && name !== "README.md");
+}
+
+const countOf = (prefix: string): number => changesetNames().filter((name) => name.startsWith(prefix)).length;
+
+/**
+ * The decision list ITSELF, sliced out of the document — not the whole file.
+ *
+ * Measured while writing this: every phrase below appears a second time in the `B3 (as originally
+ * scoped)` section further down, so a whole-file `includes` passes with the list deleted. The assertion
+ * has to be about the section the row is about, or it is satisfied by a copy of the reasoning in a
+ * section the row never touched.
+ */
+function decisionList(): string {
+  const text = read(RELIABILITY_PLAN);
+  const start = text.indexOf("**Three decisions remained when this list was written");
+  assert.notEqual(start, -1, "the decision list must still be in the document — #2058 is a correction, not a cull");
+  const end = text.indexOf("\n---", start);
+  assert.notEqual(end, -1, "the decision list must still end at a section break");
+  return text.slice(start, end);
+}
+
+test("#2058: the three-decisions list survives the correction, and each item says what decided it", () => {
+  // A diff that deletes the list to make the currency assertions pass has removed the record of why the
+  // publish waited. #2052's shape: a correction, not a cull.
+  const list = decisionList();
+  for (const reasoning of [
+    "ADR 0006's AGPL/Apache split is gated on it and is effectively irreversible",
+    "ADR 0007 makes the weights the API",
+    "is a call about what a first release says, not a tidy-up",
+  ]) {
+    assert.ok(list.includes(reasoning), `the reasoning must survive inside the list itself: ${reasoning}`);
+  }
+  assert.equal((list.match(/\*\*DECIDED/g) ?? []).length, 3,
+    "each of the three items must say that it was decided — a list that merely drops the stale numbers "
+    + "leaves a reader unable to tell a settled item from an open one");
+});
+
+test("#2058: item 3's promotion count is today's, read from the directory it describes", () => {
+  const list = decisionList();
+  assert.equal(countOf("promote-"), 1,
+    "the standing shape is one promotion changeset — if this is no longer 1, the sentence below is stale "
+    + "and the document must say what the new shape is");
+  assert.ok(list.includes("holds **one** promotion changeset today"),
+    "item 3 must state the count that is true now, not the five it was filed with");
+  assert.ok(!list.includes("five promotion changesets are pending"),
+    "the 2026-08-31 count must not survive as a present-tense claim");
+});
+
+/**
+ * Directories whose contents are not THIS tree's record: `node_modules` and `.venv` are dependency
+ * installs holding third-party changelogs, and the rest are caches, run records or version-control
+ * output. `derived-artifact-sweep.test.ts` prunes the same names for the same reason.
+ *
+ * `dist` IS DELIBERATELY NOT AMONG THEM, and it is the one name this list drops from that sweep's.
+ * Everything else here belongs to something other than this repository; `dist` is this repository's own
+ * build output, and `npm pack` puts a package's `CHANGELOG.md` into what it ships. Reviewer's refusal of
+ * #2159 at `fa72a9bf` planted `dist/CHANGELOG.md` and nothing went red. A changelog there means one was
+ * written or copied, which is exactly the event the paragraph below claims has not happened — so the walk
+ * reaches it rather than the document carving it out. No `package.json` lives under any `dist` in this
+ * tree, so the manifest population this same walk feeds is unchanged by including them.
+ */
+const SKIP_DIRS = new Set(["node_modules", ".git", "runs", "__pycache__", ".venv", "coverage"]);
+
+/**
+ * Every file named `name` under `root`, root-relative and sorted.
+ *
+ * WHOLE-TREE, BECAUSE THE CLAIM IS WHOLE-TREE — reviewer's refusal of #2159 at `12c2d579`. This shipped
+ * as `readdirSync(REPO + "/packages")` filtered by `existsSync`, i.e. a scan of the immediate children of
+ * ONE directory, under a document sentence saying no `CHANGELOG.md` existed anywhere in the tree. A
+ * changelog at the repository root, under `scripts/`, or in a package nested one level deeper would have
+ * left that sentence reading as verified when nothing had looked at it. The walk and the sentence now
+ * name the same boundary — the tree, `node_modules` and the derived directories aside.
+ */
+function filesNamed(root: string, name: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (SKIP_DIRS.has(entry.name)) continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) { walk(full); continue; }
+      if (entry.name === name) out.push(full.slice(root.length + 1));
+    }
+  };
+  walk(root);
+  return out.sort();
+}
+
+/**
+ * THE POSITIVE CONTROL FOR THE EMPTY-CHANGELOG ASSERTION BELOW, AND WHERE THE ASSERTION SAYS IT LIVES.
+ *
+ * `assert.deepEqual(changelogs, [])` passes when the population is genuinely empty and equally when the
+ * walk returned nothing because it never looked — and this repository's rule is that the writer has to be
+ * able to POINT at the assertion that tells those apart. This is that assertion, and the reach floor in
+ * the test below is its other half: this one proves the walker returns a `CHANGELOG.md` that exists, that
+ * one proves the walker visited the real directories a publish would write one into.
+ *
+ * The fixture plants one two directories down and one inside a pruned directory, so a walker that stopped
+ * descending and a prune list that swallowed the whole tree both fail here rather than reading as an
+ * empty repository.
+ */
+test("#2159: the changelog walk returns a CHANGELOG.md that is there, and prunes the ones that are not this tree's", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "changelog-walk-"));
+  try {
+    mkdirSync(join(fixture, "packages", "scorer"), { recursive: true });
+    writeFileSync(join(fixture, "packages", "scorer", "CHANGELOG.md"), "## 0.1.0\n");
+    // One in EVERY pruned directory, not only `node_modules` — reviewer's refusal of #2159 at
+    // `fa72a9bf` planted `dist/CHANGELOG.md` and no test moved, because the control exercised one
+    // name out of seven. The prune list is the boundary the document now states, so each member of it
+    // is a case here rather than an implementation detail nothing looks at.
+    for (const pruned of SKIP_DIRS) {
+      mkdirSync(join(fixture, pruned, "left-pad"), { recursive: true });
+      writeFileSync(join(fixture, pruned, "left-pad", "CHANGELOG.md"), "## 1.3.0\n");
+    }
+    // AND ONE IN `dist`, WHICH MUST COME BACK. This is the mutant reviewer planted at `fa72a9bf`, as a
+    // case rather than as an argument: `dist` is this repository's own build output, so a changelog
+    // there is this tree's and the walk has to see it.
+    assert.ok(!SKIP_DIRS.has("dist"), "dist is this repository's own output and is walked, not pruned");
+    mkdirSync(join(fixture, "packages", "cli", "dist"), { recursive: true });
+    writeFileSync(join(fixture, "packages", "cli", "dist", "CHANGELOG.md"), "## 0.1.0\n");
+
+    assert.deepEqual(filesNamed(fixture, "CHANGELOG.md"),
+      [join("packages", "cli", "dist", "CHANGELOG.md"), join("packages", "scorer", "CHANGELOG.md")],
+      "the walk must descend past the root to find a package's changelog and the copy `npm pack` would "
+      + "ship, and must not count one from any pruned directory — if this is empty, the emptiness "
+      + "asserted below means nothing");
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("#2058: the successor's own numbers are the tree's — six first-publish entries, no CHANGELOG", () => {
+  const list = decisionList();
+  assert.equal(countOf("first-publish-"), 6,
+    "six first-publish entries were pending when #2058 measured; a different number makes the paragraph "
+    + "below wrong rather than merely old");
+  assert.ok(list.includes("**Six of the pending entries are `first-publish-*.md`**"),
+    "the successor decision must name how many of the pending entries announce a publish that happened");
+
+  // The document says the first CHANGELOG was never written. That is a live claim, and the release that
+  // falsifies it is the one this section exists to inform — so it fails here rather than misleading a
+  // reader at publish time.
+  //
+  // THE EMPTINESS HAS TWO CONTROLS AND THIS NAMES BOTH. The test above proves this walker returns a
+  // `CHANGELOG.md` that exists; the loop below proves that in THIS run it reached every directory
+  // `changeset version` would write one into, enumerated independently of the walk. Without them a walk
+  // that lost `packages/` and a tree that truly has no changelog are the same green.
+  // AND THE CLAIM IS PINNED TO THE WALK'S SCOPE, because the two drifted once already: the sentence read
+  // "anywhere in this tree" while the walk read the immediate children of one directory. The prune list
+  // is part of what the reader is told, not an implementation detail of the guard, so a reversion to the
+  // unscoped wording is red here rather than quietly re-opening the gap.
+  const flat = unwrapped(list);
+  assert.ok(flat.includes("a walk of this tree finds no `CHANGELOG.md` at all outside"),
+    "the document must state the scope this test actually walks");
+  // THE BOUNDARY IS DERIVED FROM THE PRUNE LIST, NOT RETYPED BESIDE IT. The sentence said "outside
+  // `node_modules`" while the walk skipped seven directories, so a `dist/CHANGELOG.md` left every
+  // assertion green while falsifying the sentence — reviewer's refusal of #2159 at `fa72a9bf`, whose
+  // mutant survived. Adding a directory to SKIP_DIRS without saying so in the document is red here.
+  for (const pruned of SKIP_DIRS) {
+    assert.ok(flat.includes(`\`${pruned}\``),
+      `the document's changelog sentence does not name \`${pruned}\`, which the walk skips — a `
+      + `CHANGELOG.md under it would leave this test green while the sentence reads as verified`);
+  }
+
+  const manifests = filesNamed(REPO, "package.json");
+  const packageDirs = readdirSync(resolve(REPO, "packages"), { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && existsSync(resolve(REPO, "packages", entry.name, "package.json")))
+    .map((entry) => entry.name);
+  assert.ok(packageDirs.length >= FEWEST_PLAUSIBLE_PACKAGES,
+    `only ${packageDirs.length} package directories were enumerated — the directory has been lost, and `
+    + "the changelog population below would be empty for that reason rather than because none exists");
+  for (const pkg of packageDirs) {
+    assert.ok(manifests.includes(join("packages", pkg, "package.json")),
+      `the walk did not reach packages/${pkg}, which is where changeset version writes its CHANGELOG — `
+      + "so its absence from the changelog population says nothing");
+  }
+
+  assert.deepEqual(filesNamed(REPO, "CHANGELOG.md"), [],
+    "docs/reliability-plan.md states that a walk of this tree finds no CHANGELOG.md outside node_modules "
+    + "and that the pending set has never been consumed; the tree now carries one, so that paragraph is "
+    + "wrong");
+});
+
+/**
+ * Every workspace manifest, with the two fields the version claim turns on.
+ *
+ * The population comes from the walk above — which has its own control — narrowed to the ROOT
+ * `workspaces` glob, read from the root manifest rather than hard-coded. That narrowing is the point:
+ * `scripts/isolation-fixtures/` holds seven more `package.json` files, several of them public and at
+ * `0.0.0`, and they are deliberately not workspace members. A guard that counted them would give the
+ * right answer about the wrong population, and would keep giving it after a fixture changed.
+ */
+function workspaceManifests(): { path: string; name: string; version: string; isPrivate: boolean }[] {
+  const globs = JSON.parse(read("package.json")).workspaces as string[];
+  assert.deepEqual(globs, ["packages/*"],
+    "this guard narrows the walk to the workspace glob; if the glob has changed, the narrowing below "
+    + "reads a population the release no longer versions");
+  return filesNamed(REPO, "package.json")
+    .filter((file) => /^packages\/[^/]+\/package\.json$/.test(file.split(sep).join("/")))
+    .map((file) => {
+      const manifest = JSON.parse(read(file));
+      return { path: file, name: manifest.name, version: manifest.version, isPrivate: manifest.private === true };
+    });
+}
+
+/** The decision list with its hand-wrapping collapsed, so a phrase may be asserted across a line break. */
+const unwrapped = (text: string): string => text.replace(/\s+/g, " ");
+
+/**
+ * #2159, reviewer's refusal at `ff88e9ea`: the document said "every `package.json` still reads `0.0.0`",
+ * and two of them read `0.1.0`.
+ *
+ * THE EMPTINESS AND ITS POSITIVE CONTROL ARE THE TWO HALVES OF ONE PARTITION, COMPUTED IN ONE RUN.
+ * `public and not 0.0.0` must be empty — that is the document's claim. `private and not 0.0.0` must be
+ * exactly `@a11ign/control` and `@a11ign/lab` — a NON-EMPTY population produced by the same read of the
+ * same files, so a walk that returned nothing, a narrowing that matched nothing, or a `version` field
+ * this code failed to read turns the second assertion red rather than letting the first pass by vacuity.
+ * That is the assertion this file can point at, and it is why the two live in one test rather than two.
+ *
+ * The private pair is pinned by NAME and not merely counted, because the defect being guarded is a
+ * sentence that named the wrong SET: a count of two is satisfied by any two manifests drifting off
+ * `0.0.0`, including a public one, which is the case that has to be loudest.
+ */
+test("#2159: the 0.0.0 claim is true of the set changesets versions, and the private pair is why it needs saying", () => {
+  const manifests = workspaceManifests();
+  assert.ok(manifests.length >= FEWEST_PLAUSIBLE_PACKAGES,
+    `only ${manifests.length} workspace manifests were read — the population is broken, and both halves `
+    + "of the partition below would be empty for that reason rather than because the tree says so");
+
+  const notAtZero = manifests.filter((manifest) => manifest.version !== "0.0.0");
+  assert.deepEqual(notAtZero.filter((manifest) => !manifest.isPrivate).map((manifest) => manifest.path), [],
+    "docs/reliability-plan.md states that every manifest `changeset version` writes still reads 0.0.0, "
+    + "because the 2026-09-19 publish never committed its bump back. A public manifest above 0.0.0 means "
+    + "a version has landed since, and the successor decision's premise is stale");
+  assert.deepEqual(notAtZero.map((manifest) => manifest.name).sort(), ["@a11ign/control", "@a11ign/lab"],
+    "THE POSITIVE CONTROL for the emptiness above: these two private manifests are hand-set to 0.1.0 and "
+    + "changesets never touches them, so this list is non-empty in any run where the manifests were "
+    + "actually read. If it is empty, the assertion above proved nothing");
+
+  const versioned = manifests.filter((manifest) => !manifest.isPrivate);
+  assert.equal(versioned.length, 7,
+    `the document says SEVEN versioned manifests and this tree has ${versioned.length} — a package added, `
+    + "published or made private changes the sentence, and it is corrected here rather than left to rot");
+
+  const list = unwrapped(decisionList());
+  assert.ok(list.includes("all seven versioned manifests still read `0.0.0`"),
+    "the document must state the claim over the set it is true of — the reviewer refused the unqualified "
+    + "form, and a narrowing that is not in the document narrows nothing");
+  assert.ok(!/every `package\.json`[^.]{0,40}reads `0\.0\.0`/.test(list),
+    "the unqualified sentence must not come back. It was false in this tree from the day @a11ign/control "
+    + "was extracted, and it read as verified because nothing had looked at the manifests");
+  for (const name of ["@a11ign/control", "@a11ign/lab"]) {
+    assert.ok(list.includes(name),
+      `the document must name ${name} as a manifest the claim does NOT cover — a narrowing that hides its `
+      + "own exceptions is the same defect one step quieter");
   }
 });
