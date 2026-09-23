@@ -54,7 +54,8 @@ import { FAULT } from "@a11ign/nvda-worker/capture-faults";
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
 refuseUnknownFlags(["--role=", "--worker=", "--shard=", "--allow-mixed-browsers", "--allow-stale-workers",
-  "--resume"], { entry: import.meta.url, command: "npm run lab:job -- -e job=capture-real-pages" });
+  "--allow-unchecked-fields", "--resume"],
+{ entry: import.meta.url, command: "npm run lab:job -- -e job=capture-real-pages" });
 
 const ROLE = flagValue(process.argv, "role") ?? null;
 const WORKER = flagValue(process.argv, "worker") ?? null;
@@ -62,6 +63,15 @@ const WORKER = flagValue(process.argv, "worker") ?? null;
 const ALLOW_MIXED = process.argv.includes("--allow-mixed-browsers");
 /** Capture with a fleet that is not running this checkout. Says so in the output; never the default. */
 const ALLOW_STALE = process.argv.includes("--allow-stale-workers");
+/**
+ * Capture on guests that were never ASKED about a `MUST_MATCH` field (#2047). Says so in the output,
+ * naming each field and its reporter count; never the default.
+ *
+ * Its own flag rather than a second meaning for `--allow-mixed-browsers`: that one says *the guests
+ * differ and I accept it*, this says *the guests were never asked*, and an operator who accepted the
+ * first must not be taken to have accepted the second.
+ */
+const ALLOW_UNCHECKED_FIELDS = process.argv.includes("--allow-unchecked-fields");
 const OUT = realCorpusRoot();
 
 /**
@@ -379,20 +389,26 @@ async function captureAcrossPool(/** @type {any} */ pages, /** @type {any} */ wo
 }
 
 /**
- * `--allow-mixed-browsers`, applied where the flags are parsed.
+ * The fleet waivers, applied where the flags are parsed.
  *
  * The check itself is `capture-fleet-guard.mjs` — moved out of this file in #2018 so a test can import it
  * without importing the corpus reader above it, which is what kept CI from ever running one. What stays
- * here is the only part that belongs to this script: the flag that says build one corpus from two browser
- * builds anyway. One wrapper rather than the condition at both call sites, so a third call site cannot
- * quietly forget it.
+ * here is the only part that belongs to this script: reading the flags. One wrapper rather than the
+ * conditions at both call sites, so a third call site cannot quietly forget them.
+ *
+ * THEY ARE PASSED IN, NOT APPLIED HERE (#2047), and that is a change from #2018's shape. This used to be
+ * `if (ALLOW_MIXED) return;`, which was the same act as waiving the check while the guard made one
+ * refusal. It makes two now, and an early return here would waive the coverage refusal along with the
+ * browser one — letting an operator who accepted a browser split also silently accept a field no guest
+ * was ever asked, which is the fold `product-manager`'s ruling on #2047 refused. Only the guard can tell
+ * its own two refusals apart, so only the guard may waive one.
  *
  * @param {string[]} workers
  * @param {string} when
  */
 async function assertOneBrowserAcross(workers, when) {
-  if (ALLOW_MIXED) return;
-  await refuseSplitFleet(workers, when);
+  await refuseSplitFleet(workers, when,
+    { allowMixedBrowsers: ALLOW_MIXED, allowUncheckedFields: ALLOW_UNCHECKED_FIELDS });
 }
 
 /**
