@@ -84,9 +84,22 @@ const SELF = "packages/lab/src/packaging/git-population-vacuity.test.ts";
 /** `git branch -r`, `git tag`, `git log`, `git grep`, `git ls-files`, `git show`, `git for-each-ref`,
  * `git diff` (#633) -- every git subcommand that ENUMERATES a population, comments stripped first so a
  * docstring mentioning one (this file's own header, or the sibling divergence test's) cannot be mistaken
- * for a real call. */
+ * for a real call.
+ *
+ * #2028: THE SUBCOMMAND IS NO LONGER REQUIRED TO BE THE FIRST ARRAY ELEMENT. Until this row it was, and
+ * `execFileSync("git", ["-C", REPO, "ls-files", ...])` -- the same call with the repository named git's
+ * own way instead of through `cwd:` -- did not match. The census's assertion ("these tests spawn git to
+ * enumerate a population and are classified nowhere") therefore read CLEAN over a guard it never looked
+ * at, which is the failure mode this whole file exists to name one level down: a result that examined
+ * nothing is indistinguishable from a result that examined everything. `ansible-yaml-parses.test.ts` was
+ * the one real escape, found by grepping the tree for the shape rather than by this pattern.
+ *
+ * The widening is bounded to git's OWN pre-subcommand options -- `-C <path>` and `-c <key>=<value>`,
+ * which is all of them this tree writes -- so the subcommand alternation still decides membership and
+ * CLASSIFICATION's literal guard-string check stays meaningful. It is NOT a step toward tolerating a
+ * wrapped call site; see "DELIBERATELY NOT BROADENED" above, which is unchanged. */
 const SPAWNS_GIT_POPULATION =
-  /\b(?:execFileSync|spawnSync)\(\s*["']git["'],\s*\[\s*["'](?:branch|tag|log|grep|ls-files|show|for-each-ref|diff)/;
+  /\b(?:execFileSync|spawnSync)\(\s*["']git["'],\s*\[\s*(?:["']-[Cc]["'],\s*[^,\]]+,\s*)*["'](?:branch|tag|log|grep|ls-files|show|for-each-ref|diff)/;
 
 function tracked(): string[] {
   return execFileSync("git", ["ls-files", "*.test.ts"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
@@ -426,7 +439,23 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "(every tracked PowerShell file, minus this guard's own deliberately broken control, which is "
       + "itself asserted to be exactly one file), and a floor cannot hold a count (#1067). It is written "
       + "with `cwd` rather than a leading `-C` ON PURPOSE, so that this table finds it -- see the comment "
-      + "at its own spawn, and #2028 for the sibling that escapes this census on argument order.",
+      + "at its own spawn, and #2028 for the sibling that escaped this census on argument order. #2028 has "
+      + "since widened the pattern, so `-C` no longer hides a call and that choice is no longer LOAD-"
+      + "BEARING -- it stays written this way, and the reason stays recorded, because the rewrite is what "
+      + "found the blind spot.",
+  },
+  "packages/lab/src/packaging/ansible-yaml-parses.test.ts": {
+    guard: "assert.equal(ours.length, EXPECTED_FILES",
+    note: "#1274, discovered here only by #2028's widening -- it names its repository with a leading "
+      + "`-C REPO` rather than `cwd:`, so the census could not see it and reported clean over it. It was "
+      + "NEVER UNSAFE, and that is the point of the entry: it already pins `ours.length` EQUAL to "
+      + "`EXPECTED_FILES` (48 today, 47 until #1980 added the shared zero-host include), which is a "
+      + "stronger pin than this census asks for, on a `git ls-files` population it then asserts "
+      + "`deepEqual(unparseable, [])` over. What was missing was not the guard but the CHECK that there "
+      + "was one -- nothing would have noticed had the pin been a floor, or absent. The equality is also "
+      + "the right shape rather than a floor (#1067): the count IS the claim that the walk reached every "
+      + "committed playbook, and its own two positive controls prove the parser can reject and that the "
+      + "walk reaches a named file.",
   },
 };
 
@@ -572,6 +601,32 @@ test("CONTROL: a non-population git call (status, config, rev-parse) is not disc
   const fixture = 'execFileSync("git", ["status", "--porcelain"], opts);\n';
   assert.ok(!SPAWNS_GIT_POPULATION.test(stripComments(fixture)),
     "status/config/rev-parse are not population-enumerating commands -- they are out of this file's scope");
+});
+
+test("#2028 CONTROL: a population named with a leading `-C <path>` is discovered", () => {
+  // The escape this row exists to close, driven on a fixture rather than only on the real tree: the real
+  // tree has exactly one such file today, so an assertion about the tree alone would go green again the
+  // day that file changes shape, having proven nothing about the pattern.
+  const fixture = 'execFileSync("git", ["-C", REPO, "ls-files", `${ANSIBLE}*.yml`], { env: sandboxGitEnv() });\n';
+  assert.ok(SPAWNS_GIT_POPULATION.test(stripComments(fixture)),
+    "`-C <path>` names the repository git's own way -- it is the SAME population call as one written "
+    + "with `cwd:`, and before #2028 this pattern could not see it");
+  assert.ok(SPAWNS_GIT_POPULATION.test(stripComments('spawnSync("git", ["-c", "core.quotePath=false", "log", "--oneline"]);\n')),
+    "`-c <key>=<value>` is the other pre-subcommand option, hidden by the identical order-sensitivity");
+  assert.ok(SPAWNS_GIT_POPULATION.test(stripComments('execFileSync("git", ["-c", "a=b", "-C", REPO, "for-each-ref"]);\n')),
+    "and several of them in a row, since git accepts them repeated");
+});
+
+test("#2028 CONTROL: a `-C` call in PROSE, and a `-C` call to a non-population subcommand, are not discovered", () => {
+  // Both halves are load-bearing. Without the first, the widening could have been a match-anything
+  // pattern and still passed the control above; without the second, `-C` would have become a licence to
+  // ignore the subcommand alternation, which is what makes CLASSIFICATION's guard-string check meaningful.
+  const prose = '/** Prefer execFileSync("git", ["-C", REPO, "ls-files"]) over a bare cwd. */\nexport const x = 1;\n';
+  assert.ok(!SPAWNS_GIT_POPULATION.test(stripComments(prose)),
+    "a docstring showing the shape is not a call -- the existing stripped-source control, on the new shape");
+  assert.ok(!SPAWNS_GIT_POPULATION.test(stripComments('execFileSync("git", ["-C", REPO, "status", "--porcelain"]);\n')),
+    "`status` behind a `-C` is still not a population-enumerating command; the widening moved WHERE the "
+    + "subcommand may appear, not WHICH subcommands count");
 });
 
 test("#633 CONTROL: `diff` is discovered -- the extension this row exists to prove, not merely declare", () => {

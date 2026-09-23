@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { CASES, evidenceUnits, signalMatches, arrowKeysAreInert } from "./case-matrix.mjs";
+import { ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
+import { probeKindFor } from "@a11ign/nvda-worker/capture-pure";
 
 /**
  * The fields of a generated case that these tests read.
@@ -324,4 +326,76 @@ test("#1202 clause 3, FOCUS-TARGET spelling: only the good variant moves focus, 
   assert.ok(!/\.focus\(\)/.test(bad),
     "the bad variant must NOT move focus: if it did, its pair would name two controls too and the gate "
     + "would skip it, leaving a case whose signal cannot fire on either variant");
+});
+
+// ---------------------------------------------------------------------------------------------------
+// #2070: 3.3.1 WHOSE SUBMIT IS NOT NAMED LIKE ONE.
+//
+// Measured 2026-09-23 at `abbaa6adc`: `3.3.1:validation-error-silent` held 143 training positives and
+// `probeKindFor` classified 143 of them `submit`, while the acceptance set carries the other shape at
+// 1 in 6 -- `acceptance-b2-error-vessel`, "Apply for a berth". A held-out case tests GENERALISATION only
+// when the training distribution contains the thing it generalises from; a shape present nowhere in
+// training is not held out, it is unseen.
+//
+// These cases carry NO SIGNAL until the corpus is recaptured under protocol 21 (#1926), because
+// `screenreader_features.py:1015-1017` refuses `taskButton` alone. A flat scorer number before that
+// recapture is this ordering working, not this row having failed.
+// ---------------------------------------------------------------------------------------------------
+
+const validationErrorCases = CASES.filter(
+  (c: { criterion: string; subtype: string }) =>
+    c.criterion === "3.3.1" && c.subtype === "validation-error-silent",
+) as Array<{ id: string; task: string; badSignal: { control?: string } }>;
+
+const probesAsTask = (c: { task: string; badSignal: { control?: string } }) =>
+  probeKindFor(`${c.badSignal.control ?? ""}, button`, { probeForms: true, task: c.task }) === "task";
+
+test("#2070: 20-30 validation-error-silent cases are probed as TASK buttons, asked of the real decider", () => {
+  // CALLING `probeKindFor`, never matching the name against a pattern. "Task-named" is not a prefix test:
+  // the predicate is that the name misses all sixteen `SUBMIT_RE` alternatives AND shares a meaningful
+  // word with the case's own task (rule 4). A name pattern written to stand in for that passes on names
+  // the capture would still classify `submit`, which is the failure mode this assertion exists to refuse.
+  const taskNamed = validationErrorCases.filter(probesAsTask);
+  assert.ok(validationErrorCases.length > 100,
+    `only ${validationErrorCases.length} validation-error-silent cases -- re-read this test`);
+  assert.ok(taskNamed.length >= 20 && taskNamed.length <= 30,
+    `${taskNamed.length} of ${validationErrorCases.length} validation-error-silent cases probe as task `
+    + "buttons, outside the 20-30 band #2070 rules. Below 20 the shape is thin enough to be memorised "
+    + "rather than learned; above 30 training carries it at a higher rate than the acceptance set that "
+    + "tests it (1 in 6), and the submit-named majority -- the real-world majority -- weakens.");
+});
+
+test("#2070: what the matrix DECLARES task-named and what probeKindFor decides are the same set", () => {
+  // Two independent derivations of one population, pinned equal so neither can drift alone -- this is
+  // what lets `submit-is-recognised.test.ts` exempt these cases by ID without weakening itself. A case
+  // named `form-error-taskname-*` that reads `submit` is an ordinary case wearing the prefix; a case that
+  // reads `task` WITHOUT it is the 2026-09-02 accident that file exists to catch ("Confirm booking",
+  // "Create account" -- meant as submits, silently probed as task buttons), arriving through the door
+  // this row opened.
+  const declared = validationErrorCases.filter((c) => /^form-error-taskname-/.test(c.id)).map((c) => c.id).sort();
+  const observed = validationErrorCases.filter(probesAsTask).map((c) => c.id).sort();
+  assert.ok(declared.length > 0, "no case carries the form-error-taskname- prefix -- this comparison would be vacuous");
+  assert.deepEqual(observed, declared);
+});
+
+test("#2070: no training control string for this subtype is reused from the acceptance set", () => {
+  // THE NEGATIVE CONTROL, and it must pass BOTH before and after this row. Reaching for "Apply for a
+  // berth" is the obvious way to write a task-named variant and it would destroy the only held-out case
+  // this criterion has -- the overlap was empty before (121 distinct training controls, 6 acceptance) and
+  // stays empty.
+  const acceptance = (ACCEPTANCE_CASES as readonly unknown[] as Array<{ id: string; criterion: string;
+    subtype: string; task: string; badSignal: { control?: string } }>)
+    .filter((c) => c.criterion === "3.3.1" && c.subtype === "validation-error-silent");
+  // NOT VACUOUS, and here is the positive control by name: the acceptance population is non-empty, and
+  // `acceptance-b2-error-vessel` is the one task-named case in it -- the very case whose held-out status
+  // this whole row exists to make meaningful.
+  assert.ok(acceptance.length > 0, "the acceptance population for this subtype is empty");
+  const heldOut = acceptance.find((c) => c.id === "acceptance-b2-error-vessel");
+  assert.ok(heldOut, "acceptance-b2-error-vessel is gone -- the held-out task-named case this row serves");
+  assert.ok(probesAsTask(heldOut), "acceptance-b2-error-vessel no longer probes as a task button");
+  const trainingControls = new Set(validationErrorCases.map((c) => c.badSignal.control));
+  const reused = acceptance.map((c) => c.badSignal.control).filter((control) => trainingControls.has(control));
+  assert.deepEqual(reused, [],
+    "these acceptance control strings were copied into training, so the acceptance cases carrying them "
+    + "are no longer held out from anything");
 });
