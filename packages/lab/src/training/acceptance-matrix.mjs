@@ -871,7 +871,15 @@ export const ACCEPTANCE_CASES = Object.freeze([
   //
   // Field names and themes disjoint from the corpus's 44 `form-placeholder-*` cases, per this file's own
   // generalisation rule: a held-out case that reuses a training case's vocabulary measures memorisation.
-  formPair({ id: "placeholder-postcode", title: "Delivery details", label: "Delivery postcode", name: "delivery-postcode", placeholderOnly: true, task: "Enter the delivery postcode." }),
+  //
+  // AND THE FAMILY THAT WAS CHECKED WAS NOT THE FAMILY THAT COLLIDED (#2114). The line above is true and
+  // was not enough: this pair read `task: "Enter the delivery postcode."` with `label: "Delivery postcode"`,
+  // which is `form-unlabelled-library`'s task and label verbatim — a `form-unlabelled-*` case, not one of
+  // the 44 `form-placeholder-*` the comment names. Disjointness from the SUBTYPE's own family was checked
+  // by eye and the rest of the corpus was not, because nothing compared the two sets at all until #2100's
+  // `held-out-is-disjoint-from-training.test.ts`. Re-themed to a meter serial, which collides with no
+  // training task, control or label; the recapture that cost is recorded on #2114.
+  formPair({ id: "placeholder-meter-serial", title: "Energy account", label: "Meter serial number", name: "meter-serial", placeholderOnly: true, task: "Enter the meter serial number." }),
   formPair({ id: "placeholder-reference", title: "Warranty claim", label: "Warranty reference", name: "warranty-reference", placeholderOnly: true, task: "Enter the warranty reference." }),
   formPair({ id: "field-company", title: "Supplier form", label: "Company name", name: "company", task: "Enter the supplier company name." }),
 
@@ -962,8 +970,13 @@ export const ACCEPTANCE_CASES = Object.freeze([
     waiting: "Checking stock, please wait.", task: "Check stock and notice whether anything is announced while it works." }),
   waitingStatusPair({ id: "status-waiting-postage", title: "Postage quote", control: "Check postage",
     waiting: "Checking postage, please wait.", task: "Check postage and notice whether anything is announced while it works." }),
-  progressStatusPair({ id: "status-progress-application", title: "Application form", control: "Continue to step 2",
-    progress: "Step 2 of 4", task: "Continue to step 2 and notice whether the step change is announced." }),
+  // #2114: was `control: "Continue to step 2"` / `task: "Continue to step 2 and notice whether the step
+  // change is announced."` — the task AND the control of the training case `status-progress-signup` and its
+  // four multi-defect variants, differing from the training spelling by one leading capital. "Continue to
+  // eligibility" is this case's own vocabulary and appears in no training task or control; the step the
+  // indicator advances to is unchanged, so the exercise is the same shape and none of the words are.
+  progressStatusPair({ id: "status-progress-application", title: "Application form", control: "Continue to eligibility",
+    progress: "Step 2 of 4", task: "Continue to eligibility and notice whether the step change is announced." }),
   progressStatusPair({ id: "status-progress-booking", title: "Booking form", control: "Continue to dates",
     progress: "Step 2 of 4", task: "Continue to dates and notice whether the step change is announced." }),
   statusPair({ id: "status-local", title: "Local items", control: "Show local items", task: "Show local items and notice the result count." }),
