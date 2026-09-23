@@ -22,6 +22,7 @@ import { NOT_STARTABLE } from "../../../agent-org/src/work-gate.mjs";
 import { CLAIM_LABEL } from "../../../agent-org/src/claim-labels.mjs";
 import {
   READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, handClaims, strandedByIncompleteDecline,
+  bothBoardLabels,
   claimsNobodyIsWorking,
   releaseDeclarationDrift,
   fetchOpenIssues, fetchOpenIssuesChecked, fetchReportedOpenIssueNumbers, openIssueSetSummary, fetchAllIssues, fetchIssues, closedDebris,
@@ -59,8 +60,8 @@ test("ready + disputed is caught, exactly tonight's #13", () => {
 });
 
 test("#673: ready + in-progress + session:* is NO LONGER a mutexViolations match -- #246's shape moved " +
-  "to its own check (handClaims, below), since it names a cause row-claim.mjs's own atomicity makes " +
-  "provable rather than a generic pair to remove one of", () => {
+  "to its own check (handClaims, below), since it names a cause and a remedy rather than a generic pair " +
+  "to remove one of", () => {
   const issues = [
     { number: 230, title: "t", labels: ["backlog", READY_LABEL, "in-progress", "session:worker-judge"] },
     { number: 223, title: "t", labels: ["backlog", READY_LABEL, "in-progress", "session:worker-capture"] },
@@ -121,8 +122,11 @@ test("MUTATION: review-only is genuinely in MUTEX_LABELS, not just described as 
     "review-only must be in MUTEX_LABELS -- it is #27's own shape, the reason this label exists at all");
 });
 
-// --- handClaims: #673 -- ready + in-progress together, which row-claim.mjs's own atomic label-write
-// can never produce, so this co-occurrence is proof the claim was made some other way ---
+// --- handClaims: #673 -- ready + in-progress together, which a COMPLETED claim through row-claim.mjs
+// does not leave behind, so the co-occurrence is strong evidence the claim was made some other way. NOT
+// proof: #749 split the claim's additions and its `ready` removal into two calls (because #677 reproduced
+// one combined edit half-applying), so a claim whose second call never landed leaves this same pair
+// (#2111 rework) ---
 
 test("#673 ACCEPTANCE: a row hand-claimed by applying in-progress + session:x to a ready row is " +
   "reported as a hand claim", () => {
@@ -1113,19 +1117,19 @@ test("#546: notRun defaults to a fresh array when the caller does not pass one -
     + "refusal -- it is simply not recorded anywhere the caller can see, same as before this test existed");
 });
 
-test("CHECKS names all fifteen, so the partial-audit sentence states a true denominator", () => {
+test("CHECKS names all sixteen, so the partial-audit sentence states a true denominator", () => {
   // #1130 added the twelfth, #1163 the thirteenth, and the waits-in-prose witness the fourteenth. This pin is why: the audit's own "N of M check(s) did
   // not answer" sentence reads M from `CHECKS.length`, so a check added without updating the denominator
   // would make every partial-audit report understate what it failed to examine.
   //
   // It caught #1163's entry within a minute of it being added, and the fourteenth the same way,
   // which is the whole of its job.
-  assert.equal(CHECKS.length, 15);
+  assert.equal(CHECKS.length, 16);
   assert.deepEqual(CHECKS.map(([what]) => what), [
     "open issues", "hand claims", "labelless rows", "declined rows", "closed issues",
     "board membership", "closing PR references", "claim activity", "closed-row provenance",
     "closing PR never merged", "coverage vs tracker", "release declaration", "filing guidance",
-    "waits stated in prose", "rows no cause can reach",
+    "waits stated in prose", "rows no cause can reach", "half-promoted rows",
   ]);
 });
 
@@ -1726,4 +1730,69 @@ test("#2008: a claim whose holder has gone is reportDeadClaims' finding, handed 
     }).map((c) => c.number),
     [1966],
     "and reportDeadClaims still sees it, on the `in-progress` label this check now skips");
+});
+
+/**
+ * #2111: A ROW CARRYING BOTH BOARD LABELS IS HALF-PROMOTED -- the opposite defect to `invisibleRows`.
+ *
+ * Promoting a row was three separate hand writes with nothing doing them together: add `ready`, remove
+ * `backlog`, move the Status to `Ready`. Miss the middle one and nothing reported it. Measured
+ * 2026-09-23: #2050 and #2110, promoted by hand, both carrying both labels for roughly 25 minutes, and
+ * the only two of the eight ready rows in that state -- the other six were clean, so it is the promotion
+ * ACT rather than drift over time. Found by `ceo`, not by any check.
+ *
+ * THE FIXTURE IS CONSTRUCTED, NOT LIVE ORG STATE, AND THAT IS THE ROW'S OWN CLAUSE 4 (`ceo`, 2026-09-23).
+ * A check over the live population would pass by examining nothing: the only two rows ever in this state
+ * were cleared the moment the defect was found -- deliberately, because leaving a real row miscounted to
+ * keep a check red would be falsifying the org's own state to serve a row -- and `row-file --promote`
+ * would clear any future one before a test could see it. A constructed pair is permanent and depends on
+ * nothing outside this suite.
+ *
+ * THE POSITIVE CONTROL for the two emptiness assertions below is the first test here: a row carrying
+ * both IS reported, by number. Without it, `bothBoardLabels` could return `[]` for everything and every
+ * assertion in this block would still pass.
+ */
+test("#2111 ACCEPTANCE, MUTATION TARGET: a row carrying BOTH backlog and ready is reported by number", () => {
+  const found = bothBoardLabels([
+    { number: 2050, title: "promoted by hand", labels: ["backlog", READY_LABEL, "lane:any"] },
+    { number: 2110, title: "promoted by hand too", labels: [READY_LABEL, "backlog"] },
+    { number: 1, title: "cleanly promoted", labels: [READY_LABEL, "lane:any", "out-of-release"] },
+  ]);
+  assert.deepEqual(found.map((r) => r.number), [2050, 2110]);
+  // The labels travel with the finding: the report prints them, so a reader can see WHICH promotion this
+  // was without opening the row.
+  assert.deepEqual(found[0].labels, ["backlog", READY_LABEL, "lane:any"]);
+});
+
+test("#2111: a row carrying ONLY ready is a correctly promoted row, and is not a finding", () => {
+  // This is the assertion that makes the check worth having rather than merely present: every cleanly
+  // promoted row on the board is this shape, so a predicate keyed on `ready` alone would report the
+  // whole Ready lane. The positive control is the test above.
+  assert.deepEqual(bothBoardLabels([
+    { number: 2, title: "ready, correctly", labels: [READY_LABEL] },
+    { number: 3, title: "ready in a lane", labels: [READY_LABEL, "lane:orchestrator", "fleet-gated"] },
+  ]), []);
+});
+
+test("#2111: a row carrying ONLY backlog is an unpromoted row, and is not a finding either", () => {
+  // The other half of the pair. `backlog` alone is the state every row is FILED in.
+  assert.deepEqual(bothBoardLabels([
+    { number: 4, title: "filed, not yet promoted", labels: ["backlog", "lane:any"] },
+    { number: 5, title: "no labels at all", labels: [] },
+  ]), []);
+  assert.deepEqual(bothBoardLabels([]), []);
+  assert.deepEqual(bothBoardLabels(undefined as never), []);
+});
+
+test("#2111: `backlog` is deliberately NOT in MUTEX_LABELS -- this check exists because the remedy "
+  + "differs, not because the pair was unlisted", () => {
+  // `mutexViolations` would report the same rows if `backlog` joined its list, with its own generic
+  // wording: "remove one or the other". That is wrong here. The promotion is a real, deliberate, later
+  // act, so the answer is always to remove `backlog` and never `ready`. Same argument `handClaims`
+  // makes for its own separate check (#673). If someone ever adds `backlog` to MUTEX_LABELS, this
+  // assertion is what says the two checks have started reporting one row twice with opposite advice.
+  assert.ok(!MUTEX_LABELS.includes("backlog"),
+    `MUTEX_LABELS must not contain \`backlog\`: ${MUTEX_LABELS.join(", ")}`);
+  assert.deepEqual(mutexViolations([{ number: 2050, title: "half-promoted", labels: ["backlog", READY_LABEL] }]), [],
+    "the half-promoted row is bothBoardLabels' finding, not mutexViolations', and only one of them may own it");
 });
