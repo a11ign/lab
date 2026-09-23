@@ -1,0 +1,124 @@
+"""The evaluator must REFUSE records whose case definitions the code does not have (#2094).
+
+The capture path has checked this since #958 and the evaluator never did. Measured on the lab
+2026-09-23: `runs/screenreader-acceptance/repeat-1.jsonl` held 436 records of which **290 named
+`acceptance-b3-*` cases that exist on no branch reachable from `main`** — introduced by `22af7eeb3`,
+which never had a pull request. `training:capture` refused the moment a capture was attempted against
+that manifest; `job=acceptance` scored the stored records of those same cases and reported a number.
+Two rows closed on numbers derived that way (#1852's 436-record floor, #37's 0.873% Wilson bound), and
+neither is reproducible from this repository — which is the one property a held-out number exists to have.
+
+**The positive control is the first test below**, and it is named as one: a fixture where a single record
+names a case the set does not define, asserting the refusal NAMES that id. Without it the two tests that
+assert a clean set passes would both hold against a guard that never fires, which is precisely the
+failure being fixed — a check that cannot see the thing it is for.
+
+`defined_case_ids()` is exercised separately and for its own reason: it shells out to node, and a
+silently empty result would make every record unknown and fire this refusal over the whole corpus. That
+reads as a corpus defect when the fault is that node did not run.
+"""
+import importlib.util
+import sys
+from pathlib import Path
+
+import pytest
+
+EVALUATOR = Path(__file__).resolve().parents[1] / "scripts" / "evaluate-screenreader-acceptance.py"
+
+_spec = importlib.util.spec_from_file_location("evaluate_screenreader_acceptance", EVALUATOR)
+evaluator = importlib.util.module_from_spec(_spec)
+sys.modules["evaluate_screenreader_acceptance"] = evaluator
+_spec.loader.exec_module(evaluator)
+
+DEFINED = {"acceptance-generic-lantern", "acceptance-filename-orchard"}
+
+
+def record(case_id, variant="bad"):
+    return {"provenance": {"caseId": case_id, "variant": variant}, "target": {"criteria": []}}
+
+
+KNOWN = [record("acceptance-generic-lantern"), record("acceptance-filename-orchard")]
+UNKNOWN = record("acceptance-b3-error-badge")
+
+
+def test_a_record_naming_an_undefined_case_is_named_in_the_refusal():
+    """THE POSITIVE CONTROL. One unknown id among known ones, and the refusal must say which."""
+    with pytest.raises(SystemExit) as refusal:
+        evaluator.assert_cases_exist({"repeat-1.jsonl": KNOWN + [UNKNOWN]}, DEFINED)
+    message = str(refusal.value)
+    assert "acceptance-b3-error-badge" in message, (
+        f"the refusal must name the case that does not exist, or it cannot be acted on: {message}")
+    assert "repeat-1.jsonl" in message, "and which file the records came from"
+    assert "1 of 3 records" in message, f"and how much of that file it is: {message}"
+
+
+def test_a_set_whose_cases_all_exist_is_scored():
+    evaluator.assert_cases_exist({"repeat-1.jsonl": KNOWN}, DEFINED)
+
+
+def test_the_count_is_per_file_and_not_summed_across_repeats():
+    """A held-out floor and a Wilson bound are both stated at the size of ONE repeat.
+
+    `resolution()` in the evaluator takes `min(record_counts)` for exactly this reason: two repeats of
+    436 are 436 independent observations, not 872. A refusal that reported 580 would be a count of
+    nothing any reader compares anything against.
+    """
+    with pytest.raises(SystemExit) as refusal:
+        evaluator.assert_cases_exist(
+            {"repeat-1.jsonl": KNOWN + [UNKNOWN], "repeat-2.jsonl": KNOWN + [UNKNOWN]}, DEFINED)
+    message = str(refusal.value)
+    assert "1 of 3 records" in message and "2 of 6" not in message, (
+        f"each repeat is counted on its own: {message}")
+    assert message.count("repeat-") >= 2, f"and both are named: {message}"
+
+
+def test_a_record_with_no_case_id_is_a_finding_and_not_a_skip():
+    """Unattributable is the same failure from the reader's side, and skipping it is the subset-scoring
+    this guard refuses."""
+    with pytest.raises(SystemExit) as refusal:
+        evaluator.assert_cases_exist({"repeat-1.jsonl": KNOWN + [{"provenance": {}}]}, DEFINED)
+    assert evaluator.NO_CASE_ID in str(refusal.value)
+
+
+def test_unknown_ids_are_counted_per_id():
+    """The predicate itself: id -> how many records name it, so a refusal can say whether one case
+    drifted or a whole family did."""
+    counts = evaluator.unknown_case_ids(KNOWN + [UNKNOWN, UNKNOWN, record("acceptance-b3-error-taxi")],
+                                        DEFINED)
+    assert counts == {"acceptance-b3-error-badge": 2, "acceptance-b3-error-taxi": 1}
+
+
+def test_many_unknown_ids_are_truncated_with_the_remainder_stated():
+    """Bounded, and the bound is stated — a refusal nobody reads is its own kind of silence."""
+    extra = evaluator.NAMED_UNKNOWN_CASES + 3
+    with pytest.raises(SystemExit) as refusal:
+        evaluator.assert_cases_exist(
+            {"repeat-1.jsonl": [record(f"acceptance-b3-{n}") for n in range(extra)]}, DEFINED)
+    message = str(refusal.value)
+    assert f"... and {extra - evaluator.NAMED_UNKNOWN_CASES} more" in message, message
+
+
+def test_the_defined_set_is_read_from_the_javascript_that_declares_it():
+    """The premise, stated as an assertion — the shape `test_grants_map_is_current.py` records.
+
+    If `defined_case_ids` ever returned an empty or tiny set (a renamed export, a moved file), the guard
+    would fire over the entire corpus and read as a corpus defect. It refuses loudly instead, and this
+    pins that it is reading the real set rather than something that happens not to be empty.
+    """
+    defined = evaluator.defined_case_ids()
+    assert len(defined) >= 50, f"expected the full acceptance set, got {len(defined)}: {sorted(defined)}"
+    assert all(case_id.startswith("acceptance-") for case_id in defined), sorted(defined)[:5]
+
+
+def test_the_corpus_the_gate_reads_is_judged_against_that_set_and_not_a_copy():
+    """No `acceptance-b3-*` id is defined at this commit, which is the fact #2094 was filed on.
+
+    Stated here rather than only in the row, because a later branch that lands those 146 pairs must make
+    this test fail loudly and be updated deliberately — that is the review this corpus growth never got.
+    """
+    defined = evaluator.defined_case_ids()
+    b3 = sorted(case_id for case_id in defined if case_id.startswith("acceptance-b3-"))
+    assert b3 == [], (
+        f"`acceptance-b3-*` cases are defined now ({len(b3)}): {b3[:5]}. If they were landed through a "
+        "reviewed pull request, delete this test and say so in the commit; if they arrived any other way, "
+        "that is #2094 happening again.")
