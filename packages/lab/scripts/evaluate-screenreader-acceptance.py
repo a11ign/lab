@@ -756,6 +756,46 @@ def stamp_generalisation(report_path: Path, passed: bool, reasons: list[str], di
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
+# WHAT AN ABSENT `captureProtocol` IS REPORTED AS. A name, not `None`, for `NO_CASE_ID`'s reason one
+# section up: the census is read by `jq` out of the report, and a JSON `null` key is not expressible while
+# a missing key reads as "no such records" rather than as the finding. Absence IS the finding here —
+# `export-screenreader-dataset.mjs` only began stamping the protocol on 2026-09-22, and 3,742 of 3,742
+# records carried none before it.
+ABSENT_PROTOCOL = "absent"
+
+
+def capture_protocol_census(records: list[dict[str, Any]]) -> dict[str, int]:
+    """How many of these records were captured under each `captureProtocol`, keyed by the protocol.
+
+    THE REPORT COULD NOT SAY WHAT ITS OWN INPUTS WERE CAPTURED UNDER, and #1918 is what that costs. Its
+    fix lands in two halves that meet nowhere in this file: `formChanges[].submitted` is written at
+    CAPTURE time (protocol 21), and `_is_submit` reads it at SCORING time. Run the evaluator over an
+    export taken before the recapture and every result is what a broken fix looks like — the same false
+    negatives, on a codebase where the defect is already fixed. The row spent three paragraphs of prose
+    telling a later reader not to make that mistake, which is the form this repository loses.
+
+    A CENSUS AND NOT A FLOOR, deliberately. Which protocol a reading REQUIRES is the question's, not this
+    evaluator's: #1918 wants 21, a reading taken in August legitimately wanted 17, and a hard minimum here
+    would be this file guessing at the caller's question and refusing every other one. What the evaluator
+    owes the reader is the fact; the Acceptance that needs 21 asserts on it (`jq`, off
+    `lab:fetch -e artifact=acceptance-report`) and can then tell **UNMET** — not yet recaptured — from
+    **FAILED**, which is the distinction the whole row turns on.
+
+    PER FILE, for `assert_cases_exist`'s reason: a repeat is an independent observation of the same pages,
+    so a census summed across repeats describes no set. A mixed export is the interesting case and it
+    survives the counting — `{"21": 290, "20": 146}` says exactly which half is stale.
+    """
+    counts: dict[str, int] = defaultdict(int)
+    for record in records:
+        # `or {}` twice, and not `.get(k, {})`: a record can carry `"provenance": null` or
+        # `"environment": null`, and a default covers only the absent key. This runs over every evaluated
+        # record, so an AttributeError here would replace a report with a traceback.
+        environment = (record.get("provenance") or {}).get("environment") or {}
+        protocol = environment.get("captureProtocol")
+        counts[ABSENT_PROTOCOL if protocol is None else str(protocol)] += 1
+    return dict(counts)
+
+
 # The z of a two-sided 95% interval. Named because #37's Acceptance is stated at 95% and a reader of the
 # report must be able to see which confidence the bound below was computed at.
 RESOLUTION_CONFIDENCE = 0.95
@@ -785,11 +825,24 @@ def resolution(record_counts: list[int]) -> dict[str, Any]:
     }
 
 
-def report_skeleton(record_counts: dict[str, int], artifact: dict[str, Any], diagnostic: bool) -> dict[str, Any]:
-    """The report before any criterion is measured: what was read, from which weights, at what resolution."""
+def report_skeleton(by_path: dict[str, list[dict[str, Any]]], artifact: dict[str, Any],
+                    diagnostic: bool) -> dict[str, Any]:
+    """The report before any criterion is measured: what was read, from which weights, at what resolution.
+
+    TAKES THE RECORDS, NOT A COUNT OF THEM, since #1918. It took `{path: count}` while the only per-file
+    fact it reported was the count; `captureProtocols` is a second fact about the same files, and handing
+    this function a count plus a census would be two projections of one thing that can disagree.
+    """
+    record_counts = {path: len(records) for path, records in by_path.items()}
     return {
         "schema": "a11ign/screenreader-scorer-acceptance",
-        "data": [{"path": path, "records": count} for path, count in record_counts.items()],
+        # `captureProtocols` beside `records` and not in a block of its own: they answer one question --
+        # what was read -- and a reader asserting on the protocol of a file wants its record count in the
+        # same object to see whether the census covers all of it.
+        "data": [
+            {"path": path, "records": record_counts[path], "captureProtocols": capture_protocol_census(records)}
+            for path, records in by_path.items()
+        ],
         "artifact": artifact,
         "resolution": resolution(list(record_counts.values())),
         "criteria": {},
@@ -841,11 +894,7 @@ def main() -> None:
     }
     import numpy as np
 
-    result = report_skeleton(
-        {path: len(records) for path, records in by_path.items()},
-        artifact,
-        diagnostic=bool(args.allow_ineligible),
-    )
+    result = report_skeleton(by_path, artifact, diagnostic=bool(args.allow_ineligible))
     stability_inputs: dict[str, list[tuple[str, Any, float]]] = {}
     stability_records: dict[str, list[dict[str, Any]]] = {}
     for criterion, criterion_report in report["criteria"].items():
