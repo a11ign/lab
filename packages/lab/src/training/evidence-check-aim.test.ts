@@ -13,12 +13,13 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { CASES } from "./case-matrix.mjs";
 import { drainAcrossPool } from "./worker-pool.mjs";
 import {
-  narrowTo, stratify, resultRow, caseComparer, countUncomparedAgainstCoverage,
+  narrowTo, stratify, resultRow, caseComparer, countUncomparedAgainstCoverage, writeReports,
 } from "../../scripts/evidence-check.mjs";
 
 /** #1908's family, and the string its seven cases embed. */
@@ -224,7 +225,33 @@ test("every report row is built by resultRow, so no path can record one without 
       + "is where the capturing worker is recorded. A row built any other way silently has no worker, and "
       + "the report goes back to naming a box that may not have captured anything.");
   }
-  assert.match(source, /JSON\.stringify\(\{ workers, results, summary \}/,
-    "the report's top level lists the pool AS DISPATCHED (`workers`), not a singular `worker` — which was "
-    + "`workers[0]` and therefore the same value whichever box did the work");
+});
+
+test("#1948: the report's top level names the POOL, and no singular `worker` returns to it", () => {
+  // WAS A SOURCE REGEX pinning the literal `JSON.stringify({ workers, results, summary }`, which stopped
+  // being readable the moment #2122 gave the report three more fields — and would have gone on passing if
+  // `workers` had been renamed inside a differently-spelled literal. `writeReports` is exported now, so
+  // this asks the writer instead of the file: run it, read what it wrote, and look at the keys.
+  const dir = mkdtempSync(join(tmpdir(), "evidence-check-aim-"));
+  try {
+    const { latest } = writeReports({
+      workers: ["http://worker-2:7331", "http://worker-3:7331"],
+      results: [resultRow({ testCase: { id: FAMILY }, variant: "good", worker: "http://worker-3:7331",
+        comparison: { verdict: "SAME" } })],
+      summary: { compared: 1 },
+      out: dir, runs: join(dir, "runs"),
+    });
+    const report = JSON.parse(readFileSync(latest, "utf8"));
+    assert.deepEqual(report.workers, ["http://worker-2:7331", "http://worker-3:7331"],
+      "the pool AS DISPATCHED, in full");
+    assert.equal("worker" in report, false,
+      "and NO singular `worker` at the top level — it was `workers[0]`, the first url on the argv, so it "
+      + "named the same box whether or not that box did any of the work. The per-row `worker` below is "
+      + "the one that answers that question.");
+    assert.equal(report.results[0].worker, "http://worker-3:7331",
+      "the positive control for the assertion above: a `worker` key EXISTS in this report, on the row "
+      + "where it is a measurement, so `\"worker\" in report` is false by absence and not by an empty file");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
