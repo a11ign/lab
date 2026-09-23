@@ -82,83 +82,34 @@ export function sharedExercises({ training, heldOut }: {
   return offenders;
 }
 
-/**
- * THE TWO THAT PREDATE THIS GUARD, NAMED RATHER THAN EXCLUDED BY A PATTERN.
+/*
+ * THE ALLOWLIST IS GONE, AND WHAT IT RECORDED IS WHY IT MUST NOT COME BACK CASUALLY (#2114).
  *
- * Both are original acceptance cases on `main`, not part of the 146 this guard was written for. They are
- * listed instead of fixed because fixing one means REDEFINING a case that the lab's stored captures were
- * taken under, which is exactly what `capture-screenreader-dataset.mjs`'s manifest guard refuses and what
- * #2094 is about: the repair costs a recapture and belongs to a row that budgets for one.
+ * This file shipped with `KNOWN_PRE_EXISTING`, three fingerprints naming the two ORIGINAL acceptance cases
+ * that repeated a training exercise — `acceptance-placeholder-postcode` (its task, shared with
+ * `form-unlabelled-library`) and `acceptance-status-progress-application` (its task AND its control, shared
+ * with `status-progress-signup` and its four multi-defect variants). They were listed rather than fixed
+ * because fixing one REDEFINES a case whose captures were already taken, which costs a recapture.
  *
- * The list is exact in both directions — an entry that stops colliding fails this test too — so it cannot
- * quietly outlive the problem it records.
+ * #2114 paid that recapture. Both cases now carry their own vocabulary — a meter serial and an
+ * eligibility step — so every entry went stale at once. Emptying the list would have left THREE assertions
+ * that can no longer fail: the staleness check below it, `illegitimateExceptions` over an empty list, and
+ * the two-originals-are-legitimate test. This file's own message said to delete rather than leave one of
+ * those, so the list, the legitimacy rule that policed it (`legitimateExceptions` /
+ * `illegitimateExceptions`, the growth-batch prefix refusal, the provenance refusal) and the four tests
+ * that exercised them are deleted together. The assertion below now
+ * filters NOTHING.
+ *
+ * **That is stronger than an empty allowlist, and the reason is `reviewer-2`'s mutation on #2108.** Their
+ * bypass was: put a held-out case back to a training task (1 red), then add its two fingerprints to the list
+ * (0 red) — the guard switched off, one line per case, by the population it was written for. The
+ * legitimacy rule made that bypass refuse. Deleting the mechanism means there is no line to add at all.
+ *
+ * SO: A NEW COLLISION IS FIXED BY GIVING THE CASE ITS OWN VOCABULARY, NEVER BY RESTORING THIS LIST. Before
+ * a case's first capture that is free; after one it costs a recapture, which is a row with a fleet budget
+ * and not a line in a file. If a future debt genuinely has to be recorded, that row argues for a mechanism
+ * from scratch — re-adding an allowlist here re-creates the bypass.
  */
-const KNOWN_PRE_EXISTING = [
-  "acceptance-placeholder-postcode:task",
-  "acceptance-status-progress-application:control",
-  "acceptance-status-progress-application:task",
-] as const;
-
-/**
- * AN ALLOWLIST THE GUARD'S OWN SUBJECT CAN JOIN IS NOT A GUARD — `reviewer-2` on #2108, 2026-09-23.
- *
- * The first version of this file checked `KNOWN_PRE_EXISTING` only for *current collision* and
- * *staleness*, and the reviewer's mutation went straight through it: put `b3-status-plot` back to the
- * training task (1 red), then add its two fingerprints to the list (0 red). **The guard written to stop a
- * held-out case repeating a training exercise could be switched off, one line per case, by the very
- * population it was written for.**
- *
- * So an exception now has to be LEGITIMATE, and legitimacy is a property of the case rather than a line in
- * a list:
- *
- *   1. **It must predate the held-out growth batches.** Every batch prefixes the ids it adds —
- *      `b2-` (2026-08-23) and `b3-` (#2100) — so a case from one is refused by shape. A new collision is
- *      fixed by giving the case its own vocabulary, which costs nothing before its first capture; the
- *      whole reason the two below are DEBT is that theirs has already been taken.
- *   2. **It must be one of the two originals this list records**, so an exception cannot be minted for a
- *      case added under a new naming convention either.
- *
- * AND THE FILTER BELOW USES `legitimateExceptions`, NOT `KNOWN_PRE_EXISTING`. That placement is the point:
- * an illegitimate entry fails the legitimacy test AND still does not suppress its offender, so the
- * reviewer's mutation stays red in the main assertion even if this meta-test is deleted with it. An
- * allowlist can always be edited — what is gone is the one-line bypass.
- */
-const PRE_EXISTING_CASE_IDS = [
-  "acceptance-placeholder-postcode",
-  "acceptance-status-progress-application",
-] as const;
-
-/** Held-out growth batches prefix every id they add: `b2-`, `b3-`, and whatever the next one is called. */
-const GROWTH_BATCH_ID = /^acceptance-b\d+-/;
-
-const caseIdOf = (entry: string) => entry.slice(0, entry.lastIndexOf(":"));
-
-/** Why an exception may not be taken at its word; empty when it may. */
-function exceptionRefusal(entry: string): string | null {
-  const id = caseIdOf(entry);
-  if (GROWTH_BATCH_ID.test(id)) {
-    return `${id} was added by a held-out growth batch, so it has no capture to protect.`
-      + " Give the case its own vocabulary instead — that is free before its first capture.";
-  }
-  if (!(PRE_EXISTING_CASE_IDS as readonly string[]).includes(id)) {
-    return `${id} is not one of the pre-existing acceptance cases this list records`
-      + ` (${PRE_EXISTING_CASE_IDS.join(", ")}), so nothing establishes that excepting it costs a recapture.`;
-  }
-  return null;
-}
-
-/** @returns the entries that may suppress an offender, which is never all of them by construction. */
-export function legitimateExceptions(entries: readonly string[]): string[] {
-  return entries.filter((entry) => exceptionRefusal(entry) === null);
-}
-
-/** @returns `{entry, reason}` for every exception that may NOT suppress an offender. */
-export function illegitimateExceptions(entries: readonly string[]): { entry: string; reason: string }[] {
-  return entries.flatMap((entry) => {
-    const reason = exceptionRefusal(entry);
-    return reason === null ? [] : [{ entry, reason }];
-  });
-}
 
 const fingerprint = (offender: Offender) => `${offender.id}:${offender.field}`;
 
@@ -171,48 +122,22 @@ test("no held-out case reuses a training case's task or control", () => {
     heldOut: ALL_ACCEPTANCE_CASES as readonly Case[],
   });
 
-  const excepted = legitimateExceptions(KNOWN_PRE_EXISTING);
-  const unexpected = offenders.filter((o) => !excepted.includes(fingerprint(o)));
-  assert.deepEqual(unexpected.map(fingerprint), [],
+  assert.deepEqual(offenders.map(fingerprint), [],
     "These held-out cases reuse a training case's task or control verbatim:\n  "
-    + unexpected.map((o) => `${o.id} — ${o.field} "${o.value}" is also ${o.trainingIds.slice(0, TRAINING_IDS_SHOWN).join(", ")}`)
+    + offenders.map((o) => `${o.id} — ${o.field} "${o.value}" is also ${o.trainingIds.slice(0, TRAINING_IDS_SHOWN).join(", ")}`)
       .join("\n  ")
     + "\n\nA held-out set that repeats the training set measures memorisation and reports it as"
-    + "\ngeneralisation, which is the one thing the acceptance number exists not to do. Give the case"
-    + "\nits own vocabulary; do not add it to KNOWN_PRE_EXISTING, which is a record of debt that costs a"
-    + "\nrecapture to clear, not a way to admit new cases — and which will not suppress a growth-batch"
-    + "\ncase anyway, because this assertion filters by legitimateExceptions and not by the raw list.");
-});
-
-test("every recorded exception is legitimate — the list cannot admit the cases this guard is for", () => {
-  const refused = illegitimateExceptions(KNOWN_PRE_EXISTING);
-
-  assert.deepEqual(refused, [],
-    "KNOWN_PRE_EXISTING records exceptions that nothing entitles it to:\n  "
-    + refused.map((r) => `${r.entry} — ${r.reason}`).join("\n  "));
-});
-
-test("the recorded pre-existing overlaps still exist, so the list cannot outlive them", () => {
-  assert.ok(KNOWN_PRE_EXISTING.length > 0,
-    "KNOWN_PRE_EXISTING is empty, so this test examines nothing. If the debt really is cleared, delete"
-    + " this test with it rather than leaving an assertion that can no longer fail.");
-
-  const found = new Set(sharedExercises({
-    training: CASES as readonly Case[],
-    heldOut: ALL_ACCEPTANCE_CASES as readonly Case[],
-  }).map(fingerprint));
-
-  const stale = KNOWN_PRE_EXISTING.filter((entry) => !found.has(entry));
-  assert.deepEqual(stale, [],
-    `KNOWN_PRE_EXISTING names overlaps that no longer exist: ${stale.join(", ")}.`
-    + " Delete them — a debt list that is not exact stops being evidence of anything.");
+    + "\ngeneralisation, which is the one thing the acceptance number exists not to do. Give the case its"
+    + "\nown vocabulary — free before its first capture, a recapture after one. There is no allowlist to"
+    + "\nadd it to, and restoring one is not the fix; see the note above this test.");
 });
 
 /*
- * THE POSITIVE CONTROLS. The assertions above are `deepEqual(…, [])` over a population derived from a
- * CALL, which passes just as readily when the detector is broken as when the corpus is clean. These two
- * are where this file proves it can fail, and they run against fixtures so they stay true whatever the
- * corpus becomes.
+ * THE POSITIVE CONTROLS. The assertion above is `deepEqual(…, [])` over a population derived from a CALL,
+ * which passes just as readily when the detector is broken as when the corpus is clean — and since #2114
+ * cleared the last recorded offender it is the ONLY assertion in this file over the real corpus, so these
+ * two fixtures are the whole of what proves it can fail. They run against fixtures on purpose, so they stay
+ * true whatever the corpus becomes.
  */
 test("a held-out case sharing a training task is named, and its clean sibling is not", () => {
   const training = [{ id: "train-allotment", task: "Show available plots and notice the result count." }];
@@ -234,37 +159,4 @@ test("a held-out case sharing only a training control is named", () => {
   const offenders = sharedExercises({ training, heldOut });
 
   assert.deepEqual(offenders.map(fingerprint), ["held-plot:control"]);
-});
-
-/*
- * THE BYPASS CONTROL. `illegitimateExceptions(KNOWN_PRE_EXISTING)` is another `deepEqual(…, [])` over a
- * population derived from a call, so here is where it is shown to fail: the first of these is
- * `reviewer-2`'s own mutation on #2108, entry for entry.
- */
-test("the reviewer's bypass is refused: a growth-batch case cannot be excepted", () => {
-  const bypass = ["acceptance-b3-status-plot:task", "acceptance-b3-status-plot:control"];
-
-  const refused = illegitimateExceptions([...KNOWN_PRE_EXISTING, ...bypass]);
-
-  assert.deepEqual(refused.map((r) => r.entry), bypass);
-  assert.match(refused[0]!.reason, /added by a held-out growth batch/);
-  // And the entry does not suppress anything either, which is the half that survives deleting a test.
-  assert.deepEqual(legitimateExceptions([...KNOWN_PRE_EXISTING, ...bypass]), [...KNOWN_PRE_EXISTING]);
-});
-
-test("a b2 case is refused on the same rule, so the prefix is not a b3 special case", () => {
-  assert.deepEqual(illegitimateExceptions(["acceptance-b2-error-plot:task"]).map((r) => r.entry),
-    ["acceptance-b2-error-plot:task"]);
-});
-
-test("an unprefixed case the list does not record is refused too — the provenance half", () => {
-  const refused = illegitimateExceptions(["acceptance-something-new:control"]);
-
-  assert.deepEqual(refused.map((r) => r.entry), ["acceptance-something-new:control"]);
-  assert.match(refused[0]!.reason, /not one of the pre-existing acceptance cases/);
-});
-
-test("the two originals are legitimate, so the rule refuses by provenance rather than refusing everything", () => {
-  assert.deepEqual(illegitimateExceptions(KNOWN_PRE_EXISTING), []);
-  assert.deepEqual(legitimateExceptions(KNOWN_PRE_EXISTING), [...KNOWN_PRE_EXISTING]);
 });
