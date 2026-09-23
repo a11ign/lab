@@ -51,6 +51,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RSTEST_CONFIG } from "../../../guards/src/assert-glob-not-empty.mjs";
+// #492: a bare `spawnSync("npx", ...)` is ENOENT on Windows and EINVAL since CVE-2024-27980, so every
+// npx/npm call site in this repo resolves npm's own CLI script through this helper and spawns `node`.
+// `npm-cli-windows-spawn.test.ts` discovers the population by shape and refuses a bare one -- it caught
+// this file's first draft, in CI.
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const PACKAGING = "packages/lab/src/packaging";
@@ -105,11 +110,17 @@ function withoutAnsi(stream: string): string {
   return stream.replaceAll(/\u001b\[[0-9;]*m/g, "");
 }
 
+/** The `npx rstest run --config <ours> <args>` a session types, in the shape Windows can actually launch. */
+function invocation(args: string[]): { command: string; args: string[] } {
+  return npmCliInvocation("npx", ["rstest", "run", "--config", RSTEST_CONFIG, ...args]);
+}
+
 /** A real `npx rstest run` through the repo's own config, with the two streams kept apart. */
 function rstest(args: string[], mode: Record<string, string>): Run {
   const cacheRoot = mkdtempSync(join(tmpdir(), "rstest-report-verdict-"));
   try {
-    const result = spawnSync("npx", ["rstest", "run", "--config", RSTEST_CONFIG, ...args],
+    const npx = invocation(args);
+    const result = spawnSync(npx.command, npx.args,
       { cwd: REPO, encoding: "utf8", env: childEnv(mode, cacheRoot) });
     return { status: result.status, stdout: withoutAnsi(result.stdout), stderr: withoutAnsi(result.stderr) };
   } finally {
@@ -126,8 +137,9 @@ function rstest(args: string[], mode: Record<string, string>): Run {
 function merged(args: string[], mode: Record<string, string>): string {
   const cacheRoot = mkdtempSync(join(tmpdir(), "rstest-report-verdict-"));
   try {
-    const quoted = [RSTEST_CONFIG, ...args].map((arg) => `'${arg.replaceAll("'", "'\\''")}'`).join(" ");
-    const result = spawnSync("sh", ["-c", `npx rstest run --config ${quoted} 2>&1`],
+    const npx = invocation(args);
+    const quoted = [npx.command, ...npx.args].map((arg) => `'${arg.replaceAll("'", "'\\''")}'`).join(" ");
+    const result = spawnSync("sh", ["-c", `${quoted} 2>&1`],
       { cwd: REPO, encoding: "utf8", env: childEnv(mode, cacheRoot) });
     return withoutAnsi(result.stdout);
   } finally {
