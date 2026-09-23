@@ -96,9 +96,11 @@ export function compareTable(/** @type {any} */ reports) {
 /**
  * A miss whose head cleared its own Neyman-Pearson floor and lost to the raise above it, named as such.
  *
- * Without this the list reads `MISS <id>` and every miss looks like the same thing. It is not: a head
- * scoring inside `[floor, threshold)` already satisfied the bound the cut is derived from, so the work
- * that would recover it is on the threshold and not on the features. Measured 2026-09-23 (#2152) on
+ * Without this the list reads `MISS <id>` and every miss looks like the same thing. It is not: a head the
+ * evaluator found WOULD HAVE FIRED at its own Neyman-Pearson floor already satisfied the bound the cut is
+ * derived from, so the work that would recover it is on the threshold and not on the features. That
+ * question is the evaluator's and is asked there, gate and all — this reads the answer and never a band.
+ * Measured 2026-09-23 (#2152) on
  * 4.1.3, where 0.9608 was called threshold variance and 0.9442 "not a threshold-variance candidate at
  * all" — both were in that band, and nothing printed here could have said so.
  *
