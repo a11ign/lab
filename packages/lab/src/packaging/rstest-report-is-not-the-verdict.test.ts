@@ -110,6 +110,29 @@ function withoutAnsi(stream: string): string {
   return stream.replaceAll(/\u001b\[[0-9;]*m/g, "");
 }
 
+/**
+ * WHITESPACE COLLAPSED, so a sentence a line wrap happened to split still reads as the sentence it is. The assertion
+ * this serves is about what a refusal SAYS, and a claim must not stop being findable because it was rewrapped.
+ */
+function collapsed(stream: string): string {
+  return stream.replaceAll(/\s+/g, " ");
+}
+
+/** The glob floor, whose refusal sentence this row corrects. Run, never read: see the last test in this file. */
+const GLOB_FLOOR = "packages/guards/src/assert-glob-not-empty.mjs";
+
+/**
+ * The floor's own refusal, EXERCISED. One pattern in, whatever it wrote out -- no `--run`, so nothing is spawned
+ * underneath it and this costs a bare node start. `NODE_TEST_CONTEXT` is stripped for the reason `childEnv` strips it.
+ */
+function floor(pattern: string): Run {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const result = spawnSync(process.execPath, [join(REPO, GLOB_FLOOR), pattern],
+    { cwd: REPO, encoding: "utf8", env });
+  return { status: result.status, stdout: withoutAnsi(result.stdout), stderr: withoutAnsi(result.stderr) };
+}
+
 /** The `npx rstest run --config <ours> <args>` a session types, in the shape Windows can actually launch. */
 function invocation(args: string[]): { command: string; args: string[] } {
   return npmCliInvocation("npx", ["rstest", "run", "--config", RSTEST_CONFIG, ...args]);
@@ -316,15 +339,31 @@ test("#2165 ACCEPTANCE: docs/proving-a-gate.md carries the trap beside the one t
   assert.match(trap, /agent/i, "and it says which reporter the table was measured under");
 });
 
-test("#2165 ACCEPTANCE: the glob floor's refusal no longer says `tsx --test` is the only place a zero-match can be caught", () => {
-  // True while `tsx --test` was the runner and wrong under rstest in the half that tells you where to look: rstest DOES
-  // exit non-zero, so the floor is no longer the only place -- while its REPORT still says pass, which that sentence
-  // never mentioned. The same fact, one file over.
-  const floor = readFileSync(join(REPO, "packages/guards/src/assert-glob-not-empty.mjs"), "utf8");
-  const refusal = floor.slice(floor.indexOf("REFUSING: a test glob matched too few files"));
-  assert.ok(refusal.length > 0, "the floor still refuses a zero-match -- this row does not touch its behaviour");
-  assert.equal(floor.includes("the only place that failure can be caught"), false,
-    "the refusal no longer claims to be the only place a zero-match can be caught");
-  assert.match(refusal, /rstest/,
-    "and it says what rstest actually does instead: a non-zero exit under a report that reads `pass`");
+test("#2165 ACCEPTANCE: the glob floor's refusal, AS EMITTED, no longer says a zero-match can only be caught there", () => {
+  // MEASURED ON WHAT THE REFUSAL WROTE, NEVER ON THE SOURCE IT WAS WRITTEN IN -- reviewer-2 on #2240, and the finding
+  // is sharper than the fix it asked for. The first cut asserted `floor.includes("the only place ...") === false`
+  // over the file's TEXT; the reviewer put the false sentence back into the runtime refusal split across two adjacent
+  // string literals, the emitted message said it in full, and the assertion stayed green (12/12). A source grep is a
+  // proxy for a claim about output, and it is defeated by the most ordinary edit there is: a string that got long.
+  //
+  // The claim itself was true while `tsx --test` was the runner and is wrong under rstest in the half that tells a
+  // reader where to look: rstest DOES exit non-zero, so this floor is no longer the only catcher -- while its REPORT
+  // still says `pass`, which that sentence never mentioned. The same fact as the rest of this file, one file over.
+  const refused = floor(EMPTY_GLOB);
+  const said = collapsed(refused.stderr);
+  assert.equal(refused.status, 1, `the floor still refuses a zero-match -- this row does not touch its behaviour:\n${refused.stderr}`);
+  assert.ok(said.includes("REFUSING: a test glob matched too few files"), `and refuses in its own words:\n${refused.stderr}`);
+  assert.ok(said.includes(`${EMPTY_GLOB} matched 0, need at least 1`), `naming the pattern and the count:\n${refused.stderr}`);
+  assert.equal(said.includes("the only place that failure can be caught"), false,
+    `the emitted refusal no longer claims to be the only place a zero-match can be caught:\n${refused.stderr}`);
+  assert.ok(said.includes("rstest exits non-zero on a zero-match"), `and says what rstest actually does:\n${refused.stderr}`);
+  assert.ok(said.includes('"status": "pass"'), `including the half a reader is misled by:\n${refused.stderr}`);
+});
+
+test("#2165: the floor's control -- a pattern that DOES match is not refused, and writes nothing at all", () => {
+  // Without this, every reading above is satisfied by a floor that refuses everything, and the negative assertion is
+  // satisfied by a floor that emits nothing. This is the positive control for both, on the same instrument.
+  const allowed = floor(CONTROL_TEST);
+  assert.equal(allowed.status, 0, `a pattern that matches is not refused:\n${allowed.stderr}`);
+  assert.equal(allowed.stderr.trim(), "", `and the refusal above is the floor speaking, not this runner:\n${allowed.stderr}`);
 });
