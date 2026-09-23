@@ -105,10 +105,49 @@ const ENTERS_A_DIRECTORY = new RegExp([
 /**
  * A directory named DIRECTLY under a home root. The second question, and the one that reaches a literal
  * an operation never touches: `REPO_PATH="${A11Y_REPO_PATH:-$HOME/a11ign}"` is an assignment, so no
- * amount of operation-keying finds it. Five spellings of "home", because a `.sh`, a `.ps1` and a `.cmd`
- * each write it differently.
+ * amount of operation-keying finds it. Several spellings of "home", because a `.sh`, a `.ps1`, a `.cmd`
+ * and a systemd unit each write it differently.
+ *
+ * ## #1990: AND `/home/<user>/` IS THE SPELLING IT COULD NOT READ — the one CONFIGURATION must use
+ *
+ * Until this row the alternation was `/root`, `$HOME`, `~`. **A systemd unit cannot expand `~` or `$HOME`
+ * in an `Environment=` line** — the literal absolute path is the only form available to it — so every
+ * host unit in `packages/agent-org/host/` named absolute home paths that this pattern was structurally
+ * blind to. Host units are the file class MOST likely to carry a second copy of a machine's layout, being
+ * the only files here that address a specific host by absolute path, and they were precisely the class it
+ * could not see.
+ *
+ * Measured 2026-09-22, two branches adding the identical fact within the hour: #1982 wrote
+ * `Environment=GH_CONFIG_DIR=/home/agent/workers/gh` and PASSED, the guard never seeing it; #1986 wrote
+ * the same line AND spelled it `~/workers/gh` in prose, and FAILED — on the prose only. **The guard fired
+ * on the documentation and stayed silent on the configuration**, while its own message — "a path under a
+ * home root is not automatically this machine's" — is exactly right about both.
+ *
+ * The user segment is matched rather than named, for the same reason the checkout's name is read out of
+ * the source of truth: `agent` is this host's account and `runner` is GitHub's, and a pattern naming
+ * either would answer about one machine while claiming to answer about home roots.
+ *
+ * **The absolute branch takes a FORWARD SLASH and nothing else, and that is a finding rather than a
+ * detail.** The older branches allow `[/\\]{1,2}` because a `~` or `$HOME` is written `~\` on Windows and
+ * `~\\` inside a JS string. Reusing that here made the guard read a JS newline escape as a separator, at
+ * THREE sites in `host-units.test.ts` — measured, with that variant, over the whole file after
+ * `stripComments`:
+ *
+ *     "...\nEnvironment=HOME=/home/agent\n"                -> `~/n`            (twice: the escape ends it)
+ *     "...\nEnvironment=HOME=/home/agent\nEnvironment=..." -> `~/nEnvironment` (once: it runs on into
+ *                                                                              the next key)
+ *
+ * Neither is a directory anybody has. **The count is three sites and two names, and it is written out
+ * because one site is not enough to reason from**: a reviewer reconstructing only the last of the three
+ * concluded the variant produced `~/nEnvironment` alone, which is true of that string and false of the
+ * file. An absolute POSIX home root is separated by `/`; a backslash after one is a string escape.
+ * Classifying either name would have put nonsense in a list whose whole value is that every row is a
+ * decision somebody made — the objection this file already states one question up.
  */
-const UNDER_A_HOME_ROOT = /(?:\/root|\$HOME|~)[/\\]{1,2}([A-Za-z0-9._-]+)/g;
+const UNDER_A_HOME_ROOT = new RegExp([
+  String.raw`(?:\/root|\$HOME|~)[/\\]{1,2}([A-Za-z0-9._-]+)`,
+  String.raw`\/home\/[A-Za-z0-9._-]+\/([A-Za-z0-9._-]+)`,
+].join("|"), "g");
 
 /**
  * The DIRECTORY a `cd` actually enters, past any flags. `guest-run.mjs` writes `cd /d ${GUEST_DIR}` —
@@ -404,6 +443,27 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
     + "nobody has measured, under a placeholder account -- see the boundary in this file's header.",
   "g": "`~/g` in a `claude-md-links.test.ts` fixture, a two-character stand-in for a path, not a "
     + "directory anybody has.",
+  "workers": "the AGENT host's `gh` CONFIG ROOT for the machine account `a11ign-ai-workers` -- "
+    + "`Environment=GH_CONFIG_DIR=/home/agent/workers/gh` in `a11ign-board-report.service` and "
+    + "`a11ign-work-tick.service`, with the same line quoted in `host-units.mjs`'s remedy text and in "
+    + "`host-units.test.ts`. It is which ACCOUNT a unit acts as, not a checkout, and it is on the same "
+    + "measured box as `repos` above. FIRST VISIBLE UNDER #1990: a unit cannot expand `~` in an "
+    + "`Environment=` line, so this fact could only ever be written absolutely, which is the one spelling "
+    + "this guard could not read -- #1982 added the line and passed, #1986 added it and failed on its "
+    + "PROSE copy alone.",
+  "work": "GitHub's HOSTED RUNNER workspace root -- a QUOTATION of it, in `readAgainst`'s header in "
+    + "`scripts/doc-cross-reference-report.mjs` and in its test, both recording what the first nightly "
+    + "comment printed (`Read against /home/runner/work/...`) and why #954 replaced it with a ref and a "
+    + "commit. Nothing resolves it: the path is the DEFECT those comments describe, kept so the next "
+    + "reader knows what was wrong with naming a runner's checkout. A machine class Actions creates and "
+    + "destroys per job -- not this fleet, not this host, and not renameable from here. Surfaced by the "
+    + "same widening, and it is the evidence that the user segment is MATCHED rather than named: "
+    + "`runner` is not `agent`. (Both sites are COMMENTS and still reach the walk, because "
+    + "`stripComments` has no notion of a REGEX LITERAL: `text.match(/`+/g)` earlier in that file opens "
+    + "a phantom template literal on the backtick inside the regex, and everything after it is copied "
+    + "through as string -- measured, 19 block openers in, 11 out. Not this row's to fix, and it does "
+    + "not change the answer here: a prose-only site is still a site to classify, which this file's "
+    + "third escape-hatch assertion already insists on.)",
   "repos": "the AGENT host's worktree root -- where `row-claim claim` puts a worktree per claim (#1432) "
     + "and where the primary checkout itself lives, on the box the org's sessions run on rather than on "
     + "the control plane. Named in a11ign-worktree-prune.service's comment, which states the measurement "
@@ -445,19 +505,82 @@ test("THE EXEMPTION IS THE FIELD, NOT THE FILE -- a quoted `command` in a report
     + "exempted itself by being malformed would be an escape hatch anybody could open with a typo");
 });
 
+/**
+ * The unclassified home-root names in ONE file's source, each reported as `<file>: ~/<segment>`.
+ *
+ * Extracted for the reason `entrySitesIn` was: a test that can only observe the tree cannot show that
+ * two SPELLINGS of one path are decided the same way — the tree holds whichever spelling somebody
+ * happened to write, and #1990 is precisely the case where it held both and the guard read one. The
+ * report is normalised to `~/<segment>` whatever the spelling matched, so an absolute `/home/agent/x`
+ * and a `~/x` are not merely both found: they are indistinguishable afterwards.
+ *
+ * @param file the tracked path, for the report
+ * @param source its bytes
+ */
+export function homeRootNamesIn(file: string, source: string): string[] {
+  const named: string[] = [];
+  for (const m of stripComments(source).matchAll(UNDER_A_HOME_ROOT)) {
+    const segment = (m[1] ?? m[2]).replace(/\.+$/, "");
+    if (segment === "") continue;
+    if (segment === CHECKOUT_NAME) continue;
+    if (segment in OTHER_HOME_DIRECTORIES) continue;
+    named.push(`${file}: ~/${segment}`);
+  }
+  return named;
+}
+
+test("BOTH SPELLINGS OF ONE PATH ARE DECIDED THE SAME WAY -- a systemd unit cannot expand `~` or `$HOME` "
+  + "in an `Environment=` line, so the absolute form is the only one CONFIGURATION can use, and it was "
+  + "the one form this guard could not read (#1990)", () => {
+  // THE POSITIVE CONTROL for the emptiness assertion below, and named here so the pair can be pointed
+  // at rather than believed in. An unclassified segment must surface, or `deepEqual(named, [])` is
+  // passing over a population it cannot see -- which is exactly what it did until this row.
+  const unclassified = "nobodys-dir";
+  assert.ok(!(unclassified in OTHER_HOME_DIRECTORIES) && unclassified !== CHECKOUT_NAME,
+    "the control segment must be one the guard has no classification for, or it proves nothing");
+
+  // ONE file name for both, deliberately: the report carries the file, so a second name would make the
+  // comparison below differ for a reason that has nothing to do with the spelling under test.
+  const unit = "packages/agent-org/host/x.service";
+  const absolute = homeRootNamesIn(unit, `Environment=GH_CONFIG_DIR=/home/agent/${unclassified}/gh`);
+  const tilde = homeRootNamesIn(unit, `\`~/${unclassified}/gh\``);
+  assert.deepEqual(absolute, [`${unit}: ~/${unclassified}`],
+    "the absolute spelling must be found -- #1982 wrote exactly this line and passed");
+  assert.deepEqual(absolute, tilde,
+    "and found IDENTICALLY to the prose spelling that #1986 failed on. Without this the next widening "
+    + "fixes one form and leaves the other, which is the shape of the defect rather than a risk of it");
+
+  // The same pair once the segment IS classified: both spellings go quiet, and neither goes quiet alone.
+  assert.deepEqual(homeRootNamesIn("a.service", "Environment=GH_CONFIG_DIR=/home/agent/workers/gh"), [],
+    "a classified segment is silent in the absolute spelling");
+  assert.deepEqual(homeRootNamesIn("a.md", "`~/workers/gh`"), [],
+    "and in the tilde spelling -- one list classifies both, because one function decides both");
+
+});
+
+test("the user segment is MATCHED, not named -- a home root under ANOTHER account is still a home root, "
+  + "so `/home/runner/` is read exactly as `/home/agent/` is", () => {
+  // Its own test rather than a fourth block in the one above: that test's fact is "both spellings of one
+  // path are decided alike", and this is "the pattern does not hardcode an account". A failure here
+  // reported under that name would describe something other than what broke.
+  //
+  // `/home/agent/` is this host's account and `/home/runner/` is GitHub's. A pattern naming either would
+  // answer about ONE MACHINE while claiming to answer about home roots -- the shape this whole file
+  // exists to refuse, and the reason the checkout's own name is read out of the source of truth rather
+  // than written here.
+  const unclassified = "nobodys-dir";
+  assert.ok(!(unclassified in OTHER_HOME_DIRECTORIES) && unclassified !== CHECKOUT_NAME,
+    "the control segment must be one the guard has no classification for, or it proves nothing");
+  assert.deepEqual(homeRootNamesIn("a.yml", `/home/runner/${unclassified}/x`),
+    [`a.yml: ~/${unclassified}`], "a home root belonging to another account is still a home root");
+});
+
 test("no file names a directory under a home root that should be the checkout -- the SECOND question, "
   + "and the only one that reaches an ASSIGNMENT: `REPO_PATH=\"${A11Y_REPO_PATH:-$HOME/a11ign}\"` is not "
   + "an operation, so no amount of operation-keying finds it", () => {
-  const named: string[] = [];
-  for (const file of trackedSource()) {
-    for (const m of stripComments(read(file)).matchAll(UNDER_A_HOME_ROOT)) {
-      const segment = m[1].replace(/\.+$/, "");
-      if (segment === "") continue;
-      if (segment === CHECKOUT_NAME) continue;
-      if (segment in OTHER_HOME_DIRECTORIES) continue;
-      named.push(`${file}: ~/${segment}`);
-    }
-  }
+  // Emptiness, with its positive control in the test directly above (#1990): one unclassified segment
+  // surfacing, in both spellings, through this same function.
+  const named = trackedSource().flatMap((file) => homeRootNamesIn(file, read(file)));
   assert.deepEqual([...new Set(named)].sort(), [],
     "these name a directory directly under a home root that is neither the control plane's checkout "
     + `(${CHECKOUT_NAME}, from ${SOURCE_OF_TRUTH}) nor a classified other. If it is another literal for `
