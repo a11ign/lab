@@ -492,3 +492,102 @@ test("a branch merely BEHIND main is accused of nothing -- the two-dot trap", (t
     `a branch that is only BEHIND main removed nothing, but the merge-base diff found ${correct.length} `
     + "removed line(s) -- the base is wrong");
 });
+
+/**
+ * #2083: A DELIVERY CLOCK THAT OUTLIVED ITS CLOCK, IN THE FILE EVERY SESSION LOADS.
+ *
+ * The guards above ask whether text that LEFT an always-loaded document still exists. This asks the
+ * neighbouring question about text that STAYED: `.claude/rules/agent-practices.md` deleted the standing
+ * crons on 2026-09-17 ("No session holds a standing cron ... and the reversal is the point") and left a
+ * routing clause, 176 lines further down, telling `product-manager` to post the org's only state reading
+ * at three fixed minutes past the hour "so the tick at" four minutes later "reads it". There is no such
+ * tick. A session following it literally posts to a thread nobody is scheduled to read; measured
+ * 2026-09-23, one decision in that reading had waited 6h52m. Region: this file and that one.
+ *
+ * ## IT REFUSES A CONTRADICTION WITHIN ONE DOCUMENT, WHICH IS WHY THE ANCHOR IS ASSERTED
+ *
+ * This is not an outside opinion about scheduling. The file itself says no session holds a standing cron,
+ * so a sentence in the same file that times a session's action to a wall-clock minute contradicts it. The
+ * anchor is therefore asserted separately: if that statement is ever removed, this guard stops being a
+ * consistency check and must fail loudly rather than keep enforcing a rule the document no longer makes.
+ *
+ * ## THE FOUR LITERALS ARE NOT WHAT IS MATCHED, BECAUSE THE NEXT ONE WILL SPELL THEM DIFFERENTLY
+ *
+ * The row's own open-check was `grep -c ':09/:29/:49'`, and it said so: that goes to `0` when somebody
+ * deletes the sentence and replaces it with nothing, which is worse than today. What is matched is the
+ * SHAPE -- a bare `:MM` with no hour in front of it. An hour in front makes it a timestamp
+ * (`19:22:54Z`, `2026-09-22T23:45Z`), which this file is full of and which states WHEN something was
+ * measured rather than scheduling anything. A minute with nothing before it is a position on a repeating
+ * clock, and in a document that has no clock left there is nothing for it to be.
+ *
+ * **What it cannot see:** a clock written in words ("post it at quarter past"). That is a real hole and
+ * not a closable one -- the alternative is a rule that infers intent from prose, which this repo has
+ * already ruled is worse than a habit that decays (#1157). The shape catches every spelling of the form
+ * that has actually appeared.
+ */
+const ALWAYS_LOADED_RULES = ".claude/rules";
+
+/** The general statement in that file which a delivery clock contradicts. Asserted, never assumed. */
+const NO_STANDING_CRON = "No session holds a standing cron";
+
+/**
+ * Every bare wall-clock minute marker in `text`: a `:MM` whose preceding character is not a digit.
+ *
+ * Returns the LINE as well as the marker, because the marker alone (`:45`) tells a reader nothing about
+ * which sentence to fix -- the same evidence-over-number choice `longestSurvivingRun` makes above.
+ */
+export function wallClockMinuteMarkers(text: string): { line: number; marker: string; context: string }[] {
+  const found: { line: number; marker: string; context: string }[] = [];
+  text.split("\n").forEach((context, i) => {
+    for (const m of context.matchAll(/(?:^|[^0-9:])(:[0-9]{2})(?![0-9])/g)) {
+      found.push({ line: i + 1, marker: m[1], context: norm(context) });
+    }
+  });
+  return found;
+}
+
+/** Every `.md` under `.claude/rules/`, read. The directory, not a literal filename: a second rules file
+ *  loads in every session exactly the same way and must not be a place the clock can come back to. */
+function alwaysLoadedRuleFiles(): { rel: string; text: string }[] {
+  const dir = join(REPO_ROOT, ALWAYS_LOADED_RULES);
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".md"))
+    .map((name) => ({ rel: `${ALWAYS_LOADED_RULES}/${name}`, text: readFileSync(join(dir, name), "utf8") }));
+}
+
+test("CONTROL: a delivery clock spelled ANY way is flagged, and a timestamp is not", () => {
+  // Deliberately NOT the four literals the row's own grep matched. If this guard were matching them, this
+  // fixture would pass and the guard would be worthless against the next stale clause.
+  const restated = "posted on #928 at :12/:32/:52 so the tick at :19 reads it";
+  assert.deepEqual(wallClockMinuteMarkers(restated).map((m) => m.marker), [":12", ":32", ":52", ":19"],
+    "a clock in a spelling this row never saw must still be flagged -- the shape is what is matched");
+  // The false positives that would make a reader stop trusting the report. Every one of these is real
+  // text from the file this guards, which is stuffed with measured timestamps and durations.
+  const timestamps = "measured 2026-09-22T19:22:54Z, again at 08:49Z and 23:45Z, after 4m37s and 6h52m, "
+    + "clearing at ~1/tick; see https://github.com/a11ign/a11ign/issues/928";
+  assert.deepEqual(wallClockMinuteMarkers(timestamps), [],
+    "an hour in front of the minutes makes it a timestamp -- it records when, it schedules nothing");
+});
+
+test("the always-loaded rules still say no session holds a standing cron -- the guard's own anchor", () => {
+  const files = alwaysLoadedRuleFiles();
+  assert.ok(files.length > 0, `no .md files under ${ALWAYS_LOADED_RULES}/ -- the population is empty, so `
+    + "the assertion below would pass having read nothing");
+  assert.ok(files.some(({ text }) => text.includes(NO_STANDING_CRON)),
+    `the rules no longer state "${NO_STANDING_CRON}". The test below refuses a wall-clock minute because `
+    + "it CONTRADICTS that statement, within one document. Without the statement it is an outside opinion "
+    + "about scheduling, and it must be re-argued rather than left running on a premise that has gone.");
+});
+
+test("no rule loaded by every session times a session's action to a wall-clock minute", () => {
+  const files = alwaysLoadedRuleFiles();
+  const flagged = files.flatMap(({ rel, text }) =>
+    wallClockMinuteMarkers(text).map((m) => ({ file: `${rel}:${m.line}`, ...m })));
+  assert.deepEqual(flagged, [], `${flagged.length} wall-clock minute marker(s) in ${files.length} `
+    + `always-loaded rule file(s). ${NO_STANDING_CRON} -- so there is no tick at a named minute for a `
+    + "session to post before or wait on, and an instruction that names one sends its reader to a thread "
+    + "nobody is scheduled to read (#2083: a state reading with a 6h52m-old decision in it). State the "
+    + "RATE and the mechanism instead: one reading per `ceo` tick, posted on #928 as the record and "
+    + "delivered with `npm run prompt:session`. A timestamp (`19:22:54Z`) is not this and is not "
+    + `flagged:\n${flagged.map((f) => `-> ${f.file}  ${f.marker}\n   ${f.context}`).join("\n")}`);
+});
