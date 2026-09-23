@@ -33,6 +33,45 @@
  *
  * `--allow-mixed-browsers` stays with the flags, in the caller: this function is the check, not the
  * decision to skip it.
+ *
+ * IT READ `consistent` ALONE, SO A FIELD NOBODY REPORTED WAS AGREEMENT (#2047) — the sixth pass of this
+ * family, and the one layer down from where the previous five were fixed. `fleetConsistency` skips an
+ * absent value rather than calling it a mismatch, which is right (a rolling deploy must not flag the
+ * guest it has not reached yet) and means a field NO guest answers draws no values to disagree about:
+ * `mismatches` is empty, `consistent` is true, and it is indistinguishable from a field every guest
+ * agreed on. #1997 fixed that in the HEADLINE, #2019 extended it from 0-of-N to k-of-N — and this
+ * caller, the one that actually refuses a run, threw `verdict.fields` away and kept reading the boolean.
+ *
+ * Measured 2026-09-22T23:5xZ on the live fleet: ten guests, `displayMode` reported by 0 of 10 (worker
+ * code predating #1953), `fields.unchecked: ["displayMode"]`, and this guard returned SILENTLY on the
+ * same fleet the adjacent `npm run fleet:status` called UNKNOWN. Per #1955 those ten boxes genuinely ran
+ * two display modes that day — five at 1024x768 and five at 640x480 — so a capture started then would
+ * have spread one corpus across both. That is this function's own docstring failure with the axis
+ * changed from DRIFTED to NEVER ASKED.
+ *
+ * THE GATE'S RULE IS THE HEADLINE'S RULE: any `MUST_MATCH` field where `reported < asked` — the same line
+ * `fieldCoverageGap` draws in `fleet-status.mjs`, covering #1997's 0-of-N and #2019's k-of-N alike. One
+ * rule read in two places, and a future change to either owes the other. A gate looser than the headline
+ * would recreate #2047 one release later; the two are NOT shared as code because `fieldCoverageGap`
+ * builds an operator's status LINE and this builds a refusal, and `packages/lab` importing
+ * `packages/control` is a dependency this repo does not have.
+ *
+ * WARN-AND-CONTINUE WAS REFUSED, and the reason is what a gate is: in a gate, the reader's takeaway is
+ * whether it returns. The override is `allowUncheckedFields` — a SEPARATE waiver from
+ * `--allow-mixed-browsers`, because the two say different things. That one says *the guests differ and I
+ * accept it*; this says *the guests were never asked*, and folding them would let an operator who
+ * accepted a browser split also silently accept an unasked display. Taken as an OPTION rather than read
+ * from `process.argv` here, the way `assertFleetRunsThisCheckout` takes `allow:`, so a test can exercise
+ * the waived path through this function instead of through a caller-side `if (ALLOW) return;` that CI
+ * cannot reach.
+ *
+ * WHICH IS ALSO WHY `--allow-mixed-browsers` STOPPED BEING A CALL-SITE SKIP. #2018 deliberately left it
+ * in `capture-real-pages.mjs` as `if (ALLOW_MIXED) return;`, and that was right while this function made
+ * ONE refusal: skipping the call and waiving the check were the same act. They stopped being the same
+ * act the moment a second, independent refusal moved in here — an early return at the call site waives
+ * both, which is exactly the fold the ruling refused, reached from the other side. A waiver has to be
+ * named where the refusals are distinguishable, so both are options on this function now and neither can
+ * waive the other.
  */
 import { requestJson } from "@a11ign/worker-fleet/worker-http";
 import { fleetConsistency, describeMismatches } from "@a11ign/worker-fleet/fleet-consistency";
@@ -54,7 +93,8 @@ export const EXIT_FLEET_INCONSISTENT = 3;
  * @param {string[]} workers
  * @param {string} when — "before the run" / "by the END of the run", quoted into the refusal
  * @param {{probe?: (url: string) => Promise<any>, report?: (text: string) => void,
- *   exit?: (code: number) => void}} [deps]
+ *   exit?: (code: number) => void, allowMixedBrowsers?: boolean,
+ *   allowUncheckedFields?: boolean}} [deps]
  */
 export async function assertOneBrowserAcross(workers, when, deps = {}) {
   const probe = deps.probe ?? healthOfGuest;
@@ -65,12 +105,71 @@ export async function assertOneBrowserAcross(workers, when, deps = {}) {
   // guests is the whole point of this fix — a `.filter(Boolean)` here leaves the array `(guest|null)[]`,
   // which is how a wrongly-shaped guest reached `fleetConsistency` unchecked in the first place.
   const verdict = fleetConsistency(guests.filter((guest) => guest !== null));
-  if (verdict.consistent) return;
-  report(`\nFLEET INCONSISTENT ${when}: ${describeMismatches(verdict.mismatches)}\n`
-    + "Two browser builds must never write into one corpus — `browserVersion` is in the capture cache\n"
-    + "key for exactly this reason, and a split shows up later as evidence that cannot be compared.\n"
-    + "Pin the fleet (`provision-role.yml --tags edge`) or run with --allow-mixed-browsers.\n");
+  if (!verdict.consistent && deps.allowMixedBrowsers) {
+    report(`\n--allow-mixed-browsers: capturing ${when} across a fleet that does NOT agree: `
+      + `${describeMismatches(verdict.mismatches)}\n`);
+  } else if (!verdict.consistent) {
+    report(`\nFLEET INCONSISTENT ${when}: ${describeMismatches(verdict.mismatches)}\n`
+      + "Two browser builds must never write into one corpus — `browserVersion` is in the capture cache\n"
+      + "key for exactly this reason, and a split shows up later as evidence that cannot be compared.\n"
+      + "Pin the fleet (`provision-role.yml --tags edge`) or run with --allow-mixed-browsers.\n");
+    return exit(EXIT_FLEET_INCONSISTENT);
+  }
+  // AGREEING IS NOT ENOUGH; THEY HAVE TO HAVE BEEN ASKED. Checked only once the mismatch verdict is
+  // clean, because a genuine split is the more urgent finding and naming both at once would bury it.
+  const gaps = fieldCoverageGaps(verdict.fields);
+  if (gaps.length === 0) return;
+  if (deps.allowUncheckedFields) {
+    // SAID LOUDLY, NAMING EACH FIELD AND ITS REPORTER COUNT (#1989). The waiver is the only record this
+    // path leaves — `capture-real-pages.mjs` writes no structured run record here — so a corpus taken
+    // under it must at least have printed what nobody was asked.
+    report(`\n--allow-unchecked-fields: capturing ${when} WITHOUT having asked `
+      + `${gaps.length === 1 ? "one field" : `${gaps.length} fields`} of every guest: `
+      + `${describeCoverageGaps(gaps)}.\nThese guests are being treated as interchangeable on evidence `
+      + "nobody collected.\n");
+    return;
+  }
+  report(`\nFLEET COVERAGE UNKNOWN ${when}: ${describeCoverageGaps(gaps)}.\n`
+    + "A field no guest reports draws no values to disagree about, so it reads exactly like a field every\n"
+    + "guest agrees on — these boxes are not known to be interchangeable, they were never asked. The\n"
+    + "fleet ran two display modes under exactly this silence (#1955), and a corpus captured across both\n"
+    + "cannot be compared.\n"
+    + "Deploy the fleet (`npm run fleet:deploy`), take the field out of `MUST_MATCH`, or run with\n"
+    + "--allow-unchecked-fields.\n");
   exit(EXIT_FLEET_INCONSISTENT);
+}
+
+/**
+ * The fields this verdict did not actually ask of every guest — `fieldCoverageGap`'s rule, in a gate.
+ *
+ * `reported < asked` covers both halves of the family in one line: #1997's field that NOBODY answered
+ * (`reported === 0`) and #2019's field that only some did. They are not split into two clauses here as
+ * the headline splits them, because the headline's split serves the REMEDY (a field at 0 sends a reader
+ * to the field, a field at k sends them to the boxes) and both remedies are already on the refusal.
+ *
+ * NO COVERAGE SUPPLIED IS THE SAME CANNOT-ASK, not a pass — a callee that answered with a pre-#2019
+ * shape has not told us how many guests reported anything, so it cannot rule the gap out. `[]` coverage
+ * is different and is genuinely no objection: `fleetConsistency` returns it for a fleet of fewer than
+ * two guests, where there is nobody to be interchangeable with and coverage is not a question yet.
+ *
+ * @param {{ coverage?: { field: string, reported: number, asked: number }[] } | undefined} fields
+ * @returns {{ field: string, reported: number, asked: number }[]}
+ */
+function fieldCoverageGaps(fields) {
+  if (fields?.coverage === undefined) return [{ field: "(no coverage supplied)", reported: 0, asked: 0 }];
+  return fields.coverage.filter(({ reported, asked }) => reported < asked);
+}
+
+/**
+ * Each gap as `field (k of N reported it)` — named with its count, never counted.
+ *
+ * "1 field was not compared" sends the reader back to this command; `displayMode (0 of 10 reported it)`
+ * tells them which field and how many boxes owe an answer, which is the finding.
+ *
+ * @param {{ field: string, reported: number, asked: number }[]} gaps
+ */
+function describeCoverageGaps(gaps) {
+  return gaps.map(({ field, reported, asked }) => `${field} (${reported} of ${asked} reported it)`).join(", ");
 }
 
 /**
