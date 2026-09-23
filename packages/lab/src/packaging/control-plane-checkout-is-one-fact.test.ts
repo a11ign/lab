@@ -167,8 +167,9 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
     + "act #515 was filed against. Held on #526.",
   "/opt/a11y": "the LAB's checkout (`lab_repo_path` in `group_vars/a11y_lab.yml`), a different machine "
     + "and a different fact from the control plane's -- `run-job.yml` already reaches it through that "
-    + "variable, but `files/a11y-corpus-snapshot.service` and `files/a11y-corpus-backup.service` "
-    + "(#1795) are static systemd unit files, plain text with no templating step, so they cannot "
+    + "variable, but `files/a11y-corpus-snapshot.service` (#1795; its `corpus-backup` twin was "
+    + "retired by #2059 and this sentence named it until then) is a static systemd unit file, "
+    + "plain text with no templating step, so it cannot "
     + "interpolate a Jinja variable or import a JS constant the way an ansible task or a .mjs consumer "
     + "can. The literal is the only way a unit file can say `--working-directory=` at all.",
 };
