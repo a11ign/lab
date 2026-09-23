@@ -298,3 +298,99 @@ test("#1157 MUTATION: removing the line from EITHER file must go red, not just f
       + "lets the two drift apart");
   }
 });
+
+// --- #2076: the empty-guard, written where a session loads it before typing the command -----------------
+//
+// `rm -f $D/*.md` is safe when `D` was assigned a literal path on the same line, and the permission
+// classifier cannot see that. It is one of the few guards `--dangerously-skip-permissions` deliberately
+// does NOT disable, so on 2026-09-23 it reached the chairman several times in one morning -- each time a
+// command read in order to conclude it was fine. The remedy is `"${D:?}"`, which removes the danger rather
+// than the prompt.
+//
+// PINNED FOR THE SAME REASON #1967 IS, and it is the same failure shape one level up: knowledge that
+// exists only in a closed row is knowledge nobody reads before typing. The file's own Assertions section
+// says out loud that **this repository loses habits**; a line with no guard on it is the kind it loses.
+//
+// BOTH DIRECTIONS, because the two ways this rule dies are opposites. It can lose its REMEDY -- the
+// principle survives, nobody is told what to type, and the reader is left with the override as the only
+// move they know. Or it can be INVERTED -- the override reinstated as the answer, which is the defect the
+// rule exists to name, and which a guard checking only for the string `:?` would sail straight past.
+
+const CLICK_THROUGH = /an approval prompt a human learns to click through is worse than no prompt/i;
+const THE_EMPTY_GUARD = /rm -f "\$\{D:\?\}"\/\*\.md/;
+const SHAPE_NOT_EFFECT =
+  /when a command is refused for its SHAPE rather than its EFFECT, change the shape/i;
+const NOT_AN_OVERRIDE =
+  /reaching for an override, or asking a human to approve it again, both leave the next session to rediscover the same refusal/i;
+
+test("#2076: the practices file states the principle AND the command that satisfies it", () => {
+  const text = flat(agentPractices);
+
+  assert.match(text, CLICK_THROUGH,
+    "the principle itself -- without it `:?` reads as a style preference, and a style preference is not "
+    + "what stops the next avoidable prompt being filed");
+  assert.match(text, THE_EMPTY_GUARD,
+    "and the literal remedy, quoted and brace-guarded: a rule whose fix the reader has to reconstruct "
+    + "sends them back to the override, because they still have a command to run");
+  assert.match(text, /abort on an unset or empty variable/i,
+    "and WHY `:?` works, or it is a charm to be copied rather than a construct to be applied to the next "
+    + "command, which will not be this one");
+  assert.match(text, /dangerously-skip-permissions/,
+    "and the fact that makes it unavoidable: bypass is already on and this guard survives it, so "
+    + "'turn the prompts off' is not an available answer and the reader should not go looking for it");
+});
+
+test("#2076: the general form is stated, and the override is disowned rather than merely unmentioned", () => {
+  const text = flat(agentPractices);
+
+  assert.match(text, SHAPE_NOT_EFFECT,
+    "THE TRANSFERABLE HALF -- `rm` is one instance, and a rule that names only the instance leaves the "
+    + "next refused shape to be solved by an override again");
+  assert.match(text, NOT_AN_OVERRIDE,
+    "and what is wrong with the two easier moves, stated: a rule that recommends the fix without "
+    + "disowning the alternatives reads as advice between equals");
+  assert.match(text, /several times in one morning/i,
+    "with the measurement, so the cost is a count rather than an intuition about tidiness");
+  assert.match(text, /makes the unavoidable ones cheaper to ignore/i,
+    "and the consequence that makes this a safety rule rather than a courtesy -- the harm lands on the "
+    + "NEXT prompt, which is the one that will be real");
+});
+
+test("#2076: the population is stated as already-clean, with what would make a call site unsafe", () => {
+  const text = flat(agentPractices);
+
+  assert.match(text, /prevention rather than cleanup/i,
+    "the row's own claim: nothing tracked has the pattern, so a reader does not go hunting for offenders");
+  assert.match(text, /quoting alone defuses the catastrophe/i,
+    "and WHICH property each tracked call site already has -- the eight `rm \"$VAR\"` sites are quoted "
+    + "with no glob, and a rule that called them offenders would be asking for a change that buys nothing");
+  assert.match(text, /the moment a glob joins the variable/i,
+    "and the trigger for applying it, so the reader can tell their own next command apart from those eight");
+});
+
+test("#2076 MUTATION: losing the remedy and reinstating the override must EACH go red", () => {
+  const text = flat(agentPractices);
+
+  // Direction 1 -- the remedy is dropped. The principle survives and the reader has no command.
+  const withoutRemedy = text.replace(THE_EMPTY_GUARD, "the usual removal");
+  assert.notEqual(withoutRemedy, text, "the remedy mutation must LAND, or this proves nothing");
+  assert.doesNotMatch(withoutRemedy, THE_EMPTY_GUARD,
+    "a file that states the principle without the command must fail the assertion above");
+
+  // Direction 2 -- the override is reinstated as the answer. This is the mutation a guard that only
+  // looked for `:?` would survive: the remedy is still on the page, and the sentence now points past it.
+  const overrideReinstated = text.replace(NOT_AN_OVERRIDE,
+    "reaching for an override is the quicker fix and is fine here");
+  assert.notEqual(overrideReinstated, text, "the override mutation must LAND, or this proves nothing");
+  assert.doesNotMatch(overrideReinstated, NOT_AN_OVERRIDE,
+    "a file that offers the override must fail the assertion above -- the override being NAMED is not "
+    + "the property under test, its being DISOWNED is");
+
+  // Direction 3 -- the rule is narrowed back to `rm`. It still reads correctly about the one command it
+  // was born from, and says nothing to the next session meeting a different refused shape.
+  const narrowed = text.replace(SHAPE_NOT_EFFECT, "always write `rm` this way");
+  assert.notEqual(narrowed, text, "the narrowing mutation must LAND, or this proves nothing");
+  assert.doesNotMatch(narrowed, SHAPE_NOT_EFFECT,
+    "a file carrying only the `rm` instance must fail the assertion above -- the general form is the "
+    + "part the row said was worth keeping");
+});
