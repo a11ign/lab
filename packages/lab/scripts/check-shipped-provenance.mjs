@@ -55,13 +55,33 @@ function main() {
   // WHAT IT EXAMINED, always. A pass that does not say how many entries it read is indistinguishable from
   // a pass over an empty directory, which is this repo's definition of a check that reports success
   // having examined nothing.
+  //
+  // AND `existsSync` IS THE WHOLE OF WHAT THIS LINE MAY CLAIM (#2162). It answers whether THIS CHECKOUT
+  // holds the file; it cannot answer whether anything was ever published. The gloss here used to read
+  // `absent (never published)` -- a measured fact and an unmeasured conclusion joined by a bracket, with
+  // no way for a reader to tell which half was checked. A publish that does not commit its CHANGELOG back
+  // leaves exactly this state, and that is a real event here rather than a hypothetical: #1824 records the
+  // 2026-09-19 release running `release:version` inside the job with nothing committing the result. Only
+  // the registry can answer the publication question, and this gate deliberately runs where there is no
+  // npm token -- so the honest move is to say less, not to reach further.
+  const changelogState = changelog ? "present" : "absent, so nothing to examine";
   process.stdout.write(`  ${changesets.length} pending promotion changeset(s); `
-    + `CHANGELOG ${changelog ? "present" : "absent (never published)"}\n`);
+    + `CHANGELOG ${changelogState}\n`);
   for (const problem of problems) process.stdout.write(`\n  ${problem}\n`);
   if (problems.length) {
     process.stdout.write("\n  The weights ARE the API (ADR 0007), so a release that cannot say which model "
       + "it ships is one nobody can trace a finding back to.\n");
   }
+
+  // THE SOURCE NAMES WHAT WAS READ, and `renderVerdict` appends the word `examined` to it (#2162).
+  // Naming "the CHANGELOG" unconditionally made the PASS line read "... and the CHANGELOG examined and
+  // clean" over a `changelog` of `null` -- which is exactly what the summary line's own comment above
+  // calls a check reporting success having examined nothing: the principle stated and violated in one
+  // output. An absent CHANGELOG is NAMED as absent rather than silently dropped, so a reader can tell a
+  // file left out of the population from one that was never asked about.
+  const source = changelog
+    ? `the shipped weights, ${changesets.length} pending changeset(s) and the CHANGELOG`
+    : `the shipped weights and ${changesets.length} pending changeset(s) (no CHANGELOG to read)`;
   // examined:1, of:1 IS THE ANSWER, not a placeholder — and INCONCLUSIVE (exit 2) is UNREACHABLE from
   // this call site as a result. That is a design decision, verified in
   // `provenance-gate-refuses.test.ts`'s "INCONCLUSIVE is unreachable" test, not an oversight to fix.
@@ -86,7 +106,7 @@ function main() {
   const verdict = gateVerdict({
     examined: 1,
     of: 1,
-    source: `the shipped weights, ${changesets.length} pending changeset(s) and the CHANGELOG`,
+    source,
     failures: problems.length,
   });
   process.stdout.write(`\n  ${renderVerdict(verdict)}\n`);
