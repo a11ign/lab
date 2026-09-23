@@ -58,6 +58,34 @@
  * What CI can now catch that no unattended check could catch before: the requirement being dropped
  * entirely, or the CI identity itself acquiring a bypass. What it still cannot catch: a THIRD PARTY
  * gaining one. That asymmetry is the honest summary, and the full reasoning is at `BINDING` below.
+ *
+ * ------------------------------------------------------------------------------------------------------
+ * #2086 done-when #1 -- THE CANONICAL WORDING OF THE LIMITATION, and the reason it is recorded HERE.
+ *
+ * The row asked for this reason to be written into `.claude/rules/agent-practices.md` as well. It is not,
+ * and the ruling that says so is worth keeping beside it: `ceo` left the choice to `product-manager`, who
+ * dropped the clause on 2026-09-23T09:22Z because WHAT IS BEING RECORDED IS A GUARD'S LIMITATION, whose
+ * reader is whoever runs the guard. The rules file carries what a session needs in order to ACT. There IS a
+ * rules-file consequence -- the shipped "`main` REQUIRES an approving review" section names
+ * `bypass_pull_request_allowances` as THE exemption instrument, and after `ceo`'s edit the requirement
+ * lives on two surfaces and that paragraph knows one -- and it is filed as #2093, blocked by this row so
+ * that it can quote the four sentences below rather than reword them twice.
+ *
+ * A SESSION OR A CI JOB ASKING "IS THE REVIEW REQUIREMENT STILL THERE" MUST PICK ITS INSTRUMENT BY WHAT IT
+ * HOLDS, AND SAY WHICH IT USED:
+ *
+ *   - WITH REPOSITORY ADMIN: `branches/main/protection`, via `A11Y_CHECK_BRANCH_PROTECTION=1`. It is the
+ *     only surface whose exemption list can be ENUMERATED, so it is the only one that can answer "nobody is
+ *     exempt". It remains the authoritative read and the complete instrument.
+ *   - WITHOUT ADMIN -- every session and every CI job here: `rules/branches/main` plus `rulesets/{id}`, via
+ *     `A11Y_CHECK_MAIN_RULESET=1`. It answers the exemption question FOR THE ASKING IDENTITY ONLY.
+ *     `current_user_can_bypass: "never"` means "I am bound". It does NOT mean "nobody is exempt", and
+ *     `bypass_actors` -- the field that could say -- is withheld from a token without write access to the
+ *     ruleset, its absence meaning "you may not look" rather than "the list is empty".
+ *
+ * So a green run of the cheap instrument is evidence that the requirement EXISTS and that the runner cannot
+ * walk past it. Quoting it as evidence that nobody can walk past it is the overclaim #2022 exists to
+ * prevent, and it does not become acceptable by being cheap.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -514,20 +542,31 @@ const BINDING = {
 type BindingCode = (typeof BINDING)[keyof typeof BINDING];
 
 type BranchRule = { type?: string; ruleset_id?: number; parameters?: { required_approving_review_count?: number } };
-type RulesetBinding = {
-  /** `GET /repos/{o}/{r}/rules/branches/main` -- any token that can read the repo; null when unreadable. */
-  branchRules: BranchRule[] | null;
-  /** `enforcement` of the ruleset the biting rule came from; null when unreadable. */
+type RulesetMeta = {
+  /** `enforcement` of ONE ruleset: "active" | "evaluate" | "disabled"; null when unreadable. */
   enforcement: string | null;
   /** `current_user_can_bypass`: "always" | "pull_requests_only" | "never" | "exempt"; null when unreadable. */
   canBypass: string | null;
+};
+type RulesetBinding = {
+  /** `GET /repos/{o}/{r}/rules/branches/main` -- any token that can read the repo; null when unreadable. */
+  branchRules: BranchRule[] | null;
+  /**
+   * Keyed by `ruleset_id`: one entry per contributing ruleset that was actually read.
+   *
+   * A MISSING ENTRY IS NOT AN EMPTY ONE, and this is the third absence rule in this file, decided the same
+   * way as the other two: nobody has measured what a missing ruleset read means, so it is CANNOT_TELL. A
+   * `pull_request` rule whose ruleset is absent from this map is a rule whose binding state was never
+   * examined, and the verdict below fails closed on it.
+   */
+  rulesets: Record<number, RulesetMeta>;
 };
 
 /** The only value that means "this identity is bound"; every other value, known or not, means it is not. */
 const NOT_BYPASSABLE = "never";
 
 /** Existence and strength, from the branch-keyed endpoint. Most restrictive wins, as requirements compose. */
-function ruleAppliesVerdict({ branchRules, enforcement, canBypass }: RulesetBinding) {
+function ruleAppliesVerdict({ branchRules, rulesets }: RulesetBinding) {
   if (branchRules === null) {
     return { code: BINDING.CANNOT_TELL as BindingCode,
       why: "`rules/branches/main` could not be read, so nothing is known about which rules apply" };
@@ -537,20 +576,64 @@ function ruleAppliesVerdict({ branchRules, enforcement, canBypass }: RulesetBind
     return { code: BINDING.ABSENT as BindingCode,
       why: "no `pull_request` rule applies to `main`: the ruleset surface requires no approval -- the pre-#2086 shape" };
   }
-  const counts = prRules.map((r) => r.parameters?.required_approving_review_count);
-  if (counts.some((c) => typeof c !== "number")) {
+  return strongestBinding(prRules.map((rule) => contributingRuleVerdict(rule, rulesets)));
+}
+
+/**
+ * ONE RULE, JUDGED AGAINST ITS OWN RULESET -- the #2090 review blocker, and why it was a real defect.
+ *
+ * The first version took the count from `Math.max` over EVERY contributing `pull_request` rule and the
+ * exemption state from whichever ruleset happened to serve the FIRST of them. GitHub documents that several
+ * rulesets can contribute rules to one branch, and the branch-keyed endpoint returns all of them, so those
+ * two halves could come from different rulesets: a rule demanding 5 approvals inside an `evaluate` ruleset,
+ * printed as binding because an unrelated `active` ruleset's rule happened to be listed first. It was also
+ * ORDER-DEPENDENT -- the same two rulesets in the other order produced a different verdict -- which is the
+ * fingerprint of the bug and what the tests below pin.
+ *
+ * A rule binds ME only if ITS OWN ruleset is `active` AND ITS OWN `current_user_can_bypass` is `never`.
+ * Nothing about one ruleset may be attributed to another.
+ */
+function contributingRuleVerdict(rule: BranchRule, rulesets: Record<number, RulesetMeta>) {
+  const count = rule.parameters?.required_approving_review_count;
+  if (typeof count !== "number") {
     // Deliberately NOT read as zero. GitHub returns this parameter on every `pull_request` rule seen here,
     // so a rule without it is an unrecognised shape rather than a cleared field -- the same discipline
     // `enforce_admins` gets above, and for the same reason: nobody has measured the absent case.
-    return { code: BINDING.CANNOT_TELL as BindingCode,
+    return { code: BINDING.CANNOT_TELL as BindingCode, required: 0,
       why: "a `pull_request` rule carries no `required_approving_review_count` -- an unrecognised shape, not a cleared field" };
   }
-  const required = Math.max(...(counts as number[]));
-  if (required < 1) {
-    return { code: BINDING.DECORATIVE as BindingCode,
-      why: `the \`pull_request\` rule applies and asks for ${required} approvals: it exists and demands nothing` };
+  const why = `a \`pull_request\` rule requires ${count} approval(s) on \`main\``;
+  if (count < 1) {
+    return { code: BINDING.DECORATIVE as BindingCode, required: count,
+      why: `the \`pull_request\` rule applies and asks for ${count} approvals: it exists and demands nothing` };
   }
-  return bindsMeVerdict({ enforcement, canBypass }, `a \`pull_request\` rule requires ${required} approval(s) on \`main\``);
+  const meta = rule.ruleset_id === undefined ? undefined : rulesets[rule.ruleset_id];
+  if (meta === undefined) {
+    return { code: BINDING.CANNOT_TELL as BindingCode, required: count,
+      why: `${why}, but the ruleset serving it (${rule.ruleset_id ?? "the rule carries no `ruleset_id`"}) was never`
+        + " read: its `enforcement` and `current_user_can_bypass` are unknown, so whether THIS rule binds me is unknown" };
+  }
+  return { ...bindsMeVerdict(meta, why), required: count };
+}
+
+/**
+ * MANY RULES, ONE VERDICT, AND IT FAILS CLOSED.
+ *
+ * `CANNOT_TELL` on ANY contributing rule decides the whole read, even when another rule is known to bind:
+ * the reviewer's second arm, "fail closed when any contributing rule is unexamined". Passing on the rules
+ * that happened to be readable is how a check certifies a branch it only partly looked at.
+ *
+ * Otherwise the most restrictive rule that ACTUALLY BINDS ME wins, because requirements compose: a rule
+ * that is decorative or that I bypass contributes nothing and weakens nothing. With no binding rule at all,
+ * `EXEMPT` is preferred over `DECORATIVE` -- both mean "not bound", and the one naming a live bypass of the
+ * identity running the check is the one worth printing.
+ */
+function strongestBinding(verdicts: Array<{ code: BindingCode; why: string; required: number }>) {
+  const unexamined = verdicts.find((v) => v.code === BINDING.CANNOT_TELL);
+  if (unexamined) return { code: BINDING.CANNOT_TELL as BindingCode, why: unexamined.why };
+  const binding = verdicts.filter((v) => v.code === BINDING.BINDS_ME);
+  if (binding.length > 0) return binding.reduce((a, b) => (b.required > a.required ? b : a));
+  return verdicts.find((v) => v.code === BINDING.EXEMPT) ?? verdicts[0];
 }
 
 /**
@@ -562,7 +645,7 @@ function ruleAppliesVerdict({ branchRules, enforcement, canBypass }: RulesetBind
  * `exempt`, which is not mentioned anywhere in the row, the ruling, or any reading taken here.
  * `pull_requests_only` matters most of all: it is a bypass of precisely the rule being asserted.
  */
-function bindsMeVerdict({ enforcement, canBypass }: Omit<RulesetBinding, "branchRules">, why: string) {
+function bindsMeVerdict({ enforcement, canBypass }: RulesetMeta, why: string) {
   if (enforcement === null) {
     return { code: BINDING.CANNOT_TELL as BindingCode,
       why: `${why}, but the ruleset's \`enforcement\` could not be read, so it may be evaluated rather than enforced` };
@@ -586,14 +669,35 @@ function bindsMeVerdict({ enforcement, canBypass }: Omit<RulesetBinding, "branch
 
 // --- #2086: the verdict, against synthetic inputs ----------------------------------------------------
 
-const BINDS = (over: Partial<RulesetBinding> = {}): RulesetBinding => ({
+const LIVE_RULES: BranchRule[] = [
+  { type: "merge_queue", ruleset_id: 23681721 },
+  { type: "pull_request", ruleset_id: 23681721, parameters: { required_approving_review_count: 1 } },
+];
+
+/**
+ * `enforcement`/`canBypass` give EVERY ruleset named in `branchRules` the same metadata, which is the live
+ * shape: one ruleset, `merge-queue-main`, serves both rules. Tests where the rulesets must DIFFER pass
+ * `rulesets` explicitly -- and that is the whole of the #2090 review blocker, so those tests are below.
+ */
+const BINDS = ({ branchRules = LIVE_RULES, enforcement = "active", canBypass = NOT_BYPASSABLE, rulesets }: {
+  branchRules?: BranchRule[] | null;
+  enforcement?: string | null;
+  canBypass?: string | null;
+  rulesets?: Record<number, RulesetMeta>;
+} = {}): RulesetBinding => ({
+  branchRules,
+  rulesets: rulesets ?? Object.fromEntries((branchRules ?? []).map((r) => [r.ruleset_id, { enforcement, canBypass }])),
+});
+
+/** Two rulesets contributing to `main`, each with its own state -- the shape the blocker was about. */
+const TWO_RULESETS = ({ first, second, rulesets }: {
+  first: number; second: number; rulesets: Record<number, RulesetMeta>;
+}): RulesetBinding => ({
   branchRules: [
-    { type: "merge_queue", ruleset_id: 23681721 },
-    { type: "pull_request", ruleset_id: 23681721, parameters: { required_approving_review_count: 1 } },
+    { type: "pull_request", ruleset_id: 1, parameters: { required_approving_review_count: first } },
+    { type: "pull_request", ruleset_id: 2, parameters: { required_approving_review_count: second } },
   ],
-  enforcement: "active",
-  canBypass: "never",
-  ...over,
+  rulesets,
 });
 
 test("#2086: the live shape read as `a11ign-ai-workers` BINDS_ME -- the state this row exists to certify", () => {
@@ -643,6 +747,74 @@ test("#2086: the MOST RESTRICTIVE of several `pull_request` rules wins -- requir
       { type: "pull_request", ruleset_id: 2, parameters: { required_approving_review_count: 2 } },
     ],
   }));
+  assert.equal(v.code, BINDING.BINDS_ME);
+  assert.match(v.why, /requires 2 approval/);
+});
+
+const ACTIVE_BINDING: RulesetMeta = { enforcement: "active", canBypass: NOT_BYPASSABLE };
+
+test("#2090 BLOCKER: a rule I BYPASS never lends its count to a rule that binds me", () => {
+  // THE REVIEW FINDING, AS THE STATE THAT PRODUCED IT. Ruleset 1 binds me and asks for 1; ruleset 2 asks
+  // for 5 and I walk past it. The first version took the count from `Math.max` over both rules and the
+  // exemption state from the FIRST rule's ruleset alone, and so printed "requires 5 approval(s)" with
+  // BINDS_ME -- certifying a requirement that does not bind the identity running the check.
+  const v = ruleAppliesVerdict(TWO_RULESETS({ first: 1, second: 5,
+    rulesets: { 1: ACTIVE_BINDING, 2: { enforcement: "active", canBypass: "always" } } }));
+  assert.equal(v.code, BINDING.BINDS_ME);
+  assert.match(v.why, /requires 1 approval/, "only the rule that actually binds me may set the number");
+  assert.doesNotMatch(v.why, /requires 5 approval/, "the bypassed rule's count is not mine to claim");
+});
+
+test("#2090 BLOCKER: the verdict does not depend on which ruleset is listed first", () => {
+  // THE FINGERPRINT OF THE DEFECT, and the cheapest way to catch its return. Reading the exemption state
+  // off `branchRules.find(...)` made the answer a property of GitHub's response ORDER: the same two
+  // rulesets swapped gave BINDS_ME one way and EXEMPT the other. Both orders must now agree.
+  const rulesets = { 1: { enforcement: "active", canBypass: "always" }, 2: ACTIVE_BINDING };
+  const forward = ruleAppliesVerdict(TWO_RULESETS({ first: 5, second: 1, rulesets }));
+  const reversed = ruleAppliesVerdict({
+    branchRules: [...(TWO_RULESETS({ first: 5, second: 1, rulesets }).branchRules ?? [])].reverse(), rulesets,
+  });
+  assert.equal(forward.code, BINDING.BINDS_ME);
+  assert.deepEqual(forward, reversed, "order-dependence here IS the bug");
+});
+
+test("#2090 BLOCKER: a rule in an `evaluate` ruleset lends nothing to one in an `active` ruleset", () => {
+  // The same confusion through the other field. `rules/branches/{branch}` is documented to exclude
+  // non-active rulesets, so this should be unreachable live -- but the count and the enforcement came from
+  // different objects, and a documented filter is not a measured one.
+  const v = ruleAppliesVerdict(TWO_RULESETS({ first: 1, second: 5,
+    rulesets: { 1: ACTIVE_BINDING, 2: { enforcement: "evaluate", canBypass: NOT_BYPASSABLE } } }));
+  assert.equal(v.code, BINDING.BINDS_ME);
+  assert.match(v.why, /requires 1 approval/);
+  assert.doesNotMatch(v.why, /requires 5 approval/);
+});
+
+test("#2090 BLOCKER: an UNEXAMINED contributing ruleset is CANNOT_TELL even though another rule binds", () => {
+  // FAIL CLOSED, the reviewer's second arm. Ruleset 2's metadata was never fetched -- the live reader drops
+  // a ruleset it could not read rather than inventing one -- so its rule may demand more than the rule that
+  // did bind. Passing on the readable half is how a check certifies a branch it only partly looked at.
+  const v = ruleAppliesVerdict(TWO_RULESETS({ first: 1, second: 5, rulesets: { 1: ACTIVE_BINDING } }));
+  assert.equal(v.code, BINDING.CANNOT_TELL);
+  assert.notEqual(v.code, BINDING.BINDS_ME, "one readable ruleset is not a reading of the branch");
+  assert.match(v.why, /was never\s+read/);
+});
+
+test("#2090 BLOCKER: a `pull_request` rule with NO `ruleset_id` cannot be attributed, so it is CANNOT_TELL", () => {
+  // The positive control for the attribution itself: with no id there is no ruleset to ask about, and
+  // reading that as "use whichever ruleset we already have" is the defect one step further on.
+  const v = ruleAppliesVerdict({
+    branchRules: [{ type: "pull_request", parameters: { required_approving_review_count: 1 } }],
+    rulesets: { 23681721: ACTIVE_BINDING },
+  });
+  assert.equal(v.code, BINDING.CANNOT_TELL);
+  assert.match(v.why, /carries no `ruleset_id`/);
+});
+
+test("#2090: two rulesets that BOTH bind me still take the most restrictive -- composition is unchanged", () => {
+  // The positive control for the fail-closed rules above: judging each rule against its own ruleset must
+  // not have cost the composition the ruling turns on. Both active, both binding, 1 and 2 -> 2.
+  const v = ruleAppliesVerdict(TWO_RULESETS({ first: 1, second: 2,
+    rulesets: { 1: ACTIVE_BINDING, 2: ACTIVE_BINDING } }));
   assert.equal(v.code, BINDING.BINDS_ME);
   assert.match(v.why, /requires 2 approval/);
 });
@@ -719,12 +891,18 @@ test("#2086 LIVE: the `pull_request` rule applies to `main` and this identity ca
 });
 
 /**
- * Both halves of the ruleset state, with the id taken from the branch-keyed read rather than hardcoded.
+ * Both halves of the ruleset state, with the ids taken from the branch-keyed read rather than hardcoded.
  *
  * #2086's own Open-check flagged the hardcoded `rulesets/23681721` as rot waiting to happen, with "re-read
- * the list for its id" as the manual recovery. Taking `ruleset_id` off the rule that was actually found
+ * the list for its id" as the manual recovery. Taking `ruleset_id` off the rules that were actually found
  * removes the id from this file altogether: there is nothing left to go stale, and a rule served by a
  * different or re-created ruleset is followed automatically.
+ *
+ * ONE READ PER CONTRIBUTING RULESET, NOT ONE PER BRANCH (#2090 review blocker). GitHub returns the rules of
+ * EVERY active ruleset that applies, repository- and organisation-level alike, so `find(...)` answered for
+ * whichever was listed first. Today that is one call, because one ruleset serves both rules here; the loop
+ * is what keeps the verdict honest if a second ever appears, and a ruleset that could not be read is simply
+ * left OUT of the map, where `contributingRuleVerdict` fails closed on it.
  */
 function liveRulesetBinding(): RulesetBinding {
   let branchRules: BranchRule[];
@@ -732,16 +910,30 @@ function liveRulesetBinding(): RulesetBinding {
     branchRules = JSON.parse(gh(["api", "repos/a11ign/a11ign/rules/branches/main"]));
   } catch (cause) {
     console.log(`  \`rules/branches/main\` could not be read (${String(cause)}).`);
-    return { branchRules: null, enforcement: null, canBypass: null };
+    return { branchRules: null, rulesets: {} };
   }
-  const rulesetId = branchRules?.find((r) => r.type === "pull_request")?.ruleset_id;
-  if (rulesetId === undefined) return { branchRules, enforcement: null, canBypass: null };
+  const ids = new Set((branchRules ?? [])
+    .filter((r) => r.type === "pull_request")
+    .map((r) => r.ruleset_id)
+    .filter((id): id is number => typeof id === "number"));
+  const rulesets: Record<number, RulesetMeta> = {};
+  for (const id of ids) {
+    const meta = liveRulesetMeta(id);
+    if (meta) rulesets[id] = meta;
+  }
+  return { branchRules, rulesets };
+}
+
+/** One ruleset's own `enforcement` and `current_user_can_bypass`; null when the object could not be read. */
+function liveRulesetMeta(id: number): RulesetMeta | null {
   try {
-    const ruleset = JSON.parse(gh(["api", `repos/a11ign/a11ign/rulesets/${rulesetId}`]));
-    return { branchRules, enforcement: ruleset.enforcement ?? null, canBypass: ruleset.current_user_can_bypass ?? null };
+    const ruleset = JSON.parse(gh(["api", `repos/a11ign/a11ign/rulesets/${id}`]));
+    return { enforcement: ruleset.enforcement ?? null, canBypass: ruleset.current_user_can_bypass ?? null };
   } catch (cause) {
-    console.log(`  \`rulesets/${rulesetId}\` could not be read (${String(cause)}); the exemption half is unavailable.`);
-    return { branchRules, enforcement: null, canBypass: null };
+    // Never an empty catch, and deliberately NOT an entry in the map: an unread ruleset is unexamined,
+    // which the verdict reports as CANNOT_TELL rather than letting the readable rulesets answer for it.
+    console.log(`  \`rulesets/${id}\` could not be read (${String(cause)}); that ruleset's exemption half is unavailable.`);
+    return null;
   }
 }
 
