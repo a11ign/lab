@@ -93,6 +93,23 @@ export function compareTable(/** @type {any} */ reports) {
   return lines;
 }
 
+/**
+ * A miss whose head cleared its own Neyman-Pearson floor and lost to the raise above it, named as such.
+ *
+ * Without this the list reads `MISS <id>` and every miss looks like the same thing. It is not: a head
+ * scoring inside `[floor, threshold)` already satisfied the bound the cut is derived from, so the work
+ * that would recover it is on the threshold and not on the features. Measured 2026-09-23 (#2152) on
+ * 4.1.3, where 0.9608 was called threshold variance and 0.9442 "not a threshold-variance candidate at
+ * all" — both were in that band, and nothing printed here could have said so.
+ *
+ * Empty for a report written before the evaluator recorded the floors, which reads as an unannotated
+ * miss rather than as a claim that the head lost it.
+ */
+function aboveFloor(/** @type {any} */ criterion, /** @type {any} */ id) {
+  const subtypes = criterion.falseNegativesAboveFloor?.[id];
+  return subtypes?.length ? `   (above the NP floor of ${subtypes.join(", ")} — the raise refused it)` : "";
+}
+
 /** Which cases a criterion got wrong, named, with the cut that decided them. */
 export function criterionDetail(/** @type {any} */ report, /** @type {any} */ criterion) {
   const c = report.criteria?.[criterion];
@@ -102,7 +119,11 @@ export function criterionDetail(/** @type {any} */ report, /** @type {any} */ cr
     `  records=${c.records} positive=${c.positive} clean=${c.clean}`,
     `  TP=${c.truePositive} FP=${c.falsePositive} FN=${c.falseNegative}`];
   for (const [key, label] of [["falsePositiveCases", "FALSE ALARM"], ["falseNegativeCases", "MISS"]]) {
-    for (const id of [...new Set(c[key] ?? [])]) lines.push(`  ${label.padEnd(12)} ${id}`);
+    // The annotation belongs to MISSES only: a false alarm fired, so no cut refused it and the floor
+    // says nothing about it. Keyed off the list being walked rather than trusting the two lists never
+    // to share an id.
+    const annotate = key === "falseNegativeCases" ? aboveFloor : () => "";
+    for (const id of [...new Set(c[key] ?? [])]) lines.push(`  ${label.padEnd(12)} ${id}${annotate(c, id)}`);
     if (c[`${key}Truncated`]) lines.push(`  ...and ${c[`${key}Truncated`]} more not listed`);
   }
   if (!c.falsePositive && !c.falseNegative) lines.push("  (nothing wrong on this criterion)");
