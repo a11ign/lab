@@ -129,11 +129,20 @@ const ENTERS_A_DIRECTORY = new RegExp([
  *
  * **The absolute branch takes a FORWARD SLASH and nothing else, and that is a finding rather than a
  * detail.** The older branches allow `[/\\]{1,2}` because a `~` or `$HOME` is written `~\` on Windows and
- * `~\\` inside a JS string. Reusing that here made the guard read `"...HOME=/home/agent\nEnvironment=..."`
- * — a JS newline escape in `host-units.test.ts`'s fixture — as the directories `~/n` and `~/nEnvironment`,
- * neither of which anybody has. An absolute POSIX home root is separated by `/`; a backslash after one is
- * a string escape. Classifying those two would have put nonsense in a list whose whole value is that every
- * row is a decision somebody made — the objection this file already states one question up.
+ * `~\\` inside a JS string. Reusing that here made the guard read a JS newline escape as a separator, at
+ * THREE sites in `host-units.test.ts` — measured, with that variant, over the whole file after
+ * `stripComments`:
+ *
+ *     "...\nEnvironment=HOME=/home/agent\n"                -> `~/n`            (twice: the escape ends it)
+ *     "...\nEnvironment=HOME=/home/agent\nEnvironment=..." -> `~/nEnvironment` (once: it runs on into
+ *                                                                              the next key)
+ *
+ * Neither is a directory anybody has. **The count is three sites and two names, and it is written out
+ * because one site is not enough to reason from**: a reviewer reconstructing only the last of the three
+ * concluded the variant produced `~/nEnvironment` alone, which is true of that string and false of the
+ * file. An absolute POSIX home root is separated by `/`; a backslash after one is a string escape.
+ * Classifying either name would have put nonsense in a list whose whole value is that every row is a
+ * decision somebody made — the objection this file already states one question up.
  */
 const UNDER_A_HOME_ROOT = new RegExp([
   String.raw`(?:\/root|\$HOME|~)[/\\]{1,2}([A-Za-z0-9._-]+)`,
@@ -505,7 +514,8 @@ test("THE EXEMPTION IS THE FIELD, NOT THE FILE -- a quoted `command` in a report
  * report is normalised to `~/<segment>` whatever the spelling matched, so an absolute `/home/agent/x`
  * and a `~/x` are not merely both found: they are indistinguishable afterwards.
  *
- * @param file the tracked path, for the report @param source its bytes
+ * @param file the tracked path, for the report
+ * @param source its bytes
  */
 export function homeRootNamesIn(file: string, source: string): string[] {
   const named: string[] = [];
@@ -546,9 +556,21 @@ test("BOTH SPELLINGS OF ONE PATH ARE DECIDED THE SAME WAY -- a systemd unit cann
   assert.deepEqual(homeRootNamesIn("a.md", "`~/workers/gh`"), [],
     "and in the tilde spelling -- one list classifies both, because one function decides both");
 
-  // The user segment is MATCHED, not named. `/home/runner/` is GitHub's runner and `/home/agent/` this
-  // host's account; a pattern that named either would answer about one machine and claim to answer
-  // about home roots -- the shape this whole file exists to refuse.
+});
+
+test("the user segment is MATCHED, not named -- a home root under ANOTHER account is still a home root, "
+  + "so `/home/runner/` is read exactly as `/home/agent/` is", () => {
+  // Its own test rather than a fourth block in the one above: that test's fact is "both spellings of one
+  // path are decided alike", and this is "the pattern does not hardcode an account". A failure here
+  // reported under that name would describe something other than what broke.
+  //
+  // `/home/agent/` is this host's account and `/home/runner/` is GitHub's. A pattern naming either would
+  // answer about ONE MACHINE while claiming to answer about home roots -- the shape this whole file
+  // exists to refuse, and the reason the checkout's own name is read out of the source of truth rather
+  // than written here.
+  const unclassified = "nobodys-dir";
+  assert.ok(!(unclassified in OTHER_HOME_DIRECTORIES) && unclassified !== CHECKOUT_NAME,
+    "the control segment must be one the guard has no classification for, or it proves nothing");
   assert.deepEqual(homeRootNamesIn("a.yml", `/home/runner/${unclassified}/x`),
     [`a.yml: ~/${unclassified}`], "a home root belonging to another account is still a home root");
 });
