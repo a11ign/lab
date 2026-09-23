@@ -606,3 +606,150 @@ test("#2076: no tracked file a shell executes runs `rm` on a glob beneath an ung
     + "is the CONTROL test above, which fires the same detector on five dangerous forms; the non-empty "
     + `complement is the nine pinned call sites. Write \`"\${VAR:?}"/*\`:\n${offenders.join("\n")}`);
 });
+
+// --- #2025: which account this session is spending, stated where the rate-limit rule is read -----------
+//
+// The paragraph above teaches a reader to read the headers of "the pool you are about to spend", and until
+// this landed it ended by telling them the host "has exactly one `gh` identity configured -- so there is
+// nothing here to switch to". That was true of `~/.config/gh` and false of the host. There are two
+// configurations, two tokens and two accounts, and `/home/agent/.local/bin/gh` ALREADY SWITCHES between
+// them by `HERDR_WORKSPACE_ID` -- which is the same routing `host-units.mjs` and three unit files already
+// describe, contradicted in the one file every session loads.
+//
+// WHAT IS PINNED IS THE REFUSAL, NEVER THE COUNT, and the distinction is this row's whole point. An
+// assertion on "exactly one" -- or on the number two -- goes stale the day a third configuration appears,
+// and is then a green test asserting a false fact, which is precisely the defect being repaired. So
+// nothing below counts configurations. What must survive a mutation is *do not switch to the other config
+// to get past your own limit*, and a guard that merely finds the string `GH_CONFIG_DIR` survives the
+// inversion of it with nothing to say. The row's Open-check grep is a filing instrument for one moment,
+// deliberately not reproduced here for the same reason.
+//
+// WRITTEN AS FUNCTIONS, per #2104's finding on the block above: a mutation proves a guard bites only by
+// running THE GUARD against the mutated subject.
+
+const DEFAULT_CONFIG_IS_A_PERSON =
+  /the default `~\/\.config\/gh` authenticates as a person \(`DanBeckDev`\)/i;
+const WORKERS_CONFIG_IS_THE_BOT =
+  /`GH_CONFIG_DIR=\/home\/agent\/workers\/gh` as `a11ign-ai-workers`/;
+const WHICH_UNIT_SETS_IT = /which is what `a11ign-work-tick\.service` sets/i;
+const THE_REFUSAL = /you must not switch to the other config to get past your own limit/i;
+const ATTRIBUTION_IS_THE_GROUND =
+  /one export changes who every subsequent write is attributed to/i;
+const THE_ROUTING_WRAPPER = /is a ROUTING WRAPPER sitting ahead of `\/usr\/bin\/gh`/;
+const NAME_THE_ACCOUNT_FIRST = /run `gh api user --jq \.login` first, then the headers/i;
+
+const assertsBothAccountsAreNamed = (text: string) => {
+  assert.match(text, DEFAULT_CONFIG_IS_A_PERSON,
+    "which account the DEFAULT config authenticates as -- a reader who is told only that a second one "
+    + "exists cannot tell whether the pool they just read belongs to a person or to the bot");
+  assert.match(text, WORKERS_CONFIG_IS_THE_BOT,
+    "and the other, by the export that selects it, so the sentence names a thing the reader can type "
+    + "rather than an arrangement they have to go and discover");
+  assert.match(text, WHICH_UNIT_SETS_IT,
+    "and something on this host that already sets it -- the claim is that the switch is REAL and in use, "
+    + "and an unattributed claim is the one the old sentence made in the other direction");
+};
+
+const assertsTheRefusal = (text: string) => {
+  assert.match(text, THE_REFUSAL,
+    "THE SENTENCE THIS ROW EXISTS FOR. The old wording declined the switch because there was supposedly "
+    + "nothing to switch to; correcting the fact without carrying the refusal would leave a reader with "
+    + "an exhausted pool, a healthy neighbour named for them, and no instruction");
+  assert.match(text, ATTRIBUTION_IS_THE_GROUND,
+    "and the reason, which is what makes it hold at 3am against a deadline: the cost is not the quota, "
+    + "it is that every subsequent write is attributed to somebody else");
+  assert.match(text, /that disposition is `ceo`'s \(`lane:ceo`, #916\) rather than yours/i,
+    "and WHOSE decision it is, so the refusal points somewhere instead of merely forbidding -- this file "
+    + "must not settle by wording whether a blocked session may ever spend the other account's quota");
+  assert.match(text, /wait out your own reset/i,
+    "and what to do instead, because a prohibition whose alternative is unstated is one a stuck reader "
+    + "reads as advice");
+};
+
+const assertsTheRoutingIsNotChosen = (text: string) => {
+  assert.match(text, THE_ROUTING_WRAPPER,
+    "that a bare `gh` is ROUTED -- without this the paragraph's own instruction, read the pool you are "
+    + "about to spend, is unfollowable, because the reader believes the account is whatever their config "
+    + "says and it is decided by their PATH");
+  assert.match(text, /`HERDR_WORKSPACE_ID` is listed in `\/home\/agent\/workers\/workspaces\.txt`/,
+    "and what the routing keys on, which is also why a systemd unit -- having no workspace id -- has to "
+    + "declare its identity rather than inherit one");
+  assert.match(text, NAME_THE_ACCOUNT_FIRST,
+    "and the command that answers it BEFORE the headers are read, or the reader has a fact they cannot "
+    + "act on");
+  assert.match(text, /decided by your PATH and your workspace id, not by what you typed/i,
+    "and the consequence stated plainly, since the same command name spelling two accounts is the part "
+    + "that reads as impossible until it is written down");
+};
+
+test("#2025: the practices file names both accounts and what already sets the second", () => {
+  assertsBothAccountsAreNamed(flat(agentPractices));
+});
+
+test("#2025: the refusal is carried, with its ground and whose decision it is", () => {
+  assertsTheRefusal(flat(agentPractices));
+});
+
+test("#2025: a bare `gh` is routed, and the reader is told to name the account before reading its pool", () => {
+  assertsTheRoutingIsNotChosen(flat(agentPractices));
+});
+
+const IDENTITY_MUTATIONS: readonly {
+  what: string; pattern: RegExp; into: string; rejects: (text: string) => void; why: string;
+}[] = [
+  {
+    what: "refusal inverted", pattern: THE_REFUSAL,
+    into: "switch to the other config when your own limit is reached",
+    rejects: assertsTheRefusal,
+    why: "THE MUTATION A `GH_CONFIG_DIR`-GREP SURVIVES -- both accounts are still named, the export is "
+      + "still on the page, and the sentence now recommends the thing it exists to refuse. The switch "
+      + "being DESCRIBED is not the property under test; its being REFUSED is",
+  },
+  {
+    what: "ground for the refusal dropped", pattern: ATTRIBUTION_IS_THE_GROUND,
+    into: "it is a different directory",
+    rejects: assertsTheRefusal,
+    why: "the prohibition survives with no reason behind it, and a reader who is blocked, on a deadline "
+      + "and holding a working alternative overrides an unexplained rule -- which is how the old sentence "
+      + "failed, refusing on a ground that turned out to be false",
+  },
+  {
+    what: "the defect re-shipped", pattern: WHICH_UNIT_SETS_IT,
+    into: "so there is nothing here to switch to",
+    rejects: assertsBothAccountsAreNamed,
+    why: "the exact sentence this row removed, restored beside a correction -- the file would then state "
+      + "the second config and deny it in the same breath, and a guard reading only the refusal would "
+      + "still be green",
+  },
+  {
+    what: "routing dropped", pattern: THE_ROUTING_WRAPPER,
+    into: "reads a single config",
+    rejects: assertsTheRoutingIsNotChosen,
+    why: "the two accounts survive as an arrangement the reader must opt into, so they conclude their own "
+      + "`gh` is the default one -- which on this host it is not, in three of the workspaces listed",
+  },
+  {
+    what: "instrument for the account dropped", pattern: NAME_THE_ACCOUNT_FIRST,
+    into: "read the headers",
+    rejects: assertsTheRoutingIsNotChosen,
+    why: "the reader is told the account is not what they think and given nothing to run, which is the "
+      + "same shape as prohibiting the endpoint without naming the headers, one field over",
+  },
+];
+
+test("#2025 MUTATION: each direction must make the assertions THEMSELVES throw, not merely stop matching", () => {
+  const text = flat(agentPractices);
+
+  // THE CONTROL, RUN FIRST -- five `assert.throws` in a row is a green test on a file that fails every
+  // check, so the unmutated subject is shown passing all three before any throw below means anything.
+  for (const check of [assertsBothAccountsAreNamed, assertsTheRefusal, assertsTheRoutingIsNotChosen]) {
+    check(text);
+  }
+
+  for (const { what, pattern, into, rejects, why } of IDENTITY_MUTATIONS) {
+    const mutated = text.replace(pattern, into);
+    assert.notEqual(mutated, text, `the ${what} mutation must LAND, or this proves nothing`);
+    assert.throws(() => rejects(mutated), assert.AssertionError,
+      `the practices file with the ${what} must FAIL the check above, and did not -- ${why}`);
+  }
+});
