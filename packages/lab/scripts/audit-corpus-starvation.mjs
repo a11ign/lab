@@ -126,6 +126,34 @@ export const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
   // `after` is empty, which IS the finding. So "some form change announced something" cannot be true of a
   // page whose only activation announced nothing. 143 of 143 on both, not 142.
   //
+  // SUPERSEDED FOR THE 3.3.1 LINE (#2070, 2026-09-23) -- the reading above is a DATED historical one from
+  // 2026-08-30/31 and is kept as it was written, never restated as current. The `4.1.3` line is
+  // untouched by that row and still reads as printed.
+  //
+  // What that row changed: `3.3.1:validation-error-silent` now declares 24 cases whose submit is
+  // deliberately NOT named like one, so the same population is 167 positives rather than 143. Re-derived
+  // 2026-09-23 on the branch that closes #2070, `agent/task-named-3311-training-2070`, by the command
+  // below rather than quoted -- so the next reader re-runs it instead of trusting this line:
+  //
+  //     3.3.1:validation-error-silent   167 declared, probeKindFor: submit=143 task=24
+  //
+  // READ OFF THE MATRIX AND THE REAL DECIDER, NOT off `runs/` -- this is the case declarations through
+  // `probeKindFor`, which is what a recapture WOULD stamp, and a checkout's `runs/` is only as fresh as
+  // its last sync. It is also the other SPELLING of the same fact: `probeKindFor` returns `"task"` and a
+  // capture records `"taskButton"`, so the line above (a corpus read) and this one (a matrix read) count
+  // the same thing under two names, and mixing them silently reads zero.
+  //
+  //     node --input-type=module -e 'const { CASES } = await import("./packages/lab/src/training/case-matrix.mjs");
+  //       const { probeKindFor } = await import("./packages/nvda-worker/src/capture-pure.mjs");
+  //       const v = CASES.filter(c => c.criterion === "3.3.1" && c.subtype === "validation-error-silent");
+  //       const by = {}; for (const c of v) { const k = probeKindFor(`${c.badSignal?.control ?? ""}, button`,
+  //         { probeForms: true, task: c.task }) ?? "none"; by[k] = (by[k] ?? 0) + 1; } console.log(v.length, by);'
+  //
+  // THOSE 24 CARRY NO SIGNAL UNTIL THE CORPUS IS RECAPTURED under protocol 21 (#1926): the feature at
+  // `screenreader_features.py:1015-1017` refuses `taskButton` alone, because 26 silent
+  // `4.1.3:form-activation-silent` positives are `taskButton` and would otherwise read as silent
+  // validation errors. A flat number here before that recapture is this ordering working as designed.
+  //
   // THE HYPOTHESIS THIS REFUTED is worth keeping, because it was plausible and wrong: 29 cases in each
   // subtype carry disclosure FURNITURE, a working disclosure announces something, so the feature should
   // have been 1 on those. It is not, because a disclosure activation lands in `stateChanges` and never in
@@ -190,7 +218,9 @@ export const IMPOSSIBLE_BY_DEFINITION = Object.freeze({
   //
   // 3.3.1 and 4.1.3 are the two subtypes whose whole point is a submission that gets rejected or ignored, so
   // a control to press is guaranteed by the case definition rather than incidental to it. Census against
-  // `case-matrix.mjs`'s `CASES` (no capture needed): 143/143 positives of 3.3.1 carry `probeForms: true`;
+  // `case-matrix.mjs`'s `CASES` (no capture needed): 143/143 positives of 3.3.1 carry `probeForms: true`
+  // (#2070, 2026-09-23: re-derived as 167/167 after that row added 24 task-named cases -- the census's
+  // CLAIM is unchanged, every positive still carries the flag, and only the denominator moved);
   // 149/150 of 4.1.3, the one exception being `filter-status-silent-link`, which activates through
   // `probeNavigation` instead -- its own comment says why: "probeForms deliberately never activates a link."
   // That case's `observed.formChanges.asked` is FALSE (no `probeForms`, no `formState`), so it lands in the
