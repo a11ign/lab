@@ -753,3 +753,188 @@ test("#2025 MUTATION: each direction must make the assertions THEMSELVES throw, 
       `the practices file with the ${what} must FAIL the check above, and did not -- ${why}`);
   }
 });
+
+// --- #2093: two surfaces carry the review requirement, and which instrument reads which ----------------
+//
+// `ceo` added a `pull_request` rule to the `merge-queue-main` ruleset on 2026-09-23 at ~09:04Z (#2086),
+// and #2090 shipped the guard that reads it. The "`main` REQUIRES an approving review" section above
+// predates both: it named `bypass_pull_request_allowances` as THE exemption instrument and ended by
+// teaching `CANNOT_TELL` for everything a non-admin token can see. Nothing in it was false -- classic
+// protection still carries the requirement and its exemption list is still admin-only -- but a session
+// following it reported ignorance where a true, bounded reading had become available.
+//
+// WHAT IS PINNED IS THE BOUND ON THE CHEAP READING, NEVER THE FIELD NAME, and that is this block's whole
+// point. `current_user_can_bypass` is a string a grep finds in the sentence that states the limitation AND
+// in the sentence that inverts it, so a guard looking for it is green on both. What must survive a
+// mutation is *`never` answers for me alone and does not mean nobody is exempt* -- flip that to its
+// opposite and every assertion below must throw. The row's Open-check grep counted the field name for one
+// moment, as a filing instrument; it is deliberately not reproduced here.
+//
+// THE OVERCLAIM IS THE FAILURE MODE, NOT THE OMISSION. A rewrite that lets `never` read as "nobody is
+// exempt" is strictly worse than the over-strict sentence it replaces, because it is quotable: `ceo`'s
+// ruling on #2086 is binding on the wording -- "a CI check that certifies less than it appears to is the
+// failure #2022 exists to prevent; it does not become acceptable by being cheap".
+//
+// WRITTEN AS FUNCTIONS, per #2104's finding two blocks up: a mutation proves a guard bites only by running
+// THE GUARD against the mutated subject.
+
+const TWO_SURFACES =
+  /TWO SURFACES CARRY THE REQUIREMENT, and a reading of one is not a reading of the other/i;
+const EXEMPTIONS_DO_NOT_COMPOSE = /requirements compose and exemptions do not/i;
+const CLASSIC_CAN_BE_ENUMERATED =
+  /the only surface whose exemption list can be ENUMERATED rather than merely queried for one identity/i;
+const PICK_YOUR_INSTRUMENT = /PICK THE INSTRUMENT BY WHAT YOU HOLD, AND SAY WHICH ONE YOU USED/i;
+const THE_ADMIN_INSTRUMENT = /`branches\/main\/protection`, behind `A11Y_CHECK_BRANCH_PROTECTION=1`/;
+const THE_CHEAP_INSTRUMENT =
+  /`rules\/branches\/main` plus `rulesets\/\{id\}`, behind `A11Y_CHECK_MAIN_RULESET=1`/;
+const THE_BOUNDED_CLAIM =
+  /`current_user_can_bypass: "never"` answers FOR ME ALONE and does not mean nobody is exempt/i;
+const ABSENCE_IS_NOT_EMPTINESS =
+  /its absence means "you may not look", never "the list is empty"/i;
+const CANNOT_TELL_STANDS = /`CANNOT_TELL` stands unchanged as the verdict for/i;
+const NOT_ACCEPTABLE_BY_BEING_CHEAP = /does not become acceptable by being cheap/i;
+
+const assertsBothSurfacesAreNamed = (text: string) => {
+  assert.match(text, TWO_SURFACES,
+    "that there are TWO of them -- the shipped section knew one, and a session reading it goes to the "
+    + "admin-only endpoint, gets a 404 and stops, never learning the other object exists");
+  assert.match(text, /`merge-queue-main` ruleset \(id `23681721`\)/,
+    "and WHICH ruleset carries the second, by id, because `rulesets/{id}` is the call the reader has to "
+    + "make and the id is not derivable from anything else on the page");
+  assert.match(text, EXEMPTIONS_DO_NOT_COMPOSE,
+    "and `ceo`'s reason for ADD rather than SWAP -- without it a reader meets two surfaces and assumes a "
+    + "second place to be exempt, which is the assumption the ruling was granted against");
+  assert.match(text, CLASSIC_CAN_BE_ENUMERATED,
+    "and why the admin-only surface stays authoritative rather than being superseded by the cheaper one: "
+    + "enumeration is a property only it has, and it is the property the whole requirement rests on");
+};
+
+const assertsTheInstrumentIsChosenByWhatYouHold = (text: string) => {
+  assert.match(text, PICK_YOUR_INSTRUMENT,
+    "that the choice is the reader's and has to be DECLARED -- two instruments answering different "
+    + "questions are quoted as one the moment a verdict does not say which produced it");
+  assert.match(text, THE_ADMIN_INSTRUMENT,
+    "the admin instrument, with the switch that runs it, or 'use the complete one' names nothing typeable");
+  assert.match(text, THE_CHEAP_INSTRUMENT,
+    "and the one every session and every CI job here can actually run -- this is the whole of what #2086 "
+    + "bought, and a rules file that omits it leaves the reader at `CANNOT_TELL` by default again");
+};
+
+const assertsTheReadingIsBounded = (text: string) => {
+  assert.match(text, THE_BOUNDED_CLAIM,
+    "THE SENTENCE THIS ROW EXISTS FOR. `never` is a per-identity answer; read as a universal it converts "
+    + "the cheap instrument into a certificate that nobody can bypass `main`, which no token here can "
+    + "issue -- and a quotable overclaim is worse than the over-strict sentence it replaced");
+  assert.match(text, ABSENCE_IS_NOT_EMPTINESS,
+    "and the same error one field over: `bypass_actors` is withheld rather than empty on a token without "
+    + "write access to the ruleset, so a reader who treats a missing list as an empty one reaches the "
+    + "universal claim by a second route");
+  assert.match(text, CANNOT_TELL_STANDS,
+    "and that the old verdict SURVIVES for the question it always answered -- the amendment narrows what "
+    + "`CANNOT_TELL` covers and must not read as retiring it, which is the other way this section dies");
+  assert.match(text, NOT_ACCEPTABLE_BY_BEING_CHEAP,
+    "with `ceo`'s ruling on the wording, because cheapness is the argument that will be made for the "
+    + "overclaim and the answer to it has to be on the page rather than in a closed row");
+};
+
+test("#2093: the practices file names both surfaces and why the admin-only one stays authoritative", () => {
+  assertsBothSurfacesAreNamed(flat(agentPractices));
+});
+
+test("#2093: the instrument is chosen by what the reader holds, and must be declared", () => {
+  assertsTheInstrumentIsChosenByWhatYouHold(flat(agentPractices));
+});
+
+test("#2093: the cheap reading is bounded to the asking identity, and `CANNOT_TELL` survives", () => {
+  assertsTheReadingIsBounded(flat(agentPractices));
+});
+
+const REVIEW_SURFACE_MUTATIONS: readonly {
+  what: string; pattern: RegExp; into: string; rejects: (text: string) => void; why: string;
+}[] = [
+  {
+    what: "bounded claim inverted", pattern: THE_BOUNDED_CLAIM,
+    into: '`current_user_can_bypass: "never"` means nobody is exempt',
+    rejects: assertsTheReadingIsBounded,
+    why: "THE MUTATION A `current_user_can_bypass`-GREP SURVIVES -- the field is still named, the cheap "
+      + "instrument is still on the page, and the sentence now issues the certificate #2022 exists to "
+      + "prevent. The field being MENTIONED is not the property under test; the reading being BOUNDED is",
+  },
+  {
+    what: "withheld read as empty", pattern: ABSENCE_IS_NOT_EMPTINESS,
+    into: "an absent list is an empty one",
+    rejects: assertsTheReadingIsBounded,
+    why: "the bound on `current_user_can_bypass` survives and the reader reaches the same universal claim "
+      + "through `bypass_actors` instead -- a permission-dependent absence read as a measurement",
+  },
+  {
+    what: "CANNOT_TELL retired", pattern: CANNOT_TELL_STANDS,
+    into: "the cheap read replaces the verdict for",
+    rejects: assertsTheReadingIsBounded,
+    why: "the opposite failure to the overclaim and the easier one to ship by accident: the amendment "
+      + "narrows what `CANNOT_TELL` covers, and a reader told it is superseded stops reporting the one "
+      + "question neither surface answers without admin",
+  },
+  {
+    what: "second surface dropped", pattern: TWO_SURFACES,
+    into: "the requirement lives in classic protection",
+    rejects: assertsBothSurfacesAreNamed,
+    why: "the shipped defect restored -- every assertion about the cheap instrument could still be on the "
+      + "page while the reader is told there is one object to read, and they will read the one that 404s",
+  },
+  {
+    what: "ADD read as SWAP", pattern: EXEMPTIONS_DO_NOT_COMPOSE,
+    into: "the newer surface supersedes the older",
+    rejects: assertsBothSurfacesAreNamed,
+    why: "`ceo`'s ruling inverted: a reader who believes the ruleset replaced classic protection concludes "
+      + "the enumerable surface is gone and that `never` is now the best available answer, which is the "
+      + "overclaim arrived at by a third route",
+  },
+  {
+    what: "cheap instrument dropped", pattern: THE_CHEAP_INSTRUMENT,
+    into: "the endpoints you can reach",
+    rejects: assertsTheInstrumentIsChosenByWhatYouHold,
+    why: "the bound survives with nothing bounded -- the reader is told what the cheap reading does not "
+      + "mean and never told how to take it, so they are back at `CANNOT_TELL` for everything, which is "
+      + "the state this row exists to leave",
+  },
+];
+
+test("#2093 MUTATION: each direction must make the assertions THEMSELVES throw, not merely stop matching", () => {
+  const text = flat(agentPractices);
+
+  // THE CONTROL, RUN FIRST -- six `assert.throws` in a row is a green test on a file that fails every
+  // check, so the unmutated subject is shown passing all three before any throw below means anything.
+  for (const check of [assertsBothSurfacesAreNamed, assertsTheInstrumentIsChosenByWhatYouHold,
+    assertsTheReadingIsBounded]) {
+    check(text);
+  }
+
+  for (const { what, pattern, into, rejects, why } of REVIEW_SURFACE_MUTATIONS) {
+    const mutated = text.replace(pattern, into);
+    assert.notEqual(mutated, text, `the ${what} mutation must LAND, or this proves nothing`);
+    assert.throws(() => rejects(mutated), assert.AssertionError,
+      `the practices file with the ${what} must FAIL the check above, and did not -- ${why}`);
+  }
+});
+
+/**
+ * THE ROW'S OWN REJECTED ALTERNATIVE, PINNED AS A CONTROL: "a guard that merely finds the string
+ * `current_user_can_bypass` survives that flip and must not be accepted as one". That is an assertion
+ * about a guard this file does not contain, so it is demonstrated rather than trusted -- the weaker guard
+ * is written out here, run against the inverted file, and shown GREEN in the same breath as the real one
+ * is shown red above.
+ */
+test("#2093 CONTROL: a field-name guard is green on the inverted file, which is why this block is not one", () => {
+  const FIELD_NAME_ONLY = /current_user_can_bypass/;
+  const inverted = flat(agentPractices)
+    .replace(THE_BOUNDED_CLAIM, '`current_user_can_bypass: "never"` means nobody is exempt');
+
+  assert.match(flat(agentPractices), FIELD_NAME_ONLY, "the weaker guard passes on the real file");
+  assert.match(inverted, FIELD_NAME_ONLY,
+    "and on the inverted one -- a file that now states the overclaim still contains the field name, so "
+    + "the cheaper guard cannot tell the two apart and would have shipped green");
+  assert.throws(() => assertsTheReadingIsBounded(inverted), assert.AssertionError,
+    "while the guard this block actually installs rejects it -- the pair is the evidence that what is "
+    + "pinned is the bounded CLAIM and not the field NAME");
+});
