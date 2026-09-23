@@ -424,7 +424,7 @@ test("#2058: the successor's own numbers are the tree's — six first-publish en
   assert.equal(countOf("first-publish-"), 6,
     "six first-publish entries were pending when #2058 measured; a different number makes the paragraph "
     + "below wrong rather than merely old");
-  assert.ok(list.includes("Six of those 85 are `first-publish-*.md`"),
+  assert.ok(list.includes("**Six of the pending entries are `first-publish-*.md`**"),
     "the successor decision must name how many of the pending entries announce a publish that happened");
 
   // The document says the first CHANGELOG was never written. That is a live claim, and the release that
