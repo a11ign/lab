@@ -182,6 +182,11 @@ test("an unreportable environment still keys consistently", () => {
     // cached capture misses on the day the field ships. It still differs from the id a NEW profile is
     // stamped with, so a cold profile does not blend with a warm one, which is the point.
     browserProfile: "adopted",
+    // "maximized", NOT "unknown", and for the identical reason two fields up (#1561). Every capture on
+    // disk was taken under `--start-maximized` at whatever width the guest's desktop gave, so the absent
+    // value is a fact about those captures. It differs from any `WxH` a pinned guest reports, which is
+    // what stops a pinned capture and a maximized one sharing an entry.
+    windowSize: "maximized",
   });
 });
 
@@ -268,6 +273,70 @@ test("DIRECTION TWO -- a DIFFERENT profile stamp changes the key, which is the w
     cacheKey({ caseId: "c", pageHash: "p", environment: {} }),
     "the whole cache key must move, not merely the environment fragment -- a field that changes "
     + "`environmentKey` and not `cacheKey` would be a key nobody consults");
+});
+
+// --- #1561: the pinned window is a key input, and MISSING must read as MAXIMIZED, not as unknown ---
+
+test("DIRECTION ONE -- a capture that predates the pin keys as MAXIMIZED, and a PINNED capture does not "
+  + "share its entry. Both halves, because either alone is satisfied by the wrong default", () => {
+  // Every capture on disk was taken with `--start-maximized` and no `--window-size`, so `"maximized"` is
+  // what those captures ARE rather than what we failed to find out -- the same device
+  // `browserProfile: "adopted"` uses one block up. `"unknown"` would say the width is unknowable, which
+  // is false, and would read identically to a guest whose /health could not be parsed.
+  assert.equal(environmentKey({}).windowSize, "maximized");
+  assert.deepEqual(environmentKey({ windowSize: "maximized" }), environmentKey({}));
+
+  // And the half that costs the recapture: the pin is a DIFFERENT environment from maximized. This is
+  // the rolling-deploy case the field exists for -- a guest still on the pre-pin worker code reports no
+  // `windowSize` while reporting the same `captureProtocol` as a pinned one, so the protocol cannot
+  // separate them and this field must.
+  assert.notDeepEqual(environmentKey({ windowSize: "1024x768" }), environmentKey({}));
+});
+
+test("DIRECTION TWO -- TWO WIDTHS GIVE TWO KEYS, and the whole cache key moves rather than just the "
+  + "environment fragment", () => {
+  // The property the field exists for, and it is a measured one rather than a hypothetical: `caselaw`
+  // matched a `<768px` layout on one worker and a `>=992px` layout on another and yielded different
+  // findings (#1043), and weather.metoffice.gov.uk's CSS hides its `h1` below 1280px (#1522). Two guests
+  // pinned to different widths are therefore not interchangeable, exactly as two guidepup versions are
+  // not.
+  const narrow = { ...ENV, windowSize: "1024x768" };
+  const wide = { ...ENV, windowSize: "1280x1024" };
+  assert.notDeepEqual(environmentKey(narrow), environmentKey(wide));
+  assert.notEqual(cacheKey({ caseId: "c", pageHash: "p", environment: narrow }),
+    cacheKey({ caseId: "c", pageHash: "p", environment: wide }),
+    "the whole cache key must move, not merely the environment fragment -- a field that changes "
+    + "`environmentKey` and not `cacheKey` would be a key nobody consults");
+
+  // The other direction, and it is not the same assertion twice: two guests pinned to the SAME width
+  // must still share evidence, or the pool stops reusing anything and the field has taken the cache
+  // offline rather than made it honest.
+  assert.equal(cacheKey({ caseId: "c", pageHash: "p", environment: narrow }),
+    cacheKey({ caseId: "c", pageHash: "p", environment: { ...ENV, windowSize: "1024x768" } }));
+});
+
+test("the value the worker reports IS the value the launch flags ask for -- one constant, not two "
+  + "spellings of it", () => {
+  // The defect this forecloses: `browsers.mjs` asks Edge for one size while `/health` reports another,
+  // so every capture is keyed by a width it was not taken at. Two copies of one fact is this repo's most
+  // expensive recurring shape, and a cache key is the worst place for it.
+  //
+  // Read from `browsers.mjs`'s SOURCE rather than imported: that module is fine to import, but
+  // `server.mjs` is not (it constructs a guidepup ScreenReader at module scope and throws on a host with
+  // no screen reader), and asserting both ends the same way is what makes this one claim instead of two.
+  const browsers = readFileSync(new URL("../../../nvda-worker/src/browsers.mjs", import.meta.url), "utf8");
+  const server = readFileSync(new URL("../../../nvda-worker/src/server.mjs", import.meta.url), "utf8");
+  assert.match(browsers, /export const CAPTURE_WINDOW = \{ width: 1024, height: 768 \}/,
+    "the pin is 1024x768 -- ceo's ruling (b) on #1561, and what all ten guests provision to (#1567)");
+  assert.match(browsers, /`--window-size=\$\{CAPTURE_WINDOW\.width\},\$\{CAPTURE_WINDOW\.height\}`/,
+    "the launch flag must be BUILT from the constant, not written out beside it");
+  assert.match(server, /windowSize: CAPTURE_WINDOW_SIZE,/,
+    "/health must report the same constant the flag is built from");
+
+  // The positive control for the three matchers above: a matcher that matches anything proves nothing,
+  // and `assert.match` against source text is exactly where that happens silently.
+  assert.doesNotMatch(server, /windowSize: SOME_OTHER_CONSTANT,/,
+    "the source matcher matches text that is not there, so the assertions above prove nothing");
 });
 
 /**
