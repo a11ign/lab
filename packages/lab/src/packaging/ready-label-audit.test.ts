@@ -122,10 +122,11 @@ test("MUTATION: review-only is genuinely in MUTEX_LABELS, not just described as 
     "review-only must be in MUTEX_LABELS -- it is #27's own shape, the reason this label exists at all");
 });
 
-// --- handClaims: #673 -- ready + in-progress together, which row-claim.mjs's own one-command label
-// write is not expected to leave behind, so the co-occurrence is strong evidence the claim was made some
-// other way. NOT proof: #677's reproduction (quoted in row-claim.mjs's #749 comment) shows that command
-// half-applying, so the claim path can mint this pair too (#2111 rework) ---
+// --- handClaims: #673 -- ready + in-progress together, which a COMPLETED claim through row-claim.mjs
+// does not leave behind, so the co-occurrence is strong evidence the claim was made some other way. NOT
+// proof: #749 split the claim's additions and its `ready` removal into two calls (because #677 reproduced
+// one combined edit half-applying), so a claim whose second call never landed leaves this same pair
+// (#2111 rework) ---
 
 test("#673 ACCEPTANCE: a row hand-claimed by applying in-progress + session:x to a ready row is " +
   "reported as a hand claim", () => {
