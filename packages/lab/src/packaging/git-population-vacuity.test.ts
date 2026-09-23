@@ -457,6 +457,23 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "committed playbook, and its own two positive controls prove the parser can reject and that the "
       + "walk reaches a named file.",
   },
+  "packages/lab/src/packaging/roles-readme.test.ts": {
+    guard: "files.length >= SHELL_FILE_FLOOR",
+    note: "guarded, and the entry is owed to the review that asked for it one level down. #2076's block "
+      + "spawns `git ls-files` to enumerate the tracked files a shell EXECUTES (`*.sh` plus "
+      + "`scripts/git-hooks/`) and asserts `deepEqual(offenders, [])` over them -- no script attaches a "
+      + "glob to an unguarded variable, the shape `rm -f $D/*.md` that `.claude/rules/agent-practices.md` "
+      + "now rules out. A clean result is the EXPECTED answer on main today, so 'no script does this' and "
+      + "'the walk read nothing' are otherwise the same observation -- which is the identical objection "
+      + "`reviewer-2` raised on #2104 about the emptiness itself, and this file asks it of the walk. "
+      + "GUARDED TWICE, because a floor does not say WHICH tree was read (the `fixture-absence-guard` "
+      + "entry above learned that the hard way): the floor is 10 against 16 measured, and beside it the "
+      + "walk must CONTAIN `fetch-windows-iso.sh` by name -- the file carrying the most "
+      + "`rm`-through-a-variable lines in the tree, so a walk scoped to the wrong subtree fails rather "
+      + "than reporting clean. The emptiness's own positive control is a different thing again and lives "
+      + "in that file: the detector is fired at five dangerous forms and six safe ones, and the nine real "
+      + "call sites are pinned by name as the non-empty complement.",
+  },
 };
 
 /**
