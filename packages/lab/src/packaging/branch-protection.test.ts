@@ -27,6 +27,13 @@
  * forbidden -- and here it is demonstrably FORBIDDEN. `branches/main.protected` is the discriminator,
  * because it needs no admin. A verdict that cannot see the exemption list must be CANNOT_TELL, loudly,
  * and never a pass: that is the whole of "distinguish them or fail loudly".
+ *
+ * AND THE ONE THING THAT RULE COST, CORRECTED 2026-09-23. Refusing to read an ABSENT
+ * `bypass_pull_request_allowances` as an empty one made `REQUIRED` unreachable on every token and every
+ * configuration -- a guard with no green state at all. `ceo` read the live body at admin level on both
+ * sides of the change and settled it (#2022, comment 5787499206); `exemptIdentities` carries the
+ * before/after, the flipped test carries why it is kept, and the foot of this file records the sibling key
+ * where the same absence still means "you may not look".
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -54,7 +61,12 @@ type ProtectionRead = {
   /** `.protected` from `GET /repos/{o}/{r}/branches/main` -- readable by any token that can read the repo. */
   protectedFlag: boolean | null;
   /** The protection body when status is 200, else null. */
-  body: { required_pull_request_reviews?: ReviewRule } | null;
+  body: ProtectionBody | null;
+};
+type ProtectionBody = {
+  required_pull_request_reviews?: ReviewRule;
+  /** Present in every protection body GitHub returns; disabled, it exempts every repository admin. */
+  enforce_admins?: { enabled?: boolean };
 };
 type BypassAllowances = { users?: unknown[]; teams?: unknown[]; apps?: unknown[] };
 type ReviewRule = { required_approving_review_count?: number; bypass_pull_request_allowances?: BypassAllowances };
@@ -82,14 +94,26 @@ function protectionReadVerdict({ status, protectedFlag }: Pick<ProtectionRead, "
 }
 
 /**
- * Everyone named here may merge without the approval the rule demands. `null` means the key was ABSENT,
- * which is NOT the same as empty and is deliberately not read as it: GitHub is documented to omit the key
- * when no actor may bypass, but this session holds no admin token and so could not confirm that against a
- * live body. Reading absence as "nobody is exempt" is the shape that turns a missing field into a pass.
+ * Everyone named here may merge without the approval the rule demands.
+ *
+ * AN ABSENT `bypass_pull_request_allowances` IS AN EMPTY LIST -- MEASURED, NOT ASSUMED, AND ONLY ON A 200.
+ * This function is reached only from a `READ.READABLE` body, which is what makes that safe to say. It was
+ * `CANNOT_TELL` until 2026-09-23, correctly, because no session here could read a live body; the
+ * consequence was a guard that could not pass on ANY token or configuration -- non-admin stops at the
+ * forbidden-404, admin stopped here, and a 200 with the key absent is the CORRECT fully-configured state.
+ * `ceo` read the same endpoint at admin level on both sides of the change (#2022, comment 5787499206):
+ *
+ *     2026-09-22  bypass_pull_request_allowances : users=[DanBeckDev], teams=[], apps=[]   # key PRESENT
+ *     2026-09-23  {"bypass":null,"count":1,"has_bypass_key":false}                         # key ABSENT
+ *
+ * Same repo, same endpoint, same permission level: GitHub emits the key when an actor is configured and
+ * omits it when none is. So absence here is the CLEARED state, not an unknown one. This is a narrow
+ * exception to this repository's `absence vs broken` rule, and it is narrow because it is measured on both
+ * sides -- contrast the ruleset's `bypass_actors`, whose absence is permission-dependent and therefore
+ * still unreadable; see "the other exemption surfaces" at the foot of this file.
  */
-function exemptIdentities(reviews: ReviewRule | undefined): string[] | null {
-  const allow = reviews?.bypass_pull_request_allowances;
-  if (!allow) return null;
+function exemptIdentities(reviews: ReviewRule): string[] {
+  const allow = reviews.bypass_pull_request_allowances ?? {};
   return [...(allow.users ?? []), ...(allow.teams ?? []), ...(allow.apps ?? [])]
     .map((a) => (typeof a === "string" ? a : String((a as { login?: string; slug?: string })?.login
       ?? (a as { slug?: string })?.slug ?? JSON.stringify(a))));
@@ -115,11 +139,12 @@ function reviewRequirementVerdict({ reviewDecision, protection }: { reviewDecisi
   if (read.code === READ.ABSENT) {
     return { code: VERDICT.DECORATIVE as Code, why: `${read.why}, so nothing requires a review` };
   }
-  return reviewRuleVerdict(protection.body?.required_pull_request_reviews, reviewDecision);
+  return reviewRuleVerdict(protection.body, reviewDecision);
 }
 
 /** The readable-protection half: the rule must exist, demand at least one approval, and exempt nobody. */
-function reviewRuleVerdict(reviews: ReviewRule | undefined, reviewDecision: string) {
+function reviewRuleVerdict(body: ProtectionBody | null, reviewDecision: string) {
+  const reviews = body?.required_pull_request_reviews;
   if (!reviews) {
     return { code: VERDICT.DECORATIVE as Code,
       why: "the protection object carries no `required_pull_request_reviews` at all, so no approval is required" };
@@ -130,16 +155,37 @@ function reviewRuleVerdict(reviews: ReviewRule | undefined, reviewDecision: stri
       why: `\`required_approving_review_count\` is ${count}: the rule exists and demands nothing` };
   }
   const exempt = exemptIdentities(reviews);
-  if (exempt === null) {
-    return { code: VERDICT.CANNOT_TELL as Code,
-      why: "`bypass_pull_request_allowances` is ABSENT from the body. GitHub omits the key when nobody may "
-        + "bypass, but absence is not read as empty here -- confirm it against a live body with an admin token" };
-  }
   if (exempt.length > 0) {
     return { code: VERDICT.DECORATIVE as Code,
       why: `the rule bites but these identities bypass it: ${exempt.join(", ")}` };
   }
-  return { code: VERDICT.REQUIRED as Code, why: `reviewDecision=${reviewDecision}, and no identity is exempt` };
+  return adminEnforcementVerdict(body, `reviewDecision=${reviewDecision}, and no identity is exempt`);
+}
+
+/**
+ * THE SECOND EXEMPTION SURFACE IN THE SAME BODY, so it costs no extra call: with `enforce_admins`
+ * disabled, every repository admin bypasses the review requirement without appearing in any allowance
+ * list. `ceo` asked for it pinned "only if cheap" (#2022, comment 5787499206) -- this one is, because it
+ * arrives in the read that is already being made. Measured on the live body 2026-09-23: `{"enabled":true}`.
+ *
+ * Its ABSENCE is NOT read as emptiness, and that is not a contradiction of `exemptIdentities` above: the
+ * before/after measurement that licenses absence-as-cleared exists for `bypass_pull_request_allowances`
+ * and does not exist for this key, which GitHub returns in every protection body it has ever served here.
+ * An absent one is a shape nobody has seen, so it is `CANNOT_TELL` rather than a guess in either direction.
+ */
+function adminEnforcementVerdict(body: ProtectionBody, why: string) {
+  const enforceAdmins = body.enforce_admins;
+  if (!enforceAdmins || typeof enforceAdmins.enabled !== "boolean") {
+    return { code: VERDICT.CANNOT_TELL as Code,
+      why: "`enforce_admins` is missing from a readable protection body -- GitHub always returns it, so this "
+        + "is an unrecognised body rather than a cleared field, and admins may or may not be exempt" };
+  }
+  if (!enforceAdmins.enabled) {
+    return { code: VERDICT.DECORATIVE as Code,
+      why: "`enforce_admins` is disabled: every repository admin bypasses the rule without being named in "
+        + "any allowance list -- the exemption surface that carries no identities to print" };
+  }
+  return { code: VERDICT.REQUIRED as Code, why: `${why}, with \`enforce_admins\` enabled` };
 }
 
 // --- the 404 trap -----------------------------------------------------------------------------------
@@ -184,7 +230,10 @@ test("#2022: an unexpected status is its own CANNOT_TELL rather than falling thr
 
 const READABLE = (allow: BypassAllowances = {}, count = 1): ProtectionRead => ({
   status: HTTP_OK, protectedFlag: true,
-  body: { required_pull_request_reviews: { required_approving_review_count: count, bypass_pull_request_allowances: allow } },
+  body: {
+    required_pull_request_reviews: { required_approving_review_count: count, bypass_pull_request_allowances: allow },
+    enforce_admins: { enabled: true },
+  },
 });
 
 test("#2022 THE #1968 STATE: an APPROVED review with an EMPTY decision is DECORATIVE, as measured", () => {
@@ -262,14 +311,53 @@ test("#2045 BLOCKER: `required_approving_review_count: 0` is DECORATIVE -- the p
   assert.match(v.why, /demands nothing/);
 });
 
-test("#2045 BLOCKER: an ABSENT `bypass_pull_request_allowances` is CANNOT_TELL, not an empty list", () => {
-  // Absence is not emptiness. A missing key read as "nobody is exempt" is how a field that was never
-  // checked becomes a pass; this repository has the `absence vs broken` rule for exactly that shape.
+test("#2045 ROUND 2: an ABSENT `bypass_pull_request_allowances` on a 200 body is an EMPTY list -- measured", () => {
+  // THIS TEST IS THE RECORD OF A MEASUREMENT, AND IT IS KEPT WITH ITS VERDICT FLIPPED RATHER THAN DELETED.
+  // Until 2026-09-23 it asserted CANNOT_TELL, and that was right: no session here held a token that could
+  // read a live protection body, so "GitHub omits the key when nobody may bypass" was documentation rather
+  // than an observation. The cost of being right about it was a guard REQUIRED could not be reached on --
+  // non-admin stops at the forbidden-404, admin stopped here, and this shape IS the fully-configured one.
+  // `ceo` then read the same endpoint at admin level on both sides of the change: the key present with
+  // `DanBeckDev` in it on 09-22, absent entirely on 09-23 with the count still 1. Absence here is the
+  // CLEARED state. The narrowness matters -- see `exemptIdentities`, and the foot of this file for the
+  // sibling key whose absence is still NOT emptiness because nobody has the same before/after for it.
   const v = reviewRequirementVerdict({ reviewDecision: "APPROVED",
-    protection: { status: HTTP_OK, protectedFlag: true, body: { required_pull_request_reviews: { required_approving_review_count: 1 } } } });
+    protection: { status: HTTP_OK, protectedFlag: true,
+      body: { required_pull_request_reviews: { required_approving_review_count: 1 }, enforce_admins: { enabled: true } } } });
+  assert.equal(v.code, VERDICT.REQUIRED);
+  assert.notEqual(v.code, VERDICT.CANNOT_TELL, "the state this guard exists to certify must be reachable");
+  assert.match(v.why, /no identity is exempt/);
+});
+
+test("#2045 ROUND 2: absence is emptiness ONLY on a 200 -- a forbidden read with the key absent is still CANNOT_TELL", () => {
+  // The positive control for the narrowness. `exemptIdentities` reads absence as emptiness because its
+  // only caller is the readable-body path; if that changed, this is the assertion that goes red.
+  const v = reviewRequirementVerdict({ reviewDecision: "APPROVED", protection: { ...FORBIDDEN_HERE, body: null } });
   assert.equal(v.code, VERDICT.CANNOT_TELL);
-  assert.notEqual(v.code, VERDICT.REQUIRED);
-  assert.match(v.why, /ABSENT from the body/);
+  assert.notEqual(v.code, VERDICT.REQUIRED, "a body nobody could read must never certify an empty allowance list");
+});
+
+test("#2045 ROUND 2: `enforce_admins` disabled is DECORATIVE -- the exemption surface that names nobody", () => {
+  // The second surface in the same body, so pinning it costs no extra call. An allowance list can be
+  // empty while every admin walks past the rule, and this is the one hole with no identity to print.
+  const v = reviewRequirementVerdict({ reviewDecision: "REVIEW_REQUIRED",
+    protection: { status: HTTP_OK, protectedFlag: true,
+      body: { required_pull_request_reviews: { required_approving_review_count: 1, bypass_pull_request_allowances: { users: [] } },
+        enforce_admins: { enabled: false } } } });
+  assert.equal(v.code, VERDICT.DECORATIVE);
+  assert.notEqual(v.code, VERDICT.REQUIRED, "an empty allowance list is not the whole of `exempts nobody`");
+  assert.match(v.why, /every repository admin bypasses the rule/);
+});
+
+test("#2045 ROUND 2: a MISSING `enforce_admins` is CANNOT_TELL -- absence is only emptiness where it was measured", () => {
+  // Deliberately NOT the rule applied to `bypass_pull_request_allowances` above. GitHub returns this key
+  // in every protection body read here, so a body without it is unrecognised rather than cleared, and
+  // there is no before/after to license reading it either way.
+  const v = reviewRequirementVerdict({ reviewDecision: "APPROVED",
+    protection: { status: HTTP_OK, protectedFlag: true,
+      body: { required_pull_request_reviews: { required_approving_review_count: 1 } } } });
+  assert.equal(v.code, VERDICT.CANNOT_TELL);
+  assert.match(v.why, /always returns it/);
 });
 
 test("#2022: the three verdicts are genuinely distinct -- none is a spelling of another", () => {
@@ -311,6 +399,9 @@ test("#2022 LIVE: `main` requires an approving review, asked of GitHub", () => {
   assert.equal(v.code, VERDICT.REQUIRED,
     `#${openPr.number}: ${v.why}.${v.code === VERDICT.CANNOT_TELL
       ? " Re-run with a token holding repository admin -- this session's `a11ign-ai-workers` has `permissions.admin: false`." : ""}`);
+  // A pass prints WHAT it read. `ok 21` alone is indistinguishable from a check that asked nothing, and
+  // this row is about a guard whose green run nobody had seen: the line below is what gets quoted.
+  console.log(`  LIVE PASS on #${openPr.number}: ${v.why}`);
 });
 
 /** Reads both halves of the protection state, keeping "forbidden" distinguishable from "absent". */
@@ -330,3 +421,32 @@ function liveProtection(gh: (args: string[]) => string): ProtectionRead {
     return { status: HTTP_NOT_FOUND, protectedFlag, body: null };
   }
 }
+
+/**
+ * THE OTHER EXEMPTION SURFACES, AND WHY ONLY ONE OF THE TWO IS PINNED HERE.
+ *
+ * `ceo` asked for `enforce_admins` and the `merge-queue-main` ruleset's `bypass_actors` pinned "only if
+ * cheap" (#2022, comment 5787499206). `enforce_admins` is cheap and is pinned above: it arrives inside the
+ * protection body this guard already reads, so it costs no call and one branch.
+ *
+ * THE RULESET'S `bypass_actors` IS NOT, AND THE REASON IS A MEASUREMENT RATHER THAN AN ESTIMATE OF EFFORT.
+ * Read on 2026-09-23 against the same ruleset, seconds apart, by two identities:
+ *
+ *     as `DanBeckDev`        (admin:true)   {"bypass":[],"enforcement":"active","rules":["merge_queue"]}
+ *     as `a11ign-ai-workers` (admin:false)  has("bypass_actors") => false        # the key is ABSENT
+ *
+ * So on THIS key absence is permission-dependent: it means "empty" to one token and "you may not see it"
+ * to another, from the same object at the same moment. That is the exact opposite of the
+ * `bypass_pull_request_allowances` finding above, where absence was measured as the cleared state at a
+ * FIXED permission level on both sides of a real change. Pinning it would put two contradictory absence
+ * rules in one guard, keyed on the token rather than on the field -- the shape this whole file exists to
+ * refuse. Doing it properly means a third read (`GET /repos/{o}/{r}/rulesets/{id}` plus a permission probe
+ * to interpret a missing key), which is a widening, so per `ceo`'s own "say so and I will take it as a
+ * follow-up row" it is left out and reported on #2045 instead.
+ *
+ * What IS readable without admin, and is the likely shape of that follow-up: the same object carries
+ * `current_user_can_bypass` (`"never"` for `a11ign-ai-workers` on 2026-09-23), which answers the exemption
+ * question per identity and needs no admin at all. It answers it about the `merge_queue` rule, which is
+ * the only rule this ruleset carries -- the review requirement lives in classic branch protection, not
+ * here -- so it is not a substitute for the read above, only a cheaper instrument for a different row.
+ */
