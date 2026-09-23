@@ -99,10 +99,16 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   // reader after a broken walker for a count that had moved for a perfectly good reason. So it now pins
   // the SPECIFIERS -- a control that says WHICH imports are seen cannot pass by finding nothing, and a
   // legitimate fourth import falsifies it only by being missing from this list.
+  //
+  // #2046 IS THAT CASE, and it is the first one: the arm refusal path was made to read the ARMED state,
+  // the predicate lifted to `pr-armed-state.mjs`, and the fifth specifier below is that import. The list
+  // moved because the file did; the walk is fine. This is the failure mode the paragraph above designed
+  // for, and updating the list IS the response -- there is nothing here to fix in the walker.
   assert.deepEqual(
     localImports(`${REPO}packages/agent-org/src/arm-pr.mjs`).map((p: string) => p.replace(REPO, "")).sort(),
     ["packages/agent-org/src/acceptance-commands.mjs", "packages/agent-org/src/api-pool.mjs",
-      "packages/agent-org/src/pr-hold-state.mjs", "packages/worker-fleet/src/cli-flags.mjs"],
+      "packages/agent-org/src/pr-armed-state.mjs", "packages/agent-org/src/pr-hold-state.mjs",
+      "packages/worker-fleet/src/cli-flags.mjs"],
     "arm-pr.mjs's local imports must all be visible to the walk");
 });
 
