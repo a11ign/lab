@@ -89,6 +89,38 @@ function machineryFiles(): string[] {
 export type Quotation = { file: string; line: number; value: string; text: string };
 
 /**
+ * The phrasings that bind a quoted value to a moment that has PASSED, which is what makes a line a record
+ * of its own moment rather than a claim about now. #2052's ruling made mechanical.
+ *
+ * A NAMED VOCABULARY, AND NOT "THE LINE HAS A DATE ON IT", which is what this file shipped at `9d201937`
+ * and what reviewer-2 refused. Their mutation: take `release.yml`'s live gate requirement, flip its quote
+ * to `restricted`, append `(checked 2026-09-23)` — and all nine tests passed. `checked <date>` records
+ * when somebody LOOKED; it says nothing about whether the claim is about the past, so a stale quote could
+ * evade this guard by carrying any date at all. **A date is not evidence of a record. A date bound to a
+ * past boundary is.**
+ *
+ * The two rules fail in OPPOSITE directions, and that — not the wording — is the argument. A bare date
+ * test fails OPEN: an unforeseen line is dropped from the population silently and the guard reports an
+ * agreement it never checked, which is the exact failure `the machinery population … is not empty` exists
+ * to catch one level up. This list fails CLOSED: a genuine record phrased in a way not listed here is
+ * REPORTED, and a human either rephrases the line or adds the form. The cost of being wrong here is a red
+ * test somebody reads; the cost of being wrong there was a silent hole.
+ *
+ * Both live exemptions in the tree are this one shape, and `the exemption's whole live population` below
+ * pins that they are the only two.
+ */
+const RECORD_MARKERS: readonly RegExp[] = [
+  // "It read `restricted` until 2026-09-14" (.changeset/README.md) and "Until 2026-09-14 this asserted
+  // `restricted`" (release-safety.test.ts) — the date is the END of the value's life, on either side of it.
+  /\b(?:until|up until|before|prior to|up to)\s+\d{4}-\d{2}-\d{2}\b/i,
+];
+
+/** Does this line bound its quoted value to a moment that has passed, rather than merely mention a date? */
+export function isDatedRecord(line: string): boolean {
+  return RECORD_MARKERS.some((pattern) => pattern.test(line));
+}
+
+/**
  * Every place in one file that QUOTES a value for the changeset access setting.
  *
  * A quoted `public` or `restricted` in the publish machinery means the access setting and nothing else —
@@ -98,14 +130,12 @@ export type Quotation = { file: string; line: number; value: string; text: strin
  * human reads at the moment of publishing — quotes `'restricted'` two lines below the `access=` it belongs
  * to. That near-miss is exactly how the filed open-check on #2052 matched two of five sites.
  *
- * A LINE CARRYING A DATE IS EXEMPT, and that is #2052's ruling made mechanical rather than a loophole: a
- * dated claim is a record of its own moment and stays true. `release-safety.test.ts:72` ("Until 2026-09-14
- * this asserted `restricted`") is the live example, and `exempts a dated record` below is the test that
- * this exemption does not swallow the undated case with it.
+ * A LINE THAT BINDS ITS VALUE TO A PAST MOMENT IS EXEMPT — see `RECORD_MARKERS`, which is that test and
+ * the reason it is not simply "the line has a date on it".
  */
 export function accessQuotations(file: string, text: string): Quotation[] {
   return text.split("\n").flatMap((line, index) => {
-    if (/\b\d{4}-\d{2}-\d{2}\b/.test(line)) return [];
+    if (isDatedRecord(line)) return [];
     return [...line.matchAll(/[`'"](public|restricted)[`'"]/g)].map((match) => ({
       file,
       line: index + 1,
@@ -197,11 +227,11 @@ test("POSITIVE CONTROL: flipping the config value makes every quoting site fail,
   }
 });
 
-test("accessQuotations exempts a dated record, and only a dated one", () => {
+test("accessQuotations exempts a PAST-BOUNDED record, and only that", () => {
   // A skip that fires always is a check that never runs, so the exemption is tested from both sides.
   const dated = 'Until 2026-09-14 this asserted "restricted": PLAN.md B5 was open.';
   assert.deepEqual(accessQuotations("fixture.ts", dated), [],
-    "a claim carrying its own date is a record of its own moment and stays");
+    "a value bounded to a moment that has passed is a record of that moment and stays");
 
   const undated = 'It currently says `restricted`, so even a correctly-confirmed run fails.';
   assert.equal(accessQuotations("fixture.ts", undated).length, 1,
@@ -212,6 +242,34 @@ test("accessQuotations exempts a dated record, and only a dated one", () => {
   assert.deepEqual(accessQuotations("fixture.yml", guardMessage).map((q) => q.value), ["restricted"],
     "the guard's own error message quotes the value without naming `access` on the line, and the filed "
     + "open-check missed it for exactly that reason");
+});
+
+test("RED CONTROL: a date on the line does not exempt a present-tense claim", () => {
+  // reviewer-2's refusal of `9d201937`, reproduced as a test rather than as a reading of the regexp. The
+  // exemption there was "the line contains a date", so appending `(checked …)` to a live gate requirement
+  // took it out of the population and the FULL acceptance still passed 9/9. This is the control that a
+  // mismatch dressed in a date is still a mismatch.
+  const evasion = '#      It currently says `restricted` (checked 2026-09-23), so a confirmed run fails.';
+  assert.deepEqual(accessQuotations("fixture.yml", evasion).map((quotation) => quotation.value), ["restricted"],
+    "`checked <date>` records when somebody looked, not that the claim is about the past — this is still "
+    + "a present-tense requirement and must be compared against the config");
+  assert.equal(accessMismatches(accessQuotations("fixture.yml", evasion), "public").length, 1,
+    "and against a config reading `public` it must be REPORTED, which is the assertion reviewer-2 found "
+    + "passing vacuously");
+
+  assert.equal(isDatedRecord("Deprecated 2026-09-19; the gate still demands `public` today."), false,
+    "a date elsewhere in the sentence does not bind the quoted value to a past moment");
+  assert.equal(isDatedRecord("It read `restricted` until 2026-09-14 (#1530)."), true,
+    "and the boundary form must still be recognised, or the exemption has simply been deleted");
+});
+
+test("the exemption's whole live population is the two records #2052 left standing", () => {
+  // An exemption is a hole in the population, so the holes are enumerated. A third file starting to use
+  // one means a line left the comparison and nobody said so — which is how `9d201937` shipped.
+  const exempted = machineryFiles().filter((file) =>
+    read(file).split("\n").some((line) => isDatedRecord(line) && /[`'"](public|restricted)[`'"]/.test(line)));
+  assert.deepEqual(exempted, [".changeset/README.md", "packages/lab/src/packaging/release-safety.test.ts"],
+    "these are the only files whose access quotations the record exemption removes from the comparison");
 });
 
 test("no file in the publish machinery still claims nothing has been published", () => {
