@@ -20,7 +20,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { assertOneBrowserAcross, EXIT_FLEET_INCONSISTENT } from "./capture-fleet-guard.mjs";
-import { fleetConsistency, MUST_MATCH } from "@a11ign/worker-fleet/fleet-consistency";
+import { fleetConsistency, MUST_MATCH, REPORTED_ONLY } from "@a11ign/worker-fleet/fleet-consistency";
 
 /**
  * Fixture addresses BUILT FROM OCTETS, for the reason `fleet-consistency.test.ts` gives: #63's history
@@ -57,9 +57,13 @@ const ENVIRONMENT: Record<string, unknown> = {
   displayMode: "1024x768", windowSize: "1024x768",
 };
 
-const health = (browserVersion: string, { omit = [] as string[] } = {}) => ({
+const health = (browserVersion: string,
+  { omit = [] as string[], with: extra = {} as Record<string, unknown> } = {}) => ({
   ok: true, screenReader: "nvda", busy: false, code: "abc1234",
-  environment: Object.fromEntries(Object.entries({ ...ENVIRONMENT, browserVersion })
+  // `with` adds a field the fixture does not carry — #2063's reported-only fields, which this object
+  // deliberately does NOT hold by default: they are absent on every deployed worker, so a fixture that
+  // supplied them would test the guard against a fleet that does not exist yet.
+  environment: Object.fromEntries(Object.entries({ ...ENVIRONMENT, browserVersion, ...extra })
     .filter(([field]) => !omit.includes(field))),
 });
 
@@ -307,4 +311,73 @@ test("one guest left standing is not a coverage gap either", async () => {
 
   assert.deepEqual(exits, []);
   assert.equal(reported, "");
+});
+
+// --- #2063: THE REPORTED-ONLY CHANNEL REACHES NO GATE, which is the ruling's most losable clause ---
+
+test("#2063: a fleet split on a REPORTED_ONLY field is NOT refused, and the guard is silent", async () => {
+  // `ceo`'s ruling on #2063: "`nodeVersion` is NOT a capture gate, and this row must not make it one in
+  // its first step." The corpus is already mixed on it -- 2,870 training records, 1,266 on v24.19.0
+  // against 1,564 on v24.20.0 since at least 2026-09-12 -- so refusing here would gate every capture on a
+  // condition every published acceptance number was measured across.
+  //
+  // ASSERTED IN THIS FILE because the claim is about THIS function's behaviour: `fleet-consistency.test.ts`
+  // can pin that the field is in neither gating channel, and only a test beside the guard can pin that the
+  // guard therefore returns. The two gating channels are `mismatches` (the browser-split refusal) and
+  // `fields.coverage` (#2047's, which exits on `reported < asked` for EVERY row, not only MUST_MATCH ones).
+  const { reported, exits } = await runGuard({
+    [workerUrl(4)]: () => health(EDGE_151, { with: { nodeVersion: "v24.19.0" } }),
+    [workerUrl(5)]: () => health(EDGE_151, { with: { nodeVersion: "v24.20.0" } }),
+  });
+
+  assert.deepEqual(exits, [], "a reported-only split must not stop a capture run");
+  assert.equal(reported, "",
+    "and must not print a refusal it is not making — this guard's takeaway is whether it returns, and a "
+    + "warning here would read as one");
+
+  // THE POSITIVE CONTROL, in the same shape: the SAME two guests, split on a field that IS a gate.
+  // Without it, the silence above is satisfied by a guard that refuses nothing at all.
+  const split = await runGuard({
+    [workerUrl(4)]: () => health(EDGE_151, { with: { nodeVersion: "v24.19.0" } }),
+    [workerUrl(5)]: () => health(EDGE_150, { with: { nodeVersion: "v24.19.0" } }),
+  });
+  assert.deepEqual(split.exits, [EXIT_FLEET_INCONSISTENT]);
+});
+
+test("#2063: a REPORTED_ONLY field reported by 0 of N does not refuse either, at ANY coverage", async () => {
+  // The clause that would be lost by accident rather than on purpose. `displayAdapter` is reported by NO
+  // deployed worker, so routing it through `fields.coverage` -- the obvious place, and the one #2047 just
+  // made a refusal -- would stop EVERY capture in the project immediately, including #1926's recapture.
+  // That is precisely the harm the ruling forbids, reached by a filing mistake instead of a decision.
+  //
+  // The fixture already omits every REPORTED_ONLY field (it derives from MUST_MATCH), so this fleet is
+  // 0-of-2 on both of them — which is the live fleet's own state for the adapter.
+  const { reported, exits } = await runGuard({
+    [workerUrl(4)]: () => health(EDGE_151),
+    [workerUrl(5)]: () => health(EDGE_151),
+  });
+  assert.deepEqual(exits, [], "a reported-only field nobody reports must not refuse a run");
+  assert.equal(reported, "");
+
+  // AND ITS CONTROL, one field over: a MUST_MATCH field at 0 of 2 DOES refuse. The pair is what separates
+  // "this channel is exempt" from "the coverage rule stopped working".
+  const gap = await runGuard({
+    [workerUrl(4)]: () => health(EDGE_151, { omit: ["displayMode"] }),
+    [workerUrl(5)]: () => health(EDGE_151, { omit: ["displayMode"] }),
+  });
+  assert.deepEqual(gap.exits, [EXIT_FLEET_INCONSISTENT]);
+  assert.match(gap.reported, /displayMode \(0 of 2 reported it\)/);
+});
+
+test("#2063: no REPORTED_ONLY field is also a MUST_MATCH field, or the exemption is a contradiction", () => {
+  // The two lists are the gate and the not-gate, so a field on both would be refused and exempted at once
+  // -- and `fleetConsistency` would answer from whichever list it read first, which is not a decision
+  // anybody made. #2170 is the row that MOVES a field between them; nothing should ever hold it in both.
+  const onBoth = REPORTED_ONLY.map(({ path }) => path)
+    .filter((path) => MUST_MATCH.some((field) => field.path === path));
+  assert.deepEqual(onBoth, [], "a field cannot be both a capture gate and exempt from every gate");
+
+  // The positive control: both lists are non-empty, so the intersection above is a real emptiness rather
+  // than an artefact of one list having gone missing.
+  assert.ok(MUST_MATCH.length > 0 && REPORTED_ONLY.length > 0);
 });
