@@ -309,5 +309,6 @@ def test_that_witness_can_fail_and_names_the_case_and_the_field(tmp_path):
             by_path, {str(data): evaluator.captured_definitions(data)}, evaluator.defined_cases())
     message = str(refused.value)
     assert "acceptance-b2-error-plot" in message and "badSignal" in message, message
-    assert "Request the plot" in message, f"and the value the code has now: {message}"
+    assert "Submit the request" in message, f"and what the corpus was captured under: {message}"
+    assert "CASES=" in message, f"beside what the code means now: {message}"
     assert "1 of 1 records" in message, message
