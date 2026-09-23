@@ -45,6 +45,14 @@ import { realPageFor } from "../src/training/real-page-corpus.mjs";
 // THE TRAINING SET'S SELECTION, imported rather than written here (#955): `field-role.test.ts` names this
 // reader and asserts through the function it calls.
 import { trainingEntries } from "../src/training/real-page-selection.mjs";
+// THE SAME ENVIRONMENT STAMP THE CORPUS EXPORT WRITES, imported rather than restated (#1926).
+// `with-realism.jsonl` has two writers -- the export's records pass through verbatim below, and this
+// file appends the realism tier -- and only the export was given a `captureProtocol` stamp by #1989/#2064.
+// So a realism record carried no `provenance.environment` at all, and #1926's clause 3 ("every record
+// carries captureProtocol: 21") read `null` on up to 41 records however perfectly a recapture ran. A
+// second stamping implementation here would be the shape this repo keeps paying for; one definition both
+// writers call is the remedy `retrain-pipeline.mjs` already states for its own tail.
+import { captureEnvironment } from "../src/training/export-screenreader-dataset.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { captureWasTruncated } from "@a11ign/evidence/verify";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
@@ -237,7 +245,7 @@ function reportMasks(/** @type {any} */ records, /** @type {any} */ heads) {
 
 /** One capture, as a training record. The channel contract and the publisher's claim both come from
  * elsewhere on purpose -- see the imports. */
-function recordFor(/** @type {any} */ entry) {
+export function recordFor(/** @type {any} */ entry) {
     const capture = entry.capture;
     return {
       // ONE builder, shared with the corpus export. These two constructed the model's input separately
@@ -281,6 +289,12 @@ function recordFor(/** @type {any} */ entry) {
         claimSource: entry.claimSource,
         demonstrates: entry.demonstrates,
         capturedAt: entry.capturedAt,
+        // WHAT THIS EVIDENCE MEANS, on the same path and in the same spelling the corpus export uses.
+        // Measured on the lab 2026-09-23T18:44Z: every one of the 121 real-page captures is
+        // `captureProtocol: 18`, three versions behind the fleet's 21 -- so the realism tier is not
+        // merely unstamped, it is a different protocol, and the missing stamp is what made that
+        // invisible. Read from the capture and never defaulted, exactly as `captureEnvironment` does.
+        environment: captureEnvironment(capture),
       },
     };
 }
