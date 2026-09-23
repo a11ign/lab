@@ -301,11 +301,31 @@ async function main() {
   process.stdout.write(`Read back ${archived.jsonFiles} JSON file(s), matching the ${onDisk} on disk, `
     + `and ${(archived.bytes / (1024 * 1024)).toFixed(1)} MB uncompressed against `
     + `${(onDiskBytes / (1024 * 1024)).toFixed(1)} MB on disk.\n`);
+  // THE WARNING STAYS AND THE REMEDY CHANGES -- #2050. "not yet a backup" is ACCURATE at the instant
+  // this prints: on the lab the archive is written at 03:00Z and nothing has copied it anywhere until
+  // the release nightly fires at 04:00Z. What was wrong is that the only route this message NAMED was
+  // `corpus:backup`'s scp/mount one, which has never been configured on any machine -- so a reader
+  // landing here concluded the corpus has no durable destination at all and escalated. That is #1042's
+  // own incident, and this file is the third message with its defect and the one a reader is most
+  // likely to meet, since the lab prints it unattended every night. A fix that instead claimed the
+  // snapshot was already safe would be a false statement in a verification message, which is worse
+  // than the silence: hence both halves below.
   process.stdout.write(
     "This is on the SAME DISK as the corpus, so it is not yet a backup — it defends against\n" +
     "`rm -rf runs/` and a bad recapture, not against losing the machine.\n\n" +
-    "  A11Y_CORPUS_REMOTE=<user@host:/path or /mnt/...>  npm run corpus:backup\n\n" +
-    "which copies it somewhere durable and VERIFIES it arrived by reading it back.\n");
+    "IT DOES NOT STAY THAT WAY ON THE LAB, and this is not the route to reach for first.\n" +
+    "`a11ign-corpus-release-nightly.timer` fires at 04:00 UTC — an hour after the lab's own\n" +
+    "03:00 UTC snapshot — fetches the newest archive from `backups/` and hands it to\n" +
+    "`corpus:release`, which publishes it to GitHub Releases on `a11ign/corpus-backups`\n" +
+    "(private) and verifies it by downloading the release back. That has been the corpus's\n" +
+    "real off-machine copy since 2026-09-06 (#1042). Read the line above as \"no second copy\n" +
+    "YET\", not as \"the corpus has nowhere durable to go\".\n\n" +
+    "To publish THIS archive now rather than wait for the nightly — or to publish one taken\n" +
+    "anywhere other than the lab, which the nightly does not see:\n\n" +
+    `  npm run corpus:release -- --archive=${archive}\n\n` +
+    "A separate, interim route copies it to an scp/mount destination you supply instead. It\n" +
+    "needs one configured, and `corpus:release` above does not:\n\n" +
+    "  A11Y_CORPUS_REMOTE=<user@host:/path or /mnt/...>  npm run corpus:backup\n");
 }
 
 // Guarded, because CLAUDE.md makes `node -e "import('./this.mjs')"` the only real check that an .mjs file
