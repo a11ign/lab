@@ -121,7 +121,9 @@ type ProtectionBody = {
   enforce_admins?: { enabled?: boolean };
 };
 type BypassAllowances = { users?: unknown[]; teams?: unknown[]; apps?: unknown[] };
-type ReviewRule = { required_approving_review_count?: number; bypass_pull_request_allowances?: BypassAllowances };
+type ReviewRule = { required_approving_review_count?: number; bypass_pull_request_allowances?: BypassAllowances;
+  /** #2084: whether an approving review survives a push. Classic protection's half of the pair. */
+  dismiss_stale_reviews?: boolean };
 
 /**
  * THE 404 TRAP, AS A FUNCTION. Absent and forbidden are the same status code, and only
@@ -547,7 +549,9 @@ const BINDING = {
 } as const;
 type BindingCode = (typeof BINDING)[keyof typeof BINDING];
 
-type BranchRule = { type?: string; ruleset_id?: number; parameters?: { required_approving_review_count?: number } };
+type BranchRule = { type?: string; ruleset_id?: number; parameters?: { required_approving_review_count?: number;
+  /** #2084: the RULESET's half of the same pair, and a DIFFERENT FIELD -- see `STALENESS` below. */
+  dismiss_stale_reviews_on_push?: boolean } };
 type RulesetMeta = {
   /** `enforcement` of ONE ruleset: "active" | "evaluate" | "disabled"; null when unreadable. */
   enforcement: string | null;
@@ -1241,3 +1245,266 @@ test("#2119: the live run's own assertion, driven WITHOUT the network -- EXEMPTE
  *     #2119 restates it as out of scope for the same reason. NEITHER live read has ever run unattended,
  *     so nothing above should be quoted as something CI checks until that row lands.
  */
+
+// --- #2084: DOES A REVIEW OUTLIVE THE HEAD IT WAS POSTED ON? ----------------------------------------
+
+/**
+ * #2084: THE STALENESS SURFACES, AND THE RULING THAT DECIDED THEM -- BOTH READ, NEITHER ASSUMED.
+ *
+ * `main` decides review staleness on TWO INDEPENDENT FIELDS with two different names, and #2084's own
+ * amendment is explicit that they are not one setting seen twice: classic protection's
+ * `dismiss_stale_reviews` and the `merge-queue-main` ruleset's `dismiss_stale_reviews_on_push`. They agree
+ * today -- both `false` -- and CHANGING ONE DOES NOT MOVE THE OTHER. So a guard pointed at one surface
+ * reads green while the other is flipped, which is the exact failure the amendment asked this file to
+ * prevent, and it is why `surfacesAgree` below is a verdict of its own rather than a sentence here.
+ *
+ * WHICH CREDENTIAL READS WHICH, because the row required this file to say so:
+ *
+ *   - CLASSIC (`branches/main/protection`) -- REPOSITORY ADMIN ONLY. Measured 2026-09-23T17:4xZ, this
+ *     host, same minute: `a11ign-ai-workers` gets `404 Not Found` while `branches/main.protected` reads
+ *     `true` (so FORBIDDEN, never absent), and `DanBeckDev` reads the body. No session and no CI job here
+ *     holds admin, so on every unattended run this surface is `CANNOT_TELL` -- loudly, and never a pass.
+ *   - RULESET (`rules/branches/main`) -- ANY TOKEN THAT CAN READ THE REPOSITORY. Measured the same minute
+ *     as `a11ign-ai-workers`: the `pull_request` rule of ruleset `23681721` carries
+ *     `dismiss_stale_reviews_on_push: false`. THIS is the surface the live assertion below rests on,
+ *     for #2086's reason: it is the only one an unattended check can actually reach.
+ *
+ * THE RULING IS RECORDED AS A CONSTANT RATHER THAN AS AN ASSERTION LITERAL (`RULED_STALENESS`), so that a
+ * later decision to dismiss stale reviews is ONE EDIT in a named place with its reasoning attached, and
+ * the test then goes red until the live configuration follows. A bare `assert.equal(v, KEEPS)` would read
+ * as "this is how it must be" rather than "this is what was decided, on this evidence, on this date".
+ *
+ * WHAT WAS DECIDED, AND WHY IT IS NOT WHAT #2084's DONE-WHEN 1 ASKED FOR. The row asked for
+ * `dismiss_stale_reviews: true`. Two measurements taken while building it say that lever does not do what
+ * the row needs and costs what the row did not price:
+ *
+ *   1. IT DOES NOT CLEAR A REFUSAL, WHICH IS THE DIRECTION #2049 WAS STUCK IN. Every official statement of
+ *      this setting is scoped to APPROVING reviews -- "dismiss stale pull request approvals",
+ *      "the approving review is dismissed as stale", and the ruleset parameter's own "New, reviewable
+ *      commits pushed will dismiss previous pull request review approvals." A `CHANGES_REQUESTED` is not
+ *      an approval, so turning this on would not have unblocked #2049, the live instance the row is built
+ *      on. (GitHub does not state the negative outright; the scope is consistent across every official
+ *      surface, and this repository's own #2049 reading agrees with it.)
+ *   2. IT WOULD STALL A THIRD OF THIS REPOSITORY'S MERGES. GitHub documents the Update-branch button as a
+ *      dismissal trigger by name, with no carve-out for base-originated updates -- and
+ *      `update-branch-sweep.mjs` runs exactly that on every armed, green pull request after every merge.
+ *      Measured over the 40 most recent merged pull requests at `468a74f1b`: all 40 carried an APPROVED
+ *      review, all 40 were approved AT the head that merged (so a content push would have cost nothing),
+ *      median approval-to-merge latency 6.5 minutes -- and 15 OF THE 40 had another pull request merge to
+ *      `main` inside that window, which is one sweep each. Under `dismiss_stale_reviews: true` those
+ *      fifteen lose the approval that armed them and stop, and until #2084's own fourth done-when landed
+ *      NOTHING IN THIS ORG WOULD HAVE SAID SO.
+ *
+ * So the ruling is KEEPS on both surfaces, and the real defect is closed by READING the field instead:
+ * `work-gate.mjs`'s `pr-review-blocked`. `.claude/rules/agent-practices.md` carries the ruling in full and
+ * names what would reopen it -- the 0-of-40 figure moving is the measurement that flips direction 2.
+ */
+const STALENESS = {
+  /** A push dismisses the approving review: no approval outlives the diff it approved. */
+  DISMISSES: "DISMISSES",
+  /** A review outlives the head it was posted on. The #2084 state, on both surfaces today. */
+  KEEPS: "KEEPS",
+  /** The surface could not be read, or answered a shape nobody here has measured. NEVER a pass. */
+  CANNOT_TELL: "CANNOT_TELL",
+} as const;
+type StalenessCode = (typeof STALENESS)[keyof typeof STALENESS];
+
+/**
+ * THE DECISION OF 2026-09-23, IN ONE PLACE. Change this and the live read below enforces the new one.
+ * It is deliberately NOT spelled inline at the assertion: a literal there states a requirement, and what
+ * this file can honestly state is a decision, with a date and an argument that a reader can check.
+ */
+const RULED_STALENESS: StalenessCode = STALENESS.KEEPS;
+
+/** CLASSIC protection's half. Admin-only, so `CANNOT_TELL` is the expected answer on every session here. */
+function classicStalenessVerdict(protection: ProtectionRead) {
+  const read = protectionReadVerdict(protection);
+  if (read.code !== READ.READABLE) {
+    return { code: STALENESS.CANNOT_TELL as StalenessCode,
+      why: `classic \`dismiss_stale_reviews\` is unreadable: ${read.why}` };
+  }
+  const reviews = protection.body?.required_pull_request_reviews;
+  if (!reviews) {
+    return { code: STALENESS.KEEPS as StalenessCode,
+      why: "the protection object carries no `required_pull_request_reviews`, so nothing dismisses anything" };
+  }
+  return dismissalOf(reviews.dismiss_stale_reviews, "classic `dismiss_stale_reviews`");
+}
+
+/**
+ * THE RULESET's half, and the one an unattended run can actually reach.
+ *
+ * FAILS CLOSED ON A RULE IT CANNOT JUDGE, exactly as `strongestBinding` does, and for the same reason: a
+ * verdict taken from the rules that happened to be readable is a verdict about part of the branch. Several
+ * `pull_request` rules may contribute, and if any of them dismisses, a review here is dismissed -- so
+ * `DISMISSES` on any one rule decides the whole read.
+ */
+function rulesetStalenessVerdict(branchRules: BranchRule[] | null) {
+  if (branchRules === null) {
+    return { code: STALENESS.CANNOT_TELL as StalenessCode,
+      why: "`rules/branches/main` could not be read, so the ruleset surface was never examined" };
+  }
+  const verdicts = branchRules.filter((r) => r.type === "pull_request")
+    .map((r) => dismissalOf(r.parameters?.dismiss_stale_reviews_on_push,
+      "the ruleset's `dismiss_stale_reviews_on_push`"));
+  if (verdicts.length === 0) {
+    return { code: STALENESS.KEEPS as StalenessCode,
+      why: "no `pull_request` rule applies to `main`, so the ruleset surface dismisses nothing" };
+  }
+  return verdicts.find((v) => v.code === STALENESS.CANNOT_TELL)
+    ?? verdicts.find((v) => v.code === STALENESS.DISMISSES)
+    ?? verdicts[0];
+}
+
+/**
+ * ONE BOOLEAN, THREE ANSWERS. An ABSENT field is `CANNOT_TELL` and never `false`, which is this file's
+ * standing discipline for `enforce_admins` and `required_approving_review_count` and is owed here for the
+ * same reason: GitHub returns this key on every protection body and every `pull_request` rule read here,
+ * so a read without it is an unrecognised shape rather than a cleared field. Reading it as `false` would
+ * invent the reassuring answer on the one question this row is about.
+ */
+function dismissalOf(value: boolean | undefined, field: string) {
+  if (typeof value !== "boolean") {
+    return { code: STALENESS.CANNOT_TELL as StalenessCode,
+      why: `${field} is ${JSON.stringify(value)} rather than a boolean: an unrecognised shape, not a cleared field` };
+  }
+  return value
+    ? { code: STALENESS.DISMISSES as StalenessCode, why: `${field} is true: a push dismisses an approving review` }
+    : { code: STALENESS.KEEPS as StalenessCode,
+      why: `${field} is false: a review outlives the head it was posted on -- the #2084 state` };
+}
+
+/**
+ * THE AMENDMENT'S OWN REQUIREMENT, AS A VERDICT. #2084 asked this file to name WHICH surface it means "or
+ * a later fix flips one while the acceptance reads green off the other". Naming one is necessary and not
+ * sufficient: the failure it describes is the two surfaces DISAGREEING, and only a reader of both can see
+ * that. `CANNOT_TELL` on either is not a disagreement -- it is an unexamined half, and it says so.
+ */
+function surfacesAgree(classic: { code: StalenessCode; why: string }, ruleset: { code: StalenessCode; why: string }) {
+  if (classic.code === STALENESS.CANNOT_TELL || ruleset.code === STALENESS.CANNOT_TELL) {
+    return { agree: null,
+      why: `one surface was not examined -- classic: ${classic.why}; ruleset: ${ruleset.why}` };
+  }
+  return { agree: classic.code === ruleset.code,
+    why: `classic says ${classic.code} and the ruleset says ${ruleset.code}` };
+}
+
+const NO_DISMISSAL_RULES: BranchRule[] = [
+  { type: "merge_queue", ruleset_id: 23681721 },
+  { type: "pull_request", ruleset_id: 23681721,
+    parameters: { required_approving_review_count: 1, dismiss_stale_reviews_on_push: false } },
+];
+
+test("#2084 THE LIVE SHAPE, BOTH SURFACES: today `main` KEEPS a stale review, and that is the ruling", () => {
+  // Byte-for-byte the 2026-09-23 readings: the ruleset rule as `a11ign-ai-workers`, the protection body as
+  // `DanBeckDev`. This is the state the row was filed about, and the state the ruling deliberately leaves.
+  const ruleset = rulesetStalenessVerdict(NO_DISMISSAL_RULES);
+  assert.equal(ruleset.code, STALENESS.KEEPS);
+  assert.match(ruleset.why, /the #2084 state/);
+  const classic = classicStalenessVerdict({ status: HTTP_OK, protectedFlag: true,
+    body: { required_pull_request_reviews: { required_approving_review_count: 1, dismiss_stale_reviews: false },
+      enforce_admins: { enabled: true } } });
+  assert.equal(classic.code, STALENESS.KEEPS);
+  assert.deepEqual(surfacesAgree(classic, ruleset).agree, true);
+});
+
+test("#2084: `true` on either surface is DISMISSES -- the state this guard would have to certify", () => {
+  // THE POSITIVE CONTROL. Without it the pair above is satisfied by a function that only ever says KEEPS,
+  // and the ruling would rest on a verdict whose other value nobody has seen produced.
+  assert.equal(rulesetStalenessVerdict([{ type: "pull_request", ruleset_id: 1,
+    parameters: { dismiss_stale_reviews_on_push: true } }]).code, STALENESS.DISMISSES);
+  assert.equal(classicStalenessVerdict({ status: HTTP_OK, protectedFlag: true,
+    body: { required_pull_request_reviews: { dismiss_stale_reviews: true } } }).code, STALENESS.DISMISSES);
+});
+
+test("#2084 THE FAILURE THE AMENDMENT NAMED: one surface flipped and the other not is a DISAGREEMENT", () => {
+  // "a later fix flips one while the acceptance reads green off the other", in the row's own words. A
+  // guard that read only the surface it was pointed at would go green on exactly this input.
+  const classic = classicStalenessVerdict({ status: HTTP_OK, protectedFlag: true,
+    body: { required_pull_request_reviews: { dismiss_stale_reviews: true } } });
+  const ruleset = rulesetStalenessVerdict(NO_DISMISSAL_RULES);
+  const agreement = surfacesAgree(classic, ruleset);
+  assert.equal(agreement.agree, false);
+  assert.match(agreement.why, /classic says DISMISSES and the ruleset says KEEPS/,
+    "a disagreement must print both readings, or the reader cannot tell which surface to go and fix");
+});
+
+test("#2084: a FORBIDDEN classic read is CANNOT_TELL, and CANNOT_TELL is not a disagreement", () => {
+  // The state every session and every CI job here is actually in, and the reason the live assertion below
+  // rests on the ruleset. Folding it into KEEPS would report "a review outlives its head" on the strength
+  // of a 404, which is the trap the top of this file forbids by name.
+  const classic = classicStalenessVerdict({ ...FORBIDDEN_HERE, body: null });
+  assert.equal(classic.code, STALENESS.CANNOT_TELL);
+  assert.match(classic.why, /FORBIDDEN to this token, NOT absent/);
+  const agreement = surfacesAgree(classic, rulesetStalenessVerdict(NO_DISMISSAL_RULES));
+  assert.equal(agreement.agree, null, "an unexamined half is not agreement and is not disagreement");
+  assert.match(agreement.why, /one surface was not examined/);
+});
+
+test("#2084: an ABSENT dismissal field is CANNOT_TELL on BOTH surfaces, never `false`", () => {
+  // The same discipline `enforce_admins` and `required_approving_review_count` get above, and owed here
+  // for the same reason: GitHub returns these keys on every body and every rule read here, so a read
+  // without one is an unrecognised shape. Reading it as `false` would invent the reassuring answer.
+  assert.equal(rulesetStalenessVerdict([{ type: "pull_request", ruleset_id: 1,
+    parameters: { required_approving_review_count: 1 } }]).code, STALENESS.CANNOT_TELL);
+  assert.equal(classicStalenessVerdict({ status: HTTP_OK, protectedFlag: true,
+    body: { required_pull_request_reviews: { required_approving_review_count: 1 } } }).code, STALENESS.CANNOT_TELL);
+});
+
+test("#2084: an unexaminable ruleset rule FAILS CLOSED even beside one that is readable", () => {
+  // `strongestBinding`'s rule, owed here too: a verdict taken from the rules that happened to be readable
+  // is a verdict about part of the branch. And `DISMISSES` on ANY contributing rule decides the read,
+  // because dismissal composes -- one rule dismissing is enough to dismiss.
+  assert.equal(rulesetStalenessVerdict([
+    { type: "pull_request", ruleset_id: 1, parameters: { dismiss_stale_reviews_on_push: false } },
+    { type: "pull_request", ruleset_id: 2, parameters: {} }]).code, STALENESS.CANNOT_TELL);
+  assert.equal(rulesetStalenessVerdict([
+    { type: "pull_request", ruleset_id: 1, parameters: { dismiss_stale_reviews_on_push: false } },
+    { type: "pull_request", ruleset_id: 2, parameters: { dismiss_stale_reviews_on_push: true } }]).code,
+  STALENESS.DISMISSES);
+});
+
+test("#2084: the three staleness verdicts are distinct, and none of them spells REQUIRED or BINDS_ME", () => {
+  // The guard every vocabulary in this file carries. A later edit wanting one verdict type for every
+  // question about `main` is how a weaker claim gets quoted as a stronger one.
+  assert.equal(new Set(Object.values(STALENESS)).size, 3);
+  assert.equal(Object.values(STALENESS).includes(VERDICT.REQUIRED as never), false);
+  assert.equal(Object.values(STALENESS).includes(BINDING.BINDS_ME as never), false);
+});
+
+test("#2084 LIVE: `main`'s staleness configuration still matches the recorded ruling", () => {
+  // OPT-IN under `A11Y_CHECK_MAIN_RULESET`, sharing #2086's switch rather than minting a third: it is the
+  // same endpoint, the same call and the same permission requirement -- none. The classic half is read
+  // too and REPORTED rather than asserted, because it cannot be reached without admin, and a check that
+  // asserted it would be unpassable on the only token that ever runs unattended.
+  if (process.env.A11Y_CHECK_MAIN_RULESET !== "1") {
+    console.log("  NOT RUN: the live staleness read is opt-in -- `A11Y_CHECK_MAIN_RULESET=1` asks GitHub "
+      + "whether a review outlives the head it was posted on. The verdict logic above ran against "
+      + "synthetic inputs; nothing here read the live branch.");
+    return;
+  }
+  const binding = liveRulesetBinding();
+  if (binding.branchRules === null) {
+    // Never an empty catch and never a pass: a check that could not ask reports that it could not ask.
+    console.log("  SKIPPED: `rules/branches/main` could not be asked. NOT a pass.");
+    return;
+  }
+  const ruleset = rulesetStalenessVerdict(binding.branchRules);
+  const classic = classicStalenessVerdict(liveProtection(gh));
+  console.log(`  LIVE classic surface  : ${classic.code} -- ${classic.why}`);
+  console.log(`  LIVE ruleset surface  : ${ruleset.code} -- ${ruleset.why}`);
+  console.log(`  LIVE surfaces agree?  : ${JSON.stringify(surfacesAgree(classic, ruleset))}`);
+  // THE ASSERTION IS AGAINST THE RECORDED DECISION, IN EITHER DIRECTION. It goes red if somebody turns
+  // dismissal on without the ruling that prices it (15 of the last 40 merges stalling, and a refusal still
+  // not cleared), and it goes red if the ruling is later changed to DISMISSES and the branch has not
+  // followed. "Goes red when it is false" was the row's wording for a decision it expected to go the other
+  // way; this is that requirement keyed on the decision rather than on one of its two possible values.
+  assert.equal(ruleset.code, RULED_STALENESS,
+    `the ruleset surface reads ${ruleset.code} and the 2026-09-23 ruling is ${RULED_STALENESS}: ${ruleset.why}. `
+    + "Either the branch was changed without the ruling, or the ruling changed and the branch has not followed.");
+  const agreement = surfacesAgree(classic, ruleset);
+  assert.notEqual(agreement.agree, false,
+    `the two staleness surfaces DISAGREE -- ${agreement.why}. #2084's amendment: changing one does not move `
+    + "the other, so a guard reading either alone goes green while the branch is half-configured.");
+  console.log(`  LIVE PASS (no admin required): \`main\` ${ruleset.code} a stale review, as ruled 2026-09-23`);
+});
