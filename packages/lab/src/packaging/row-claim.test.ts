@@ -24,9 +24,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+// #2158: every sandbox in this file is built through `withSandbox`, never a bare `mkdtempSync`. The four
+// helpers below each `git init`, `commit` and `worktree add` inside a directory under the agents host's
+// SHARED 16G tmpfs `/tmp`, and when it fills, Node's bare `EDQUOT`/`ENOSPC`/`EACCES` reads as fifteen
+// failed assertions rather than as a full disk -- which is exactly what happened here on 2026-09-23.
+// `withSandbox` keeps the failure RED and replaces its message with one that names the root, the
+// filesystem's free space, and the host as the cause. It is this file's first adoption (#2158's Region);
+// the other 103 exposed suites are explicitly a later decision.
+import { EXHAUSTION_MARKER, withSandbox } from "../../../guards/src/sandbox-exhaustion.mjs";
 import {
   claimStatus, decideClaim, fetchLabels, claimRow, dispatchRow, declineRow, moveProjectStatus,
   CLAIM_LABEL, STARTED_LABEL, BLOCKED_LABEL, recordCheck, recordConflict, latestCheckFor,
@@ -1078,12 +1085,7 @@ test("declineRow says so, rather than silently no-op'ing, when the row was never
 // entry paired with the tool's own prior verdict is the numerator. ---
 
 function withTempLogDir(fn: (dir: string) => void): void {
-  const dir = mkdtempSync(join(tmpdir(), "row-claim-log-"));
-  try {
-    fn(dir);
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  withSandbox({ prefix: "row-claim-log-" }, (dir) => { fn(dir); });
 }
 
 test("latestCheckFor returns null for an issue nothing ever recorded, never an empty-but-present entry", () => {
@@ -1415,10 +1417,9 @@ function git(cwd: string, args: string[]): string {
 
 /** A real primary checkout plus ONE real linked worktree off it -- the shape `declineRow` releases. */
 function withRealWorktree<T>(fn: (t: { primary: string; worktree: string }) => T): T {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "row-claim-worktree-")));
-  const primary = join(root, "primary");
-  const worktree = join(root, "wt");
-  try {
+  return withSandbox({ prefix: "row-claim-worktree-" }, (root) => {
+    const primary = join(root, "primary");
+    const worktree = join(root, "wt");
     execFileSync("git", ["init", "--quiet", primary], { env: sandboxGitEnv() });
     git(primary, ["symbolic-ref", "HEAD", "refs/heads/main"]);
     writeFileSync(join(primary, "file.txt"), "committed\n");
@@ -1426,9 +1427,7 @@ function withRealWorktree<T>(fn: (t: { primary: string; worktree: string }) => T
     git(primary, ["-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "-m", "initial"]);
     git(primary, ["worktree", "add", "-q", "-b", "agent/test-branch", worktree]);
     return fn({ primary, worktree });
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 }
 
 test("#665: worktreeStatus reads a freshly created worktree as clean", () => {
@@ -1489,9 +1488,8 @@ test("removeClaimedWorktree on an already-gone path reports removed:true -- noth
 
 test("#665 MUTATION direction 2 (the issue's own instruction): drop the removal, and released claims "
   + "accumulate worktrees one per decline; wire it back in, and the count returns to baseline every time", () => {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "row-claim-count-")));
-  const primary = join(root, "primary");
-  try {
+  withSandbox({ prefix: "row-claim-count-" }, (root) => {
+    const primary = join(root, "primary");
     execFileSync("git", ["init", "--quiet", primary], { env: sandboxGitEnv() });
     git(primary, ["symbolic-ref", "HEAD", "refs/heads/main"]);
     writeFileSync(join(primary, "file.txt"), "committed\n");
@@ -1527,9 +1525,7 @@ test("#665 MUTATION direction 2 (the issue's own instruction): drop the removal,
     assert.equal(worktreeCount(), baseline + 3,
       "the fixed cycles must leave the count exactly where the dropped ones left it -- three behind from "
       + "the mutation above, zero added by the three cycles that correctly cleaned up after themselves");
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 });
 
 // --- #1039: row-claim reads LANE OWNERSHIP, which it never did ---
@@ -1785,10 +1781,9 @@ function plantRecordFile(checkout: string, file: string) {
 /** `withRealWorktree`'s shape, with `/runs` ignored and `files` planted in the worktree's `runs/`. */
 function withRecordsWorktree<T>(files: string[],
   fn: (t: { primary: string; worktree: string; run: (cmd: string, args: string[]) => string }) => T): T {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), "row-claim-records-")));
-  const primary = join(root, "primary");
-  const worktree = join(root, "wt");
-  try {
+  return withSandbox({ prefix: "row-claim-records-" }, (root) => {
+    const primary = join(root, "primary");
+    const worktree = join(root, "wt");
     execFileSync("git", ["init", "--quiet", primary], { env: sandboxGitEnv() });
     git(primary, ["symbolic-ref", "HEAD", "refs/heads/main"]);
     writeFileSync(join(primary, ".gitignore"), "/runs\n");
@@ -1797,9 +1792,7 @@ function withRecordsWorktree<T>(files: string[],
     git(primary, ["worktree", "add", "-q", "-b", "agent/records", worktree]);
     for (const file of files) plantRecordFile(worktree, file);
     return fn({ primary, worktree, run: (cmd: string, args: string[]) => git(primary, args) });
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+  });
 }
 
 test("#1373: decline's remover REFUSES a clean worktree holding three runs/ records absent from the primary, naming 3", () => {
@@ -2240,3 +2233,51 @@ test("#2014: several branches for one row are ALL named, so nobody resumes the w
   assert.match(reason, /`agent\/second-try-1432` at bbbbbbbb/);
 });
 
+
+// --- #2158: THIS FILE'S OWN ADOPTION, PROVEN BY DRIVING ITS HELPERS -----------------------------------
+//
+// Not a grep over this file for `withSandbox` -- a grep is satisfied by the word and says nothing about the
+// path a failing helper actually takes. Each helper below is CALLED, with an exhaustion raised from inside
+// it, and what comes out is read. `sandbox-exhaustion.test.ts` owns the classifier; these two own the claim
+// that THIS file's sandboxes route through it. The fourth sandbox, the #665 count test's, calls
+// `withSandbox` in its own body where it is read rather than inferred.
+
+/** An `EDQUOT` of the shape Node raises when the shared 16G /tmp fills under a sandbox being built. */
+function quotaExhausted(where: string): Error {
+  return Object.assign(new Error(`EDQUOT: disk quota exceeded, open '${where}'`), { code: "EDQUOT" });
+}
+
+/** What `run` threw, or a failure saying it did not throw. */
+function messageFrom(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return (error as Error).message;
+  }
+  throw new Error("the helper was meant to fail and did not");
+}
+
+test("#2158: a full /tmp under any of this file's reusable sandbox helpers reads as a full /tmp, not as a "
+  + "failed assertion", () => {
+  const helpers: [string, (fail: (root: string) => never) => unknown][] = [
+    ["withTempLogDir", (fail) => withTempLogDir((dir) => fail(dir))],
+    ["withRealWorktree", (fail) => withRealWorktree(({ primary }) => fail(primary))],
+    ["withRecordsWorktree", (fail) => withRecordsWorktree(RECORD_FILES, ({ worktree }) => fail(worktree))],
+  ];
+  for (const [name, drive] of helpers) {
+    const message = messageFrom(() => drive((root) => { throw quotaExhausted(root); }));
+    assert.ok(message.startsWith(EXHAUSTION_MARKER), `${name} left the errno bare: ${message}`);
+    assert.match(message, / free of .* on the filesystem holding /, `${name}: ${message}`);
+    assert.match(message, /proved nothing about the code under test/, `${name}: ${message}`);
+    assert.equal(message.split("\n").length, 1, `${name} must stay ONE grep-reachable line: ${message}`);
+  }
+});
+
+test("#2158: a REAL red inside a sandbox is untouched by the adoption -- same object, same message", () => {
+  const real = new assert.AssertionError({ message: "worktreeStatus read a dirty worktree as clean" });
+  let caught: unknown = null;
+  try {
+    withTempLogDir(() => { throw real; });
+  } catch (error) { caught = error; }
+  assert.equal(caught, real, "wrapping the sandboxes must not reword an ordinary failure");
+});
