@@ -94,8 +94,16 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   // nothing anywhere.
   assert.equal(localImports(`${REPO}scripts/ci-changed.mjs`).length, 5);
   assert.equal(localImports(`${REPO}scripts/select-changed-tests.mjs`).length, 5);
-  assert.equal(localImports(`${REPO}packages/agent-org/src/arm-pr.mjs`).length, 3,
-    "arm-pr.mjs was never blinded -- if this changes, the walk is broken in the other direction");
+  // A SIGHTED CONTROL, and the number is incidental to it: it says the walk finds this file's imports
+  // rather than nothing. It read `3` until #1969 added `./api-pool.mjs`, and the message then sent the
+  // reader after a broken walker for a count that had moved for a perfectly good reason. So it now pins
+  // the SPECIFIERS -- a control that says WHICH imports are seen cannot pass by finding nothing, and a
+  // legitimate fourth import falsifies it only by being missing from this list.
+  assert.deepEqual(
+    localImports(`${REPO}packages/agent-org/src/arm-pr.mjs`).map((p: string) => p.replace(REPO, "")).sort(),
+    ["packages/agent-org/src/acceptance-commands.mjs", "packages/agent-org/src/api-pool.mjs",
+      "packages/agent-org/src/pr-hold-state.mjs", "packages/worker-fleet/src/cli-flags.mjs"],
+    "arm-pr.mjs's local imports must all be visible to the walk");
 });
 
 test("#1019 THE VACUITY FLOOR: no tracked file loses a local import to the stripper", () => {
