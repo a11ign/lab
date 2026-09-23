@@ -124,3 +124,131 @@ test("#2053: the distinct-depth check FAILS on a uniform population — its own 
     "with every case at one depth the check must report a single distance. If it does not, the check "
     + "above cannot fail either, and it has been passing without measuring anything");
 });
+
+/**
+ * #2142 (#1926's offline authoring half): HOW DEEP THE WALK IS ASKED TO GO, which is not the same claim.
+ *
+ * `#2053: the corpus exercises more than one trigger depth` above measures VARIETY, and the mutation that
+ * proves it is a different assertion is cheap to run: move this row's new trigger back to position 1 and
+ * that test stays GREEN -- distances 0 and 1 are still two distinct values -- while both assertions below
+ * go red. Variety at the shallow end says nothing about a walk bounded at `FOCUS_REVEAL_STOPS = 8`
+ * (`packages/nvda-worker/src/capture-probes.mjs`), which until #2142 had been asked for stops 0 and 1 only.
+ *
+ * DERIVED, NEVER PINNED, on the same rule as the rest of this file: neither test below names a case. They
+ * read the floor off `CASES` every run, so deleting the deep case fails them and renaming it does not.
+ */
+
+/**
+ * Distinct depths the corpus must exercise. Three rather than two because two is already asserted above
+ * and was already true of a corpus that only ever reached stop 1; this is the number that cannot be
+ * satisfied without leaving the shallow end.
+ */
+const MINIMUM_DISTINCT_DEPTHS = 3;
+
+/**
+ * How far in the deepest trigger must sit. Five, with the walk bounded at 8, for the reason the case's own
+ * comment gives: a trigger AT the bound cannot tell "the walk reached the last stop" from "the walk ran
+ * out", so the deep case has to leave headroom or its `revealed: false` is unreadable. It is a FLOOR --
+ * a deeper case satisfies it, and nothing here needs changing when one is added.
+ */
+const DEEPEST_REQUIRED_DISTANCE = 5;
+
+/** The deepest trigger a population reaches, or `null` when nothing in it is measurable. */
+function deepestDistance(cases: GeneratedCase[]): number | null {
+  const distances = distinctDistances(cases);
+  return distances.length === 0 ? null : distances[distances.length - 1];
+}
+
+test("#2142: the corpus exercises at least three distinct trigger depths", () => {
+  const distances = distinctDistances(focusRevealCases());
+  assert.ok(distances.length >= MINIMUM_DISTINCT_DEPTHS,
+    `the focus-reveal corpus reaches its triggers from ${distances.length} distinct depth(s) `
+    + `(${JSON.stringify(distances)}). Two of them are the shallow pair the corpus has always had; a walk `
+    + "bounded at 8 stops needs to be asked for more than its first two. Add a case at another depth; do "
+    + "not relax this number.");
+});
+
+test("#2142: the deepest trigger sits five stops in, with headroom inside the walk's bound", () => {
+  const deepest = deepestDistance(focusRevealCases());
+  assert.ok(deepest !== null && deepest >= DEEPEST_REQUIRED_DISTANCE,
+    `the deepest focus-reveal trigger stands ${deepest} control(s) from document start. `
+    + `FOCUS_REVEAL_STOPS bounds walkToReveal at 8, so a corpus that never asks past ${deepest} leaves `
+    + "most of that budget justified by nothing. This is the assertion `#2053: the corpus exercises more "
+    + "than one trigger depth` cannot make: it counts distinct values and a corpus at depths 0 and 1 "
+    + "satisfies it forever.");
+});
+
+/** A `focus` listener registration this file can read the target of. */
+const FOCUS_LISTENER_ON_ID = /getElementById\(\s*["']([^"']+)["']\s*\)\s*\.addEventListener\(\s*["']focus["']/g;
+
+/** Any `focus` listener registration at all, however it names its element. */
+const FOCUS_LISTENER = /addEventListener\(\s*["']focus["']/g;
+
+/** An inline `onfocus=` attribute -- the other way a control can reveal something on focus. */
+const INLINE_ONFOCUS = /\bonfocus\s*=/gi;
+
+/**
+ * Why a page's reveal is not attributable to `#trigger` alone, or `[]` when it is.
+ *
+ * Counts every registration BEFORE reading targets, so a `focus` listener spelled in a way the pattern
+ * cannot attribute is reported as unreadable rather than passing unseen -- the same "we could not tell is
+ * not the same as it is fine" rule `triggerDistance` follows by returning `null`.
+ */
+function nonTriggerReveals(html: string): string[] {
+  const registrations = (html.match(FOCUS_LISTENER) ?? []).length;
+  const targets = [...html.matchAll(FOCUS_LISTENER_ON_ID)].map((m) => m[1]);
+  const inline = (html.match(INLINE_ONFOCUS) ?? []).length;
+  return [
+    ...(registrations === targets.length ? []
+      : [`${registrations - targets.length} focus listener(s) whose element this file cannot read`]),
+    ...(inline === 0 ? [] : [`${inline} inline onfocus= attribute(s)`]),
+    ...targets.filter((id) => id !== "trigger").map((id) => `a focus listener on #${id}`),
+  ];
+}
+
+test("#2142: only the trigger reveals the panel, so a shallow stop cannot look like a deep one", () => {
+  const offenders = focusRevealCases().flatMap((c) => (["good", "bad"] as const).flatMap(
+    (variant) => nonTriggerReveals(c[variant]).map((why) => `${c.id} (${variant}): ${why}`)));
+  assert.deepEqual(offenders, [],
+    "a focus-reveal case reveals its panel from somewhere other than #trigger. The depth assertions above "
+    + "then measure nothing: a walk that stopped at the first control would open the panel there and read "
+    + "exactly like a walk that travelled the whole distance. Only #trigger may carry the handler:\n  "
+    + offenders.join("\n  "));
+});
+
+/**
+ * THE POSITIVE CONTROLS for the three assertions above, run rather than described.
+ *
+ * The first two run the real derivations over the corpus AS IT STOOD BEFORE #2142 -- every case shallower
+ * than the floor, which is a real population of this file's own making, not a fabricated one. Both checks
+ * must report that corpus as failing, or neither was ever capable of it.
+ *
+ * The third is fabricated, because there is no page in `CASES` that reveals from the wrong control and
+ * this file's whole point is that there must not be one. `nonTriggerReveals` is the same function the
+ * test above calls.
+ */
+test("#2142: both depth checks FAIL on the corpus as it stood before this row -- their positive control", () => {
+  const shallow = focusRevealCases().filter((c) => (triggerDistance(c.bad) ?? 0) < DEEPEST_REQUIRED_DISTANCE);
+  assert.ok(shallow.length >= MINIMUM_POPULATION,
+    "the control needs the pre-#2142 population to still be there; it is what both checks must reject");
+  assert.ok(distinctDistances(shallow).length < MINIMUM_DISTINCT_DEPTHS,
+    `the shallow population already spans ${distinctDistances(shallow).length} depths, so the `
+    + "distinct-depth check would pass on it and cannot be said to have been failing before this row");
+  const deepest = deepestDistance(shallow);
+  assert.ok(deepest !== null && deepest < DEEPEST_REQUIRED_DISTANCE,
+    `the shallow population reaches ${deepest}, which meets the floor -- the depth check cannot fail and `
+    + "has been passing without measuring anything");
+});
+
+test("#2142: the reveal-attribution check REPORTS a panel opened from another control", () => {
+  const revealedFromTheFirstField = "<input id=\"first\"><input id=\"trigger\">"
+    + "<script>var p=document.getElementById('panel');"
+    + "document.getElementById('first').addEventListener('focus', function(){ p.hidden = false; });"
+    + "</script>";
+  assert.deepEqual(nonTriggerReveals(revealedFromTheFirstField), ["a focus listener on #first"]);
+  const spelledAnotherWay = "<script>document.querySelector('#first').addEventListener('focus', f);</script>";
+  assert.deepEqual(nonTriggerReveals(spelledAnotherWay),
+    ["1 focus listener(s) whose element this file cannot read"]);
+  assert.deepEqual(nonTriggerReveals("<input id=\"trigger\" onfocus=\"reveal()\">"),
+    ["1 inline onfocus= attribute(s)"]);
+});
