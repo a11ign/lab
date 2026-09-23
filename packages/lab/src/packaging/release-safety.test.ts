@@ -1,9 +1,14 @@
 /**
  * The release workflow must be incapable of publishing by accident.
  *
- * Nothing has been published to any registry, the name is undecided (PLAN.md B5), and npm versions cannot
- * be unpublished after 72 hours — only deprecated. So a wrong first release is permanent, and the guards
- * that prevent one are worth asserting rather than trusting to review.
+ * `a11ign@0.1.0` and five `@a11ign/*` packages shipped on 2026-09-19T09:39:12Z, and npm versions cannot
+ * be unpublished after 72 hours — only deprecated. So a wrong release is permanent, and the guards that
+ * prevent one are worth asserting rather than trusting to review.
+ *
+ * #2052: until 2026-09-23 this paragraph said nothing had been published and the name was undecided,
+ * while guard 4's own body below already recorded the opposite WITH its evidence — the file guarding the
+ * publish disagreed with itself about the fact being guarded, and the docblock is the half a reader meets
+ * first. `release-header-currency.test.ts` is the guard against that recurring.
  *
  * Seven independent guards, and independence is the point: any single one would be a single point of
  * failure, which is this repo's rule about a verification not sharing a failure mode with its action.
