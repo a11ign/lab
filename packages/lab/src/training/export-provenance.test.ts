@@ -55,3 +55,51 @@ test("the sibling fields still come from the capture's own environment", () => {
   assert.equal(env.browserVersion, "151.0.4129.101");
   assert.equal(env.workerCode, "abc123");
 });
+
+// WHICH PROTOCOL PRODUCED THIS RECORD (#1989). The cache keys on `captureProtocol`, so a v21 capture is
+// never served from a v20 entry -- but the exporter dropped the field, so the RECORD could not say. All
+// 3,742 records in the three corpora carried none, and a corpus mixed across the 20 -> 21 bump looked
+// exactly like one that was not.
+//
+// These pin the property rather than a number: the value must come from the capture, a capture that did
+// not record one must export `null`, and two protocols must stay distinguishable. Mutation-checked by
+// hard-coding `captureProtocol: 21` in the exporter, which the first test alone survives.
+
+// The two real protocols either side of #1918's bump -- the populations #1926 must be able to tell
+// apart. Named because the test's subject IS which number came out, so a bare literal in the assertion
+// and a bare literal in the input read as the same thing when they are the claim and its control.
+const BEFORE_BUMP = 20;
+const AFTER_BUMP = 21;
+// Falsy, and RECORDED -- the pair `||` cannot tell apart.
+const FALSY_BUT_RECORDED = 0;
+
+const captureAt = (captureProtocol: unknown) =>
+  ({ environment: captureProtocol === undefined ? {} : { captureProtocol } });
+
+test("the protocol is read from the capture", () => {
+  assert.equal(captureEnvironment(captureAt(AFTER_BUMP)).captureProtocol, AFTER_BUMP);
+});
+
+test("two captures on different protocols stay distinguishable in one export", () => {
+  // The whole point of the stamp: a mixed corpus must be detectable after the fact. A hard-coded or
+  // defaulted value passes the test above and fails this one.
+  const before = captureEnvironment(captureAt(BEFORE_BUMP));
+  const after = captureEnvironment(captureAt(AFTER_BUMP));
+  assert.equal(before.captureProtocol, BEFORE_BUMP);
+  assert.equal(after.captureProtocol, AFTER_BUMP);
+  assert.notEqual(before.captureProtocol, after.captureProtocol);
+});
+
+test("a capture that recorded no protocol exports null, never a default protocol number", () => {
+  // A record claiming a protocol it was not captured under is WORSE than one claiming none: it puts a
+  // record into a population it does not belong to, which is the one thing this field exists to prevent.
+  assert.equal(captureEnvironment(captureAt(undefined)).captureProtocol, null);
+  assert.equal(captureEnvironment({}).captureProtocol, null);
+});
+
+test("a recorded protocol 0 exports as 0, not as 'not recorded'", () => {
+  // `knownOr` is `||`, so it would collapse a recorded 0 into `null`. Every sibling field here is a
+  // string and cannot tell the difference; this one is a NUMBER, and the two states it would merge are
+  // the two populations the stamp exists to separate.
+  assert.equal(captureEnvironment(captureAt(FALSY_BUT_RECORDED)).captureProtocol, FALSY_BUT_RECORDED);
+});
