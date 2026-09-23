@@ -22,11 +22,7 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const SCRIPT = join(REPO, "packages/lab/scripts/check-shipped-provenance.mjs");
 
 /** The provenance rows `promote-model.mjs` renders, for a report with this many records. */
-const entryFor = (records: number) => `---
-"@a11ign/scorer": major
----
-
-Retrained scorer weights (\`candidate\`).
+const provenanceBody = (records: number) => `Retrained scorer weights (\`candidate\`).
 
 Provenance, so a disputed finding can be traced to the model that produced it:
 
@@ -38,8 +34,34 @@ Provenance, so a disputed finding can be traced to the model that produced it:
 - feature schema: \`screenreader-structured-v15\`
 `;
 
-/** A minimal tree with the three things the gate reads. */
-function planted(records: number, changesets: Record<string, string>): string {
+/** A PENDING promotion changeset: the rows above, under changeset front-matter. */
+const entryFor = (records: number) => `---
+"@a11ign/scorer": major
+---
+
+${provenanceBody(records)}`;
+
+/**
+ * A PUBLISHED CHANGELOG carrying the same rows -- what `changeset version` leaves behind once a release
+ * has actually landed. Built from `provenanceBody` rather than spelled a second time, for the reason
+ * `shipped-provenance.mjs` names: a copy of the format drifts the first time a row is added.
+ */
+const changelogFor = (records: number) => `# @a11ign/scorer
+
+## 0.1.0
+
+### Major Changes
+
+- a1b2c3d4: ${provenanceBody(records)}`;
+
+/**
+ * A minimal tree with the three things the gate reads.
+ *
+ * `changelog` is the third: absent by default, because that is this repository's own state and the state
+ * every test here was written in. Passing one exercises the OTHER branch of the same code path, which is
+ * what #2162 turns on -- a test that pins only the absent case passes with the summary line deleted.
+ */
+function planted(records: number, changesets: Record<string, string>, changelog?: string): string {
   const root = mkdtempSync(join(tmpdir(), "a11y-prov-"));
   const model = join(root, "packages/scorer/models/screenreader-scorer");
   mkdirSync(model, { recursive: true });
@@ -54,6 +76,7 @@ function planted(records: number, changesets: Record<string, string>): string {
   for (const [name, text] of Object.entries(changesets)) {
     writeFileSync(join(root, ".changeset", name), text);
   }
+  if (changelog !== undefined) writeFileSync(join(root, "packages/scorer/CHANGELOG.md"), changelog);
   return root;
 }
 
@@ -107,6 +130,62 @@ test("THE CONTROL: a matching entry passes, and the gate says what it examined",
     assert.match(out, /PASS/);
     assert.match(out, /1 pending promotion changeset\(s\)/,
       "a pass that does not say how much it read is indistinguishable from a pass over nothing");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("ABSENT: the summary says only what `existsSync` can support, and the PASS names no CHANGELOG", () => {
+  // #2162. Two defects in one output, and this repository's own vocabulary names both.
+  //
+  // `absent (never published)` joined a measured fact to an unmeasured conclusion with a bracket, leaving
+  // a reader no way to tell which half was checked. `existsSync` answers whether THIS CHECKOUT holds the
+  // file; a publish that did not commit its CHANGELOG back leaves exactly this state, and #1824 records
+  // that happening here on 2026-09-19. Only the registry can answer the publication question, and this
+  // gate runs where `npm view` cannot authenticate -- by design, so the answer is to claim less.
+  //
+  // And `renderVerdict` appends the word `examined` to `source`, so naming "the CHANGELOG" there printed
+  // `PASS ... and the CHANGELOG examined and clean` over a `changelog` of `null` -- which the summary
+  // line's own comment, six lines above the string, defines as a check reporting success having examined
+  // nothing.
+  const root = planted(2487, { "promote-candidate-a1b2c3d4.md": entryFor(2487) });
+  try {
+    const { code, out } = runGate(root);
+    assert.equal(code, 0, `a correct tree with no CHANGELOG must still pass; the gate said: ${out}`);
+    assert.match(out, /CHANGELOG absent, so nothing to examine/,
+      "the state is `absent`, and what that state means for what was read");
+    assert.doesNotMatch(out, /never published/,
+      "absent is measured; what it implies about the registry is not, and this gate cannot ask");
+    assert.match(
+      out,
+      /PASS — all 1 of 1 from the shipped weights and 1 pending changeset\(s\) \(no CHANGELOG to read\) examined and clean/,
+      "every name in `source` must correspond to something this run read",
+    );
+    assert.doesNotMatch(out, /and the CHANGELOG examined/,
+      "a `null` is not a CHANGELOG examined");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("PRESENT: the same code path reads the CHANGELOG, says so, and names it in what was examined", () => {
+  // THE POSITIVE CONTROL for the test above, and the row's own requirement: assert the output BOTH ways
+  // from one code path, or a pass over the absent branch is satisfied by a summary line that was deleted.
+  //
+  // NO pending changeset at all, deliberately. The CHANGELOG is then the ONLY thing that can state the
+  // shipped provenance (`shipped-provenance.mjs` accepts either), so exit 0 proves the file was READ --
+  // not merely that `existsSync` returned true and the word changed.
+  const root = planted(2487, {}, changelogFor(2487));
+  try {
+    const { code, out } = runGate(root);
+    assert.equal(code, 0, `a published CHANGELOG stating the provenance must pass; the gate said: ${out}`);
+    assert.match(out, /0 pending promotion changeset\(s\); CHANGELOG present/);
+    assert.match(
+      out,
+      /PASS — all 1 of 1 from the shipped weights, 0 pending changeset\(s\) and the CHANGELOG examined and clean/,
+      "when the file IS there and IS read, the verdict must say so",
+    );
+    assert.doesNotMatch(out, /no CHANGELOG to read/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
