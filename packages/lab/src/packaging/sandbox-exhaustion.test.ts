@@ -289,26 +289,60 @@ function runFixture(): { status: number | null; output: string } {
   }
 }
 
+/** Whatever reporter produced this, as plain lines -- rstest colours its output and CI does not strip it. */
+function plainLines(output: string): string[] {
+  // eslint-disable-next-line no-control-regex
+  return output.replace(/\u001b\[[0-9;]*m/g, "").split("\n");
+}
+
+/** The index of the first line naming `fragment`, or -1. */
+function firstLineNaming(lines: readonly string[], fragment: string): number {
+  return lines.findIndex((line) => line.includes(fragment));
+}
+
+/**
+ * WHICH REPORTER RSTEST USES IS NOT A PROPERTY OF THIS REPOSITORY, and the first version of this test
+ * assumed it was. It sliced the run's output at a `## Failures` heading -- which exists in the reporter
+ * this file was written against and does NOT exist in the one CI runs, where the failure list is
+ * `Summary of all failing tests:` followed by ` FAIL <path> > <test name>`. It passed locally and went red
+ * on the acceptance job at `0d22a3abc`, on a correct classifier.
+ *
+ * `RSTEST_NO_AGENT=1` REPRODUCES CI'S REPORTER LOCALLY, and is how this was re-checked rather than
+ * re-pushed: rstest picks its agent-friendly reporter when it detects an agent
+ * (`determineAgent`/`RSTEST_NO_AGENT` in `@rstest/core`), and CI, detecting none, uses the default. Run
+ * this file both ways before trusting any assertion over a runner's output.
+ *
+ * So the anchor is the FAILING TEST'S OWN NAME, which every reporter prints because it is the verdict.
+ * The orientation must appear AFTER it -- attached to the failure rather than a screen earlier, which is
+ * precisely where `worker-capture`'s quota lines were -- and every printed occurrence must carry the whole
+ * orientation on that ONE line, so a `grep` for the marker never lands on a fragment.
+ */
+const MUST_CARRY = [" free of ", "on the filesystem holding ", "proved nothing about the code under test"];
+
 test("#2158 MUTATION 2: the orientation reaches what the RUNNER PRINTS, beside the failing test's name", () => {
   const { status, output } = runFixture();
   assert.equal(status, 1, `the fixture must stay RED -- a full disk is a real failure:\n${output}`);
   assert.doesNotMatch(output, /No test files found/, output);
+  const lines = plainLines(output);
 
-  // THE ROW'S OWN DEFECT, PINNED: `worker-capture`'s quota lines existed and were still missed, because they
-  // printed ABOVE the summary. So the orientation must be inside the section a reader reads for the verdict,
-  // not merely somewhere in the stream.
-  const failures = output.slice(output.indexOf("## Failures"));
-  assert.ok(output.includes("## Failures"), `the runner printed no failure list at all:\n${output}`);
-  for (const code of ["EACCES", "EDQUOT"]) {
-    const carrying = failures.split("\n").filter((line) => line.includes(EXHAUSTION_MARKER) && line.includes(code));
-    assert.equal(carrying.length, 1,
-      `exactly one printed line must carry the marker and ${code} -- and it must be ONE line, because the `
-      + `defect this row closes is an orientation a grep for the verdict never reached:\n${failures}`);
-    // The three facts, on that same single grep-reachable line.
-    assert.match(carrying[0], / free of /, carrying[0]);
-    assert.match(carrying[0], /proved nothing about the code under test/, carrying[0]);
+  for (const [name, code] of [["a sandbox whose root cannot be written", "EACCES"],
+    ["a sandbox whose setup dies of an injected EDQUOT", "EDQUOT"]]) {
+    const named = firstLineNaming(lines, name);
+    assert.notEqual(named, -1, `the runner must print the failing test's name:\n${output}`);
+
+    const carrying = lines.flatMap((line, index) =>
+      (line.includes(EXHAUSTION_MARKER) && line.includes(code) ? [index] : []));
+    assert.ok(carrying.length > 0,
+      `no printed line carries the marker and ${code} -- the orientation exists only inside the Error, `
+      + `which is the defect this row closes restated:\n${output}`);
+    assert.ok(carrying.every((index) => index > named),
+      `the orientation must print AFTER the failing test's name, not a screen earlier:\n${output}`);
+    // ONE LINE: every occurrence carries the whole orientation, so a grep for the marker lands on all of it.
+    for (const index of carrying) {
+      for (const fragment of MUST_CARRY) {
+        assert.ok(lines[index].includes(fragment),
+          `line ${index} carries the marker without "${fragment}":\n${lines[index]}`);
+      }
+    }
   }
-  // and the failing tests' own names are still there, so the run still reads as a list of failures.
-  assert.match(failures, /a sandbox whose root cannot be written/, failures);
-  assert.match(failures, /a sandbox whose setup dies of an injected EDQUOT/, failures);
 });
