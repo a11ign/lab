@@ -60,8 +60,8 @@ test("ready + disputed is caught, exactly tonight's #13", () => {
 });
 
 test("#673: ready + in-progress + session:* is NO LONGER a mutexViolations match -- #246's shape moved " +
-  "to its own check (handClaims, below), since it names a cause row-claim.mjs's own atomicity makes " +
-  "provable rather than a generic pair to remove one of", () => {
+  "to its own check (handClaims, below), since it names a cause and a remedy rather than a generic pair " +
+  "to remove one of", () => {
   const issues = [
     { number: 230, title: "t", labels: ["backlog", READY_LABEL, "in-progress", "session:worker-judge"] },
     { number: 223, title: "t", labels: ["backlog", READY_LABEL, "in-progress", "session:worker-capture"] },
@@ -122,8 +122,10 @@ test("MUTATION: review-only is genuinely in MUTEX_LABELS, not just described as 
     "review-only must be in MUTEX_LABELS -- it is #27's own shape, the reason this label exists at all");
 });
 
-// --- handClaims: #673 -- ready + in-progress together, which row-claim.mjs's own atomic label-write
-// can never produce, so this co-occurrence is proof the claim was made some other way ---
+// --- handClaims: #673 -- ready + in-progress together, which row-claim.mjs's own one-command label
+// write is not expected to leave behind, so the co-occurrence is strong evidence the claim was made some
+// other way. NOT proof: #677's reproduction (quoted in row-claim.mjs's #749 comment) shows that command
+// half-applying, so the claim path can mint this pair too (#2111 rework) ---
 
 test("#673 ACCEPTANCE: a row hand-claimed by applying in-progress + session:x to a ready row is " +
   "reported as a hand claim", () => {
