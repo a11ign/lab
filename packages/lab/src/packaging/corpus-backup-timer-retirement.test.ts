@@ -30,6 +30,19 @@
  * All three had the same weakness and only the first was measured; fixing one and leaving its siblings
  * would have been answering the mutant rather than the finding.
  *
+ * ## A membership test that asks SYSTEMD — reviewer-2's fourth refusal, on `c951eedc`
+ *
+ * The fix above still read one side of a two-sided test. `asserts()` asked whether a clause named the unit
+ * and contained ` in `, so **`'a11y-corpus-snapshot.timer' in 'a11y-corpus-snapshot.timer'` left all 42
+ * tests green** — a tautology, true on a lab where systemd lists no timer at all, standing where the proof
+ * that the surviving timer is still scheduled is supposed to be. Same defect, one level further in: the
+ * SHAPE of a membership test read instead of what it compares.
+ *
+ * A clause now has to look the unit up IN THE REGISTER of the `systemctl list-timers` read-back
+ * (`timers-read-back` / `testsMembership`), in the right direction, with no constant spliced into the
+ * haystack — and both directions are read that way, because the negative clause could be written against a
+ * constant just as easily and nobody had measured it yet.
+ *
  * ## Why the contract is between tasks, rather than inside any one of them
  *
  * Every trap `corpus-schedule.yml`'s own header names is a relationship a single task cannot state:
@@ -113,6 +126,7 @@ const CLAUSES = {
   failedStateProbe: "failed-state-probe",
   resetFailedGated: "reset-failed-gated",
   checkModeRead: "check-mode-read",
+  timersReadBack: "timers-read-back",
   assertSnapshotPresent: "assert-snapshot-present",
   assertBackupAbsent: "assert-backup-absent",
 } as const;
@@ -223,6 +237,28 @@ const stopStep = (steps: Step[], vars: Vars): Step | undefined =>
 const unitFileProbeStep = (steps: Step[], vars: Vars): Step | undefined =>
   steps.find((step) => step.module === "ansible.builtin.stat"
     && interpolate(step.args.path, vars).endsWith(`/${BACKUP_TIMER}`));
+
+/**
+ * The `systemctl list-timers` read the closing assert is supposed to be reading. It is found by what it
+ * runs, like every other task here, and its REGISTER is the point: an assert clause that does not read
+ * this register's stdout is not reading systemd at all, whatever unit names it happens to contain.
+ */
+const timersReadBackStep = (steps: Step[], vars: Vars): Step | undefined =>
+  steps.find((step) => step.module === "ansible.builtin.command"
+    && argvOf(step, vars).includes("list-timers") && step.task.register !== undefined);
+
+/**
+ * A Jinja membership test, split at its operator into the thing looked FOR and the thing looked IN.
+ * Both sides matter and the checker used to read neither: `'…snapshot.timer' in '…snapshot.timer'` is a
+ * membership test, mentions the unit, and is true of every host in the fleet including one where systemd
+ * lists nothing at all.
+ */
+function membership(clause: string): { needle: string; haystack: string; negated: boolean } | undefined {
+  const split = clause.match(/^(.*?)\s+(not\s+in|in)\s+(.*)$/s);
+  return split
+    ? { needle: split[1].trim(), haystack: split[3].trim(), negated: split[2].includes("not") }
+    : undefined;
+}
 
 /** The `ansible.builtin.file` task that deletes the retired unit files. */
 const removalStep = (steps: Step[], vars: Vars): Step | undefined =>
@@ -363,30 +399,57 @@ function checkModeFindings(steps: Step[]): Finding[] {
         + "the lab 2026-09-23T05:21Z)" }));
 }
 
+/**
+ * Does this clause test THIS unit's membership of what systemd actually said, in THIS direction?
+ *
+ * Three things, and the checker used to ask only the first two. The unit must be the thing looked FOR, so
+ * a reversed test (`<register>.stdout in '…timer'`) is not mistaken for the real one. The haystack must
+ * READ THE REGISTER of the `list-timers` read-back, so a clause comparing two constants -- reviewer-2's
+ * refusal of `c951eedc`, `'a11y-corpus-snapshot.timer' in 'a11y-corpus-snapshot.timer'`, true on a host
+ * where systemd lists nothing -- is refused. And the haystack must carry no literal of its own, because a
+ * constant spliced into it (`<register>.stdout ~ '…timer'`) makes the clause true again without systemd's
+ * help. The direction is read from the operator rather than from whether the words "not in" appear
+ * somewhere in the text.
+ */
+function testsMembership(clause: string, subject: { unit: string; sense: "in" | "not in" },
+  register: string, vars: Vars): boolean {
+  const test = membership(clause);
+  if (!test || test.negated !== (subject.sense === "not in")) return false;
+  return mentions(test.needle, aliasesFor(subject.unit, vars))
+    && reads(test.haystack, register, "stdout") && !/["']/.test(test.haystack);
+}
+
 /** Trap 4: the closing assert reads both directions, so the removal is not checked by its own task. */
 function assertionFindings(steps: Step[], vars: Vars): Finding[] {
   const closing = steps.find((step) => step.module === "ansible.builtin.assert");
   if (!closing) {
     return [{ clause: CLAUSES.assertBackupAbsent, detail: "the play asserts nothing at all" }];
   }
-  const clauses = asList(closing.args.that).map(asText);
-  // PRESENT means a POSITIVE membership test. `'…snapshot.timer' not in …` names the surviving timer just
-  // as loudly and asserts the opposite of what this play is for -- the same read-the-shape-not-the-meaning
-  // weakness as the stop's guard, and it has to be refused in the same breath rather than after someone
-  // measures it too.
-  const asserts = (unit: string, sense: "in" | "not in") => clauses.some((clause) =>
-    mentions(clause, aliasesFor(unit, vars)) && clause.includes(" in ")
-      && clause.includes(" not in ") === (sense === "not in"));
+  const register = asText(timersReadBackStep(steps, vars)?.task.register);
+  if (!register) {
+    return [{ clause: CLAUSES.timersReadBack,
+      detail: "no ansible.builtin.command registers a `systemctl list-timers` read, so the closing assert "
+        + "has nothing of systemd's to read: whatever it compares, it is comparing the play's own values "
+        + "to each other and cannot see a timer that survived the removal" }];
+  }
+  // PRESENT means a POSITIVE membership test OF THE READ-BACK. `'…snapshot.timer' not in …` names the
+  // surviving timer just as loudly and asserts the opposite of what this play is for; a clause that reads
+  // no register names it just as loudly and asks systemd nothing. Both are the same
+  // read-the-shape-not-the-meaning weakness as the stop's guard, one level further in.
+  const asserts = (unit: string, sense: "in" | "not in") =>
+    asList(closing.args.that).map(asText)
+      .some((clause) => testsMembership(clause, { unit, sense }, register, vars));
   const findings: Finding[] = [];
   if (!asserts(SNAPSHOT_TIMER, "in")) {
     findings.push({ clause: CLAUSES.assertSnapshotPresent,
-      detail: `no assert clause requires ${SNAPSHOT_TIMER} to be PRESENT in the read-back; this retirement `
-        + "stops one timer of the pair, and nothing would notice if it took the surviving one with it" });
+      detail: `no assert clause requires ${SNAPSHOT_TIMER} to be PRESENT in \`${register}.stdout\`; this `
+        + "retirement stops one timer of the pair, and nothing would notice if it took the surviving one "
+        + "with it -- nor if the clause that says so never reads what systemd listed" });
   }
   if (!asserts(BACKUP_TIMER, "not in")) {
     findings.push({ clause: CLAUSES.assertBackupAbsent,
-      detail: `no assert clause requires ${BACKUP_TIMER} to be ABSENT from the read-back; the removal is `
-        + "then checked only by the task that performed it" });
+      detail: `no assert clause requires ${BACKUP_TIMER} to be ABSENT from \`${register}.stdout\`; the `
+        + "removal is then checked only by the task that performed it" });
   }
   return findings;
 }
@@ -599,6 +662,53 @@ test("#2060 CONTROL: an assert demanding the SURVIVING timer be gone too is caug
   });
   provenBy(mutated, CLAUSES.assertSnapshotPresent,
     "an assert that succeeds only when the SURVIVING timer is also gone passed.");
+});
+
+/** Rewrite the clause of the closing assert that tests in this direction, leaving its sibling alone. */
+function rewriteClause(play: Task, steps: Step[], sense: "in" | "not in", replacement: string): void {
+  const closing = steps.find((step) => step.module === "ansible.builtin.assert")!;
+  const args = moduleAt(play, closing);
+  args.that = asList(args.that).map(asText)
+    .map((clause) => clause.includes(" not in ") === (sense === "not in") ? replacement : clause);
+}
+
+test("#2060 CONTROL: a surviving-timer clause that reads no systemd output is caught -- reviewer-2 on `c951eedc`", () => {
+  // "I applied this subject mutation on disk and confirmed it: `'a11y-corpus-snapshot.timer' in
+  // 'a11y-corpus-snapshot.timer'`. The full five-file Acceptance stayed green at 42/42, even though the
+  // playbook would no longer verify that systemd listed the surviving timer."
+  const mutated = mutate((play, steps) =>
+    rewriteClause(play, steps, "in", `'${SNAPSHOT_TIMER}' in '${SNAPSHOT_TIMER}'`));
+  provenBy(mutated, CLAUSES.assertSnapshotPresent,
+    "a clause comparing two constants passed, and it is true on a lab where systemd lists no timer at all.");
+});
+
+test("#2060 CONTROL: a retired-timer clause that reads no systemd output is caught", () => {
+  // The same hole in the negative direction, fixed in the same breath rather than after someone measures
+  // it too: `<timer> not in '<some other name>'` is true whether or not the removal did anything.
+  const mutated = mutate((play, steps) =>
+    rewriteClause(play, steps, "not in", `'${BACKUP_TIMER}' not in '${SNAPSHOT_TIMER}'`));
+  provenBy(mutated, CLAUSES.assertBackupAbsent,
+    "a clause asserting the retired timer is absent from a constant passed, and the removal is unchecked.");
+});
+
+test("#2060 CONTROL: a membership test written BACKWARDS is caught", () => {
+  // It reads the register, names the unit, and asks whether systemd's whole output is a substring of one
+  // timer name -- false on every real host, so the play would fail for a reason that is not the schedule.
+  const mutated = mutate((play, steps, vars) => {
+    const register = asText(timersReadBackStep(steps, vars)!.task.register);
+    rewriteClause(play, steps, "in", `${register}.stdout in '${SNAPSHOT_TIMER}'`);
+  });
+  provenBy(mutated, CLAUSES.assertSnapshotPresent,
+    "a reversed membership test passed as the clause that proves the surviving timer is scheduled.");
+});
+
+test("#2060 CONTROL: dropping the list-timers read-back leaves the assert nothing to read, and is caught", () => {
+  const mutated = mutate((play, steps, vars) => {
+    const read = timersReadBackStep(steps, vars)!;
+    play.tasks = asList(play.tasks).filter((_, index) => index !== read.index);
+  });
+  provenBy(mutated, CLAUSES.timersReadBack,
+    "the closing assert names a register nothing sets, so it reads the play's own values, not systemd's.");
 });
 
 /**
