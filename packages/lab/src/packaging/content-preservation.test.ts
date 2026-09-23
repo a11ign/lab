@@ -581,6 +581,10 @@ test("the always-loaded rules still say no session holds a standing cron -- the 
 
 test("no rule loaded by every session times a session's action to a wall-clock minute", () => {
   const files = alwaysLoadedRuleFiles();
+  // The population, in THIS test and not only in the anchor test above: `flagged` is derived from
+  // `files`, so an empty `files` makes the emptiness assertion below pass having read nothing -- the
+  // vacuity this whole file exists to refuse, one directory over.
+  assert.ok(files.length > 0, `no .md files under ${ALWAYS_LOADED_RULES}/ -- nothing was examined`);
   const flagged = files.flatMap(({ rel, text }) =>
     wallClockMinuteMarkers(text).map((m) => ({ file: `${rel}:${m.line}`, ...m })));
   assert.deepEqual(flagged, [], `${flagged.length} wall-clock minute marker(s) in ${files.length} `
