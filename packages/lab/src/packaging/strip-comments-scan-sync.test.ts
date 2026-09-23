@@ -20,23 +20,28 @@
  *
  * ## The readings that produced these assertions, 2026-09-23, #2131
  *
- * Taken HERE, against this file's own population (1042 files: every tracked `.ts`/`.mjs` under
- * `packages/` and `scripts/`) and its own two predicates. The row's census script reports 100 of 1005 for
- * the first one; **both are right and they count different things** — that script globs a slightly
- * narrower population and charges any surviving `//` line, where this file charges only a line the
- * TypeScript parser would have removed. Re-derive before quoting either, and do not read a difference
- * between them as drift.
+ * Taken HERE, against THIS file's own population and its own oracle — every tracked `.ts`/`.mjs` under
+ * `packages/` and `scripts/`, `dist/` and `node_modules/` excluded, which is exactly what
+ * `trackedSourceFiles()` below walks — so any reader can regenerate every number by driving that walk and
+ * `commentsRemovedByTheParser` over it. **An earlier draft of this table quoted a second, narrower
+ * population from a throwaway census script (1005 files), and `reviewer` could not reproduce it at
+ * `def6aef9`; those figures are withdrawn rather than re-explained.** A measurement whose population
+ * cannot be rebuilt from the tree is a claim.
  *
- * | | at `ec27b8ccb`, before regex-literal recognition | at the fix |
+ * | over 1043 files | before regex-literal recognition | at the fix |
  * |---|---|---|
  * | files keeping a comment the parser removes | **99** | **0** |
  * | files losing a character the parser keeps | **56** | **0** |
+ * | agrees with the parser character for character | **833** | **988** |
  *
- * Character-for-character agreement with the parser went from 803 of 1005 to 952 of 1005 over the census
- * script's population. The 53 files that still differ all differ in one direction and for one
- * already-documented reason — a comment written inside a `${...}` interpolation is copied through as
- * string content, which `source-text.test.ts` pins as a KNOWN LIMITATION. Neither predicate here charges
- * it: the interpolation's text is not a leading-`//` line, and keeping a character is not losing one.
+ * The population is a count of the tree and it moves: 1042 when this file was written, 1043 on
+ * 2026-09-23 at `def6aef9`+fix. Re-derive before quoting.
+ *
+ * The 55 files that still differ all differ in ONE direction — every one KEEPS more than the parser, none
+ * loses anything, measured rather than argued — and for one already-documented reason: a comment written
+ * inside a `${...}` interpolation is copied through as string content, which `source-text.test.ts` pins as
+ * a KNOWN LIMITATION. Neither predicate here charges it: the interpolation's text is not a leading-`//`
+ * line, and keeping a character is not losing one.
  *
  * ## Why the offender count can be `0` without an exemption list
  *
@@ -63,7 +68,7 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
 /** The reading this file was written against — see the header for how it was taken. */
 const OFFENDERS_AT_THE_FIX = 0;
-/** Below this the walk itself is broken, not the population shrinking (1042 files at the fix). */
+/** Below this the walk itself is broken, not the population shrinking (1043 files on 2026-09-23). */
 const POPULATION_FLOOR = 900;
 
 /**
@@ -137,7 +142,7 @@ test("the walk finds a non-trivial population -- vacuity guard for the scan itse
   const files = trackedSourceFiles();
   assert.ok(files.length >= POPULATION_FLOOR,
     `only found ${files.length} tracked .ts/.mjs files under packages/ and scripts/, below the `
-    + `${POPULATION_FLOOR} floor (1042 at the fix) -- the walk is broken, not the tree`);
+    + `${POPULATION_FLOOR} floor (1043 on 2026-09-23) -- the walk is broken, not the tree`);
 });
 
 test("the leading-comment counter is not vacuous: real files DO carry comment-shaped lines through, and "
