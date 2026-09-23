@@ -51,7 +51,10 @@ const ENVIRONMENT: Record<string, unknown> = {
   browserVersion: "", screenReaderVersion: "2026.1.1", guidepupVersion: "0.31.0",
   windowsVersion: "Microsoft Windows 11 Pro 10.0.22621", architecture: "arm64", captureProtocol: 2,
   browserProfile: "adopted", screenReaderSettings: "sha256:9f2c84c2", provisionRevision: "r41",
-  displayMode: "1024x768",
+  // The PIN and the DESKTOP are two fields with the same value here on purpose: #1561 pins the window to
+  // exactly what the fleet's display mode holds, so a fixture where they differed would be a fleet that
+  // does not exist. `fleet-consistency.test.ts` is where the case that they CAN differ is pinned.
+  displayMode: "1024x768", windowSize: "1024x768",
 };
 
 const health = (browserVersion: string, { omit = [] as string[] } = {}) => ({
