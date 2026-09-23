@@ -521,10 +521,12 @@ test("BOTH SPELLINGS OF ONE PATH ARE DECIDED THE SAME WAY -- a systemd unit cann
   assert.ok(!(unclassified in OTHER_HOME_DIRECTORIES) && unclassified !== CHECKOUT_NAME,
     "the control segment must be one the guard has no classification for, or it proves nothing");
 
-  const absolute = homeRootNamesIn("packages/agent-org/host/x.service",
-    `Environment=GH_CONFIG_DIR=/home/agent/${unclassified}/gh`);
-  const tilde = homeRootNamesIn("packages/agent-org/host/x.service", `\`~/${unclassified}/gh\``);
-  assert.deepEqual(absolute, [`packages/agent-org/host/x.service: ~/${unclassified}`],
+  // ONE file name for both, deliberately: the report carries the file, so a second name would make the
+  // comparison below differ for a reason that has nothing to do with the spelling under test.
+  const unit = "packages/agent-org/host/x.service";
+  const absolute = homeRootNamesIn(unit, `Environment=GH_CONFIG_DIR=/home/agent/${unclassified}/gh`);
+  const tilde = homeRootNamesIn(unit, `\`~/${unclassified}/gh\``);
+  assert.deepEqual(absolute, [`${unit}: ~/${unclassified}`],
     "the absolute spelling must be found -- #1982 wrote exactly this line and passed");
   assert.deepEqual(absolute, tilde,
     "and found IDENTICALLY to the prose spelling that #1986 failed on. Without this the next widening "
