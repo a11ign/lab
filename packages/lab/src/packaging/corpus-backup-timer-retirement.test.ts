@@ -43,6 +43,22 @@
  * haystack — and both directions are read that way, because the negative clause could be written against a
  * constant just as easily and nobody had measured it yet.
  *
+ * ## A read-back that asks SYSTEMD — reviewer-2's fifth refusal, on `797028f6`
+ *
+ * Having made the assert read a register, nothing made the REGISTER read systemd. A task was taken for the
+ * `list-timers` read-back because the word `list-timers` appeared somewhere in its argv, so
+ * **`argv: [printf, "a11y-corpus-snapshot.timer", list-timers, "--no-legend"]` left all 46 tests green** —
+ * the assert then consumes a string the play wrote for itself as if it came from the host, and the checker
+ * certifies a playbook that never observes the lab's timer state at all.
+ *
+ * **`ansible.builtin.command` is the one module here whose PROGRAM is data.** `stat`, `file`, `systemd`
+ * and `assert` name what they do in the module key, which no argument can forge; a `command` names it in
+ * `argv[0]`, and this file was reading every position but that one. So all three command tasks — the
+ * `is-failed` probe, the `reset-failed`, and the read-back — are now found by `systemctlDoing()`: the
+ * program is `systemctl` and the SUBCOMMAND is `argv[1]`, rather than the verb appearing anywhere in the
+ * list. Two of those three were unmeasured siblings, and one of them (`printf reset-failed …`) is the
+ * row's own second Mutation wearing a disguise: a reset that silently does nothing.
+ *
  * ## Why the contract is between tasks, rather than inside any one of them
  *
  * Every trap `corpus-schedule.yml`'s own header names is a relationship a single task cannot state:
@@ -220,13 +236,42 @@ const reads = (expression: string, register: string, field: string): boolean =>
 const testsPositively = (expression: string, register: string, field: string): boolean =>
   reads(expression, register, field) && !/(^|\W)not(\W|$)/.test(expression);
 
-/** The argv of an `ansible.builtin.command`, which this playbook always writes as a list rather than a string. */
-const argvOf = (step: Step, vars: Vars): string[] => unitNames(step.args.argv, vars);
+/**
+ * The argv of an `ansible.builtin.command`, POSITION BY POSITION — index 0 is the program and index 1 the
+ * subcommand, and both are load-bearing below. This playbook always writes argv as a list; a task that
+ * writes its command as one string resolves to nothing here and is reported as a missing task, which is a
+ * false finding in the safe direction rather than a command this checker cannot read.
+ */
+const argvOf = (step: Step, vars: Vars): string[] =>
+  asList(expand(step.args.argv, vars, 0)).map(asText);
+
+/**
+ * The program a `command` task runs, as a bare name, so `/usr/bin/systemctl` and `systemctl` are the same
+ * program — which of the two a playbook writes is not this checker's business.
+ */
+const programOf = (argv: string[]): string => asText(argv[0]).split("/").pop() ?? "";
+
+/**
+ * `systemctl <verb> …`, found by the PROGRAM IT RUNS and the SUBCOMMAND IT PASSES.
+ *
+ * `ansible.builtin.command` is the only module in this play whose program is DATA: every other task names
+ * what it does in the module key, where no argument can forge it. reviewer-2's refusal of `797028f6` is
+ * the measurement — `argv: [printf, "a11y-corpus-snapshot.timer", list-timers, "--no-legend"]` contains
+ * the verb, registers output, and asks systemd nothing, and the whole Acceptance stayed green while the
+ * play consumed a string it had written for itself.
+ *
+ * The subcommand must be `argv[1]` rather than merely present, because that is where systemctl's own
+ * subcommand is: an option slipped in front of it changes which systemd answers (`systemctl --user
+ * list-timers` reads the calling user's instance, not the system one that owns these units), and a verb
+ * sitting in an argument position is not the verb being run.
+ */
+const systemctlDoing = (steps: Step[], verb: string, vars: Vars): Step[] =>
+  steps.filter((step) => step.module === "ansible.builtin.command"
+    && programOf(argvOf(step, vars)) === "systemctl" && argvOf(step, vars)[1] === verb);
 
 /** The `systemctl <verb> a11y-job-corpus-backup` task, found by what it runs rather than by its name. */
 const commandDoing = (steps: Step[], verb: string, vars: Vars): Step | undefined =>
-  steps.find((step) => step.module === "ansible.builtin.command"
-    && argvOf(step, vars).includes(verb) && argvOf(step, vars).includes(BACKUP_JOB_UNIT));
+  systemctlDoing(steps, verb, vars).find((step) => argvOf(step, vars).includes(BACKUP_JOB_UNIT));
 
 /** The `ansible.builtin.systemd` task that acts on the retired timer — the subject of traps 1 and 2. */
 const stopStep = (steps: Step[], vars: Vars): Step | undefined =>
@@ -241,11 +286,11 @@ const unitFileProbeStep = (steps: Step[], vars: Vars): Step | undefined =>
 /**
  * The `systemctl list-timers` read the closing assert is supposed to be reading. It is found by what it
  * runs, like every other task here, and its REGISTER is the point: an assert clause that does not read
- * this register's stdout is not reading systemd at all, whatever unit names it happens to contain.
+ * this register's stdout is not reading systemd at all, whatever unit names it happens to contain — and a
+ * register filled by a program that is not systemctl is not systemd's answer, whatever the clause reads.
  */
 const timersReadBackStep = (steps: Step[], vars: Vars): Step | undefined =>
-  steps.find((step) => step.module === "ansible.builtin.command"
-    && argvOf(step, vars).includes("list-timers") && step.task.register !== undefined);
+  systemctlDoing(steps, "list-timers", vars).find((step) => step.task.register !== undefined);
 
 /**
  * A Jinja membership test, split at its operator into the thing looked FOR and the thing looked IN.
@@ -359,13 +404,17 @@ function resetFailedFindings(steps: Step[], vars: Vars): Finding[] {
   if (!reset) {
     return [{ clause: CLAUSES.resetFailed,
       detail: `nothing runs \`systemctl reset-failed ${BACKUP_JOB_UNIT}\`; the unit is transient and `
-        + "`--remain-after-exit`, so removing the timer leaves `lab:failed-units` naming it forever" }];
+        + "`--remain-after-exit`, so removing the timer leaves `lab:failed-units` naming it forever. A "
+        + "command whose argv merely CONTAINS `reset-failed` is not one: the program is argv[0] and the "
+        + "subcommand argv[1], and a task that runs something else clears nothing while reporting success" }];
   }
   const probe = commandDoing(steps, "is-failed", vars);
   if (!probe) {
     return [{ clause: CLAUSES.failedStateProbe,
-      detail: `nothing runs \`systemctl is-failed ${BACKUP_JOB_UNIT}\`, so the reset cannot be gated on the `
-        + "state it exists to clear and must instead be forced with `failed_when: false`" }];
+      detail: `nothing runs \`systemctl is-failed ${BACKUP_JOB_UNIT}\` (argv[0] the program, argv[1] the `
+        + "subcommand), so the reset cannot be gated on the state it exists to clear and must instead be "
+        + "forced with `failed_when: false` -- and a gate reading a register some OTHER program filled is "
+        + "gated on a string this play wrote for itself" }];
   }
   // READ FOR WHAT IT TESTS, for the same reason the stop's guard is: `when: <register> is defined` MENTIONS
   // the probe and gates on nothing, because a registered command is always defined once it has run. The
@@ -428,9 +477,10 @@ function assertionFindings(steps: Step[], vars: Vars): Finding[] {
   const register = asText(timersReadBackStep(steps, vars)?.task.register);
   if (!register) {
     return [{ clause: CLAUSES.timersReadBack,
-      detail: "no ansible.builtin.command registers a `systemctl list-timers` read, so the closing assert "
-        + "has nothing of systemd's to read: whatever it compares, it is comparing the play's own values "
-        + "to each other and cannot see a timer that survived the removal" }];
+      detail: "no ansible.builtin.command registers a `systemctl list-timers` read -- argv[0] the program "
+        + "and argv[1] the subcommand, not the word appearing somewhere in the list -- so the closing "
+        + "assert has nothing of systemd's to read: whatever it compares, it is comparing the play's own "
+        + "values to each other and cannot see a timer that survived the removal" }];
   }
   // PRESENT means a POSITIVE membership test OF THE READ-BACK. `'…snapshot.timer' not in …` names the
   // surviving timer just as loudly and asserts the opposite of what this play is for; a clause that reads
@@ -709,6 +759,55 @@ test("#2060 CONTROL: dropping the list-timers read-back leaves the assert nothin
   });
   provenBy(mutated, CLAUSES.timersReadBack,
     "the closing assert names a register nothing sets, so it reads the play's own values, not systemd's.");
+});
+
+/** Rewrite what a command task RUNS, leaving everything else about it — its register, its guards — alone. */
+const runInstead = (play: Task, step: Step, argv: string[]): void => { moduleAt(play, step).argv = argv; };
+
+test("#2060 CONTROL: a read-back run by `printf` is caught -- reviewer-2's refusal on `797028f6`", () => {
+  // "I applied the subject mutation `argv: [printf, "a11y-corpus-snapshot.timer", list-timers,
+  // "--no-legend"]` on disk and confirmed the changed line; the exact five-file Acceptance remained 46/46
+  // green. The assert then consumes fabricated static output as if it came from `systemctl`."
+  const mutated = mutate((play, steps, vars) =>
+    runInstead(play, timersReadBackStep(steps, vars)!,
+      ["printf", SNAPSHOT_TIMER, "list-timers", "--no-legend"]));
+  provenBy(mutated, CLAUSES.timersReadBack,
+    "a register filled by `printf` passed as systemd's own view, so every clause of the closing assert "
+    + "read a string this play wrote for itself and the schedule was never observed at all.");
+});
+
+test("#2060 CONTROL: a read-back whose SUBCOMMAND is not what systemctl runs is caught", () => {
+  // The other half of reading argv position by position. `systemctl --user list-timers` is `systemctl`
+  // and contains the verb, and it reads the CALLING USER's systemd -- not the system instance that owns
+  // these units, where the timers are and where the removal happened.
+  const mutated = mutate((play, steps, vars) =>
+    runInstead(play, timersReadBackStep(steps, vars)!,
+      ["systemctl", "--user", "list-timers", "a11y-corpus-*", "--no-legend"]));
+  provenBy(mutated, CLAUSES.timersReadBack,
+    "a read of the wrong systemd instance passed as the read-back, and it lists no timer on any lab.");
+});
+
+test("#2060 CONTROL: a reset-failed that runs something OTHER than systemctl is caught", () => {
+  // The row's own second Mutation in disguise, and the first of the two unmeasured siblings: the task is
+  // present, named, gated and ordered exactly as the contract requires, and it clears nothing. That is a
+  // SILENT pass -- `lab:failed-units` keeps naming the unit forever and the play reports success.
+  const mutated = mutate((play, steps, vars) =>
+    runInstead(play, commandDoing(steps, "reset-failed", vars)!,
+      ["printf", "reset-failed", BACKUP_JOB_UNIT]));
+  provenBy(mutated, CLAUSES.resetFailed,
+    "a reset-failed that runs `printf` passed, and the failed unit outlives the retirement it was "
+    + "supposed to clear.");
+});
+
+test("#2060 CONTROL: an is-failed probe that fabricates its own answer is caught", () => {
+  // The second sibling. `printf failed …` puts the one word the gate tests for on stdout, so the gate is
+  // true on every lab -- the reset it protects then runs where there is nothing failed, which is the
+  // unconditional reset the playbook's own header argues against, wearing a probe's register.
+  const mutated = mutate((play, steps, vars) =>
+    runInstead(play, commandDoing(steps, "is-failed", vars)!,
+      ["printf", "failed", "is-failed", BACKUP_JOB_UNIT]));
+  provenBy(mutated, CLAUSES.failedStateProbe,
+    "a probe that prints its own answer passed, and the gate below it reads that answer as systemd's.");
 });
 
 /**
