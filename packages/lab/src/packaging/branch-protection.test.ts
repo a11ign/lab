@@ -34,6 +34,30 @@
  * sides of the change and settled it (#2022, comment 5787499206); `exemptIdentities` carries the
  * before/after, the flipped test carries why it is kept, and the foot of this file records the sibling key
  * where the same absence still means "you may not look".
+ *
+ * ------------------------------------------------------------------------------------------------------
+ * #2086: THE SAME REQUIREMENT NOW HAS A SECOND SURFACE, AND THIS FILE READS BOTH.
+ *
+ * Everything above reaches a pass only on a token holding repository admin, which no session and no CI job
+ * here holds. `ceo` ruled on 2026-09-23 (#2086) and made the edit personally, because creating it needs
+ * the very permission the row exists to route around: `merge-queue-main` now carries a `pull_request` rule
+ * with `required_approving_review_count: 1` beside its `merge_queue` rule, and that object IS readable by
+ * `a11ign-ai-workers`.
+ *
+ * THE RULING WAS **ADD, NOT SWAP**, and its reason is the part worth keeping: the row assumed a second
+ * surface meant a second place to be exempt. It does not. **Requirements compose and exemptions do not** --
+ * classic protection and rulesets are evaluated together and the most restrictive applies, so an identity
+ * must be exempt in BOTH to merge without a review. The ruleset rule therefore cannot open a hole, only
+ * close one, and classic `required_pull_request_reviews` STAYS as the authoritative read: it is the only
+ * surface whose exemption list can be ENUMERATED rather than merely queried for one identity.
+ *
+ * SO THE TWO HALVES OF THIS FILE ANSWER DIFFERENT QUESTIONS AND MUST NEVER BE COLLAPSED. `VERDICT.REQUIRED`
+ * above means "the rule bites and NOBODY is exempt" and needs admin. `BINDING.BINDS_ME` below means "the
+ * rule applies and I cannot bypass it" and needs nothing -- it is strictly weaker, named so it cannot be
+ * quoted as the stronger claim, and a test pins that no member of one vocabulary equals `REQUIRED`.
+ * What CI can now catch that no unattended check could catch before: the requirement being dropped
+ * entirely, or the CI identity itself acquiring a bypass. What it still cannot catch: a THIRD PARTY
+ * gaining one. That asymmetry is the honest summary, and the full reasoning is at `BINDING` below.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -366,6 +390,9 @@ test("#2022: the three verdicts are genuinely distinct -- none is a spelling of 
 
 // --- the live read ----------------------------------------------------------------------------------
 
+/** The one `gh` shell-out every live read here goes through. It throws; each caller catches by name. */
+const gh = (args: string[]) => execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+
 test("#2022 LIVE: `main` requires an approving review, asked of GitHub", () => {
   // OPT-IN, for `arm-pr-labels-live.test.ts`'s reason: a test that spawns `gh` whenever a token happens
   // to be present asks GitHub on every local run and inside the acceptance job. An agent asks deliberately.
@@ -375,7 +402,6 @@ test("#2022 LIVE: `main` requires an approving review, asked of GitHub", () => {
       + "verdict logic above ran against synthetic inputs; nothing here read the live branch.");
     return;
   }
-  const gh = (args: string[]) => execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   let openPr: { number: number; reviewDecision: string | null } | undefined;
   try {
     openPr = JSON.parse(gh(["pr", "list", "--repo", "a11ign/a11ign", "--state", "open", "--limit", "1",
@@ -422,31 +448,344 @@ function liveProtection(gh: (args: string[]) => string): ProtectionRead {
   }
 }
 
+// --- #2086: the same requirement, read by a token that holds no admin -------------------------------
+
 /**
- * THE OTHER EXEMPTION SURFACES, AND WHY ONLY ONE OF THE TWO IS PINNED HERE.
+ * #2086: THE SECOND SURFACE, AND WHY ITS VERDICT IS DELIBERATELY WEAKER THAN THE ONE ABOVE.
+ *
+ * Everything above needs repository admin to reach a pass, because the question "is anyone exempt" is
+ * answered by `bypass_pull_request_allowances`, and that endpoint 404s at `a11ign-ai-workers` -- the
+ * identity every session and the CI job here authenticates as. `ceo`'s 2026-09-23 ruling on #2086 adds a
+ * `pull_request` rule to the `merge-queue-main` ruleset so the SAME requirement is also readable without
+ * admin, and rules "ADD, do not SWAP": classic protection stays and remains the authoritative read.
+ *
+ * THE RULING'S REASON, BECAUSE IT INVERTS WHAT THE ROW ASSUMED. The row treated a second surface as a
+ * second place to be exempt. It is not: requirements COMPOSE and exemptions do NOT -- classic protection
+ * and rulesets are evaluated together and the most restrictive applies, so an identity must be exempt in
+ * BOTH to merge without a review. Adding the ruleset rule cannot open a hole, only close one.
+ *
+ * WHAT THIS BUYS, AND WHAT IT DOES NOT -- `ceo`'s own summary, kept verbatim because a reader who takes
+ * this check for more than it is has recreated the failure #2022 exists to prevent:
+ *
+ *     Both surfaces already bind everyone, so the edit buys a READABLE surface, not a stricter one. What
+ *     CI can now catch that no unattended check could catch before: the requirement being dropped
+ *     entirely, or the CI identity itself acquiring a bypass. What it still cannot catch: a THIRD PARTY
+ *     gaining one. That asymmetry is the honest summary.
+ *
+ * SO THIS VERDICT REPORTS EXACTLY TWO THINGS and says so in its own name: a `pull_request` rule requiring
+ * at least one approval applies to `main`, and `current_user_can_bypass` is `"never"` FOR THE IDENTITY
+ * RUNNING THE CHECK. It CANNOT enumerate who else is exempt. `bypass_actors` is the field that could, and
+ * GitHub documents it as returned "only if the user making the API request has write access to the
+ * ruleset" -- measured here as present-and-`[]` to `DanBeckDev` and ABSENT to `a11ign-ai-workers`, from
+ * the same object at the same moment. The COMPLETE read is still the admin-only opt-in command above.
+ * `BINDS_ME` is named the way it is so that no future reader can quote it as `REQUIRED`.
+ *
+ * THE MEASUREMENT `ceo` ASKED FOR, AND THE ANSWER, WHICH IS "NOT KNOWABLE HERE" (#2086 ruling, §3).
+ * The ruling asked whether `rules/branches/{branch}` OMITS rules the calling identity can bypass -- if it
+ * did, the rule's mere presence in that list would assert existence AND non-bypassability in one
+ * observation. Two independent checks say do not lean on it:
+ *
+ *   1. MEASURED 2026-09-23, both identities, same minute -- and NON-DISCRIMINATING, which is the finding:
+ *          as `DanBeckDev`        (admin:true)   rules/branches/main => ["merge_queue","pull_request"]
+ *          as `a11ign-ai-workers` (admin:false)  rules/branches/main => ["merge_queue","pull_request"]
+ *      Identical, but `bypass_actors` is `[]`, so NEITHER identity can bypass and both readings are
+ *      consistent with either hypothesis. The experiment has no discriminating power at this
+ *      configuration, and manufacturing one would mean granting a live bypass on `main`.
+ *   2. GitHub's OpenAPI description of the endpoint is SILENT on identity: "All active rules that apply
+ *      will be returned, regardless of the level at which they are configured... Rules in rulesets with
+ *      'evaluate' or 'disabled' enforcement statuses are not returned." Enforcement status is the only
+ *      documented filter.
+ *
+ * So the guard does NOT lean on it: presence proves EXISTENCE only, and `current_user_can_bypass` carries
+ * the whole exemption claim on its own -- the "if false" arm of the ruling, recorded as asked.
+ */
+const BINDING = {
+  /** The rule exists, demands an approval, and THIS identity cannot bypass it. Never a claim about others. */
+  BINDS_ME: "BINDS_ME",
+  /** No `pull_request` rule applies to `main` at all. */
+  ABSENT: "ABSENT",
+  /** One applies and asks for nothing, or its ruleset is not enforced. */
+  DECORATIVE: "DECORATIVE",
+  /** It applies and bites, and this identity walks past it. */
+  EXEMPT: "EXEMPT",
+  /** One of the two facts could not be read. Never a pass. */
+  CANNOT_TELL: "CANNOT_TELL",
+} as const;
+type BindingCode = (typeof BINDING)[keyof typeof BINDING];
+
+type BranchRule = { type?: string; ruleset_id?: number; parameters?: { required_approving_review_count?: number } };
+type RulesetBinding = {
+  /** `GET /repos/{o}/{r}/rules/branches/main` -- any token that can read the repo; null when unreadable. */
+  branchRules: BranchRule[] | null;
+  /** `enforcement` of the ruleset the biting rule came from; null when unreadable. */
+  enforcement: string | null;
+  /** `current_user_can_bypass`: "always" | "pull_requests_only" | "never" | "exempt"; null when unreadable. */
+  canBypass: string | null;
+};
+
+/** The only value that means "this identity is bound"; every other value, known or not, means it is not. */
+const NOT_BYPASSABLE = "never";
+
+/** Existence and strength, from the branch-keyed endpoint. Most restrictive wins, as requirements compose. */
+function ruleAppliesVerdict({ branchRules, enforcement, canBypass }: RulesetBinding) {
+  if (branchRules === null) {
+    return { code: BINDING.CANNOT_TELL as BindingCode,
+      why: "`rules/branches/main` could not be read, so nothing is known about which rules apply" };
+  }
+  const prRules = branchRules.filter((r) => r.type === "pull_request");
+  if (prRules.length === 0) {
+    return { code: BINDING.ABSENT as BindingCode,
+      why: "no `pull_request` rule applies to `main`: the ruleset surface requires no approval -- the pre-#2086 shape" };
+  }
+  const counts = prRules.map((r) => r.parameters?.required_approving_review_count);
+  if (counts.some((c) => typeof c !== "number")) {
+    // Deliberately NOT read as zero. GitHub returns this parameter on every `pull_request` rule seen here,
+    // so a rule without it is an unrecognised shape rather than a cleared field -- the same discipline
+    // `enforce_admins` gets above, and for the same reason: nobody has measured the absent case.
+    return { code: BINDING.CANNOT_TELL as BindingCode,
+      why: "a `pull_request` rule carries no `required_approving_review_count` -- an unrecognised shape, not a cleared field" };
+  }
+  const required = Math.max(...(counts as number[]));
+  if (required < 1) {
+    return { code: BINDING.DECORATIVE as BindingCode,
+      why: `the \`pull_request\` rule applies and asks for ${required} approvals: it exists and demands nothing` };
+  }
+  return bindsMeVerdict({ enforcement, canBypass }, `a \`pull_request\` rule requires ${required} approval(s) on \`main\``);
+}
+
+/**
+ * The exemption half, and the ONLY thing this check can say about it: whether the caller is bound.
+ *
+ * ANYTHING THAT IS NOT EXACTLY `"never"` IS TREATED AS A BYPASS, including a value this code has never
+ * seen. GitHub's schema lists FOUR values -- `always`, `pull_requests_only`, `never`, `exempt` -- and a
+ * check written as "is it one of the bypassing ones" would have to enumerate three and would have missed
+ * `exempt`, which is not mentioned anywhere in the row, the ruling, or any reading taken here.
+ * `pull_requests_only` matters most of all: it is a bypass of precisely the rule being asserted.
+ */
+function bindsMeVerdict({ enforcement, canBypass }: Omit<RulesetBinding, "branchRules">, why: string) {
+  if (enforcement === null) {
+    return { code: BINDING.CANNOT_TELL as BindingCode,
+      why: `${why}, but the ruleset's \`enforcement\` could not be read, so it may be evaluated rather than enforced` };
+  }
+  if (enforcement !== "active") {
+    return { code: BINDING.DECORATIVE as BindingCode,
+      why: `${why}, but its ruleset's enforcement is "${enforcement}": evaluated or disabled, and it blocks nothing` };
+  }
+  if (canBypass === null) {
+    return { code: BINDING.CANNOT_TELL as BindingCode,
+      why: `${why}, but \`current_user_can_bypass\` could not be read: "I could not look" is not "I am bound"` };
+  }
+  if (canBypass !== NOT_BYPASSABLE) {
+    return { code: BINDING.EXEMPT as BindingCode,
+      why: `${why}, but \`current_user_can_bypass\` reads "${canBypass}": the identity running this check walks past it` };
+  }
+  return { code: BINDING.BINDS_ME as BindingCode,
+    why: `${why}, and \`current_user_can_bypass\` is "never" for the identity running this check`
+      + " -- who ELSE may bypass is not knowable without admin" };
+}
+
+// --- #2086: the verdict, against synthetic inputs ----------------------------------------------------
+
+const BINDS = (over: Partial<RulesetBinding> = {}): RulesetBinding => ({
+  branchRules: [
+    { type: "merge_queue", ruleset_id: 23681721 },
+    { type: "pull_request", ruleset_id: 23681721, parameters: { required_approving_review_count: 1 } },
+  ],
+  enforcement: "active",
+  canBypass: "never",
+  ...over,
+});
+
+test("#2086: the live shape read as `a11ign-ai-workers` BINDS_ME -- the state this row exists to certify", () => {
+  // Byte-for-byte the 2026-09-23T09:06Z reading, taken with `permissions.admin: false`. #2045's live test
+  // cannot reach a pass on this token at all; this one must, or the swap bought nothing.
+  const v = ruleAppliesVerdict(BINDS());
+  assert.equal(v.code, BINDING.BINDS_ME);
+  assert.match(v.why, /not knowable without admin/, "the limitation is in the verdict's own words, not implied");
+});
+
+test("#2086: no `pull_request` rule is ABSENT -- the pre-ruling shape, and the regression this catches", () => {
+  // `["merge_queue"]` is exactly what the row's Open-check read before `ceo` made the edit. It is also
+  // what a CI run would read if the rule were ever dropped: the one regression this check is for.
+  const v = ruleAppliesVerdict(BINDS({ branchRules: [{ type: "merge_queue", ruleset_id: 23681721 }] }));
+  assert.equal(v.code, BINDING.ABSENT);
+  assert.notEqual(v.code, BINDING.BINDS_ME);
+});
+
+test("#2086: an EMPTY rule list is ABSENT, and an unreadable one is CANNOT_TELL -- never the same answer", () => {
+  // The absence-vs-broken split, at the top of the read rather than only deep inside it.
+  assert.equal(ruleAppliesVerdict(BINDS({ branchRules: [] })).code, BINDING.ABSENT);
+  const v = ruleAppliesVerdict(BINDS({ branchRules: null }));
+  assert.equal(v.code, BINDING.CANNOT_TELL);
+  assert.match(v.why, /could not be read/);
+});
+
+test("#2086: `required_approving_review_count: 0` is DECORATIVE -- the rule exists and demands nothing", () => {
+  const v = ruleAppliesVerdict(BINDS({
+    branchRules: [{ type: "pull_request", ruleset_id: 1, parameters: { required_approving_review_count: 0 } }],
+  }));
+  assert.equal(v.code, BINDING.DECORATIVE);
+  assert.match(v.why, /demands nothing/);
+});
+
+test("#2086: a MISSING count is CANNOT_TELL, not zero -- absence is only emptiness where it was measured", () => {
+  const v = ruleAppliesVerdict(BINDS({ branchRules: [{ type: "pull_request", ruleset_id: 1 }] }));
+  assert.equal(v.code, BINDING.CANNOT_TELL);
+  assert.notEqual(v.code, BINDING.DECORATIVE, "reading it as 0 would invent a measurement nobody took");
+});
+
+test("#2086: the MOST RESTRICTIVE of several `pull_request` rules wins -- requirements compose", () => {
+  // `ceo`'s ruling turns on this: two surfaces cannot weaken each other. The same holds within one list,
+  // where a repository-level and an organisation-level ruleset may each contribute a rule.
+  const v = ruleAppliesVerdict(BINDS({
+    branchRules: [
+      { type: "pull_request", ruleset_id: 1, parameters: { required_approving_review_count: 0 } },
+      { type: "pull_request", ruleset_id: 2, parameters: { required_approving_review_count: 2 } },
+    ],
+  }));
+  assert.equal(v.code, BINDING.BINDS_ME);
+  assert.match(v.why, /requires 2 approval/);
+});
+
+test("#2086 THE OVERCLAIM THIS CHECK EXISTS TO REFUSE: a bypassing caller is EXEMPT, never BINDS_ME", () => {
+  // Done-when #4, and the condition `ceo` ruled "add" on. A check that reads the rule's presence and stops
+  // would go green here while the identity running it merges without any review at all.
+  for (const canBypass of ["always", "pull_requests_only", "exempt"]) {
+    const v = ruleAppliesVerdict(BINDS({ canBypass }));
+    assert.equal(v.code, BINDING.EXEMPT, `\`current_user_can_bypass: "${canBypass}"\` must never bind`);
+    assert.notEqual(v.code, BINDING.BINDS_ME);
+    assert.match(v.why, new RegExp(canBypass), "the verdict names the value it read");
+  }
+});
+
+test("#2086: `exempt` is in GitHub's enum and nowhere in this row -- which is why the test is `!== never`", () => {
+  // THE POSITIVE CONTROL FOR THE `!== "never"` SHAPE. An allowlist of known-bypassing values would have
+  // been written from the row's own vocabulary (`always`, `pull_requests_only`) and would have passed
+  // `exempt` straight through to BINDS_ME. The schema lists four; this guard recognises exactly one.
+  assert.equal(ruleAppliesVerdict(BINDS({ canBypass: "a_value_github_has_not_shipped_yet" })).code, BINDING.EXEMPT);
+  assert.equal(ruleAppliesVerdict(BINDS({ canBypass: NOT_BYPASSABLE })).code, BINDING.BINDS_ME);
+});
+
+test("#2086: an unreadable `current_user_can_bypass` is CANNOT_TELL -- \"I could not look\" is not \"I am bound\"", () => {
+  const v = ruleAppliesVerdict(BINDS({ canBypass: null }));
+  assert.equal(v.code, BINDING.CANNOT_TELL);
+  assert.notEqual(v.code, BINDING.BINDS_ME);
+});
+
+test("#2086: an `evaluate` or `disabled` ruleset is DECORATIVE, and an unreadable enforcement CANNOT_TELL", () => {
+  // GitHub documents `rules/branches/{branch}` as already excluding non-active rulesets, so this branch
+  // should be unreachable against the real API. It is checked anyway because the `enforcement` field
+  // arrives in the `rulesets/{id}` read this guard is already making for `current_user_can_bypass`, so it
+  // costs no call -- and a documented filter is not a measured one.
+  assert.equal(ruleAppliesVerdict(BINDS({ enforcement: "evaluate" })).code, BINDING.DECORATIVE);
+  assert.equal(ruleAppliesVerdict(BINDS({ enforcement: "disabled" })).code, BINDING.DECORATIVE);
+  assert.equal(ruleAppliesVerdict(BINDS({ enforcement: null })).code, BINDING.CANNOT_TELL);
+});
+
+test("#2086: BINDS_ME IS NOT A SPELLING OF REQUIRED -- the cheap instrument certifies strictly less", () => {
+  // The whole of done-when #4 as one assertion. `REQUIRED` above means "the rule bites and NOBODY is
+  // exempt", reachable only on an admin token. Nothing in this vocabulary may ever equal it, because the
+  // next edit that wants "one verdict type for both surfaces" is how the overclaim gets in.
+  assert.equal(Object.values(BINDING).includes(VERDICT.REQUIRED as never), false);
+  assert.notEqual(BINDING.BINDS_ME as string, VERDICT.REQUIRED as string);
+  assert.equal(new Set(Object.values(BINDING)).size, 5, "and the five are genuinely distinct");
+});
+
+// --- #2086: the live read, which needs NO admin -----------------------------------------------------
+
+test("#2086 LIVE: the `pull_request` rule applies to `main` and this identity cannot bypass it", () => {
+  // OPT-IN, and under its OWN switch rather than `A11Y_CHECK_BRANCH_PROTECTION`. The two live reads have
+  // different permission requirements: the one above cannot pass without repository admin, so a single
+  // switch would make this one impossible to enable anywhere admin is absent -- which is everywhere the
+  // CI job runs, and the entire point of #2086.
+  if (process.env.A11Y_CHECK_MAIN_RULESET !== "1") {
+    console.log("  NOT RUN: the live ruleset read is opt-in -- `A11Y_CHECK_MAIN_RULESET=1 npx tsx --test "
+      + "packages/lab/src/packaging/branch-protection.test.ts` asks GitHub whether the ruleset's "
+      + "`pull_request` rule binds THIS identity. It needs no admin. The verdict logic above ran against "
+      + "synthetic inputs; nothing here read the live ruleset.");
+    return;
+  }
+  const binding = liveRulesetBinding();
+  if (binding.branchRules === null) {
+    // Never an empty catch and never a pass: a check that could not ask reports that it could not ask.
+    console.log("  SKIPPED: `rules/branches/main` could not be asked. NOT a pass.");
+    return;
+  }
+  const v = ruleAppliesVerdict(binding);
+  assert.equal(v.code, BINDING.BINDS_ME, v.why);
+  // A pass prints WHAT it read, and what it did NOT establish. `ok 30` alone would be quoted as proof
+  // that nobody can bypass the requirement, which is the one thing this check cannot say.
+  console.log(`  LIVE PASS (no admin required): ${v.why}`);
+});
+
+/**
+ * Both halves of the ruleset state, with the id taken from the branch-keyed read rather than hardcoded.
+ *
+ * #2086's own Open-check flagged the hardcoded `rulesets/23681721` as rot waiting to happen, with "re-read
+ * the list for its id" as the manual recovery. Taking `ruleset_id` off the rule that was actually found
+ * removes the id from this file altogether: there is nothing left to go stale, and a rule served by a
+ * different or re-created ruleset is followed automatically.
+ */
+function liveRulesetBinding(): RulesetBinding {
+  let branchRules: BranchRule[];
+  try {
+    branchRules = JSON.parse(gh(["api", "repos/a11ign/a11ign/rules/branches/main"]));
+  } catch (cause) {
+    console.log(`  \`rules/branches/main\` could not be read (${String(cause)}).`);
+    return { branchRules: null, enforcement: null, canBypass: null };
+  }
+  const rulesetId = branchRules?.find((r) => r.type === "pull_request")?.ruleset_id;
+  if (rulesetId === undefined) return { branchRules, enforcement: null, canBypass: null };
+  try {
+    const ruleset = JSON.parse(gh(["api", `repos/a11ign/a11ign/rulesets/${rulesetId}`]));
+    return { branchRules, enforcement: ruleset.enforcement ?? null, canBypass: ruleset.current_user_can_bypass ?? null };
+  } catch (cause) {
+    console.log(`  \`rulesets/${rulesetId}\` could not be read (${String(cause)}); the exemption half is unavailable.`);
+    return { branchRules, enforcement: null, canBypass: null };
+  }
+}
+
+/**
+ * THE OTHER EXEMPTION SURFACES, AND WHICH OF THEM THIS FILE PINS.
  *
  * `ceo` asked for `enforce_admins` and the `merge-queue-main` ruleset's `bypass_actors` pinned "only if
  * cheap" (#2022, comment 5787499206). `enforce_admins` is cheap and is pinned above: it arrives inside the
  * protection body this guard already reads, so it costs no call and one branch.
  *
- * THE RULESET'S `bypass_actors` IS NOT, AND THE REASON IS A MEASUREMENT RATHER THAN AN ESTIMATE OF EFFORT.
- * Read on 2026-09-23 against the same ruleset, seconds apart, by two identities:
+ * THE RULESET'S `bypass_actors` IS STILL NOT PINNED, AND THE REASON IS A MEASUREMENT RATHER THAN AN
+ * ESTIMATE OF EFFORT. Read on 2026-09-23 against the same ruleset, seconds apart, by two identities:
  *
- *     as `DanBeckDev`        (admin:true)   {"bypass":[],"enforcement":"active","rules":["merge_queue"]}
+ *     as `DanBeckDev`        (admin:true)   {"bypass_actors":[], "current_user_can_bypass":"never"}
  *     as `a11ign-ai-workers` (admin:false)  has("bypass_actors") => false        # the key is ABSENT
  *
  * So on THIS key absence is permission-dependent: it means "empty" to one token and "you may not see it"
- * to another, from the same object at the same moment. That is the exact opposite of the
+ * to another, from the same object at the same moment. GitHub documents exactly that -- "to prevent
+ * leaking sensitive information, the `bypass_actors` property is only returned if the user making the API
+ * request has write access to the ruleset" -- so the measurement and the schema agree, and the absence
+ * can never be read as emptiness on the CI token. That is the exact opposite of the
  * `bypass_pull_request_allowances` finding above, where absence was measured as the cleared state at a
  * FIXED permission level on both sides of a real change. Pinning it would put two contradictory absence
  * rules in one guard, keyed on the token rather than on the field -- the shape this whole file exists to
- * refuse. Doing it properly means a third read (`GET /repos/{o}/{r}/rulesets/{id}` plus a permission probe
- * to interpret a missing key), which is a widening, so per `ceo`'s own "say so and I will take it as a
- * follow-up row" it is left out and reported on #2045 instead.
+ * refuse.
  *
- * What IS readable without admin, and is the likely shape of that follow-up: the same object carries
- * `current_user_can_bypass` (`"never"` for `a11ign-ai-workers` on 2026-09-23), which answers the exemption
- * question per identity and needs no admin at all. It answers it about the `merge_queue` rule, which is
- * the only rule this ruleset carries -- the review requirement lives in classic branch protection, not
- * here -- so it is not a substitute for the read above, only a cheaper instrument for a different row.
+ * WHAT #2086 ADDED INSTEAD, AND THE ONE LINE OF THIS BLOCK THAT WENT STALE. Until `ceo`'s ruling this
+ * paragraph ended "the review requirement lives in classic branch protection, not here", and that is no
+ * longer true: `merge-queue-main` has carried a `pull_request` rule since 2026-09-23T09:03Z. The sentence
+ * is corrected rather than deleted because the reasoning around it still holds --
+ * `current_user_can_bypass` answers the exemption question PER IDENTITY and needs no admin, and it is
+ * still not a substitute for the admin read above, only a cheaper instrument that certifies less.
+ *
+ * TWO THINGS THIS FILE DELIBERATELY DOES NOT ASSERT, so that a later reader does not mistake the silence
+ * for an oversight:
+ *
+ *   - `require_extra_approval_for_unattributed_changes`. GitHub defaulted it to `true` when the rule was
+ *     created and `ceo` set it to `false` explicitly, because most commits here are authored by
+ *     `github-actions[bot]` and agent identities and a second approval would have been demanded on nearly
+ *     every PR (#2086 ruling, §2 -- "a mirrored rule is not mirrored until you read back the parameters
+ *     the API filled in for you"). It is left unpinned because it is a WALL rather than a HOLE: were it
+ *     to flip back, merges would stop, loudly, which is not the silent failure this guard is for.
+ *   - Whether the check runs UNATTENDED. `A11Y_CHECK_MAIN_RULESET=1` makes the read possible on the CI
+ *     token; it does not schedule it. A workflow step that sets it -- and that asserts the `LIVE PASS`
+ *     line was actually printed, since a skip is green -- lives in `.github/workflows/` and so outside
+ *     #2086's Region of one file. Reported to `product-manager` as the follow-up rather than smuggled in.
  */
