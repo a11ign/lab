@@ -18,6 +18,7 @@ silently empty result would make every record unknown and fire this refusal over
 reads as a corpus defect when the fault is that node did not run.
 """
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -29,6 +30,10 @@ _spec = importlib.util.spec_from_file_location("evaluate_screenreader_acceptance
 evaluator = importlib.util.module_from_spec(_spec)
 sys.modules["evaluate_screenreader_acceptance"] = evaluator
 _spec.loader.exec_module(evaluator)
+
+# The SAME module `main()` loads, so the integration tests below read their fixtures through the real
+# `read_records` — its input contract, its forbidden-key check and its grouping-family refusal included.
+training = evaluator.load_training_module()
 
 DEFINED = {"acceptance-generic-lantern", "acceptance-filename-orchard"}
 
@@ -83,12 +88,73 @@ def test_a_record_with_no_case_id_is_a_finding_and_not_a_skip():
 def test_a_null_provenance_is_reported_and_not_a_traceback():
     """`"provenance": null` is a DIFFERENT shape from an absent key, and a default covers only the second.
 
-    This guard runs before anything else touches the records, so getting it wrong replaces the refusal
-    with an AttributeError on the very record the refusal is for — a crash where a finding belongs.
+    THIS TESTS THE HELPER IN ISOLATION, and saying so is the point: `reviewer-2` showed on #2098 that a
+    record shaped this way never reaches here through `main()` at all — `training.read_records` refuses
+    the whole file first. So this pins the helper for its direct callers, and
+    `test_the_loader_refuses_a_null_provenance_by_name_before_the_guard_is_reached` below pins what the
+    real chain does. A test that proved only this one would have claimed an end-to-end property the code
+    does not have.
     """
     with pytest.raises(SystemExit) as refusal:
         evaluator.assert_cases_exist({"repeat-1.jsonl": KNOWN + [{"provenance": None}]}, DEFINED)
     assert evaluator.NO_CASE_ID in str(refusal.value)
+
+
+# A record that satisfies `read_records`' whole input contract, so the tests below exercise the REAL
+# loading path rather than a shape it would have rejected for some unrelated reason.
+def stored_record(case_id, family="acceptance-orchard", provenance=...):
+    record = {
+        "input": {"inputVersion": 2, "evidenceText": "Orchard map, graphic",
+                  "evidenceUnits": [{"channel": "browse", "text": "Orchard map, graphic"}]},
+        "target": {"label": "violation", "subtypes": ["1.1.1:filename-alt"], "criteria": ["1.1.1"]},
+    }
+    record["provenance"] = ({"caseId": case_id, "variant": "bad", "family": family}
+                            if provenance is ... else provenance)
+    return record
+
+
+def write_jsonl(directory, name, records):
+    path = directory / name
+    path.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
+    return path
+
+
+def test_the_chain_refuses_an_unknown_case_through_the_real_loader(tmp_path):
+    """THE INTEGRATION PATH, not the helper: read the file the way `main()` does, then guard it.
+
+    `reviewer-2`'s blocker on #2098 was that the unit tests above all call `assert_cases_exist` directly,
+    so none of them proves the records ever arrive there in the shape they assume. This one goes through
+    `load_records_by_path` — the same `training.read_records` the evaluator uses, contract checks and all
+    — and is the test that would fail if the guard were wired in at the wrong point in `main()`.
+    """
+    data = write_jsonl(tmp_path, "repeat-1.jsonl",
+                       [stored_record("acceptance-filename-orchard"),
+                        stored_record("acceptance-b3-error-badge", family="acceptance-b3-badge")])
+    by_path = evaluator.load_records_by_path(training, [data])
+    assert sum(len(records) for records in by_path.values()) == 2, "the loader accepted both records"
+    with pytest.raises(SystemExit) as refusal:
+        evaluator.assert_cases_exist(by_path, evaluator.defined_case_ids())
+    message = str(refusal.value)
+    assert "acceptance-b3-error-badge" in message and "1 of 2 records" in message, message
+    assert "acceptance-filename-orchard" not in message, (
+        f"the case that DOES exist must not be named — that is the difference between checking and "
+        f"counting: {message}")
+
+
+def test_the_loader_refuses_a_null_provenance_by_name_before_the_guard_is_reached(tmp_path):
+    """What a null provenance ACTUALLY does to the chain, which is not what the helper test implies.
+
+    `read_records` already meant to refuse a record with no grouping family and said so by name; with a
+    plain `get("provenance", {})` default it raised `AttributeError: 'NoneType' object has no attribute
+    'get'` instead — the same refusal wearing a crash, from the one load point every reader shares. Fixed
+    there rather than worked around here, because guarding at the call site is the "fix applied at one
+    call site" that `read_records`' own comment says has cost this repo four separate defects.
+    """
+    data = write_jsonl(tmp_path, "repeat-1.jsonl", [stored_record("acceptance-filename-orchard"),
+                                                    stored_record("x", provenance=None)])
+    with pytest.raises(RuntimeError) as refusal:
+        evaluator.load_records_by_path(training, [data])
+    assert "no grouping family" in str(refusal.value), str(refusal.value)
 
 
 def test_unknown_ids_are_counted_per_id():
