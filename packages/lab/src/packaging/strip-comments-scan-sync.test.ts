@@ -30,30 +30,33 @@
  *
  * **EVERY FIGURE BELOW IS A READING AT A NAMED COMMIT, AND THE POPULATION MOVES WITH THE TREE.** It read
  * 1042 files when this file was written, 1043 at `def6aef9`+fix, 1048 when `reviewer` rebuilt it
- * independently at `b00a10fd`, and 1049 at `b9867a3ec` (2026-09-23, `origin/main` merged) — three merges,
- * three populations, and the table below was quoted flat once and went stale within the hour. So the one
- * figure that is asserted is the one that does not depend on the population at all: **`0`, at any head.**
+ * independently at `b00a10fd`, 1049 at `b9867a3ec` and 1050 at `d269bf9d4` — five readings in one
+ * afternoon, each true where it was taken, and a flat "over N files" went stale inside an hour. **Do not
+ * expect this number to match your head, and note that nothing here asserts it:** the only figure this
+ * file asserts is the one that does not depend on the population at all, **`0`, at any head.**
  *
- * | at `b9867a3ec`: 1049 tracked files | before regex-literal recognition | at the fix |
+ * | at `d269bf9d4`: 1050 tracked files | before regex-literal recognition | at the fix |
  * |---|---|---|
  * | files keeping a comment the parser removes | 100 | **0 — asserted below** |
  * | files losing a character the parser keeps | 56 | **0 — asserted below** |
  * | agrees with the parser character for character | 838 | 994 |
  *
  * The `before` column is a historical reading of code that is no longer in the tree (`def6aef9^`'s
- * `stripComments`, driven over `b9867a3ec`'s files), so it can only ever be a stamped reading — but it is
- * reproducible from the repository, which is the property the withdrawn figures lacked: check the file
+ * `stripComments`, driven over `d269bf9d4`'s files), so it can only ever be a stamped reading — but it is
+ * reproducible from the repository, which is the property the withdrawn figures lacked: check that file
  * out and drive it over the same walk. `reviewer`'s independent rebuild at `b00a10fd` read 837/100/56 →
- * 993/0/0 over 1048 files, which is this table file for file with one exactly-agreeing file fewer.
+ * 993/0/0 over 1048 files, which is this table file for file with the population two smaller — the
+ * agreement between two people's oracles matters, the population count does not.
  *
  * **The other two columns are not quoted at all — they are what the two tests below assert at whatever
  * head they run on**, which is what keeps the safety argument from rotting the way the population count
- * did. The 55 files that still differ from the parser at `b9867a3ec` differ in ONE direction, and that
+ * did. The 56 files that still differ from the parser at `d269bf9d4` differ in ONE direction, and that
  * direction is likewise asserted rather than described: `nothing but a comment is ever deleted` charges
- * any file that loses a character, so every remaining difference is a KEPT one. They are kept for one
- * already-documented reason: a comment written inside a `${...}` interpolation is copied through as string
- * content, which `source-text.test.ts` pins as a KNOWN LIMITATION. Neither predicate here charges it: the
- * interpolation's text is not a leading-`//` line, and keeping a character is not losing one.
+ * any file that loses a character, so every remaining difference is a KEPT one. All 56 are the one
+ * already-documented reason, measured rather than assumed — the first divergence in every one of them
+ * falls inside a `${...}` interpolation, where a comment is copied through as string content, which
+ * `source-text.test.ts` pins as a KNOWN LIMITATION. Neither predicate here charges it: the interpolation's
+ * text is not a leading-`//` line, and keeping a character is not losing one.
  *
  * ## Why the offender count can be `0` without an exemption list
  *
@@ -81,8 +84,8 @@ const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 /** The reading this file was written against — see the header for how it was taken. */
 const OFFENDERS_AT_THE_FIX = 0;
 /**
- * A FLOOR and not a count, because the population is head-relative: it grew 1042 → 1043 → 1048 → 1049
- * across three merges while this row was in review, and an equality here would turn trunk red on the next
+ * A FLOOR and not a count, because the population is head-relative: it grew 1042 → 1043 → 1048 → 1049 →
+ * 1050 across four merges while this row was in review, and an equality here would turn trunk red on the next
  * ordinary file addition — a tripwire rather than a guard. Below this the WALK is broken (a moved root, a
  * sandboxed `git ls-files`), which is the only thing this test is for; the count it actually found is in
  * the failure message, so a reader never has to trust the number in this comment.
@@ -160,7 +163,7 @@ test("the walk finds a non-trivial population -- vacuity guard for the scan itse
   const files = trackedSourceFiles();
   assert.ok(files.length >= POPULATION_FLOOR,
     `only found ${files.length} tracked .ts/.mjs files under packages/ and scripts/, below the `
-    + `${POPULATION_FLOOR} floor -- the walk is broken, not the tree (it read 1049 at b9867a3ec, and `
+    + `${POPULATION_FLOOR} floor -- the walk is broken, not the tree (it read 1050 at d269bf9d4, and `
     + "that figure is a reading at a commit rather than a property of the repository)");
 });
 
@@ -206,14 +209,14 @@ test("no tracked source file loses scan sync: stripComments keeps no comment lin
     `${offenders.length} file(s) come out of stripComments still carrying a real comment line, which can `
     + "only happen where the scan believed it was inside a string while passing a comment. Every guard "
     + "reading one of these is quiet from that point on (#2131, where the unfixed stripComments read 99 "
-    + "of 1042 tracked files, and 100 of 1049 once main had moved -- both readings at a commit):\n"
+    + "of 1042 tracked files, and 100 of 1050 once main had moved -- both readings at a commit):\n"
     + offenders.map((o) => `  ${o}`).join("\n"));
 });
 
 test("nothing but a comment is ever deleted: everything the parser keeps survives stripComments", () => {
   // The dangerous direction, and the one the leading-comment census above is structurally blind to: a
   // file with no comments left after the desync point reads clean to that census and can still have lost
-  // code. The unfixed stripComments charged 56 files at ec27b8ccb and 56 again at b9867a3ec, each a regex
+  // code. The unfixed stripComments charged 56 files at ec27b8ccb and 56 again at d269bf9d4, each a regex
   // literal containing `//` read as a comment start -- the one figure in this row that three different
   // populations agreed on.
   const offenders: string[] = [];
