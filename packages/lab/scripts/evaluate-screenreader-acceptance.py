@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import subprocess
 import sys
 import json
 from collections import defaultdict
@@ -86,15 +87,156 @@ def model_directory(path: Path) -> Path:
     return path.parent
 
 
-def load_records(training: Any, paths: list[Path]) -> list[dict[str, Any]]:
-    records = []
+def load_records_by_path(training: Any, paths: list[Path]) -> dict[str, list[dict[str, Any]]]:
+    """The records of each `--data` file, kept SEPARATE rather than concatenated.
+
+    Every reader below wants the flat list, and `flatten` gives it — but two do not, and both were
+    re-reading the files to get what this already had: the per-file record counts in `report_skeleton`,
+    and the case-existence refusal, which must name a count PER REPEAT because that is the number a
+    reader compares against the floor (#1852 read `repeat-1.jsonl has 436 records`, not the sum).
+    """
+    by_path: dict[str, list[dict[str, Any]]] = {}
     for path in paths:
         if not path.is_file():
             raise RuntimeError(f"acceptance data is missing: {path}")
-        records.extend(training.read_records(path))
-    if not records:
+        by_path[str(path)] = training.read_records(path)
+    if not any(by_path.values()):
         raise RuntimeError("acceptance data is empty")
-    return records
+    return by_path
+
+
+def flatten(by_path: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    return [record for records in by_path.values() for record in records]
+
+
+# The case definitions the code has, asked of the code. `packages/lab/src/training/acceptance-matrix.mjs`
+# is JavaScript and this evaluator is Python, so neither can import the other — the same bind
+# `audit_grants.py` is in, and this is its answer: ask node, rather than re-parsing the source with a
+# regex. A regex over an `id: "..."` literal would be a SECOND definition of the case set that can match
+# nothing and still pass, which is the defect class this guard exists to close, one level up.
+ACCEPTANCE_MATRIX = "./packages/lab/src/training/acceptance-matrix.mjs"
+
+
+def defined_case_ids() -> set[str]:
+    """Every case id `ALL_ACCEPTANCE_CASES` defines RIGHT NOW, at the commit this is running from.
+
+    Derived at evaluation time and never cached to a file on purpose. A generated artefact under `runs/`
+    would be the transport `corpus:grants-audit` uses — and `lab-job.yml` records what that costs:
+    "The audit refuses an ABSENT map and cannot see a STALE one, so the failure is silent by
+    construction." A stale copy of exactly this fact is what this row is about, so the copy does not exist.
+
+    LOUD ON FAILURE, never an empty set. An empty set makes every stored record unknown and the refusal
+    below fires on the whole corpus, which reads as a corpus defect when the real fault is that node did
+    not run. `CANNOT_TELL` loudly beats a wrong verdict in either direction.
+    """
+    script = (
+        f'import {{ ALL_ACCEPTANCE_CASES }} from "{ACCEPTANCE_MATRIX}";'
+        'process.stdout.write(JSON.stringify(ALL_ACCEPTANCE_CASES.map((testCase) => testCase.id)));'
+    )
+    try:
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script],
+            cwd=REPO_ROOT, capture_output=True, text=True,
+        )
+    except FileNotFoundError as missing:
+        raise SystemExit(
+            "cannot read the acceptance case definitions: `node` is not on PATH, and this evaluator has "
+            "no other way to ask JavaScript what cases it defines.\n"
+            "Run it from a checkout with node available — the lab has one, and every other route to this "
+            "fact is a second copy of it that can go stale."
+        ) from missing
+    if result.returncode != 0:
+        raise SystemExit(
+            f"cannot read the acceptance case definitions from {ACCEPTANCE_MATRIX}: node exited "
+            f"{result.returncode}.\n{result.stderr.strip()}\n"
+            "This evaluator refuses rather than scoring without them: it cannot tell a record whose case "
+            "was deleted from one whose case is merely unreadable, and those need opposite responses."
+        )
+    ids = set(json.loads(result.stdout))
+    if not ids:
+        raise SystemExit(
+            f"{ACCEPTANCE_MATRIX} defines no acceptance cases. That is not a corpus this evaluator can "
+            "judge anything against — every stored record would read as unknown."
+        )
+    return ids
+
+
+# What an absent `provenance.caseId` is reported as. A name, not `None`, so the message reads as a finding
+# rather than as the guard having crashed on a null.
+NO_CASE_ID = "<no caseId>"
+
+
+def unknown_case_ids(records: list[dict[str, Any]], defined: set[str]) -> dict[str, int]:
+    """The case ids these records name that the code does not define, and how many records name each.
+
+    Pure, and separate from both the node call above and the refusal below, so the question it answers —
+    "which of these records describe a case that no longer exists?" — is testable with a plain fixture.
+
+    A record with NO `caseId` is counted too, under `NO_CASE_ID`. It is the same failure from the reader's
+    side: a record this evaluator cannot attribute to a case definition. Silently skipping it would be the
+    subset-scoring this whole guard refuses.
+    """
+    counts: dict[str, int] = defaultdict(int)
+    for record in records:
+        # `or {}` and not a default, because a record CAN carry `"provenance": null` -- a default only
+        # covers the absent key, and this guard runs before anything else touches the records, so an
+        # AttributeError here would replace the refusal with a traceback on the very record it is for.
+        case_id = (record.get("provenance") or {}).get("caseId") or NO_CASE_ID
+        if case_id not in defined:
+            counts[case_id] += 1
+    return dict(counts)
+
+
+# Enough ids to see the pattern — one family, one id prefix — without turning a refusal into a corpus dump.
+# The same bound, for the same reason, as `assertManifestMatchesCases`'s `NAMED`.
+NAMED_UNKNOWN_CASES = 8
+
+
+def assert_cases_exist(by_path: dict[str, list[dict[str, Any]]], defined: set[str]) -> None:
+    """REFUSE to score records whose case definitions the code does not have.
+
+    The capture path has checked this since #958 (`assertManifestMatchesCases`) and this evaluator never
+    did, and that asymmetry is the whole of #2094: `training:capture` refused outright the moment a
+    capture was attempted against a manifest naming cases that had left `CASES`, while `job=acceptance`
+    went on scoring the STORED records of those same cases and reporting a number. Measured on the lab
+    2026-09-23: 290 of 436 records per repeat named `acceptance-b3-*` cases introduced by a commit that
+    reached no branch on `main` and never had a pull request. Every held-out reading taken between
+    2026-09-21 and then — including the two that closed #1852's record floor and #37's resolution bound —
+    was computed mostly from cases this repository does not contain.
+
+    FAIL-CLOSED, and with no fixture escape. `manifestDrift` has one — a manifest sharing NO id with
+    `CASES` is a deliberately different set (a test fixture, an archived corpus under `DATASET_ROOT`), and
+    comparing it would report every id missing. There is no such reading here: this evaluator scores the
+    held-out acceptance set against the case definitions that set was built from, so a record it cannot
+    attribute is exactly the thing it must not quietly leave out of a denominator.
+
+    PER FILE, because the number that matters is per repeat. A sum across repeats describes no set: two
+    repeats of 436 are 436 independent observations (`resolution`'s own argument), so "580 records" would
+    be a count of nothing a floor or a Wilson bound is ever stated at.
+    """
+    unknown_by_path = {path: unknown_case_ids(records, defined) for path, records in by_path.items()}
+    if not any(unknown_by_path.values()):
+        return
+    lines = []
+    for path, unknown in unknown_by_path.items():
+        if not unknown:
+            continue
+        lines.append(f"  {path}: {sum(unknown.values())} of {len(by_path[path])} records, "
+                     f"{len(unknown)} distinct case id(s)")
+        for case_id in sorted(unknown)[:NAMED_UNKNOWN_CASES]:
+            lines.append(f"    {case_id}: named by {unknown[case_id]} record(s), not in ALL_ACCEPTANCE_CASES")
+        if len(unknown) > NAMED_UNKNOWN_CASES:
+            lines.append(f"    ... and {len(unknown) - NAMED_UNKNOWN_CASES} more")
+    raise SystemExit(
+        "refusing to score: these acceptance records name case definitions this code does not have, so "
+        "the report would be a number computed from a corpus the repository cannot reproduce.\n"
+        + "\n".join(lines)
+        + f"\n({len(defined)} case(s) defined in {ACCEPTANCE_MATRIX}.)\n"
+        "Either the cases they were captured under were never merged, or they have since been removed. "
+        "Both are the same problem for a held-out number: it cannot be re-derived. Land the definitions, "
+        "or recapture at this commit — never evaluate the subset, because a floor or a false-positive "
+        "bound stated over an unknown denominator is not a measurement."
+    )
 
 
 def score_subtypes(training: Any, subtype_reports: dict[str, Any], views: dict[str, Any], weights: Any) -> dict[str, Any]:
@@ -468,7 +610,12 @@ def main() -> None:
     args = parse_args()
     training = load_training_module()
     scorer = load_scorer_module()
-    records = load_records(training, args.data)
+    by_path = load_records_by_path(training, args.data)
+    records = flatten(by_path)
+    # FIRST, before the weights are even opened. Whether these records describe cases the code has is a
+    # question about the corpus, not about the model, and answering it after scoring would mean the run
+    # that refuses and the run that passes do the same half-hour of work.
+    assert_cases_exist(by_path, defined_case_ids())
     assert_disjoint(training, records, args.training_data)
     report, weights, artifact = scorer.verify_artifact(
         argparse.Namespace(
@@ -492,7 +639,7 @@ def main() -> None:
     import numpy as np
 
     result = report_skeleton(
-        {str(path): len(training.read_records(path)) for path in args.data},
+        {path: len(records) for path, records in by_path.items()},
         artifact,
         diagnostic=bool(args.allow_ineligible),
     )
