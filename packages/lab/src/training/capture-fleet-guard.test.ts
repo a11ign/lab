@@ -55,6 +55,10 @@ const ENVIRONMENT: Record<string, unknown> = {
   // exactly what the fleet's display mode holds, so a fixture where they differed would be a fleet that
   // does not exist. `fleet-consistency.test.ts` is where the case that they CAN differ is pinned.
   displayMode: "1024x768", windowSize: "1024x768",
+  // #2170: a gate since the fleet converged on the pin. `v24.20.0` is the pinned value
+  // (`worker_node_version`, the worker role's `defaults/main.yml`) and what all ten guests reported at
+  // 2026-09-23T18:02Z -- a fixture on some other build would be a fleet that does not exist.
+  nodeVersion: "v24.20.0",
 };
 
 const health = (browserVersion: string,
@@ -316,18 +320,23 @@ test("one guest left standing is not a coverage gap either", async () => {
 // --- #2063: THE REPORTED-ONLY CHANNEL REACHES NO GATE, which is the ruling's most losable clause ---
 
 test("#2063: a fleet split on a REPORTED_ONLY field is NOT refused, and the guard is silent", async () => {
-  // `ceo`'s ruling on #2063: "`nodeVersion` is NOT a capture gate, and this row must not make it one in
-  // its first step." The corpus is already mixed on it -- 2,870 training records, 1,266 on v24.19.0
-  // against 1,564 on v24.20.0 since at least 2026-09-12 -- so refusing here would gate every capture on a
-  // condition every published acceptance number was measured across.
+  // `ceo`'s ruling on #2063: a reported-only field "is NOT a capture gate, and this row must not make it
+  // one in its first step."
+  //
+  // THE SUBJECT IS `displayAdapter` AND IT USED TO BE `nodeVersion` (#2170). That is not a cosmetic
+  // re-pointing: `nodeVersion` graduated to `MUST_MATCH` once the fleet converged on the pin, so driving
+  // this clause with it would now assert the OPPOSITE of what the file below asserts, and the ruling's
+  // exemption would silently lose its only guard. `displayAdapter` is the remaining member and cannot
+  // graduate -- its values differ by HARDWARE (`Intel(R) UHD Graphics 630` on nine guests,
+  // `Intel(R) HD Graphics 630` on the tenth), which no provisioning run converges.
   //
   // ASSERTED IN THIS FILE because the claim is about THIS function's behaviour: `fleet-consistency.test.ts`
   // can pin that the field is in neither gating channel, and only a test beside the guard can pin that the
   // guard therefore returns. The two gating channels are `mismatches` (the browser-split refusal) and
   // `fields.coverage` (#2047's, which exits on `reported < asked` for EVERY row, not only MUST_MATCH ones).
   const { reported, exits } = await runGuard({
-    [workerUrl(4)]: () => health(EDGE_151, { with: { nodeVersion: "v24.19.0" } }),
-    [workerUrl(5)]: () => health(EDGE_151, { with: { nodeVersion: "v24.20.0" } }),
+    [workerUrl(4)]: () => health(EDGE_151, { with: { displayAdapter: "Intel(R) UHD Graphics 630" } }),
+    [workerUrl(5)]: () => health(EDGE_151, { with: { displayAdapter: "Intel(R) HD Graphics 630" } }),
   });
 
   assert.deepEqual(exits, [], "a reported-only split must not stop a capture run");
@@ -338,10 +347,59 @@ test("#2063: a fleet split on a REPORTED_ONLY field is NOT refused, and the guar
   // THE POSITIVE CONTROL, in the same shape: the SAME two guests, split on a field that IS a gate.
   // Without it, the silence above is satisfied by a guard that refuses nothing at all.
   const split = await runGuard({
-    [workerUrl(4)]: () => health(EDGE_151, { with: { nodeVersion: "v24.19.0" } }),
-    [workerUrl(5)]: () => health(EDGE_150, { with: { nodeVersion: "v24.19.0" } }),
+    [workerUrl(4)]: () => health(EDGE_151, { with: { displayAdapter: "Intel(R) UHD Graphics 630" } }),
+    [workerUrl(5)]: () => health(EDGE_150, { with: { displayAdapter: "Intel(R) UHD Graphics 630" } }),
   });
   assert.deepEqual(split.exits, [EXIT_FLEET_INCONSISTENT]);
+});
+
+test("#2170: nodeVersion NOW refuses a split fleet, and a converged one still runs", async () => {
+  // THE FIELD THAT GRADUATED, and both directions, because an exclusion assertion alone passes on a
+  // comparison that compares nothing -- which is exactly what the test above used to assert about this
+  // same field. Step 3 of `ceo`'s ruling on #2063: report it, pin provisioning so the fleet converges,
+  // and only then may it gate. The fleet converged at 2026-09-23T18:02Z, 10 of 10 on v24.20.0 read off
+  // the guests' own `/health`.
+  const split = await runGuard({
+    [workerUrl(4)]: () => health(EDGE_151, { with: { nodeVersion: "v24.19.0" } }),
+    [workerUrl(5)]: () => health(EDGE_151, { with: { nodeVersion: "v24.20.0" } }),
+  });
+  assert.deepEqual(split.exits, [EXIT_FLEET_INCONSISTENT],
+    "the 5/5 split this fleet actually ran until 18:02Z would now stop a capture run");
+  assert.match(split.reported, /nodeVersion/,
+    "and it is NAMED, so the operator is sent to the runtime rather than to a bare refusal");
+
+  // THE OTHER DIRECTION, and it is not the same assertion twice: a gate that refused the CONVERGED fleet
+  // would stop every capture in the project, which is the harm the ruling's ordering exists to prevent.
+  // The fixture already carries the pinned value on both guests.
+  const converged = await runGuard({
+    [workerUrl(4)]: () => health(EDGE_151),
+    [workerUrl(5)]: () => health(EDGE_151),
+  });
+  assert.deepEqual(converged.exits, [], "a fleet agreeing on the pinned runtime runs");
+});
+
+test("#2170: a guest that stops REPORTING nodeVersion refuses the run, at any coverage", async () => {
+  // DONE-WHEN 3 OF #2170, asserted rather than discovered. Joining `MUST_MATCH` buys a second refusal
+  // for free -- #2047 made `fields.coverage` a gate as well, so `fieldCoverageGaps` exits on
+  // `reported < asked` -- and that is the intended behaviour at this step: a guest rolled back to a
+  // worker build that does not report its runtime is a guest whose corpus records cannot say what
+  // produced them, which is the whole reason the field is here.
+  const nobody = await runGuard({
+    [workerUrl(4)]: () => health(EDGE_151, { omit: ["nodeVersion"] }),
+    [workerUrl(5)]: () => health(EDGE_151, { omit: ["nodeVersion"] }),
+  });
+  assert.deepEqual(nobody.exits, [EXIT_FLEET_INCONSISTENT], "0 of 2 reporting it stops the run");
+  assert.match(nobody.reported, /nodeVersion \(0 of 2 reported it\)/);
+
+  // AND AT PARTIAL COVERAGE, which is the rolling-deploy reading and the one a field in the third channel
+  // is explicitly exempt from. `reported < asked` gates at ANY count, so 1 of 2 refuses too -- and that
+  // is the difference the move actually makes, stated where somebody re-reading the channels can see it.
+  const partial = await runGuard({
+    [workerUrl(4)]: () => health(EDGE_151),
+    [workerUrl(5)]: () => health(EDGE_151, { omit: ["nodeVersion"] }),
+  });
+  assert.deepEqual(partial.exits, [EXIT_FLEET_INCONSISTENT], "1 of 2 reporting it stops the run too");
+  assert.match(partial.reported, /nodeVersion \(1 of 2 reported it\)/);
 });
 
 test("#2063: a REPORTED_ONLY field reported by 0 of N does not refuse either, at ANY coverage", async () => {
@@ -350,8 +408,10 @@ test("#2063: a REPORTED_ONLY field reported by 0 of N does not refuse either, at
   // made a refusal -- would stop EVERY capture in the project immediately, including #1926's recapture.
   // That is precisely the harm the ruling forbids, reached by a filing mistake instead of a decision.
   //
-  // The fixture already omits every REPORTED_ONLY field (it derives from MUST_MATCH), so this fleet is
-  // 0-of-2 on both of them — which is the live fleet's own state for the adapter.
+  // The fixture omits every REPORTED_ONLY field, so this fleet is 0-of-2 on `displayAdapter` — which was
+  // the live fleet's own state for the adapter until the worker carrying it was deployed. `nodeVersion`
+  // was the other member and is a `MUST_MATCH` field since #2170, so it is in the fixture now and the
+  // test above is where its 0-of-N refusal is pinned; this one is down to one field on purpose.
   const { reported, exits } = await runGuard({
     [workerUrl(4)]: () => health(EDGE_151),
     [workerUrl(5)]: () => health(EDGE_151),
