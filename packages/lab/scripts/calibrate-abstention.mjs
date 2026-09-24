@@ -48,6 +48,7 @@ import { realPageFor } from "../src/training/real-page-corpus.mjs";
 // THE FIGURES' SELECTION, imported rather than written here (#955): `field-role.test.ts` asserts through it.
 import { calibrationEntries } from "../src/training/real-page-selection.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
+import { captureProtocolCensus } from "../src/training/capture-protocol-census.mjs";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, realCorpusRoot, abstentionRoot, abstentionSweepPath, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
@@ -367,6 +368,8 @@ function main() {
   }
   process.stdout.write(`Scoring ${pages.length} calibration page(s) from ${ROOT}\n`);
   reportCaptureAges(pages);
+  const captureProtocols = captureProtocolCensus(pages);
+  process.stdout.write(`  Capture protocols of the fitted captures: ${JSON.stringify(captureProtocols)}\n`);
   process.stdout.write(`Model: ${MODEL ?? "packages/scorer/models/screenreader-scorer (shipped)"}\n\n`);
   const scored = pages.map(scoreOne).sort((a, b) => (b.cosine ?? 0) - (a.cosine ?? 0));
 
@@ -413,7 +416,7 @@ function main() {
   // a role filter downstream happened to drop it for an unrelated reason.
   mkdirSync(OUT_DIR, { recursive: true });
   const outPath = MODEL ? resolve(OUT_DIR, "abstention-sweep.candidate.json") : abstentionSweepPath(OUT_DIR);
-  writeFileSync(outPath, JSON.stringify({ model: MODEL ?? "shipped", calibrationPages: n, scored, rows }, null, 2));
+  writeFileSync(outPath, JSON.stringify({ model: MODEL ?? "shipped", calibrationPages: n, captureProtocols, scored, rows }, null, 2));
   process.stdout.write(`\n  written: ${outPath}\n`);
 
   reportRegression(rows);
