@@ -197,7 +197,7 @@ test("the restore target can never be the live corpus, its symlink, this checkou
   await assert.rejects(restoreDrill({ archive, scratch: join(live, "restore"), liveRuns: live }), /the live corpus/);
 });
 
-test("the CLI exits 2 and writes nothing when the target is refused, and 1 when the drill fails", () => {
+test("the CLI exits 2 when the target is refused or nothing was compared against, and 1 when the drill fails", () => {
   const runs = fixtureRuns();
   const archive = snapshotOf(runs);
   const live = liveAfterSnapshot(runs);
@@ -208,8 +208,15 @@ test("the CLI exits 2 and writes nothing when the target is refused, and 1 when 
   assert.equal(readdirSync(live).includes("restore"), false, "a refused target was not created");
 
   const noLive = spawnSync(process.execPath, [DRILL, `--archive=${archive}`], { cwd: REPO_ROOT, encoding: "utf8", env: cleanEnv() });
-  assert.equal(noLive.status, 1, noLive.stderr);
-  assert.match(noLive.stderr, /no --live-runs/);
+  assert.equal(noLive.status, 2, noLive.stderr);
+  assert.match(noLive.stdout, /NO LIVE COUNT was given/);
+  assert.match(noLive.stderr, /INCONCLUSIVE/, "with nothing to compare against the drill is not a pass, and says it could not tell");
+
+  const hollow = fixtureRuns({ hollow: true });
+  const failed = spawnSync(process.execPath, [DRILL, `--archive=${snapshotOf(hollow)}`, `--live-runs=${liveAfterSnapshot(hollow)}`],
+    { cwd: REPO_ROOT, encoding: "utf8", env: cleanEnv() });
+  assert.equal(failed.status, 1, failed.stdout + failed.stderr);
+  assert.match(failed.stderr, /DRILL FAIL/);
 
   const passed = spawnSync(process.execPath, [DRILL, `--archive=${archive}`, `--live-runs=${live}`],
     { cwd: REPO_ROOT, encoding: "utf8", env: cleanEnv() });
@@ -240,12 +247,14 @@ test("MEMBER_LAYOUT names exactly the members corpus-snapshot.mjs archives", () 
   assert.deepEqual(Object.keys(MEMBER_LAYOUT).sort(), archived.sort());
 });
 
-test("drillVerdict: no live count is a failure, and a restore holding MORE than live is reported, not failed", () => {
+test("drillVerdict: no live count is INCONCLUSIVE, and a restore holding MORE than live is reported, not failed", () => {
   const restored = { "captures": 5, "manifest.json": 1, "real-page-corpus": 1, "screenreader-acceptance": 1, "board-snapshots": 1 };
   const gate = { status: 0, summary: "PASS" };
   const noLive = drillVerdict({ listed: 9, restored, live: null, gate });
   assert.equal(noLive.ok, false);
-  assert.match(noLive.failures.join(), /no --live-runs/);
+  assert.equal(noLive.verdict.verdict, "INCONCLUSIVE", "asked 2 of 3 questions: could not tell, which is not a pass");
+  assert.deepEqual(noLive.failures, []);
+  assert.equal(drillVerdict({ listed: 9, restored, live: restored, gate }).verdict.verdict, "PASS", "control: 3 of 3, clean");
   const fewerLive = drillVerdict({ listed: 9, restored, live: { ...restored, captures: 4 }, gate });
   assert.equal(fewerLive.ok, true);
   assert.match(fewerLive.lines[0], /the RESTORE has more/);

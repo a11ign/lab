@@ -55,7 +55,8 @@ import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
-import { REPO_ROOT, runsRoot } from "../dataset-paths.mjs";
+import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
+import { gateVerdict, renderVerdict, exitCodeFor } from "../gates/verdict.mjs";
 import { DEFAULT_REPO } from "../../scripts/corpus-release.mjs";
 
 const run = promisify(execFile);
@@ -90,6 +91,8 @@ const SAMPLE_PATHS = 3;
 /** Column widths of the per-member table. */
 const MEMBER_COLUMN = 24;
 const COUNT_COLUMN = 6;
+/** What `drillVerdict` asks: intact, complete against live, and a gate that runs. */
+const QUESTIONS = 3;
 
 /** @param {string} path @returns {string} the real path of the deepest ancestor that exists, with the rest re-appended */
 function realpathOfNearest(path) {
@@ -238,8 +241,35 @@ async function runGate({ env, requireComplete }) {
 }
 
 /**
+ * Restored against live, member by member, with the difference stated.
+ * @param {{ restored: Record<string, number>, live: Record<string, number> }} counts
+ */
+function compareToLive({ restored, live }) {
+  const total = sum(restored);
+  const liveTotal = sum(live);
+  /** @type {string[]} */ const failures = [];
+  const lines = [`restored ${total} JSON file(s); the live corpus holds ${liveTotal}; `
+    + `difference ${liveTotal - total} (${liveTotal >= total ? "live has more" : "the RESTORE has more"})`];
+  for (const member of Object.keys(MEMBER_LAYOUT)) {
+    lines.push(`  ${member.padEnd(MEMBER_COLUMN)} restored ${String(restored[member] ?? 0).padStart(COUNT_COLUMN)}`
+      + `  live ${String(live[member] ?? 0).padStart(COUNT_COLUMN)}`);
+    if ((restored[member] ?? 0) === 0 && (live[member] ?? 0) > 0) {
+      failures.push(`${member} is ABSENT from the restore and the live corpus holds ${live[member]} file(s) for it `
+        + "-- a member the snapshot omitted, which recency drift cannot explain");
+    }
+  }
+  return { lines, failures };
+}
+
+/**
  * Whether the restore produced a lab -- a PURE function of what was measured, so the decision is the part
  * pinned, apart from tar and a gate (the split `releaseVerdict` makes).
+ *
+ * THREE QUESTIONS, and `gateVerdict` derives the verdict from how many were ANSWERED: the archive came back
+ * out intact, it is complete against the live corpus, and a real gate runs off it. With no live tree the
+ * second cannot be asked, so the drill is INCONCLUSIVE -- never a pass -- rather than a report of what it
+ * restored, which is the defect it exists to close. A gate that answered anything but 0 is a FAILURE, not
+ * a shrug: the restore was made and the gate could not use it.
  *
  * A member wholly ABSENT from the restore while the live tree holds files for it is the failure a total
  * cannot see. A restore that holds MORE than the live tree is reported, not failed: files pruned since the
@@ -258,28 +288,20 @@ export function drillVerdict({ listed, restored, live, gate }) {
       + "invented files");
   }
   if (total === 0) failures.push("nothing was restored");
-  if (live) {
-    const liveTotal = sum(live);
-    lines.push(`restored ${total} JSON file(s); the live corpus holds ${liveTotal}; `
-      + `difference ${liveTotal - total} (${liveTotal >= total ? "live has more" : "the RESTORE has more"})`);
-    for (const member of Object.keys(MEMBER_LAYOUT)) {
-      lines.push(`  ${member.padEnd(MEMBER_COLUMN)} restored ${String(restored[member] ?? 0).padStart(COUNT_COLUMN)}  live ${String(live[member] ?? 0).padStart(COUNT_COLUMN)}`);
-      if ((restored[member] ?? 0) === 0 && (live[member] ?? 0) > 0) {
-        failures.push(`${member} is ABSENT from the restore and the live corpus holds ${live[member]} file(s) for it `
-          + "-- a member the snapshot omitted, which recency drift cannot explain");
-      }
-    }
-  } else {
-    lines.push(`restored ${total} JSON file(s); NO LIVE COUNT was given, so completeness was not checked`);
-    failures.push("no --live-runs: the difference from the live corpus cannot be stated, and a drill that reports "
-      + "only what it restored is the defect it exists to close");
-  }
-  if (gate === null) failures.push("the gate never ran, because the restore itself failed");
-  else {
+  const against = live ? compareToLive({ restored, live }) : {
+    lines: [`restored ${total} JSON file(s); NO LIVE COUNT was given (--live-runs), so the difference from the live `
+      + "corpus is not stated and completeness was not checked"],
+    failures: [],
+  };
+  lines.push(...against.lines);
+  failures.push(...against.failures);
+  if (gate) {
     lines.push(`gate check-signals exit ${gate.status}: ${gate.summary}`);
     if (gate.status !== 0) failures.push(`the gate answered ${gate.status}, not 0 -- the restored tree is not a lab that works`);
   }
-  return { ok: failures.length === 0, failures, lines };
+  const verdict = gateVerdict({ examined: 1 + (live ? 1 : 0) + (gate ? 1 : 0), of: QUESTIONS, failures: failures.length,
+    source: "the restore, the live corpus and check-signals" });
+  return { verdict, ok: verdict.verdict === "PASS", failures, lines };
 }
 
 /**
@@ -332,6 +354,7 @@ async function downloadRelease(repo, tag, into) {
 async function main() {
   const made = flag("scratch") ? null : mkdtempSync(join(tmpdir(), "corpus-restore-drill-"));
   const scratch = flag("scratch") ?? join(/** @type {string} */ (made), "restore");
+  refuseIfRunsReadonly(scratch);
   try {
     const archive = flag("archive") ?? await downloadFrom(flag("release"), flag("repo") ?? DEFAULT_REPO, made);
     const result = await restoreDrill({ archive: resolve(archive), scratch,
@@ -339,8 +362,9 @@ async function main() {
       requireComplete: process.argv.includes("--require-complete") });
     process.stdout.write(result.lines.join("\n") + "\n");
     if (!result.ok) {
-      process.stderr.write(`DRILL FAILED:\n  ${result.failures.join("\n  ")}\nLEFT IN PLACE to inspect: ${result.scratch}\n`);
-      process.exit(1);
+      process.stderr.write(`DRILL ${renderVerdict(result.verdict)}\n${result.failures.map((f) => `  ${f}\n`).join("")}`
+        + `LEFT IN PLACE to inspect: ${result.scratch}\n`);
+      process.exit(exitCodeFor(result.verdict));
     }
     process.stdout.write("DRILL PASSED: the release restores into a tree a real gate runs off.\n");
     if (made) rmSync(made, { recursive: true, force: true });
@@ -360,6 +384,6 @@ async function downloadFrom(tag, repo, made) {
 
 // Guarded, because `node -e "import('./this.mjs')"` is this repo's only real check that an .mjs file still
 // loads, and unguarded that check would download a release and restore it.
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
+if (import.meta.url === pathToFileURL(process.argv[1] ? realpathSync(process.argv[1]) : "").href) {
   await main();
 }
