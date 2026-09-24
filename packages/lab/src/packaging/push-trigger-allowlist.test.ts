@@ -96,8 +96,8 @@ const PUSH_TO_MAIN_ALLOWLIST: Record<string, string> = {};
 // MERGE COMMIT landing on `main` was ever tested -- `ci.yml`'s `pull_request` trigger tests a PR's head,
 // never the commit it produces on merge. That is a genuinely different gap from "did a schedule go
 // silent", and closing it needs the opposite shape from a watchdog: real verification, real action. See
-// `trunk.yml`'s own header for the full reasoning and `packages/agent-org/src/trunk-revert.mjs`'s for the two ways
-// a naive "revert on red" would be worse than nothing.
+// `trunk.yml`'s own header for the full reasoning and `packages/agent-org/src/trunk-red.mjs`'s for why a red `main` wakes
+// a fixer and nothing reverts it (#2356).
 const TRUNK_GATE_ALLOWLIST: Record<string, string> = {
   "trunk.yml": "pipeline unit 3 (#316): the merge commit landing on main after strict=false (#298) "
     + "has never itself been tested by ci.yml's pull_request-triggered run. This is the one place that gap "
@@ -217,7 +217,7 @@ for (const file of Object.keys(TRUNK_GATE_ALLOWLIST)) {
   test(`${file}: structurally the trunk gate, not a watchdog -- builds, runs the full suite, is NOT continue-on-error`, () => {
     const text = readWorkflow(file);
 
-    // #901: `continue-on-error` is permitted ONLY inside the `watchdogs` job, which `decideRevert` does not
+    // #901: `continue-on-error` is permitted ONLY inside the `watchdogs` job, which `trunkRecheck` does not
     // depend on. Everywhere else in this file it would let a red gate be shrugged off.
     const parsed = parseYaml(text) as { jobs: Record<string, { steps?: Array<Record<string, unknown>>; "continue-on-error"?: unknown }> };
     for (const [name, job] of Object.entries(parsed.jobs)) {
@@ -226,13 +226,13 @@ for (const file of Object.keys(TRUNK_GATE_ALLOWLIST)) {
       for (const step of job.steps ?? []) {
         assert.notEqual(step["continue-on-error"], true,
           `${file}: a step in job ${name} is continue-on-error -- the trunk gate's whole point is that a `
-          + "failure here is ACTED ON (a revert), so a red run must be able to drive something, not be "
+          + "failure here is ACTED ON (it wakes a fixer, #2356), so a red run must be able to drive something, not be "
           + "shrugged off. Only the watchdogs job may carry it");
       }
     }
-    const decideRevert = parsed.jobs.decideRevert as { needs?: string[] } | undefined;
-    assert.ok(decideRevert && !(decideRevert.needs ?? []).includes("watchdogs"),
-      `${file}: decideRevert must not depend on watchdogs, or a red watchdog could drive a revert`);
+    const recheck = parsed.jobs.trunkRecheck as { needs?: string[] } | undefined;
+    assert.ok(recheck && !(recheck.needs ?? []).includes("watchdogs"),
+      `${file}: trunkRecheck must not depend on watchdogs, or a red watchdog could read as a red main`);
 
     // A1 (#452): follows a local `uses: ./.github/workflows/reusable-build-test.yml` call -- the real
     // build/test commands checked below now live there, not in this file's own steps.
