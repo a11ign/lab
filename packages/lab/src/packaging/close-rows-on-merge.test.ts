@@ -162,7 +162,7 @@ test("#909: the closeRows job rides trunk.yml's push to main, and cannot push (c
   assert.ok(job, "trunk.yml carries the closeRows job");
   assert.deepEqual(job.permissions, { issues: "write", "pull-requests": "read", contents: "read" },
     "a job triggered by a merge must never be able to push -- the permissions close-rows.yml carried, and no more, "
-    + "pinned on THIS job because decideRevert beside it legitimately holds contents: write");
+    + "pinned on THIS job so that no job added beside it later can widen it");
   const run = job.steps.map((s) => s.run ?? "").join("\n");
   assert.match(run, /close-rows-for-merged-pr\.mjs/, "the same closure plan drives the dispatch path");
   assert.match(run, /close-rows-sweep\.mjs/, "and the push path");
@@ -178,8 +178,7 @@ test("#909: the closeRows JOB can close issues and can do NOTHING else -- pinned
   };
   assert.deepEqual(doc.jobs.closeRows.permissions, { issues: "write", "pull-requests": "read", contents: "read" },
     "close-rows.yml carried exactly these at the workflow level; folded into trunk.yml they are pinned on the job, "
-    + "because decideRevert in the same file legitimately holds contents: write and a workflow-level grant would "
-    + "hand it to this job too");
+    + "because a workflow-level grant would hand every job in the file that write scope, this one included");
   assert.equal(doc.permissions, undefined, "no workflow-level permissions block widens what closeRows gets");
 });
 

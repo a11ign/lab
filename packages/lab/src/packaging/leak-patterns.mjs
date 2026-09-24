@@ -216,7 +216,6 @@ export const TRACKER_WRITERS = Object.freeze([
   "row-file.mjs",
   "stranded-branches.mjs",
   "tracker-comment.mjs",
-  "trunk-revert.mjs",
 ]);
 
 /** Where a declared writer may live. The prefixes are here so the registry above holds no path-shaped
