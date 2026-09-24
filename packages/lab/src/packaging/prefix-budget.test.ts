@@ -246,12 +246,21 @@ test("the warn remedy carries the ladder in ceo's order, the debt's author and i
   assert.match(WARN_REMEDY, /Deleting a rule is NOT on this list/, "deletion is not a rung");
 });
 
+/**
+ * The refusal's remedy as #2217 shipped it, PINNED AS A LITERAL copied from this file at `f3e75eee6^` (the
+ * commit before #2248). Comparing the subject to the `REMEDY` it exports compares it to itself, so a reference
+ * changed in `prefix-budget.mjs` (`#1240` to `#9999`) passed all twelve tests; only a literal held here can
+ * notice the words move.
+ */
+const REMEDY_BEFORE_2248 = "EVICT OR MOVE, DO NOT TRUNCATE: keep the RULE loaded, move the incident narrative to "
+  + "docs/operational-lessons.md and link it from the heading. That is the form CLAUDE.md already uses "
+  + "(#458, #1240). Deleting a rule to fit is NOT the remedy, and the preservation test below refuses it.";
+
 test("the 20,000 refusal still says what it said before #2248", () => {
   const over = prefixBudgetVerdict(BUDGET_BYTES + 1);
-  assert.equal(over.remedy, REMEDY);
-  assert.equal(over.message, `OVER BUDGET by 1 B.\n${REMEDY}`);
-  assert.match(REMEDY, /^EVICT OR MOVE, DO NOT TRUNCATE: keep the RULE loaded/);
-  assert.match(REMEDY, /Deleting a rule to fit is NOT the remedy/);
+  assert.equal(over.remedy, REMEDY_BEFORE_2248);
+  assert.equal(over.message, `OVER BUDGET by 1 B.\n${REMEDY_BEFORE_2248}`);
+  assert.equal(REMEDY, REMEDY_BEFORE_2248, "the export the other assertions print is the same words");
 });
 
 test("no rule was lost to the budget: every heading the rules file carried still exists", () => {
