@@ -520,12 +520,14 @@ test("#2046 WIRING: both callers of the armed read build it from the SAME `armed
 
 const SESSIONS_FILE = new URL("../../../../packages/agent-org/docs/roles/sessions.json", import.meta.url);
 /** A `live` entry, read wide enough to see the keys it carries as well as its name (#1951's question). */
-type SessionEntry = { name: string } & Record<string, unknown>;
+type SessionEntry = { name: string; family?: unknown } & Record<string, unknown>;
 const sessionsFile = () => JSON.parse(readFileSync(SESSIONS_FILE, "utf8")) as { live: SessionEntry[]; retired: { name: string }[] };
 
 test("#1453 ACCEPTANCE: arm-pr's live and retired sets EQUAL packages/agent-org/docs/roles/sessions.json's, worker-tooling included", () => {
   const file = sessionsFile();
-  assert.deepEqual([...LIVE_SESSIONS], file.live.map((s) => s.name), "the live set is the file's, in the file's order");
+  // #2403: a FAMILY entry is a rule for many addresses, so it is not one name in the list -- `isLiveSession` reads it.
+  assert.deepEqual([...LIVE_SESSIONS], file.live.filter((s) => s.family === undefined).map((s) => s.name),
+    "the live set is the file's addresses, in the file's order");
   assert.deepEqual([...RETIRED_SESSIONS], file.retired.map((s) => s.name), "and so is the retired set");
   assert.ok(LIVE_SESSIONS.includes("worker-tooling"), "the session the typed list predated");
   assert.deepEqual(unknownSessionLabels(["session:worker-tooling"]), [],
@@ -543,7 +545,9 @@ test("#1453 ACCEPTANCE: arm-pr's live and retired sets EQUAL packages/agent-org/
 // An ALLOWLIST rather than a denylist of suspicious key names, deliberately: a rule that infers whether a
 // key smells like a process handle is the defect this row is about one level up. Adding a genuine role fact
 // here is one line, and it makes the writer say which of the two it is.
-const ROLE_ENTRY_KEYS = ["name", "role", "brief", "started", "spare", "drain"];
+// #2403 added `family`: `{prefix, from}` says every `<prefix><n>` for n from `from` is an instance of the ROLE, so the
+// roster need not carry one entry per address. A fact about the role, like `spare`; it names no pane, pid or workspace.
+const ROLE_ENTRY_KEYS = ["name", "role", "brief", "started", "spare", "drain", "family"];
 
 /** The `live` entries carrying a key that is not a role fact, each with the keys that offend. */
 function processBoundEntries(live: SessionEntry[]): { name: unknown; keys: string[] }[] {
