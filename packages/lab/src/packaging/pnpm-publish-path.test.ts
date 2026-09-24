@@ -272,7 +272,7 @@ test("#2301: package-lock.json is deleted, and no source under .github, scripts 
   const tracked = execFileSync("git", ["ls-files", "-z", "--", ".github", "scripts", "packages"],
     { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() }).split("\0").filter(Boolean);
   const scanned = tracked.filter((file) => /\.(mjs|cjs|js|ts|ya?ml|json)$/.test(file));
-  assert.ok(scanned.length > 500, `only ${scanned.length} files scanned; the listing is broken, not the repo clean`);
+  assert.ok(scanned.length > 500, "the git listing returned almost nothing: it is broken, not the repo clean");
   // `(?<![.\w])` so npm's HIDDEN `node_modules/.package-lock.json`, which the Ansible one-time migration
   // looks for on purpose, is a different name.
   const readers = scanned.filter((file) => !NAMES_IT_AS_DATA.has(file))
