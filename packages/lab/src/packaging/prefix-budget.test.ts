@@ -256,10 +256,17 @@ test("the preservation assertion is REACHABLE -- a heading that was never writte
  */
 const DIRECTIVES_BY_SECTION: Readonly<Record<string, readonly string[]>> = {
   "## Model routing for subagents": ["**Every subagent call names its model.**"],
-  "## Context": ["`/clear` between unrelated topics; a fresh window beats stale history."],
+  "## Context": [
+    "`/clear` between unrelated topics; a fresh window beats stale history.",
+    // #2257: the model-change trigger is a COUNT, so the count and the WRONG-not-stale qualifier are pinned.
+    "two `ceo` rulings in a week reversed as WRONG, not stale,",
+    "**Never pin a session to Opus.**",
+  ],
   "## Web research": ["**One fetch that the main session must read itself is the exception, not the habit.**"],
   "## Timers and state": [
     "**No session holds a standing cron.**",
+    // #2257: the ORDER is the rule -- list ONCE, then delete. `CronDelete` needs ids and ids need a list.
+    "list them once and **`CronDelete` anything you find.**",
     "**Do not create a cron to check for work.**",
     "**The row is the state.**",
     "**Nobody merges by hand.**",
@@ -355,6 +362,13 @@ test("the directive assertion is REACHABLE, and it kills the mutant that motivat
   const directive = collapse("**Do not create a cron to check for work.**");
   assert.equal(weakened.includes(directive), false, "the weakened text must NOT satisfy the directive");
   assert.ok(weakened.includes("## Timers and state"), "…while its heading survives, which is why headings alone are not enough");
+  // Control 4 (#2257): the two mutants the reviewer applied to this PR, as local fixtures. Swapping the verb
+  // or loosening the count must each stop satisfying its pin, and the real prose must satisfy both.
+  const cronPin = collapse("list them once and **`CronDelete` anything you find.**");
+  const triggerPin = collapse("two `ceo` rulings in a week reversed as WRONG, not stale,");
+  assert.ok(prose.includes(cronPin) && prose.includes(triggerPin), "the shipped prose must satisfy both new pins");
+  assert.equal(collapse("list them once and **`CronList` anything you find.**").includes(cronPin), false);
+  assert.equal(collapse("one `ceo` ruling in a week reversed as WRONG, not stale,").includes(triggerPin), false);
   // Control 3: the whitespace collapse is load-bearing -- the directive is wrapped in the real file.
   const wrapped = collapse("**Do not create a cron\n  to check for work.**");
   assert.equal(wrapped, directive, "a directive wrapped across lines must still match");
