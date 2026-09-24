@@ -27,6 +27,7 @@ const PR_OPEN = readFileSync(join(REPO, "packages/agent-org/src/pr-open.mjs"), "
 /** The three refusals the row names, at the commits the reviewer refused (2026-09-24). */
 const REFUSED: Record<string, string> = { "2384": "9eee4fdb", "2368": "011da083", "2392": "0c929352" };
 const MIN_FOUND = 2;
+const MIN_QUOTE = 40;
 
 type Replay = { pr: string; commit: string; quote: string; found: boolean; operators: string[]; survivor: string };
 
@@ -61,21 +62,23 @@ test("the record names all three PRs at the commits the reviewer refused, and ea
   // The emptiness control: three sections were parsed, so the per-section assertions below ran three times.
   assert.deepEqual(replays.map((r) => r.pr).sort(), Object.keys(REFUSED).sort());
   for (const r of replays) {
-    assert.ok(r.commit.startsWith(REFUSED[r.pr]), `#${r.pr} is replayed at ${r.commit}, not the refused ${REFUSED[r.pr]}`);
-    assert.ok(r.quote.length >= 40, `#${r.pr}: the reviewer's path is quoted from the refusal, not paraphrased (${r.quote.length} chars)`);
+    const at = `#${r.pr}`;
+    assert.ok(r.commit.startsWith(REFUSED[r.pr]), `${at} is replayed at a commit that is not the refused ${REFUSED[r.pr]}`);
+    assert.ok(r.quote.length >= MIN_QUOTE, `${at}: the reviewer's path is quoted from the refusal, not paraphrased`);
   }
 });
 
 test("each replay says whether a survivor covered the path, and a `yes` names the survivor and real operators", () => {
   for (const r of replays) {
+    const at = `#${r.pr}`;
     if (r.found) {
-      assert.ok(r.operators.length > 0, `#${r.pr}: found, so an operator found it`);
-      assert.match(r.survivor, /\S+:\d+/, `#${r.pr}: found, so the surviving file:line is named`);
+      assert.notDeepEqual(r.operators, [], `${at}: found, so an operator found it`);
+      assert.match(r.survivor, /\S+:\d+/, `${at}: found, so the surviving file:line is named`);
     } else {
-      assert.deepEqual(r.operators, [], `#${r.pr}: not found, so no operator is credited`);
+      assert.deepEqual(r.operators, [], `${at}: not found, so no operator is credited`);
     }
     for (const id of r.operators) {
-      assert.ok(OPERATORS.some((o) => o.id === id), `#${r.pr}: \`${id}\` is not an operator in mutant-survivors.mjs`);
+      assert.ok(OPERATORS.some((o) => o.id === id), `${at}: \`${id}\` is not an operator in mutant-survivors.mjs`);
     }
   }
 });

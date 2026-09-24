@@ -55,6 +55,16 @@ test("arg-empty finds the reviewer's #2384 mutant, and leaves a definition and a
   assert.deepEqual(mutantsOf("arg-empty", line), ["    rejectedAsTruncated: rejectedAsTruncated([]),"]);
   assert.deepEqual(mutantsOf("arg-empty", "function writeProvenance(baseText, records, census) {"), []);
   assert.deepEqual(mutantsOf("arg-empty", "  handle(request) {"), []);
+  // A signature whose `{` is on the next line is still a definition, by the word before its name.
+  assert.deepEqual(mutantsOf("arg-empty", "export function writeProvenance(baseText, records)"), []);
+  assert.deepEqual(mutantsOf("arg-empty", "export function* walk(nodes)"), []);
+  // A keyword before a parenthesis is not a call: `if (ready)` must not become `if ([])`.
+  for (const line of ["  if (ready) go();", "  while (more) step();", "  const f = async (event) => 1;", "  return (value);",
+    "  await (pending);", "  switch (kind) {", "  } catch (error) {", "  const c = new Thing;"]) {
+    assert.deepEqual(mutantsOf("arg-empty", line), [], line);
+  }
+  // A method call's callee is the whole dotted path, so its ARGUMENTS are the sites and its receiver is not.
+  assert.deepEqual(mutantsOf("arg-empty", "  results.finish(id, body);"), ["  results.finish([], body);", "  results.finish(id, []);"]);
   assert.deepEqual(mutantsOf("arg-empty", "  send(res, 400, null, undefined, true);"), ["  send([], 400, null, undefined, true);"]);
   // Two calls on one line are two sites; a comma inside a string does not split an argument.
   assert.equal(mutantsOf("arg-empty", "  join(a, split(b, ',', c));").length, 3);
@@ -89,7 +99,7 @@ test("applyMutant changes exactly one line, and returns null for a mutant that d
 
 test("chooseMutants reads only ADDED lines of SOURCE files, never a test file, a comment or a doc", () => {
   const files: Record<string, string> = {
-    "a.mjs": "// return x;\n  return one;\n  return two;",
+    "a.mjs": "// f(x) === y, and  * g(z)\n  return one;\n  return two;",
     "a.test.ts": "  return three;",
     "b.ts": "  return four;",
     "notes.md": "  return five;",
@@ -218,6 +228,7 @@ test("the section is appended after a blank line and a heading, so Acceptance st
   const twice = withSurvivorsSection(extended, ["Survivors: 0 of 3 mutants run survived the named tests (ADVISORY)."]);
   assert.equal(twice.match(/## Survivors/g)?.length, 1);
   assert.doesNotMatch(twice, /1 of 3/);
+  assert.ok(twice.startsWith(BODY.trimEnd()), "replacing the old section keeps everything before it");
 });
 
 test("withBody swaps --body in place, and for --body-file writes a NEW file and leaves the author's alone", () => {
@@ -244,8 +255,10 @@ function driveMain(mode: string, survivors: unknown, body = BODY) {
 }
 
 test("main: a create sends the body WITH the section; an edit sends the body it was given; both exit as before", () => {
-  const found = () => ({ lines: SECTION, section: true });
+  const seen: string[] = [];
+  const found = (given: string) => { seen.push(given); return { lines: SECTION, section: true }; };
   const created = driveMain("create", found);
+  assert.deepEqual(seen, [BODY], "it is handed the body the author wrote");
   assert.equal(created.code, 0);
   const createdBody = created.sent[0][created.sent[0].indexOf("--body") + 1];
   assert.equal(createdBody, withSurvivorsSection(BODY, SECTION));
