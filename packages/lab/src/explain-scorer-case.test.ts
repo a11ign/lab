@@ -145,8 +145,8 @@ test("a case captured in two repeat files prints once per file, so the repeats s
 // ---- the JavaScript half: the flag, the listing, and the argv the reader gets ---------------------------------
 
 test("`--case=` is admitted by refuseUnknownFlags, and an unknown flag still is not", () => {
-  const admitted = spawnSync(process.execPath, [EXPLAIN, "--model=no-such-model-2334", "--case=x"],
-    { encoding: "utf8", env: { ...process.env, A11Y_RUNS_ROOT: tmpdir() } });
+  // A model name no corpus holds, so the run stops at "no acceptance report" wherever it is run.
+  const admitted = spawnSync(process.execPath, [EXPLAIN, "--model=no-such-model-2334", "--case=x"], { encoding: "utf8" });
   assert.doesNotMatch(admitted.stderr, /unknown flag|not a flag/i, admitted.stderr);
   assert.match(admitted.stderr, /no acceptance report for 'no-such-model-2334'/,
     "past the flag check it must go and look for the model's acceptance report");
