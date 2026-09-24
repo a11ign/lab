@@ -204,6 +204,12 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
     + "different machine's directory. It is the same class as this one and is deliberately NOT fixed "
     + "here: nobody has run `win_stat` against those nine boxes, and restoring a name on sight is the "
     + "act #515 was filed against. Held on #526.",
+  "C:\\Users\\witness\\a11y-witness": "the copy-paste runbook in `docs/pnpm-rollback.md` (#2302), the "
+    + "WINDOWS worker's checkout -- a different machine's directory, the same class as `${GUEST_DIR}` "
+    + "above and guarded by `guest-paths-are-measured.test.ts` against a measurement of real guests. It "
+    + "names the directory LITERALLY and must: a human pastes it into PowerShell, and a shell cannot "
+    + "import a constant. Not this file's fact, and listed rather than derived so the duplication is "
+    + "visibly decided.",
   "/opt/a11y": "the LAB's checkout (`lab_repo_path` in `group_vars/a11y_lab.yml`), a different machine "
     + "and a different fact from the control plane's -- `run-job.yml` already reaches it through that "
     + "variable, but `files/a11y-corpus-snapshot.service` (#1795; its `corpus-backup` twin was "
