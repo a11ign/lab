@@ -31,7 +31,13 @@ import { execFileSync } from "node:child_process";
 // #2076's tree scan spawns `git ls-files`, and every git spawn in this repo strips the environment through
 // this one function -- see the file's own header for the 2026-09-06 incident that made it a rule.
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { readLoadedRules } from "./rules-files.ts";
+import { RULES_FILES } from "./rules-files.ts";
+// #2247: the pins are a TABLE that carries its own tier, and the subject a pin is matched against is the
+// loaded rules plus the NAMED destination a narrative sentence may move to (`docs/operational-lessons.md`).
+import {
+  PINS, IMPERATIVE, NARRATIVE, LOADED_RULES_FILES, NARRATIVE_DESTINATIONS, pinById, pinPattern,
+  textForPin, readPinSubject, flatten, pinnedProseReading, coveredByPatterns,
+} from "./prefix-pins.mjs";
 // #905: the roster parser and the per-file check live in the doc cross-reference check the nightly report
 // also runs -- one copy, which is what this file's own "exercise the exact same logic" comment asked for.
 import { README_PATH, checkRoster, roster } from "../../../../scripts/doc-checks/roles-readme.mjs";
@@ -185,10 +191,13 @@ test("#1118: the provisional marker is ON THE VERDICT LINE, where the sha-plus-w
 // that tells people how to avoid defects.
 
 // #2092: the rules are one file per topic now, so this is the loaded SET, and each pin below is found in
-// whichever file carries it.
-const agentPractices = readLoadedRules();
+// whichever file carries it. #2247: read WITH the named destination a narrative sentence may move to
+// (`docs/operational-lessons.md`), so the subject of a pin is `{ loaded, destinations }` and its TIER decides
+// which half it may be found in -- see `prefix-pins.mjs`.
+type PinSubject = { loaded: string; destinations: string };
+const subject: PinSubject = readPinSubject();
 
-const POSITIVE_CONTROL = /an emptiness assertion names where its positive control lives/i;
+const POSITIVE_CONTROL = pinPattern("emptiness.positive-control");
 
 /**
  * EVERY ASSERTION BELOW READS THE FLATTENED TEXT, and this file is the third place today that learned it
@@ -200,20 +209,34 @@ const POSITIVE_CONTROL = /an emptiness assertion names where its positive contro
  * It was caught here by the mutation's own landing check rather than by care: `assert.notEqual(without,
  * text)` fired because the replace had matched nothing. That is the pre-read check #1165 is about, working.
  */
-const flat = (/** @type {string} */ text: string) => text.replace(/\s+/g, " ");
+const flat = flatten;
+
+/**
+ * ONE PIN, FOUND IN THE SUBJECT ITS TIER ALLOWS. An IMPERATIVE pin is matched against the loaded rules alone;
+ * a NARRATIVE pin against the rules plus the named destination -- that asymmetry is #2247's whole ruling and
+ * lives in `textForPin`, so no check below can quietly accept either file for either tier.
+ */
+const assertPin = (from: PinSubject, id: string, message: string) => {
+  assert.match(textForPin(pinById(id), from), pinPattern(id), message);
+};
+
+/** A subject whose rules are `loaded` and whose destination says nothing: what a MUTATION is run against, so
+ * a sentence the destination happens to quote today cannot rescue a mutant (the fixture would name a thing
+ * the project can change). */
+const alone = (loaded: string): PinSubject => ({ loaded, destinations: "" });
 
 /**
  * THE TWO #1157 CHECKS, AS FUNCTIONS -- each is called by its own test against the real file and by the
  * mutation test below against the file with the line removed. See #2185 for why the mutation test may not
  * re-test `String.replace` instead.
  */
-const assertsThePracticesLine = (text: string) => {
-  assert.match(text, POSITIVE_CONTROL,
+const assertsThePracticesLine = (subject: PinSubject) => {
+  assertPin(subject, "emptiness.positive-control",
     "the sentence itself, since this is the only thing standing in for a guard on 64 assertions");
-  assert.match(text, /point at it/i,
+  assertPin(subject, "emptiness.point-at-it",
     "and the operative half: a control you BELIEVE in is not one you can POINT AT, which is the "
     + "difference between this line and an encouragement");
-  assert.match(text, /64 derive from a CALL|64 call-derived/i,
+  assertPin(subject, "emptiness.call-population",
     "and the population it covers, so a reader can tell whether their case is one of them");
 };
 
@@ -229,7 +252,7 @@ const assertsTheReviewersEntry = (text: string) => {
 };
 
 test("#1157: the practices file carries the line, with what makes it applicable rather than aspirational", () => {
-  assertsThePracticesLine(flat(agentPractices));
+  assertsThePracticesLine(subject);
 });
 
 test("#1157: the reviewer's entry says what a reviewer DOES, not that the property is desirable", () => {
@@ -249,40 +272,38 @@ test("#1157: the reviewer's entry says what a reviewer DOES, not that the proper
 // consult (the correction is inverted back into the defect). A guard that only checks the prohibition is
 // still passing the day someone writes "check `gh api rate_limit` first" underneath it.
 
-const NEVER_THE_ENDPOINT = /never decide anything from `gh api rate_limit`/i;
-const THE_INSTRUMENT = /read `X-Ratelimit-\*` off a real call/i;
+const NEVER_THE_ENDPOINT = pinPattern("gauge.never-endpoint");
+const THE_INSTRUMENT = pinPattern("gauge.instrument");
 
 /** The #1967 checks as functions, for the reason the #1157 ones are: the mutation test runs THEM. */
-const assertsTheGaugeAndItsInstrument = (text: string) => {
-  assert.match(text, NEVER_THE_ENDPOINT,
+const assertsTheGaugeAndItsInstrument = (subject: PinSubject) => {
+  assertPin(subject, "gauge.never-endpoint",
     "the prohibition itself -- the endpoint has now been measured lying twice, three weeks apart, and "
     + "until this landed the only record of it was two code comments nobody reads before typing a command");
-  assert.match(text, THE_INSTRUMENT,
+  assertPin(subject, "gauge.instrument",
     "and what to read INSTEAD: a prohibition with no replacement instrument sends the reader back to the "
     + "endpoint, because they still need the number");
-  assert.match(text, /gh api graphql[^`]*-i/,
+  assertPin(subject, "gauge.command",
     "with the command that produces it, or 'read the headers' is an instruction the reader cannot follow");
-  assert.match(text, /headers come back on the 403/i,
+  assertPin(subject, "gauge.headers-on-403",
     "and the half that makes it work during the outage it exists to report -- an instrument that fails "
     + "exactly when its subject fails reports the alarming state as no state");
 };
 
 test("#1967: the practices file names the broken gauge AND the instrument that replaces it", () => {
-  assertsTheGaugeAndItsInstrument(flat(agentPractices));
+  assertsTheGaugeAndItsInstrument(subject);
 });
 
 test("#1967: per TOKEN and per RESOURCE, with why a sanity check on core is not one", () => {
-  const text = flat(agentPractices);
-
-  assert.match(text, /per TOKEN and per RESOURCE/i,
+  assertPin(subject, "gauge.per-token-per-resource",
     "both axes: one token's pools are separate from each other, and separate from another token's");
-  assert.match(text, /spend GRAPHQL|spends CORE/,
+  assertPin(subject, "gauge.which-pool-is-spent",
     "and which commands spend which pool, so 'check the pool you care about' names a pool");
-  assert.match(text, /a sanity check on core is not a sanity check/i,
+  assertPin(subject, "gauge.sanity-check-on-core",
     "THE SHARPEST HALF, and the one the row did not have: on 2026-09-22 the endpoint was accurate on "
     + "core to within one call and wrong by 1360 on graphql -- so the obvious way to test the gauge "
     + "returns that it works");
-  assert.match(text, /same token, same second/i,
+  assertPin(subject, "gauge.same-token-same-second",
     "and that the disagreement was read from ONE moment, not two readings minutes apart, which is the "
     + "only reading that rules out the pool simply having moved");
 });
@@ -295,8 +316,8 @@ test("#1967: per TOKEN and per RESOURCE, with why a sanity check on core is not 
  * passing FIRST, since `assert.throws` is green on a subject that fails every check.
  */
 test("#1967 MUTATION: dropping the instrument and reinstating the endpoint must EACH go red", () => {
-  const text = flat(agentPractices);
-  assertsTheGaugeAndItsInstrument(text);
+  const text = subject.loaded;
+  assertsTheGaugeAndItsInstrument(alone(text));
 
   const mutations = [
     // Direction 1 -- the instrument is dropped. The prohibition survives; nobody is told what to read.
@@ -312,7 +333,7 @@ test("#1967 MUTATION: dropping the instrument and reinstating the endpoint must 
   for (const { what, pattern, into, why } of mutations) {
     const mutated = text.replace(pattern, into);
     assert.notEqual(mutated, text, `the ${what} mutation must LAND, or this proves nothing`);
-    assert.throws(() => assertsTheGaugeAndItsInstrument(mutated), assert.AssertionError,
+    assert.throws(() => assertsTheGaugeAndItsInstrument(alone(mutated)), assert.AssertionError,
       `the ${what} file must FAIL the check, and did not -- ${why}`);
   }
 });
@@ -322,13 +343,12 @@ test("#1157 MUTATION: removing the line from EITHER file must go red, not just f
   // let one drift away silently -- and the drift would be invisible precisely because the other copy
   // still reads correctly to anyone who looks in one place.
   const files: readonly [string, string, (text: string) => void][] = [
-    ["agent-practices.md", agentPractices, assertsThePracticesLine],
-    ["reviewer.md", reviewerBrief, assertsTheReviewersEntry],
+    ["the loaded rules", subject.loaded, (text) => assertsThePracticesLine(alone(text))],
+    ["reviewer.md", flat(reviewerBrief), assertsTheReviewersEntry],
   ];
-  for (const [, source, check] of files) check(flat(source));
+  for (const [, text, check] of files) check(text);
 
-  for (const [name, source, check] of files) {
-    const text = flat(source);
+  for (const [name, text, check] of files) {
     const without = text.replace(POSITIVE_CONTROL, "a removed sentence");
     assert.notEqual(without, text, `the mutation must LAND in ${name}, or this proves nothing`);
     assert.throws(() => check(without), assert.AssertionError,
@@ -362,77 +382,75 @@ test("#1157 MUTATION: removing the line from EITHER file must go red, not just f
 // the mutation test calls the same functions against each mutated subject and requires an `AssertionError`.
 // The same tautology was in the `#1967` and `#1157` mutation blocks above; #2185 converted them the same way.
 
-const CLICK_THROUGH = /an approval prompt a human learns to click through is worse than no prompt/i;
-const THE_EMPTY_GUARD = /rm -f "\$\{D:\?\}"\/\*\.md/;
-const SHAPE_NOT_EFFECT =
-  /when a command is refused for its SHAPE rather than its EFFECT, change the shape/i;
-const NOT_AN_OVERRIDE =
-  /reaching for an override, or asking a human to approve it again, both leave the next session to rediscover the same refusal/i;
-const QUOTING_IS_HALF = /quoting alone defuses the BARE-VARIABLE case, and buys nothing once a glob is attached/i;
-const GREP_UNDERCOUNTS = /puts a `--` where the regex expects the target/i;
+const CLICK_THROUGH = pinPattern("click-through.principle");
+const THE_EMPTY_GUARD = pinPattern("click-through.remedy");
+const SHAPE_NOT_EFFECT = pinPattern("click-through.shape-not-effect");
+const NOT_AN_OVERRIDE = pinPattern("click-through.not-an-override");
+const QUOTING_IS_HALF = pinPattern("click-through.quoting-is-half");
+const GREP_UNDERCOUNTS = pinPattern("click-through.grep-undercounts");
 
 /**
  * THE THREE POSITIVE CHECKS, AS FUNCTIONS RATHER THAN TEST BODIES. A mutation test can only prove a guard
  * bites by running THE GUARD against the mutated subject; anything else re-tests the mutation itself. Each
  * is called twice -- once by its own test against the real file, and once per mutation below.
  */
-const assertsThePrincipleAndItsRemedy = (text: string) => {
-  assert.match(text, CLICK_THROUGH,
+const assertsThePrincipleAndItsRemedy = (subject: PinSubject) => {
+  assertPin(subject, "click-through.principle",
     "the principle itself -- without it `:?` reads as a style preference, and a style preference is not "
     + "what stops the next avoidable prompt being filed");
-  assert.match(text, THE_EMPTY_GUARD,
+  assertPin(subject, "click-through.remedy",
     "and the literal remedy, quoted and brace-guarded: a rule whose fix the reader has to reconstruct "
     + "sends them back to the override, because they still have a command to run");
-  assert.match(text, /abort on an unset or empty variable/i,
+  assertPin(subject, "click-through.why-it-works",
     "and WHY `:?` works, or it is a charm to be copied rather than a construct to be applied to the next "
     + "command, which will not be this one");
-  assert.match(text, /dangerously-skip-permissions/,
+  assertPin(subject, "click-through.bypass-survives",
     "and the fact that makes it unavoidable: bypass is already on and this guard survives it, so "
     + "'turn the prompts off' is not an available answer and the reader should not go looking for it");
 };
 
-const assertsTheGeneralForm = (text: string) => {
-  assert.match(text, SHAPE_NOT_EFFECT,
+const assertsTheGeneralForm = (subject: PinSubject) => {
+  assertPin(subject, "click-through.shape-not-effect",
     "THE TRANSFERABLE HALF -- `rm` is one instance, and a rule that names only the instance leaves the "
     + "next refused shape to be solved by an override again");
-  assert.match(text, NOT_AN_OVERRIDE,
+  assertPin(subject, "click-through.not-an-override",
     "and what is wrong with the two easier moves, stated: a rule that recommends the fix without "
     + "disowning the alternatives reads as advice between equals");
-  assert.match(text, /several times in one morning/i,
+  assertPin(subject, "click-through.several-times",
     "with the measurement, so the cost is a count rather than an intuition about tidiness");
-  assert.match(text, /makes the unavoidable ones cheaper to ignore/i,
+  assertPin(subject, "click-through.cheaper-to-ignore",
     "and the consequence that makes this a safety rule rather than a courtesy -- the harm lands on the "
     + "NEXT prompt, which is the one that will be real");
 };
 
-const assertsThePopulationReading = (text: string) => {
-  assert.match(text, /prevention rather than cleanup/i,
+const assertsThePopulationReading = (subject: PinSubject) => {
+  assertPin(subject, "click-through.prevention",
     "the row's own claim: nothing tracked has the pattern, so a reader does not go hunting for offenders");
-  assert.match(text, QUOTING_IS_HALF,
+  assertPin(subject, "click-through.quoting-is-half",
     "and WHICH property each tracked call site already has, stated precisely: the nine `rm \"$VAR\"` sites "
     + "are quoted with no glob, and quoting is what saves THEM -- it saves nothing once a glob is attached, "
     + "which is the distinction that makes `:?` load-bearing rather than tidy");
-  assert.match(text, /the moment a glob joins the variable/i,
+  assertPin(subject, "click-through.glob-trigger",
     "and the trigger for applying it, so the reader can tell their own next command apart from those nine");
-  assert.match(text, GREP_UNDERCOUNTS,
+  assertPin(subject, "click-through.grep-undercounts",
     "and why the grep undercounts -- a population read with the wrong instrument is the defect one level "
     + "up from the one this rule is about, and the reader needs to know which reading to trust");
 };
 
 test("#2076: the practices file states the principle AND the command that satisfies it", () => {
-  assertsThePrincipleAndItsRemedy(flat(agentPractices));
+  assertsThePrincipleAndItsRemedy(subject);
 });
 
 test("#2076: the general form is stated, and the override is disowned rather than merely unmentioned", () => {
-  assertsTheGeneralForm(flat(agentPractices));
+  assertsTheGeneralForm(subject);
 });
 
 test("#2076: the population is stated as already-clean, with what would make a call site unsafe", () => {
-  assertsThePopulationReading(flat(agentPractices));
+  assertsThePopulationReading(subject);
 });
 
 /** One mutation: a sentence removed or inverted, and the check that must reject the result. */
-const MUTATIONS: readonly { what: string; pattern: RegExp; into: string; rejects: (text: string) => void; why: string }[] = [
+const MUTATIONS: readonly { what: string; pattern: RegExp; into: string; rejects: (from: PinSubject) => void; why: string }[] = [
   {
     what: "remedy dropped", pattern: THE_EMPTY_GUARD, into: "the usual removal",
     rejects: assertsThePrincipleAndItsRemedy,
@@ -473,19 +491,19 @@ const MUTATIONS: readonly { what: string; pattern: RegExp; into: string; rejects
 ];
 
 test("#2076 MUTATION: each direction must make the assertions THEMSELVES throw, not merely stop matching", () => {
-  const text = flat(agentPractices);
+  const text = subject.loaded;
 
   // THE RESTORED CONTROL, RUN FIRST. Five `assert.throws` in a row is a green test on a file that fails
   // every check, so the unmutated subject has to be shown passing all three before any throw means
   // anything. This is the half the first version of this block was missing.
   for (const check of [assertsThePrincipleAndItsRemedy, assertsTheGeneralForm, assertsThePopulationReading]) {
-    check(text);
+    check(alone(text));
   }
 
   for (const { what, pattern, into, rejects, why } of MUTATIONS) {
     const mutated = text.replace(pattern, into);
     assert.notEqual(mutated, text, `the ${what} mutation must LAND, or this proves nothing`);
-    assert.throws(() => rejects(mutated), assert.AssertionError,
+    assert.throws(() => rejects(alone(mutated)), assert.AssertionError,
       `the practices file with the ${what} must FAIL the check above, and did not -- ${why}`);
   }
 });
@@ -660,89 +678,83 @@ test("#2076: no tracked file a shell executes runs `rm` on a glob beneath an ung
 // WRITTEN AS FUNCTIONS, per #2104's finding on the block above: a mutation proves a guard bites only by
 // running THE GUARD against the mutated subject.
 
-const DEFAULT_CONFIG_IS_A_PERSON =
-  /the default `~\/\.config\/gh` authenticates as a person \(`DanBeckDev`\)/i;
-const WORKERS_CONFIG_IS_THE_BOT =
-  /`GH_CONFIG_DIR=\/home\/agent\/workers\/gh` as `a11ign-ai-workers`/;
-const WHICH_UNIT_SETS_IT = /which is what `a11ign-work-tick\.service` sets/i;
-const THE_REFUSAL = /you must not switch to the other config to get past your own limit/i;
-const ATTRIBUTION_IS_THE_GROUND =
-  /one export changes who every subsequent write is attributed to/i;
-const THE_ROUTING_WRAPPER = /is a ROUTING WRAPPER ahead of `\/usr\/bin\/gh`/;
-const AGENTS_ARE_NEVER_THE_HUMAN =
-  /an agent workspace gets the workers config, or the leads config when it is in `~\/leads\/workspaces\.txt` \(w6 w2 w5\); NO agent gets the person's/;
-const WHAT_THE_THIRD_ACCOUNT_IS = /`\/home\/agent\/leads\/gh` as `a11ign-ai-leads`/;
-const NAME_THE_ACCOUNT_FIRST = /run `gh api user --jq \.login` first, then the headers/i;
+const WHICH_UNIT_SETS_IT = pinPattern("identity.which-unit-sets-it");
+const THE_REFUSAL = pinPattern("identity.the-refusal");
+const ATTRIBUTION_IS_THE_GROUND = pinPattern("identity.attribution-is-the-ground");
+const THE_ROUTING_WRAPPER = pinPattern("identity.routing-wrapper");
+const AGENTS_ARE_NEVER_THE_HUMAN = pinPattern("identity.agents-are-never-the-human");
+const WHAT_THE_THIRD_ACCOUNT_IS = pinPattern("identity.the-third-account");
+const NAME_THE_ACCOUNT_FIRST = pinPattern("identity.name-the-account-first");
 
-const assertsBothAccountsAreNamed = (text: string) => {
-  assert.match(text, DEFAULT_CONFIG_IS_A_PERSON,
+const assertsBothAccountsAreNamed = (subject: PinSubject) => {
+  assertPin(subject, "identity.default-is-a-person",
     "which account the DEFAULT config authenticates as -- a reader who is told only that a second one "
     + "exists cannot tell whether the pool they just read belongs to a person or to the bot");
-  assert.match(text, WORKERS_CONFIG_IS_THE_BOT,
+  assertPin(subject, "identity.workers-is-the-bot",
     "and the other, by the export that selects it, so the sentence names a thing the reader can type "
     + "rather than an arrangement they have to go and discover");
-  assert.match(text, WHICH_UNIT_SETS_IT,
+  assertPin(subject, "identity.which-unit-sets-it",
     "and something on this host that already sets it -- the claim is that the switch is REAL and in use, "
     + "and an unattributed claim is the one the old sentence made in the other direction");
 };
 
-const assertsTheRefusal = (text: string) => {
-  assert.match(text, THE_REFUSAL,
+const assertsTheRefusal = (subject: PinSubject) => {
+  assertPin(subject, "identity.the-refusal",
     "THE SENTENCE THIS ROW EXISTS FOR. The old wording declined the switch because there was supposedly "
     + "nothing to switch to; correcting the fact without carrying the refusal would leave a reader with "
     + "an exhausted pool, a healthy neighbour named for them, and no instruction");
-  assert.match(text, ATTRIBUTION_IS_THE_GROUND,
+  assertPin(subject, "identity.attribution-is-the-ground",
     "and the reason, which is what makes it hold at 3am against a deadline: the cost is not the quota, "
     + "it is that every subsequent write is attributed to somebody else");
-  assert.match(text, /that disposition is `ceo`'s \(`lane:ceo`, #916\) rather than yours/i,
+  assertPin(subject, "identity.whose-decision",
     "and WHOSE decision it is, so the refusal points somewhere instead of merely forbidding -- this file "
     + "must not settle by wording whether a blocked session may ever spend the other account's quota");
-  assert.match(text, /wait out your own reset/i,
+  assertPin(subject, "identity.wait-out-your-reset",
     "and what to do instead, because a prohibition whose alternative is unstated is one a stuck reader "
     + "reads as advice");
 };
 
-const assertsTheRoutingIsNotChosen = (text: string) => {
-  assert.match(text, THE_ROUTING_WRAPPER,
+const assertsTheRoutingIsNotChosen = (subject: PinSubject) => {
+  assertPin(subject, "identity.routing-wrapper",
     "that a bare `gh` is ROUTED -- without this the paragraph's own instruction, read the pool you are "
     + "about to spend, is unfollowable, because the reader believes the account is whatever their config "
     + "says and it is decided by their PATH");
-  assert.match(text, AGENTS_ARE_NEVER_THE_HUMAN,
+  assertPin(subject, "identity.agents-are-never-the-human",
     "and which way it FALLS (#1950, #2332): an agent workspace is the workers account or the leads one, "
     + "so a forgotten workspace is never the chairman -- and there is no exception list to be on");
-  assert.match(text, WHAT_THE_THIRD_ACCOUNT_IS,
+  assertPin(subject, "identity.the-third-account",
     "and the account the leads list selects, by the export that names it, or `leads` is a word with no "
     + "referent for a reader who has to read its pool");
-  assert.doesNotMatch(text, /human-account-workspaces|TEMPORARY|human list/i,
+  assert.doesNotMatch(subject.loaded, /human-account-workspaces|TEMPORARY|human list/i,
     "the exception #1950 first shipped and #2333 deleted: naming it again as a thing a workspace can be "
     + "on would teach an agent that acting as the person is something to ask for");
-  assert.doesNotMatch(text, /(?<!leads\/)workspaces\.txt/,
+  assert.doesNotMatch(subject.loaded, /(?<!leads\/)workspaces\.txt/,
     "the only list the routing keys on is the leads one; a bare `workspaces.txt` is the retired "
     + "allow-list for the workers account, the defect #1950 removed");
-  assert.match(text, /No workspace id means a person, so a systemd unit must DECLARE `GH_CONFIG_DIR`/,
+  assertPin(subject, "identity.units-declare-it",
     "and why a systemd unit -- having no workspace id -- has to declare its identity rather than inherit one");
-  assert.match(text, NAME_THE_ACCOUNT_FIRST,
+  assertPin(subject, "identity.name-the-account-first",
     "and the command that answers it BEFORE the headers are read, or the reader has a fact they cannot "
     + "act on");
-  assert.match(text, /PATH and workspace id decide the pool/i,
+  assertPin(subject, "identity.path-decides-the-pool",
     "and the consequence stated plainly, since the same command name spelling two accounts is the part "
     + "that reads as impossible until it is written down");
 };
 
 test("#2025: the practices file names both accounts and what already sets the second", () => {
-  assertsBothAccountsAreNamed(flat(agentPractices));
+  assertsBothAccountsAreNamed(subject);
 });
 
 test("#2025: the refusal is carried, with its ground and whose decision it is", () => {
-  assertsTheRefusal(flat(agentPractices));
+  assertsTheRefusal(subject);
 });
 
 test("#2025: a bare `gh` is routed, and the reader is told to name the account before reading its pool", () => {
-  assertsTheRoutingIsNotChosen(flat(agentPractices));
+  assertsTheRoutingIsNotChosen(subject);
 });
 
 const IDENTITY_MUTATIONS: readonly {
-  what: string; pattern: RegExp; into: string; rejects: (text: string) => void; why: string;
+  what: string; pattern: RegExp; into: string; rejects: (from: PinSubject) => void; why: string;
 }[] = [
   {
     what: "refusal inverted", pattern: THE_REFUSAL,
@@ -809,18 +821,18 @@ const IDENTITY_MUTATIONS: readonly {
 ];
 
 test("#2025 MUTATION: each direction must make the assertions THEMSELVES throw, not merely stop matching", () => {
-  const text = flat(agentPractices);
+  const text = subject.loaded;
 
   // THE CONTROL, RUN FIRST -- five `assert.throws` in a row is a green test on a file that fails every
   // check, so the unmutated subject is shown passing all three before any throw below means anything.
   for (const check of [assertsBothAccountsAreNamed, assertsTheRefusal, assertsTheRoutingIsNotChosen]) {
-    check(text);
+    check(alone(text));
   }
 
   for (const { what, pattern, into, rejects, why } of IDENTITY_MUTATIONS) {
     const mutated = text.replace(pattern, into);
     assert.notEqual(mutated, text, `the ${what} mutation must LAND, or this proves nothing`);
-    assert.throws(() => rejects(mutated), assert.AssertionError,
+    assert.throws(() => rejects(alone(mutated)), assert.AssertionError,
       `the practices file with the ${what} must FAIL the check above, and did not -- ${why}`);
   }
 });
@@ -849,79 +861,70 @@ test("#2025 MUTATION: each direction must make the assertions THEMSELVES throw, 
 // WRITTEN AS FUNCTIONS, per #2104's finding two blocks up: a mutation proves a guard bites only by running
 // THE GUARD against the mutated subject.
 
-const TWO_SURFACES =
-  /TWO SURFACES CARRY THE REQUIREMENT, and a reading of one is not a reading of the other/i;
-const EXEMPTIONS_DO_NOT_COMPOSE = /requirements compose and exemptions do not/i;
-const CLASSIC_CAN_BE_ENUMERATED =
-  /the only surface whose exemption list can be ENUMERATED rather than merely queried for one identity/i;
-const PICK_YOUR_INSTRUMENT = /PICK THE INSTRUMENT BY WHAT YOU HOLD, AND SAY WHICH ONE YOU USED/i;
-const THE_ADMIN_INSTRUMENT = /`branches\/main\/protection`, behind `A11Y_CHECK_BRANCH_PROTECTION=1`/;
-const THE_CHEAP_INSTRUMENT =
-  /`rules\/branches\/main` plus `rulesets\/\{id\}`, behind `A11Y_CHECK_MAIN_RULESET=1`/;
-const THE_BOUNDED_CLAIM =
-  /`current_user_can_bypass: "never"` answers FOR ME ALONE and does not mean nobody is exempt/i;
-const ABSENCE_IS_NOT_EMPTINESS =
-  /its absence means "you may not look", never "the list is empty"/i;
-const CANNOT_TELL_STANDS = /`CANNOT_TELL` stands unchanged as the verdict for/i;
-const NOT_ACCEPTABLE_BY_BEING_CHEAP = /does not become acceptable by being cheap/i;
+const TWO_SURFACES = pinPattern("review.two-surfaces");
+const EXEMPTIONS_DO_NOT_COMPOSE = pinPattern("review.exemptions-do-not-compose");
+const THE_CHEAP_INSTRUMENT = pinPattern("review.cheap-instrument");
+const THE_BOUNDED_CLAIM = pinPattern("review.bounded-claim");
+const ABSENCE_IS_NOT_EMPTINESS = pinPattern("review.absence-is-not-emptiness");
+const CANNOT_TELL_STANDS = pinPattern("review.cannot-tell-stands");
 
-const assertsBothSurfacesAreNamed = (text: string) => {
-  assert.match(text, TWO_SURFACES,
+const assertsBothSurfacesAreNamed = (subject: PinSubject) => {
+  assertPin(subject, "review.two-surfaces",
     "that there are TWO of them -- the shipped section knew one, and a session reading it goes to the "
     + "admin-only endpoint, gets a 404 and stops, never learning the other object exists");
-  assert.match(text, /`merge-queue-main` ruleset \(id `23681721`\)/,
+  assertPin(subject, "review.ruleset-id",
     "and WHICH ruleset carries the second, by id, because `rulesets/{id}` is the call the reader has to "
     + "make and the id is not derivable from anything else on the page");
-  assert.match(text, EXEMPTIONS_DO_NOT_COMPOSE,
+  assertPin(subject, "review.exemptions-do-not-compose",
     "and `ceo`'s reason for ADD rather than SWAP -- without it a reader meets two surfaces and assumes a "
     + "second place to be exempt, which is the assumption the ruling was granted against");
-  assert.match(text, CLASSIC_CAN_BE_ENUMERATED,
+  assertPin(subject, "review.classic-is-enumerable",
     "and why the admin-only surface stays authoritative rather than being superseded by the cheaper one: "
     + "enumeration is a property only it has, and it is the property the whole requirement rests on");
 };
 
-const assertsTheInstrumentIsChosenByWhatYouHold = (text: string) => {
-  assert.match(text, PICK_YOUR_INSTRUMENT,
+const assertsTheInstrumentIsChosenByWhatYouHold = (subject: PinSubject) => {
+  assertPin(subject, "review.pick-your-instrument",
     "that the choice is the reader's and has to be DECLARED -- two instruments answering different "
     + "questions are quoted as one the moment a verdict does not say which produced it");
-  assert.match(text, THE_ADMIN_INSTRUMENT,
+  assertPin(subject, "review.admin-instrument",
     "the admin instrument, with the switch that runs it, or 'use the complete one' names nothing typeable");
-  assert.match(text, THE_CHEAP_INSTRUMENT,
+  assertPin(subject, "review.cheap-instrument",
     "and the one every session and every CI job here can actually run -- this is the whole of what #2086 "
     + "bought, and a rules file that omits it leaves the reader at `CANNOT_TELL` by default again");
 };
 
-const assertsTheReadingIsBounded = (text: string) => {
-  assert.match(text, THE_BOUNDED_CLAIM,
+const assertsTheReadingIsBounded = (subject: PinSubject) => {
+  assertPin(subject, "review.bounded-claim",
     "THE SENTENCE THIS ROW EXISTS FOR. `never` is a per-identity answer; read as a universal it converts "
     + "the cheap instrument into a certificate that nobody can bypass `main`, which no token here can "
     + "issue -- and a quotable overclaim is worse than the over-strict sentence it replaced");
-  assert.match(text, ABSENCE_IS_NOT_EMPTINESS,
+  assertPin(subject, "review.absence-is-not-emptiness",
     "and the same error one field over: `bypass_actors` is withheld rather than empty on a token without "
     + "write access to the ruleset, so a reader who treats a missing list as an empty one reaches the "
     + "universal claim by a second route");
-  assert.match(text, CANNOT_TELL_STANDS,
+  assertPin(subject, "review.cannot-tell-stands",
     "and that the old verdict SURVIVES for the question it always answered -- the amendment narrows what "
     + "`CANNOT_TELL` covers and must not read as retiring it, which is the other way this section dies");
-  assert.match(text, NOT_ACCEPTABLE_BY_BEING_CHEAP,
+  assertPin(subject, "review.not-acceptable-by-being-cheap",
     "with `ceo`'s ruling on the wording, because cheapness is the argument that will be made for the "
     + "overclaim and the answer to it has to be on the page rather than in a closed row");
 };
 
 test("#2093: the practices file names both surfaces and why the admin-only one stays authoritative", () => {
-  assertsBothSurfacesAreNamed(flat(agentPractices));
+  assertsBothSurfacesAreNamed(subject);
 });
 
 test("#2093: the instrument is chosen by what the reader holds, and must be declared", () => {
-  assertsTheInstrumentIsChosenByWhatYouHold(flat(agentPractices));
+  assertsTheInstrumentIsChosenByWhatYouHold(subject);
 });
 
 test("#2093: the cheap reading is bounded to the asking identity, and `CANNOT_TELL` survives", () => {
-  assertsTheReadingIsBounded(flat(agentPractices));
+  assertsTheReadingIsBounded(subject);
 });
 
 const REVIEW_SURFACE_MUTATIONS: readonly {
-  what: string; pattern: RegExp; into: string; rejects: (text: string) => void; why: string;
+  what: string; pattern: RegExp; into: string; rejects: (from: PinSubject) => void; why: string;
 }[] = [
   {
     what: "bounded claim inverted", pattern: THE_BOUNDED_CLAIM,
@@ -972,19 +975,19 @@ const REVIEW_SURFACE_MUTATIONS: readonly {
 ];
 
 test("#2093 MUTATION: each direction must make the assertions THEMSELVES throw, not merely stop matching", () => {
-  const text = flat(agentPractices);
+  const text = subject.loaded;
 
   // THE CONTROL, RUN FIRST -- six `assert.throws` in a row is a green test on a file that fails every
   // check, so the unmutated subject is shown passing all three before any throw below means anything.
   for (const check of [assertsBothSurfacesAreNamed, assertsTheInstrumentIsChosenByWhatYouHold,
     assertsTheReadingIsBounded]) {
-    check(text);
+    check(alone(text));
   }
 
   for (const { what, pattern, into, rejects, why } of REVIEW_SURFACE_MUTATIONS) {
     const mutated = text.replace(pattern, into);
     assert.notEqual(mutated, text, `the ${what} mutation must LAND, or this proves nothing`);
-    assert.throws(() => rejects(mutated), assert.AssertionError,
+    assert.throws(() => rejects(alone(mutated)), assert.AssertionError,
       `the practices file with the ${what} must FAIL the check above, and did not -- ${why}`);
   }
 });
@@ -998,14 +1001,151 @@ test("#2093 MUTATION: each direction must make the assertions THEMSELVES throw, 
  */
 test("#2093 CONTROL: a field-name guard is green on the inverted file, which is why this block is not one", () => {
   const FIELD_NAME_ONLY = /current_user_can_bypass/;
-  const inverted = flat(agentPractices)
+  const inverted = subject.loaded
     .replace(THE_BOUNDED_CLAIM, '`current_user_can_bypass: "never"` means nobody is exempt');
 
-  assert.match(flat(agentPractices), FIELD_NAME_ONLY, "the weaker guard passes on the real file");
+  assert.match(subject.loaded, FIELD_NAME_ONLY, "the weaker guard passes on the real file");
   assert.match(inverted, FIELD_NAME_ONLY,
     "and on the inverted one -- a file that now states the overclaim still contains the field name, so "
     + "the cheaper guard cannot tell the two apart and would have shipped green");
-  assert.throws(() => assertsTheReadingIsBounded(inverted), assert.AssertionError,
+  assert.throws(() => assertsTheReadingIsBounded(alone(inverted)), assert.AssertionError,
     "while the guard this block actually installs rejects it -- the pair is the evidence that what is "
     + "pinned is the bounded CLAIM and not the field NAME");
 });
+
+// --- #2247: the pins keep a lesson from being LOST, and no longer insist it be in the LOADED file ----------
+//
+// Until now every pin above was matched against the loaded rules and nothing else, so the guard that exists
+// so the org does not quietly lose a lesson ALSO enforced that the lesson sits in the prefix every session
+// pays for. A narrative sentence could not move to `docs/operational-lessons.md` without turning a pin red,
+// which left deletion as the only compression -- and deletion is the one thing refused. `ceo` ruled the split
+// on 2026-09-23 (#2217): what a session must read BEFORE acting stays loaded with its pin unchanged; the
+// incident, the measurement, the date and the issue number may live in the loaded file OR the named
+// destination, and the pin moves with them.
+//
+// THIS WIDENS WHERE A LESSON MAY LIVE AND NOTHING ELSE. Every pattern is exactly as it was, and each still
+// fails when its sentence is in neither place. The tests below drive that with the pins THEMSELVES, once per
+// pin, on the real text -- the sentence is cut out of the loaded rules and either dropped or handed to the
+// destination -- so a tier that is wrong, or a `textForPin` that accepts either file for either tier, is a
+// red test rather than a reading.
+
+const PERCENT = 100;
+const EM_DASH_UTF8_BYTES = 3;
+
+/** The sentence a pin matched in the real loaded rules, and the rules with every such match cut out. */
+const cutOut = (id: string) => {
+  const pattern = pinPattern(id);
+  const everywhere = new RegExp(pattern.source, `${pattern.flags.replace("g", "")}g`);
+  const sentence = subject.loaded.match(pattern)?.[0];
+  assert.ok(sentence !== undefined, `${id} matches nothing in the loaded rules, so there is nothing to cut out`);
+  const without = subject.loaded.replace(everywhere, " ");
+  assert.notEqual(without, subject.loaded, `the cut must LAND for ${id}, or this proves nothing`);
+  return { sentence, without };
+};
+
+const tierOf = (tier: string) => PINS.filter((pin) => pin.tier === tier);
+
+test("#2247: every pin declares one of exactly two tiers, and both tiers are populated", () => {
+  assert.equal(new Set(PINS.map((pin) => pin.id)).size, PINS.length, "a pin id names ONE pin, or a lookup lies");
+  const untiered = PINS.filter((pin) => pin.tier !== IMPERATIVE && pin.tier !== NARRATIVE);
+  assert.deepEqual(untiered.map((pin) => pin.id), [],
+    "an unmarked pin silently becomes whichever tier the next reader assumes, so it is a failure, not a default");
+  // THE POSITIVE CONTROL for the emptiness above: a table with no narrative pin would satisfy it and would
+  // ship the machinery with nothing marked (done-when 5), and one with no imperative pin has no asymmetry.
+  assert.ok(tierOf(IMPERATIVE).length > 0, "no IMPERATIVE pin: the split has nothing that must stay loaded");
+  assert.ok(tierOf(NARRATIVE).length > 0, "no NARRATIVE pin: the machinery is shipped and marks nothing");
+});
+
+test("#2247: the pin subject is the loaded rules plus NAMED destinations, and the loaded list is the real one", () => {
+  assert.deepEqual([...LOADED_RULES_FILES], [...RULES_FILES],
+    "prefix-pins.mjs restates rules-files.ts because plain node cannot import a .ts; the copy is pinned here");
+  assert.ok(RULES_FILES.length > 0, "an empty loaded list would make the equality above vacuous");
+  assert.deepEqual([...NARRATIVE_DESTINATIONS], ["docs/operational-lessons.md"],
+    "a NAMED list, never a directory walk: adding a destination is a deliberate edit that shows in a diff");
+  assert.ok(subject.destinations.length > 0,
+    "the destination read as EMPTY would make every narrative pin's second chance a search of nothing");
+  assert.ok(subject.loaded.length > 0, "and the loaded half likewise");
+});
+
+test("#2247: every pin is found in the real subject, in the half its tier allows", () => {
+  for (const pin of PINS) {
+    assertPin(subject, pin.id, `${pin.id} (${pin.tier}) is not in the loaded rules or the destination`);
+  }
+});
+
+test("#2247: an IMPERATIVE pin fails when its sentence leaves the loaded rules, even if the destination has it", () => {
+  for (const { id } of tierOf(IMPERATIVE)) {
+    const { sentence, without } = cutOut(id);
+    assertPin(subject, id, "the control: the pin is green on the real subject");
+    assert.throws(() => assertPin({ loaded: without, destinations: sentence }, id, "moved"), assert.AssertionError,
+      `${id} is IMPERATIVE and must NOT be satisfied by the destination -- if both tiers accept either file the `
+      + "split is a no-op that reads as a compression licence");
+  }
+});
+
+test("#2247: a NARRATIVE pin accepts the destination, and still fails when its sentence is in NEITHER", () => {
+  for (const { id } of tierOf(NARRATIVE)) {
+    const { sentence, without } = cutOut(id);
+    assertPin({ loaded: without, destinations: sentence }, id, "moved");
+    assert.throws(() => assertPin({ loaded: without, destinations: "" }, id, "lost"), assert.AssertionError,
+      `${id} is NARRATIVE and found in neither file must still FAIL -- this row widens where a lesson may `
+      + "live, and widens nothing else");
+    assert.throws(() => assertPin({ loaded: without, destinations: "an unrelated paragraph" }, id, "lost"),
+      assert.AssertionError, `${id}: a destination that does not carry the sentence rescues nothing`);
+  }
+});
+
+/** The narrative sentences really can move: this row's whole claim, driven on a real one end to end. */
+test("#2247: moving a narrative sentence to the destination turns no check red, and dropping it does", () => {
+  const moved = cutOut("click-through.several-times");
+  const check = assertsTheGeneralForm;
+  check({ loaded: moved.without, destinations: moved.sentence });
+  assert.throws(() => check({ loaded: moved.without, destinations: "" }), assert.AssertionError,
+    "the SAME move with nothing at the destination must fail the same check");
+});
+
+test("#2247 CONTROL: the byte count is a UNION over the wrapped, multibyte text as it sits on disk", () => {
+  // 'aaa bbb' and 'bbb ccc' overlap on 'bbb'. On disk the second is 'bbb\n  ccc' -- the wrap is a newline and
+  // two indent spaces, which are BYTES the file costs -- so a SUM over matches would say 7 + 10 = 17, and the
+  // union is the 13 bytes of the whole wrapped text.
+  const wrapped = "aaa bbb\n  ccc";
+  assert.equal(coveredByPatterns(wrapped, [/aaa bbb/, /bbb ccc/]), wrapped.length,
+    "overlapping pins count each byte ONCE, and the span carries back to the wrapped original");
+  assert.equal(coveredByPatterns(wrapped, [/aaa bbb/]), "aaa bbb".length, "one pin covers only its phrase");
+  assert.equal(coveredByPatterns(wrapped, [/nomatch/]), 0, "a pin matching nothing covers nothing");
+  // An em dash is 3 bytes in UTF-8, so a count of characters would under-read this file family.
+  assert.equal(coveredByPatterns("a \u2014 b", [/\u2014/]), EM_DASH_UTF8_BYTES, "bytes, not characters");
+});
+
+test("#2247: the pinned-prose bytes of the loaded set are measured, and PRINTED", () => {
+  const reading = pinnedProseReading();
+  const commit = headCommit();
+  const share = (bytes: number) => `${((bytes / reading.loadedSetBytes) * PERCENT).toFixed(1)}%`;
+  console.log([
+    `PINNED PROSE -- how much of what every wake loads a pin in this file holds in place (at ${commit}):`,
+    `  UNION of pinned phrases: ${reading.total.toLocaleString()} B of ${reading.loadedSetBytes.toLocaleString()} B loaded = ${share(reading.total)}`,
+    `  IMPERATIVE (must stay loaded): ${reading.byTier[IMPERATIVE].toLocaleString()} B = ${share(reading.byTier[IMPERATIVE])}`,
+    `  NARRATIVE (may move to ${NARRATIVE_DESTINATIONS.join(", ")}): ${reading.byTier[NARRATIVE].toLocaleString()} B = ${share(reading.byTier[NARRATIVE])}`,
+    ...Object.entries(reading.byFile).map(([file, bytes]) => `  ${file}: ${bytes.toLocaleString()} B pinned`),
+    "  A FLOOR: it counts the matched PHRASE, not the sentence around it, and ONLY the pins in this file --",
+    "  any other test that pins the loaded set is outside it. The tier figures overlap where two pins do.",
+  ].join("\n"));
+
+  assert.ok(reading.total > 0, "a zero here means the pins matched nothing on disk, not that nothing is pinned");
+  assert.ok(reading.total <= reading.loadedSetBytes, "the pinned bytes are a part of the loaded set");
+  assert.equal(Object.values(reading.byFile).reduce((sum, bytes) => sum + bytes, 0), reading.total,
+    "the per-file figures are the total, split");
+  assert.ok(reading.byTier[IMPERATIVE] <= reading.total && reading.byTier[NARRATIVE] <= reading.total,
+    "a tier is a part of the union, never more than it");
+});
+
+/** The commit the figure was read at. A figure off disk is at whatever commit the tree was on, so say which. */
+function headCommit(): string {
+  try {
+    return execFileSync("git", ["rev-parse", "--short", "HEAD"], {
+      cwd: REPO_ROOT, encoding: "utf8", env: sandboxGitEnv(), stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch (cause) {
+    return `an unknown commit (no git here: ${(cause as Error).message.split("\n")[0]})`;
+  }
+}

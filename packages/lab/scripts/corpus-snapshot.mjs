@@ -246,6 +246,29 @@ export function noteMissing(missing) {
   if (missing.length) process.stderr.write(`note: ${missing.join(", ")} absent, archiving the rest\n`);
 }
 
+/**
+ * What is on disk under the archived roots, in the two units the archive is checked against.
+ *
+ * TAKEN BEFORE THE ARCHIVE IS WRITTEN, and the order is load-bearing (#2210). A capture can arrive at any
+ * moment, and the run is a few seconds long. A reading taken BEFORE `tar` can only be an UNDERESTIMATE of
+ * what the archive then holds, because whatever lands in between is picked up by `tar` and not by the
+ * reading, so the archive reads larger than the disk and both guards (`archived.bytes < onDiskBytes`,
+ * `archived.jsonFiles < onDisk`) stay quiet. Taken AFTER, the same arrival is on disk and not in the
+ * archive: the comparison is then exactly one byte from firing, and the refusal it prints ("N did not make
+ * it in") is false about an archive that was healthy when it was written. Zero margin by construction.
+ *
+ * The residue is the OTHER direction, a file DELETED between the reading and `tar`, which would refuse a
+ * healthy archive. Captures are only ever added, never removed, while a snapshot runs.
+ *
+ * @param {string[]} present @param {string[]} siblings
+ */
+function diskReading(present, siblings) {
+  return {
+    onDisk: jsonUnder(DATASET, present) + siblings.reduce((n, name) => n + jsonUnder(RUNS, [name]), 0),
+    onDiskBytes: bytesUnder(DATASET, present) + siblings.reduce((n, name) => n + bytesUnder(RUNS, [name]), 0),
+  };
+}
+
 async function main() {
   const { present, missing, captures } = describe();
   if (!present.length) {
@@ -264,6 +287,9 @@ async function main() {
   noteMissing(missingSiblings);
   process.stdout.write(`Archiving ${captures} capture(s) from ${DATASET}`
     + (siblings.length ? `, plus ${siblings.join(" and ")}\n` : "\n"));
+  // THE DISK IS READ FIRST -- see `diskReading` for why the order is what keeps this guard from refusing a
+  // healthy archive when a capture lands mid-run.
+  const { onDisk, onDiskBytes } = diskReading(present, siblings);
   // Two -C flags: the dataset's members are relative to DATASET, the siblings to RUNS. tar applies each
   // -C to the paths that FOLLOW it, so this stays one archive with a flat, restorable layout rather than
   // two archives somebody has to remember to take together.
@@ -289,9 +315,6 @@ async function main() {
   // rather than by running it, which is the only reason it is not in the commit.
   const { stdout: listed } = await run("tar", ["-tzvf", archive], { maxBuffer: 1 << 28 });
   const archived = archiveTotals(listed);
-  const onDisk = jsonUnder(DATASET, present) + siblings.reduce((n, name) => n + jsonUnder(RUNS, [name]), 0);
-  const onDiskBytes = bytesUnder(DATASET, present)
-    + siblings.reduce((n, name) => n + bytesUnder(RUNS, [name]), 0);
   const refusal = archiveRefusal({ archive, archived, onDisk, onDiskBytes });
   if (refusal) {
     process.stderr.write(refusal);
