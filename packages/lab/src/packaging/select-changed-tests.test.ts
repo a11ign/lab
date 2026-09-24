@@ -308,6 +308,18 @@ test("#1358 THE WIRING main USES: selectionFor, given the incident's scope, sele
   assert.ok(result.selectedTests.includes(DOCUMENTED_CRITERIA), `not selected: ${result.selectedTests.length} tests`);
 });
 
+test("#2277 A MOVED TEST: its old path (deleted, so on no disk) selects nothing, and its new path still selects itself", () => {
+  // `changedFiles` lists both sides of a rename. Before this the old path was selected as a test file and
+  // `assert-glob-not-empty` refused the whole run ("matched 0") -- a PR that only MOVED a test went red.
+  // BUILT, NEVER SPELLED, for the same reason as the controls around it.
+  const moved = ["packages", "lab", "src", "packaging", "moved-away.test.ts"].join("/");
+  const stays = "packages/lab/src/packaging/select-changed-tests.test.ts";
+  const { result } = selectionFor([moved, stays],
+    { repoRoot: REPO_ROOT, allPackages: knownPackages(REPO_ROOT), testPackages: ["lab"] });
+  assert.equal(result.selectedTests.includes(moved), false, "a path that is not on disk cannot be run");
+  assert.ok(result.selectedTests.includes(stays), "the positive control: a changed test that exists still selects itself");
+});
+
 test("#1358 THE MECHANISM: with only the implicated package's tests as candidates, the incident reproduces", () => {
   // The positive control for the two tests above: without the wider population the same diff misses the
   // guard, so their passing is the population's doing and not something else that happens to select it.
