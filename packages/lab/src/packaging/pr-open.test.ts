@@ -38,7 +38,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { acceptanceEnv, checkBody, bodyFromArgs, armAfterCreate, labelAfterCreate, sendToGitHub,
-  headTreeRefusal, editTreeRefusal,
+  headTreeRefusal, editTreeRefusal, mutationReport,
   main as prOpenMain,
   EXIT_NOTHING_SENT, EXIT_USAGE, EXIT_LANDED_THEN_FAILED } from "../../../agent-org/src/pr-open.mjs";
 
@@ -746,4 +746,100 @@ test("#1846: a label that FAILS warns and still exits 0 -- it must not turn a go
   assert.match(lines[0], /session:ceo/, "and it names the label to apply by hand");
   assert.match(lines[0], /product-manager/,
     "and says what it costs -- a silently unlabelled PR is how this survived 20 merges unnoticed");
+});
+
+// --- #2307: a declared `Mutation:` command is RUN, and a guard that does not bite is WARNED about ---------------
+//
+// `ceo`'s ruling (#2305 part b): WARN, never refuse. `mutation-check.mjs` observes a nonzero exit and not WHY, so
+// a refusal on its reading would be wrong often enough to train authors around the wrapper. Driven through `main`
+// with the runner injected, so no test edits a file.
+
+const BITES = 0;
+const DID_NOT_BITE = 1;
+const REFUSED = 2;
+const RESTORE_FAILED = 3;
+const OUTSIDE_ITS_CODES = 127;
+const PROSE_PREVIEW = 60;
+const MUTATE_COMMAND = "npm run mutate -- --file=packages/x.mjs --mutate='perl -pi -e s/a/b/ packages/x.mjs' "
+  + "--test='node --test packages/x.test.mjs'";
+const mutationBody = (mutation: string) => `## Acceptance\n\nnode -e "process.exit(0)"\n\nMutation:\n\`\`\`\n${mutation}\n\`\`\`\n\nCloses #1\n`;
+
+/** `main` on a body whose Acceptance passes, with `mutate`'s exit code chosen by the test. */
+function driveMutation(body: string, mutateExit: number) {
+  const ran: string[] = [];
+  const outs: string[] = [];
+  const spawned: string[][] = [];
+  const code = prOpenMain(["create", "--draft", "--body", body], {
+    runAcceptance: () => 0,
+    runMutation: (command: string) => { ran.push(command); return mutateExit; },
+    run: (args: string[]) => { spawned.push(args); },
+    git: gitStub, owner: UNSTAMPED, out: (l: string) => { outs.push(l); }, err: () => {},
+  });
+  return { code, ran, outs: outs.join(""), spawned };
+}
+
+test("#2307 ACCEPTANCE: a Mutation whose guard does NOT bite prints a warning naming the command, and pr-open "
+  + "still sends the PR", () => {
+  const { code, ran, outs, spawned } = driveMutation(mutationBody(MUTATE_COMMAND), DID_NOT_BITE);
+  assert.deepEqual(ran, [MUTATE_COMMAND], "the declared command was run, verbatim");
+  assert.match(outs, /MUTATION: WARNING/);
+  assert.ok(outs.includes("DID NOT BITE"), "the warning says plainly that the guard does not bite");
+  assert.ok(outs.includes(MUTATE_COMMAND), "and names the command");
+  assert.equal(code, 0, "a warning, never a refusal (ceo, #2305)");
+  assert.deepEqual(spawned.map((args) => args.slice(0, 2)), [["pr", "create"]]);
+});
+
+test("#2307: a guard that bites is reported beside the Acceptance result, without a warning", () => {
+  const { code, outs } = driveMutation(mutationBody(MUTATE_COMMAND), BITES);
+  assert.match(outs, /MUTATION: .*bites/);
+  assert.doesNotMatch(outs, /WARNING/);
+  assert.equal(code, 0);
+});
+
+test("#2307: mutate's refused (2) and restore-failed (3) exits each warn in their own words, and neither refuses",
+  () => {
+    const refused = driveMutation(mutationBody(MUTATE_COMMAND), REFUSED);
+    assert.match(refused.outs, /WARNING.*before mutating/s);
+    assert.doesNotMatch(refused.outs, /DID NOT BITE/, "a refusal to mutate says nothing about the guard");
+    const restore = driveMutation(mutationBody(MUTATE_COMMAND), RESTORE_FAILED);
+    assert.match(restore.outs, /WARNING.*RESTORE FAILED/s);
+    assert.equal(refused.code, 0);
+    assert.equal(restore.code, 0);
+  });
+
+test("#2307: an exit outside mutate's four codes is reported as unread, never as a bite", () => {
+  const { outs } = driveMutation(mutationBody(MUTATE_COMMAND), OUTSIDE_ITS_CODES);
+  assert.match(outs, new RegExp(`WARNING.*${OUTSIDE_ITS_CODES}`, "s"));
+  assert.doesNotMatch(outs, /bites/);
+});
+
+test("#2307: a Mutation that is prose, or absent, or `none`, runs nothing (the template calls it a RECORD)", () => {
+  for (const body of [
+    mutationBody("Deleted the guard's `if`; the test went red."),
+    "## Acceptance\n\nnode -e \"process.exit(0)\"\n\nCloses #1\n",
+    "## Acceptance\n\nnode -e \"process.exit(0)\"\n\nMutation: none \u2014 docs only\n\nCloses #1\n",
+  ]) {
+    const { ran, code } = driveMutation(body, DID_NOT_BITE);
+    assert.deepEqual(ran, [], `nothing ran for: ${body.slice(0, PROSE_PREVIEW)}`);
+    assert.equal(code, 0);
+  }
+});
+
+test("#2307: a body the Acceptance check refuses never runs its Mutation", () => {
+  const ran: string[] = [];
+  const body = mutationBody(MUTATE_COMMAND).replace("Closes #1", "");
+  const code = prOpenMain(["create", "--draft", "--body", body], {
+    runAcceptance: () => 0, runMutation: (c: string) => { ran.push(c); return 0; },
+    run: () => {}, git: gitStub, owner: UNSTAMPED, out: () => {}, err: () => {},
+  });
+  assert.equal(code, EXIT_NOTHING_SENT);
+  assert.deepEqual(ran, [], "a body that is refused sends nothing, so nothing is worth mutating for it");
+});
+
+test("#2307: mutationReport lists ONLY `npm run mutate` lines and skips other commands in the section", () => {
+  const ran: string[] = [];
+  const body = mutationBody(`node -e "process.exit(0)"\n${MUTATE_COMMAND}`);
+  const report = mutationReport(body, (c: string) => { ran.push(c); return 0; });
+  assert.deepEqual(ran, [MUTATE_COMMAND], "an arbitrary command in a section nobody gates is never executed");
+  assert.equal(report.warned, false);
 });
