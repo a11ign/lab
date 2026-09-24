@@ -41,7 +41,7 @@ const committedYml = () =>
 // 47 until #1980 added `tasks/require-inventory-group.yml`, the one spelling of the zero-host refusal
 // that ten playbooks had been carrying a hand-copied copy of. Moved deliberately, as the message below
 // asks: a shared include is a real addition to the population this parses, not a rename.
-const EXPECTED_FILES = 48;
+const EXPECTED_FILES = 49;
 const EXPECTED_VENDORED = 2;
 
 test("#1274: every committed Ansible .yml parses, and the file list is NAMED not globbed", () => {
