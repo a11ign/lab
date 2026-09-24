@@ -37,3 +37,11 @@ names the lab job answering each, unconditionally.
 > Moved here 2026-09-06 from `docs/backlog-ready.md`, which was retired when the tracker moved to GitHub
 > Issues. That page was the only place this ruling existed, so deleting it would have deleted the rule —
 > which is why the page was read for what it uniquely held before it was replaced.
+## Reading captures back — `packages/lab/src/capture/**` and `corpus-settled.mjs`
+
+**These rules govern `packages/lab/src/capture/**`, `packages/lab/src/training/corpus-settled.mjs` and every corpus-reading test across `packages/lab`** (moved here from a retired role brief, #2406).
+
+- **This area decides what a check may CONCLUDE from a capture** (`evidence-fields`, `evidence-diff`, `verify.corpus`, `explain-capture`). It never runs the thing that produces the evidence: the fleet, the lab and any gate that reads `runs/` for a verdict belong to the agent driving them (the section above).
+- **`corpus-settled.mjs` decides whether a corpus may be READ right now:** absent, in-flight, abandoned, settled, or a stub. Every corpus-reading test asks it (`corpusReadable` / `labCorpusReadable`) and says whether it asked, and one that cannot ask is classified rather than left silent. `gates/corpus-readers-are-guarded.test.ts` enforces it.
+- **A marker for that call must match every spelling.** A scan for `/corpusReadable\(/` did not match `labCorpusReadable(` and reported five wired files as unguarded. After writing a marker, break the thing it looks for and confirm it notices; then apply the remedy and confirm it stops complaining.
+- **Read the composition of "all captures on disk" before treating it as one population.** One local corpus was 97.4% a retired VM pool at a protocol nobody was asking about, and a stale local `runs/` is never the corpus for a verdict.
