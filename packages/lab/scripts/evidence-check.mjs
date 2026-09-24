@@ -44,6 +44,9 @@ import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { captureTolerantly } from "@a11ign/worker-fleet/capture-client";
 // #958: the three-direction manifest check every verdict reader shares.
 import { assertManifestMatchesCases } from "../src/training/manifest-matches-cases.mjs";
+// #2197: a crash and a CHANGED verdict no longer share an exit code. A leaf module, so a test can read the
+// codes without importing this script and its corpus paths.
+import { exitCodeFor, runToExit } from "../src/training/evidence-check-exit.mjs";
 
 /**
  * the check that decides whether 2,122 cached captures survive a change. It also takes worker URLs
@@ -685,13 +688,13 @@ async function main() {
   // operator reading a dispatch log who cannot tell which file this read became.
   process.stdout.write(`This run: ${runReport}\n`);
   // Exit code is the contract, same as the other gates: 0 safe to ship, 1 evidence changed,
-  // 2 could not answer. `inconclusive` MUST NOT exit 0, and that now covers PARTIAL coverage as well as
+  // 2 could not answer, 3 (`EXIT.THREW`, #2197) it threw and never got to answer.
+  // `inconclusive` MUST NOT exit 0, and that now covers PARTIAL coverage as well as
   // none: this exited 0 with "safe to ship" having compared 2 of 48, because a concurrent run stopped the
   // page server two captures in. The stratified sample means an uncompared capture is an unexamined
   // FAMILY, so a verdict drawn from the ones that landed says nothing about the ones that did not.
-  process.exit(summary.inconclusive ? 2 : summary.evidenceChanged ? 1 : 0);
+  process.exit(exitCodeFor(summary));
 }
-
 
 /**
  * Which cases can honestly be compared, and a loud account of every one excluded.
@@ -728,4 +731,4 @@ function selectComparable()
   return comparable;
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main();
+if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await runToExit(main);
