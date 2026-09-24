@@ -811,13 +811,15 @@ export const REAL_PAGES = /** @type {RealPage[]} */ ([
     source: "SEPA: partially compliant, own statement (https://sepa.org.uk/help/accessibility/)",
     demonstrates: "environmental data index" },
   // ROTS EVERY YEAR, and that is a property of the page rather than a mistake. The unversioned path
-  // redirects to the current intake — `/courses/2026` today — so this entry needs the year moving each
+  // redirects to the current intake — `/courses/2027` today — so this entry needs the year moving each
   // autumn. Pinned rather than left unversioned because the capture refuses a redirect: an unversioned
   // url fails EVERY capture, where a versioned one fails once a year and `npm run corpus:urls` says so.
-  { url: "https://sheffield.ac.uk/postgraduate/taught/courses/2026", role: "training",
+  { url: "https://sheffield.ac.uk/postgraduate/taught/courses/2027", role: "training",
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "2.4.6", "4.1.2"],
     source: "University of Sheffield: partially compliant, own statement (https://sheffield.ac.uk/accessibility)",
-    demonstrates: "postgraduate course search" },
+    demonstrates: "postgraduate course search",
+    movedFrom: [{ url: "https://sheffield.ac.uk/postgraduate/taught/courses/2026",
+      when: "2026-09-24", why: "the publisher's annual intake rollover, the one this entry's comment names: `/courses/2026` now redirects to `/courses/2027` and the capture refuses a redirect, so #2215's recapture failed it. Declared so `supersededBy` pairs the old capture instead of leaving it UNCLAIMED \u2014 the state #365 keeps apart" }] },
   { url: "https://find-and-update.company-information.service.gov.uk/company/00000006", role: "training",
     publishedClaim: "conformant", claimExcludes: ["1.1.1", "1.3.1", "4.1.2"],
     source: "Companies House: partially compliant, own statement (https://find-and-update.company-information.service.gov.uk/help/accessibility-statement)",
