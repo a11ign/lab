@@ -1535,8 +1535,9 @@ test("#665 MUTATION direction 2 (the issue's own instruction): drop the removal,
 // pins `arm-pr.mjs`'s list to that same file by arm-pr's SOURCE line. (This file already loads arm-pr through
 // `row-claim/runner-rule.mjs`; its `// no-token: defaultRun` header is what keeps that closure exempt.)
 const SESSIONS_FILE = JSON.parse(readFileSync(new URL("../../../../packages/agent-org/docs/roles/sessions.json", import.meta.url), "utf8")) as
-  { live: { name: string }[]; retired: { name: string }[] };
-const LIVE: readonly string[] = SESSIONS_FILE.live.map((s) => s.name);
+  { live: { name: string; family?: unknown }[]; retired: { name: string }[] };
+// #2403: the addresses the file names -- the family entry is a rule, read by `isLiveSession`, and is not one of them.
+const LIVE: readonly string[] = SESSIONS_FILE.live.filter((s) => s.family === undefined).map((s) => s.name);
 /** The retired-session case's roster, INJECTED on purpose (that test says why): a named fixture, not the live set. */
 const RETIRED_CASE_ROSTER = ["ceo", "worker-capture"] as const;
 
@@ -1550,8 +1551,8 @@ test("#1464: the live set these tests read is sessions.json's -- non-empty, hold
 
 test("#1464: arm-pr's LIVE_SESSIONS is the same list -- derived from the same file, pinned by its SOURCE line", () => {
   const source = readFileSync(new URL("../../../agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
-  assert.deepEqual(source.split("\n").filter((line) => line.includes("SESSIONS.live.map(")),
-    ["export const LIVE_SESSIONS = SESSIONS.live.map((s) => s.name);"],
+  assert.deepEqual(source.split("\n").filter((line) => line.includes("SESSIONS.live.filter(")),
+    ["export const LIVE_SESSIONS = SESSIONS.live.filter((s) => s.family === undefined).map((s) => s.name);"],
     "arm-pr derives its list from `.live`'s names in exactly one line, as `LIVE` above does");
   // Depth-agnostic: arm-pr moved into @a11ign/agent-org so the prefix is no longer `../`. What this pins
   // is that it reads THE SAME FILE, not how far up the tree that file happens to sit.
