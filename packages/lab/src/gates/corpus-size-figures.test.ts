@@ -95,13 +95,42 @@ import { REPO_ROOT } from "../dataset-paths.mjs";
  * bare `1,061` for the guard to flag, so a self-scan would refuse the fixture that proves the guard works.
  * The same device `corpus-readers-are-guarded.test.ts` uses on itself, for the same reason.
  */
-const GUARDED = [
+const GUARDED_2155 = [
   "packages/lab/src/training/README.md",
   "packages/lab/src/training/capture-cache.mjs",
   "packages/nvda-worker/CLAUDE.md",
   "packages/cli/src/cli.ts",
   "packages/control/src/fleet-status.mjs",
 ];
+
+/**
+ * #2244: THE DEPLOY GUARDS AND THEIR NEIGHBOURS -- what #2155's five files did not reach. Eight files, each
+ * guarded for the reason beside it, and none of them a dated record.
+ *
+ * **Printed to an operator, at the moment of a refusal** (the two that priced a decision wrongly, 2,122
+ * where a full re-run is twice the manifest's cases): `protocol-guard.mjs` and `deploy-worker.mjs`.
+ * **Stated about the present, about what a protocol bump costs**: `protocol-guard.test.ts`,
+ * `check-worker-code.mjs` and `lab-job.test.ts`. **Stated about this repository's contents, falsely**:
+ * `cli.test.ts` (the captures are not in this repository). **Quoting a line that no longer exists**:
+ * `worker-code-check.mjs` and `stamp-provision-revision.ps1`, which quoted `capture-cache.mjs`'s
+ * "invalidating 1,061 pairs" after #2242 reworded it.
+ *
+ * Listed apart from #2155's five so that `CONTROL ON REAL HISTORY` below, which reads `d9521699e`, is not
+ * asked for files that did not carry the figure there, and so that each list's length is pinned by the
+ * row that added it.
+ */
+const GUARDED_2244 = [
+  "packages/worker-fleet/src/protocol-guard.mjs",
+  "packages/worker-fleet/src/protocol-guard.test.ts",
+  "packages/worker-fleet/src/deploy-worker.mjs",
+  "packages/worker-fleet/src/check-worker-code.mjs",
+  "packages/worker-fleet/src/worker-code-check.mjs",
+  "packages/worker-fleet/src/lab-job.test.ts",
+  "packages/worker-fleet/src/provisioning/stamp-provision-revision.ps1",
+  "packages/cli/src/cli.test.ts",
+];
+
+const GUARDED = [...GUARDED_2155, ...GUARDED_2244];
 
 /**
  * A figure counting the corpus: a number, then up to two words, then a corpus noun.
@@ -262,9 +291,14 @@ test("the guarded list reaches no dated record -- nothing under docs/, and nothi
     "#2155's Region deliberately excludes docs/ and the ADRs: their 2,122s are records of what a past "
     + "decision cost, and a guard that demanded an as-of date on them would be asking history to restate "
     + `itself. Found: ${strays.join(", ")}`);
-  const REGION_FILES = 5;
-  assert.equal(GUARDED.length, REGION_FILES,
+  const REGION_FILES_2155 = 5;
+  assert.equal(GUARDED_2155.length, REGION_FILES_2155,
     "#2155's Region names five existing files; a sixth is a deliberate edit here, not a glob's doing");
+  const REGION_FILES_2244 = 8;
+  assert.equal(GUARDED_2244.length, REGION_FILES_2244,
+    "#2244's Region adds eight existing files (its ninth is this one, which is not self-scanned); a ninth "
+    + "is a deliberate edit here, with the reason it is guarded written above the list");
+  assert.equal(GUARDED.length, REGION_FILES_2155 + REGION_FILES_2244);
 });
 
 /**
@@ -293,7 +327,7 @@ test("CONTROL ON REAL HISTORY: 9 of d9521699e's 10 figures are flagged", (t) => 
     t.skip(`${BASE} is not in this checkout (a shallow clone). Not run, and not counted as a pass.`);
     return;
   }
-  const blobs = GUARDED.map((rel) => ({ rel, text: git("show", `${BASE}:${rel}`) }));
+  const blobs = GUARDED_2155.map((rel) => ({ rel, text: git("show", `${BASE}:${rel}`) }));
   const found = blobs.flatMap(({ rel, text }) => flagged(rel, text));
   const count = population(blobs);
   assert.equal(count, FIGURES_AT_BASE, "the population at that commit is 10 corpus-size figures");
@@ -301,4 +335,48 @@ test("CONTROL ON REAL HISTORY: 9 of d9521699e's 10 figures are flagged", (t) => 
     `the scan flagged ${found.length} of ${count} at ${BASE}: ${found.map((f) => f.figure).join(", ")}`);
   assert.deepEqual(found.filter((f) => /1,061\/1,061/.test(f.context)), [],
     "the one figure that passes there is the sample status block, dated by its own `run: started` line");
+});
+
+/**
+ * #2244's CONTROL, NOT #2155's. The one above drives the scan over the old five; this one drives it over
+ * the eight this row added, at `a4eba30ed`, where every one of them still carried the stale figure. An
+ * emptiness assertion over the new entries needs a control that is not the one already shipped for the
+ * old ones, or a scan that looked at nothing in the eight would ride on the five.
+ *
+ * SKIPS HONESTLY when the commit is absent, as the control above does.
+ */
+test("CONTROL ON REAL HISTORY (#2244): the figures this row removed ARE flagged at a4eba30ed", (t) => {
+  const BASE = "a4eba30ed";
+  const git = (...args: string[]) => execFileSync("git", args,
+    { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8", maxBuffer: 1024 * 1024 * 16 });
+  try {
+    git("cat-file", "-e", `${BASE}^{commit}`);
+  } catch {
+    t.skip(`${BASE} is not in this checkout (a shallow clone). Not run, and not counted as a pass.`);
+    return;
+  }
+  const blobs = GUARDED_2244.map((rel) => ({ rel, text: git("show", `${BASE}:${rel}`) }));
+  const found = blobs.flatMap(({ rel, text }) => flagged(rel, text));
+  // Every file this row edited for a figure, by name: a per-file assertion, so one file's flags cannot
+  // stand in for another's, and an eighth flag in a single file does not read as eight files covered.
+  const flaggedIn = new Set(found.map((f) => f.rel));
+  // `lab-job.test.ts` is the one file the scan CANNOT see the figure in, and it is a measured limit rather
+  // than an oversight: its `2,122 cached` sits at the end of a `//` line and `captures` at the start of the
+  // next, and CORPUS_FIGURE's gap admits whitespace and hyphens, not a comment marker. Widening the regex to
+  // cross one would move #2155's population (16 figures today) for a wrapped sentence; the file stays listed
+  // because the next figure written on ONE line is caught, and the assertion below pins the miss so that a
+  // scan that later learns to see it turns this test red rather than leaving the limit unrecorded.
+  const WRAPPED = "packages/worker-fleet/src/lab-job.test.ts";
+  assert.equal(flaggedIn.has(WRAPPED), false,
+    `${WRAPPED} is now flagged at ${BASE}: the scan crosses a wrapped comment, so drop WRAPPED from this test`);
+  for (const rel of GUARDED_2244.filter((r) => r !== WRAPPED)) {
+    assert.ok(flaggedIn.has(rel), `${rel} carried a stale corpus figure at ${BASE} and the widened scan `
+      + `did not flag it; flagged: ${[...flaggedIn].join(", ")}`);
+  }
+  // The two printed refusals, by their figure, because they are the reason the row exists.
+  const printed = found.filter((f) => /protocol-guard\.mjs|deploy-worker\.mjs/.test(f.rel)
+    && /2,?122/.test(f.figure));
+  const PRINTED_REFUSALS = 2;
+  assert.ok(printed.length >= PRINTED_REFUSALS,
+    `expected both refusals' 2,122 among the flags, got ${printed.map((f) => f.rel).join(", ") || "none"}`);
 });
