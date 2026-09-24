@@ -668,7 +668,9 @@ const WHICH_UNIT_SETS_IT = /which is what `a11ign-work-tick\.service` sets/i;
 const THE_REFUSAL = /you must not switch to the other config to get past your own limit/i;
 const ATTRIBUTION_IS_THE_GROUND =
   /one export changes who every subsequent write is attributed to/i;
-const THE_ROUTING_WRAPPER = /is a ROUTING WRAPPER sitting ahead of `\/usr\/bin\/gh`/;
+const THE_ROUTING_WRAPPER = /is a ROUTING WRAPPER ahead of `\/usr\/bin\/gh`/;
+const AGENTS_ARE_NOT_THE_HUMAN_BY_DEFAULT =
+  /an agent workspace gets the workers config UNLESS it is in `human-account-workspaces\.txt`/;
 const NAME_THE_ACCOUNT_FIRST = /run `gh api user --jq \.login` first, then the headers/i;
 
 const assertsBothAccountsAreNamed = (text: string) => {
@@ -704,13 +706,18 @@ const assertsTheRoutingIsNotChosen = (text: string) => {
     "that a bare `gh` is ROUTED -- without this the paragraph's own instruction, read the pool you are "
     + "about to spend, is unfollowable, because the reader believes the account is whatever their config "
     + "says and it is decided by their PATH");
-  assert.match(text, /`HERDR_WORKSPACE_ID` is listed in `\/home\/agent\/workers\/workspaces\.txt`/,
-    "and what the routing keys on, which is also why a systemd unit -- having no workspace id -- has to "
-    + "declare its identity rather than inherit one");
+  assert.match(text, AGENTS_ARE_NOT_THE_HUMAN_BY_DEFAULT,
+    "and which way it FALLS (#1950, #2332): an agent workspace is the workers account unless it is a "
+    + "named exception, so a forgotten workspace is never the chairman");
+  assert.doesNotMatch(text, /(?<!human-account-)workspaces\.txt/,
+    "the allow-list this paragraph used to describe is the defect #1950 removed; naming it again as the "
+    + "thing the routing keys on would teach the old, wrong direction");
+  assert.match(text, /no workspace id means a person, so a systemd unit must DECLARE `GH_CONFIG_DIR`/,
+    "and why a systemd unit -- having no workspace id -- has to declare its identity rather than inherit one");
   assert.match(text, NAME_THE_ACCOUNT_FIRST,
     "and the command that answers it BEFORE the headers are read, or the reader has a fact they cannot "
     + "act on");
-  assert.match(text, /decided by your PATH and your workspace id, not by what you typed/i,
+  assert.match(text, /PATH and workspace id decide the pool/i,
     "and the consequence stated plainly, since the same command name spelling two accounts is the part "
     + "that reads as impossible until it is written down");
 };
@@ -759,7 +766,15 @@ const IDENTITY_MUTATIONS: readonly {
     into: "reads a single config",
     rejects: assertsTheRoutingIsNotChosen,
     why: "the two accounts survive as an arrangement the reader must opt into, so they conclude their own "
-      + "`gh` is the default one -- which on this host it is not, in three of the workspaces listed",
+      + "`gh` is the default one -- which on this host it is not, for every agent workspace",
+  },
+  {
+    what: "allow-list restored", pattern: AGENTS_ARE_NOT_THE_HUMAN_BY_DEFAULT,
+    into: "an agent workspace gets the workers config IF it is in `workspaces.txt`",
+    rejects: assertsTheRoutingIsNotChosen,
+    why: "the paragraph as it stood before #1950, restored -- the direction that let two engineer sessions "
+      + "act as the chairman for hours, because the routing described what a workspace must do to reach "
+      + "the bot instead of what it must do to reach the person",
   },
   {
     what: "instrument for the account dropped", pattern: NAME_THE_ACCOUNT_FIRST,
