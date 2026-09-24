@@ -26,9 +26,13 @@
 // EVERY case as `STALE CAPTURES` and the gate answers INCONCLUSIVE. Rebuilding a lab is therefore
 // restore + `training:generate` + gate, and that is the sequence this runs.
 //
-// The generator writes into a SECOND directory and only its `pages/` are moved across. Left to write into
-// the restored dataset it would also overwrite `manifest.json` with one built from today's `CASES`, and the
-// gate would then be comparing the current case set with itself instead of with the archive's manifest.
+// The generator runs IN PLACE, and that rewrites `manifest.json` from today's `CASES`, which is what a lab
+// does and what `check-signals` tells you to do when the archived manifest has fallen behind: measured
+// 2026-09-24 against the 03:00Z release, the gate REFUSED the archived manifest outright ("22 cases in CASES,
+// not in the manifest") because main had gained cases since the lab last generated. A restore is always
+// read by code that is newer than the snapshot, so a drill that kept the archived manifest could only ever
+// report that skew. Captures for the new cases are gaps, and the gate's own contract says what a gap means.
+// The counts are taken BEFORE the generator runs, so the archived manifest is still counted as restored.
 //
 // ## The restore target is a scratch tree, and cannot be made anything else
 //
@@ -49,7 +53,7 @@
 // just fetched or on the lab. This gate reads a tree this script has just restored from the release, which
 // is the case that ruling names as legitimate; it never reads a working copy of `runs/`.
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, renameSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -191,17 +195,12 @@ async function extract({ archive, scratch, members }) {
 }
 
 /**
- * Rebuild `pages/` the way a lab does (`training:generate`), into a SECOND directory, then move only the
- * pages across -- see the header for why the generator must not write over the restored manifest.
- *
- * @param {{ scratch: string, env: NodeJS.ProcessEnv }} request
+ * Rebuild `pages/` and the manifest the way a lab does (`training:generate`), in the restored dataset.
+ * @param {{ env: NodeJS.ProcessEnv }} request
  */
-async function regeneratePages({ scratch, env }) {
-  const generated = join(scratch, "generated");
+async function regeneratePages({ env }) {
   await run(process.execPath, [join(REPO_ROOT, "packages/lab/src/training/generate-screenreader-dataset.mjs")],
-    { cwd: REPO_ROOT, env: { ...env, DATASET_ROOT: generated }, maxBuffer: MAX_GATE_OUTPUT_BYTES });
-  renameSync(join(generated, "pages"), join(scratch, "runs", DATASET_DIR, "pages"));
-  rmSync(generated, { recursive: true, force: true });
+    { cwd: REPO_ROOT, env, maxBuffer: MAX_GATE_OUTPUT_BYTES });
 }
 
 /**
@@ -335,7 +334,7 @@ export async function restoreDrill({ archive, scratch, liveRuns, requireComplete
   const restored = await countMembers(join(scratch, "runs"));
   const live = liveRuns ? await countMembers(liveRuns) : null;
   const env = scratchEnv(scratch);
-  await regeneratePages({ scratch, env });
+  await regeneratePages({ env });
   const gate = await runGate({ env, requireComplete });
   return { ...drillVerdict({ listed: inspected.jsonFiles, restored, live, gate }), scratch };
 }
