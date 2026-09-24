@@ -263,7 +263,7 @@ test("#1319: the cache is restored and its HIT or MISS printed before both test 
   assert.equal(cache.length, 1, "exactly one actions/cache step persists rstest's build cache");
   const step = STEPS[cache[0]];
   assert.match(step.if ?? "", /inputs\.run-ts-tests/);
-  assert.match(step.with?.key ?? "", /hashFiles\('package-lock\.json', 'scripts\/rstest\/rstest\.config\.mjs'\)/);
+  assert.match(step.with?.key ?? "", /hashFiles\('pnpm-lock\.yaml', 'scripts\/rstest\/rstest\.config\.mjs'\)/);
   assert.ok(step.id, "the cache step has an id, so its cache-hit output can be read");
   const printed = STEPS.flatMap((s, index) => ((s.run ?? "").includes(`steps.${step.id}.outputs.cache-hit`) ? [index] : []));
   assert.equal(printed.length, 1, "one step prints HIT or MISS");
@@ -274,11 +274,13 @@ test("#1319: the cache is restored and its HIT or MISS printed before both test 
   }
 });
 
-test("#1319: a node_modules restore cannot bring back an rstest cache that the rstest step then reports as a MISS", () => {
-  const nodeModules = STEPS.find((step) => step.id === "node-modules-cache");
-  assert.ok(nodeModules, "the dedicated node_modules cache step is still there");
-  const paths = (nodeModules.with?.path ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
-  assert.deepEqual(paths, ["node_modules", "!node_modules/.cache"]);
+test("#1319, #2298: no OTHER step restores node_modules, so nothing can bring back an rstest cache that the rstest step then reports as a MISS", () => {
+  // Until #2298 a dedicated step restored `node_modules` minus `.cache`. It went with the move to pnpm, whose STORE is
+  // cached by setup-node, and what must stay true is the property it protected: a cold figure is never measured warm.
+  const caches = STEPS.filter((step) => (step.uses ?? "").startsWith("actions/cache@"));
+  assert.equal(caches.length, 1, "the rstest build cache is the only actions/cache step (positive control: it exists)");
+  assert.equal((caches[0].with?.path ?? "").trim(), "node_modules/.cache/rstest-*");
+  assert.equal(STEPS.filter((step) => step.id === "node-modules-cache").length, 0);
 });
 
 test("#1319: after both test steps, an EMPTY rstest cache fails the job -- the assertion's own script, executed", () => {
