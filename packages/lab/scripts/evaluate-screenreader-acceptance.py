@@ -435,6 +435,20 @@ def assert_case_definitions_unchanged(by_path: dict[str, list[dict[str, Any]]],
     )
 
 
+def pooled_views(training: Any, records: list[dict[str, Any]], encoder: Path, max_length: int) -> dict[str, Any]:
+    """Both views of the records, keyed exactly as the trainer keys them. A document-pooled head sees a bag of one.
+
+    EXTRACTED so `explain-case.py` asks the SAME question the evaluator does: a second copy of these
+    four lines is a second way to featurize a record, and it would answer confidently about features the
+    model never saw the day one of them changed.
+    """
+    features, _, _ = training.encode_records(records, encoder, max_length)
+    return {
+        "instance-max": (features, training.bag_offsets(records)),
+        "document-mean": training.encode_documents(records, encoder, max_length),
+    }
+
+
 def score_subtypes(training: Any, subtype_reports: dict[str, Any], views: dict[str, Any], weights: Any) -> dict[str, Any]:
     """One score per RECORD per SUBTYPE, each head using its own pooling.
 
@@ -1118,12 +1132,7 @@ def main() -> None:
         require_release_eligible=False,
     )
     max_length = int(report["representation"]["maxLength"])
-    features, _, _ = training.encode_records(records, args.encoder, max_length)
-    # Both views, keyed exactly as the trainer keys them. A document-pooled head sees a bag of one.
-    views = {
-        "instance-max": (features, training.bag_offsets(records)),
-        "document-mean": training.encode_documents(records, args.encoder, max_length),
-    }
+    views = pooled_views(training, records, args.encoder, max_length)
     import numpy as np
 
     result = report_skeleton(by_path, artifact, diagnostic=bool(args.allow_ineligible))
