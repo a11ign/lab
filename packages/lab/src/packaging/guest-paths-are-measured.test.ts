@@ -137,6 +137,9 @@ const OTHER_GUEST_DIRECTORIES: Record<string, string> = {
   "guidepup": "guidepup's OWN install root under %LOCALAPPDATA% — where it puts NVDA, and the default "
     + "`GUIDEPUP_SCREEN_READERS_PATH` points at. A dependency's directory, not one this project named",
   "pip": "pip's own cache, in `action.yml`'s cache key",
+  "pnpm": "pnpm's OWN store root under %LOCALAPPDATA% (`%LOCALAPPDATA%\\pnpm\\store\\v10`), where corepack's "
+    + "pnpm hard-links packages from (#2299, measured 2026-09-24 on a11y-worker-2: a package file has two "
+    + "link names). A dependency's directory, not one this project named",
   "ms-playwright": "Playwright's own browser cache, appearing inside a quoted example path",
   "Temp": "the Windows temp directory, in a runbook path",
   "Programs": "`%LOCALAPPDATA%\\Programs` is Windows' own per-user install root, where `run-server.cmd` "
