@@ -241,9 +241,13 @@ const DOCUMENTED: Record<string, string> = {
     "0 every stage succeeded; 1 any stage failed OR crashed for an unrelated reason — two causes share one "
     + "code via its own pipeline() helper, not verdict.mjs",
   "packages/lab/scripts/evidence-check.mjs":
-    "2 means THREE things in one file per its own contract comment ('0 safe to ship, 1 evidence changed, 2 "
-    + "could not answer') — no --worker given, no comparable current-page capture, and unreadable page "
-    + "title all share it",
+    "0 safe to ship; 1 the evidence CHANGED (the designed verdict — but Node's own `1` for a failure BEFORE "
+    + "runToExit can catch it, a module that will not load or an unknown flag, also lands here, so `1` is "
+    + "read against the output and never on the code alone); 2 means THREE things — no --worker given, no "
+    + "comparable current-page capture, and unreadable page title all share it, alongside the INCONCLUSIVE "
+    + "coverage verdict; 3 the script THREW (EXIT.THREW, #2197) — deliberately not 2, which is already "
+    + "overloaded, and not 1, which a crash used to share with CHANGED and which sent an operator to "
+    + "recapture the fleet over a stale manifest",
   "packages/lab/scripts/explain-capture.mjs":
     "2 no search term given OR no capture file matched — usage and not-found share one code",
   "packages/lab/scripts/explain-scorer.mjs":
