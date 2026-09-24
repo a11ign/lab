@@ -243,6 +243,49 @@ test("#2385: the status pages are independent families, not copies of the older 
 });
 
 /**
+ * #2385: THE SHAPE OF A STATUS PAGE, read from its FAILING half's markup: which element carries the
+ * changing text, whether the page has a heading, whether it carries a named field. These are the three
+ * things the row says must vary, because the misses share `heading_present` and `form_field_named` at 1
+ * and every older page changes a `<p>`. Read from the shipped HTML, not from the builders' arguments, so a
+ * builder that silently drops `element` or `field` is what the test sees.
+ */
+const statusPageShape = (html: string) => ({
+  element: /<(\w+) id="(?:state|progress)"/.exec(html)?.[1],
+  heading: /<h1>/.test(html),
+  field: /<label for="ref">[^<]+<\/label><input /.test(html),
+});
+
+const MIN_DISTINCT_ELEMENTS = 3;
+const MIN_PAGES_PER_SHAPE = 2;
+
+test("#2385: the status pages vary the changing element, the heading and the named field", () => {
+  for (const subtype of ["status-waiting", "status-progress"]) {
+    const shapes = declaredStatus(subtype).map((c) => ({ id: c.id, ...statusPageShape(c.bad) }));
+    const unread = shapes.filter((s) => s.element === undefined).map((s) => s.id);
+    assert.deepEqual(unread, [], `${subtype}: pages whose changing element the reader cannot find`);
+    const elements = new Set(shapes.map((s) => s.element));
+    assert.ok(elements.size >= MIN_DISTINCT_ELEMENTS,
+      `${subtype}: the changing text sits in only ${[...elements].join(", ")}; expected ${MIN_DISTINCT_ELEMENTS}+ elements`);
+    for (const key of ["heading", "field"] as const) {
+      const withIt = shapes.filter((s) => s[key]).length;
+      const without = shapes.length - withIt;
+      assert.ok(withIt >= MIN_PAGES_PER_SHAPE && without >= MIN_PAGES_PER_SHAPE,
+        `${subtype}: ${withIt} pages have a ${key} and ${without} do not; expected ${MIN_PAGES_PER_SHAPE}+ of each`);
+    }
+  }
+});
+
+test("#2385: the shape reader tells the shapes apart (positive control)", () => {
+  // The variation test above passes vacuously if the reader returns one answer for every page, so it is
+  // run on hand-typed pages that differ in exactly one dimension each.
+  const base = statusPageShape("<h1>T</h1><button>Go</button><p id=\"state\"></p>");
+  assert.deepEqual(base, { element: "p", heading: true, field: false });
+  assert.equal(statusPageShape("<button>Go</button><span id=\"progress\">Step 1</span>").element, "span");
+  assert.equal(statusPageShape("<button>Go</button><p id=\"state\"></p>").heading, false);
+  assert.equal(statusPageShape("<label for=\"ref\">Name</label><input id=\"ref\" type=\"text\"><p id=\"state\"></p>").field, true);
+});
+
+/**
  * #2385: HARD NEGATIVES. A live region that announces a status, in any spelling a page here uses.
  * `<output>` is included because it carries an implicit `role="status"`.
  */
