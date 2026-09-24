@@ -451,6 +451,11 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
     + "`Environment=` line, so this fact could only ever be written absolutely, which is the one spelling "
     + "this guard could not read -- #1982 added the line and passed, #1986 added it and failed on its "
     + "PROSE copy alone.",
+  "leads": "the AGENT host's `gh` CONFIG ROOT for the machine account `a11ign-ai-leads` (#2333) -- "
+    + "`Environment=GH_CONFIG_DIR=/home/agent/leads/gh` in `a11ign-corpus-release-nightly.service`, and "
+    + "`~/leads/workspaces.txt`, the list of herdr workspaces the `gh` wrapper routes to it. The sibling of "
+    + "`workers` above, on the same measured box: which ACCOUNT acts, not a checkout, and written "
+    + "absolutely in a unit for the reason `workers` gives.",
   "work": "GitHub's HOSTED RUNNER workspace root -- a QUOTATION of it, in `readAgainst`'s header in "
     + "`scripts/doc-cross-reference-report.mjs` and in its test, both recording what the first nightly "
     + "comment printed (`Read against /home/runner/work/...`) and why #954 replaced it with a ref and a "

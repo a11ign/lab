@@ -669,8 +669,9 @@ const THE_REFUSAL = /you must not switch to the other config to get past your ow
 const ATTRIBUTION_IS_THE_GROUND =
   /one export changes who every subsequent write is attributed to/i;
 const THE_ROUTING_WRAPPER = /is a ROUTING WRAPPER ahead of `\/usr\/bin\/gh`/;
-const AGENTS_ARE_NOT_THE_HUMAN_BY_DEFAULT =
-  /an agent workspace gets the workers config UNLESS it is in `human-account-workspaces\.txt`/;
+const AGENTS_ARE_NEVER_THE_HUMAN =
+  /an agent workspace gets the workers config, or the leads config when it is in `~\/leads\/workspaces\.txt` \(w6 w2 w5\); NO agent gets the person's/;
+const WHAT_THE_THIRD_ACCOUNT_IS = /`\/home\/agent\/leads\/gh` as `a11ign-ai-leads`/;
 const NAME_THE_ACCOUNT_FIRST = /run `gh api user --jq \.login` first, then the headers/i;
 
 const assertsBothAccountsAreNamed = (text: string) => {
@@ -706,13 +707,19 @@ const assertsTheRoutingIsNotChosen = (text: string) => {
     "that a bare `gh` is ROUTED -- without this the paragraph's own instruction, read the pool you are "
     + "about to spend, is unfollowable, because the reader believes the account is whatever their config "
     + "says and it is decided by their PATH");
-  assert.match(text, AGENTS_ARE_NOT_THE_HUMAN_BY_DEFAULT,
-    "and which way it FALLS (#1950, #2332): an agent workspace is the workers account unless it is a "
-    + "named exception, so a forgotten workspace is never the chairman");
-  assert.doesNotMatch(text, /(?<!human-account-)workspaces\.txt/,
-    "the allow-list this paragraph used to describe is the defect #1950 removed; naming it again as the "
-    + "thing the routing keys on would teach the old, wrong direction");
-  assert.match(text, /no workspace id means a person, so a systemd unit must DECLARE `GH_CONFIG_DIR`/,
+  assert.match(text, AGENTS_ARE_NEVER_THE_HUMAN,
+    "and which way it FALLS (#1950, #2332): an agent workspace is the workers account or the leads one, "
+    + "so a forgotten workspace is never the chairman -- and there is no exception list to be on");
+  assert.match(text, WHAT_THE_THIRD_ACCOUNT_IS,
+    "and the account the leads list selects, by the export that names it, or `leads` is a word with no "
+    + "referent for a reader who has to read its pool");
+  assert.doesNotMatch(text, /human-account-workspaces|TEMPORARY|human list/i,
+    "the exception #1950 first shipped and #2333 deleted: naming it again as a thing a workspace can be "
+    + "on would teach an agent that acting as the person is something to ask for");
+  assert.doesNotMatch(text, /(?<!leads\/)workspaces\.txt/,
+    "the only list the routing keys on is the leads one; a bare `workspaces.txt` is the retired "
+    + "allow-list for the workers account, the defect #1950 removed");
+  assert.match(text, /No workspace id means a person, so a systemd unit must DECLARE `GH_CONFIG_DIR`/,
     "and why a systemd unit -- having no workspace id -- has to declare its identity rather than inherit one");
   assert.match(text, NAME_THE_ACCOUNT_FIRST,
     "and the command that answers it BEFORE the headers are read, or the reader has a fact they cannot "
@@ -769,12 +776,28 @@ const IDENTITY_MUTATIONS: readonly {
       + "`gh` is the default one -- which on this host it is not, for every agent workspace",
   },
   {
-    what: "allow-list restored", pattern: AGENTS_ARE_NOT_THE_HUMAN_BY_DEFAULT,
+    what: "allow-list restored", pattern: AGENTS_ARE_NEVER_THE_HUMAN,
     into: "an agent workspace gets the workers config IF it is in `workspaces.txt`",
     rejects: assertsTheRoutingIsNotChosen,
     why: "the paragraph as it stood before #1950, restored -- the direction that let two engineer sessions "
       + "act as the chairman for hours, because the routing described what a workspace must do to reach "
       + "the bot instead of what it must do to reach the person",
+  },
+  {
+    what: "human exception restored", pattern: AGENTS_ARE_NEVER_THE_HUMAN,
+    into: "an agent workspace gets the workers config, or the leads config when it is in "
+      + "`~/leads/workspaces.txt` (w6 w2 w5); NO agent gets the person's -- except those in "
+      + "`human-account-workspaces.txt`",
+    rejects: assertsTheRoutingIsNotChosen,
+    why: "the sentence intact and the exception appended: a guard that only looks for the rule passes it, "
+      + "and the reader learns there is a list to be put on that makes a session act as the chairman",
+  },
+  {
+    what: "third account unnamed", pattern: WHAT_THE_THIRD_ACCOUNT_IS,
+    into: "another config",
+    rejects: assertsTheRoutingIsNotChosen,
+    why: "the routing sends decision-holders to a config the reader is never told the name of, so the pool "
+      + "they read cannot be attributed to an account",
   },
   {
     what: "instrument for the account dropped", pattern: NAME_THE_ACCOUNT_FIRST,
