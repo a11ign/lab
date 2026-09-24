@@ -16,16 +16,16 @@
  * THE VERDICT HAS THREE STATES, because absence is not proof: `a11ign-ci` acting and nobody-a-person is a
  * pass; a person acting is the failure; and no `a11ign-ci` action in the window is CANNOT_TELL, never a pass
  * (a window in which only sessions armed proves nothing about the secret).
+ *
+ * ASKED, THE READ MUST ANSWER. The live read is opt-in, so whoever sets `A11Y_CHECK_ARMING_IDENTITY=1` is
+ * asking the question on purpose, and only PASS answers it: FAIL, CANNOT_TELL and a `gh` that could not be
+ * asked are all red. NOT RUN (no opt-in) is the only quiet exit, and it says so.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { SECRET_HOLDER as EXPECTED_ACTOR, PERSONAL_ACCOUNTS, SWAPPED_AT } from "./auto-arm-identity.ts";
 
-/** Who is expected to hold the secret, and who must never act with it. Moving either is a decision. */
-const EXPECTED_ACTOR = "a11ign-ci";
-const PERSONAL_ACCOUNTS = ["DanBeckDev"];
-/** The org-level secret was updated at this instant; earlier merges were made under the old token. */
-const SWAPPED_AT = "2026-09-24T19:54:17Z";
 const RECENT_MERGES = 20;
 
 type Verdict = "PASS" | "FAIL" | "CANNOT_TELL";
@@ -89,6 +89,23 @@ function readActs(): Act[] {
   return acts;
 }
 
+/** The verdict for a read that may throw: a check that could not ask is CANNOT_TELL, never a pass. */
+function liveVerdict(read: () => Act[]): { verdict: Verdict; why: string } {
+  try {
+    return armingIdentityVerdict(read());
+  } catch (cause) {
+    return { verdict: "CANNOT_TELL", why: `\`gh\` could not be asked (${String(cause)})` };
+  }
+}
+
+test("#2358: a read that throws is CANNOT_TELL, and only PASS satisfies the opted-in check", () => {
+  const thrown = liveVerdict(() => { throw new Error("no token"); });
+  assert.equal(thrown.verdict, "CANNOT_TELL");
+  assert.match(thrown.why, /could not be asked/);
+  assert.equal(liveVerdict(() => []).verdict, "CANNOT_TELL");
+  assert.equal(liveVerdict(() => [{ pr: 1, event: "merged", actor: EXPECTED_ACTOR }]).verdict, "PASS");
+});
+
 test("#2358 LIVE: nothing armed or merged since the swap acted as a personal account, asked of GitHub", () => {
   // OPT-IN, for `arm-pr-labels-live.test.ts`'s reason: a test that spawns `gh` whenever a token happens to
   // be present asks GitHub on every local run. An agent asks deliberately.
@@ -98,15 +115,7 @@ test("#2358 LIVE: nothing armed or merged since the swap acted as a personal acc
       + "logic above ran against synthetic acts; nothing here read GitHub.");
     return;
   }
-  let acts: Act[];
-  try {
-    acts = readActs();
-  } catch (cause) {
-    // Never an empty catch, and never a pass: a check that could not ask reports that it could not ask.
-    console.log(`  SKIPPED: \`gh\` could not be asked (${String(cause)}). NOT a pass.`);
-    return;
-  }
-  const { verdict, why } = armingIdentityVerdict(acts);
+  const { verdict, why } = liveVerdict(readActs);
   console.log(`  ARMING IDENTITY: ${verdict} -- ${why}`);
-  assert.notEqual(verdict, "FAIL", why);
+  assert.equal(verdict, "PASS", why);
 });
