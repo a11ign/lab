@@ -32,8 +32,10 @@
  * 09:35:09Z, ONE SECOND APART, and the event ids say the merge was created FIRST (`merged` 31744507916 <
  * `removed_from_merge_queue` 31744508190) -- so the timestamps skew in BOTH directions and an exact match
  * read a merge that happened as `BITES`. A removal is now the merge's own exit when a `merged` lands within
- * `MERGE_EXIT_SKEW_MS` of it, either side. The bound is a measurement of ONE (1 s), doubled; a removal
- * farther from any merge is an ejection whatever the pull request does afterwards.
+ * `MERGE_EXIT_SKEW_MS` of it, either side, WITH NO RE-ENTRY BETWEEN THE TWO: an ejection followed by a fast
+ * re-arm puts a removal, an `added_to_merge_queue` and a merge inside the same skew, and reading that merge
+ * as the removal's own exit would call a rule that bit "does not bite". The bound is a measurement of ONE
+ * (1 s), doubled; a removal farther from any merge is an ejection whatever the pull request does afterwards.
  *
  * THE POSITIVE CONTROLS ARE THE TWO FIXTURES THAT MUST DISAGREE: #2079's real shape reads DOES_NOT_BITE,
  * the ejection shape reads BITES. A reader that answers one thing to everything passes neither, and the
@@ -49,6 +51,8 @@ interface QueueEvent {
   e: string;
   t: string;
   s?: string;
+  /** The timeline event id. The row's projection drops it; only a fixture that quotes it as evidence carries it. */
+  id?: number;
 }
 
 const VERDICT = {
@@ -94,9 +98,19 @@ function refusalWhileQueued(events: QueueEvent[]): QueueEvent | undefined {
  */
 const MERGE_EXIT_SKEW_MS = 2_000;
 
-/** A removal that accompanies a merge is the entry leaving the queue BECAUSE it merged, not an ejection. */
-function isMergeExit(removal: QueueEvent, merges: QueueEvent[]): boolean {
-  return merges.some((merge) => Math.abs(Date.parse(merge.t) - Date.parse(removal.t)) <= MERGE_EXIT_SKEW_MS);
+/**
+ * A removal that accompanies a merge is the entry leaving the queue BECAUSE it merged, not an ejection --
+ * but only when both belong to ONE entry. A re-entry stamped between them (either end included, because the
+ * stamps skew) means the removal ended an entry that was ejected and the merge belongs to the next one.
+ */
+function isMergeExit(removal: QueueEvent, merges: QueueEvent[], reentries: QueueEvent[]): boolean {
+  const removedAt = Date.parse(removal.t);
+  return merges.some((merge) => {
+    const mergedAt = Date.parse(merge.t);
+    if (Math.abs(mergedAt - removedAt) > MERGE_EXIT_SKEW_MS) return false;
+    const [from, to] = [Math.min(removedAt, mergedAt), Math.max(removedAt, mergedAt)];
+    return !reentries.some((entry) => Date.parse(entry.t) >= from && Date.parse(entry.t) <= to);
+  });
 }
 
 function queueWindowVerdict(unsorted: QueueEvent[]): { code: VerdictCode; why: string } {
@@ -107,9 +121,11 @@ function queueWindowVerdict(unsorted: QueueEvent[]): { code: VerdictCode; why: s
   }
   const after = events.filter((event) => event.t >= refusal.t);
   const merges = after.filter((event) => event.e === MERGED);
-  const ejection = after.find((event) => event.e === LEFT && !isMergeExit(event, merges));
+  // Strictly after the refusal: the entry the refusal met is at or before it, and is not a RE-entry.
+  const reentries = after.filter((event) => event.e === ENTERED && event.t > refusal.t);
+  const ejection = after.find((event) => event.e === LEFT && !isMergeExit(event, merges, reentries));
   if (ejection) {
-    return { code: VERDICT.BITES, why: `removed from the queue at ${ejection.t}, after the refusal at ${refusal.t}, with no merge within ${MERGE_EXIT_SKEW_MS} ms of it` };
+    return { code: VERDICT.BITES, why: `removed from the queue at ${ejection.t}, after the refusal at ${refusal.t}, with no merge of the same entry within ${MERGE_EXIT_SKEW_MS} ms of it` };
   }
   if (merges.length > 0) {
     return { code: VERDICT.DOES_NOT_BITE, why: `merged at ${merges[0].t}, after the refusal at ${refusal.t}` };
@@ -205,8 +221,8 @@ const PR_2289: QueueEvent[] = [
   { e: REVIEWED, t: "2026-09-24T09:22:59Z", s: "approved" },
   { e: ENTERED, t: "2026-09-24T09:29:53Z" },
   { e: REVIEWED, t: "2026-09-24T09:31:17Z", s: "changes_requested" },
-  { e: LEFT, t: "2026-09-24T09:35:08Z" },
-  { e: MERGED, t: "2026-09-24T09:35:09Z" },
+  { e: LEFT, t: "2026-09-24T09:35:08Z", id: 31744508190 },
+  { e: MERGED, t: "2026-09-24T09:35:09Z", id: 31744507916 },
   { e: "closed", t: "2026-09-24T09:35:09Z" },
 ];
 
@@ -214,6 +230,14 @@ test("#2206 MEASURED: #2289 -- a merge one second after its own removal reads DO
   // The control that failed the exact-second reader: it saw a removal with no merge at THAT second.
   const verdict = queueWindowVerdict(PR_2289);
   assert.equal(verdict.code, VERDICT.DOES_NOT_BITE, verdict.why);
+});
+
+test("#2206 MEASURED: #2289's own event ids put the merge FIRST while its timestamps put it second -- the skew is real", () => {
+  const removal = PR_2289.find((event) => event.e === LEFT);
+  const merge = PR_2289.find((event) => event.e === MERGED);
+  assert.ok(removal?.id !== undefined && merge?.id !== undefined, "the fixture must carry the ids it cites");
+  assert.ok(merge.id < removal.id, "ids: the merge was created first");
+  assert.ok(Date.parse(merge.t) > Date.parse(removal.t), "timestamps: the merge is stamped after the removal");
 });
 
 test("#2206: the skew runs BOTH ways -- a merge stamped a second BEFORE its removal is still the merge", () => {
@@ -226,6 +250,44 @@ test("#2206: a removal FARTHER than the skew from any merge is an ejection, what
   const lateMerge = [...EJECTED, { e: MERGED, t: "2026-01-01T10:01:19Z" }];
   assert.equal(queueWindowVerdict(lateMerge).code, VERDICT.BITES,
     "ten seconds is not the queue merging the entry; the removal already happened");
+});
+
+test("#2206: an ejection then a FAST re-arm reads BITES -- a re-entry between removal and merge splits the entries", () => {
+  // The boundary the merge-skew reader got wrong: removal, re-entry and merge all inside two seconds.
+  const rearmedFast = [...EJECTED,
+    { e: ENTERED, t: "2026-01-01T10:01:10Z" },
+    { e: MERGED, t: "2026-01-01T10:01:10Z" }];
+  assert.equal(queueWindowVerdict(rearmedFast).code, VERDICT.BITES);
+});
+
+test("#2206: a re-entry stamped the SAME second as the removal, merge a second later, still BITES", () => {
+  const sameSecond = [...EJECTED,
+    { e: ENTERED, t: "2026-01-01T10:01:09Z" },
+    { e: MERGED, t: "2026-01-01T10:01:10Z" }];
+  assert.equal(queueWindowVerdict(sameSecond).code, VERDICT.BITES);
+});
+
+test("#2206: the entry the refusal MET is not a re-entry, even when it shares a second with the removal", () => {
+  // Boundary of the re-entry window: entry, refusal and removal all stamped :05, merge :06. The ORIGINAL
+  // entry sits inside [removal, merge] to the second, and counting it would read a plain merge as an ejection.
+  const burst: QueueEvent[] = [
+    { e: ENTERED, t: "2026-01-01T10:00:05Z" },
+    { e: REVIEWED, t: "2026-01-01T10:00:05Z", s: "changes_requested" },
+    { e: LEFT, t: "2026-01-01T10:00:05Z" },
+    { e: MERGED, t: "2026-01-01T10:00:06Z" },
+  ];
+  assert.equal(queueWindowVerdict(burst).code, VERDICT.DOES_NOT_BITE);
+});
+
+test("#2206: the fast re-arm control is the SAME shape as #2289 plus a re-entry -- delete it and it reads DOES_NOT_BITE", () => {
+  // Positive control for the two above: a reader that ignored re-entries would fail them, and this proves
+  // the only difference between BITES and DOES_NOT_BITE here is that one event.
+  const rearmedFast = [...EJECTED,
+    { e: ENTERED, t: "2026-01-01T10:01:10Z" },
+    { e: MERGED, t: "2026-01-01T10:01:10Z" }];
+  const withoutReentry = rearmedFast.filter((event) => event.t !== "2026-01-01T10:01:10Z" || event.e !== ENTERED);
+  assert.equal(queueWindowVerdict(withoutReentry).code, VERDICT.DOES_NOT_BITE);
+  assert.equal(queueWindowVerdict(rearmedFast).code, VERDICT.BITES);
 });
 
 /**
