@@ -19,9 +19,10 @@
 // below writes a root `package.json` too, so both the protected and unprotected shapes can be driven.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import {
   linkState, workspacePackages, packagesImportedByName, distTrapReport, rootPrepareBuildsEverything,
@@ -183,4 +184,27 @@ test("undecidedRefusal returns null when every row has a real decision", () => {
     ["Disk free", "800 GB", "Informational only -- not an accumulator, no rule needed at current scale."],
   ];
   assert.equal(undecidedRefusal(rows), null);
+});
+
+// #2300 (pnpm 3/6 of #57): the symlink stopped being a choice the day a worktree could get its own install in
+// seconds, and both places that state the rule -- this page and the script that regenerates it -- said the
+// opposite until then. Each is read as TEXT, because the rows are built inside `main()` and printing them would
+// need the live host's worktrees.
+const HYGIENE_SOURCES = ["docs/control-plane-hygiene.md", "packages/agent-org/src/control-plane-hygiene.mjs"]
+  .map((rel) => ({ rel, text: readFileSync(fileURLToPath(new URL(`../../../../${rel}`, import.meta.url)), "utf8") }));
+
+test("#2300: neither the hygiene page nor its report calls the symlink deliberate, or pnpm post-publish", () => {
+  for (const { rel, text } of HYGIENE_SOURCES) {
+    assert.doesNotMatch(text, /deliberately post-publish|Structural fix is `pnpm`/i, `${rel} still defers pnpm`);
+    assert.doesNotMatch(text, /symlink to the primary's INSTEAD only when/, `${rel} still offers the symlink as a choice`);
+  }
+});
+
+test("#2300: both name the pnpm install, and the page carries a MEASURED residual count with its command and commit", () => {
+  // The positive control for the two emptiness assertions above: the corrected text is present, not merely
+  // the old text absent -- an emptied file would pass those.
+  for (const { rel, text } of HYGIENE_SOURCES) assert.match(text, /pnpm install --frozen-lockfile/, rel);
+  const page = HYGIENE_SOURCES[0].text;
+  assert.match(page, /MEASURED: \d+ of \d+ registered worktrees\*\*, read at `[0-9a-f]{7,}`/);
+  assert.match(page, /npm run hygiene:report/);
 });
