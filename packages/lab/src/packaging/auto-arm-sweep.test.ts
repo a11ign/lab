@@ -31,6 +31,7 @@ import {
   confirmArmed, CONFIRM_ARMED_READS, CONFIRM_ARMED_WAIT_MS, armedFromApi, unarmedCandidates, armFailureVerdict,
 } from "../../../agent-org/src/auto-arm-sweep.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
+import { PARITY, parityOwner } from "../../../agent-org/src/review-attribution.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOW = `${REPO}.github/workflows/auto-arm.yml`;
@@ -110,6 +111,38 @@ test("ONE check run is enough — the question is whether anything tested it, no
 
 test("`blocked` outranks a green, tested, unheld PR — the refusals are checked before the permission", () => {
   assert.equal(sweepDecision({ labels: ["blocked"], checkRunCount: 400 }).arm, false);
+});
+
+// #2195: an off-parity approval must not queue the PR. #2079 (odd, so `reviewer`'s) was armed on `reviewer-2`'s
+// approval at 08:45:06Z and `reviewer`'s refusal arrived at 08:46:07Z, 61s after the queue entry.
+const PR_2079 = 2079;
+const OFF_PARITY = { parity: PARITY.violation, parityOwner: parityOwner(PR_2079), reviewedBy: ["reviewer-2"] };
+
+test("#2195 ACCEPTANCE: a parity VIOLATION is refused, and the reason names the parity owner AND the reviewing session", () => {
+  const { arm, reason } = sweepDecision({ ...pr({ checkRunCount: 30 }), ...OFF_PARITY });
+  assert.equal(arm, false);
+  assert.match(reason, /`reviewer-2`/, "it must say who reviewed");
+  assert.match(reason, /`reviewer`/, "and who should have, or the author cannot re-prompt");
+});
+
+test("#2195 CONTROL: `correct`, ABSENT and `unobservable` parity all still ARM -- only a violation refuses", () => {
+  for (const parity of [PARITY.correct, PARITY.unobservable, undefined]) {
+    assert.equal(sweepDecision({ ...pr({ checkRunCount: 30 }), parity }).arm, true, `parity ${parity}`);
+  }
+  assert.equal(sweepDecision(pr({ checkRunCount: 30 })).arm, true, "no field at all: every existing caller");
+});
+
+test("#2195: a violation with no names still refuses, and says what rule was broken", () => {
+  const { arm, reason } = sweepDecision({ ...pr(), parity: PARITY.violation });
+  assert.equal(arm, false);
+  assert.match(reason, /off parity/);
+});
+
+test("#2195: a violation does not disturb the refusals it sits beside -- `blocked`, a hold and no check runs keep their own reasons", () => {
+  const off = { parity: PARITY.violation };
+  assert.match(sweepDecision({ ...pr({ labels: ["blocked"] }), ...off }).reason, /blocked/);
+  assert.match(sweepDecision({ ...pr({ labels: ["hold:worker-capture"] }), ...off }).reason, /worker-capture/);
+  assert.match(sweepDecision({ ...pr({ checkRunCount: 0 }), parity: PARITY.correct }).reason, /STRANDED/);
 });
 
 test("the exit codes are the contract, and CANNOT_ASK is distinct from a clean drain", () => {
