@@ -1,3 +1,6 @@
+// writes: runs/captures
+// The line above is the acceptance job's declaration, and it is narrower than it reads: this file NAMES `RUNS_ROOT`/`DATASET_ROOT`
+// only to point the real script at a throwaway temp directory, so the `captures/` it writes is that fixture's and never the corpus's.
 /**
  * #1936 — `corpus-snapshot.mjs` summed tar's TIME column, so `archivedBytes` was `NaN` on every run and
  * the hollow-archive refusal it feeds could never fire.
@@ -24,7 +27,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { archiveRefusal, archiveTotals } from "../../scripts/corpus-snapshot.mjs";
@@ -129,6 +132,44 @@ function fixtureCorpus(): { dir: string; env: NodeJS.ProcessEnv; out: string } {
   };
 }
 
+/**
+ * #2210 — A `tar` ON THE PATH THAT DROPS A FILE INTO THE CORPUS AROUND THE REAL ARCHIVE WRITE.
+ *
+ * The race is a file arriving DURING the run, and a run is a few seconds, so it cannot be provoked by
+ * waiting; it has to be placed. The script calls `tar` through the process's PATH, so a shim ahead of the
+ * real one can do exactly that, at exactly the instant that matters, and still run the real `tar` so the
+ * archive, its listing and every number the guard compares are genuine. Only the `-czf` call is touched:
+ * the `-tzvf` read-back passes straight through.
+ *
+ *   `after`   the file lands once the archive is WRITTEN. The archive cannot hold it. This is the case the
+ *             old ordering (walk the disk after writing) got wrong: the walk sees the file, the archive
+ *             does not, the byte total is short, and a healthy archive is refused.
+ *   `before`  the file lands just before the archive is written. The archive holds it, and a disk reading
+ *             taken earlier does not: the archive reads LARGER than the disk, which must never refuse.
+ */
+function tarThatAlsoWritesAFile(
+  fixture: { dir: string; env: NodeJS.ProcessEnv },
+  { when, bytes }: { when: "before" | "after"; bytes: number },
+): string {
+  const realTar = execFileSync("sh", ["-c", "command -v tar"], { encoding: "utf8" }).trim();
+  const late = join(fixture.dir, "dataset", "captures", `arrived-${when}.json`);
+  const shimDir = join(fixture.dir, "shim");
+  mkdirSync(shimDir);
+  const drop = `head -c ${bytes} /dev/zero | tr '\\0' 'x' > '${late}'`;
+  writeFileSync(join(shimDir, "tar"), [
+    "#!/bin/sh",
+    `if [ "$1" = "-czf" ]; then`,
+    when === "before" ? `  ${drop}` : "",
+    `  '${realTar}' "$@"; status=$?`,
+    when === "after" ? `  ${drop}` : "",
+    "  exit $status",
+    "fi",
+    `exec '${realTar}' "$@"`,
+  ].join("\n") + "\n", { mode: 0o755 });
+  fixture.env.PATH = `${shimDir}:${process.env.PATH}`;
+  return late;
+}
+
 function runSnapshot(fixture: { dir: string; env: NodeJS.ProcessEnv; out: string }) {
   try {
     const stdout = execFileSync(process.execPath, [SNAPSHOT_SCRIPT, `--out=${fixture.out}`],
@@ -179,6 +220,67 @@ test("#1936 POSITIVE CONTROL (end to end): an archive short of the disk's BYTES 
     assert.doesNotMatch(stderr, /JSON file\(s\) and \d+ were on disk/,
       "the file-count refusal must NOT be what fired: every name arrived, and a count that can see this "
       + "shortfall would make the byte guard redundant rather than proven");
+  } finally {
+    rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test("#2210: a file that arrives AFTER the archive is written does not refuse a healthy archive", () => {
+  // THE ORDERING, DRIVEN. The disk readings the guard compares against must be taken BEFORE the archive
+  // is written, so anything arriving during the run can only make the archive read larger than the
+  // reading, never smaller. Under the old order the walk came after `tar`, so the late file was on disk,
+  // absent from the archive, and `archived.bytes < onDiskBytes` refused a healthy archive with a message
+  // ("N did not make it in") that was false: the file was never meant to be in it.
+  const fixture = fixtureCorpus();
+  try {
+    const late = tarThatAlsoWritesAFile(fixture, { when: "after", bytes: 700 });
+    const { code, stdout, stderr } = runSnapshot(fixture);
+    assert.ok(existsSync(late), "the shim must have placed the late file, or this test proves nothing");
+    assert.equal(code, 0, `a file arriving mid-run must not refuse a healthy archive; got ${code}: ${stderr}`);
+    assert.doesNotMatch(stderr, /REFUSING/);
+    assert.match(stdout, /Read back 2 JSON file\(s\), matching the 2 on disk/,
+      `the late file is not in the archive and was not in the reading: ${stdout}`);
+  } finally {
+    rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test("#2210: a file that arrives BEFORE the archive is written, and so is in it, does not refuse", () => {
+  // The other direction of the same argument, and the one that is true under EITHER order: the archive
+  // then holds more than the disk reading did. Kept so a future "fix" that makes the guard an EQUALITY
+  // (archive bytes must equal the reading) fails here rather than on the lab at 03:00Z.
+  const fixture = fixtureCorpus();
+  try {
+    const late = tarThatAlsoWritesAFile(fixture, { when: "before", bytes: 700 });
+    const { code, stdout, stderr } = runSnapshot(fixture);
+    assert.ok(existsSync(late), "the shim must have placed the late file, or this test proves nothing");
+    assert.equal(code, 0, `an archive larger than the disk reading is healthy; got ${code}: ${stderr}`);
+    assert.doesNotMatch(stderr, /REFUSING/);
+    assert.match(stdout, /Read back 3 JSON file\(s\), matching the 2 on disk/,
+      `the archive holds the late file and the reading did not: ${stdout}`);
+  } finally {
+    rmSync(fixture.dir, { recursive: true, force: true });
+  }
+});
+
+test("#2210 POSITIVE CONTROL: moving the reading earlier did not remove the refusal — a short archive still exits 2", () => {
+  // Item 3 of the row, re-asserted rather than assumed. Reordering removes a false refusal, and "removes
+  // a false refusal by removing the refusal" is the failure that would look identical in a green run.
+  // The shortfall is the symlink from #1936's control, which is on disk BEFORE the reading, so it is in
+  // the reading and not in the archive under the new order too. The shim is on the path AND drops a late
+  // file, so this also proves the harness above does not itself mask the guard.
+  const fixture = fixtureCorpus();
+  try {
+    mkdirSync(join(fixture.dir, "outside"));
+    const target = join(fixture.dir, "outside", "big.json");
+    writeFileSync(target, JSON.stringify({ bytes: "x".repeat(4980) }));
+    symlinkSync(target, join(fixture.dir, "dataset", "captures", "big.json"));
+    tarThatAlsoWritesAFile(fixture, { when: "after", bytes: 700 });
+
+    const { code, stdout, stderr } = runSnapshot(fixture);
+    assert.equal(code, 2, `a genuinely short archive must still exit 2; got ${code}: ${stderr}${stdout}`);
+    assert.match(stderr, /REFUSING: the archive holds \d+ byte\(s\) and \d+ were on disk/);
+    assert.match(stderr, /The names are right and the contents are not/);
   } finally {
     rmSync(fixture.dir, { recursive: true, force: true });
   }
