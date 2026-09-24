@@ -89,7 +89,7 @@ function corpusOfSource(path: string): string[] {
 export function corpusWrittenBy(name: string, jobs: Record<string, Job>,
                                 scripts: Record<string, string>): string | null {
   const argv = [jobs[name]?.argv ?? ""].flat();
-  const script = argv[0]?.endsWith("npm") && argv[1] === "run"
+  const script = /(^|\/)npm$/.test(String(argv[0])) && argv[1] === "run"
     ? argv.slice(2).find((word) => !word.startsWith("-"))
     : undefined;
   if (!script) return null;
