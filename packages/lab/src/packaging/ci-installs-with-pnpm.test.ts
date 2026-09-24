@@ -46,7 +46,7 @@ const allSteps = () => jobs().flatMap((j) => j.steps.map((step) => ({ where: j.w
 const installLines = () => allSteps().flatMap(({ where, step }) =>
   codeLines(step).filter((l) => /\bpnpm install\b/.test(l)).map((line) => ({ where, line })));
 
-/** Below these the scan has broken rather than the repo shrunk: measured 2026-09-24 at 18 installs and 15 pnpm caches. */
+/** Below these the scan has broken rather than the repo shrunk: measured 2026-09-24 at 19 installs and 16 pnpm caches. */
 const MIN_INSTALLS = 15;
 const MIN_PNPM_CACHES = 12;
 
