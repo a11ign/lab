@@ -126,3 +126,45 @@ test("an input mirroring a --no-<name> flag defaults true and passes the flag on
       `${name}'s guard ${passes[0].trim()} is not one that leaves the probe ON by default; use ${onPreserving[0]}`);
   }
 });
+
+/**
+ * THE PAGE LIST (#2272): `url` AND `urls` ARE TWO FORMS OF ONE INPUT, AND THE CAP OVERRIDE IS AN INPUT AND NOTHING ELSE.
+ *
+ * Three things a workflow file could get wrong without any other test noticing, each of them a way for a run to
+ * capture something other than what its author wrote:
+ * - `url` stayed `required: true`, so a list-only workflow could not be written (the runner refuses a missing
+ *   required input before any step runs, which reads as a broken Action);
+ * - the both-or-neither refusal moved AFTER setup, so the ~100 s of runner minutes it exists to save were billed
+ *   anyway;
+ * - the override was made reachable some other way -- an environment default or a config file -- and a cap the
+ *   author never raised on purpose was raised for them.
+ */
+test("url and urls are alternatives: neither is required, and both-or-neither is refused before setup", () => {
+  const entry = (name: string) => new RegExp(`^ {2}${name}:\\n((?:(?: {4}.*)?\\n)*)`, "m").exec(ACTION)?.[1] ?? "";
+  // `url` carries no `default:`: `example-matches-action-defaults.test.ts` compares every input an example SETS
+  // against its default, and `url: ""` would read as a contradiction by every example that names a page.
+  for (const name of ["url", "urls", "max-pages"]) {
+    assert.match(entry(name), /^ {4}required: false$/m, `${name} must not be required: exactly one of url and urls is`);
+    if (name !== "url") {
+      assert.match(entry(name), /^ {4}default: ""$/m, `${name} must default to the empty string, which is "not given"`);
+    }
+  }
+  const guard = ACTION.indexOf("Check exactly one of url and urls is given");
+  const setup = ACTION.indexOf("uses: actions/setup-node");
+  assert.ok(guard > 0 && setup > 0 && guard < setup, "the both-or-neither refusal must come BEFORE setup-node, which is where billing starts");
+  const step = ACTION.slice(guard, setup);
+  assert.match(step, /Give exactly one of url and urls, not both/);
+  assert.match(step, /Give exactly one of url and urls: no page was given/);
+});
+
+test("the page list reaches the CLI as --urls, the override as --max-pages, and nothing else raises the cap", () => {
+  for (const flag of ["--urls", "--max-pages"]) {
+    assert.ok(CLI.includes(`"${flag}"`), `${flag} is not a flag the CLI parses, so this expectation is stale rather than met`);
+    assert.ok(ACTION.split("\n").some((line) => /\bargs\+=\(/.test(line) && line.includes(flag)),
+      `the Action never passes ${flag}: the input would be declared and ignored`);
+  }
+  assert.ok(ACTION.split("\n").some((line) => /\bargs\+=\(/.test(line) && line.includes("inputs.max-pages }}")),
+    "max-pages must reach the argv");
+  // `multi-page.test.ts` proves the CLI reads no environment variable for the cap; this is the workflow's half.
+  assert.doesNotMatch(ACTION, /\bMAX_PAGES\b/, "action.yml exports no environment default for the cap");
+});
