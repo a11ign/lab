@@ -21,6 +21,7 @@ re-implements the exclusion to assert the exclusion proves nothing."
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -208,3 +209,144 @@ def test_no_head_exists_in_a_real_safetensors_artefact_for_the_excluded_subtype(
         )
     finally:
         trainer.RULE_OWNERSHIP = original_ownership
+
+
+# ---------------------------------------------------------------------------------------------------------
+# `--exclude-subtype` (#2304): leave a head out of ONE run, as an experiment.
+#
+# It is not `modelHead: false`. That moves who decides a subtype for every run and lives in a tracked file;
+# this is a per-run lever so #2258's isolating retrain can be dispatched without editing either. Because a
+# model missing a head must never pass for a full one, it is also stamped ineligible -- and that stamp is
+# only worth asserting against a positive control, hence the eligible run beside it below.
+# ---------------------------------------------------------------------------------------------------------
+
+ALPHA = "9.1.1:alpha"
+BETA = "9.1.1:beta"
+SYNTHETIC_FEATURE_WIDTH = 8
+
+
+def test_an_exclusion_applies_to_the_call_it_was_passed_to_and_no_other(monkeypatch):
+    monkeypatch.setattr(trainer, "RULE_OWNERSHIP", fake_ownership(**{
+        ALPHA: {"decidedBy": "model", "reportsAs": "9.1.1"},
+        BETA: {"decidedBy": "model", "reportsAs": "9.1.1"},
+    }))
+    records = [record(["9.1.1"], [ALPHA]), record(["9.1.1"], [BETA])]
+    assert trainer.subtypes_by_criterion_for(records, ["9.1.1"], exclude=[BETA]) == {"9.1.1": [ALPHA]}
+    assert trainer.subtypes_by_criterion_for(records, ["9.1.1"]) == {"9.1.1": [ALPHA, BETA]}, (
+        "an exclusion leaked into the next call: it must be an argument, never a change to who decides")
+    assert trainer.RULE_OWNERSHIP[BETA] == {"decidedBy": "model", "reportsAs": "9.1.1"}, (
+        "the exclusion rewrote the ownership table, which is exactly what this lever exists NOT to do")
+
+
+def test_an_unknown_or_headless_subtype_is_refused_not_ignored():
+    available = {"9.1.1": [ALPHA, BETA]}
+    for excluded, culprit in ((["9.1.1:betaa"], "9.1.1:betaa"), ([ALPHA, "9.9.9:nope"], "9.9.9:nope")):
+        try:
+            trainer.refuse_unknown_exclusions(available, excluded)
+        except SystemExit as exc:
+            assert culprit in str(exc) and "FULL model" in str(exc), str(exc)
+        else:
+            raise AssertionError(f"{excluded} was accepted; a typo would train a full model as 'excluded'")
+    assert trainer.refuse_unknown_exclusions(available, [BETA, ALPHA, BETA]) == [ALPHA, BETA], (
+        "a valid list comes back sorted and deduplicated, which is what the report records")
+    assert trainer.refuse_unknown_exclusions(available, []) == []
+
+
+def test_the_flag_is_repeatable(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["train", "--exclude-subtype", ALPHA, "--exclude-subtype", BETA])
+    assert trainer.parse_args().exclude_subtype == [ALPHA, BETA]
+    monkeypatch.setattr(sys, "argv", ["train"])
+    assert trainer.parse_args().exclude_subtype == [], "no flag must mean no exclusion"
+
+
+def synthetic_dataset() -> list[dict]:
+    """240 records over 40 families; `ALPHA` on every 6th and `BETA` on every 5th, so each has dozens of
+    positives and neither is starved of the 20 the trainer wants."""
+    return [
+        {"input": {}, "provenance": {"family": f"family-{i % 40}"},
+         "target": {"criteria": ["9.1.1"] if (i % 6 == 0 or i % 5 == 0) else [],
+                    "subtypes": [s for s, every in ((ALPHA, 6), (BETA, 5)) if i % every == 0]}}
+        for i in range(240)
+    ]
+
+
+def train_synthetic(monkeypatch, tmp_path, *extra_args: str) -> tuple[dict, set[str]]:
+    """Runs the REAL `main()` -- argument parsing, exclusion, calibration, saving -- on synthetic records with
+    only the encoder and the corpus reads stubbed, and returns the `training-report.json` and the keys of
+    `model.safetensors` READ BACK from disk. Not the dict `main()` built."""
+    import pytest
+    pytest.importorskip("torch")
+    import numpy as np
+    from safetensors import safe_open
+
+    generator = np.random.default_rng(0)
+    records = synthetic_dataset()
+
+    def fake_encode(_training, recs, _encoder, _max_length):
+        features = generator.normal(size=(len(recs), SYNTHETIC_FEATURE_WIDTH)).astype("float32")
+        for row, rec in enumerate(recs):
+            for column, subtype in enumerate((ALPHA, BETA)):
+                if subtype in rec["target"]["subtypes"]:
+                    features[row, column] += 3
+        return features, features.copy(), list(range(len(recs) + 1)), SYNTHETIC_FEATURE_WIDTH, 0
+
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    data, encoder, output = tmp_path / "data.jsonl", tmp_path / "encoder", tmp_path / "model"
+    data.write_text("{}\n")
+    encoder.write_text("x")
+    monkeypatch.setitem(sys.modules, trainer.__name__, trainer)  # `main()` hands its own module to the cache
+    monkeypatch.setattr(trainer, "RULE_OWNERSHIP", {})
+    monkeypatch.setattr(trainer, "cached_encode", fake_encode)
+    monkeypatch.setattr(trainer, "assert_encoder", lambda path: path)
+    monkeypatch.setattr(trainer, "assert_dataset_is_current", lambda path: None)
+    monkeypatch.setattr(trainer, "read_records", lambda path: records)
+    # Tiny synthetic data cannot meet the type-I calibration bound, which would leave EVERY run ineligible
+    # and make "an exclusion makes it ineligible" pass having examined nothing. Neutralised so the control
+    # run below is eligible, and the exclusion is the only thing that can change that.
+    monkeypatch.setattr(trainer, "type_one_error_blocker", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sys, "argv", ["train", "--data", str(data), "--encoder", str(encoder),
+                                      "--output", str(output), "--epochs", "2", *extra_args])
+    trainer.main()
+    report = json.loads((output / "training-report.json").read_text(encoding="utf-8"))
+    with safe_open(str(output / "model.safetensors"), framework="pt") as handle:
+        return report, set(handle.keys())
+
+
+def test_a_model_trained_with_an_exclusion_has_no_such_head_and_cannot_pass_for_a_full_one(monkeypatch, tmp_path):
+    control_report, control_keys = train_synthetic(monkeypatch, tmp_path / "full")
+    assert control_report["releaseEligible"] is True, (
+        "the POSITIVE CONTROL failed: a run with no exclusion is not eligible, so the assertion below "
+        "would pass whatever the exclusion did")
+    assert control_report["excludedSubtypes"] == []
+    assert trainer.head_key(BETA) + ".weight" in control_keys
+
+    report, keys = train_synthetic(monkeypatch, tmp_path / "left-out", "--exclude-subtype", BETA)
+    assert trainer.head_key(BETA) + ".weight" not in keys, "the excluded head is IN the saved artefact"
+    assert trainer.head_key(ALPHA) + ".weight" in keys, "the kept head vanished: the filter removed too much"
+    assert report["excludedSubtypes"] == [BETA]
+    assert report["releaseEligible"] is False and report["modelReleaseEligible"] is False, (
+        "a model missing a head the release model has must never be promotable")
+    assert any(BETA in blocker and "--exclude-subtype" in blocker for blocker in report["releaseBlockedBy"]), (
+        f"the report must SAY why it cannot be released: {report['releaseBlockedBy']}")
+
+
+def test_a_typo_in_an_exclusion_trains_nothing(monkeypatch, tmp_path):
+    try:
+        train_synthetic(monkeypatch, tmp_path, "--exclude-subtype", "9.1.1:betaa")
+    except SystemExit as exc:
+        assert "9.1.1:betaa" in str(exc)
+    else:
+        raise AssertionError("a name matching no head was accepted")
+    assert not (tmp_path / "model").exists(), "the refusal came AFTER output was written"
+
+
+def test_leaving_out_every_head_of_a_criterion_is_reported_as_an_experiment_not_as_ownership(monkeypatch, tmp_path):
+    report, keys = train_synthetic(monkeypatch, tmp_path, "--exclude-subtype", ALPHA, "--exclude-subtype", BETA)
+    entry = report["criteria"]["9.1.1"]
+    assert entry["subtypes"] == {} and entry["modelHead"] is False, (
+        "an emptied criterion must keep the declaration `score.py` needs to LOAD it")
+    assert entry["excludedSubtypes"] == [ALPHA, BETA]
+    assert "rules decide" not in entry["why"], (
+        "the rules do not own this criterion: reading 'no head' as settled ownership is the misreading")
+    assert not [key for key in keys if "9_1_1" in key or "alpha" in key or "beta" in key]
+
