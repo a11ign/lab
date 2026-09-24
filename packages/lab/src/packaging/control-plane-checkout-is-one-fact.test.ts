@@ -470,6 +470,20 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
     + "that unit exists for: 143 worktrees and 16G on 2026-09-22 (#2000). A MEASURED machine, which is "
     + "what this file's boundary asks for -- the entry says WHICH box, so the path is classified rather "
     + "than assumed to be this one.",
+  ".codex": "the OpenAI Codex CLI's own state directory (`auth.json`, `config.toml`, `rules/`), on the "
+    + "AGENT host where the external reviewer runs. Named in `docs/reviewer-instancing.md`, which records "
+    + "what two codex reviewers do when they share it (#2325). Not a checkout, and not the control plane.",
+  "reviewer": "the AGENT host's `gh` CONFIG ROOT for the reviewer account -- "
+    + "`/home/agent/reviewer/gh`, the third of the three `GH_CONFIG_DIR`s `docs/reviewer-instancing.md` "
+    + "reaches its accounts through, beside `workers` above and `.config` (the person's). It is which "
+    + "ACCOUNT a reviewer acts as, not a checkout, on the same measured box as `repos`. First visible "
+    + "under #2325, whose merge failed this guard on main's own tip.",
+  "leads": "the AGENT host's `gh` CONFIG ROOT for the machine account `a11ign-ai-leads` -- "
+    + "`/home/agent/leads/gh`, the fourth `GH_CONFIG_DIR` beside `workers`, `reviewer` and `.config` above, "
+    + "created by the chairman on 2026-09-24. It is which ACCOUNT the lead sessions act as, not a checkout, "
+    + "on the same measured box as `repos`. Classified BEFORE its first doc lands on main: #2332 / PR #2336 "
+    + "ships docs and a wrapper that name it, and would have failed this guard on merge exactly as #2329 "
+    + "did (#2346).",
 };
 
 test("THE EXEMPTION IS THE FIELD, NOT THE FILE -- a quoted `command` in a reported record is not a use, "
