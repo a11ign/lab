@@ -219,7 +219,7 @@ export function reportUncapturedCases(/** @type {any} */ summary) {
     : "    npm run training:capture");
 }
 
-function record(/** @type {any} */ testCase, /** @type {any} */ variant, /** @type {any} */ capture) {
+export function record(/** @type {any} */ testCase, /** @type {any} */ variant, /** @type {any} */ capture) {
   const isBad = variant === "bad";
   const subtype = testCase.subtype || testCase.badSignal.type;
   const input = modelInput(capture);

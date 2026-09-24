@@ -796,3 +796,45 @@ test("#1970: a drained sweep is still a clean pass, and says nothing", () => {
   assert.equal(run.status, 0);
   assert.doesNotMatch(run.stdout, /^::error::/m, "nothing failed, so nothing is annotated");
 });
+
+/**
+ * #2204: A RED `sweep` ON PR #N WAS OFTEN A FINDING ABOUT OTHER PRs. `ceo` ruled the shield onto the JOB
+ * (2026-09-23T18:26Z), because a check colour is one bit and cannot be partially about #N.
+ *
+ * The property is read STRUCTURALLY off `jobs.sweep`. `push-trigger-allowlist.test.ts`'s file-level
+ * regex already passes on `update-branch`'s `continue-on-error`, so a file-level `match` here would be a
+ * test that cannot fail -- the second `#2204` test below is what proves the key is on THIS job.
+ */
+const jobsOf = () => (parseYaml(readFileSync(WORKFLOW, "utf8")) as {
+  jobs: Record<string, { "continue-on-error"?: unknown, steps: Array<{ run?: string, "continue-on-error"?: unknown }> }>,
+}).jobs;
+
+test("#2204 ACCEPTANCE: the `sweep` JOB is shielded, so no per-PR check is charged for a repo-wide finding", () => {
+  assert.equal(jobsOf().sweep?.["continue-on-error"], true,
+    "`continue-on-error: true` on the JOB -- the category `update-branch` already names");
+});
+
+test("#2204 MUTATION TARGET: the shield is on the JOB and never the step, and the step is no `|| true`", () => {
+  const steps = jobsOf().sweep?.steps ?? [];
+  assert.deepEqual(steps.filter((s) => s["continue-on-error"] !== undefined), [],
+    "a step-level shield would leave the job reading as a gate while the exit-1 test below cannot see it");
+  assert.doesNotMatch(stripComments(sweepStepRun()), /\|\|\s*true/,
+    "a `|| true` makes the step exit 0, which is the finding going quietly green");
+});
+
+test("#2204 CONTROL: the finding is still a non-zero exit AND still in the log, for a PR that names none of it", () => {
+  // The positive control for the two tests above: green before the shield and it must stay green. A
+  // remedy that swallows the finding fails HERE, not in an assertion written to pass.
+  const finding = "SWEEP: could not arm 1: 1743";
+  const run = runSweepStep({ exitCode: 1, says: finding });
+  assert.equal(run.status, 1, "the step still reports exit 1 -- the shield changes who is charged, not what is found");
+  assert.match(run.stdout + run.stderr, /could not arm 1: 1743/, "and the finding still reaches the log");
+});
+
+test("#2204: `update-branch` keeps its shield and `arm` does NOT have one", () => {
+  // `arm` was handed ONE PR and its refusal is a complete statement about it, so its red stays red (ceo,
+  // 2026-09-22). Pinning both directions stops the shield spreading to the one job it must not reach.
+  const jobs = jobsOf();
+  assert.equal(jobs["update-branch"]?.["continue-on-error"], true);
+  assert.notEqual(jobs.arm?.["continue-on-error"], true, "`arm` stays red: it is a claim about the triggering PR");
+});

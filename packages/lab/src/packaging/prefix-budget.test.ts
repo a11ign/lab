@@ -1,7 +1,9 @@
 /**
  * #2217: EVERY WAKE RE-READS THE RULES BEFORE IT CAN ACT, AND NOTHING MEASURED WHAT THAT COST.
  *
- * `CLAUDE.md` and `.claude/rules/agent-practices.md` load together in every session in every directory.
+ * `CLAUDE.md` and every file under `.claude/rules/` load together in every session in every directory.
+ * (One file until #2092, which split it by topic; `rules-files.ts` names the set and the budget is on ALL
+ * of it, which is what `ceo`'s number below means by `agent-practices.md`.)
  * Between 2026-09-11 and 2026-09-23 the rules file grew from 1,526 B to 35,374 B -- 23x, a quarter of it
  * in one day -- because every incident in this org correctly ends with somebody writing the lesson down.
  * That is the right habit, and each addition is also a permanent per-wake tax charged hundreds of times a
@@ -50,11 +52,13 @@ import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { RULES_FILES } from "./rules-files.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
 /** The two files every session loads before it can act. Budgeted as a SET -- see the header. */
-const LOADED = ["CLAUDE.md", ".claude/rules/agent-practices.md"] as const;
+// #2092: the rules are one file per topic; the set is named in `rules-files.ts`, never globbed.
+const LOADED = ["CLAUDE.md", ...RULES_FILES] as const;
 
 /** `ceo`'s number, #2217. Only `ceo` moves it. */
 const BUDGET_BYTES = 20_000;
@@ -172,7 +176,7 @@ test("the loaded prefix states its price, and every run says it", () => {
   for (const f of each) assert.ok(price.includes(f.file), `the price must name ${f.file}`);
 });
 
-test("the loaded set -- CLAUDE.md plus agent-practices.md -- is within ceo's 20,000-byte budget", () => {
+test("the loaded set -- CLAUDE.md plus every rules file -- is within ceo's 20,000-byte budget", () => {
   const { each, total } = loadedSizes();
   assert.ok(
     total <= BUDGET_BYTES,
@@ -237,7 +241,7 @@ test("the preservation assertion is REACHABLE -- a heading that was never writte
  * found exactly that shape three times: `Model routing`, `Context` and `Web research` had their
  * measurements deleted outright while their headings survived in the loaded file, and the Web-research
  * exception ("One fetch that the main session must read itself is the exception, not the habit.") was
- * gone from all three files. So the haystack here is `CLAUDE.md` + `agent-practices.md`, and nothing else.
+ * gone from all three files. So the haystack here is `CLAUDE.md` + the rules files, and nothing else.
  *
  * ## WHY NORMALISED SUBSTRING HERE, WHERE THE HEADING CENSUS USES WHOLE LINES
  *
