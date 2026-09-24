@@ -199,9 +199,11 @@ test("`c8` has no remaining use, so it leaves the manifest and the lockfile", ()
   for (const bucket of ["dependencies", "devDependencies", "optionalDependencies"] as const) {
     assert.ok(!("c8" in (pkg[bucket] ?? {})), `c8 must not be a ${bucket} entry`);
   }
-  const lock = JSON.parse(readFileSync(join(REPO, "package-lock.json"), "utf8")) as { packages: Record<string, unknown> };
-  const lockEntries = Object.keys(lock.packages).filter((path) => path === "node_modules/c8" || path.endsWith("/node_modules/c8"));
-  assert.deepEqual(lockEntries, []);
+  // pnpm-lock.yaml since #2301: a package appears as a `c8@<version>:` key under `packages:` and `snapshots:`,
+  // and as `c8:` under an importer's dependencies. The control is that the same read finds a package known to be there.
+  const lock = readFileSync(join(REPO, "pnpm-lock.yaml"), "utf8");
+  assert.match(lock, /^ {2}typescript@\d/m, "CONTROL: the read finds a package that is in the lockfile");
+  assert.deepEqual(lock.split("\n").filter((line) => /^ {2,6}'?c8(@|:)/.test(line)), []);
 });
 
 // --- every remaining `tsx` use, named --------------------------------------------------------------------

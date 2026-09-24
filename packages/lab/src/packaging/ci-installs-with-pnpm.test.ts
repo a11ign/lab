@@ -12,9 +12,8 @@
  *     `cache: pnpm` shells out to `pnpm store path`), or without `--frozen-lockfile`, which lets CI rewrite the
  *     lockfile it is meant to be checking.
  *
- * `release.yml` is EXEMPT and named as such: the publish path is the next row's, which must prove `gate:isolation` and
- * a green dry run before it moves. The exemption asserts it is still needed, so the row that moves release.yml
- * cannot forget to delete it.
+ * `release.yml` WAS EXEMPT until #2301 moved the publish path (it had to prove `gate:isolation` and a green dry run
+ * first), and is covered here like every other workflow now. `pnpm-publish-path.test.ts` pins what is specific to it.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -24,14 +23,12 @@ import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
 const WORKFLOWS = fileURLToPath(new URL("../../../../.github/workflows/", import.meta.url));
-const EXEMPT = "release.yml";
-
 interface Step { name?: string; uses?: string; run?: string; with?: Record<string, unknown> }
 interface Job { steps?: Step[] }
 
-/** Every job with steps, across every workflow file but the exempt one, as `file:job`. */
+/** Every job with steps, across every workflow file, as `file:job`. */
 function jobs(): { where: string; steps: Step[] }[] {
-  return readdirSync(WORKFLOWS).filter((f) => /\.ya?ml$/.test(f) && f !== EXEMPT).flatMap((file) => {
+  return readdirSync(WORKFLOWS).filter((f) => /\.ya?ml$/.test(f)).flatMap((file) => {
     const doc = parse(readFileSync(join(WORKFLOWS, file), "utf8")) as { jobs?: Record<string, Job> };
     return Object.entries(doc.jobs ?? {}).flatMap(([name, job]) =>
       (job.steps ? [{ where: `${file}:${name}`, steps: job.steps }] : []));
@@ -46,11 +43,11 @@ const allSteps = () => jobs().flatMap((j) => j.steps.map((step) => ({ where: j.w
 const installLines = () => allSteps().flatMap(({ where, step }) =>
   codeLines(step).filter((l) => /\bpnpm install\b/.test(l)).map((line) => ({ where, line })));
 
-/** Below these the scan has broken rather than the repo shrunk: measured 2026-09-24 at 19 installs and 16 pnpm caches. */
+/** Below these the scan has broken rather than the repo shrunk: measured 2026-09-24 at 19 installs and 16 pnpm caches (20 and 17 with release.yml, #2301). */
 const MIN_INSTALLS = 15;
 const MIN_PNPM_CACHES = 12;
 
-test("#2298: no job outside the exempt release workflow installs with npm", () => {
+test("#2298: no job in any workflow installs with npm", () => {
   const offenders = allSteps().flatMap(({ where, step }) =>
     codeLines(step).filter((l) => /\bnpm (ci|install)\b/.test(l)).map((l) => `${where}: ${l}`));
   assert.ok(installLines().length >= MIN_INSTALLS, `only ${installLines().length} pnpm installs found; the scan is broken`);
@@ -83,11 +80,4 @@ test("#2298: every pnpm install is frozen, and every job that needs a pnpm has o
     return firstNeed >= 0 && (setup < 0 || setup > firstNeed) ? [`${where} (needs pnpm at step ${firstNeed}, sets it up at ${setup})`] : [];
   });
   assert.deepEqual(unready, []);
-});
-
-test("#2298: the exemption is still needed -- release.yml still installs with npm, so the publish-path row must delete this exemption", () => {
-  const doc = parse(readFileSync(join(WORKFLOWS, EXEMPT), "utf8")) as { jobs: Record<string, Job> };
-  const npmInstalls = Object.values(doc.jobs).flatMap((job) => job.steps ?? [])
-    .flatMap(codeLines).filter((l) => /\bnpm ci\b/.test(l));
-  assert.ok(npmInstalls.length > 0, "release.yml no longer runs npm ci: delete EXEMPT and this test");
 });

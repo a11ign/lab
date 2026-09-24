@@ -153,12 +153,12 @@ test("the gate runs, and is not allowed to fail softly", () => {
     "no step in the release path may continue on error — that is how a release ships past its own gate");
 });
 
-test("the npm-workspaces lockfile trap is handled", () => {
-  // `changeset version` does not update package-lock.json. Without the install that follows, the lockfile
-  // ships describing the PREVIOUS versions, invisible until a consumer's clean install resolves the wrong
-  // tree. Asserted on the npm script, since that is the one place both CI and a human use.
+test("the workspaces lockfile trap is handled", () => {
+  // `changeset version` does not update the lockfile. Without the install that follows, the lockfile
+  // ships describing the PREVIOUS versions, and the next frozen install refuses the release commit.
+  // Asserted on the npm script, since that is the one place both CI and a human use. pnpm's, since #2301.
   const scripts = JSON.parse(readFileSync(resolve(REPO, "package.json"), "utf8")).scripts;
-  assert.match(scripts["release:version"], /changeset version\s*&&\s*npm install/,
+  assert.match(scripts["release:version"], /changeset version\s*&&\s*pnpm install --lockfile-only/,
     "release:version must reinstall after versioning, or the lockfile ships stale");
 });
 
