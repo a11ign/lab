@@ -729,9 +729,12 @@ function selectedByTheDiff(block: string): boolean {
   return /\n {4}if: .*needs\.changed\.outputs\./.test(block);
 }
 
-test("#2348: a docs-only diff skips `ts` -- the premise that makes an unconditional sweep necessary", () => {
+test("#2357: a docs-only diff now SELECTS `ts` (a test reads docs), yet #2348's sweep stays unselected by the diff", () => {
+  // #2348 pinned the opposite premise -- a docs-only diff skips `ts` -- to justify the unconditional sweep. #2357 moved
+  // it: `ts` now runs for a docs diff when a test reads docs. The sweep keeps its own reason (a path-to-guard table
+  // is a second list that drifts), pinned by the two tests below, so it is NOT made conditional on this.
   const result = classify(["docs/known-gaps.md"], knownPackages(REPO_ROOT));
-  assert.equal(result.ts, false, "a docs-only diff no longer skips `ts`, so this row's premise has moved -- re-read #2348");
+  assert.equal(result.ts, true, "a docs-only diff skips `ts` again, which is #2329 -- re-read #2357");
 });
 
 test("#2348: the guard sweep job runs `npm run guards:sweep` and is not selected by the diff", () => {
