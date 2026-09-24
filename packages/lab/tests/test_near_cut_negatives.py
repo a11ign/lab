@@ -37,8 +37,17 @@ def load():
     return module
 
 
-def record(case: str, variant: str = "good") -> dict:
-    return {"provenance": {"caseId": case, "variant": variant}, "input": {}}
+#: A form change that was READ: `applicability.decide` rules `4.1.3:form-activation-silent` IN on it.
+READ_FORM_CHANGE = {"control": "Save, button", "after": "Saved", "kind": "submit"}
+#: ...and one whose outcome was never read (#1105), which rules the head OUT at every cut.
+UNREAD_FORM_CHANGE = {"control": "Save, button", "after": "unknown", "afterUnresolved": True, "kind": "submit"}
+
+
+def record(case: str, variant: str = "good", form_change: dict = READ_FORM_CHANGE) -> dict:
+    """APPLICABLE by default: the band is the counterfactual `applicability.decide` answers, so a fixture the
+    gate rules out would read as an empty band whatever the score."""
+    return {"provenance": {"caseId": case, "variant": variant},
+            "input": {"interaction": {"formChanges": [form_change]}}}
 
 
 def band(records: list[dict], scores: list[float], positive: list[bool] | None = None,
@@ -115,3 +124,12 @@ def test_the_score_is_rounded_for_the_reader_but_compared_unrounded():
     """0.96199 is in the band and prints as 0.962; a rounded comparison would call 0.96204 in as well."""
     found = band([record("in"), record("out")], [0.9619999, CUT + 0.00001])
     assert found == {SILENT: {"in/good": 0.962}}
+
+
+def test_a_negative_the_applicability_gate_rules_out_is_not_near_the_cut():
+    """GATED, unlike the two sibling fields: `applicability.decide` vetoes at EVERY cut, so a cut moved to the
+    floor would not have acted on it. The applicable record beside it is the positive control -- same score,
+    same head, and it is reported -- so the empty result is the gate's and not a fixture that never fired."""
+    records = [record("read"), record("unread", form_change=UNREAD_FORM_CHANGE)]
+    assert band(records, [0.95, 0.95]) == {SILENT: {"read/good": 0.95}}
+    assert band(records[1:], [0.95]) == {SILENT: {}}

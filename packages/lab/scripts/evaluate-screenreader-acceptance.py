@@ -890,10 +890,14 @@ def near_cut_negatives(records: list[dict[str, Any]], included_indices: list[int
     measured on the DEVELOPMENT sample alone (3 negatives, 0 positives in `0.95-0.962`). This is the number that
     would confirm it on independent data, or show a lower cut is cheaper than it looks.
 
-    Compared against the head's own floor and applied cut, both as floats: the head fires at `score >= threshold`,
-    so the band is closed below and open above, and a negative AT the cut fired and is a false positive, not a
-    near miss. UNGATED, as its two siblings are -- `applicability.decide` vetoes independently of the cut, and
-    this field says where the head SCORED, which is what a cut moved to the floor would have acted on.
+    THE COUNTERFACTUAL, NOT THE BAND: `refused_only_by_the_raise` asks `applicability.decide` at the floor and at
+    the applied cut, and a negative that fires at the first and not the second is in `[floor, threshold)` and
+    would have been a false positive at the floor. `floor <= score < threshold` is the private comparison
+    `test_decision_has_one_definition.py` forbids, and this function first shipped it (#2431 red on it). It is
+    GATED as a consequence: a negative on a page the applicability gate rules out never fires at ANY cut, so a
+    cut moved to the floor would not have acted on it, and reporting it as near the cut would state a comparison
+    the product never makes. The band is closed below and open above as before -- a negative AT the cut fired
+    and is a false positive, not a near miss.
 
     Per SUBTYPE, and only for a head that records a floor: an artifact trained before `guarantee` has no band, and
     "unrecorded" must not read as an empty one. A head that HAS a floor and no negative in its band maps to an
@@ -906,11 +910,11 @@ def near_cut_negatives(records: list[dict[str, Any]], included_indices: list[int
     """
     floors = threshold_floors(model_subtypes)
     banded: dict[str, dict[str, float]] = {subtype: {} for subtype in floors}
-    for subtype, floor in floors.items():
-        threshold = float(model_subtypes[subtype]["threshold"])
+    for subtype in floors:
         for position, index in enumerate(included_indices):
             score = float(subtype_scores[subtype][index])
-            if included_labels[position] or not floor <= score < threshold:
+            if included_labels[position] or not refused_only_by_the_raise(
+                    subtype, score, model_subtypes[subtype], records[index]):
                 continue
             case = case_identity(records[index])
             banded[subtype][case] = max(score, banded[subtype].get(case, float("-inf")))
@@ -1308,7 +1312,8 @@ def main() -> None:
             # repeat the raise did not refuse falsifies the claim, so it can only narrow.
             "falseNegativesAboveFloor": misses_the_raise_refused(missed, model_subtypes),
             # THE NEGATIVES IN THE SAME BAND (#2259), beside the misses in it. Reported, never acted on: this
-            # field moves no cut and gates nothing -- it is the number a ruling on the cut would need.
+            # field moves no cut and gates nothing -- it is the number a ruling on the cut would need. Gated
+            # by `applicability.decide` at both cuts, unlike its two ungated siblings.
             "nearCutNegatives": near_cut_negatives(
                 records, included_indices, included_labels, subtype_scores, model_subtypes),
             **without_binary_criterion_scores(
