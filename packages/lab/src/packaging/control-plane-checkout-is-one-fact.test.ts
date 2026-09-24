@@ -210,6 +210,10 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
     + "names the directory LITERALLY and must: a human pastes it into PowerShell, and a shell cannot "
     + "import a constant. Not this file's fact, and listed rather than derived so the duplication is "
     + "visibly decided.",
+  "${primary}": "the AGENT HOST's primary checkout, in the command `wake.mjs`'s `launchAdvice` (#2405) hands a standing "
+    + "engineer with no `role-<you>` worktree: `git -C ${primary} worktree add --detach ...`. It is a parameter there "
+    + "(defaulting to `PRIMARY_CHECKOUT`, the directory the order text has always named), and it is the checkout a "
+    + "SESSION is told not to work in -- a different machine's fact from the control plane's fleet-driving one.",
   "/opt/a11y": "the LAB's checkout (`lab_repo_path` in `group_vars/a11y_lab.yml`), a different machine "
     + "and a different fact from the control plane's -- `run-job.yml` already reaches it through that "
     + "variable, but `files/a11y-corpus-snapshot.service` (#1795; its `corpus-backup` twin was "
