@@ -1,6 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { REPO_ROOT } from "../dataset-paths.mjs";
 import { rejectedAsTruncated } from "./rejected-as-truncated.mjs";
 
 const gap = (channel: string, kind = "inferred", reason = "repeat") => ({ channel, reason, kind });
@@ -60,4 +65,74 @@ test("the shaper does not mutate what completeCaptures returned", () => {
   const before = JSON.stringify(input);
   rejectedAsTruncated(input);
   assert.equal(JSON.stringify(input), before);
+});
+
+// THE INTEGRATION: the shaper's own tests cannot see whether `writeProvenance` is handed the rejected set at
+// all -- pass it `[]` and every test above stays green (reviewer-2's mutation on #2384). So this runs the
+// BUILD, on a fixture corpus, and reads the `.source.json` it wrote.
+const CLEAN = "https://www.w3.org/WAI/tutorials/images/decorative/";
+const TRUNCATED = [
+  "https://www.w3.org/WAI/tutorials/images/informative/",
+  "https://www.w3.org/WAI/tutorials/images/functional/",
+];
+
+function corpusEntry(url: string, diagnostics: object[]) {
+  return {
+    role: "training",
+    publishedClaim: "clean",
+    claimSource: "https://www.w3.org/WAI/",
+    demonstrates: "images",
+    capturedAt: "2026-09-14T00:00:10.389Z",
+    capture: { url, transcript: [], diagnostics, environment: { captureProtocol: 21 } },
+  };
+}
+
+function buildIn(dir: string, entries: ReturnType<typeof corpusEntry>[]) {
+  const corpus = join(dir, "corpus");
+  mkdirSync(corpus);
+  entries.forEach((e, i) => writeFileSync(join(corpus, `${i}.json`), JSON.stringify(e)));
+  const base = join(dir, "base.jsonl");
+  writeFileSync(base, JSON.stringify({ id: "generated-1" }) + "\n");
+  const out = join(dir, "with-realism.jsonl");
+  const run = spawnSync(process.execPath, ["packages/lab/scripts/build-realism-tier.mjs", `--out=${out}`], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+    env: { ...process.env, REAL_CORPUS_ROOT: corpus, DATASET_EXPORT: base, A11Y_RUNS_READONLY: "" },
+  });
+  assert.equal(run.status, 0, `the build must run on the fixture corpus: ${run.stderr}${run.stdout}`);
+  return { run, provenance: JSON.parse(readFileSync(`${out}.source.json`, "utf8")) };
+}
+
+test("the build writes both rejected urls and their gaps into .source.json, beside realismRecords (#2383)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rejected-as-truncated-"));
+  try {
+    const sweep = (type: string, nextStop: string) => ({ event: "sweep", type, prevStop: "exhausted", nextStop });
+    const entries = [
+      corpusEntry(CLEAN, [sweep("heading", "exhausted")]),
+      corpusEntry(TRUNCATED[0], [sweep("heading", "repeat")]),
+      corpusEntry(TRUNCATED[1], [{ event: "readThrough", stopReason: "cap" }, sweep("heading", "deadline")]),
+    ];
+    const { run, provenance } = buildIn(dir, entries);
+    // Positive control for the emptiness below: one capture WAS usable, so this is a partition, not a wipe-out.
+    assert.equal(provenance.realismRecords, 1);
+    assert.match(run.stdout, new RegExp(`rejected as truncated: ${TRUNCATED.length} of ${entries.length}`));
+    assert.deepEqual(provenance.rejectedAsTruncated, [
+      { url: TRUNCATED[1], gaps: [gap("heading", "starved", "deadline"), gap("read-through", "capped", "cap")] },
+      { url: TRUNCATED[0], gaps: [gap("heading", "inferred", "repeat")] },
+    ]);
+    assert.equal(provenance.rejectedAsTruncated.length, entries.length - provenance.realismRecords);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a build that rejected nothing writes [] into .source.json, not an absent key (#2383)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "rejected-as-truncated-"));
+  try {
+    const { provenance } = buildIn(dir, [corpusEntry(CLEAN, [])]);
+    assert.equal(provenance.realismRecords, 1);
+    assert.deepEqual(provenance.rejectedAsTruncated, []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
