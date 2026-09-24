@@ -255,6 +255,9 @@ const JOB_SCRIPT_OVERRIDE: Record<string, string> = {
   // placeholder instead would be refused by `refuseUnknownFlags`, and a job whose no-op form is refused
   // is one nobody runs.
   "prune-orphan-captures": "packages/lab/scripts/corpus-prune-orphans.mjs",
+  // Same shape again (#2386): `--criterion=` is appended only when the caller named one, so the argv is a
+  // templated list. Its classification is the `NO_PARTIAL_POPULATION` line for the reader below, unchanged.
+  "explain-case": "packages/lab/scripts/explain-scorer.mjs",
 };
 
 /**
