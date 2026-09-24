@@ -1,3 +1,6 @@
+// writes: runs/captures
+// The line above is the acceptance job's declaration, and it is narrower than it reads: this file NAMES `RUNS_ROOT`/`DATASET_ROOT`
+// only to point the real script at a throwaway temp directory, so the `captures/` it writes is that fixture's and never the corpus's.
 /**
  * #1936 — `corpus-snapshot.mjs` summed tar's TIME column, so `archivedBytes` was `NaN` on every run and
  * the hollow-archive refusal it feeds could never fire.
