@@ -20,9 +20,12 @@ import { fileURLToPath } from "node:url";
 // with the gate. `CLAIM_LABEL` comes from the claim path's own module for the same reason.
 import { NOT_STARTABLE } from "../../../agent-org/src/work-gate.mjs";
 import { CLAIM_LABEL } from "../../../agent-org/src/claim-labels.mjs";
+// #2190: the rule the audit CALLS, imported so the test can drive one row per section the RULE names
+// rather than per section this file remembers -- see the loop test at the end.
+import { REQUIRED_FIELDS } from "../../../agent-org/src/row-claim/template-fields-rule.mjs";
 import {
   READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, handClaims, strandedByIncompleteDecline,
-  bothBoardLabels,
+  bothBoardLabels, unclaimableReadyRows, fetchReadyRowsWithBodies,
   claimsNobodyIsWorking,
   releaseDeclarationDrift,
   fetchOpenIssues, fetchOpenIssuesChecked, fetchReportedOpenIssueNumbers, openIssueSetSummary, fetchAllIssues, fetchIssues, closedDebris,
@@ -1117,19 +1120,19 @@ test("#546: notRun defaults to a fresh array when the caller does not pass one -
     + "refusal -- it is simply not recorded anywhere the caller can see, same as before this test existed");
 });
 
-test("CHECKS names all sixteen, so the partial-audit sentence states a true denominator", () => {
+test("CHECKS names all seventeen, so the partial-audit sentence states a true denominator", () => {
   // #1130 added the twelfth, #1163 the thirteenth, and the waits-in-prose witness the fourteenth. This pin is why: the audit's own "N of M check(s) did
   // not answer" sentence reads M from `CHECKS.length`, so a check added without updating the denominator
   // would make every partial-audit report understate what it failed to examine.
   //
   // It caught #1163's entry within a minute of it being added, and the fourteenth the same way,
   // which is the whole of its job.
-  assert.equal(CHECKS.length, 16);
+  assert.equal(CHECKS.length, 17);
   assert.deepEqual(CHECKS.map(([what]) => what), [
     "open issues", "hand claims", "labelless rows", "declined rows", "closed issues",
     "board membership", "closing PR references", "claim activity", "closed-row provenance",
     "closing PR never merged", "coverage vs tracker", "release declaration", "filing guidance",
-    "waits stated in prose", "rows no cause can reach", "half-promoted rows",
+    "waits stated in prose", "rows no cause can reach", "half-promoted rows", "unclaimable ready rows",
   ]);
 });
 
@@ -1795,4 +1798,123 @@ test("#2111: `backlog` is deliberately NOT in MUTEX_LABELS -- this check exists 
     `MUTEX_LABELS must not contain \`backlog\`: ${MUTEX_LABELS.join(", ")}`);
   assert.deepEqual(mutexViolations([{ number: 2050, title: "half-promoted", labels: ["backlog", READY_LABEL] }]), [],
     "the half-promoted row is bothBoardLabels' finding, not mutexViolations', and only one of them may own it");
+});
+
+/**
+ * #2190: A `ready` ROW `row-claim` WOULD REFUSE IS REPORTED -- #75's shape, the one this audit's own header
+ * names as its founding incident ("no Region or Acceptance a worker could run") and never checked.
+ *
+ * THE POSITIVE CONTROL IS THE THREE TESTS BELOW THAT EACH DROP ONE SECTION. Measured 2026-09-23 at
+ * `70a1087ee`: 0 of 25 open `ready` rows were unclaimable, so an emptiness assertion over the live queue
+ * would pass by having nothing to look at -- which is the one thing this row must not ship. Each section
+ * has its own test, so a predicate that only ever looked at one of them fails the other two by name.
+ */
+const SECTION_TEXT: Record<string, string> = {
+  Region: "## Region\n\n```\npackages/agent-org/src/ready-label-audit.mjs\n```\n",
+  Acceptance: "## Acceptance\n\n```shell\nnpx rstest run --config c.mjs --include a.test.ts\n```\n",
+  "Open-check": "## Open-check\n\nMeasured 2026-09-23 by `product-manager`.\n",
+};
+/** A body stating every section except those named. */
+function bodyWithout(...omitted: string[]) {
+  return ["## What is wrong\n\nSomething.\n",
+    ...Object.entries(SECTION_TEXT).filter(([name]) => !omitted.includes(name)).map(([, text]) => text),
+  ].join("\n");
+}
+function readyRow(number: number, body: string, labels: string[] = [READY_LABEL, "lane:any"]) {
+  return { number, title: `row ${number}`, labels, body };
+}
+
+test("#2190 ACCEPTANCE, MUTATION TARGET: a ready row with NO Region is reported, naming Region", () => {
+  const found = unclaimableReadyRows([readyRow(75, bodyWithout("Region"))]);
+  assert.deepEqual(found.map((r) => [r.number, r.missing]), [[75, ["Region"]]]);
+});
+
+test("#2190 ACCEPTANCE, MUTATION TARGET: a ready row with NO Acceptance is reported, naming Acceptance", () => {
+  const found = unclaimableReadyRows([readyRow(76, bodyWithout("Acceptance"))]);
+  assert.deepEqual(found.map((r) => [r.number, r.missing]), [[76, ["Acceptance"]]]);
+});
+
+test("#2190 ACCEPTANCE, MUTATION TARGET: a ready row with NO Open-check is reported, naming Open-check "
+  + "-- #1990's shape, promoted by hand", () => {
+  const found = unclaimableReadyRows([readyRow(1990, bodyWithout("Open-check"))]);
+  assert.deepEqual(found.map((r) => [r.number, r.missing]), [[1990, ["Open-check"]]]);
+});
+
+test("#2190: a ready row carrying all three sections is NOT reported", () => {
+  // The other half of the control: every complete row on the board is this shape, so a predicate that
+  // reported every `ready` row would fail here and not above.
+  assert.deepEqual(unclaimableReadyRows([readyRow(1, bodyWithout())]), []);
+});
+
+test("#2190: an EMPTY body reports all three sections, and a heading with nothing under it counts as absent", () => {
+  assert.deepEqual(unclaimableReadyRows([readyRow(2, "")])[0].missing, ["Region", "Acceptance", "Open-check"]);
+  const found = unclaimableReadyRows([readyRow(3, `${bodyWithout("Open-check")}\n## Open-check\n`)]);
+  assert.deepEqual(found.map((r) => r.missing), [["Open-check"]],
+    "the rule reads a bare heading as absent, and this check reports what the rule reports");
+});
+
+test("#2190: only rows carrying `ready` are in the population -- a backlog row missing sections is not this "
+  + "check's finding, and a row is judged on its OWN body", () => {
+  const found = unclaimableReadyRows([
+    readyRow(4, bodyWithout("Region"), ["backlog", "lane:any"]),
+    readyRow(5, bodyWithout("Region")),
+    readyRow(6, bodyWithout()),
+  ]);
+  assert.deepEqual(found.map((r) => r.number), [5]);
+  assert.deepEqual(unclaimableReadyRows([]), []);
+  assert.deepEqual(unclaimableReadyRows(undefined as never), []);
+});
+
+test("#2190: the finding carries the RULE's own sentence, so the report and the claim refusal cannot say "
+  + "different things", () => {
+  const [row] = unclaimableReadyRows([readyRow(75, bodyWithout("Region", "Acceptance"))]);
+  assert.match(row.reason, /^#75 is missing Region, Acceptance -- /);
+  assert.deepEqual(row.missing, ["Region", "Acceptance"]);
+});
+
+test("#2190: it asks the rule which sections are required -- a row missing EACH section the rule names is "
+  + "reported, whatever the list is today", () => {
+  // Derived from the rule's own export, so a fourth required field is covered without this file being
+  // edited. The literal below is the positive control for THAT loop: were `REQUIRED_FIELDS` emptied the
+  // loop would pass over nothing.
+  assert.deepEqual([...REQUIRED_FIELDS], ["Region", "Acceptance", "Open-check"]);
+  for (const field of REQUIRED_FIELDS) {
+    assert.ok(SECTION_TEXT[field], `the fixture has no text for the rule's field ${field}`);
+    assert.deepEqual(unclaimableReadyRows([readyRow(9, bodyWithout(field))])[0]?.missing, [field]);
+  }
+});
+
+test("#2190: it is its OWN population -- an unclaimable ready row is not a mutex violation or closed debris", () => {
+  const row = readyRow(75, bodyWithout("Region"));
+  assert.deepEqual(mutexViolations([row]), []);
+  assert.deepEqual(closedDebris([row]), []);
+  assert.equal(unclaimableReadyRows([row]).length, 1);
+});
+
+test("#2190: `unclaimable ready rows` is a CHECKS entry, so the live comparison actually runs", () => {
+  assert.ok(CHECKS.some(([name]) => name === "unclaimable ready rows"),
+    "a pure predicate nothing calls is a fact stated once more, not a fact checked");
+});
+
+test("#2190: fetchReadyRowsWithBodies asks server-side for `ready`, with the body, and parses labels", () => {
+  const seen: string[][] = [];
+  const run = (_cmd: string, args: string[]) => {
+    seen.push(args);
+    return JSON.stringify([{ number: 7, title: "t", labels: [{ name: READY_LABEL }], body: "" }]);
+  };
+  const rows = fetchReadyRowsWithBodies({ run });
+  assert.deepEqual(rows, [{ number: 7, title: "t", labels: [READY_LABEL], body: "" }]);
+  const args = seen[0];
+  assert.equal(args[args.indexOf("--label") + 1], READY_LABEL);
+  assert.equal(args[args.indexOf("--state") + 1], "open");
+  assert.match(args[args.indexOf("--json") + 1], /\bbody\b/);
+});
+
+test("#2190: an entry with no `body` STRING throws -- an empty body is a fact, an absent one is a wrong question", () => {
+  const noBody = () => JSON.stringify([{ number: 7, title: "t", labels: [{ name: READY_LABEL }] }]);
+  assert.throws(() => fetchReadyRowsWithBodies({ run: noBody }), /missing number\/title\/labels\/body/);
+  assert.throws(() => fetchReadyRowsWithBodies({ run: throwingRun("gh: authentication required") }),
+    /could not list open ready rows with bodies/);
+  const nullBody = () => JSON.stringify([{ number: 7, title: "t", labels: [], body: null }]);
+  assert.throws(() => fetchReadyRowsWithBodies({ run: nullBody }), /missing number\/title\/labels\/body/);
 });
