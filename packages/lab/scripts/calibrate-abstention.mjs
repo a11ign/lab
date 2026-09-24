@@ -48,6 +48,7 @@ import { realPageFor } from "../src/training/real-page-corpus.mjs";
 // THE FIGURES' SELECTION, imported rather than written here (#955): `field-role.test.ts` asserts through it.
 import { calibrationEntries } from "../src/training/real-page-selection.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
+import { captureProtocolCensus } from "../src/training/capture-protocol-census.mjs";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, realCorpusRoot, abstentionRoot, abstentionSweepPath, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
@@ -295,35 +296,6 @@ export function testedCells(/** @type {any} */ page) {
 export function contradictedFindings(/** @type {any} */ page) {
   const disclosed = new Set((page.claimExcludes ?? []).map((/** @type {any} */ entry) => entry.split(":")[0]));
   return page.predicted.filter((/** @type {any} */ criterion) => !disclosed.has(criterion));
-}
-
-/**
- * How many of the fitted captures were taken under each `captureProtocol`, keyed by the protocol, in the shape
- * `evaluate-screenreader-acceptance.py`'s `capture_protocol_census` reports (`{"21": 49}`; a capture that
- * records none counts under `"absent"`).
- *
- * THE FIT COULD NOT SAY WHAT ITS OWN INPUTS WERE CAPTURED UNDER, and #2212 is what that costs: the 49
- * calibration captures sat at protocol 18 while the workers served 21, and the threshold fitted on them looked
- * identical to one fitted on a current split -- so three meaning bumps went unnoticed.
- *
- * A CENSUS AND NOT A FLOOR, for the Python function's reason: which protocol a reading REQUIRES belongs to the
- * question asking (#2212 wants a single `21`), and a minimum here would be this script guessing at it.
- *
- * Read off the captures the scoring actually used, never off the stamped role or the directory listing: the
- * directory also holds orphans (protocol 6, or none) that no declared page owns and that will never move.
- * @param {readonly any[]} pages
- * @returns {Record<string, number>}
- */
-export function captureProtocolCensus(pages) {
-  /** @type {Record<string, number>} */
-  const counts = {};
-  for (const page of pages) {
-    // `?.` all the way down: a capture can carry `"environment": null`, and this runs over every fitted page.
-    const protocol = page.capture?.environment?.captureProtocol;
-    const key = protocol === undefined || protocol === null ? "absent" : String(protocol);
-    counts[key] = (counts[key] ?? 0) + 1;
-  }
-  return counts;
 }
 
 /** @param {any[]} pages */

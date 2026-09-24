@@ -11,7 +11,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { captureProtocolCensus, compareAtFloor } from "../scripts/calibrate-abstention.mjs";
+import { compareAtFloor } from "../scripts/calibrate-abstention.mjs";
 
 const row = (floor: number, falsePositives: number) =>
   ({ floor, scored: 21, conformantScored: 18, falsePositives, disclosed: 0,
@@ -48,22 +48,4 @@ test("a baseline that never swept this floor falls back to a LOWER one, never a 
 test("no comparable baseline row yields no verdict, rather than a fabricated one", () => {
   assert.equal(compareAtFloor([row(0.5, 3)], [], 0.5), null);
   assert.equal(compareAtFloor([], [row(0.5, 3)], 0.5), null);
-});
-
-const captured = (protocol?: number | null) =>
-  ({ capture: { url: "https://example.test/", environment: protocol === undefined ? undefined : { captureProtocol: protocol } } });
-
-test("the capture-protocol census counts each protocol the fit was taken under (#2212)", () => {
-  // A stale split must say so in its own output: 49 captures at 18 while the workers serve 21 read
-  // identically to a current split until something prints the census.
-  assert.deepEqual(captureProtocolCensus([captured(18), captured(18), captured(21)]), { "18": 2, "21": 1 });
-});
-
-test("a capture that records no protocol counts as absent, and does not crash the census", () => {
-  const nullEnvironment = { capture: { environment: null } };
-  assert.deepEqual(captureProtocolCensus([captured(), captured(null), nullEnvironment, { capture: {} }]), { absent: 4 });
-});
-
-test("an empty fit has an empty census, so the positive control is the two cases above", () => {
-  assert.deepEqual(captureProtocolCensus([]), {});
 });
