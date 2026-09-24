@@ -20,8 +20,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const ACTION = readFileSync(resolve(REPO, "action.yml"), "utf8");
@@ -125,4 +127,135 @@ test("an input mirroring a --no-<name> flag defaults true and passes the flag on
     assert.ok(onPreserving.includes(passes[0].trim()),
       `${name}'s guard ${passes[0].trim()} is not one that leaves the probe ON by default; use ${onPreserving[0]}`);
   }
+});
+
+/**
+ * THE PAGE LIST (#2272): `url` AND `urls` ARE TWO FORMS OF ONE INPUT, AND THE CAP OVERRIDE IS AN INPUT AND NOTHING ELSE.
+ *
+ * Three things a workflow file could get wrong without any other test noticing, each of them a way for a run to
+ * capture something other than what its author wrote:
+ * - `url` stayed `required: true`, so a list-only workflow could not be written (the runner refuses a missing
+ *   required input before any step runs, which reads as a broken Action);
+ * - the both-or-neither refusal moved AFTER setup, so the ~100 s of runner minutes it exists to save were billed
+ *   anyway;
+ * - the override was made reachable some other way -- an environment default or a config file -- and a cap the
+ *   author never raised on purpose was raised for them.
+ */
+test("url and urls are alternatives: neither is required, and both-or-neither is refused before setup", () => {
+  const entry = (name: string) => new RegExp(`^ {2}${name}:\\n((?:(?: {4}.*)?\\n)*)`, "m").exec(ACTION)?.[1] ?? "";
+  // `url` carries no `default:`: `example-matches-action-defaults.test.ts` compares every input an example SETS
+  // against its default, and `url: ""` would read as a contradiction by every example that names a page.
+  for (const name of ["url", "urls", "max-pages"]) {
+    assert.match(entry(name), /^ {4}required: false$/m, `${name} must not be required: exactly one of url and urls is`);
+    if (name !== "url") {
+      assert.match(entry(name), /^ {4}default: ""$/m, `${name} must default to the empty string, which is "not given"`);
+    }
+  }
+  const guard = ACTION.indexOf("Check exactly one of url and urls is given");
+  const setup = ACTION.indexOf("uses: actions/setup-node");
+  assert.ok(guard > 0 && setup > 0 && guard < setup, "the both-or-neither refusal must come BEFORE setup-node, which is where billing starts");
+  const step = ACTION.slice(guard, setup);
+  assert.match(step, /Give exactly one of url and urls, not both/);
+  assert.match(step, /Give exactly one of url and urls: no page was given/);
+});
+
+test("the page list reaches the CLI as --urls, the override as --max-pages, and nothing else raises the cap", () => {
+  for (const flag of ["--urls", "--max-pages"]) {
+    assert.ok(CLI.includes(`"${flag}"`), `${flag} is not a flag the CLI parses, so this expectation is stale rather than met`);
+    assert.ok(ACTION.split("\n").some((line) => /\bargs\+=\(/.test(line) && line.includes(flag)),
+      `the Action never passes ${flag}: the input would be declared and ignored`);
+  }
+  assert.ok(ACTION.split("\n").some((line) => /\bargs\+=\(/.test(line) && line.includes("inputs.max-pages }}")),
+    "max-pages must reach the argv");
+  // `multi-page.test.ts` proves the CLI reads no environment variable for the cap; this is the workflow's half.
+  assert.doesNotMatch(ACTION, /\bMAX_PAGES\b/, "action.yml exports no environment default for the cap");
+});
+
+/**
+ * A LIST IN WHICH ONE PAGE FAILED MUST STILL BE REPORTED (#2313's review at 0209b180).
+ *
+ * The CLI exits 1 for such a list AFTER writing every page's result, and GitHub runs `shell: bash` with `-eo
+ * pipefail`, so a bare invocation stopped the capture step before `result-json` was set and the Report step -- the
+ * only thing that renders the failed page -- never ran. Both halves below RUN the shell text out of action.yml
+ * rather than grep it, because a grep for `|| status=$?` is satisfied by a comment that says so.
+ */
+function stepText(startMarker: string, endMarker: string): string {
+  const from = ACTION.indexOf(startMarker);
+  const to = ACTION.indexOf(endMarker, from);
+  assert.ok(from > 0 && to > from, `action.yml no longer has ${JSON.stringify(startMarker)} .. ${JSON.stringify(endMarker)}`);
+  return ACTION.slice(from, to);
+}
+
+function runCaptureTail(fake: string): { status: number | null; outputs: string; result: string } {
+  const dir = mkdtempSync(join(tmpdir(), "capture-tail-"));
+  try {
+    // Only the lines that invoke the CLI and record its outcome; `npx tsx packages/cli/src/cli.ts "${args[@]}"` is the fake.
+    const tail = stepText("        status=0\n        npx tsx packages/cli/src/cli.ts", '    - name: Report')
+      .replace(/npx tsx packages\/cli\/src\/cli\.ts "\$\{args\[@\]\}"/, "fake_cli");
+    const script = `set -eo pipefail\nargs=()\nout="$D/result.json"\nfake_cli() { ${fake}; }\n${tail}`;
+    const ran = spawnSync("bash", ["-c", script], {
+      env: { ...process.env, D: dir, GITHUB_OUTPUT: join(dir, "outputs") }, encoding: "utf8",
+    });
+    const read = (name: string) => { try { return readFileSync(join(dir, name), "utf8"); } catch { return ""; } };
+    return { status: ran.status, outputs: read("outputs"), result: read("result.json") };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("a CLI that exits 1 AFTER writing its result does not stop the capture step: the outputs are set and the status is handed on", () => {
+  const run = runCaptureTail(`echo '{"multiPage":true,"pages":[]}'; return 1`);
+  assert.equal(run.status, 0, "the capture step must not fail here: the Report step is what renders the failed page");
+  assert.match(run.outputs, /^result-json=.*result\.json$/m);
+  assert.match(run.outputs, /^capture-status=1$/m);
+});
+
+test("a CLI that exits nonzero with NO result still fails the capture step, and sets no result-json", () => {
+  const run = runCaptureTail("return 2");
+  assert.equal(run.status, 2, "a refusal or crash left nothing to report, and must fail where it always did");
+  assert.doesNotMatch(run.outputs, /result-json=/);
+});
+
+test("a CLI that succeeds sets capture-status=0", () => {
+  const run = runCaptureTail(`echo '{}'`);
+  assert.equal(run.status, 0);
+  assert.match(run.outputs, /^capture-status=0$/m);
+});
+
+test("the Report step re-raises the capture's status once the report exists, and the outputs reducer survives a PDF page", () => {
+  const report = stepText("    - name: Report\n", "    # Last, and `always()`");
+  assert.match(report, /capture-status \|\| 0/, "the Report step must read the capture's status");
+  // The reducer, run as the runner runs it, over a list holding a PDF result (`{ url, task, pdf }`: no verdict) beside a page with one.
+  const reducer = /node -e '\n([\s\S]*?)\n\s*' "\$\{\{ steps\.capture\.outputs\.result-json \}\}"/.exec(report)?.[1];
+  assert.ok(reducer, "the outputs reducer is no longer an inline `node -e` in the Report step");
+  const dir = mkdtempSync(join(tmpdir(), "reducer-"));
+  try {
+    const result = join(dir, "result.json");
+    const withVerdict = { url: "https://a.example/", verdict: { findings: [{}, {}], taskCompletable: true } };
+    const pdf = { url: "https://a.example/x.pdf", task: "t", pdf: [] };
+    writeFileSync(result, JSON.stringify({
+      multiPage: true,
+      pages: [{ url: withVerdict.url, status: "captured", results: [withVerdict] },
+        { url: pdf.url, status: "captured", results: [pdf] }],
+    }));
+    const ran = spawnSync("node", ["-e", reducer, result], {
+      env: { ...process.env, GITHUB_OUTPUT: join(dir, "outputs") }, encoding: "utf8",
+    });
+    assert.equal(ran.status, 0, `the reducer crashed on a verdict-less result: ${ran.stderr}`);
+    const outputs = readFileSync(join(dir, "outputs"), "utf8");
+    assert.match(outputs, /^findings=2$/m, "the verdict-less page adds no findings");
+    assert.match(outputs, /^task-completable=false$/m, "a page with no verdict is never completable");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the Report step exits with the capture's status only when the report's own status is 0", () => {
+  const raise = stepText('        if [ "$status" -eq 0 ]; then status="${{', "\n    # Last, and `always()`");
+  const exitOf = (reportStatus: number, captureStatus: string) => spawnSync("bash", ["-c",
+    `set -eo pipefail\nstatus=${reportStatus}\n${raise.replace(/\$\{\{ steps\.capture\.outputs\.capture-status \|\| 0 \}\}/, captureStatus)}`,
+  ]).status;
+  assert.equal(exitOf(0, "1"), 1, "a failed page must fail the job after the report is written");
+  assert.equal(exitOf(0, "0"), 0);
+  assert.equal(exitOf(2, "1"), 2, "the report's status says WHICH failure; the capture's must not overwrite it");
 });
