@@ -55,6 +55,7 @@ import { trainingEntries } from "../src/training/real-page-selection.mjs";
 import { captureEnvironment } from "../src/training/export-screenreader-dataset.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { protocolCensusLines, protocolCensusOfTheMix } from "../src/training/capture-protocol-census.mjs";
+import { rejectedAsTruncated } from "../src/training/rejected-as-truncated.mjs";
 import { captureWasTruncated } from "@a11ign/evidence/verify";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, realCorpusRoot, datasetExportPath, datasetRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
@@ -315,8 +316,11 @@ export function recordFor(/** @type {any} */ entry) {
  *
  * The capture-protocol census of both halves is recorded here too (#2371), so the reading of what the file
  * is MADE OF survives the run that printed it -- a mixed-protocol file looks the same as a uniform one.
+ *
+ * So are the captures rejected as truncated (#2383): the count alone (`4 of 41`) could not say which pages
+ * changed sides between two builds. `[]` on the base-only path -- an absent key and an empty list differ.
  */
-function writeProvenance(/** @type {any} */ baseText, /** @type {any} */ records, /** @type {any} */ census) {
+function writeProvenance(/** @type {any} */ baseText, /** @type {any} */ records, /** @type {any} */ census, /** @type {any} */ rejected) {
   const path = OUT + ".source.json";
   writeFileSync(path, JSON.stringify({
     source: relative(REPO, BASE),
@@ -324,6 +328,7 @@ function writeProvenance(/** @type {any} */ baseText, /** @type {any} */ records
     sourceRecords: baseText.trimEnd().split("\n").filter(Boolean).length,
     realismRecords: records.length,
     captureProtocolCensus: census,
+    rejectedAsTruncated: rejectedAsTruncated(rejected),
   }, null, 2) + "\n");
   return path;
 }
@@ -388,7 +393,7 @@ function main() {
     const baseOnly = readFileSync(BASE, "utf8");
     writeFileSync(OUT, baseOnly);
     const census = protocolCensusOf(entries, baseOnly);
-    writeProvenance(baseOnly, [], census);
+    writeProvenance(baseOnly, [], census, []);
     process.stdout.write(`  written: ${OUT} (base only)\n`);
     reportProtocolCensus(census);
     return;
@@ -407,7 +412,7 @@ function main() {
   const base = baseText.trimEnd().split("\n");
   writeFileSync(OUT, [...base, ...records.map((/** @type {any} */ r) => JSON.stringify(r))].join("\n") + "\n");
   const census = protocolCensusOf(entries, baseText);
-  const provenance = writeProvenance(baseText, records, census);
+  const provenance = writeProvenance(baseText, records, census, rejected);
 
   process.stdout.write(`  base records:     ${base.length}\n`);
   process.stdout.write(`  realism records:  ${records.length}  (label=clean, from each publisher's own statement)\n`);
