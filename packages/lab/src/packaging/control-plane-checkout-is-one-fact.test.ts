@@ -478,6 +478,12 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
     + "reaches its accounts through, beside `workers` above and `.config` (the person's). It is which "
     + "ACCOUNT a reviewer acts as, not a checkout, on the same measured box as `repos`. First visible "
     + "under #2325, whose merge failed this guard on main's own tip.",
+  "leads": "the AGENT host's `gh` CONFIG ROOT for the machine account `a11ign-ai-leads` -- "
+    + "`/home/agent/leads/gh`, the fourth `GH_CONFIG_DIR` beside `workers`, `reviewer` and `.config` above, "
+    + "created by the chairman on 2026-09-24. It is which ACCOUNT the lead sessions act as, not a checkout, "
+    + "on the same measured box as `repos`. Classified BEFORE its first doc lands on main: #2332 / PR #2336 "
+    + "ships docs and a wrapper that name it, and would have failed this guard on merge exactly as #2329 "
+    + "did (#2346).",
 };
 
 test("THE EXEMPTION IS THE FIELD, NOT THE FILE -- a quoted `command` in a reported record is not a use, "
