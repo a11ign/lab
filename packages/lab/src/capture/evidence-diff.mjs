@@ -705,5 +705,82 @@ export function readCapture(dir, id, variant) {
  * @param {Record<string, any> | null} capture
  */
 export function isUsableCapture(capture) {
-  return capture?.screenReader === "NVDA" && Array.isArray(capture.transcript) && capture.transcript.length > 0;
+  return unusableReason(capture) === null;
+}
+
+/**
+ * Why this capture is NOT usable, or `null` when it is. `isUsableCapture` is this being `null`, so a sweep
+ * that refuses a capture can say WHY in the same words the predicate used (#2433).
+ *
+ * THE THIRD REFUSAL is a capture in which NVDA never read the page (#2412): its focus was on a `cmd.exe`
+ * console, so the transcript is `["blank","blank"]` and `documentReady` titled "C: Windows SYSTEM 32 cmd dot
+ * exe". The transcript is non-empty and the reader is NVDA, so the two older tests admitted it, and it was
+ * scored as a calibration page that "read" nothing (0.7665 -> 0.5069 on a page that had not changed). It is
+ * defined by WHAT THE CAPTURE SAYS -- every line is `blank`, or the last `documentReady` names the console --
+ * and not by a length: no threshold is taken on trust, and the shortest transcript that passed in the two
+ * corpus copies read for this row (p18, p21) was 240 lines.
+ *
+ * The LAST `documentReady` decides the title, because `capture-setup.mjs` marks one per attempt and a retry
+ * that reached the browser after an attempt on a console is a capture that read the page.
+ *
+ * @param {Record<string, any> | null} capture
+ * @returns {string | null}
+ */
+export function unusableReason(capture) {
+  if (capture?.screenReader !== "NVDA") return "not a capture NVDA made";
+  if (!Array.isArray(capture.transcript) || capture.transcript.length === 0) return "empty transcript";
+  if (capture.transcript.every((/** @type {unknown} */ line) => typeof line === "string" && line.trim() === "blank")) {
+    return `NVDA read only "blank" (${capture.transcript.length} line(s)), so it never read the page`;
+  }
+  const title = lastDocumentReadyTitle(capture.diagnostics);
+  if (typeof title === "string" && CONSOLE_WINDOW_TITLE.test(title)) {
+    return `NVDA's focus was on a console window, not the browser (documentReady title "${title}")`;
+  }
+  return null;
+}
+
+/** NVDA speaks `cmd.exe` as "cmd dot exe", so that is what a title names when focus sat on the console. */
+const CONSOLE_WINDOW_TITLE = /\bcmd dot exe\b/i;
+
+/** @param {unknown} diagnostics @returns {unknown} */
+function lastDocumentReadyTitle(diagnostics) {
+  if (!Array.isArray(diagnostics)) return undefined;
+  const marks = diagnostics.filter((event) => event?.event === "documentReady");
+  return marks.at(-1)?.title;
+}
+
+/**
+ * Split loaded capture entries (`{ capture }` wrappers, as the real-page corpus stores them) into those the
+ * sweep may score and those it must refuse, each refused one with the reason.
+ *
+ * Pure, so a sweep's "N scored" can be pinned without a lab: the number it prints is `kept.length`, which
+ * is the number it READ (#2433).
+ *
+ * @template {{ capture?: Record<string, any> | null }} E
+ * @param {readonly E[]} entries
+ * @returns {{ kept: E[], refused: { url: string, reason: string }[] }}
+ */
+export function refuseUnusableEntries(entries) {
+  /** @type {E[]} */ const kept = [];
+  /** @type {{ url: string, reason: string }[]} */ const refused = [];
+  for (const entry of entries) {
+    const reason = unusableReason(entry.capture ?? null);
+    if (reason === null) kept.push(entry);
+    else refused.push({ url: String(entry.capture?.url ?? "(no url)"), reason });
+  }
+  return { kept, refused };
+}
+
+/**
+ * The lines a sweep prints for what it refused. EMPTY when it refused nothing, so a clean sweep carries no
+ * line to learn to skip.
+ * @param {readonly { url: string, reason: string }[]} refused
+ * @returns {string[]}
+ */
+export function refusalLines(refused) {
+  if (!refused.length) return [];
+  return [
+    `  REFUSED ${refused.length} capture(s) NVDA did not read the page in; they are not in the scored total:`,
+    ...refused.map((r) => `    ${r.url}  --  ${r.reason}`),
+  ];
 }

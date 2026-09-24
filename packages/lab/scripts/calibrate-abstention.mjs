@@ -47,6 +47,7 @@ import { oracleCounts } from "@a11ign/evidence/verify";
 import { realPageFor } from "../src/training/real-page-corpus.mjs";
 // THE FIGURES' SELECTION, imported rather than written here (#955): `field-role.test.ts` asserts through it.
 import { calibrationEntries } from "../src/training/real-page-selection.mjs";
+import { refuseUnusableEntries, refusalLines } from "../src/capture/evidence-diff.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { captureProtocolCensus } from "../src/training/capture-protocol-census.mjs";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
@@ -135,7 +136,12 @@ function calibrationPages() {
     process.stdout.write(`  NOTE: ${undeclared.length} captured page(s) are not in real-page-corpus.mjs `
       + "and are excluded; a capture nobody declares cannot be scored against a claim.\n");
   }
-  return calibrationEntries(loaded);
+  // AFTER the role join, so a refusal names a page that would have been scored, and BEFORE the count `main`
+  // prints, so "Scoring N" is the number of pages NVDA READ (#2433). A console capture (transcript of
+  // `blank` lines) used to be admitted here and scored as a page.
+  const { kept, refused } = refuseUnusableEntries(calibrationEntries(loaded));
+  for (const line of refusalLines(refused)) process.stdout.write(`${line}\n`);
+  return kept;
 }
 
 /**
