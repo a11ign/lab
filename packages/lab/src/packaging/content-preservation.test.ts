@@ -72,6 +72,7 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { RULES_DIR, RULES_FILES } from "./rules-files.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -212,10 +213,13 @@ const NESTED_CLAUDE_MD = [
   ".github/CLAUDE.md",
 ];
 
-/** The new CLAUDE.md, every nested `CLAUDE.md`, and every `docs/*.md`, whitespace-normalised. */
+/** The new CLAUDE.md, every nested `CLAUDE.md`, every rules file, and every `docs/*.md`, normalised.
+ *
+ *  #2092: the rules files are named in `rules-files.ts` and are destinations for the same reason the
+ *  nested `CLAUDE.md` files are -- they load in every session, so text moved there is MOVED, not lost. */
 export function haystack(): string {
   const claudeMd = norm(readFileSync(join(REPO_ROOT, "CLAUDE.md"), "utf8"));
-  const nested = NESTED_CLAUDE_MD
+  const nested = [...NESTED_CLAUDE_MD, ...RULES_FILES]
     .map((rel) => join(REPO_ROOT, rel))
     .filter((abs) => existsSync(abs))
     .map((abs) => norm(readFileSync(abs, "utf8")));
@@ -522,6 +526,9 @@ test("a branch merely BEHIND main is accused of nothing -- the two-dot trap", (t
  * guarded population: the population stays the whole directory, because a second rules file loads in
  * every session exactly the same way. If `agent-practices.md` is ever split the way `CLAUDE.md` was
  * (#1240), this fails loudly and the anchor is re-pointed at whichever file the delivery clause went to.
+ * **#2092 did split it, and kept the anchor and the clause in ONE file on purpose:** `Timers and state`
+ * (the anchor) and `Routing` (the clause) both live in `org-routing-and-timers.md`, so the "contradicts
+ * its own document" argument still holds and the anchor did not have to be copied to a second file.
  * The loud failure IS the notice; deleting the assertion instead is how a guard quietly outlives its
  * premise, which is the shape this whole file exists to refuse one directory over.
  *
@@ -553,7 +560,7 @@ test("a branch merely BEHIND main is accused of nothing -- the two-dot trap", (t
  * these files today, the direction of that error is a loud red on a docs edit rather than a silent miss,
  * and the failure message says which spellings are not flagged.
  */
-const ALWAYS_LOADED_RULES = ".claude/rules";
+const ALWAYS_LOADED_RULES = RULES_DIR;
 
 /** The general statement in that file which a delivery clock contradicts. Asserted, never assumed. */
 const NO_STANDING_CRON = "No session holds a standing cron";
@@ -561,7 +568,7 @@ const NO_STANDING_CRON = "No session holds a standing cron";
 /** The always-loaded file carrying the delivery clause #2083 struck, and therefore the one that must
  *  state the anchor ITSELF. Named because "some file states it" is a different, weaker claim -- see the
  *  mutation in the header. This is the anchor's home, not the guarded population. */
-const CLAUSE_FILE = `${ALWAYS_LOADED_RULES}/agent-practices.md`;
+const CLAUSE_FILE = `${ALWAYS_LOADED_RULES}/org-routing-and-timers.md`;
 
 /**
  * Every wall-clock minute marker in `text`: a bare `:MM`, or an `H:MM`/`HH:MM`, in either case with no
@@ -674,4 +681,112 @@ test("no rule loaded by every session times a session's action to a wall-clock m
     + "RATE and the mechanism instead: one reading per `ceo` tick, posted on #928 as the record and "
     + "delivered with `npm run prompt:session`. A timestamp (`19:22:54Z`) is not this and is not "
     + `flagged:\n${flagged.map((f) => `-> ${f.file}  ${f.marker}  [${f.why}]\n   ${f.context}`).join("\n")}`);
+});
+
+/**
+ * #2092: THE RULES FILE WAS SPLIT BY TOPIC, AND THE SPLIT IS PROVED AGAINST THE COMMIT THAT MADE IT.
+ *
+ * `.claude/rules/agent-practices.md` was one file and B4 admits one open pull request per file, so every
+ * row amending any org practice waited on every other (#2025: refused three times in 15 hours, by three
+ * pull requests about unrelated topics). It is one file per topic now, and moving text between files is
+ * the operation `CLAUDE.md`'s guard above exists to make safe -- so the same standard applies: the move is
+ * BYTE-IDENTICAL, and the destinations are NAMED rather than globbed.
+ *
+ * ## WHY THIS COMPARES TWO FIXED COMMITS AND NOT "MAIN VERSUS NOW"
+ *
+ * The `CLAUDE.md` guard diffs against the merge-base, so it judges every future edit. Doing that here would
+ * refuse the ordinary act of striking a stale rule (#2083 deleted a delivery clock; #2025 rewrote a false
+ * sentence) -- a policy change nobody ruled on, made inside a split. The question this asks is narrower
+ * and has one answer forever: **did the split lose or alter a section?** Its inputs are the commit that
+ * ADDED the second rules file and that commit's parent, both immutable, so a later edit to any rules file
+ * cannot turn it red and cannot hide a loss the split itself made.
+ *
+ * ## THE UNIT IS THE SECTION, EXACTLY
+ *
+ * Every `## ` section of the parent's `agent-practices.md` must appear, byte for byte, in EXACTLY one
+ * destination that commit created -- and no destination may carry a section the parent did not have. That
+ * is three refusals with three names: DROPPED, DUPLICATED, ALTERED (which reads as one dropped and one
+ * added, both printed). The title and preamble are outside the claim: they were edited on purpose in the
+ * same commit, to say the file is no longer the only one.
+ *
+ * ## WHAT IT CANNOT SEE
+ *
+ * It says the sections moved intact; it does not say they moved to the RIGHT file. Which topic lives where
+ * is a judgement, and the directory listing test below only says the set is the one named.
+ *
+ * Skips, naming the reason, where the history is absent (the `acceptance` job's clone has no parent for
+ * the commit) -- the `ts` job runs it with `fetch-depth: 0`, as the guards above do.
+ */
+export function rulesSections(text: string): string[] {
+  return text.split(/^(?=## )/m).filter((p) => p.startsWith("## ")).map((p) => p.replace(/\s+$/, ""));
+}
+
+const headingOf = (section: string) => section.split("\n")[0];
+
+/** What a split did to the sections of the file it split. Empty arrays are the passing answer. */
+export function splitVerdict(baseText: string, destinations: { rel: string; text: string }[]) {
+  const base = rulesSections(baseText);
+  const held = destinations.flatMap((d) => rulesSections(d.text).map((section) => ({ rel: d.rel, section })));
+  return {
+    examined: base.length,
+    dropped: base.filter((s) => !held.some((h) => h.section === s)).map(headingOf),
+    duplicated: base.filter((s) => held.filter((h) => h.section === s).length > 1).map(headingOf),
+    added: held.filter((h) => !base.includes(h.section)).map((h) => `${h.rel}: ${headingOf(h.section)}`),
+  };
+}
+
+test("CONTROL: a split that drops, duplicates or rewords a section is refused, and an intact one is not", () => {
+  const a = "## Alpha\n\nfirst rule\n";
+  const b = "## Beta\n\n- second rule\n  wrapped\n";
+  const base = `# Title\n\npreamble\n\n${a}\n${b}`;
+  const clean = splitVerdict(base, [{ rel: "one.md", text: `# Title\n\nedited preamble\n\n${a}` }, { rel: "two.md", text: b }]);
+  assert.deepEqual(clean, { examined: 2, dropped: [], duplicated: [], added: [] },
+    "an intact split, with an EDITED preamble, must pass -- the preamble is outside the claim");
+  assert.deepEqual(splitVerdict(base, [{ rel: "one.md", text: a }]).dropped, ["## Beta"], "a dropped section");
+  assert.deepEqual(splitVerdict(base, [{ rel: "one.md", text: a }, { rel: "two.md", text: `${a}\n${b}` }]).duplicated,
+    ["## Alpha"], "a section in two destinations");
+  const reworded = splitVerdict(base, [{ rel: "one.md", text: a }, { rel: "two.md", text: b.replace("second", "2nd") }]);
+  assert.deepEqual([reworded.dropped, reworded.added], [["## Beta"], ["two.md: ## Beta"]],
+    "a reword is a drop AND an addition, so nothing rewritten in the move can pass as moved");
+  assert.equal(splitVerdict("no sections here", []).examined, 0,
+    "a base with no sections examines nothing -- the real test below asserts a positive count");
+});
+
+test("the directory holds exactly the rules files `rules-files.ts` names -- named, never globbed", () => {
+  const onDisk = readdirSync(join(REPO_ROOT, RULES_DIR)).filter((n) => n.endsWith(".md")).map((n) => `${RULES_DIR}/${n}`);
+  assert.ok(RULES_FILES.length > 1, "the split produced more than one file, so a list of one is a regression");
+  assert.deepEqual([...onDisk].sort(), [...RULES_FILES].sort(),
+    `${RULES_DIR}/ and rules-files.ts disagree. A file on disk that is not named loads in every session with `
+    + "nobody having chosen it; a name with no file is a destination that was silently dropped. Adding or "
+    + "removing a rules file is a deliberate edit to rules-files.ts.");
+});
+
+test("the #2092 split moved every section of agent-practices.md, byte for byte, into exactly one destination", (t) => {
+  if (!originMainResolves()) { t.skip(NO_ORIGIN_MAIN); return; }
+  const git = (...args: string[]) => execFileSync("git", args,
+    { cwd: REPO_ROOT, env: sandboxGitEnv(), encoding: "utf8", maxBuffer: 1024 * 1024 * 64 });
+  // The commit that ADDED the second rules file IS the split. `--reverse` so a file later deleted and
+  // re-added still answers with the first.
+  const splitCommit = git("log", "--diff-filter=A", "--reverse", "--format=%H", "--", RULES_FILES[1]).trim().split("\n")[0];
+  if (!splitCommit) { t.skip(`no commit adding ${RULES_FILES[1]} in this history. Not run, and not a pass.`); return; }
+  let parent: string;
+  try {
+    parent = git("rev-parse", `${splitCommit}^`).trim();
+  } catch {
+    t.skip(`${splitCommit.slice(0, 8)} is in this clone but its parent is not -- shallow. Not run, and not counted as a pass.`);
+    return;
+  }
+  // The destinations are what the split commit CREATED under the rules directory -- read from that immutable
+  // tree, so renaming a rules file later leaves this proof intact. Whether the CURRENT set is the named one
+  // is the previous test's question.
+  const created = git("ls-tree", "--name-only", splitCommit, `${RULES_DIR}/`).split("\n").filter((f) => f.endsWith(".md"));
+  const texts = blobsAt([`${parent}:${RULES_DIR}/agent-practices.md`, ...created.map((f) => `${splitCommit}:${f}`)]);
+  const verdict = splitVerdict(texts[0], created.map((rel, i) => ({ rel, text: texts[i + 1] })));
+  assert.ok(created.length > 1, `${splitCommit.slice(0, 8)} left ${created.length} rules file(s): not a split`);
+  assert.ok(verdict.examined >= 2, `the parent's agent-practices.md had ${verdict.examined} sections: nothing was examined`);
+  assert.deepEqual({ dropped: verdict.dropped, duplicated: verdict.duplicated, added: verdict.added },
+    { dropped: [], duplicated: [], added: [] },
+    `the split at ${splitCommit.slice(0, 8)} did not move ${verdict.examined} sections intact. DROPPED = in the `
+    + "parent, in no destination; DUPLICATED = in two; ADDED = in a destination and not the parent (which is also "
+    + "what a reworded section looks like). The move is byte-identical or it is a different change.");
 });
