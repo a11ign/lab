@@ -46,6 +46,7 @@ import {
   TRUNK_FIX_POLICY,
   extractTrunkFixDeclaration,
   redStreak,
+  redStreakReading,
   jumpDecision,
   atFrontOfQueue,
   enqueueAtFront,
@@ -774,10 +775,11 @@ const queuedAt = (position: number): Seat => seat({ mergeQueueEntry: { position,
 /**
  * A `gh` for a PR carrying `body`. `runs` answers the `trunk.yml` read (`"unreadable"` makes it fail); `seats` are
  * the successive answers to the queue-seat read -- the first is the read BEFORE the mutation, the second the
- * READ-BACK -- and `"unreadable"` in a slot makes that read fail. The mutation succeeds unless `mutationFails`.
+ * READ-BACK -- and `"unreadable"` in a slot makes that read fail. `pages` answers the `trunk.yml` read PAGE BY PAGE
+ * (the `page=N` of the URL picks the entry; past the end it is an empty page, as GitHub answers) and beats `runs`. The mutation succeeds unless `mutationFails`.
  */
-function jumpRun({ body, runs = RED_MAIN, seats = [seat(), queuedAt(1)], mutationFails, editFails }: {
-  body: string; runs?: object | "unreadable"; seats?: (Seat | "unreadable")[]; mutationFails?: string; editFails?: boolean;
+function jumpRun({ body, runs = RED_MAIN, pages, seats = [seat(), queuedAt(1)], mutationFails, editFails }: {
+  body: string; runs?: object | "unreadable"; pages?: (object | "unreadable")[]; seats?: (Seat | "unreadable")[]; mutationFails?: string; editFails?: boolean;
 }) {
   const calls: string[][] = [];
   let seatReads = 0;
@@ -791,9 +793,10 @@ function jumpRun({ body, runs = RED_MAIN, seats = [seat(), queuedAt(1)], mutatio
     if (answer === "unreadable") throw new Error("gh: HTTP 502 on the seat read");
     return JSON.stringify(answer);
   };
-  const trunkRuns = () => {
-    if (runs === "unreadable") throw new Error("gh: HTTP 403 on the runs read");
-    return JSON.stringify(runs);
+  const trunkRuns = (url: string) => {
+    const answer = pages ? (pages[Number(/[?&]page=(\d+)/.exec(url)?.[1] ?? 1) - 1] ?? { workflow_runs: [] }) : runs;
+    if (answer === "unreadable") throw new Error("gh: HTTP 403 on the runs read");
+    return JSON.stringify(answer);
   };
   const editLabels = () => {
     if (editFails) throw new Error("gh: HTTP 502 on pr edit");
@@ -806,7 +809,7 @@ function jumpRun({ body, runs = RED_MAIN, seats = [seat(), queuedAt(1)], mutatio
     if (route === "pr edit") return editLabels();
     if (route === "issue view") return JSON.stringify({ labels: [{ name: "session:worker-tooling" }] });
     if (route === "api graphql") return graphql(args);
-    if (args[0] === "api" && args[1].includes("actions/workflows/trunk.yml/runs")) return trunkRuns();
+    if (args[0] === "api" && args[1].includes("actions/workflows/trunk.yml/runs")) return trunkRuns(args[1]);
     return "";
   };
   return { run, calls };
@@ -984,6 +987,98 @@ test("#2391 PURE: redStreak is the run of reds up to the newest green -- through
   assert.deepEqual(redStreak({ workflow_runs: [...runs].reverse() }).map((r) => r.id), [6, 3], "the order the API hands them in decides nothing");
   assert.deepEqual(redStreak({ workflow_runs: [trunkRun(1, "aaaaaaa", "cancelled")] }), [], "no verdict at all is not a red");
   assert.deepEqual(redStreak(null as never), []);
+});
+
+/** `reds` consecutive failures, newest first, then (optionally) a green -- with the newest red's sha and the oldest red's sha named. */
+function longStreak({ reds, endsInGreen }: { reds: number; endsInGreen: boolean }) {
+  const at = (n: number) => new Date(Date.UTC(2026, 8, 1) + n * 60_000).toISOString();
+  const runs: TrunkRun[] = Array.from({ length: reds }, (_, i) => {
+    const n = reds - i;
+    const sha = n === reds ? RED_SHA : n === 1 ? OLDER_RED_SHA : n.toString(16).padStart(40, "0");
+    return { ...trunkRun(n + 1, sha, "failure"), created_at: at(n + 1) };
+  });
+  if (endsInGreen) runs.push({ ...trunkRun(1, GREEN_SHA, "success"), created_at: at(0) });
+  return runs;
+}
+const inPagesOf = (runs: TrunkRun[], size = 100) =>
+  Array.from({ length: Math.ceil(runs.length / size) }, (_, i) => ({ workflow_runs: runs.slice(i * size, (i + 1) * size) }));
+const pageReads = (calls: string[][]) => calls.filter((c) => c[1] === "api" && c[2]?.includes("actions/workflows/trunk.yml/runs")).length;
+
+test("#2441 A STREAK LONGER THAN ONE PAGE: a marker naming the OLDEST red of 250 is honoured -- the read pages until the green ends it", () => {
+  const stub = jumpRun({ body: `Closes #725\nFixes-trunk: ${OLDER_RED_SHA}\n`, pages: inPagesOf(longStreak({ reds: 250, endsInGreen: true })) });
+  const { code, log } = entry(stub);
+  assert.equal(code, EXIT.DONE);
+  assert.equal(mutations(stub.calls).length, 1, "the marker names a merge in the streak, however far back");
+  assert.ok(log.some((l) => /jump GRANTED/.test(l)));
+  assert.equal(pageReads(stub.calls), 3, "251 runs at 100 a page: the green is on the third");
+});
+
+test("#2441 THE READ STOPS WHEN IT HAS ITS ANSWER: the newest red is found on page one, and a green that ends the streak stops the paging", () => {
+  const long = inPagesOf(longStreak({ reds: 250, endsInGreen: true }));
+  const newest = jumpRun({ body: MARKED, pages: long });
+  entry(newest);
+  assert.equal(pageReads(newest.calls), 1, "the sha is in the streak already; nothing older can change that");
+  assert.equal(mutations(newest.calls).length, 1);
+
+  const named = inPagesOf([...longStreak({ reds: 50, endsInGreen: true })]);
+  const unnamed = jumpRun({ body: `Closes #725\nFixes-trunk: deadbee\n`, pages: named });
+  const { log } = entry(unnamed);
+  assert.equal(pageReads(unnamed.calls), 1, "a green on the first page ends the streak: the marker names nothing, and there is no page two to read");
+  assert.equal(mutations(unnamed.calls).length, 0);
+  assert.ok(log.some((l) => /none of deadbee is in its current red streak/.test(l)));
+});
+
+test("#2441 EACH STOP IS ITS OWN: a green on a FULL page ends the read though more pages exist, and history running out ends it though no green came", () => {
+  const streakThenHistory = longStreak({ reds: 29, endsInGreen: true });
+  const older = longStreak({ reds: 70, endsInGreen: false }).map((r, i) => ({ ...r, id: 1000 + i, created_at: `2026-08-01T00:${String(i).padStart(2, "0")}:00Z` }));
+  const fullPage = [...streakThenHistory, ...older];
+  assert.equal(fullPage.length, 100, "the green sits INSIDE a full page, so only `ended` can stop the read");
+  const greenOnFullPage = jumpRun({ body: `Closes #725\nFixes-trunk: deadbee\n`, pages: [{ workflow_runs: fullPage }, { workflow_runs: older }] });
+  entry(greenOnFullPage);
+  assert.equal(pageReads(greenOnFullPage.calls), 1, "the older runs on page two cannot lengthen a streak a green already ended");
+
+  const shortHistory = jumpRun({ body: `Closes #725\nFixes-trunk: deadbee\n`, pages: inPagesOf(longStreak({ reds: 30, endsInGreen: false })) });
+  const { log, error } = entry(shortHistory);
+  assert.equal(pageReads(shortHistory.calls), 1, "a page shorter than the page size is the end of the history: there is no page two to ask for");
+  assert.ok(log.some((l) => /none of deadbee is in its current red streak/.test(l)), "the whole history was read, so this is `names nothing`, not `could not read`");
+  assert.deepEqual(error, []);
+});
+
+test("#2441 A STREAK THAT OUTRUNS THE CAP is `could not read`, never `the marker names nothing` -- and the PR still arms", () => {
+  const endless = inPagesOf(longStreak({ reds: 1100, endsInGreen: false }));
+  const stub = jumpRun({ body: `Closes #725\nFixes-trunk: deadbee\n`, pages: endless });
+  const { code, log, error } = entry(stub);
+  assert.equal(code, EXIT.DONE);
+  assert.equal(pageReads(stub.calls), 10, "bounded: the cap is the limit, not the length of the history");
+  assert.equal(mutations(stub.calls).length, 0);
+  assert.equal(mergeCalls(stub.calls).length, 1, "a refused jump still arms the ordinary way");
+  assert.ok(error.some((l) => /longer than 1000 runs and names none of deadbee -- not read to its end/.test(l)));
+  assert.ok(log.some((l) => /jump REFUSED: could not read whether main is red/.test(l)));
+
+  const found = jumpRun({ body: `Closes #725\nFixes-trunk: ${OLDER_RED_SHA}\n`, pages: inPagesOf(longStreak({ reds: 1100, endsInGreen: false }).map((r, i) => (i === 950 ? { ...r, head_sha: OLDER_RED_SHA } : r))) });
+  entry(found);
+  assert.equal(pageReads(found.calls), 10, "found on the tenth page, inside the cap");
+  assert.equal(mutations(found.calls).length, 1, "a sha the reads DID reach is in the streak whatever lies beyond");
+});
+
+test("#2441 a page that FAILS partway is unreadable, not a shorter streak: nothing is granted from the pages that did answer", () => {
+  const [first] = inPagesOf(longStreak({ reds: 250, endsInGreen: true }));
+  const stub = jumpRun({ body: `Closes #725\nFixes-trunk: ${OLDER_RED_SHA}\n`, pages: [first, "unreadable"] });
+  const { code, error } = entry(stub);
+  assert.equal(code, EXIT.DONE);
+  assert.equal(mutations(stub.calls).length, 0);
+  assert.equal(mergeCalls(stub.calls).length, 1);
+  assert.ok(error.some((l) => /HTTP 403 on the runs read/.test(l)));
+});
+
+test("#2441 PURE: redStreakReading says whether the streak is KNOWN to have ended -- only a green after the reds ends it", () => {
+  assert.deepEqual(redStreakReading(RED_MAIN).ended, true);
+  assert.deepEqual(redStreakReading(GREEN_MAIN), { streak: [], ended: true });
+  const unfinished = redStreakReading({ workflow_runs: [trunkRun(3, RED_SHA, "failure"), trunkRun(2, OLDER_RED_SHA, "failure")] });
+  assert.deepEqual(unfinished.streak.map((r) => r.id), [3, 2]);
+  assert.equal(unfinished.ended, false, "reds that run out of runs are a streak that may go on");
+  assert.equal(redStreakReading({ workflow_runs: [trunkRun(2, RED_SHA, "failure"), trunkRun(1, GREEN_SHA, "cancelled")] }).ended, false, "a cancelled run ends nothing");
+  assert.deepEqual(redStreakReading(null as never), { streak: [], ended: false });
 });
 
 test("#2391 PURE: jumpDecision grants only a marked PR, on a red main, naming a merge in the streak", () => {
