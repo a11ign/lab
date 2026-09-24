@@ -260,6 +260,7 @@ test("main: a create sends the body WITH the section; an edit sends the body it 
   const created = driveMain("create", found);
   assert.deepEqual(seen, [BODY], "it is handed the body the author wrote");
   assert.equal(created.code, 0);
+  assert.deepEqual(created.sent[0].slice(0, 2), ["pr", "create"], "the section changes the body and nothing else");
   const createdBody = created.sent[0][created.sent[0].indexOf("--body") + 1];
   assert.equal(createdBody, withSurvivorsSection(BODY, SECTION));
   assert.ok(created.printed.join("").includes(SECTION[1]));
