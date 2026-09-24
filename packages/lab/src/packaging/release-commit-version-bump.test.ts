@@ -17,7 +17,7 @@
  * not prove that**: it asserts those paths are TRACKED, never that the diff in them is empty. Nothing
  * asserted the precondition the whole argument rested on, so the run was safe only for a reader whose tree
  * happened to be clean -- and an engineer mid-edit under `.changeset/`, `package.json` or
- * `package-lock.json` is the ordinary case, not the exotic one.
+ * `pnpm-lock.yaml` is the ordinary case, not the exotic one.
  *
  * Measured 2026-09-23 on `agent/release-header-currency-2052`: an uncommitted `.changeset/README.md` edit
  * was committed as `e7f0b4d11 release: apply version bump published at e33c2a62d`, authored
@@ -64,14 +64,14 @@ test("#1824 POSITIVE CONTROL: a package with a CHANGELOG.md contributes both fil
     writeFileSync(join(dir, "packages/no-changelog/package.json"), "{}");
     mkdirSync(join(dir, ".changeset"), { recursive: true });
     writeFileSync(join(dir, "package.json"), "{}");
-    writeFileSync(join(dir, "package-lock.json"), "{}");
+    writeFileSync(join(dir, "pnpm-lock.yaml"), "lockfileVersion: 9\n");
 
     assert.deepEqual(versionBumpPaths(dir), [
       "packages/has-changelog/package.json",
       "packages/has-changelog/CHANGELOG.md",
       "packages/no-changelog/package.json",
       "package.json",
-      "package-lock.json",
+      "pnpm-lock.yaml",
       ".changeset",
     ]);
   } finally {
@@ -79,7 +79,7 @@ test("#1824 POSITIVE CONTROL: a package with a CHANGELOG.md contributes both fil
   }
 });
 
-test("#1824 NEGATIVE CONTROL: a path that does not exist is never returned -- no root package.json, no package-lock.json, no .changeset", () => {
+test("#1824 NEGATIVE CONTROL: a path that does not exist is never returned -- no root package.json, no pnpm-lock.yaml, no .changeset", () => {
   const dir = mkdtempSync(join(tmpdir(), "a11y-version-bump-paths-empty-"));
   try {
     mkdirSync(join(dir, "packages"), { recursive: true });
@@ -100,8 +100,8 @@ test("#1824 on the real repository: every package directory contributes package.
   // does not: `versionBumpPaths` calls `existsSync` and nothing else.
   const paths = versionBumpPaths(REPO);
   assert.ok(paths.includes("packages/scorer/package.json"), "packages/scorer/package.json must be tracked");
-  assert.ok(paths.includes("package.json") && paths.includes("package-lock.json") && paths.includes(".changeset"),
-    "the root package.json, package-lock.json and .changeset must all be tracked -- they all exist");
+  assert.ok(paths.includes("package.json") && paths.includes("pnpm-lock.yaml") && paths.includes(".changeset"),
+    "the root package.json, pnpm-lock.yaml and .changeset must all be tracked -- they all exist");
   assert.deepEqual(paths.filter((p) => p.endsWith("CHANGELOG.md")), [],
     "no package here has a CHANGELOG.md yet -- if this fails, `changeset version` has run for real and the "
     + "glob-pathspec trap this function avoids is worth re-testing against the real tree it describes");
@@ -147,7 +147,7 @@ function plantScript(sandbox: GitSandbox, remote: string): void {
   mkdirSync(join(sandbox.dir, "packages/fixture"), { recursive: true });
   writeFileSync(join(sandbox.dir, "packages/fixture/package.json"), '{ "name": "fixture", "version": "0.0.0" }\n');
   writeFileSync(join(sandbox.dir, "package.json"), '{ "name": "sandbox-root", "version": "0.0.0" }\n');
-  writeFileSync(join(sandbox.dir, "package-lock.json"), "{}\n");
+  writeFileSync(join(sandbox.dir, "pnpm-lock.yaml"), "{}\n");
   mkdirSync(join(sandbox.dir, ".changeset"), { recursive: true });
   writeFileSync(join(sandbox.dir, ".changeset/README.md"), "# Changesets\n");
   sandbox.run(["add", "-A"]);
