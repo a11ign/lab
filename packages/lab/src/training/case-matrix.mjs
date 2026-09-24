@@ -4717,13 +4717,24 @@ cases.push(
 // SYNCHRONOUS ONLY, as `waitingStatusVariant` requires. `Continue ...` controls match `SUBMIT_RE` and are
 // probed as submits, the others as task buttons; both shapes are declared because the older six are all the
 // first.
+//
+// TWO DEFECTS IN THE FIRST DECLARATION, both read off the lab's retrain (#2258, 2026-09-24, `check-signals`
+// STOPPED it at 6 contaminated of 1765) and both left as the reason the values below are what they are:
+//   - EVERY PAGE NEEDS AN `<h1>`. The five declared with `heading: ""` recorded NO `formChanges` on either
+//     half (`n=0`), so `form-activation-silent` fired on the good page as well as the bad one; all nineteen
+//     that had a heading recorded exactly one. Read across all 24 status pages; furniture is not the
+//     difference (most of the headed pages are furnished too). The probe's mechanism was not read, only
+//     the separation.
+//   - NVDA SPEAKS `%` AS "percent". `Installing, 60% done` was captured as `Installing, 60 percent done`, so
+//     the announcement never contained the expected text and the signal fired on the good page. The
+//     declared text is what is SAID: punctuation and symbols do not survive speech (see `REMEDY_PHRASE`).
 cases.push(
   ...[
     ["statement", "Account statement", "Account statement", "Load my statement", "Loading your statement", "span", ""],
     ["postcode", "Address lookup", "Address lookup", "Verify postcode", "Verifying your postcode", "p", "Postcode"],
-    ["catalogue", "Catalogue results", "", "Find matching titles", "Looking through the catalogue, this may take a moment", "div", ""],
+    ["catalogue", "Catalogue results", "Catalogue results", "Find matching titles", "Looking through the catalogue, this may take a moment", "div", ""],
     ["profile-edit", "Profile settings", "Profile settings", "Store my display name", "Storing your display name", "span", "Display name"],
-    ["timetable", "Live departures", "", "Refresh timetable", "Fetching the latest timetable", "p", ""],
+    ["timetable", "Live departures", "Live departures", "Refresh timetable", "Fetching the latest timetable", "p", ""],
     ["virus-scan", "File safety", "File safety", "Scan for viruses", "Scanning your files, please do not close this page", "div", "Folder name"],
   ].map(([slug, title, heading, control, waiting, element, field]) => independent(waitingStatusVariant({
     id: "status-waiting-" + slug,
@@ -4739,12 +4750,12 @@ cases.push(
   ...[
     ["questions", "Membership form", "Membership form", "Go to the next question", "Question 3 of 10", "Question 4 of 10", "p", ""],
     ["pagination", "Meeting records", "Meeting records", "Show the next page", "Page 1 of 7", "Page 2 of 7", "span", ""],
-    ["upload", "Photo upload", "", "Add the next photograph", "Uploading, 20%", "Uploading, 40%", "div", ""],
-    ["modules", "Safety training", "", "Mark this module as done", "1 of 5 modules complete", "2 of 5 modules complete", "span", ""],
+    ["upload", "Photo upload", "Photo upload", "Add the next photograph", "Uploading, 20 percent", "Uploading, 40 percent", "div", ""],
+    ["modules", "Safety training", "Safety training", "Mark this module as done", "1 of 5 modules complete", "2 of 5 modules complete", "span", ""],
     ["review", "Planning application", "Planning application", "Continue to the review", "Step 2 of 5", "Step 3 of 5", "p", "Full name"],
-    ["install", "Software setup", "Software setup", "Install the next component", "Installing, 30% done", "Installing, 60% done", "div", ""],
+    ["install", "Software setup", "Software setup", "Install the next component", "Installing, 30 percent done", "Installing, 60 percent done", "div", ""],
     ["lessons", "Language course", "Language course", "Move on to the next lesson", "Lesson 4 of 12", "Lesson 5 of 12", "p", "Learner name"],
-    ["scanning", "Archive digitising", "", "Scan the next document", "3 of 8 documents scanned", "4 of 8 documents scanned", "span", ""],
+    ["scanning", "Archive digitising", "Archive digitising", "Scan the next document", "3 of 8 documents scanned", "4 of 8 documents scanned", "span", ""],
   ].map(([slug, title, heading, control, initial, progress, element, field]) => independent(progressStatusVariant({
     id: "status-progress-" + slug,
     title,
