@@ -37,6 +37,15 @@ names the lab job answering each, unconditionally.
 > Moved here 2026-09-06 from `docs/backlog-ready.md`, which was retired when the tracker moved to GitHub
 > Issues. That page was the only place this ruling existed, so deleting it would have deleted the rule —
 > which is why the page was read for what it uniquely held before it was replaced.
+## A BARE `find` ON THE `runs` SYMLINK COUNTS `0` ON A FULL CORPUS (#2134)
+
+**On the lab, `runs` is a SYMLINK onto the mounted volume `/srv/a11y-runs`** (`.gitignore` records why), and `find` does not descend a symlink given as its TRAILING argument. So `find /opt/a11y/runs -name '*.json' | wc -l` prints `0` on a corpus of 8,433 files. **Two spellings fix it, and the second needs no flag and no memory of which flag:** `find -L /opt/a11y/runs …`, or a trailing slash, `find /opt/a11y/runs/ …`.
+
+**Where it came from:** the session closing #1042, on 2026-09-23: *"I nearly reported the corpus empty on the night its backup verified."* Self-caught, no harm, and the same class as the `gh api rate_limit` section in `agent-practices.md` — about what you type by hand. Reproduced on a temp tree with a positive control (bare link `0`, `-L` and `link/` both `2`, the real path `2`).
+
+**Only a TRAILING symlink is refused; one in the MIDDLE of the path is followed.** `find /opt/a11y/runs/screenreader-dataset/captures …` needs neither flag. So `bootstrap-control-plane.sh`'s two counts of `"$CORPUS_DIR/captures"` (`CORPUS_DIR="$REPO_PATH/runs/screenreader-dataset"`), and the `[ -d … ]` guard above them, are correct as written. **Do not "fix" them: that is churn against a verified line.**
+
+**Before quoting a count of `0`, run the same command on a path you know is populated.** Absence of output from a walk is not the absence of files.
 ## Reading captures back — `packages/lab/src/capture/**` and `corpus-settled.mjs`
 
 **These rules govern `packages/lab/src/capture/**`, `packages/lab/src/training/corpus-settled.mjs` and every corpus-reading test across `packages/lab`** (moved here from a retired role brief, #2406).
