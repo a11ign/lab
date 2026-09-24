@@ -103,7 +103,7 @@ function specifiersOf(source: string): string[] {
 }
 
 /**
- * Scripts a workflow invokes with no `npm ci`/`npm install` earlier in the same job.
+ * Scripts a workflow invokes with no install (`npm ci`, `npm install`, `pnpm install`) earlier in the same job.
  *
  * Read line by line rather than through a YAML parser, deliberately: `packages/control` cannot depend on
  * one (ADR 0012) and `lab-job.mjs` already slices its catalogue by the indentation the file commits to,
@@ -123,7 +123,7 @@ export function preInstallScripts(workflowText: string): string[] {
   let installed = false;
   for (const line of workflowText.split("\n")) {
     if (/^ {2}[A-Za-z0-9_-]+:\s*$/.test(line)) installed = false;          // a new job
-    if (/npm (ci|install)\b/.test(line)) installed = true;
+    if (/\bp?npm (ci|install)\b/.test(line)) installed = true;
     if (installed) continue;
     if (/^\s*echo\b/.test(line)) continue;                                 // prose, not an invocation
     const call = /\bnode\s+(scripts\/[A-Za-z0-9._-]+\.mjs)/.exec(line);
@@ -308,6 +308,20 @@ test("preInstallScripts stops at an install step, and resumes at the next job", 
   ].join("\n");
   assert.deepEqual(preInstallScripts(yaml), ["scripts/before.mjs", "scripts/fresh-job.mjs"],
     "a script after `npm ci` is safe; a new job starts uninstalled again");
+});
+
+test("#2298: `pnpm install` is an install step too -- CI moved to it, and a job that installs with it is not pre-install", () => {
+  // The old pattern matched `pnpm install` only because `npm install` is a substring of it. Pinned by a fixture
+  // rather than left to that accident.
+  const yaml = [
+    "jobs:",
+    "  early:",
+    "    steps:",
+    "      - run: node scripts/before.mjs",
+    "      - run: pnpm install --frozen-lockfile --ignore-scripts",
+    "      - run: node scripts/after.mjs",
+  ].join("\n");
+  assert.deepEqual(preInstallScripts(yaml), ["scripts/before.mjs"]);
 });
 
 test("#558 MUTATION TARGET: an echo line MENTIONING a script's name is not read as invoking it -- "
