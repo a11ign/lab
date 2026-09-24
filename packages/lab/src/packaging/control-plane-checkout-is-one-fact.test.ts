@@ -470,6 +470,15 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
     + "that unit exists for: 143 worktrees and 16G on 2026-09-22 (#2000). A MEASURED machine, which is "
     + "what this file's boundary asks for -- the entry says WHICH box, so the path is classified rather "
     + "than assumed to be this one.",
+  ".codex": "the Codex CLI's own state directory on the AGENT host -- `~/.codex/auth.json`, `config.toml` "
+    + "and `rules/default.rules`, the reviewer's credentials and execpolicy that `docs/reviewer-instancing.md` "
+    + "(#2325) measured. Which reviewer account runs, not a checkout. FIRST VISIBLE UNDER #2357: that doc "
+    + "merged as a docs-only diff, which selected no `ts` job, so this guard never read it until a diff "
+    + "that reaches `ts` did.",
+  "reviewer": "the AGENT host's `gh` CONFIG ROOT for the reviewer account -- `/home/agent/reviewer/gh`, "
+    + "named in `docs/reviewer-instancing.md` (#2325) beside the workers' and the person's, as the third "
+    + "of the three accounts that doc's test reached. Like `workers` above it says which ACCOUNT acts, not "
+    + "where a checkout lives, and it is on the same measured box as `repos`.",
 };
 
 test("THE EXEMPTION IS THE FIELD, NOT THE FILE -- a quoted `command` in a reported record is not a use, "
