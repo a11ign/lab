@@ -297,6 +297,35 @@ export function contradictedFindings(/** @type {any} */ page) {
   return page.predicted.filter((/** @type {any} */ criterion) => !disclosed.has(criterion));
 }
 
+/**
+ * How many of the fitted captures were taken under each `captureProtocol`, keyed by the protocol, in the shape
+ * `evaluate-screenreader-acceptance.py`'s `capture_protocol_census` reports (`{"21": 49}`; a capture that
+ * records none counts under `"absent"`).
+ *
+ * THE FIT COULD NOT SAY WHAT ITS OWN INPUTS WERE CAPTURED UNDER, and #2212 is what that costs: the 49
+ * calibration captures sat at protocol 18 while the workers served 21, and the threshold fitted on them looked
+ * identical to one fitted on a current split -- so three meaning bumps went unnoticed.
+ *
+ * A CENSUS AND NOT A FLOOR, for the Python function's reason: which protocol a reading REQUIRES belongs to the
+ * question asking (#2212 wants a single `21`), and a minimum here would be this script guessing at it.
+ *
+ * Read off the captures the scoring actually used, never off the stamped role or the directory listing: the
+ * directory also holds orphans (protocol 6, or none) that no declared page owns and that will never move.
+ * @param {readonly any[]} pages
+ * @returns {Record<string, number>}
+ */
+export function captureProtocolCensus(pages) {
+  /** @type {Record<string, number>} */
+  const counts = {};
+  for (const page of pages) {
+    // `?.` all the way down: a capture can carry `"environment": null`, and this runs over every fitted page.
+    const protocol = page.capture?.environment?.captureProtocol;
+    const key = protocol === undefined || protocol === null ? "absent" : String(protocol);
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}
+
 /** @param {any[]} pages */
 function reportCaptureAges(pages) {
   const ages = pages
@@ -367,6 +396,8 @@ function main() {
   }
   process.stdout.write(`Scoring ${pages.length} calibration page(s) from ${ROOT}\n`);
   reportCaptureAges(pages);
+  const captureProtocols = captureProtocolCensus(pages);
+  process.stdout.write(`  Capture protocols of the fitted captures: ${JSON.stringify(captureProtocols)}\n`);
   process.stdout.write(`Model: ${MODEL ?? "packages/scorer/models/screenreader-scorer (shipped)"}\n\n`);
   const scored = pages.map(scoreOne).sort((a, b) => (b.cosine ?? 0) - (a.cosine ?? 0));
 
@@ -413,7 +444,7 @@ function main() {
   // a role filter downstream happened to drop it for an unrelated reason.
   mkdirSync(OUT_DIR, { recursive: true });
   const outPath = MODEL ? resolve(OUT_DIR, "abstention-sweep.candidate.json") : abstentionSweepPath(OUT_DIR);
-  writeFileSync(outPath, JSON.stringify({ model: MODEL ?? "shipped", calibrationPages: n, scored, rows }, null, 2));
+  writeFileSync(outPath, JSON.stringify({ model: MODEL ?? "shipped", calibrationPages: n, captureProtocols, scored, rows }, null, 2));
   process.stdout.write(`\n  written: ${outPath}\n`);
 
   reportRegression(rows);
