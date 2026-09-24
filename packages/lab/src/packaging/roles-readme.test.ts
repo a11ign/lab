@@ -31,6 +31,7 @@ import { execFileSync } from "node:child_process";
 // #2076's tree scan spawns `git ls-files`, and every git spawn in this repo strips the environment through
 // this one function -- see the file's own header for the 2026-09-06 incident that made it a rule.
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { readLoadedRules } from "./rules-files.ts";
 // #905: the roster parser and the per-file check live in the doc cross-reference check the nightly report
 // also runs -- one copy, which is what this file's own "exercise the exact same logic" comment asked for.
 import { README_PATH, checkRoster, roster } from "../../../../scripts/doc-checks/roles-readme.mjs";
@@ -183,8 +184,9 @@ test("#1118: the provisional marker is ON THE VERDICT LINE, where the sha-plus-w
 // either copy is a check that lets them drift — which is the fact-stated-twice defect, landing on the line
 // that tells people how to avoid defects.
 
-const agentPractices = readFileSync(
-  new URL("../../../../.claude/rules/agent-practices.md", import.meta.url), "utf8");
+// #2092: the rules are one file per topic now, so this is the loaded SET, and each pin below is found in
+// whichever file carries it.
+const agentPractices = readLoadedRules();
 
 const POSITIVE_CONTROL = /an emptiness assertion names where its positive control lives/i;
 
