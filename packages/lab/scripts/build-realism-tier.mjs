@@ -290,10 +290,10 @@ export function recordFor(/** @type {any} */ entry) {
         demonstrates: entry.demonstrates,
         capturedAt: entry.capturedAt,
         // WHAT THIS EVIDENCE MEANS, on the same path and in the same spelling the corpus export uses.
-        // Measured on the lab 2026-09-23T18:44Z: every one of the 121 real-page captures is
-        // `captureProtocol: 18`, three versions behind the fleet's 21 -- so the realism tier is not
-        // merely unstamped, it is a different protocol, and the missing stamp is what made that
-        // invisible. Read from the capture and never defaulted, exactly as `captureEnvironment` does.
+        // Measured on the lab 2026-09-23 (backlog: "121 capture(s)", no split on `captureProtocol`, and 18
+        // read directly off four fetched captures -- an inference for the rest, not a count): the realism
+        // tier looks to be protocol 18, three versions behind the fleet's 21, and the missing stamp is what
+        // made that invisible. Read from the capture and never defaulted, exactly as `captureEnvironment` does.
         environment: captureEnvironment(capture),
       },
     };

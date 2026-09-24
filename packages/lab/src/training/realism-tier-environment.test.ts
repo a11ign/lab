@@ -9,9 +9,10 @@
  *
  * What that cost is not abstract. #1926's clause 3 — "every record in `with-realism.jsonl` carries
  * `captureProtocol: 21`" — would have read `null` on up to 41 records (`REAL_PAGES` `role: training`)
- * however perfectly the recapture ran, and `[null, 21]` reads as *some records are unstamped*. Measured
- * on the lab 2026-09-23T18:44Z, what it was hiding is that **all 121 real-page captures are protocol
- * 18**, three versions behind the fleet. The absent stamp is what made a three-version gap invisible,
+ * however perfectly the recapture ran, and `[null, 21]` reads as *some records are unstamped*. On the
+ * lab 2026-09-23, what it was hiding is that the 121 real-page captures share one protocol -- **18**, read
+ * directly off four fetched captures and inferred for the rest (`captureProtocol` is not in the split
+ * list) -- three versions behind the fleet. The absent stamp is what made a three-version gap invisible,
  * which is #1989's own thesis arriving one file to the left.
  *
  * These tests drive `recordFor` rather than reading a corpus, deliberately: `runs/` is gitignored and a
@@ -23,7 +24,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { recordFor } from "../../scripts/build-realism-tier.mjs";
-import { captureEnvironment } from "./export-screenreader-dataset.mjs";
+import { record as exportRecord } from "./export-screenreader-dataset.mjs";
 
 /** A real-page corpus entry, in the six-key shape `capture-real-pages.mjs` actually writes. */
 function entryWith(environment: Record<string, unknown>) {
@@ -65,15 +66,16 @@ test("#1926: a RECORDED protocol 0 survives, so `||` cannot creep back in on thi
   assert.equal(record.provenance.environment.captureProtocol, 0);
 });
 
-test("#1926: both writers stamp the SAME shape, so clause 3's single jq path reads both tiers", () => {
-  // THE DELETE-A-COPY CONTROL. The remedy here was to call the export's own `captureEnvironment` rather
-  // than to write a second stamping implementation beside it. A re-implementation would satisfy every
-  // assertion above and still drift — a different key set, or the same fields one level up — and then
-  // `.provenance.environment.captureProtocol` would answer on one tier and not the other, which is the
-  // state this row found the file in.
+test("#1926: both writers stamp the SAME environment, so clause 3's single jq path reads both tiers", () => {
+  // THE DELETE-A-COPY CONTROL, and it drives the BASE writer. The remedy was to call the export's own
+  // `captureEnvironment` rather than write a second stamping implementation beside it. Comparing
+  // `recordFor` with `captureEnvironment` would only compare a helper with itself -- rename the export's
+  // `environment` key and it would stay green, which reviewer-2 measured on #2274. So this runs the export
+  // writer's own `record()` on the same capture and compares what each WRITER emitted, key path included:
+  // `.provenance.environment` must exist on both, and hold the same value.
   const environment = { captureProtocol: 21, nodeVersion: "v24.20.0", browserVersion: "152.0.4191.66" };
   const entry = entryWith(environment);
-  assert.deepEqual(
-    Object.keys(recordFor(entry).provenance.environment).sort(),
-    Object.keys(captureEnvironment(entry.capture)).sort());
+  const exported = exportRecord({ id: "case-1", subtype: "missing-alt", criterion: "1.1.1" }, "good", entry.capture);
+  assert.ok(exported.provenance.environment, "the export writer must carry provenance.environment");
+  assert.deepEqual(recordFor(entry).provenance.environment, exported.provenance.environment);
 });
