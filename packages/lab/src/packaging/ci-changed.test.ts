@@ -16,8 +16,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { classify, knownPackages, readWorkspaceDependencyGraph, dependentsOf, packedFiles, candidatePackedPaths,
-  reachesPacked, testDependencyMap, jobsFor }
+  reachesPacked, testDependencyMap, jobsFor, docsReadingTests }
   from "../../../../scripts/ci-changed.mjs";
+import { discoversFromTree } from "../../../../scripts/select-changed-tests.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -65,10 +66,73 @@ const runCliIn = (dir: string, args: string[]) =>
 const fakePacked = (byPackage: Record<string, string[]>) =>
   (_repoRoot: string, pkgName: string) => new Set(byPackage[pkgName] ?? []);
 
-test("classify: a docs-only change fires only the docs category", () => {
+test("classify: a docs-only change fires docs and ts, and implicates NO package", () => {
+  // #2357: `ts: false` here was the defect. With no package implicated `testPackages` is empty, so the ts
+  // job's selector falls back to no package suite -- only the guards that read the tree run.
   const result = classify(["docs/known-gaps.md", "README.md"], ["lab", "judge"]);
-  assert.deepEqual(result, { ts: false, python: false, ansible: false, docs: true, board: false,
+  assert.deepEqual(result, { ts: true, python: false, ansible: false, docs: true, board: false,
     changeset: false, rulesFitness: false, packages: [], testPackages: [] });
+});
+
+// A fixture diff of the #2329 shape -- one new doc, nothing else -- through the REAL classify and the REAL
+// tracked tests, and through `jobsFor`, the answer `ci.yml` acts on.
+test("#2357: a docs-only diff of the #2329 shape selects the ts job, before the merge queue", () => {
+  const diff = ["docs/reviewer-instancing.md"];
+  assert.ok(jobsFor(diff, REPO).includes("ts"), "#2329 merged ts=SKIPPED and broke main; a docs-only diff must "
+    + "select the ts job, which is where the guards that read docs run");
+  const result = classify(diff, knownPackages(REPO), {}, { repoRoot: REPO });
+  assert.deepEqual(result.testPackages, [], "no package implicated: an implicated package falls back to its "
+    + "WHOLE suite for a doc no test names, which is the cost this row must not add to a one-line doc edit");
+});
+
+test("#2357: the docs-reading set is non-empty against the real tree, and holds the #2329 breaker", () => {
+  // The positive control for the `.length > 0` gate in classify: were the derivation to break and return
+  // nothing, ts would silently stop running on docs diffs -- #2329 again.
+  const readers = docsReadingTests(REPO);
+  assert.ok(readers.includes("packages/lab/src/packaging/control-plane-checkout-is-one-fact.test.ts"),
+    "the guard that turned main red on #2329 walks the tracked tree and must be in the set");
+  const EXPECTED_AT_LEAST = 20;
+  assert.ok(readers.length >= EXPECTED_AT_LEAST, `only ${readers.length} docs-reading tests derived -- expected dozens`);
+});
+
+test("#2357: every guard the ts selector treats as reading the tree is in the docs-reading set", () => {
+  // `select-changed-tests.mjs` cannot be imported by ci-changed.mjs (it needs `npm ci`, which the `changed`
+  // job runs before), so its detector is re-expressed there. This pins that the copy never falls behind.
+  const readers = new Set(docsReadingTests(REPO));
+  const tests = execFileSync("git", ["ls-files", "packages"], { cwd: REPO, env: sandboxGitEnv(), encoding: "utf8" })
+    .split("\n").filter((f) => /\/src\/.*\.test\.ts$/.test(f));
+  const walkers = tests.filter((f) => discoversFromTree(readFileSync(`${REPO}${f}`, "utf8")));
+  assert.ok(walkers.length > 0, "positive control: the selector finds tree-walking guards");
+  assert.deepEqual(walkers.filter((f) => !readers.has(f)), []);
+});
+
+test("#2357: a test added tomorrow that reads docs/ joins the set with no edit to ci-changed.mjs", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "docs-readers-")));
+  after(() => rmSync(dir, { recursive: true, force: true }));
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: dir, env: sandboxGitEnv(), encoding: "utf8" });
+  git("init", "--quiet", "-b", "main");
+  const add = (rel: string, text: string) => {
+    mkdirSync(join(dir, rel, ".."), { recursive: true });
+    writeFileSync(join(dir, rel), text);
+    git("add", rel);
+  };
+  add("packages/a/src/unrelated.test.ts", "assert.equal(1 + 1, 2);\n");
+  assert.deepEqual(docsReadingTests(dir), [], "a test that reads no docs is not in the set");
+  add("packages/a/src/new-doc-guard.test.ts", 'readFileSync("docs/anything.md", "utf8");\n');
+  assert.deepEqual(docsReadingTests(dir), ["packages/a/src/new-doc-guard.test.ts"]);
+  add("packages/b/src/root-doc.test.ts", 'readFileSync(join(REPO, "README.md"), "utf8");\n');
+  add("packages/b/src/walker.test.ts", 'execFileSync("git", ["ls-files"]);\n');
+  assert.deepEqual(docsReadingTests(dir), ["packages/a/src/new-doc-guard.test.ts",
+    "packages/b/src/root-doc.test.ts", "packages/b/src/walker.test.ts"]);
+});
+
+test("#2357: with no docs-reading test at all, a docs-only diff runs no ts -- the gate is the derived set", () => {
+  const none = classify(["docs/known-gaps.md"], ["lab"], {}, { getDocsReadingTests: () => [] });
+  assert.equal(none.ts, false, "nothing reads docs, so a docs-only diff has nothing for ts to run");
+  const some = classify(["docs/known-gaps.md"], ["lab"], {}, { getDocsReadingTests: () => ["x.test.ts"] });
+  assert.equal(some.ts, true);
+  const notDocs = classify([".gitignore"], ["lab"], {}, { getDocsReadingTests: () => ["x.test.ts"] });
+  assert.equal(notDocs.ts, false, "the set is consulted only for a diff that touches docs");
 });
 
 test("classify: a source change under one package fires ts, names that package, and nothing else", () => {
@@ -349,11 +413,11 @@ test("classify: a board-only diff also fires ts, because a NON-board test names 
 
 test("classify: the fold is GATED on board, so an unrelated file's OTHER site does not widen ts for free", () => {
   // README.md is ALSO named by a real `file:` site (see the anti-vacuity test above), but a README.md-only
-  // diff classifies docs (not board) and is therefore already covered by the wide docs job in full -- the
-  // fold must not fire here, or every README.md edit would pay for both docs AND ts with nothing gained.
+  // diff classifies docs (not board), and the fold must not fire for it: the `file:` fold would implicate
+  // `lab` and run its WHOLE suite for a one-line edit. #2357 runs ts for docs WITHOUT any package.
   const result = classify(["docs/known-gaps.md", "README.md"], ["lab", "judge"]);
-  assert.deepEqual(result, { ts: false, python: false, ansible: false, docs: true, board: false,
-    changeset: false, rulesFitness: false, packages: [], testPackages: [] });
+  assert.deepEqual(result.packages, [], "the fold must not implicate a package for a non-board diff");
+  assert.deepEqual(result.testPackages, []);
 });
 
 test("classify: an injected empty test-dependency map reproduces the pre-#283 bug -- the guard BITES", () => {
