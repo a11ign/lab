@@ -16,6 +16,7 @@ import math
 import shutil
 import random
 import sys
+from collections.abc import Collection
 from pathlib import Path
 from typing import Any
 
@@ -302,6 +303,13 @@ def parse_args() -> argparse.Namespace:
     # is not obvious afterwards.
     parser.add_argument("--allow-overwrite", action="store_true",
                         help="overwrite a release-eligible model in the output directory")
+    # An EXPERIMENT LEVER, not a decision about who decides a subtype. `rule-ownership.json`'s
+    # `modelHead: false` moves that for every run; this leaves one head out of THIS run so a retrain can
+    # ask "is the model worse for having it?" without touching a tracked file. Repeatable. A model trained
+    # with it is stamped ineligible and names what it lacks -- see `excluded_subtypes_of`.
+    parser.add_argument("--exclude-subtype", action="append", default=[], metavar="SUBTYPE",
+                        help="leave this subtype's head out of this run (repeatable); the model is then "
+                             "never release-eligible")
     return parser.parse_args()
 
 def assign_splits(records: list[dict[str, Any]]) -> dict[str, str]:
@@ -794,7 +802,9 @@ def assert_declaration_matches_data(records: list[dict[str, Any]]) -> None:
             "that cannot express its failure."
         )
 
-def subtypes_by_criterion_for(records: list[dict[str, Any]], criteria: list[str]) -> dict[str, list[str]]:
+def subtypes_by_criterion_for(
+    records: list[dict[str, Any]], criteria: list[str], exclude: Collection[str] = (),
+) -> dict[str, list[str]]:
     """Which subtypes get a trained HEAD, per criterion -- the single choke point `main()`'s per-criterion
     loop iterates, so a subtype absent here can never be fitted, whatever the corpus contains.
 
@@ -809,6 +819,12 @@ def subtypes_by_criterion_for(records: list[dict[str, Any]], criteria: list[str]
     contains. See `Ownership.modelHead`'s own doc for why two different reasons (no corpus case yet;
     a head that would be a free veto) share one field: what is true of both is "no head", never
     "no corpus case".
+
+    `exclude` removes subtypes for THIS CALL ONLY -- the trainer's `--exclude-subtype`, an experiment lever
+    that must not change who decides a subtype. It is applied here, at the same choke point, so an excluded
+    head can no more reach the loop than a `modelHead: false` one. Names are NOT validated here: a name
+    that matches no head is `refuse_unknown_exclusions`'s to refuse, because a caller passing the list
+    straight through would otherwise train a full model under an "excluded" label.
     """
     return {
         criterion: sorted({
@@ -817,9 +833,62 @@ def subtypes_by_criterion_for(records: list[dict[str, Any]], criteria: list[str]
             for subtype in record["target"].get("subtypes", [])
             if subtype.startswith(criterion + ":")
             and RULE_OWNERSHIP.get(subtype, {}).get("modelHead") is not False
+            and subtype not in exclude
         })
         for criterion in criteria
     }
+
+
+def refuse_unknown_exclusions(available: dict[str, list[str]], excluded: list[str]) -> list[str]:
+    """`excluded`, deduplicated and sorted, or a refusal naming every entry that matches no head.
+
+    REFUSED, NOT IGNORED. `--exclude-subtype 4.1.3:status-progres` that matched nothing would train a FULL
+    model and label it as one with a head left out: every later reading of "the model without that head"
+    would then be a reading of the model with it. `available` is `subtypes_by_criterion_for` with nothing
+    excluded, so a `modelHead: false` subtype is refused too -- it never had a head to leave out.
+    """
+    heads = {subtype for subtypes in available.values() for subtype in subtypes}
+    unknown = sorted(set(excluded) - heads)
+    if unknown:
+        raise SystemExit(
+            f"REFUSING --exclude-subtype {', '.join(unknown)}: no head would be trained for "
+            f"{'it' if len(unknown) == 1 else 'them'} in this dataset, so excluding "
+            f"{'it' if len(unknown) == 1 else 'them'} would train a FULL model under an 'excluded' label. "
+            f"Subtypes that have a head: {', '.join(sorted(heads))}."
+        )
+    return sorted(set(excluded))
+
+
+def left_out_of(criterion: str, excluded: list[str]) -> list[str]:
+    """The `--exclude-subtype` entries that belong to `criterion`."""
+    return [subtype for subtype in excluded if subtype.startswith(criterion + ":")]
+
+
+def no_head_reason(criterion: str, excluded: list[str]) -> dict[str, Any]:
+    """The `why` (and, for an experiment, `excludedSubtypes`) of a criterion that ended up with NO head.
+
+    Only the reason lives here; the caller writes `"modelHead": False` itself, because `score.py` accepts an
+    empty criterion only on that declaration -- so a model with every head of a criterion left out still
+    LOADS. What differs is `why` and `excludedSubtypes`: "the rules decide it alone" is false of a
+    criterion the rules do not own, and a reader believing it would read a missing head as settled ownership.
+    """
+    left_out = left_out_of(criterion, excluded)
+    if not left_out:
+        return {"why": "every subtype of this criterion is declared `modelHead: false` in "
+                       "rule-ownership.json, so no head is fitted and the rules decide it alone"}
+    return {
+        "excludedSubtypes": left_out,
+        "why": "every head of this criterion was left out of this run with --exclude-subtype (any others "
+               "are `modelHead: false`); this is an experiment, and the ownership is unchanged",
+    }
+
+
+def no_head_note(criterion: str, excluded: list[str]) -> str:
+    if not left_out_of(criterion, excluded):
+        return (f"{criterion}: no trained head -- all of its subtypes are rule-decided "
+                f"(`modelHead: false`). The rules own this criterion outright.")
+    return (f"{criterion}: no trained head -- {', '.join(left_out_of(criterion, excluded))} left out by "
+            f"--exclude-subtype. An experiment; who decides this criterion has not changed.")
 
 
 def known_indices(records: list[dict[str, Any]], subtype: str, candidates: list[int]) -> list[int]:
@@ -867,6 +936,12 @@ def main() -> None:
     assert_dataset_is_current(args.data)
     records = read_records(args.data)
     assert_declaration_matches_data(records)
+    # Resolved HERE, before the encoder pass, for the reason `refuse_to_destroy_release_weights` runs first:
+    # a typo in `--exclude-subtype` should cost a second, not the minutes a cold embedding cache costs.
+    criteria = sorted({criterion for record in records for criterion in record["target"].get("criteria", [])})
+    excluded_subtypes = refuse_unknown_exclusions(
+        subtypes_by_criterion_for(records, criteria), args.exclude_subtype)
+    subtypes_by_criterion = subtypes_by_criterion_for(records, criteria, exclude=excluded_subtypes)
     split_for_family = assign_splits(records)
     # The featurizer returns NUMPY now, so inference needs no torch — a 400 MB wheel removed from every
     # Action run. Training does need autograd, so it converts here, at its own boundary, and this is the
@@ -893,8 +968,6 @@ def main() -> None:
     }
     from safetensors.torch import save_file
 
-    criteria = sorted({criterion for record in records for criterion in record["target"].get("criteria", [])})
-    subtypes_by_criterion = subtypes_by_criterion_for(records, criteria)
     split_indices = {
         split: [index for index, record in enumerate(records) if split_for_family[record["provenance"]["family"]] == split]
         for split in ("train", "validation", "test")
@@ -937,6 +1010,8 @@ def main() -> None:
         # reads absence as a pass. `release:gate` runs that evaluator; nothing else may set this.
         "generalisationVerified": False,
         "releaseBlockedBy": ["held-out acceptance has not been evaluated for these weights"]
+        + ([f"trained with --exclude-subtype: no head for {', '.join(excluded_subtypes)}, so this is an "
+            "experiment and can never stand in for a full model"] if excluded_subtypes else [])
         + (["dataset is TEST GRADE: some captures do not describe the page they are labelled against, "
             "so this model exists to answer a question and can never be promoted. Recapture and export "
             "without A11Y_DATASET_GRADE=test to produce a releasable one."]
@@ -950,8 +1025,16 @@ def main() -> None:
         # cleared later is one a later branch can quietly restore. `promote-model.mjs` refuses a model
         # that is not release-eligible, so this is the first of three independent gates and the only one
         # that cannot be argued with.
-        "releaseEligible": dataset_grade(records) != "test",
-        "modelReleaseEligible": dataset_grade(records) != "test",
+        #
+        # AN EXCLUSION IS THE SAME KIND OF FACT. A model missing heads the release model has must not pass
+        # for it: `promote-model.mjs` and `refuse_to_destroy_release_weights` both read this flag, so
+        # clearing it here is what makes an isolating retrain unable to overwrite or become the candidate.
+        "releaseEligible": dataset_grade(records) != "test" and not excluded_subtypes,
+        "modelReleaseEligible": dataset_grade(records) != "test" and not excluded_subtypes,
+        # WHAT THIS RUN LEFT OUT, recorded rather than implied by absence: a head missing from the weights
+        # is otherwise indistinguishable from a subtype the corpus never had. Always present, `[]` for a
+        # full model, so a reader can tell "none excluded" from "written before this field existed".
+        "excludedSubtypes": excluded_subtypes,
         "warnings": [],
         # Notes that can actually stop a release, kept apart from notes worth reading. See `note()`.
         "calibrationBlockers": [],
@@ -976,11 +1059,9 @@ def main() -> None:
             report["criteria"][criterion] = {
                 "subtypes": {},
                 "modelHead": False,
-                "why": "every subtype of this criterion is declared `modelHead: false` in "
-                       "rule-ownership.json, so no head is fitted and the rules decide it alone",
+                **no_head_reason(criterion, excluded_subtypes),
             }
-            note(report, f"{criterion}: no trained head -- all of its subtypes are rule-decided "
-                 f"(`modelHead: false`). The rules own this criterion outright.", blocking=False)
+            note(report, no_head_note(criterion, excluded_subtypes), blocking=False)
             continue
         criterion_labels = torch.tensor(
             [int(criterion in record["target"].get("criteria", [])) for record in records],
