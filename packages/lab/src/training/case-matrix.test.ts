@@ -244,10 +244,11 @@ test("#2385: the status pages are independent families, not copies of the older 
 
 /**
  * #2385: THE SHAPE OF A STATUS PAGE, read from its FAILING half's markup: which element carries the
- * changing text, whether the page has a heading, whether it carries a named field. These are the three
- * things the row says must vary, because the misses share `heading_present` and `form_field_named` at 1
- * and every older page changes a `<p>`. Read from the shipped HTML, not from the builders' arguments, so a
- * builder that silently drops `element` or `field` is what the test sees.
+ * changing text, whether the page has a heading, whether it carries a named field. The row asked all three
+ * to vary, because the misses share `heading_present` and `form_field_named` at 1 and every older page
+ * changes a `<p>`. **Only two can: the heading cannot be absent** (see the test below). Read from the
+ * shipped HTML, not from the builders' arguments, so a builder that silently drops `element` or `field` is
+ * what the test sees.
  */
 const statusPageShape = (html: string) => ({
   element: /<(\w+) id="(?:state|progress)"/.exec(html)?.[1],
@@ -258,7 +259,7 @@ const statusPageShape = (html: string) => ({
 const MIN_DISTINCT_ELEMENTS = 3;
 const MIN_PAGES_PER_SHAPE = 2;
 
-test("#2385: the status pages vary the changing element, the heading and the named field", () => {
+test("#2385: the status pages vary the changing element and the named field, and every one has a heading", () => {
   for (const subtype of ["status-waiting", "status-progress"]) {
     const shapes = declaredStatus(subtype).map((c) => ({ id: c.id, ...statusPageShape(c.bad) }));
     const unread = shapes.filter((s) => s.element === undefined).map((s) => s.id);
@@ -266,12 +267,17 @@ test("#2385: the status pages vary the changing element, the heading and the nam
     const elements = new Set(shapes.map((s) => s.element));
     assert.ok(elements.size >= MIN_DISTINCT_ELEMENTS,
       `${subtype}: the changing text sits in only ${[...elements].join(", ")}; expected ${MIN_DISTINCT_ELEMENTS}+ elements`);
-    for (const key of ["heading", "field"] as const) {
-      const withIt = shapes.filter((s) => s[key]).length;
-      const without = shapes.length - withIt;
-      assert.ok(withIt >= MIN_PAGES_PER_SHAPE && without >= MIN_PAGES_PER_SHAPE,
-        `${subtype}: ${withIt} pages have a ${key} and ${without} do not; expected ${MIN_PAGES_PER_SHAPE}+ of each`);
-    }
+    const withField = shapes.filter((s) => s.field).length;
+    const withoutField = shapes.length - withField;
+    assert.ok(withField >= MIN_PAGES_PER_SHAPE && withoutField >= MIN_PAGES_PER_SHAPE,
+      `${subtype}: ${withField} pages have a named field and ${withoutField} do not; expected ${MIN_PAGES_PER_SHAPE}+ of each`);
+    // A heading-less page is NOT a variation we can have: #2258's retrain stopped at `check-signals` because
+    // the five status pages declared without an `<h1>` recorded no `formChanges` on either half (0 of 5,
+    // against 19 of 19 with one), so `form-activation-silent` fired on the good page. Varying
+    // `heading_present` needs the worker to activate a control on a page with no `<h1>`, which nothing here
+    // has read; until then the dimension stays at 1 and the row's ask for it is unmet, not satisfied.
+    const headingless = shapes.filter((s) => !s.heading).map((s) => s.id);
+    assert.deepEqual(headingless, [], `${subtype}: pages with no <h1> are never probed, so the signal fires on both halves`);
   }
 });
 
