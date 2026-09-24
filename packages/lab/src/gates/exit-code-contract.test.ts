@@ -247,7 +247,8 @@ const DOCUMENTED: Record<string, string> = {
   "packages/lab/scripts/explain-capture.mjs":
     "2 no search term given OR no capture file matched — usage and not-found share one code",
   "packages/lab/scripts/explain-scorer.mjs":
-    "2 no --model= given outside --compare mode",
+    "2 no --model= given outside --compare mode, OR --case with no id; --case passes the case reader's own "
+    + "exit status through (0 printed, 2 a named case no acceptance record holds)",
   "packages/lab/scripts/lab-inventory.mjs":
     "0 in --json mode, on EPIPE, and on one specific benign refusal; 2 the other refusal branch (schema/data "
     + "problem) — this script has NO exit-1 path at all, it never reports a hard FAIL",
@@ -470,6 +471,11 @@ const INFRASTRUCTURE_PY: Record<string, string> = {
  * the source, never inferred from the name — the identical discipline as `DOCUMENTED` above.
  */
 const DOCUMENTED_PY: Record<string, string> = {
+  "packages/lab/scripts/explain-case.py":
+    "0 every named case was found and printed; 2 a named case id no acceptance record holds (nothing is "
+    + "printed, and the refusal names the id and the ids the records DO hold). A precondition failure "
+    + "inside the shared loaders (a stale input contract, a missing repeat file) raises instead and "
+    + "exits non-zero for its own reason. Read-only; no verdict reads its code (#2334)",
   "packages/lab/scripts/audit-scorer-shortcuts.py":
     "0 --update-baseline written, --no-baseline, no baseline file yet, or compare_to_baseline finds "
     + "nothing wrong; 1 any of REGRESSION/UNAUDITED/LOST COVERAGE (three distinct findings collapsed) OR "
