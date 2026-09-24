@@ -88,7 +88,8 @@ const EXEMPT_ON_MERGE_GROUP: Record<string, string> = {
 // it names today's answer so this file can assert the loop and the needs list against each other. A
 // correctly-added job turns two tests here red until KEPT is edited too; that friction is the price of
 // the second reading, and the edit is one line (worker-capture's review of #1001).
-const KEPT = ["changed", "ts", "python", "ansible", "changeset", "rulesFitness", "deliberateRefusals",
+// #2348: `guardSweep` joined -- the tree-wide guards on every PR, docs-only included.
+const KEPT = ["changed", "ts", "python", "ansible", "changeset", "rulesFitness", "guardSweep", "deliberateRefusals",
   "acceptance", "ownedPaths"];
 // #1065: `docs` left this list when it was deleted outright -- red and unread on an environment-only failure,
 // its population already run unscoped by trunk-guard after every merge.
