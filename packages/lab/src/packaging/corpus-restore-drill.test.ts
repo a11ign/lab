@@ -1,3 +1,6 @@
+// no-token: gh -- the only `gh` in the drill is its `--release` download, which no test here reaches; every archive is made locally by the real snapshot script
+// writes: runs/screenreader-dataset
+// (every test builds its own fixture tree of that name under a temp dir and points the scripts at it; the real corpus is never read)
 /**
  * #2051 — a release is verified by REBUILDING a lab from it and running a real gate, not by counting a tarball.
  *
