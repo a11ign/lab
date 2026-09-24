@@ -20,8 +20,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const ACTION = readFileSync(resolve(REPO, "action.yml"), "utf8");
@@ -167,4 +169,93 @@ test("the page list reaches the CLI as --urls, the override as --max-pages, and 
     "max-pages must reach the argv");
   // `multi-page.test.ts` proves the CLI reads no environment variable for the cap; this is the workflow's half.
   assert.doesNotMatch(ACTION, /\bMAX_PAGES\b/, "action.yml exports no environment default for the cap");
+});
+
+/**
+ * A LIST IN WHICH ONE PAGE FAILED MUST STILL BE REPORTED (#2313's review at 0209b180).
+ *
+ * The CLI exits 1 for such a list AFTER writing every page's result, and GitHub runs `shell: bash` with `-eo
+ * pipefail`, so a bare invocation stopped the capture step before `result-json` was set and the Report step -- the
+ * only thing that renders the failed page -- never ran. Both halves below RUN the shell text out of action.yml
+ * rather than grep it, because a grep for `|| status=$?` is satisfied by a comment that says so.
+ */
+function stepText(startMarker: string, endMarker: string): string {
+  const from = ACTION.indexOf(startMarker);
+  const to = ACTION.indexOf(endMarker, from);
+  assert.ok(from > 0 && to > from, `action.yml no longer has ${JSON.stringify(startMarker)} .. ${JSON.stringify(endMarker)}`);
+  return ACTION.slice(from, to);
+}
+
+function runCaptureTail(fake: string): { status: number | null; outputs: string; result: string } {
+  const dir = mkdtempSync(join(tmpdir(), "capture-tail-"));
+  try {
+    // Only the lines that invoke the CLI and record its outcome; `npx tsx packages/cli/src/cli.ts "${args[@]}"` is the fake.
+    const tail = stepText("        status=0\n        npx tsx packages/cli/src/cli.ts", '    - name: Report')
+      .replace(/npx tsx packages\/cli\/src\/cli\.ts "\$\{args\[@\]\}"/, "fake_cli");
+    const script = `set -eo pipefail\nargs=()\nout="$D/result.json"\nfake_cli() { ${fake}; }\n${tail}`;
+    const ran = spawnSync("bash", ["-c", script], {
+      env: { ...process.env, D: dir, GITHUB_OUTPUT: join(dir, "outputs") }, encoding: "utf8",
+    });
+    const read = (name: string) => { try { return readFileSync(join(dir, name), "utf8"); } catch { return ""; } };
+    return { status: ran.status, outputs: read("outputs"), result: read("result.json") };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("a CLI that exits 1 AFTER writing its result does not stop the capture step: the outputs are set and the status is handed on", () => {
+  const run = runCaptureTail(`echo '{"multiPage":true,"pages":[]}'; return 1`);
+  assert.equal(run.status, 0, "the capture step must not fail here: the Report step is what renders the failed page");
+  assert.match(run.outputs, /^result-json=.*result\.json$/m);
+  assert.match(run.outputs, /^capture-status=1$/m);
+});
+
+test("a CLI that exits nonzero with NO result still fails the capture step, and sets no result-json", () => {
+  const run = runCaptureTail("return 2");
+  assert.equal(run.status, 2, "a refusal or crash left nothing to report, and must fail where it always did");
+  assert.doesNotMatch(run.outputs, /result-json=/);
+});
+
+test("a CLI that succeeds sets capture-status=0", () => {
+  const run = runCaptureTail(`echo '{}'`);
+  assert.equal(run.status, 0);
+  assert.match(run.outputs, /^capture-status=0$/m);
+});
+
+test("the Report step re-raises the capture's status once the report exists, and the outputs reducer survives a PDF page", () => {
+  const report = stepText("    - name: Report\n", "    # Last, and `always()`");
+  assert.match(report, /capture-status \|\| 0/, "the Report step must read the capture's status");
+  // The reducer, run as the runner runs it, over a list holding a PDF result (`{ url, task, pdf }`: no verdict) beside a page with one.
+  const reducer = /node -e '\n([\s\S]*?)\n\s*' "\$\{\{ steps\.capture\.outputs\.result-json \}\}"/.exec(report)?.[1];
+  assert.ok(reducer, "the outputs reducer is no longer an inline `node -e` in the Report step");
+  const dir = mkdtempSync(join(tmpdir(), "reducer-"));
+  try {
+    const result = join(dir, "result.json");
+    const withVerdict = { url: "https://a.example/", verdict: { findings: [{}, {}], taskCompletable: true } };
+    const pdf = { url: "https://a.example/x.pdf", task: "t", pdf: [] };
+    writeFileSync(result, JSON.stringify({
+      multiPage: true,
+      pages: [{ url: withVerdict.url, status: "captured", results: [withVerdict] },
+        { url: pdf.url, status: "captured", results: [pdf] }],
+    }));
+    const ran = spawnSync("node", ["-e", reducer, result], {
+      env: { ...process.env, GITHUB_OUTPUT: join(dir, "outputs") }, encoding: "utf8",
+    });
+    assert.equal(ran.status, 0, `the reducer crashed on a verdict-less result: ${ran.stderr}`);
+    const outputs = readFileSync(join(dir, "outputs"), "utf8");
+    assert.match(outputs, /^findings=2$/m, "the verdict-less page adds no findings");
+    assert.match(outputs, /^task-completable=false$/m, "a page with no verdict is never completable");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the Report step exits with the capture's status only when the report's own status is 0", () => {
+  const raise = stepText('        if [ "$status" -eq 0 ]; then status="${{', "\n    # Last, and `always()`");
+  const exitOf = (reportStatus: number, captureStatus: string) => spawnSync("bash", ["-c",
+    `set -eo pipefail\nstatus=${reportStatus}\n${raise.replace(/\$\{\{ steps\.capture\.outputs\.capture-status \|\| 0 \}\}/, captureStatus)}`,
+  ]).status;
+  assert.equal(exitOf(0, "1"), 1, "a failed page must fail the job after the report is written");
+  assert.equal(exitOf(0, "0"), 0);
+  assert.equal(exitOf(2, "1"), 2, "the report's status says WHICH failure; the capture's must not overwrite it");
 });
