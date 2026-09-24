@@ -715,7 +715,10 @@ x
 
 const WORKFLOW = ".github/workflows/nightly.yml";
 const FENCED = "packages/agent-org/host/a11ign-lab-watch.service";
-const regionWith = (paragraph: string) => `## Region\n\n~~~\n${FENCED}\n~~~\n\n${paragraph}\n\n## Done-when\n\n1. x\n`;
+// The fence is a NAME, not a literal: `~` followed by a `\n` escape is what control-plane-checkout-is-one-fact
+// reads as a directory `n` under a home root (its UNDER_A_HOME_ROOT doc records that exact misreading).
+const FENCE = "~~~";
+const regionWith = (paragraph: string) => `## Region\n\n${FENCE}\n${FENCED}\n${FENCE}\n\n${paragraph}\n\n## Done-when\n\n1. x\n`;
 
 test("#2233 open-check: an exclusion paragraph's path is not declared, and the fenced one is", () => {
   const body = regionWith(`**Deliberately NOT in the Region: \`${WORKFLOW}\`.**`);
@@ -764,7 +767,7 @@ test("#2233: the exclusion paragraph reaches its continuations and stops at a bl
     `**Deliberately NOT in the Region: the docs tree, and\n\`${WORKFLOW}\` on the second line.**\n\nBut \`scripts/ci-changed.mjs\` is this row's.`);
   assert.deepEqual(declaredRegionFiles(wrapped), [FENCED, "scripts/ci-changed.mjs"]);
   // A fenced path BENEATH an exclusion label is a declaration: a fence is structured, not prose.
-  const fencedAfter = regionWith(`**Not in scope: the docs tree.**\n~~~\n${WORKFLOW}\n~~~`);
+  const fencedAfter = regionWith(`**Not in scope: the docs tree.**\n${FENCE}\n${WORKFLOW}\n${FENCE}`);
   assert.deepEqual(declaredRegionFiles(fencedAfter), [FENCED, WORKFLOW]);
 });
 
