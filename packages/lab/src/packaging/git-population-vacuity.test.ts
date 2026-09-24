@@ -474,6 +474,16 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "in that file: the detector is fired at five dangerous forms and six safe ones, and the nine real "
       + "call sites are pinned by name as the non-empty complement.",
   },
+  "packages/lab/src/packaging/ci-changed.test.ts": {
+    guard: "walkers.length > 0",
+    note: "guarded -- #2357's drift test spawns `git ls-files packages` and asks whether every test the ts "
+      + "selector's own detector finds walking the tree is in `docsReadingTests`. A clean result is the "
+      + "EXPECTED answer (the two sets agree), so 'no drift' and 'the walk found no walkers' would otherwise "
+      + "be the same observation. The floor is on the population the assertion ranges over -- the walkers "
+      + "`discoversFromTree` finds -- not on the listing, because an empty listing empties it too. The same "
+      + "file's set-non-empty test holds the OTHER population, `docsReadingTests` itself, to a floor and "
+      + "to the #2329 breaker by name.",
+  },
 };
 
 /**
