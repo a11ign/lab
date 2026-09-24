@@ -59,7 +59,7 @@ function record(caseId: string, variant: string, after: string, subtypes = ["4.1
 
 type Read = { status: number | null; stdout: string; stderr: string };
 
-function readCase(records: object[], caseIds: string): Read {
+function runReader(records: object[], caseIds: string): Read {
   const dir = mkdtempSync(join(tmpdir(), "explain-case-"));
   try {
     const data = join(dir, "repeat-1.jsonl");
@@ -76,8 +76,8 @@ const valueOf = (output: string, feature: string) =>
   output.match(new RegExp(`^\\s+${feature}\\s+(\\S+)\\s*$`, "m"))?.[1];
 
 test("the value printed for `form_change_nonempty` follows the RECORD: 1 when the form change said something, 0 when it did not", () => {
-  const spoke = readCase([record("acceptance-b3-status-taxi", "bad", "Saved, 2 of 4")], "acceptance-b3-status-taxi");
-  const silent = readCase([record("acceptance-b3-status-plot", "bad", "")], "acceptance-b3-status-plot");
+  const spoke = runReader([record("acceptance-b3-status-taxi", "bad", "Saved, 2 of 4")], "acceptance-b3-status-taxi");
+  const silent = runReader([record("acceptance-b3-status-plot", "bad", "")], "acceptance-b3-status-plot");
   assert.equal(spoke.status, 0, spoke.stderr);
   assert.equal(silent.status, 0, silent.stderr);
   assert.equal(valueOf(spoke.stdout, "form_change_nonempty"), "1", spoke.stdout);
@@ -88,7 +88,7 @@ test("the value printed for `form_change_nonempty` follows the RECORD: 1 when th
 });
 
 test("every feature the model has is printed by name, and the label and the case identity beside them", () => {
-  const out = readCase([record("acceptance-b3-status-taxi", "bad", "")], "acceptance-b3-status-taxi").stdout;
+  const out = runReader([record("acceptance-b3-status-taxi", "bad", "")], "acceptance-b3-status-taxi").stdout;
   assert.match(out, /^case acceptance-b3-status-taxi\/bad {3}\(repeat-1\.jsonl\)/m);
   assert.match(out, /label: criteria 4\.1\.3; subtypes 4\.1\.3:status-progress/);
   for (const feature of ["form_change_nonempty", "validation_error_missing", "transcript_present"]) {
@@ -99,7 +99,7 @@ test("every feature the model has is printed by name, and the label and the case
 });
 
 test("a case id no record names is REFUSED BY NAME, with the ids that exist, and prints no features block", () => {
-  const run = readCase([record("acceptance-b3-status-taxi", "bad", "")], "acceptance-b3-status-typo");
+  const run = runReader([record("acceptance-b3-status-taxi", "bad", "")], "acceptance-b3-status-typo");
   assert.equal(run.status, 2);
   assert.match(run.stderr, /no acceptance record names case 'acceptance-b3-status-typo'/);
   assert.match(run.stderr, /acceptance-b3-status-taxi/, "the refusal must say which ids the records DO hold");
@@ -107,7 +107,7 @@ test("a case id no record names is REFUSED BY NAME, with the ids that exist, and
 });
 
 test("one absent id among present ones refuses the whole request and names only the absent one", () => {
-  const run = readCase([record("acceptance-b3-status-taxi", "bad", "")], "acceptance-b3-status-taxi,acceptance-nope");
+  const run = runReader([record("acceptance-b3-status-taxi", "bad", "")], "acceptance-b3-status-taxi,acceptance-nope");
   assert.equal(run.status, 2);
   assert.match(run.stderr, /'acceptance-nope'/);
   assert.doesNotMatch(run.stderr, /no acceptance record names case[^\n]*acceptance-b3-status-taxi'/);
@@ -117,7 +117,7 @@ test("one absent id among present ones refuses the whole request and names only 
 test("`caseId` reads every variant of the case, `caseId/variant` reads that one, and a list reads each", () => {
   const records = [record("acceptance-a", "bad", "said"), record("acceptance-a", "good", "", []),
     record("acceptance-b", "bad", "")];
-  const blocks = (ids: string) => readCase(records, ids).stdout.match(/^case \S+/gm);
+  const blocks = (ids: string) => runReader(records, ids).stdout.match(/^case \S+/gm);
   assert.deepEqual(blocks("acceptance-a"), ["case acceptance-a/bad", "case acceptance-a/good"]);
   assert.deepEqual(blocks("acceptance-a/good"), ["case acceptance-a/good"]);
   assert.deepEqual(blocks("acceptance-a/bad,acceptance-b"), ["case acceptance-a/bad", "case acceptance-b/bad"]);

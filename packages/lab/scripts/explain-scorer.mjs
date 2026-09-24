@@ -31,7 +31,14 @@ import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
  */
 refuseUnknownFlags(["--model=", "--criterion=", "--compare=", "--case="], { entry: import.meta.url, command: "npm run scorer:explain" });
 
-const RUNS = runsRoot();
+// A FUNCTION, NOT A CONSTANT: `RUNS = runsRoot()` at the top level made importing this module for its pure
+// helpers (`caseIdsOf`, `caseReaderArgs`) count as reading the corpus, so the row's own Acceptance -- a test of
+// those helpers -- was refused by the acceptance job, which has none. A DECLARATION rather than a `const`
+// arrow, because the closure keeps a top-level initializer's text but only the bodies of functions something reaches
+// -- and reaches BY NAME, so this is not called `modelDir`, which `caseReaderArgs` takes as a parameter.
+function modelRunsDir(/** @type {string} */ model) {
+  return resolve(runsRoot(), `model-${model}`);
+}
 /**
  * `--name=value` or `--name value`, because both are what people type.
  *
@@ -52,9 +59,10 @@ const readJson = (/** @type {any} */ path) => JSON.parse(readFileSync(path, "utf
 
 /** A model's acceptance report, or a clear explanation of what is missing. */
 function acceptance(/** @type {any} */ model) {
-  const path = resolve(RUNS, `model-${model}`, "acceptance-report.json");
+  const path = resolve(modelRunsDir(model), "acceptance-report.json");
   if (!existsSync(path)) {
-    const have = existsSync(RUNS) ? readdirSync(RUNS).filter((d) => d.startsWith("model-")) : [];
+    const runs = runsRoot();
+    const have = existsSync(runs) ? readdirSync(runs).filter((d) => d.startsWith("model-")) : [];
     throw new Error(`no acceptance report for '${model}' at ${path}\n`
       + `models with a runs/ directory here: ${have.join(", ") || "(none)"}\n`
       + "Score one first:  npm run lab:job -- -e job=acceptance -e out=<name>");
@@ -188,7 +196,7 @@ export function caseReaderArgs(/** @type {{report: any, modelDir: string, cases:
 function readCase(/** @type {string} */ model, /** @type {string} */ cases, /** @type {string | undefined} */ criterion) {
   const report = acceptance(model);
   const python = resolve(REPO_ROOT, ".venv/bin/python");
-  const run = spawnSync(python, caseReaderArgs({ report, modelDir: resolve(RUNS, `model-${model}`), cases, criterion }),
+  const run = spawnSync(python, caseReaderArgs({ report, modelDir: modelRunsDir(model), cases, criterion }),
     { stdio: "inherit", cwd: REPO_ROOT });
   if (run.error) throw new Error(`could not run ${python}: ${run.error.message}`);
   process.exit(run.status ?? 1);
