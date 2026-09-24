@@ -828,6 +828,77 @@ def describe_miss(name: str, block: dict[str, Any]) -> str:
     return " ".join([name] + parts)
 
 
+def false_positive_subtype_scores(records: list[dict[str, Any]], included_indices: list[int], included_labels: Any,
+                                  decided: Any, subtype_scores: dict[str, Any]) -> dict[str, dict[str, float]]:
+    """The raw head score of every head, for each case the criterion FIRED on and should not have. PURE.
+
+    THE SIBLING OF `falseNegativeSubtypeScores`, WHICH THE FALSE-POSITIVE HALF NEVER HAD. The report printed
+    `@1.000` for a false positive, and that number is `decided` -- the criterion's own 0/1 decision, the OR of its
+    heads -- passed through `metrics` against a 0.5 cut. It is not a confidence, it names no head, and it cannot be
+    compared to `subtypeThresholds`. Two rows read it as the model's confidence within one hour on 2026-09-23 (#2187,
+    #2188); the real `2.4.6:regex` scores were 0.980 and 0.870, which differ by 0.11, and the report said 1.000 for both.
+
+    Fed from `subtype_scores`, never from `decided`: the mutation is the whole of what this field is for.
+
+    UNGATED, for the reason `falseNegativeSubtypeScores` states -- `applicability.decide` is what turned a score into a
+    decision, and every head's raw score stays visible beside it. WHICH heads fired is `falsePositivesBySubtype`, and
+    `describe_false_positive` joins the two.
+
+    The STRONGEST capture of a case captured more than once, the mirror of `weakest_miss_scores`: a case is a false
+    positive if ANY capture fired, so the question the number answers -- did the head fire narrowly, or hard -- is
+    answered by the capture that fired hardest. Only captures the criterion FIRED on are read: a repeat that scored low
+    and did not fire is not what made this a false positive, and would only pull a minimum toward a lie. Keyed by
+    case identity, which repeats collapse onto, so the summary is chosen here rather than fallen into.
+
+    Rounded to 4dp for a human, as `falseNegativeSubtypeScores` is. An EMPTY map, never an absent one, when nothing
+    fired wrongly: an empty map says "looked and found none", and a missing key says nothing.
+    """
+    strongest: dict[str, dict[str, float]] = {}
+    for position, index in enumerate(included_indices):
+        if not decided[index] or included_labels[position]:
+            continue
+        heads = strongest.setdefault(case_identity(records[index]), {})
+        for subtype, scores in subtype_scores.items():
+            heads[subtype] = max(float(scores[index]), heads.get(subtype, float("-inf")))
+    return {case: {subtype: round(score, 4) for subtype, score in heads.items()}
+            for case, heads in sorted(strongest.items())}
+
+
+def describe_false_positive(name: str, block: dict[str, Any]) -> str:
+    """One false positive as a failure reason reads it: each head that FIRED, its raw score, and its own cut.
+
+    `acceptance-b3-icon-help/good [2.4.6:regex 0.980 vs cut 0.605]`, the shape `describe_miss` prints for the other
+    direction, and not `@1.000` -- the criterion's binary decision, which a reader took for a confidence.
+    """
+    scores = block.get("falsePositiveSubtypeScores", {}).get(name, {})
+    fired = sorted(subtype for subtype, cases in block.get("falsePositivesBySubtype", {}).items() if name in cases)
+    parts = [f"[{subtype} {scores.get(subtype, float('nan')):.3f} vs cut "
+             f"{block.get('subtypeThresholds', {}).get(subtype, float('nan')):.3f}]" for subtype in fired]
+    return " ".join([name] + parts)
+
+
+def false_positive_reason(criterion: str, block: dict[str, Any]) -> str:
+    """The failure reason for a criterion that fired where it should not have: a count, then each case named. PURE.
+
+    Named here rather than inline so the line a reader meets is testable -- it was an f-string in `main` that printed
+    `@1.000`, and nothing short of a model and a corpus could reach it.
+    """
+    names = list(dict.fromkeys(block.get("falsePositiveCases", [])))
+    return (f"{criterion}: {block['falsePositive']} acceptance false positive(s)"
+            + (": " + ", ".join(describe_false_positive(name, block) for name in names) if names else ""))
+
+
+# `metrics` reports these against the criterion's own 0/1 decision (`DECIDED`), which is right for a caller holding
+# real scores and wrong for the acceptance report, where `1.000` and `0.000` are the decision restated and were read
+# as a confidence. The head scores are `falsePositiveSubtypeScores` and `falseNegativeSubtypeScores`.
+BINARY_CRITERION_SCORES = ("falsePositiveScores", "falseNegativeScores")
+
+
+def without_binary_criterion_scores(block: dict[str, Any]) -> dict[str, Any]:
+    """`metrics`' result without the two maps that restate the criterion's decision as a score. PURE."""
+    return {key: value for key, value in block.items() if key not in BINARY_CRITERION_SCORES}
+
+
 def model_decision_owner(criterion_report: dict[str, Any]) -> str:
     # Reports produced before decision ownership was recorded remain learned
     # scorer reports for backwards compatibility.
@@ -1165,6 +1236,12 @@ def main() -> None:
                 case: {subtype: round(score, 4) for subtype, score in scores.items()}
                 for case, scores in miss_scores.items()
             },
+            # THE RAW HEAD SCORE FOR EACH FALSE POSITIVE, the half of the pair this report lacked. The
+            # criterion-level `falsePositiveScores` `metrics` writes is the binary decision, and read as `@1.000`
+            # by two rows in one hour (#2187, #2188), so it is dropped below and this stands in its place.
+            # Compare with `subtypeThresholds`; which heads fired is `falsePositivesBySubtype`.
+            "falsePositiveSubtypeScores": false_positive_subtype_scores(
+                records, included_indices, included_labels, decided, subtype_scores),
             # WHICH MISSES THE HEAD DID NOT LOSE. A record that WOULD HAVE FIRED at the cut its own
             # Neyman-Pearson bound requires was refused by the raise above it, so no amount of work on
             # the features would recover it and none is owed. Measured 2026-09-23 (#2152): every one of
@@ -1181,8 +1258,9 @@ def main() -> None:
             # Unanimous over the captures of a case, for the same reason and in the same direction: one
             # repeat the raise did not refuse falsifies the claim, so it can only narrow.
             "falseNegativesAboveFloor": misses_the_raise_refused(missed, model_subtypes),
-            **metrics(decided[included_indices].astype(float), included_labels, DECIDED,
-                      identities=[case_identity(records[index]) for index in included_indices]),
+            **without_binary_criterion_scores(
+                metrics(decided[included_indices].astype(float), included_labels, DECIDED,
+                        identities=[case_identity(records[index]) for index in included_indices])),
         }
         stability_inputs[criterion] = [
             (subtype, scores[included_indices], float(model_subtypes[subtype]["threshold"]))
@@ -1195,12 +1273,7 @@ def main() -> None:
             result["failureReasons"].append(f"{criterion}: fewer than {args.min_clean} acceptance clean records")
         block = result["criteria"][criterion]
         if block["falsePositive"]:
-            result["failureReasons"].append(
-                f"{criterion}: {block['falsePositive']} acceptance false positive(s)"
-                + (": " + ", ".join(
-                    f"{name} @{block.get('falsePositiveScores', {}).get(name, float('nan')):.3f}"
-                    for name in block.get("falsePositiveCases", [])) if block.get("falsePositiveCases") else "")
-            )
+            result["failureReasons"].append(false_positive_reason(criterion, block))
         if block["falseNegative"]:
             result["failureReasons"].append(
                 f"{criterion}: {block['falseNegative']} acceptance false negative(s)"
