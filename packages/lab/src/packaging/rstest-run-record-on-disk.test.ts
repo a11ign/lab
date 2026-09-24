@@ -82,6 +82,14 @@ export default { ...rest, ${options.withReporters ? "reporters, " : ""}root: ${J
 }
 
 /**
+ * EVERY variable the shipped config's `agentReporterFor` reads (`AI_AGENT` and its `AGENT_VARIABLES`). A child that keeps
+ * one of them is not agent-free: a session under Codex inherits `CODEX_THREAD_ID`, and the "no agent variable" case then
+ * prints the agent report it asserts is absent.
+ */
+const AGENT_ENV = ["AI_AGENT", "CLAUDECODE", "CLAUDE_CODE", "REPL_ID", "GEMINI_CLI", "CODEX_SANDBOX", "CODEX_THREAD_ID",
+  "OPENCODE", "AUGMENT_AGENT", "GOOSE_PROVIDER", "JUNIE_DATA", "JUNIE_SHIM_PATH", "CURSOR_AGENT"];
+
+/**
  * A real `npx rstest run` through the wrapper. The parent's agent variables are removed first, so the mode is DECLARED
  * by the caller rather than inherited (`rstest-report-is-not-the-verdict.test.ts` was caught measuring its own parent).
  * `NODE_TEST_CONTEXT` is stripped for the reason `assert-glob-not-empty.mjs` strips it.
@@ -89,8 +97,7 @@ export default { ...rest, ${options.withReporters ? "reporters, " : ""}root: ${J
 function rstest(config: string, env: Record<string, string>): Run {
   const cacheRoot = mkdtempSync(join(tmpdir(), "rstest-run-record-cache-"));
   const childEnv: NodeJS.ProcessEnv = { ...process.env, A11Y_RSTEST_CACHE_DIR: cacheRoot };
-  for (const name of ["AI_AGENT", "CLAUDECODE", "CLAUDE_CODE", "RSTEST_NO_AGENT", "A11Y_RSTEST_RECORD_DIR",
-    "NODE_TEST_CONTEXT"]) delete childEnv[name];
+  for (const name of [...AGENT_ENV, "RSTEST_NO_AGENT", "A11Y_RSTEST_RECORD_DIR", "NODE_TEST_CONTEXT"]) delete childEnv[name];
   Object.assign(childEnv, env);
   try {
     const npx = npmCliInvocation("npx", ["rstest", "run", "--config", config]);
@@ -173,7 +180,7 @@ test("a red run's record SURVIVES the green runs that follow it, because no two 
 /** The reporters the shipped config would give a run started with `env`, read in a fresh node process. */
 function shippedReporters(env: Record<string, string>): unknown[] {
   const childEnv: NodeJS.ProcessEnv = { ...process.env };
-  for (const name of ["RSTEST_WORKER_ID", "A11Y_RSTEST_RECORD_DIR", "NODE_TEST_CONTEXT"]) delete childEnv[name];
+  for (const name of [...AGENT_ENV, "RSTEST_WORKER_ID", "A11Y_RSTEST_RECORD_DIR", "NODE_TEST_CONTEXT"]) delete childEnv[name];
   const result = spawnSync(process.execPath, ["--input-type=module", "-e",
     `const c = (await import(${JSON.stringify(pathToFileURL(RSTEST_CONFIG).href)})).default; console.log(JSON.stringify(c.reporters));`],
     { cwd: REPO, encoding: "utf8", env: { ...childEnv, ...env } });
