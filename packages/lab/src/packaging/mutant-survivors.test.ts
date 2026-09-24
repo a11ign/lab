@@ -312,6 +312,6 @@ test("survivorsOfThisTree: names the Acceptance commands as the tests, and lists
 
 test("WIRING: the CLI entry block hands `main` the real `survivors`, and `main` is off without it", () => {
   const source = readFileSync(join(import.meta.dirname, "../../../agent-org/src/pr-open.mjs"), "utf8");
-  assert.match(source, /process\.exitCode = main\(process\.argv\.slice\(2\), \{ survivors: survivorsOfThisTree \}\)/);
+  assert.match(source, /process\.exitCode = main\(undefined, \{ rowBody: defaultRowBody, survivors: survivorsOfThisTree \}\)/);
   assert.match(source, /from "\.\.\/\.\.\/guards\/src\/mutant-survivors\.mjs"/);
 });
