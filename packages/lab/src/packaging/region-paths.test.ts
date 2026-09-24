@@ -659,3 +659,173 @@ test("#1193 clause 3: the predicate asks whether tracked files sit BENEATH the e
   assert.deepEqual(slashlessDirectoryEntries("## Region\n\n```\ndocs/adr\n```\n"), ["docs/adr"]);
   assert.deepEqual(slashlessDirectoryEntries("## Region\n\n```\ndocs/README.md\n```\n"), []);
 });
+
+// ---------------------------------------------------------------------------------------------------------
+// #2233: a Region's EXCLUSION paragraph declares nothing, and a prose extension is read whole or not at all.
+// ---------------------------------------------------------------------------------------------------------
+
+// #2230's Region section as it stands on the issue, and #2155's -- the two real bodies the row names. #2155
+// is the CONTROL for #2230: a fix that cleans the first by narrowing the span too far breaks the second.
+// Inlined, not fixtures, because a fixture file would be a path outside this row's Region.
+const ISSUE_2230_REGION = `## Region
+
+~~~
+packages/agent-org/host/a11ign-lab-watch.service
+packages/agent-org/host/a11ign-lab-watch.timer
+packages/agent-org/host/a11ign-fleet-watch.service
+packages/agent-org/host/a11ign-fleet-watch.timer
+package.json
+packages/lab/src/packaging/host-units.test.ts
+~~~
+
+The four unit files are NEW and reserved here. \`package.json\` gains the missing \`fleet:watch\` script.
+
+**Deliberately NOT in the Region: \`lab-watch.mjs\`, \`fleet-watch.mjs\`, their tests, and
+\`.github/workflows/nightly.yml\`.** The two scripts are correct as written and need no change -- the defect
+is the absence of a caller, not the callees. The rules-file sentence at \`agent-practices.md:306\` is also
+out: it becomes true when this row lands, so editing it is not this row's work.
+
+## Acceptance
+x
+`;
+
+const ISSUE_2155_REGION = `## Region
+
+~~~
+packages/lab/src/training/README.md
+packages/lab/src/training/capture-cache.mjs
+packages/nvda-worker/CLAUDE.md
+packages/cli/src/cli.ts
+packages/control/src/fleet-status.mjs
+packages/lab/src/gates/corpus-size-figures.test.ts
+~~~
+
+\`packages/lab/src/gates/corpus-size-figures.test.ts\` is NEW. \`packages/nvda-worker/CLAUDE.md\` is one of the
+four destinations \`content-preservation.test.ts\` names by path, so that test is in the Acceptance below and
+not left to \`ts / run\` to discover.
+
+**Deliberately NOT in the Region: the docs tree, the ADR directory, and the incident write-ups.** Their
+occurrences are dated records of past populations and are correct as written. A builder who widens this
+Region to reach them has misread the row. Named in words rather than as paths on purpose: a path under this
+heading reserves every file beneath it.
+
+## Acceptance
+x
+`;
+
+const WORKFLOW = ".github/workflows/nightly.yml";
+const FENCED = "packages/agent-org/host/a11ign-lab-watch.service";
+const regionWith = (paragraph: string) => `## Region\n\n~~~\n${FENCED}\n~~~\n\n${paragraph}\n\n## Done-when\n\n1. x\n`;
+
+test("#2233 open-check: an exclusion paragraph's path is not declared, and the fenced one is", () => {
+  const body = regionWith(`**Deliberately NOT in the Region: \`${WORKFLOW}\`.**`);
+  assert.deepEqual(declaredRegionFiles(body), [FENCED]);
+});
+
+test("#2233 REGRESSION: #2230's real Region stops declaring the workflow that made it lane:ceo", () => {
+  const declared = declaredRegionFiles(ISSUE_2230_REGION) ?? [];
+  assert.ok(!declared.includes(WORKFLOW), "the workflow named only by the exclusion paragraph must not declare");
+  assert.deepEqual(declared, [
+    "packages/agent-org/host/a11ign-lab-watch.service", "packages/agent-org/host/a11ign-lab-watch.timer",
+    "packages/agent-org/host/a11ign-fleet-watch.service", "packages/agent-org/host/a11ign-fleet-watch.timer",
+    "packages/lab/src/packaging/host-units.test.ts", "package.json",
+  ]);
+});
+
+test("#2233 CONTROL: #2155's real Region keeps exactly its six fenced paths -- the trim is not too wide", () => {
+  assert.deepEqual(declaredRegionFiles(ISSUE_2155_REGION), [
+    "packages/lab/src/training/README.md", "packages/lab/src/training/capture-cache.mjs",
+    "packages/nvda-worker/CLAUDE.md", "packages/cli/src/cli.ts", "packages/control/src/fleet-status.mjs",
+    "packages/lab/src/gates/corpus-size-figures.test.ts",
+  ]);
+});
+
+test("#2233: every NAMED label declares nothing -- and the same sentence unlabelled DOES, which is the control", () => {
+  const labels = [
+    `**Deliberately NOT in the Region: \`${WORKFLOW}\`.**`,                 // #2230
+    `**Deliberately out of the Region, and named on purpose: \`${WORKFLOW}\`.**`, // #2233's own spelling
+    `**\`${WORKFLOW}\` is deliberately NOT reserved here.**`,               // #2208: the path IS the lead-in
+    `**Not in scope: \`${WORKFLOW}\`.**`,
+    `**Not in the Region: \`${WORKFLOW}\`.**`,
+    `__Out of the Region: \`${WORKFLOW}\`.__`,
+  ];
+  for (const label of labels) {
+    assert.deepEqual(declaredRegionFiles(regionWith(label)), [FENCED], `label: ${label}`);
+  }
+  // THE POSITIVE CONTROL for the emptiness above: with no label the path is in the span and IS read. Were the
+  // extractor blind to it, every assertion above would pass for the wrong reason.
+  assert.deepEqual([...(declaredRegionFiles(regionWith(`Also \`${WORKFLOW}\`.`)) ?? [])].sort(), [FENCED, WORKFLOW].sort());
+  // Bold is required: a sentence merely SAYING "not in scope" is prose, left to the path grammar (#848, #920).
+  assert.ok((declaredRegionFiles(regionWith(`Deliberately NOT in the Region: \`${WORKFLOW}\`.`)) ?? []).includes(WORKFLOW));
+});
+
+test("#2233: the exclusion paragraph reaches its continuations and stops at a blank line or a fence", () => {
+  const wrapped = regionWith(
+    `**Deliberately NOT in the Region: the docs tree, and\n\`${WORKFLOW}\` on the second line.**\n\nBut \`scripts/ci-changed.mjs\` is this row's.`);
+  assert.deepEqual(declaredRegionFiles(wrapped), [FENCED, "scripts/ci-changed.mjs"]);
+  // A fenced path BENEATH an exclusion label is a declaration: a fence is structured, not prose.
+  const fencedAfter = regionWith(`**Not in scope: the docs tree.**\n~~~\n${WORKFLOW}\n~~~`);
+  assert.deepEqual(declaredRegionFiles(fencedAfter), [FENCED, WORKFLOW]);
+});
+
+test("#2233: an excluded path is not reported STRAY either -- it is out of the span, not declared-and-lost", () => {
+  assert.deepEqual(unrecognisedRegionPaths(regionWith(`**Deliberately NOT in the Region: \`${WORKFLOW}\`.**`)), []);
+});
+
+// The pre-#2233 grammar, verbatim -- the extension ended `\.[A-Za-z]{2,4}` with nothing after it -- so the
+// truncation is REPRODUCED here rather than described.
+const oldRegionPaths = (text: string): string[] => {
+  const alts = trackedTopLevelDirs().map((d) => d.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const old = new RegExp(`(?:^|[\\s\`"'(])((?:${alts})\\/[A-Za-z0-9/_.-]+\\.[A-Za-z]{2,4})`, "g");
+  return [...text.matchAll(old)].map((m) => m[1]);
+};
+/** Is `path` a whole token of `text` -- nothing alphanumeric glued to its end? "Never the wrong file." */
+const isWholeToken = (text: string, path: string) => {
+  const at = text.indexOf(path);
+  return at >= 0 && !/[A-Za-z0-9_]/.test(text[at + path.length] ?? "");
+};
+const LONG_EXTENSIONS = [
+  "packages/lab/src/fixtures/corpus.jsonl",
+  "packages/agent-org/host/a11ign-work-tick.service",
+  "packages/agent-org/host/a11ign-work-tick.timer",
+  "docs/guide.markdown",
+  "packages/lab/src/fixtures/frame.mp4",
+];
+
+test("#2233: a prose path declares its WHOLE extension, or nothing -- never the wrong file", () => {
+  for (const path of LONG_EXTENSIONS) {
+    const text = `It rewrites ${path} in place.`;
+    assert.deepEqual(regionPathsFromBody(text), [path], text);
+  }
+  // The lookahead is what makes it "or nothing": an extension glued to more name declares NOTHING, not the
+  // shorter file (`a.mjs_bak` is not `a.mjs`).
+  assert.deepEqual(regionPathsFromBody("touches packages/lab/src/a.mjs_bak and docs/b.md2x"), ["docs/b.md2x"]);
+  assert.deepEqual(regionPathsFromBody("touches packages/lab/src/a.mjs_bak"), []);
+  // The four-letter and shorter ones are unchanged, and a sentence's own full stop is still not part of one.
+  assert.deepEqual(regionPathsFromBody("See packages/lab/src/x.mjs. Then docs/a.md, and docs/b.json)."),
+    ["packages/lab/src/x.mjs", "docs/a.md", "docs/b.json"]);
+});
+
+test("#2233 POSITIVE CONTROL: the pre-fix grammar DID truncate these, and the whole-token predicate catches it", () => {
+  // The guard is `isWholeToken`: it must FAIL on the old grammar's output, or "no truncation" above is an
+  // emptiness that passes when the predicate can see nothing. The population is LONG_EXTENSIONS, above.
+  const truncated = Object.fromEntries(LONG_EXTENSIONS.map((path) => [path, oldRegionPaths(` ${path} `)[0]]));
+  assert.deepEqual(truncated, {
+    "packages/lab/src/fixtures/corpus.jsonl": "packages/lab/src/fixtures/corpus.json",
+    "packages/agent-org/host/a11ign-work-tick.service": "packages/agent-org/host/a11ign-work-tick.serv",
+    "packages/agent-org/host/a11ign-work-tick.timer": "packages/agent-org/host/a11ign-work-tick.time",
+    "docs/guide.markdown": "docs/guide.mark",
+    "packages/lab/src/fixtures/frame.mp4": "packages/lab/src/fixtures/frame.mp",
+  });
+  for (const [path, fragment] of Object.entries(truncated)) {
+    assert.ok(!isWholeToken(`x ${path} y`, fragment), `${fragment} must be flagged as a fragment of ${path}`);
+    assert.ok(isWholeToken(`x ${path} y`, path));
+  }
+});
+
+test("#2233 clause 3: `.service` and `.timer` -- the shape that found this -- now declare as written, from prose and Region", () => {
+  const body = "## Region\n\nAdds packages/agent-org/host/a11ign-lab-watch.service and packages/agent-org/host/a11ign-lab-watch.timer.\n\n## Done-when\n";
+  assert.deepEqual(declaredRegionFiles(body), [
+    "packages/agent-org/host/a11ign-lab-watch.service", "packages/agent-org/host/a11ign-lab-watch.timer",
+  ]);
+});
