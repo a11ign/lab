@@ -266,6 +266,7 @@ const NAMES_IT_AS_DATA = new Set([
   "packages/lab/src/packaging/ci-installs-with-pnpm.test.ts",
   "packages/lab/src/repo/lockfile-in-sync.test.ts",
   "packages/lab/src/packaging/row-claim-file-overlap-rule.test.ts",
+  "packages/lab/src/packaging/pr-open-region.test.ts", // plants it as a neighbour of the exempt pnpm-lock.yaml
 ]);
 
 /**
