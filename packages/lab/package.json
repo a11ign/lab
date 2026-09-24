@@ -17,6 +17,7 @@
     "@guidepup/guidepup": "0.31.0",
     "a11ign": "0.0.0",
     "typescript": "^6.0.3",
-    "yaml": "^2.9.0"
+    "yaml": "^2.9.0",
+    "axe-core": "^4.12.1"
   }
 }
