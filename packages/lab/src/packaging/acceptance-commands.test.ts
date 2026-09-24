@@ -7,6 +7,7 @@
  * MISSING (no acceptance line at all -- must FAIL, never read as a pass).
  */
 import { test } from "node:test";
+import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,8 +25,11 @@ import {
   SUITE_SCRIPTS,
   SPAWNS_GH,
   endsInsideQuote,
+  endsInOperator,
   handRunDeclaration, handRunAcceptanceReason, handRunEvidence,
+  testFilesAmong, mutationRecordReport, changedFilesOfThisPullRequest,
 } from "../../../agent-org/src/acceptance-commands.mjs";
+import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
 
 // A file known to exist, relative to the repo root -- where every real invocation of this command runs
 // from. This test file names itself, so it cannot go stale independently of being renamed.
@@ -597,6 +601,93 @@ test("#2068: the same shape in a BARE (unfenced) block joins, and still stops wh
   const body = "Acceptance:\nnode -e 'const a = 1;\nconsole.log(a);'\n\nMutation: flip the joiner\n";
   assert.deepEqual(extractAcceptanceSection(body),
     { kind: "commands", commands: ["node -e 'const a = 1;\nconsole.log(a);'"] });
+});
+
+// --- #2178: a TRAILING OPERATOR is the third continuation -- `&&`, `||`, `|` and `|&` never end a command ---
+//
+// The incident shape: `npm run build &&` on one line and `npm test` on the next reached bash as two commands.
+// The first is `syntax error: unexpected end of file`; the second runs ALONE and can be green, so the
+// conjunction the author wrote (the second only if the first) asserted nothing. The first fragment also
+// classified `runnable`, so nothing warned at filing time.
+
+const fenced = (...lines: string[]) => `## Acceptance\n\n\`\`\`bash\n${lines.join("\n")}\n\`\`\`\n`;
+
+test("#2178: a fenced line ending in EACH of the four operators joins the next line -- one command, "
+  + "never one per line, and never one operator standing in for the family", () => {
+  for (const op of ["&&", "||", "|", "|&"]) {
+    assert.deepEqual(extractAcceptanceSection(fenced(`npm run build ${op}`, "  npm test")),
+      { kind: "commands", commands: [`npm run build ${op} npm test`] }, `operator ${op}`);
+  }
+});
+
+test("#2178: a chain of several operator-ended lines is ONE command", () => {
+  assert.deepEqual(extractAcceptanceSection(fenced("gh issue list |", "  jq length |", "  cat")),
+    { kind: "commands", commands: ["gh issue list | jq length | cat"] });
+});
+
+test("#2178: what RUNS is the whole conjunction -- run() never sees the `&&` fragment", () => {
+  const seen: string[] = [];
+  const report = acceptanceReport(fenced("npm run lint &&", "  npm run typecheck"), (cmd) => { seen.push(cmd); return 0; },
+    { commandExists: () => true });
+  assert.equal(report.ok, true);
+  assert.deepEqual(seen, ["npm run lint && npm run typecheck"]);
+});
+
+test("#2178 NEGATIVE CONTROLS: an operator that does not END the line, a lone `&` (background -- a complete "
+  + "command), and an escaped `\\|` each leave the next line a SEPARATE command -- a joiner with no operator "
+  + "test fuses every two-command Acceptance in the repository", () => {
+  assert.deepEqual(extractAcceptanceSection(fenced("npm run a && npm run b", "npm run c")),
+    { kind: "commands", commands: ["npm run a && npm run b", "npm run c"] });
+  assert.deepEqual(extractAcceptanceSection(fenced("npm run a &", "npm run c")),
+    { kind: "commands", commands: ["npm run a &", "npm run c"] });
+  assert.deepEqual(extractAcceptanceSection(fenced("echo a\\|", "npm run c")),
+    { kind: "commands", commands: ["echo a\\|", "npm run c"] });
+});
+
+test("#2178 THE RUNAWAY: an operator on the last line of the block stops at the CLOSING FENCE", () => {
+  const body = `${fenced("npm run build &&")}\n## Mutation\n\nsomething else\n`;
+  assert.deepEqual(extractAcceptanceSection(body), { kind: "commands", commands: ["npm run build &&"] });
+});
+
+test("#2178: the same shape in a BARE (unfenced) block joins, and still stops where the block ends", () => {
+  const body = "Acceptance:\nnpm run build &&\nnpm test\n\nMutation: flip the joiner\n";
+  assert.deepEqual(extractAcceptanceSection(body), { kind: "commands", commands: ["npm run build && npm test"] });
+});
+
+test("#2178: #2068's two shapes still join beside the new one -- the positive control for the counts above", () => {
+  assert.deepEqual(extractAcceptanceSection(fenced("node -e 'const a = 1;", "console.log(a);'")),
+    { kind: "commands", commands: ["node -e 'const a = 1;\nconsole.log(a);'"] });
+  assert.deepEqual(extractAcceptanceSection(fenced("node -e 1 \\", "  --check")),
+    { kind: "commands", commands: ["node -e 1 --check"] });
+});
+
+test("#2178: the operator scanner itself", () => {
+  const cases: Array<[string, boolean]> = [
+    ["npm run build &&", true], ["npm run build &&  ", true], ["a ||", true], ["a |", true], ["a |&", true],
+    ["a&&", true],
+    ["a &", false], ["a && b", false], ["a | b", false], ["a \\|", false], ["a", false], ["", false],
+  ];
+  for (const [text, expected] of cases) {
+    assert.equal(endsInOperator(text), expected, `endsInOperator(${JSON.stringify(text)})`);
+  }
+});
+
+test("#2178: a block-opening keyword is refused for what it IS, not for a binary it lacks -- `for` is a "
+  + "command to bash, and `no executable` sends the filer looking for a missing program", () => {
+  for (const line of ["for f in a b; do", "while true; do", "if true; then", "case x in", "do", "fi", "{"]) {
+    const verdict = classifyCommand(line);
+    assert.equal(verdict.verdict, "prose", line);
+    assert.doesNotMatch((verdict as { reason: string }).reason, /no executable/, line);
+    assert.match((verdict as { reason: string }).reason, /keyword/, line);
+  }
+});
+
+test("#2178 CONTROL: a token that is not a keyword and not on $PATH keeps the `no executable` reason, and `[[` "
+  + "(a complete one-line command) is not treated as a block edge", () => {
+  const missing = classifyCommand("definitely-not-a-binary --x", { commandExists: () => false });
+  assert.match((missing as { reason: string }).reason, /no executable "definitely-not-a-binary"/);
+  const test2 = classifyCommand("[[ -f x ]]", { commandExists: () => false });
+  assert.match((test2 as { reason: string }).reason, /no executable "\[\["/);
 });
 
 test("#2068: the quote scanner itself, on the shapes that decide the two halves apart", () => {
@@ -2972,4 +3063,110 @@ test("#2221: a command that names no test file is still never inspected, and one
   assert.deepEqual(unmetCommandClosureRequirements(
     "npx rstest run --include packages/lab/src/training/abstention-regression.test.ts", NO_CAPABILITIES), [],
     "a path that does not exist reads 0 for a reason that is NOT the hole -- the row's own first probe");
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// #2305: A PR THAT CHANGES A TEST MUST CARRY A `Mutation:` RECORD, or `Mutation: none -- <reason>`.
+// Positive control for every emptiness below: `TEST_DIFF` names a real test file and `testFilesAmong` is
+// asserted to find it, so "no test in the diff" is never a verdict reached by an empty population.
+// ---------------------------------------------------------------------------------------------------------
+const TEST_DIFF = { ok: true as const, files: ["packages/lab/src/packaging/x.test.ts", "README.md"] };
+const SOURCE_DIFF = { ok: true as const, files: ["packages/agent-org/src/x.mjs", "README.md"] };
+
+test("#2305: testFilesAmong finds every test-file shape this repo writes, and no source file", () => {
+  assert.deepEqual(testFilesAmong(TEST_DIFF.files), ["packages/lab/src/packaging/x.test.ts"],
+    "the positive control: the population the rest of this block relies on is not empty");
+  const shapes = ["a/b.test.mjs", "packages/scorer/tests/test_vague_link_context.py", "a/b_test.py", "a/b.test.js"];
+  assert.deepEqual(testFilesAmong(shapes), shapes);
+  assert.deepEqual(testFilesAmong(["a/test-support/helper.ts", "a/contest.ts", "a/latest.mjs"]), []);
+});
+
+test("#2305: THE ROW'S OWN FAILING TEST -- a diff with a test and an empty `Mutation:` is MISSING, and fails", () => {
+  for (const body of ["Closes #1\n\nMutation:\n\n## What changes", "Closes #1", "Mutation: none",
+    "Mutation: <!-- what you broke -->"]) {
+    const report = mutationRecordReport({ body, diff: TEST_DIFF });
+    assert.equal(report.ok, false, `${JSON.stringify(body)} must not pass`);
+    assert.match(report.line, /^MUTATION: MISSING/);
+    assert.match(report.line, /x\.test\.ts/, "names the test file that owes the record");
+  }
+});
+
+test("#2305: a record, or `Mutation: none -- <reason>`, passes; the reason is required", () => {
+  const record = mutationRecordReport({ body: "Mutation: npm run mutate -- --file x.mjs", diff: TEST_DIFF });
+  assert.equal(record.ok, true);
+  assert.match(record.line, /^MUTATION: RECORDED/);
+  const prose = mutationRecordReport({ body: "Mutation:\nDeleted the guard; the test went red.", diff: TEST_DIFF });
+  assert.equal(prose.ok, true);
+  const none = mutationRecordReport({ body: "Mutation: none \u2014 a rename, no behaviour", diff: TEST_DIFF });
+  assert.deepEqual(none, { ok: true, line: "MUTATION: NONE -> a rename, no behaviour" });
+  assert.equal(mutationRecordReport({ body: "Mutation: none -- a rename", diff: TEST_DIFF }).ok, true,
+    "the ASCII spelling the row wrote is accepted too");
+  assert.equal(mutationRecordReport({ body: "Mutation: none", diff: TEST_DIFF }).ok, false);
+});
+
+test("#2305: a diff with no test file owes nothing, and a body with no `Mutation:` still passes it", () => {
+  const report = mutationRecordReport({ body: "Closes #1", diff: SOURCE_DIFF });
+  assert.deepEqual(report, { ok: true, line: "MUTATION: NOT REQUIRED -- no test file in the diff" });
+  assert.equal(mutationRecordReport({ body: null, diff: SOURCE_DIFF }).ok, true);
+});
+
+test("#2305: two `Mutation:` headers fail rather than pick one", () => {
+  const report = mutationRecordReport({ body: "Mutation: a\n\nMutation: b", diff: TEST_DIFF });
+  assert.equal(report.ok, false);
+  assert.match(report.line, /^MUTATION: DUPLICATE/);
+});
+
+test("#2305: a diff this job could not read is UNCHECKED -- loud, and not a failure", () => {
+  const report = mutationRecordReport({ body: "", diff: { ok: false, why: "git said: boom" } });
+  assert.equal(report.ok, true);
+  assert.match(report.line, /^MUTATION: UNCHECKED .*git said: boom/);
+});
+
+/** A base with one commit, a PR branch adding a test, base moving on, then the merge commit `checkout` builds. */
+function mergedPullRequest(dir: string, run: (args: string[]) => string, commit: (message: string) => string) {
+  const write = (name: string) => { mkdirSync(join(dir, "src"), { recursive: true }); writeFileSync(join(dir, name), name); };
+  write("base.txt"); run(["add", "-A"]); commit("base");
+  run(["branch", "-M", "main"]);
+  run(["checkout", "-q", "-b", "pr"]);
+  write("src/x.test.ts"); write("src/x.mjs"); run(["add", "-A"]); commit("pr work");
+  run(["checkout", "-q", "main"]);
+  write("base-moved-on.test.ts"); run(["add", "-A"]); commit("base moves on");
+  run(["checkout", "-q", "-b", "merge-ref"]);
+  run(["-c", "user.name=t", "-c", "user.email=t@example.invalid", "merge", "--no-ff", "-q", "-m", "merge", "pr"]);
+}
+
+test("#2305: the diff is the PR's OWN files -- HEAD^1..HEAD of the merge commit, not what the base did since", () => {
+  withGitSandbox(({ dir, run, commit }) => {
+    mergedPullRequest(dir, run, commit);
+    const reading = changedFilesOfThisPullRequest(dir);
+    assert.deepEqual(reading, { ok: true, files: ["src/x.mjs", "src/x.test.ts"] },
+      "base-moved-on.test.ts landed on the base and is not this PR's to answer for");
+  });
+});
+
+test("#2305: a HEAD that is not a merge commit is UNREADABLE, never a diff of only its last commit", () => {
+  withGitSandbox(({ dir, run, commit }) => {
+    mergedPullRequest(dir, run, commit);
+    run(["checkout", "-q", "pr"]);
+    run(["remote", "add", "origin", dir]); // so the deepening fetch succeeds and the merge test is what refuses
+    const reading = changedFilesOfThisPullRequest(dir);
+    assert.equal(reading.ok, false, "a non-merge HEAD is never read as the PR's diff");
+    assert.match((reading as { why: string }).why, /not a merge commit/);
+  });
+});
+
+test("#2305: `main()` is WIRED -- the job exits 1 on a missing record and 0 once it is written", () => {
+  withGitSandbox(({ dir, run, commit }) => {
+    mergedPullRequest(dir, run, commit);
+    const job = (body: string) => spawnSync("node",
+      [new URL("../../../agent-org/src/acceptance-commands.mjs", import.meta.url).pathname],
+      { cwd: dir, encoding: "utf8", env: sandboxGitEnv({ PR_BODY: body }) });
+    const base = "Acceptance: none \u2014 the test is the check\n\nCloses: none \u2014 test\n";
+    const missing = job(base);
+    assert.equal(missing.status, 1, missing.stdout + missing.stderr);
+    assert.match(missing.stdout, /MUTATION: MISSING/);
+    const written = job(`${base}\nMutation: none \u2014 a fixture rename\n`);
+    assert.equal(written.status, 0, written.stdout + written.stderr);
+    assert.match(written.stdout, /MUTATION: NONE/);
+  });
 });

@@ -129,6 +129,12 @@ const HAS_INCONCLUSIVE_DOCUMENTED: Record<string, string> = {
  * either always-true-by-construction or not-the-right-question for that script.
  */
 const NO_PARTIAL_POPULATION: Record<string, string> = {
+  "packages/lab/scripts/explain-scorer.mjs":
+    "NO POPULATION OF EVIDENCE, AND IT REFUSES THE ONE WAY IT COULD FALL SHORT: the `explain-case` job reads "
+    + "the cases the caller NAMED, so 'did it see everything' means 'did every named id have a record', and "
+    + "the reader answers that itself -- an id no acceptance record holds is refused by name (exit 2) and "
+    + "NOTHING is printed, so a half-answer to a two-case question cannot read as the whole answer. It is "
+    + "read-only and reports, never gates: no verdict reads its exit code (#2334).",
   "packages/lab/scripts/full-page-claims.mjs":
     "REPORT-ONLY, AND IT STATES ITS OWN POPULATION: it makes no pass/fail judgement — it counts how many "
     + "real-page captures lose Requirement 2's full-page claim and names the sweep that withheld each. "

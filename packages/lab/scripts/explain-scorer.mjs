@@ -9,26 +9,36 @@
  *
  *   npm run scorer:explain -- --compare a,b              two models, criterion by criterion
  *   npm run scorer:explain -- --model=m --criterion=2.4.4  which cases failed, and their scores
- *   npm run scorer:explain -- --model=m --case=<id>       one case: label, features, evidence
+ *   npm run scorer:explain -- --model=m --case=<id>       one case: label, head scores, every feature value
  *   npm run scorer:explain -- --model=m --weights=3.3.2:unnamed-form-field
  *
  * Read-only. It runs no training, writes nothing, and touches no shipped artefact — so it can be pointed
  * at a release candidate mid-investigation without changing what is being investigated.
  */
 import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
-import { runsRoot } from "../src/dataset-paths.mjs";
+import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
 
 /**
- * `--name`, `--case` and `--weights` appear in this file's prose, not in its argv.
+ * `--name` and `--weights` appear in this file's prose, not in its argv.
  *
- * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
+ * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success. `--case` was one
+ * of the three until #2334: documented above and refused here, so the question that needed it -- what did
+ * a held-out case's features read? -- had no instrument.
  */
-refuseUnknownFlags(["--model=", "--criterion=", "--compare="], { entry: import.meta.url, command: "npm run scorer:explain" });
+refuseUnknownFlags(["--model=", "--criterion=", "--compare=", "--case="], { entry: import.meta.url, command: "npm run scorer:explain" });
 
-const RUNS = runsRoot();
+// A FUNCTION, NOT A CONSTANT: `RUNS = runsRoot()` at the top level made importing this module for its pure
+// helpers (`caseIdsOf`, `caseReaderArgs`) count as reading the corpus, so the row's own Acceptance -- a test of
+// those helpers -- was refused by the acceptance job, which has none. A DECLARATION rather than a `const`
+// arrow, because the closure keeps a top-level initializer's text but only the bodies of functions something reaches
+// -- and reaches BY NAME, so this is not called `modelDir`, which `caseReaderArgs` takes as a parameter.
+function modelRunsDir(/** @type {string} */ model) {
+  return resolve(runsRoot(), `model-${model}`);
+}
 /**
  * `--name=value` or `--name value`, because both are what people type.
  *
@@ -49,9 +59,10 @@ const readJson = (/** @type {any} */ path) => JSON.parse(readFileSync(path, "utf
 
 /** A model's acceptance report, or a clear explanation of what is missing. */
 function acceptance(/** @type {any} */ model) {
-  const path = resolve(RUNS, `model-${model}`, "acceptance-report.json");
+  const path = resolve(modelRunsDir(model), "acceptance-report.json");
   if (!existsSync(path)) {
-    const have = existsSync(RUNS) ? readdirSync(RUNS).filter((d) => d.startsWith("model-")) : [];
+    const runs = runsRoot();
+    const have = existsSync(runs) ? readdirSync(runs).filter((d) => d.startsWith("model-")) : [];
     throw new Error(`no acceptance report for '${model}' at ${path}\n`
       + `models with a runs/ directory here: ${have.join(", ") || "(none)"}\n`
       + "Score one first:  npm run lab:job -- -e job=acceptance -e out=<name>");
@@ -129,7 +140,66 @@ export function criterionDetail(/** @type {any} */ report, /** @type {any} */ cr
     if (c[`${key}Truncated`]) lines.push(`  ...and ${c[`${key}Truncated`]} more not listed`);
   }
   if (!c.falsePositive && !c.falseNegative) lines.push("  (nothing wrong on this criterion)");
+  else lines.push(...caseHint(c));
   return lines;
+}
+
+/**
+ * The case ids of EVERY miss and false alarm on a criterion, from the report's untruncated fields.
+ *
+ * `falseNegativeCases` and `falsePositiveCases` are cut at twelve, and #2258 asks about sixteen misses and six
+ * false alarms, so reading the ids off the printed lines would drop four of the sixteen without saying so.
+ * `falseNegativeSubtypeScores` and `falsePositiveSubtypeScores` are keyed by every case that missed or fired,
+ * with no cap; the two named lists are unioned in for a report written before those fields existed.
+ * `caseId` alone, not `caseId/variant`: the `explain-case` job's `case` is contained by a shape with no `/`,
+ * and the reader prints every variant of a case, which is what a miss needs (the repeats disagree).
+ */
+export function caseIdsOf(/** @type {any} */ criterion) {
+  const identities = [...(criterion.falseNegativeCases ?? []), ...(criterion.falsePositiveCases ?? []),
+    ...Object.keys(criterion.falseNegativeSubtypeScores ?? {}), ...Object.keys(criterion.falsePositiveSubtypeScores ?? {})];
+  return [...new Set(identities.map((identity) => String(identity).split("/")[0]))].sort();
+}
+
+/** What to type to read the cases just listed, pasteable into the `explain-case` job as well. */
+function caseHint(/** @type {any} */ criterion) {
+  const ids = caseIdsOf(criterion);
+  return ids.length
+    ? ["", `  read their features and head scores (${ids.length} case(s)):`, `    --case=${ids.join(",")}`,
+      "    or on the lab:  -e job=explain-case -e out=<model> -e case=<the same list>"]
+    : [];
+}
+
+/**
+ * The acceptance records a model was evaluated on, named by the report itself rather than assumed.
+ *
+ * A path the evaluator was given is a path it recorded, so a reader that re-derived `repeat-1` and `repeat-2`
+ * would answer about files the report never read the day a third repeat is added.
+ */
+export function acceptanceDataPaths(/** @type {any} */ report) {
+  const paths = (report.data ?? []).map((/** @type {any} */ entry) => resolve(REPO_ROOT, entry.path));
+  if (!paths.length) throw new Error("this acceptance report records no --data files, so there are no records to read a case from");
+  return paths;
+}
+
+/** The argv for the case reader: which records, which model, which case -- and nothing the caller typed as a path. */
+export function caseReaderArgs(/** @type {{report: any, modelDir: string, cases: string, criterion?: string}} */ { report, modelDir, cases, criterion }) {
+  return [resolve(REPO_ROOT, "packages/lab/scripts/explain-case.py"),
+    ...acceptanceDataPaths(report).flatMap((/** @type {string} */ path) => ["--data", path]),
+    "--case", cases, "--model", modelDir, ...(criterion ? ["--criterion", criterion] : [])];
+}
+
+/**
+ * Run the case reader. It is Python because the features are: `screenreader_features.py` is the featurizer the
+ * evaluator scores with, and a JavaScript port of it would be a second implementation that could disagree
+ * with what the model saw.
+ */
+function readCase(/** @type {string} */ model, /** @type {string} */ cases, /** @type {string | undefined} */ criterion) {
+  const report = acceptance(model);
+  const python = resolve(REPO_ROOT, ".venv/bin/python");
+  const run = spawnSync(python, caseReaderArgs({ report, modelDir: modelRunsDir(model), cases, criterion }),
+    { stdio: "inherit", cwd: REPO_ROOT });
+  if (run.error) throw new Error(`could not run ${python}: ${run.error.message}`);
+  process.exit(run.status ?? 1);
 }
 
 /** A head's document-feature weights, largest magnitude first — where a decision actually comes from. */
@@ -159,6 +229,14 @@ function main() {
     process.exit(2);
   }
   const criterion = arg("criterion");
+  const cases = arg("case");
+  // `--case` with no value would otherwise fall through to the whole-report listing and answer a question
+  // nobody asked, in the shape of an answer to the one they did.
+  if (!cases && process.argv.some((a) => a === "--case" || a.startsWith("--case="))) {
+    process.stderr.write("--case needs one or more case ids, comma-separated: --case=acceptance-b3-status-taxi\n");
+    process.exit(2);
+  }
+  if (cases) return readCase(model, cases, criterion);
   if (criterion) {
     process.stdout.write(`${criterionDetail(acceptance(model), criterion).join("\n")}\n`);
     return;
