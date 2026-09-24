@@ -723,6 +723,11 @@ export function rulesSections(text: string): string[] {
 
 const headingOf = (section: string) => section.split("\n")[0];
 
+/** What the split of `agent-practices.md` produced and consumed -- read off the two commits, pinned as literals
+ *  because they are immutable (and `reported-counts.test.ts` refuses a floor standing in for a count). */
+const SPLIT_DESTINATIONS = 6;
+const SPLIT_SECTIONS = 12;
+
 /** What a split did to the sections of the file it split. Empty arrays are the passing answer. */
 export function splitVerdict(baseText: string, destinations: { rel: string; text: string }[]) {
   const base = rulesSections(baseText);
@@ -782,8 +787,10 @@ test("the #2092 split moved every section of agent-practices.md, byte for byte, 
   const created = git("ls-tree", "--name-only", splitCommit, `${RULES_DIR}/`).split("\n").filter((f) => f.endsWith(".md"));
   const texts = blobsAt([`${parent}:${RULES_DIR}/agent-practices.md`, ...created.map((f) => `${splitCommit}:${f}`)]);
   const verdict = splitVerdict(texts[0], created.map((rel, i) => ({ rel, text: texts[i + 1] })));
-  assert.ok(created.length > 1, `${splitCommit.slice(0, 8)} left ${created.length} rules file(s): not a split`);
-  assert.ok(verdict.examined >= 2, `the parent's agent-practices.md had ${verdict.examined} sections: nothing was examined`);
+  // The population, asserted by EQUALITY against literals: both inputs are immutable commits, so the counts
+  // cannot drift, and a floor (`> 1`) would be satisfied by a split that lost half its sections.
+  assert.equal(created.length, SPLIT_DESTINATIONS, `the split commit created ${created.length} rules files`);
+  assert.equal(verdict.examined, SPLIT_SECTIONS, "the parent's agent-practices.md had a different section count");
   assert.deepEqual({ dropped: verdict.dropped, duplicated: verdict.duplicated, added: verdict.added },
     { dropped: [], duplicated: [], added: [] },
     `the split at ${splitCommit.slice(0, 8)} did not move ${verdict.examined} sections intact. DROPPED = in the `
