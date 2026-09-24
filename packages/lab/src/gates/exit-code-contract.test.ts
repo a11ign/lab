@@ -123,6 +123,10 @@ const INFRASTRUCTURE: Record<string, string> = {
     + "produces 2 — self-documented as the honest INCONCLUSIVE for a dispatch that died, and the reason a "
     + "bare 2 from anything using this helper is ambiguous between three distinct causes. See the doc's "
     + "'gave up observing' section",
+  "packages/lab/src/training/evidence-check-exit.mjs":
+    "`EXIT` names evidence-check's four codes and `runToExit` exits 3 (THREW) on a throw — no `main` of its "
+    + "own, inherited by `evidence-check.mjs`, whose entry below documents all four. Split out so a test can "
+    + "read the codes without importing the script and its corpus paths (#2197)",
   "packages/lab/src/training/capture-fleet-guard.mjs":
     "`assertOneBrowserAcross` exits 3 on a fleet split across two browser builds and has no `main` of its "
     + "own — `capture-real-pages.mjs` inherits it directly, and that script's own entry below already "
@@ -241,9 +245,13 @@ const DOCUMENTED: Record<string, string> = {
     "0 every stage succeeded; 1 any stage failed OR crashed for an unrelated reason — two causes share one "
     + "code via its own pipeline() helper, not verdict.mjs",
   "packages/lab/scripts/evidence-check.mjs":
-    "2 means THREE things in one file per its own contract comment ('0 safe to ship, 1 evidence changed, 2 "
-    + "could not answer') — no --worker given, no comparable current-page capture, and unreadable page "
-    + "title all share it",
+    "0 safe to ship; 1 the evidence CHANGED (the designed verdict — but Node's own `1` for a failure BEFORE "
+    + "runToExit can catch it, a module that will not load or an unknown flag, also lands here, so `1` is "
+    + "read against the output and never on the code alone); 2 means THREE things — no --worker given, no "
+    + "comparable current-page capture, and unreadable page title all share it, alongside the INCONCLUSIVE "
+    + "coverage verdict; 3 the script THREW (EXIT.THREW, #2197) — deliberately not 2, which is already "
+    + "overloaded, and not 1, which a crash used to share with CHANGED and which sent an operator to "
+    + "recapture the fleet over a stale manifest",
   "packages/lab/scripts/explain-capture.mjs":
     "2 no search term given OR no capture file matched — usage and not-found share one code",
   "packages/lab/scripts/explain-scorer.mjs":
