@@ -200,27 +200,38 @@ const POSITIVE_CONTROL = /an emptiness assertion names where its positive contro
  */
 const flat = (/** @type {string} */ text: string) => text.replace(/\s+/g, " ");
 
-test("#1157: the practices file carries the line, with what makes it applicable rather than aspirational", () => {
-  assert.match(flat(agentPractices), POSITIVE_CONTROL,
+/**
+ * THE TWO #1157 CHECKS, AS FUNCTIONS -- each is called by its own test against the real file and by the
+ * mutation test below against the file with the line removed. See #2185 for why the mutation test may not
+ * re-test `String.replace` instead.
+ */
+const assertsThePracticesLine = (text: string) => {
+  assert.match(text, POSITIVE_CONTROL,
     "the sentence itself, since this is the only thing standing in for a guard on 64 assertions");
-  assert.match(flat(agentPractices), /point at it/i,
+  assert.match(text, /point at it/i,
     "and the operative half: a control you BELIEVE in is not one you can POINT AT, which is the "
     + "difference between this line and an encouragement");
-  assert.match(flat(agentPractices), /64 derive from a CALL|64 call-derived/i,
+  assert.match(text, /64 derive from a CALL|64 call-derived/i,
     "and the population it covers, so a reader can tell whether their case is one of them");
+};
+
+const assertsTheReviewersEntry = (text: string) => {
+  assert.match(text, POSITIVE_CONTROL, "the same sentence, in the other place a reader meets it");
+  assert.match(text, /\bask where its positive control lives\b/i,
+    "an instruction with a verb -- a checklist item that states a property gives the reviewer nothing to do");
+  assert.match(text, /point at it, not describe it/i,
+    "and names what counts as an answer, or 'ask' is satisfied by any reply");
+  assert.match(text, /you are the check/i,
+    "and says where the reviewer's judgement is the ONLY instrument, which is the whole reason the line "
+    + "exists rather than a rule");
+};
+
+test("#1157: the practices file carries the line, with what makes it applicable rather than aspirational", () => {
+  assertsThePracticesLine(flat(agentPractices));
 });
 
 test("#1157: the reviewer's entry says what a reviewer DOES, not that the property is desirable", () => {
-  const brief = flat(reviewerBrief);
-
-  assert.match(brief, POSITIVE_CONTROL, "the same sentence, in the other place a reader meets it");
-  assert.match(brief, /\bask where its positive control lives\b/i,
-    "an instruction with a verb -- a checklist item that states a property gives the reviewer nothing to do");
-  assert.match(brief, /point at it, not describe it/i,
-    "and names what counts as an answer, or 'ask' is satisfied by any reply");
-  assert.match(brief, /you are the check/i,
-    "and says where the reviewer's judgement is the ONLY instrument, which is the whole reason the line "
-    + "exists rather than a rule");
+  assertsTheReviewersEntry(flat(reviewerBrief));
 });
 
 // --- #1967: the broken gauge, stated where a session loads it rather than in two code comments ---------
@@ -239,9 +250,8 @@ test("#1157: the reviewer's entry says what a reviewer DOES, not that the proper
 const NEVER_THE_ENDPOINT = /never decide anything from `gh api rate_limit`/i;
 const THE_INSTRUMENT = /read `X-Ratelimit-\*` off a real call/i;
 
-test("#1967: the practices file names the broken gauge AND the instrument that replaces it", () => {
-  const text = flat(agentPractices);
-
+/** The #1967 checks as functions, for the reason the #1157 ones are: the mutation test runs THEM. */
+const assertsTheGaugeAndItsInstrument = (text: string) => {
   assert.match(text, NEVER_THE_ENDPOINT,
     "the prohibition itself -- the endpoint has now been measured lying twice, three weeks apart, and "
     + "until this landed the only record of it was two code comments nobody reads before typing a command");
@@ -253,6 +263,10 @@ test("#1967: the practices file names the broken gauge AND the instrument that r
   assert.match(text, /headers come back on the 403/i,
     "and the half that makes it work during the outage it exists to report -- an instrument that fails "
     + "exactly when its subject fails reports the alarming state as no state");
+};
+
+test("#1967: the practices file names the broken gauge AND the instrument that replaces it", () => {
+  assertsTheGaugeAndItsInstrument(flat(agentPractices));
 });
 
 test("#1967: per TOKEN and per RESOURCE, with why a sanity check on core is not one", () => {
@@ -271,34 +285,52 @@ test("#1967: per TOKEN and per RESOURCE, with why a sanity check on core is not 
     + "only reading that rules out the pool simply having moved");
 });
 
+/**
+ * BOTH MUTATION BLOCKS BELOW RUN THE CHECKS ABOVE against the mutated file and require an `AssertionError`.
+ * The first version of each read `text.replace(RE, x)` then `assert.doesNotMatch(mutated, RE)`, which proves
+ * that `String.replace` removed what it matched and nothing about whether the assertions would REJECT the
+ * result (#2185; the shape #2104's review found in the #2076 block). Each shows the unmutated subject
+ * passing FIRST, since `assert.throws` is green on a subject that fails every check.
+ */
 test("#1967 MUTATION: dropping the instrument and reinstating the endpoint must EACH go red", () => {
   const text = flat(agentPractices);
+  assertsTheGaugeAndItsInstrument(text);
 
-  // Direction 1 -- the instrument is dropped. The prohibition survives; nobody is told what to read.
-  const withoutInstrument = text.replace(THE_INSTRUMENT, "consult the usual place");
-  assert.notEqual(withoutInstrument, text, "the instrument mutation must LAND, or this proves nothing");
-  assert.doesNotMatch(withoutInstrument, THE_INSTRUMENT,
-    "a file that prohibits the endpoint without naming the headers must fail the assertion above");
-
-  // Direction 2 -- the correction is inverted back into the defect. This is the mutation that a guard
-  // checking only for the string `gh api rate_limit` would survive: the endpoint is still named, and the
-  // sentence now recommends it.
-  const reinstated = text.replace(NEVER_THE_ENDPOINT, "always decide from `gh api rate_limit`");
-  assert.notEqual(reinstated, text, "the reinstatement mutation must LAND, or this proves nothing");
-  assert.doesNotMatch(reinstated, NEVER_THE_ENDPOINT,
-    "a file that recommends the endpoint must fail the assertion above -- the endpoint's NAME being "
-    + "present is not the property under test, its being DISOWNED is");
+  const mutations = [
+    // Direction 1 -- the instrument is dropped. The prohibition survives; nobody is told what to read.
+    { what: "instrument dropped", pattern: THE_INSTRUMENT, into: "consult the usual place",
+      why: "a file that prohibits the endpoint without naming the headers must fail the check" },
+    // Direction 2 -- the correction is inverted back into the defect. This is the mutation that a guard
+    // checking only for the string `gh api rate_limit` would survive: the endpoint is still named, and the
+    // sentence now recommends it.
+    { what: "endpoint reinstated", pattern: NEVER_THE_ENDPOINT, into: "always decide from `gh api rate_limit`",
+      why: "a file that recommends the endpoint must fail the check -- the endpoint's NAME being present is "
+        + "not the property under test, its being DISOWNED is" },
+  ];
+  for (const { what, pattern, into, why } of mutations) {
+    const mutated = text.replace(pattern, into);
+    assert.notEqual(mutated, text, `the ${what} mutation must LAND, or this proves nothing`);
+    assert.throws(() => assertsTheGaugeAndItsInstrument(mutated), assert.AssertionError,
+      `the ${what} file must FAIL the check, and did not -- ${why}`);
+  }
 });
 
 test("#1157 MUTATION: removing the line from EITHER file must go red, not just from both", () => {
   // The row's clause 3, driven rather than asserted. Two copies with a check that accepts either would
   // let one drift away silently -- and the drift would be invisible precisely because the other copy
   // still reads correctly to anyone who looks in one place.
-  for (const [name, text] of [["agent-practices.md", agentPractices], ["reviewer.md", reviewerBrief]]) {
-    const without = flat(text).replace(POSITIVE_CONTROL, "a removed sentence");
-    assert.notEqual(without, flat(text), `the mutation must LAND in ${name}, or this proves nothing`);
-    assert.doesNotMatch(without, POSITIVE_CONTROL,
-      `${name} without the line must fail the assertion above -- a guard that passes on one copy is what `
+  const files: readonly [string, string, (text: string) => void][] = [
+    ["agent-practices.md", agentPractices, assertsThePracticesLine],
+    ["reviewer.md", reviewerBrief, assertsTheReviewersEntry],
+  ];
+  for (const [, source, check] of files) check(flat(source));
+
+  for (const [name, source, check] of files) {
+    const text = flat(source);
+    const without = text.replace(POSITIVE_CONTROL, "a removed sentence");
+    assert.notEqual(without, text, `the mutation must LAND in ${name}, or this proves nothing`);
+    assert.throws(() => check(without), assert.AssertionError,
+      `${name} without the line must FAIL its check, and did not -- a guard that passes on one copy is what `
       + "lets the two drift apart");
   }
 });
@@ -326,8 +358,7 @@ test("#1157 MUTATION: removing the line from EITHER file must go red, not just f
 // assertions above would REJECT the mutated file. Every direction could have been weakened with that block
 // still green. So the positive assertions are now FUNCTIONS, the tests call them against the real file, and
 // the mutation test calls the same functions against each mutated subject and requires an `AssertionError`.
-// The same tautology is present in the `#1967` and `#1157` mutation blocks above, which this row did not
-// buy and does not touch; it is filed separately rather than fixed in passing.
+// The same tautology was in the `#1967` and `#1157` mutation blocks above; #2185 converted them the same way.
 
 const CLICK_THROUGH = /an approval prompt a human learns to click through is worse than no prompt/i;
 const THE_EMPTY_GUARD = /rm -f "\$\{D:\?\}"\/\*\.md/;
