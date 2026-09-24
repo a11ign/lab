@@ -490,6 +490,11 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
     + "on the same measured box as `repos`. Classified BEFORE its first doc lands on main: #2332 / PR #2336 "
     + "ships docs and a wrapper that name it, and would have failed this guard on merge exactly as #2329 "
     + "did (#2346).",
+  "reviews": "the AGENT host's per-PR REVIEW CHECKOUT root -- `REVIEW_CHECKOUT_ROOT` in `wake.mjs`, where "
+    + "the tick prepares a linked worktree `~/reviews/reviewer-<n>` for each per-PR reviewer instance and "
+    + "removes it at teardown (#2401). Named in that row's changeset and in `docs/known-gaps.md`, which says "
+    + "it was chosen on a measurement of `codex sandbox` and not seen in a live instance. Not the control "
+    + "plane's checkout: it is a scratch tree for one pull request, on the same measured box as `repos`.",
 };
 
 test("THE EXEMPTION IS THE FIELD, NOT THE FILE -- a quoted `command` in a reported record is not a use, "
