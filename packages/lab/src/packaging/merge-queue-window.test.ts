@@ -27,6 +27,14 @@
  * ejection would read every ordinary merge as a refusal that worked, and the rule would appear to bite on
  * exactly the pull requests it did not stop.
  *
+ * AMENDED 2026-09-24, BY THE EXPERIMENT IT WAS WRITTEN FOR. The reader above was pinned to an EXACT-SECOND
+ * match, and #2289's own timeline falsified that: the queue's removal is stamped 09:35:08Z and the merge
+ * 09:35:09Z, ONE SECOND APART, and the event ids say the merge was created FIRST (`merged` 31744507916 <
+ * `removed_from_merge_queue` 31744508190) -- so the timestamps skew in BOTH directions and an exact match
+ * read a merge that happened as `BITES`. A removal is now the merge's own exit when a `merged` lands within
+ * `MERGE_EXIT_SKEW_MS` of it, either side. The bound is a measurement of ONE (1 s), doubled; a removal
+ * farther from any merge is an ejection whatever the pull request does afterwards.
+ *
  * THE POSITIVE CONTROLS ARE THE TWO FIXTURES THAT MUST DISAGREE: #2079's real shape reads DOES_NOT_BITE,
  * the ejection shape reads BITES. A reader that answers one thing to everything passes neither, and the
  * NOT_EXERCISED cases are what stop "the refusal never reached a queued state" being read as an answer --
@@ -34,6 +42,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 
 /** The row's own `jq` projection: `{e: event, t: created_at // submitted_at, s: state // ""}`. */
 interface QueueEvent {
@@ -79,6 +88,17 @@ function refusalWhileQueued(events: QueueEvent[]): QueueEvent | undefined {
   });
 }
 
+/**
+ * Timestamps on the queue's two events skew by a second in EITHER direction (#2289: removal `:08`, merge
+ * `:09`, ids the other way round), so "the same second" is not a test that holds. Two, for one measurement.
+ */
+const MERGE_EXIT_SKEW_MS = 2_000;
+
+/** A removal that accompanies a merge is the entry leaving the queue BECAUSE it merged, not an ejection. */
+function isMergeExit(removal: QueueEvent, merges: QueueEvent[]): boolean {
+  return merges.some((merge) => Math.abs(Date.parse(merge.t) - Date.parse(removal.t)) <= MERGE_EXIT_SKEW_MS);
+}
+
 function queueWindowVerdict(unsorted: QueueEvent[]): { code: VerdictCode; why: string } {
   const events = [...unsorted].sort(byTime);
   const refusal = refusalWhileQueued(events);
@@ -86,13 +106,13 @@ function queueWindowVerdict(unsorted: QueueEvent[]): { code: VerdictCode; why: s
     return { code: VERDICT.NOT_EXERCISED, why: "no CHANGES_REQUESTED arrived while the pull request was queued" };
   }
   const after = events.filter((event) => event.t >= refusal.t);
-  const mergedAt = new Set(after.filter((event) => event.e === MERGED).map((event) => event.t));
-  const ejection = after.find((event) => event.e === LEFT && !mergedAt.has(event.t));
+  const merges = after.filter((event) => event.e === MERGED);
+  const ejection = after.find((event) => event.e === LEFT && !isMergeExit(event, merges));
   if (ejection) {
-    return { code: VERDICT.BITES, why: `removed from the queue at ${ejection.t}, after the refusal at ${refusal.t}, with no merge at that second` };
+    return { code: VERDICT.BITES, why: `removed from the queue at ${ejection.t}, after the refusal at ${refusal.t}, with no merge within ${MERGE_EXIT_SKEW_MS} ms of it` };
   }
-  if (mergedAt.size > 0) {
-    return { code: VERDICT.DOES_NOT_BITE, why: `merged at ${[...mergedAt][0]}, after the refusal at ${refusal.t}` };
+  if (merges.length > 0) {
+    return { code: VERDICT.DOES_NOT_BITE, why: `merged at ${merges[0].t}, after the refusal at ${refusal.t}` };
   }
   return { code: VERDICT.NOT_EXERCISED, why: `refused at ${refusal.t} and neither ejected nor merged yet` };
 }
@@ -172,4 +192,92 @@ test("#2206: the review state is read case-insensitively -- REST and GraphQL spe
 test("#2206: the verdict does not depend on the order the events were listed in", () => {
   assert.equal(queueWindowVerdict([...EJECTED].reverse()).code, VERDICT.BITES);
   assert.equal(queueWindowVerdict([...PR_2079].reverse()).code, VERDICT.DOES_NOT_BITE);
+});
+
+/**
+ * #2206: THE EXPERIMENT, RUN 2026-09-24 -- verbatim from `issues/2289/timeline`, the pull request that
+ * carried it. Approved at 09:22:59Z, queued 09:29:53Z, a deliberate `CHANGES_REQUESTED` at 09:31:17Z (84 s
+ * after entry), merged 09:35:09Z at the REFUSED head `6cdb54f4`, with ONE entry into the queue and none
+ * after. Actors: the removal is `github-merge-queue[bot]`; the merge carries commit `4fc44fd1`.
+ */
+const PR_2289: QueueEvent[] = [
+  { e: "auto_merge_enabled", t: "2026-09-24T09:05:45Z" },
+  { e: REVIEWED, t: "2026-09-24T09:22:59Z", s: "approved" },
+  { e: ENTERED, t: "2026-09-24T09:29:53Z" },
+  { e: REVIEWED, t: "2026-09-24T09:31:17Z", s: "changes_requested" },
+  { e: LEFT, t: "2026-09-24T09:35:08Z" },
+  { e: MERGED, t: "2026-09-24T09:35:09Z" },
+  { e: "closed", t: "2026-09-24T09:35:09Z" },
+];
+
+test("#2206 MEASURED: #2289 -- a merge one second after its own removal reads DOES_NOT_BITE, not BITES", () => {
+  // The control that failed the exact-second reader: it saw a removal with no merge at THAT second.
+  const verdict = queueWindowVerdict(PR_2289);
+  assert.equal(verdict.code, VERDICT.DOES_NOT_BITE, verdict.why);
+});
+
+test("#2206: the skew runs BOTH ways -- a merge stamped a second BEFORE its removal is still the merge", () => {
+  const mergeFirst = [...PR_2289.filter((event) => event.e !== MERGED && event.e !== "closed"),
+    { e: MERGED, t: "2026-09-24T09:35:07Z" }];
+  assert.equal(queueWindowVerdict(mergeFirst).code, VERDICT.DOES_NOT_BITE);
+});
+
+test("#2206: a removal FARTHER than the skew from any merge is an ejection, whatever happens after", () => {
+  const lateMerge = [...EJECTED, { e: MERGED, t: "2026-01-01T10:01:19Z" }];
+  assert.equal(queueWindowVerdict(lateMerge).code, VERDICT.BITES,
+    "ten seconds is not the queue merging the entry; the removal already happened");
+});
+
+/**
+ * THE OBSERVED BEHAVIOUR, RECORDED AS A DECISION-SHAPED CONSTANT (the `RULED_STALENESS` pattern of #2084):
+ * ONE EDIT in a named place, with its date and evidence, and the live read below goes red when the
+ * configuration it was measured against has moved -- rather than a bare assertion that reads as "this is
+ * how the queue must behave".
+ *
+ * WHAT IS RECORDED: a `CHANGES_REQUESTED` posted AFTER queue entry does NOT stop the merge, with the
+ * `pull_request` rule on the `merge-queue-main` ruleset in place. Three measurements agree: #1971
+ * (2026-09-22) and #2079 (2026-09-23), both under the classic rule alone, and #2289 (2026-09-24), the
+ * first under the ruleset's `pull_request` rule. So #2086's rule bought a READABLE surface, as its header
+ * said, and NOT a re-evaluated one. `min_entries_to_merge_wait_minutes: 5` sizes the window: #2289 sat
+ * 5 m 16 s in the queue and the refusal arrived 84 s in.
+ *
+ * WHAT IS NOT: whether ANY ruleset setting would make the queue re-evaluate (`require_last_push_approval`
+ * is `false` and was never varied). One configuration was measured, and only that one is claimed.
+ */
+const OBSERVED_QUEUE_WINDOW = {
+  verdict: VERDICT.DOES_NOT_BITE as VerdictCode,
+  measuredOn: "2026-09-24",
+  evidence: PR_2289,
+  ruleset: { id: 23681721, updatedAt: "2026-09-23T09:03:01.101Z" },
+} as const;
+
+test("#2206 RECORDED: the constant is what its own evidence reads as, so it cannot drift from the timeline", () => {
+  const verdict = queueWindowVerdict([...OBSERVED_QUEUE_WINDOW.evidence]);
+  assert.equal(verdict.code, OBSERVED_QUEUE_WINDOW.verdict, verdict.why);
+  assert.notEqual(OBSERVED_QUEUE_WINDOW.verdict, VERDICT.NOT_EXERCISED,
+    "a recorded observation must be an ANSWER; a run that answers nothing is re-run, never recorded");
+});
+
+test("#2206 LIVE: the ruleset is unchanged since the experiment measured it", () => {
+  // OPT-IN under `A11Y_CHECK_MAIN_RULESET`, the switch `branch-protection.test.ts` already owns: the same
+  // endpoint and the same permission requirement (none).
+  if (process.env.A11Y_CHECK_MAIN_RULESET !== "1") {
+    console.log("  NOT RUN: `A11Y_CHECK_MAIN_RULESET=1` asks GitHub whether ruleset "
+      + `${OBSERVED_QUEUE_WINDOW.ruleset.id} has changed since the queue-window experiment. Nothing here read it.`);
+    return;
+  }
+  let updatedAt: string;
+  try {
+    updatedAt = execFileSync("gh", ["api", `repos/a11ign/a11ign/rulesets/${OBSERVED_QUEUE_WINDOW.ruleset.id}`,
+      "--jq", ".updated_at"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  } catch (error) {
+    // Never an empty catch and never a pass: a check that could not ask reports that it could not ask.
+    console.log(`  SKIPPED: the ruleset could not be asked (${(error as Error).message.split("\n")[0]}). NOT a pass.`);
+    return;
+  }
+  assert.equal(Date.parse(updatedAt), Date.parse(OBSERVED_QUEUE_WINDOW.ruleset.updatedAt),
+    `ruleset ${OBSERVED_QUEUE_WINDOW.ruleset.id} was updated at ${updatedAt}, not ${OBSERVED_QUEUE_WINDOW.ruleset.updatedAt}: `
+    + `the ${OBSERVED_QUEUE_WINDOW.measuredOn} measurement (${OBSERVED_QUEUE_WINDOW.verdict}) was taken against the old `
+    + "configuration. Re-run the #2206 experiment, then edit OBSERVED_QUEUE_WINDOW in ONE place.");
+  console.log(`  LIVE PASS: ruleset unchanged since ${OBSERVED_QUEUE_WINDOW.ruleset.updatedAt}; a queued refusal ${OBSERVED_QUEUE_WINDOW.verdict}`);
 });
