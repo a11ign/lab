@@ -84,3 +84,12 @@ test(".pnpmfile.cjs lets a REAL node_modules and an ABSENT one through -- the gu
   assert.equal(withGuardIn((dir) => mkdirSync(join(dir, "node_modules"))).code, 0);
   assert.equal(withGuardIn(() => undefined).code, 0);
 });
+
+test("yaml AND axe-core are hoisted to the root, because no manifest declares them and package-lock.json must not change", () => {
+  const workspace = parse(readFileSync(join(ROOT, "pnpm-workspace.yaml"), "utf8")) as { publicHoistPattern?: string[] };
+  assert.deepEqual(workspace.publicHoistPattern, ["yaml", "axe-core"]);
+  // The positive control: the hoist is what makes them resolvable, so they must be in pnpm's root layout.
+  const lock = readFileSync(join(ROOT, "pnpm-lock.yaml"), "utf8");
+  assert.match(lock, /^ {2}yaml@2\.\d+\.\d+:/m);
+  assert.match(lock, /^ {2}axe-core@\d+\.\d+\.\d+:/m);
+});
