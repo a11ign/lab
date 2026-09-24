@@ -45,7 +45,7 @@ import {
   sourceClosure, discoverTestFiles, selectTests, broadReasons, pathStringReferences,
   discoversFromTree, alwaysRunTests, testFilesToRun, selectionFor,
 } from "../../../../scripts/select-changed-tests.mjs";
-import { knownPackages } from "../../../../scripts/ci-changed.mjs";
+import { knownPackages, classify } from "../../../../scripts/ci-changed.mjs";
 import { underFloor } from "../../../guards/src/assert-glob-not-empty.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
@@ -707,4 +707,49 @@ test("#1527 THE INCIDENT, on the real tree: #1526's changed script selects its s
     "packages/evidence/src/verify.test.ts", "packages/judge/src/rule-evidence-reaches-the-gate.test.ts"]) {
     assert.equal(result.selectedTests.includes(commentOnly), false, `${commentOnly} names the script only in a comment`);
   }
+});
+
+// #2348: A DOCS-ONLY PR STILL REACHES THE TREE-WIDE GUARDS. #2329 merged with `ts` SKIPPED and turned `main` red,
+// because a guard whose population is `docs/` first ran in trunk-guard. ceo's ruling is to run the sweep on every PR
+// rather than select guards by the paths each reads (a path-to-guard table is a second list that drifts), so the
+// property pinned here is that the sweep job is NOT conditional on any diff classification.
+const CI_YML = readFileSync(join(REPO_ROOT, ".github/workflows/ci.yml"), "utf8");
+
+/** A job's own block in `ci.yml` text, from its key to the next job at the same indent (or EOF). */
+function jobBlockOf(workflow: string, name: string): string {
+  const start = workflow.indexOf(`\n  ${name}:\n`);
+  assert.notEqual(start, -1, `ci.yml has no \`${name}\` job`);
+  const rest = workflow.slice(start + 1);
+  const next = rest.slice(1).search(/\n {2}[A-Za-z][\w-]*:\n/);
+  return next === -1 ? rest : rest.slice(0, next + 1);
+}
+
+/** Does the job carry an `if:` reading `needs.changed.outputs.*`, i.e. is it selected by what the diff touched? */
+function selectedByTheDiff(block: string): boolean {
+  return /\n {4}if: .*needs\.changed\.outputs\./.test(block);
+}
+
+test("#2348: a docs-only diff skips `ts` -- the premise that makes an unconditional sweep necessary", () => {
+  const result = classify(["docs/known-gaps.md"], knownPackages(REPO_ROOT));
+  assert.equal(result.ts, false, "a docs-only diff no longer skips `ts`, so this row's premise has moved -- re-read #2348");
+});
+
+test("#2348: the guard sweep job runs `npm run guards:sweep` and is not selected by the diff", () => {
+  const block = jobBlockOf(CI_YML, "guardSweep");
+  assert.match(block, /run: npm run guards:sweep\n/, "the job no longer runs the sweep");
+  assert.equal(selectedByTheDiff(block), false,
+    "guardSweep is conditional on needs.changed.outputs.* -- a docs-only PR would skip it, which is #2329");
+});
+
+test("#2348 CONTROL: the detector fires on a sweep made conditional on `ts`, and on the real `ts` job", () => {
+  const conditional = jobBlockOf(CI_YML, "guardSweep")
+    .replace("    needs: changed\n", "    needs: changed\n    if: needs.changed.outputs.ts == 'true'\n");
+  assert.equal(selectedByTheDiff(conditional), true, "the mutation did not change the block, so the detector proves nothing");
+  assert.equal(selectedByTheDiff(jobBlockOf(CI_YML, "ts")), true, "`ts` is the job a docs-only diff skips; the detector must see it");
+});
+
+test("#2348: `gate` waits for the sweep and reads its result", () => {
+  const gate = jobBlockOf(CI_YML, "gate");
+  assert.match(gate, /needs: \[[^\]]*\bguardSweep\b/, "gate does not need guardSweep, so a red sweep would not block a merge");
+  assert.ok(gate.includes("needs.guardSweep.result"), "gate names guardSweep in `needs` but never reads its result");
 });
