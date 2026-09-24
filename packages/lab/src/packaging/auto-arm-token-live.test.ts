@@ -26,7 +26,8 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { SECRET_HOLDER as EXPECTED_ACTOR, PERSONAL_ACCOUNTS, SWAPPED_AT } from "./auto-arm-identity.ts";
 
-const RECENT_MERGES = 20;
+/** A ceiling on the merges asked for. Reaching it means the answer may be TRUNCATED, which is CANNOT_TELL. */
+const MERGES_CEILING = 1000;
 
 type Verdict = "PASS" | "FAIL" | "CANNOT_TELL";
 /** One actor's act on one pull request: `auto_merge_enabled`, `added_to_merge_queue` or `merged`. */
@@ -70,14 +71,31 @@ test("#2358: no act by the machine account is CANNOT_TELL, never PASS -- silence
 
 const gh = (args: string[]) => execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
 
-/** The acts on recently merged PRs, the merge itself included. Throws when `gh` cannot be asked. */
-function readActs(): Act[] {
-  const merged: { number: number; mergedAt: string; mergedBy: { login: string } | null }[] = JSON.parse(gh([
-    "pr", "list", "--repo", "a11ign/a11ign", "--state", "merged", "--limit", String(RECENT_MERGES),
-    "--json", "number,mergedAt,mergedBy"]));
+type Merged = { number: number; mergedAt: string; mergedBy: { login: string } | null };
+
+/**
+ * The merges after the swap, and only if the list is COMPLETE. A read bounded by count rather than time
+ * (`--limit 20`) let an older personal act fall out of the window while a later `a11ign-ci` one stayed, so the
+ * verdict was PASS over a population it had not seen (reviewer, #2425). A list that reaches the ceiling may
+ * have been cut, so it throws and the caller reports CANNOT_TELL.
+ */
+export function postSwapMerges(listed: Merged[], ceiling = MERGES_CEILING): Merged[] {
+  if (listed.length >= ceiling) {
+    throw new Error(`${listed.length} merges came back against a ceiling of ${ceiling}: the list may be truncated`);
+  }
   const since = Date.parse(SWAPPED_AT);
+  return listed.filter((m) => Date.parse(m.mergedAt) > since);
+}
+
+/** The acts on every PR merged since the swap, the merge itself included. Throws when `gh` cannot be asked. */
+function readActs(): Act[] {
+  // `merged:>=DATE` bounds the query by TIME, so the population is "everything merged since", not "the last N".
+  // The search takes a date, not an instant, so `postSwapMerges` trims to the exact second.
+  const listed: Merged[] = JSON.parse(gh([
+    "pr", "list", "--repo", "a11ign/a11ign", "--state", "merged", "--search", `merged:>=${SWAPPED_AT.slice(0, 10)}`,
+    "--limit", String(MERGES_CEILING), "--json", "number,mergedAt,mergedBy"]));
   const acts: Act[] = [];
-  for (const pr of merged.filter((m) => Date.parse(m.mergedAt) > since)) {
+  for (const pr of postSwapMerges(listed)) {
     if (pr.mergedBy) acts.push({ pr: pr.number, event: "merged", actor: pr.mergedBy.login });
     const timeline = gh(["api", `repos/a11ign/a11ign/issues/${pr.number}/timeline`, "--paginate", "--jq",
       '.[]|select(.event=="auto_merge_enabled" or .event=="added_to_merge_queue")|"\\(.event) \\(.actor.login)"']);
@@ -104,6 +122,15 @@ test("#2358: a read that throws is CANNOT_TELL, and only PASS satisfies the opte
   assert.match(thrown.why, /could not be asked/);
   assert.equal(liveVerdict(() => []).verdict, "CANNOT_TELL");
   assert.equal(liveVerdict(() => [{ pr: 1, event: "merged", actor: EXPECTED_ACTOR }]).verdict, "PASS");
+});
+
+test("#2358: a merge list that reaches the ceiling is truncated, so it throws; older merges are trimmed", () => {
+  const merge = (n: number, mergedAt: string): Merged => ({ number: n, mergedAt, mergedBy: null });
+  const full = Array.from({ length: 3 }, (_, i) => merge(i, "2026-09-25T00:00:00Z"));
+  assert.throws(() => postSwapMerges(full, 3), /may be truncated/);
+  const listed = [merge(1, "2026-09-24T19:00:00Z"), merge(2, "2026-09-24T20:00:00Z")];
+  assert.deepEqual(postSwapMerges(listed, 3).map((m) => m.number), [2], "a merge before the swap is not read");
+  assert.equal(liveVerdict(() => { postSwapMerges(full, 3); return []; }).verdict, "CANNOT_TELL");
 });
 
 test("#2358 LIVE: nothing armed or merged since the swap acted as a personal account, asked of GitHub", () => {
