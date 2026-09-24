@@ -123,6 +123,10 @@ const INFRASTRUCTURE: Record<string, string> = {
     + "produces 2 — self-documented as the honest INCONCLUSIVE for a dispatch that died, and the reason a "
     + "bare 2 from anything using this helper is ambiguous between three distinct causes. See the doc's "
     + "'gave up observing' section",
+  "packages/lab/src/training/evidence-check-exit.mjs":
+    "`EXIT` names evidence-check's four codes and `runToExit` exits 3 (THREW) on a throw — no `main` of its "
+    + "own, inherited by `evidence-check.mjs`, whose entry below documents all four. Split out so a test can "
+    + "read the codes without importing the script and its corpus paths (#2197)",
   "packages/lab/src/training/capture-fleet-guard.mjs":
     "`assertOneBrowserAcross` exits 3 on a fleet split across two browser builds and has no `main` of its "
     + "own — `capture-real-pages.mjs` inherits it directly, and that script's own entry below already "

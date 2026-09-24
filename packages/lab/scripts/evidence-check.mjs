@@ -44,6 +44,9 @@ import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { captureTolerantly } from "@a11ign/worker-fleet/capture-client";
 // #958: the three-direction manifest check every verdict reader shares.
 import { assertManifestMatchesCases } from "../src/training/manifest-matches-cases.mjs";
+// #2197: a crash and a CHANGED verdict no longer share an exit code. A leaf module, so a test can read the
+// codes without importing this script and its corpus paths.
+import { exitCodeFor, runToExit } from "../src/training/evidence-check-exit.mjs";
 
 /**
  * the check that decides whether 2,122 cached captures survive a change. It also takes worker URLs
@@ -685,55 +688,13 @@ async function main() {
   // operator reading a dispatch log who cannot tell which file this read became.
   process.stdout.write(`This run: ${runReport}\n`);
   // Exit code is the contract, same as the other gates: 0 safe to ship, 1 evidence changed,
-  // 2 could not answer, 3 (`EXIT.THREW`, #2197) it threw and never got to answer. `inconclusive` MUST NOT exit 0, and that now covers PARTIAL coverage as well as
+  // 2 could not answer, 3 (`EXIT.THREW`, #2197) it threw and never got to answer.
+  // `inconclusive` MUST NOT exit 0, and that now covers PARTIAL coverage as well as
   // none: this exited 0 with "safe to ship" having compared 2 of 48, because a concurrent run stopped the
   // page server two captures in. The stratified sample means an uncompared capture is an unexamined
   // FAMILY, so a verdict drawn from the ones that landed says nothing about the ones that did not.
   process.exit(exitCodeFor(summary));
 }
-
-/**
- * THE EXIT CODES, named, because a crash used to share one with the verdict (#2197).
- *
- * `1` was both "the evidence CHANGED" and what Node exits with for an uncaught throw, so a run that died
- * on a stale manifest read to the operator as the answer to the question, and the job's message told them
- * to bump CAPTURE_PROTOCOL_VERSION and recapture the fleet (872 captures, about 71 minutes, and every
- * stored capture invalidated) to fix a manifest that `-e job=generate` regenerates in seconds. `THREW`
- * takes a code of its own so the two are separable from outside the process. It is `3` and not `2`
- * because `2` is already three things in this file (`exit-code-contract.test.ts`).
- */
-export const EXIT = /** @type {const} */ ({ SAFE: 0, CHANGED: 1, INCONCLUSIVE: 2, THREW: 3 });
-
-/**
- * The verdict's code. `inconclusive` wins over `evidenceChanged`: a partial read that saw some change has
- * not answered "did the evidence change", and reporting CHANGED off it would send someone to recapture.
- *
- * @param {{ inconclusive?: boolean, evidenceChanged?: boolean }} summary
- */
-export function exitCodeFor(summary) {
-  if (summary.inconclusive) return EXIT.INCONCLUSIVE;
-  return summary.evidenceChanged ? EXIT.CHANGED : EXIT.SAFE;
-}
-
-/**
- * Run the script's `main` and turn a throw into `EXIT.THREW`.
- *
- * The error is printed in full first, stack included: the exit code says THAT it could not answer, and
- * the stack is what says why. Without this Node exits `1` for the rejection, which is the CHANGED code.
- * A failure before this runs (a module that will not load, an unknown flag) is still Node's own `1`;
- * `lab-job.yml` says so rather than claiming the code is unambiguous.
- *
- * @param {() => Promise<unknown>} run
- */
-export async function runToExit(run) {
-  try {
-    await run();
-  } catch (error) {
-    console.error(error);
-    process.exit(EXIT.THREW);
-  }
-}
-
 
 /**
  * Which cases can honestly be compared, and a loud account of every one excluded.

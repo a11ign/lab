@@ -10,7 +10,7 @@
  * end: a stale manifest makes it throw, and the code it exits with is what this test reads. The CHANGED
  * verdict cannot be produced end to end without a Windows worker, a page server and NVDA captures — this
  * row's own "Does the acceptance need the fleet" answers no for that reason — so the codes a completed run
- * ends with are driven through the script's REAL `runToExit` and `exitCodeFor` with a REAL `summarise`
+ * ends with are driven through the REAL `runToExit` and `exitCodeFor` the script's entry point is built from with a REAL `summarise`
  * over the rows, in a child process, because `process.exit` is what is being asserted and it cannot be
  * observed in-process. That half proves the codes are distinct and wired to the verdict; the first half is
  * what proves the script's own entry point goes through `runToExit` at all.
@@ -24,7 +24,7 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 import { CASES } from "./case-matrix.mjs";
-import { EXIT, exitCodeFor } from "../../scripts/evidence-check.mjs";
+import { EXIT, exitCodeFor } from "./evidence-check-exit.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const SCRIPT = join(REPO, "packages/lab/scripts/evidence-check.mjs");
@@ -75,11 +75,11 @@ test("a run that THROWS exits with THREW, not with the CHANGED code (real script
  * the code a completed run would. `verdicts` is what the comparisons said; `summarise` is the real one.
  */
 function writeDriver(dir: string): string {
-  const evidenceCheck = pathToFileURL(SCRIPT).href;
+  const exitModule = pathToFileURL(join(REPO, "packages/lab/src/training/evidence-check-exit.mjs")).href;
   const evidenceDiff = pathToFileURL(join(REPO, "packages/lab/src/capture/evidence-diff.mjs")).href;
   const file = join(dir, "driver.mjs");
   writeFileSync(file, `
-    import { runToExit, exitCodeFor } from ${JSON.stringify(evidenceCheck)};
+    import { runToExit, exitCodeFor } from ${JSON.stringify(exitModule)};
     import { summarise } from ${JSON.stringify(evidenceDiff)};
     const [mode, ...verdicts] = process.argv.slice(2);
     await runToExit(async () => {
@@ -90,7 +90,7 @@ function writeDriver(dir: string): string {
   return file;
 }
 
-test("a completed run exits 1 for CHANGED and a throw exits 3 — both through the script's own exports", () => {
+test("a completed run exits 1 for CHANGED and a throw exits 3 — both through the exit module the script uses", () => {
   const dir = mkdtempSync(join(tmpdir(), "evidence-check-driver-"));
   try {
     const driver = writeDriver(dir);
