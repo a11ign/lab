@@ -268,15 +268,39 @@ const NAMES_IT_AS_DATA = new Set([
   "packages/lab/src/packaging/row-claim-file-overlap-rule.test.ts",
 ]);
 
+/**
+ * The files among `files` (relative to `root`) whose CODE names the old lockfile. One function for the real walk
+ * and for its positive control below, so the control exercises the matching the walk uses and not a copy of it.
+ * `(?<![.\w])` so npm's HIDDEN `node_modules/.package-lock.json`, which the Ansible one-time migration looks
+ * for on purpose, is a different name.
+ */
+function filesReadingTheOldLockfile(root: string, files: string[]): string[] {
+  return files.filter((file) => !NAMES_IT_AS_DATA.has(file))
+    .filter((file) => /(?<![.\w])package-lock\.json/.test(stripComments(readFileSync(join(root, file), "utf8"))));
+}
+
+test("#2301 CONTROL: the reader scan finds a planted reader, and passes the spellings that are not one", () => {
+  const root = mkdtempSync(join(tmpdir(), "lockfile-readers-"));
+  try {
+    const plant = (name: string, text: string) => writeFileSync(join(root, name), text);
+    plant("reads.mjs", 'const lock = existsSync("package-lock.json");\n');
+    plant("reads.yml", "run: cat package-lock.json\n");
+    plant("hidden.mjs", 'const hidden = "node_modules/.package-lock.json";\n');
+    plant("comment.mjs", "// package-lock.json used to be read here\nconst x = 1;\n");
+    assert.deepEqual(filesReadingTheOldLockfile(root, ["reads.mjs", "reads.yml", "hidden.mjs", "comment.mjs"]),
+      ["reads.mjs", "reads.yml"], "the scan must flag both code spellings and neither the hidden file nor a comment");
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("#2301: package-lock.json is deleted, and no source under .github, scripts or packages still reads it", () => {
   const tracked = execFileSync("git", ["ls-files", "-z", "--", ".github", "scripts", "packages"],
     { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() }).split("\0").filter(Boolean);
   const scanned = tracked.filter((file) => /\.(mjs|cjs|js|ts|ya?ml|json)$/.test(file));
   assert.ok(scanned.length > 500, "the git listing returned almost nothing: it is broken, not the repo clean");
-  // `(?<![.\w])` so npm's HIDDEN `node_modules/.package-lock.json`, which the Ansible one-time migration
-  // looks for on purpose, is a different name.
-  const readers = scanned.filter((file) => !NAMES_IT_AS_DATA.has(file))
-    .filter((file) => /(?<![.\w])package-lock\.json/.test(stripComments(readFileSync(join(REPO, file), "utf8"))));
+  // The emptiness below is controlled by the test above, which plants readers and expects them found.
+  const readers = filesReadingTheOldLockfile(REPO, scanned);
   assert.deepEqual(readers, [], "these still name package-lock.json in code, and nothing produces it any more");
   assert.throws(() => readFileSync(join(REPO, "package-lock.json")), /ENOENT/);
 });
