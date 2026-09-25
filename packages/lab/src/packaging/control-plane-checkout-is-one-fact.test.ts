@@ -143,10 +143,43 @@ const ENTERS_A_DIRECTORY = new RegExp([
  * file. An absolute POSIX home root is separated by `/`; a backslash after one is a string escape.
  * Classifying either name would have put nonsense in a list whose whole value is that every row is a
  * decision somebody made — the objection this file already states one question up.
+ *
+ * ## #2189: AND THE HEADER PROMISED TWO WINDOWS SPELLINGS THE PATTERN NEVER HELD
+ *
+ * `%USERPROFILE%` and `$env:USERPROFILE` sat in the header from #585 and in no alternative, while three
+ * tracked `.ps1` files under `packages/worker-fleet/src/provisioning/` name the Windows worker's checkout
+ * through one (`Join-Path $env:USERPROFILE 'a11y-witness'`). Each new alternative is a decision about its
+ * SEPARATOR, and the two are not alike:
+ *
+ *   - **`%USERPROFILE%` and `$env:USERPROFILE` followed by a character take `[/\\]{1,2}`**, the class `~`
+ *     already takes, because a backslash IS their separator (`%USERPROFILE%\a11y-witness`), `\\` is that
+ *     backslash escaped in a JS or JSON string, and PowerShell accepts `/`. The trap #1990 measured for the
+ *     POSIX absolute branch is real here and is ACCEPTED: `%USERPROFILE%\nvda` in a JS string reads as
+ *     `~/nvda`. The cost of being wrong differs by direction. A false read fails LOUDLY with a one-line
+ *     remedy naming the key that classifies it; a separator the pattern refused would be silent, and silence
+ *     is the defect this row exists to close. No tracked file writes one today.
+ *   - **`Join-Path <root> '<segment>'` separates by ARGUMENT**: the segment is a quoted string with no
+ *     separator character at all, so no class can find it. It is its own alternative, keyed on the
+ *     cmdlet, and takes only a QUOTED literal -- `Join-Path $env:USERPROFILE $name` names no directory.
+ *     It takes `$HOME` and `~` too: they are the same PowerShell spelling of the same root, and the
+ *     shell branch above cannot read them here for the same reason.
+ *
+ * PowerShell is case-insensitive about its variables and cmdlets, and Windows about `%USERPROFILE%`, so
+ * those words match in any case (`$Env:UserProfile`).
+ * A pattern that answers only for the case somebody happened to type answers about a person, not a language.
  */
+const anyCase = (word: string): string =>
+  [...word].map((c) => (/[a-z]/i.test(c) ? `[${c.toLowerCase()}${c.toUpperCase()}]` : c)).join("");
+
+const WINDOWS_HOME_ROOT = String.raw`(?:%${anyCase("USERPROFILE")}%|\$${anyCase("env:USERPROFILE")})`;
+const POWERSHELL_HOME_ROOT = String.raw`(?:\$${anyCase("env:USERPROFILE")}|\$${anyCase("HOME")}|~)`;
+
 const UNDER_A_HOME_ROOT = new RegExp([
   String.raw`(?:\/root|\$HOME|~)[/\\]{1,2}([A-Za-z0-9._-]+)`,
   String.raw`\/home\/[A-Za-z0-9._-]+\/([A-Za-z0-9._-]+)`,
+  String.raw`${WINDOWS_HOME_ROOT}[/\\]{1,2}([A-Za-z0-9._-]+)`,
+  String.raw`${anyCase("Join-Path")}\s+(?:${anyCase("-Path")}\s+)?${POWERSHELL_HOME_ROOT}\s+`
+    + String.raw`(?:${anyCase("-ChildPath")}\s+)?['"]([A-Za-z0-9._-]+)`,
 ].join("|"), "g");
 
 /**
@@ -200,6 +233,9 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
   "$RepoPath": "the WINDOWS worker's checkout, in `stamp-provision-revision.ps1` -- a different "
     + "machine's directory, guarded by `guest-paths-are-measured.test.ts` against a MEASUREMENT taken "
     + "on three real guests (#584). Not this file's fact.",
+  "$repo": "the WINDOWS worker's checkout, in `auth-leak-check.yml`'s guest script (#2399): `Set-Location $repo`, "
+    + "where `$repo` is rendered from `a11y_repo_path` in `group_vars/a11y_workers.yml`, which is that machine's "
+    + "directory stated ONCE. The same class as `$RepoPath` above; not this file's fact.",
   "${GUEST_DIR}": "the WINDOWS worker's checkout in `guest-run.mjs` (`C:\\Users\\witness\\...`), a "
     + "different machine's directory. It is the same class as this one and is deliberately NOT fixed "
     + "here: nobody has run `win_stat` against those nine boxes, and restoring a name on sight is the "
@@ -410,7 +446,28 @@ test("every site that ENTERS a directory either interpolates the source of truth
     `only ${sites.length} entry site(s) found across the tree -- the discovery is broken, and a check `
     + "that passes having examined nothing is the defect this file exists to prevent (10 on 2026-09-08)");
 
-  const unclassified = sites.filter(([file, target]) => {
+  // Emptiness, whose positive control is the "tripped on purpose" test below (#2414): an unclassified
+  // fixture site must surface through this same function, with the remedy attached.
+  const failures = unclassifiedEntrySites({ sites, classified: NOT_THE_CONTROL_PLANE_CHECKOUT, sourceOf: read })
+    .map(([file, target]) => entrySiteFailure(file, target));
+  assert.equal(failures.length, 0,
+    `these sites enter a directory that is neither the control plane's checkout (from ${SOURCE_OF_TRUTH}) `
+    + `nor a classified other one. Each line below names its own fix:\n${failures.join("\n")}`);
+});
+
+/**
+ * The entry sites that are neither the control plane's checkout nor a decided other directory. The decision
+ * behind the assertion above, taking its three inputs rather than reading them (the way `entrySitesIn` and
+ * `homeRootNamesIn` do), so a fixture can trip it and the failure message can be shown to be one that,
+ * followed, makes the site pass (#2414).
+ */
+export function unclassifiedEntrySites(input: {
+  sites: Array<[string, string]>;
+  classified: Record<string, string>;
+  sourceOf: (file: string) => string;
+}): Array<[string, string]> {
+  const { sites, classified, sourceOf } = input;
+  return sites.filter(([file, target]) => {
     // A target that CANNOT be the control plane's checkout, decided by shape rather than by listing
     // every literal. The checkout is `/root/<name>` or the bare `<name>` reached from `/root`; none of
     // these three can be that, and enumerating them one at a time would be a list that drifts.
@@ -422,19 +479,84 @@ test("every site that ENTERS a directory either interpolates the source of truth
     // `{{` or a JS `},`. A directory cannot be named that, and classifying it as one would put nonsense
     // in a list whose whole value is that every row is a decision somebody made.
     if (!/[A-Za-z0-9_~$%.]/.test(target)) return false;
-    const name = /^\$\{([A-Za-z_$][\w$]*)\}/.exec(target)?.[1];
+    const name = aliasIn(target);
     if (name && EXPORTED_NAMES.includes(name)) return false;
-    if (target in NOT_THE_CONTROL_PLANE_CHECKOUT) return false;
+    if (target in classified) return false;
     // A local alias is fine ONLY if THIS file derives it from the source of truth. Reading the site's
     // OWN file matters: the first draft read `sites[0]`'s, which answered about a neighbouring file --
     // this repository's most-repeated shape, committed inside the guard written against it.
-    return !(name && new RegExp(`\\b${name}\\s*=\\s*(${EXPORTED_NAMES.join("|")})\\b`).test(read(file)));
-  }).map(([file, target]) => `${file}: enters ${target}`);
-  assert.deepEqual(unclassified, [],
-    `these sites enter a directory that is neither the control plane's checkout (from ${SOURCE_OF_TRUTH}) `
-    + `nor a classified other one. If this is a SECOND literal for the checkout, derive it from the `
-    + `source of truth -- that is the whole reason this file exists. If it is a different directory, add `
-    + `it to NOT_THE_CONTROL_PLANE_CHECKOUT with the reason.`);
+    return !(name && new RegExp(`\\b${name}\\s*=\\s*(${EXPORTED_NAMES.join("|")})\\b`).test(sourceOf(file)));
+  });
+}
+
+/** `PRIMARY_CHECKOUT` out of `${PRIMARY_CHECKOUT}`: the local name a template literal interpolates. */
+const aliasIn = (target: string): string | undefined => /^\$\{([A-Za-z_$][\w$]*)\}/.exec(target)?.[1];
+
+/** The classification map's name, as the source spells it -- the test below reads SELF to keep it true. */
+const CLASSIFICATION_MAP = "NOT_THE_CONTROL_PLANE_CHECKOUT";
+
+/**
+ * The ONE edit that turns an unclassified entry site green, on one line. The guard cannot know which of
+ * the two it is -- a second literal for the checkout, or another directory -- so it states both, each a
+ * single edit with the key spelled the way the map spells it (`JSON.stringify` is a valid TS string key).
+ * The "tripped on purpose" test applies each edit and checks the site goes quiet.
+ */
+export function entryRemedy(file: string, target: string): string {
+  const alias = aliasIn(target);
+  const [checkout, checkoutPath] = EXPORTED_NAMES;
+  const useTheExport = alias
+    ? `in ${file} define ${alias} = ${checkout} (imported from ${SOURCE_OF_TRUTH})`
+    : `in ${file} use \${${checkout}} (or \${${checkoutPath}}) from ${SOURCE_OF_TRUTH}`;
+  return "FIX, ONE EDIT -- if it is a second literal for the checkout: " + useTheExport
+    + `; if it is a different directory: add the key ${JSON.stringify(target)} to ${CLASSIFICATION_MAP} `
+    + `in ${SELF}, its value being the reason.`;
+}
+
+/** One unclassified site as the failure prints it: what was found, then the edit that fixes it. */
+export function entrySiteFailure(file: string, target: string): string {
+  return `  ${file}: enters ${target}\n    ${entryRemedy(file, target)}`;
+}
+
+test("TRIPPED ON PURPOSE -- an unclassified entry site fails naming its file and the one edit that fixes "
+  + "it, and following that edit is what makes it pass (#2414: #2409 cost a review round on a bare "
+  + "`${PRIMARY_CHECKOUT}` because the message named neither)", () => {
+  // Fixture names no directory this project will ever create: a path invented for the trip.
+  const file = "packages/nobody/src/trip.mjs";
+  const target = "/srv/nobodys-checkout";
+  const trip = (classified: Record<string, string>, sourceOf: (f: string) => string = () => "") =>
+    unclassifiedEntrySites({ sites: [[file, target]], classified, sourceOf });
+
+  // THE POSITIVE CONTROL for the emptiness assertion above: the guard fires on this fixture.
+  assert.deepEqual(trip(NOT_THE_CONTROL_PLANE_CHECKOUT), [[file, target]],
+    "the fixture must be unclassified, or the assertions below prove nothing");
+
+  const message = entrySiteFailure(file, target);
+  const remedy = entryRemedy(file, target);
+  assert.ok(message.includes(`${file}: enters ${target}`), "the message names the offending file and target");
+  assert.ok(message.includes(remedy), "and carries the remedy");
+  assert.ok(!remedy.includes("\n"), "the remedy is ONE line -- if it cannot be, that is the finding (#2414 ruling 3)");
+  assert.ok(remedy.includes(file), "the remedy names the file to edit, so the line stands alone when copied");
+  for (const name of [CLASSIFICATION_MAP, ...EXPORTED_NAMES]) {
+    assert.ok(remedy.includes(name), `the remedy names ${name}`);
+  }
+  assert.match(read(SELF), new RegExp(`const ${CLASSIFICATION_MAP}\\b`),
+    "the map's name in the remedy is the identifier this file declares, not a stale spelling");
+  assert.match(read(SOURCE_OF_TRUTH), new RegExp(`export const ${EXPORTED_NAMES[0]}\\b`));
+
+  // FOLLOW the remedy's key: read it out of the message the way a person would copy it, add it, and the
+  // site is decided. A key spelled wrongly in the message would leave this red.
+  const key = JSON.parse(/add the key ("(?:[^"\\]|\\.)*")/.exec(remedy)?.[1] ?? "null");
+  assert.equal(key, target, "the message spells the key exactly as the map must");
+  assert.deepEqual(trip({ ...NOT_THE_CONTROL_PLANE_CHECKOUT, [key]: "a reason" }), []);
+
+  // The third exit the old paragraph never mentioned: a local alias the site's OWN file derives.
+  const alias = "nobodysAlias";
+  const aliased = { sites: [[file, `\${${alias}}`]] as Array<[string, string]>, classified: {} };
+  assert.equal(unclassifiedEntrySites({ ...aliased, sourceOf: () => "" }).length, 1, "an alias nothing derives is a site");
+  const derive = /define (\w+ = \w+)/.exec(entryRemedy(file, `\${${alias}}`))?.[1] ?? "";
+  assert.equal(derive, `${alias} = ${EXPORTED_NAMES[0]}`, "the alias remedy is the derivation itself");
+  assert.deepEqual(unclassifiedEntrySites({ ...aliased, sourceOf: () => `const ${derive};` }), [],
+    "and writing that line in the site's own file is what silences it");
 });
 
 /**
@@ -448,6 +570,9 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
   ".local": "the XDG user data root -- `~/.local/bin`, where pipx and friends install.",
   ".ansible": "Ansible's own cache, in `requirements.yml`'s documented paths.",
   ".npm": "npm's cache, in `action.yml`'s cache key.",
+  ".cache": "the XDG cache root -- `Environment=NODE_COMPILE_CACHE=%h/.cache/node-compile-cache` in every "
+    + "shipped unit (#2458), which `host-units.test.ts` also quotes in the absolute spelling a unit could use "
+    + "instead of `%h`. A cache directory, not a checkout.",
   ".config": "the XDG config home -- `~/.config/gh/hosts.yml` is where `gh` itself reads its "
     + "credentials from, named in a11ign-work-tick.service's comment on why the unit sets HOME.",
   "Library": "macOS's per-user library, in the board scripts' log paths.",
@@ -551,15 +676,38 @@ test("THE EXEMPTION IS THE FIELD, NOT THE FILE -- a quoted `command` in a report
  * @param source its bytes
  */
 export function homeRootNamesIn(file: string, source: string): string[] {
-  const named: string[] = [];
+  return homeRootSegmentsIn(source).map((segment) => `${file}: ~/${segment}`);
+}
+
+/**
+ * EVERY segment the pattern reads directly under a home root, the checkout's own name and the classified
+ * ones included: what the guard SAW, before it decides anything about it (#2189). The answer to "does the
+ * guard read this file" is a property of this list, and the filter below cannot give it -- a file whose
+ * every segment is the checkout's name reports nothing there, exactly as a file the pattern is blind to does.
+ */
+function homeRootSegmentsSeenIn(source: string): string[] {
+  const seen: string[] = [];
   for (const m of stripComments(source).matchAll(UNDER_A_HOME_ROOT)) {
-    const segment = (m[1] ?? m[2]).replace(/\.+$/, "");
-    if (segment === "") continue;
-    if (segment === CHECKOUT_NAME) continue;
-    if (segment in OTHER_HOME_DIRECTORIES) continue;
-    named.push(`${file}: ~/${segment}`);
+    const segment = (m.slice(1).find((g) => g !== undefined) ?? "").replace(/\.+$/, "");
+    if (segment !== "") seen.push(segment);
   }
-  return named;
+  return seen;
+}
+
+/** The unclassified segments themselves, so a failure can spell the key that classifies one (#2414). */
+function homeRootSegmentsIn(source: string): string[] {
+  return homeRootSegmentsSeenIn(source)
+    .filter((segment) => segment !== CHECKOUT_NAME && !(segment in OTHER_HOME_DIRECTORIES));
+}
+
+/**
+ * The ONE edit that settles an unclassified home-root name, on one line: the two answers the guard cannot
+ * choose between, each a single edit, the key spelled as `OTHER_HOME_DIRECTORIES` spells it.
+ */
+export function homeRootRemedy(segment: string): string {
+  return `FIX, ONE EDIT -- if it is another literal for the checkout: use ${EXPORTED_NAMES[0]} from `
+    + `${SOURCE_OF_TRUTH}; if it belongs to a different machine: add the key ${JSON.stringify(segment)} to `
+    + `OTHER_HOME_DIRECTORIES in ${SELF}, its value being the reason.`;
 }
 
 test("BOTH SPELLINGS OF ONE PATH ARE DECIDED THE SAME WAY -- a systemd unit cannot expand `~` or `$HOME` "
@@ -613,12 +761,25 @@ test("no file names a directory under a home root that should be the checkout --
   + "an operation, so no amount of operation-keying finds it", () => {
   // Emptiness, with its positive control in the test directly above (#1990): one unclassified segment
   // surfacing, in both spellings, through this same function.
-  const named = trackedSource().flatMap((file) => homeRootNamesIn(file, read(file)));
-  assert.deepEqual([...new Set(named)].sort(), [],
+  const failures = trackedSource().flatMap((file) => [...new Set(homeRootSegmentsIn(read(file)))]
+    .map((segment) => `  ${file}: ~/${segment}\n    ${homeRootRemedy(segment)}`)).sort();
+  assert.equal(failures.length, 0,
     "these name a directory directly under a home root that is neither the control plane's checkout "
-    + `(${CHECKOUT_NAME}, from ${SOURCE_OF_TRUTH}) nor a classified other. If it is another literal for `
-    + "the checkout, derive it from the source of truth; if it belongs to a different machine, say so in "
-    + "OTHER_HOME_DIRECTORIES -- a path under a home root is not automatically this machine's.");
+    + `(${CHECKOUT_NAME}, from ${SOURCE_OF_TRUTH}) nor a classified other. Each line below names its own fix:\n`
+    + failures.join("\n"));
+});
+
+test("an unclassified home-root name fails with a one-line remedy naming the map and the key to add (#2414)", () => {
+  const segment = "nobodys-dir";
+  const remedy = homeRootRemedy(segment);
+  assert.ok(!remedy.includes("\n"), "the remedy is ONE line");
+  for (const name of ["OTHER_HOME_DIRECTORIES", EXPORTED_NAMES[0], SOURCE_OF_TRUTH, SELF]) {
+    assert.ok(remedy.includes(name), `the remedy names ${name}`);
+  }
+  assert.match(read(SELF), /const OTHER_HOME_DIRECTORIES\b/, "the map's name is the identifier declared here");
+  assert.ok(remedy.includes(`the key ${JSON.stringify(segment)}`), "the key is spelled out");
+  assert.deepEqual(homeRootNamesIn("a.md", `\`~/${segment}\``), [`a.md: ~/${segment}`],
+    "control: the segment the remedy names is one the guard actually reports");
 });
 
 test("both consumers reach the checkout through the source of truth, and neither holds its own literal "
@@ -631,5 +792,93 @@ test("both consumers reach the checkout through the source of truth, and neither
     assert.ok(!/=\s*["']\/?root?\/?a11[a-z-]*["']/.test(stripComments(source)),
       `${consumer} assigns a bare checkout literal again -- the exact shape that made every fleet play `
       + "unreachable on 2026-09-08");
+  }
+});
+
+const PROVISIONING = "packages/worker-fleet/src/provisioning/";
+
+/**
+ * Every spelling of "home" the header's second question names, and the ways a file writes a path under
+ * it. `%USERPROFILE%` and `$env:USERPROFILE` sat in the header from #585 and in no alternative of the
+ * pattern until #2189, so the list is READ OUT OF THE HEADER below and compared to these keys: a spelling
+ * dropped from either side breaks this test rather than a sentence nobody re-reads. Each rendering is one
+ * path, `<root>/<segment>`, written the way its language writes it.
+ */
+const HOME_ROOT_SPELLINGS: Record<string, (segment: string) => string[]> = {
+  "/root": (s) => [`/root/${s}/x`],
+  "$HOME": (s) => [`$HOME/${s}/x`, `Join-Path $HOME '${s}'`],
+  "~": (s) => [`~/${s}/x`, `Join-Path ~ '${s}'`],
+  "%USERPROFILE%": (s) => [`%USERPROFILE%\\${s}\\x`, `"%USERPROFILE%\\\\${s}"`, `%userprofile%\\${s}`],
+  "$env:USERPROFILE": (s) => [
+    `"$env:USERPROFILE\\${s}"`, `$env:USERPROFILE/${s}`, `Join-Path $env:USERPROFILE '${s}'`,
+    `Join-Path -Path $env:USERPROFILE -ChildPath "${s}"`, `join-path $Env:UserProfile '${s}\\sub'`,
+  ],
+};
+
+/** The spellings the header's second question lists, read from this file's own header. */
+function headerHomeRootSpellings(): string[] {
+  const header = read(SELF).slice(0, read(SELF).indexOf("*/"));
+  const sentence = /Who NAMES a directory directly under a home root\*\*([\s\S]*?)\. Catches/.exec(header)?.[1] ?? "";
+  return [...sentence.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+}
+
+test("EVERY SPELLING THE HEADER NAMES IS DECIDED THE SAME WAY -- one path, five roots, identical answer "
+  + "(#2189: two of the five had never been in the pattern, and #1990's pair-test did not say so)", () => {
+  assert.deepEqual(headerHomeRootSpellings().sort(), Object.keys(HOME_ROOT_SPELLINGS).sort(),
+    "the header's list and this table are the same set. Add the spelling to BOTH, and to the pattern");
+
+  const unclassified = "nobodys-dir";
+  assert.ok(!(unclassified in OTHER_HOME_DIRECTORIES) && unclassified !== CHECKOUT_NAME,
+    "the control segment must be one the guard has no classification for, or it proves nothing");
+  const file = "x.ps1";
+  const expected = [`${file}: ~/${unclassified}`];
+  for (const [root, renderings] of Object.entries(HOME_ROOT_SPELLINGS)) {
+    for (const path of renderings(unclassified)) {
+      assert.deepEqual(homeRootNamesIn(file, path), expected,
+        `${root}, written as ${JSON.stringify(path)}, must surface the segment exactly as \`~/${unclassified}\` does`);
+    }
+    for (const path of renderings("workers")) {
+      assert.deepEqual(homeRootNamesIn(file, path), [],
+        `and once classified, ${root} written as ${JSON.stringify(path)} goes quiet in the same spelling`);
+    }
+  }
+});
+
+test("the Windows spellings name a DIRECTORY only when a literal follows -- a variable, the bare root and a "
+  + "sibling environment variable are not one (#2189)", () => {
+  for (const notADirectory of [
+    "Join-Path $env:USERPROFILE $name",
+    "$env:USERPROFILE",
+    "%USERPROFILE%",
+    "$env:USERPROFILE_BACKUP/nobodys-dir",
+    "%TEMP%\\nobodys-dir",
+    "Join-Path $env:TEMP 'nobodys-dir'",
+  ]) {
+    assert.deepEqual(homeRootNamesIn("x.ps1", notADirectory), [], JSON.stringify(notADirectory));
+  }
+});
+
+/** A PowerShell script without its `#` comment lines, which `stripComments` does not know are comments. */
+const psCode = (source: string): string =>
+  source.split("\n").filter((line) => !line.trimStart().startsWith("#")).join("\n");
+
+test("THE GUARD READS THE WINDOWS WORKER'S CHECKOUT LITERAL -- the three provisioning scripts name it through "
+  + "`$env:USERPROFILE`, and a scan that finds nothing there is indistinguishable from one blind to it (#2189)", () => {
+  const scripts = ["bootstrap-windows-worker.ps1", "diagnose-nvda-worker.ps1", "provision-nvda-worker.ps1"];
+  for (const script of scripts) {
+    assert.ok(trackedSource().includes(`${PROVISIONING}${script}`), `${script} is in the walked population`);
+    assert.ok(homeRootSegmentsSeenIn(psCode(read(`${PROVISIONING}${script}`))).includes(CHECKOUT_NAME),
+      `${script} names the checkout under $env:USERPROFILE, and the guard must SEE it`);
+  }
+  // The decision, made where it can be argued with: today the literal EQUALS the source of truth's value,
+  // exactly as `bootstrap-control-plane.sh`'s `$HOME/a11y-witness` does, so it is not reported. A RENAME is
+  // what changes that -- the stale literal then surfaces here, in every one of the three, and forces the
+  // call between "derive it" and "the Windows worker's checkout is its own fact".
+  // Code lines only (`psCode`): each script's header comment says `%USERPROFILE%\a11y-witness` too, and a
+  // prose mention would keep this test green with the `Join-Path` assignment beside it unread.
+  for (const script of scripts) {
+    const stale = homeRootSegmentsIn(psCode(read(`${PROVISIONING}${script}`)).split(CHECKOUT_NAME).join("a11ign"));
+    assert.ok(stale.length > 0 && stale.every((segment) => segment === "a11ign"),
+      `${script}: a stale checkout literal under $env:USERPROFILE must be reported, and was ${JSON.stringify(stale)}`);
   }
 });

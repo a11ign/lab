@@ -154,6 +154,15 @@ export const PINS = [
     pattern: /`CANNOT_TELL` stands unchanged as the verdict for/i },
   { id: "review.not-acceptable-by-being-cheap", tier: NARRATIVE,
     pattern: /does not become acceptable by being cheap/i },
+
+  // --- #2223: the scratchpad is shared by every session, and a full one fails without saying why ---
+  { id: "scratchpad.no-self-capture", tier: IMPERATIVE,
+    pattern: /never capture output into a directory you are also reading/i },
+  { id: "scratchpad.no-large-artefacts", tier: IMPERATIVE,
+    pattern: /no virtualenvs, wheels, weights or fetched corpora in the scratchpad/i },
+  // The clause of why that lets a session recognise the failure: it arrives as empty output or ENOSPC, not as a message about the disk.
+  { id: "scratchpad.full-is-unlabelled", tier: IMPERATIVE,
+    pattern: /a full one shows as empty output or ENOSPC/i },
 ];
 
 /** The pin with this id. Throws on an unknown id: a pin that is not there must never read as one that passes. */
