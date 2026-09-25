@@ -1,0 +1,58 @@
+{
+  "description": "an empty reading (the install failed and an empty directory was read): refused, never passed",
+  "expect": {
+    "refused": [
+      {
+        "rule": "nothing-installed",
+        "package": "a11ign"
+      }
+    ]
+  },
+  "reading": {
+    "packages": [],
+    "version": {
+      "exitCode": 0,
+      "stdout": "0.1.0\n",
+      "stderr": ""
+    },
+    "imports": [],
+    "layers": [
+      {
+        "name": "@a11ign/agent-org",
+        "registry": {
+          "published": false
+        }
+      },
+      {
+        "name": "@a11ign/control",
+        "registry": {
+          "published": false
+        }
+      },
+      {
+        "name": "@a11ign/guards",
+        "registry": {
+          "published": false
+        }
+      },
+      {
+        "name": "@a11ign/lab",
+        "registry": {
+          "published": false
+        }
+      },
+      {
+        "name": "@a11ign/nvda-speech",
+        "registry": {
+          "published": false
+        }
+      },
+      {
+        "name": "@a11ign/pdf",
+        "registry": {
+          "published": false
+        }
+      }
+    ]
+  }
+}
