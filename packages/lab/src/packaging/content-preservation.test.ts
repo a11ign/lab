@@ -73,6 +73,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 import { RULES_DIR, RULES_FILES } from "./rules-files.ts";
+import { IMPERATIVE, pinById, readPinSubject, textForPin } from "./prefix-pins.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -881,3 +882,53 @@ test("the #2092 split moved every section of agent-practices.md, byte for byte, 
     + "parent, in no destination; DUPLICATED = in two; ADDED = in a destination and not the parent (which is also "
     + "what a reworded section looks like). The move is byte-identical or it is a different change.");
 });
+
+/**
+ * #2223: THE SCRATCHPAD IS SHARED BY EVERY SESSION, AND THE TWO HABITS THAT KEEP IT FROM FILLING ARE PINNED.
+ *
+ * A full scratchpad does not say so: commands return EMPTY output or ENOSPC, and a 0-byte file reads as "the
+ * command printed nothing". A session that has not been told will conclude a grep found no matches. The
+ * habits are IMPERATIVE in `prefix-pins.mjs`'s sense -- a session acting without them takes the wrong
+ * action -- so each is matched against the LOADED rules alone and the incident's copy in
+ * `docs/operational-lessons.md` cannot stand in for it. The pins themselves live in that table so
+ * `roles-readme.test.ts` asserts the tier for every pin at once; this file states the ones this row owns and
+ * carries the positive control that a deleted sentence is noticed.
+ */
+const SCRATCHPAD_PIN_IDS = ["scratchpad.no-self-capture", "scratchpad.no-large-artefacts", "scratchpad.full-is-unlabelled"];
+
+test("CONTROL: a scratchpad habit deleted from the loaded rules is noticed, even when the destination keeps it", () => {
+  assert.ok(SCRATCHPAD_PIN_IDS.length > 0, "no scratchpad pins named -- the loop below would assert nothing");
+  for (const id of SCRATCHPAD_PIN_IDS) {
+    const pin = pinById(id);
+    // The matching text is manufactured FROM the pattern's own source words, so the control cannot pass by
+    // a fixture that happens to contain the real prose: the real prose is read only in the test after this.
+    const present = { loaded: flattenSource(pin.pattern), destinations: "" };
+    assert.match(textForPin(pin, present), pin.pattern, `${id}: the control text must match, or "fails when deleted" proves nothing`);
+    assert.doesNotMatch(textForPin(pin, { ...present, loaded: "" }), pin.pattern,
+      `${id}: deleting the sentence from the loaded rules must make the pin fail`);
+    assert.doesNotMatch(textForPin(pin, { loaded: "", destinations: present.loaded }), pin.pattern,
+      `${id}: IMPERATIVE means the destination's copy is not enough -- a moved rule is read after the command it governed`);
+    assert.doesNotMatch(textForPin(pin, { loaded: "an unrelated rule about something else", destinations: "" }), pin.pattern,
+      `${id}: an unrelated sentence must not satisfy it`);
+  }
+});
+
+test("#2223: both scratchpad habits and how a full scratchpad shows itself stay in the loaded rules", () => {
+  const subject = readPinSubject();
+  for (const id of SCRATCHPAD_PIN_IDS) {
+    const pin = pinById(id);
+    assert.equal(pin.tier, IMPERATIVE, `${id} must be IMPERATIVE: it tells a session what NOT to do before it does it`);
+    assert.match(textForPin(pin, subject), pin.pattern,
+      `${id} is not in the loaded rules (${RULES_DIR}/). The rule is what stops a session filling the shared `
+      + "scratchpad; its incident is in docs/operational-lessons.md under 'The scratchpad is shared', and "
+      + "a copy THERE does not count -- that file is read on demand, after the command it should have stopped.");
+  }
+});
+
+/** The literal words of a pattern's source, unescaped enough to be matched by it. Only for the plain-prose
+ *  patterns this file uses: anything with a metacharacter other than an escaped one is refused. */
+function flattenSource(pattern: RegExp): string {
+  assert.doesNotMatch(pattern.source.replace(/\\./g, ""), /[[\](){}|*+?^$]/,
+    "flattenSource only handles a plain-prose pattern; write the control text by hand for this one");
+  return pattern.source.replace(/\\(.)/g, "$1");
+}
