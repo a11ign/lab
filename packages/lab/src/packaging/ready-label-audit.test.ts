@@ -20,9 +20,12 @@ import { fileURLToPath } from "node:url";
 // with the gate. `CLAIM_LABEL` comes from the claim path's own module for the same reason.
 import { NOT_STARTABLE } from "../../../agent-org/src/work-gate.mjs";
 import { CLAIM_LABEL } from "../../../agent-org/src/claim-labels.mjs";
+// #2190: the rule the audit CALLS, imported so the test can drive one row per section the RULE names
+// rather than per section this file remembers -- see the loop test at the end.
+import { REQUIRED_FIELDS } from "../../../agent-org/src/row-claim/template-fields-rule.mjs";
 import {
   READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, handClaims, strandedByIncompleteDecline,
-  bothBoardLabels,
+  bothBoardLabels, unclaimableReadyRows, fetchReadyRowsWithBodies,
   claimsNobodyIsWorking,
   releaseDeclarationDrift,
   fetchOpenIssues, fetchOpenIssuesChecked, fetchReportedOpenIssueNumbers, openIssueSetSummary, fetchAllIssues, fetchIssues, closedDebris,
@@ -31,7 +34,7 @@ import {
   fetchClosedUnmergedPrs, fetchClosingIssueRefs, soleUnmergedCloserRows,
   criterionStatusesFromSource, criterionOwningRow, coverageTrackerDisagreements, fetchClosedCompletedIssues,
   reachableCriteriaWithoutRow, provenanceVerdicts, provenanceFindings, provenanceRemedySummary, reportProvenanceOf,
-  guidanceDrift,
+  guidanceDrift, statusLabelDisagreements, statusLabelRemedy, STATUS_LABEL_KINDS,
 } from "../../../agent-org/src/ready-label-audit.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { ARM_LABELS_FROM } from "../../../agent-org/src/claim-provenance.mjs";
@@ -1117,19 +1120,20 @@ test("#546: notRun defaults to a fresh array when the caller does not pass one -
     + "refusal -- it is simply not recorded anywhere the caller can see, same as before this test existed");
 });
 
-test("CHECKS names all sixteen, so the partial-audit sentence states a true denominator", () => {
+test("CHECKS names all eighteen, so the partial-audit sentence states a true denominator", () => {
   // #1130 added the twelfth, #1163 the thirteenth, and the waits-in-prose witness the fourteenth. This pin is why: the audit's own "N of M check(s) did
   // not answer" sentence reads M from `CHECKS.length`, so a check added without updating the denominator
   // would make every partial-audit report understate what it failed to examine.
   //
   // It caught #1163's entry within a minute of it being added, and the fourteenth the same way,
   // which is the whole of its job.
-  assert.equal(CHECKS.length, 16);
+  assert.equal(CHECKS.length, 18);
   assert.deepEqual(CHECKS.map(([what]) => what), [
     "open issues", "hand claims", "labelless rows", "declined rows", "closed issues",
     "board membership", "closing PR references", "claim activity", "closed-row provenance",
     "closing PR never merged", "coverage vs tracker", "release declaration", "filing guidance",
-    "waits stated in prose", "rows no cause can reach", "half-promoted rows",
+    "waits stated in prose", "rows no cause can reach", "half-promoted rows", "unclaimable ready rows",
+    "status vs ready label",
   ]);
 });
 
@@ -1795,4 +1799,216 @@ test("#2111: `backlog` is deliberately NOT in MUTEX_LABELS -- this check exists 
     `MUTEX_LABELS must not contain \`backlog\`: ${MUTEX_LABELS.join(", ")}`);
   assert.deepEqual(mutexViolations([{ number: 2050, title: "half-promoted", labels: ["backlog", READY_LABEL] }]), [],
     "the half-promoted row is bothBoardLabels' finding, not mutexViolations', and only one of them may own it");
+});
+
+/**
+ * #2190: A `ready` ROW `row-claim` WOULD REFUSE IS REPORTED -- #75's shape, the one this audit's own header
+ * names as its founding incident ("no Region or Acceptance a worker could run") and never checked.
+ *
+ * THE POSITIVE CONTROL IS THE THREE TESTS BELOW THAT EACH DROP ONE SECTION. Measured 2026-09-23 at
+ * `70a1087ee`: 0 of 25 open `ready` rows were unclaimable, so an emptiness assertion over the live queue
+ * would pass by having nothing to look at -- which is the one thing this row must not ship. Each section
+ * has its own test, so a predicate that only ever looked at one of them fails the other two by name.
+ */
+const SECTION_TEXT: Record<string, string> = {
+  Region: "## Region\n\n```\npackages/agent-org/src/ready-label-audit.mjs\n```\n",
+  Acceptance: "## Acceptance\n\n```shell\nnpx rstest run --config c.mjs --include a.test.ts\n```\n",
+  "Open-check": "## Open-check\n\nMeasured 2026-09-23 by `product-manager`.\n",
+};
+/** A body stating every section except those named. */
+function bodyWithout(...omitted: string[]) {
+  return ["## What is wrong\n\nSomething.\n",
+    ...Object.entries(SECTION_TEXT).filter(([name]) => !omitted.includes(name)).map(([, text]) => text),
+  ].join("\n");
+}
+function readyRow(number: number, body: string, labels: string[] = [READY_LABEL, "lane:any"]) {
+  return { number, title: `row ${number}`, labels, body };
+}
+
+test("#2190 ACCEPTANCE, MUTATION TARGET: a ready row with NO Region is reported, naming Region", () => {
+  const found = unclaimableReadyRows([readyRow(75, bodyWithout("Region"))]);
+  assert.deepEqual(found.map((r) => [r.number, r.missing]), [[75, ["Region"]]]);
+});
+
+test("#2190 ACCEPTANCE, MUTATION TARGET: a ready row with NO Acceptance is reported, naming Acceptance", () => {
+  const found = unclaimableReadyRows([readyRow(76, bodyWithout("Acceptance"))]);
+  assert.deepEqual(found.map((r) => [r.number, r.missing]), [[76, ["Acceptance"]]]);
+});
+
+test("#2190 ACCEPTANCE, MUTATION TARGET: a ready row with NO Open-check is reported, naming Open-check "
+  + "-- #1990's shape, promoted by hand", () => {
+  const found = unclaimableReadyRows([readyRow(1990, bodyWithout("Open-check"))]);
+  assert.deepEqual(found.map((r) => [r.number, r.missing]), [[1990, ["Open-check"]]]);
+});
+
+test("#2190: a ready row carrying all three sections is NOT reported", () => {
+  // The other half of the control: every complete row on the board is this shape, so a predicate that
+  // reported every `ready` row would fail here and not above.
+  assert.deepEqual(unclaimableReadyRows([readyRow(1, bodyWithout())]), []);
+});
+
+test("#2190: an EMPTY body reports all three sections, and a heading with nothing under it counts as absent", () => {
+  assert.deepEqual(unclaimableReadyRows([readyRow(2, "")])[0].missing, ["Region", "Acceptance", "Open-check"]);
+  const found = unclaimableReadyRows([readyRow(3, `${bodyWithout("Open-check")}\n## Open-check\n`)]);
+  assert.deepEqual(found.map((r) => r.missing), [["Open-check"]],
+    "the rule reads a bare heading as absent, and this check reports what the rule reports");
+});
+
+test("#2190: only rows carrying `ready` are in the population -- a backlog row missing sections is not this "
+  + "check's finding, and a row is judged on its OWN body", () => {
+  const found = unclaimableReadyRows([
+    readyRow(4, bodyWithout("Region"), ["backlog", "lane:any"]),
+    readyRow(5, bodyWithout("Region")),
+    readyRow(6, bodyWithout()),
+  ]);
+  assert.deepEqual(found.map((r) => r.number), [5]);
+  assert.deepEqual(unclaimableReadyRows([]), []);
+  assert.deepEqual(unclaimableReadyRows(undefined as never), []);
+});
+
+test("#2190: the finding carries the RULE's own sentence, so the report and the claim refusal cannot say "
+  + "different things", () => {
+  const [row] = unclaimableReadyRows([readyRow(75, bodyWithout("Region", "Acceptance"))]);
+  assert.match(row.reason, /^#75 is missing Region, Acceptance -- /);
+  assert.deepEqual(row.missing, ["Region", "Acceptance"]);
+});
+
+test("#2190: it asks the rule which sections are required -- a row missing EACH section the rule names is "
+  + "reported, whatever the list is today", () => {
+  // Derived from the rule's own export, so a fourth required field is covered without this file being
+  // edited. The literal below is the positive control for THAT loop: were `REQUIRED_FIELDS` emptied the
+  // loop would pass over nothing.
+  assert.deepEqual([...REQUIRED_FIELDS], ["Region", "Acceptance", "Open-check"]);
+  for (const field of REQUIRED_FIELDS) {
+    assert.ok(SECTION_TEXT[field], `the fixture has no text for the rule's field ${field}`);
+    assert.deepEqual(unclaimableReadyRows([readyRow(9, bodyWithout(field))])[0]?.missing, [field]);
+  }
+});
+
+test("#2190: it is its OWN population -- an unclaimable ready row is not a mutex violation or closed debris", () => {
+  const row = readyRow(75, bodyWithout("Region"));
+  assert.deepEqual(mutexViolations([row]), []);
+  assert.deepEqual(closedDebris([row]), []);
+  assert.equal(unclaimableReadyRows([row]).length, 1);
+});
+
+test("#2190: `unclaimable ready rows` is a CHECKS entry, so the live comparison actually runs", () => {
+  assert.ok(CHECKS.some(([name]) => name === "unclaimable ready rows"),
+    "a pure predicate nothing calls is a fact stated once more, not a fact checked");
+});
+
+test("#2190: fetchReadyRowsWithBodies asks server-side for `ready`, with the body, and parses labels", () => {
+  const seen: string[][] = [];
+  const run = (_cmd: string, args: string[]) => {
+    seen.push(args);
+    return JSON.stringify([{ number: 7, title: "t", labels: [{ name: READY_LABEL }], body: "" }]);
+  };
+  const rows = fetchReadyRowsWithBodies({ run });
+  assert.deepEqual(rows, [{ number: 7, title: "t", labels: [READY_LABEL], body: "" }]);
+  const args = seen[0];
+  assert.equal(args[args.indexOf("--label") + 1], READY_LABEL);
+  assert.equal(args[args.indexOf("--state") + 1], "open");
+  assert.match(args[args.indexOf("--json") + 1], /\bbody\b/);
+});
+
+test("#2190: an entry with no `body` STRING throws -- an empty body is a fact, an absent one is a wrong question", () => {
+  const noBody = () => JSON.stringify([{ number: 7, title: "t", labels: [{ name: READY_LABEL }] }]);
+  assert.throws(() => fetchReadyRowsWithBodies({ run: noBody }), /missing number\/title\/labels\/body/);
+  assert.throws(() => fetchReadyRowsWithBodies({ run: throwingRun("gh: authentication required") }),
+    /could not list open ready rows with bodies/);
+  const nullBody = () => JSON.stringify([{ number: 7, title: "t", labels: [], body: null }]);
+  assert.throws(() => fetchReadyRowsWithBodies({ run: nullBody }), /missing number\/title\/labels\/body/);
+});
+
+// --- #2150: a board Status that disagrees with the `ready` label, in both directions ---
+//
+// THE FIXTURES ARE CONSTRUCTED AND THE LIVE BOARD IS NOT THE CONTROL (done-when 3): the one live instance
+// the row cited (#1988) has since closed, and a check over the live population passes by examining nothing
+// on any day the board happens to be clean. Each direction has its own positive control below, so
+// deleting one direction's clause turns ITS test red and no other.
+
+const item = (number: number | null, status: string | null) => ({ number, status });
+const issue = (number: number, ...labels: string[]) => ({ number, title: `row ${number}`, labels });
+
+test("#2150 DIRECTION 1, MUTATION TARGET: Status `Ready` beside a `backlog` label is an interrupted promotion", () => {
+  const found = statusLabelDisagreements([issue(2133, "backlog", "lane:any")], [item(2133, "Ready")]);
+  assert.equal(found.length, 1, "positive control: the constructed row IS reported");
+  assert.equal(found[0].number, 2133);
+  assert.equal(found[0].kind, STATUS_LABEL_KINDS.INTERRUPTED_PROMOTION);
+  assert.equal(found[0].status, "Ready");
+  assert.deepEqual(found[0].labels, ["backlog", "lane:any"], "what the labels say travels with the finding");
+});
+
+test("#2150 DIRECTION 2, MUTATION TARGET: the `ready` label beside any other Status is reported", () => {
+  const found = statusLabelDisagreements(
+    [issue(1988, READY_LABEL), issue(1989, READY_LABEL, "lane:any"), issue(1990, READY_LABEL)],
+    [item(1988, "Backlog"), item(1989, "In progress"), item(1990, "Fleet-gated")]);
+  assert.deepEqual(found.map((r) => [r.number, r.status]),
+    [[1988, "Backlog"], [1989, "In progress"], [1990, "Fleet-gated"]], "positive control: all three");
+  assert.ok(found.every((r) => r.kind === STATUS_LABEL_KINDS.LABEL_READY_STATUS_ELSEWHERE));
+});
+
+test("#2150: Status `Ready` with NEITHER `ready` nor `backlog` on the row is the third kind, and is reported", () => {
+  const found = statusLabelDisagreements([issue(5, "lane:any", "out-of-release")], [item(5, "Ready")]);
+  assert.deepEqual(found.map((r) => r.kind), [STATUS_LABEL_KINDS.STATUS_READY_LABEL_ABSENT]);
+});
+
+test("#2150 NEGATIVE, must stay clean: every agreeing pair is silent", () => {
+  const issues = [
+    issue(1, READY_LABEL), issue(2, "backlog"), issue(3), issue(4, "in-progress", "session:x"),
+    issue(5, READY_LABEL, "lane:any", "fleet-gated"),
+  ];
+  const board = [item(1, "Ready"), item(2, "Backlog"), item(3, "Backlog"), item(4, "In progress"),
+    item(5, "Ready")];
+  assert.deepEqual(statusLabelDisagreements(issues, board), [],
+    "the population of correctly promoted rows is the whole Ready lane: a predicate keyed on Status alone "
+    + "or label alone would report it. The positive controls are the two DIRECTION tests above.");
+});
+
+test("#2150 (done-when 5): rows another check owns are NOT reported here", () => {
+  const issues = [issue(10, READY_LABEL), issue(11, READY_LABEL), issue(12, "backlog")];
+  // 10: `ready` with NO Status (readyRowsMissingStatus). 11: no board item at all
+  // (openRowsAbsentFromBoard). Neither has two fields to compare. 20: an item for an issue that is not in
+  // the open population (closed). null number: a draft item.
+  const board = [item(10, null), item(20, "Ready"), item(null, "Ready"), item(12, null)];
+  assert.deepEqual(statusLabelDisagreements(issues, board), []);
+  // The control that this is a skip and not a blind spot: give 10 a Status and it IS reported.
+  assert.equal(statusLabelDisagreements(issues, [item(10, "Backlog")]).length, 1);
+});
+
+test("#2150: a row carrying BOTH board labels beside Status `Ready` is bothBoardLabels' finding, not this one's", () => {
+  const issues = [issue(2050, "backlog", READY_LABEL)];
+  assert.deepEqual(statusLabelDisagreements(issues, [item(2050, "Ready")]), []);
+  assert.equal(bothBoardLabels(issues).length, 1, "positive control: the other check DOES own it");
+});
+
+test("#2150: findings come back in row-number order whatever order the board pages arrived in", () => {
+  const issues = [issue(9, READY_LABEL), issue(3, READY_LABEL), issue(6, "backlog")];
+  const board = [item(9, "Backlog"), item(6, "Ready"), item(3, "Backlog")];
+  assert.deepEqual(statusLabelDisagreements(issues, board).map((r) => r.number), [3, 6, 9]);
+  assert.deepEqual(statusLabelDisagreements(undefined as never, undefined as never), []);
+});
+
+test("#2150 (done-when 2): the interrupted promotion's remedy is `--promote`, named as idempotent", () => {
+  const remedy = statusLabelRemedy(2133, STATUS_LABEL_KINDS.INTERRUPTED_PROMOTION);
+  assert.match(remedy, /npm run row-file -- --promote=2133 --session=<you>/);
+  assert.match(remedy, /idempotent/);
+  assert.doesNotMatch(remedy, /TWO READINGS/, "a known cause gets ONE answer, not two");
+});
+
+test("#2150 (done-when 2): a hand-moved field states BOTH readings and picks neither", () => {
+  for (const kind of [STATUS_LABEL_KINDS.STATUS_READY_LABEL_ABSENT, STATUS_LABEL_KINDS.LABEL_READY_STATUS_ELSEWHERE]) {
+    const remedy = statusLabelRemedy(7, kind);
+    assert.match(remedy, /TWO READINGS/, kind);
+    assert.match(remedy, /if the row IS ready, `npm run row-file -- --promote=7/, kind);
+    assert.match(remedy, /if it is NOT/, kind);
+  }
+  assert.match(statusLabelRemedy(7, STATUS_LABEL_KINDS.LABEL_READY_STATUS_ELSEWHERE), /remove `ready`/);
+  assert.match(statusLabelRemedy(7, STATUS_LABEL_KINDS.STATUS_READY_LABEL_ABSENT), /move the Status back/);
+});
+
+test("#2150: `status vs ready label` is a CHECKS entry, and its name says it reads Status (the row's open-check)", () => {
+  const named = CHECKS.filter(([name]) => /status/i.test(name));
+  assert.equal(named.length, 1, "the row's open-check read 0 of 16; it reads 1 once the check is registered");
+  assert.equal(named[0][0], "status vs ready label");
 });
