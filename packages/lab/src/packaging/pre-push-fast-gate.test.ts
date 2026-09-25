@@ -15,7 +15,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, rmSync, mkdtempSync, symlinkSync, readdirSync, existsSync } from "node:fs";
+import {
+  readFileSync, writeFileSync, rmSync, mkdtempSync, symlinkSync, readdirSync, existsSync, cpSync, lstatSync, mkdirSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -151,6 +153,8 @@ const PLANTED = "packages/lab/src/packaging/_scratch-run-fn-proof.test.ts";
  * `tsc` see exactly as they see this one, and no other test can walk. `git archive` rather than a worktree:
  * it registers nothing in `.git`, so a crashed run leaves only a temp directory behind. `sandboxGitEnv`,
  * because a hook exports `GIT_DIR` and an inherited one would archive whatever it names.
+ *
+ * The export OWNS its build (#2250): `stageBuilds` COPIES each package's `dist`, it does not link it.
  */
 function treeExport(): string {
   const dir = mkdtempSync(join(tmpdir(), "fast-gate-export-"));
@@ -158,18 +162,87 @@ function treeExport(): string {
     { cwd: REPO, env: sandboxGitEnv(), maxBuffer: 256 * 1024 * 1024 });
   execFileSync("tar", ["-x", "-C", dir], { input: tar });
   symlinkSync(join(REPO, "node_modules"), join(dir, "node_modules"), "dir");
-  // Each package's BUILD, linked in too: `dist` is gitignored, and a relative `../dist/` import
-  // (`packages/scorer/bin/fetch-encoder.mjs`) fails `tsc` in a tree that lacks it.
+  try {
+    stageBuilds({ from: REPO, into: dir });
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
+  }
   for (const name of readdirSync(join(REPO, "packages"))) {
-    const built = join(REPO, "packages", name, "dist");
-    if (existsSync(built) && existsSync(join(dir, "packages", name))) symlinkSync(built, join(dir, "packages", name, "dist"), "dir");
-    // And each package's OWN `node_modules`: under pnpm a package sees only what it declares, so `pdf-lib` and
+    // Each package's OWN `node_modules`: under pnpm a package sees only what it declares, so `pdf-lib` and
     // `@a11ign/pdf` live at `packages/<name>/node_modules`, not in the root's. npm hoists and has none (#2297).
     const own = join(REPO, "packages", name, "node_modules");
     if (existsSync(own) && existsSync(join(dir, "packages", name))) symlinkSync(own, join(dir, "packages", name, "node_modules"), "dir");
   }
   return dir;
 }
+
+/**
+ * #2250, TWO SIGHTINGS -- read a red here as one of these before calling it flaky. `dist` is gitignored, so the
+ * export has none and a relative `../dist/` import (`packages/scorer/bin/fetch-encoder.mjs`) needs one. This
+ * used to LINK each package's live `dist` in, and the rest of the suite rebuilds those directories:
+ *   - 2026-09-23 evening, `worker-capture`, the packaging suite on its #2162 branch: this test's MUTATION case
+ *     red, green on its own.
+ *   - 2026-09-23T21:24-21:28Z, `product-manager`, the same suite at `c06bc5cc3` (main, so nobody's change): 260
+ *     files, 4,341 tests, 1 failed -- and 6/6 green running this file ALONE in the same worktree. The failure
+ *     was `TS2307 Cannot find module '../dist/index.js'`, and `packages/scorer/dist/index.js` had been
+ *     rewritten at 21:25:53Z, inside the run. PARALLEL SUITE versus ALONE is the whole difference.
+ * A copy is a snapshot taken once, in milliseconds, instead of a window the length of lint plus `tsc`.
+ *
+ * A package is expected to be built when it has a `tsconfig.json` -- the rule `scripts/build-packages.mjs`
+ * uses -- and a build that is absent or EMPTY is a named failure, not a compiler error about a path.
+ */
+function stageBuilds({ from, into }: { from: string; into: string }): void {
+  const unbuilt: string[] = [];
+  for (const name of readdirSync(join(from, "packages"))) {
+    if (!existsSync(join(into, "packages", name, "tsconfig.json"))) continue;
+    const built = join(from, "packages", name, "dist");
+    if (!existsSync(built) || readdirSync(built).length === 0) {
+      unbuilt.push(`packages/${name}`);
+      continue;
+    }
+    cpSync(built, join(into, "packages", name, "dist"), { recursive: true });
+  }
+  assert.deepEqual(unbuilt, [],
+    `the export has no build for ${unbuilt.join(", ")} -- run \`npm run build\` first; \`dist\` is gitignored, so a `
+    + "tree that was never built cannot type-check its own `../dist/` imports");
+}
+
+test("#2250: an export whose live build is missing or empty fails NAMED, and its own build is a copy no one else writes", () => {
+  // The negative control the row asked for: the build state is deliberately wrong, and the failure must say
+  // WHICH package has no build rather than leaving a session to work back from a `TS2307`.
+  const scratch = mkdtempSync(join(tmpdir(), "fast-gate-stage-"));
+  try {
+    const live = join(scratch, "live");
+    const into = join(scratch, "into");
+    for (const [root, packages] of [[live, ["built", "never-built", "emptied"]], [into, ["built", "never-built", "emptied"]]] as const) {
+      for (const name of packages) {
+        mkdirSync(join(root, "packages", name), { recursive: true });
+        writeFileSync(join(root, "packages", name, "tsconfig.json"), "{}");
+      }
+    }
+    mkdirSync(join(live, "packages", "built", "dist"));
+    writeFileSync(join(live, "packages", "built", "dist", "index.js"), "old");
+    mkdirSync(join(live, "packages", "emptied", "dist"));
+
+    assert.throws(() => stageBuilds({ from: live, into }),
+      /the export has no build for packages\/emptied, packages\/never-built/);
+
+    // With the build state right, the staged directory is a COPY: not a link, and a later write to the live
+    // build (another test's emit) does not reach it.
+    rmSync(join(live, "packages", "never-built"), { recursive: true });
+    rmSync(join(live, "packages", "emptied"), { recursive: true });
+    rmSync(join(into, "packages", "never-built"), { recursive: true });
+    rmSync(join(into, "packages", "emptied"), { recursive: true });
+    stageBuilds({ from: live, into });
+    const staged = join(into, "packages", "built", "dist");
+    assert.ok(!lstatSync(staged).isSymbolicLink(), "the export must own its build, not link the live one");
+    writeFileSync(join(live, "packages", "built", "dist", "index.js"), "rewritten mid-run");
+    assert.equal(readFileSync(join(staged, "index.js"), "utf8"), "old");
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
 
 /**
  * #911 REMOVED THE CHANGESET GATE FROM THIS HOOK, and with it the three #288 tests that drove its block.
