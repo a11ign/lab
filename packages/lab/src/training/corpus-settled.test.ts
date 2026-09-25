@@ -7,9 +7,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { tempDir } from "../../../guards/src/test-tmp.mjs";
 import { corpusState, SETTLED_AFTER_MINUTES, corpusReadable, skipLine, captureCount } from "./corpus-settled.mjs";
 import { progressPath } from "./capture-progress.mjs";
 
@@ -17,7 +17,7 @@ const NOW = Date.parse("2026-08-26T12:00:00.000Z");
 
 /** A dataset root carrying one progress file, so `readProgress` finds it exactly as in production. */
 function rootWith(progress: Record<string, unknown>): string {
-  const root = mkdtempSync(join(tmpdir(), "corpus-settled-"));
+  const root = tempDir("corpus-settled-");
   const path = progressPath(root);
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, JSON.stringify(progress), "utf8");
@@ -32,7 +32,6 @@ test("a run that FINISHED is settled, however new its files are", () => {
     finishedAt: "2026-08-26T11:59:30.000Z", cases: {},
   });
   const state = corpusState({ datasetRoots: [root], now: NOW, minutesSinceLastWrite: () => 0.5 });
-  rmSync(root, { recursive: true, force: true });
   assert.equal(state.state, "settled");
   assert.equal(state.blocking, false, "a finished run must not block an audit, whatever the clock says");
   assert.match(state.why, /finished at/);
@@ -47,7 +46,6 @@ test("a run still writing blocks, however OLD its last write is", () => {
     finishedAt: null, captureTimeoutMs: 20 * 60_000, cases: {},
   });
   const state = corpusState({ datasetRoots: [root], now: NOW, minutesSinceLastWrite: () => 12 });
-  rmSync(root, { recursive: true, force: true });
   assert.equal(state.state, "in-flight");
   assert.equal(state.blocking, true, "12 minutes of quiet is under this run's own timeout, so it is alive");
 });
@@ -61,7 +59,6 @@ test("a run that DIED mid-write is its own answer, not 'settled'", () => {
     finishedAt: null, captureTimeoutMs: 60_000, cases: {},
   });
   const state = corpusState({ datasetRoots: [root], now: NOW, minutesSinceLastWrite: () => 175 });
-  rmSync(root, { recursive: true, force: true });
   assert.equal(state.state, "abandoned");
   assert.equal(state.blocking, true, "a half-written corpus must not be measured as a whole one");
   assert.match(state.why, /never finished/);
@@ -108,7 +105,7 @@ test("every audit carrying this guard uses the shared check", () => {
 const MOVING = { startedAt: "2026-09-06T10:00:00.000Z", updatedAt: "2026-09-06T10:00:30.000Z" };
 
 function rootWithProgress(progress: object): string {
-  const root = mkdtempSync(join(tmpdir(), "corpus-readable-"));
+  const root = tempDir("corpus-readable-");
   writeFileSync(join(root, "capture-progress.json"), JSON.stringify(progress));
   return root;
 }
@@ -155,7 +152,7 @@ test("a runs/ holding one emitted report is NOT a corpus — the stub the suite 
   // `emit-unclosable-vetoes.mjs` writes one file into `runs/`, so running the suite where no corpus exists
   // CREATES a directory that `existsSync` reports as a corpus. Counting captures is what keeps the stub
   // indistinguishable from absent, which is what it is.
-  const stub = mkdtempSync(join(tmpdir(), "corpus-stub-"));
+  const stub = tempDir("corpus-stub-");
   writeFileSync(join(stub, "unclosable-vetoes.json"), "{}");
   assert.equal(captureCount([join(stub, "screenreader-dataset", "captures")]), 0,
     "one report at the root of runs/ is not a capture, and must not be counted as evidence");

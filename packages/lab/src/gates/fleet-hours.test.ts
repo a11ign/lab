@@ -1,15 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { tempDir } from "../../../guards/src/test-tmp.mjs";
 import { occupancyMs, scan, report, METHOD } from "../../scripts/fleet-hours.mjs";
 
 /** A capture is billed on the LAST cumulative `atMs`, so a fixture needs marks that climb. */
 const marks = (...ms: number[]) => ms.map((atMs, i) => ({ event: `mark${i}`, atMs }));
 
 function corpus(files: Record<string, unknown>): string {
-  const dir = mkdtempSync(join(tmpdir(), "fleet-hours-"));
+  const dir = tempDir("fleet-hours-");
   for (const [name, body] of Object.entries(files)) {
     const path = join(dir, name);
     mkdirSync(join(path, ".."), { recursive: true });

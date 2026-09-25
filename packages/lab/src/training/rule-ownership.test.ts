@@ -9,15 +9,16 @@
  * a wrong answer wearing a clean one's clothes. That is what these tests are for.
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { tempDir } from "../../../guards/src/test-tmp.mjs";
 import { readRuleOwnership } from "./rule-ownership.js";
 
 const withDeclaration = (contents: unknown): string => {
-  const path = join(mkdtempSync(join(tmpdir(), "rule-ownership-")), "rule-ownership.json");
+  const path = join(tempDir("rule-ownership-"), "rule-ownership.json");
   writeFileSync(path, JSON.stringify(contents));
   return path;
 };
