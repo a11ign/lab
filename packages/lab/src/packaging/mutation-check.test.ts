@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync, readFileSync } from "node:fs";
+import { writeFileSync, mkdtempSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -27,9 +27,9 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.
 const SCRIPT = path.join(REPO, "packages/guards/src/mutation-check.mjs");
 
 /** Run the checker and return its exit code and output, never throwing on a non-zero exit. */
-function check(args: string[]): { code: number; out: string } {
+function check(args: string[], env: NodeJS.ProcessEnv = process.env): { code: number; out: string } {
   try {
-    const out = execFileSync("node", [SCRIPT, ...args], { encoding: "utf8", stdio: "pipe", cwd: REPO });
+    const out = execFileSync("node", [SCRIPT, ...args], { encoding: "utf8", stdio: "pipe", cwd: REPO, env });
     return { code: 0, out };
   } catch (error) {
     const e = error as { status?: number; stdout?: string; stderr?: string };
@@ -86,4 +86,128 @@ test("it refuses a missing argument rather than doing half the sequence", () => 
   const { code, out } = check(["--file=/tmp/nope"]);
   assert.equal(code, 2, out);
   assert.match(out, /--mutate/);
+});
+
+/* PER-MUTANT MODE (#2448): a caller trying many mutants of one file pays for the clean run and the restored
+ * run once per mutant. The mode drops both, so what it must still do is pinned as hard as what it stops
+ * doing: the byte check after EVERY mutant, the exit codes, the sentences, and the default's three runs.
+ */
+const PER_MUTANT = ["--per-mutant", "--baseline-passed"];
+
+/** A fixture whose test appends a line to a counter file every time it runs, so runs are COUNTED, not inferred. */
+function counted(): { file: string; test: string; runs: () => number } {
+  const file = fixture();
+  const counter = `${file}.runs`;
+  return {
+    file,
+    // `echo` first, then the grep: the command's exit status is the grep's, and the counter grows either way.
+    test: `--test=echo x >> ${counter}; grep -q 'is 42' ${file}`,
+    runs: () => (existsSync(counter) ? readFileSync(counter, "utf8").split("\n").filter(Boolean).length : 0),
+  };
+}
+
+/** A mutation that also corrupts the copy-aside, so the restore lands bytes that are not the original's.
+ * `TMPDIR` is private to the run, which makes the glob match this run's stash and nothing else's. */
+function corruptsItsOwnStash(file: string): { mutate: string; env: NodeJS.ProcessEnv } {
+  const tmp = mkdtempSync(path.join(tmpdir(), "mutcheck-tmp-"));
+  return {
+    mutate: `--mutate=perl -pi -e 's/42/99/' ${file} ${tmp}/mutate-*/subject.txt`,
+    env: { ...process.env, TMPDIR: tmp },
+  };
+}
+
+test("the DEFAULT still runs the test three times: clean, mutated, restored", () => {
+  const { file, test: testArg, runs } = counted();
+  const { code, out } = check([`--file=${file}`, `--mutate=perl -pi -e 's/42/99/' ${file}`, testArg]);
+  assert.equal(code, 0, out);
+  assert.equal(runs(), 3, "the default is the contract every existing caller relies on");
+  assert.match(out, /test PASSES again/);
+});
+
+test("per-mutant mode runs the test ONCE, and keeps the sentence, the exit code and the file's bytes", () => {
+  const { file, test: testArg, runs } = counted();
+  const { code, out } = check([`--file=${file}`, `--mutate=perl -pi -e 's/42/99/' ${file}`, testArg,
+    ...PER_MUTANT]);
+  assert.equal(code, 0, out);
+  assert.equal(runs(), 1, "only the mutated run");
+  assert.match(out, /THE GUARD BITES\./);
+  assert.match(out, /byte-identical/);
+  assert.match(out, /--prove-restored/, "it must say where the restored proof went");
+  assert.equal(readFileSync(file, "utf8"), "the answer is 42\n");
+});
+
+test("per-mutant mode keeps exit 1 and exit 2 for a guard that does not bite and a mutation that lands nowhere", () => {
+  const notBiting = counted();
+  const one = check([`--file=${notBiting.file}`, `--mutate=perl -pi -e 's/answer/question/' ${notBiting.file}`,
+    notBiting.test, ...PER_MUTANT]);
+  assert.equal(one.code, 1, one.out);
+  assert.match(one.out, /THE GUARD DID NOT BITE/);
+  assert.equal(notBiting.runs(), 1);
+
+  const noOp = counted();
+  const two = check([`--file=${noOp.file}`, "--mutate=true", noOp.test, ...PER_MUTANT]);
+  assert.equal(two.code, 2, two.out);
+  assert.match(two.out, /changed nothing/);
+  assert.equal(noOp.runs(), 0, "a no-op mutation is refused before the test is consulted at all");
+});
+
+test("per-mutant mode is REFUSED without the baseline statement, and names the flag and why", () => {
+  const { file, test: testArg, runs } = counted();
+  const { code, out } = check([`--file=${file}`, `--mutate=perl -pi -e 's/42/99/' ${file}`, testArg,
+    "--per-mutant"]);
+  assert.equal(code, 2, out);
+  assert.match(out, /--baseline-passed/);
+  assert.match(out, /ALREADY FAILING/, "the reason is the check it stops making");
+  assert.equal(runs(), 0, "a refusal happens before anything runs");
+  assert.equal(readFileSync(file, "utf8"), "the answer is 42\n");
+});
+
+test("the baseline statement alone is refused: a flag that changes nothing reads as if it did", () => {
+  const { file, test: testArg, runs } = counted();
+  const { code, out } = check([`--file=${file}`, `--mutate=perl -pi -e 's/42/99/' ${file}`, testArg,
+    "--baseline-passed"]);
+  assert.equal(code, 2, out);
+  assert.match(out, /--per-mutant/);
+  assert.equal(runs(), 0);
+});
+
+test("a restore that is not byte-identical exits 3 in per-mutant mode, as it does by default", () => {
+  // The default is the positive control: it proves this mutation really does defeat the restore, so the
+  // per-mutant exit 3 below is not the harness failing to reach the branch.
+  const control = counted();
+  const c = corruptsItsOwnStash(control.file);
+  const byDefault = check([`--file=${control.file}`, c.mutate, control.test], c.env);
+  assert.equal(byDefault.code, 3, byDefault.out);
+
+  const batch = counted();
+  const b = corruptsItsOwnStash(batch.file);
+  const { code, out } = check([`--file=${batch.file}`, b.mutate, batch.test, ...PER_MUTANT], b.env);
+  assert.equal(code, 3, out);
+  assert.match(out, /THE RESTORE FAILED/);
+  assert.match(out, /NOT\s+been deleted/, "the copy is left in place for a human");
+  assert.equal(batch.runs(), 1, "it stopped at the byte check and did not go on to run the test");
+});
+
+test("--prove-restored runs the test once on the file as the batch left it: exit 0 green, exit 3 red", () => {
+  const green = counted();
+  const ok = check([`--file=${green.file}`, green.test, "--prove-restored"]);
+  assert.equal(ok.code, 0, ok.out);
+  assert.match(ok.out, /after the batch/);
+  assert.equal(green.runs(), 1);
+
+  // A batch whose mutation command left something behind: the bytes are the original's, the test is red.
+  const red = counted();
+  const bad = check([`--file=${red.file}`, `--test=grep -q 'is 43' ${red.file}`, "--prove-restored"]);
+  assert.equal(bad.code, 3, bad.out);
+  assert.match(bad.out, /THE TEST FAILS/);
+});
+
+test("--prove-restored refuses to be combined with a mutation, and the batch flags", () => {
+  const { file, test: testArg, runs } = counted();
+  for (const extra of [[`--mutate=perl -pi -e 's/42/99/' ${file}`], ["--per-mutant"], ["--baseline-passed"]]) {
+    const { code, out } = check([`--file=${file}`, testArg, "--prove-restored", ...extra]);
+    assert.equal(code, 2, out);
+  }
+  assert.equal(runs(), 0);
+  assert.equal(readFileSync(file, "utf8"), "the answer is 42\n");
 });
