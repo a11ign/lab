@@ -13,17 +13,17 @@
 // `serve` processes would test `npx` more than the rule.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, existsSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { resolve, join } from "node:path";
+import { writeFileSync, existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import { createServer } from "node:http";
 
+import { tempDir } from "../../../guards/src/test-tmp.mjs";
 import { holdersPath, joinHolders, leasePageServer, leaveHolders, readHolders } from "./page-server.mjs";
 
 /** A root whose `..` is a scratch dir, matching how the real caller passes `<dataset>/pages`. */
 function scratchRoot(): string {
-  const dir = mkdtempSync(join(tmpdir(), "a11y-holders-"));
+  const dir = tempDir("a11y-holders-");
   return resolve(dir, "pages");
 }
 

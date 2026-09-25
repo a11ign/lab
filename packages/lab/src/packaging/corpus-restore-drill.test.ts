@@ -22,9 +22,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { tempDir } from "../../../guards/src/test-tmp.mjs";
 import { CASES } from "../training/case-matrix.mjs";
 import { hashPageDir } from "../training/capture-cache.mjs";
 import { captureFilePath } from "../capture/evidence-diff.mjs";
@@ -40,19 +40,25 @@ const DRILL = resolve(REPO_ROOT, "packages/lab/src/packaging/corpus-restore-dril
 /** More than `MIN_EXAMINED` (25) in `check-signals.mjs`, so a healthy restore is a PASS and not INCONCLUSIVE. */
 const FIXTURE_CASES = 30;
 
+function tmp(prefix: string): string {
+  return tempDir(`restore-drill-${prefix}-`);
+}
+
+/**
+ * #2457: EVERY script spawned below writes its scratch under THIS `TMPDIR`, which the helper removes with the file.
+ * The drill's CLI makes `corpus-restore-drill-*` with `mkdtempSync` unless `--scratch` is given, and on a FAILED drill it
+ * deliberately leaves it in place to inspect. Two tests here run it to a failure on purpose, so each left a whole restored
+ * corpus behind (measured: about 5,400 inodes a run). Handing the child a `TMPDIR` rather than a `--scratch` keeps the
+ * default, `mkdtemp` path exercised, which is the one that leaked.
+ */
+const CHILD_TMPDIR = tmp("child-tmpdir");
+
 /** The environment a script sees when nothing points it at another corpus. */
 function cleanEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
-  const env = { ...process.env, ...extra };
+  const env: NodeJS.ProcessEnv = { ...process.env, TMPDIR: CHILD_TMPDIR, ...extra };
   for (const name of ["RUNS_ROOT", "A11Y_RUNS_ROOT", "DATASET_ROOT", "DATASET_KIND", "DATASET_CAPTURE_ROOT",
     "A11Y_DATASET_GRADE", "A11Y_RUNS_READONLY"]) if (!(name in extra)) delete env[name];
   return env;
-}
-
-const scratchDirs: string[] = [];
-function tmp(prefix: string): string {
-  const dir = mkdtempSync(join(tmpdir(), `restore-drill-${prefix}-`));
-  scratchDirs.push(dir);
-  return dir;
 }
 
 /** Pages exactly as a lab generates them, plus the manifest -- built ONCE, because the generator is real. */
@@ -114,8 +120,6 @@ function liveAfterSnapshot(runs: string): string {
   writeFileSync(join(live, "runs", "real-page-corpus", "later.json"), "{}");
   return join(live, "runs");
 }
-
-test.after(() => { for (const dir of scratchDirs) rmSync(dir, { recursive: true, force: true }); });
 
 test("a release restores into a tree a real gate runs off, and the report states restored, live and the difference", async () => {
   const runs = fixtureRuns();
