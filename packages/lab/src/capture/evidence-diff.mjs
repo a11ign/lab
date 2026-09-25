@@ -717,8 +717,9 @@ export function isUsableCapture(capture) {
  * exe". The transcript is non-empty and the reader is NVDA, so the two older tests admitted it, and it was
  * scored as a calibration page that "read" nothing (0.7665 -> 0.5069 on a page that had not changed). It is
  * defined by WHAT THE CAPTURE SAYS -- every line is `blank`, or the last `documentReady` names the console --
- * and not by a length: no threshold is taken on trust, and the shortest transcript that passed in the two
- * corpus copies read for this row (p18, p21) was 240 lines.
+ * and not by a length: no threshold is taken on trust. Measured 2026-09-25 over the two corpus copies (121 files
+ * at protocol 18, 123 in the archive read for #2412): the shortest transcript this predicate still admits is 4
+ * lines, a real cookie-banner page (Ofgem), so a "few lines" rule would sit one line from a legitimate capture.
  *
  * The LAST `documentReady` decides the title, because `capture-setup.mjs` marks one per attempt and a retry
  * that reached the browser after an attempt on a console is a capture that read the page.
