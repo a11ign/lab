@@ -204,24 +204,54 @@ test("CONTROL: a genuinely empty label array is accepted -- that is a real, diff
 
 // --- claimRow: claim-then-verify, including the backoff path ---
 
-test("claimRow claims a genuinely unclaimed row: reads, writes, re-reads, confirms", () => {
+// #2151: THE CLAIM'S LABEL WRITE IS ONE `PUT .../labels`, so these tests read it as the whole list the row
+// is left carrying rather than as a delta -- and a fake that only replays canned answers cannot say what a
+// set write DOES to the labels somebody else put there. `boardRun` is a stateful fake of ONE row: a label
+// read answers the row as it stands, a `PUT` REPLACES its labels (the endpoint's semantics, which is the
+// whole cost of a set), and an `issue edit` applies its deltas. `interleave` runs before each label read
+// and is how a test lands somebody else's write in a window; `failWhen` picks the one call that throws.
+const isLabelSet = (args: string[]) => args[0] === "api" && args[1] === "--method" && args[2] === "PUT"
+  && /\/issues\/\d+\/labels$/.test(args[3]);
+const labelsSetBy = (args: string[]) => args.filter((a) => a.startsWith("labels[]=")).map((a) => a.slice("labels[]=".length));
+
+function boardRun(initial: string[], { number = 176, interleave, failWhen }: {
+  number?: number,
+  interleave?: (labelRead: number, board: { labels: string[] }) => void,
+  failWhen?: (args: string[]) => boolean,
+} = {}) {
+  const board = { labels: [...initial] };
   const calls: string[][] = [];
-  let reads = 0;
-  const run = (cmd: string, args: string[]) => {
+  let labelReads = 0;
+  const run = (_cmd: string, args: string[]) => {
     calls.push(args);
-    if (args[1] === "view") {
-      reads += 1;
-      // Unclaimed on the first read; claimed by us on the re-read after the write below.
-      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }];
-      return JSON.stringify({ number: 55, title: "A row", labels });
+    if (failWhen?.(args)) throw new Error(`simulated: gh ${args.slice(0, 2).join(" ")} failed`);
+    if (isLabelSet(args)) {
+      board.labels = labelsSetBy(args);
+      return "[]";
     }
-    return ""; // the `edit` call
+    if (args[1] === "edit") {
+      const changed = (flag: string) => args.flatMap((a, i) => (a === flag ? [args[i + 1]] : []));
+      board.labels = [...board.labels.filter((l) => !changed("--remove-label").includes(l)), ...changed("--add-label")];
+      return "";
+    }
+    if (args[1] === "view") {
+      if (args.includes("number,title,labels,state")) {
+        labelReads += 1;
+        interleave?.(labelReads, board);
+      }
+      return JSON.stringify({ number, title: "A row", state: "OPEN", labels: board.labels.map((name) => ({ name })) });
+    }
+    return "";
   };
+  return { run, calls, board, labelSets: () => calls.filter(isLabelSet).map(labelsSetBy) };
+}
+
+test("claimRow claims a genuinely unclaimed row: reads, writes, re-reads, confirms", () => {
+  const { run, board, labelSets } = boardRun(["backlog"], { number: 55 });
   const result = claimRow(55, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { claimed: true, statusMoved: true });
-  const editCall = calls.find((a) => a[1] === "edit");
-  assert.ok(editCall, "must have written the claim");
-  assert.ok(editCall!.includes(CLAIM_LABEL) && editCall!.includes("session:worker-contracts"));
+  assert.equal(labelSets().length, 1, "must have written the claim, in ONE request");
+  assert.deepEqual(board.labels.sort(), ["backlog", CLAIM_LABEL, "session:worker-contracts", STARTED_LABEL].sort());
 });
 
 // --- #707: claim-time enforcement of the three required template fields ---
@@ -279,27 +309,15 @@ test("claimRow refuses immediately when already claimed by another -- never even
 });
 
 test("MUTATION: a race detected on the RE-READ is backed off, not reported as a successful claim", () => {
-  // The exact scenario the header describes: this session's write lands, but by the time it re-reads,
-  // ANOTHER session's write has also landed -- simulating the propagation-lag race.
-  let reads = 0;
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      reads += 1;
-      if (reads === 1) return JSON.stringify({ number: 55, title: "A row", labels: [] });
-      return JSON.stringify({ number: 55, title: "A row",
-        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }, { name: "session:worker-judge" }] });
-    }
-    return "";
-  };
+  // The other session's label lands AFTER our write (the third label read is `completeClaim`'s verify).
+  const { run, calls } = boardRun([], { number: 55, interleave: (read, board) => {
+    if (read === 3) board.labels.push("session:worker-judge");
+  } });
   const result = claimRow(55, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.equal(result.claimed, false);
   assert.match((result as { reason: string }).reason, /lost a race to worker-judge/);
-  // The FIRST edit call is the forward write, which also removes `ready` (see the `ready`-removal test
-  // below) -- and its `--add-label session:worker-contracts` would satisfy a plain `.includes()` check
-  // just as well as the back-off call's `--remove-label session:worker-contracts` does, so identify the
-  // back-off call by the ADJACENT PAIR, never by mere membership.
+  // The forward write is the PUT, whose set names our session label too, so identify the back-off by the
+  // `--remove-label` pair it alone carries.
   const removedLabels = (args: string[]) => args
     .map((a, i) => (a === "--remove-label" ? args[i + 1] : null))
     .filter((l): l is string => l !== null);
@@ -311,25 +329,37 @@ test("MUTATION: a race detected on the RE-READ is backed off, not reported as a 
     "must never remove a label that is not its own");
 });
 
+test("#2151: a claim that landed BEFORE our write is REFUSED, never overwritten -- a set write would "
+  + "have erased the very label the race check needs to find", () => {
+  // The fresh read is the SECOND label read (the first is `writeRowLabels`'s own, several lookups earlier).
+  const { run, board, calls, labelSets } = boardRun(["backlog"], { number: 55, interleave: (read, b) => {
+    if (read === 2) b.labels.push(CLAIM_LABEL, "session:worker-judge");
+  } });
+  const result = claimRow(55, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
+  assert.equal(result.claimed, false);
+  assert.match((result as { reason: string }).reason, /already claimed by worker-judge/);
+  assert.match((result as { reason: string }).reason, /Nothing was written/);
+  assert.deepEqual(labelSets(), [], "no PUT may run: it would erase the other session's claim");
+  assert.ok(board.labels.includes("session:worker-judge"), "the other session's claim is untouched");
+  assert.ok(!calls.some((a) => a[1] === "comment"), "a refused claim posts no record");
+});
+
+test("#2151: a label somebody ELSE added since the first read is carried by the set, not erased by it", () => {
+  const { run, board } = boardRun(["backlog"], { number: 55, interleave: (read, b) => {
+    if (read === 2) b.labels.push("lane:any");
+  } });
+  assert.equal(claimRow(55, "worker-contracts", { run, moveStatus: () => ({ moved: true }) }).claimed, true);
+  assert.ok(board.labels.includes("lane:any"), "the set is computed from the read taken just before it");
+});
+
 // --- dispatchRow: #176's fix -- mark taken at dispatch, before anyone has started ---
 
 test("dispatchRow marks in-progress + session, but deliberately NOT started", () => {
-  const calls: string[][] = [];
-  let reads = 0;
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      reads += 1;
-      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }];
-      return JSON.stringify({ number: 176, title: "A row", labels });
-    }
-    return "";
-  };
+  const { run, board } = boardRun([]);
   const result = dispatchRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { claimed: true, statusMoved: true });
-  const editCall = calls.find((a) => a[1] === "edit");
-  assert.ok(editCall!.includes(CLAIM_LABEL) && editCall!.includes("session:worker-contracts"));
-  assert.ok(!editCall!.includes(STARTED_LABEL), "dispatch must not mark started -- that is claim's job");
+  assert.ok(board.labels.includes(CLAIM_LABEL) && board.labels.includes("session:worker-contracts"));
+  assert.ok(!board.labels.includes(STARTED_LABEL), "dispatch must not mark started -- that is claim's job");
 });
 
 test("MUTATION: a SECOND dispatch sees the FIRST, and refuses -- the whole point of #176", () => {
@@ -347,48 +377,25 @@ test("MUTATION: a SECOND dispatch sees the FIRST, and refuses -- the whole point
 });
 
 test("claimRow (start) additionally writes STARTED_LABEL, transitioning dispatched -> started", () => {
-  const calls: string[][] = [];
-  let reads = 0;
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      reads += 1;
-      // Row was already dispatched to us; claiming it now should re-add the same two labels harmlessly
-      // and add `started`.
-      const labels = reads === 1
-        ? [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }]
-        : [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }, { name: STARTED_LABEL }];
-      return JSON.stringify({ number: 176, title: "A row", labels });
-    }
-    return "";
-  };
+  // Row was already dispatched to us; claiming it now keeps the two labels it holds (a SET write must carry
+  // them, or the resume would erase its own dispatch) and adds `started`.
+  const { run, board } = boardRun([CLAIM_LABEL, "session:worker-contracts", WAS_READY_LABEL]);
   const result = claimRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { claimed: true, statusMoved: true });
-  const editCall = calls.find((a) => a[1] === "edit");
-  assert.ok(editCall!.includes(STARTED_LABEL), "claim/start must mark started");
+  assert.deepEqual(board.labels.sort(),
+    [CLAIM_LABEL, "session:worker-contracts", STARTED_LABEL, WAS_READY_LABEL].sort(),
+    "the resume must add `started` and lose nothing it already held, `was-ready` included");
 });
 
 // --- #656: claimRow records the branch, declineRow removes it ---
 
 test("#656/#987 ACCEPTANCE: claimRow given a branch RECORDS it -- in a comment now, never a label, "
   + "because GitHub caps a label name at 50 characters", () => {
-  const calls: string[][] = [];
-  let reads = 0;
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      reads += 1;
-      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
-        { name: STARTED_LABEL }];
-      return JSON.stringify({ number: 656, title: "A row", labels });
-    }
-    return "";
-  };
+  const { run, calls, labelSets } = boardRun([], { number: 656 });
   const result = claimRow(656, "worker-config",
     { run, moveStatus: () => ({ moved: true }), branch: "agent/row-claim-branch-656" });
   assert.deepEqual(result, { claimed: true, statusMoved: true });
-  const editCall = calls.find((a) => a[1] === "edit")!;
-  assert.ok(!editCall.some((a) => a.startsWith("branch:")),
+  assert.ok(!labelSets().flat().some((l) => l.startsWith("branch:")),
     "#987: no `branch:` label may be written any more -- a path or a long branch name does not fit in one");
   const comment = calls.find((a) => a[1] === "comment");
   assert.ok(comment, "the claim must record the branch somewhere");
@@ -401,31 +408,16 @@ test("#656/#987 ACCEPTANCE: claimRow given a branch RECORDS it -- in a comment n
 
 test("claimRow with NO branch given writes no branch: label at all -- not every claimed row is code, "
   + "and a dispatch-only claim may not have one yet", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") return JSON.stringify({ number: 656, title: "A row", labels: [] });
-    return "";
-  };
+  const { run, labelSets } = boardRun([], { number: 656 });
   claimRow(656, "worker-config", { run, moveStatus: () => ({ moved: true }) });
-  const editCall = calls.find((a) => a[1] === "edit")!;
-  assert.ok(!editCall.some((a) => a.startsWith("branch:")), "no branch was given, none should be written");
+  assert.ok(!labelSets().flat().some((l) => l.startsWith("branch:")), "no branch was given, none should be written");
 });
 
 test("#656/#987 MUTATION: losing the claim race leaves NO claim record behind -- a back-off must leave "
   + "nothing of this session's attempt standing, and a comment cannot be un-posted", () => {
-  let reads = 0;
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      reads += 1;
-      if (reads === 1) return JSON.stringify({ number: 656, title: "A row", labels: [] });
-      return JSON.stringify({ number: 656, title: "A row", labels: [{ name: CLAIM_LABEL },
-        { name: "session:worker-config" }, { name: "session:worker-judge" }] });
-    }
-    return "";
-  };
+  const { run, calls } = boardRun([], { number: 656, interleave: (read, board) => {
+    if (read === 3) board.labels.push("session:worker-judge");
+  } });
   const result = claimRow(656, "worker-config",
     { run, moveStatus: () => ({ moved: true }), branch: "agent/row-claim-branch-656" });
   assert.equal(result.claimed, false);
@@ -433,7 +425,7 @@ test("#656/#987 MUTATION: losing the claim race leaves NO claim record behind --
     .map((a, i) => (a === "--remove-label" ? args[i + 1] : null)).filter((l): l is string => l !== null);
   const backOffCall = calls.find((a) => removedLabels(a).includes("session:worker-config"));
   assert.ok(backOffCall, "must back off");
-  // #987: THIS IS WHY THE RECORD IS POSTED AFTER THE RACE CHECK, not before. An `--add-label` can be taken
+  // #987: THIS IS WHY THE RECORD IS POSTED AFTER THE RACE CHECK, not before. A label can be taken
   // back; an issue comment cannot. A claim that lost must leave no comment naming a worktree it never kept,
   // so there is nothing here to retract -- which is only true if nothing was ever written.
   assert.equal(calls.filter((a) => a[1] === "comment").length, 0,
@@ -473,18 +465,7 @@ const LONG_WORKTREE = "/Users/danielbeck/Documents/repos/personal/a11y-wt-987";
 
 test("#987 ACCEPTANCE: a claim naming a 63-character worktree path SUCCEEDS and records the path -- the "
   + "case that was refused outright while the record lived in a label", () => {
-  const calls: string[][] = [];
-  let reads = 0;
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      reads += 1;
-      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
-        { name: STARTED_LABEL }];
-      return JSON.stringify({ number: 987, title: "A row", labels });
-    }
-    return "";
-  };
+  const { run, calls } = boardRun([], { number: 987 });
   const path = `${LONG_WORKTREE}${"x".repeat(63 - LONG_WORKTREE.length)}`;
   assert.equal(path.length, 63, "the fixture must be the length this row is about, not merely long");
   assert.ok(`${WORKTREE_LABEL_PREFIX}${path}`.length > 50,
@@ -506,23 +487,11 @@ test("#987 ACCEPTANCE: a claim naming a 63-character worktree path SUCCEEDS and 
 
 test("#987 ACCEPTANCE: A LONG BRANCH NAME TOO -- `branch:` leaves 43 characters, and the row asked for "
   + "both fields, not just the one that was reported", () => {
-  const calls: string[][] = [];
-  let reads = 0;
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      reads += 1;
-      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
-        { name: STARTED_LABEL }];
-      return JSON.stringify({ number: 987, title: "A row", labels });
-    }
-    return "";
-  };
+  const { run, calls, labelSets } = boardRun([], { number: 987 });
   const branch = `agent/${"a-long-enough-segment-".repeat(3)}987`;
   assert.ok(`${BRANCH_LABEL_PREFIX}${branch}`.length > 50, "the fixture must exceed the cap it is about");
   claimRow(987, "worker-config", { run, moveStatus: () => ({ moved: true }), branch });
-  const editCall = calls.find((a) => a[1] === "edit")!;
-  assert.ok(!editCall.some((a) => a.startsWith(BRANCH_LABEL_PREFIX)), "no branch label may be written");
+  assert.ok(!labelSets().flat().some((l) => l.startsWith(BRANCH_LABEL_PREFIX)), "no branch label may be written");
   const comment = calls.find((a) => a[1] === "comment")!;
   assert.equal(claimRecordFrom([comment[comment.indexOf("--body") + 1]]).branch, branch);
 });
@@ -632,23 +601,11 @@ test("#987: fetchClaimComments REFUSES a response it cannot read, rather than re
 });
 
 test("#665/#987 ACCEPTANCE: claimRow given a worktree records it in the claim comment, not a label", () => {
-  const calls: string[][] = [];
-  let reads = 0;
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      reads += 1;
-      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
-        { name: STARTED_LABEL }];
-      return JSON.stringify({ number: 665, title: "A row", labels });
-    }
-    return "";
-  };
+  const { run, calls, labelSets } = boardRun([], { number: 665 });
   const result = claimRow(665, "worker-config",
     { run, moveStatus: () => ({ moved: true }), worktree: "/tmp/a11y-wt-665" });
   assert.deepEqual(result, { claimed: true, statusMoved: true });
-  const editCall = calls.find((a) => a[1] === "edit")!;
-  assert.ok(!editCall.some((a) => a.startsWith(WORKTREE_LABEL_PREFIX)), "no worktree label may be written");
+  assert.ok(!labelSets().flat().some((l) => l.startsWith(WORKTREE_LABEL_PREFIX)), "no worktree label may be written");
   const comment = calls.find((a) => a[1] === "comment")!;
   assert.equal(claimRecordFrom([comment[comment.indexOf("--body") + 1]]).worktree, "/tmp/a11y-wt-665");
 });
@@ -676,114 +633,91 @@ test("#987: a claim naming NEITHER a branch nor a worktree posts NO record -- a 
 // may not exist yet), so these keep guarding the order over whatever labels the claim DOES write, and no
 // longer name a specific one. They are deliberately not deleted: the guard outlived its first instance. ---
 
-test("#749 ACCEPTANCE: claimRow CREATES every label before adding it -- `gh label create --force` runs "
-  + "before `gh issue edit --add-label`, never after, and never skipped", () => {
-  const calls: string[][] = [];
-  let reads = 0;
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      reads += 1;
-      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
-        { name: STARTED_LABEL }];
-      return JSON.stringify({ number: 749, title: "A row", labels });
-    }
-    return "";
-  };
+test("#749 ACCEPTANCE: claimRow CREATES every label before naming it -- `gh label create --force` runs "
+  + "before the label write, never after, and never skipped", () => {
+  const { run, calls } = boardRun([], { number: 749 });
   const result = claimRow(749, "worker-config",
     { run, moveStatus: () => ({ moved: true }), branch: "agent/new-branch-749" });
   assert.equal(result.claimed, true);
   const createIndex = calls.findIndex((a) => a[0] === "label" && a[1] === "create");
-  const addIndex = calls.findIndex((a) => a[1] === "edit" && a.includes("--add-label"));
+  const writeIndex = calls.findIndex(isLabelSet);
   assert.ok(createIndex !== -1, `expected a \`gh label create\` call; got: ${JSON.stringify(calls)}`);
-  assert.ok(addIndex !== -1, "expected the add-label edit call to still happen");
-  assert.ok(createIndex < addIndex, "the label must be created BEFORE it is added, never after");
+  assert.ok(writeIndex !== -1, "expected the label write to still happen");
+  assert.ok(createIndex < writeIndex, "the label must be created BEFORE it is named, never after");
   assert.ok(calls.some((a) => a.includes("--force")), "creation must be idempotent (--force), so a "
     + "label a previous claim already made never errors this claim");
 });
 
-test("#749 ACCEPTANCE: EVERY label in the add set is created, derived from the add set rather than named "
-  + "-- a hand-picked creation list is how `worktree:` was found unwritten (`gh label list` returned 0) "
-  + "while fixing that row in the first place", () => {
-  const calls: string[][] = [];
-  let reads = 0;
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      reads += 1;
-      const labels = reads === 1 ? [{ name: READY_LABEL }] : [{ name: CLAIM_LABEL },
-        { name: "session:worker-config" }, { name: STARTED_LABEL }];
-      return JSON.stringify({ number: 749, title: "A row", labels });
-    }
-    return "";
-  };
+test("#749 ACCEPTANCE: EVERY label the claim writes is created, derived from what it writes rather than "
+  + "named -- a hand-picked creation list is how `worktree:` was found unwritten (`gh label list` returned "
+  + "0) while fixing that row in the first place", () => {
+  const { run, calls, labelSets } = boardRun([READY_LABEL], { number: 749 });
   claimRow(749, "worker-config", { run, moveStatus: () => ({ moved: true }), worktree: "/tmp/a11y-wt-749" });
   const created = calls.filter((a) => a[0] === "label" && a[1] === "create").map((a) => a[2]);
-  const editCall = calls.find((a) => a[1] === "edit" && a.includes("--add-label"))!;
-  const added = editCall
-    .map((a, i) => (a === "--add-label" ? editCall[i + 1] : null)).filter((l): l is string => l !== null);
-  assert.ok(added.length > 0, "the claim must add something, or this test proves nothing");
-  assert.deepEqual(added.filter((l) => !created.includes(l)), [],
-    `every added label must have been created first; added ${JSON.stringify(added)}, `
+  const [written] = labelSets();
+  assert.ok(written.length > 0, "the claim must write something, or this test proves nothing");
+  assert.deepEqual(written.filter((l) => !created.includes(l)), [],
+    `every written label must have been created first; wrote ${JSON.stringify(written)}, `
     + `created ${JSON.stringify(created)}`);
   // AND THE WAS-READY MARKER IS IN IT: the row above was `ready`, so the claim writes that marker too --
   // the case a creation list naming only the git-object labels would have missed.
-  assert.ok(added.includes(WAS_READY_LABEL), "the was-ready marker must be among the added labels here");
+  assert.ok(written.includes(WAS_READY_LABEL), "the was-ready marker must be among the written labels here");
 });
 
-test("#749 ACCEPTANCE: a failed ADD leaves `ready` untouched -- the removal must never run while the "
-  + "additions are not KNOWN to have succeeded, the exact reverse of #677's own reproduction (its remove "
-  + "applied while its adds did not)", () => {
-  const calls: string[][] = [];
-  let reads = 0;
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      reads += 1;
-      return JSON.stringify({ number: 749, title: "A row",
-        labels: reads === 1 ? [{ name: READY_LABEL }] : [] });
-    }
-    if (args[1] === "edit" && args.includes("--add-label")) {
-      throw new Error("simulated: gh issue edit refused an add-label target");
-    }
-    return "";
-  };
-  assert.throws(() => claimRow(749, "worker-config", { run, moveStatus: () => ({ moved: true }) }),
-    /simulated/, "a genuinely failed add must propagate, not be swallowed into a false claimed:true");
-  assert.ok(!calls.some((a) => a[1] === "edit" && a.includes("--remove-label")),
-    "the remove-label call must never have been reached -- `ready` stays on the row, recoverable and "
-    + "visible, rather than the row losing it while gaining nothing");
+test("#2151 ACCEPTANCE: the claim's label write is ONE request, and `ready` is not in it -- the row is never "
+  + "observable with both `ready` and `in-progress`", () => {
+  const seen: string[][] = [];
+  const { run, calls } = boardRun([READY_LABEL, "backlog"], { number: 2151, interleave: (_read, board) => {
+    seen.push([...board.labels]);
+  } });
+  assert.equal(claimRow(2151, "worker-18", { run, moveStatus: () => ({ moved: true }) }).claimed, true);
+  assert.equal(calls.filter(isLabelSet).length, 1);
+  assert.equal(calls.filter((a) => a[1] === "edit").length, 0, "no `gh issue edit` may write the claim's labels");
+  assert.deepEqual(labelsSetBy(calls.find(isLabelSet)!).sort(),
+    ["backlog", CLAIM_LABEL, "session:worker-18", STARTED_LABEL, WAS_READY_LABEL].sort());
+  assert.deepEqual(seen.filter((labels) => labels.includes(READY_LABEL) && labels.includes(CLAIM_LABEL)), [],
+    "at no read may the row carry both `ready` and `in-progress`");
+  assert.ok(seen.some((labels) => labels.includes(CLAIM_LABEL)), "the read after the write saw the claim");
 });
 
-test("#749 MUTATION: skipping label creation reproduces the original failure -- a claim naming a branch "
-  + "that genuinely does not exist as a label yet must fail exactly the way #677 did, proving the fix "
-  + "above is what prevents it rather than the label happening to exist by coincidence", () => {
-  const calls: string[][] = [];
-  let reads = 0;
-  // A `run` that behaves like the REAL `gh issue edit` did on #677: `--add-label` for a label that has
-  // never been created throws; `label create` is never called (the mutation this test targets: what if
-  // `ensureLabelsExist` were skipped entirely?), so the add-label call below always sees an unknown label.
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      reads += 1;
-      return JSON.stringify({ number: 749, title: "A row",
-        labels: reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" }] });
-    }
-    if (args[0] === "label" && args[1] === "create") return ""; // the fix's own creation call, if made
-    if (args[1] === "edit" && args.includes("--add-label") && args.includes("branch:agent/never-existed-749")) {
-      // Reproduces `gh`'s real refusal of an add-label target that was never created -- this only fires
-      // if the label genuinely was never created first, which is exactly what a skipped
-      // `ensureLabelsExist` call would leave true.
-      const created = calls.some((a) => a[0] === "label" && a[1] === "create"
-        && a.includes("branch:agent/never-existed-749"));
-      if (!created) throw new Error("'branch:agent/never-existed-749' not found");
-    }
-    return "";
-  };
-  const result = claimRow(749, "worker-config",
-    { run, moveStatus: () => ({ moved: true }), branch: "agent/never-existed-749" });
-  assert.equal(result.claimed, true, "the real fix creates the label first, so this must succeed -- if "
+test("#2151 ACCEPTANCE: a failed label write leaves the row's labels EXACTLY as they were -- `ready` "
+  + "and everything else -- and the report says nothing was written", () => {
+  const { run, board, calls } = boardRun([READY_LABEL, "backlog", "lane:any"], { number: 2151, failWhen: isLabelSet });
+  const error = thrownBy(() => claimRow(2151, "worker-18", { run, moveStatus: () => ({ moved: true }) }));
+  assert.match((error as Error).message, /simulated/);
+  assert.deepEqual(board.labels, [READY_LABEL, "backlog", "lane:any"], "the row is untouched");
+  assert.equal(landedWritesOf(error), null, "nothing landed, so the report must not claim a partial write");
+  assert.equal(failureReport(error).exitCode, 2);
+  assert.match(failureReport(error).text, /^COULD NOT DETERMINE/);
+  assert.ok(!calls.some((a) => a[1] === "edit" || a[1] === "comment"), "nothing else may be written after it");
+});
+
+test("#2151 MUTATION: a claim whose label write LANDED and whose next step failed is PARTIALLY WRITTEN, and "
+  + "names the set it wrote", () => {
+  const { run, board } = boardRun([READY_LABEL], { number: 2151, failWhen: (args) => args[1] === "comment" });
+  const error = thrownBy(() => claimRow(2151, "worker-18",
+    { run, moveStatus: () => ({ moved: true }), branch: "agent/x-2151" }));
+  assert.ok(!board.labels.includes(READY_LABEL), "the write landed, so `ready` is gone with it");
+  const landed = landedWritesOf(error);
+  assert.equal(landed?.length, 1);
+  assert.match(landed![0], /^set the row's labels to /);
+  assert.equal(failureReport(error).exitCode, LANDED_WRITE_EXIT);
+  assert.match(failureReport(error).text, /^PARTIALLY WRITTEN/);
+});
+
+test("#749 MUTATION: skipping label creation reproduces the original failure -- a label write naming a "
+  + "label that was never created must fail the way #677 did, proving the creation step is what prevents it "
+  + "rather than the label happening to exist by coincidence", () => {
+  // `gh` refuses to name a label that was never created; this fake refuses the same, and only when
+  // `ensureLabelsExist` did NOT create every label the write names -- which is exactly what skipping it leaves.
+  const created = new Set<string>();
+  const { run } = boardRun([], { number: 749, failWhen: (args) => {
+    if (args[0] === "label" && args[1] === "create") created.add(args[2]);
+    if (!isLabelSet(args)) return false;
+    return labelsSetBy(args).some((l) => !created.has(l));
+  } });
+  const result = claimRow(749, "worker-config", { run, moveStatus: () => ({ moved: true }) });
+  assert.equal(result.claimed, true, "the real fix creates the labels first, so this must succeed -- if "
     + "it throws instead, the creation step above was skipped or removed");
 });
 
@@ -831,82 +765,38 @@ test("#665 MUTATION direction 1: a DIRTY worktree refuses the WHOLE decline, nam
 });
 
 test("MUTATION: dispatching a `ready` row removes `ready` -- #197's review finding, caught before merge", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 176, title: "A row",
-        labels: [{ name: READY_LABEL }, { name: CLAIM_LABEL }, { name: "session:worker-contracts" }] });
-    }
-    return "";
-  };
+  const { run, board, calls } = boardRun([READY_LABEL], { number: 176 });
   dispatchRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
-  const editCalls = calls.filter((a) => a[1] === "edit");
-  assert.ok(editCalls.length > 0, "must have written the dispatch");
-  // #749: the add and the remove are now two SEPARATE calls, in that order -- a combined call is not
-  // atomic (#677's own reproduction: its `--remove-label` applied while its `--add-label`s did not), so
-  // this checks the remove genuinely happened, not that it happened in the SAME subprocess call as the
-  // add. "Never both pickable and taken" still holds: the remove only runs once the add call is known to
-  // have succeeded (`run` throws on failure), so the two states are still never both true at once.
-  const removeCall = editCalls.find((a) => a.includes("--remove-label"));
-  assert.ok(removeCall, `dispatching must remove \`ready\`, so a row is never both pickable and taken -- `
-    + `got: ${JSON.stringify(editCalls)}`);
-  const removeIndex = removeCall!.indexOf("--remove-label");
-  assert.equal(removeCall![removeIndex + 1], READY_LABEL);
+  // #2151: the removal travels IN the write that adds the claim (one PUT), so "never both pickable and
+  // taken" is a fact about the request rather than about the order of two of them.
+  assert.equal(calls.filter(isLabelSet).length, 1, `dispatching must write the labels once -- got: ${JSON.stringify(calls)}`);
+  assert.ok(!board.labels.includes(READY_LABEL), "dispatching must remove `ready`, so a row is never both pickable and taken");
+  assert.ok(board.labels.includes(CLAIM_LABEL));
 });
 
-test("#449 MUTATION TARGET: claiming a `ready` row writes the was-ready marker in the SAME edit that "
+test("#449 MUTATION TARGET: claiming a `ready` row writes the was-ready marker in the SAME write that "
   + "removes `ready` -- this is the only place declineRow can later learn the fact", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 176, title: "A row",
-        labels: [{ name: READY_LABEL }, { name: CLAIM_LABEL }, { name: "session:worker-contracts" }] });
-    }
-    return "";
-  };
+  const { run, labelSets } = boardRun([READY_LABEL], { number: 176 });
   dispatchRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
-  const editCall = calls.find((a) => a[1] === "edit")!;
-  assert.ok(editCall.includes(WAS_READY_LABEL)
-    && editCall[editCall.indexOf(WAS_READY_LABEL) - 1] === "--add-label",
-    `the marker must be ADDED, not merely mentioned -- got: ${JSON.stringify(editCall)}`);
+  const [written] = labelSets();
+  assert.ok(written.includes(WAS_READY_LABEL) && !written.includes(READY_LABEL),
+    `the marker must be WRITTEN with \`ready\` gone -- got: ${JSON.stringify(written)}`);
 });
 
 test("claiming a row that was NEVER `ready` writes no was-ready marker at all", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") return JSON.stringify({ number: 176, title: "A row", labels: [] });
-    return "";
-  };
+  const { run, labelSets } = boardRun([], { number: 176 });
   claimRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
-  const editCall = calls.find((a) => a[1] === "edit")!;
-  assert.ok(!editCall.includes(WAS_READY_LABEL), "no marker for a row that was never ready to begin with");
+  assert.ok(!labelSets()[0].includes(WAS_READY_LABEL), "no marker for a row that was never ready to begin with");
 });
 
 test("#444: a runner: label is NEVER removed by a claim -- it survives, unlike ready", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 324, title: "V1 rehearsal",
-        labels: [{ name: READY_LABEL }, { name: "runner:worker-audit" }] });
-    }
-    return "[]"; // eligibility lookups (B2/B4) see an empty answer and fail open
-  };
+  const { run, board } = boardRun([READY_LABEL, "runner:worker-audit"], { number: 324 });
   const result = claimRow(324, "worker-audit", { run, moveStatus: () => ({ moved: true }) });
   assert.equal(result.claimed, true, `expected a successful claim by the named runner, got: `
     + `${JSON.stringify(result)}`);
-  const editCalls = calls.filter((a) => a[1] === "edit");
-  assert.ok(editCalls.length > 0, "must have written the claim");
-  // #749: add and remove are now two separate calls -- collect removals across ALL of them, never just
-  // the first "edit" found, or a real removal in the second call would read as absent.
-  const removedLabels = editCalls.flatMap((call) =>
-    call.map((a, i) => (a === "--remove-label" ? call[i + 1] : null)).filter((l): l is string => l !== null));
-  assert.ok(!removedLabels.includes("runner:worker-audit"),
+  assert.ok(board.labels.includes("runner:worker-audit"),
     "runner: records WHO a row was reserved for, and stays true after the reservation is honoured");
-  assert.ok(removedLabels.includes(READY_LABEL), "ready must still be removed as usual");
+  assert.ok(!board.labels.includes(READY_LABEL), "ready must still be removed as usual");
 });
 
 // --- declineRow: give a row back, #176's second acceptance case ---
@@ -1858,7 +1748,8 @@ function claimRunFailingAt(failAt: (args: string[], labelReads: number) => boole
     if (failAt(args, labelReads)) throw new Error(`simulated: gh ${args.slice(0, 2).join(" ")} failed`);
     if (args[1] === "view" && args.includes("body")) return JSON.stringify({ body: TEMPLATE_BODY });
     if (isLabelRead) {
-      const labels = labelReads === 1 ? [READY_LABEL]
+      // Reads 1 and 2 are the two BEFORE the write (`writeRowLabels`'s and #2151's fresh one); 3 is the verify.
+      const labels = labelReads <= 2 ? [READY_LABEL]
         : [CLAIM_LABEL, "session:worker-judge", STARTED_LABEL, WAS_READY_LABEL];
       return JSON.stringify({ number: ROW, title: "A row", state: "OPEN", labels: labels.map((name) => ({ name })) });
     }
@@ -1878,17 +1769,18 @@ function thrownBy(act: () => unknown): unknown {
 
 const claimOf = (run: (cmd: string, args: string[]) => string) => () => claimRow(ROW, "worker-judge",
   { run, moveStatus: () => ({ moved: true }), branch: "agent/x-1399", worktree: "/tmp/wt-1399" });
-const ADDED = `added labels ${CLAIM_LABEL}, session:worker-judge, ${STARTED_LABEL}, ${WAS_READY_LABEL}`;
+const SET = `set the row's labels to ${CLAIM_LABEL}, session:worker-judge, ${STARTED_LABEL}, ${WAS_READY_LABEL} `
+  + `(\`${READY_LABEL}\` removed in the same write)`;
 
 test("#1399 ACCEPTANCE: labels LANDED, then the verify read throws -- exit 4, naming the written labels", () => {
-  const { run } = claimRunFailingAt((args, reads) => args[1] === "view" && !args.includes("body") && reads === 2);
+  const { run } = claimRunFailingAt((args, reads) => args[1] === "view" && !args.includes("body") && reads === 3);
   const error = thrownBy(claimOf(run));
-  assert.deepEqual(landedWritesOf(error), [ADDED, `removed label ${READY_LABEL}`]);
+  assert.deepEqual(landedWritesOf(error), [SET]);
   const report = failureReport(error);
   assert.equal(report.exitCode, LANDED_WRITE_EXIT);
   assert.equal(LANDED_WRITE_EXIT, DOCUMENTED_LANDED_WRITE_EXIT);
   assert.match(report.text, /^PARTIALLY WRITTEN/);
-  assert.ok(report.text.includes(ADDED) && report.text.includes(`removed label ${READY_LABEL}`));
+  assert.ok(report.text.includes(SET));
   assert.doesNotMatch(report.text, /COULD NOT DETERMINE/);
 });
 
@@ -1901,22 +1793,15 @@ test("#1399 CONTROL: the PRE-write read throws -- nothing is written, and COULD 
   assert.ok(!calls.some((a) => a[1] === "edit" || a[1] === "comment"), "no write may be attempted");
 });
 
-test("#1399: the remove-`ready` call throws AFTER the add landed -- exit 4, naming only the add", () => {
-  const { run } = claimRunFailingAt((args) => args[1] === "edit" && args.includes("--remove-label"));
-  const error = thrownBy(claimOf(run));
-  assert.deepEqual(landedWritesOf(error), [ADDED]);
-  assert.equal(failureReport(error).exitCode, LANDED_WRITE_EXIT);
-});
-
 test("#1399: the claim record throws after the labels and the verify -- exit 4, and the record is NOT listed", () => {
   const { run } = claimRunFailingAt((args) => args[1] === "comment");
   const error = thrownBy(claimOf(run));
-  assert.deepEqual(landedWritesOf(error), [ADDED, `removed label ${READY_LABEL}`]);
+  assert.deepEqual(landedWritesOf(error), [SET]);
   assert.equal(failureReport(error).exitCode, LANDED_WRITE_EXIT);
 });
 
-test("#1399 BOUNDARY: a failed ADD call is not known to have landed -- exit 2, as #749 left it", () => {
-  const { run } = claimRunFailingAt((args) => args[1] === "edit" && args.includes("--add-label"));
+test("#1399 BOUNDARY: a failed label write is not known to have landed -- exit 2, as #749 left it", () => {
+  const { run } = claimRunFailingAt(isLabelSet);
   const error = thrownBy(claimOf(run));
   assert.equal(landedWritesOf(error), null);
   assert.equal(failureReport(error).exitCode, 2);
