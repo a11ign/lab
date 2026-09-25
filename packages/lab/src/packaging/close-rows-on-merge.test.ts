@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 // A plain `.mjs`, and `scripts/**` IS in the typecheck program (#189), so this resolves and is checked.
 import {
-  closurePlan, labelsToStrip, applyClosurePlan, EXIT, closeRowsExit, liveClosureEffects, stripClaimLabels,
+  closurePlan, labelsToStrip, applyClosurePlan, owedNote, EXIT, closeRowsExit, liveClosureEffects, stripClaimLabels,
   LIVE_SETTLE_DEPS, rateLimitHeaders, rateLimitLine, logRateLimit,
   rowNumberFromBranch, orphanedRowReport, reportOrphanedRow,
 } from "../../../agent-org/src/close-rows-for-merged-pr.mjs";
@@ -129,7 +129,7 @@ test("#1877 MUTATION TARGET: applyClosurePlan closes/strips/settles nothing for 
       settle: (n) => { settled.push(n); return { settled: true, refused: [] }; },
     },
   );
-  assert.deepEqual(result, { failed: [], unsettled: [], skipped: [1865] });
+  assert.deepEqual(result, { failed: [], unsettled: [], skipped: [1865], owed: [] });
   assert.deepEqual(closed, [], "a skipped row is never closed");
   assert.deepEqual(stripped, [], "a skipped row's claim/labels are left exactly as they were");
   assert.deepEqual(settled, [], "a skipped row's Status is never touched");
@@ -141,10 +141,109 @@ test("#1877: a plan with no `skip` at all (an older caller) applies exactly as b
     { prNumber: "1", sha: "abc", repo: "o/r" },
     { closeOne: () => true, strip: () => {}, settle: () => ({ settled: true, refused: [] }) },
   );
-  assert.deepEqual(result, { failed: [], unsettled: [], skipped: [] });
+  assert.deepEqual(result, { failed: [], unsettled: [], skipped: [], owed: [] });
 });
 
-test("the exit codes are the contract, and CANNOT_ASK is distinct from a clean run", () => {
+// --- #2202: a merge's close must not silently void `answer:<session>` ---
+
+/**
+ * THREE ROWS, 2026-09-22, MEASURED off GitHub's own timestamps: #1936 (`answer:orchestrator` 18:04:09Z, closed by
+ * PR #1944 at 18:09:32Z, 5m23s), #1970 (`answer:product-manager` 19:37:09Z, PR #1975 at 19:46:33Z, 9m24s) and
+ * #2034 (`answer:product-manager` 23:05:54Z, PR #2039 at 23:20:39Z, 14m45s). Not one of the three questions was
+ * ever answered, and all three still carried the label a day later.
+ */
+const MERGED = { prMergedAt: "2026-09-23T09:31:51Z" };
+
+test("#2202 DONE-WHEN 1: closurePlan names the row AND the session that owes it, for a row it closes AND one "
+  + "GitHub already closed", () => {
+  const plan = closurePlan([
+    { number: 2070, state: "OPEN", labels: ["answer:orchestrator"], reopenedAt: null },
+    { number: 1936, state: "CLOSED", labels: ["answer:product-manager", "lane:any"], reopenedAt: null },
+  ], MERGED);
+  assert.deepEqual(plan.owed, [{ number: 2070, session: "orchestrator" }, { number: 1936, session: "product-manager" }]);
+});
+
+test("#2202 DONE-WHEN 2: an ordinary closing row owes nothing -- and the answer-carrying row beside it is "
+  + "the POSITIVE CONTROL that makes that emptiness non-vacuous", () => {
+  const plan = closurePlan([
+    { number: 2071, state: "OPEN", labels: ["lane:any", "in-progress", "session:worker-4"], reopenedAt: null },
+    { number: 2070, state: "OPEN", labels: ["answer:orchestrator"], reopenedAt: null },
+  ], MERGED);
+  assert.deepEqual(plan.owed.map((o: { number: number }) => o.number), [2070],
+    "only the row that carries the label is reported -- a fix reporting EVERY closing row fails here");
+  const ordinary = closurePlan([{ number: 2071, state: "OPEN", labels: ["lane:any"], reopenedAt: null }], MERGED);
+  assert.deepEqual(ordinary.owed, []);
+});
+
+test("#2202: a row with TWO owing sessions names both, and a bare `answer:` names nobody", () => {
+  const plan = closurePlan([{ number: 5, state: "OPEN", labels: ["answer:ceo", "answer:", "answer:orchestrator"] }]);
+  assert.deepEqual(plan.owed, [{ number: 5, session: "ceo" }, { number: 5, session: "orchestrator" }]);
+});
+
+test("#2202: a row REOPENED after the merge is `skip` and OPEN again, so it is not reported as owed -- "
+  + "the gate's open read still sees it", () => {
+  const plan = closurePlan([{ number: 9, state: "OPEN", labels: ["answer:ceo"], reopenedAt: "2026-09-23T10:00:00Z" }],
+    MERGED);
+  assert.deepEqual(plan.skip.map((r: { number: number }) => r.number), [9]);
+  assert.deepEqual(plan.owed, []);
+});
+
+test("#2202 DONE-WHEN 4: labelsToStrip KEEPS answer:* -- the close strips the claim and not the debt", () => {
+  assert.deepEqual(labelsToStrip(["answer:orchestrator", "ready", "session:worker-4", "in-progress"]),
+    ["ready", "session:worker-4", "in-progress"],
+    "stripping `answer:*` on close would end the wake AND erase the question in one act");
+  assert.deepEqual(labelsToStrip(["answer:ceo"]), []);
+});
+
+test("#2202: applyClosurePlan reports each owed row in its log and return value, says so in the CLOSING comment, "
+  + "and strips the claim but not the answer label", () => {
+  const closedWith: Array<[number, string[] | undefined]> = [];
+  const stripped: Array<[number, string[]]> = [];
+  const lines: string[] = [];
+  const log = console.log;
+  console.log = (line: string) => { lines.push(String(line)); };
+  let result;
+  try {
+    result = applyClosurePlan(
+      { close: [{ number: 1936, labels: ["answer:orchestrator", "in-progress"] }, { number: 3, labels: ["ready"] }],
+        already: [{ number: 1970, labels: ["answer:product-manager"] }],
+        owed: [{ number: 1936, session: "orchestrator" }, { number: 1970, session: "product-manager" }] },
+      { prNumber: "1944", sha: "abc123", repo: "o/r" },
+      { closeOne: (n, ctx) => { closedWith.push([n, ctx.owedBy]); return true; },
+        strip: (n, labels) => { stripped.push([n, labelsToStrip(labels)]); }, settle: settledOk },
+    );
+  } finally { console.log = log; }
+  assert.deepEqual(result.owed, [{ number: 1936, session: "orchestrator" }, { number: 1970, session: "product-manager" }]);
+  assert.deepEqual(closedWith, [[1936, ["orchestrator"]], [3, []]],
+    "the closing comment is told who still owes; an ordinary row is told nobody");
+  assert.deepEqual(stripped, [[1970, []], [1936, ["in-progress"]], [3, ["ready"]]]);
+  assert.ok(lines.some((l) => /#1936 IS CLOSED STILL OWING AN ANSWER from orchestrator/.test(l)));
+  assert.ok(lines.some((l) => /#1970 IS CLOSED STILL OWING AN ANSWER from product-manager/.test(l)));
+  assert.ok(!lines.some((l) => /#3 IS CLOSED STILL OWING/.test(l)), "an ordinary row is never reported as owing");
+});
+
+test("#2202: a row whose CLOSE FAILED is not reported as closed-and-owing -- it is still open, the gate sees it", () => {
+  const lines: string[] = [];
+  const log = console.log;
+  console.log = (line: string) => { lines.push(String(line)); };
+  let result;
+  try {
+    result = applyClosurePlan(
+      { close: [{ number: 7, labels: ["answer:ceo"] }], already: [], owed: [{ number: 7, session: "ceo" }] },
+      { prNumber: "1", sha: "abc", repo: "o/r" },
+      { closeOne: () => false, strip: () => {}, settle: settledOk },
+    );
+  } finally { console.log = log; }
+  assert.deepEqual(result.owed, []);
+  assert.deepEqual(lines, []);
+});
+
+test("#2202: owedNote is empty for nobody, and names every label kept for somebody", () => {
+  assert.equal(owedNote([]), "");
+  assert.match(owedNote(["ceo", "orchestrator"]), /`answer:ceo`, `answer:orchestrator` was left ON/);
+});
+
+test("the exit codes, and CANNOT_ASK is distinct from a clean run", () => {
   assert.deepEqual(EXIT, { DONE: 0, COULD_NOT_CLOSE: 1, CANNOT_ASK: 2, STATUS_NOT_MOVED: 3 });
 });
 
@@ -366,11 +465,11 @@ test("#1299: applyClosurePlan NAMES a closed row whose Status did not move, on b
   const ctx = { prNumber: "1", sha: "abc", repo: "o/r" };
   const deps = { closeOne: () => true, strip: () => {} };
   assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: refuseOnly(30, "HTTP 500") }),
-    { failed: [], unsettled: [refusal(30, "HTTP 500")], skipped: [] }, "the already-closed path");
+    { failed: [], unsettled: [refusal(30, "HTTP 500")], skipped: [], owed: [] }, "the already-closed path");
   assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: refuseOnly(31, "HTTP 500") }),
-    { failed: [], unsettled: [refusal(31, "HTTP 500")], skipped: [] }, "the just-closed path");
+    { failed: [], unsettled: [refusal(31, "HTTP 500")], skipped: [], owed: [] }, "the just-closed path");
   assert.deepEqual(applyClosurePlan(plan, ctx, { ...deps, settle: () => ({ settled: true, refused: [] }) }),
-    { failed: [], unsettled: [], skipped: [] }, "the positive control: a run whose every move settled names nobody");
+    { failed: [], unsettled: [], skipped: [], owed: [] }, "the positive control: a run whose every move settled names nobody");
 });
 
 /** CAPTURED, not composed: the reason `moveProjectStatus` gave for #1299 in trunk run 34769927592 (`02ae7420`). */
