@@ -332,6 +332,54 @@ test("#2385: the live-region detector fires on a page that does announce (positi
   assert.ok(!ANNOUNCES_A_STATUS.test("<button>Print</button><p id=\"state\"></p>"));
 });
 
+/**
+ * #2489: THE ICON-LABELLED DOSE IS A FLOOR TOO. #2385 gave the 4.1.3 heads three icon-labelled no-status
+ * controls against 62 declared status pages, and two icon-labelled held-out pages still scored above three
+ * of `status-progress`'s own true positives (#2258). The dose is raised to the size of the positives, and
+ * pinned so a later edit cannot quietly thin it back out.
+ *
+ * COUNTED THE WAY THE ROW'S OPEN-CHECK COUNTS (`CASES` ids by prefix), so this test and that command cannot
+ * disagree. `MIN_ICON_HARD_NEGATIVE_PAIRS` is the figure measured when the dose landed (3 + 30); the
+ * relation to the two positive counts is what the row's sentence says, and it is derived so it moves with
+ * the positives rather than being a number somebody has to remember.
+ */
+const ICON_NEGATIVE_PREFIX = `${HARD_NEGATIVE_PREFIX}icon-`;
+const MIN_ICON_HARD_NEGATIVE_PAIRS = 33;
+const idsWithPrefix = (prefix: string) => cases.filter((c) => c.id.startsWith(prefix));
+const iconNegatives = idsWithPrefix(ICON_NEGATIVE_PREFIX) as unknown as {
+  id: string; criterion: string; subtype: string; task: string; good: string; bad: string;
+}[];
+
+test("#2489: at least as many icon-labelled no-status pairs as EITHER status head has status pages", () => {
+  const progressPages = idsWithPrefix("status-progress-").length;
+  const waitingPages = idsWithPrefix("status-waiting-").length;
+  // POSITIVE CONTROL: `>=` against a zero passes for any count, so both populations must be non-empty.
+  assert.ok(progressPages > 0 && waitingPages > 0, "no declared status pages -- the comparison would be vacuous");
+  assert.ok(iconNegatives.length >= Math.max(progressPages, waitingPages),
+    `${iconNegatives.length} icon negatives against ${progressPages} progress and ${waitingPages} waiting pages`);
+  assert.ok(iconNegatives.length >= MIN_ICON_HARD_NEGATIVE_PAIRS,
+    `${iconNegatives.length} icon negatives, floor ${MIN_ICON_HARD_NEGATIVE_PAIRS}`);
+});
+
+test("#2489: an icon negative differs between its halves only in the icon's accessible name", () => {
+  for (const c of iconNegatives) {
+    assert.notEqual(c.criterion, "4.1.3", `${c.id}: a 4.1.3 case is a status positive`);
+    assert.ok(c.good.includes(`aria-label="`) && !c.bad.includes(`aria-label="`),
+      `${c.id}: the good half must name the icon and the bad half must not -- that is the whole difference`);
+  }
+});
+
+test("#2489: icon negative task wording varies, and no two share one", () => {
+  const tasks = iconNegatives.map((c) => c.task.trim().toLowerCase());
+  assert.equal(new Set(tasks).size, tasks.length, "two icon negatives share a task");
+  const verbs = new Set(tasks.map((task) => task.split(/\s+/)[0]));
+  // Twelve, not thirty-three: the row names print, save, profile, settings and share as the spread, and a
+  // floor a reasonable edit can meet is one that gets read rather than raised.
+  const MIN_DISTINCT_LEADING_VERBS = 12;
+  assert.ok(verbs.size >= MIN_DISTINCT_LEADING_VERBS,
+    `${verbs.size} distinct leading words across ${tasks.length} icon negatives: ${[...verbs].join(", ")}`);
+});
+
 test("#1115: each new case declares a badSignal an implementation actually reads", () => {
   // THE #1114 LESSON, ONE FILE OVER: a declaration nothing implements does nothing. `check-signals.mjs`
   // maps a badSignal TYPE to the evidence fields a capture records, so a new type invented here would

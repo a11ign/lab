@@ -26,7 +26,7 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import {
   linkState, workspacePackages, packagesImportedByName, distTrapReport, rootPrepareBuildsEverything,
-  undecidedRefusal,
+  undecidedRefusal, classifyTmpQuota, readTmpQuota, tmpQuotaRow, QUOTACTL_PY,
 } from "../../../agent-org/src/control-plane-hygiene.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
@@ -207,4 +207,108 @@ test("#2300: both name the pnpm install, and the page carries a MEASURED residua
   const page = HYGIENE_SOURCES[0].text;
   assert.match(page, /MEASURED: \d+ of \d+ registered worktrees\*\*, read at `[0-9a-f]{7,}`/);
   assert.match(page, /npm run hygiene:report/);
+});
+
+// #2220: `/tmp` on the agent host is a `usrquota` tmpfs, and `df` said 80% / 3.1 GB free while a 50 MB write
+// was refused. Every reading below is a fixture handed to the classifier: a test that shelled out to the real
+// /tmp would report whatever the host happens to be that minute, and CI's /tmp has no usrquota at all.
+const GIB = 1024 ** 3;
+const MOUNT_WITH_QUOTA = "rw,nosuid,nodev,size=15797356k,nr_inodes=1048576,inode64,usrquota";
+const LIMIT_GIB = 12;
+const KIB_PER_GIB = 1024 ** 2;
+/** A user `fraction` of the way into a 12 GiB limit (hard and soft alike, as on the agent host). */
+const quotaAt = (fraction: number) =>
+  ({ hardKb: LIMIT_GIB * KIB_PER_GIB, softKb: LIMIT_GIB * KIB_PER_GIB, usedBytes: fraction * LIMIT_GIB * GIB });
+const readingOf = (over: Record<string, unknown>) =>
+  ({ mountOptions: MOUNT_WITH_QUOTA, quota: quotaAt(0.1), quotaError: null, dfFreeBytes: 3.1 * GIB, ...over }) as
+    Parameters<typeof classifyTmpQuota>[0];
+
+test("#2220: a user AT its quota is EXHAUSTED while the filesystem still has 3.1 GB free -- df is not the verdict", () => {
+  const verdict = classifyTmpQuota(readingOf({ quota: quotaAt(1), dfFreeBytes: 3.1 * GIB }));
+  assert.equal(verdict.state, "EXHAUSTED");
+  assert.equal(classifyTmpQuota(readingOf({ quota: quotaAt(1.1), dfFreeBytes: 3.1 * GIB })).state, "EXHAUSTED");
+  // The same quota reading with every df figure changed must not move the verdict: it is never consulted.
+  for (const dfFreeBytes of [0, 3.1 * GIB, null]) {
+    assert.equal(classifyTmpQuota(readingOf({ quota: quotaAt(1), dfFreeBytes })).state, "EXHAUSTED");
+    assert.equal(classifyTmpQuota(readingOf({ quota: quotaAt(0.1), dfFreeBytes })).state, "OK");
+  }
+});
+
+test("#2220: fine, constrained and exhausted are three different answers, split at 90% and 100%", () => {
+  assert.equal(classifyTmpQuota(readingOf({ quota: quotaAt(0.8) })).state, "OK");
+  assert.equal(classifyTmpQuota(readingOf({ quota: quotaAt(0.9) })).state, "CONSTRAINED");
+  assert.equal(classifyTmpQuota(readingOf({ quota: quotaAt(0.999) })).state, "CONSTRAINED");
+  assert.equal(classifyTmpQuota(readingOf({ quota: quotaAt(1) })).state, "EXHAUSTED");
+});
+
+test("#2220: NOT MEASURABLE is never OK -- no usrquota, no limit for the user, and every unreadable part", () => {
+  const noQuotaMount = classifyTmpQuota(readingOf({ mountOptions: "rw,nosuid,nodev,size=15797356k", quota: null }));
+  assert.equal(noQuotaMount.state, "NOT MEASURABLE");
+  assert.match(noQuotaMount.detail, /no usrquota/);
+  // A mount whose option list merely CONTAINS the word inside another option's value must not be read as
+  // declaring the quota: match the option, not the substring.
+  assert.equal(classifyTmpQuota(readingOf({ mountOptions: "rw,context=usrquota_t" })).state, "NOT MEASURABLE");
+  assert.equal(classifyTmpQuota(readingOf({ quota: { hardKb: 0, softKb: 0, usedBytes: GIB } })).state, "NOT MEASURABLE");
+  assert.equal(classifyTmpQuota(readingOf({ quota: null, quotaError: "quotactl_fd: Function not implemented" })).state,
+    "NOT MEASURABLE");
+  const unreadable = classifyTmpQuota(readingOf({ mountOptions: null, quota: null, quotaError: "findmnt failed: ENOENT" }));
+  assert.equal(unreadable.state, "NOT MEASURABLE");
+  assert.match(unreadable.detail, /findmnt failed/, "the reason must reach the report, or the reader cannot act on it");
+});
+
+test("#2220: the smaller of a hard and a soft limit is the limit that refuses the write", () => {
+  const soft = { hardKb: LIMIT_GIB * KIB_PER_GIB, softKb: LIMIT_GIB / 2 * KIB_PER_GIB, usedBytes: 0.6 * LIMIT_GIB * GIB };
+  assert.equal(classifyTmpQuota(readingOf({ quota: soft })).state, "EXHAUSTED");
+});
+
+test("#2220: readTmpQuota reads through its injected exec and reports what it could not read as null, not as a guess", () => {
+  const answers: Record<string, string | Error> = {
+    findmnt: MOUNT_WITH_QUOTA + "\n",
+    python3: JSON.stringify({ hardKb: 12637884, softKb: 12637884, usedBytes: 10359521280 }),
+  };
+  const exec = ((cmd: string) => { const a = answers[cmd]; if (a instanceof Error) throw a; return a; }) as never;
+  const ok = readTmpQuota("/tmp", exec);
+  assert.equal(ok.mountOptions, MOUNT_WITH_QUOTA);
+  assert.deepEqual(ok.quota, { hardKb: 12637884, softKb: 12637884, usedBytes: 10359521280 });
+  assert.equal(classifyTmpQuota(ok).state, "OK");
+
+  answers.python3 = JSON.stringify({ error: "Operation not permitted" });
+  const refused = readTmpQuota("/tmp", exec);
+  assert.equal(refused.quota, null);
+  assert.equal(refused.quotaError, "quotactl_fd: Operation not permitted");
+
+  answers.python3 = new Error("spawn python3 ENOENT");
+  assert.match(readTmpQuota("/tmp", exec).quotaError as string, /python3 quotactl_fd failed: spawn python3 ENOENT/);
+
+  answers.findmnt = new Error("spawn findmnt ENOENT");
+  const noMount = readTmpQuota("/tmp", exec);
+  assert.equal(noMount.mountOptions, null);
+  assert.equal(classifyTmpQuota(noMount).state, "NOT MEASURABLE");
+});
+
+test("#2220: the quotactl script is real Python that answers in JSON on ANY host, quota or none", () => {
+  // The injected exec above never runs the script, so a syntax error in it would pass every case there. CI's
+  // /tmp has no usrquota, so the answer is an error object there and numbers on the agent host: both are shaped.
+  const out = execFileSync("python3", ["-c", QUOTACTL_PY, tmpdir(), String(process.getuid?.() ?? 0)], { encoding: "utf8" });
+  const parsed = JSON.parse(out);
+  assert.ok(typeof parsed.error === "string" || (typeof parsed.hardKb === "number" && typeof parsed.usedBytes === "number"),
+    `unexpected quotactl answer: ${out}`);
+});
+
+test("#2220: the report row carries the verdict, the df contrast, a rule the report accepts, and reads via `read`", () => {
+  let asked = "";
+  const [label, measured, rule] = tmpQuotaRow((path) => { asked = path; return readingOf({ quota: quotaAt(1) }); });
+  assert.equal(asked, "/tmp");
+  assert.match(label, /\/tmp user quota/);
+  assert.match(measured, /^EXHAUSTED -- .*100%.*; df shows 3174 MB free$/);
+  assert.equal(undecidedRefusal([[label, measured, rule]]), null, "the row must state a decision, not an intention");
+  const [, unmeasured] = tmpQuotaRow(() => readingOf({ mountOptions: "rw", quota: null }));
+  assert.match(unmeasured, /^NOT MEASURABLE -- the mount declares no usrquota/);
+});
+
+test("#2220: the hygiene page records the /tmp quota row, and the reporter's rule says to read the quota", () => {
+  const [page, script] = HYGIENE_SOURCES;
+  assert.match(page.text, /\*\*`\/tmp` user quota\*\*/);
+  assert.match(page.text, /never `df`/);
+  assert.match(script.text, /tmpQuotaRow\(\)/, "main() must actually put the row in the report");
 });
