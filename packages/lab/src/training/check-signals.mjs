@@ -288,7 +288,11 @@ function main() {
   const { exitCode, summary } = signalVerdict(counts, { requireComplete: REQUIRE_COMPLETE });
   console.log(summary);
   if (exitCode !== 0) console.log(unsyncedCorpusHint(counts));
-  process.exit(exitCode);
+  // NOT `process.exit(exitCode)`: the output is ~170 KB on a full manifest, stdout to a pipe is asynchronous,
+  // and exiting drops whatever the reader has not yet taken -- the verdict line at the END. A parent busy
+  // enough to read slowly (the CI unit run) saw 'no verdict line' and read a gate that had answered as one
+  // that had not (#2441's trunk run, corpus-restore-drill). Setting the code lets the stream drain first.
+  process.exitCode = exitCode;
 }
 
 /**
