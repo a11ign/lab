@@ -43,6 +43,13 @@ import {
   armMerge,
   runArmPr,
   EXIT,
+  TRUNK_FIX_POLICY,
+  extractTrunkFixDeclaration,
+  redStreak,
+  redStreakReading,
+  jumpDecision,
+  atFrontOfQueue,
+  enqueueAtFront,
 } from "../../../agent-org/src/arm-pr.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -493,12 +500,23 @@ test("#2046 ONE PREDICATE, ONE MODULE: arm-pr reads the armed rule from `pr-arme
   const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/arm-pr.mjs`, "utf8"));
   assert.match(source, /from "\.\/pr-armed-state\.mjs"/,
     "the predicate is IMPORTED, the way `pr-hold-state.mjs` already is on the line above it");
-  assert.doesNotMatch(source, /mergeQueueEntry/,
+  // #2391 NARROWED, NOT DELETED. The two proxies this test used to use -- the strings `mergeQueueEntry` and
+  // `pullRequest(number` anywhere in the file -- stood in for "the armed rule is not re-spelled here", and the
+  // jump needs to ask a DIFFERENT question of the same object: WHERE a queued PR sits (`position`), not WHETHER it
+  // is armed. So the test now names what a copy of the RULE would contain -- the `autoMergeRequest` field, the
+  // one part of the three-state rule that exists nowhere else -- and allows the queue-seat read in exactly one
+  // place, `SEAT_QUERY`. The mutation that matters is pinned below: a re-spelled armed rule still fails this.
+  assert.doesNotMatch(source, /autoMergeRequest/,
     "and the three-state rule must not be re-spelled here: a second copy is how #1729, #2004 and #2046 "
     + "each happened, and `arm-pr.mjs`'s own header says so about the hold predicate");
-  assert.doesNotMatch(source, /pullRequest\(number/,
-    "nor may the GraphQL query be re-assembled here -- `armedQueryArgs` is what makes both callers ask "
-    + "the identical question");
+  const seatQuery = /const SEAT_QUERY = [^;]+;/.exec(source)?.[0] ?? "";
+  assert.match(seatQuery, /pullRequest\(number:\$n\)\{id headRefOid mergeStateStatus mergeQueueEntry\{position/,
+    "POSITIVE CONTROL: the one allowed query is found, so the check below is not an emptiness over nothing");
+  assert.doesNotMatch(source.replace(seatQuery, ""), /pullRequest\(number/,
+    "nor may any OTHER GraphQL query be re-assembled here -- `armedQueryArgs` is what makes both callers ask "
+    + "the identical armed question, and the seat query asks a different one");
+  assert.match("const armed = pr.autoMergeRequest != null;", /autoMergeRequest/,
+    "CONTROL: the fingerprint finds a re-spelled armed rule, so a copy cannot pass by being quiet");
 });
 
 test("#2046 WIRING: both callers of the armed read build it from the SAME `armedQueryArgs`, so the "
@@ -520,12 +538,14 @@ test("#2046 WIRING: both callers of the armed read build it from the SAME `armed
 
 const SESSIONS_FILE = new URL("../../../../packages/agent-org/docs/roles/sessions.json", import.meta.url);
 /** A `live` entry, read wide enough to see the keys it carries as well as its name (#1951's question). */
-type SessionEntry = { name: string } & Record<string, unknown>;
+type SessionEntry = { name: string; family?: unknown } & Record<string, unknown>;
 const sessionsFile = () => JSON.parse(readFileSync(SESSIONS_FILE, "utf8")) as { live: SessionEntry[]; retired: { name: string }[] };
 
 test("#1453 ACCEPTANCE: arm-pr's live and retired sets EQUAL packages/agent-org/docs/roles/sessions.json's, worker-tooling included", () => {
   const file = sessionsFile();
-  assert.deepEqual([...LIVE_SESSIONS], file.live.map((s) => s.name), "the live set is the file's, in the file's order");
+  // #2403: a FAMILY entry is a rule for many addresses, so it is not one name in the list -- `isLiveSession` reads it.
+  assert.deepEqual([...LIVE_SESSIONS], file.live.filter((s) => s.family === undefined).map((s) => s.name),
+    "the live set is the file's addresses, in the file's order");
   assert.deepEqual([...RETIRED_SESSIONS], file.retired.map((s) => s.name), "and so is the retired set");
   assert.ok(LIVE_SESSIONS.includes("worker-tooling"), "the session the typed list predated");
   assert.deepEqual(unknownSessionLabels(["session:worker-tooling"]), [],
@@ -543,7 +563,9 @@ test("#1453 ACCEPTANCE: arm-pr's live and retired sets EQUAL packages/agent-org/
 // An ALLOWLIST rather than a denylist of suspicious key names, deliberately: a rule that infers whether a
 // key smells like a process handle is the defect this row is about one level up. Adding a genuine role fact
 // here is one line, and it makes the writer say which of the two it is.
-const ROLE_ENTRY_KEYS = ["name", "role", "brief", "started"];
+// #2403 added `family`: `{prefix, from}` says every `<prefix><n>` for n from `from` is an instance of the ROLE, so the
+// roster need not carry one entry per address. A fact about the role, like `spare`; it names no pane, pid or workspace.
+const ROLE_ENTRY_KEYS = ["name", "role", "brief", "started", "spare", "drain", "family"];
 
 /** The `live` entries carrying a key that is not a role fact, each with the keys that offend. */
 function processBoundEntries(live: SessionEntry[]): { name: unknown; keys: string[] }[] {
@@ -715,7 +737,7 @@ test("#1478: a missing --pr exits CANNOT_ASK before any call", () => {
 });
 
 test("#1478: the script's header documents every exit code, the partial-success code included", () => {
-  assert.deepEqual(EXIT, { DONE: 0, REFUSED: 1, CANNOT_ASK: 2, ARMED_THEN_LABEL_FAILED: 3 });
+  assert.deepEqual(EXIT, { DONE: 0, REFUSED: 1, CANNOT_ASK: 2, ARMED_THEN_LABEL_FAILED: 3, JUMP_UNCONFIRMED: 4 });
   const source = readFileSync(new URL("../../../agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
   const header = source.slice(0, source.indexOf("export const EXIT"));
   for (const [name, code] of Object.entries(EXIT)) {
@@ -723,3 +745,374 @@ test("#1478: the script's header documents every exit code, the partial-success 
   }
 });
 
+
+// --- #2391: THE FIX PR FOR A RED `main` JUMPS THE MERGE QUEUE -------------------------------------------------------
+//
+// NOT VERIFIABLE WITHOUT A LIVE QUEUE, and this file does not pretend to. Every test below drives `gh` with a stub
+// that answers as the API's documented shape does (`EnqueuePullRequestInput`/`MergeQueueEntry`, schema read by
+// introspection 2026-09-24), so what it proves is this script's DECISIONS and its refusal to believe an exit code.
+// Whether the real `merge-queue-main` ruleset lets the arming identity jump is read from the first real red, from
+// `mergeQueueEntry.position`, and the PR says so.
+
+const RED_SHA = "a1b2c3d4e5f6789012345678901234567890abcd";
+const OLDER_RED_SHA = "0123456789abcdef0123456789abcdef01234567";
+const GREEN_SHA = "fedcba9876543210fedcba9876543210fedcba98";
+const HEAD_OID = "5555555555555555555555555555555555555555";
+
+type TrunkRun = { id: number; head_sha: string; status: string; conclusion: string | null; html_url: string; created_at: string };
+const trunkRun = (id: number, head_sha: string, conclusion: string | null, status = "completed"): TrunkRun => ({
+  id, head_sha, status, conclusion, html_url: `https://example.test/runs/${id}`,
+  created_at: `2026-09-24T${String(10 + id).padStart(2, "0")}:00:00Z`,
+});
+/** newest first, as the API answers -- the reader sorts anyway, and one test hands them in the other order. */
+const RED_MAIN = { workflow_runs: [trunkRun(3, RED_SHA, "failure"), trunkRun(2, GREEN_SHA, "success")] };
+const GREEN_MAIN = { workflow_runs: [trunkRun(3, GREEN_SHA, "success"), trunkRun(2, RED_SHA, "failure")] };
+
+type Seat = { id: string; headRefOid: string; mergeStateStatus: string; mergeQueueEntry: { position: number; state: string } | null };
+const seat = (over: Partial<Seat> = {}): Seat => ({ id: "PR_node", headRefOid: HEAD_OID, mergeStateStatus: "CLEAN", mergeQueueEntry: null, ...over });
+const queuedAt = (position: number): Seat => seat({ mergeQueueEntry: { position, state: "QUEUED" } });
+
+/**
+ * A `gh` for a PR carrying `body`. `runs` answers the `trunk.yml` read (`"unreadable"` makes it fail); `seats` are
+ * the successive answers to the queue-seat read -- the first is the read BEFORE the mutation, the second the
+ * READ-BACK -- and `"unreadable"` in a slot makes that read fail. `pages` answers the `trunk.yml` read PAGE BY PAGE
+ * (the `page=N` of the URL picks the entry; past the end it is an empty page, as GitHub answers) and beats `runs`. The mutation succeeds unless `mutationFails`.
+ */
+function jumpRun({ body, runs = RED_MAIN, pages, seats = [seat(), queuedAt(1)], mutationFails, editFails }: {
+  body: string; runs?: object | "unreadable"; pages?: (object | "unreadable")[]; seats?: (Seat | "unreadable")[]; mutationFails?: string; editFails?: boolean;
+}) {
+  const calls: string[][] = [];
+  let seatReads = 0;
+  const graphql = (args: string[]) => {
+    if (args.some((a) => a.startsWith("query=mutation"))) {
+      if (mutationFails) throw new Error(mutationFails);
+      return JSON.stringify({ data: { enqueuePullRequest: { mergeQueueEntry: { position: 1 } } } });
+    }
+    const answer = seats[Math.min(seatReads, seats.length - 1)];
+    seatReads += 1;
+    if (answer === "unreadable") throw new Error("gh: HTTP 502 on the seat read");
+    return JSON.stringify(answer);
+  };
+  const trunkRuns = (url: string) => {
+    const answer = pages ? (pages[Number(/[?&]page=(\d+)/.exec(url)?.[1] ?? 1) - 1] ?? { workflow_runs: [] }) : runs;
+    if (answer === "unreadable") throw new Error("gh: HTTP 403 on the runs read");
+    return JSON.stringify(answer);
+  };
+  const editLabels = () => {
+    if (editFails) throw new Error("gh: HTTP 502 on pr edit");
+    return "";
+  };
+  const run = (cmd: string, args: string[]) => {
+    calls.push([cmd, ...args]);
+    const route = `${args[0]} ${args[1]}`;
+    if (route === "pr view") return JSON.stringify({ labels: [], body, state: "OPEN" });
+    if (route === "pr edit") return editLabels();
+    if (route === "issue view") return JSON.stringify({ labels: [{ name: "session:worker-tooling" }] });
+    if (route === "api graphql") return graphql(args);
+    if (args[0] === "api" && args[1].includes("actions/workflows/trunk.yml/runs")) return trunkRuns(args[1]);
+    return "";
+  };
+  return { run, calls };
+}
+
+const MARKED = `Closes #725\n\nFixes-trunk: ${RED_SHA}\n`;
+const UNMARKED = "Closes #725\n";
+const isMutation = (c: string[]) => c[1] === "api" && c.some((a) => a.startsWith("query=mutation"));
+const mutations = (calls: string[][]) => calls.filter(isMutation);
+const mergeCalls = (calls: string[][]) => calls.filter((c) => c[1] === "pr" && c[2] === "merge");
+const apiCalls = (calls: string[][]) => calls.filter((c) => c[1] === "api");
+
+test("#2391 ACCEPTANCE: a PR carrying the trunk-fix marker, while main is red, is armed with `jump: true` -- and one without it is not", () => {
+  const marked = jumpRun({ body: MARKED });
+  const { code, log } = entry(marked);
+  assert.equal(code, EXIT.DONE);
+  assert.equal(mutations(marked.calls).length, 1, "the marked PR is enqueued by the mutation");
+  const [mutation] = mutations(marked.calls);
+  assert.match(mutation.find((a) => a.startsWith("query=")) ?? "", /enqueuePullRequest\(input:\{pullRequestId:\$id,jump:true,/);
+  assert.ok(mutation.includes(`oid=${HEAD_OID}`), "the head whose readiness was read is the head enqueued (`expectedHeadOid`)");
+  assert.equal(mergeCalls(marked.calls).length, 0, "it is enqueued INSTEAD of armed, not in addition to it");
+  assert.ok(log.some((l) => /jump GRANTED/.test(l)) && log.some((l) => /jump for #817 -- front/.test(l)));
+
+  const plain = jumpRun({ body: UNMARKED });
+  assert.equal(entry(plain).code, EXIT.DONE);
+  assert.equal(mutations(plain.calls).length, 0, "an unmarked PR is never enqueued by the mutation");
+  assert.equal(mergeCalls(plain.calls).length, 1, "it is armed the ordinary way");
+  assert.equal(apiCalls(plain.calls).length, 0, "and an unmarked PR costs NOT ONE extra API call -- the privilege is asked for, not probed for");
+});
+
+test("#2391: a jump is REFUSED while main is NOT red -- and the PR is still armed, the ordinary way", () => {
+  const stub = jumpRun({ body: MARKED, runs: GREEN_MAIN });
+  const { code, log } = entry(stub);
+  assert.equal(code, EXIT.DONE, "a refused privilege is not a failure");
+  assert.equal(mutations(stub.calls).length, 0);
+  assert.equal(mergeCalls(stub.calls).length, 1, "a stale or mistyped marker must not strand the PR");
+  assert.ok(log.some((l) => /jump REFUSED: main is NOT red/.test(l)));
+});
+
+test("#2391: UNREADABLE IS NOT RED -- a failed read of trunk.yml grants nothing, and the PR still arms", () => {
+  const stub = jumpRun({ body: MARKED, runs: "unreadable" });
+  const { code, log, error } = entry(stub);
+  assert.equal(code, EXIT.DONE);
+  assert.equal(mutations(stub.calls).length, 0);
+  assert.equal(mergeCalls(stub.calls).length, 1);
+  assert.ok(log.some((l) => /jump REFUSED: could not read whether main is red/.test(l)));
+  assert.ok(error.some((l) => /HTTP 403 on the runs read/.test(l)), "the failed read is said, not swallowed");
+});
+
+test("#2391: a marker naming a merge that is NOT in the current red streak grants nothing", () => {
+  const stub = jumpRun({ body: `Closes #725\nFixes-trunk: ${OLDER_RED_SHA}\n` });
+  const { log } = entry(stub);
+  assert.equal(mutations(stub.calls).length, 0);
+  assert.ok(log.some((l) => /none of 0123456789abcdef0123456789abcdef01234567 is in its current red streak/.test(l)));
+});
+
+test("#2391 SECOND RED: the marker is honoured for ANY merge in the current red streak, not only the newest", () => {
+  const twoReds = { workflow_runs: [trunkRun(4, RED_SHA, "failure"), trunkRun(3, OLDER_RED_SHA, "failure"), trunkRun(2, GREEN_SHA, "success")] };
+  for (const named of [RED_SHA, OLDER_RED_SHA]) {
+    const stub = jumpRun({ body: `Closes #725\nFixes-trunk: ${named.slice(0, 9)}\n`, runs: twoReds });
+    entry(stub);
+    assert.equal(mutations(stub.calls).length, 1, `${named.slice(0, 9)} names a merge in the streak, by an abbreviated sha too`);
+  }
+  // ...and a red that ENDED in green ends the privilege with it.
+  const ended = { workflow_runs: [trunkRun(4, GREEN_SHA, "success"), trunkRun(3, OLDER_RED_SHA, "failure")] };
+  const stub = jumpRun({ body: `Closes #725\nFixes-trunk: ${OLDER_RED_SHA}\n`, runs: ended });
+  entry(stub);
+  assert.equal(mutations(stub.calls).length, 0);
+});
+
+test("#2391: a marker in PROSE grants nothing -- the line is anchored, so a PR that merely discusses the marker is not a fix", () => {
+  const prose = `Closes #725\n\nThis PR adds the \`Fixes-trunk: ${RED_SHA}\` marker and explains it.\n`;
+  assert.deepEqual(extractTrunkFixDeclaration(prose), { kind: "none" },
+    "NONE, not malformed: a mid-line mention read as a botched marker is still a PR that 'declared' one, and is logged as such");
+  const stub = jumpRun({ body: prose });
+  const { log } = entry(stub);
+  assert.equal(apiCalls(stub.calls).length, 0);
+  assert.equal(mutations(stub.calls).length, 0);
+  assert.ok(!log.some((l) => /Fixes-trunk/.test(l)), "and the log says nothing about a privilege nobody asked for");
+});
+
+test("#2391: a granted jump on a PR that is NOT READY (mergeStateStatus not CLEAN) enqueues nothing and arms the ordinary way", () => {
+  const stub = jumpRun({ body: MARKED, seats: [seat({ mergeStateStatus: "BLOCKED" })] });
+  const { code, log } = entry(stub);
+  assert.equal(code, EXIT.DONE);
+  assert.equal(mutations(stub.calls).length, 0, "not enqueued before its checks are green");
+  assert.equal(mergeCalls(stub.calls).length, 1);
+  assert.ok(log.some((l) => /jump for #817 -- not-jumped: mergeStateStatus is BLOCKED, not CLEAN/.test(l)));
+});
+
+test("#2391 THE VERDICT IS THE QUEUE, NEVER THE EXIT CODE: a mutation that SUCCEEDS but reads back at position 3 is exit 4, naming it", () => {
+  const stub = jumpRun({ body: MARKED, seats: [seat(), queuedAt(3)] });
+  const { code, error, log } = entry(stub);
+  assert.equal(mutations(stub.calls).length, 1, "the mutation exited 0 -- and that proves nothing");
+  assert.equal(code, EXIT.JUMP_UNCONFIRMED);
+  assert.match(error.join("\n"), /JUMP NOT CONFIRMED for #817: .*position 3 \(QUEUED\), NOT the front/);
+  assert.ok(log.some((l) => /^arm-pr: armed #817/.test(l)), "what landed is still said");
+  assert.ok(log.some((l) => /jump for #817 -- behind: .*position 3/.test(l)), "and so is where it landed");
+});
+
+test("#2391: a mutation that reports success while the PR is NOT in the queue on read-back is UNCONFIRMED, not a success", () => {
+  const { code, error } = entry(jumpRun({ body: MARKED, seats: [seat(), seat()] }));
+  assert.equal(code, EXIT.JUMP_UNCONFIRMED);
+  assert.match(error.join("\n"), /reported success and the PR is NOT in the merge queue on read-back/);
+});
+
+test("#2391: a FAILED read-back leaves the position unknown, and unknown is not the front", () => {
+  const { code, error } = entry(jumpRun({ body: MARKED, seats: [seat(), "unreadable"] }));
+  assert.equal(code, EXIT.JUMP_UNCONFIRMED);
+  assert.match(error.join("\n"), /read-back FAILED, so its position is unknown/);
+});
+
+test("#2391: the exit code lies about FAILURE too -- a mutation that THROWS but reads back at position 1 is a jump that worked", () => {
+  const stub = jumpRun({ body: MARKED, seats: [seat(), queuedAt(1)], mutationFails: "GraphQL: something reworded" });
+  const { code, log } = entry(stub);
+  assert.equal(code, EXIT.DONE);
+  assert.equal(mergeCalls(stub.calls).length, 0, "no ordinary arm on a PR that is already first");
+  assert.ok(log.some((l) => /jump for #817 -- front: the jump reported a failure \(GraphQL: something reworded\) yet it is queued/.test(l)));
+});
+
+test("#2391: a mutation REFUSED with the PR not queued arms the ordinary way, and quotes the refusal", () => {
+  const stub = jumpRun({ body: MARKED, seats: [seat(), seat()], mutationFails: "GraphQL: Pull request is not mergeable" });
+  const { code, log } = entry(stub);
+  assert.equal(code, EXIT.DONE);
+  assert.equal(mergeCalls(stub.calls).length, 1);
+  assert.ok(log.some((l) => /not-jumped: the jump was refused: GraphQL: Pull request is not mergeable/.test(l)));
+});
+
+test("#2391: NOTHING DISPLACES A QUEUED PR -- one already queued behind others is reported, and no mutation is sent", () => {
+  const stub = jumpRun({ body: MARKED, seats: [queuedAt(4)] });
+  const { code, error } = entry(stub);
+  assert.equal(mutations(stub.calls).length, 0);
+  assert.equal(code, EXIT.JUMP_UNCONFIRMED);
+  assert.match(error.join("\n"), /it was already queued, and the queue reads back position 4/);
+  const first = jumpRun({ body: MARKED, seats: [queuedAt(1)] });
+  assert.equal(entry(first).code, EXIT.DONE, "already first is the jump having worked");
+  assert.equal(mutations(first.calls).length, 0);
+});
+
+test("#2391: an unreadable seat before the jump arms the ordinary way rather than jumping blind", () => {
+  const stub = jumpRun({ body: MARKED, seats: ["unreadable"] });
+  const { code, log } = entry(stub);
+  assert.equal(code, EXIT.DONE);
+  assert.equal(mutations(stub.calls).length, 0);
+  assert.equal(mergeCalls(stub.calls).length, 1);
+  assert.ok(log.some((l) => /could not read #817's queue seat/.test(l)));
+});
+
+test("#2391: a labelling failure keeps its OWN exit code, and an unconfirmed jump is still said", () => {
+  const { code, error } = entry(jumpRun({ body: MARKED, seats: [seat(), queuedAt(2)], editFails: true }));
+  assert.equal(code, EXIT.ARMED_THEN_LABEL_FAILED, "it names a command to run by hand; the jump's code would name none");
+  assert.match(error.join("\n"), /JUMP NOT CONFIRMED/);
+});
+
+test("#2391 PURE: extractTrunkFixDeclaration keeps none, fixes-trunk and malformed apart", () => {
+  assert.deepEqual(extractTrunkFixDeclaration(null), { kind: "none" });
+  assert.deepEqual(extractTrunkFixDeclaration("Closes #1\n"), { kind: "none" });
+  assert.deepEqual(extractTrunkFixDeclaration(`x\n  fixes-TRUNK: ${RED_SHA.toUpperCase()}\n`), { kind: "fixes-trunk", shas: [RED_SHA] },
+    "indented, any case, and the sha is normalised so a later prefix match cannot miss on case");
+  assert.deepEqual(extractTrunkFixDeclaration(`Fixes-trunk: ${RED_SHA}\nFixes-trunk: ${OLDER_RED_SHA}\nFixes-trunk: ${RED_SHA}\n`),
+    { kind: "fixes-trunk", shas: [RED_SHA, OLDER_RED_SHA] });
+  for (const bad of ["", "abc12", "not-a-sha", `${RED_SHA}0`, "https://example.test/run/1"]) {
+    const d = extractTrunkFixDeclaration(`Fixes-trunk: ${bad}\n`);
+    assert.equal(d.kind, "malformed", `\`${bad}\` names no merge sha`);
+  }
+  assert.equal(extractTrunkFixDeclaration(`Fixes-trunk: ${RED_SHA}\nFixes-trunk: oops\n`).kind, "malformed", "one bad line spoils the declaration");
+});
+
+test("#2391 PURE: redStreak is the run of reds up to the newest green -- through a cancelled or in-flight run", () => {
+  assert.deepEqual(redStreak(GREEN_MAIN), []);
+  assert.deepEqual(redStreak(RED_MAIN).map((r) => r.id), [3]);
+  const runs = [trunkRun(6, "aaaaaaa", "failure"), trunkRun(5, "bbbbbbb", "cancelled"), trunkRun(4, "ccccccc", null, "in_progress"),
+    trunkRun(3, "ddddddd", "failure"), trunkRun(2, "eeeeeee", "success"), trunkRun(1, "fffffff", "failure")];
+  assert.deepEqual(redStreak({ workflow_runs: runs }).map((r) => r.id), [6, 3], "cancelled and running say nothing about main; the green ends it");
+  assert.deepEqual(redStreak({ workflow_runs: [...runs].reverse() }).map((r) => r.id), [6, 3], "the order the API hands them in decides nothing");
+  assert.deepEqual(redStreak({ workflow_runs: [trunkRun(1, "aaaaaaa", "cancelled")] }), [], "no verdict at all is not a red");
+  assert.deepEqual(redStreak(null as never), []);
+});
+
+/** `reds` consecutive failures, newest first, then (optionally) a green -- with the newest red's sha and the oldest red's sha named. */
+function longStreak({ reds, endsInGreen }: { reds: number; endsInGreen: boolean }) {
+  const at = (n: number) => new Date(Date.UTC(2026, 8, 1) + n * 60_000).toISOString();
+  const runs: TrunkRun[] = Array.from({ length: reds }, (_, i) => {
+    const n = reds - i;
+    const sha = n === reds ? RED_SHA : n === 1 ? OLDER_RED_SHA : n.toString(16).padStart(40, "0");
+    return { ...trunkRun(n + 1, sha, "failure"), created_at: at(n + 1) };
+  });
+  if (endsInGreen) runs.push({ ...trunkRun(1, GREEN_SHA, "success"), created_at: at(0) });
+  return runs;
+}
+const inPagesOf = (runs: TrunkRun[], size = 100) =>
+  Array.from({ length: Math.ceil(runs.length / size) }, (_, i) => ({ workflow_runs: runs.slice(i * size, (i + 1) * size) }));
+const pageReads = (calls: string[][]) => calls.filter((c) => c[1] === "api" && c[2]?.includes("actions/workflows/trunk.yml/runs")).length;
+
+test("#2441 A STREAK LONGER THAN ONE PAGE: a marker naming the OLDEST red of 250 is honoured -- the read pages until the green ends it", () => {
+  const stub = jumpRun({ body: `Closes #725\nFixes-trunk: ${OLDER_RED_SHA}\n`, pages: inPagesOf(longStreak({ reds: 250, endsInGreen: true })) });
+  const { code, log } = entry(stub);
+  assert.equal(code, EXIT.DONE);
+  assert.equal(mutations(stub.calls).length, 1, "the marker names a merge in the streak, however far back");
+  assert.ok(log.some((l) => /jump GRANTED/.test(l)));
+  assert.equal(pageReads(stub.calls), 3, "251 runs at 100 a page: the green is on the third");
+});
+
+test("#2441 THE READ STOPS WHEN IT HAS ITS ANSWER: the newest red is found on page one, and a green that ends the streak stops the paging", () => {
+  const long = inPagesOf(longStreak({ reds: 250, endsInGreen: true }));
+  const newest = jumpRun({ body: MARKED, pages: long });
+  entry(newest);
+  assert.equal(pageReads(newest.calls), 1, "the sha is in the streak already; nothing older can change that");
+  assert.equal(mutations(newest.calls).length, 1);
+
+  const named = inPagesOf([...longStreak({ reds: 50, endsInGreen: true })]);
+  const unnamed = jumpRun({ body: `Closes #725\nFixes-trunk: deadbee\n`, pages: named });
+  const { log } = entry(unnamed);
+  assert.equal(pageReads(unnamed.calls), 1, "a green on the first page ends the streak: the marker names nothing, and there is no page two to read");
+  assert.equal(mutations(unnamed.calls).length, 0);
+  assert.ok(log.some((l) => /none of deadbee is in its current red streak/.test(l)));
+});
+
+test("#2441 EACH STOP IS ITS OWN: a green on a FULL page ends the read though more pages exist, and history running out ends it though no green came", () => {
+  const streakThenHistory = longStreak({ reds: 29, endsInGreen: true });
+  const older = longStreak({ reds: 70, endsInGreen: false }).map((r, i) => ({ ...r, id: 1000 + i, created_at: `2026-08-01T00:${String(i).padStart(2, "0")}:00Z` }));
+  const fullPage = [...streakThenHistory, ...older];
+  assert.equal(fullPage.length, 100, "the green sits INSIDE a full page, so only `ended` can stop the read");
+  const greenOnFullPage = jumpRun({ body: `Closes #725\nFixes-trunk: deadbee\n`, pages: [{ workflow_runs: fullPage }, { workflow_runs: older }] });
+  entry(greenOnFullPage);
+  assert.equal(pageReads(greenOnFullPage.calls), 1, "the older runs on page two cannot lengthen a streak a green already ended");
+
+  const shortHistory = jumpRun({ body: `Closes #725\nFixes-trunk: deadbee\n`, pages: inPagesOf(longStreak({ reds: 30, endsInGreen: false })) });
+  const { log, error } = entry(shortHistory);
+  assert.equal(pageReads(shortHistory.calls), 1, "a page shorter than the page size is the end of the history: there is no page two to ask for");
+  assert.ok(log.some((l) => /none of deadbee is in its current red streak/.test(l)), "the whole history was read, so this is `names nothing`, not `could not read`");
+  assert.deepEqual(error, []);
+});
+
+test("#2441 A STREAK THAT OUTRUNS THE CAP is `could not read`, never `the marker names nothing` -- and the PR still arms", () => {
+  const endless = inPagesOf(longStreak({ reds: 1100, endsInGreen: false }));
+  const stub = jumpRun({ body: `Closes #725\nFixes-trunk: deadbee\n`, pages: endless });
+  const { code, log, error } = entry(stub);
+  assert.equal(code, EXIT.DONE);
+  assert.equal(pageReads(stub.calls), 10, "bounded: the cap is the limit, not the length of the history");
+  assert.equal(mutations(stub.calls).length, 0);
+  assert.equal(mergeCalls(stub.calls).length, 1, "a refused jump still arms the ordinary way");
+  assert.ok(error.some((l) => /longer than 1000 runs and names none of deadbee -- not read to its end/.test(l)));
+  assert.ok(log.some((l) => /jump REFUSED: could not read whether main is red/.test(l)));
+
+  const found = jumpRun({ body: `Closes #725\nFixes-trunk: ${OLDER_RED_SHA}\n`, pages: inPagesOf(longStreak({ reds: 1100, endsInGreen: false }).map((r, i) => (i === 950 ? { ...r, head_sha: OLDER_RED_SHA } : r))) });
+  entry(found);
+  assert.equal(pageReads(found.calls), 10, "found on the tenth page, inside the cap");
+  assert.equal(mutations(found.calls).length, 1, "a sha the reads DID reach is in the streak whatever lies beyond");
+});
+
+test("#2441 a page that FAILS partway is unreadable, not a shorter streak: nothing is granted from the pages that did answer", () => {
+  const [first] = inPagesOf(longStreak({ reds: 250, endsInGreen: true }));
+  const stub = jumpRun({ body: `Closes #725\nFixes-trunk: ${OLDER_RED_SHA}\n`, pages: [first, "unreadable"] });
+  const { code, error } = entry(stub);
+  assert.equal(code, EXIT.DONE);
+  assert.equal(mutations(stub.calls).length, 0);
+  assert.equal(mergeCalls(stub.calls).length, 1);
+  assert.ok(error.some((l) => /HTTP 403 on the runs read/.test(l)));
+});
+
+test("#2441 PURE: redStreakReading says whether the streak is KNOWN to have ended -- only a green after the reds ends it", () => {
+  assert.deepEqual(redStreakReading(RED_MAIN).ended, true);
+  assert.deepEqual(redStreakReading(GREEN_MAIN), { streak: [], ended: true });
+  const unfinished = redStreakReading({ workflow_runs: [trunkRun(3, RED_SHA, "failure"), trunkRun(2, OLDER_RED_SHA, "failure")] });
+  assert.deepEqual(unfinished.streak.map((r) => r.id), [3, 2]);
+  assert.equal(unfinished.ended, false, "reds that run out of runs are a streak that may go on");
+  assert.equal(redStreakReading({ workflow_runs: [trunkRun(2, RED_SHA, "failure"), trunkRun(1, GREEN_SHA, "cancelled")] }).ended, false, "a cancelled run ends nothing");
+  assert.deepEqual(redStreakReading(null as never), { streak: [], ended: false });
+});
+
+test("#2391 PURE: jumpDecision grants only a marked PR, on a red main, naming a merge in the streak", () => {
+  const fix = { kind: "fixes-trunk" as const, shas: [RED_SHA.slice(0, 7)] };
+  const streak = redStreak(RED_MAIN);
+  assert.equal(jumpDecision({ kind: "none" }, streak).marked, false);
+  assert.equal(jumpDecision({ kind: "malformed", detail: "x" }, streak).grant, false);
+  assert.equal(jumpDecision(fix, null).grant, false, "unreadable is not red");
+  assert.equal(jumpDecision(fix, []).grant, false, "green is not red");
+  assert.equal(jumpDecision({ kind: "fixes-trunk", shas: ["deadbee"] }, streak).grant, false);
+  assert.equal(jumpDecision(fix, streak).grant, true);
+});
+
+test("#2391 PURE: atFrontOfQueue answers yes only for position 1 -- a missing answer is not a yes", () => {
+  assert.equal(atFrontOfQueue({ position: 1 }), true);
+  for (const not of [{ position: 2 }, { position: 0 }, { position: "1" }, {}, null, undefined]) {
+    assert.equal(atFrontOfQueue(not as never), false, JSON.stringify(not));
+  }
+});
+
+test("#2391: enqueueAtFront's mutation is the only write, and is sent once", () => {
+  const stub = jumpRun({ body: MARKED });
+  assert.equal(enqueueAtFront({ number: "817", repo: "org/repo", run: stub.run as never }).kind, "front");
+  assert.equal(mutations(stub.calls).length, 1);
+  assert.equal(stub.calls.filter((c) => c[1] === "pr").length, 0, "no pr merge, no pr edit: the only write is the enqueue");
+});
+
+test("#2391 THE POLICY THE ROW ASKED TO BE DECIDED is written as data and pinned", () => {
+  assert.deepEqual({ ...TRUNK_FIX_POLICY }, {
+    marker: "Fixes-trunk:",
+    grantedOnlyWhileMainIsRed: true,
+    unreadableRedIsNotRed: true,
+    refusedJumpStillArms: true,
+    honouredForAnyMergeInTheRedStreak: true,
+    neverDisplacesAQueuedPr: true,
+  });
+});

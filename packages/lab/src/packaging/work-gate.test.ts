@@ -54,7 +54,7 @@ import { MAX_ROW_ORDERS_PER_TICK, readCommitChain, withCommitChains, decide, che
 // can assert what the membership BUYS rather than only that the name is in the list. `wake.mjs` runs
 // nothing on import (its `main()` is behind an `import.meta.url` guard) and these three are pure, so this
 // costs the `no-token` promise at the top of this file nothing.
-import { readLedger, undelivered, WAKE_TTL_MS, JUDGMENT_TTL_MS }
+import { readLedger, undelivered, addressed, WAKE_TTL_MS, JUDGMENT_TTL_MS }
   from "../../../agent-org/src/wake.mjs";
 // #2237: the decider that REFUSES a launch, so the order's named launch directory is checked against it
 // rather than read by a reviewer. Pure over an injected filesystem.
@@ -77,8 +77,8 @@ function draft(n: number, rollup: unknown[], comments: { body: string }[] = []) 
 test("#912: a settled green draft with no verdict wakes its parity reviewer -- and nothing else does", () => {
   // THE POSITIVE, first: without this the rest is satisfied by a function that never emits anything.
   const orders = decide({ prs: [draft(1, GREEN), draft(2, GREEN)], readyRows: [] });
-  assert.deepEqual(orders.map((o) => o.session), ["reviewer", "reviewer-2"],
-    "odd PR numbers go to `reviewer` and even to `reviewer-2` -- agent-practices.md's own split");
+  assert.deepEqual(orders.map((o) => o.session), ["reviewer-1", "reviewer-2"],
+    "PR n's reviewer is `reviewer-<n>` (#2401); the odd/even split is retired");
   assert.equal(orders[0].cause, "draft-awaiting-verdict");
   assert.ok(CAUSES.includes(orders[0].cause), "every emitted cause is declared in CAUSES");
 
@@ -217,6 +217,50 @@ test("rows go out OLDEST first -- a queue that hands out its newest starves its 
     ["row-12", "row-45", "row-90"]);
 });
 
+// --- #2296: the `priority` label is READ, and it orders offers without granting a claim ---
+const priorityRow = (n: number, ...extra: string[]) =>
+  ({ number: n, labels: [{ name: "ready" }, ...extra.map((e) => ({ name: e }))] });
+const offered = (rows: unknown[], extra = {}) =>
+  decide({ prs: [], readyRows: rows, ...extra })
+    .filter((o: { cause: string }) => o.cause === "ready-row-unclaimed")
+    .map((o: { subject: string }) => o.subject);
+
+test("#2296: a higher-numbered row labelled `priority` is offered FIRST", () => {
+  assert.deepEqual(offered([priorityRow(50), priorityRow(90, "priority")]), ["row-90", "row-50"]);
+});
+
+test("#2296: a `priority` row is inside the cap even when it is the highest-numbered of nine", () => {
+  const rows = [...Array.from({ length: 8 }, (_, i) => priorityRow(100 + i)), priorityRow(999, "priority")];
+  const names = offered(rows);
+  assert.equal(names.length, MAX_ROW_ORDERS_PER_TICK);
+  assert.equal(names[0], "row-999", "the slice must come AFTER the reorder, or the cap cuts the row it exists to lift");
+  // POSITIVE CONTROL: without the label the same nine rows cut #999, so the assertion above can go red.
+  assert.ok(!offered(rows.map((r) => priorityRow(r.number))).includes("row-999"));
+});
+
+test("#2296: oldest-first holds within each group, priority and not", () => {
+  const rows = [priorityRow(70), priorityRow(30, "priority"), priorityRow(20), priorityRow(80, "priority")];
+  assert.deepEqual(offered(rows), ["row-30", "row-80", "row-20", "row-70"]);
+});
+
+test("#2296: the label reorders offers and does NOT grant a claim -- a shelved `priority` row stays shelved", () => {
+  const shelved = { ...regionRow(1452, ".github/workflows/release.yml"),
+    labels: [{ name: "ready" }, { name: "priority" }] };
+  assert.deepEqual(offered([shelved], { prFiles: [prTouching(1695, ".github/workflows/release.yml")] }), []);
+  const held = priorityRow(1453, "priority", "in-progress");
+  assert.deepEqual(offered([held]), []);
+});
+
+// --- #2293: what the label does NOT override, beyond #2296's shelved and claimed cases ---
+test("#2293 a `priority` row keeps its lane owner, and an `answer:` shelf still hides it", () => {
+  const orders = decide({ prs: [], readyRows: [priorityRow(20, "priority", "lane:ceo"),
+    priorityRow(23, "priority", "answer:ceo"), priorityRow(30)] })
+    .filter((o: { cause: string }) => o.cause === "ready-row-unclaimed");
+  assert.deepEqual(orders.map((o: { subject: string, session: string }) => [o.subject, o.session]),
+    [["row-20", "ceo"], ["row-30", "engineers"]],
+    "#23 stays shelved despite the label; #20 goes to its lane owner rather than the engineer pool");
+});
+
 test("the per-tick cap bounds the REPORT, not the parallelism", () => {
   const many = Array.from({ length: 30 }, (_, i) => ({ number: 100 + i, labels: [{ name: "ready" }] }));
   const orders = decide({ prs: [], readyRows: many });
@@ -241,7 +285,7 @@ test("#912: the same state produces byte-identical orders, so the ledger can ded
   const state = { prs: [draft(1, GREEN)], readyRows: [{ number: 20, labels: [{ name: "ready" }] }] };
   assert.equal(JSON.stringify(decide(state)), JSON.stringify(decide(state)),
     "causeKey is derived from GitHub state alone -- that is what lets the gate be stateless and re-run");
-  assert.equal(decide(state)[0].causeKey, "reviewer/draft-awaiting-verdict/pr-1/abc12345");
+  assert.equal(decide(state)[0].causeKey, "reviewer-1/draft-awaiting-verdict/pr-1/abc12345");
 });
 
 test("#1286: a refused read returns null, an empty one returns [] -- and they are not the same", () => {
@@ -568,21 +612,28 @@ const claimOrderPrompt = () => {
 };
 
 /**
- * THE LAUNCH DIRECTORY THE ORDER NAMES: the first absolute path in it, `<you>` rendered as a roster name the
- * way `wake.mjs`'s `addressed` does. "First" is a convention this test imposes -- an order that names the
+ * THE ORDER AS THE ENGINEER READS IT (#2405): the gate leaves the launch directory to `wake.mjs`, which knows who
+ * took the order, so the sentence #2237 pins is asserted on what `addressed` delivers to a standing session whose
+ * `role-<you>` worktree exists. `work-gate-engineer-order-paths.test.ts` pins the branch where it does not.
+ */
+const deliveredClaimOrder = () => addressed({ session: "engineers", prompt: claimOrderPrompt() }, "worker-tooling",
+  { exists: () => true });
+
+/**
+ * THE LAUNCH DIRECTORY THE ORDER NAMES: the first absolute path in it, the order as `addressed` delivers it. "First" is a convention this test imposes -- an order that names the
  * primary at all, even to forbid it, must name its own directory BEFORE it -- and it is what lets a reworded
  * order that instructs the primary go red here without this file pinning a spelling of the wrong sentence.
  */
 const namedLaunchDirectory = (prompt: string) =>
-  /\/home\/agent\/repos\/[^\s`),;]+/.exec(prompt.replaceAll("<you>", "worker-tooling"))?.[0] ?? null;
+  /\/home\/agent\/repos\/[^\s`),;]+/.exec(prompt)?.[0] ?? null;
 
 test("#2237 DONE-WHEN 1: the ready-row order does not instruct the launch `launchGate` refuses", () => {
-  assert.doesNotMatch(claimOrderPrompt(), /from the primary checkout/i,
+  assert.doesNotMatch(deliveredClaimOrder(), /from the primary checkout/i,
     "row-claim, pr-open and row-file all refuse a launch from the primary checkout (#1352)");
 });
 
 test("#2237 DONE-WHEN 2+3: it names a launch directory, and `launchGate` accepts the one it names", () => {
-  const dir = namedLaunchDirectory(claimOrderPrompt());
+  const dir = namedLaunchDirectory(deliveredClaimOrder());
   // DONE-WHEN 2. A prompt that names nothing passes clause 1 and re-opens the 2026-09-17 incident.
   assert.ok(dir !== null, "the order must say where to run the command, or the engineer stops and asks");
   assert.ok(launchCheckoutOf(dir, HOST_FS) !== null, `${dir} must be a checkout, else the refusal below is vacuous`);
@@ -828,8 +879,15 @@ test("every cause is classified as START or FINISH -- a new one cannot default i
   // to the very checkout a unit's `WorkingDirectory=` names. It also starts no work by the partition's
   // own definition: its subject is a machine that is already wrong, not a row anybody has yet to pick up,
   // and the action is minutes rather than a build.
+  // #2356: `trunk-red` is FINISH, and a drain is a window where withholding it costs most. A red `main` is
+  // the branch every in-flight pull request lands on, so a window waiting to land them is waiting on the
+  // fix; and it takes on nothing new -- the work is repairing what was already merged.
   // #2209: `pr-merge-conflict` is FINISH, for `pr-review-blocked`'s argument: a green, unheld pull request
   // that cannot merge is finished work that cannot land, and a window waits on exactly those.
+  // #2365: `verdict-comment-unreviewed` is FINISH: its subject is a green, unheld pull request whose verdict
+  // exists and cannot merge, which is finished work a window is waiting to land.
+  // #2401: `reviewer-auth-failed` is FINISH: a reviewer that cannot authenticate is the reason in-flight pull
+  // requests cannot land, and a window waiting to land them is waiting on the login. It starts no work.
   // #2084: `pr-review-blocked` is FINISH, and it is `pr-green-unarmed`'s own argument one surface over.
   // A pull request that is green, unheld and refused by GitHub's `reviewDecision` is finished work that
   // cannot land -- it is the most in-flight thing there is, and it takes on nothing. Withholding it during
@@ -837,8 +895,8 @@ test("every cause is classified as START or FINISH -- a new one cannot default i
   // `START_CAUSES` was split out to prevent.
   assert.deepEqual(finish, ["answer-owed", "blocker-cleared", "chairman-blocked", "claimed-row-amended",
     "draft-awaiting-verdict", "draft-convinced-not-ready", "host-units-stale", "pr-checks-failing",
-    "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "row-branch-unshipped",
-    "verdict-not-convinced"]);
+    "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "reviewer-auth-failed",
+    "row-branch-unshipped", "trunk-red", "verdict-comment-unreviewed", "verdict-not-convinced"]);
   for (const cause of START_CAUSES) {
     assert.ok(CAUSES.includes(cause), `${cause} is withheld by a drain but no longer exists`);
   }
@@ -1074,11 +1132,14 @@ test("the expensive question is asked only when something is red", () => {
   assert.equal(anyChecksRed([]), false);
 });
 
+const BRANCH_ANSWER = (contexts: string[] | null, isProtected = true) =>
+  JSON.stringify({ protected: isProtected, contexts });
+
 test("requiredCheckNames fails OPEN on every unusable answer", () => {
-  assert.deepEqual(requiredCheckNames(() => JSON.stringify(["gate"])), ["gate"]);
+  assert.deepEqual(requiredCheckNames(() => BRANCH_ANSWER(["gate"])), ["gate"]);
   assert.equal(requiredCheckNames(() => { throw new Error("HTTP 404"); }), null,
     "a repo with no branch protection must not read as 'nothing blocks a merge'");
-  assert.equal(requiredCheckNames(() => "[]"), null, "an EMPTY required set is treated as unreadable");
+  assert.equal(requiredCheckNames(() => BRANCH_ANSWER([])), null, "an EMPTY required set is treated as unreadable");
   assert.equal(requiredCheckNames(() => "not json"), null);
 });
 
@@ -1091,13 +1152,15 @@ test("requiredCheckNames fails OPEN on every unusable answer", () => {
  * correctness bug: the fallback counts every check, so no red pull request went unreported. What was lost
  * is the saving, and nothing said so.
  *
+ * #2331 REMOVED THE CAUSE, NOT THE REPORT. The gate now reads `branches/main`, which a non-admin
+ * credential can read, so the admin-only 404 that produced the four dead days is gone -- and with it the
+ * `branches/main.protected` DISCRIMINATOR that existed to explain that 404 (#2022's FORBIDDEN-versus-ABSENT).
+ * Nothing reaches a second read any more: the discriminator was the same endpoint as the read it explained.
+ * The report itself stays, because `branches/main` can still be refused (network, a renamed trunk) and
+ * "fails open" must still announce itself.
+ *
  * THE TEST DRIVES THE THROWING CASE AND ASSERTS BOTH HALVES, because `null` alone is what the old code
  * already did. Only the report is new, and a test that checked the `null` would pass against the defect.
- *
- * AND #2022'S RULING IS THE SECOND HALF: a 404 from `branches/main/protection` means FORBIDDEN or ABSENT,
- * and reading it as "unprotected" is never allowed. `branches/main.protected` is the discriminator, so
- * all three of its answers are pinned here -- including the one where it too is refused, which must say
- * CANNOT TELL rather than pick a side.
  */
 const requiredWithLog = (run: (args: string[]) => string) => {
   const lines: string[] = [];
@@ -1107,55 +1170,50 @@ const requiredWithLog = (run: (args: string[]) => string) => {
   return { required, lines, calls };
 };
 
-/** A `gh` that refuses the protection endpoint and answers the discriminator with `protectedFlag`. */
-const refusingProtection = (protectedFlag: string | null) => (args: string[]) => {
-  if (args.includes("repos/{owner}/{repo}/branches/main/protection")) {
-    throw new Error("gh: Not Found (HTTP 404)");
-  }
-  if (protectedFlag === null) throw new Error("gh: Not Found (HTTP 404)");
-  return protectedFlag;
+/** The gate's credential, as GitHub answers it: the ADMIN endpoint is a 404, `branches/main` answers. */
+const nonAdminGh = (branchAnswer: string) => (args: string[]) => {
+  if (args.some((arg) => arg.includes("branches/main/protection"))) throw new Error("gh: Not Found (HTTP 404)");
+  return branchAnswer;
 };
 
-test("a refused required-checks read says so, and names the credential it needed -- #2106", () => {
-  const forbidden = requiredWithLog(refusingProtection("true"));
-  assert.equal(forbidden.required, null,
-    "FAIL OPEN IS UNCHANGED: the report is additional, never a substitute for the `null`");
-  assert.equal(forbidden.lines.length, 1, "once per tick -- `requiredWhenRed` is the only caller");
-  assert.match(forbidden.lines[0], /branches\/main\/protection/,
-    "the report names the endpoint, so the reader can run the failing call themselves");
-  assert.match(forbidden.lines[0], /FORBIDDEN rather than ABSENT/);
-  assert.match(forbidden.lines[0], /permissions\.admin/,
-    "and names WHY -- the gate's credential is not an admin, which is the fact that fixes nothing by retrying");
-  assert.match(forbidden.lines[0], /#1750/, "and what is lost: the saving, not any red pull request");
-
-  // #2022's OTHER ARM, which must not be guessed: the same 404 with an UNPROTECTED trunk behind it.
-  const absent = requiredWithLog(refusingProtection("false"));
-  assert.equal(absent.required, null);
-  assert.match(absent.lines[0], /genuinely ABSENT/);
-  assert.doesNotMatch(absent.lines[0], /FORBIDDEN rather than ABSENT/,
-    "a trunk with no protection is not a credential problem, and must not be reported as one");
-
-  // AND THE HONEST THIRD STATE. The discriminator is subject to the same fail-open rule as its caller.
-  const cannotTell = requiredWithLog(refusingProtection(null));
-  assert.equal(cannotTell.required, null);
-  assert.match(cannotTell.lines[0], /CANNOT TELL/,
-    "#2022: a 404 that cannot be discriminated is never read as unprotected");
+test("the required checks are read through `branches/main` with the ADMIN endpoint answering 404 -- #2331", () => {
+  const read = requiredWithLog(nonAdminGh(BRANCH_ANSWER(["gate"])));
+  assert.deepEqual(read.required, ["gate"]);
+  assert.deepEqual(read.lines, [], "and a read that works says nothing");
+  assert.equal(read.calls.length, 1, "ONE call -- there is no discriminator left to pay for");
+  assert.ok(read.calls.every((args) => args.every((arg) => !arg.includes("branches/main/protection"))),
+    `no call may name the admin-only endpoint; saw ${JSON.stringify(read.calls)}`);
+  assert.ok(read.calls[0].some((arg) => arg.endsWith("/branches/main")));
 });
 
-test("the new report cannot become tick noise on a healthy gate -- #2106", () => {
+test("POSITIVE CONTROL: a protected branch with no list is the existing 'cannot read' outcome -- #2331", () => {
+  // Without this, the test above is satisfied by any function that returns ["gate"].
+  const noList = requiredWithLog(nonAdminGh(BRANCH_ANSWER(null)));
+  assert.equal(noList.required, null, "protected, but nothing to read: fail open, never a default");
+  assert.equal(noList.lines.length, 1);
+  assert.match(noList.lines[0], /CANNOT READ the required checks/);
+  assert.match(noList.lines[0], /no usable list of contexts/);
+  assert.match(noList.lines[0], /"protected":true/, "the report quotes whether `main` is protected at all");
+
+  // #2022 STILL HOLDS AND NEEDS NO DISCRIMINATOR: a refusal is `null` and never a claim about protection.
+  const refused = requiredWithLog(() => { throw new Error("gh: Not Found (HTTP 404)"); });
+  assert.equal(refused.required, null);
+  assert.match(refused.lines[0], /REFUSED/);
+  assert.doesNotMatch(refused.lines[0], /ABSENT|unprotected/,
+    "a refused read says nothing about whether the trunk is protected");
+  assert.equal(refused.calls.length, 1, "and a refusal is not followed by a second, diagnosing read");
+});
+
+test("the report cannot become tick noise on a healthy gate -- #2106", () => {
   // THE POSITIVE CONTROL, NAMED. Every assertion above is satisfied by a version that reports on every
-  // tick, including the successful ones -- which would bury the four-day failure it exists to surface.
-  const healthy = requiredWithLog(() => JSON.stringify(["gate"]));
+  // tick, including the successful ones -- which would bury the failure it exists to surface.
+  const healthy = requiredWithLog(() => BRANCH_ANSWER(["gate"]));
   assert.deepEqual(healthy.required, ["gate"], "the successful read is unchanged");
   assert.deepEqual(healthy.lines, [], "a gate that CAN read the contexts says NOTHING");
-  assert.equal(healthy.calls.length, 1,
-    "and pays exactly one call -- the discriminator is reached only by a REFUSED read");
+  assert.equal(healthy.calls.length, 1);
 
-  // A REACHABLE ENDPOINT WITH AN UNUSABLE ANSWER IS REPORTED, BUT NOT DIAGNOSED. The call answered, so
-  // there is nothing for `branches/main.protected` to discriminate and no second call to pay for.
-  const empty = requiredWithLog(() => "[]");
+  const empty = requiredWithLog(() => BRANCH_ANSWER([]));
   assert.equal(empty.required, null);
-  assert.equal(empty.calls.length, 1, "a malformed answer proves the endpoint was reachable");
   assert.match(empty.lines[0], /no usable list of contexts/);
   assert.doesNotMatch(empty.lines[0], /REFUSED/);
 });
@@ -1350,10 +1408,11 @@ test("a SUPERSEDED red run does not wake anyone -- the newest run per name is wh
  * sentence. This test is why the next person inherits a checked number.
  */
 test("the gate's read count is counted, not remembered", () => {
-  // FIVE since `answer-owed` landed. This pin caught that read within a minute of it being added, which
+  // SIX since #2356 added the trunk read (`readTrunkRed`: one REST call, core pool). It was FIVE since
+  // `answer-owed` landed. This pin caught that read within a minute of it being added, which
   // is exactly why it exists: the number it replaced ("two `gh` calls") had been wrong for months
   // because three readers arrived and nobody re-counted.
-  assert.equal(GH_READS.unconditional.length, 5,
+  assert.equal(GH_READS.unconditional.length, 6,
     "if you add or remove an unconditional read, this number and every comment quoting it move together");
   // #1938 REMOVED THE SILENCE-CONDITIONAL READ ENTIRELY: the dead man's switch now derives its
   // answer from the rows the unconditional read already fetched. The key is GONE rather than empty,
@@ -1369,6 +1428,9 @@ test("the gate's read count is counted, not remembered", () => {
     "the page must be the claimed rows and nothing else -- a full-population comments read is the cost "
     + "this cause was told not to buy");
   assert.ok(GH_READS.conditionalOnClaimedRows.includes("readClaimedRowComments"));
+  // #2356: the trunk read is ONE call when main is healthy, and its four follow-ups are paid only by a red.
+  assert.ok(GH_READS.unconditional.some((r) => r.includes("readTrunkRed")));
+  assert.ok(GH_READS.conditionalOnRedTrunk.includes("readTrunkRed"));
 });
 
 /**
@@ -2480,7 +2542,7 @@ test("#2161: decide() hands the cause the pull requests it already read", () => 
 });
 
 test("#2161: the narrowing spends no `gh` call -- it reads what `draftOrder` already has", () => {
-  assert.equal(GH_READS.unconditional.length, 5, "#2161 adds no unconditional read");
+  assert.equal(GH_READS.unconditional.length, 6, "#2161 adds no unconditional read");
   const gate = readFileSync(new URL("../../../agent-org/src/work-gate.mjs", import.meta.url), "utf8");
   const body = gate.slice(gate.indexOf("function rowsWithOpenPr"), gate.indexOf("export function blockerClearedOrders"));
   assert.ok(body.length > 0 && !/\brun\(|spawnSync|defaultRun/.test(body),
@@ -3029,7 +3091,7 @@ test("#2110: main pays for it only when something is actually claimed", () => {
     "exactly one call site, and it is inside the condition below -- a second is a second price");
   assert.match(gate, /const held = openRows\.some\(\(r\) => labelsOf\(r\)\.includes\(CLAIM_LABEL\)\);\s*\n\s*return held \? readClaimedRowComments\(\) : null;/,
     "the condition is answered from rows already in hand, so asking it costs no call of its own");
-  assert.equal(GH_READS.unconditional.length, 5,
+  assert.equal(GH_READS.unconditional.length, 6,
     "#2110 adds no UNCONDITIONAL read -- the comment page is conditional on a claim existing");
 });
 
@@ -3175,7 +3237,7 @@ test("#2003: the pool reading has ONE definition, and the gate pays for it only 
 
   // AND THE READ COUNT IS UNCHANGED, which is the other half of done-when 2: this row adds no
   // unconditional read, and `GH_READS` is the pin that would catch it if it ever did.
-  assert.equal(GH_READS.unconditional.length, 5,
+  assert.equal(GH_READS.unconditional.length, 6,
     "#2003 must not add an unconditional read -- the refusal path is where the extra call lives");
 
   // A SECOND COPY OF "HOW TO READ A POOL" IS REFUSED (#2003's Region says so). The header name is the
@@ -3399,7 +3461,7 @@ test("#2031: the detection makes NO `gh` call -- the pool is gone in the outage 
     + "the exhausted-pool outage that produces the staleness it detects");
   assert.deepEqual(found, [{ branch: BRANCH_2000, head: SHA_2000, row: 2000 }],
     "`main` is not a row branch: the trailing `-<digits>` is the whole match");
-  assert.equal(GH_READS.unconditional.length, 5, "#2031 adds NO gh read -- it is a local git call");
+  assert.equal(GH_READS.unconditional.length, 6, "#2031 adds NO gh read -- it is a local git call");
   assert.ok(GIT_READS.unconditional.some((r: string) => r.includes("ls-remote")),
     "and the free read is COUNTED rather than left out because it is free -- `GH_READS`'s own header "
     + "records what happened last time a read went unwritten-down");
@@ -3989,9 +4051,9 @@ const ordersFor = (pr: unknown) => decide({ prs: [pr], readyRows: [] }) as
 test("#2176 a green NON-DRAFT with no verdict at its head wakes its parity reviewer", () => {
   // THE POSITIVE HALF, and the row's Open-check: this returned ZERO orders before #2176.
   const orders = ordersFor(readyPr(9999, AUTHORED));
-  assert.deepEqual(orders.map((o) => [o.session, o.cause]), [["reviewer", "draft-awaiting-verdict"]]);
-  assert.deepEqual(ordersFor(readyPr(9998, AUTHORED)).map((o) => o.session), ["reviewer-2"],
-    "odd to `reviewer`, even to `reviewer-2`, exactly as for a draft");
+  assert.deepEqual(orders.map((o) => [o.session, o.cause]), [["reviewer-9999", "draft-awaiting-verdict"]]);
+  assert.deepEqual(ordersFor(readyPr(9998, AUTHORED)).map((o) => o.session), ["reviewer-9998"],
+    "`reviewer-<n>` for every n, exactly as for a draft");
   assert.match(orders[0].prompt, /Ready \(not a draft\) #9999/, "the wording must be true of the pull request");
   assert.doesNotMatch(orders[0].prompt, /Draft #/);
   // THE CONTRAST THAT MAKES THE RESULT A DEFECT RATHER THAN A FIXTURE PROPERTY: the same pull request as a draft.
@@ -4102,4 +4164,94 @@ test("#2176 a REFUSED commit read leaves the pull request as it was -- never an 
 
 test("#2176 the commit read is counted in GH_READS", () => {
   assert.match(GH_READS.conditionalOnUnreviewedGreenPr, /pulls\/\{n\}\/commits/);
+});
+
+
+// --- #2365: a convinced verdict that is only a COMMENT ---------------------------------------------------
+
+const approvalAt = (oid: string) => ({ state: "APPROVED", commit: { oid }, author: { login: "a11ign-bot" } });
+/** #2337's shape: green, ready, a convinced COMMENT at head, and `reviews` READ and empty. */
+const commentOnly = (n = 9999, head = AUTHORED, extra: Record<string, unknown> = {}) =>
+  readyPr(n, head, { comments: [verdictAt(n, head, "convinced")], reviews: [], reviewDecision: "REVIEW_REQUIRED", ...extra });
+const unreviewed = (pr: unknown) => ordersFor(pr).filter((o) => o.cause === "verdict-comment-unreviewed");
+
+test("#2365 a green ready PR with a convinced COMMENT and no review at head orders its parity reviewer", () => {
+  const [order, ...rest] = unreviewed(commentOnly(9999));
+  assert.deepEqual(rest, []);
+  assert.equal(order.session, "reviewer-9999", "`reviewer-<n>`");
+  assert.equal(unreviewed(commentOnly(9998))[0].session, "reviewer-9998", "and for an even number too");
+  assert.match(order.prompt, /pr-review-verdict/, "it must name the remedy");
+  assert.match(order.prompt, /not a new review round/);
+  assert.equal(order.causeKey, `reviewer-9999/verdict-comment-unreviewed/pr-9999/${AUTHORED.slice(0, 8)}`);
+  // `pr-review-blocked` (#2084) ALSO names it, for the whole set to `product-manager`: two questions, two
+  // remedies, and neither replaces the other -- this one names the comment and who re-posts it.
+  assert.deepEqual(ordersFor(commentOnly(9999)).map((o) => o.cause).sort(),
+    ["pr-review-blocked", "verdict-comment-unreviewed"]);
+});
+
+test("#2365 the same pull request with an APPROVED review at head produces NO such order", () => {
+  // THE CONTROL is the test above: same reader, same shape, `reviews` empty, non-empty.
+  assert.equal(unreviewed(commentOnly()).length, 1);
+  assert.deepEqual(unreviewed(commentOnly(9999, AUTHORED, { reviews: [approvalAt(AUTHORED)] })), []);
+  // An approval at an OLDER head that is not equivalent is not an approval at this one.
+  assert.equal(unreviewed(commentOnly(9999, AUTHORED, { reviews: [approvalAt(AUTHORED_2)] })).length, 1);
+});
+
+test("#2365 a PR-wide `reviewDecision: APPROVED` does not stand in for an approval AT this head (reviewer-2, #2388)", () => {
+  // `main` keeps a stale approval, so `reviewDecision` stays APPROVED while nothing approves the current head.
+  const staleButApproved = commentOnly(9999, AUTHORED, { reviewDecision: "APPROVED", reviews: [approvalAt(AUTHORED_2)] });
+  assert.equal(unreviewed(staleButApproved).length, 1, "the stale approval must not silence the order");
+  // THE CONTROL: the same shape with the approval AT head is silent, so the line above is not a constant.
+  assert.deepEqual(unreviewed({ ...staleButApproved, reviews: [approvalAt(AUTHORED)] }), []);
+  // `reviews` UNREAD stays no order whatever `reviewDecision` says.
+  assert.deepEqual(unreviewed({ ...staleButApproved, reviews: undefined }), []);
+});
+
+test("#2365 `not convinced` at head, a STALE head, and an UNREAD `reviews` field each produce NO such order", () => {
+  const notConvinced = commentOnly(9999, AUTHORED, { comments: [verdictAt(9999, AUTHORED, "not convinced")] });
+  assert.deepEqual(unreviewed(notConvinced), [], "rework is `verdict-not-convinced`'s");
+  assert.deepEqual(ordersFor(notConvinced).map((o) => o.cause).filter((c) => c !== "pr-review-blocked"),
+    ["verdict-not-convinced"]);
+  const stale = commentOnly(9999, AUTHORED, { comments: [verdictAt(9999, AUTHORED_2, "convinced")] });
+  assert.deepEqual(unreviewed(stale), [], "a comment at a head that is not this one says nothing about it");
+  assert.deepEqual(ordersFor(stale).map((o) => o.cause).filter((c) => c !== "pr-review-blocked"),
+    ["draft-awaiting-verdict"], "the reviewer is asked afresh");
+  const unread = { ...commentOnly(), reviews: undefined };
+  assert.deepEqual(unreviewed(unread), [], "an absent field is UNREAD, never 'no review'");
+});
+
+test("#2365 a HELD or RED pull request is not asked", () => {
+  assert.equal(unreviewed(commentOnly()).length, 1);
+  const held = commentOnly(9999, AUTHORED, { labels: [{ name: "session:worker-judge" }, { name: "hold:ceo" }] });
+  assert.deepEqual(unreviewed(held), [], "held is not merging BY DECISION");
+  assert.deepEqual(unreviewed(commentOnly(9999, AUTHORED, { statusCheckRollup: [] })), []);
+});
+
+test("#2365 when both apply, a DRAFT's next act is `draft-convinced-not-ready`, and the ready PR gets this one", () => {
+  const draft = commentOnly(9999, AUTHORED, { isDraft: true });
+  assert.deepEqual(ordersFor(draft).map((o) => o.cause), ["draft-convinced-not-ready"]);
+  assert.deepEqual(ordersFor({ ...draft, isDraft: false }).map((o) => o.cause).filter((c) => c !== "pr-review-blocked"),
+    ["verdict-comment-unreviewed"]);
+});
+
+test("#2365 a head advanced only by a merge from main keeps the SAME causeKey; an authored commit moves it", () => {
+  const keyOf = (pr: unknown) => unreviewed(pr)[0].causeKey;
+  const base = keyOf(commentOnly(9999, AUTHORED, { commits: [commit(AUTHORED, "Fix the thing")] }));
+  const merged = commentOnly(9999, MERGE_UI, { comments: [verdictAt(9999, AUTHORED, "convinced")],
+    commits: [commit(AUTHORED, "Fix the thing"), UPDATE_BRANCH(MERGE_UI)] });
+  assert.equal(keyOf(merged), base, "update-branch is a new head with no new work");
+  // An approval AT THE AUTHORED HEAD still counts after the merge: it is the same work.
+  assert.deepEqual(unreviewed({ ...merged, reviews: [approvalAt(AUTHORED)] }), []);
+  const authoredAfter = commentOnly(9999, AUTHORED_2, { comments: [verdictAt(9999, AUTHORED_2, "convinced")],
+    commits: [commit(AUTHORED, "Fix the thing"), UPDATE_BRANCH(MERGE_UI), commit(AUTHORED_2, "Address the review")] });
+  assert.notEqual(keyOf(authoredAfter), base, "THE CONTROL: without it the equalities above are a constant");
+});
+
+test("#2365 `readPrs` asks for `reviews` -- not `latestReviews`, whose commit oid is empty -- on the one list call", () => {
+  const calls: string[][] = [];
+  readPrs((args: string[]) => { calls.push(args); return "[]"; });
+  assert.equal(calls.length, 1);
+  const fields = calls[0][calls[0].indexOf("--json") + 1].split(",");
+  assert.ok(fields.includes("reviews"));
+  assert.ok(!fields.includes("latestReviews"));
 });

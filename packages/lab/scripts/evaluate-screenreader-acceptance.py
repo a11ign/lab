@@ -403,6 +403,16 @@ def assert_case_definitions_unchanged(by_path: dict[str, list[dict[str, Any]]],
 
     PER FILE and fail-closed, for the reasons `assert_cases_exist` states: the number that matters is per
     repeat, and a subset scored silently is the defect this whole family exists to close.
+
+    THE REMEDY IT PRINTS IS A FULL, BOTH-REPEAT RECAPTURE, AND SAYS SO (#2168). It named the TRAINING
+    jobs (`generate`, `capture`), which write `runs/screenreader-dataset` and leave this refusal
+    byte-identical, and it said "recapture the cases named above" although no job can do that: the
+    acceptance capture never caches, and its catalogue entries take no `only`. SCOPING IS REFUSED, NOT
+    MISSING: a corpus part-recaptured on a later day holds two populations that nothing records
+    (`lab:inventory` found four worker-code populations and two Edge builds in the training corpus on
+    2026-08-25, and its cache key exists for that), and this corpus is the one that decides whether a
+    candidate ships. So the message states the real cost instead of implying a cheaper one.
+    `acceptance-remedy-names-its-own-jobs.test.ts` reads the job names back out of this message.
     """
     changed_by_path = {path: changed_case_definitions(records, captured_by_path.get(path, {}), current)
                        for path, records in by_path.items()}
@@ -428,8 +438,13 @@ def assert_case_definitions_unchanged(by_path: dict[str, list[dict[str, Any]]],
         "match the ones this code has, so the report would grade captures of one page against the labels "
         "of another.\n"
         + "\n".join(lines)
-        + "\nRecapture the cases named above at this commit, on the box that owns the corpus:"
-        "\n  npm run lab:job -- -e job=generate   then   npm run lab:job -- -e job=capture"
+        + "\nRecapture the HELD-OUT ACCEPTANCE corpus at this commit, on the box that owns it. There is no"
+        "\nscoped form: acceptance runs never cache, so this is EVERY case, twice, whatever the number named"
+        "\nabove:"
+        "\n  npm run lab:job -- -e job=generate-acceptance"
+        "\n  npm run lab:job -- -e job=capture-acceptance     # repeat-1"
+        "\n  npm run lab:job -- -e job=capture-acceptance-2   # repeat-2"
+        "\n  npm run lab:job -- -e job=export-acceptance      # rewrites both repeat-N.jsonl files above"
         "\nNever evaluate the rest and report a number: a held-out reading states what the corpus IS, and "
         "a corpus the repository cannot reproduce states nothing."
     )
@@ -878,6 +893,50 @@ def false_positive_subtype_scores(records: list[dict[str, Any]], included_indice
             for case, heads in sorted(strongest.items())}
 
 
+def near_cut_negatives(records: list[dict[str, Any]], included_indices: list[int], included_labels: Any,
+                       subtype_scores: dict[str, Any], model_subtypes: dict[str, Any]) -> dict[str, dict[str, float]]:
+    """The held-out NEGATIVES that scored inside `[floor, threshold)`, per head that records a floor. PURE.
+
+    THE HALF OF THE BAND THE REPORT COULD NOT SEE. `falseNegativeSubtypeScores` records a score for every record
+    that was MISSED, and `falsePositiveSubtypeScores` for every record that FIRED wrongly, so a negative that
+    scored 0.95 and stayed under the cut is recorded nowhere: it is indistinguishable from one that scored 0.20.
+    That is exactly the population #2152's ruling rests on. The applied cut sits above two misses that both lie in
+    `[floor, threshold)`, and the argument for keeping it is that the same band holds negatives -- but that was
+    measured on the DEVELOPMENT sample alone (3 negatives, 0 positives in `0.95-0.962`). This is the number that
+    would confirm it on independent data, or show a lower cut is cheaper than it looks.
+
+    THE COUNTERFACTUAL, NOT THE BAND: `refused_only_by_the_raise` asks `applicability.decide` at the floor and at
+    the applied cut, and a negative that fires at the first and not the second is in `[floor, threshold)` and
+    would have been a false positive at the floor. `floor <= score < threshold` is the private comparison
+    `test_decision_has_one_definition.py` forbids, and this function first shipped it (#2431 red on it). It is
+    GATED as a consequence: a negative on a page the applicability gate rules out never fires at ANY cut, so a
+    cut moved to the floor would not have acted on it, and reporting it as near the cut would state a comparison
+    the product never makes. The band is closed below and open above as before -- a negative AT the cut fired
+    and is a false positive, not a near miss.
+
+    Per SUBTYPE, and only for a head that records a floor: an artifact trained before `guarantee` has no band, and
+    "unrecorded" must not read as an empty one. A head that HAS a floor and no negative in its band maps to an
+    EMPTY dict, never an absent key -- an empty map says "looked and found none", a missing key says nothing.
+
+    A NEGATIVE is a record the criterion was not labelled for, the same population `falsePositiveSubtypeScores`
+    reads, so the two fields partition the criterion's negatives by score rather than counting different things.
+    The STRONGEST capture of a case captured more than once, as that sibling does, because the question is how
+    close the case came to firing. Rounded to 4dp for a human; the comparison is made on the float.
+    """
+    floors = threshold_floors(model_subtypes)
+    banded: dict[str, dict[str, float]] = {subtype: {} for subtype in floors}
+    for subtype in floors:
+        for position, index in enumerate(included_indices):
+            score = float(subtype_scores[subtype][index])
+            if included_labels[position] or not refused_only_by_the_raise(
+                    subtype, score, model_subtypes[subtype], records[index]):
+                continue
+            case = case_identity(records[index])
+            banded[subtype][case] = max(score, banded[subtype].get(case, float("-inf")))
+    return {subtype: {case: round(score, 4) for case, score in sorted(cases.items())}
+            for subtype, cases in banded.items()}
+
+
 def describe_false_positive(name: str, block: dict[str, Any]) -> str:
     """One false positive as a failure reason reads it: each head that FIRED, its raw score, and its own cut.
 
@@ -1267,6 +1326,11 @@ def main() -> None:
             # Unanimous over the captures of a case, for the same reason and in the same direction: one
             # repeat the raise did not refuse falsifies the claim, so it can only narrow.
             "falseNegativesAboveFloor": misses_the_raise_refused(missed, model_subtypes),
+            # THE NEGATIVES IN THE SAME BAND (#2259), beside the misses in it. Reported, never acted on: this
+            # field moves no cut and gates nothing -- it is the number a ruling on the cut would need. Gated
+            # by `applicability.decide` at both cuts, unlike its two ungated siblings.
+            "nearCutNegatives": near_cut_negatives(
+                records, included_indices, included_labels, subtype_scores, model_subtypes),
             **without_binary_criterion_scores(
                 metrics(decided[included_indices].astype(float), included_labels, DECIDED,
                         identities=[case_identity(records[index]) for index in included_indices])),

@@ -3,8 +3,8 @@
  *
  * Two facts, each of which is a way for the migration to look done and not be:
  *
- *   - Internal dependencies are pinned `"0.0.0"`, not `workspace:*` (npm cannot read that protocol, and
- *     `package-lock.json` stays while the sibling rows land). pnpm resolves a bare version from the REGISTRY
+ *   - Internal dependencies are pinned `"0.0.0"`, not `workspace:*` (npm could not read that protocol
+ *     while `package-lock.json` existed, and #2301 deleted it; `changeset version` still writes concrete ranges). pnpm resolves a bare version from the REGISTRY
  *     unless `linkWorkspacePackages` is on, so an install can succeed while every `@a11ign/*` import reads a
  *     downloaded copy -- the false green this migration exists to remove. Measured 2026-09-24: with the
  *     setting off, `pnpm import` went to the registry and stopped on a 404 for the unpublished
@@ -85,7 +85,7 @@ test(".pnpmfile.cjs lets a REAL node_modules and an ABSENT one through -- the gu
   assert.equal(withGuardIn(() => undefined).code, 0);
 });
 
-test("yaml AND axe-core are hoisted to the root, because no manifest declares them and package-lock.json must not change", () => {
+test("yaml AND axe-core are hoisted to the root, because no manifest declares them", () => {
   const workspace = parse(readFileSync(join(ROOT, "pnpm-workspace.yaml"), "utf8")) as { publicHoistPattern?: string[] };
   assert.deepEqual(workspace.publicHoistPattern, ["yaml", "axe-core"]);
   // The positive control: the hoist is what makes them resolvable, so they must be in pnpm's root layout.

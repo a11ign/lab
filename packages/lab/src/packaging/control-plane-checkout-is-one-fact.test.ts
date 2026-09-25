@@ -204,6 +204,20 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
     + "different machine's directory. It is the same class as this one and is deliberately NOT fixed "
     + "here: nobody has run `win_stat` against those nine boxes, and restoring a name on sight is the "
     + "act #515 was filed against. Held on #526.",
+  "C:\\Users\\witness\\a11y-witness": "the copy-paste runbook in `docs/pnpm-rollback.md` (#2302), the "
+    + "WINDOWS worker's checkout -- a different machine's directory, the same class as `${GUEST_DIR}` "
+    + "above and guarded by `guest-paths-are-measured.test.ts` against a measurement of real guests. It "
+    + "names the directory LITERALLY and must: a human pastes it into PowerShell, and a shell cannot "
+    + "import a constant. Not this file's fact, and listed rather than derived so the duplication is "
+    + "visibly decided.",
+  "${primary}": "the AGENT HOST's primary checkout, in the command `wake.mjs`'s `launchAdvice` (#2405) hands a standing "
+    + "engineer with no `role-<you>` worktree: `git -C ${primary} worktree add --detach ...`. It is a parameter there "
+    + "(defaulting to `PRIMARY_CHECKOUT`, the directory the order text has always named), and it is the checkout a "
+    + "SESSION is told not to work in -- a different machine's fact from the control plane's fleet-driving one.",
+  "${PRIMARY_CHECKOUT}": "the same AGENT-host primary checkout as `${primary}` above, spelled by its exported name in "
+    + "`work-gate-engineer-order-paths.test.ts`, which asserts the `git -C ${PRIMARY_CHECKOUT} worktree add --detach ...` "
+    + "line `launchAdvice` (#2405) hands an engineer. It is `wake.mjs`'s own constant, not a second literal for the "
+    + "control plane's checkout, and the directory a SESSION is told not to work in.",
   "/opt/a11y": "the LAB's checkout (`lab_repo_path` in `group_vars/a11y_lab.yml`), a different machine "
     + "and a different fact from the control plane's -- `run-job.yml` already reaches it through that "
     + "variable, but `files/a11y-corpus-snapshot.service` (#1795; its `corpus-backup` twin was "
@@ -434,6 +448,9 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
   ".local": "the XDG user data root -- `~/.local/bin`, where pipx and friends install.",
   ".ansible": "Ansible's own cache, in `requirements.yml`'s documented paths.",
   ".npm": "npm's cache, in `action.yml`'s cache key.",
+  ".cache": "the XDG cache root -- `Environment=NODE_COMPILE_CACHE=%h/.cache/node-compile-cache` in every "
+    + "shipped unit (#2458), which `host-units.test.ts` also quotes in the absolute spelling a unit could use "
+    + "instead of `%h`. A cache directory, not a checkout.",
   ".config": "the XDG config home -- `~/.config/gh/hosts.yml` is where `gh` itself reads its "
     + "credentials from, named in a11ign-work-tick.service's comment on why the unit sets HOME.",
   "Library": "macOS's per-user library, in the board scripts' log paths.",
@@ -484,6 +501,11 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
     + "on the same measured box as `repos`. Classified BEFORE its first doc lands on main: #2332 / PR #2336 "
     + "ships docs and a wrapper that name it, and would have failed this guard on merge exactly as #2329 "
     + "did (#2346).",
+  "reviews": "the AGENT host's per-PR REVIEW CHECKOUT root -- `REVIEW_CHECKOUT_ROOT` in `wake.mjs`, where "
+    + "the tick prepares a linked worktree `~/reviews/reviewer-<n>` for each per-PR reviewer instance and "
+    + "removes it at teardown (#2401). Named in that row's changeset and in `docs/known-gaps.md`, which says "
+    + "it was chosen on a measurement of `codex sandbox` and not seen in a live instance. Not the control "
+    + "plane's checkout: it is a scratch tree for one pull request, on the same measured box as `repos`.",
 };
 
 test("THE EXEMPTION IS THE FIELD, NOT THE FILE -- a quoted `command` in a reported record is not a use, "

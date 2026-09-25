@@ -48,7 +48,7 @@
  *
  * A superseded FAILED run survives on the head for ever, so this reported `checks failing` for a PR whose
  * current runs were all green. `newestPerName` had been added to `update-branch-sweep.mjs` twice (#500,
- * #517), to `trunk-revert.mjs` (#582) and to `queue-table.mjs` — **four fixes, four call sites, and the
+ * #517), to the since-retired revert script (#582) and to `queue-table.mjs` — **four fixes, four call sites, and the
  * fifth never had it.** That is this repository's most expensive recurring shape, and it is why the
  * remedy here is one shared definition plus this guard rather than a fifth copy.
  *

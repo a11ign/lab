@@ -487,7 +487,7 @@ test("a path through a LINK is classified by where it leads", async () => {
 test("THIRD-PARTY node_modules is excluded ONLY because a lockfile change is a broad diff -- the premise, pinned", async (t) => {
   // A broad diff runs every guard before any narrowing, so what `npm ci` installed cannot differ on a run
   // that left a guard out. If either of these stopped being broad, this exclusion would become a false pass.
-  assert.deepEqual(broadReasons(["package-lock.json"]), ["package-lock.json"]);
+  assert.deepEqual(broadReasons(["pnpm-lock.yaml"]), ["pnpm-lock.yaml"]);
   assert.deepEqual(broadReasons(["package.json"]), ["package.json"]);
   // A probe of our own, because a real package can be a LINK to another checkout's node_modules (a worktree
   // set up that way) -- where a read leads out of this checkout and the exclusion is never reached, and this

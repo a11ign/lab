@@ -1402,6 +1402,13 @@ function statusVariant(/** @type {any} */ {
 }
 
 /**
+ * #2385: A NAMED FIELD BESIDE THE CONTROL, for the status pages that carry one. Empty `field` renders
+ * nothing, so the twelve pages declared before this row stay byte-identical and are not recaptured.
+ */
+const statusPageField = (/** @type {string} */ label) =>
+  label ? `<label for="ref">${label}</label><input id="ref" type="text">` : "";
+
+/**
  * #1115: 4.1.3'S OTHER TWO STATUS CATEGORIES — a WAITING state and a PROGRESS update.
  *
  * All 150 of 4.1.3's cases were `form-activation-silent`. **A criterion whose whole population is one
@@ -1424,8 +1431,8 @@ function statusVariant(/** @type {any} */ {
  * what this row moves, and it is passed explicitly because `defaultSubtype` falls through to the signal's
  * own type.
  */
-function waitingStatusVariant(/** @type {any} */ { id, title, heading, control, waiting, task }) {
-  const body = `<button id="go" type="button">${control}</button><p id="state"></p>`;
+function waitingStatusVariant(/** @type {any} */ { id, title, heading, control, waiting, task, element = "p", field = "" }) {
+  const body = `${statusPageField(field)}<button id="go" type="button">${control}</button><${element} id="state"></${element}>`;
   const goodBody = body.replace('id="state"', 'id="state" role="status" aria-live="polite" aria-atomic="true"');
   const script = `document.querySelector('#go').addEventListener('click', () => { document.querySelector('#state').textContent = '${waiting}'; });`;
   return pair({
@@ -1443,8 +1450,10 @@ function waitingStatusVariant(/** @type {any} */ { id, title, heading, control, 
   });
 }
 
-function progressStatusVariant(/** @type {any} */ { id, title, heading, control, progress, task }) {
-  const body = `<button id="next" type="button">${control}</button><p id="progress">Step 1 of 4</p>`;
+function progressStatusVariant(/** @type {any} */ {
+  id, title, heading, control, progress, task, initial = "Step 1 of 4", element = "p", field = "",
+}) {
+  const body = `${statusPageField(field)}<button id="next" type="button">${control}</button><${element} id="progress">${initial}</${element}>`;
   const goodBody = body.replace('id="progress"', 'id="progress" role="status" aria-live="polite" aria-atomic="true"');
   const script = `document.querySelector('#next').addEventListener('click', () => { document.querySelector('#progress').textContent = '${progress}'; });`;
   return pair({
@@ -4679,6 +4688,142 @@ cases.push(
 // bounds the census half; the focus-event half is unmeasured, and nobody has counted how many captures
 // read `fallback` while showing the requested page.
 
+
+// #2385: THE 4.1.3 STATUS HEADS TRAINED ON SIX DECLARATIONS EACH, AND THE PROGRESS HEAD ON ONE SENTENCE.
+//
+// `4.1.3:status-waiting` and `4.1.3:status-progress` had 24 positives apiece -- six pages times the
+// `+also-*` / `+with-component-index` expansion -- and all six progress pages announced `Step 2 of 4` from
+// the same `<p>`. #2258 read 16 misses and 6 false positives off that corpus and ruled the vetoes out: the
+// misses carry `form_change_nonempty` 0 and `validation_error_missing` 0, and share one 30-feature
+// document vector with two held-out false positives, so what separates them is the head's OTHER input,
+// which a corpus this thin cannot teach. This row grows the corpus; it does NOT claim size is THE cause
+// (nothing has varied the count with the rest held fixed) and it moves no number -- the capture, the
+// retrain and the reading are #2258's.
+//
+// APPENDED AFTER EVERY OTHER BASE CASE, for the reason the block above the 2.4.6 label cases gives: page
+// furniture is dealt within a subtype by position, so anything inserted mid-list re-buckets what follows.
+// The ids below are new and the twelve declared before them are byte-identical (`statusPageField` renders
+// nothing for an empty field), so what is recaptured is what this row adds plus the derived variants of
+// the subtypes it appends to.
+//
+// EACH IS ITS OWN FAMILY (`independent`). The builders name the family `status-waiting` / `status-progress`,
+// so the twelve older pages are ONE family to the grouped split and can only fall on one side of it; a
+// thirteenth page that shared the name would be a thirteenth copy of that one example. Left as they are
+// -- moving the older twelve changes the split, which is a decision for #2258, not a side effect here.
+//
+// NO `<output>`, although the row suggests one: `<output>` has an implicit `role="status"`, so the FAILING
+// half would announce and the pair would teach the opposite of its label. Elements are `p`, `span`, `div`.
+//
+// SYNCHRONOUS ONLY, as `waitingStatusVariant` requires. `Continue ...` controls match `SUBMIT_RE` and are
+// probed as submits, the others as task buttons; both shapes are declared because the older six are all the
+// first.
+//
+// TWO DEFECTS IN THE FIRST DECLARATION, both read off the lab's retrain (#2258, 2026-09-24, `check-signals`
+// STOPPED it at 6 contaminated of 1765) and both left as the reason the values below are what they are:
+//   - EVERY PAGE NEEDS AN `<h1>`. The five declared with `heading: ""` recorded NO `formChanges` on either
+//     half (`n=0`), so `form-activation-silent` fired on the good page as well as the bad one; all nineteen
+//     that had a heading recorded exactly one. Read across all 24 status pages; furniture is not the
+//     difference (most of the headed pages are furnished too). The probe's mechanism was not read, only
+//     the separation.
+//   - NVDA SPEAKS `%` AS "percent". `Installing, 60% done` was captured as `Installing, 60 percent done`, so
+//     the announcement never contained the expected text and the signal fired on the good page. The
+//     declared text is what is SAID: punctuation and symbols do not survive speech (see `REMEDY_PHRASE`).
+cases.push(
+  ...[
+    ["statement", "Account statement", "Account statement", "Load my statement", "Loading your statement", "span", ""],
+    ["postcode", "Address lookup", "Address lookup", "Verify postcode", "Verifying your postcode", "p", "Postcode"],
+    ["catalogue", "Catalogue results", "Catalogue results", "Find matching titles", "Looking through the catalogue, this may take a moment", "div", ""],
+    ["profile-edit", "Profile settings", "Profile settings", "Store my display name", "Storing your display name", "span", "Display name"],
+    ["timetable", "Live departures", "Live departures", "Refresh timetable", "Fetching the latest timetable", "p", ""],
+    ["virus-scan", "File safety", "File safety", "Scan for viruses", "Scanning your files, please do not close this page", "div", "Folder name"],
+  ].map(([slug, title, heading, control, waiting, element, field]) => independent(waitingStatusVariant({
+    id: "status-waiting-" + slug,
+    title,
+    heading,
+    control,
+    waiting,
+    element,
+    field,
+    task: control.charAt(0).toLowerCase() + control.slice(1) + " and notice whether anything is announced while it works.",
+  }))),
+
+  ...[
+    ["questions", "Membership form", "Membership form", "Go to the next question", "Question 3 of 10", "Question 4 of 10", "p", ""],
+    ["pagination", "Meeting records", "Meeting records", "Show the next page", "Page 1 of 7", "Page 2 of 7", "span", ""],
+    ["upload", "Photo upload", "Photo upload", "Add the next photograph", "Uploading, 20 percent", "Uploading, 40 percent", "div", ""],
+    ["modules", "Safety training", "Safety training", "Mark this module as done", "1 of 5 modules complete", "2 of 5 modules complete", "span", ""],
+    ["review", "Planning application", "Planning application", "Continue to the review", "Step 2 of 5", "Step 3 of 5", "p", "Full name"],
+    ["install", "Software setup", "Software setup", "Install the next component", "Installing, 30 percent done", "Installing, 60 percent done", "div", ""],
+    ["lessons", "Language course", "Language course", "Move on to the next lesson", "Lesson 4 of 12", "Lesson 5 of 12", "p", "Learner name"],
+    ["scanning", "Archive digitising", "Archive digitising", "Scan the next document", "3 of 8 documents scanned", "4 of 8 documents scanned", "span", ""],
+  ].map(([slug, title, heading, control, initial, progress, element, field]) => independent(progressStatusVariant({
+    id: "status-progress-" + slug,
+    title,
+    heading,
+    control,
+    initial,
+    progress,
+    element,
+    field,
+    task: control.charAt(0).toLowerCase() + control.slice(1) + " and notice whether the step change is announced.",
+  }))),
+);
+
+/**
+ * #2385: HARD NEGATIVES FOR THE 4.1.3 STATUS HEADS -- a named control is pressed, and nothing on either
+ * half is a status message.
+ *
+ * #2258's false positives are pages of exactly this shape (an icon-labelled print or profile control, a
+ * tree of sections with no form) at 0.811 / 0.960 / 1.000. **Positives alone teach the label, not the
+ * criterion** (#1115, ADR 0015), so the matched negatives go in with them.
+ *
+ * NEGATIVE BY CONSTRUCTION, and that is the labelling: the exporter writes `subtypes` as
+ * `criterion:subtype` of the CASE and only on its failing half, so a case whose criterion is not 4.1.3
+ * is a `clean`-for-every-status-head record on both halves. There is no per-head negative field to set --
+ * "labelled" here means the case names a criterion and subtype that are not a 4.1.3 one, which
+ * `case-matrix.test.ts` reads.
+ *
+ * BUILT FROM EXISTING VARIANTS with new vocabulary rather than new builders: the pages are ones this
+ * corpus already proves it can capture and discriminate. NOT the held-out cases -- `acceptance-b3-icon-print`
+ * carries the task "Print this page." and `acceptance-b3-icon-profile` "Open your account.", and
+ * `held-out-is-disjoint-from-training.test.ts` refuses a training case that repeats either.
+ */
+function sectionsTreeVariant(/** @type {any} */ { id, title, sections, task }) {
+  // Enough paragraphs to be a PAGE and not a fragment: the no-headings rule stays silent below fifteen
+  // announcements and `structure-empty-cases.test.ts` refuses a case with fewer than eighteen blocks.
+  const filler = (/** @type {string} */ section) => [
+    `The rules on ${section.toLowerCase()} apply to every applicant.`,
+    `Read this part before you start on ${section.toLowerCase()}.`,
+    `Ask the council office if ${section.toLowerCase()} is unclear to you.`,
+    `Changes to ${section.toLowerCase()} are published each spring.`,
+    `Keep a copy of anything you send about ${section.toLowerCase()}.`,
+    `A decision on ${section.toLowerCase()} is normally made within a month.`,
+  ].map((line) => "<p>" + line + "</p>").join("");
+  return pair({
+    id,
+    criterion: "1.3.1",
+    subtype: "no-headings",
+    task,
+    source: "Web Content Accessibility Guidelines, Understanding SC 1.3.1",
+    mutation: "Section titles are bold paragraphs rather than headings, so the page exposes no heading structure.",
+    badSignal: { type: "structure-empty", field: "headings" },
+    good: page({ title, heading: title, body: sections.map((/** @type {string} */ t) => "<h2>" + t + "</h2>" + filler(t)).join("") }),
+    bad: page({ title, heading: false, body: sections.map((/** @type {string} */ t) => "<p><b>" + t + "</b></p>" + filler(t)).join("") }),
+  });
+}
+
+cases.push(
+  ...[
+    unnamedIconVariant({ id: "status-negative-icon-receipt", title: "Receipts", heading: "Receipts", name: "Download the receipt", task: "Download the receipt." }),
+    unnamedIconVariant({ id: "status-negative-icon-share", title: "Recipe", heading: "Recipe", name: "Share this recipe", task: "Share this recipe." }),
+    unnamedIconVariant({ id: "status-negative-icon-notes", title: "Meeting notes", heading: "Meeting notes", name: "Open the notes panel", task: "Open the notes panel." }),
+    disclosureVariant({ id: "status-negative-disclosure-delivery", title: "Delivery", heading: "Delivery", control: "Delivery charges", content: "Standard delivery costs four pounds.", task: "Open the delivery charges." }),
+    disclosureVariant({ id: "status-negative-disclosure-hours", title: "Visiting", heading: "Visiting", control: "Visiting hours", content: "The ward is open to visitors from two until four.", task: "Open the visiting hours." }),
+    customControlVariant({ id: "status-negative-control-permit", title: "Parking", heading: "Parking", label: "Print the parking permit", task: "Print the parking permit." }),
+    sectionsTreeVariant({ id: "status-negative-sections-hedges", title: "Hedge cutting rules", sections: ["Nesting season", "Boundary disputes", "Reporting a problem"], task: "Move between the sections of the hedge cutting rules." }),
+    sectionsTreeVariant({ id: "status-negative-sections-licences", title: "Street trading licences", sections: ["Who needs one", "Fees", "Renewals"], task: "Move between the sections of the street trading licence rules." }),
+  ].map(independent),
+);
 
 export const CASES = Object.freeze(withRealisticScale(
   [...cases, ...multiDefectCases(cases), ...conformantBehaviourCases(cases)],

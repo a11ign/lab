@@ -173,19 +173,31 @@ test("#1115: 4.1.3 is no longer ONE subtype — asserted as a distribution, neve
   }
 });
 
-test("#1115: six WAITING and six PROGRESS pairs are declared, and they are well-formed", () => {
+/** The declared (unexpanded) pages of a status subtype: `+also-*` and `+with-component-index` are copies. */
+const declaredStatus = (subtype: string) =>
+  bySubtype(subtype).filter((c: { id: string }) => !c.id.includes("+")) as {
+    id: string; family: string; task: string; source: string; mutation: string;
+    badSignal: { type: string; control?: string; expected?: string };
+    good: string; bad: string; probeForms: boolean;
+  }[];
+
+/**
+ * #2385: THE FLOOR, NOT THE TOTAL. #1115 pinned exactly six declarations per subtype, which is how the
+ * two status heads came to be trained on six pages each (24 positives once expanded, 0 recovered at their
+ * own operating point in #2258). The count is now a MINIMUM, asserted against the shipped `CASES`, so
+ * adding a page never needs this file edited and removing one below the floor is refused.
+ */
+const MIN_DECLARED_STATUS_PAGES = 12;
+
+test("#1115/#2385: at least twelve WAITING and twelve PROGRESS pairs are declared, and they are well-formed", () => {
   // Counted from the DECLARATIONS rather than from the expanded array: `+also-*` and
   // `+with-component-index` multiply every case in this file, so the expanded total is a fact about the
-  // expansion and not about what this row built.
+  // expansion and not about what was built.
   for (const subtype of ["status-waiting", "status-progress"]) {
-    const declared = bySubtype(subtype)
-      .filter((c: { id: string }) => !c.id.includes("+"));
-    assert.equal(declared.length, 6, `${subtype} declares ${declared.length} pairs, expected six`);
-    for (const c of declared as {
-      id: string; task: string; source: string; mutation: string;
-      badSignal: { type: string; control?: string; expected?: string };
-      good: string; bad: string; probeForms: boolean;
-    }[]) {
+    const declared = declaredStatus(subtype);
+    assert.ok(declared.length >= MIN_DECLARED_STATUS_PAGES,
+      `${subtype} declares ${declared.length} pages, expected at least ${MIN_DECLARED_STATUS_PAGES}`);
+    for (const c of declared) {
       assert.ok(c.task && c.source && c.mutation, `${c.id}: missing task, source or mutation`);
       assert.ok(c.good.includes("role=\"status\""), `${c.id}: the conformant half must announce`);
       assert.ok(!c.bad.includes("role=\"status\""), `${c.id}: the failing half must NOT announce`);
@@ -195,6 +207,129 @@ test("#1115: six WAITING and six PROGRESS pairs are declared, and they are well-
         + "intermittently, and `filter-status-silent-checkbox` was withdrawn over exactly that");
     }
   }
+});
+
+test("#2385: the status pages do not share one announced string, and the progress head hears more than one", () => {
+  // THE SHAPE THIS ROW WAS FILED AGAINST: `Step 2 of 4` x6 on the same `<p id="progress">`. A head that
+  // sees one sentence learns the sentence, so the property is "no string on more than half the pages",
+  // read from the shipped declarations rather than typed as a total.
+  for (const subtype of ["status-waiting", "status-progress"]) {
+    const declared = declaredStatus(subtype);
+    const perString = new Map<string, number>();
+    for (const c of declared) {
+      const text = c.badSignal.expected ?? "";
+      perString.set(text, (perString.get(text) ?? 0) + 1);
+    }
+    assert.ok(perString.size > 1, `${subtype} announces ONE string on every page: ${[...perString.keys()].join(" | ")}`);
+    const [commonest, count] = [...perString.entries()].sort((a, b) => b[1] - a[1])[0]!;
+    assert.ok(count * 2 <= declared.length,
+      `${subtype}: "${commonest}" is announced by ${count} of ${declared.length} declarations -- more than half`);
+  }
+});
+
+test("#2385: the status pages are independent families, not copies of the older twelve", () => {
+  // The builders name the family `status-waiting` / `status-progress`; a page sharing that name is one
+  // example to the grouped split however many are declared. Each page added by #2385 is its OWN family.
+  // Counted as a floor over what ships: the older twelve are the only pages allowed to share a name.
+  for (const subtype of ["status-waiting", "status-progress"]) {
+    const declared = declaredStatus(subtype);
+    const sharing = declared.filter((c) => c.family === subtype);
+    const own = declared.filter((c) => c.family === c.id);
+    assert.ok(own.length >= MIN_DECLARED_STATUS_PAGES / 2,
+      `${subtype}: only ${own.length} pages are their own family`);
+    assert.equal(own.length + sharing.length, declared.length,
+      `${subtype}: a page is in neither its own family nor the shared one`);
+  }
+});
+
+/**
+ * #2385: THE SHAPE OF A STATUS PAGE, read from its FAILING half's markup: which element carries the
+ * changing text, whether the page has a heading, whether it carries a named field. The row asked all three
+ * to vary, because the misses share `heading_present` and `form_field_named` at 1 and every older page
+ * changes a `<p>`. **Only two can: the heading cannot be absent** (see the test below). Read from the
+ * shipped HTML, not from the builders' arguments, so a builder that silently drops `element` or `field` is
+ * what the test sees.
+ */
+const statusPageShape = (html: string) => ({
+  element: /<(\w+) id="(?:state|progress)"/.exec(html)?.[1],
+  heading: /<h1>/.test(html),
+  field: /<label for="ref">[^<]+<\/label><input /.test(html),
+});
+
+const MIN_DISTINCT_ELEMENTS = 3;
+const MIN_PAGES_PER_SHAPE = 2;
+
+test("#2385: the status pages vary the changing element and the named field, and every one has a heading", () => {
+  for (const subtype of ["status-waiting", "status-progress"]) {
+    const shapes = declaredStatus(subtype).map((c) => ({ id: c.id, ...statusPageShape(c.bad) }));
+    const unread = shapes.filter((s) => s.element === undefined).map((s) => s.id);
+    assert.deepEqual(unread, [], `${subtype}: pages whose changing element the reader cannot find`);
+    const elements = new Set(shapes.map((s) => s.element));
+    assert.ok(elements.size >= MIN_DISTINCT_ELEMENTS,
+      `${subtype}: the changing text sits in only ${[...elements].join(", ")}; expected ${MIN_DISTINCT_ELEMENTS}+ elements`);
+    const withField = shapes.filter((s) => s.field).length;
+    const withoutField = shapes.length - withField;
+    assert.ok(withField >= MIN_PAGES_PER_SHAPE && withoutField >= MIN_PAGES_PER_SHAPE,
+      `${subtype}: ${withField} pages have a named field and ${withoutField} do not; expected ${MIN_PAGES_PER_SHAPE}+ of each`);
+    // A heading-less page is NOT a variation we can have: #2258's retrain stopped at `check-signals` because
+    // the five status pages declared without an `<h1>` recorded no `formChanges` on either half (0 of 5,
+    // against 19 of 19 with one), so `form-activation-silent` fired on the good page. Varying
+    // `heading_present` needs the worker to activate a control on a page with no `<h1>`, which nothing here
+    // has read; until then the dimension stays at 1 and the row's ask for it is unmet, not satisfied.
+    const headingless = shapes.filter((s) => !s.heading).map((s) => s.id);
+    assert.deepEqual(headingless, [], `${subtype}: pages with no <h1> are never probed, so the signal fires on both halves`);
+  }
+});
+
+test("#2385: the shape reader tells the shapes apart (positive control)", () => {
+  // The variation test above passes vacuously if the reader returns one answer for every page, so it is
+  // run on hand-typed pages that differ in exactly one dimension each.
+  const base = statusPageShape("<h1>T</h1><button>Go</button><p id=\"state\"></p>");
+  assert.deepEqual(base, { element: "p", heading: true, field: false });
+  assert.equal(statusPageShape("<button>Go</button><span id=\"progress\">Step 1</span>").element, "span");
+  assert.equal(statusPageShape("<button>Go</button><p id=\"state\"></p>").heading, false);
+  assert.equal(statusPageShape("<label for=\"ref\">Name</label><input id=\"ref\" type=\"text\"><p id=\"state\"></p>").field, true);
+});
+
+/**
+ * #2385: HARD NEGATIVES. A live region that announces a status, in any spelling a page here uses.
+ * `<output>` is included because it carries an implicit `role="status"`.
+ */
+const ANNOUNCES_A_STATUS = /role="(?:status|alert|log)"|aria-live=|<output[\s>]/i;
+
+const HARD_NEGATIVE_PREFIX = "status-negative-";
+const MIN_HARD_NEGATIVE_PAIRS = 6;
+const hardNegatives = CASES.filter((c: { id: string }) => c.id.startsWith(HARD_NEGATIVE_PREFIX)) as unknown as {
+  id: string; criterion: string; subtype: string; badSignal: { type: string }; good: string; bad: string;
+  probeForms: boolean;
+}[];
+
+test("#2385: at least six hard-negative pairs exist, labelled as NOT 4.1.3 and announcing no status", () => {
+  assert.ok(hardNegatives.length >= MIN_HARD_NEGATIVE_PAIRS,
+    `${hardNegatives.length} hard-negative pairs, expected at least ${MIN_HARD_NEGATIVE_PAIRS}`);
+  const statusSubtypes = new Set(["status-waiting", "status-progress"]);
+  for (const c of hardNegatives) {
+    // The exporter writes `subtypes` as `criterion:subtype` of the CASE on its failing half only, so a case
+    // that is not 4.1.3 is `clean` for every 4.1.3 head on both halves: that is the whole of the label.
+    assert.notEqual(c.criterion, "4.1.3", `${c.id}: a 4.1.3 case is a status POSITIVE, not a negative for it`);
+    assert.ok(!statusSubtypes.has(c.subtype), `${c.id}: subtype ${c.subtype} is a status subtype`);
+    assert.ok(typeof c.subtype === "string" && c.subtype !== "", `${c.id}: no subtype, so its label is absent rather than negative`);
+    assert.ok(c.badSignal.type !== "form-activation-silent",
+      `${c.id}: form-activation-silent is the status subtypes' own signal`);
+    assert.ok(!ANNOUNCES_A_STATUS.test(c.good) && !ANNOUNCES_A_STATUS.test(c.bad),
+      `${c.id}: a page here contains a live region, so it is not a page with no status message`);
+  }
+});
+
+test("#2385: the live-region detector fires on a page that does announce (positive control)", () => {
+  // `!ANNOUNCES_A_STATUS.test(...)` over the hard negatives passes just as readily when the pattern
+  // matches nothing. Every conformant status page announces by construction, so the detector is run on
+  // those, and on the implicit-role spelling the row's own suggestion (`<output>`) would have produced.
+  const conformant = declaredStatus("status-waiting");
+  assert.ok(conformant.length > 0, "no declared waiting pages -- this control would be vacuous");
+  for (const c of conformant) assert.ok(ANNOUNCES_A_STATUS.test(c.good), `${c.id}: detector missed its live region`);
+  assert.ok(ANNOUNCES_A_STATUS.test("<output id=\"state\"></output>"));
+  assert.ok(!ANNOUNCES_A_STATUS.test("<button>Print</button><p id=\"state\"></p>"));
 });
 
 test("#1115: each new case declares a badSignal an implementation actually reads", () => {

@@ -86,7 +86,7 @@ test("#1536 THE WORKFLOW CALLS IT: release.yml runs the check with no `if:`, so 
   assert.doesNotMatch(WORKFLOW.slice(stepStart, step), /\n\s+if:/,
     "the check carries an `if:`, so some path -- the dry run -- can skip it");
   const refuse = WORKFLOW.indexOf("- name: Refuse to publish unless");
-  const publish = WORKFLOW.indexOf("run: npx changeset publish");
+  const publish = WORKFLOW.indexOf("run: pnpm exec changeset publish");
   assert.ok(refuse !== -1 && publish !== -1, "release.yml's guard or publish step moved; re-read this test");
   assert.ok(step < refuse && step < publish,
     "the manifest check must run before the guard step and before `changeset publish`, or the registry answers first");
