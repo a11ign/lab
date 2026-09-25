@@ -86,8 +86,8 @@ test("closedRowNumbers is EMPTY, not a guess, when the body names no row -- MISS
 test("sessionLabelsOf keeps only session:* -- a row's other labels (ready, backlog, in-progress) are "
   + "not attribution and must not leak onto the PR", () => {
   assert.deepEqual(
-    sessionLabelsOf(["ready", "in-progress", "session:worker-capture", "backlog"]),
-    ["session:worker-capture"],
+    sessionLabelsOf(["ready", "in-progress", "session:worker-4", "backlog"]),
+    ["session:worker-4"],
   );
 });
 
@@ -100,22 +100,22 @@ test("A ROW WITH NO SESSION LABEL CONTRIBUTES NOTHING -- #725's own ruling: a ro
 
 test("Arming a PR for a row carrying session:X puts session:X on the PR", () => {
   assert.deepEqual(
-    sessionLabelsForArm([["ready", "in-progress", "session:worker-capture"]]),
-    ["session:worker-capture"],
+    sessionLabelsForArm([["ready", "in-progress", "session:worker-4"]]),
+    ["session:worker-4"],
   );
 });
 
 test("A row with two session labels puts both on, rather than picking one", () => {
   assert.deepEqual(
-    sessionLabelsForArm([["session:worker-capture", "session:orchestrator"]]).sort(),
-    ["session:orchestrator", "session:worker-capture"],
+    sessionLabelsForArm([["session:worker-4", "session:orchestrator"]]).sort(),
+    ["session:orchestrator", "session:worker-4"],
   );
 });
 
 test("Two rows closed by one PR: each row's session label is kept, deduplicated, order-independent", () => {
   assert.deepEqual(
-    sessionLabelsForArm([["session:worker-capture"], ["session:worker-capture"], ["ready"]]),
-    ["session:worker-capture"],
+    sessionLabelsForArm([["session:worker-4"], ["session:worker-4"], ["ready"]]),
+    ["session:worker-4"],
   );
   assert.deepEqual(
     sessionLabelsForArm([["session:a"], ["session:b"]]).sort(),
@@ -124,11 +124,11 @@ test("Two rows closed by one PR: each row's session label is kept, deduplicated,
 });
 
 test("labelArmedPr: a row carrying session:X gets it added to the PR, read from the row at arm time", () => {
-  const { run, calls } = fakeRun({ "725": ["ready", "in-progress", "session:worker-capture"] });
+  const { run, calls } = fakeRun({ "725": ["ready", "in-progress", "session:worker-4"] });
   labelArmedPr({ number: "817", repo: "org/repo", prBody: "Closes #725\n", run });
   const editCall = calls.find((c) => c[1] === "pr" && c[2] === "edit");
   assert.ok(editCall, "expected a `gh pr edit` call");
-  assert.ok(editCall!.includes("--add-label") && editCall!.includes("session:worker-capture"));
+  assert.ok(editCall!.includes("--add-label") && editCall!.includes("session:worker-4"));
 });
 
 test("labelArmedPr: a row with NO session label leaves the PR unlabelled -- no gh pr edit call at all, "
@@ -147,12 +147,12 @@ test("labelArmedPr: a PR body with no Closes declaration makes no gh call at all
 
 test("labelArmedPr: two rows, two different session labels -- both go on the PR in one call", () => {
   const { run, calls } = fakeRun({
-    "717": ["session:worker-capture"],
+    "717": ["session:worker-4"],
     "718": ["session:orchestrator"],
   });
   labelArmedPr({ number: "900", repo: "org/repo", prBody: "Closes #717, #718\n", run });
   const editCall = calls.find((c) => c[1] === "pr" && c[2] === "edit")!;
-  assert.ok(editCall.includes("session:worker-capture") && editCall.includes("session:orchestrator"));
+  assert.ok(editCall.includes("session:worker-4") && editCall.includes("session:orchestrator"));
 });
 
 test("labelArmedPr: a row this can't read leaves the PR unlabelled for it rather than throwing -- arming "
@@ -167,13 +167,13 @@ test("labelArmedPr: a row this can't read leaves the PR unlabelled for it rather
 test("Re-arming an already-labelled PR calls labelArmedPr again but issues the SAME single add-label "
   + "call, not an accumulating one -- gh's own --add-label is idempotent, so no special-case dedup "
   + "against the PR's current labels is needed here", () => {
-  const { run, calls } = fakeRun({ "725": ["session:worker-capture"] });
+  const { run, calls } = fakeRun({ "725": ["session:worker-4"] });
   labelArmedPr({ number: "817", repo: "org/repo", prBody: "Closes #725\n", run });
   labelArmedPr({ number: "817", repo: "org/repo", prBody: "Closes #725\n", run });
   const editCalls = calls.filter((c) => c[1] === "pr" && c[2] === "edit");
   assert.equal(editCalls.length, 2, "one call per arm, as designed -- idempotent on GitHub's side");
   for (const c of editCalls) {
-    assert.equal(c.filter((a) => a === "session:worker-capture").length, 1,
+    assert.equal(c.filter((a) => a === "session:worker-4").length, 1,
       "never more than one copy of the same label in a single call");
   }
 });
@@ -201,7 +201,7 @@ test("#1000: the live and retired sets are DISJOINT, and the split is checked ag
 });
 
 test("#1000: a not-live label is NAMED, and says WHICH KIND of not-live", () => {
-  assert.deepEqual(unknownSessionLabels(["session:worker-judge", "session:dispatcher"]),
+  assert.deepEqual(unknownSessionLabels(["session:worker-4", "session:dispatcher"]),
     [{ label: "session:dispatcher", retired: true }]);
   assert.deepEqual(unknownSessionLabels(["session:ceo", "session:product-manager"]), [],
     "every live session passes -- a refusal that fires on the normal case is how a guard gets bypassed");
@@ -215,19 +215,19 @@ test("#1000: a not-live label is NAMED, and says WHICH KIND of not-live", () => 
 test("#1000: the refusal applies NOTHING -- not even the live label beside the retired one", () => {
   // A partial arm is the state nobody can tell from a complete one: the PR would carry one true claim and
   // silently lack another, and `attributionFor` reads what is there, not what was meant.
-  const { calls, run } = fakeRun({ 725: ["session:dispatcher", "session:worker-judge"] });
+  const { calls, run } = fakeRun({ 725: ["session:dispatcher", "session:worker-4"] });
   labelArmedPr({ number: "817", repo: "org/repo", prBody: "Closes #725\n", run });
   assert.equal(calls.find((c) => c[1] === "pr" && c[2] === "edit"), undefined,
     "a retired label refuses the whole arm; nothing is applied");
 });
 
 test("#1000: a row carrying only LIVE labels arms exactly as it does today -- both directions", () => {
-  const { calls, run } = fakeRun({ 725: ["session:worker-judge"] });
+  const { calls, run } = fakeRun({ 725: ["session:worker-4"] });
   labelArmedPr({ number: "817", repo: "org/repo", prBody: "Closes #725\n", run });
   const editCall = calls.find((c) => c[1] === "pr" && c[2] === "edit");
   assert.ok(editCall, "a live session must arm unchanged -- a refusal that fires on the normal case is "
     + "how a guard gets bypassed");
-  assert.ok(editCall!.includes("session:worker-judge"));
+  assert.ok(editCall!.includes("session:worker-4"));
 });
 ;
 
@@ -541,15 +541,39 @@ const SESSIONS_FILE = new URL("../../../../packages/agent-org/docs/roles/session
 type SessionEntry = { name: string; family?: unknown } & Record<string, unknown>;
 const sessionsFile = () => JSON.parse(readFileSync(SESSIONS_FILE, "utf8")) as { live: SessionEntry[]; retired: { name: string }[] };
 
-test("#1453 ACCEPTANCE: arm-pr's live and retired sets EQUAL packages/agent-org/docs/roles/sessions.json's, worker-tooling included", () => {
+test("#1453 ACCEPTANCE: arm-pr's live and retired sets EQUAL packages/agent-org/docs/roles/sessions.json's", () => {
   const file = sessionsFile();
   // #2403: a FAMILY entry is a rule for many addresses, so it is not one name in the list -- `isLiveSession` reads it.
   assert.deepEqual([...LIVE_SESSIONS], file.live.filter((s) => s.family === undefined).map((s) => s.name),
     "the live set is the file's addresses, in the file's order");
   assert.deepEqual([...RETIRED_SESSIONS], file.retired.map((s) => s.name), "and so is the retired set");
-  assert.ok(LIVE_SESSIONS.includes("worker-tooling"), "the session the typed list predated");
-  assert.deepEqual(unknownSessionLabels(["session:worker-tooling"]), [],
-    "the label the auto-arm job refused on #1412 now passes");
+  // #1412 was `worker-tooling`, the session the typed list predated. #2505 retired it, so the same read now says the
+  // OPPOSITE about it, from the same file: it is not live, and its label is refused as retired (test below).
+  assert.ok(!LIVE_SESSIONS.includes("worker-tooling"), "the file, not a typed list, says worker-tooling is not live");
+  assert.deepEqual(unknownSessionLabels(["session:worker-4"]), [],
+    "a spare-family label passes: the family is read from the file too");
+});
+
+// #2505: THE THREE STANDING ENGINEERS ARE RETIRED, AND RETIRING THREE NAMES DID NOT RETIRE THE FAMILY. The positive
+// control is the retired list itself: each label is refused with the sentence `retired` chooses, and `worker-4` beside
+// them still passes -- so the refusal is the roster's doing, not a guard that fires on every `worker-*`.
+test("#2505: `session:worker-capture`, `-judge` and `-tooling` are refused as RETIRED; `session:worker-4` still passes", () => {
+  const retired = ["worker-capture", "worker-judge", "worker-tooling"];
+  const file = sessionsFile();
+  for (const name of retired) {
+    assert.deepEqual(file.retired.find((r) => r.name === name), { name, retiredBy: "#2505" }, `${name} is in \`retired\``);
+    assert.ok(!LIVE_SESSIONS.includes(name) && RETIRED_SESSIONS.includes(name), `${name} is not live and is retired`);
+  }
+  assert.deepEqual(unknownSessionLabels(retired.map((n) => `session:${n}`)),
+    retired.map((n) => ({ label: `session:${n}`, retired: true })), "each is named, and as RETIRED -- not as a typo");
+  assert.deepEqual(unknownSessionLabels(["session:worker-4", "session:worker-9", "session:worker-2505"]), [],
+    "the family passes: three names were retired, not the `worker-<n>` rule");
+  assert.deepEqual(unknownSessionLabels(["session:worker-3"]), [{ label: "session:worker-3", retired: false }],
+    "and below the family's `from` is still refused, as unknown -- the family did not widen");
+  // The refusal reaches the arming path too, and applies NOTHING (#1000): a retired label beside a live one arms none.
+  const { calls, run } = fakeRun({ 725: ["session:worker-capture", "session:worker-4"] });
+  labelArmedPr({ number: "817", repo: "org/repo", prBody: "Closes #725\n", run });
+  assert.equal(calls.find((c) => c[1] === "pr" && c[2] === "edit"), undefined, "nothing was labelled");
 });
 
 // #1951: A `live` ENTRY IS A ROLE. `session:<name>` is a ROUTING ADDRESS, and every enforcement path around
@@ -641,7 +665,7 @@ test("#1453 STRUCTURAL: arm-pr.mjs declares no session-name array -- a typed lis
 
 /** A `gh` for the whole entry point, recording every call. The row #725 carries `rowLabel`. */
 function entryRun({ viewFails = false, state = "OPEN", mergeFails = false, editFails = false,
-  rowLabel = "session:worker-tooling" }: { viewFails?: boolean; state?: string; mergeFails?: boolean;
+  rowLabel = "session:worker-4" }: { viewFails?: boolean; state?: string; mergeFails?: boolean;
   editFails?: boolean; rowLabel?: string } = {}) {
   const calls: string[][] = [];
   const run = (cmd: string, args: string[]) => {
@@ -686,9 +710,9 @@ test("#1478 ACCEPTANCE: the label edit throws AFTER auto-merge landed -- exit 3,
   assert.ok(log.some((line) => line.startsWith("arm-pr: armed #817")), "what landed is printed before the step that failed");
   const said = error.join("\n");
   assert.match(said, /#817 IS ARMED: auto-merge was enabled/);
-  assert.match(said, /NOT applied: session:worker-tooling/);
+  assert.match(said, /NOT applied: session:worker-4/);
   assert.match(said, /HTTP 502 on pr edit/, "the underlying error is quoted, never swallowed");
-  assert.match(said, /Apply them by hand: gh pr edit 817 --repo org\/repo --add-label session:worker-tooling$/,
+  assert.match(said, /Apply them by hand: gh pr edit 817 --repo org\/repo --add-label session:worker-4$/,
     "the one failed step is named as a command, because re-running arm-pr would re-arm an armed PR");
 });
 
@@ -706,7 +730,7 @@ test("#1478 CONTROL: every call succeeds -- exit 0, armed, and labelled from the
   assert.equal(code, EXIT.DONE);
   assert.ok(log.some((line) => line.startsWith("arm-pr: armed #817")));
   const edit = stub.calls[callIndex(stub.calls, "edit")];
-  assert.deepEqual(edit.slice(edit.indexOf("--add-label")), ["--add-label", "session:worker-tooling"]);
+  assert.deepEqual(edit.slice(edit.indexOf("--add-label")), ["--add-label", "session:worker-4"]);
 });
 
 test("#1478 CONTROL: a merge refused on a PR that stays OPEN still throws -- nothing landed, and no label is written", () => {
@@ -807,7 +831,7 @@ function jumpRun({ body, runs = RED_MAIN, pages, seats = [seat(), queuedAt(1)], 
     const route = `${args[0]} ${args[1]}`;
     if (route === "pr view") return JSON.stringify({ labels: [], body, state: "OPEN" });
     if (route === "pr edit") return editLabels();
-    if (route === "issue view") return JSON.stringify({ labels: [{ name: "session:worker-tooling" }] });
+    if (route === "issue view") return JSON.stringify({ labels: [{ name: "session:worker-4" }] });
     if (route === "api graphql") return graphql(args);
     if (args[0] === "api" && args[1].includes("actions/workflows/trunk.yml/runs")) return trunkRuns(args[1]);
     return "";

@@ -1431,9 +1431,12 @@ const LIVE: readonly string[] = SESSIONS_FILE.live.filter((s) => s.family === un
 /** The retired-session case's roster, INJECTED on purpose (that test says why): a named fixture, not the live set. */
 const RETIRED_CASE_ROSTER = ["ceo", "worker-capture"] as const;
 
-test("#1464: the live set these tests read is sessions.json's -- non-empty, holding worker-tooling, and no retired name", () => {
+test("#1464: the live set these tests read is sessions.json's -- non-empty, and no retired name", () => {
   assert.ok(LIVE.length > 0, "the positive control for every `liveSessions: LIVE` below: the set they read is not empty");
-  assert.ok(LIVE.includes("worker-tooling"), "the name the typed five-name copy lacked");
+  assert.ok(LIVE.includes("orchestrator"), "a standing decision-holder is in it, so the set is the file's and not a stub");
+  // #2505: `worker-tooling` was the name the typed five-name copy lacked; it is now retired, which is the same
+  // read from the other side -- the file, and not a typed list, is what says which of them exists.
+  assert.ok(!LIVE.includes("worker-tooling") && SESSIONS_FILE.retired.some((s) => s.name === "worker-tooling"));
   assert.ok(!LIVE.includes("dispatcher"), "a retired session is not live -- the retired-session case's premise, read from the file");
   assert.ok(SESSIONS_FILE.retired.some((s) => s.name === "dispatcher"),
     "and the file records `dispatcher` as retired, so the absence above is not a misspelt name");
