@@ -200,6 +200,9 @@ const NOT_THE_CONTROL_PLANE_CHECKOUT: Record<string, string> = {
   "$RepoPath": "the WINDOWS worker's checkout, in `stamp-provision-revision.ps1` -- a different "
     + "machine's directory, guarded by `guest-paths-are-measured.test.ts` against a MEASUREMENT taken "
     + "on three real guests (#584). Not this file's fact.",
+  "$repo": "the WINDOWS worker's checkout, in `auth-leak-check.yml`'s guest script (#2399): `Set-Location $repo`, "
+    + "where `$repo` is rendered from `a11y_repo_path` in `group_vars/a11y_workers.yml`, which is that machine's "
+    + "directory stated ONCE. The same class as `$RepoPath` above; not this file's fact.",
   "${GUEST_DIR}": "the WINDOWS worker's checkout in `guest-run.mjs` (`C:\\Users\\witness\\...`), a "
     + "different machine's directory. It is the same class as this one and is deliberately NOT fixed "
     + "here: nobody has run `win_stat` against those nine boxes, and restoring a name on sight is the "
