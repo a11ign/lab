@@ -216,6 +216,9 @@ export const TRACKER_WRITERS = Object.freeze([
   "row-file.mjs",
   "stranded-branches.mjs",
   "tracker-comment.mjs",
+  // #2470: `performRelease` comments on the row it takes a claim back from, so the tick's performer became a body sender. It
+  // reaches this guard through its own `guardedGh`, which is the reachability the second test asserts.
+  "wake.mjs",
 ]);
 
 /** Where a declared writer may live. The prefixes are here so the registry above holds no path-shaped
