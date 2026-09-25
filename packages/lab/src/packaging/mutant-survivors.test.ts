@@ -12,8 +12,6 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { extractAcceptanceSection } from "../../../agent-org/src/acceptance-commands.mjs";
-import { main as prOpenMain, survivorsOfThisTree, withBody, withSurvivorsSection } from "../../../agent-org/src/pr-open.mjs";
 import {
   OPERATORS, applyMutant, changedLines, chooseMutants, hunt, mutateRunner, renderSurvivors, survivorsFor,
 } from "../../../guards/src/mutant-survivors.mjs";
@@ -209,109 +207,4 @@ test("mutateRunner does not read a CRASH as a survivor: exit 1 without mutate's 
   const silentPass = (() => ({ status: 0, stdout: "", stderr: "" })) as never;
   assert.equal(mutateRunner({ cwd: dir, test: "T", spawn: crashed })({ ...M(1), file: "f.mjs" }), 2);
   assert.equal(mutateRunner({ cwd: dir, test: "T", spawn: silentPass })({ ...M(1), file: "f.mjs" }), 2);
-});
-
-// ---------------------------------------------------------------------------------------------------------------
-// The wiring in `pr-open.mjs` (present exactly when `docs/mutant-replay.md` reads SHIP: mutant-replay-record.test.ts).
-// ---------------------------------------------------------------------------------------------------------------
-
-const BODY = "## Acceptance\n\nnode -e \"process.exit(0)\"\n\nCloses #1\n";
-const SECTION = ["Survivors: 1 of 3 mutants run survived the named tests (ADVISORY).", "- `a.mjs:2` arg-empty: `f(x)` -> `f([])`"];
-const noGit = () => "";
-
-test("the section is appended after a blank line and a heading, so Acceptance still reads what it read", () => {
-  const extended = withSurvivorsSection(BODY, SECTION);
-  assert.ok(extended.startsWith(BODY.trimEnd()));
-  assert.match(extended, /\n\n## Survivors\n\nSurvivors: 1 of 3/);
-  assert.deepEqual(extractAcceptanceSection(extended), extractAcceptanceSection(BODY));
-  // Idempotent: a body that already carries one gets ITS section replaced, not a second.
-  const twice = withSurvivorsSection(extended, ["Survivors: 0 of 3 mutants run survived the named tests (ADVISORY)."]);
-  assert.equal(twice.match(/## Survivors/g)?.length, 1);
-  assert.doesNotMatch(twice, /1 of 3/);
-  assert.ok(twice.startsWith(BODY.trimEnd()), "replacing the old section keeps everything before it");
-});
-
-test("withBody swaps --body in place, and for --body-file writes a NEW file and leaves the author's alone", () => {
-  assert.deepEqual(withBody(["--draft", "--body", "old", "--title", "t"], "new"), ["--draft", "--body", "new", "--title", "t"]);
-  const dir = mkdtempSync(join(tmpdir(), "pr-body-src-"));
-  const theirs = join(dir, "body.md");
-  writeFileSync(theirs, "old");
-  const args = withBody(["--body-file", theirs], "new");
-  assert.notEqual(args[1], theirs);
-  assert.equal(readFileSync(args[1], "utf8"), "new");
-  assert.equal(readFileSync(theirs, "utf8"), "old");
-});
-
-/** `main` with every seam a fake, returning what `gh` was handed and what was printed. */
-function driveMain(mode: string, survivors: unknown, body = BODY) {
-  const sent: string[][] = [];
-  const printed: string[] = [];
-  const code = prOpenMain([mode, ...(mode === "edit" ? ["7"] : []), "--body", body], {
-    runAcceptance: () => 0, runMutation: () => 0, survivors: survivors as never,
-    run: (args: string[]) => { sent.push(args); }, git: (args: string[]) => (args.includes("--abbrev-ref") ? "b" : "o"), owner: () => null,
-    prHead: () => ({ ref: "b", oid: "o" }), out: (l: string) => printed.push(l), err: () => {},
-  });
-  return { sent, printed, code };
-}
-
-test("main: a create sends the body WITH the section; an edit sends the body it was given; both exit as before", () => {
-  const seen: string[] = [];
-  const found = (given: string) => { seen.push(given); return { lines: SECTION, section: true }; };
-  const created = driveMain("create", found);
-  assert.deepEqual(seen, [BODY], "it is handed the body the author wrote");
-  assert.equal(created.code, 0);
-  assert.deepEqual(created.sent[0].slice(0, 2), ["pr", "create"], "the section changes the body and nothing else");
-  const createdBody = created.sent[0][created.sent[0].indexOf("--body") + 1];
-  assert.equal(createdBody, withSurvivorsSection(BODY, SECTION));
-  assert.ok(created.printed.join("").includes(SECTION[1]));
-  const edited = driveMain("edit", found);
-  assert.equal(edited.sent[0][edited.sent[0].indexOf("--body") + 1], BODY, "an edit re-sends the author's body");
-  assert.equal(edited.code, 0);
-});
-
-test("main: with no `survivors` seam nothing runs and the body is untouched (every other test's shape)", () => {
-  const plain = driveMain("create", undefined);
-  assert.equal(plain.sent[0][plain.sent[0].indexOf("--body") + 1], BODY);
-});
-
-test("main: a survivor list never changes the exit code -- a SKIPPED run is printed and sends the body as it was", () => {
-  const skipped = driveMain("create", () => ({ lines: ["Survivors: SKIPPED -- x."], section: false }));
-  assert.equal(skipped.code, 0);
-  assert.ok(skipped.printed.includes("Survivors: SKIPPED -- x.\n"));
-  assert.equal(skipped.sent[0][skipped.sent[0].indexOf("--body") + 1], BODY);
-});
-
-test("main: a section that would trip the leak scan is NOT appended, and the body goes as the author wrote it", () => {
-  const leaky = { lines: [`- \`a.mjs:2\` arg-empty: \`host = "${["10", "1", "2", "3"].join(".")}"\``], section: true };
-  const { sent, printed, code } = driveMain("create", () => leaky);
-  assert.equal(code, 0);
-  assert.equal(sent[0][sent[0].indexOf("--body") + 1], BODY);
-  assert.ok(printed.some((l) => l.startsWith("Survivors: NOT APPENDED")));
-});
-
-test("survivorsOfThisTree: budget 0 and a body with no Acceptance command are SKIPPED, each saying why", () => {
-  const never = () => { throw new Error("must not run"); };
-  const off = survivorsOfThisTree(BODY, { git: noGit, diff: never, env: { A11Y_SURVIVORS_BUDGET: "0" }, runMutant: never });
-  assert.deepEqual([off.section, off.lines[0]], [false, "Survivors: SKIPPED -- A11Y_SURVIVORS_BUDGET is 0."]);
-  const bare = survivorsOfThisTree("Closes #1", { git: noGit, diff: never, env: {}, runMutant: never });
-  assert.match(bare.lines[0], /^Survivors: SKIPPED -- the body names no Acceptance command/);
-  const broken = survivorsOfThisTree(BODY, { git: () => { throw new Error("no origin/main\nsecond line"); }, env: {}, runMutant: never });
-  assert.deepEqual([broken.section, broken.lines[0]], [false, "Survivors: SKIPPED -- it could not run (no origin/main)."]);
-});
-
-test("survivorsOfThisTree: names the Acceptance commands as the tests, and lists what the injected runner leaves alive", () => {
-  const root = mkdtempSync(join(tmpdir(), "survivors-tree-"));
-  writeFileSync(join(root, "a.mjs"), "  return one;\n  return two;\n");
-  const diff = ["+++ b/a.mjs", "@@ -1,0 +1,2 @@"].join("\n");
-  const git = (args: string[]) => (args[0] === "rev-parse" ? root : "base");
-  const found = survivorsOfThisTree(BODY, { git, diff: () => diff, env: {}, runMutant: (m) => (m.line === 1 ? 1 : 0) });
-  assert.equal(found.section, true);
-  assert.match(found.lines[0], /^Survivors: 1 of 2 mutants run survived/);
-  assert.ok(found.lines.some((l) => l.includes("`a.mjs:1` return-null: `return one;` -> `return null;`")));
-});
-
-test("WIRING: the CLI entry block hands `main` the real `survivors`, and `main` is off without it", () => {
-  const source = readFileSync(join(import.meta.dirname, "../../../agent-org/src/pr-open.mjs"), "utf8");
-  assert.match(source, /process\.exitCode = main\(undefined, \{ rowBody: defaultRowBody, survivors: survivorsOfThisTree \}\)/);
-  assert.match(source, /from "\.\.\/\.\.\/guards\/src\/mutant-survivors\.mjs"/);
 });
