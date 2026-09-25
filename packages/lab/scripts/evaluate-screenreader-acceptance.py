@@ -403,6 +403,16 @@ def assert_case_definitions_unchanged(by_path: dict[str, list[dict[str, Any]]],
 
     PER FILE and fail-closed, for the reasons `assert_cases_exist` states: the number that matters is per
     repeat, and a subset scored silently is the defect this whole family exists to close.
+
+    THE REMEDY IT PRINTS IS A FULL, BOTH-REPEAT RECAPTURE, AND SAYS SO (#2168). It named the TRAINING
+    jobs (`generate`, `capture`), which write `runs/screenreader-dataset` and leave this refusal
+    byte-identical, and it said "recapture the cases named above" although no job can do that: the
+    acceptance capture never caches, and its catalogue entries take no `only`. SCOPING IS REFUSED, NOT
+    MISSING: a corpus part-recaptured on a later day holds two populations that nothing records
+    (`lab:inventory` found four worker-code populations and two Edge builds in the training corpus on
+    2026-08-25, and its cache key exists for that), and this corpus is the one that decides whether a
+    candidate ships. So the message states the real cost instead of implying a cheaper one.
+    `acceptance-remedy-names-its-own-jobs.test.ts` reads the job names back out of this message.
     """
     changed_by_path = {path: changed_case_definitions(records, captured_by_path.get(path, {}), current)
                        for path, records in by_path.items()}
@@ -428,8 +438,13 @@ def assert_case_definitions_unchanged(by_path: dict[str, list[dict[str, Any]]],
         "match the ones this code has, so the report would grade captures of one page against the labels "
         "of another.\n"
         + "\n".join(lines)
-        + "\nRecapture the cases named above at this commit, on the box that owns the corpus:"
-        "\n  npm run lab:job -- -e job=generate   then   npm run lab:job -- -e job=capture"
+        + "\nRecapture the HELD-OUT ACCEPTANCE corpus at this commit, on the box that owns it. There is no"
+        "\nscoped form: acceptance runs never cache, so this is EVERY case, twice, whatever the number named"
+        "\nabove:"
+        "\n  npm run lab:job -- -e job=generate-acceptance"
+        "\n  npm run lab:job -- -e job=capture-acceptance     # repeat-1"
+        "\n  npm run lab:job -- -e job=capture-acceptance-2   # repeat-2"
+        "\n  npm run lab:job -- -e job=export-acceptance      # rewrites both repeat-N.jsonl files above"
         "\nNever evaluate the rest and report a number: a held-out reading states what the corpus IS, and "
         "a corpus the repository cannot reproduce states nothing."
     )
