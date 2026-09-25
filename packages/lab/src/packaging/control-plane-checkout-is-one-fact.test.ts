@@ -448,6 +448,9 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
   ".local": "the XDG user data root -- `~/.local/bin`, where pipx and friends install.",
   ".ansible": "Ansible's own cache, in `requirements.yml`'s documented paths.",
   ".npm": "npm's cache, in `action.yml`'s cache key.",
+  ".cache": "the XDG cache root -- `Environment=NODE_COMPILE_CACHE=%h/.cache/node-compile-cache` in every "
+    + "shipped unit (#2458), which `host-units.test.ts` also quotes in the absolute spelling a unit could use "
+    + "instead of `%h`. A cache directory, not a checkout.",
   ".config": "the XDG config home -- `~/.config/gh/hosts.yml` is where `gh` itself reads its "
     + "credentials from, named in a11ign-work-tick.service's comment on why the unit sets HOME.",
   "Library": "macOS's per-user library, in the board scripts' log paths.",
