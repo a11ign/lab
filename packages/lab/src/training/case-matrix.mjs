@@ -4825,7 +4825,74 @@ cases.push(
   ].map(independent),
 );
 
-export const CASES = Object.freeze(withRealisticScale(
+/**
+ * #2489: THE DOSE OF ICON-LABELLED, NO-STATUS HARD NEGATIVES, RAISED TO THE SIZE OF THE POSITIVES.
+ *
+ * #2385 gave the 4.1.3 heads three icon negatives against 62 declared status pages, and the two
+ * icon-labelled held-out pages (`acceptance-b3-icon-print`, `acceptance-b3-icon-profile`) still scored
+ * 0.966 and 0.977 on `4.1.3:status-progress`, above three of that head's own true positives (#2258). The
+ * cheapest isolating variable is how MANY such pages the head sees, so this changes only that: same
+ * builder, same failure, more of them, with the task wording varied across print, save, profile,
+ * settings, share and the rest so the head cannot learn one verb.
+ *
+ * ONE HYPOTHESIS, NOT THE CAUSE. If a retrain on this dose reads the same, the next row is a feature or an
+ * encoder change, and `orchestrator` decides that from the reading on #2258.
+ *
+ * THE COUNT IS A MULTIPLE OF `SCALE_BUCKETS.length` (five), AND THAT IS LOAD-BEARING. These are
+ * `4.1.2:unnamed-control` base cases, and page furniture is dealt round-robin by position WITHIN the
+ * subtype in FINAL-list order, so every derived variant of that subtype (`+also-`, `+with-`) sits after
+ * them and moves by however many are added here. Thirty moves each by 30 % 5 = 0 buckets; a count that
+ * was not a multiple would re-bucket, and so recapture, existing derived variants of the subtype. MEASURED
+ * by hashing every case's whole definition before and after: 30 added, 0 removed, 0 changed; the same
+ * list with 29 changes 20 existing cases. Not pinned by a test, so the next addition to this subtype
+ * repeats that measurement rather than trusting this paragraph.
+ *
+ * NOT THE HELD-OUT TASKS: "Print this page.", "Open your account.", "Open settings." and the rest of
+ * `acceptance-b3-icon-*` are refused for training by `held-out-is-disjoint-from-training.test.ts`.
+ * Appended after the #2385 block, never inserted, for the reason the furniture comment gives.
+ */
+cases.push(
+  ...[
+    ["print-timetable", "Bus timetable", "Print the timetable"],
+    ["print-ticket", "Concert booking", "Print your ticket"],
+    ["print-recipe", "Soup recipe", "Print the recipe card"],
+    ["save-draft", "Letter draft", "Save the draft"],
+    ["save-article", "Reading list", "Save this article for later"],
+    ["save-photo", "Photo album", "Save the photograph"],
+    ["profile-view", "Member area", "View your member profile"],
+    ["profile-edit", "Volunteer area", "Edit your volunteer profile"],
+    ["settings-display", "Display options", "Change the display settings"],
+    ["settings-privacy", "Privacy centre", "Adjust your privacy settings"],
+    ["settings-alerts", "Alert preferences", "Manage alert preferences"],
+    ["share-photos", "Holiday photos", "Share the photo album"],
+    ["share-route", "Walking route", "Send the route to a friend"],
+    ["copy-link", "Event page", "Copy the event link"],
+    ["copy-voucher", "Voucher", "Copy the voucher code"],
+    ["export-report", "Sales report", "Export the report"],
+    ["export-contacts", "Address book", "Export your contacts"],
+    ["download-manual", "Product manual", "Download the manual"],
+    ["upload-scan", "Document scans", "Upload a scanned document"],
+    ["attach-file", "New message", "Attach a file to the message"],
+    ["reply-message", "Inbox", "Reply to this message"],
+    ["forward-message", "Mail thread", "Forward the message"],
+    ["bookmark-guide", "Visitor guide", "Bookmark this guide"],
+    ["favourite-song", "Playlist", "Add the song to favourites"],
+    ["zoom-map", "Site map", "Zoom in on the map"],
+    ["rotate-plan", "Floor plan", "Rotate the floor plan"],
+    ["refresh-scores", "Match scores", "Refresh the scores"],
+    ["sign-out", "Staff portal", "Sign out of the portal"],
+    ["search-catalogue", "Library catalogue", "Search the catalogue"],
+    ["fullscreen-lecture", "Lecture video", "Show the lecture full screen"],
+  ].map(([slug, title, name]) => unnamedIconVariant({
+    id: "status-negative-icon-" + slug,
+    title,
+    heading: title,
+    name,
+    task: name + ".",
+  })).map(independent),
+);
+
+export const CASES =Object.freeze(withRealisticScale(
   [...cases, ...multiDefectCases(cases), ...conformantBehaviourCases(cases)],
 ));
 
