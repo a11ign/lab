@@ -24,7 +24,7 @@ import { CLAIM_LABEL } from "../../../agent-org/src/claim-labels.mjs";
 // rather than per section this file remembers -- see the loop test at the end.
 import { REQUIRED_FIELDS } from "../../../agent-org/src/row-claim/template-fields-rule.mjs";
 import {
-  READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, handClaims, strandedByIncompleteDecline,
+  READY_LABEL, WAS_READY_LABEL, MUTEX_LABELS, mutexViolations, handClaims, HAND_CLAIM_CAUSES, handClaimFinding, strandedByIncompleteDecline,
   bothBoardLabels, unclaimableReadyRows, fetchReadyRowsWithBodies,
   claimsNobodyIsWorking,
   releaseDeclarationDrift,
@@ -126,10 +126,9 @@ test("MUTATION: review-only is genuinely in MUTEX_LABELS, not just described as 
 });
 
 // --- handClaims: #673 -- ready + in-progress together, which a COMPLETED claim through row-claim.mjs
-// does not leave behind, so the co-occurrence is strong evidence the claim was made some other way. NOT
-// proof: #749 split the claim's additions and its `ready` removal into two calls (because #677 reproduced
-// one combined edit half-applying), so a claim whose second call never landed leaves this same pair
-// (#2111 rework) ---
+// does not leave behind. Since #2151 that includes the claim's own failure: its labels are one `PUT`, so a
+// claim either lands whole or leaves the row untouched (it used to be two calls, and the pair was also what
+// a claim whose removal never landed left). The finding names what remains (`HAND_CLAIM_CAUSES`). ---
 
 test("#673 ACCEPTANCE: a row hand-claimed by applying in-progress + session:x to a ready row is " +
   "reported as a hand claim", () => {
@@ -180,6 +179,19 @@ test("a hand claim with no session:* label yet -- assigned directly, not through
   const claims = handClaims(issues);
   assert.equal(claims.length, 1);
   assert.deepEqual(claims[0].sessions, []);
+});
+
+test("#2151 ACCEPTANCE: the finding names EVERY cause it cannot tell apart, each with its own remedy, and no "
+  + "longer blames a claim made through row-claim.mjs", () => {
+  const line = handClaimFinding({ number: 9, title: "t", sessions: ["session:worker-a"] });
+  assert.equal(HAND_CLAIM_CAUSES.length, 2);
+  for (const { cause, remedy } of HAND_CLAIM_CAUSES) {
+    assert.ok(line.includes(cause) && line.includes(remedy), `the finding must carry: ${cause}`);
+  }
+  assert.match(line, /^HAND CLAIM {2}#9 "t" -- .*session:worker-a/);
+  assert.doesNotMatch(line, /cannot tell the two apart/, "the hedge about the claim's own second call is gone");
+  assert.match(line, /one request, #2151/, "and it says why a claim through the mechanism cannot be the cause");
+  assert.match(handClaimFinding({ number: 9, title: "t", sessions: [] }), /an unknown session/);
 });
 
 // --- strandedByIncompleteDecline: #449, the population no other check here can see ---
