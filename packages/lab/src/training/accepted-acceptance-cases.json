@@ -1,0 +1,62 @@
+{
+  "ruling": "ceo, 2026-09-25, #2258 (the enumeration, docs/known-gaps.md section 53) and #2532 (the evaluator reads it). A 4.1.3 status-head list ONLY; widening it is a new ceo ruling and a new known-gaps section. A false positive's subtype is the head that FIRED; a miss's is the head its case is labelled for.",
+  "falsePositives": [
+    {
+      "case": "acceptance-b3-icon-print/good",
+      "criterion": "4.1.3",
+      "subtype": "4.1.3:status-progress"
+    },
+    {
+      "case": "acceptance-b3-icon-profile/good",
+      "criterion": "4.1.3",
+      "subtype": "4.1.3:status-progress"
+    }
+  ],
+  "misses": [
+    {
+      "case": "acceptance-b3-status-progress-market/bad",
+      "criterion": "4.1.3",
+      "subtype": "4.1.3:status-progress"
+    },
+    {
+      "case": "acceptance-b3-status-progress-plot/bad",
+      "criterion": "4.1.3",
+      "subtype": "4.1.3:status-progress"
+    },
+    {
+      "case": "acceptance-b3-status-progress-taxi/bad",
+      "criterion": "4.1.3",
+      "subtype": "4.1.3:status-progress"
+    },
+    {
+      "case": "acceptance-b3-status-waiting-badge/bad",
+      "criterion": "4.1.3",
+      "subtype": "4.1.3:status-waiting"
+    },
+    {
+      "case": "acceptance-b3-status-waiting-market/bad",
+      "criterion": "4.1.3",
+      "subtype": "4.1.3:status-waiting"
+    },
+    {
+      "case": "acceptance-b3-status-waiting-plot/bad",
+      "criterion": "4.1.3",
+      "subtype": "4.1.3:status-waiting"
+    },
+    {
+      "case": "acceptance-status-progress-booking/bad",
+      "criterion": "4.1.3",
+      "subtype": "4.1.3:status-progress"
+    },
+    {
+      "case": "acceptance-status-waiting-postage/bad",
+      "criterion": "4.1.3",
+      "subtype": "4.1.3:status-waiting"
+    },
+    {
+      "case": "acceptance-status-waiting-stock/bad",
+      "criterion": "4.1.3",
+      "subtype": "4.1.3:status-waiting"
+    }
+  ]
+}

@@ -9,6 +9,7 @@ the same NVDA interaction crosses the model threshold between captures.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import subprocess
 import sys
@@ -961,6 +962,144 @@ def false_positive_reason(criterion: str, block: dict[str, Any]) -> str:
             + (": " + ", ".join(describe_false_positive(name, block) for name in names) if names else ""))
 
 
+# THE ACCEPTED CASES (#2532): the one list `ceo` ruled ACCEPTED on #2258 (2026-09-25), read here so the gate that
+# decides `passed` can see a ruling that lived in `docs/known-gaps.md` §53 and a doc test. Before this a candidate
+# `ceo` had accepted read `passed: false` for good, `promote:gated` refused it, and the schema migration it gates
+# could not close. `known-gaps-file-facts.test.ts` reads the SAME file and pins it to §53, so the doc and the gate
+# cannot drift.
+ACCEPTED_CASES_FILE = REPO_ROOT / "packages/lab/src/training/accepted-acceptance-cases.json"
+# THE LIST IS A `4.1.3` STATUS-HEAD LIST, NOT A GENERAL MECHANISM (`ceo`, 2026-09-25). Refused HERE as well as in the
+# doc test, because the loader is what the gate runs: a widened file must fail the evaluation, not merely a test.
+# `2.4.6` (#2188's icon-help false positive and its two heading misses) is NOT covered; widening is a new ruling
+# and a new known-gaps section.
+ACCEPTABLE_CRITERION = "4.1.3"
+ACCEPTABLE_SUBTYPES = frozenset({"4.1.3:status-progress", "4.1.3:status-waiting"})
+ACCEPTED_FILE_KEYS = frozenset({"ruling", "falsePositives", "misses"})
+ACCEPTED_ENTRY_KEYS = frozenset({"case", "criterion", "subtype"})
+
+
+def load_accepted_cases(path: Path = ACCEPTED_CASES_FILE) -> dict[str, frozenset[tuple[str, str, str]]]:
+    """The accepted false positives and misses as `(case, criterion, subtype)` keys. LOUD on anything malformed.
+
+    THE KEY IS THREE FIELDS, and `ceo` named that non-negotiable: an id-only key accepts a DIFFERENT failure on the
+    same page. For a false positive the subtype is the HEAD THAT FIRED; for a miss it is the head the case is
+    labelled for. Absent file, unknown key, duplicate entry or an entry outside the `4.1.3` status heads raises
+    rather than reading as "nothing accepted": an empty list here would fail every accepted case again and read as a
+    candidate regression, and a list silently widened would pass one.
+    """
+    if not path.is_file():
+        raise RuntimeError(f"the accepted-cases file is missing: {path}")
+    document = json.loads(path.read_text(encoding="utf-8"))
+    if set(document) != ACCEPTED_FILE_KEYS:
+        raise RuntimeError(f"{path} keys are {sorted(document)}, expected {sorted(ACCEPTED_FILE_KEYS)}")
+    accepted: dict[str, frozenset[tuple[str, str, str]]] = {}
+    for kind in ("falsePositives", "misses"):
+        keys = []
+        for entry in document[kind]:
+            if set(entry) != ACCEPTED_ENTRY_KEYS:
+                raise RuntimeError(f"{path} {kind} entry {entry!r} must carry exactly {sorted(ACCEPTED_ENTRY_KEYS)}")
+            if entry["criterion"] != ACCEPTABLE_CRITERION or entry["subtype"] not in ACCEPTABLE_SUBTYPES:
+                raise RuntimeError(
+                    f"{path} {kind} entry {entry!r} is outside the `4.1.3` status heads {sorted(ACCEPTABLE_SUBTYPES)}. "
+                    "Widening the list is a new `ceo` ruling and a new known-gaps section, not an edit to this file.")
+            keys.append((entry["case"], entry["criterion"], entry["subtype"]))
+        if len(set(keys)) != len(keys):
+            raise RuntimeError(f"{path} {kind} lists an entry twice")
+        accepted[kind] = frozenset(keys)
+    return accepted
+
+
+def accepted_cases_provenance(path: Path, accepted: dict[str, frozenset[tuple[str, str, str]]]) -> dict[str, Any]:
+    """Which list this report was judged against, so `passed: true` names the ruling it applied. PURE-ish: reads the file."""
+    return {
+        "source": str(path.relative_to(REPO_ROOT)) if path.is_relative_to(REPO_ROOT) else str(path),
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "falsePositives": len(accepted["falsePositives"]),
+        "misses": len(accepted["misses"]),
+    }
+
+
+def accepted_cases_reading(criterion: str, records: list[dict[str, Any]], included_indices: list[int],
+                           included_labels: Any, decided: Any, subtype_fired: dict[str, Any],
+                           model_subtypes: dict[str, Any],
+                           accepted: dict[str, frozenset[tuple[str, str, str]]]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """What the accepted list removes from this criterion's failures, and what it still leaves. PURE.
+
+    Returns `(report_fields, failing)`. `report_fields` is what the report RECORDS -- `acceptedFalsePositives` and
+    `acceptedMisses` (the cases observed, so a `passed: true` never hides that a ruling was applied) and
+    `staleAcceptedCases` (entries whose case is present and did NOT err this way in this run, so the list cannot
+    outlive the reading it was accepted on unnoticed; reported, never failing). `failing` is the count and the names
+    of the records NOT covered, in the shape `false_positive_reason` and the miss reason already read.
+
+    RECORD-LEVEL, then folded to cases. A record is covered only if EVERY head that fired on it (false positive) or
+    EVERY eligible subtype it is labelled for (miss) is an accepted key, so a page that fires the accepted head and
+    ANOTHER one still fails, and a case is reported accepted only when none of its erring captures fails. The names
+    are built from the records here and not from `metrics`' lists, which stop at `MAX_NAMED_FAILURES`: an
+    unaccepted case beyond that cut would be counted and never named.
+    """
+    accepted_false_positives = {(case, subtype) for case, crit, subtype in accepted["falsePositives"] if crit == criterion}
+    accepted_misses = {(case, subtype) for case, crit, subtype in accepted["misses"] if crit == criterion}
+    present: set[str] = set()
+    observed = {"falsePositives": set(), "misses": set()}
+    uncovered = {"falsePositives": {}, "misses": {}}
+    covered_cases = {"falsePositives": set(), "misses": set()}
+    for position, index in enumerate(included_indices):
+        record = records[index]
+        case = case_identity(record)
+        present.add(case)
+        if decided[index] and not included_labels[position]:
+            kind, subtypes, allowed = "falsePositives", {s for s, fired in subtype_fired.items() if fired[index]}, accepted_false_positives
+        elif included_labels[position] and not decided[index]:
+            kind, subtypes, allowed = "misses", set(record["target"].get("subtypes", [])) & set(model_subtypes), accepted_misses
+        else:
+            continue
+        observed[kind].update((case, subtype) for subtype in subtypes)
+        if subtypes and all((case, subtype) in allowed for subtype in subtypes):
+            covered_cases[kind].add(case)
+        else:
+            uncovered[kind][case] = uncovered[kind].get(case, 0) + 1
+    stale = sorted(
+        ({"kind": kind, "case": case, "criterion": criterion, "subtype": subtype}
+         for kind, allowed in (("falsePositives", accepted_false_positives), ("misses", accepted_misses))
+         for case, subtype in allowed
+         if case in present and (case, subtype) not in observed[kind]),
+        key=lambda entry: (entry["kind"], entry["case"], entry["subtype"]))
+    report_fields = {
+        "acceptedFalsePositives": sorted(covered_cases["falsePositives"] - set(uncovered["falsePositives"])),
+        "acceptedMisses": sorted(covered_cases["misses"] - set(uncovered["misses"])),
+        "staleAcceptedCases": stale,
+    }
+    failing = {
+        "falsePositive": sum(uncovered["falsePositives"].values()),
+        "falsePositiveCases": sorted(uncovered["falsePositives"])[:MAX_NAMED_FAILURES],
+        "falseNegative": sum(uncovered["misses"].values()),
+        "falseNegativeCases": sorted(uncovered["misses"])[:MAX_NAMED_FAILURES],
+    }
+    return report_fields, failing
+
+
+def false_negative_reason(criterion: str, block: dict[str, Any]) -> str:
+    """The failure reason for a criterion that missed a labelled positive: a count, then each case with its head scores. PURE."""
+    names = block.get("falseNegativeCases", [])
+    return (f"{criterion}: {block['falseNegative']} acceptance false negative(s)"
+            + (": " + ", ".join(describe_miss(name, block) for name in names) if names else ""))
+
+
+def failure_reasons_after_accepting(criterion: str, block: dict[str, Any], failing: dict[str, Any]) -> list[str]:
+    """The false-positive and miss reasons for the records the accepted list does NOT cover. PURE.
+
+    `failing` overrides the block's raw counts and case lists and nothing else, so the reason text for an uncovered
+    case is byte-for-byte what it was before the list existed, and a criterion with no accepted case reads the same.
+    """
+    reasons = []
+    covered_block = {**block, **failing}
+    if failing["falsePositive"]:
+        reasons.append(false_positive_reason(criterion, covered_block))
+    if failing["falseNegative"]:
+        reasons.append(false_negative_reason(criterion, covered_block))
+    return reasons
+
+
 # `metrics` reports these against the criterion's own 0/1 decision (`DECIDED`), which is right for a caller holding
 # real scores and wrong for the acceptance report, where `1.000` and `0.000` are the decision restated and were read
 # as a confidence. The head scores are `falsePositiveSubtypeScores` and `falseNegativeSubtypeScores`.
@@ -1195,6 +1334,8 @@ def main() -> None:
     import numpy as np
 
     result = report_skeleton(by_path, artifact, diagnostic=bool(args.allow_ineligible))
+    accepted = load_accepted_cases()
+    result["acceptedCases"] = accepted_cases_provenance(ACCEPTED_CASES_FILE, accepted)
     stability_inputs: dict[str, list[tuple[str, Any, float]]] = {}
     stability_records: dict[str, list[dict[str, Any]]] = {}
     for criterion, criterion_report in report["criteria"].items():
@@ -1345,15 +1486,12 @@ def main() -> None:
         if result["criteria"][criterion]["clean"] < args.min_clean:
             result["failureReasons"].append(f"{criterion}: fewer than {args.min_clean} acceptance clean records")
         block = result["criteria"][criterion]
-        if block["falsePositive"]:
-            result["failureReasons"].append(false_positive_reason(criterion, block))
-        if block["falseNegative"]:
-            result["failureReasons"].append(
-                f"{criterion}: {block['falseNegative']} acceptance false negative(s)"
-                + (": " + ", ".join(describe_miss(name, block)
-                                     for name in block.get("falseNegativeCases", []))
-                   if block.get("falseNegativeCases") else "")
-            )
+        # WHAT THE ACCEPTED LIST REMOVES, recorded in the block and subtracted only from the REASONS. `falsePositive`
+        # and `falseNegative` stay the raw counts every other reader (precision, recall) has always had.
+        accepted_fields, failing = accepted_cases_reading(
+            criterion, records, included_indices, included_labels, decided, subtype_fired, model_subtypes, accepted)
+        block.update(accepted_fields)
+        result["failureReasons"].extend(failure_reasons_after_accepting(criterion, block, failing))
         stability_records[criterion] = included_records
 
     # Counted BEFORE the stability block, so a real per-criterion regression (false positive/negative, or

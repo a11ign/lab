@@ -150,21 +150,20 @@ test("§39 is marked CLOSED, and the threshold constant it quotes lives where th
 // reopens #2258, so what this pins is the LIST, not a number. A test that only counted would let a case
 // be swapped for another of the same cardinality, so each set is compared member by member as well.
 
-const ACCEPTED_FALSE_POSITIVES = [
-  "acceptance-b3-icon-print/good",
-  "acceptance-b3-icon-profile/good",
-];
-const ACCEPTED_MISSES = [
-  "acceptance-b3-status-progress-market/bad",
-  "acceptance-b3-status-progress-plot/bad",
-  "acceptance-b3-status-progress-taxi/bad",
-  "acceptance-b3-status-waiting-badge/bad",
-  "acceptance-b3-status-waiting-market/bad",
-  "acceptance-b3-status-waiting-plot/bad",
-  "acceptance-status-progress-booking/bad",
-  "acceptance-status-waiting-postage/bad",
-  "acceptance-status-waiting-stock/bad",
-];
+// THE LIST IS ONE FILE (#2532): `evaluate-screenreader-acceptance.py` reads it to decide `passed`, and this test
+// reads it to pin it to §53, so the doc and the gate cannot drift. It was two arrays written out here, which is a
+// second copy of the ruling and the one place the gate could not see.
+const ACCEPTED_CASES_FILE = "packages/lab/src/training/accepted-acceptance-cases.json";
+type AcceptedEntry = { case: string, criterion: string, subtype: string };
+const ACCEPTED_FILE: { falsePositives: AcceptedEntry[], misses: AcceptedEntry[] } =
+  JSON.parse(readFileSync(join(REPO, ACCEPTED_CASES_FILE), "utf8"));
+const ACCEPTED_FALSE_POSITIVES = ACCEPTED_FILE.falsePositives.map((entry) => entry.case).sort();
+const ACCEPTED_MISSES = ACCEPTED_FILE.misses.map((entry) => entry.case).sort();
+// THE LIST IS A `4.1.3` STATUS-HEAD LIST, NOT A GENERAL MECHANISM (`ceo`, 2026-09-25). Written out here and not
+// read from the evaluator's own constant, so widening it takes an edit in two places and a reviewer sees both.
+// `2.4.6` (#2188's icon-help false positive and its two heading misses) is NOT covered.
+const ACCEPTABLE_CRITERION = "4.1.3";
+const ACCEPTABLE_SUBTYPES = ["4.1.3:status-progress", "4.1.3:status-waiting"];
 const STATUS_HEADS_SECTION = 53;
 // The sizes the row states (2 and 9), written out rather than taken from the arrays above: a size read
 // from the list it guards moves with it, and is no guard.
@@ -257,6 +256,9 @@ test("§53's enumerated cases are real acceptance cases of the kind the sets cla
     assert.ok(found, `${id} is not an acceptance case (renamed or removed?) -- the miss set now pins a name nothing reads`);
     assert.equal(found.criterion, "4.1.3", `${id} is not a 4.1.3 case`);
     assert.match(found.subtype, /^status-(?:progress|waiting)$/, `${id} is not under a status head`);
+    const entry = ACCEPTED_FILE.misses.find((candidate) => candidate.case === id);
+    assert.equal(entry?.subtype, `4.1.3:${found.subtype}`,
+      `${id} is labelled for ${found.subtype} but the file accepts it under ${entry?.subtype}: a miss is keyed by the head its case is labelled for`);
     assert.match(id, /\/bad$/, `${id}: a MISS is a positive the head failed to flag, so it is the bad page`);
   }
   for (const id of ACCEPTED_FALSE_POSITIVES) {
@@ -265,6 +267,38 @@ test("§53's enumerated cases are real acceptance cases of the kind the sets cla
     assert.equal(found.criterion, "4.1.2",
       `${id} is no longer a 4.1.2 icon case: an FP under a 4.1.3 head on a page of ANOTHER criterion is the reading §53 accepts`);
     assert.match(id, /\/good$/, `${id}: a false positive is a flag on a page with no defect, so it is the good page`);
+  }
+});
+
+/** The entries that are not a `4.1.3` status-head entry keyed by case id + criterion + subtype. */
+const entriesOutsideTheRuling = (entries: AcceptedEntry[]): AcceptedEntry[] =>
+  entries.filter((entry) => Object.keys(entry).sort().join() !== "case,criterion,subtype"
+    || entry.criterion !== ACCEPTABLE_CRITERION || !ACCEPTABLE_SUBTYPES.includes(entry.subtype));
+
+test("the accepted-cases file is the ONE list: 2 false positives and 9 misses, each under a 4.1.3 status head", () => {
+  assert.equal(ACCEPTED_FILE.falsePositives.length, FALSE_POSITIVE_COUNT,
+    `${ACCEPTED_CASES_FILE} must list exactly ${FALSE_POSITIVE_COUNT} false positives (§53)`);
+  assert.equal(ACCEPTED_FILE.misses.length, MISS_COUNT,
+    `${ACCEPTED_CASES_FILE} must list exactly ${MISS_COUNT} misses (§53)`);
+  assert.deepEqual(entriesOutsideTheRuling([...ACCEPTED_FILE.falsePositives, ...ACCEPTED_FILE.misses]), [],
+    "an accepted entry is outside the `4.1.3` status heads, or lacks one of the three key fields (case id + "
+    + "criterion + subtype). Widening the list is a NEW `ceo` ruling and a new known-gaps section, not an edit "
+    + "to this file; `2.4.6` is not covered");
+  const keys = [...ACCEPTED_FILE.falsePositives, ...ACCEPTED_FILE.misses]
+    .map((entry) => `${entry.case}|${entry.criterion}|${entry.subtype}`);
+  assert.equal(new Set(keys).size, keys.length, "an accepted entry is listed twice");
+});
+
+test("each accepted entry's subtype is the head §53 names beside its case", () => {
+  const section = sectionOf(KNOWN_GAPS, STATUS_HEADS_SECTION);
+  assert.ok(section, "§53 is gone -- see the first §53 test");
+  const lines = section.split("\n");
+  for (const entry of [...ACCEPTED_FILE.falsePositives, ...ACCEPTED_FILE.misses]) {
+    const line = lines.find((candidate) => candidate.startsWith(`- \`${entry.case}\``));
+    assert.ok(line, `${entry.case} has no bullet in §53`);
+    assert.ok(line.includes(`\`${entry.subtype}\``) || line.includes(`\`${entry.subtype.replace(/^4\.1\.3:/, "")}\``),
+      `§53 names a different head beside ${entry.case} than the file's ${entry.subtype}: the gate would accept `
+      + `a failure the ruling does not describe. Line: ${line}`);
   }
 });
 
@@ -280,4 +314,15 @@ test("MUTATION: the §53 readers notice a widened set, a removed anchor and a mi
     "an absent anchor read as an empty set instead of as absent");
   assert.equal(sectionOf(KNOWN_GAPS.replace(/^## 53\. /m, "## 5x. "), STATUS_HEADS_SECTION), null,
     "a missing section heading was not reported as absent");
+
+  const real = ACCEPTED_FILE.misses[0];
+  assert.equal(entriesOutsideTheRuling([real]).length, 0, "the real first entry reads as outside the ruling -- the guard refuses everything");
+  for (const widened of [
+    { ...real, criterion: "2.4.6", subtype: "2.4.6:regex" },
+    { ...real, subtype: "4.1.3:form-activation-silent" },
+    { case: real.case, subtype: real.subtype },
+  ]) {
+    assert.equal(entriesOutsideTheRuling([widened as AcceptedEntry]).length, 1,
+      `an entry outside the 4.1.3 status heads was not refused: ${JSON.stringify(widened)}`);
+  }
 });
