@@ -410,7 +410,28 @@ test("every site that ENTERS a directory either interpolates the source of truth
     `only ${sites.length} entry site(s) found across the tree -- the discovery is broken, and a check `
     + "that passes having examined nothing is the defect this file exists to prevent (10 on 2026-09-08)");
 
-  const unclassified = sites.filter(([file, target]) => {
+  // Emptiness, whose positive control is the "tripped on purpose" test below (#2414): an unclassified
+  // fixture site must surface through this same function, with the remedy attached.
+  const failures = unclassifiedEntrySites({ sites, classified: NOT_THE_CONTROL_PLANE_CHECKOUT, sourceOf: read })
+    .map(([file, target]) => entrySiteFailure(file, target));
+  assert.equal(failures.length, 0,
+    `these sites enter a directory that is neither the control plane's checkout (from ${SOURCE_OF_TRUTH}) `
+    + `nor a classified other one. Each line below names its own fix:\n${failures.join("\n")}`);
+});
+
+/**
+ * The entry sites that are neither the control plane's checkout nor a decided other directory. The decision
+ * behind the assertion above, taking its three inputs rather than reading them (the way `entrySitesIn` and
+ * `homeRootNamesIn` do), so a fixture can trip it and the failure message can be shown to be one that,
+ * followed, makes the site pass (#2414).
+ */
+export function unclassifiedEntrySites(input: {
+  sites: Array<[string, string]>;
+  classified: Record<string, string>;
+  sourceOf: (file: string) => string;
+}): Array<[string, string]> {
+  const { sites, classified, sourceOf } = input;
+  return sites.filter(([file, target]) => {
     // A target that CANNOT be the control plane's checkout, decided by shape rather than by listing
     // every literal. The checkout is `/root/<name>` or the bare `<name>` reached from `/root`; none of
     // these three can be that, and enumerating them one at a time would be a list that drifts.
@@ -422,19 +443,84 @@ test("every site that ENTERS a directory either interpolates the source of truth
     // `{{` or a JS `},`. A directory cannot be named that, and classifying it as one would put nonsense
     // in a list whose whole value is that every row is a decision somebody made.
     if (!/[A-Za-z0-9_~$%.]/.test(target)) return false;
-    const name = /^\$\{([A-Za-z_$][\w$]*)\}/.exec(target)?.[1];
+    const name = aliasIn(target);
     if (name && EXPORTED_NAMES.includes(name)) return false;
-    if (target in NOT_THE_CONTROL_PLANE_CHECKOUT) return false;
+    if (target in classified) return false;
     // A local alias is fine ONLY if THIS file derives it from the source of truth. Reading the site's
     // OWN file matters: the first draft read `sites[0]`'s, which answered about a neighbouring file --
     // this repository's most-repeated shape, committed inside the guard written against it.
-    return !(name && new RegExp(`\\b${name}\\s*=\\s*(${EXPORTED_NAMES.join("|")})\\b`).test(read(file)));
-  }).map(([file, target]) => `${file}: enters ${target}`);
-  assert.deepEqual(unclassified, [],
-    `these sites enter a directory that is neither the control plane's checkout (from ${SOURCE_OF_TRUTH}) `
-    + `nor a classified other one. If this is a SECOND literal for the checkout, derive it from the `
-    + `source of truth -- that is the whole reason this file exists. If it is a different directory, add `
-    + `it to NOT_THE_CONTROL_PLANE_CHECKOUT with the reason.`);
+    return !(name && new RegExp(`\\b${name}\\s*=\\s*(${EXPORTED_NAMES.join("|")})\\b`).test(sourceOf(file)));
+  });
+}
+
+/** `PRIMARY_CHECKOUT` out of `${PRIMARY_CHECKOUT}`: the local name a template literal interpolates. */
+const aliasIn = (target: string): string | undefined => /^\$\{([A-Za-z_$][\w$]*)\}/.exec(target)?.[1];
+
+/** The classification map's name, as the source spells it -- the test below reads SELF to keep it true. */
+const CLASSIFICATION_MAP = "NOT_THE_CONTROL_PLANE_CHECKOUT";
+
+/**
+ * The ONE edit that turns an unclassified entry site green, on one line. The guard cannot know which of
+ * the two it is -- a second literal for the checkout, or another directory -- so it states both, each a
+ * single edit with the key spelled the way the map spells it (`JSON.stringify` is a valid TS string key).
+ * The "tripped on purpose" test applies each edit and checks the site goes quiet.
+ */
+export function entryRemedy(file: string, target: string): string {
+  const alias = aliasIn(target);
+  const [checkout, checkoutPath] = EXPORTED_NAMES;
+  const useTheExport = alias
+    ? `in ${file} define ${alias} = ${checkout} (imported from ${SOURCE_OF_TRUTH})`
+    : `in ${file} use \${${checkout}} (or \${${checkoutPath}}) from ${SOURCE_OF_TRUTH}`;
+  return "FIX, ONE EDIT -- if it is a second literal for the checkout: " + useTheExport
+    + `; if it is a different directory: add the key ${JSON.stringify(target)} to ${CLASSIFICATION_MAP} `
+    + `in ${SELF}, its value being the reason.`;
+}
+
+/** One unclassified site as the failure prints it: what was found, then the edit that fixes it. */
+export function entrySiteFailure(file: string, target: string): string {
+  return `  ${file}: enters ${target}\n    ${entryRemedy(file, target)}`;
+}
+
+test("TRIPPED ON PURPOSE -- an unclassified entry site fails naming its file and the one edit that fixes "
+  + "it, and following that edit is what makes it pass (#2414: #2409 cost a review round on a bare "
+  + "`${PRIMARY_CHECKOUT}` because the message named neither)", () => {
+  // Fixture names no directory this project will ever create: a path invented for the trip.
+  const file = "packages/nobody/src/trip.mjs";
+  const target = "/srv/nobodys-checkout";
+  const trip = (classified: Record<string, string>, sourceOf: (f: string) => string = () => "") =>
+    unclassifiedEntrySites({ sites: [[file, target]], classified, sourceOf });
+
+  // THE POSITIVE CONTROL for the emptiness assertion above: the guard fires on this fixture.
+  assert.deepEqual(trip(NOT_THE_CONTROL_PLANE_CHECKOUT), [[file, target]],
+    "the fixture must be unclassified, or the assertions below prove nothing");
+
+  const message = entrySiteFailure(file, target);
+  const remedy = entryRemedy(file, target);
+  assert.ok(message.includes(`${file}: enters ${target}`), "the message names the offending file and target");
+  assert.ok(message.includes(remedy), "and carries the remedy");
+  assert.ok(!remedy.includes("\n"), "the remedy is ONE line -- if it cannot be, that is the finding (#2414 ruling 3)");
+  assert.ok(remedy.includes(file), "the remedy names the file to edit, so the line stands alone when copied");
+  for (const name of [CLASSIFICATION_MAP, ...EXPORTED_NAMES]) {
+    assert.ok(remedy.includes(name), `the remedy names ${name}`);
+  }
+  assert.match(read(SELF), new RegExp(`const ${CLASSIFICATION_MAP}\\b`),
+    "the map's name in the remedy is the identifier this file declares, not a stale spelling");
+  assert.match(read(SOURCE_OF_TRUTH), new RegExp(`export const ${EXPORTED_NAMES[0]}\\b`));
+
+  // FOLLOW the remedy's key: read it out of the message the way a person would copy it, add it, and the
+  // site is decided. A key spelled wrongly in the message would leave this red.
+  const key = JSON.parse(/add the key ("(?:[^"\\]|\\.)*")/.exec(remedy)?.[1] ?? "null");
+  assert.equal(key, target, "the message spells the key exactly as the map must");
+  assert.deepEqual(trip({ ...NOT_THE_CONTROL_PLANE_CHECKOUT, [key]: "a reason" }), []);
+
+  // The third exit the old paragraph never mentioned: a local alias the site's OWN file derives.
+  const alias = "nobodysAlias";
+  const aliased = { sites: [[file, `\${${alias}}`]] as Array<[string, string]>, classified: {} };
+  assert.equal(unclassifiedEntrySites({ ...aliased, sourceOf: () => "" }).length, 1, "an alias nothing derives is a site");
+  const derive = /define (\w+ = \w+)/.exec(entryRemedy(file, `\${${alias}}`))?.[1] ?? "";
+  assert.equal(derive, `${alias} = ${EXPORTED_NAMES[0]}`, "the alias remedy is the derivation itself");
+  assert.deepEqual(unclassifiedEntrySites({ ...aliased, sourceOf: () => `const ${derive};` }), [],
+    "and writing that line in the site's own file is what silences it");
 });
 
 /**
@@ -448,6 +534,9 @@ const OTHER_HOME_DIRECTORIES: Record<string, string> = {
   ".local": "the XDG user data root -- `~/.local/bin`, where pipx and friends install.",
   ".ansible": "Ansible's own cache, in `requirements.yml`'s documented paths.",
   ".npm": "npm's cache, in `action.yml`'s cache key.",
+  ".cache": "the XDG cache root -- `Environment=NODE_COMPILE_CACHE=%h/.cache/node-compile-cache` in every "
+    + "shipped unit (#2458), which `host-units.test.ts` also quotes in the absolute spelling a unit could use "
+    + "instead of `%h`. A cache directory, not a checkout.",
   ".config": "the XDG config home -- `~/.config/gh/hosts.yml` is where `gh` itself reads its "
     + "credentials from, named in a11ign-work-tick.service's comment on why the unit sets HOME.",
   "Library": "macOS's per-user library, in the board scripts' log paths.",
@@ -551,15 +640,30 @@ test("THE EXEMPTION IS THE FIELD, NOT THE FILE -- a quoted `command` in a report
  * @param source its bytes
  */
 export function homeRootNamesIn(file: string, source: string): string[] {
+  return homeRootSegmentsIn(source).map((segment) => `${file}: ~/${segment}`);
+}
+
+/** The unclassified segments themselves, so a failure can spell the key that classifies one (#2414). */
+function homeRootSegmentsIn(source: string): string[] {
   const named: string[] = [];
   for (const m of stripComments(source).matchAll(UNDER_A_HOME_ROOT)) {
     const segment = (m[1] ?? m[2]).replace(/\.+$/, "");
     if (segment === "") continue;
     if (segment === CHECKOUT_NAME) continue;
     if (segment in OTHER_HOME_DIRECTORIES) continue;
-    named.push(`${file}: ~/${segment}`);
+    named.push(segment);
   }
   return named;
+}
+
+/**
+ * The ONE edit that settles an unclassified home-root name, on one line: the two answers the guard cannot
+ * choose between, each a single edit, the key spelled as `OTHER_HOME_DIRECTORIES` spells it.
+ */
+export function homeRootRemedy(segment: string): string {
+  return `FIX, ONE EDIT -- if it is another literal for the checkout: use ${EXPORTED_NAMES[0]} from `
+    + `${SOURCE_OF_TRUTH}; if it belongs to a different machine: add the key ${JSON.stringify(segment)} to `
+    + `OTHER_HOME_DIRECTORIES in ${SELF}, its value being the reason.`;
 }
 
 test("BOTH SPELLINGS OF ONE PATH ARE DECIDED THE SAME WAY -- a systemd unit cannot expand `~` or `$HOME` "
@@ -613,12 +717,25 @@ test("no file names a directory under a home root that should be the checkout --
   + "an operation, so no amount of operation-keying finds it", () => {
   // Emptiness, with its positive control in the test directly above (#1990): one unclassified segment
   // surfacing, in both spellings, through this same function.
-  const named = trackedSource().flatMap((file) => homeRootNamesIn(file, read(file)));
-  assert.deepEqual([...new Set(named)].sort(), [],
+  const failures = trackedSource().flatMap((file) => [...new Set(homeRootSegmentsIn(read(file)))]
+    .map((segment) => `  ${file}: ~/${segment}\n    ${homeRootRemedy(segment)}`)).sort();
+  assert.equal(failures.length, 0,
     "these name a directory directly under a home root that is neither the control plane's checkout "
-    + `(${CHECKOUT_NAME}, from ${SOURCE_OF_TRUTH}) nor a classified other. If it is another literal for `
-    + "the checkout, derive it from the source of truth; if it belongs to a different machine, say so in "
-    + "OTHER_HOME_DIRECTORIES -- a path under a home root is not automatically this machine's.");
+    + `(${CHECKOUT_NAME}, from ${SOURCE_OF_TRUTH}) nor a classified other. Each line below names its own fix:\n`
+    + failures.join("\n"));
+});
+
+test("an unclassified home-root name fails with a one-line remedy naming the map and the key to add (#2414)", () => {
+  const segment = "nobodys-dir";
+  const remedy = homeRootRemedy(segment);
+  assert.ok(!remedy.includes("\n"), "the remedy is ONE line");
+  for (const name of ["OTHER_HOME_DIRECTORIES", EXPORTED_NAMES[0], SOURCE_OF_TRUTH, SELF]) {
+    assert.ok(remedy.includes(name), `the remedy names ${name}`);
+  }
+  assert.match(read(SELF), /const OTHER_HOME_DIRECTORIES\b/, "the map's name is the identifier declared here");
+  assert.ok(remedy.includes(`the key ${JSON.stringify(segment)}`), "the key is spelled out");
+  assert.deepEqual(homeRootNamesIn("a.md", `\`~/${segment}\``), [`a.md: ~/${segment}`],
+    "control: the segment the remedy names is one the guard actually reports");
 });
 
 test("both consumers reach the checkout through the source of truth, and neither holds its own literal "
