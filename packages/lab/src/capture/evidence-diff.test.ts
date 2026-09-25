@@ -12,8 +12,8 @@ import { resolve as resolvePath } from "node:path";
 import { captureRoot, datasetRoot } from "../dataset-paths.mjs";
 import { labCorpusReadable, skipLine } from "../training/corpus-settled.mjs";
 
-import { compareCapture, summarise, readCapture, isUsableCapture, EVIDENCE_FIELDS, NOT_EVIDENCE_KEYS }
-  from "./evidence-diff.mjs";
+import { compareCapture, summarise, readCapture, isUsableCapture, unusableReason, refuseUnusableEntries,
+  refusalLines, EVIDENCE_FIELDS, NOT_EVIDENCE_KEYS } from "./evidence-diff.mjs";
 
 /**
  * A sample of real captures, anchored on THIS FILE rather than `process.cwd()` — a cwd-relative corpus
@@ -287,6 +287,77 @@ test("isUsableCapture: null (readCapture's own 'absent' answer) is NOT usable", 
   assert.equal(isUsableCapture(null), false);
 });
 
+/**
+ * #2433 -- a capture in which NVDA's focus was on a `cmd.exe` console. THE SOUTHWARK SHAPE, copied from
+ * the protocol-21 capture of data.southwark.gov.uk/data-catalog-explorer (2026-09-24, #2412): transcript
+ * two `blank` lines and a `documentReady` that says `ok: true` about the console window's title.
+ */
+const CONSOLE_TITLE = "C: Windows SYSTEM 32 cmd dot exe";
+const southwark = () => ({
+  screenReader: "NVDA",
+  url: "https://data.southwark.gov.uk/data-catalog-explorer/",
+  transcript: ["blank", "blank"],
+  diagnostics: [{ event: "documentReady", atMs: 6792, ok: true, title: CONSOLE_TITLE, attempt: 1 }],
+});
+/** THE POSITIVE CONTROL: same envelope, a real transcript and a real page title. It must stay usable. */
+const readPage = () => ({
+  screenReader: "NVDA",
+  url: "https://www.w3.org/WAI/tutorials/forms/",
+  transcript: ["Forms Tutorial | WAI | W3C", "heading level 1, Forms Tutorial", "blank", "link, Skip to content"],
+  diagnostics: [{ event: "documentReady", atMs: 5100, ok: true, title: "Forms Tutorial | Web Accessibility Initiative (WAI) | W3C", attempt: 1 }],
+});
+
+test("isUsableCapture: a console-window capture (the Southwark shape) is NOT usable", () => {
+  assert.equal(isUsableCapture(southwark()), false);
+  assert.match(unusableReason(southwark()) ?? "", /only "blank"/);
+});
+
+test("isUsableCapture: the same predicate still admits a capture that read a real page (positive control)", () => {
+  assert.equal(isUsableCapture(readPage()), true);
+  assert.equal(unusableReason(readPage()), null);
+});
+
+test("isUsableCapture: either half of the definition refuses it alone", () => {
+  // Blank transcript with a browser title: NVDA read nothing whatever the title says.
+  const blankOnly = { ...southwark(), diagnostics: [{ event: "documentReady", ok: true, title: "A real page" }] };
+  assert.equal(isUsableCapture(blankOnly), false);
+  // A real transcript with the console title: what the capture says about focus outranks the length.
+  const consoleTitleOnly = { ...readPage(), diagnostics: [{ event: "documentReady", ok: true, title: CONSOLE_TITLE }] };
+  assert.equal(isUsableCapture(consoleTitleOnly), false);
+  assert.match(unusableReason(consoleTitleOnly) ?? "", /console window/);
+});
+
+test("isUsableCapture: a lone 'blank' among real lines, or no diagnostics at all, is not a console capture", () => {
+  assert.equal(isUsableCapture({ screenReader: "NVDA", transcript: ["blank", "heading"] }), true);
+  assert.equal(isUsableCapture({ screenReader: "NVDA", transcript: ["a"], diagnostics: "not a list" }), true);
+});
+
+test("isUsableCapture: a retry that reached the browser after an attempt on the console IS usable", () => {
+  const retried = { ...readPage(), diagnostics: [
+    { event: "documentReady", ok: false, title: CONSOLE_TITLE, attempt: 1 },
+    { event: "documentReady", ok: true, title: "Forms Tutorial | W3C", attempt: 2 },
+  ] };
+  assert.equal(isUsableCapture(retried), true);
+});
+
+test("refuseUnusableEntries: names each refused url with its reason, and keeps the rest", () => {
+  const { kept, refused } = refuseUnusableEntries([{ capture: readPage() }, { capture: southwark() }]);
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0]?.capture.url, readPage().url);
+  assert.deepEqual(refused.map((r) => r.url), [southwark().url]);
+  assert.match(refused[0]?.reason ?? "", /never read the page/);
+});
+
+test("refusalLines: prints each refused url with the reason, and NOTHING when nothing was refused", () => {
+  const { refused } = refuseUnusableEntries([{ capture: readPage() }, { capture: southwark() }]);
+  const lines = refusalLines(refused);
+  assert.equal(lines.length, 2);
+  assert.match(lines[0] ?? "", /REFUSED 1 capture\(s\)/);
+  assert.ok(lines[1]?.includes(southwark().url) && lines[1].includes("never read the page"));
+  // The clean sweep: the same function over captures that were all read prints no line at all.
+  assert.deepEqual(refusalLines(refuseUnusableEntries([{ capture: readPage() }]).refused), []);
+});
+
 test("a timing-only difference is NOT an evidence change", () => {
   // MEASURED 2026-09-06 on the run meant to decide whether three probe fixes moved the evidence:
   // `48 compared: 42 same, 0 drift, 6 changed`, and all six were form cases whose ONLY differing key was
@@ -539,4 +610,17 @@ test("every capture served a different document does not read as 'every capture 
   const result = summarise([{ comparison: { verdict: "DIFFERENT_DOCUMENT" } }]);
   assert.match(result.recommendation, /^DIFFERENT DOCUMENT/);
   assert.doesNotMatch(result.recommendation, /worker is reachable/);
+});
+
+test("the calibration sweep routes what it scores through the refusal, and scores only what was kept (#2433)", () => {
+  // A WIRING PIN, and named as one: `calibrate-abstention.mjs` cannot be imported by a test (it refuses
+  // unknown flags against `process.argv` at import and reaches the corpus), so `calibrationPages` is read
+  // as text. It catches the mutant that matters -- `return calibrationEntries(loaded)` in place of `return
+  // kept`, which leaves every helper above green while the sweep scores the console capture again -- and
+  // nothing subtler: a rewrite that keeps the shape and drops the semantics is not seen here.
+  const source = readFile(new URL("../../scripts/calibrate-abstention.mjs", import.meta.url), "utf8");
+  const body = source.slice(source.indexOf("function calibrationPages()"));
+  assert.match(body, /const \{ kept, refused \} = refuseUnusableEntries\(calibrationEntries\(loaded\)\);/);
+  assert.match(body, /refusalLines\(refused\)/);
+  assert.match(body.slice(0, body.indexOf("\n}\n")), /return kept;/);
 });
