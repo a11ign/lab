@@ -49,6 +49,12 @@ const NOT_A_CLI_ARGUMENT: Readonly<Record<string, string>> = {
   "fail-on": "read by the Report step to decide the exit status; the capture does not see it",
   "comment-on-pr": "read by the Report step to decide whether to post; the capture does not see it",
   "node-version": "consumed by actions/setup-node before the CLI exists",
+  "flows": "exported as the FLOWS environment variable and made absolute against the workspace in the Capture step's shell, "
+    + "which then passes `--flows`; deliberately NOT interpolated into the run text (ADR 0038, Constraint 2: these are the "
+    + "inputs of an action that handles secrets, and `authenticated-action.test.ts` pins that none of the three is)",
+  "login-flow": "exported as LOGIN_FLOW and passed as `--login-flow` from the environment variable, for the reason `flows` is",
+  "send-authenticated-transcript-to-judge-vendor": "exported as SEND_TRANSCRIPT and passed as `--send-authenticated-transcript-to-judge-vendor` "
+    + "ONLY when it is exactly `true`; an argument in the CLI and never an environment variable it reads (clause 5's override)",
 };
 
 test("every declared input either reaches the CLI or is classified", () => {
