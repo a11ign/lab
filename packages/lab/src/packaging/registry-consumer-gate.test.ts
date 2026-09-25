@@ -18,7 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  decide, formatDecision, loadFixtures, lookupPaths, readInstalledTree, selfCheckProblems, RULES,
+  decide, formatDecision, isLoaderFailure, loadFixtures, lookupPaths, readInstalledTree, selfCheckProblems, RULES,
 } from "../../../../scripts/registry-consumer-gate.mjs";
 
 const SCRIPT = fileURLToPath(new URL("../../../../scripts/registry-consumer-gate.mjs", import.meta.url));
@@ -55,6 +55,8 @@ const REFUSALS: Array<[fixture: string, rule: string, pkg: string, detail: RegEx
   ["unsatisfied-range", "unsatisfied-range", "@a11ign/worker-fleet", /"@a11ign\/judge"\] is "0\.2\.0" -- installed 0\.1\.0 .* does not satisfy/],
   ["version-mismatch", "version-mismatch", "a11ign", /printed 0\.0\.9, but 0\.1\.0 is what was installed/],
   ["entry-point-unresolvable", "import-failed", "@a11ign/judge", /ERR_MODULE_NOT_FOUND/],
+  // The #2521 review's case: a Node loader code the first list of seven did not name, which passed as UNCHECKED.
+  ["entry-point-import-not-defined", "import-failed", "@a11ign/judge", /ERR_PACKAGE_IMPORT_NOT_DEFINED/],
   // The two this gate adds to the row's six, each because its own failure is otherwise a pass or a crash.
   ["cli-unrunnable", "cli-unrunnable", "a11ign", /could not determine executable to run/],
   ["nothing-installed", "nothing-installed", "a11ign", /an empty reading proves nothing/],
@@ -217,6 +219,28 @@ test("an entry point deleted from an installed package is REFUSED at import, thr
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("an entry point importing an undefined #alias is REFUSED through the script, from a real package", posixOnly, () => {
+  const root = syntheticInstall();
+  try {
+    writePackage(root, "node_modules/@a11ign/evidence", { name: "@a11ign/evidence", version: "0.1.0", type: "module", exports: { ".": "./index.js" } },
+      { "index.js": "import \"#missing\";\n" });
+    const run = gate(root);
+    assert.equal(run.status, 1, run.stdout + run.stderr);
+    assert.match(run.stdout, /REFUSED:\s+\[import-failed\] @a11ign\/evidence: .*ERR_PACKAGE_IMPORT_NOT_DEFINED/);
+    assert.doesNotMatch(run.stdout, /UNCHECKED: import\("@a11ign\/evidence"\)/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a loader failure is recognised by the SHAPE of its code, and a package's own throw is not one", () => {
+  assert.equal(isLoaderFailure({ code: "ERR_PACKAGE_IMPORT_NOT_DEFINED", errorName: "TypeError" }), true);
+  assert.equal(isLoaderFailure({ code: "ERR_A_CODE_NODE_ADDS_NEXT_YEAR", errorName: "Error" }), true, "not a list a new release can outgrow");
+  assert.equal(isLoaderFailure({ code: "MODULE_NOT_FOUND", errorName: "Error" }), true);
+  assert.equal(isLoaderFailure({ code: null, errorName: "SyntaxError" }), true);
+  assert.equal(isLoaderFailure({ code: null, errorName: "Error" }), false, "nvda-worker's own 'No available supported screen readers'");
 });
 
 test("a directory with no install is exit 2 -- could not read, never a pass", () => {
