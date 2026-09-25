@@ -10,6 +10,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { captureRoot, datasetRoot, realCorpusRoot } from "../src/dataset-paths.mjs";
@@ -82,4 +83,6 @@ function main() {
   for (const source of sources) reportSource(source);
 }
 
-main();
+// Guarded, so importing this module cannot run it -- the check CLAUDE.md makes mandatory for every `.mjs`.
+// Realpath'd, or npm's own .bin symlink reads this false and `main()` never runs -- #1086.
+if (import.meta.url === pathToFileURL(process.argv[1] ? fs.realpathSync(process.argv[1]) : "").href) main();
