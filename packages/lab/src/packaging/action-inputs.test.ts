@@ -24,6 +24,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const ACTION = readFileSync(resolve(REPO, "action.yml"), "utf8");
@@ -49,6 +50,12 @@ const NOT_A_CLI_ARGUMENT: Readonly<Record<string, string>> = {
   "fail-on": "read by the Report step to decide the exit status; the capture does not see it",
   "comment-on-pr": "read by the Report step to decide whether to post; the capture does not see it",
   "node-version": "consumed by actions/setup-node before the CLI exists",
+  "flows": "exported as the FLOWS environment variable and made absolute against the workspace in the Capture step's shell, "
+    + "which then passes `--flows`; deliberately NOT interpolated into the run text (ADR 0038, Constraint 2: these are the "
+    + "inputs of an action that handles secrets, and `authenticated-action.test.ts` pins that none of the three is)",
+  "login-flow": "exported as LOGIN_FLOW and passed as `--login-flow` from the environment variable, for the reason `flows` is",
+  "send-authenticated-transcript-to-judge-vendor": "exported as SEND_TRANSCRIPT and passed as `--send-authenticated-transcript-to-judge-vendor` "
+    + "ONLY when it is exactly `true`; an argument in the CLI and never an environment variable it reads (clause 5's override)",
 };
 
 test("every declared input either reaches the CLI or is classified", () => {
@@ -258,4 +265,83 @@ test("the Report step exits with the capture's status only when the report's own
   assert.equal(exitOf(0, "1"), 1, "a failed page must fail the job after the report is written");
   assert.equal(exitOf(0, "0"), 0);
   assert.equal(exitOf(2, "1"), 2, "the report's status says WHICH failure; the capture's must not overwrite it");
+});
+
+/**
+ * `task` IS OPTIONAL, DESCRIBED AS WHAT IT DOES, AND AN UNSET ONE IS THE CLI'S DEFAULT, NEVER AN EMPTY TASK (#2268, #2262 a).
+ *
+ * Making the input optional alone would have shipped a second defect: an unset input is the empty string, the workflow
+ * passed `--task ""`, and the CLI parsed with `argv[++i] ?? args.task`, which only falls back on a MISSING value. The
+ * report then printed a blank `Task:` line. Both halves are pinned: the workflow does not build the flag from an empty
+ * input, and the parser does not take an empty value for a task, so removing either fails here.
+ */
+const entryOf = (name: string) => new RegExp(`^ {2}${name}:\\n((?:(?: {4}.*)?\\n)*)`, "m").exec(ACTION)?.[1] ?? "";
+
+test("task is not required, and its description names what it does and denies what it does not", () => {
+  const task = entryOf("task");
+  assert.ok(task.length > 0, "found no `task` entry in action.yml -- the block format changed and this went blind");
+  assert.match(task, /^ {4}required: false$/m, "task must not be required: an unset one is the CLI's default");
+  const description = task.replace(/\s+/g, " ");
+  assert.match(description, /NAMES A BUTTON FOR THE PROBE TO PRESS/, "it steers which button the probe presses");
+  assert.match(description, /LABEL FOR YOUR REPORT/, "it is a label for the report");
+  assert.match(description, /It does NOT change the analysis/, "and it does not change the analysis");
+  // The other half: the description must never claim the judgement follows the task. The rented backends DO read it, and
+  // that sentence is allowed to say so -- as a thing only they do.
+  assert.doesNotMatch(description, /\b(?:sharpen|improve|steer|tune)s?\b[^.]*\b(?:judg|analysis|findings|verdict)/i,
+    "the description must not claim the task steers or sharpens the judgement");
+  assert.doesNotMatch(description, /load-bearing/, "the description no longer calls the task load-bearing");
+});
+
+/** The Capture step's argv, built by the workflow's own shell text with the input substituted the way the runner does. */
+function argvFromWorkflow(task: string): string[] {
+  const text = stepText("        args=(", "        # ONE OF THESE TWO").replaceAll("${{ inputs.task }}", task);
+  const ran = spawnSync("bash", ["-c", `set -eo pipefail\n${text}\nprintf '%s\\0' "\${args[@]}"`], { encoding: "utf8" });
+  assert.equal(ran.status, 0, `the workflow's argv block failed: ${ran.stderr}`);
+  return ran.stdout.split("\0").slice(0, -1);
+}
+
+/** What the CLI makes of an argv: the task it parsed, and the `Task:` line the report prints for it. */
+function taskAndReportLine(argv: string[]): { task: string; line: string | undefined } {
+  const script = `
+    import { parseArgs } from "./packages/cli/src/cli.ts";
+    import { reportLines } from "./packages/cli/src/report.ts";
+    const { task } = parseArgs(JSON.parse(process.env.WITNESS_TEST_ARGV));
+    const lines = reportLines({ url: "https://example.com", task, screenReader: "NVDA", announcements: 1,
+      verdict: { taskCompletable: true, confidence: 0.9, summary: "s", findings: [] }, axe: null });
+    console.log(JSON.stringify({ task, line: lines.find((l) => l.startsWith("Task:")) }));`;
+  const npx = npmCliInvocation("npx", ["tsx", "-e", script]);
+  const ran = spawnSync(npx.command, npx.args, {
+    cwd: REPO, encoding: "utf8", // by environment: cli.ts's entry guard reads `process.argv[1]` as a script path
+    env: { ...process.env, WITNESS_TEST_ARGV: JSON.stringify(["https://example.com", ...argv]) },
+  });
+  assert.equal(ran.status, 0, `parsing the argv failed: ${ran.stderr}`);
+  return JSON.parse(ran.stdout.trim().split("\n").at(-1) ?? "{}");
+}
+
+const CLI_DEFAULT_TASK = "Read and understand this page";
+
+test("an Action run with task unset builds no --task and reaches the report as the CLI default, never an empty task", () => {
+  const argv = argvFromWorkflow("");
+  assert.deepEqual(argv, ["--json"], "an unset task passes no --task flag");
+  const { task, line } = taskAndReportLine(argv);
+  assert.equal(task, CLI_DEFAULT_TASK);
+  assert.match(line ?? "", new RegExp(`^Task:  ${CLI_DEFAULT_TASK}  \\(`), "the report prints the default, not a blank Task line");
+});
+
+test("an Action run with task set passes it through, and a blank one still gets the default from the parser", () => {
+  assert.deepEqual(argvFromWorkflow("Buy a bag"), ["--json", "--task", "Buy a bag"]);
+  assert.equal(taskAndReportLine(argvFromWorkflow("Buy a bag")).task, "Buy a bag");
+  // The parser's own half, independent of the workflow: `--task ""` and a whitespace-only value are not a task.
+  assert.equal(taskAndReportLine(["--task", ""]).task, CLI_DEFAULT_TASK);
+  assert.equal(taskAndReportLine(["--task", "  "]).task, CLI_DEFAULT_TASK);
+});
+
+test("README and docs/github-action.md say what task does in the same words, and README no longer says it is not a label", () => {
+  const sentence = "`task` is optional. It names a button for the probe to press, by a word from that button's label; "
+    + "it is a label for your report; and it does NOT change the analysis.";
+  for (const file of ["README.md", "docs/github-action.md"]) {
+    const text = readFileSync(resolve(REPO, file), "utf8");
+    assert.ok(text.includes(sentence), `${file} must carry the ruling's sentence verbatim: ${sentence}`);
+    assert.doesNotMatch(text, /`--task` is not a label|Give it a real task/, `${file} still tells the reader the task is not a label`);
+  }
 });

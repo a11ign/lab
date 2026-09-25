@@ -75,7 +75,17 @@ function codeLines(source: string): string[] {
 function runSites(source: string): { label: string; command: string; runner: string }[] {
   const joined = source.replace(/\\\n\s*/g, " ").replace(/(^|\s)#.*$/gm, "$1");
   return [...joined.matchAll(/^\s*run "([^"]*)"\s+(.+)$/gm)]
-    .map((m) => ({ label: m[1], command: m[2].trim(), runner: m[2].trim().split(/\s+/)[0] }));
+    .map((m) => ({ label: m[1], command: withoutCap(m[2].trim()), runner: withoutCap(m[2].trim()).split(/\s+/)[0] }));
+}
+
+/**
+ * #2507: A CHECK MAY START UNDER THE MEMORY CAP, and the site is judged by what the cap STARTS. The one prefix is
+ * `node packages/guards/src/test-memory-cap.mjs run <name> --`; strip it and the runner is `npx` again, so `... -- echo
+ * skipped` still reads as `echo` and is refused below. Stripping only this exact prefix is the point: a `node` runner in
+ * general would let a gutted site through.
+ */
+function withoutCap(command: string): string {
+  return command.replace(/^node packages\/guards\/src\/test-memory-cap\.mjs run \S+ -- /, "");
 }
 
 /** What a check may be executed BY. Anything else is a check turned off while still reading like one. */
