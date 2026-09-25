@@ -25,7 +25,8 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { regionRefusalReason, declaresRelease, outOfReleaseArgv, labelsOutOfRelease, OUT_OF_RELEASE, OUT_OF_RELEASE_MILESTONE }
   from "../../../agent-org/src/row-file.mjs";
-import { declaredRegionFiles } from "../../../agent-org/src/region-paths.mjs";
+import { declaredRegionFiles, NOT_A_COMMIT } from "../../../agent-org/src/region-paths.mjs";
+import { startability, subjectAndRegionFacts } from "../../../agent-org/src/row-reachability.mjs";
 import { declarationDisagreement, extractAcceptanceSection, fleetOrLabAcceptance, untrimmedFleetMention } from "../../../agent-org/src/acceptance-commands.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1554,6 +1555,80 @@ test("#1322: labelValuesFromArgv reads every spelling gh takes; withoutLabels dr
 });
 
 // ---------------------------------------------------------------------------------------------------
+// #2147: #2059 CAME OUT `backlog, lane:any, lane:orchestrator` -- AN ANSWER AND ITS NEGATION -- and the
+// composing functions (`laneLabelsFor`, `withAcceptanceLane`, `labelRefusal`) are each correct today, so a
+// test of any one of them would have passed on 2026-09-23. This one asserts the SET THE FILER APPLIES: what
+// reaches `gh issue create` plus every `gh issue edit --add-label`, over every Region x Acceptance x typed-lane
+// combination that can reach a filing.
+//
+// Not reproduced at `28196cb02` or `4121f9be8` (the last main before the filing). Reproduced EXACTLY -- the same
+// labels, the same silent stderr, `lane:any` stripped from the create call and applied at the board step -- by
+// any tree before `6a1c41ad9` (#1912), where `withAcceptanceLane` did not yet drop `lane:any`.
+// ---------------------------------------------------------------------------------------------------
+
+/** What each Region x Acceptance cell must derive, written out by hand so the test is not the code it checks. */
+const LANE_CELLS = [
+  { region: "no lane", acceptance: "npx tsx --test x", lanes: { lanes: [] }, derived: ["lane:any"] },
+  { region: "an owned lane", acceptance: "npx tsx --test x",
+    lanes: { lanes: [{ owner: "ceo", paths: ["packages/lab/src/packaging/foo.ts"] }] }, derived: ["lane:ceo"] },
+  { region: "no lane", acceptance: "npm run lab:status", lanes: { lanes: [] }, derived: ["lane:orchestrator"] },
+  { region: "an owned lane", acceptance: "npm run lab:status",
+    lanes: { lanes: [{ owner: "ceo", paths: ["packages/lab/src/packaging/foo.ts"] }] },
+    derived: ["lane:ceo", "lane:orchestrator"] },
+];
+const TYPED_LANES = [[], ["--label=lane:any"], ["--label=lane:orchestrator"], ["--label=lane:ceo"],
+  ["--label=lane:any,lane:orchestrator"]];
+
+/** One filing of `cell`'s body with `typed` appended: the exit code, and the lanes that reached `gh`. */
+function lanesAppliedBy(cell: (typeof LANE_CELLS)[number], typed: string[]) {
+  const body = COMPLETE_BODY.replace("npx tsx --test x", cell.acceptance);
+  assert.equal(body.includes(cell.acceptance), true, "the Acceptance replacement landed");
+  const argv = ["--title", "a real row", "--body", body, "--session=worker-contracts", ...RELEASE, ...typed];
+  let created: string[] = [];
+  const added: string[] = [];
+  const write = process.stderr.write.bind(process.stderr);
+  (process.stderr as { write: unknown }).write = () => true;
+  try {
+    const code = createIssue(argv, {
+      ...happyDeps("worker-contracts", "backlog", {
+        loadLanesConfig: () => cell.lanes,
+        fetchLabels: () => ({ number: 900, title: "a real row", labels: ["backlog", ...cell.derived] }),
+      }),
+      spawnGh: (a: string[]) => { created = a; return FILED_URL; },
+      run: (cmd: string, args: string[]) => {
+        args.forEach((arg, i) => { if (arg === "--add-label") added.push(args[i + 1]); });
+        return afterRun(appendFiledBy(body, "worker-contracts"))(cmd, args);
+      },
+    });
+    return { code, applied: lanesIn([...labelValuesFromArgv(created), ...added]).sort() };
+  } finally {
+    (process.stderr as { write: unknown }).write = write;
+  }
+}
+
+test("#2147: the lanes a filing applies are the derived set exactly, and never `lane:any` beside an owned lane", () => {
+  let filed = 0;
+  for (const cell of LANE_CELLS) {
+    for (const typed of TYPED_LANES) {
+      const said = `${cell.region} + ${cell.acceptance} + typed [${typed.join(" ")}]`;
+      const { code, applied } = lanesAppliedBy(cell, typed);
+      if (labelValuesFromArgv(typed).every((lane) => cell.derived.includes(lane))) {
+        filed += 1;
+        assert.equal(code, 0, `${said} files`);
+        assert.deepEqual(applied, cell.derived, `${said}: the derived set, once each`);
+      } else {
+        assert.equal(code, 1, `${said}: a typed lane the Region and Acceptance do not derive refuses`);
+        assert.deepEqual(applied, [], `${said}: and nothing reaches gh`);
+      }
+      assert.equal(applied.includes("lane:any") && applied.length > 1, false, `${said}: an answer beside its negation`);
+    }
+  }
+  assert.equal(filed, 4 + 1 + 2 + 2,
+    "positive control: the untyped filing of each of 4 cells, plus a typed lane wherever it IS derived "
+    + "(`lane:any` in 1 cell, `lane:orchestrator` in 2, `lane:ceo` in 2), still files");
+});
+
+// ---------------------------------------------------------------------------------------------------
 // #1393: `out-of-release` WAS READ BY EXACT SPELLING, IN TWO COPIES.
 //
 // `declaresRelease` made the refusal and `outOfReleaseArgv` added the milestone, and both matched only
@@ -2366,4 +2441,33 @@ test("#2175: createIssue on a No that still runs an invocation routes it AND pri
   assert.equal(code, 0, stderr);
   assert.deepEqual(ensured, ["backlog", "lane:orchestrator"]);
   assert.match(stderr, /lane:orchestrator added although the row declares "No" to "Does the acceptance need the fleet or the lab\?" -- the Acceptance reaches the fleet/);
+});
+
+// #2177: THE FILER AND THE CLAIMER AGREE ON ONE BODY, driven from ONE exported sentence. Both readers are
+// CALLED over the same fixtures -- never two regexes compared -- so a second spelling in either shows up as
+// a disagreement here rather than as a misleading note on somebody's claim.
+test("#2177: a body row-file accepts is one row-reachability calls declared, and a refused one still warns", () => {
+  const sentence = NOT_A_COMMIT.source;
+  assert.equal(new RegExp(sentence, "i").test(sentence), true, "the exported spelling is a plain sentence");
+  const noteOf = (body: string) => {
+    const facts = subjectAndRegionFacts(body, { run: () => "", refs: () => [], state: () => "no PR" });
+    return startability({ row: 1, ...facts, state: "OPEN" }).lines.join("\n");
+  };
+  const tail = "\n\n## Acceptance\nNot a test.\n\n## Open-check\nn/a\n";
+  const accepted = [
+    `## What it is\nx\n\n## Region\n${sentence}.${tail}`,
+    `## What it is\nx\n\n**Region:** ${sentence}.${tail}`,
+  ];
+  const refused = [
+    `## What it is\nx\n\n## Region\nThe destination.\n\n### Why\n${sentence}.${tail}`,
+    `## What it is\n${sentence}, they said.\n\n## Region\nThe destination.${tail}`,
+  ];
+  for (const body of accepted) {
+    assert.equal(regionRefusalReason(body), null);
+    assert.match(noteOf(body + " `someSymbolName`"), /declares `its deliverable is not a commit`/);
+  }
+  for (const body of refused) {
+    assert.ok(regionRefusalReason(body));
+    assert.match(noteOf(body + " `someSymbolName`"), /yielded NO path this could read/);
+  }
 });
