@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, readFileSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { tempDir } from "../../../guards/src/test-tmp.mjs";
@@ -27,11 +27,17 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.
 const SCRIPT = path.join(REPO, "packages/guards/src/mutation-check.mjs");
 
 /**
- * #2457: the checker copies the file aside into `mutate-*` under `TMPDIR` and deliberately never deletes that copy (a
- * restore that fails leaves it for a human, and a clean one leaves it too). So every run made here is handed a `TMPDIR` the
- * helper removes with the file, instead of the shared `/tmp`. The script keeps the copy, and a follow-up is its own row.
+ * #2457: every run made here is handed a `TMPDIR` the helper removes with the file, instead of the shared `/tmp`.
+ * #2520: the checker now removes its own `mutate-*` copy once the restore is proven, so the runs that ASSERT that
+ * (`ownTmp` below) each get a `TMPDIR` of their own and list it afterwards.
  */
 const CHECKER_ENV: NodeJS.ProcessEnv = { ...process.env, TMPDIR: tempDir("mutcheck-checker-tmp-") };
+
+/** A `TMPDIR` private to one run, so what is in it afterwards is that run's and nobody else's. */
+function ownTmp(): { tmp: string; env: NodeJS.ProcessEnv; left: () => string[] } {
+  const tmp = tempDir("mutcheck-own-tmp-");
+  return { tmp, env: { ...process.env, TMPDIR: tmp }, left: () => readdirSync(tmp) };
+}
 
 /** Run the checker and return its exit code and output, never throwing on a non-zero exit. */
 function check(args: string[], env: NodeJS.ProcessEnv = CHECKER_ENV): { code: number; out: string } {
@@ -217,4 +223,72 @@ test("--prove-restored refuses to be combined with a mutation, and the batch fla
   }
   assert.equal(runs(), 0);
   assert.equal(readFileSync(file, "utf8"), "the answer is 42\n");
+});
+
+/* THE COPY-ASIDE DIRECTORY (#2520): removed once the restore is proven, kept when it is not. Each pair below is
+ * a control for the other: a removal that ignored the restore result would pass the first and fail the second,
+ * and a removal that never happened would fail the first.
+ */
+test("a proven restore leaves nothing in TMPDIR, on every exit that restores: 0, 1 and 2", () => {
+  const cases: Array<[number, (file: string) => string[]]> = [
+    [0, (file) => [`--mutate=perl -pi -e 's/42/99/' ${file}`, `--test=grep -q 'is 42' ${file}`]],
+    [1, (file) => [`--mutate=perl -pi -e 's/answer/question/' ${file}`, `--test=grep -q 'is 42' ${file}`]],
+    [2, (file) => ["--mutate=true", `--test=grep -q 'is 42' ${file}`]],
+  ];
+  for (const [expected, argsFor] of cases) {
+    const file = fixture();
+    const { env, left } = ownTmp();
+    const { code, out } = check([`--file=${file}`, ...argsFor(file)], env);
+    assert.equal(code, expected, out);
+    assert.deepEqual(left(), [], `exit ${expected} must not leave its copy-aside directory behind`);
+  }
+});
+
+test("a run refused before it copies anything makes no directory to begin with", () => {
+  const file = fixture();
+  const { env, left } = ownTmp();
+  const { code, out } = check([`--file=${file}`, `--mutate=perl -pi -e 's/42/99/' ${file}`, "--test=false"], env);
+  assert.equal(code, 2, out);
+  assert.deepEqual(left(), []);
+});
+
+test("a FAILED restore keeps the copy, and the report names its path", () => {
+  const file = fixture();
+  const c = corruptsItsOwnStash(file);
+  const { code, out } = check([`--file=${file}`, c.mutate, `--test=grep -q 'is 42' ${file}`], c.env);
+  assert.equal(code, 3, out);
+  const tmp = c.env.TMPDIR as string;
+  const kept = readdirSync(tmp);
+  assert.equal(kept.length, 1, "the one directory holding the only copy of the original");
+  assert.match(kept[0], /^mutate-/);
+  const stash = path.join(tmp, kept[0], "subject.txt");
+  assert.ok(out.includes(stash), `the report must name ${stash}\n${out}`);
+  assert.equal(readFileSync(stash, "utf8"), "the answer is 99\n",
+    "the copy is left exactly as the mutation left it, for a human to inspect");
+});
+
+test("a byte-identical restore whose test then FAILS keeps the copy too", () => {
+  // The bytes are back, but the mutation command touched something outside --file: the row's own rule is
+  // that the copy stays until the restore is proven, and the test still failing is not proof.
+  const file = fixture();
+  const other = `${file}.other`;
+  writeFileSync(other, "ok\n");
+  const { env, tmp, left } = ownTmp();
+  const { code, out } = check([`--file=${file}`,
+    `--mutate=perl -pi -e 's/42/99/' ${file}; rm ${other}`,
+    `--test=grep -q 'is 42' ${file}; test -e ${other}`], env);
+  assert.equal(code, 3, out);
+  assert.equal(left().length, 1);
+  assert.ok(out.includes(path.join(tmp, left()[0])), out);
+});
+
+test("per-mutant mode removes its copy after the byte check, one directory per invocation and none left", () => {
+  const { file, test: testArg } = counted();
+  const { env, left } = ownTmp();
+  for (let mutant = 0; mutant < 2; mutant += 1) {
+    const { code, out } = check([`--file=${file}`, `--mutate=perl -pi -e 's/42/99/' ${file}`, testArg,
+      ...PER_MUTANT], env);
+    assert.equal(code, 0, out);
+    assert.deepEqual(left(), [], `after mutant ${mutant}`);
+  }
 });
