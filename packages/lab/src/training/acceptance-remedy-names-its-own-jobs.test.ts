@@ -129,9 +129,15 @@ function literalEnd(source: string, at: number): { end: number; quote: string } 
   return { end: Math.min(end + quote.length, source.length), quote };
 }
 
-/** A triple-quoted literal that directly follows a `:` is a docstring, which is prose about the code. */
+/**
+ * A triple-quoted literal is a docstring, which is prose about the code, when it opens a block (directly after
+ * a `:` line) or the module (nothing before it but blank lines and comments: the shebang, an encoding line).
+ * The module case has no `:` to find, which is how one slipped past this test (reviewer, #2449).
+ */
 function isDocstring(source: string, at: number): boolean {
-  return /:[ \t]*\n\s*$/.test(source.slice(0, at));
+  const before = source.slice(0, at);
+  const opensModule = before.split("\n").every((line) => line.trim() === "" || line.trim().startsWith("#"));
+  return opensModule || /:[ \t]*\n\s*$/.test(before);
 }
 
 /**
@@ -265,4 +271,30 @@ test("MUTATION: a docstring or a comment naming a job does not stand in for the 
   ]);
   // The same source scanned raw is what the guard used to do, and it passes: the defect, kept as evidence.
   assert.deepEqual(disagreements(DOCSTRING_ONLY, catalogue(), npmScripts()), []);
+});
+
+const MODULE_DOCSTRING_ONLY = [
+  "#!/usr/bin/env python3",
+  "# -*- coding: utf-8 -*-",
+  '"""Evaluate the scorer. Remedy: `-e job=export-acceptance` after `-e job=capture-acceptance-2`."""',
+  "",
+  "def refuse():",
+  '    raise SystemExit("\\n  npm run lab:job -- -e job=generate-acceptance"',
+  '                     "\\n  npm run lab:job -- -e job=capture-acceptance")',
+].join("\n");
+
+test("MUTATION: a MODULE docstring naming a job does not stand in for the message (reviewer, #2449)", () => {
+  // Nothing precedes a module docstring but the shebang and comments, so the `:`-then-newline test that
+  // recognises a function's or class's docstring never sees it.
+  const problems = disagreements(pythonMessageText(MODULE_DOCSTRING_ONLY), catalogue(), npmScripts());
+  assert.deepEqual(problems, [
+    "no job named for repeat-2, which the evaluator reads",
+    "no job named that writes the runs/screenreader-acceptance/*.jsonl the evaluator reads (the export)",
+  ]);
+  assert.deepEqual(disagreements(MODULE_DOCSTRING_ONLY, catalogue(), npmScripts()), []);
+});
+
+test("POSITIVE CONTROL: a triple-quoted string after code is message text, so the module rule is not 'all of them'", () => {
+  const assigned = ['"""Prose."""', 'REMEDY = """', "  npm run lab:job -- -e job=export-acceptance", '"""'].join("\n");
+  assert.deepEqual(jobsNamedBy(pythonMessageText(assigned)).map(({ job }) => job), ["export-acceptance"]);
 });
