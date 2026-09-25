@@ -53,15 +53,13 @@ import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { RULES_FILES } from "./rules-files.ts";
+import { BUDGET_BYTES, REMEDY, WARN_BYTES, WARN_REMEDY, prefixBudgetVerdict } from "./prefix-budget.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
 /** The two files every session loads before it can act. Budgeted as a SET -- see the header. */
 // #2092: the rules are one file per topic; the set is named in `rules-files.ts`, never globbed.
 const LOADED = ["CLAUDE.md", ...RULES_FILES] as const;
-
-/** `ceo`'s number, #2217. Only `ceo` moves it. */
-const BUDGET_BYTES = 20_000;
 
 /**
  * Deliveries in the measured day (2026-09-23): 529 `wake-ledger` lines + 171 `prompt-session-handoffs`
@@ -99,11 +97,6 @@ function priceLines(total: number, each: readonly { file: string; bytes: number 
     + `>=${(tokensFloor(ONE_KB_OF_RULE) * DELIVERIES_PER_DAY).toLocaleString()} tokens/day, every day.`,
   ].join("\n");
 }
-
-/** The remedy, named in the refusal so a reader does not have to guess at it. */
-const REMEDY = "EVICT OR MOVE, DO NOT TRUNCATE: keep the RULE loaded, move the incident narrative to "
-  + "docs/operational-lessons.md and link it from the heading. That is the form CLAUDE.md already uses "
-  + "(#458, #1240). Deleting a rule to fit is NOT the remedy, and the preservation test below refuses it.";
 
 /**
  * Every heading the loaded rules file carried at `aae2c3c9e` -- the commit #2217 was filed against.
@@ -176,20 +169,98 @@ test("the loaded prefix states its price, and every run says it", () => {
   for (const f of each) assert.ok(price.includes(f.file), `the price must name ${f.file}`);
 });
 
+/**
+ * #2248: TWO BANDS, ONE REFUSAL. The bands and both remedies live in `prefix-budget.mjs`, so the five
+ * boundary values are checkable from outside this suite; this file asserts them and applies them to the tree.
+ *
+ * **THE WARN BAND WAS IN BREACH THE DAY IT LANDED, AND THAT IS CORRECT.** The set measured 19,986 B at
+ * `c06bc5cc3` (the commit the row was filed against) and 19,972 B at `df20cfe09` (measured off disk in the
+ * worktree the band was built on), both past 18,000 B and both within 30 B of the 20,000 B refusal. So this
+ * test PRINTS A WARNING from its first run. Do not close that by moving the band: it is the alarm, and the
+ * remedy is `WARN_REMEDY`'s ladder (move narrative, shorten over-long pins, then `ceo`).
+ *
+ * WHERE THE WARNING IS SEEN, MEASURED: the `default` console reporter (CI, a person's terminal, or
+ * `RSTEST_NO_AGENT=1`) prints it, and the JSON run record keeps it. **An agent session's `md` reporter prints
+ * only failures, so on a green run it shows nothing** -- the price printout above has always had that limit.
+ */
+/**
+ * The bands as ceo set them, typed out AGAIN here on purpose: a test that imported the constants and compared
+ * them to themselves would follow whoever moved the number. Moving either is `ceo`'s, and shows up as a red here.
+ */
+const CEO_WARN_BYTES = 18_000;
+const CEO_BUDGET_BYTES = 20_000;
+/** The set as measured at `c06bc5cc3`, the commit #2248 was filed against: 14 B from the refusal. */
+const SET_AT_FILING = 19_986;
+
 test("the loaded set -- CLAUDE.md plus every rules file -- is within ceo's 20,000-byte budget", () => {
   const { each, total } = loadedSizes();
-  assert.ok(
-    total <= BUDGET_BYTES,
-    `${priceLines(total, each)}\n\nOVER BUDGET by ${(total - BUDGET_BYTES).toLocaleString()} B.\n${REMEDY}`,
-  );
+  const verdict = prefixBudgetVerdict(total);
+  // A warning is PRINTED on the run that reports it, with the number, the headroom and the remedy -- a band
+  // nobody sees reads as coverage. It does not fail the suite; only `over` does.
+  if (verdict.verdict === "warn") console.warn(`${priceLines(total, each)}\n\n${verdict.message}`);
+  assert.notEqual(verdict.verdict, "over", `${priceLines(total, each)}\n\n${verdict.message}`);
 });
 
 test("the budget assertion is REACHABLE in both directions -- a set at the budget passes, one byte over fails", () => {
   // THE POSITIVE CONTROL. Without it, the test above could pass because it measures nothing.
-  const overBudget = (total: number) => total > BUDGET_BYTES;
-  assert.equal(overBudget(BUDGET_BYTES), false, "a set exactly at the budget must PASS");
-  assert.equal(overBudget(BUDGET_BYTES + 1), true, "a set one byte over the budget must FAIL");
-  assert.equal(overBudget(BUDGET_BYTES - 1), false);
+  const at = (total: number) => prefixBudgetVerdict(total).verdict;
+  assert.equal(at(BUDGET_BYTES), "warn", "a set exactly at the budget must PASS (and warn)");
+  assert.equal(at(BUDGET_BYTES + 1), "over", "a set one byte over the budget must FAIL");
+  assert.equal(at(BUDGET_BYTES - 1), "warn");
+});
+
+test("the warn band starts at 18,000 B, in both directions, and every boundary is asserted", () => {
+  const at = (total: number) => prefixBudgetVerdict(total).verdict;
+  assert.equal(WARN_BYTES, CEO_WARN_BYTES, "only ceo moves the band, and never to silence it");
+  assert.equal(BUDGET_BYTES, CEO_BUDGET_BYTES, "the refusal stays where ceo set it");
+  assert.equal(at(WARN_BYTES - 1), "ok", "17,999 B is below the band");
+  assert.equal(at(WARN_BYTES), "warn", "18,000 B is the first byte of the band");
+  assert.equal(at(SET_AT_FILING), "warn", "the figure the row was filed at, in breach on the day it landed");
+  assert.equal(at(BUDGET_BYTES), "warn", "20,000 B exactly still passes -- the refusal was never >=");
+  assert.equal(at(BUDGET_BYTES + 1), "over");
+});
+
+test("a warning names the number, the headroom and the remedy, and an ok set says nothing", () => {
+  const warn = prefixBudgetVerdict(SET_AT_FILING);
+  const headroom = CEO_BUDGET_BYTES - SET_AT_FILING;
+  assert.equal(warn.headroom, headroom);
+  assert.match(warn.message, /19,986 B/, "the number");
+  assert.ok(warn.message.includes(`${headroom} B of headroom`), "the headroom");
+  assert.ok(warn.message.includes(WARN_REMEDY), "the remedy, in full, in the message a run prints");
+  assert.equal(warn.remedy, WARN_REMEDY);
+  const ok = prefixBudgetVerdict(WARN_BYTES - 1);
+  assert.deepEqual([ok.message, ok.remedy], ["", ""], "a set below the band must be silent");
+});
+
+test("the warn remedy carries the ladder in ceo's order, the debt's author and its due date", () => {
+  const r = WARN_REMEDY.toLowerCase();
+  const [narrative, shorten, ceo] = ["narrative", "shorten", "ceo"].map((w) => r.indexOf(w));
+  assert.ok(narrative >= 0 && narrative < shorten && shorten < ceo, `ladder out of order: ${[narrative, shorten, ceo]}`);
+  // The first-occurrence check above is the row's own Acceptance and is satisfied by the word "narrative" in the
+  // DEBT sentence, so a swapped ladder passes it (mutant survived, #2248). The rungs are pinned as rungs.
+  assert.match(WARN_REMEDY, /\(1\) MOVE NARRATIVE.*\(2\) SHORTEN OVER-LONG PINS.*\(3\) only then come back to ceo/,
+    "the rungs must be numbered and in ceo's order: narrative, then pins, then ceo");
+  assert.match(WARN_REMEDY, /adding author pays, in the same pull request/i, "the debt's author AND its due date");
+  assert.match(WARN_REMEDY, /pre-authorised/, "pin-shortening needs no second ruling");
+  assert.match(WARN_REMEDY, /claim and both its directions stay pinned/, "the proviso that makes it safe");
+  assert.match(WARN_REMEDY, /Deleting a rule is NOT on this list/, "deletion is not a rung");
+});
+
+/**
+ * The refusal's remedy as #2217 shipped it, PINNED AS A LITERAL copied from this file at `f3e75eee6^` (the
+ * commit before #2248). Comparing the subject to the `REMEDY` it exports compares it to itself, so a reference
+ * changed in `prefix-budget.mjs` (`#1240` to `#9999`) passed all twelve tests; only a literal held here can
+ * notice the words move.
+ */
+const REMEDY_BEFORE_2248 = "EVICT OR MOVE, DO NOT TRUNCATE: keep the RULE loaded, move the incident narrative to "
+  + "docs/operational-lessons.md and link it from the heading. That is the form CLAUDE.md already uses "
+  + "(#458, #1240). Deleting a rule to fit is NOT the remedy, and the preservation test below refuses it.";
+
+test("the 20,000 refusal still says what it said before #2248", () => {
+  const over = prefixBudgetVerdict(BUDGET_BYTES + 1);
+  assert.equal(over.remedy, REMEDY_BEFORE_2248);
+  assert.equal(over.message, `OVER BUDGET by 1 B.\n${REMEDY_BEFORE_2248}`);
+  assert.equal(REMEDY, REMEDY_BEFORE_2248, "the export the other assertions print is the same words");
 });
 
 test("no rule was lost to the budget: every heading the rules file carried still exists", () => {

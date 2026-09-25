@@ -54,7 +54,7 @@ import { MAX_ROW_ORDERS_PER_TICK, readCommitChain, withCommitChains, decide, che
 // can assert what the membership BUYS rather than only that the name is in the list. `wake.mjs` runs
 // nothing on import (its `main()` is behind an `import.meta.url` guard) and these three are pure, so this
 // costs the `no-token` promise at the top of this file nothing.
-import { readLedger, undelivered, WAKE_TTL_MS, JUDGMENT_TTL_MS }
+import { readLedger, undelivered, addressed, WAKE_TTL_MS, JUDGMENT_TTL_MS }
   from "../../../agent-org/src/wake.mjs";
 // #2237: the decider that REFUSES a launch, so the order's named launch directory is checked against it
 // rather than read by a reviewer. Pure over an injected filesystem.
@@ -77,8 +77,8 @@ function draft(n: number, rollup: unknown[], comments: { body: string }[] = []) 
 test("#912: a settled green draft with no verdict wakes its parity reviewer -- and nothing else does", () => {
   // THE POSITIVE, first: without this the rest is satisfied by a function that never emits anything.
   const orders = decide({ prs: [draft(1, GREEN), draft(2, GREEN)], readyRows: [] });
-  assert.deepEqual(orders.map((o) => o.session), ["reviewer", "reviewer-2"],
-    "odd PR numbers go to `reviewer` and even to `reviewer-2` -- agent-practices.md's own split");
+  assert.deepEqual(orders.map((o) => o.session), ["reviewer-1", "reviewer-2"],
+    "PR n's reviewer is `reviewer-<n>` (#2401); the odd/even split is retired");
   assert.equal(orders[0].cause, "draft-awaiting-verdict");
   assert.ok(CAUSES.includes(orders[0].cause), "every emitted cause is declared in CAUSES");
 
@@ -285,7 +285,7 @@ test("#912: the same state produces byte-identical orders, so the ledger can ded
   const state = { prs: [draft(1, GREEN)], readyRows: [{ number: 20, labels: [{ name: "ready" }] }] };
   assert.equal(JSON.stringify(decide(state)), JSON.stringify(decide(state)),
     "causeKey is derived from GitHub state alone -- that is what lets the gate be stateless and re-run");
-  assert.equal(decide(state)[0].causeKey, "reviewer/draft-awaiting-verdict/pr-1/abc12345");
+  assert.equal(decide(state)[0].causeKey, "reviewer-1/draft-awaiting-verdict/pr-1/abc12345");
 });
 
 test("#1286: a refused read returns null, an empty one returns [] -- and they are not the same", () => {
@@ -612,21 +612,28 @@ const claimOrderPrompt = () => {
 };
 
 /**
- * THE LAUNCH DIRECTORY THE ORDER NAMES: the first absolute path in it, `<you>` rendered as a roster name the
- * way `wake.mjs`'s `addressed` does. "First" is a convention this test imposes -- an order that names the
+ * THE ORDER AS THE ENGINEER READS IT (#2405): the gate leaves the launch directory to `wake.mjs`, which knows who
+ * took the order, so the sentence #2237 pins is asserted on what `addressed` delivers to a standing session whose
+ * `role-<you>` worktree exists. `work-gate-engineer-order-paths.test.ts` pins the branch where it does not.
+ */
+const deliveredClaimOrder = () => addressed({ session: "engineers", prompt: claimOrderPrompt() }, "worker-tooling",
+  { exists: () => true });
+
+/**
+ * THE LAUNCH DIRECTORY THE ORDER NAMES: the first absolute path in it, the order as `addressed` delivers it. "First" is a convention this test imposes -- an order that names the
  * primary at all, even to forbid it, must name its own directory BEFORE it -- and it is what lets a reworded
  * order that instructs the primary go red here without this file pinning a spelling of the wrong sentence.
  */
 const namedLaunchDirectory = (prompt: string) =>
-  /\/home\/agent\/repos\/[^\s`),;]+/.exec(prompt.replaceAll("<you>", "worker-tooling"))?.[0] ?? null;
+  /\/home\/agent\/repos\/[^\s`),;]+/.exec(prompt)?.[0] ?? null;
 
 test("#2237 DONE-WHEN 1: the ready-row order does not instruct the launch `launchGate` refuses", () => {
-  assert.doesNotMatch(claimOrderPrompt(), /from the primary checkout/i,
+  assert.doesNotMatch(deliveredClaimOrder(), /from the primary checkout/i,
     "row-claim, pr-open and row-file all refuse a launch from the primary checkout (#1352)");
 });
 
 test("#2237 DONE-WHEN 2+3: it names a launch directory, and `launchGate` accepts the one it names", () => {
-  const dir = namedLaunchDirectory(claimOrderPrompt());
+  const dir = namedLaunchDirectory(deliveredClaimOrder());
   // DONE-WHEN 2. A prompt that names nothing passes clause 1 and re-opens the 2026-09-17 incident.
   assert.ok(dir !== null, "the order must say where to run the command, or the engineer stops and asks");
   assert.ok(launchCheckoutOf(dir, HOST_FS) !== null, `${dir} must be a checkout, else the refusal below is vacuous`);
@@ -879,6 +886,8 @@ test("every cause is classified as START or FINISH -- a new one cannot default i
   // that cannot merge is finished work that cannot land, and a window waits on exactly those.
   // #2365: `verdict-comment-unreviewed` is FINISH: its subject is a green, unheld pull request whose verdict
   // exists and cannot merge, which is finished work a window is waiting to land.
+  // #2401: `reviewer-auth-failed` is FINISH: a reviewer that cannot authenticate is the reason in-flight pull
+  // requests cannot land, and a window waiting to land them is waiting on the login. It starts no work.
   // #2084: `pr-review-blocked` is FINISH, and it is `pr-green-unarmed`'s own argument one surface over.
   // A pull request that is green, unheld and refused by GitHub's `reviewDecision` is finished work that
   // cannot land -- it is the most in-flight thing there is, and it takes on nothing. Withholding it during
@@ -886,8 +895,8 @@ test("every cause is classified as START or FINISH -- a new one cannot default i
   // `START_CAUSES` was split out to prevent.
   assert.deepEqual(finish, ["answer-owed", "blocker-cleared", "chairman-blocked", "claimed-row-amended",
     "draft-awaiting-verdict", "draft-convinced-not-ready", "host-units-stale", "pr-checks-failing",
-    "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "row-branch-unshipped",
-    "trunk-red", "verdict-comment-unreviewed", "verdict-not-convinced"]);
+    "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "reviewer-auth-failed",
+    "row-branch-unshipped", "trunk-red", "verdict-comment-unreviewed", "verdict-not-convinced"]);
   for (const cause of START_CAUSES) {
     assert.ok(CAUSES.includes(cause), `${cause} is withheld by a drain but no longer exists`);
   }
@@ -4042,9 +4051,9 @@ const ordersFor = (pr: unknown) => decide({ prs: [pr], readyRows: [] }) as
 test("#2176 a green NON-DRAFT with no verdict at its head wakes its parity reviewer", () => {
   // THE POSITIVE HALF, and the row's Open-check: this returned ZERO orders before #2176.
   const orders = ordersFor(readyPr(9999, AUTHORED));
-  assert.deepEqual(orders.map((o) => [o.session, o.cause]), [["reviewer", "draft-awaiting-verdict"]]);
-  assert.deepEqual(ordersFor(readyPr(9998, AUTHORED)).map((o) => o.session), ["reviewer-2"],
-    "odd to `reviewer`, even to `reviewer-2`, exactly as for a draft");
+  assert.deepEqual(orders.map((o) => [o.session, o.cause]), [["reviewer-9999", "draft-awaiting-verdict"]]);
+  assert.deepEqual(ordersFor(readyPr(9998, AUTHORED)).map((o) => o.session), ["reviewer-9998"],
+    "`reviewer-<n>` for every n, exactly as for a draft");
   assert.match(orders[0].prompt, /Ready \(not a draft\) #9999/, "the wording must be true of the pull request");
   assert.doesNotMatch(orders[0].prompt, /Draft #/);
   // THE CONTRAST THAT MAKES THE RESULT A DEFECT RATHER THAN A FIXTURE PROPERTY: the same pull request as a draft.
@@ -4169,11 +4178,11 @@ const unreviewed = (pr: unknown) => ordersFor(pr).filter((o) => o.cause === "ver
 test("#2365 a green ready PR with a convinced COMMENT and no review at head orders its parity reviewer", () => {
   const [order, ...rest] = unreviewed(commentOnly(9999));
   assert.deepEqual(rest, []);
-  assert.equal(order.session, "reviewer", "odd to `reviewer`");
-  assert.equal(unreviewed(commentOnly(9998))[0].session, "reviewer-2", "even to `reviewer-2`");
+  assert.equal(order.session, "reviewer-9999", "`reviewer-<n>`");
+  assert.equal(unreviewed(commentOnly(9998))[0].session, "reviewer-9998", "and for an even number too");
   assert.match(order.prompt, /pr-review-verdict/, "it must name the remedy");
   assert.match(order.prompt, /not a new review round/);
-  assert.equal(order.causeKey, `reviewer/verdict-comment-unreviewed/pr-9999/${AUTHORED.slice(0, 8)}`);
+  assert.equal(order.causeKey, `reviewer-9999/verdict-comment-unreviewed/pr-9999/${AUTHORED.slice(0, 8)}`);
   // `pr-review-blocked` (#2084) ALSO names it, for the whole set to `product-manager`: two questions, two
   // remedies, and neither replaces the other -- this one names the comment and who re-posts it.
   assert.deepEqual(ordersFor(commentOnly(9999)).map((o) => o.cause).sort(),
