@@ -611,3 +611,16 @@ test("every capture served a different document does not read as 'every capture 
   assert.match(result.recommendation, /^DIFFERENT DOCUMENT/);
   assert.doesNotMatch(result.recommendation, /worker is reachable/);
 });
+
+test("the calibration sweep routes what it scores through the refusal, and scores only what was kept (#2433)", () => {
+  // A WIRING PIN, and named as one: `calibrate-abstention.mjs` cannot be imported by a test (it refuses
+  // unknown flags against `process.argv` at import and reaches the corpus), so `calibrationPages` is read
+  // as text. It catches the mutant that matters -- `return calibrationEntries(loaded)` in place of `return
+  // kept`, which leaves every helper above green while the sweep scores the console capture again -- and
+  // nothing subtler: a rewrite that keeps the shape and drops the semantics is not seen here.
+  const source = readFile(new URL("../../scripts/calibrate-abstention.mjs", import.meta.url), "utf8");
+  const body = source.slice(source.indexOf("function calibrationPages()"));
+  assert.match(body, /const \{ kept, refused \} = refuseUnusableEntries\(calibrationEntries\(loaded\)\);/);
+  assert.match(body, /refusalLines\(refused\)/);
+  assert.match(body.slice(0, body.indexOf("\n}\n")), /return kept;/);
+});
