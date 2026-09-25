@@ -90,6 +90,51 @@ test("#1135 clause 3: nightly.yml runs the nightly-only population as a job that
   assert.notEqual(name, "coverage", "its own job, so #169's coverage classifier never reads it as a coverage miss");
 });
 
+type Step = { name?: string; if?: string; run?: string; "continue-on-error"?: boolean };
+type Job = { steps: Step[] };
+
+/** The one job that runs `test:nightly` and its steps, read from the real workflow. */
+function nightlyOnlyJob(): { name: string; job: Job } {
+  const doc = parseYaml(readFileSync(NIGHTLY_WORKFLOW, "utf8")) as { jobs: Record<string, Job> };
+  const runners = Object.entries(doc.jobs).filter(([, job]) =>
+    job.steps.some((s) => /\bnpm run test:nightly\b/.test(s.run ?? "")));
+  assert.equal(runners.length, 1, `exactly one job runs test:nightly, got ${runners.map(([n]) => n)}`);
+  return { name: runners[0][0], job: runners[0][1] };
+}
+
+/**
+ * #2576: A NIGHTLY-ONLY FAILURE HAS A READER. Before it, a red `nightly-only` run was a run on the Actions
+ * page and nothing else, so #2546 could move no heavy test here (its rule 3: a move needs the nightly's red
+ * to REACH someone). `ceo` chose `doc-report`'s shape: a step posting ONE comment on #928 when the job fails.
+ * Pinned by what makes the reader real, each clause in a way its own mutation breaks:
+ * the step exists and posts to #928, it is conditioned on failure, it swallows nothing, it comes AFTER the
+ * tests, and the test step still fails the job through `tee`.
+ */
+test("#2576: the nightly-only job posts its failure to #928 from a step conditioned on failure()", () => {
+  const { name, job } = nightlyOnlyJob();
+  const reporters = job.steps.filter((s) => /gh issue comment 928\b/.test(s.run ?? ""));
+  assert.equal(reporters.length, 1, `${name} has exactly one step commenting on #928 (one comment per run)`);
+  const [reporter] = reporters;
+  assert.match(reporter.if ?? "", /\bfailure\(\)/, `${name}'s reporter runs on failure, or a red run reaches nobody`);
+  assert.doesNotMatch(reporter.if ?? "", /\|\||\balways\(\)/, "and on failure alone: a green night must not comment");
+  assert.notEqual(reporter["continue-on-error"], true, "the reporter must not swallow its own failure");
+  assert.match(reporter.run ?? "", /RUN_URL/, "the comment names the run URL");
+  assert.match(reporter.run ?? "", /nightly-only-output\.log/, "and reads the failing files out of the captured log");
+});
+
+test("#2576: the reporter comes after the tests, and the test step's `tee` cannot turn its red green", () => {
+  const { name, job } = nightlyOnlyJob();
+  const testIdx = job.steps.findIndex((s) => /\bnpm run test:nightly\b/.test(s.run ?? ""));
+  const reportIdx = job.steps.findIndex((s) => /gh issue comment 928\b/.test(s.run ?? ""));
+  assert.ok(testIdx >= 0 && reportIdx > testIdx, `${name}: the reporter (${reportIdx}) follows the tests (${testIdx})`);
+  const run = job.steps[testIdx].run ?? "";
+  assert.match(run, /\bset -o pipefail\b/,
+    "`| tee` reports tee's exit status (always 0), so without pipefail the job goes GREEN over a red population");
+  assert.ok(run.indexOf("set -o pipefail") < run.indexOf("npm run test:nightly"), "and pipefail is set BEFORE the pipeline");
+  assert.match(run, /tee nightly-only-output\.log/, "the log the reporter reads is the one this step writes");
+  assert.notEqual(job.steps[testIdx]["continue-on-error"], true, "the tests' step still fails the job");
+});
+
 test("#1135 clause 4: the PR suite's floor still holds after the split, on the real tree", () => {
   const min = floorOf(PACKAGE_JSON.scripts["test:ts"]);
   // EQUALITY, not a floor (#1067): a different number is a decision this test should make somebody state,
