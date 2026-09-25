@@ -32,6 +32,7 @@ import { sandboxGitEnv } from "../../guards/src/git-env.mjs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { releasability } from "../src/packaging/releasability.mjs";
+import { readAcceptedSilentHeads } from "../src/packaging/accepted-silent-heads.mjs";
 import { dirtyTargets, promotionBlockedBy } from "../src/packaging/promotion-targets.mjs";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 
@@ -106,18 +107,56 @@ function assertPromotable(candidate, shipped, shippedAcceptance, acceptRegressio
     : null;
   const verdict = releasability({
     training, acceptance, shipped, shippedAcceptance, candidateModelSha256,
+    acceptedSilentHeads: readAcceptedSilentHeads(),
   });
   if (!candidateModelSha256) verdict.blockers.unshift(`there are no weights at ${weightsFile} to promote`);
-  const blockers = acceptRegression
-    ? verdict.blockers.filter((b) => !/ (precision|recall) [\d.]+ -> /.test(b))
-    : verdict.blockers;
+  const isRegression = (/** @type {string} */ blocker) => / (precision|recall) [\d.]+ -> /.test(blocker);
+  const blockers = acceptRegression ? verdict.blockers.filter((b) => !isRegression(b)) : verdict.blockers;
   if (blockers.length > 0) {
     throw new Error(`${candidate} is not releasable:\n  ${blockers.join("\n  ")}\n`
       + (verdict.notes.length ? `\nNotes:\n  ${verdict.notes.join("\n  ")}\n` : "")
       + "\nA deliberate regression against the shipped model can be accepted with --accept-regression, "
       + "which records it in the changeset rather than hiding it. Nothing else here is overridable.");
   }
-  return { training, acceptance: acceptance ?? { passed: false } };
+  return {
+    training, acceptance: acceptance ?? { passed: false },
+    // What this promotion TAKES, so the changeset can say so: the regression lines the flag excused and
+    // the silent heads a ruling excused. Nothing else here is ever excused.
+    regressionAccepted: acceptRegression,
+    acceptedRegressions: acceptRegression ? verdict.blockers.filter(isRegression) : [],
+    acceptedSilent: verdict.acceptedSilent, stale: verdict.stale,
+  };
+}
+
+/**
+ * The changeset's account of what this promotion took, in plain words (#2536).
+ *
+ * A model that ships with a silent head must say so where a reader of the release note looks, so no
+ * README or known-gaps sentence can go on claiming that head detects anything. Regression lines are listed
+ * verbatim so a reviewer can check they are the ones ruled on rather than a new reading.
+ *
+ * @param {{regressionAccepted: boolean, acceptedRegressions: string[], acceptedSilent: string[], stale: string[]}} taken
+ * @returns {string}
+ */
+function acceptedLines({ regressionAccepted, acceptedRegressions, acceptedSilent, stale }) {
+  const sections = [];
+  if (regressionAccepted) {
+    // Said whenever the flag was given, as it always was: the flag is the acceptance, whether or not this
+    // candidate turned out to need it. The lines follow only when there are some.
+    sections.push("**Accepted with a known regression against the previously shipped weights.** "
+      + (acceptedRegressions.length ? "The held-out lines taken with `--accept-regression`:\n\n"
+        + acceptedRegressions.map((line) => `- ${line}`).join("\n") : "See the commit for why."));
+  }
+  if (acceptedSilent.length) {
+    sections.push("**Shipped with a silent head, by a `ceo` ruling (#2536).** These heads are silent at their "
+      + "operating point: the model does not detect what they exist to detect (for `4.1.3:status-waiting`, "
+      + "waiting-status announcements).\n\n" + acceptedSilent.map((line) => `- ${line}`).join("\n"));
+  }
+  if (stale.length) {
+    sections.push("Accepted-silent entries that no longer apply, to revisit:\n\n"
+      + stale.map((line) => `- ${line}`).join("\n"));
+  }
+  return sections.length ? `\n${sections.join("\n\n")}\n` : "";
 }
 
 /** The provenance ADR 0007 requires, taken from the report rather than retyped. */
@@ -281,7 +320,7 @@ function changesetPath(candidateName, entry) {
  */
 export function promote({ candidate, candidateName, dryRun = false, acceptRegression = false,
   shippedReport = null, shippedAcceptance = null, versions = publicPackageVersions() }) {
-  const { training, acceptance } = assertPromotable(candidate, shippedReport, shippedAcceptance,
+  const { training, acceptance, ...taken } = assertPromotable(candidate, shippedReport, shippedAcceptance,
     acceptRegression);
   const level = promotionLevel(versions);
   const entry = `---
@@ -301,7 +340,7 @@ Per-subtype thresholds:
 ${thresholdLines(training)}
 
 Held-out acceptance: ${acceptance.passed ? "passed" : "FAILED"}.
-${acceptRegression ? "\n**Accepted with a known regression against the previously shipped weights.** See the commit for why.\n" : ""}`;
+${acceptedLines(taken)}`;
   const target = changesetPath(candidateName, entry);
   if (dryRun) {
     process.stdout.write(`DRY RUN — would copy ${candidate} -> ${SHIPPED}\n`

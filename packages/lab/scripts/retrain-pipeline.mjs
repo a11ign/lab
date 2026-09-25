@@ -24,6 +24,7 @@ import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { releasability } from "../src/packaging/releasability.mjs";
+import { readAcceptedSilentHeads } from "../src/packaging/accepted-silent-heads.mjs";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 import { npmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
@@ -118,6 +119,8 @@ function verdict(candidateDirectory) {
     acceptance: read(resolve(candidateDirectory, "acceptance-report.json")),
     shipped: read(resolve(shipped, "training-report.json")),
     shippedAcceptance: read(resolve(shipped, "acceptance-report.json")),
+    // The same ruled list `promote:model` reads, so this verdict cannot refuse what promotion accepts (#2536).
+    acceptedSilentHeads: readAcceptedSilentHeads(),
   });
 }
 
