@@ -20,9 +20,16 @@
  * A job whose corpus cannot be determined is REFUSED rather than assumed fine: *could not determine* and
  * *confirmed right* never share a value.
  *
- * POSITIVE CONTROL: `FILED_MESSAGE` is the remedy as it stood at filing, and the tests below show
- * `disagreements()` refusing it, naming `generate` and `capture`. A checker that has only ever been
- * shown passing is the defect this repo files rows about.
+ * WHAT IT READS IS THE RUNTIME STRING, NOT THE FILE (reviewer-2, #2444). The evaluator is Python, and its
+ * docstring and comments explain the remedy in the same `-e job=<name>` spelling; scanning the raw source
+ * let a docstring satisfy the guard while the string the operator actually sees named the wrong job.
+ * `pythonMessageText()` keeps only string literals that are not docstrings, so prose beside the code
+ * cannot stand in for it.
+ *
+ * POSITIVE CONTROLS: `FILED_MESSAGE` is the remedy as it stood at filing, and the tests below show
+ * `disagreements()` refusing it, naming `generate` and `capture`; `DOCSTRING_ONLY` is a source whose
+ * runtime message omits a repeat that its docstring and a comment name, and it must be refused. A checker
+ * that has only ever been shown passing is the defect this repo files rows about.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -112,10 +119,59 @@ function evaluatorReads(jobs: Record<string, Job>): { corpus: string; repeats: s
   return { corpus: [...corpora][0] as string, repeats: parsed.map((m) => (m as RegExpExecArray)[2]) };
 }
 
+const TRIPLE = 3;
+
+/** The string literal opening at `at` (a quote), as `{ end, quote }`: the index past its close and its delimiter. */
+function literalEnd(source: string, at: number): { end: number; quote: string } {
+  const quote = source.startsWith(source[at].repeat(TRIPLE), at) ? source[at].repeat(TRIPLE) : source[at];
+  let end = at + quote.length;
+  while (end < source.length && !source.startsWith(quote, end)) end += source[end] === "\\" ? 2 : 1;
+  return { end: Math.min(end + quote.length, source.length), quote };
+}
+
+/** A triple-quoted literal that directly follows a `:` is a docstring, which is prose about the code. */
+function isDocstring(source: string, at: number): boolean {
+  return /:[ \t]*\n\s*$/.test(source.slice(0, at));
+}
+
+/**
+ * The text of every Python string literal that is NOT a docstring, joined by newlines, with comments dropped.
+ * The line numbers `jobsNamedBy()` then reports count lines of THIS text, not of the file: they say which
+ * literal, and `grep` finds it.
+ */
+export function pythonMessageText(source: string): string {
+  const literals: string[] = [];
+  let at = 0;
+  while (at < source.length) {
+    const char = source[at];
+    if (char === "#") {
+      at = source.indexOf("\n", at) === -1 ? source.length : source.indexOf("\n", at);
+    } else if (char === '"' || char === "'") {
+      const { end, quote } = literalEnd(source, at);
+      const inside = source.slice(at + quote.length, end - quote.length);
+      if (quote.length === 1 || !isDocstring(source, at)) literals.push(inside);
+      at = end;
+    } else at += 1;
+  }
+  return literals.join("\n");
+}
+
 /** Every `-e job=<name>` the evaluator's text tells an operator to run, with the line it is on. */
 export function jobsNamedBy(text: string): Array<{ job: string; line: number }> {
   return text.split("\n").flatMap((line, at) =>
     [...line.matchAll(/-e job=([\w-]+)/g)].map((match) => ({ job: match[1], line: at + 1 })));
+}
+
+/**
+ * Whether a job's script chain writes `--out=runs/<corpus>/…`, i.e. the `repeat-N.jsonl` files the evaluator
+ * reads. Only the export does: a capture writes `captures/`, and the evaluator never opens those, so a
+ * remedy naming captures alone leaves this refusal byte-identical (#2168's original defect, one step on).
+ */
+function writesReadFiles(name: string, jobs: Record<string, Job>, scripts: Record<string, string>,
+                         corpus: string): boolean {
+  const argv = [jobs[name]?.argv ?? ""].flat();
+  const script = argv[1] === "run" ? argv.slice(2).find((word) => !word.startsWith("-")) : undefined;
+  return scriptChain(script ?? "", scripts).some((body) => body.includes(`--out=runs/${corpus}/`));
 }
 
 /** Every way the message's job names disagree with the catalogue; empty means they agree. */
@@ -140,6 +196,10 @@ export function disagreements(text: string, jobs: Record<string, Job>, scripts: 
     const covered = named.some(({ job }) => (jobs[job]?.setenv ?? []).includes(`REPEAT=${repeat}`));
     if (!covered) problems.push(`no job named for ${repeat}, which the evaluator reads`);
   }
+  // And the files themselves: the evaluator reads `repeat-N.jsonl`, which only the export rewrites.
+  if (!named.some(({ job }) => writesReadFiles(job, jobs, scripts, corpus))) {
+    problems.push(`no job named that writes the runs/${corpus}/*.jsonl the evaluator reads (the export)`);
+  }
   return problems;
 }
 
@@ -150,7 +210,7 @@ const FILED_MESSAGE = [
 ].join("");
 
 test("the evaluator's remedy names only jobs that write the corpus it refuses", () => {
-  const problems = disagreements(read(EVALUATOR), catalogue(), npmScripts());
+  const problems = disagreements(pythonMessageText(read(EVALUATOR)), catalogue(), npmScripts());
   assert.deepEqual(problems, [],
     `${EVALUATOR} sends the operator at the wrong corpus or leaves a repeat uncleared:\n  ${problems.join("\n  ")}`);
 });
@@ -181,4 +241,28 @@ test("the corpus derivation separates the two corpora, and does not read a job i
   assert.equal(corpusWrittenBy("capture", jobs, scripts), "screenreader-dataset");
   assert.equal(corpusWrittenBy("generate", jobs, scripts), "screenreader-dataset");
   assert.equal(corpusWrittenBy("no-such-job", jobs, scripts), null);
+});
+
+test("POSITIVE CONTROL: the extractor reads the real refusal, so the guard above is not passing on an empty text", () => {
+  const named = jobsNamedBy(pythonMessageText(read(EVALUATOR))).map(({ job }) => job);
+  assert.ok(writesReadFiles("export-acceptance", catalogue(), npmScripts(), "screenreader-acceptance"));
+  assert.ok(!writesReadFiles("capture-acceptance", catalogue(), npmScripts(), "screenreader-acceptance"));
+  assert.ok(named.length > 0, "the extractor found no `-e job=` in the evaluator's string literals");
+});
+
+test("MUTATION: a docstring or a comment naming a job does not stand in for the message (reviewer-2, #2444)", () => {
+  const DOCSTRING_ONLY = [
+    "def refuse():",
+    '    """Remedy: `-e job=export-acceptance` after `-e job=capture-acceptance-2`."""',
+    "    # npm run lab:job -- -e job=capture-acceptance-2",
+    '    raise SystemExit("\\n  npm run lab:job -- -e job=generate-acceptance"',
+    '                     "\\n  npm run lab:job -- -e job=capture-acceptance")',
+  ].join("\n");
+  const problems = disagreements(pythonMessageText(DOCSTRING_ONLY), catalogue(), npmScripts());
+  assert.deepEqual(problems, [
+    "no job named for repeat-2, which the evaluator reads",
+    "no job named that writes the runs/screenreader-acceptance/*.jsonl the evaluator reads (the export)",
+  ]);
+  // The same source scanned raw is what the guard used to do, and it passes: the defect, kept as evidence.
+  assert.deepEqual(disagreements(DOCSTRING_ONLY, catalogue(), npmScripts()), []);
 });
