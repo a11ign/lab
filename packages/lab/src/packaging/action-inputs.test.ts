@@ -24,6 +24,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
 const ACTION = readFileSync(resolve(REPO, "action.yml"), "utf8");
@@ -308,7 +309,8 @@ function taskAndReportLine(argv: string[]): { task: string; line: string | undef
     const lines = reportLines({ url: "https://example.com", task, screenReader: "NVDA", announcements: 1,
       verdict: { taskCompletable: true, confidence: 0.9, summary: "s", findings: [] }, axe: null });
     console.log(JSON.stringify({ task, line: lines.find((l) => l.startsWith("Task:")) }));`;
-  const ran = spawnSync("npx", ["tsx", "-e", script], {
+  const npx = npmCliInvocation("npx", ["tsx", "-e", script]);
+  const ran = spawnSync(npx.command, npx.args, {
     cwd: REPO, encoding: "utf8", // by environment: cli.ts's entry guard reads `process.argv[1]` as a script path
     env: { ...process.env, WITNESS_TEST_ARGV: JSON.stringify(["https://example.com", ...argv]) },
   });
