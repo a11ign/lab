@@ -49,11 +49,12 @@ function* heads(training) {
  * text match silently stops working while its tests, which assert on their own copy of the string, keep
  * passing.
  */
-/** @param {Record<string, any>} training */
-function calibrationFailures(training) {
+/** @param {Record<string, any>} training @param {Set<string>} acceptedSilent head ids `ceo` ruled may ship silent */
+function calibrationFailures(training, acceptedSilent) {
   const failures = [];
   const notes = [];
-  for (const { name, subtype } of heads(training)) {
+  const accepted = [];
+  for (const { criterion, name, subtype } of heads(training)) {
     if (isRuleDecided(subtype)) continue;
     const development = subtype?.development;
     if (!development || development.precision === undefined) {
@@ -76,11 +77,14 @@ function calibrationFailures(training) {
     // the only place the asymmetry lived. Preference belongs in the THRESHOLD a criterion is calibrated
     // to — which is now a stated Neyman-Pearson bound (ADR 0022) — not in which errors a gate can see.
     failures.push(...typeOneErrorFailures(name, subtype, development));
-    const { blocking, note } = silentHeadFailures(name, subtype, development);
-    if (blocking) failures.push(blocking);
+    const { silent, note } = silentHeadFailures(name, subtype, development);
+    // The head's id AND its criterion must both match the entry: the same subtype name filed under another
+    // criterion is a different head and still blocks.
+    if (silent && acceptedSilent.has(name) && name.startsWith(`${criterion}:`)) accepted.push(silent);
+    else if (silent) failures.push(silent);
     if (note) notes.push(note);
   }
-  return { failures, notes };
+  return { failures, notes, accepted };
 }
 
 /**
@@ -166,6 +170,9 @@ export function typeOneErrorFailures(name, subtype, development) {
   return failures;
 }
 
+/** @param {Record<string, any>} development */
+const isSilent = (development) => development.truePositive === 0 && development.positive > 0;
+
 /**
  * Has this head gone SILENT?
  *
@@ -194,10 +201,17 @@ export function typeOneErrorFailures(name, subtype, development) {
  * Nothing is lost by the move: a head that genuinely weakens still fails, on the measurement that can
  * see it. What is gained is that a candidate is no longer refused for being measured on harder data.
  */
-/** @param {string} name @param {Record<string, any>} subtype @param {Record<string, any>} development */
+/**
+ * Returns the SILENT line and leaves the verdict to `calibrationFailures`, which knows whether `ceo` ruled
+ * this head may ship silent (`accepted-silent-heads.json`, #2536). That excuse is by id alone: the count it
+ * was ruled at is provenance, so a retrain reading `0 of 31` is the same head and does not re-block; it
+ * excuses this line and no other, and `regressions()` never sees it.
+ *
+ * @param {string} name @param {Record<string, any>} subtype @param {Record<string, any>} development
+ */
 function silentHeadFailures(name, subtype, development) {
-  if (development.truePositive === 0 && development.positive > 0) {
-    return { blocking: `${name}: SILENT — 0 of ${development.positive} positive record(s) found at threshold `
+  if (isSilent(development)) {
+    return { silent: `${name}: SILENT — 0 of ${development.positive} positive record(s) found at threshold `
       + `${subtype.threshold}. A head that reports nothing scores perfect precision, which is why this is `
       + "checked apart from the false-positive bound." };
   }
@@ -343,6 +357,27 @@ function coverageHandedOver(acceptance, shippedAcceptance) {
     + "— check it was deliberate, because a head that silently stopped being evaluated looks the same."];
 }
 
+/**
+ * Entries in the accepted-silent list that no longer describe this candidate, REPORTED and never failed.
+ *
+ * An entry that stops applying is good news or a changed report, not a fault: the head found something
+ * this time, or is not in this candidate at all. Either way the list should be revisited, so it is named
+ * rather than left to look like a live excuse.
+ *
+ * @param {Record<string, any>} training @param {import("./accepted-silent-heads.mjs").AcceptedSilentHead[]} entries
+ */
+function staleSilentEntries(training, entries) {
+  const all = [...heads(training)];
+  return entries.flatMap((entry) => {
+    const found = all.find(({ criterion, name }) => name === entry.id && entry.id.startsWith(`${criterion}:`));
+    if (!found) return [`${entry.id}: not in this candidate's training report, so the silent-head entry ruled ${entry.ruled} (${entry.row}) applied to nothing`];
+    if (isRuleDecided(found.subtype)) return [`${entry.id}: decided by the deterministic rules in this candidate, so the silent-head entry applied to nothing`];
+    const development = found.subtype?.development ?? {};
+    if (isSilent(development)) return [];
+    return [`${entry.id}: no longer silent — ${development.truePositive} of ${development.positive} positive record(s) found — so the silent-head entry ruled ${entry.ruled} (${entry.row}) is stale`];
+  });
+}
+
 /** @param {Record<string, any>|null} acceptance @param {Record<string, any>|null} shippedAcceptance @param {number} tolerance */
 function regressions(acceptance, shippedAcceptance, tolerance) {
   if (!acceptance || !shippedAcceptance) return [];
@@ -367,13 +402,18 @@ function regressions(acceptance, shippedAcceptance, tolerance) {
  * @param {Record<string, any>|null} input.shipped     the shipped model's training report, or null
  * @param {Record<string, any>|null} [input.shippedAcceptance] its ACCEPTANCE report — the only fixed-set baseline
  * @param {string|null} [input.candidateModelSha256] hash of the weights actually being promoted
+ * @param {import("./accepted-silent-heads.mjs").AcceptedSilentHead[]} [input.acceptedSilentHeads] heads `ceo`
+ *   ruled may ship silent, read by the CALLER from `accepted-silent-heads.json` (this function does no I/O).
+ *   Absent means none, so a caller that forgets to pass it gets the strict gate.
  * @param {number} [input.tolerance] the noise floor below which a difference is not a regression --
  *   DESTRUCTURED here for as long as this function has existed and never documented, so it was invisible
  *   to every reader of the signature and to the compiler alike
- * @returns {{releasable: boolean, blockers: string[], notes: string[]}}
+ * @returns {{releasable: boolean, blockers: string[], notes: string[], acceptedSilent: string[], stale: string[]}}
+ *   `acceptedSilent` are the SILENT lines a ruling excused (a promotion must SAY it shipped them) and
+ *   `stale` the accepted-silent entries that no longer apply, reported and never failing
  */
 export function releasability({ training, acceptance, shipped, shippedAcceptance,
-  candidateModelSha256 = null, tolerance = REGRESSION_TOLERANCE }) {
+  candidateModelSha256 = null, tolerance = REGRESSION_TOLERANCE, acceptedSilentHeads = [] }) {
   const blockers = [];
   const notes = [];
 
@@ -389,7 +429,7 @@ export function releasability({ training, acceptance, shipped, shippedAcceptance
   }
   blockers.push(...acceptanceBelongsToTheseWeights(acceptance, candidateModelSha256));
 
-  const calibration = calibrationFailures(training);
+  const calibration = calibrationFailures(training, new Set(acceptedSilentHeads.map((entry) => entry.id)));
   blockers.push(...calibration.failures);
   notes.push(...calibration.notes);
   blockers.push(...regressions(acceptance, shippedAcceptance ?? null, tolerance));
@@ -411,5 +451,8 @@ export function releasability({ training, acceptance, shipped, shippedAcceptance
       + "possible — promote:model now keeps one, so the next candidate can be compared");
   }
 
-  return { releasable: blockers.length === 0, blockers, notes };
+  return {
+    releasable: blockers.length === 0, blockers, notes,
+    acceptedSilent: calibration.accepted, stale: staleSilentEntries(training, acceptedSilentHeads),
+  };
 }
