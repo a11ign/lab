@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, mkdtempSync, readFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { tempDir } from "../../../guards/src/test-tmp.mjs";
 
 /* THE MUTATION CHECKER'S OWN EXIT-CODE CONTRACT, exercised end to end.
  *
@@ -26,8 +26,15 @@ import path from "node:path";
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const SCRIPT = path.join(REPO, "packages/guards/src/mutation-check.mjs");
 
+/**
+ * #2457: the checker copies the file aside into `mutate-*` under `TMPDIR` and deliberately never deletes that copy (a
+ * restore that fails leaves it for a human, and a clean one leaves it too). So every run made here is handed a `TMPDIR` the
+ * helper removes with the file, instead of the shared `/tmp`. The script keeps the copy, and a follow-up is its own row.
+ */
+const CHECKER_ENV: NodeJS.ProcessEnv = { ...process.env, TMPDIR: tempDir("mutcheck-checker-tmp-") };
+
 /** Run the checker and return its exit code and output, never throwing on a non-zero exit. */
-function check(args: string[], env: NodeJS.ProcessEnv = process.env): { code: number; out: string } {
+function check(args: string[], env: NodeJS.ProcessEnv = CHECKER_ENV): { code: number; out: string } {
   try {
     const out = execFileSync("node", [SCRIPT, ...args], { encoding: "utf8", stdio: "pipe", cwd: REPO, env });
     return { code: 0, out };
@@ -38,7 +45,7 @@ function check(args: string[], env: NodeJS.ProcessEnv = process.env): { code: nu
 }
 
 function fixture(): string {
-  const file = path.join(mkdtempSync(path.join(tmpdir(), "mutcheck-")), "subject.txt");
+  const file = path.join(tempDir("mutcheck-"), "subject.txt");
   writeFileSync(file, "the answer is 42\n");
   return file;
 }
@@ -109,7 +116,7 @@ function counted(): { file: string; test: string; runs: () => number } {
 /** A mutation that also corrupts the copy-aside, so the restore lands bytes that are not the original's.
  * `TMPDIR` is private to the run, which makes the glob match this run's stash and nothing else's. */
 function corruptsItsOwnStash(file: string): { mutate: string; env: NodeJS.ProcessEnv } {
-  const tmp = mkdtempSync(path.join(tmpdir(), "mutcheck-tmp-"));
+  const tmp = tempDir("mutcheck-tmp-");
   return {
     mutate: `--mutate=perl -pi -e 's/42/99/' ${file} ${tmp}/mutate-*/subject.txt`,
     env: { ...process.env, TMPDIR: tmp },

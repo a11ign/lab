@@ -13,10 +13,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { writeFileSync, mkdirSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
+import { tempDir } from "../../../guards/src/test-tmp.mjs";
 import { promote, promotionLevel, publicPackageVersions } from "../../scripts/promote-model.mjs";
 
 /** Every public package before version one, as the tree reads during the first publish. */
@@ -43,7 +43,7 @@ const REPORT = {
 };
 
 function candidate(training: object, acceptance: object): { dir: string; name: string } {
-  const root = mkdtempSync(join(tmpdir(), "promote-"));
+  const root = tempDir("promote-");
   const dir = join(root, "model-under-test");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "training-report.json"), JSON.stringify(training));
@@ -54,11 +54,7 @@ function candidate(training: object, acceptance: object): { dir: string; name: s
 
 const run = (training: object, acceptance: object, versions: Record<string, string> = ALL_ZERO) => {
   const { dir, name } = candidate(training, acceptance);
-  try {
-    return promote({ candidate: dir, candidateName: name, dryRun: true, versions });
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  return promote({ candidate: dir, candidateName: name, dryRun: true, versions });
 };
 
 test("#1396 while every public package is 0.x, a model that passed both gates yields a MINOR changeset", () => {
@@ -119,7 +115,7 @@ test("a candidate that failed held-out acceptance is refused", () => {
 });
 
 test("a candidate with no acceptance report at all is refused, not assumed good", () => {
-  const root = mkdtempSync(join(tmpdir(), "promote-"));
+  const root = tempDir("promote-");
   const dir = join(root, "model-bare");
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "training-report.json"), JSON.stringify(REPORT));
@@ -134,7 +130,6 @@ test("a dry run writes nothing", () => {
   const before = readdirSync(dir).sort();
   promote({ candidate: dir, candidateName: name, dryRun: true });
   assert.deepEqual(readdirSync(dir).sort(), before);
-  rmSync(dir, { recursive: true, force: true });
 });
 
 test("a candidate worse on the FIXED held-out set is refused, even having passed its own gates", () => {
@@ -149,7 +144,6 @@ test("a candidate worse on the FIXED held-out set is refused, even having passed
     () => promote({ candidate: dir, candidateName: name, dryRun: true,
       shippedReport: REPORT, shippedAcceptance }),
     /not releasable[\s\S]*3\.3\.2 held-out precision 1\.000 -> 0\.400/);
-  rmSync(dir, { recursive: true, force: true });
 });
 
 test("a NEW head is coverage, not a regression", () => {
@@ -163,7 +157,6 @@ test("a NEW head is coverage, not a regression", () => {
   const { entry } = promote({ candidate: dir, candidateName: name, dryRun: true, shippedReport: shipped,
     versions: ALL_ZERO });
   assert.match(entry, /^"@a11ign\/scorer": minor$/m, "promoted, not refused");
-  rmSync(dir, { recursive: true, force: true });
 });
 
 test("a deliberate regression is allowed, and SAID SO in the changelog", () => {
@@ -181,7 +174,6 @@ test("a deliberate regression is allowed, and SAID SO in the changelog", () => {
     shippedReport: shipped, acceptRegression: true });
   assert.match(entry, /Accepted with a known regression/,
     "an accepted regression must appear in the changelog — hiding it is worse than blocking it");
-  rmSync(dir, { recursive: true, force: true });
 });
 
 test("noise below the tolerance is not a regression", () => {
@@ -196,7 +188,6 @@ test("noise below the tolerance is not a regression", () => {
   };
   const { dir, name } = candidate(jitter, { passed: true });
   promote({ candidate: dir, candidateName: name, dryRun: true, shippedReport: shipped });
-  rmSync(dir, { recursive: true, force: true });
 });
 
 test("the changeset is named for WHAT IS PROMOTED, never for a count of unrelated changesets", () => {
