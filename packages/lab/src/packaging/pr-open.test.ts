@@ -681,8 +681,8 @@ test("#1846: a ready create labels the PR with the worktree's own session, by br
   const argv = labelAfterCreate("create",
     ["--title", "t", "--body-file", "b.md", "--base", "main", "--head", "agent/x"], "orchestrator");
   assert.deepEqual(argv, [["pr", "edit", "agent/x", "--add-label", "session:orchestrator"]]);
-  const eq = labelAfterCreate("create", ["--head=agent/y", "--body", "x"], "worker-capture");
-  assert.deepEqual(eq, [["pr", "edit", "agent/y", "--add-label", "session:worker-capture"]],
+  const eq = labelAfterCreate("create", ["--head=agent/y", "--body", "x"], "worker-4");
+  assert.deepEqual(eq, [["pr", "edit", "agent/y", "--add-label", "session:worker-4"]],
     "--head=value is read too, as armAfterCreate reads it");
 });
 
@@ -715,14 +715,14 @@ test("#1846: the label is really SPAWNED after a successful create, after the ar
   const lines: string[] = [];
   const code = sendToGitHub("create", ["--title", "x", "--head", "agent/x"],
     { run: (args: string[]) => { spawned.push(args); }, git: gitStub, err: (l: string) => { lines.push(l); },
-      owner: () => "worker-judge" });
+      owner: () => "worker-4" });
 
   assert.equal(code, 0);
   assert.deepEqual(lines, [], "a create that succeeds says nothing");
   assert.deepEqual(spawned, [
     ["pr", "create", "--title", "x", "--head", "agent/x"],
     ["pr", "merge", "--auto", "--merge", "agent/x"],
-    ["pr", "edit", "agent/x", "--add-label", "session:worker-judge"],
+    ["pr", "edit", "agent/x", "--add-label", "session:worker-4"],
   ], "create, then arm, then label -- the argv pr-open actually SPAWNS, not what labelAfterCreate returns");
 });
 
