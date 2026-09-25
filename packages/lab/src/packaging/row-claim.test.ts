@@ -487,7 +487,7 @@ test("#987 ACCEPTANCE: a claim naming a 63-character worktree path SUCCEEDS and 
 
 test("#987 ACCEPTANCE: A LONG BRANCH NAME TOO -- `branch:` leaves 43 characters, and the row asked for "
   + "both fields, not just the one that was reported", () => {
-  const { run, labelSets } = boardRun([], { number: 987 });
+  const { run, calls, labelSets } = boardRun([], { number: 987 });
   const branch = `agent/${"a-long-enough-segment-".repeat(3)}987`;
   assert.ok(`${BRANCH_LABEL_PREFIX}${branch}`.length > 50, "the fixture must exceed the cap it is about");
   claimRow(987, "worker-config", { run, moveStatus: () => ({ moved: true }), branch });
@@ -601,23 +601,11 @@ test("#987: fetchClaimComments REFUSES a response it cannot read, rather than re
 });
 
 test("#665/#987 ACCEPTANCE: claimRow given a worktree records it in the claim comment, not a label", () => {
-  const calls: string[][] = [];
-  let reads = 0;
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      reads += 1;
-      const labels = reads === 1 ? [] : [{ name: CLAIM_LABEL }, { name: "session:worker-config" },
-        { name: STARTED_LABEL }];
-      return JSON.stringify({ number: 665, title: "A row", labels });
-    }
-    return "";
-  };
+  const { run, calls, labelSets } = boardRun([], { number: 665 });
   const result = claimRow(665, "worker-config",
     { run, moveStatus: () => ({ moved: true }), worktree: "/tmp/a11y-wt-665" });
   assert.deepEqual(result, { claimed: true, statusMoved: true });
-  const editCall = calls.find((a) => a[1] === "edit")!;
-  assert.ok(!editCall.some((a) => a.startsWith(WORKTREE_LABEL_PREFIX)), "no worktree label may be written");
+  assert.ok(!labelSets().flat().some((l) => l.startsWith(WORKTREE_LABEL_PREFIX)), "no worktree label may be written");
   const comment = calls.find((a) => a[1] === "comment")!;
   assert.equal(claimRecordFrom([comment[comment.indexOf("--body") + 1]]).worktree, "/tmp/a11y-wt-665");
 });
@@ -777,82 +765,38 @@ test("#665 MUTATION direction 1: a DIRTY worktree refuses the WHOLE decline, nam
 });
 
 test("MUTATION: dispatching a `ready` row removes `ready` -- #197's review finding, caught before merge", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 176, title: "A row",
-        labels: [{ name: READY_LABEL }, { name: CLAIM_LABEL }, { name: "session:worker-contracts" }] });
-    }
-    return "";
-  };
+  const { run, board, calls } = boardRun([READY_LABEL], { number: 176 });
   dispatchRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
-  const editCalls = calls.filter((a) => a[1] === "edit");
-  assert.ok(editCalls.length > 0, "must have written the dispatch");
-  // #749: the add and the remove are now two SEPARATE calls, in that order -- a combined call is not
-  // atomic (#677's own reproduction: its `--remove-label` applied while its `--add-label`s did not), so
-  // this checks the remove genuinely happened, not that it happened in the SAME subprocess call as the
-  // add. "Never both pickable and taken" still holds: the remove only runs once the add call is known to
-  // have succeeded (`run` throws on failure), so the two states are still never both true at once.
-  const removeCall = editCalls.find((a) => a.includes("--remove-label"));
-  assert.ok(removeCall, `dispatching must remove \`ready\`, so a row is never both pickable and taken -- `
-    + `got: ${JSON.stringify(editCalls)}`);
-  const removeIndex = removeCall!.indexOf("--remove-label");
-  assert.equal(removeCall![removeIndex + 1], READY_LABEL);
+  // #2151: the removal travels IN the write that adds the claim (one PUT), so "never both pickable and
+  // taken" is a fact about the request rather than about the order of two of them.
+  assert.equal(calls.filter(isLabelSet).length, 1, `dispatching must write the labels once -- got: ${JSON.stringify(calls)}`);
+  assert.ok(!board.labels.includes(READY_LABEL), "dispatching must remove `ready`, so a row is never both pickable and taken");
+  assert.ok(board.labels.includes(CLAIM_LABEL));
 });
 
-test("#449 MUTATION TARGET: claiming a `ready` row writes the was-ready marker in the SAME edit that "
+test("#449 MUTATION TARGET: claiming a `ready` row writes the was-ready marker in the SAME write that "
   + "removes `ready` -- this is the only place declineRow can later learn the fact", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 176, title: "A row",
-        labels: [{ name: READY_LABEL }, { name: CLAIM_LABEL }, { name: "session:worker-contracts" }] });
-    }
-    return "";
-  };
+  const { run, labelSets } = boardRun([READY_LABEL], { number: 176 });
   dispatchRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
-  const editCall = calls.find((a) => a[1] === "edit")!;
-  assert.ok(editCall.includes(WAS_READY_LABEL)
-    && editCall[editCall.indexOf(WAS_READY_LABEL) - 1] === "--add-label",
-    `the marker must be ADDED, not merely mentioned -- got: ${JSON.stringify(editCall)}`);
+  const [written] = labelSets();
+  assert.ok(written.includes(WAS_READY_LABEL) && !written.includes(READY_LABEL),
+    `the marker must be WRITTEN with \`ready\` gone -- got: ${JSON.stringify(written)}`);
 });
 
 test("claiming a row that was NEVER `ready` writes no was-ready marker at all", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") return JSON.stringify({ number: 176, title: "A row", labels: [] });
-    return "";
-  };
+  const { run, labelSets } = boardRun([], { number: 176 });
   claimRow(176, "worker-contracts", { run, moveStatus: () => ({ moved: true }) });
-  const editCall = calls.find((a) => a[1] === "edit")!;
-  assert.ok(!editCall.includes(WAS_READY_LABEL), "no marker for a row that was never ready to begin with");
+  assert.ok(!labelSets()[0].includes(WAS_READY_LABEL), "no marker for a row that was never ready to begin with");
 });
 
 test("#444: a runner: label is NEVER removed by a claim -- it survives, unlike ready", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 324, title: "V1 rehearsal",
-        labels: [{ name: READY_LABEL }, { name: "runner:worker-audit" }] });
-    }
-    return "[]"; // eligibility lookups (B2/B4) see an empty answer and fail open
-  };
+  const { run, board } = boardRun([READY_LABEL, "runner:worker-audit"], { number: 324 });
   const result = claimRow(324, "worker-audit", { run, moveStatus: () => ({ moved: true }) });
   assert.equal(result.claimed, true, `expected a successful claim by the named runner, got: `
     + `${JSON.stringify(result)}`);
-  const editCalls = calls.filter((a) => a[1] === "edit");
-  assert.ok(editCalls.length > 0, "must have written the claim");
-  // #749: add and remove are now two separate calls -- collect removals across ALL of them, never just
-  // the first "edit" found, or a real removal in the second call would read as absent.
-  const removedLabels = editCalls.flatMap((call) =>
-    call.map((a, i) => (a === "--remove-label" ? call[i + 1] : null)).filter((l): l is string => l !== null));
-  assert.ok(!removedLabels.includes("runner:worker-audit"),
+  assert.ok(board.labels.includes("runner:worker-audit"),
     "runner: records WHO a row was reserved for, and stays true after the reservation is honoured");
-  assert.ok(removedLabels.includes(READY_LABEL), "ready must still be removed as usual");
+  assert.ok(!board.labels.includes(READY_LABEL), "ready must still be removed as usual");
 });
 
 // --- declineRow: give a row back, #176's second acceptance case ---
@@ -1801,7 +1745,8 @@ function claimRunFailingAt(failAt: (args: string[], labelReads: number) => boole
     if (failAt(args, labelReads)) throw new Error(`simulated: gh ${args.slice(0, 2).join(" ")} failed`);
     if (args[1] === "view" && args.includes("body")) return JSON.stringify({ body: TEMPLATE_BODY });
     if (isLabelRead) {
-      const labels = labelReads === 1 ? [READY_LABEL]
+      // Reads 1 and 2 are the two BEFORE the write (`writeRowLabels`'s and #2151's fresh one); 3 is the verify.
+      const labels = labelReads <= 2 ? [READY_LABEL]
         : [CLAIM_LABEL, "session:worker-judge", STARTED_LABEL, WAS_READY_LABEL];
       return JSON.stringify({ number: ROW, title: "A row", state: "OPEN", labels: labels.map((name) => ({ name })) });
     }
@@ -1821,17 +1766,18 @@ function thrownBy(act: () => unknown): unknown {
 
 const claimOf = (run: (cmd: string, args: string[]) => string) => () => claimRow(ROW, "worker-judge",
   { run, moveStatus: () => ({ moved: true }), branch: "agent/x-1399", worktree: "/tmp/wt-1399" });
-const ADDED = `added labels ${CLAIM_LABEL}, session:worker-judge, ${STARTED_LABEL}, ${WAS_READY_LABEL}`;
+const SET = `set the row's labels to ${CLAIM_LABEL}, session:worker-judge, ${STARTED_LABEL}, ${WAS_READY_LABEL} `
+  + `(\`${READY_LABEL}\` removed in the same write)`;
 
 test("#1399 ACCEPTANCE: labels LANDED, then the verify read throws -- exit 4, naming the written labels", () => {
-  const { run } = claimRunFailingAt((args, reads) => args[1] === "view" && !args.includes("body") && reads === 2);
+  const { run } = claimRunFailingAt((args, reads) => args[1] === "view" && !args.includes("body") && reads === 3);
   const error = thrownBy(claimOf(run));
-  assert.deepEqual(landedWritesOf(error), [ADDED, `removed label ${READY_LABEL}`]);
+  assert.deepEqual(landedWritesOf(error), [SET]);
   const report = failureReport(error);
   assert.equal(report.exitCode, LANDED_WRITE_EXIT);
   assert.equal(LANDED_WRITE_EXIT, DOCUMENTED_LANDED_WRITE_EXIT);
   assert.match(report.text, /^PARTIALLY WRITTEN/);
-  assert.ok(report.text.includes(ADDED) && report.text.includes(`removed label ${READY_LABEL}`));
+  assert.ok(report.text.includes(SET));
   assert.doesNotMatch(report.text, /COULD NOT DETERMINE/);
 });
 
@@ -1844,22 +1790,15 @@ test("#1399 CONTROL: the PRE-write read throws -- nothing is written, and COULD 
   assert.ok(!calls.some((a) => a[1] === "edit" || a[1] === "comment"), "no write may be attempted");
 });
 
-test("#1399: the remove-`ready` call throws AFTER the add landed -- exit 4, naming only the add", () => {
-  const { run } = claimRunFailingAt((args) => args[1] === "edit" && args.includes("--remove-label"));
-  const error = thrownBy(claimOf(run));
-  assert.deepEqual(landedWritesOf(error), [ADDED]);
-  assert.equal(failureReport(error).exitCode, LANDED_WRITE_EXIT);
-});
-
 test("#1399: the claim record throws after the labels and the verify -- exit 4, and the record is NOT listed", () => {
   const { run } = claimRunFailingAt((args) => args[1] === "comment");
   const error = thrownBy(claimOf(run));
-  assert.deepEqual(landedWritesOf(error), [ADDED, `removed label ${READY_LABEL}`]);
+  assert.deepEqual(landedWritesOf(error), [SET]);
   assert.equal(failureReport(error).exitCode, LANDED_WRITE_EXIT);
 });
 
-test("#1399 BOUNDARY: a failed ADD call is not known to have landed -- exit 2, as #749 left it", () => {
-  const { run } = claimRunFailingAt((args) => args[1] === "edit" && args.includes("--add-label"));
+test("#1399 BOUNDARY: a failed label write is not known to have landed -- exit 2, as #749 left it", () => {
+  const { run } = claimRunFailingAt(isLabelSet);
   const error = thrownBy(claimOf(run));
   assert.equal(landedWritesOf(error), null);
   assert.equal(failureReport(error).exitCode, 2);
