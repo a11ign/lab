@@ -24,8 +24,10 @@ const ADR_FILE = "0040-agent-org-is-a-standalone-project-agnostic-tool.md";
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const ADR_DIR = `${REPO_ROOT}docs/adr/`;
 
-/** The nine decisions `ceo` named (#2615), in the order the ADR states them. */
-const DECISION_COUNT = 9;
+/** The eleven decisions (`ceo`'s nine, then the timeline of 08:45Z and the chairman's three asks), in the order the ADR states them. */
+const DECISION_COUNT = 11;
+const TIMELINE_DECISION = 10;
+const ASKS_DECISION = 11;
 /** The merge path, the licence and the fixture project: the three decisions that RECORD a ruling and must say so, citing #69. */
 const MERGE_PATH_DECISION = 6;
 /** The decision that carries the relicensing check, whose command must mention the licence. */
@@ -34,10 +36,12 @@ const FIXTURE_DECISION = 8;
 const RULED_DECISIONS: readonly number[] = [MERGE_PATH_DECISION, LICENCE_DECISION, FIXTURE_DECISION];
 /** The four surfaces decision 1 sizes as a number of files. */
 const SURFACE_COUNT = 4;
-/** The chairman's three asks (a), (b), (c) of #69, 07:53Z. */
+/** The chairman's three asks (a), (b), (c) of #69, 07:53Z, the parts of the last decision. */
 const ASKS = ["a", "b", "c"] as const;
 /** The children the ADR confirms or amends, in the order the chain runs; extra entries (3g, W) may sit among them. */
 const REQUIRED_CHILDREN = ["3a", "3b", "3c", "3d", "3e", "3f", "4", "5"] as const;
+/** The MOVE rows: one per target repository and one per npm rename (#2615, 08:45Z), each stating its chairman step or none. */
+const REQUIRED_MOVES = ["R1", "R2", "M0", "M1", "M2", "M3", "M4", "M5", "M6"] as const;
 
 /** The five sections `docs/adr/README.md` prescribes, by the heading each is written under. */
 const PRESCRIBED_SECTIONS: readonly [string, RegExp][] = [
@@ -147,25 +151,50 @@ function decisionProblems(text: string): string[] {
       problems.push(`DECISION ${n} carries no relicensing reading: no reading whose command names the licence`);
     }
     if (n === 1) problems.push(...decisionOneProblems(body));
+    if (n === TIMELINE_DECISION) problems.push(...timelineProblems(body));
+    if (n === ASKS_DECISION) problems.push(...asksProblems(body));
   }
   return problems;
 }
 
-function askProblems(text: string): string[] {
-  const part = section(text, /^## The three asks of #69\b/m, 2);
-  if (part === undefined) return ["no section \"The three asks of #69\""];
+/** A duration is stated with a pasted reading behind it (`[reading N]`, N a reading inside the decision) or the word UNMEASURED. */
+function durationProblems(body: string, readingCount: number): string[] {
+  const lines = [...body.matchAll(/^- \*\*DURATION\b[^\n]*/gm)].map((m) => m[0]);
+  if (lines.length === 0) return ["DECISION 10 states no durations (\"- **DURATION …**\")"];
+  return lines.flatMap((line) => {
+    const cited = [...line.matchAll(/\[reading (\d+)\]/g)].map((m) => Number(m[1]));
+    const sound = /UNMEASURED/.test(line) || (cited.length > 0 && cited.every((n) => n >= 1 && n <= readingCount));
+    return sound ? [] : [`a duration has no measured input and no UNMEASURED: ${line.slice(0, 90)}`];
+  });
+}
+
+/** Decision 10: ranges (not figures) with what they stand on, a shadow window, every duration accounted for, and the documents note. */
+function timelineProblems(body: string): string[] {
   const problems: string[] = [];
+  const range = /\d+ to \d+ days/;
+  const rangeLine = (label: string): string | undefined => new RegExp(`^\\*\\*${label}:[^\\n]*`, "m").exec(body)?.[0];
+  if (!range.test(rangeLine("`agent-org` out") ?? "")) problems.push('DECISION 10 gives no range for `agent-org` out ("**`agent-org` out: N to M days.**")');
+  if (!range.test(rangeLine("Whole split") ?? "")) problems.push('DECISION 10 gives no range for the whole split ("**Whole split: N to M days.**")');
+  if (!/^\*\*Shadow window:[^\n]*\b[\d,]+ (?:ticks|hours)\b/m.test(body)) problems.push("DECISION 10 states no shadow window in hours or ticks");
+  for (const label of ["Stands on", "Does not know"]) {
+    if ([...body.matchAll(new RegExp(`^\\*\\*${label}:\\*\\*`, "gm"))].length < 2) problems.push(`DECISION 10 must say what each range ${label === "Stands on" ? "stands on" : "does not know"} ("**${label}:**", twice)`);
+  }
+  if (!/^\*\*UNMEASURED, listed:\*\*/m.test(body)) problems.push('DECISION 10 does not list what is UNMEASURED ("**UNMEASURED, listed:**")');
+  problems.push(...durationProblems(body, readings(body).length));
+  if (!/FIRST PUBLISH|first publish/.test(body) || !/critical path/.test(body)) problems.push("DECISION 10 does not say the documents move is a FIRST PUBLISH on the critical path of the next release");
+  return problems;
+}
+
+/** Decision 11: the trigger has a number and a unit, the wording check and the evidence reading are pasted, `scorer` is placed. */
+function asksProblems(body: string): string[] {
+  const problems: string[] = [];
+  if (!/^\*\*Trigger:\*\*[^\n]*\b\d+ (?:consecutive )?(?:days|weeks)\b/m.test(body)) problems.push("DECISION 11's trigger has no number and unit (\"**Trigger:** … 28 consecutive days …\")");
   for (const a of ASKS) {
-    const one = section(part, new RegExp(`^### ASK \\(${a}\\)`, "m"), ENTRY_LEVEL);
-    if (one === undefined) problems.push(`ASK (${a}) is missing`);
-    else if (readings(one).length === 0) problems.push(`ASK (${a}) has no reading`);
+    const one = section(body, new RegExp(`^#### \\(${a}\\)`, "m"), ENTRY_LEVEL + 1);
+    if (one === undefined) problems.push(`DECISION 11 part (${a}) is missing`);
+    else if (a !== "c" && readings(one).length === 0) problems.push(`DECISION 11 part (${a}) has no reading`);
   }
-  const documents = section(part, /^### The documents layer\b/m, ENTRY_LEVEL);
-  if (documents === undefined) problems.push("no \"The documents layer\" section");
-  else {
-    if (readings(documents).length === 0) problems.push("the documents layer has no reading");
-    if (!/FIRST PUBLISH/.test(documents) || !/critical path/.test(documents)) problems.push("the documents layer does not say its move is a FIRST PUBLISH on the critical path");
-  }
+  if (!/^\*\*Placement:\*\*\s*\S/m.test(body)) problems.push("DECISION 11 does not place `scorer` (\"**Placement:** …\")");
   return problems;
 }
 
@@ -201,16 +230,17 @@ function appendixProblems(text: string): string[] {
   const appendix = section(text, /^## Appendix\b/m, 2);
   if (appendix === undefined) return ["no \"## Appendix\" holding the child rows"];
   const problems: string[] = [];
-  const found = [...appendix.matchAll(/^### (?:CHILD|NEW ROW) (\S+)/gm)].map((m) => m[1]!);
+  const found = [...appendix.matchAll(/^### (?:CHILD|NEW ROW|MOVE ROW) (\S+)/gm)].map((m) => m[1]!);
   let at = -1;
-  for (const id of REQUIRED_CHILDREN) {
+  for (const id of [...REQUIRED_CHILDREN, ...REQUIRED_MOVES]) {
     const next = found.indexOf(id, at + 1);
-    if (next < 0) problems.push(`appendix has no CHILD ${id} (or it is out of order); found [${found.join(", ")}]`);
+    if (next < 0) problems.push(`appendix has no entry ${id} (or it is out of order); found [${found.join(", ")}]`);
     else at = next;
   }
   for (const id of found) {
-    const rowText = section(appendix, new RegExp(`^### (?:CHILD|NEW ROW) ${id}(?![\\w])`, "m"), ENTRY_LEVEL) ?? "";
+    const rowText = section(appendix, new RegExp(`^### (?:CHILD|NEW ROW|MOVE ROW) ${id}(?![\\w])`, "m"), ENTRY_LEVEL) ?? "";
     if (!/^\*\*Verdict:?\s*(?:CONFIRMED|AMENDED|NEW)\b/m.test(rowText)) problems.push(`CHILD ${id} states no verdict ("**Verdict: CONFIRMED|AMENDED|NEW …**")`);
+    if ((REQUIRED_MOVES as readonly string[]).includes(id) && !/^\*\*Chairman step:\*\*\s*\S/m.test(rowText)) problems.push(`MOVE ROW ${id} says nothing about a chairman step ("**Chairman step:** … or none")`);
     const bodies = fencedBlocks(rowText).filter((b) => b.info === "markdown");
     if (bodies.length !== 1) problems.push(`CHILD ${id} must hold exactly one fenced markdown body; found ${bodies.length}`);
     else problems.push(...rowBodyProblems(id, bodies[0]!.lines.join("\n")));
@@ -224,8 +254,9 @@ function appendixProblems(text: string): string[] {
  */
 const RESERVED_BY_A_ROW: readonly RegExp[] = [
   /^\.agent-org\//,
+  /^\.changeset\//,
   /^packages\/agent-org\/src\/(?:lib\/|project-config\.mjs$|project-vocabulary\.mjs$|host-config\.mjs$|cause-declaration\.mjs$|shadow-gate\.mjs$)/,
-  /^packages\/lab\/src\/packaging\/(?:project-config|multi-board-claim|multi-board-gate|project-vocabulary|project-roles|host-project-paths|shadow-gate|agent-org-extraction|agent-org-outward-edges)\.test\.ts$/,
+  /^packages\/lab\/src\/packaging\/(?:project-config|multi-board-claim|multi-board-gate|project-vocabulary|project-roles|host-project-paths|shadow-gate|agent-org-extraction|agent-org-outward-edges|package-rename-nvda-worker|package-rename-worker-fleet|agent-org-monorepo-copy-removed|screenreader-worker-extraction|screenreader-fleet-extraction|lab-extraction|control-extraction|documents-extraction|cli-documents-dependency)\.test\.ts$/,
 ];
 
 /** The paths each appendix entry's Region lists: the lines of the FIRST fenced block under its `## Region`. */
@@ -259,7 +290,6 @@ export function checkAdr(text: string, indexText: string, fileName = ADR_FILE, e
   if (!/still OPEN/.test(text)) problems.push("does not say the two questions still open on #69 are open (and nothing more)");
   problems.push(...supersessionProblems(text));
   problems.push(...decisionProblems(text));
-  problems.push(...askProblems(text));
   const sum = section(text, /^## The sum\s*$/m, 2);
   if (sum === undefined || !/^\*\*Sum:\*\*[^\n]*\b\d+ rows\b/m.test(sum)) problems.push("no \"**Sum:** ... N rows\" sentence in \"## The sum\"");
   if (sum === undefined || !/^\*\*First two:\*\*\s*\S/m.test(sum)) problems.push("no \"**First two:**\" line naming the rows that go first in \"## The sum\"");
@@ -286,23 +316,46 @@ function fixtureDecision(n: number, options: FixtureOptions): string {
     ].join("\n")
     : "";
   const ruled = RULED_DECISIONS.includes(n) && n !== options.unruled ? "**RULED (#69, 07:20Z):** recorded, not reopened." : "";
-  return [`### DECISION ${n} — a fixture decision`, "", reading, "", surfaces, "", ruled, "", "**Decision:** it becomes two things.", "", "**Owner:** engineer.", ""].join("\n");
+  const extra = n === TIMELINE_DECISION ? fixtureTimeline(options) : n === ASKS_DECISION ? fixtureAsks(options) : "";
+  return [`### DECISION ${n} — a fixture decision`, "", reading, "", surfaces, "", ruled, "", extra, "", "**Decision:** it becomes two things.", "", "**Owner:** engineer.", ""].join("\n");
 }
 
-function fixtureAsk(a: string, options: FixtureOptions): string {
-  const reading = a === "b" && options.askWithoutReading
-    ? "The wording lives in one file."
-    : [FENCE, "$ git grep -l needle | wc -l", "7", FENCE].join("\n");
-  return [`### ASK (${a}) — a fixture ask`, "", reading, ""].join("\n");
+/** Decision 10's fixture body: two ranges with their footings, a window, an unmeasured list, durations, and the documents note. */
+function fixtureTimeline(options: FixtureOptions): string {
+  const duration = options.durationWithoutInput === true
+    ? "- **DURATION a path row:** 3 to 8 hours each."
+    : "- **DURATION a path row:** 3 to 8 hours each, UNMEASURED.";
+  return [
+    "**`agent-org` out: 3 to 5 days.**", "", "**Stands on:** a chain.", "", "**Does not know:** a row's real length.", "",
+    options.noWholeRange === true ? "**Whole split: unknown.**" : "**Whole split: 6 to 16 days, LOW confidence.**", "",
+    "**Stands on:** the chain.", "", "**Does not know:** the chairman's turnaround.", "",
+    "**Shadow window: 1,440 ticks (48 hours).**", "",
+    "- **DURATION tick period:** 2 minutes [reading 1].", duration, "",
+    "**UNMEASURED, listed:** every move-row duration.", "",
+    "The documents move is a FIRST PUBLISH on the critical path of the next release.",
+  ].join("\n");
 }
 
-function fixtureRow(id: string, options: { acceptance?: boolean; path?: string } = {}): string {
+/** Decision 11's fixture body: three parts, a trigger with a number and a unit, and `scorer` placed. */
+function fixtureAsks(options: FixtureOptions): string {
+  const reading = [FENCE, "$ git grep -l needle | wc -l", "7", FENCE].join("\n");
+  return [
+    options.triggerWithoutUnit === true ? "**Trigger:** when it feels stable." : "**Trigger:** 28 consecutive days without a bump.", "",
+    "#### (a) — a trigger", "", reading, "",
+    "#### (b) — the wording", "", options.askWithoutReading === true ? "The wording lives in one file." : reading, "",
+    "#### (c) — `scorer`", "", "**Placement:** it stays.",
+  ].join("\n");
+}
+
+function fixtureRow(id: string, options: { acceptance?: boolean; path?: string; chairmanStep?: boolean } = {}): string {
+  const kind = (REQUIRED_MOVES as readonly string[]).includes(id) ? "MOVE ROW" : "CHILD";
   const acceptance = options.acceptance === false ? "" : ["## Acceptance", "", "```bash", "npx rstest run --include x.test.ts", "```", ""].join("\n");
   return [
-    `### CHILD ${id}`,
+    `### ${kind} ${id}`,
     "",
     `**Verdict: AMENDED, small.**`,
     "",
+    ...(options.chairmanStep === true ? ["**Chairman step:** none.", ""] : []),
     OUTER_FENCE + "markdown",
     "## Region",
     "",
@@ -321,14 +374,15 @@ function fixtureRow(id: string, options: { acceptance?: boolean; path?: string }
 
 interface FixtureOptions {
   without?: number; proseReadingIn?: number; rowWithoutAcceptance?: string; unruled?: number; noLicenceReading?: boolean;
-  noSum?: boolean; askWithoutReading?: boolean; noSupersession?: boolean; twoParagraphSupersession?: boolean; badRegionPath?: boolean;
+  noSum?: boolean; askWithoutReading?: boolean; durationWithoutInput?: boolean; noWholeRange?: boolean; triggerWithoutUnit?: boolean; moveWithoutStep?: string; noSupersession?: boolean; twoParagraphSupersession?: boolean; badRegionPath?: boolean;
 }
 
 function fixtureAdr(options: FixtureOptions = {}): string {
   const decisions = countTo(DECISION_COUNT).filter((n) => n !== options.without).map((n) => fixtureDecision(n, options));
-  const rows = [...REQUIRED_CHILDREN, "3g"].map((id) => fixtureRow(id, {
+  const rows = [...REQUIRED_CHILDREN, "3g", ...REQUIRED_MOVES].map((id) => fixtureRow(id, {
     acceptance: id !== options.rowWithoutAcceptance,
     path: options.badRegionPath === true && id === "3g" ? "docs/nope.md" : undefined,
+    chairmanStep: (REQUIRED_MOVES as readonly string[]).includes(id) && id !== options.moveWithoutStep,
   }));
   const supersession = options.noSupersession === true ? [] : [
     "## What this changes in ADR 0039", "",
@@ -342,12 +396,8 @@ function fixtureAdr(options: FixtureOptions = {}): string {
     ...supersession,
     "## Context", "", "c", "",
     "## Decision", "", "d", "",
-    "## The nine decisions", "",
+    "## The eleven decisions", "",
     ...decisions,
-    "## The three asks of #69 (07:53Z), and the documents layer", "",
-    ...ASKS.map((a) => fixtureAsk(a, options)),
-    "### The documents layer, and the placeholder repositories", "",
-    FENCE, "$ npm view pkg version", "E404", FENCE, "", "Its move is a FIRST PUBLISH on the critical path.", "",
     "## The sum", "",
     "**Sum:** the work is 10 rows.", "",
     "**First two:** 3a and 3g.", "",
@@ -395,12 +445,16 @@ test("control: the three breakages the row names, together, are each REPORTED, n
   }
 });
 
-test("control: each ruling, the licence reading, the sum, an ask's reading and the 0039 paragraph REFUSE when absent", () => {
+test("control: each ruling, the licence reading, the sum, the timeline, the asks, the move rows and the 0039 paragraph REFUSE when absent", () => {
   const cases: [string, FixtureOptions, RegExp][] = [
     ["a ruling not stated", { unruled: 7 }, /DECISION 7 does not state the ruling/],
     ["the licence reading", { noLicenceReading: true }, /DECISION 7 carries no relicensing reading/],
     ["decision 1's sum", { noSum: true }, /DECISION 1 has no "\*\*Sum:\*\*"/],
-    ["ask (b)'s reading", { askWithoutReading: true }, /ASK \(b\) has no reading/],
+    ["part (b)'s reading", { askWithoutReading: true }, /DECISION 11 part \(b\) has no reading/],
+    ["a duration with no measured input and no UNMEASURED", { durationWithoutInput: true }, /a duration has no measured input and no UNMEASURED/],
+    ["the whole-split range", { noWholeRange: true }, /DECISION 10 gives no range for the whole split/],
+    ["a trigger with no number and unit", { triggerWithoutUnit: true }, /DECISION 11's trigger has no number and unit/],
+    ["a move row silent on its chairman step", { moveWithoutStep: "M5" }, /MOVE ROW M5 says nothing about a chairman step/],
     ["the 0039 paragraph", { noSupersession: true }, /no "What this changes in ADR 0039" section/],
     ["a one-paragraph 0039 section", { twoParagraphSupersession: true }, /must be ONE paragraph/],
     ["a Region path that neither exists nor is reserved", { badRegionPath: true }, /Region path "docs\/nope\.md" neither exists/],
@@ -420,7 +474,7 @@ test("control: a section, the commit, the open-questions line, a verdict and the
     ["a verdict", full.replace("**Verdict: AMENDED, small.**", ""), FIXTURE_INDEX, /states no verdict/],
     ["the sum sentence", full.replace("**Sum:** the work is 10 rows.", "**Sum:** several."), FIXTURE_INDEX, /"\*\*Sum:\*\* \.\.\. N rows"/],
     ["a surface size", full.replace("**Surface 3 — 5 files.**", "**Surface 3 — large.**"), FIXTURE_INDEX, /does not size surface 3/],
-    ["a required child", full.replace("### CHILD 3c\n", "### CHILD 3z\n"), FIXTURE_INDEX, /no CHILD 3c/],
+    ["a required child", full.replace("### CHILD 3c\n", "### CHILD 3z\n"), FIXTURE_INDEX, /no entry 3c/],
     ["the index entry", full, "| nothing |", /does not index/],
   ];
   for (const [what, text, index, wanted] of cases) {
@@ -433,7 +487,7 @@ test("control: a section, the commit, the open-questions line, a verdict and the
 // THE REAL DOCUMENT.
 // ---------------------------------------------------------------------------------------------------------
 
-test("ADR 0040 has all nine decisions, each with a reading, the three asks and every child row of the appendix", () => {
+test("ADR 0040 has all eleven decisions, each with a reading, and every child and move row of the appendix", () => {
   const text = readFileSync(`${ADR_DIR}${ADR_FILE}`, "utf8");
   const index = readFileSync(`${ADR_DIR}README.md`, "utf8");
   // The population is proved non-empty by the controls above (the complete fixture passes and each broken one reports);
@@ -441,5 +495,6 @@ test("ADR 0040 has all nine decisions, each with a reading, the three asks and e
   assert.equal([...text.matchAll(/^### DECISION \d+\b/gm)].length, DECISION_COUNT);
   const appendix = section(text, /^## Appendix\b/m, 2) ?? "";
   for (const id of REQUIRED_CHILDREN) assert.ok(new RegExp(`^### CHILD ${id}\\b`, "m").test(appendix), `CHILD ${id} is in the appendix`);
+  for (const id of REQUIRED_MOVES) assert.ok(new RegExp(`^### MOVE ROW ${id}\\b`, "m").test(appendix), `MOVE ROW ${id} is in the appendix`);
   assert.deepEqual(checkAdr(text, index, ADR_FILE, (path) => existsSync(`${REPO_ROOT}${path}`)), []);
 });
