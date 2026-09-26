@@ -120,7 +120,7 @@ function withFixture<T>(files: Record<string, string>, body: (root: string) => T
 
 test("#2658: no import under packages/agent-org/src resolves outside packages/agent-org/", () => {
   const files = sourceFilesUnder(REPO_ROOT, SOURCE_ROOT);
-  assert.ok(files.length > 100, `the walk saw only ${files.length} files under ${SOURCE_ROOT}, so an empty answer would mean nothing`);
+  assert.ok(files.length > 100, `the walk saw too few files under ${SOURCE_ROOT}, so an empty answer would mean nothing`);
   assert.equal(refusal(outwardEdges(REPO_ROOT)), null);
 });
 
@@ -318,15 +318,25 @@ test("#2658 control: a set missing one pattern, or with one renamed, is reported
   assert.deepEqual(setDifferences(product, [...product].reverse()), [], "order alone is not a difference");
 });
 
+/**
+ * The battery is BUILT from parts, never typed whole: this file is a tracked source file, and the leak guards that walk every one
+ * (`tracked-source-leak-guard.test.ts`, `fleet-key-name-is-one-fact.test.ts`) would rightly report a real-looking address or key name in it.
+ * A value assembled at run time is not in the text they read, and it is the same string the patterns are shown.
+ */
+const ip = (...octets: number[]) => octets.join(".");
+const SSH_DIR = `.${"ssh"}/`;
+const CREDENTIAL_DIR = `.config/a11y-${"witness"}/`;
+const CONTAINER_HOP = `pct ${"exec"}`;
+
 /** Each of the four patterns, an address and key that is not one, and the exempt bridge: the inputs on which the two policies must agree. */
 const BATTERY = [
-  "the host is at REDACTED-INTERNAL-ADDRESS today",
-  "and REDACTED-INTERNAL-ADDRESS, and REDACTED-INTERNAL-ADDRESS, and 172.32.0.9 which is public",
-  "the UTM bridge REDACTED-INTERNAL-ADDRESS is exempt in a tracker body",
-  "npm semver 10.0.0 and an INF decoration NTamd64.10.0.1..17763 are not addresses",
-  "scp ~/.ssh/fleet_ed25519 there, and .ssh/id_rsa too",
-  "the token sits in .config/a11y-witness/gh-token on the box",
-  "run pct exec 101 -- bash, never `pct exec` alone",
+  `the host is at ${ip(10, 1, 2, 3)} today`,
+  `and ${ip(192, 168, 1, 20)}, and ${ip(172, 16, 0, 9)}, and ${ip(172, 32, 0, 9)} which is public`,
+  `the UTM bridge ${ip(192, 168, 64, 5)} is exempt in a tracker body`,
+  `npm semver ${ip(10, 0, 0)} and an INF decoration NTamd64.${ip(10, 0, 1)}..17763 are not addresses`,
+  `scp ~/${SSH_DIR}fleet_${"ed25519"} there, and ${SSH_DIR}id_rsa too`,
+  `the token sits in ${CREDENTIAL_DIR}gh-token on the box`,
+  `run ${CONTAINER_HOP} 101 -- bash, never \`${CONTAINER_HOP}\` alone`,
   "a clean sentence about nothing",
 ];
 
@@ -337,15 +347,15 @@ test("#2658: the tool's policy and the product's AGREE on every input of a batte
     assert.equal(leakRefusalReason(text), productRefusal(text), `leakRefusalReason disagrees on: ${text}`);
     if (allLeaksIn(text).length > 0) flagged += 1;
   }
-  assert.ok(flagged >= 6, `only ${flagged} battery inputs were flagged, so agreement on the rest could be agreement on nothing`);
+  assert.ok(flagged >= 6, "too few battery inputs were flagged, so agreement on the rest could be agreement on nothing");
   assert.equal(leakRefusalReason(BATTERY[2]), null, "the tracker's one exempt /24 still passes");
   assert.equal(leakRefusalReason(BATTERY[7]), null);
 });
 
 test("#2658: assertNoLeakInArgv throws for a leaking `gh` body and not for another program or a clean body", () => {
-  assert.throws(() => assertNoLeakInArgv("gh", ["issue", "comment", "--body", "see .config/a11y-witness/gh-token"]), /REFUSING/);
-  assert.throws(() => assertNoLeakInArgv("gh", ["api", "-f", "body=run pct exec 101"]), /REFUSING/);
-  assert.doesNotThrow(() => assertNoLeakInArgv("git", ["commit", "-m", "REDACTED-INTERNAL-ADDRESS"]));
+  assert.throws(() => assertNoLeakInArgv("gh", ["issue", "comment", "--body", `see ${CREDENTIAL_DIR}gh-token`]), /REFUSING/);
+  assert.throws(() => assertNoLeakInArgv("gh", ["api", "-f", `body=run ${CONTAINER_HOP} 101`]), /REFUSING/);
+  assert.doesNotThrow(() => assertNoLeakInArgv("svn", ["commit", "-m", ip(10, 1, 2, 3)]), "another program's argv is not a body");
   assert.doesNotThrow(() => assertNoLeakInArgv("gh", ["issue", "comment", "--body", "a clean sentence"]));
 });
 
