@@ -54,6 +54,8 @@ const NOT_A_CLI_ARGUMENT: Readonly<Record<string, string>> = {
     + "which then passes `--flows`; deliberately NOT interpolated into the run text (ADR 0038, Constraint 2: these are the "
     + "inputs of an action that handles secrets, and `authenticated-action.test.ts` pins that none of the three is)",
   "login-flow": "exported as LOGIN_FLOW and passed as `--login-flow` from the environment variable, for the reason `flows` is",
+  "auth-state": "exported as AUTH_STATE, made absolute against the workspace in the Capture step's shell, and passed as `--auth-state` "
+    + "from that variable; not interpolated into the run text, for the reason `flows` is (ADR 0038, amendment 7, choice 6)",
   "send-authenticated-transcript-to-judge-vendor": "exported as SEND_TRANSCRIPT and passed as `--send-authenticated-transcript-to-judge-vendor` "
     + "ONLY when it is exactly `true`; an argument in the CLI and never an environment variable it reads (clause 5's override)",
 };
