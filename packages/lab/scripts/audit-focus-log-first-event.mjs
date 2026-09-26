@@ -38,7 +38,10 @@ function capturesUnder(/** @type {string} */ root) {
   return found;
 }
 
-const HEADERS = ["protocol", "focusin", "focusout", "no-log", "other", "total"];
+// `initial` and `focusin-unmarked` sit AFTER the total because they are not buckets: `initial` counts captures
+// whose log[0] carries `initial: true` and `focusin-unmarked` a focusin-first log WITHOUT it, so a protocol-22
+// zero under `focusout` can be told from a marker that was never written (#2594).
+const HEADERS = ["protocol", "focusin", "focusout", "no-log", "other", "total", "initial", "focusin-unmarked"];
 
 /** @param {ReturnType<typeof countFirstEvents>["byProtocol"]} byProtocol */
 function tableLines(byProtocol) {
@@ -47,7 +50,7 @@ function tableLines(byProtocol) {
   const rows = Object.entries(byProtocol).sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }));
   return [
     row(HEADERS),
-    ...rows.map(([protocol, t]) => row([protocol, ...[t.focusin, t.focusout, t.noLog, t.other, t.total].map(String)])),
+    ...rows.map(([protocol, t]) => row([protocol, ...[t.focusin, t.focusout, t.noLog, t.other, t.total, t.initial, t.focusinUnmarked].map(String)])),
   ];
 }
 
@@ -63,6 +66,7 @@ function reportSource({ label, root }) {
   const ages = captures.flatMap(({ at, role }) => (at ? [{ at, role }] : []));
   console.log(captureAgeLines(ages).join("\n"));
   console.log(`${total} capture(s). no-log = checked:false, empty or absent log (its own number, not a zero above).`);
+  console.log("initial = log[0] carries initial:true; focusin-unmarked = focusin-first WITHOUT it. A focusout of 0 at protocol 22 means something only beside a nonzero initial.");
   console.log(tableLines(byProtocol).join("\n"));
   console.log(`\n${focusoutFirst.length} focusout-first capture(s)${focusoutFirst.length ? ":" : "."}`);
   for (const entry of focusoutFirst) {

@@ -9,6 +9,14 @@
  * 0 `focusout`-first captures means the carve-out is dead weight; a count above 0 means genuine
  * focus-removed-by-script findings may be swallowed by it.
  *
+ * THE `initial: true` MARKER (#2587, #2594). Protocol 22's install records `document.activeElement` as the log's
+ * first entry with `initial: true`. A reading of "0 `focusout`-first at protocol 22" licenses deleting the
+ * carve-out only if the marker was actually written, so the tally carries two more numbers beside the four
+ * buckets: `initial` (captures whose `log[0].initial === true`) and `focusinUnmarked` (a `focusin`-first
+ * capture WITHOUT it). Protocol 22 then reads as three visible groups -- marked, unmarked `focusin`, `focusout`
+ * -- and a 0 from a marker that was never written shows as `initial: 0` beside it. Both are extra columns and
+ * not buckets: they overlap `focusin`, so the four still sum to the total.
+ *
  * THREE BUCKETS PLUS ONE, and the third is the point: a capture with no log at all (`checked: false`, an
  * empty log, or no `focusEvents` key) is `noLog`, reported as its own number, so a skipped capture is never
  * a silent zero in either of the others. `other` is a first event that is neither type -- unexpected, and
@@ -18,10 +26,10 @@
  * that records none counts under `"absent"`.
  */
 
-/** @typedef {{ type?: unknown, id?: unknown, atMs?: unknown, name?: unknown }} FocusLogEntry */
+/** @typedef {{ type?: unknown, id?: unknown, atMs?: unknown, name?: unknown, initial?: unknown }} FocusLogEntry */
 /** @typedef {"focusin" | "focusout" | "noLog" | "other"} FirstEventBucket */
 
-const EMPTY_TALLY = () => ({ focusin: 0, focusout: 0, noLog: 0, other: 0, total: 0 });
+const EMPTY_TALLY = () => ({ focusin: 0, focusout: 0, noLog: 0, other: 0, total: 0, initial: 0, focusinUnmarked: 0 });
 
 /**
  * @param {any} capture
@@ -42,6 +50,16 @@ export function firstEventBucket(capture) {
   if (!first) return "noLog";
   if (first.type === "focusin" || first.type === "focusout") return first.type;
   return "other";
+}
+
+/**
+ * Does the capture's FIRST log entry carry the `initial: true` marker? Only the boolean `true` counts, and only
+ * on `log[0]`: the listener writes it there or nowhere, and a later entry carrying it would be a different bug.
+ * @param {any} capture
+ * @returns {boolean}
+ */
+export function hasInitialMarker(capture) {
+  return focusLog(capture)[0]?.initial === true;
 }
 
 /** @param {any} capture @returns {string} */
@@ -80,6 +98,9 @@ export function countFirstEvents(captures) {
     const bucket = firstEventBucket(capture);
     tally[bucket] += 1;
     tally.total += 1;
+    const marked = hasInitialMarker(capture);
+    if (marked) tally.initial += 1;
+    if (bucket === "focusin" && !marked) tally.focusinUnmarked += 1;
     if (bucket === "focusout") focusoutFirst.push({ file, protocol, ...focusoutFirstDetail(capture) });
   }
   return { total: captures.length, byProtocol, focusoutFirst };
