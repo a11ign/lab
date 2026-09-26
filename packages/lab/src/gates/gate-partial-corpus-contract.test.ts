@@ -236,6 +236,8 @@ const NPM_GATE_SCRIPTS = ["eval:gate", "gate:stability", "gate:isolation", "rule
 /** Jobs whose dispatch is itself a composite chain of `&&`-joined npm scripts, not a single gate. */
 const COMPOSITE_JOBS: Record<string, string> = {
   promote: "runs `promote:gated` = `candidate:gate && promote:model` -- each already classified on its own",
+  "promote-accepting-regression": "`promote`'s argv plus `--accept-regression` (#2580) -- the same `promote:gated` chain, "
+    + "and the flag only strips the precision/recall blockers; every other refusal is unchanged",
   "release-gate": "runs `npm run release:gate`, a ~12-stage chain of already-classified gates",
 };
 
