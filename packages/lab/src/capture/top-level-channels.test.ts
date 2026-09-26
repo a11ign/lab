@@ -15,7 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { layerFile } from "../../../guards/src/layer-file.mjs";
 
 import { compareCapture, COMPARED_OUTSIDE_THE_TABLE, ENVELOPE_FIELDS, EVIDENCE_FIELDS, fieldKey, FIELD_GROUPS, NOT_COMPARED }
   from "./evidence-diff.mjs";
@@ -53,7 +53,7 @@ test("#977: the top-level channels in EVIDENCE_FIELDS are one-segment paths -- e
 });
 
 /** A `@typedef {{ ... }} Name` line's field names -- the wire test's reading: one line, flat, colon-anchored. */
-const CAPTURE_CORE = readFileSync(join(import.meta.dirname, "../../../nvda-worker/src/capture-core.mjs"), "utf8");
+const CAPTURE_CORE = readFileSync(layerFile("@a11ign/nvda-worker", "src/capture-core.mjs", { from: import.meta.dirname }), "utf8");
 function typedefFields(name: string): string[] {
   const line = CAPTURE_CORE.split("\n").find((l) => l.includes("@typedef {{") && new RegExp(`\\}\\}\\s*${name}\\b`).test(l));
   assert.ok(line, `@typedef {{ ... }} ${name} not found on one line -- capture-core.mjs has moved`);
