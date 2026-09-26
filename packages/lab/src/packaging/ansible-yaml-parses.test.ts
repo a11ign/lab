@@ -43,7 +43,9 @@ const committedYml = () =>
 // asks: a shared include is a real addition to the population this parses, not a rename.
 // 50 with #2399's `auth-leak-check.yml`, a playbook and not a shared include: a real addition to the
 // population this parses, moved deliberately as the message below asks.
-const EXPECTED_FILES = 50;
+// 51 with #2672's `roles/worker/tasks/powershell-native-image.yml`: a task include under a role is a real
+// addition to the population this parses, moved deliberately as the message below asks.
+const EXPECTED_FILES = 51;
 const EXPECTED_VENDORED = 2;
 
 test("#1274: every committed Ansible .yml parses, and the file list is NAMED not globbed", () => {
