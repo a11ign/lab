@@ -18,6 +18,7 @@
  * run against anyone's production sign-up form — repeated real submissions create records and send mail.
  */
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "@a11ign/worker-fleet/host-address";
@@ -53,7 +54,9 @@ const PAGES = fileURLToPath(new URL("../../../../runs/screenreader-dataset/pages
  * guess at it — the one place the oracle spike earns its keep here. An announcement made only of role
  * and state chrome ("edit", "button", "invalid entry") names a control; it does not tell you what to do.
  */
-const LABELS = readFileSync(fileURLToPath(new URL("../../../nvda-speech/nvda_speech/labels.py", import.meta.url)), "utf8");
+// BY PACKAGE NAME (#2612): `nvda-speech` is a layer that is to leave for its own repository, so this names the package and
+// not where it sits in this checkout. The package declares no `exports`, so any file in it resolves.
+const LABELS = readFileSync(createRequire(import.meta.url).resolve("@a11ign/nvda-speech/nvda_speech/labels.py"), "utf8");
 const VOCAB = new Set([...LABELS.matchAll(/:\s*'([^']+)'/g)].map((m) => m[1].toLowerCase()));
 
 /** Enough non-chrome words to count as an instruction rather than a label. */
