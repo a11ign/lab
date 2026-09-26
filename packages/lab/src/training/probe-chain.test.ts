@@ -21,6 +21,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { layerFile } from "../../../guards/src/layer-file.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 
 import { CASES, pair } from "./case-matrix.mjs";
@@ -34,6 +35,8 @@ import { pair as acceptancePair } from "./acceptance-matrix.mjs";
 // comment naming one in prose (this file discusses probe flags extensively) would satisfy the check
 // without the flag actually being read. See `@a11ign/evidence/source-text`.
 const read = (path: string) => stripComments(readFileSync(resolve(process.cwd(), path), "utf8"));
+/** A file of the worker package, comments stripped, found by package name (#2613) and not by `packages/nvda-worker/`. */
+const readWorker = (rel: string) => stripComments(readFileSync(layerFile("@a11ign/nvda-worker", rel, { from: import.meta.dirname }), "utf8"));
 
 /** Every probe flag any case actually asks for. Derived, never listed — a list is the defect. */
 const PROBE_FLAGS = [...new Set(
@@ -141,8 +144,8 @@ test("the capture itself reads every probe flag", () => {
   // Split since the 2026-09-05 capture-core.mjs split: `runCapturePhases` (still in capture-core.mjs)
   // reads `opts.*` and passes it on; `navigateByStructure`, which actually gates a probe on it, moved to
   // capture-probes.mjs along with the rest of the structural-navigation/probe machinery.
-  const core = read("packages/nvda-worker/src/capture-core.mjs");
-  const probes = read("packages/nvda-worker/src/capture-probes.mjs");
+  const core = readWorker("src/capture-core.mjs");
+  const probes = readWorker("src/capture-probes.mjs");
   for (const flag of PROBE_FLAGS) {
     // `!!opts.X` for a switch, `opts.X === "name"` for a validated NAME. Both are reads; requiring the
     // boolean form only would refuse the shape `probeOrder` has deliberately had from the start.
