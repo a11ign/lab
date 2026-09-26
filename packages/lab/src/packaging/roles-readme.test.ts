@@ -174,6 +174,63 @@ test("#1118: the provisional marker is ON THE VERDICT LINE, where the sha-plus-w
     + "state is how a matcher ends up seeing neither");
 });
 
+// --- #2630: `ceo`'s "What's new in the product" directive is a bullet nothing else in the repo names ----
+//
+// `grep -rln 'new in the product' packages docs .claude` matches ONLY that bullet in `roles/ceo.md`, so
+// deleting it broke no test and no reader: the chairman's only view of what a USER can now reach (#68's
+// PDF layer merged 2026-09-20 and was found six days later, from the code) would have gone silently.
+// Asserted BY SHAPE -- the heading, who it is for, what stays out, the empty case -- not by one frozen
+// sentence, so the next honest rewrite passes and a deletion, or a hollowing-out, does not.
+
+const ceoBrief = readFileSync(
+  new URL("../../../../packages/agent-org/docs/roles/ceo.md", import.meta.url), "utf8");
+
+/** The bullet that carries the directive, or `null` when no line of the brief names the section. */
+const productGrowthBullet = (brief: string): string | null =>
+  brief.split("\n").find((line) => /^- .*What's new in the product/.test(line)) ?? null;
+
+/** What the bullet must say for a reader to act on it; each entry is a clause whose loss changes the behaviour. */
+const PRODUCT_GROWTH_CLAUSES: ReadonlyArray<{ clause: string; pattern: RegExp }> = [
+  { clause: "it ends each state reading on #928, so the chairman meets it where the readings already go",
+    pattern: /state reading on #928/ },
+  { clause: "it lists what a USER can now reach, not what the org changed",
+    pattern: /capability a USER can now reach/ },
+  { clause: "each line carries its row or PR, so a claim of growth can be checked",
+    pattern: /one line each, with its row or PR/ },
+  { clause: "org machinery stays out, or the section drowns in what the chairman did not ask to see",
+    pattern: /Org-machinery changes stay out/ },
+  { clause: "an empty reading says so in one line, so silence cannot pass for nothing having shipped",
+    pattern: /nothing new says so in one line/ },
+];
+
+const missingProductGrowthClauses = (brief: string): string[] => {
+  const bullet = productGrowthBullet(brief);
+  if (bullet === null) return ["the bullet naming the \"What's new in the product\" section"];
+  return PRODUCT_GROWTH_CLAUSES.filter(({ pattern }) => !pattern.test(bullet)).map(({ clause }) => clause);
+};
+
+test("#2630: ceo.md keeps the \"What's new in the product\" directive, with every clause that makes it usable", () => {
+  assert.deepEqual(missingProductGrowthClauses(ceoBrief), [],
+    "roles/ceo.md must keep the bullet that ends each #928 state reading with what a USER can now reach");
+});
+
+test("#2630 mutation: removing the bullet, or any one clause of it, is caught", () => {
+  // The positive control for the emptiness assertion above: it passes on the real brief, so these prove
+  // it CAN fail. Removing the bullet is the defect the reviewer named; the per-clause cases prove the
+  // pin is not satisfied by a bullet that only keeps the heading.
+  const withoutBullet = ceoBrief.split("\n").filter((line) => productGrowthBullet(line) === null).join("\n");
+  assert.notEqual(withoutBullet, ceoBrief, "the mutation must actually remove something");
+  assert.deepEqual(missingProductGrowthClauses(withoutBullet),
+    ["the bullet naming the \"What's new in the product\" section"]);
+  for (const { clause, pattern } of PRODUCT_GROWTH_CLAUSES) {
+    const hollowed = ceoBrief.split("\n")
+      .map((line) => (productGrowthBullet(line) === null ? line : line.replace(pattern, "")))
+      .join("\n");
+    assert.notEqual(hollowed, ceoBrief, `the mutation must remove the clause: ${clause}`);
+    assert.deepEqual(missingProductGrowthClauses(hollowed), [clause]);
+  }
+});
+
 // --- #1157: the line that stands in for a guard the 64 call-derived assertions cannot have ------------
 //
 // `ceo` split 236 emptiness assertions three ways on 2026-09-12: a RULE where a rule can work (the 64
