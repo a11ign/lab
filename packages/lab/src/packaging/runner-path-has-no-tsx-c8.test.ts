@@ -236,6 +236,7 @@ const NAMED_TSX_USES: Record<string, string> = {
   "identity:rate": "a page-identity-rate harness",
   "verdict:stability": "an occurrence-verdict-stability harness",
   "auth:leak-check": "the authenticated-capture credential-leak check (needs a worker on this machine; imports the CLI's TypeScript directly, so a worker machine needs no build)",
+  "auth:artifact-scan": "the credential scan of a real run's output, every text file under a path (imports the CLI's TypeScript directly, so a machine needs no build)",
 };
 
 test("every remaining manifest `tsx` use is named with its purpose, and none of them is `--test`", () => {
