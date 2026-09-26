@@ -84,6 +84,10 @@ const EXEMPT: Record<string, { category: "owed" | "not-a-gate" | "deliberate"; w
       + "blocks, read-only against the real-page corpus on disk by design. There is no commit for a "
       + "disagreement rate to condition pass/fail on; it exits 2 only when the corpus it read was empty, "
       + "which is the coverage half this shape exists for" },
+  "audit-focus-log-first-event.mjs": { category: "not-a-gate",
+    why: "#2550: counts the first event of every focus log per capture protocol, read-only against the "
+      + "real-page corpus and the dataset captures. It reports and never blocks and sets no exit code: an "
+      + "empty root prints EXAMINED NOTHING, and there is no commit for a count to condition pass/fail on" },
   "emit-unclosable-vetoes.mjs": { category: "not-a-gate",
     why: "emits data for another program to read; it has no verdict" },
   "emit-grants-map.mjs": { category: "not-a-gate",
