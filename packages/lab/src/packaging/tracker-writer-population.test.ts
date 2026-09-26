@@ -33,7 +33,10 @@ import { localImports } from "../../../guards/src/local-import-closure.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
-const GUARD = resolve(REPO, "packages/lab/src/packaging/leak-patterns.mjs");
+// #2658 (child 3g of #69): the guard the tool's writers REACH is the tool's own `lib/leak-patterns.mjs`, since `agent-org` no longer imports the
+// product's. The declared registries below (`TRACKER_WRITERS`, `TRACKER_WRITER_DIRS`, `sendsABody`) stay in the product's file, which is
+// why this file still imports them from there: they are the product's list of which scripts send a body, not something a writer imports.
+const GUARD = resolve(REPO, "packages/agent-org/src/lib/leak-patterns.mjs");
 
 /** Every `.mjs` a tracker writer could live in, from git rather than a glob, so an untracked scratch file
  * is not a writer. THREE ROOTS, not one: the org tooling moved to `@a11ign/agent-org` and the repo-hygiene

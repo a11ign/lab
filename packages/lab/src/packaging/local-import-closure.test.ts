@@ -105,13 +105,17 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   // moved because the file did; the walk is fine. This is the failure mode the paragraph above designed
   // for, and updating the list IS the response -- there is nothing here to fix in the walker.
   //
+  // #2658 IS THE THIRD: the last specifier was `packages/worker-fleet/src/cli-flags.mjs`, and it is now the tool's own copy,
+  // `lib/cli-flags.mjs` (child 3g of #69: the tool imports nothing outside its package). The walk is fine, and it is
+  // the same import seen at its new address, so it moved from the end of the sorted list to its place in it.
+  //
   // #2391 IS THE SECOND: the sixth specifier is `trunk-red.mjs`, imported so that "main is red" in the jump's
   // grant is the gate's own `newestVerdictRun` and not a second reading of it.
   assert.deepEqual(
     localImports(`${REPO}packages/agent-org/src/arm-pr.mjs`).map((p: string) => p.replace(REPO, "")).sort(),
     ["packages/agent-org/src/acceptance-commands.mjs", "packages/agent-org/src/api-pool.mjs",
-      "packages/agent-org/src/pr-armed-state.mjs", "packages/agent-org/src/pr-hold-state.mjs",
-      "packages/agent-org/src/trunk-red.mjs", "packages/worker-fleet/src/cli-flags.mjs"],
+      "packages/agent-org/src/lib/cli-flags.mjs", "packages/agent-org/src/pr-armed-state.mjs",
+      "packages/agent-org/src/pr-hold-state.mjs", "packages/agent-org/src/trunk-red.mjs"],
     "arm-pr.mjs's local imports must all be visible to the walk");
 });
 

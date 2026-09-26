@@ -208,8 +208,12 @@ test("board-data.mjs and row-claim.mjs DERIVE the name rather than restating it 
     const text = readFileSync(path.join(ROOT, file), "utf8");
     // The specifier is relative to wherever the consumer lives -- these two moved into @a11ign/agent-org,
     // so it is no longer `./`. What matters is that the name is IMPORTED, not which depth the path has.
-    assert.match(text, /from ["'][^"']*repo-identity\.mjs["']/,
-      `${file} must import REPO from repo-identity.mjs rather than declaring its own copy`);
+    //
+    // #2658 (child 3g of #69): the tool no longer imports `scripts/repo-identity.mjs`, a product file. Its two consumers import the
+    // tool's own `project-identity.mjs`, which answers with the SAME declaration `repo-identity.mjs` reads, so either name is the
+    // name being DERIVED; a literal, or any other module, is not.
+    assert.match(text, /from ["'][^"']*(?:repo|project)-identity\.mjs["']/,
+      `${file} must import REPO from repo-identity.mjs (or the tool's project-identity.mjs) rather than declaring its own copy`);
     assert.ok(!new RegExp(`["']${REPO.replace(/[/.]/g, "\\$&")}["']`).test(text),
       `${file} still declares the repository name as its own string literal`);
   }
