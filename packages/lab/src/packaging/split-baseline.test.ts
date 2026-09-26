@@ -1,4 +1,4 @@
-// no-token: percentile -- #2610. Importing split-baseline.mjs reaches its `gh` seam, which only the CLI entry calls; this file calls the pure readings, and it passes with `gh` off PATH and every token variable unset.
+// no-token: LAYER_PACKAGES -- #2610. Importing split-baseline.mjs reaches its `gh` seam, which only the CLI entry calls; this file calls the pure readings, and it passes with `gh` off PATH and every token variable unset.
 /**
  * #2610, child 0 of #69: `scripts/split-baseline.mjs`, the instrument that reads what the package split is
  * claimed to buy BEFORE anything moves, and can be run again AFTER.
