@@ -1,0 +1,3 @@
+[
+  { "from": "packages/nvda-worker/src/x.mjs", "to": "packages/other/src/x.mjs", "kind": "import", "direction": "out", "disposition": "owned-by:#2614", "reason": "an edge that was cut and whose entry was left behind" }
+]
