@@ -77,11 +77,71 @@ test("a `.cmd` launcher naming another package's path is REFUSED", () => {
 });
 
 test("a path named once in a constant and read through the variable is REFUSED", () => {
-  assert.deepEqual(edgesOf("bound-literal"), [{ from: LAYER_FILE, to: TARGET, kind: "path-literal", direction: "out" }]);
+  assert.deepEqual(edgesOf("bound-literal"), [{ from: LAYER_FILE, to: TARGET, kind: "path-literal", direction: "out", via: { declaredLine: 2, readLine: 3 } }]);
 });
 
 test("a `<rev>:<path>` argument (the shape of `git show`) naming another package is REFUSED", () => {
   assert.deepEqual(edgesOf("git-show"), [{ from: LAYER_FILE, to: TARGET, kind: "path-literal", direction: "out" }]);
+});
+
+// ------------------------------------------------------------------ a path carried through a `const` (#2643)
+//
+// THE REFUSALS AND THE PASSES GO THROUGH ONE ENTRY POINT, `edgesOf`, which is `findEdges` over the fixture's own files: a
+// guard that refuses everything would satisfy the refusals and fail the passes, and one that refuses nothing the reverse.
+
+const viaOf = (name: string) => edgesOf(name).map((e) => ({ file: e.from.split("/").pop(), via: e.via }));
+
+test("a path assigned to a `const` and read a few lines later is REFUSED, naming the declaration and the read", () => {
+  assert.match(textOf("const-read", LAYER_FILE), /^const SIBLING = "packages\/other\/src\/x\.mjs";$/m, "CONTROL: the const is really there");
+  const edges = edgesOf("const-read");
+  assert.deepEqual(edges, [{ from: LAYER_FILE, to: TARGET, kind: "path-literal", direction: "out", via: { declaredLine: 4, readLine: 7 } }]);
+  const message = describeVerdict(judgeEdges(edges, [])).join("\n");
+  assert.match(message, /through a const declared at line 4 and read at line 7/);
+  assert.equal(cli("--check", `--root=${fixture("const-read")}`).status, 1, "and the command refuses it too");
+});
+
+test("a `const` that is only handed to a function that does not read PASSES: a parser, an `includes`, a `.map` over strings", () => {
+  assert.ok(existsSync(join(fixture("const-parsed"), TARGET)), "CONTROL: the target exists, so this passes because the const is not read");
+  const source = textOf("const-parsed", LAYER_FILE);
+  assert.match(source, /^const PATH = "packages\/other\/src\/x\.mjs";$/m);
+  assert.match(source, /mentions\("see packages\/other\/src\/x\.mjs", PATH\)/, "and the const is passed to a call");
+  assert.match(source, /LIST\.map\(\(entry\) => entry\.toUpperCase\(\)\)/, "and a list of paths is walked by a callback that reads nothing");
+  const scanned = trackedFiles(fixture("const-parsed")).filter((path) => isScanned(path));
+  assert.ok(scanned.includes(LAYER_FILE) && scanned.includes("packages/nvda-worker/src/y.mjs"), "POSITIVE CONTROL: both files are scanned");
+  assert.deepEqual(edgesOf("const-parsed"), []);
+  assert.equal(cli("--check", `--root=${fixture("const-parsed")}`).status, 0);
+});
+
+test("the property a read takes is the property that is read: `expect` holds another package's path as DATA and `file` is the layer's own", () => {
+  const source = textOf("const-parsed", "packages/nvda-worker/src/y.mjs");
+  assert.match(source, /file: "packages\/nvda-worker\/src\/own\.mjs", expect: "packages\/other\/src\/x\.mjs"/);
+  assert.match(source, /readFileSync\(join\(ROOT, file\)/);
+  assert.deepEqual(edgesOf("const-parsed").filter((e) => e.from.endsWith("y.mjs")), [], "the destructured `file` is judged, not every string in the list");
+  const swapped = viaOf("const-array").filter((e) => e.file === "z.mjs");
+  assert.deepEqual(swapped, [{ file: "z.mjs", via: { declaredLine: 4, readLine: 7 } }], "CONTROL: with the paths the other way round the same loop IS refused");
+});
+
+test("a path in a list `const` that is walked into a read is REFUSED: for-of into existsSync, a spread list mapped into join, a destructured loop", () => {
+  assert.deepEqual(viaOf("const-array"), [
+    { file: "x.mjs", via: { declaredLine: 4, readLine: 8 } },
+    { file: "y.mjs", via: { declaredLine: 3, readLine: 7 } },
+    { file: "z.mjs", via: { declaredLine: 4, readLine: 7 } },
+  ]);
+  assert.match(textOf("const-array", "packages/nvda-worker/src/y.mjs"), /const ALL = \[\.\.\.A, \.\.\.B\];/, "CONTROL: the list is built by spreading two");
+  assert.ok(edgesOf("const-array").every((e) => e.to === TARGET), "the layer's own path in B is not a reach");
+});
+
+test("a `const` shadowed in an inner scope is judged on the value that reaches the read, on both sides of the block", () => {
+  for (const file of ["x.mjs", "y.mjs"]) {
+    assert.match(textOf("const-shadowed", `packages/nvda-worker/src/${file}`), /const P = "\.\/own\.mjs"|const P = "\.\.\/\.\.\/other\/src\/x\.mjs"/);
+  }
+  assert.ok(existsSync(join(fixture("const-shadowed"), "packages/nvda-worker/src/own.mjs")), "CONTROL: `./own.mjs` exists, so an unresolved read is not why one read is clean");
+  assert.deepEqual(viaOf("const-shadowed"), [
+    // the INNER const names the other package and is declared BEFORE a file-level const that names the layer's own file
+    { file: "x.mjs", via: { declaredLine: 3, readLine: 4 } },
+    // the FILE-LEVEL const names the other package, an inner block shadows it with the layer's own file, and the read AFTER the block is the outer one
+    { file: "y.mjs", via: { declaredLine: 2, readLine: 7 } },
+  ]);
 });
 
 test("the OTHER direction: a package that imports into the layer by path is REFUSED", () => {
@@ -159,6 +219,16 @@ test("the real tree agrees with the committed baseline: no new edge, no stale en
   const baseline = readBaseline(ROOT);
   const verdict = judgeEdges(findEdges({ root: ROOT, tracked: trackedFiles(ROOT) }), baseline);
   assert.deepEqual(describeVerdict(verdict), []);
+});
+
+test("the widened guard finds `const`-carried edges in the real tree that a literal-only reading did not, each with its declaration and read", () => {
+  const carried = findEdges({ root: ROOT, tracked: trackedFiles(ROOT) }).filter((e) => e.via !== undefined);
+  assert.ok(carried.length >= 1, "POSITIVE CONTROL: no edge in the real tree was found through a const, so the widening matched nothing");
+  const froms = carried.map((e) => e.from);
+  for (const file of ["corpus-size-figures.test.ts", "content-preservation.test.ts", "wake-engineer-brief.test.ts"]) {
+    assert.ok(froms.some((from) => from.endsWith(file)), `${file} reads the layer's CLAUDE.md through a const and is not found`);
+  }
+  for (const { from, via } of carried) assert.ok(via && via.declaredLine > 0 && via.readLine >= via.declaredLine, `${from}: the declaration and the read are lines of the file`);
 });
 
 test("the real baseline is NON-EMPTY and records the deploy path, so a guard that found nothing is not read as a fenced layer", () => {

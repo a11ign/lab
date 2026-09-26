@@ -42,8 +42,15 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { REPO, REPO_URL, REPO_GIT_URL, PRODUCT_REPO, PRODUCT_REPO_URL, PRODUCT_GIT_URL }
   from "../../../../scripts/repo-identity.mjs";
+import { layerFile } from "../../../guards/src/layer-file.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
+
+/** A site is a file of this repository, or -- `layer` set -- a file of a layer PACKAGE, found by node's own lookup
+ *  (#2643): `nvda-worker` leaves for its own repository, and a path into `packages/nvda-worker/` is true in this tree only. */
+type Site = { file: string; expect: string; layer?: string };
+const siteFile = ({ file, layer }: Site) => (layer === undefined ? path.join(ROOT, file) : layerFile(layer, file, { from: import.meta.dirname }));
+const siteName = ({ file, layer }: Site) => (layer === undefined ? file : `${layer}/${file}`);
 
 /**
  * Every literal site the 2026-09-06 audit found, one entry per DISTINCT textual form in that file — some
@@ -74,7 +81,7 @@ const ROOT = path.resolve(import.meta.dirname, "..", "..", "..", "..");
 // under "clone instructions" -- correctly grouped with badges as PRODUCT_REPO territory in general, but
 // wrong for these specific instances because, like the badges, they are executed without a reader ever
 // being asked to notice the substitution.
-const SITES: Array<{ file: string; expect: string }> = [
+const SITES: Site[] = [
   // #569: AUTO-FETCHED by GitHub's own renderer the instant anyone views this page -- the same "must
   // resolve today" shape as the `uses:` line two lines down, not the static prose PRODUCT_REPO covers.
   // `ci.yml`, not `lint.yml`: there is no lint.yml in .github/workflows and never has been, so the badge
@@ -134,10 +141,10 @@ const SITES: Array<{ file: string; expect: string }> = [
   { file: "packages/agent-org/docs/roles/README.md", expect: `\`${PRODUCT_REPO}\`` },
   { file: "packages/agent-org/docs/roles/memory/org-shape-second-orchestrator.md", expect: `a Project on ${PRODUCT_REPO}` },
   { file: "examples/workflow.yml", expect: `uses: ${REPO}@main` },
-  { file: "packages/nvda-worker/package.json", expect: PRODUCT_GIT_URL },
+  { layer: "@a11ign/nvda-worker", file: "package.json", expect: PRODUCT_GIT_URL },
   // COPY-PASTE-EXECUTE, same shape as docs/getting-started.md above -- see that entry's comment for why
   // the `cd a11y-witness` line right after this is not separately pinned.
-  { file: "packages/nvda-worker/src/README.md", expect: `git clone ${REPO_URL}.git` },
+  { layer: "@a11ign/nvda-worker", file: "src/README.md", expect: `git clone ${REPO_URL}.git` },
   { file: "packages/worker-fleet/package.json", expect: PRODUCT_GIT_URL },
   { file: "packages/evidence/README.md", expect: `(${PRODUCT_REPO_URL})` },
   { file: "packages/evidence/package.json", expect: PRODUCT_GIT_URL },
@@ -163,13 +170,14 @@ const SITES: Array<{ file: string; expect: string }> = [
 test("every literal site still names this repository, agreeing with repo-identity.mjs", () => {
   const bad: string[] = [];
   const cache = new Map<string, string>();
-  for (const { file, expect } of SITES) {
-    let text = cache.get(file);
+  for (const site of SITES) {
+    const name = siteName(site);
+    let text = cache.get(name);
     if (text === undefined) {
-      text = readFileSync(path.join(ROOT, file), "utf8");
-      cache.set(file, text);
+      text = readFileSync(siteFile(site), "utf8");
+      cache.set(name, text);
     }
-    if (!text.includes(expect)) bad.push(`${file}: does not contain "${expect}"`);
+    if (!text.includes(site.expect)) bad.push(`${name}: does not contain "${site.expect}"`);
   }
   assert.deepEqual(bad, [],
     "these sites disagree with repo-identity.mjs -- either they were not updated when the name last "
@@ -183,9 +191,10 @@ test("the vacuity guard: this list is not empty and each file it names exists", 
   assert.ok(SITES.length >= 30, `only ${SITES.length} sites declared -- the 2026-09-06 audit found ~30; `
     + "a shrunk list examining less than the audit found would pass by looking at fewer things, not by "
     + "the repository needing fewer references fixed");
-  const files = [...new Set(SITES.map((s) => s.file))];
-  for (const file of files) {
-    assert.doesNotThrow(() => readFileSync(path.join(ROOT, file), "utf8"),
+  const sites = [...new Map(SITES.map((s) => [siteName(s), s])).values()];
+  for (const site of sites) {
+    const file = siteName(site);
+    assert.doesNotThrow(() => readFileSync(siteFile(site), "utf8"),
       `${file} is named in SITES but does not exist -- a renamed or deleted file leaves a stale entry `
       + "that can never fail honestly");
   }
