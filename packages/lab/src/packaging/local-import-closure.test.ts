@@ -182,3 +182,59 @@ test("#1019: the LINE pass preserves offsets too, not just the block pass", () =
   assert.doesNotMatch(stripped, /trailing note/);
   assert.match(stripped, /const a = 1;/);
 });
+
+// --- #2546: THE FASTER BLANKING IS THE SAME BLANKING ---
+
+/**
+ * `stripComments` blanks a comment one RUN of non-newlines at a time now, where it used to call the engine once per
+ * character (80s of the whole-suite closure walk's 156s). A faster function that is not the same function would
+ * change what every walker reads, and it fails by finding LESS, which reads as clean -- so the OLD per-character
+ * form is kept here as the reference and the two are compared byte for byte, over the shapes that could tell them
+ * apart and over every tracked source file.
+ *
+ * THE POPULATION'S POSITIVE CONTROL: the equality below passes on an empty list and on a tree with no comments in it,
+ * so the sweep asserts it saw more than 500 files AND that the blanking changed at least one character in most of them.
+ */
+const perCharacter = (text: string) =>
+  text.replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, (m) => m.replace(/[^\n]/g, " "));
+
+test("#2546 stripComments equals the per-character reference on the shapes that could tell them apart", () => {
+  const star = "*";
+  const shapes = [
+    "",
+    "no comments at all\n",
+    `a // line\nb`,
+    `a /${star} block ${star}/ b`,
+    `/${star}\nmulti\n\nline\n${star}/\ncode`,
+    `x /${star} crlf\r\nline ${star}/ y\r\n// tail\r\n`,
+    `tab\t/${star}\t${star}/\t// \t\n`,
+    `// astral \u{1F600} and a lone surrogate \uD800 \n`,
+    `/${star} ${"\u{1F600}"} ${star}/`,
+    `// one\n// two\n\n// three`,
+    `//`,
+    `/${star}${star}/`,
+  ];
+  for (const source of shapes) {
+    const got = stripComments(source);
+    assert.equal(got, perCharacter(source), `differs on ${JSON.stringify(source)}`);
+    assert.equal(got.length, source.length, `length is the offset property: ${JSON.stringify(source)}`);
+    assert.equal(got.split("\n").length, source.split("\n").length, `line count is preserved: ${JSON.stringify(source)}`);
+  }
+});
+
+test("#2546 stripComments equals the per-character reference on every tracked source file", () => {
+  const files = execFileSync("git", ["ls-files", "*.mjs", "*.ts"],
+    { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() })
+    .split("\n").filter(Boolean).filter((f) => !f.includes("/dist/"));
+  assert.ok(files.length > 500, `only ${files.length} files discovered; the sweep is broken, not the tree`);
+  const differing: string[] = [];
+  let changed = 0;
+  for (const file of files) {
+    const src = readFileSync(`${REPO}${file}`, "utf8");
+    const got = stripComments(src);
+    if (got !== perCharacter(src)) differing.push(file);
+    if (got !== src) changed += 1;
+  }
+  assert.deepEqual(differing, []);
+  assert.ok(changed > files.length / 2, `${changed} of ${files.length} files had a comment blanked: the equality above compared comments, not nothing`);
+});
