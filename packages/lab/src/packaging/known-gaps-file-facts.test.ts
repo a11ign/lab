@@ -326,3 +326,48 @@ test("MUTATION: the §53 readers notice a widened set, a removed anchor and a mi
       `an entry outside the 4.1.3 status heads was not refused: ${JSON.stringify(widened)}`);
   }
 });
+
+// `ceo`'s 2026-09-25 rulings on three survey questions (#928, comment 5840564703, ruling 5), each written
+// into the section that raised the question as one dated line. Pinned BY SECTION: a whole-file `includes`
+// is satisfied by a copy in the wrong section, which is exactly the misplacement this guards.
+const RULING_COMMENT_ID = "5840564703";
+const RULING_DATE = "2026-09-25";
+const RULED_SECTIONS: Array<{ section: number, states: RegExp, because: string }> = [
+  { section: 31, states: /: NO\*\*[\s\S]*n=6 on one page shape[\s\S]*would change this; none is queued/,
+    because: "NO, its bound (n=6, one page shape) and what would change it" },
+  { section: 32, states: /agreed, do not ask now[\s\S]*cannot detect its absence[\s\S]*no reader is asking/,
+    because: "not asked now, with the reason" },
+  { section: 42, states: /ACCEPT the autofocus bound permanently, condition unchanged[\s\S]*not sized now/,
+    because: "accepted permanently, condition unchanged, not sized" },
+];
+const occurrences = (text: string, needle: string): number => text.split(needle).length - 1;
+
+// The DATE is read off the ruling's own line, not the section: §42 already carries another 2026-09-25 (the
+// #2551 correction of its deleted-exception claim), so a section-wide count would refuse a correct file.
+const rulingLines = (body: string): string[] => body.split("\n").filter((row) => row.includes(RULING_COMMENT_ID));
+
+test("each of §31, §32 and §42 records ceo's 2026-09-25 ruling once, INSIDE that section", () => {
+  for (const { section, states, because } of RULED_SECTIONS) {
+    const body = sectionOf(KNOWN_GAPS, section);
+    assert.ok(body, `§${section} is gone from known-gaps.md -- the ruling recorded in it has nowhere to be read`);
+    assert.equal(occurrences(body, RULING_COMMENT_ID), 1,
+      `§${section} must name #928 comment ${RULING_COMMENT_ID} exactly once (a copy in another section does not count)`);
+    const [line] = rulingLines(body);
+    assert.equal(occurrences(line, RULING_DATE), 1, `§${section}'s ruling line must carry ${RULING_DATE} exactly once`);
+    assert.match(body, states, `§${section}'s dated line no longer states the ruling: ${because}`);
+  }
+});
+
+test("MUTATION: deleting the line from one section turns only that section's reading red", () => {
+  for (const { section } of RULED_SECTIONS) {
+    const withoutIt = KNOWN_GAPS.split("\n")
+      .filter((row) => !(row.includes(RULING_COMMENT_ID) && sectionOf(KNOWN_GAPS, section)!.includes(row)))
+      .join("\n");
+    assert.notEqual(withoutIt, KNOWN_GAPS, `§${section}: there was no ruling line to delete -- the reading above is vacuous`);
+    for (const other of RULED_SECTIONS) {
+      const expected = other.section === section ? 0 : 1;
+      assert.equal(occurrences(sectionOf(withoutIt, other.section)!, RULING_COMMENT_ID), expected,
+        `deleting §${section}'s line changed §${other.section}'s reading to something other than ${expected}`);
+    }
+  }
+});
