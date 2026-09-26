@@ -10,7 +10,8 @@
     "@a11ign/judge": "0.0.0",
     "@a11ign/scorer": "0.0.0",
     "@a11ign/worker-fleet": "0.0.0",
-    "@a11ign/nvda-worker": "0.0.0"
+    "@a11ign/nvda-worker": "0.0.0",
+    "@a11ign/nvda-speech": "0.0.0"
   },
   "devDependencies": {
     "@a11ign/control": "0.1.0",
