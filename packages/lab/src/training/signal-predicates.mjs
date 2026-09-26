@@ -937,6 +937,8 @@ function focusPanelUndismissable(/** @type {any} */ capture) {
  *     the missing (or reversed) `focusin` IS the signal, and unlike a completed receipt it is never
  *     cleared by a redirect: the very next event after an orphaned loss is routinely another real focusin
  *     the probe reaches next, which must not be read as this control's own destination.
+ *   - a focusout whose prior is the protocol-22 `initial` focusin of the same id reads no hold time and is
+ *     never F55 (`initialHoldLossVerdict`: clear or unpairable).
  *   - a completed receipt (prior IS a matching `focusin`) is F55 only if held under `SCRIPT_BLUR_WINDOW_MS`
  *     (mirrors `FOCUS_SCRIPT_WINDOW_MS` in rules.ts; kept as a literal here, for the reason above) AND
  *     focus did not land on a different real control immediately after.
@@ -959,6 +961,10 @@ function firstEventIsDecidable(/** @type {any[]} */ log, /** @type {any} */ even
 function completedReceiptIsClear(
   /** @type {any[]} */ log, /** @type {number} */ i, /** @type {any} */ event, /** @type {any} */ prior,
 ) {
+  // Protocol 22 (#2587): an `initial` focusin is a hold the install FOUND, its `atMs` the install moment,
+  // so no hold time can be read off it. Focus leaving it is clear (landed elsewhere) or unpairable, and
+  // neither is F55 -- mirrors `initialHoldLossVerdict` in `rules.ts`.
+  if (prior.initial) return true;
   const heldMs = event.atMs - prior.atMs;
   if (heldMs >= SCRIPT_BLUR_WINDOW_MS) return true; // an ordinary Tab transition, not a script
   const next = log[i + 1];
