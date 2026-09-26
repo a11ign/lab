@@ -58,7 +58,7 @@ const REVERSED_THEN_ELSEWHERE: FocusEvent[] = [
   { type: "focusin", id: 2, name: "Next field", atMs: 200 },
 ];
 
-/** A plain orphan at index 0, nothing reversed about it — the ambiguous case that must NOT fire. */
+/** A plain orphan at index 0, nothing reversed about it. Ambiguous until protocol 22 (#2587), and F55 since #2602. */
 const ORPHAN_AT_START: FocusEvent[] = [
   { type: "focusout", id: 1, name: "Coupon", atMs: 0 },
   { type: "focusin", id: 2, name: "Next field", atMs: 50 },
@@ -82,9 +82,9 @@ test("a reversed pair followed by a REAL next control still fires -- a redirect 
   assert.equal(fires(REVERSED_THEN_ELSEWHERE), true);
 });
 
-test("a plain orphan at index 0 does NOT fire -- ambiguous with focus the listener never saw arrive", () => {
-  assert.equal(fires(ORPHAN_AT_START), false,
-    "this is the shape `known-gaps.md` §42 excludes at capture-listener boundary, not a script-blur finding");
+test("a plain orphan at index 0 FIRES -- protocol 22 records what already held focus, so it is no longer ambiguous (#2602)", () => {
+  assert.equal(fires(ORPHAN_AT_START), true,
+    "the shipped rule deleted its index-0 exception on the protocol-22 reading, and this predicate mirrors it");
 });
 
 function judgeFires(log: FocusEvent[]): boolean {

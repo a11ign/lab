@@ -930,10 +930,9 @@ function focusPanelUndismissable(/** @type {any} */ capture) {
  *
  * Mirrors `focusLossVerdict`'s full decision (`packages/judge/src/rules.ts`), duplicated rather than
  * imported for the reason above:
- *   - at index 0, a plain orphan is AMBIGUOUS with a pre-existing focus the listener never saw arrive, and
- *     does not count -- UNLESS the very next event is a same-id `focusin`, the reversed-pair shape, which
- *     is decidable with no prior context at all.
- *   - past index 0, ANY focusout not immediately preceded by a same-id `focusin` is unconditionally F55 --
+ *   - ANY focusout not immediately preceded by a same-id `focusin` is unconditionally F55, index 0 included
+ *     (#2602: protocol 22 records what already held focus as an `initial` entry, so a bare focusout at
+ *     `log[0]` is no longer a late listener's artefact and the rule's own exception was deleted) --
  *     the missing (or reversed) `focusin` IS the signal, and unlike a completed receipt it is never
  *     cleared by a redirect: the very next event after an orphaned loss is routinely another real focusin
  *     the probe reaches next, which must not be read as this control's own destination.
@@ -948,13 +947,6 @@ function focusPanelUndismissable(/** @type {any} */ capture) {
  * distinction `focusRevealVerdict`'s own `revealed: null` exists to preserve one probe over.
  */
 const SCRIPT_BLUR_WINDOW_MS = 50;
-
-/** Index 0 is ambiguous with focus the listener never saw arrive, UNLESS the very next event is a
- *  same-id `focusin` -- the reversed-pair shape, decidable with no prior context at all. */
-function firstEventIsDecidable(/** @type {any[]} */ log, /** @type {any} */ event) {
-  const next = log[1];
-  return next?.type === "focusin" && next.id === event.id;
-}
 
 /** A completed receipt (prior IS a matching `focusin`) is F55 only if held under the script-blur window
  *  and focus did not land on a different real control immediately after -- either clears it. */
@@ -978,7 +970,6 @@ function focusRemovedOnReceipt(/** @type {any} */ capture) {
   for (let i = 0; i < log.length; i += 1) {
     const event = log[i];
     if (event?.type !== "focusout") continue;
-    if (i === 0 && !firstEventIsDecidable(log, event)) continue;
     const prior = log[i - 1];
     const completedReceipt = prior?.type === "focusin" && prior.id === event.id;
     if (completedReceipt && completedReceiptIsClear(log, i, event, prior)) continue;
