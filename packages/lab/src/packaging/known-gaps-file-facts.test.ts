@@ -16,6 +16,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { layerFile } from "../../../guards/src/layer-file.mjs";
 import { ALL_ACCEPTANCE_CASES } from "../training/acceptance-matrix.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -129,7 +130,7 @@ test("§39 is marked CLOSED, and the threshold constant it quotes lives where th
   // (ADR 0021, "captures record, rules decide"), so `FOCUS_SCRIPT_BLUR_WINDOW_MS` has no home there any
   // more. It now lives in rules.ts as `FOCUS_SCRIPT_WINDOW_MS`, judging a HELD time rather than gating a
   // capture-time pairing -- same value, different question.
-  const capturePure = readFileSync(join(REPO, "packages/nvda-worker/src/capture-pure.mjs"), "utf8");
+  const capturePure = readFileSync(layerFile("@a11ign/nvda-worker", "src/capture-pure.mjs", { from: import.meta.dirname }), "utf8");
   assert.doesNotMatch(capturePure, /FOCUS_SCRIPT_BLUR_WINDOW_MS/,
     "§39 says this constant moved OUT of capture-pure.mjs entirely -- if it is back, the closure's account "
     + "of the architecture is wrong and needs re-checking, not just this test");

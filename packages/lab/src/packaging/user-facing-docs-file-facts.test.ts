@@ -16,6 +16,7 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { layerFile } from "../../../guards/src/layer-file.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const README = readFileSync(join(REPO, "README.md"), "utf8");
@@ -71,7 +72,11 @@ test("packages/control has a README, because it did not for a while", () => {
 });
 
 test("nvda-speech is marked private everywhere it is described", () => {
-  const pkg = JSON.parse(readFileSync(join(REPO, "packages/nvda-speech/package.json"), "utf8"));
+  // BY PACKAGE NAME (#2613). `nvda-speech` is PRIVATE and publishes nothing, so this resolves only while it is installed
+  // beside this package (a workspace link): once the layer leaves, the resolver refuses it BY NAME and this test says so.
+  // That is the truth about a private package, and it is #69's open question for `nvda-speech`, not a fallback to hide.
+  const pkg = JSON.parse(readFileSync(
+    layerFile("@a11ign/nvda-speech", "package.json", { from: import.meta.dirname }), "utf8"));
   assert.equal(pkg.private, true,
     "packages/nvda-speech/package.json is no longer private -- if it was deliberately published, the "
     + "PRIVATE markers in README.md and packages/README.md need removing, not just this test");
