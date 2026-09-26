@@ -64,6 +64,13 @@ export function runPdfLayerProblems(cliSource: string): string[] {
   return problems;
 }
 
+/** Each URL form the prose must promise, with a URL in that form: the claim is required AND the function is called on it. */
+const URL_FORMS: Array<[RegExp, string, string]> = [
+  [/any case/, "the extension matches in any case", "https://example.com/a.PDF"],
+  [/`\?query`/, "a `?query` does not hide it", "https://example.com/a.pdf?x=1"],
+  [/`#fragment`/, "a `#fragment` does not hide it", "https://example.com/a.pdf#p"],
+];
+
 /** The URL forms the prose promises are accepted, checked by calling the function that accepts them. */
 function urlProblems(paragraph: string): string[] {
   const problems: string[] = [];
@@ -71,8 +78,10 @@ function urlProblems(paragraph: string): string[] {
   if (!example) problems.push("gives no example URL ending in .pdf");
   else if (!looksLikePdfUrl(example)) problems.push(`example ${example} is not a URL looksLikePdfUrl accepts`);
   if (!/path ends in `\.pdf`/.test(paragraph)) problems.push("does not say the URL's path ends in `.pdf`");
-  const promised = ["https://example.com/a.PDF", "https://example.com/a.pdf?x=1", "https://example.com/a.pdf#p"];
-  if (/\?query/.test(paragraph) && !promised.every(looksLikePdfUrl)) problems.push("promises URL forms looksLikePdfUrl refuses");
+  for (const [claim, why, url] of URL_FORMS) {
+    if (!claim.test(paragraph)) problems.push(`does not say ${why} (the URL form ${url})`);
+    else if (!looksLikePdfUrl(url)) problems.push(`promises ${why}, which looksLikePdfUrl refuses (${url})`);
+  }
   return problems;
 }
 
@@ -133,6 +142,9 @@ test("each required claim, deleted on its own, is refused for that claim alone",
     ["NVDA", /NVDA/],
     ["does not run a screen reader", /does NOT do/],
     ["path ends in `.pdf`", /path ends in/],
+    ["any case", /any case/],
+    ["`?query`", /`\?query`/],
+    ["`#fragment`", /`#fragment`/],
   ];
   for (const [cut, why] of cuts) {
     const problems = pdfDocumentationProblems(paragraph.replace(cut, "XXXX"), sources());
