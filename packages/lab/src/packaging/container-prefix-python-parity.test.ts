@@ -70,8 +70,8 @@ function pythonAcceptedBareWords(): string[] {
 test("the Python featurizer's container prefix differs from the JS worker's by EXACTLY the known words", () => {
   const js = new Set(jsAcceptedBareWords());
   const python = new Set(pythonAcceptedBareWords());
-  assert.ok(js.size >= 8, `only ${js.size} word(s) read from the JS worker's regex; its shape changed`);
-  assert.ok(python.size >= 8, `only ${python.size} word(s) read from the Python featurizer; its shape changed`);
+  assert.ok(js.size >= 8, "too few words read from the JS worker's regex; its shape changed");
+  assert.ok(python.size >= 8, "too few words read from the Python featurizer; its shape changed");
 
   const pythonOnly = [...python].filter((word) => !js.has(word)).sort();
   assert.deepEqual(pythonOnly, [...KNOWN_PYTHON_ONLY_WORDS].sort(),

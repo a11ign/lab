@@ -80,7 +80,7 @@ test("a path named once in a constant and read through the variable is REFUSED",
   assert.deepEqual(edgesOf("bound-literal"), [{ from: LAYER_FILE, to: TARGET, kind: "path-literal", direction: "out" }]);
 });
 
-test("a git `<rev>:<path>` read of another package is REFUSED", () => {
+test("a `<rev>:<path>` argument (the shape of `git show`) naming another package is REFUSED", () => {
   assert.deepEqual(edgesOf("git-show"), [{ from: LAYER_FILE, to: TARGET, kind: "path-literal", direction: "out" }]);
 });
 
