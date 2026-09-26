@@ -81,8 +81,16 @@ test("the budget is close to what the code actually does", async () => {
   const floor = options.max - 30;
   const probe = new ESLint({ cwd: root,
     overrideConfig: { rules: { [PHYSICAL]: ["error", { ...options, max: floor }] } } });
-  const reports = (await probe.lintFiles(["packages", "scripts"]))
-    .flatMap((r) => r.messages).filter((m) => m.ruleId === PHYSICAL);
+  // THE CLAIM IS EXISTENTIAL -- ONE function over the floor is enough -- so the tree is linted in order and the walk stops at the
+  // first scope that has one (#2546). This linted all of `packages` and `scripts` for ~22s to learn what `wake.mjs` alone says in
+  // seconds. If NO function is over the floor every scope is still linted and the assertion below still fires, so nothing it
+  // could catch is skipped: only the order changes, and the likeliest home of a long function goes first.
+  const SCOPES = ["packages/agent-org/src", "packages", "scripts"];
+  let reports: unknown[] = [];
+  for (const scope of SCOPES) {
+    reports = (await probe.lintFiles([scope])).flatMap((r) => r.messages).filter((m) => m.ruleId === PHYSICAL);
+    if (reports.length > 0) break;
+  }
   assert.ok(reports.length > 0,
     `no function in the tree exceeds ${floor} lines, against a budget of ${options.max}. That gap means the `
     + `budget is not doing any work — lower it to just above the longest function.`);
