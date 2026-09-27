@@ -168,10 +168,21 @@ const GATE_PROOFS: Record<string, GateProof> = {
       + "supply the rest, and the floor is 0.55",
     provenBy: "packages/lab/src/eval/eval-gate-refuses.test.ts",
   },
+  "gate:nvda-release": {
+    catches: "a release whose NVDA reading of the held-out acceptance set regressed against the shipped "
+      + "reading -- `releasability.mjs` has this for the trained scorer (same 35-case set, "
+      + "REGRESSION_TOLERANCE) and nothing asked the equivalent question of the screen-reader/NVDA layer "
+      + "itself (ceo's #928 ruling point 1). Both halves proven: the decision in "
+      + "`nvda-release-regression.test.ts`, and the wiring by running the real command against planted "
+      + "manifest and capture fixtures -- watching it refuse a case never captured, a lost field, and a "
+      + "different served document, and pass on an empty baseline, an identical reading and transcript "
+      + "drift alone",
+    provenBy: "packages/lab/src/packaging/nvda-release-gate-refuses.test.ts",
+  },
 };
 
 /** Gates whose refusal has been WATCHED. May only rise. */
-const PROVEN_AT_LEAST = 17;
+const PROVEN_AT_LEAST = 18;
 
 function gatesInUse(): string[] {
   const chain = STEPS.filter((step: { gate?: boolean }) => step.gate)
