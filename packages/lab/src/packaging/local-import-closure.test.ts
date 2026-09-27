@@ -111,11 +111,16 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   //
   // #2391 IS THE SECOND: the sixth specifier is `trunk-red.mjs`, imported so that "main is red" in the jump's
   // grant is the gate's own `newestVerdictRun` and not a second reading of it.
+  //
+  // #2619 IS THE FOURTH (child 3d of #69): the seventh specifier is `project-vocabulary.mjs`, imported for
+  // `SESSION_PREFIX` -- the `session:` label prefix moved out of this file's own literal into the project's
+  // declared vocabulary.
   assert.deepEqual(
     localImports(`${REPO}packages/agent-org/src/arm-pr.mjs`).map((p: string) => p.replace(REPO, "")).sort(),
     ["packages/agent-org/src/acceptance-commands.mjs", "packages/agent-org/src/api-pool.mjs",
       "packages/agent-org/src/lib/cli-flags.mjs", "packages/agent-org/src/pr-armed-state.mjs",
-      "packages/agent-org/src/pr-hold-state.mjs", "packages/agent-org/src/trunk-red.mjs"],
+      "packages/agent-org/src/pr-hold-state.mjs", "packages/agent-org/src/project-vocabulary.mjs",
+      "packages/agent-org/src/trunk-red.mjs"],
     "arm-pr.mjs's local imports must all be visible to the walk");
 });
 
