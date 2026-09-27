@@ -115,12 +115,16 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   // #2619 IS THE FOURTH (child 3d of #69): the seventh specifier is `project-vocabulary.mjs`, imported for
   // `SESSION_PREFIX` -- the `session:` label prefix moved out of this file's own literal into the project's
   // declared vocabulary.
+  //
+  // #2621 IS THE FIFTH (child 3e of #69): the eighth specifier is `project-roles.mjs`, imported for
+  // `roleBriefPath` -- `SESSIONS_FILE` moved from a literal `new URL("../docs/roles/...")` to the
+  // project's declared role-briefs directory.
   assert.deepEqual(
     localImports(`${REPO}packages/agent-org/src/arm-pr.mjs`).map((p: string) => p.replace(REPO, "")).sort(),
     ["packages/agent-org/src/acceptance-commands.mjs", "packages/agent-org/src/api-pool.mjs",
       "packages/agent-org/src/lib/cli-flags.mjs", "packages/agent-org/src/pr-armed-state.mjs",
-      "packages/agent-org/src/pr-hold-state.mjs", "packages/agent-org/src/project-vocabulary.mjs",
-      "packages/agent-org/src/trunk-red.mjs"],
+      "packages/agent-org/src/pr-hold-state.mjs", "packages/agent-org/src/project-roles.mjs",
+      "packages/agent-org/src/project-vocabulary.mjs", "packages/agent-org/src/trunk-red.mjs"],
     "arm-pr.mjs's local imports must all be visible to the walk");
 });
 

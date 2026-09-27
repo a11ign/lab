@@ -20,7 +20,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
-const BRIEF = readFileSync(`${ROOT}packages/agent-org/docs/roles/engineer.md`, "utf8");
+const BRIEF = readFileSync(`${ROOT}.agent-org/roles/engineer.md`, "utf8");
 /** The row's ceiling on what the section may weigh. */
 const SECTION_BYTE_CEILING = 1600;
 const HEADING = /^## Keep your context small\b.*$/gm;

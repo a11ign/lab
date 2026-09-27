@@ -1,4 +1,4 @@
-// worker-config's `~/.claude` memory moved into `packages/agent-org/docs/roles/memory/`, so it survives losing this Mac
+// worker-config's `~/.claude` memory moved into `.agent-org/roles/memory/`, so it survives losing this Mac
 // alongside the role files it complements. Three obligations, each with its own reason to be a test
 // rather than prose:
 //
@@ -82,7 +82,7 @@ test("no fact file leaks a host address, a key filename, or the retired containe
   }
   assert.deepEqual(findings, [],
     `these fact file(s) contain reachability-sensitive material that must be described, never printed `
-    + `(see packages/agent-org/docs/roles/README.md's "Credentials" section):\n${findings.join("\n")}`);
+    + `(see .agent-org/roles/README.md's "Credentials" section):\n${findings.join("\n")}`);
 });
 
 /**

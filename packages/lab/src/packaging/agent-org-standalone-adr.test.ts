@@ -249,14 +249,18 @@ function appendixProblems(text: string): string[] {
 }
 
 /**
- * Paths an appendix Region may name that do not exist yet because THE ROW CREATES THEM. Named here, so a misspelt path is refused
- * rather than reserved: a Region must name files that exist or are reserved by it (Done-when 4 of #2615).
+ * Paths an appendix Region may name that do not exist yet because THE ROW CREATES THEM, OR NO LONGER EXIST
+ * because the row MOVED them out. Named here, so a misspelt path is refused rather than reserved: a Region
+ * must name files that exist or are reserved by it (Done-when 4 of #2615).
  */
 const RESERVED_BY_A_ROW: readonly RegExp[] = [
   /^\.agent-org\//,
   /^\.changeset\//,
   /^packages\/agent-org\/src\/(?:lib\/|project-config\.mjs$|project-vocabulary\.mjs$|host-config\.mjs$|cause-declaration\.mjs$|shadow-gate\.mjs$)/,
   /^packages\/lab\/src\/packaging\/(?:project-config|multi-board-claim|multi-board-gate|project-vocabulary|project-roles|host-project-paths|shadow-gate|agent-org-extraction|agent-org-outward-edges|package-rename-nvda-worker|package-rename-worker-fleet|agent-org-monorepo-copy-removed|screenreader-worker-extraction|screenreader-fleet-extraction|lab-extraction|control-extraction|documents-extraction|cli-documents-dependency)\.test\.ts$/,
+  // CHILD 3e (#2621) moves these 33 files out of the tool's own tree into `.agent-org/roles/`, which is
+  // already reserved above -- so the FROM side, still named in the Region that filed the move, no longer exists.
+  /^packages\/agent-org\/docs\/roles\//,
 ];
 
 /** The paths each appendix entry's Region lists: the lines of the FIRST fenced block under its `## Region`. */
