@@ -196,6 +196,11 @@ const EXEMPT: Record<string, string> = {
   "packages/control/src/fleet-watch.test.ts":
     "Same reason as fleet-watch.mjs: the literal is the fixture state path these tests drive through an "
     + "injected in-memory read/write, never a real file under the dataset's runs root.",
+  "packages/control/src/fleet-auto-off.mjs":
+    "#2656: the identical shape fleet-watch.mjs is exempted for, one field over -- ADR 0012's "
+    + "@a11ign/control cannot import @a11ign/lab, and runs/fleet-auto-off-state.json is a tiny local "
+    + "ledger of idle-since/shutdown-requested-at timestamps between one auto-off tick and the next, not "
+    + "a dataset root this module owns at all.",
   "packages/agent-org/src/acceptance-commands.mjs":
     "#1973: `runs/fetched/<out>.<artifact><ext>` is QUOTED FROM lab-fetch.yml's own \"Name it after what "
     + "it actually is\" task, to tell a row filer which path their Acceptance meant -- a string in a "
