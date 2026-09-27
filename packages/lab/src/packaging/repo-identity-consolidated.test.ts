@@ -137,9 +137,9 @@ const SITES: Site[] = [
   // like it verifies something real about a file that does not depend on the repo's name at all. If a
   // future field in this file is ever actually CONSUMED under the repo's name (a computed URL, a value fed
   // to `gh --repo`), add it back as a live site then -- not as a standing anchor with no functional reader.
-  { file: "packages/agent-org/docs/roles/memory/github-is-the-tracker.md", expect: `GitHub Issues on ${PRODUCT_REPO}` },
-  { file: "packages/agent-org/docs/roles/README.md", expect: `\`${PRODUCT_REPO}\`` },
-  { file: "packages/agent-org/docs/roles/memory/org-shape-second-orchestrator.md", expect: `a Project on ${PRODUCT_REPO}` },
+  { file: ".agent-org/roles/memory/github-is-the-tracker.md", expect: `GitHub Issues on ${PRODUCT_REPO}` },
+  { file: ".agent-org/roles/README.md", expect: `\`${PRODUCT_REPO}\`` },
+  { file: ".agent-org/roles/memory/org-shape-second-orchestrator.md", expect: `a Project on ${PRODUCT_REPO}` },
   { file: "examples/workflow.yml", expect: `uses: ${REPO}@main` },
   { layer: "@a11ign/nvda-worker", file: "package.json", expect: PRODUCT_GIT_URL },
   // COPY-PASTE-EXECUTE, same shape as docs/getting-started.md above -- see that entry's comment for why

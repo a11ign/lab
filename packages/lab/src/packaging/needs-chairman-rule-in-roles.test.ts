@@ -15,8 +15,8 @@ import { resolve } from "node:path";
 
 const ROOT = process.cwd();
 const read = (relPath: string) => readFileSync(resolve(ROOT, relPath), "utf8");
-const CEO = "packages/agent-org/docs/roles/ceo.md";
-const PRODUCT_MANAGER = "packages/agent-org/docs/roles/product-manager.md";
+const CEO = ".agent-org/roles/ceo.md";
+const PRODUCT_MANAGER = ".agent-org/roles/product-manager.md";
 
 /** What a passage must say, each with the reason it is on the list. Patterns are on words the rule needs. */
 const SHARED: Array<[string, RegExp]> = [

@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const ROOT = process.cwd();
-const PRODUCT_MANAGER = "packages/agent-org/docs/roles/product-manager.md";
+const PRODUCT_MANAGER = ".agent-org/roles/product-manager.md";
 const read = (relPath: string) => readFileSync(resolve(ROOT, relPath), "utf8");
 
 /** What the passage must say, each with the reason it is on the list. */

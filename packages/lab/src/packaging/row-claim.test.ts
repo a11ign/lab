@@ -1420,11 +1420,11 @@ test("#665 MUTATION direction 2 (the issue's own instruction): drop the removal,
 
 // --- #1039: row-claim reads LANE OWNERSHIP, which it never did ---
 
-// #1464: THE LIVE SET IS READ FROM `packages/agent-org/docs/roles/sessions.json`, ceo's file (#1453), never typed here. The typed copy held
+// #1464: THE LIVE SET IS READ FROM `.agent-org/roles/sessions.json`, ceo's file (#1453), never typed here. The typed copy held
 // five names and missed worker-tooling. It is read from the file itself, the one source, and the second test below
 // pins `arm-pr.mjs`'s list to that same file by arm-pr's SOURCE line. (This file already loads arm-pr through
 // `row-claim/runner-rule.mjs`; its `// no-token: defaultRun` header is what keeps that closure exempt.)
-const SESSIONS_FILE = JSON.parse(readFileSync(new URL("../../../../packages/agent-org/docs/roles/sessions.json", import.meta.url), "utf8")) as
+const SESSIONS_FILE = JSON.parse(readFileSync(new URL("../../../../.agent-org/roles/sessions.json", import.meta.url), "utf8")) as
   { live: { name: string; family?: unknown }[]; retired: { name: string }[] };
 // #2403: the addresses the file names -- the family entry is a rule, read by `isLiveSession`, and is not one of them.
 const LIVE: readonly string[] = SESSIONS_FILE.live.filter((s) => s.family === undefined).map((s) => s.name);
@@ -1447,10 +1447,12 @@ test("#1464: arm-pr's LIVE_SESSIONS is the same list -- derived from the same fi
   assert.deepEqual(source.split("\n").filter((line) => line.includes("SESSIONS.live.filter(")),
     ["export const LIVE_SESSIONS = SESSIONS.live.filter((s) => s.family === undefined).map((s) => s.name);"],
     "arm-pr derives its list from `.live`'s names in exactly one line, as `LIVE` above does");
-  // Depth-agnostic: arm-pr moved into @a11ign/agent-org so the prefix is no longer `../`. What this pins
-  // is that it reads THE SAME FILE, not how far up the tree that file happens to sit.
-  assert.match(source, /readFileSync\(new URL\("[^"]*docs\/roles\/sessions\.json", import\.meta\.url\)/,
-    "and from the same file");
+  // #2621: arm-pr now reads through `project-roles.mjs`'s `roleBriefPath`, the project's DECLARED
+  // directory, rather than a literal relative path -- what this pins is that it reads THE SAME FILE by
+  // the same declared-directory mechanism `SESSIONS_FILE` above uses, not a literal that agrees only by
+  // coincidence.
+  assert.match(source, /readFileSync\(roleBriefPath\("sessions\.json"\)\.absolute, "utf8"\)/,
+    "and from the same declared file");
 });
 
 test("#1039: a row in another LIVE session's lane is refused, naming the owner and the route", () => {
