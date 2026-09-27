@@ -6,10 +6,11 @@
  * move in the JSON and nobody edits CODEOWNERS to match, this fails in both directions -- a path the JSON
  * protects but CODEOWNERS does not, and a CODEOWNERS line the JSON no longer names.
  *
- * `ROLE_LOGIN` is the one place a lane's role-name owner (`"ceo"`) becomes a GitHub login (`@DanBeckDev`)
- * -- there is no other mapping of the two in this repo (`workers-github-account.md`'s account split is
- * operational memory, not code), so it is written out and small on purpose rather than imported from
- * somewhere that would make it look derived when it is actually just asserted here.
+ * `ROLE_LOGIN` is the one place a lane's role-name owner (`"ceo"`) becomes a GitHub login
+ * (`@a11ign-ai-leads`, moved off `@DanBeckDev` by #2333, 2026-09-24) -- there is no other mapping of the
+ * two in this repo (`workers-github-account.md`'s account split is operational memory, not code), so it
+ * is written out and small on purpose rather than imported from somewhere that would make it look derived
+ * when it is actually just asserted here.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -21,7 +22,7 @@ const LANES = JSON.parse(readFileSync(new URL("docs/lane-ownership.json", REPO_R
 
 /** ceo's own ruling on 2026-09-07 refuses this same treatment for owned-path-facts.json's role, so this
  * mapping is deliberately scoped to lane-ownership.json's lanes and nothing wider. */
-const ROLE_LOGIN: Record<string, string> = { ceo: "DanBeckDev" };
+const ROLE_LOGIN: Record<string, string> = { ceo: "a11ign-ai-leads" };
 
 /** @returns {{pattern: string, owners: string[]}[]} non-comment, non-blank CODEOWNERS lines, parsed. */
 function parseCodeowners(text: string): { pattern: string; owners: string[] }[] {
