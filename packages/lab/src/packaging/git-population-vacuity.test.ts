@@ -491,6 +491,14 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "file's set-non-empty test holds the OTHER population, `docsReadingTests` itself, to a floor and "
       + "to the #2329 breaker by name.",
   },
+  "packages/lab/src/packaging/gh-identity-declared.test.ts": {
+    guard: "population.length >= MEASURED_POPULATION_FLOOR",
+    note: "guarded -- #1984's walk spawns `git ls-files` (via `trackedSourceFiles`) and asks which tracked "
+      + "non-test `.mjs`/`.ts` files transitively reach a `gh` spawn. A clean result here (a real, non-trivial "
+      + "population) is the EXPECTED answer -- this is the row's own positive control against a typo'd glob "
+      + "that matched nothing -- so the floor (a real number, `20`, well under the row's own measured `32`) "
+      + "is what tells a genuine population apart from an empty one that happened to pass vacuously.",
+  },
 };
 
 /**
