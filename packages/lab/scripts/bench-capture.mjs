@@ -20,6 +20,7 @@ import { captureIn, costCause, MIN_TRIPS_FOR_A_RATE, rateAcrossPages, sweepCosts
   from "../src/capture/sweep-costs.mjs";
 import { captureTolerantly } from "../../worker-fleet/src/capture-client.mjs";
 import { datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
+import { wakeNamedWorkers } from "../src/training/wake-by-hand.mjs";
 
 /**
  * `--from-disk` decides whether it measures a live capture or replays one; mistyped, it silently
@@ -406,6 +407,12 @@ async function main() {
     process.exit(0);
   }
 
+  // Run BY HAND, this positional worker never goes through `lab:job`'s own wake -- #2655's table, row 11.
+  const wake = await wakeNamedWorkers([worker]);
+  if (!wake.ok) {
+    console.error(wake.refusal);
+    process.exit(2);
+  }
   const { runs, recovered } = await collectSamples(page);
   // NEVER a silent truncation: this repo's own rule is that a bounded sample must say what it dropped, or
   // it reads as "covered everything".
