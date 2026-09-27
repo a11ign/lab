@@ -327,6 +327,54 @@ test("#999: #975's root-level files still resolve, and `.`/`..` still declare no
 });
 
 /**
+ * #2707: A BARE, EXTENSIONLESS ROOT FILE (`CODEOWNERS`, `LICENSE`) DECLARES, FENCED OR NOT.
+ *
+ * `ROOT_FILE_CANDIDATE` requires a dot-extension, so a name with none never matched it; `FENCED_PATH_ITEM`
+ * requires a `/`, so a single bare word inside a fence never matched that either. Hit live on #2696/PR
+ * #2706: that row's own fenced Region named `CODEOWNERS` on its own line and `declaredRegionFiles` dropped
+ * it, reading the row as not covering the file it named.
+ */
+test("#2707: a bare root-level file with no dot and no slash declares, on its own plain line", () => {
+  const known = new Set(["package.json", "CODEOWNERS", "LICENSE"]);
+  assert.deepEqual(declaredRegionFiles("## Region\n\nCODEOWNERS\npackages/agent-org/src/region-paths.mjs\n", { rootFiles: known }),
+    ["packages/agent-org/src/region-paths.mjs", "CODEOWNERS"]);
+  assert.deepEqual(declaredRegionFiles("## Region\n\nLICENSE\n", { rootFiles: known }), ["LICENSE"]);
+  assert.deepEqual(declaredRegionFiles("## Region\n\n`CODEOWNERS`\n", { rootFiles: known }), ["CODEOWNERS"],
+    "backticked, the same as #975's dotted root files");
+});
+
+test("#2707: a bare root-level file declares from inside a fence, the same as #999's extension-less files", () => {
+  const known = new Set(["CODEOWNERS", "LICENSE"]);
+  assert.deepEqual(declaredRegionFiles(REGION_FENCE("CODEOWNERS", "packages/agent-org/src/region-paths.mjs"), { rootFiles: known }),
+    ["packages/agent-org/src/region-paths.mjs", "CODEOWNERS"],
+    "#2696/PR #2706's own reproduction: a fenced Region naming CODEOWNERS beside a slashed path");
+  assert.deepEqual(declaredRegionFiles(REGION_FENCE("LICENSE"), { rootFiles: known }), ["LICENSE"]);
+});
+
+test("#2707: ANCHORED TO THE TREE -- an invented bare word declares nothing, fenced or not", () => {
+  const known = new Set(["CODEOWNERS"]);
+  assert.deepEqual(declaredRegionFiles("## Region\n\nFOOBAR\n", { rootFiles: known }), [],
+    "a bare word that names no real root file must not become a declaration -- every capitalised word in "
+    + "a Region would otherwise declare something");
+  assert.deepEqual(declaredRegionFiles(REGION_FENCE("FOOBAR"), { rootFiles: known }), []);
+  // And the real tree answers the same way: `CODEOWNERS` and `LICENSE` are both there.
+  const tree = rootFilesOnMain().files;
+  assert.ok(tree.has("CODEOWNERS") && tree.has("LICENSE"),
+    "the root listing is missing one of the two bare files this row is about, so this asserts nothing");
+});
+
+test("#2707: a sentence that MENTIONS a bare root file declares nothing -- only a standalone whole line does", () => {
+  const known = new Set(["CODEOWNERS"]);
+  assert.deepEqual(declaredRegionFiles("## Region\n\nThe fix touches CODEOWNERS, mostly.\n", { rootFiles: known }), [],
+    "prose was read as a declaration twice before (#848, #920) and this rule must not reopen that");
+  assert.deepEqual(declaredRegionFiles(REGION_FENCE("CODEOWNERS and the lane sync test"), { rootFiles: known }), []);
+  // Unlike #941's directories, a bare word is NOT split at `,`/`and`/`or`: a directory's trailing `/` keeps
+  // "under `docs/`, and `scripts/` for the helper" from isolating either name, but a bare word has no such
+  // marker, so this line must not be read as declaring `CODEOWNERS` even though it is the phrase's first word.
+  assert.deepEqual(declaredRegionFiles("## Region\n\nCODEOWNERS, and its lane sync test\n", { rootFiles: known }), []);
+});
+
+/**
  * #995: THE READER SAYS WHICH REF ANSWERED, SO AN EMPTY ANSWER IS NEVER SILENT.
  *
  * `rootFilesOnMain` used to return a bare `Set`, and three different situations produced the same value: a
