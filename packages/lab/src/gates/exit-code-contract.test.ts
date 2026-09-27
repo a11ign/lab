@@ -345,6 +345,10 @@ const DOCUMENTED: Record<string, string> = {
     "2 no workers matched, or an empty inventory; 1 a requested worker timed out waking (does not "
     + "distinguish never-woke from woke-too-slowly — a softer version of 'gave up observing') OR has no MAC "
     + "on file; 0 every requested worker answered",
+  "packages/control/src/fleet-auto-off.mjs":
+    "2 usage error — inventory unreadable or empty (precondition, matching fleet-wake.mjs's own empty-"
+    + "inventory code); 0 otherwise regardless of what any worker was decided — #2656 ships this report-"
+    + "only, so the decision itself is the output, never a pass/fail verdict",
   "packages/worker-fleet/src/guest-run.mjs":
     "2 usage error; 1 via a top-level catch for ANY thrown error, including the polling-timeout path whose "
     + "own message reads 'the script may still be running' — a confirmed 'gave up observing' instance "

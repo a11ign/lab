@@ -45,7 +45,9 @@ const committedYml = () =>
 // population this parses, moved deliberately as the message below asks.
 // 51 with #2672's `roles/worker/tasks/powershell-native-image.yml`: a task include under a role is a real
 // addition to the population this parses, moved deliberately as the message below asks.
-const EXPECTED_FILES = 51;
+// 52 with #2656's `auto-off-schedule.yml`: a new playbook (installs the fleet auto-off timer, disabled) is
+// a real addition to the population this parses, moved deliberately as the message below asks.
+const EXPECTED_FILES = 52;
 const EXPECTED_VENDORED = 2;
 
 test("#1274: every committed Ansible .yml parses, and the file list is NAMED not globbed", () => {
