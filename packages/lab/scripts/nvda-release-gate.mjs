@@ -11,7 +11,7 @@
  * wiring -- reading the candidate's own held-out captures and the shipped baseline off disk, and exiting
  * non-zero when the decision refuses.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
@@ -106,6 +106,6 @@ function main() {
   return exitCodeFor(verdict);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (import.meta.url === pathToFileURL(process.argv[1] ? realpathSync(process.argv[1]) : "").href) {
   process.exit(main());
 }
