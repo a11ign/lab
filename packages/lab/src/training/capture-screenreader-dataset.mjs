@@ -22,6 +22,7 @@ import { drainAcrossPool } from "./worker-pool.mjs";
 import { previouslyCaptured } from "./capture-resume.mjs";
 import { leasePageServer } from "./page-server.mjs";
 import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.mjs";
+import { wakeNamedWorkers } from "./wake-by-hand.mjs";
 import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
 import { datasetRoot, captureRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
@@ -752,6 +753,11 @@ async function acquireDatasetWorkers() {
   const named = configuredWorkers();
   const explicitPool = named.length ? named.map((w) => w.url) : null;
   if (explicitPool) {
+    // Run BY HAND, `A11Y_WORKERS` never goes through `lab:job`'s own wake -- #2655's table, row 6. One
+    // asleep box used to fail silently at the first request; this sends it #2655's own packet, and refuses
+    // before a single case is touched if one never comes up.
+    const wake = await wakeNamedWorkers(explicitPool);
+    if (!wake.ok) throw new Error(wake.refusal);
     return {
       pool: explicitPool,
       lease: { worker: explicitPool[0], source: "explicit", hostAddress: undefined, release: async () => {} },
@@ -771,6 +777,9 @@ async function acquireDatasetWorkers() {
   // start or stop. Leasing them would be `worker-ctl.sh` reaching for `utmctl` against a physical box.
   const fleet = inventoryWorkerUrls();
   if (fleet.length) {
+    // Named by inventory.yml rather than A11Y_WORKERS, but the same by-hand case: #2655's table, row 6.
+    const wake = await wakeNamedWorkers(fleet);
+    if (!wake.ok) throw new Error(wake.refusal);
     return {
       pool: fleet,
       lease: { worker: fleet[0], source: "inventory.yml", hostAddress: undefined, release: async () => {} },
