@@ -207,13 +207,16 @@ const FIXTURE_PROJECT = {
   code: [{ key: "", repo: "acme-corp/widgets" }],
 };
 
+// Deliberately NOT under `/home/` -- control-plane-checkout-is-one-fact.test.ts reads any
+// `/home/<account>/<segment>` literal in tracked source as a possible hardcoded real machine path
+// (#1990: the account is matched, not named), and this fixture represents no real machine at all.
 const FIXTURE_HOST = {
   schema: 1,
-  home: "/home/fixture",
-  binDir: "/home/fixture/.local/bin",
+  home: "/fixture-root",
+  binDir: "/fixture-root/.local/bin",
   primary: "fixture",
   projects: [{ id: "fixture", checkout: "" }], // filled in per-test with the scratch checkout
-  gh: { workers: "/home/fixture/gh-workers", leads: "/home/fixture/gh-leads", leadsHeader: [], leadsWorkspaces: [] },
+  gh: { workers: "/fixture-root/gh-workers", leads: "/fixture-root/gh-leads", leadsHeader: [], leadsWorkspaces: [] },
 };
 
 /** A scratch checkout: its own `.agent-org/project.json`, nothing else -- decision 3's "pointed at a project". */
