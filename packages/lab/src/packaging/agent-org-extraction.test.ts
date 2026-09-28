@@ -1,24 +1,31 @@
 /**
  * #2623 (child 5 of #69): THE EXTRACTION'S OWN TEST (ADR 0040, decision 8's fixture-project pattern).
  *
- * Five claims the row's Acceptance names, each with a fixture positive control beside it:
+ * Five claims the row's Acceptance names, each with a fixture positive control beside it, plus one more
+ * (2b) added 2026-09-28 after a live rehearsal dispatch found a gap claim 2 does not cover:
  *
  *   1. No import in the EXTRACTED tree (`packages/agent-org` copied out as its own root, exactly what
  *      `git filter-repo --path-rename` produces) resolves outside it. THE CONTROL: the same walk over a
  *      fixture tree with one import crossing the boundary REFUSES, naming both the file and the target.
  *   2. Nothing outside `packages/agent-org` and `packages/lab` (whose own fate decision 4 already tracks
  *      by a re-run count, amended on this row twice) reaches into the package by a relative path. Measured
- *      today (committed tree, `510f21c4a`): FIVE files do, all named below rather than silently allowed --
+ *      today: SIX files do (five at `510f21c4a`, plus `scripts/agent-org-extraction-rehearsal.mjs` once
+ *      #2765 landed it), all named below rather than silently allowed --
  *      `@a11ign/agent-org` does not resolve yet (no consumer declares it, so pnpm never links it: checked
  *      directly, no `node_modules/@a11ign/agent-org`), so every current consumer, however permanent,
  *      necessarily reaches it by a relative path, and "the old path LEFT WIRED" (the row's own prose) may
- *      mean this is intentional rather than a defect. (A sixth, this row's own uncommitted
- *      `scripts/agent-org-extraction-rehearsal.mjs`, is excluded here on purpose: it is not part of the
- *      committed tree this test runs against in CI, and would make the count depend on what happens to be
- *      sitting in a working tree rather than what was actually shipped.) None of the five are in this row's
+ *      mean this is intentional rather than a defect. None of the six are in this row's
  *      Region. Posted to the row, 2026-09-28: product-manager rules whether the Acceptance bullet means
- *      "zero, always" (these five need rewiring, in this row or a sibling one) or "zero NEW ones" (this
+ *      "zero, always" (these need rewiring, in this row or a sibling one) or "zero NEW ones" (this
  *      list is the transitional baseline).
+ *   2b. Claim 2 exempts `packages/lab` wholesale, trusting decision 4's own re-run count to track its
+ *      fate -- but that formula (`travellingLabTestFiles()`, `scripts/agent-org-extraction-rehearsal.mjs`,
+ *      now committed on `main` as of #2765) only says WHICH lab files travel, not that every one of them
+ *      can actually be moved: `extractionPathRenames()` can only rename a travelling file that already
+ *      lives under `packages/lab/src/packaging/`. A live rehearsal dispatch (run 36415569320, 2026-09-28)
+ *      crashed on `packages/lab/src/training/field-role.test.ts`, which claim 2 could not have caught.
+ *      THE CONTROL: `extractionPathRenames()` called directly on a synthetic path outside that directory
+ *      REFUSES, naming it.
  *   3. The package, installed at an arbitrary path and pointed at a project via `host.json`'s `checkout`
  *      (decision 3's actual mechanism -- `HOME_CHECKOUT`'s directory-depth math is explicitly the
  *      transitional in-tree case only, `project-config.mjs`'s own header says so), resolves THAT project's
@@ -36,8 +43,9 @@
  *
  * WHY A COPY OF THE REAL TREE, NOT A HAND-WRITTEN FIXTURE, FOR CLAIM 1. `packages/agent-org` is exactly
  * what `git filter-repo --path-rename packages/agent-org/src/:src/ ...` (etc.) produces once run for real
- * (`scripts/agent-org-extraction-rehearsal.mjs`, not committed under this row's Region): copying it to a
- * fresh root and walking THAT is a truer rehearsal than asserting properties of the source tree in place,
+ * (`scripts/agent-org-extraction-rehearsal.mjs`, on `main` via #2765 but still outside this row's own
+ * Region): copying it to a fresh root and walking THAT is a truer rehearsal than asserting properties of
+ * the source tree in place,
  * and it is what would have caught `git filter-repo`'s own "Unexpected object of type tree" class of defect
  * if this were a content bug rather than a path one (`scripts/history-purge-rehearsal.mjs`'s incident).
  */
@@ -59,6 +67,7 @@ import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseHostConfig } from "../../../agent-org/src/host-config.mjs";
 import { homeProjectDeclaration, readProjectDeclaration } from "../../../agent-org/src/project-config.mjs";
+import { extractionPathRenames, travellingLabTestFiles } from "../../../../scripts/agent-org-extraction-rehearsal.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "../../../..");
@@ -171,11 +180,14 @@ function relativeImportersOfAgentOrg(): string[] {
 }
 
 /**
- * Measured 2026-09-28 at `510f21c4a` (row comment, same timestamp): the committed tree's five files, none
- * in this row's Region, so named and bounded rather than silently allowed to grow.
+ * Measured 2026-09-28 at `510f21c4a` (row comment, same timestamp): five files, none in this row's Region,
+ * so named and bounded rather than silently allowed to grow. A sixth, `scripts/agent-org-extraction-
+ * rehearsal.mjs`, landed on `main` afterward (#2765, decision 6's own rehearsal script) -- same category
+ * as the other four `scripts/*.mjs` entries here, so added rather than treated as a new class of finding.
  */
 const KNOWN_RELATIVE_IMPORTERS = [
   "packages/control/src/fleet-playbook.mjs",
+  "scripts/agent-org-extraction-rehearsal.mjs",
   "scripts/npm-token-liveness.mjs",
   "scripts/release-reuses-verdict.mjs",
   "scripts/repo-identity.mjs",
@@ -197,6 +209,36 @@ test("control: the relative-import scan finds a fixture violator and ignores a c
     return REACHES_IN.test(code);
   }));
   assert.deepEqual(found, ["packages/widgets/src/a.mjs"]);
+});
+
+// ---- 2b. every file decision 4's own formula selects to TRAVEL can actually be path-renamed --------------
+//
+// Claim 2 above deliberately exempts `packages/lab` (its own fate is decision 4's re-run count, not this
+// file's business) -- but decision 4's formula (`travellingLabTestFiles()`) does not itself guarantee that
+// every file it selects lives under `packages/lab/src/packaging/`, the one directory
+// `extractionPathRenames()` (both in `scripts/agent-org-extraction-rehearsal.mjs`) knows how to rename.
+// Found the hard way, not by inspection: the real rehearsal dispatch (run 36415569320, row #2623,
+// 2026-09-28) CRASHED on `packages/lab/src/training/field-role.test.ts`, a leftover relative import
+// (`9eb846790`'s WIP move) that claim 2's own exemption let through silently. This is the permanent,
+// repo-wide version of that catch -- run at every claim, not discovered again by a live dispatch.
+
+test("every file travellingLabTestFiles() selects already lives under packages/lab/src/packaging/, so extractionPathRenames() does not crash", () => {
+  const travelling = travellingLabTestFiles(REPO_ROOT);
+  assert.ok(travelling.length > 50, `too few travelling files (${travelling.length}): the scan is reading the wrong tree`);
+  const misplaced = travelling.filter((file) => !file.startsWith("packages/lab/src/packaging/"));
+  assert.deepEqual(misplaced, [],
+    "a packages/lab file imports agent-org by a relative path and does NOT live under "
+    + "packages/lab/src/packaging/ -- the field-role.test.ts/board-gates.mjs defect (row #2623) again: "
+    + "either give it a local copy of what it imports, or move it under packages/lab/src/packaging/ if it "
+    + "genuinely belongs to the extracted tree");
+  assert.doesNotThrow(() => extractionPathRenames(travelling));
+});
+
+test("control: extractionPathRenames() REFUSES a travelling file outside packages/lab/src/packaging/, naming it", () => {
+  assert.throws(
+    () => extractionPathRenames(["packages/lab/src/training/not-packaging.mjs"]),
+    /not a packages\/lab\/src\/packaging\/ path: packages\/lab\/src\/training\/not-packaging\.mjs/,
+  );
 });
 
 // ---- 3. installed at a scratch path, pointed at a project by host.json's checkout ----------------------
