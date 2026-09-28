@@ -385,15 +385,19 @@ function decision4Counts(): { total: number; divided: number } {
 }
 
 /**
- * Recorded 2026-09-28 at `510f21c4a` PLUS this file: 141 total, 16 divided (125 travel = 141 - 16). One
- * more of each than the row body's own currently-amended reading (140/15), because THIS FILE now exists
- * and itself matches both patterns -- it imports `agent-org/src` (t-import) and, in its own fixture string
- * for the `@a11ign/` control above, the literal `"@a11ign/worker-fleet/cli-flags"` (t-product): the same
- * "matches inside a fixture string, not a real import" false positive the row's finding 1 already named.
+ * Recorded 2026-09-28 after PR #2772 (shape 1, ceo's ruling on this row): 140 total, 16 divided (124
+ * travel = 140 - 16). One less total than the prior reading (141/16) because `field-role.test.ts` no
+ * longer imports `agent-org/src` by a relative path -- it now imports the local copy at
+ * `packages/lab/src/training/board-gates.mjs` -- and so drops out of the t-import population entirely.
+ * `divided` is unchanged: that file never matched the product pattern either before or after. This
+ * file itself still counts once toward each: it imports `agent-org/src` (t-import) and, in its own
+ * fixture string for the `@a11ign/` control above, the literal `"@a11ign/worker-fleet/cli-flags"`
+ * (t-product) -- the same "matches inside a fixture string, not a real import" false positive the
+ * row's finding 1 already named.
  * Grows or shrinks with real PRs; a mismatch here means product-manager owes another amendment, not that
  * this test is wrong.
  */
-const RECORDED_DECISION_4 = { total: 141, divided: 16 };
+const RECORDED_DECISION_4 = { total: 140, divided: 16 };
 
 test("decision 4's total/divided counts, re-derived, match the row's currently-amended reading", () => {
   const counts = decision4Counts();
