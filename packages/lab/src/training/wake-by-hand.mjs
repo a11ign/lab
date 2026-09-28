@@ -18,6 +18,7 @@
  * answers `already-up` on the first probe and is sent nothing: nothing here can wake a box twice.
  */
 import { wakeFleet, wakeFailed, wakeReportLine } from "@a11ign/control/fleet-wake";
+import { requestJson } from "@a11ign/worker-fleet/worker-http";
 
 /**
  * @param {string} url
@@ -48,4 +49,45 @@ export async function wakeNamedWorkers(urls, wakeOptions = {}) {
     `REFUSING: ${failed.length} of ${results.length} named worker(s) did not come up:`,
     ...failed.map(wakeReportLine),
   ].join("\n") };
+}
+
+/**
+ * #2756 (the chairman, 2026-09-28, direction on `fleet:deploy`'s own `--allow-offline` precedent): ONE
+ * NAMED WORKER BEING DOWN MUST NOT REFUSE THE WHOLE RUN. Kept in THIS module, not
+ * `capture-screenreader-dataset.mjs`, for the same reason `wakeNamedWorkers` itself lives here: that file
+ * imports `dataset-paths.mjs` (a `corpus` reader), so anything reached only through it is invisible to the
+ * token-less acceptance job -- this file's own header already names that trap.
+ *
+ * `wakeNamedWorkers` stays untouched: it is shared by six other by-hand capture entries this row did not
+ * individually audit, so its all-or-nothing contract for THOSE six is not this fix's business. This
+ * function is called only by `capture-screenreader-dataset.mjs`'s own two named-pool branches.
+ *
+ * Re-probes every named worker's own `/health` directly once `wakeNamedWorkers` reports a failure --
+ * whatever packet it could send has already been sent by the time it returns, so a worker still not
+ * answering now is down for THIS run, not merely asleep-and-about-to-wake. Survivors proceed; the rest are
+ * REPORTED, matching `fleet:deploy`'s `--allow-offline` shape (named, not silently dropped), never waited
+ * on. Refuses only when NONE answer -- the same "never zero workers" floor `pool-invariants.test.ts`
+ * already pins one layer down, at `drainAcrossPool`.
+ *
+ * @param {string[]} urls every worker this run was told to use
+ * @param {{ ok: true } | { ok: false, refusal: string }} wake `wakeNamedWorkers`'s own verdict on `urls`
+ * @param {{ probe?: (url: string) => Promise<unknown> }} [deps]
+ * @returns {Promise<string[]>} the subset that answered `/health` just now
+ */
+export async function survivingNamedWorkers(urls, wake, { probe = (url) => requestJson(url) } = {}) {
+  if (wake.ok) return urls;
+  const alive = await Promise.all(urls.map(async (url) => {
+    try {
+      await probe(`${url}/health`);
+      return true;
+    } catch {
+      return false;
+    }
+  }));
+  const survivors = urls.filter((_, i) => alive[i]);
+  const dead = urls.filter((_, i) => !alive[i]);
+  if (!survivors.length) throw new Error(wake.refusal);
+  console.log(`REPORTED, not blocking: ${dead.length} of ${urls.length} named worker(s) did not come up `
+    + `and are excluded from this run: ${dead.join(", ")}\n${wake.refusal}`);
+  return survivors;
 }
