@@ -214,8 +214,9 @@ const isLabelSet = (args: string[]) => args[0] === "api" && args[1] === "--metho
   && /\/issues\/\d+\/labels$/.test(args[3]);
 const labelsSetBy = (args: string[]) => args.filter((a) => a.startsWith("labels[]=")).map((a) => a.slice("labels[]=".length));
 
-function boardRun(initial: string[], { number = 176, interleave, failWhen }: {
+function boardRun(initial: string[], { number = 176, state = "OPEN", interleave, failWhen }: {
   number?: number,
+  state?: "OPEN" | "CLOSED",
   interleave?: (labelRead: number, board: { labels: string[] }) => void,
   failWhen?: (args: string[]) => boolean,
 } = {}) {
@@ -229,6 +230,7 @@ function boardRun(initial: string[], { number = 176, interleave, failWhen }: {
       board.labels = labelsSetBy(args);
       return "[]";
     }
+    if (args[0] === "label" && args[1] === "create") return "";
     if (args[1] === "edit") {
       const changed = (flag: string) => args.flatMap((a, i) => (a === flag ? [args[i + 1]] : []));
       board.labels = [...board.labels.filter((l) => !changed("--remove-label").includes(l)), ...changed("--add-label")];
@@ -239,7 +241,7 @@ function boardRun(initial: string[], { number = 176, interleave, failWhen }: {
         labelReads += 1;
         interleave?.(labelReads, board);
       }
-      return JSON.stringify({ number, title: "A row", state: "OPEN", labels: board.labels.map((name) => ({ name })) });
+      return JSON.stringify({ number, title: "A row", state, labels: board.labels.map((name) => ({ name })) });
     }
     return "";
   };
@@ -433,16 +435,8 @@ test("#656/#987 MUTATION: losing the claim race leaves NO claim record behind --
 });
 
 test("#656 ACCEPTANCE: declineRow removes the recorded branch label when releasing a row", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 656, title: "A row", labels: [{ name: CLAIM_LABEL },
-        { name: "session:worker-config" }, { name: STARTED_LABEL },
-        { name: "branch:agent/row-claim-branch-656" }] });
-    }
-    return "";
-  };
+  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-config", STARTED_LABEL,
+    "branch:agent/row-claim-branch-656"], { number: 656 });
   const result = declineRow(656, "worker-config", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) });
   assert.equal(result.declined, true);
   const editCall = calls.find((a) => a[1] === "edit")!;
@@ -500,13 +494,7 @@ test("#987 ACCEPTANCE: declineRow removes the worktree the CLAIM COMMENT names -
   + "worth keeping if the release reads the same place the claim wrote", () => {
   const path = "/Users/danielbeck/Documents/repos/personal/a11y-wt-declined-987";
   const removed: string[] = [];
-  const run = (cmd: string, args: string[]) => {
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 987, title: "A row", labels: [{ name: CLAIM_LABEL },
-        { name: "session:worker-judge" }, { name: STARTED_LABEL }] });
-    }
-    return "";
-  };
+  const { run } = boardRun([CLAIM_LABEL, "session:worker-judge", STARTED_LABEL], { number: 987 });
   const comments = [claimRecordComment({ session: "worker-judge", branch: "agent/x-987", worktree: path })];
   const result = declineRow(987, "worker-judge", { run, fetchComments: () => comments,
     moveStatus: () => ({ moved: true }),
@@ -519,13 +507,10 @@ test("#987: a RELEASE record supersedes the claim record, so `check` stops namin
   + "already removed -- the stale-record failure a label removal used to handle for free", () => {
   const path = "/private/tmp/wt-987";
   const posted: string[] = [];
+  const { run: boardRunFn } = boardRun([CLAIM_LABEL, "session:worker-judge", STARTED_LABEL], { number: 987 });
   const run = (cmd: string, args: string[]) => {
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 987, title: "A row", labels: [{ name: CLAIM_LABEL },
-        { name: "session:worker-judge" }, { name: STARTED_LABEL }] });
-    }
-    if (args[1] === "comment") posted.push(args[args.indexOf("--body") + 1]);
-    return "";
+    if (args[1] === "comment") { posted.push(args[args.indexOf("--body") + 1]); return ""; }
+    return boardRunFn(cmd, args);
   };
   const claim = claimRecordComment({ session: "worker-judge", worktree: path });
   declineRow(987, "worker-judge", { run, fetchComments: () => [claim],
@@ -543,13 +528,10 @@ test("#987: a RELEASE record supersedes the claim record, so `check` stops namin
 test("#987: a decline that had NOTHING recorded posts no release record -- noise a later "
   + "`claimRecordFrom` would then have to read past", () => {
   const posted: string[] = [];
+  const { run: boardRunFn } = boardRun([CLAIM_LABEL, "session:worker-judge", STARTED_LABEL], { number: 987 });
   const run = (cmd: string, args: string[]) => {
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 987, title: "A row", labels: [{ name: CLAIM_LABEL },
-        { name: "session:worker-judge" }, { name: STARTED_LABEL }] });
-    }
-    if (args[1] === "comment") posted.push(args[args.indexOf("--body") + 1]);
-    return "";
+    if (args[1] === "comment") { posted.push(args[args.indexOf("--body") + 1]); return ""; }
+    return boardRunFn(cmd, args);
   };
   declineRow(987, "worker-judge",
     { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) });
@@ -723,17 +705,9 @@ test("#749 MUTATION: skipping label creation reproduces the original failure -- 
 
 test("#665 ACCEPTANCE: declineRow calls removeWorktree with the recorded path, and removes the label "
   + "once it succeeds", () => {
-  const calls: string[][] = [];
   const removeCalls: string[] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 665, title: "A row", labels: [{ name: CLAIM_LABEL },
-        { name: "session:worker-config" }, { name: STARTED_LABEL },
-        { name: "worktree:/tmp/a11y-wt-665" }] });
-    }
-    return "";
-  };
+  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-config", STARTED_LABEL,
+    "worktree:/tmp/a11y-wt-665"], { number: 665 });
   const removeWorktree = (path: string) => { removeCalls.push(path); return { removed: true } as const; };
   const result = declineRow(665, "worker-config", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }), removeWorktree });
   assert.equal(result.declined, true);
@@ -747,13 +721,8 @@ test("#665 ACCEPTANCE: declineRow calls removeWorktree with the recorded path, a
 test("#665 MUTATION direction 1: a DIRTY worktree refuses the WHOLE decline, named -- the label stays, "
   + "so a future reader still knows the claim was open, rather than losing the record while the "
   + "directory (and whatever uncommitted work sits in it) silently survives untracked", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    return JSON.stringify({ number: 665, title: "A row", labels: [{ name: CLAIM_LABEL },
-      { name: "session:worker-config" }, { name: STARTED_LABEL },
-      { name: "worktree:/tmp/a11y-wt-665" }] });
-  };
+  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-config", STARTED_LABEL,
+    "worktree:/tmp/a11y-wt-665"], { number: 665 });
   const removeWorktree = () => ({ removed: false as const,
     reason: "/tmp/a11y-wt-665 has uncommitted change(s) -- refusing to remove it: M dirty.txt",
     files: ["M dirty.txt"] });
@@ -803,15 +772,7 @@ test("#444: a runner: label is NEVER removed by a claim -- it survives, unlike r
 
 test("declineRow returns a dispatched-but-not-started row to genuinely unclaimed, and does NOT invent "
   + "`ready` when there is no was-ready marker (#449)", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 176, title: "A row",
-        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }] });
-    }
-    return "";
-  };
+  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-contracts"], { number: 176 });
   const result = declineRow(176, "worker-contracts", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, closed: false, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit");
@@ -821,15 +782,7 @@ test("declineRow returns a dispatched-but-not-started row to genuinely unclaimed
 });
 
 test("declineRow also clears STARTED_LABEL when a started row is declined", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 176, title: "A row",
-        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }, { name: STARTED_LABEL }] });
-    }
-    return "";
-  };
+  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-contracts", STARTED_LABEL], { number: 176 });
   const result = declineRow(176, "worker-contracts", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) });
   assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, closed: false, statusMoved: true });
   const editCall = calls.find((a) => a[1] === "edit");
@@ -840,16 +793,8 @@ test("declineRow also clears STARTED_LABEL when a started row is declined", () =
 
 test("#449 ACCEPTANCE: a claim-then-decline of a row that WAS `ready` restores `ready`, via the "
   + "was-ready marker `writeRowLabels` wrote at claim time", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 171, title: "A row",
-        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-audit" }, { name: STARTED_LABEL },
-          { name: WAS_READY_LABEL }] });
-    }
-    return "";
-  };
+  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-audit", STARTED_LABEL, WAS_READY_LABEL],
+    { number: 171 });
   const moveCalls: [number, string][] = [];
   const result = declineRow(171, "worker-audit",
     { run, fetchComments: noRecord, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
@@ -863,16 +808,8 @@ test("#449 ACCEPTANCE: a claim-then-decline of a row that WAS `ready` restores `
 
 test("#449 ACCEPTANCE: MUTATION TARGET -- a decline carrying --blocked leaves `blocked`, not `ready`, "
   + "even though the was-ready marker is present, and records the reason as a comment", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 171, title: "A row",
-        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-audit" }, { name: STARTED_LABEL },
-          { name: WAS_READY_LABEL }] });
-    }
-    return "";
-  };
+  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-audit", STARTED_LABEL, WAS_READY_LABEL],
+    { number: 171 });
   const moveCalls: [number, string][] = [];
   const result = declineRow(171, "worker-audit", { run, fetchComments: noRecord,
     moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; },
@@ -891,15 +828,8 @@ test("#449 ACCEPTANCE: MUTATION TARGET -- a decline carrying --blocked leaves `b
 
 test("#752 REGRESSION: #721's real shape -- a claimed, was-ready row that has since CLOSED must NOT "
   + "have `ready` restored, even though WAS_READY_LABEL says it was `ready` before the claim", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 721, title: "A row", state: "CLOSED",
-        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }, { name: WAS_READY_LABEL }] });
-    }
-    return "";
-  };
+  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-contracts", WAS_READY_LABEL],
+    { number: 721, state: "CLOSED" });
   const moveCalls: [number, string][] = [];
   const result = declineRow(721, "worker-contracts",
     { run, fetchComments: noRecord, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
@@ -912,15 +842,8 @@ test("#752 REGRESSION: #721's real shape -- a claimed, was-ready row that has si
 });
 
 test("#752: a CLOSED row is unaffected by --blocked -- closed wins over every other reason to add a label", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 721, title: "A row", state: "CLOSED",
-        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }, { name: WAS_READY_LABEL }] });
-    }
-    return "";
-  };
+  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-contracts", WAS_READY_LABEL],
+    { number: 721, state: "CLOSED" });
   const result = declineRow(721, "worker-contracts",
     { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }), blockedReason: "found it depends on unmerged work" });
   assert.deepEqual(result, { declined: true, restoredReady: false, blocked: false, closed: true, statusMoved: true });
@@ -931,16 +854,8 @@ test("#752: a CLOSED row is unaffected by --blocked -- closed wins over every ot
 
 test("#752: an OPEN row's decline is UNCHANGED by the closed check -- `state` present but not CLOSED "
   + "must behave exactly as the #449 case above", () => {
-  const calls: string[][] = [];
-  const run = (cmd: string, args: string[]) => {
-    calls.push(args);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 171, title: "A row", state: "OPEN",
-        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-audit" }, { name: STARTED_LABEL },
-          { name: WAS_READY_LABEL }] });
-    }
-    return "";
-  };
+  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-audit", STARTED_LABEL, WAS_READY_LABEL],
+    { number: 171, state: "OPEN" });
   const moveCalls: [number, string][] = [];
   const result = declineRow(171, "worker-audit",
     { run, fetchComments: noRecord, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
@@ -1254,14 +1169,8 @@ test("claimRow does NOT move Status when the claim itself is refused (already he
 
 test("MUTATION target: declineRow moves Status BACK to 'Ready' on a successful decline of a row that "
   + "WAS ready before the claim", () => {
-  const run = (cmd: string, args: string[]) => {
-    if (args[1] === "view") {
-      return JSON.stringify({ number: 400, title: "A row",
-        labels: [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }, { name: STARTED_LABEL },
-          { name: WAS_READY_LABEL }] });
-    }
-    return "";
-  };
+  const { run } = boardRun([CLAIM_LABEL, "session:worker-contracts", STARTED_LABEL, WAS_READY_LABEL],
+    { number: 400 });
   const moveCalls: [number, string][] = [];
   const result = declineRow(400, "worker-contracts",
     { run, fetchComments: noRecord, moveStatus: (n: number, s: string) => { moveCalls.push([n, s]); return { moved: true }; } });
@@ -1271,16 +1180,16 @@ test("MUTATION target: declineRow moves Status BACK to 'Ready' on a successful d
 
 test("declineRow's own declined:true does not depend on the Status move succeeding, and distinguishes "
   + "not-on-board from a genuine half-applied failure the same way claimRow does", () => {
-  const run = () => JSON.stringify({ number: 400, title: "A row",
-    labels: [{ name: CLAIM_LABEL }, { name: "session:worker-contracts" }, { name: STARTED_LABEL },
-      { name: WAS_READY_LABEL }] });
+  const initial = [CLAIM_LABEL, "session:worker-contracts", STARTED_LABEL, WAS_READY_LABEL];
   const notOnBoardResult = declineRow(400, "worker-contracts",
-    { run, fetchComments: noRecord, moveStatus: () => ({ moved: false, reason: "not on the Project", notOnBoard: true }) });
+    { run: boardRun(initial, { number: 400 }).run, fetchComments: noRecord,
+      moveStatus: () => ({ moved: false, reason: "not on the Project", notOnBoard: true }) });
   assert.deepEqual(notOnBoardResult, { declined: true, restoredReady: true, blocked: false, closed: false,
     statusMoved: false, notOnBoard: true, statusReason: "not on the Project" });
 
   const halfAppliedResult = declineRow(400, "worker-contracts",
-    { run, fetchComments: noRecord, moveStatus: () => ({ moved: false, reason: "gh: rate limited", notOnBoard: false }) });
+    { run: boardRun(initial, { number: 400 }).run, fetchComments: noRecord,
+      moveStatus: () => ({ moved: false, reason: "gh: rate limited", notOnBoard: false }) });
   assert.deepEqual(halfAppliedResult, { declined: true, restoredReady: true, blocked: false, closed: false,
     statusMoved: false, notOnBoard: false, statusReason: "gh: rate limited" });
 });
@@ -1809,17 +1718,21 @@ test("#1399 BOUNDARY: a failed label write is not known to have landed -- exit 2
   assert.equal(failureReport(error).exitCode, 2);
 });
 
-/** A decline of worker-judge's claim on #1399; the release record's comment is the call that throws. */
+/**
+ * A decline of worker-judge's claim on #1399; the release record's comment is the call that throws.
+ *
+ * REACTIVE, not a fixed response: #2746's `writeDeclineLabels` re-reads the row after its edit to verify
+ * the write landed, so a `view` fake that always answers the PRE-decline labels would fail that verify
+ * before ever reaching the failure point `failAt` names.
+ */
 function declineRunFailing(failAt: (args: string[]) => boolean) {
   const calls: string[][] = [];
-  const run = (_cmd: string, args: string[]) => {
+  const { run: boardRunFn } = boardRun([CLAIM_LABEL, "session:worker-judge", STARTED_LABEL, WAS_READY_LABEL],
+    { number: ROW, state: "OPEN" });
+  const run = (cmd: string, args: string[]) => {
     calls.push(args);
     if (failAt(args)) throw new Error(`simulated: gh ${args.slice(0, 2).join(" ")} failed`);
-    if (args[1] === "view") {
-      return JSON.stringify({ number: ROW, title: "A row", state: "OPEN",
-        labels: [CLAIM_LABEL, "session:worker-judge", STARTED_LABEL, WAS_READY_LABEL].map((name) => ({ name })) });
-    }
-    return "";
+    return boardRunFn(cmd, args);
   };
   const removed: string[] = [];
   const deps = { run, moveStatus: () => ({ moved: true as const }),
@@ -1846,6 +1759,52 @@ test("#1399 CONTROL: decline's label read throws -- nothing removed, COULD NOT D
   assert.equal(failureReport(error).exitCode, 2);
   assert.deepEqual(removed, []);
   assert.ok(!calls.some((a) => a[1] === "edit" || a[1] === "comment"));
+});
+
+// --- #2746: `gh issue edit` reporting success is not proof the DECLINE's labels moved -- #677's own live
+// shape (the `--remove-label` half applying while every `--add-label` silently did not, because a label
+// named for the first time had never been created) reproduced for `releaseRow`, whose write had neither
+// `ensureLabelsExist` nor a post-write verification before this row. The claim-stall release logged for
+// #2623 at 2026-09-28T03:44:09+01:00 ("RELEASED #2623 ... worktree KEPT") is the live cost: `decline`
+// exited 0 and printed `DECLINED`, and the row's `in-progress`/`started`/`session:worker-2623` labels
+// never moved on GitHub. ---
+
+test("#2746 ACCEPTANCE: declineRow CREATES every label it is about to ADD before naming it -- the same "
+  + "`gh label create --force` discipline #749 proved for claimRow, now proved for the release side", () => {
+  const { run, calls } = boardRun([CLAIM_LABEL, "session:worker-judge", STARTED_LABEL, WAS_READY_LABEL],
+    { number: 2746 });
+  const result = declineRow(2746, "worker-judge", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) });
+  assert.equal(result.declined, true);
+  const createIndex = calls.findIndex((a) => a[0] === "label" && a[1] === "create" && a[2] === READY_LABEL);
+  const editIndex = calls.findIndex((a) => a[1] === "edit");
+  assert.ok(createIndex !== -1, `expected \`ready\` to be created before it is restored; got: ${JSON.stringify(calls)}`);
+  assert.ok(createIndex < editIndex, "the label must be created BEFORE the edit that adds it, never after");
+});
+
+test("#2746 REGRESSION: a decline label edit that exits CLEAN but does not durably change the row's "
+  + "labels THROWS, instead of reporting `declined: true` over a write whose effect it never confirmed -- "
+  + "the exact #677 shape read back with a re-read rather than trusted from `gh`'s own exit code", () => {
+  const calls: string[][] = [];
+  const run = (_cmd: string, args: string[]) => {
+    calls.push(args);
+    if (args[1] === "view") {
+      // ALWAYS answers the pre-decline state: `gh issue edit` "succeeds" (no throw, no error output) but
+      // never actually lands -- GitHub silently applying the `--remove-label` half while refusing the
+      // `--add-label` half is #677's own measured failure, and a re-read is the only way to see it.
+      return JSON.stringify({ number: 2746, title: "A row", state: "OPEN",
+        labels: [CLAIM_LABEL, "session:worker-judge", STARTED_LABEL, WAS_READY_LABEL].map((name) => ({ name })) });
+    }
+    return ""; // `label create` and `edit` both report success and change nothing
+  };
+  const error = thrownBy(() => declineRow(2746, "worker-judge",
+    { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }) }));
+  assert.match((error as Error).message, /did NOT durably land/);
+  assert.match((error as Error).message, /#2746/);
+  assert.equal(landedWritesOf(error), null,
+    "an unconfirmed write is COULD NOT DETERMINE, not a partial write this call knows it made");
+  assert.equal(failureReport(error).exitCode, 2);
+  assert.ok(!calls.some((a) => a[1] === "comment"),
+    "a decline that cannot confirm its own label write must refuse BEFORE posting a release record over it");
 });
 
 test("#1399 WIRING: the claim/dispatch and decline CLIs report a thrown error through failureReport", () => {
