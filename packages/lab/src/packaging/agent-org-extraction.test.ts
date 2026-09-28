@@ -1,8 +1,8 @@
 /**
  * #2623 (child 5 of #69): THE EXTRACTION'S OWN TEST (ADR 0040, decision 8's fixture-project pattern).
  *
- * Five claims the row's Acceptance names, each with a fixture positive control beside it, plus one more
- * (2b) added 2026-09-28 after a live rehearsal dispatch found a gap claim 2 does not cover:
+ * Five claims the row's Acceptance names, each with a fixture positive control beside it, plus two more
+ * (2b, 2c) added 2026-09-28 after live rehearsal dispatches found gaps claim 2 does not cover:
  *
  *   1. No import in the EXTRACTED tree (`packages/agent-org` copied out as its own root, exactly what
  *      `git filter-repo --path-rename` produces) resolves outside it. THE CONTROL: the same walk over a
@@ -26,6 +26,16 @@
  *      crashed on `packages/lab/src/training/field-role.test.ts`, which claim 2 could not have caught.
  *      THE CONTROL: `extractionPathRenames()` called directly on a synthetic path outside that directory
  *      REFUSES, naming it.
+ *   2c. Claim 2b fixed the CRASH; it does not prove the REWRITE is correct. `git filter-repo --path-rename`
+ *      moves a file's PATH, never rewrites what is WRITTEN inside it -- a travelling test moved from
+ *      `packages/lab/src/packaging/X.test.ts` to `src/packaging/X.test.ts` still contains the literal
+ *      string that resolved to `packages/agent-org/src/Y.mjs` from its OLD location, which resolves
+ *      outside the extracted tree entirely from the new one. A live rehearsal dispatch (run 36422620851,
+ *      2026-09-28, against the merged `main` this row's own PR #2773 produced) found exactly this: 281
+ *      outward imports remained after the rename, 238 of them this exact class. `travellingImportRewrites()`
+ *      fixes it with a `git filter-repo --replace-text` pass. THE CONTROL: a fixture pair of files at
+ *      DIFFERENT depths gets a DIFFERENT rewrite prefix each, proving the fix is not hardcoded to today's
+ *      one shared depth.
  *   3. The package, installed at an arbitrary path and pointed at a project via `host.json`'s `checkout`
  *      (decision 3's actual mechanism -- `HOME_CHECKOUT`'s directory-depth math is explicitly the
  *      transitional in-tree case only, `project-config.mjs`'s own header says so), resolves THAT project's
@@ -67,7 +77,12 @@ import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parseHostConfig } from "../../../agent-org/src/host-config.mjs";
 import { homeProjectDeclaration, readProjectDeclaration } from "../../../agent-org/src/project-config.mjs";
-import { extractionPathRenames, travellingLabTestFiles } from "../../../../scripts/agent-org-extraction-rehearsal.mjs";
+import {
+  extractionPathRenames,
+  replaceTextFileContent,
+  travellingImportRewrites,
+  travellingLabTestFiles,
+} from "../../../../scripts/agent-org-extraction-rehearsal.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, "../../../..");
@@ -238,6 +253,64 @@ test("control: extractionPathRenames() REFUSES a travelling file outside package
   assert.throws(
     () => extractionPathRenames(["packages/lab/src/training/not-packaging.mjs"]),
     /not a packages\/lab\/src\/packaging\/ path: packages\/lab\/src\/training\/not-packaging\.mjs/,
+  );
+});
+
+// ---- 2c. the travelling files' own relative imports get rewritten to their NEW depth, not just moved ----
+//
+// `extractionPathRenames()` (claim 2b) only proves the FILE can be renamed without crashing -- it says
+// nothing about what is written INSIDE it. Found live, not by inspection: run 36422620851 (2026-09-28,
+// against the `main` PR #2773 of this same row produced) applied the rename for real via `git filter-repo`
+// and found 238 of 281 outward imports were exactly this -- a travelling test's own `../../../agent-org/
+// src/...` import, unchanged by the path rename, now resolving outside the tree from its new home.
+
+test("travellingImportRewrites() computes the live tree's one shared depth correctly", () => {
+  const labFiles = travellingLabTestFiles(REPO_ROOT);
+  assert.ok(labFiles.length > 50, `too few travelling files (${labFiles.length}): reading the wrong tree`);
+  const rewrites = travellingImportRewrites(labFiles);
+  assert.deepEqual(rewrites, [{ old: "../../../agent-org/src/", replacement: "../" }]);
+});
+
+test("applying the live rewrite to every travelling file's real content leaves zero agent-org-outward imports", () => {
+  const labFiles = travellingLabTestFiles(REPO_ROOT);
+  const rewrites = travellingImportRewrites(labFiles);
+  const stillOutward: string[] = [];
+  for (const file of labFiles) {
+    let code = readFileSync(join(REPO_ROOT, file), "utf8");
+    for (const { old, replacement } of rewrites) code = code.split(old).join(replacement);
+    const newFile = `src/packaging/${file.replace(/^packages\/lab\/src\/packaging\//, "")}`;
+    const lines = code.split("\n").filter((line) => !COMMENT_LINE.test(line)).join("\n");
+    for (const match of lines.matchAll(IMPORT)) {
+      const specifier = match[1];
+      // claim 2c is about THIS class only (agent-org's OWN src/host); guards/scripts/`.agent-org/` are a
+      // separate, already-reported finding -- `agent-org\/(?:src|host)` (not bare "agent-org/") keeps the
+      // hidden `.agent-org/plugins/` config directory out, which the substring "agent-org/" alone would catch.
+      if (!/agent-org\/(?:src|host)\//.test(specifier)) continue;
+      const target = posix.normalize(posix.join(posix.dirname(newFile), specifier));
+      if (target.startsWith("..")) stillOutward.push(`${newFile} -> ${specifier}`);
+    }
+  }
+  assert.deepEqual(stillOutward, []);
+});
+
+test("control: travellingImportRewrites() gives files at DIFFERENT depths their OWN rewrite, not one hardcoded prefix", () => {
+  const rewrites = travellingImportRewrites([
+    "packages/lab/src/packaging/a.test.ts",
+    "packages/lab/src/packaging/sub/b.test.ts",
+  ]);
+  assert.deepEqual(
+    [...rewrites].sort((left, right) => left.old.length - right.old.length),
+    [
+      { old: "../../../agent-org/src/", replacement: "../" },
+      { old: "../../../../agent-org/src/", replacement: "../../" },
+    ],
+  );
+});
+
+test("replaceTextFileContent() renders one `old==>replacement` line per pair, literal, for git filter-repo --replace-text", () => {
+  assert.equal(
+    replaceTextFileContent([{ old: "../../../agent-org/src/", replacement: "../" }]),
+    "../../../agent-org/src/==>../\n",
   );
 });
 
