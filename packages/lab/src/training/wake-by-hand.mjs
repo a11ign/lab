@@ -52,25 +52,27 @@ export async function wakeNamedWorkers(urls, wakeOptions = {}) {
 }
 
 /**
- * #2760 (the chairman's 2026-09-28 direction on `fleet:deploy`'s `--allow-offline` precedent, #2756/#2759
- * already applied it to `capture-screenreader-dataset.mjs`): ONE NAMED WORKER DOWN MUST NOT REFUSE A RUN
- * NAMING MORE THAN ONE. Of `wakeNamedWorkers`'s seven by-hand callers, `capture-real-pages.mjs` is the only
+ * #2756 (the chairman, 2026-09-28, direction on `fleet:deploy`'s own `--allow-offline` precedent): ONE
+ * NAMED WORKER BEING DOWN MUST NOT REFUSE THE WHOLE RUN. Kept in THIS module, not
+ * `capture-screenreader-dataset.mjs`, for the same reason `wakeNamedWorkers` itself lives here: that file
+ * imports `dataset-paths.mjs` (a `corpus` reader), so anything reached only through it is invisible to the
+ * token-less acceptance job -- this file's own header already names that trap.
+ *
+ * #2760 extended the same question to the other six by-hand callers: `capture-real-pages.mjs` is the only
  * OTHER one whose named pool can be more than one worker (`configuredWorkers()`/the fleet, same as the
- * dataset capture) -- #2760's own audit found the remaining five each name exactly one worker via a single
- * `--worker=`/positional flag, where the down worker and the whole run are the same thing and refusing is
- * still correct (see the comment beside each of those five call sites). `wakeNamedWorkers` itself stays
- * untouched for all seven: this is a second, narrower question asked only where more than one worker was
- * named.
+ * dataset capture) and is wired to this function too; the remaining five each name exactly one worker via
+ * a single `--worker=`/positional flag, where the down worker and the whole run are the same thing and
+ * refusing is still correct (see the comment beside each of those five call sites).
+ *
+ * `wakeNamedWorkers` stays untouched: this is a second, narrower question asked only where more than one
+ * worker was named, not a change to the shared all-or-nothing contract itself.
  *
  * Re-probes every named worker's own `/health` directly once `wakeNamedWorkers` reports a failure --
  * whatever packet it could send has already been sent by the time it returns, so a worker still not
  * answering now is down for THIS run, not merely asleep-and-about-to-wake. Survivors proceed; the rest are
- * REPORTED (named, not silently dropped), never waited on. Refuses only when NONE answer -- never zero
- * workers.
- *
- * NOTE for whoever reviews this beside #2759: that PR (open, not yet merged) adds a function of the same
- * name and shape to this file for its own single caller. Once one of the two lands, the other rebases onto
- * it rather than keeping two copies -- flagged here so it is not missed.
+ * REPORTED, matching `fleet:deploy`'s `--allow-offline` shape (named, not silently dropped), never waited
+ * on. Refuses only when NONE answer -- the same "never zero workers" floor `pool-invariants.test.ts`
+ * already pins one layer down, at `drainAcrossPool`.
  *
  * @param {string[]} urls every worker this run was told to use
  * @param {{ ok: true } | { ok: false, refusal: string }} wake `wakeNamedWorkers`'s own verdict on `urls`

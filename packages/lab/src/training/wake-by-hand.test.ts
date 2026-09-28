@@ -3,14 +3,17 @@
  * `wakeNamedWorkers` (`./wake-by-hand.mjs`) for exactly the workers they name, before they dispatch a
  * single capture.
  *
- * Two things are asserted, deliberately kept apart:
+ * Three things are asserted, deliberately kept apart:
  *
  *   1. `wakeNamedWorkers` ITSELF, offline by injection: it forwards to `wakeFleet` unchanged (no second
  *      implementation, no second packet rule), a worker `lab:job` already woke gets no second packet, and a
  *      worker that never wakes refuses in #2655's own words.
- *   2. EACH ENTRY calls it, before it dispatches. This reads the entry's SOURCE TEXT, never imports the
- *      entry itself: four of the seven import `dataset-paths.mjs` (a `corpus` reader), and the token-less
- *      acceptance job cannot follow that closure (`row-file`'s warning on this row).
+ *   1b. `survivingNamedWorkers` (#2756): when `wakeNamedWorkers` refuses over one down worker, the
+ *      SURVIVORS still run rather than the whole pool refusing -- kept in this module rather than
+ *      `capture-screenreader-dataset.mjs` for the exact reason (2) below names.
+ *   2. EACH ENTRY calls `wakeNamedWorkers`, before it dispatches. This reads the entry's SOURCE TEXT, never
+ *      imports the entry itself: four of the seven import `dataset-paths.mjs` (a `corpus` reader), and the
+ *      token-less acceptance job cannot follow that closure (`row-file`'s warning on this row).
  *
  * The population for (2) is DISCOVERED, not typed in from the Region section, so a census that finds
  * nothing is not silently the same as a census that found seven -- `positive control` below is the proof
@@ -90,29 +93,34 @@ test("named exactly, and nothing else: two workers in, two `wakeFleet` targets o
 });
 
 // ---------------------------------------------------------------------------------------------------
-// 1b. `survivingNamedWorkers` (#2760): one named worker down must not refuse a run naming more than one.
+// 1b. `survivingNamedWorkers` -- #2756 (the chairman, 2026-09-28): one named worker down must not
+//     refuse the whole run. Kept in THIS module (not `capture-screenreader-dataset.mjs`, which imports
+//     `dataset-paths.mjs` and would pull this test back into the corpus closure section 2's own comment
+//     warns about) so it stays reachable by the token-less acceptance job. #2760 extended the same
+//     question to `capture-real-pages.mjs`, the other multi-worker by-hand caller -- no new case here,
+//     since it exercises this same function through a different entry point.
 // ---------------------------------------------------------------------------------------------------
 
 test("wakeNamedWorkers reporting ok is passed straight through, no re-probe at all", async () => {
   let probed = 0;
-  const urls = ["http://192.0.2.30:8765", "http://192.0.2.31:8765"];
+  const urls = ["http://192.0.2.20:8765", "http://192.0.2.21:8765"];
   const got = await survivingNamedWorkers(urls, { ok: true }, { probe: async () => { probed += 1; return {}; } });
   assert.deepEqual(got, urls, "wakeNamedWorkers already said everyone is up -- nothing to narrow");
   assert.equal(probed, 0, "a successful wake needs no re-probe of its own");
 });
 
 test("one of three named workers still down after wakeNamedWorkers's own attempt: the OTHER TWO still run", async () => {
-  const urls = ["http://192.0.2.32:8765", "http://192.0.2.33:8765", "http://192.0.2.34:8765"];
-  const up = ["http://192.0.2.32:8765/health", "http://192.0.2.34:8765/health"];
+  const urls = ["http://192.0.2.22:8765", "http://192.0.2.23:8765", "http://192.0.2.24:8765"];
+  const up = ["http://192.0.2.22:8765/health", "http://192.0.2.24:8765/health"];
   const got = await survivingNamedWorkers(urls,
-    { ok: false, refusal: "REFUSING: 1 of 3 named worker(s) did not come up:\n192.0.2.33:8765: no-answer" },
+    { ok: false, refusal: "REFUSING: 1 of 3 named worker(s) did not come up:\n192.0.2.23:8765: no-answer" },
     { probe: async (url: string) => { if (!up.includes(url)) throw new Error("ECONNREFUSED"); return {}; } });
-  assert.deepEqual(got, ["http://192.0.2.32:8765", "http://192.0.2.34:8765"],
+  assert.deepEqual(got, ["http://192.0.2.22:8765", "http://192.0.2.24:8765"],
     "the down worker is excluded, not blocking; the two that answer proceed");
 });
 
 test("every named worker still down: REFUSES, naming the same reason wakeNamedWorkers gave (never zero workers)", async () => {
-  const urls = ["http://192.0.2.35:8765", "http://192.0.2.36:8765"];
+  const urls = ["http://192.0.2.25:8765", "http://192.0.2.26:8765"];
   const refusal = "REFUSING: 2 of 2 named worker(s) did not come up:\n...";
   await assert.rejects(
     survivingNamedWorkers(urls, { ok: false, refusal }, { probe: async () => { throw new Error("down"); } }),
@@ -120,6 +128,14 @@ test("every named worker still down: REFUSES, naming the same reason wakeNamedWo
   );
 });
 
+test("a single named worker, itself the one down: still refuses (one worker IS the whole pool)", async () => {
+  const urls = ["http://192.0.2.27:8765"];
+  const refusal = "REFUSING: 1 of 1 named worker(s) did not come up:\n192.0.2.27:8765: no-mac";
+  await assert.rejects(
+    survivingNamedWorkers(urls, { ok: false, refusal }, { probe: async () => { throw new Error("down"); } }),
+    (error: Error) => error.message === refusal,
+  );
+});
 // ---------------------------------------------------------------------------------------------------
 // 2. EACH ENTRY calls it, before it dispatches -- read from source text, never imported.
 // ---------------------------------------------------------------------------------------------------
@@ -208,7 +224,7 @@ const DISPATCH_MARKER: Record<string, string> = {
   "packages/lab/src/harnesses/occurrence-verdict-stability.mjs": "await capture(base, variant)",
   "packages/lab/src/harnesses/page-identity-rate.mjs": "await runRounds(base, ROUNDS)",
   "packages/lab/src/training/capture-real-pages.mjs": "await captureAcrossPool(toCapture, workers)",
-  "packages/lab/src/training/capture-screenreader-dataset.mjs": "await captureDataset(cases, done, pool, lease)",
+  "packages/lab/src/training/capture-screenreader-dataset.mjs": "await captureDataset(cases, done, checked, lease)",
   "packages/lab/src/training/repeat-capture.mjs": "await captureWithRetry()",
 };
 
