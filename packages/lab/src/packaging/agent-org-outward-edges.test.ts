@@ -224,6 +224,10 @@ const COPIES: ReadonlyArray<{ original: string; edit?: Edit }> = [
     original: "scripts/product-home.mjs",
     edit: { from: 'resolve(dirname(fileURLToPath(import.meta.url)), "..")', to: 'resolve(dirname(fileURLToPath(import.meta.url)), "../../../..")' },
   },
+  {
+    original: "packages/guards/src/test-memory-cap.mjs",
+    edit: { from: '"../../../scripts/npm-cli-executable.mjs"', to: '"./npm-cli-executable.mjs"' },
+  },
 ];
 
 const copyPath = (original: string) => `${SOURCE_ROOT}/lib/${posix.basename(original)}`;
