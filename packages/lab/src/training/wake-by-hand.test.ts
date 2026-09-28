@@ -177,7 +177,7 @@ const DISPATCH_MARKER: Record<string, string> = {
   "packages/lab/src/harnesses/occurrence-verdict-stability.mjs": "await capture(base, variant)",
   "packages/lab/src/harnesses/page-identity-rate.mjs": "await runRounds(base, ROUNDS)",
   "packages/lab/src/training/capture-real-pages.mjs": "await captureAcrossPool(toCapture, workers)",
-  "packages/lab/src/training/capture-screenreader-dataset.mjs": "await captureDataset(cases, done, pool, lease)",
+  "packages/lab/src/training/capture-screenreader-dataset.mjs": "await captureDataset(cases, done, checked, lease)",
   "packages/lab/src/training/repeat-capture.mjs": "await captureWithRetry()",
 };
 
