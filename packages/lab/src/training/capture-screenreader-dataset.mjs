@@ -22,7 +22,7 @@ import { drainAcrossPool } from "./worker-pool.mjs";
 import { previouslyCaptured } from "./capture-resume.mjs";
 import { leasePageServer } from "./page-server.mjs";
 import { hostPowerState, powerVerdict, keepHostAwake } from "./power-guard.mjs";
-import { wakeNamedWorkers } from "./wake-by-hand.mjs";
+import { wakeNamedWorkers, survivingNamedWorkers } from "./wake-by-hand.mjs";
 import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { nonAuthoritativeHostNotice } from "./capture-host.mjs";
 import { datasetRoot, captureRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
@@ -754,13 +754,12 @@ async function acquireDatasetWorkers() {
   const explicitPool = named.length ? named.map((w) => w.url) : null;
   if (explicitPool) {
     // Run BY HAND, `A11Y_WORKERS` never goes through `lab:job`'s own wake -- #2655's table, row 6. One
-    // asleep box used to fail silently at the first request; this sends it #2655's own packet, and refuses
-    // before a single case is touched if one never comes up.
-    const wake = await wakeNamedWorkers(explicitPool);
-    if (!wake.ok) throw new Error(wake.refusal);
+    // asleep box used to fail silently at the first request; this sends it #2655's own packet, and #2756
+    // narrows the pool to whoever answers rather than refusing the whole run over one that does not.
+    const pool = await survivingNamedWorkers(explicitPool, await wakeNamedWorkers(explicitPool));
     return {
-      pool: explicitPool,
-      lease: { worker: explicitPool[0], source: "explicit", hostAddress: undefined, release: async () => {} },
+      pool,
+      lease: { worker: pool[0], source: "explicit", hostAddress: undefined, release: async () => {} },
     };
   }
   // THE BARE-METAL FLEET, before the deprecated local guests. This function went named -> local UTM pool
@@ -777,12 +776,12 @@ async function acquireDatasetWorkers() {
   // start or stop. Leasing them would be `worker-ctl.sh` reaching for `utmctl` against a physical box.
   const fleet = inventoryWorkerUrls();
   if (fleet.length) {
-    // Named by inventory.yml rather than A11Y_WORKERS, but the same by-hand case: #2655's table, row 6.
-    const wake = await wakeNamedWorkers(fleet);
-    if (!wake.ok) throw new Error(wake.refusal);
+    // Named by inventory.yml rather than A11Y_WORKERS, but the same by-hand case: #2655's table, row 6,
+    // narrowed by #2756 the same way the explicit branch above is.
+    const pool = await survivingNamedWorkers(fleet, await wakeNamedWorkers(fleet));
     return {
-      pool: fleet,
-      lease: { worker: fleet[0], source: "inventory.yml", hostAddress: undefined, release: async () => {} },
+      pool,
+      lease: { worker: pool[0], source: "inventory.yml", hostAddress: undefined, release: async () => {} },
     };
   }
 
@@ -807,11 +806,26 @@ async function acquireDatasetWorkers() {
 }
 
 async function checkDatasetWorkers(/** @type {any} */ pool, /** @type {any} */ lease) {
+  let checked = pool;
   if (pool) {
-    // Check every one of them before starting: discovering a dead worker an hour in wastes
-    // the hour, and the pool driver would keep handing it cases.
-    for (const worker of pool) await checkWorker({ worker, source: "explicit" });
-    console.log(`Pool of ${pool.length}: ${pool.join(", ")}`);
+    // Check every one of them before starting: discovering a dead worker an hour in wastes the hour, and
+    // the pool driver would keep handing it cases. #2756: a worker that fails THIS check (NVDA readiness,
+    // not just TCP reachability -- `survivingNamedWorkers` upstream already excluded anything that could
+    // not even answer `/health`) is excluded here too rather than refusing the whole pool, since the same
+    // "one down worker must not block the run" direction applies to a failure discovered a step later.
+    const outcomes = await Promise.all(pool.map(async (/** @type {string} */ worker) => {
+      try {
+        await checkWorker({ worker, source: "explicit" });
+        return true;
+      } catch (error) {
+        console.log(`REPORTED, not blocking: ${worker} failed its pre-run check (${
+          /** @type {any} */ (error).message}) and is excluded from this run`);
+        return false;
+      }
+    }));
+    checked = pool.filter((/** @type {string} */ _, /** @type {number} */ i) => outcomes[i]);
+    if (!checked.length) throw new Error("Every named worker failed its pre-run check; nothing to capture with.");
+    console.log(`Pool of ${checked.length}: ${checked.join(", ")}`);
   } else {
     await checkWorker(lease);
   }
@@ -826,8 +840,9 @@ async function checkDatasetWorkers(/** @type {any} */ pool, /** @type {any} */ l
   // met with `--allow-battery` rather than understood.
   const hostNotice = nonAuthoritativeHostNotice({ cwd: process.cwd(), servesPages: true });
   if (hostNotice) process.stdout.write(hostNotice);
-  await assertFleetRunsThisCheckout(pool ?? [lease.worker],
+  await assertFleetRunsThisCheckout(checked ?? [lease.worker],
     { when: "before the run", allow: ALLOW_STALE, bareMetalUrls: inventoryWorkerUrls() });
+  return checked;
 }
 
 function captureProgress(/** @type {any} */ cases, /** @type {any} */ lease, /** @type {any} */ pool, /** @type {any} */ baseUrl) {
@@ -945,8 +960,8 @@ async function main() {
   });
   const { pool, lease } = await acquireDatasetWorkers();
   try {
-    await checkDatasetWorkers(pool, lease);
-    await captureDataset(cases, done, pool, lease);
+    const checked = await checkDatasetWorkers(pool, lease);
+    await captureDataset(cases, done, checked, lease);
   } finally {
     // Workers first: they are the expensive resource, and the page server costs nothing to hold for
     // the extra second. Both run even if the other throws.
