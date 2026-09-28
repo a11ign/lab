@@ -21,7 +21,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { treeWideGuardFiles, MARKER_MODULE } from "../../../guards/src/tree-wide-guards.mjs";
+import { treeWideGuardFiles, MARKER_MODULE, MARKER_MODULES } from "../../../guards/src/tree-wide-guards.mjs";
 import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here rather
@@ -102,4 +102,25 @@ test("CONTROL: a file that CALLS something with the same name but never imported
     readFile: () => 'import { declareTreeWideGuard } from "./some/other/module.mjs";\ndeclareTreeWideGuard();\n',
   });
   assert.deepEqual(files, [], "a same-named function from a DIFFERENT module must not satisfy membership");
+});
+
+// #2623 (child 5 of #69): `agent-org`'s own copy of `tree-wide-guard.mjs` is a second accepted resolved path,
+// so a travelling guard repointed at the copy (as `carry-branch.test.ts` now is) stays discovered.
+
+test("#2623: MARKER_MODULES names exactly two paths, and MARKER_MODULE is the first of them -- nothing "
+  + "reading the old single-path export silently loses the original", () => {
+  assert.equal(MARKER_MODULES.length, 2);
+  assert.equal(MARKER_MODULES[0], MARKER_MODULE);
+  assert.ok(MARKER_MODULES[1].endsWith("packages/agent-org/src/lib/tree-wide-guard.mjs"),
+    `the second accepted path must be the agent-org copy, got ${MARKER_MODULES[1]}`);
+});
+
+test("#2623: a file importing the AGENT-ORG COPY's resolved path (not the original) and calling it IS "
+  + "discovered -- the widening this row's split requires", () => {
+  const files = treeWideGuardFiles({
+    lsFiles: () => "fake/repointed-guard.test.ts\n",
+    imports: () => [MARKER_MODULES[1]],
+    readFile: () => "declareTreeWideGuard();\n",
+  });
+  assert.deepEqual(files, ["fake/repointed-guard.test.ts"]);
 });

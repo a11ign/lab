@@ -10,7 +10,7 @@
  *      THE CONTROL: the same walk over a fixture package with ONE import across the boundary REFUSES, naming the file and the target,
  *      over a fixture in the shape of the tree at 46b59abf0 it finds exactly the nine, and a boundary import that lives only in a
  *      comment is not one -- so an empty answer on the real tree is not a walk that cannot see.
- *   2. Each of the seven copies is BYTE-IDENTICAL to its original apart from its header and the sanctioned edits below. THE CONTROL:
+ *   2. Each of the nineteen copies is BYTE-IDENTICAL to its original apart from its header and the sanctioned edits below. THE CONTROL:
  *      a one-character change to a copy, and an edit nobody sanctioned, are each reported as a difference.
  *   3. The tool's leak policy holds the two GENERIC patterns and the declaration's `leakPatterns` the two a11ign ones, and their
  *      union equals the product's `LEAK_PATTERNS` by name and by source. THE CONTROL: dropping one of them from the union, or renaming
@@ -199,7 +199,7 @@ test("#2658 control: over a tree in the shape of 46b59abf0 the walk finds exactl
   assert.equal(new Set(found.map((edge) => edge.file)).size, 5);
 });
 
-// ---- 2. the seven copies -------------------------------------------------------------------------------------------------
+// ---- 2. the nineteen copies -------------------------------------------------------------------------------------------------
 
 const HEADER_START = /^\/\/ COPIED FROM `([^`]+)` at ([0-9a-f]{9,40}) /;
 const HEADER_END = "// ==== end of copy header ====";
@@ -210,37 +210,87 @@ const HEADER_END = "// ==== end of copy header ====";
  * repository root as one level above `scripts/`. Both are the same behaviour from the new place, and each is named in the copy's own header.
  */
 type Edit = { from: string; to: string };
-const COPIES: ReadonlyArray<{ original: string; edit?: Edit }> = [
+const COPIES: ReadonlyArray<{ original: string; edits?: Edit[] }> = [
   { original: "packages/worker-fleet/src/cli-flags.mjs" },
   { original: "packages/guards/src/git-env.mjs" },
   {
     original: "packages/guards/src/changed-files.mjs",
-    edit: { from: '"../../worker-fleet/src/cli-flags.mjs"', to: '"./cli-flags.mjs"' },
+    edits: [{ from: '"../../worker-fleet/src/cli-flags.mjs"', to: '"./cli-flags.mjs"' }],
   },
   { original: "packages/guards/src/local-import-closure.mjs" },
   { original: "packages/guards/src/worktree-resolution.mjs" },
   { original: "scripts/npm-cli-executable.mjs" },
   {
     original: "scripts/product-home.mjs",
-    edit: { from: 'resolve(dirname(fileURLToPath(import.meta.url)), "..")', to: 'resolve(dirname(fileURLToPath(import.meta.url)), "../../../..")' },
+    edits: [{ from: 'resolve(dirname(fileURLToPath(import.meta.url)), "..")', to: 'resolve(dirname(fileURLToPath(import.meta.url)), "../../../..")' }],
   },
   {
     original: "packages/guards/src/test-memory-cap.mjs",
-    edit: { from: '"../../../scripts/npm-cli-executable.mjs"', to: '"./npm-cli-executable.mjs"' },
+    edits: [{ from: '"../../../scripts/npm-cli-executable.mjs"', to: '"./npm-cli-executable.mjs"' }],
   },
-  // #2623 (child 5 of #69, ADR 0040 decision 4): the three below are not imported by `agent-org`'s own source --
+  // #2623 (child 5 of #69, ADR 0040 decision 4): the eleven below are not imported by `agent-org`'s own source --
   // they are copied so the TRAVELLING `packages/lab/src/packaging` tests can reach them from the extracted tree
   // without an outward edge, the same "once the file travels, the copy travels beside it" rule as the eight above.
-  // (`tree-wide-guard.mjs` is deliberately NOT among them yet: its one travelling importer, `carry-branch.test.ts`,
-  // is also one of #716's five files `packages/guards/src/tree-wide-guards.mjs`'s IMPORT-BASED discovery counts by
-  // the ORIGINAL file's resolved path -- repointing it silently drops it from that population. Left for a
-  // follow-up that also updates the discovery mechanism, not a plain copy-and-repoint.)
   { original: "packages/guards/src/sandbox-exhaustion.mjs" },
   { original: "scripts/fixture-symbols.mjs" },
   {
     original: "scripts/test-support/git-sandbox.ts",
-    edit: { from: '"../../packages/guards/src/git-env.mjs"', to: '"./git-env.mjs"' },
+    edits: [{ from: '"../../packages/guards/src/git-env.mjs"', to: '"./git-env.mjs"' }],
   },
+  { original: "packages/evidence/src/source-text.ts" },
+  {
+    original: "packages/guards/src/walk-scope-declaration.mjs",
+    edits: [{ from: '"@a11ign/evidence/source-text"', to: '"./source-text.ts"' }],
+  },
+  // `walk-scope.mjs`'s `declareWalkScope` dynamically imports two CI orchestration scripts to compute a
+  // test's own source closure -- missed by an initial static-import-only scan, found by running this suite
+  // once the first four copies existed. Both are self-contained once their own transitive imports (all
+  // already copied above, or copied below) are repointed, so the same copy-and-repoint technique applies;
+  // it is just a deeper application of it, not a different kind of change.
+  {
+    original: "packages/guards/src/walk-scope.mjs",
+    edits: [
+      { from: '"../../../scripts/select-changed-tests.mjs"', to: '"./select-changed-tests.mjs"' },
+      { from: '"../../../scripts/ci-changed.mjs"', to: '"./ci-changed.mjs"' },
+      { from: 'new URL("../../../", import.meta.url)', to: 'new URL("../../../../", import.meta.url)' },
+    ],
+  },
+  {
+    original: "scripts/select-changed-tests.mjs",
+    edits: [
+      { from: '"../packages/worker-fleet/src/cli-flags.mjs"', to: '"./cli-flags.mjs"' },
+      { from: '"../packages/guards/src/git-env.mjs"', to: '"./git-env.mjs"' },
+      { from: '"../packages/guards/src/changed-files.mjs"', to: '"./changed-files.mjs"' },
+      { from: '"../packages/guards/src/walk-scope-declaration.mjs"', to: '"./walk-scope-declaration.mjs"' },
+      { from: '"@a11ign/evidence/source-text"', to: '"./source-text.ts"' },
+    ],
+  },
+  {
+    original: "scripts/ci-changed.mjs",
+    edits: [
+      { from: '"../packages/guards/src/changed-files.mjs"', to: '"./changed-files.mjs"' },
+      { from: '"../packages/worker-fleet/src/cli-flags.mjs"', to: '"./cli-flags.mjs"' },
+      { from: '"../packages/guards/src/git-env.mjs"', to: '"./git-env.mjs"' },
+      { from: '"../packages/guards/src/changed-packages.mjs"', to: '"./changed-packages.mjs"' },
+      { from: '"../packages/guards/src/isolation-gate.mjs"', to: '"./isolation-gate.mjs"' },
+    ],
+  },
+  {
+    original: "packages/guards/src/changed-packages.mjs",
+    edits: [{ from: '"../../worker-fleet/src/cli-flags.mjs"', to: '"./cli-flags.mjs"' }],
+  },
+  {
+    original: "packages/guards/src/isolation-gate.mjs",
+    edits: [
+      { from: '"../../worker-fleet/src/cli-flags.mjs"', to: '"./cli-flags.mjs"' },
+      { from: '"../../../scripts/npm-cli-executable.mjs"', to: '"./npm-cli-executable.mjs"' },
+    ],
+  },
+  // `tree-wide-guard.mjs`'s one travelling importer, `carry-branch.test.ts`, is also one of #716's five files
+  // `packages/guards/src/tree-wide-guards.mjs`'s IMPORT-BASED discovery counts by the ORIGINAL file's resolved
+  // path -- repointing it would silently drop it from that population, so `tree-wide-guards.mjs` is widened
+  // (below, alongside this copy) to accept EITHER the original or this copy's resolved path.
+  { original: "packages/guards/src/tree-wide-guard.mjs" },
 ];
 
 const copyPath = (original: string) => `${SOURCE_ROOT}/lib/${posix.basename(original)}`;
@@ -255,30 +305,30 @@ function withoutHeader(text: string): { origin: string; commit: string; body: st
   return { origin, commit, body: [...lines.slice(0, start), ...lines.slice(end + 1)].join("\n") };
 }
 
-/** Every way `copy` differs from `original` beyond its header and the one sanctioned edit; empty when it does not. */
-function differences(copy: string, original: string, edit?: Edit): string[] {
+/** Every way `copy` differs from `original` beyond its header and its sanctioned edits, applied in order; empty when it does not. */
+function differences(copy: string, original: string, edits?: Edit[]): string[] {
   const header = withoutHeader(copy);
   if (header === null) return ["no complete copy header"];
   let expected = original;
-  if (edit) {
-    if (original.split(edit.from).length !== 2) return [`the sanctioned edit's target is not in the original exactly once: ${edit.from}`];
-    expected = original.replace(edit.from, edit.to);
+  for (const edit of edits ?? []) {
+    if (expected.split(edit.from).length !== 2) return [`a sanctioned edit's target is not in the file exactly once: ${edit.from}`];
+    expected = expected.replace(edit.from, edit.to);
   }
   return header.body === expected ? [] : ["the body differs from the original"];
 }
 
-for (const { original, edit } of COPIES) {
-  test(`#2658: ${copyPath(original)} is ${original} apart from its header${edit ? " and ONE named line" : ""}`, () => {
+for (const { original, edits } of COPIES) {
+  test(`#2658: ${copyPath(original)} is ${original} apart from its header${edits ? ` and ${edits.length} named line${edits.length > 1 ? "s" : ""}` : ""}`, () => {
     const originalText = readFileSync(join(REPO_ROOT, original), "utf8");
     const copyText = readFileSync(join(REPO_ROOT, copyPath(original)), "utf8");
-    assert.deepEqual(differences(copyText, originalText, edit), []);
+    assert.deepEqual(differences(copyText, originalText, edits), []);
     const header = withoutHeader(copyText);
     assert.equal(header?.origin, original, "the header must name the file it was copied from");
     assert.match(header?.commit ?? "", /^[0-9a-f]{9,40}$/, "the header must name the commit it was copied at");
     assert.equal(
-      copyText.includes("CHANGED FROM THE ORIGINAL: NOTHING") !== Boolean(edit),
+      copyText.includes("CHANGED FROM THE ORIGINAL: NOTHING") !== Boolean(edits?.length),
       true,
-      "a copy with a sanctioned edit says ONE line changed, and a copy without one says nothing did",
+      "a copy with sanctioned edits says which lines changed, and a copy without any says nothing did",
     );
   });
 }
@@ -291,11 +341,11 @@ test("#2658 control: a one-character change, an unsanctioned edit, and a missing
   assert.notDeepEqual(differences(copy, `${original}// extra\n`), [], "an edit the copy does not carry");
   assert.notDeepEqual(differences(copy.replace(HEADER_END, "// not the end"), original), [], "a header with no end");
   const sanctioned = { from: "GIT_", to: "GIT-" };
-  assert.notDeepEqual(differences(copy, original, sanctioned), [], "a sanctioned edit is applied to the ORIGINAL and the copy must carry it");
-  assert.notDeepEqual(differences(copy, original, { from: "not in the file", to: "x" }), [], "a sanctioned edit whose target is absent");
+  assert.notDeepEqual(differences(copy, original, [sanctioned]), [], "a sanctioned edit is applied to the ORIGINAL and the copy must carry it");
+  assert.notDeepEqual(differences(copy, original, [{ from: "not in the file", to: "x" }]), [], "a sanctioned edit whose target is absent");
 });
 
-test("#2658: the seven copies are the seven files the tool imported, and no other file sits in lib/ but the split leak policy", () => {
+test("#2658: the nineteen copies are the nineteen files the tool imported, and no other file sits in lib/ but the split leak policy", () => {
   const present = readdirSync(join(REPO_ROOT, SOURCE_ROOT, "lib")).sort();
   const expected = [...COPIES.map(({ original }) => posix.basename(original)), "leak-patterns.mjs"].sort();
   assert.deepEqual(present, expected);
