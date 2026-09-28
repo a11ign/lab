@@ -20,7 +20,7 @@ import {
   PR_LIST_LIMIT, PR_PAGE_SIZE, MAX_PR_PAGES, decideForPR, staleClosureComment, sweepPullRequests, prForDecision,
   EXIT, main as strandedMain } from "../../../agent-org/src/stranded-branches.mjs";
 import { sandboxGitEnv } from "../../../agent-org/src/lib/git-env.mjs";
-import { REPO } from "../../../../scripts/repo-identity.mjs";
+import { REPO } from "../../../agent-org/src/project-identity.mjs";
 
 const git = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, env: sandboxGitEnv(), encoding: "utf8" });
 
