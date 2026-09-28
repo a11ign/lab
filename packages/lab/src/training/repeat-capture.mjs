@@ -284,6 +284,9 @@ async function main() {
   mkdirSync(OUT_DIR, { recursive: true });
   // Run BY HAND, `--worker` never goes through `lab:job`'s own wake -- #2655's table, row 11. Before
   // `waitForReady`'s own poll, which sends no packet: this is the one place that does.
+  // #2760 audited this call for the "one down worker must not refuse the whole run" question #2756 raised:
+  // safe as-is, because `--worker` names exactly ONE worker here -- refusing IS the down worker, and there
+  // is no wider pool to narrow the run to.
   const wake = await wakeNamedWorkers([String(WORKER)]);
   if (!wake.ok) {
     console.error(wake.refusal);

@@ -18,6 +18,7 @@
  * answers `already-up` on the first probe and is sent nothing: nothing here can wake a box twice.
  */
 import { wakeFleet, wakeFailed, wakeReportLine } from "@a11ign/control/fleet-wake";
+import { requestJson } from "@a11ign/worker-fleet/worker-http";
 
 /**
  * @param {string} url
@@ -48,4 +49,48 @@ export async function wakeNamedWorkers(urls, wakeOptions = {}) {
     `REFUSING: ${failed.length} of ${results.length} named worker(s) did not come up:`,
     ...failed.map(wakeReportLine),
   ].join("\n") };
+}
+
+/**
+ * #2760 (the chairman's 2026-09-28 direction on `fleet:deploy`'s `--allow-offline` precedent, #2756/#2759
+ * already applied it to `capture-screenreader-dataset.mjs`): ONE NAMED WORKER DOWN MUST NOT REFUSE A RUN
+ * NAMING MORE THAN ONE. Of `wakeNamedWorkers`'s seven by-hand callers, `capture-real-pages.mjs` is the only
+ * OTHER one whose named pool can be more than one worker (`configuredWorkers()`/the fleet, same as the
+ * dataset capture) -- #2760's own audit found the remaining five each name exactly one worker via a single
+ * `--worker=`/positional flag, where the down worker and the whole run are the same thing and refusing is
+ * still correct (see the comment beside each of those five call sites). `wakeNamedWorkers` itself stays
+ * untouched for all seven: this is a second, narrower question asked only where more than one worker was
+ * named.
+ *
+ * Re-probes every named worker's own `/health` directly once `wakeNamedWorkers` reports a failure --
+ * whatever packet it could send has already been sent by the time it returns, so a worker still not
+ * answering now is down for THIS run, not merely asleep-and-about-to-wake. Survivors proceed; the rest are
+ * REPORTED (named, not silently dropped), never waited on. Refuses only when NONE answer -- never zero
+ * workers.
+ *
+ * NOTE for whoever reviews this beside #2759: that PR (open, not yet merged) adds a function of the same
+ * name and shape to this file for its own single caller. Once one of the two lands, the other rebases onto
+ * it rather than keeping two copies -- flagged here so it is not missed.
+ *
+ * @param {string[]} urls every worker this run was told to use
+ * @param {{ ok: true } | { ok: false, refusal: string }} wake `wakeNamedWorkers`'s own verdict on `urls`
+ * @param {{ probe?: (url: string) => Promise<unknown> }} [deps]
+ * @returns {Promise<string[]>} the subset that answered `/health` just now
+ */
+export async function survivingNamedWorkers(urls, wake, { probe = (url) => requestJson(url) } = {}) {
+  if (wake.ok) return urls;
+  const alive = await Promise.all(urls.map(async (url) => {
+    try {
+      await probe(`${url}/health`);
+      return true;
+    } catch {
+      return false;
+    }
+  }));
+  const survivors = urls.filter((_, i) => alive[i]);
+  const dead = urls.filter((_, i) => !alive[i]);
+  if (!survivors.length) throw new Error(wake.refusal);
+  process.stdout.write(`REPORTED, not blocking: ${dead.length} of ${urls.length} named worker(s) did not `
+    + `come up and are excluded from this run: ${dead.join(", ")}\n${wake.refusal}\n`);
+  return survivors;
 }

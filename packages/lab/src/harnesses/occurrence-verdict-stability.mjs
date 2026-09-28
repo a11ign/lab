@@ -94,6 +94,9 @@ async function capture(base, variant) {
 async function main() {
   if (!WORKER) throw new Error("usage: npm run verdict:stability -- http://<guest-ip>:8765");
   // Run BY HAND, this positional worker never goes through `lab:job`'s own wake -- #2655's table, row 11.
+  // #2760 audited this call for the "one down worker must not refuse the whole run" question #2756 raised:
+  // safe as-is, because this positional argument names exactly ONE worker -- refusing IS the down worker,
+  // and there is no wider pool to narrow the run to.
   const wake = await wakeNamedWorkers([String(WORKER)]);
   if (!wake.ok) throw new Error(wake.refusal);
   const lease = await leasePageServer({ root: PAGES, port: 5050, probePath: "form-error-silent/good.html" });

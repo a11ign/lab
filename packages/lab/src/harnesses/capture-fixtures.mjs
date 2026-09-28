@@ -121,6 +121,10 @@ function report(/** @type {any} */ name, /** @type {any} */ result, /** @type {a
 /**
  * Run BY HAND, `--worker` never goes through `lab:job`'s own wake -- #2655's table, row 11. In-process
  * mode (no `--worker`) names no worker and needs none.
+ *
+ * #2760 audited this call for the "one down worker must not refuse the whole run" question #2756 raised:
+ * safe as-is, because `--worker` names exactly ONE worker here -- refusing IS the down worker, and there
+ * is no wider pool to narrow the run to.
  * @param {string | null} worker
  */
 async function wakeIfNamed(worker) {

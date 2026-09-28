@@ -22,7 +22,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, relative } from "node:path";
 
-import { wakeNamedWorkers } from "./wake-by-hand.mjs";
+import { wakeNamedWorkers, survivingNamedWorkers } from "./wake-by-hand.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -87,6 +87,37 @@ test("named exactly, and nothing else: two workers in, two `wakeFleet` targets o
     request: async (url: string) => { seen.push(new URL(url).hostname); return { status: 200, ok: true, text: "", json: { ok: true, ready: true } }; },
   });
   assert.deepEqual(seen, ["192.0.2.13", "192.0.2.14"]);
+});
+
+// ---------------------------------------------------------------------------------------------------
+// 1b. `survivingNamedWorkers` (#2760): one named worker down must not refuse a run naming more than one.
+// ---------------------------------------------------------------------------------------------------
+
+test("wakeNamedWorkers reporting ok is passed straight through, no re-probe at all", async () => {
+  let probed = 0;
+  const urls = ["http://192.0.2.30:8765", "http://192.0.2.31:8765"];
+  const got = await survivingNamedWorkers(urls, { ok: true }, { probe: async () => { probed += 1; return {}; } });
+  assert.deepEqual(got, urls, "wakeNamedWorkers already said everyone is up -- nothing to narrow");
+  assert.equal(probed, 0, "a successful wake needs no re-probe of its own");
+});
+
+test("one of three named workers still down after wakeNamedWorkers's own attempt: the OTHER TWO still run", async () => {
+  const urls = ["http://192.0.2.32:8765", "http://192.0.2.33:8765", "http://192.0.2.34:8765"];
+  const up = ["http://192.0.2.32:8765/health", "http://192.0.2.34:8765/health"];
+  const got = await survivingNamedWorkers(urls,
+    { ok: false, refusal: "REFUSING: 1 of 3 named worker(s) did not come up:\n192.0.2.33:8765: no-answer" },
+    { probe: async (url: string) => { if (!up.includes(url)) throw new Error("ECONNREFUSED"); return {}; } });
+  assert.deepEqual(got, ["http://192.0.2.32:8765", "http://192.0.2.34:8765"],
+    "the down worker is excluded, not blocking; the two that answer proceed");
+});
+
+test("every named worker still down: REFUSES, naming the same reason wakeNamedWorkers gave (never zero workers)", async () => {
+  const urls = ["http://192.0.2.35:8765", "http://192.0.2.36:8765"];
+  const refusal = "REFUSING: 2 of 2 named worker(s) did not come up:\n...";
+  await assert.rejects(
+    survivingNamedWorkers(urls, { ok: false, refusal }, { probe: async () => { throw new Error("down"); } }),
+    (error: Error) => error.message === refusal,
+  );
 });
 
 // ---------------------------------------------------------------------------------------------------
