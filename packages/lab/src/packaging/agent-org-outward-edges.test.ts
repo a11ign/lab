@@ -228,6 +228,19 @@ const COPIES: ReadonlyArray<{ original: string; edit?: Edit }> = [
     original: "packages/guards/src/test-memory-cap.mjs",
     edit: { from: '"../../../scripts/npm-cli-executable.mjs"', to: '"./npm-cli-executable.mjs"' },
   },
+  // #2623 (child 5 of #69, ADR 0040 decision 4): the three below are not imported by `agent-org`'s own source --
+  // they are copied so the TRAVELLING `packages/lab/src/packaging` tests can reach them from the extracted tree
+  // without an outward edge, the same "once the file travels, the copy travels beside it" rule as the eight above.
+  // (`tree-wide-guard.mjs` is deliberately NOT among them yet: its one travelling importer, `carry-branch.test.ts`,
+  // is also one of #716's five files `packages/guards/src/tree-wide-guards.mjs`'s IMPORT-BASED discovery counts by
+  // the ORIGINAL file's resolved path -- repointing it silently drops it from that population. Left for a
+  // follow-up that also updates the discovery mechanism, not a plain copy-and-repoint.)
+  { original: "packages/guards/src/sandbox-exhaustion.mjs" },
+  { original: "scripts/fixture-symbols.mjs" },
+  {
+    original: "scripts/test-support/git-sandbox.ts",
+    edit: { from: '"../../packages/guards/src/git-env.mjs"', to: '"./git-env.mjs"' },
+  },
 ];
 
 const copyPath = (original: string) => `${SOURCE_ROOT}/lib/${posix.basename(original)}`;
