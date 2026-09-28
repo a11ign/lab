@@ -9,7 +9,7 @@ import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { updatePrimary, lockfileMoved } from "../../../agent-org/src/update-primary.mjs";
-import { changedFiles } from "../../../guards/src/changed-files.mjs";
+import { changedFiles } from "../../../agent-org/src/lib/changed-files.mjs";
 import { withGitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
 import { UPDATE_PRIMARY_VERBS } from "./update-primary-argv.mjs";
 

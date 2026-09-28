@@ -30,7 +30,7 @@ import { route, undelivered, parseOrders, readLedger, deliver as settlingDeliver
   WAKE_TTL_MS, JUDGMENT_TTL_MS, MAX_DELIVERIES, deliveryCounts, endedRuns, RESET,
   blockedSessions }
   from "../../../agent-org/src/wake.mjs";
-import { localImports } from "../../../guards/src/local-import-closure.mjs";
+import { localImports } from "../../../agent-org/src/lib/local-import-closure.mjs";
 import { isLiveSession } from "../../../agent-org/src/arm-pr.mjs";
 import { afterGate, GATE, EXIT as TICK_EXIT } from "../../../agent-org/src/work-tick.mjs";
 import { spawnInvocation, addressed, clearContext, CLEAR_TIMEOUT_MS, CLEAR_SETTLE_MS,

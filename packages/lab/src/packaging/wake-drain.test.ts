@@ -13,8 +13,8 @@ import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join, dirname, relative } from "node:path";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { localImports } from "../../../guards/src/local-import-closure.mjs";
+import { sandboxGitEnv } from "../../../agent-org/src/lib/git-env.mjs";
+import { localImports } from "../../../agent-org/src/lib/local-import-closure.mjs";
 import { deliver as settlingDeliver, route, withSpareInstances, engineerRoles, engineerEligibility, spawnableRole, EXIT }
   from "../../../agent-org/src/wake.mjs";
 import { activeDrain, drainedRoles, drainInForce, cyclesReport, spawnClaimability, rowOfOrder, DRAINED_SEEN,

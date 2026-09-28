@@ -49,7 +49,7 @@ import { join, dirname, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { declaredGhAccount } from "../../../agent-org/src/gh-identity.mjs";
 import { homeHostConfig } from "../../../agent-org/src/host-config.mjs";
-import { localImports, stripComments } from "../../../guards/src/local-import-closure.mjs";
+import { localImports, stripComments } from "../../../agent-org/src/lib/local-import-closure.mjs";
 import { SPAWNS_GH } from "../../../agent-org/src/acceptance-commands.mjs";
 import { sandboxGitEnv } from "../../../agent-org/src/lib/git-env.mjs";
 
