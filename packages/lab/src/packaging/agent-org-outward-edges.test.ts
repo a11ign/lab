@@ -263,6 +263,15 @@ const COPIES: ReadonlyArray<{ original: string; edits?: Edit[] }> = [
       { from: '"../packages/guards/src/changed-files.mjs"', to: '"./changed-files.mjs"' },
       { from: '"../packages/guards/src/walk-scope-declaration.mjs"', to: '"./walk-scope-declaration.mjs"' },
       { from: '"@a11ign/evidence/source-text"', to: '"./source-text.ts"' },
+      {
+        from: 'import { appendFileSync, existsSync, readFileSync } from "node:fs";',
+        to: 'import { appendFileSync, existsSync, readFileSync, realpathSync } from "node:fs";',
+      },
+      {
+        from: 'if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {\n  main();\n}',
+        to: 'if (import.meta.url === pathToFileURL(process.argv[1] ? realpathSync(process.argv[1]) : "").href) {\n'
+          + "  main();\n}",
+      },
     ],
   },
   {
@@ -273,6 +282,15 @@ const COPIES: ReadonlyArray<{ original: string; edits?: Edit[] }> = [
       { from: '"../packages/guards/src/git-env.mjs"', to: '"./git-env.mjs"' },
       { from: '"../packages/guards/src/changed-packages.mjs"', to: '"./changed-packages.mjs"' },
       { from: '"../packages/guards/src/isolation-gate.mjs"', to: '"./isolation-gate.mjs"' },
+      {
+        from: 'import { readFileSync, appendFileSync } from "node:fs";',
+        to: 'import { readFileSync, appendFileSync, realpathSync } from "node:fs";',
+      },
+      {
+        from: 'if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {\n  main();\n}',
+        to: 'if (import.meta.url === pathToFileURL(process.argv[1] ? realpathSync(process.argv[1]) : "").href) {\n'
+          + "  main();\n}",
+      },
     ],
   },
   {
