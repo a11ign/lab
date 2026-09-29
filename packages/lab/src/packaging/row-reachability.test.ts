@@ -34,8 +34,8 @@ import { declaredRegionFiles, declaresNoCommit, regionPathsFromBody } from "../.
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, realpathSync, chmodSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { tmpdir } from "node:os";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { ABSENT_FIXTURE_SYMBOLS } from "../../../../scripts/fixture-symbols.mjs";
+import { sandboxGitEnv } from "../../../agent-org/src/lib/git-env.mjs";
+import { ABSENT_FIXTURE_SYMBOLS } from "../../../agent-org/src/lib/fixture-symbols.mjs";
 
 const examined = { paths: 3, symbols: 2, region: 3 };
 const clear = { row: 189, subjectsMissing: [], heldRegions: [], examined };

@@ -49,6 +49,7 @@ import { hostPagesBase } from "@a11ign/worker-fleet/host-address";
 import { leasePageServer } from "../training/page-server.mjs";
 import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { captureTolerantly } from "@a11ign/worker-fleet/capture-client";
+import { wakeNamedWorkers } from "../training/wake-by-hand.mjs";
 
 /**
  * recaptures the eval fixtures. `--ff-only` appears in this file because it is passed to GIT, not
@@ -117,12 +118,31 @@ function report(/** @type {any} */ name, /** @type {any} */ result, /** @type {a
   return outPath;
 }
 
+/**
+ * Run BY HAND, `--worker` never goes through `lab:job`'s own wake -- #2655's table, row 11. In-process
+ * mode (no `--worker`) names no worker and needs none.
+ *
+ * #2760 audited this call for the "one down worker must not refuse the whole run" question #2756 raised:
+ * safe as-is, because `--worker` names exactly ONE worker here -- refusing IS the down worker, and there
+ * is no wider pool to narrow the run to.
+ * @param {string | null} worker
+ */
+async function wakeIfNamed(worker) {
+  if (!worker) return;
+  const wake = await wakeNamedWorkers([worker]);
+  if (!wake.ok) {
+    process.stderr.write(`${wake.refusal}\n`);
+    process.exit(2);
+  }
+}
+
 async function main() {
   const set = String(arg("set", "tutorials"));
   const only = arg("only");
   const steps = Number(arg("steps", DEFAULT_STEPS));
   const workerArg = arg("worker", process.env.A11Y_WORKER ?? null);
   const worker = workerArg ? assertWorkerUrl(String(workerArg), { source: "--worker" }) : null;
+  await wakeIfNamed(worker);
 
   const names = pagesIn(set).filter((/** @type {string} */ n) => !only || n.includes(String(only)));
   if (!names.length) {

@@ -7,7 +7,7 @@
  * In its own file because it imports `board-data.mjs`, which spawns `gh`, and CI's acceptance job refuses
  * anything that does; it runs in the ordinary `ts` suite.
  */
-import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
+import { declareWalkScope } from "../../../agent-org/src/lib/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -18,7 +18,9 @@ import { isConformanceGate, reported, worstVerdict } from "../../../agent-org/sr
 // request. The declaration is ENFORCED rather than trusted: `declareWalkScope` observes what this
 // file actually reads and fails it here if anything lands outside the scope -- so a scope that is
 // too narrow is loud, never a guard that silently stopped running.
-export const WALK_SCOPE = ["docs"];
+// #2616: `.agent-org` IS IN THE SCOPE because importing `repo-identity.mjs` now reads the project's declaration, `.agent-org/project.json`;
+// the read is real, so a change to it correctly reaches this file.
+export const WALK_SCOPE = ["docs", ".agent-org"];
 await declareWalkScope(import.meta.url);
 
 test("#429, ON THE TRACKED RECORD: the appendix slot holds a conformance gate that carries a verdict, or nothing", () => {

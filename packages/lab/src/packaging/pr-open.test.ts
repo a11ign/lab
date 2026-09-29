@@ -8,7 +8,7 @@
 // #1846 ADDED TWO EDGES TO THAT CLOSURE and neither reaches a spawn either. `labelAfterCreate` returns a
 // `["pr", "edit", ...]` argv, the same shape of data literal; `sendToGitHub` now also takes `owner`
 // injected, so its default (`ownerOfTree`, a `.a11y-owner` read) is never called from here. `pr-open.mjs`
-// now imports `arm-pr.mjs` for `LIVE_SESSIONS`, which at import time reads `docs/roles/sessions.json` and
+// now imports `arm-pr.mjs` for `LIVE_SESSIONS`, which at import time reads `.agent-org/roles/sessions.json` and
 // nothing else -- arm-pr's `gh` spawns all sit inside functions this file never calls.
 //
 // Checked with an instrument rather than by reading: a `gh` on PATH that exits 1 with a loud message,

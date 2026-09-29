@@ -13,8 +13,8 @@ import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join, dirname, relative } from "node:path";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { localImports } from "../../../guards/src/local-import-closure.mjs";
+import { sandboxGitEnv } from "../../../agent-org/src/lib/git-env.mjs";
+import { localImports } from "../../../agent-org/src/lib/local-import-closure.mjs";
 import { deliver as settlingDeliver, route, withSpareInstances, engineerRoles, engineerEligibility, spawnableRole, EXIT }
   from "../../../agent-org/src/wake.mjs";
 import { activeDrain, drainedRoles, drainInForce, cyclesReport, spawnClaimability, rowOfOrder, DRAINED_SEEN,
@@ -62,7 +62,7 @@ const NOBODY = agents({ ceo: "working", "product-manager": "working" });
 // fixture with ONE thing changed each -- the field, the ledger line, the edge -- so the thing that flipped the
 // outcome is named by the test and not inferred from it.
 
-const REAL_SESSIONS = new URL("../../../../packages/agent-org/docs/roles/sessions.json", import.meta.url);
+const REAL_SESSIONS = new URL("../../../../.agent-org/roles/sessions.json", import.meta.url);
 
 /**
  * THE ROSTER AS IT WAS BEFORE #2505, AS A FIXTURE. The drain mechanism outlived its only user: #2505 retired the three
@@ -76,7 +76,7 @@ const FIXTURE_DIR = mkdtempSync(join(tmpdir(), "wake-drain-roster-"));
 after(() => rmSync(FIXTURE_DIR, { recursive: true, force: true }));
 const DRAINED_SESSIONS_TEXT = (() => {
   const file = JSON.parse(readFileSync(REAL_SESSIONS, "utf8")) as { live: Record<string, unknown>[] };
-  const standing = STANDING.map((name) => ({ name, role: "engineer", drain: true, brief: "docs/roles/engineer.md" }));
+  const standing = STANDING.map((name) => ({ name, role: "engineer", drain: true, brief: ".agent-org/roles/engineer.md" }));
   const at = file.live.findIndex((e) => e.family !== undefined);
   file.live.splice(at, 0, ...standing);
   return JSON.stringify(file);
@@ -423,7 +423,7 @@ test("#2324 (3) POSITIVE CONTROLS through `claimRow`: a spare claims, an empty d
 // commit -- a truthful "up to date", made in a directory nothing else reads.
 const ROW_CLAIM_ENTRY = fileURLToPath(new URL("../../../agent-org/src/row-claim.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
-const SESSIONS_JSON = "packages/agent-org/docs/roles/sessions.json";
+const SESSIONS_JSON = ".agent-org/roles/sessions.json";
 const GH_READY_ROW = `#!/bin/sh
 case "$*" in
   *number,title,labels,state*) printf '%s' '{"number":2324,"title":"A row","state":"OPEN","labels":[{"name":"ready"}]}' ;;
@@ -455,7 +455,11 @@ function removeFixture(dir: string): void {
 
 /** Copies the entry's import closure, the rule directory and `sessions.json` into `copyRoot`, as an up-to-date repo. */
 function copyClosureAsRepo(copyRoot: string): string {
-  const files = new Set<string>([join(REPO_ROOT, SESSIONS_JSON)]);
+// #2616: the tool now reads the project's declaration from beside it, so a copied tree must carry it or the reader REFUSES (correctly).
+// #2621: the declaration now points at a PLUGIN (`.agent-org/plugins/causes.mjs`), imported DYNAMICALLY by
+// `cause-declaration.mjs` -- invisible to `localImports`'s static walk, so it is carried for the same reason.
+  const files = new Set<string>([join(REPO_ROOT, SESSIONS_JSON), join(REPO_ROOT, ".agent-org/project.json"),
+    join(REPO_ROOT, ".agent-org/plugins/causes.mjs")]);
   const visit = (file: string): void => {
     if (files.has(file)) return;
     files.add(file);

@@ -38,7 +38,7 @@ import { filingWarnings, malformedAcceptanceCommandWarning, quotedTestCountWarni
   from "../../../agent-org/src/row-file.mjs";
 import { CLAIM_LABEL } from "../../../agent-org/src/claim-labels.mjs";
 import { filedByLine } from "../../../agent-org/src/row-claim.mjs";
-import { REPO } from "../../../../scripts/repo-identity.mjs";
+import { REPO } from "../../../agent-org/src/project-identity.mjs";
 
 const CLI = fileURLToPath(new URL("../../../agent-org/src/row-file.mjs", import.meta.url));
 /**

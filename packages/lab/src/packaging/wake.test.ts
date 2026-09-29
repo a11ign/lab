@@ -1,3 +1,7 @@
+// no-token: defaultGh -- `wake.mjs`'s only `execFileSync("gh", ...)` (the escalation half's runner,
+// `escalateStuck`'s default `run`) lives at a private, unexported binding this file never calls: every
+// seam here is handed an injected `run`, including the three subprocess ticks at the foot of this file,
+// whose stuck array is always empty so `escalateStuck` never iterates into it.
 /**
  * `packages/agent-org/src/wake.mjs` -- #912's remaining half: work-gate says there is work, this says who
  * takes it.
@@ -26,7 +30,7 @@ import { route, undelivered, parseOrders, readLedger, deliver as settlingDeliver
   WAKE_TTL_MS, JUDGMENT_TTL_MS, MAX_DELIVERIES, deliveryCounts, endedRuns, RESET,
   blockedSessions }
   from "../../../agent-org/src/wake.mjs";
-import { localImports } from "../../../guards/src/local-import-closure.mjs";
+import { localImports } from "../../../agent-org/src/lib/local-import-closure.mjs";
 import { isLiveSession } from "../../../agent-org/src/arm-pr.mjs";
 import { afterGate, GATE, EXIT as TICK_EXIT } from "../../../agent-org/src/work-tick.mjs";
 import { spawnInvocation, addressed, clearContext, CLEAR_TIMEOUT_MS, CLEAR_SETTLE_MS,
@@ -38,6 +42,8 @@ import { handoffId, handoffQueuePath, ledgerPathFrom, readHandoffs, queueHandoff
   deliverHandoffs as settlingDeliverHandoffs, handoffOrder, staleHandoffs, nothingToDeliver, HANDOFF_STALE_MS, HANDOFF_QUEUE_FILE }
   from "../../../agent-org/src/wake.mjs";
 import { engineerEligibility, b2Verdict, ledgerKeyOf, ledgerLine } from "../../../agent-org/src/wake.mjs";
+import { AUTOCOMPACT_WINDOW_TOKENS, PER_ROW_DISALLOWED_TOOLS, WORKER_SETTINGS_PATH }
+  from "../../../agent-org/src/worker-profile.mjs";
 import { sparePathsFrom } from "../../../agent-org/src/wake.mjs";
 import { handoffBacklog, backlogReport, handoffBatches, fitBatch, waitedFor, staleReport,
   PROMPT_ARG_MAX, HANDOFF_BATCH_BYTES, BATCH_WRAPPER_BYTES, targetLabelBytes }
@@ -334,7 +340,8 @@ test("#1952 ACCEPTANCE: deliver STARTS a process when no engineer exists, and th
     "the pane comes from a workspace created for the role, and `--no-focus` keeps the tick off the display");
   assert.deepEqual(h.said("agent start"),
     ["--session org agent start worker-capture --kind claude --pane wB:p1 -- --model sonnet --effort high "
-      + "--dangerously-skip-permissions --disallowedTools AskUserQuestion"],
+      + `--dangerously-skip-permissions --disallowedTools ${PER_ROW_DISALLOWED_TOOLS.join(",")} --autocompact `
+      + `${AUTOCOMPACT_WINDOW_TOKENS} --settings ${WORKER_SETTINGS_PATH}`],
     "the pane id is the one `workspace create` just answered with, and the model/effort are the CAUSE's -- "
     + "the standing six carry neither, which is the argument only spawning answers (#1950, correction 3)");
   assert.equal(h.said("agent prompt").length, 1, "the started process is given the order");
@@ -434,7 +441,7 @@ test("#2279 / #2505: the roster is sessions.json's engineer addresses -- NONE si
   assert.deepEqual(REAL_ROSTER, [],
     "#2505: the three standing engineers are retired, so no address is listed and every engineer is a spare");
   const live = (JSON.parse(readFileSync(
-    new URL("../../../../packages/agent-org/docs/roles/sessions.json", import.meta.url), "utf8",
+    new URL("../../../../.agent-org/roles/sessions.json", import.meta.url), "utf8",
   )) as { live: { name: string; role: string; brief: string | null; spare?: boolean;
     family?: { prefix: string; from: number } }[] }).live;
   const families = live.filter((s) => s.family !== undefined);
@@ -442,7 +449,7 @@ test("#2279 / #2505: the roster is sessions.json's engineer addresses -- NONE si
   // #2406: was `null` ("an address, not a briefed session"). A spare is still an address with no standing session,
   // but every engineer address is briefed by the ONE shared file, and `addressed()` tells it to read it.
   assert.deepEqual([families[0].role, families[0].spare, families[0].brief, families[0].family],
-    ["engineer", true, "docs/roles/engineer.md", { prefix: "worker-", from: 4 }],
+    ["engineer", true, ".agent-org/roles/engineer.md", { prefix: "worker-", from: 4 }],
     "a spare is an address, but every engineer address is briefed by the shared engineer brief");
   assert.equal(REAL_ROSTER.length, live.filter((s) => s.role === "engineer" && s.family === undefined).length,
     "no engineer address in the file is missing from what `wake` offers work to");
@@ -748,6 +755,50 @@ test("a cause below the limit is still delivered", () => {
     agents({ reviewer: "idle" }), ROSTER, { run: () => "", record: () => {}, counts });
   assert.deepEqual(stuck, []);
   assert.deepEqual(sent, ["reviewer <- k1"]);
+});
+
+/**
+ * #2685: A CAUSE `work-gate.mjs` MARKED `outageNow` IS AT THE CAP FOR A REASON IT SHARES WITH EVERY OTHER
+ * ONE MARKED THE SAME WAY THIS RUN -- so it is named in `outaged`, not `stuck`, and never reaches
+ * `finishTick`'s call into `escalateStuck`, which would otherwise label its row `answer:ceo` on its own,
+ * as if the cause were stuck for a reason unique to it.
+ */
+test("#2685: an outage-marked capped cause is named in `outaged`, never `stuck`", () => {
+  const counts = new Map([["k1", MAX_DELIVERIES]]);
+  const { sent, stuck, outaged } = deliver(
+    [{ session: "reviewer", causeKey: "k1", prompt: "p", outageNow: true }],
+    agents({ reviewer: "idle" }), ROSTER, { run: () => "", record: () => {}, counts });
+  assert.deepEqual(sent, []);
+  assert.deepEqual(stuck, [], "not handed to escalateStuck's input at all");
+  assert.deepEqual(outaged, ["k1"]);
+});
+
+test("#2685: an outage-marked cause is STILL not retried -- MAX_DELIVERIES caps it either way", () => {
+  const calls: string[][] = [];
+  const counts = new Map([["k1", MAX_DELIVERIES]]);
+  deliver([{ session: "reviewer", causeKey: "k1", prompt: "p", outageNow: true }],
+    agents({ reviewer: "idle" }), ROSTER,
+    { run: (a: string[]) => { calls.push(a); return ""; }, record: () => {}, counts });
+  assert.deepEqual(calls, [], "outageNow changes WHERE a capped cause is reported, never whether it is retried");
+});
+
+test("#2685: several DIFFERENT causes marked outageNow in the same run are named TOGETHER, not one stuck row each", () => {
+  const counts = new Map([["k1", MAX_DELIVERIES], ["k2", MAX_DELIVERIES]]);
+  const { stuck, outaged } = deliver(
+    [{ session: "reviewer", causeKey: "k1", prompt: "p1", outageNow: true },
+      { session: "ceo", causeKey: "k2", prompt: "p2", outageNow: true }],
+    agents({ reviewer: "idle" }), ROSTER, { run: () => "", record: () => {}, counts });
+  assert.deepEqual(stuck, [], "ZERO of them reach escalateStuck's input");
+  assert.deepEqual(outaged, ["k1", "k2"], "both named, as ONE outage batch rather than two stuck rows");
+});
+
+test("#2685: an unmarked cause at the cap is unaffected -- outageNow is opt-in, not a new default", () => {
+  const counts = new Map([["k1", MAX_DELIVERIES]]);
+  const { stuck, outaged } = deliver([{ session: "reviewer", causeKey: "k1", prompt: "p" }],
+    agents({ reviewer: "idle" }), ROSTER, { run: () => "", record: () => {}, counts });
+  assert.deepEqual(outaged, []);
+  assert.match(stuck[0], /k1: delivered 6 times and the cause is still true/,
+    "an ordinary capped cause reads exactly as it always has");
 });
 
 // --- the largest saving: a standing session's context only grows (2026-09-18) ---
@@ -1997,7 +2048,7 @@ esac
 const FAILED_CYCLE = `${JSON.stringify({ role: "worker-4", row: 2131, at: 1, clean: false, why: "fixture" })}\n`;
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
-const SESSIONS_JSON = "packages/agent-org/docs/roles/sessions.json";
+const SESSIONS_JSON = ".agent-org/roles/sessions.json";
 
 /**
  * `wake.mjs` and its local-import closure, copied under `copyRoot` with a `sessions.json` that MARKS `worker-judge`
@@ -2015,6 +2066,12 @@ function copyWakeWithDrainedRoster(copyRoot: string): string {
     for (const next of localImports(file)) visit(next);
   };
   visit(entry);
+  // #2616: the tool now reads the project's declaration from beside it, so a copied tree must carry it or the reader REFUSES (correctly).
+  files.add(join(REPO_ROOT, ".agent-org/project.json"));
+  // #2621: the declaration now points at a PLUGIN (`.agent-org/plugins/causes.mjs`), imported DYNAMICALLY
+  // by `cause-declaration.mjs` -- invisible to `localImports`'s static walk, so it is added for the
+  // identical reason `project.json` is a line above.
+  files.add(join(REPO_ROOT, ".agent-org/plugins/causes.mjs"));
   for (const file of files) {
     const target = join(copyRoot, relative(REPO_ROOT, file));
     mkdirSync(dirname(target), { recursive: true });
@@ -2022,7 +2079,7 @@ function copyWakeWithDrainedRoster(copyRoot: string): string {
   }
   const sessions = JSON.parse(readFileSync(join(REPO_ROOT, SESSIONS_JSON), "utf8")) as { live: Record<string, unknown>[] };
   const standing = ["worker-capture", "worker-judge", "worker-tooling"]
-    .map((name) => ({ name, role: "engineer", drain: true, brief: "docs/roles/engineer.md" }));
+    .map((name) => ({ name, role: "engineer", drain: true, brief: ".agent-org/roles/engineer.md" }));
   sessions.live.splice(sessions.live.findIndex((e) => e.family !== undefined), 0, ...standing);
   mkdirSync(join(copyRoot, dirname(SESSIONS_JSON)), { recursive: true });
   writeFileSync(join(copyRoot, SESSIONS_JSON), JSON.stringify(sessions));

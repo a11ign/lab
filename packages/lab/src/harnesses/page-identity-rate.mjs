@@ -39,6 +39,7 @@ import { hostPagesBase } from "@a11ign/worker-fleet/host-address";
 import { CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11ign/worker-fleet/worker-http";
 import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { captureTolerantly } from "@a11ign/worker-fleet/capture-client";
+import { wakeNamedWorkers } from "../training/wake-by-hand.mjs";
 
 /**
  * asks whether a capture ever reads the WRONG page. `--rounds=` mistyped silently uses the default,
@@ -227,6 +228,15 @@ async function main() {
   } catch (error) {
     process.stderr.write(`${/** @type {any} */ (error).message}\n`
       + "usage: npm run identity:rate -- --worker=http://<guest-ip>:8765 [--rounds=20]\n");
+    process.exit(2);
+  }
+  // Run BY HAND, `--worker` never goes through `lab:job`'s own wake -- #2655's table, row 11.
+  // #2760 audited this call for the "one down worker must not refuse the whole run" question #2756 raised:
+  // safe as-is, because `--worker` names exactly ONE worker here -- refusing IS the down worker, and there
+  // is no wider pool to narrow the run to.
+  const wake = await wakeNamedWorkers([WORKER]);
+  if (!wake.ok) {
+    process.stderr.write(`${wake.refusal}\n`);
     process.exit(2);
   }
   selfTest();

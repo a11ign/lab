@@ -29,7 +29,7 @@ import { spawnSync } from "node:child_process";
 import { join, relative, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { shippedUnits } from "../../../agent-org/src/host-units.mjs";
-import { localImports } from "../../../guards/src/local-import-closure.mjs";
+import { localImports } from "../../../agent-org/src/lib/local-import-closure.mjs";
 import { deriveClosureRequirements } from "../../../agent-org/src/acceptance-commands.mjs";
 import { MAX_ROW_ORDERS_PER_TICK, readCommitChain, withCommitChains, decide, checksSettledGreen, readPrs, readReadyRows, EXIT, CAUSES,
   comparablePrFiles, START_CAUSES, draining, DRAIN_MARKER, stalledOrder, performActions,
@@ -39,24 +39,28 @@ import { MAX_ROW_ORDERS_PER_TICK, readCommitChain, withCommitChains, decide, che
   shouldBeMerging as shouldBeMergingPrs, conflictedPrs, conflictStateOf, mergeConflictOrders,
   unfiledEpics, epicOrders, finishedEpics, finishedEpicOrders, fleetBatchRows, fleetBatchOrders,
   partitionFleetBatch, FLEET_GATED_SELECTOR, blockersFromRows, blockerClearedOrders, unclaimedBlockerClearedOrders, unclaimedClearings,
+  anyBlockerClearingCandidate,
   promotionAskWindow, readRecentlyClosed, PROMOTION_ASK_OFFSETS_MS,
-  PROMOTION_ASK_PERIOD_MS, PROMOTION_ASK_WINDOW_MS,
+  PROMOTION_ASK_PERIOD_MS, PROMOTION_ASK_WINDOW_MS, HOUR_MS,
   claimedRowAmendedOrders, constraintsAfterClaim, amendmentsOn, readClaimedRowComments,
   CONSTRAINT_COMMENT_MARKER, CONSTRAINT_BODY_PREFIX,
   readEpics, answersOwed, answerOrders,
   readOpenRows, withAnswerLabel, rowsOwingAnswers, readClosedAnswerRows, withoutEndedAnswerSessions, endedSessionLabels,
-  blockedWithoutReferent, blockedReferentOrders, CHAIRMAN_LABEL,
+  blockedWithoutReferent, blockedReferentOrders, CHAIRMAN_LABEL, PARKED_LABEL,
   ANSWER_PREFIX, redOnlyBySupersededRun, cannotAskReport,
   readRowBranches, rowBranchOrders, GIT_READS,
-  reviewStateOf, reviewBlocked, reviewBlockedOrders, REVIEW_STATE, HOLD_RED_JOBS,
-  readRowsOffBoard, rowsOffBoard, rowOffBoardOrders, rowsOffBoardOrSay, ROW_OFF_BOARD_GRACE_MS }
+  reviewStateOf, reviewBlocked, reviewBlockedOrders, REVIEW_STATE, HOLD_RED_JOBS, reviewableHead,
+  readRowsOffBoard, rowsOffBoard, rowOffBoardOrders, rowsOffBoardOrSay, ROW_OFF_BOARD_GRACE_MS,
+  refusedReadCount, SHARED_OUTAGE_READS, sharedReadOutage, markOutageReads,
+  pipelineCodeownerReviewMissing, bareAnswerLabelOrders, readRowTimeline }
   from "../../../agent-org/src/work-gate.mjs";
+import { SESSION_PREFIX } from "../../../agent-org/src/project-vocabulary.mjs";
 // #2182: the SHIPPED reader that decides whether a delivered cause is still live, imported so this file
 // can assert what the membership BUYS rather than only that the name is in the list. `wake.mjs` runs
 // nothing on import (its `main()` is behind an `import.meta.url` guard) and these three are pure, so this
 // costs the `no-token` promise at the top of this file nothing.
 import { readLedger, undelivered, addressed, WAKE_TTL_MS, JUDGMENT_TTL_MS, deliver, escalateStuck,
-  MAX_DELIVERIES } from "../../../agent-org/src/wake.mjs";
+  MAX_DELIVERIES, deliveryCounts } from "../../../agent-org/src/wake.mjs";
 // #2237: the decider that REFUSES a launch, so the order's named launch directory is checked against it
 // rather than read by a reviewer. Pure over an injected filesystem.
 import { primaryLaunchRefusal, launchCheckoutOf }
@@ -311,6 +315,79 @@ test("#912: the exit contract keeps four states, and 0 is QUIET on purpose", () 
   assert.equal(EXIT.QUIET, 0, "flipping this makes a rate-limited gate look like a quiet queue");
   assert.notEqual(EXIT.CANNOT_ASK, EXIT.QUIET, "a refused read is never a quiet one");
   assert.notEqual(EXIT.PARTIAL, EXIT.QUIET, "a half-examined queue is never a quiet one");
+});
+
+// ---------------------------------------------------------------------------------------------------
+// #2685: AN OUTAGE THAT FAILS gh/GraphQL CALLS INDEPENDENTLY PER CAUSE MUST NOT DOUBLE-COUNT.
+//
+// `wake.mjs`'s `outageOf` already asks whether a causeKey's own addressed SESSION is unavailable
+// (#2256); #2031's pool-exhaustion guard asks about the POOL. Neither asks whether GITHUB ITSELF refused
+// THIS TICK's reads -- so, before this row, two causes stuck for the SAME shared connectivity reason each
+// reach `escalateStuck` on their own and label two DIFFERENT rows `answer:ceo` for what is really one
+// outage. `refusedReadCount`/`sharedReadOutage`/`markOutageReads` are `work-gate.mjs`'s half of the fix;
+// `deliver`'s `outaged` (wake.mjs) is the other.
+
+test("#2685: refusedReadCount counts nulls only -- an empty-but-successful read is not a refusal", () => {
+  assert.equal(refusedReadCount([[], [], []]), 0, "three quiet lanes, none of them refused");
+  assert.equal(refusedReadCount([null, [], null]), 2);
+  assert.equal(refusedReadCount([]), 0);
+});
+
+test("#2685: sharedReadOutage trips at SHARED_OUTAGE_READS, not before", () => {
+  assert.equal(SHARED_OUTAGE_READS, 2, "one lane's own trouble is not evidence of GitHub's -- a second, independent one is");
+  assert.equal(sharedReadOutage(SHARED_OUTAGE_READS - 1), false, "one refused read is that read's own trouble");
+  assert.equal(sharedReadOutage(SHARED_OUTAGE_READS), true, "a second refused read the SAME tick is the shared shape");
+  assert.equal(sharedReadOutage(SHARED_OUTAGE_READS + 3), true);
+});
+
+test("#2685: markOutageReads leaves an ordinary tick's orders untouched", () => {
+  const orders = [{ causeKey: "k1", session: "ceo", prompt: "p" }];
+  assert.deepEqual(markOutageReads(orders, false), orders);
+  assert.equal(markOutageReads(orders, false), orders, "the SAME array, not a copy -- nothing downstream sees a new shape");
+});
+
+test("#2685: markOutageReads tags every order alike, without disturbing what was already there", () => {
+  const orders = [{ causeKey: "k1", session: "ceo", prompt: "p1" }, { causeKey: "k2", session: "ceo", prompt: "p2" }];
+  assert.deepEqual(markOutageReads(orders, true),
+    [{ ...orders[0], outageNow: true }, { ...orders[1], outageNow: true }]);
+});
+
+/**
+ * THE FIXTURE ITSELF: two DIFFERENT causes, on two DIFFERENT rows, both at the delivery cap in the SAME
+ * run. `escalateStuck` and `stuckRowOf`'s own tests already prove ONE stuck cause labels ONE row; what
+ * neither proved is what happens to TWO, when the reason they are both stuck is one shared connectivity
+ * failure rather than two genuinely unrelated rows.
+ */
+const CAPPED_CAUSES = [
+  { session: "ceo", causeKey: "ceo/lane-backlog-unpromoted/row-101", prompt: "row #101 is not promoted" },
+  { session: "ceo", causeKey: "ceo/org-stalled/row-102", prompt: "row #102 is stalled" },
+];
+const bothAtCap = () => new Map(CAPPED_CAUSES.map((o) => [o.causeKey, MAX_DELIVERIES]));
+
+test("#2685 BEFORE: two causes capped for a shared reason still escalate as two, absent an outage reading", () => {
+  const { stuck, outaged } = deliver(CAPPED_CAUSES, [], [], { counts: bothAtCap() });
+  assert.equal(stuck.length, 2, "TODAY's shape: every capped cause is its own stuck entry");
+  assert.deepEqual(outaged, [], "nothing here recognises them as sharing one cause");
+
+  const calls: string[][] = [];
+  const labelled = escalateStuck(stuck, (a: string[]) => { calls.push(a); return ""; }, () => {});
+  assert.deepEqual(labelled, [101, 102], "TWO rows labelled answer:ceo for what may be one shared outage");
+});
+
+test("#2685 AFTER: work-gate's shared-outage reading collapses the SAME two causes to ONE signal", () => {
+  // THIS TICK'S OWN READS: three of four independent lanes refused together -- the shape `sharedReadOutage`
+  // exists to recognise, built from the SAME `refusedReadCount` `work-gate.mjs`'s `main` feeds it.
+  const outageNow = sharedReadOutage(refusedReadCount([null, [], null, null]));
+  assert.equal(outageNow, true, "three of four reads refused the same tick is GitHub's own outage, not one lane's");
+
+  const { stuck, outaged } = deliver(markOutageReads(CAPPED_CAUSES, outageNow), [], [], { counts: bothAtCap() });
+  assert.deepEqual(stuck, [], "NEITHER cause reaches escalateStuck's input -- the fix this row is about");
+  assert.deepEqual(outaged, CAPPED_CAUSES.map((o) => o.causeKey), "named together, as ONE outage");
+
+  const calls: string[][] = [];
+  const labelled = escalateStuck(stuck, (a: string[]) => { calls.push(a); return ""; }, () => {});
+  assert.deepEqual(labelled, [], "ZERO rows labelled -- collapsed to one outage signal, not two stuck rows");
+  assert.deepEqual(calls, [], "no `gh issue edit` was even attempted for either row");
 });
 
 // --- #1650: a red pull request is work, and nobody was asking about it (2026-09-17) ---
@@ -810,7 +887,7 @@ test("#2493 blockersFromRows answers from the open rows already read, and `null`
 
 /** #2493 done-when 5: the ready audit's line lives in the role brief, pinned so deleting it is red. */
 test("#2493: product-manager's brief says `SOLE HOLDER IS A HELD PR`, and what to read next, in ONE bullet", () => {
-  const brief = readFileSync(new URL("../../../agent-org/docs/roles/product-manager.md", import.meta.url), "utf8");
+  const brief = readFileSync(new URL("../../../../.agent-org/roles/product-manager.md", import.meta.url), "utf8");
   // THE BULLET, SLICED: a whole-file `includes` is satisfied by any second copy of the phrase elsewhere.
   const start = brief.indexOf("- **A ready audit that names a B4 holder");
   assert.ok(start >= 0, "the bullet is gone");
@@ -978,10 +1055,20 @@ test("every cause is classified as START or FINISH -- a new one cannot default i
   // holds, which a drain exists to land, and a release only returns the row to a pool that a drain already withholds.
   // #2075: `row-off-board` is FINISH, and a JUDGMENT cause. Boarding a row takes on no work -- the row is already filed, and
   // what is wrong is that the chairman's view cannot see it -- and rows are still filed during a drain.
-  assert.deepEqual(finish, ["answer-owed", "awaiting-evidence-stale", "blocker-cleared", "chairman-blocked", "claim-stalled",
-    "claimed-row-amended", "disk-headroom-low", "draft-awaiting-verdict", "draft-convinced-not-ready", "host-units-stale", "pr-checks-failing",
-    "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "reviewer-auth-failed",
-    "row-branch-unshipped", "row-off-board", "trunk-red", "verdict-comment-unreviewed", "verdict-not-convinced"]);
+  // #1959: `pr-codeowner-review-missing` is FINISH, `pr-review-blocked`'s own argument one surface over: a
+  // pull request CODEOWNERS assigns to `ceo` with no approval from `ceo` is finished work that cannot land
+  // once #1756's flip turns the gap into a hard merge block, and a drain is the window where leaving it
+  // unreviewed would cost most. It starts no work: the pull request already exists.
+  // #2691: `row-call-count-signal` is FINISH, and a JUDGMENT cause. Its subject is a row a session already
+  // holds -- the plainest case of work in flight there is -- and reading the signal starts no new work:
+  // `product-manager` deciding to split, or not, is a judgment over a row that already exists.
+  // #2711: `answer-label-unexplained` is FINISH, and an ACTION cause (in `JUDGMENT_CAUSES` neither):
+  // `claim-stalled`'s own argument -- its subject is a row a session already holds, which a drain exists to
+  // land, and the two remedies (post the question, remove the label) start no new work.
+  assert.deepEqual(finish, ["answer-label-unexplained", "answer-owed", "awaiting-evidence-stale", "blocker-cleared", "chairman-blocked",
+    "claim-stalled", "claimed-row-amended", "disk-headroom-low", "draft-awaiting-verdict", "draft-convinced-not-ready", "host-units-stale",
+    "pr-checks-failing", "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "reviewer-auth-failed",
+    "row-branch-unshipped", "row-call-count-signal", "row-off-board", "trunk-red", "verdict-comment-unreviewed", "verdict-not-convinced"]);
   for (const cause of START_CAUSES) {
     assert.ok(CAUSES.includes(cause), `${cause} is withheld by a drain but no longer exists`);
   }
@@ -1280,6 +1367,44 @@ test("HOLD_RED_JOBS names the jobs ci.yml defines, so the exemption cannot go st
   const ci = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../../.github/workflows/ci.yml"), "utf8");
   assert.deepEqual([...HOLD_RED_JOBS], ["deliberateRefusals", "gate"]);
   for (const job of HOLD_RED_JOBS) assert.match(ci, new RegExp(`\\n {2}${job}:\\n`), `${job} is a job in ci.yml`);
+});
+
+/**
+ * #2709: THE HOLD'S OWN RED MUST NOT BLOCK THE REVIEW QUESTION EITHER. `redOnlyFromHoldOf` (above) already
+ * excuses a hold's own manufactured red from `pr-checks-failing`, keyed to ONE session -- the addressee.
+ * `reviewableHead` asks a different question ("can anyone be asked for a verdict yet") and has no
+ * addressee, so it needs the unkeyed form: ANY `hold:` label, not just a session-matching one. The fixture
+ * is PR #2649's live shape: held by `orchestrator`, which is also its own `session:` label (so
+ * `failingChecksOrder` reads the hold as its own answer and stays out of the way, the same as #2400's
+ * fixture above), `deliberateRefusals` and `gate` red, everything else green.
+ */
+const holdOwnPr = (checks: [string, string][] = HELD_RED) => ({ number: 2649, isDraft: false,
+  headRefOid: "2649cafe00000000", author: { login: "x" },
+  labels: [{ name: "session:orchestrator" }, { name: "hold:orchestrator" }], comments: [],
+  statusCheckRollup: rollupOf(checks) });
+
+test("#2709: a hold's own manufactured red does not block the review question", () => {
+  assert.equal(reviewableHead(holdOwnPr()), "2649cafe00000000",
+    "settled green apart from the hold's own two jobs -- the review question can be asked");
+
+  const [order, ...rest] = decide({ prs: [holdOwnPr()], readyRows: [] }) as { cause: string, session: string }[];
+  assert.equal(rest.length, 0);
+  assert.equal(order?.cause, "draft-awaiting-verdict",
+    "end to end: draftOrder/perPullRequestOrders asks for a verdict rather than returning null at "
+    + "`if (!head) return null`");
+  assert.equal(order?.session, "reviewer-2649");
+
+  assert.deepEqual(shouldBeMergingPrs([holdOwnPr()], null), [],
+    "a hold must keep stopping the merge -- mergeCandidates/greenUnheldPrs are unaffected by this fix");
+});
+
+test("#2709: a hold does not excuse a REAL red check outside HOLD_RED_JOBS from the review question", () => {
+  const realRed: [string, string][] = [...HELD_RED, ["changeset", "FAILURE"]];
+  assert.equal(reviewableHead(holdOwnPr(realRed)), null,
+    "a genuine failure beside the hold's own two jobs still blocks the review question");
+  const orders = decide({ prs: [holdOwnPr(realRed)], readyRows: [] }) as { cause: string }[];
+  assert.ok(!orders.some((o) => o.cause === "draft-awaiting-verdict"),
+    "no reviewer is asked while a real check is red");
 });
 
 /**
@@ -1644,6 +1769,37 @@ test("a backlog row carrying needs:chairman is not promotable (#2604): nobody bu
   assert.deepEqual(read([waiting, startable]), [9002], "only the labelled row of a mixed shelf is dropped");
 });
 
+test("a backlog row carrying parked is not promotable (#2653): `ceo` schedules it when its prerequisite phase is done", () => {
+  // The third reader of the gap #2583 and #2604 closed for `needs:chairman`. The row is dropped in the reader, so
+  // the two consumers of its list (`laneBacklogOrders`, `decide`'s pool count) inherit the skip; the row-by-row
+  // pins for those consumers are below.
+  const read = (rows: unknown[]) => {
+    const got = readPromotableRows(() => JSON.stringify(rows));
+    assert.ok(got !== null, "the fixture read must not be refused");
+    return got.map((r: { number: number }) => r.number);
+  };
+  const base = [{ name: "backlog" }, { name: "lane:any" }];
+  const parked = { number: 9001, labels: [...base, { name: PARKED_LABEL }], blockedBy: { nodes: [] } };
+  const startable = { number: 9002, labels: base, blockedBy: { nodes: [] } };
+  assert.deepEqual(read([parked]), [], "a parked row is not stock");
+  // POSITIVE CONTROL: the same row without the label is still counted, so the emptiness above is not a look at nothing.
+  assert.deepEqual(read([startable]), [9002], "the row without the label is counted exactly as before");
+  assert.deepEqual(read([parked, startable]), [9002], "only the labelled row of a mixed shelf is dropped");
+
+  // END TO END, the two consumers of that list: a lane owner's `lane-backlog-unpromoted` and the pool's
+  // `ready-queue-empty`, each fed through the real reader.
+  const causes = (rows: unknown[]) => decide({ prs: [], readyRows: [],
+    promotableRows: readPromotableRows(() => JSON.stringify(rows)) ?? [] })
+    .map((o: { cause: string }) => o.cause);
+  const parkedCeo = { number: 9003, labels: [{ name: "backlog" }, { name: "lane:ceo" }, { name: PARKED_LABEL }] };
+  const unparkedCeo = { ...parkedCeo, labels: [{ name: "backlog" }, { name: "lane:ceo" }] };
+  assert.deepEqual(causes([parked, parkedCeo]), [], "a shelf of only parked rows asks nobody to promote anything");
+  // POSITIVE CONTROLS, the same two rows without the label: each consumer DOES fire, so the empty list above is the
+  // label's doing and not a fixture that never yields an order.
+  assert.ok(causes([unparkedCeo]).includes("lane-backlog-unpromoted"), "the lane owner is asked about an unparked row");
+  assert.ok(causes([startable]).includes("ready-queue-empty"), "product-manager is asked about an unparked pool row");
+});
+
 /**
  * #1899, measured live at the 2026-09-22 ~06:41Z `ready-queue-empty` tick: #1889 (`backlog`,
  * `answer:ceo`) and #1878 (`backlog`, `lane:any`, `answer:orchestrator`) both already carry the correct
@@ -1728,13 +1884,15 @@ test("a SUPERSEDED red run does not wake anyone -- the newest run per name is wh
  * sentence. This test is why the next person inherits a checked number.
  */
 test("the gate's read count is counted, not remembered", () => {
+  // TEN since #2641 added the merged-or-closed pull request answer read (`readClosedAnswerRows`'s third call; one
+  // `label list` still serves both searches).
   // NINE since #2075 added the per-issue Project 1 membership read (`readRowsOffBoard`: one GraphQL call per 100 open rows).
   // EIGHT since #2202 added the closed-row answer read (two calls, both exact -- see `readClosedAnswerRows`).
   // SIX since #2356 added the trunk read (`readTrunkRed`: one REST call, core pool). It was FIVE since
   // `answer-owed` landed. This pin caught that read within a minute of it being added, which
   // is exactly why it exists: the number it replaced ("two `gh` calls") had been wrong for months
   // because three readers arrived and nobody re-counted.
-  assert.equal(GH_READS.unconditional.length, 9,
+  assert.equal(GH_READS.unconditional.length, 10,
     "if you add or remove an unconditional read, this number and every comment quoting it move together");
   // #1938 REMOVED THE SILENCE-CONDITIONAL READ ENTIRELY: the dead man's switch now derives its
   // answer from the rows the unconditional read already fetched. The key is GONE rather than empty,
@@ -2144,6 +2302,55 @@ test("answer-owed is a WAKE cause and a FINISH cause, unlike the other three", (
   // drain wants it to happen rather than withholding it.
   assert.ok(CAUSES.includes("answer-owed"));
   assert.ok(!START_CAUSES.includes("answer-owed"), "a drain must not withhold an answer someone waits on");
+});
+
+/**
+ * #2711: THE NATURAL NEIGHBOUR OF `answerOrders`. That cause wakes the NAMED session to answer; a bare
+ * label with nothing posted since gives the addressee no way to tell a real question from a mistake, so
+ * this wakes the row's own HOLDER instead, to post the question or remove the label. Live evidence:
+ * `worker-2632` added `answer:ceo` to its own PR #2649 twice with no comment either time.
+ */
+const holderRow = (n: number, holder: string, owed: string) => ({ number: n,
+  labels: [{ name: `${SESSION_PREFIX}${holder}` }, { name: `${ANSWER_PREFIX}${owed}` }] });
+const timelineOf = (...events: unknown[]) => () => events.map((e) => JSON.stringify(e)).join("\n");
+
+test("readRowTimeline parses NDJSON and refuses rather than reporting an empty timeline", () => {
+  const ok = timelineOf({ event: "labeled", label: { name: "answer:ceo" }, created_at: "2026-09-26T12:42:47Z" });
+  assert.deepEqual(readRowTimeline(2649, ok as never),
+    [{ event: "labeled", label: { name: "answer:ceo" }, created_at: "2026-09-26T12:42:47Z" }]);
+  assert.equal(readRowTimeline(2649, () => { throw new Error("HTTP 404"); }), null,
+    "a refused read is null, never [] -- [] would read every bare label on it as unexplained");
+});
+
+test("a bare `answer:` label wakes the row's own HOLDER, never the addressee named in it", () => {
+  const bare = timelineOf({ event: "labeled", label: { name: "answer:ceo" }, created_at: "2026-09-26T12:42:47Z" });
+  const [order] = bareAnswerLabelOrders([holderRow(2649, "worker-2632", "ceo")], bare as never) as
+    { session: string, cause: string, causeKey: string }[];
+  assert.equal(order.session, "worker-2632", "the holder is woken, never `ceo`, who has nothing to answer");
+  assert.equal(order.cause, "answer-label-unexplained");
+  assert.match(order.causeKey, /^worker-2632\/answer-label-unexplained\/row-2649\/ceo\//);
+});
+
+test("a comment posted at or after the label answers it, and nothing fires", () => {
+  const explained = timelineOf(
+    { event: "labeled", label: { name: "answer:ceo" }, created_at: "2026-09-26T12:42:47Z" },
+    { event: "commented", created_at: "2026-09-26T12:42:47Z" });
+  assert.deepEqual(bareAnswerLabelOrders([holderRow(2649, "worker-2632", "ceo")], explained as never), []);
+});
+
+test("a row nobody currently holds has nobody this cause can wake", () => {
+  const bare = timelineOf({ event: "labeled", label: { name: "answer:ceo" }, created_at: "2026-09-26T12:42:47Z" });
+  assert.deepEqual(
+    bareAnswerLabelOrders([{ number: 2649, labels: [{ name: "answer:ceo" }] }], bare as never), []);
+});
+
+test("answer-label-unexplained is FINISH and an ACTION cause, `claim-stalled`'s own classification", () => {
+  assert.ok(CAUSES.includes("answer-label-unexplained"));
+  assert.ok(!START_CAUSES.includes("answer-label-unexplained"),
+    "its subject is a row the holder already holds, which a drain exists to land");
+  assert.ok(!JUDGMENT_CAUSES.includes("answer-label-unexplained"),
+    "the two remedies -- post the question, remove the label -- are one command each, not a standing "
+    + "judgment to re-ask");
 });
 
 test("readOpenRows refuses rather than reporting an empty tracker", () => {
@@ -2846,13 +3053,13 @@ const openPr = (number: number, body: string) => ({ number, body, isDraft: true,
 
 test("#2161: the SAME row is announced with no pull request and screened once one names it -- both ways", () => {
   const row = heldRow(2031, "worker-capture", { blockedBy: { nodes: [{ number: 2014, state: "CLOSED" }] } });
-  const [unresumed] = blockerClearedOrders([row], TODAY, NOW, [openPr(2999, "Closes #1111")]);
+  const [unresumed] = blockerClearedOrders([row], TODAY, NOW, { openPrs: [openPr(2999, "Closes #1111")] });
   assert.equal(unresumed?.session, "worker-capture",
     "POSITIVE CONTROL: an open PR for ANOTHER row is not this holder's answer, so the order still goes");
   assert.equal(unresumed?.causeKey, "worker-capture/blocker-cleared/row-2031/2014");
-  assert.deepEqual(blockerClearedOrders([row], TODAY, NOW, []).map((o) => o.causeKey),
+  assert.deepEqual(blockerClearedOrders([row], TODAY, NOW, { openPrs: [] }).map((o) => o.causeKey),
     ["worker-capture/blocker-cleared/row-2031/2014"], "no open PR at all: the holder has not resumed");
-  assert.deepEqual(blockerClearedOrders([row], TODAY, NOW, [openPr(2156, "Closes #2031")]), [],
+  assert.deepEqual(blockerClearedOrders([row], TODAY, NOW, { openPrs: [openPr(2156, "Closes #2031")] }), [],
     "an open PR whose `Closes:` names the row proves the clearing was acted on -- and this is the SAME "
     + "row, session and blocker as the two assertions above");
 });
@@ -2870,26 +3077,29 @@ const heldPrOf = (number: number, body: string, labels: string[]) =>
 
 test("#2493: the holder of a row whose LAST blocker closed is woken although a HELD pull request names the row", () => {
   const waiting = heldRow(2359, "worker-9", { blockedBy: { nodes: [{ number: 2399, state: "OPEN" }] } });
-  assert.deepEqual(blockerClearedOrders([waiting], TODAY, NOW, [heldPrOf(2376, "Closes #2359", ["hold:worker-9"])]), [],
+  assert.deepEqual(blockerClearedOrders([waiting], TODAY, NOW,
+    { openPrs: [heldPrOf(2376, "Closes #2359", ["hold:worker-9"])] }), [],
     "while the edge is OPEN nobody is woken -- the positive control's other side");
   const cleared = heldRow(2359, "worker-9", { blockedBy: { nodes: [{ number: 2399, state: "CLOSED" }] } });
-  const [order] = blockerClearedOrders([cleared], TODAY, NOW, [heldPrOf(2376, "Closes #2359", ["hold:worker-9"])]);
+  const [order] = blockerClearedOrders([cleared], TODAY, NOW,
+    { openPrs: [heldPrOf(2376, "Closes #2359", ["hold:worker-9"])] });
   assert.equal(order?.session, "worker-9", "the edge is what wakes the owner: no other message is needed");
   assert.equal(order?.causeKey, "worker-9/blocker-cleared/row-2359/2399");
-  assert.deepEqual(blockerClearedOrders([cleared], TODAY, NOW, [heldPrOf(2376, "Closes #2359", ["session:worker-9"])]), [],
+  assert.deepEqual(blockerClearedOrders([cleared], TODAY, NOW,
+    { openPrs: [heldPrOf(2376, "Closes #2359", ["session:worker-9"])] }), [],
     "and an UNHELD open PR still screens, exactly as #2161 says: only the hold changes the reading");
 });
 
 test("#2161: it is the DECLARATION that screens, in every spelling the merge gate reads", () => {
   const row = heldRow(2170, "worker-judge", { ...blockedByClosed });
   for (const body of ["Closes #2170", "Closes: #2170", "Closes #2100, #2170", "Closes #2100\nCloses #2170"]) {
-    assert.deepEqual(blockerClearedOrders([row], TODAY, NOW, [openPr(2246, body)]), [], `\`${body}\``);
+    assert.deepEqual(blockerClearedOrders([row], TODAY, NOW, { openPrs: [openPr(2246, body)] }), [], `\`${body}\``);
   }
   // `Closes: none` and prose that merely mentions the number declare nothing, so they screen nothing --
   // the identical rule B4 applies (#2101), read from the same parser. A row claimed and then ABANDONED,
   // with an unrelated PR mentioning its number, is exactly the holder this cause must still reach.
   for (const body of ["Closes: none -- docs only", "see #2170 for context", "", null]) {
-    assert.equal(blockerClearedOrders([row], TODAY, NOW, [openPr(2246, body as string)]).length, 1,
+    assert.equal(blockerClearedOrders([row], TODAY, NOW, { openPrs: [openPr(2246, body as string)] }).length, 1,
       `${JSON.stringify(body)} names no row`);
   }
 });
@@ -2899,15 +3109,15 @@ test("#2161: a truncated file list does not withdraw the screen -- it reads `prs
   // an overlap comparison. The largest pull requests are the likeliest to be a row's whole build.
   const big = { number: 2246, body: "Closes #2170", files: [{ path: "a" }], changedFiles: 400 };
   assert.deepEqual(blockerClearedOrders([heldRow(2170, "worker-judge", { ...blockedByClosed })],
-    TODAY, NOW, [big]), []);
+    TODAY, NOW, { openPrs: [big] }), []);
 });
 
 test("#2161: the narrowing REMOVES nothing but the resumed row -- one orders, one does not, side by side", () => {
   const rows = [heldRow(2031, "worker-capture", { ...blockedByClosed }),
     heldRow(2145, "worker-5", { ...blockedByClosed })];
-  assert.deepEqual(blockerClearedOrders(rows, TODAY, NOW, [openPr(2156, "Closes #2031")]).map((o) => o.session),
+  assert.deepEqual(blockerClearedOrders(rows, TODAY, NOW, { openPrs: [openPr(2156, "Closes #2031")] }).map((o) => o.session),
     ["worker-5"], "the holder who has NOT resumed is still told, with #2027's prompt");
-  assert.match(blockerClearedOrders(rows, TODAY, NOW, [openPr(2156, "Closes #2031")])[0]?.prompt ?? "",
+  assert.match(blockerClearedOrders(rows, TODAY, NOW, { openPrs: [openPr(2156, "Closes #2031")] })[0]?.prompt ?? "",
     /PICK IT BACK UP/);
 });
 
@@ -2921,7 +3131,7 @@ test("#2161: decide() hands the cause the pull requests it already read", () => 
 });
 
 test("#2161: the narrowing spends no `gh` call -- it reads what `draftOrder` already has", () => {
-  assert.equal(GH_READS.unconditional.length, 9, "#2161 adds no unconditional read (8 since #2202, 9 since #2075)");
+  assert.equal(GH_READS.unconditional.length, 10, "#2161 adds no unconditional read (8 since #2202, 9 since #2075, 10 since #2641)");
   const gate = readFileSync(new URL("../../../agent-org/src/work-gate.mjs", import.meta.url), "utf8");
   const body = gate.slice(gate.indexOf("function rowsWithOpenPr"), gate.indexOf("export function blockerClearedOrders"));
   assert.ok(body.length > 0 && !/\brun\(|spawnSync|defaultRun/.test(body),
@@ -2935,6 +3145,13 @@ test("#2027: blocker-cleared is a FINISH cause, because a claimed row is work in
     + "transfer window needs landed");
 });
 
+test("#2741: blocker-cleared is JUDGMENT, the same reclassification row-branch-unshipped got for the same reason", () => {
+  assert.ok(JUDGMENT_CAUSES.includes("blocker-cleared"),
+    "a clearing a holder has already answered does not become false again twenty minutes later -- an "
+    + "ACTION cause's WAKE_TTL_MS re-ask hit MAX_DELIVERIES inside its own first PROMOTION_ASK_WINDOW_MS "
+    + "and escalated #1756 twice in one day before the row's own backoff window ever went quiet");
+});
+
 test("#2027: decide() routes it, and ahead of the causes that offer new work", () => {
   const orders = decide({ prs: [], readyRows: [],
     openRows: [heldRow(1908, "worker-capture", { ...blockedByClosed })] });
@@ -2942,6 +3159,109 @@ test("#2027: decide() routes it, and ahead of the causes that offer new work", (
   assert.ok(causes.includes("blocker-cleared"),
     "the gate could see the row become runnable and, before this, had nobody to tell");
   assert.equal(orders.find((o) => o.cause === "blocker-cleared")?.session, "worker-capture");
+});
+
+// --- #2741: `blocker-cleared` backs off THE SAME WAY `unclaimed-blocker-cleared` already does ----------
+//
+// #1756 is `ceo`'s own claimed, no-PR row: `blockedBy` #1931 and #1959 closed, and the pre-fix causeKey
+// (`ceo/blocker-cleared/row-1756/1931.1959`) never changes again once they do. Because this was an ACTION
+// cause, `wake`'s twenty-minute expiry re-asked it six times inside `PROMOTION_ASK_WINDOW_MS`'s own first
+// two hours and escalated (`answer:ceo`) BEFORE any backoff schedule could ever go quiet. `ceo` answering
+// the escalation correctly -- reading the row, confirming nothing changed, removing the label -- is what
+// RESET the counter (`fleetWaitingOn` un-shelves on removal) and let the identical cycle restart from
+// zero: two full cycles on 2026-09-27 and a third overnight before `ceo` finally silenced #1756 with a
+// `Not-before:`, which is an answer this cause never needed reaching for.
+
+const T2741 = Date.parse("2026-09-27T19:00:00Z");
+/** #1756's own shape: `ceo` holds it, and both declared blockers closed at `T2741`. */
+const row1756 = () => heldRow(1756, "ceo",
+  { blockedBy: { nodes: [{ number: 1931, state: "CLOSED" }, { number: 1959, state: "CLOSED" }] } });
+const closedAt1756 = new Map([[1931, T2741], [1959, T2741]]);
+const FIRST_1756_KEY = "ceo/blocker-cleared/row-1756/1931.1959";
+
+test("#2741: a fresh clearing is asked at once under the pre-backoff key, then falls silent inside the window", () => {
+  const [first] = blockerClearedOrders([row1756()], TODAY, T2741 + 20 * 60_000, { closings: closedAt1756 });
+  assert.equal(first?.causeKey, FIRST_1756_KEY,
+    "POSITIVE CONTROL: shipping this does not re-fire every key already in the ledger");
+  assert.deepEqual(blockerClearedOrders([row1756()], TODAY, T2741 + 3 * HOUR_MS, { closings: closedAt1756 }), [],
+    "an unanswered clearing is NOT re-asked on the old twenty-minute or two-hour TTL");
+  const [second] = blockerClearedOrders([row1756()], TODAY, T2741 + 6 * HOUR_MS + 60_000, { closings: closedAt1756 });
+  assert.equal(second?.causeKey, `${FIRST_1756_KEY}@6h`,
+    "the same row IS asked again at the schedule's next horizon, under a NEW key");
+});
+
+test("#2741: with no closing times (an old caller, or a refused read), every ask is the unstaged first one", () => {
+  // The exact fallback `unclaimedBlockerClearedOrders` already documents for its own `closings`: absent
+  // or `null` behaves exactly as before this row, never toward silence.
+  for (const now of [T2741 + 20 * 60_000, T2741 + 3 * HOUR_MS, T2741 + 40 * HOUR_MS]) {
+    assert.deepEqual(blockerClearedOrders([row1756()], TODAY, now).map((o) => o.causeKey), [FIRST_1756_KEY],
+      `now=${now}`);
+  }
+});
+
+test("#2741: decide() passes the closing times through, and without them behaves as before", () => {
+  const state = { prs: [], readyRows: [], openRows: [row1756()] };
+  const asked = (closings?: Map<number, number> | null) =>
+    decide({ ...state, ...(closings === undefined ? {} : { closings }) })
+      .filter((o) => o.cause === "blocker-cleared").length;
+  assert.equal(asked(), 1, "a caller that passes nothing gets the unstaged ask");
+  assert.equal(asked(new Map([[1931, Date.now() - 30 * HOUR_MS], [1959, Date.now() - 30 * HOUR_MS]])), 0,
+    "and one that passes closing times gets the backoff: 30h after the clearing is between the 24h and 72h asks");
+  assert.equal(asked(new Map([[1931, Date.now() - 5 * 60_000], [1959, Date.now() - 5 * 60_000]])), 1,
+    "POSITIVE CONTROL: a fresh clearing is still asked");
+});
+
+test("#2741: THROUGH wake's ledger, no window's causeKey is delivered enough times on its own to escalate", () => {
+  // The shipped cadence (`work:tick`, every two minutes) over the span that held #1756's own first TWO
+  // escalate/RESET cycles -- long enough to cross the 0h, 6h and 24h rungs of the ladder.
+  const TICK = 2 * 60_000;
+  const judgment = new Set(JUDGMENT_CAUSES);
+  let ledger = "";
+  for (let now = T2741 + TICK; now <= T2741 + 30 * HOUR_MS; now += TICK) {
+    const live = readLedger("ledger", () => ledger, now, judgment);
+    const orders = undelivered(blockerClearedOrders([row1756()], TODAY, now, { closings: closedAt1756 }), live);
+    for (const o of orders) ledger += `${now}\t${o.causeKey}\n`;
+  }
+  const counts = deliveryCounts("ledger", () => ledger);
+  assert.deepEqual([...counts.keys()].sort(), [FIRST_1756_KEY, `${FIRST_1756_KEY}@24h`, `${FIRST_1756_KEY}@6h`],
+    "the ladder still asks three times over thirty hours -- it is a backoff, not a silence");
+  for (const [key, n] of counts) {
+    assert.ok(n < MAX_DELIVERIES, `${key} was delivered ${n} times on ONE unchanged key -- #1756 escalated `
+      + `at exactly ${MAX_DELIVERIES}, and a window that changes the key every time it re-asks cannot reach that cap`);
+  }
+});
+
+test("#2741: the SAME replay on the pre-#2741 key (no backoff) is what actually escalated #1756", () => {
+  // POSITIVE CONTROL on the test above: reclassifying the group alone changes the TTL from twenty minutes
+  // to two hours but not the fact that the key never changes, so the identical key keeps accumulating
+  // deliveries across the same span -- this is the shape the backoff exists to break.
+  const TICK = 2 * 60_000;
+  const judgment = new Set(JUDGMENT_CAUSES);
+  let ledger = "";
+  for (let now = T2741 + TICK; now <= T2741 + 30 * HOUR_MS; now += TICK) {
+    const live = readLedger("ledger", () => ledger, now, judgment);
+    const orders = undelivered(blockerClearedOrders([row1756()], TODAY, now), live);
+    for (const o of orders) ledger += `${now}\t${o.causeKey}\n`;
+  }
+  const counts = deliveryCounts("ledger", () => ledger);
+  assert.deepEqual([...counts.keys()], [FIRST_1756_KEY], "one key for the whole span, with no closing times");
+  assert.ok((counts.get(FIRST_1756_KEY) ?? 0) >= MAX_DELIVERIES,
+    "and delivered at least six times on it -- the run this row's #2741 backoff must not reproduce");
+});
+
+test("#2741: anyBlockerClearingCandidate is the gate `main` pays `readRecentlyClosed` on", () => {
+  assert.equal(anyBlockerClearingCandidate([row1756()], TODAY, T2741 + 60_000), true,
+    "POSITIVE CONTROL: a claimed row whose blockers just cleared is exactly what `closingsWhenRowsCleared` must pay for");
+  assert.equal(anyBlockerClearingCandidate([heldRow(1908, "worker-capture")], TODAY), false,
+    "a row that never declared a blocker is not a candidate");
+  assert.equal(anyBlockerClearingCandidate([heldRow(1908, "worker-capture",
+    { blockedBy: { nodes: [{ number: 1948, state: "CLOSED" }, { number: 1918, state: "OPEN" }] } })], TODAY), false,
+    "one still-open blocker is not a clearing -- the same positive control on the negative blockerClearedOrders pins");
+  assert.equal(anyBlockerClearingCandidate([{ number: 1908, labels: [{ name: "ready" }], ...blockedByClosed }], TODAY),
+    false, "an UNCLAIMED row is `unclaimedClearings`'s population, not this one");
+  const held = heldRow(2114, "worker-judge", { ...blockedByClosed, body: "Fleet-hold-until: 2026-09-23T22:00:00Z" });
+  assert.equal(anyBlockerClearingCandidate([held], TODAY, NOW), false,
+    "a row the FLEET holds is not a candidate until the hold passes, matching `blockerClearedOrders` itself");
 });
 
 // --- #2139, the other half of #2027: nobody was told when an UNCLAIMED row's last blocker closed ----
@@ -3013,6 +3333,20 @@ test("#2583: a row labelled `needs:chairman` is WAITING, so its cleared blockers
   assert.equal(unclaimedBlockerClearedOrders([{ ...labelled,
     labels: [{ name: "backlog" }, { name: "lane:any" }] }], TODAY).length, 1,
     "POSITIVE CONTROL: without `needs:chairman` the same row still reaches product-manager");
+});
+
+test("#2653: a row labelled `parked` is WAITING on `ceo`, so its cleared blockers order no promotion", () => {
+  // #2568: blockers #2561 and #2644 closed and `product-manager` had already parked it -- and the order came anyway.
+  const parked = { ...backlogRow(2568, blockedByClosed),
+    labels: [{ name: "backlog" }, { name: "lane:any" }, { name: PARKED_LABEL }] };
+  assert.deepEqual(unclaimedBlockerClearedOrders([parked], TODAY), [],
+    "a parked row was ordered to `product-manager` for promotion, and again at every re-ask");
+  assert.equal(unclaimedClearings([parked], TODAY).length, 0,
+    "`main` reads this population before paying for `readRecentlyClosed`, so it must not count the row either");
+  // THE CONTROL: the same row minus the label, so an empty result above is the label's doing.
+  assert.equal(unclaimedBlockerClearedOrders([{ ...parked,
+    labels: [{ name: "backlog" }, { name: "lane:any" }] }], TODAY).length, 1,
+    "POSITIVE CONTROL: without `parked` the same row still reaches product-manager");
 });
 
 test("#2139: a CLAIMED row is `blocker-cleared`'s, and a `ready` row is already offered", () => {
@@ -3484,7 +3818,7 @@ test("#2110: main pays for it only when something is actually claimed", () => {
     "exactly one call site, and it is inside the condition below -- a second is a second price");
   assert.match(gate, /const held = openRows\.some\(\(r\) => labelsOf\(r\)\.includes\(CLAIM_LABEL\)\);\s*\n\s*return held \? readClaimedRowComments\(\) : null;/,
     "the condition is answered from rows already in hand, so asking it costs no call of its own");
-  assert.equal(GH_READS.unconditional.length, 9,
+  assert.equal(GH_READS.unconditional.length, 10,
     "#2110 adds no UNCONDITIONAL read -- the comment page is conditional on a claim existing");
 });
 
@@ -3538,9 +3872,21 @@ function recordingRun(reply: (args: string[]) => string) {
   };
 }
 
-test("#2003: a refusal on a DEAD pool names the pool and the reset, for ONE call", () => {
+// --- #1984: `identity` IS NOW REQUIRED, AND EVERY EXISTING FIXTURE HERE PICKS ONE ON PURPOSE -------------
+//
+// `cannotAskReport` no longer defaults it (the same reasoning `run` has carried since #1405): a defaulted
+// read of `.agent-org/host.json` and a real `hosts.yml` would make these tests depend on whatever THIS
+// host happens to have installed. `UNASKED_IDENTITY` is what every test below that is not ABOUT identity
+// passes, so `gh-identity-declared.test.ts` -- not this file -- owns proving the real function resolves an
+// account on this host.
+const UNASKED_IDENTITY = { login: null, source: "test: identity not exercised by this fixture" };
+
+/** A stand-in for what `HERDR_WORKSPACE_ID` routing to the workers config would have declared. */
+const DECLARED_WORKERS_IDENTITY = { login: "a11ign-ai-workers", source: "test: declared via HERDR_WORKSPACE_ID" };
+
+test("#2003/#1984: a refusal on a DEAD pool names the DECLARED account beside the user ID, for ONE call", () => {
   const { calls, run } = recordingRun(refusedWith(DEAD_GRAPHQL));
-  const report = cannotAskReport({ run });
+  const report = cannotAskReport({ run, identity: DECLARED_WORKERS_IDENTITY });
 
   assert.match(report, /CANNOT ASK: neither the pull-request list nor the Ready rows could be read/,
     "the original refusal is unchanged -- this row adds facts to it, it does not replace it");
@@ -3551,23 +3897,36 @@ test("#2003: a refusal on a DEAD pool names the pool and the reset, for ONE call
   assert.match(report, /THE POOL IS EXHAUSTED/, "the verdict is stated, not left to be inferred from a 0");
 
   // DONE-WHEN 2 IS THE BINDING LIMIT, AND THIS IS WHERE IT BITES. A rate-limited response names a user ID
-  // and no login, and no second call may be made to improve on that -- so the account is reported
-  // UNREADABLE with the ID the response did carry, which is done-when 3's rule applied to the account.
+  // and no login, and no second call may be made to improve on that.
   assert.equal(calls.length, 1,
     "AT MOST ONE extra request on the refusal path -- #2003 done-when 2, and the dead pool is the case "
     + "that tests it, because it is the one where a second call would buy something");
-  assert.match(report, /account UNREADABLE \(user ID 328832207\)/,
-    "not the login, and not silence: what the refusing response actually carried, marked as not the answer");
+  // #1984: the response alone named only a user ID -- BEFORE this row the line read
+  // `account UNREADABLE (user ID 328832207)`. The DECLARED identity (bought at zero calls, off disk) now
+  // fills the login, and the user ID stays beside it rather than being dropped: when the two disagree that
+  // IS #1974/#1967's confusion made visible, so nothing here may collapse to only one of them.
+  assert.match(report, /account a11ign-ai-workers \(user ID 328832207\)/,
+    "the declared login beside the user ID the refusing response actually carried -- neither replaces the other");
   assert.ok(!/account 328832207/.test(report),
     "a user ID must never be printed as though it were the account name -- that is the journal line this "
     + "row was filed to replace");
+});
+
+test("#1984: a dead pool with NO declared identity either still degrades to UNREADABLE, never a guess", () => {
+  // THE POSITIVE CONTROL FOR THE MERGE ITSELF: without it, `diagnosis.login ?? identity.login` could look
+  // like it always prints something, when a host that cannot declare an account (a fresh checkout, a
+  // workspace with no config installed) must still read UNREADABLE rather than inventing a name.
+  const { run } = recordingRun(refusedWith(DEAD_GRAPHQL));
+  const report = cannotAskReport({ run, identity: UNASKED_IDENTITY });
+  assert.match(report, /account UNREADABLE \(user ID 328832207\)/,
+    "with no declared identity to fall back on, the prior degradation is exactly what must still print");
 });
 
 test("#2003: a LIVE pool costs ONE probe and says the pool is not the cause -- the positive control", () => {
   // THE CONTROL THAT MATTERS. Without it, a refusalPoolLine that printed EXHAUSTED unconditionally would
   // satisfy the test above perfectly, and every network blip would be reported to the org as a dead pool.
   const { calls, run } = recordingRun(() => LIVE_GRAPHQL);
-  const report = cannotAskReport({ run });
+  const report = cannotAskReport({ run, identity: UNASKED_IDENTITY });
 
   assert.match(report, /account a11ign-ai-workers/);
   assert.match(report, /1660 used, 3340 remaining of 5000/);
@@ -3579,10 +3938,22 @@ test("#2003: a LIVE pool costs ONE probe and says the pool is not the cause -- t
   assert.equal(calls.length, 1, "one probe, the same one the dead-pool case pays -- #2003's done-when 2");
 });
 
+test("#1984: a LIVE pool's own login wins over a declared identity, not the other way round", () => {
+  // THE OTHER HALF OF THE MERGE: a response that already names an account is a CONFIRMED fact, and a
+  // declared identity must never override it -- if it did, a live probe naming a DIFFERENT account than
+  // this workspace's declaration would silently hide the very drift #1974/#1967 were about.
+  const { run } = recordingRun(() => LIVE_GRAPHQL);
+  const report = cannotAskReport({ run, identity: { login: "a-declared-account-that-must-not-appear",
+    source: "test: precedence check" } });
+  assert.match(report, /account a11ign-ai-workers/, "the response's own login still wins");
+  assert.ok(!report.includes("a-declared-account-that-must-not-appear"),
+    "a declared identity is a fallback for when the response names none, never an override of one it did");
+});
+
 test("#2003: an unreadable probe reports UNREADABLE and never invents a pool", () => {
   // DONE-WHEN 3, AND THE OLDEST RULE IN THIS FILE ONE LEVEL DOWN: an instrument that cannot answer must not
   // answer zero. `0 remaining` reads as an exhausted pool, and a reader waits for a reset that is not coming.
-  const noResponse = cannotAskReport({ run: () => "" });
+  const noResponse = cannotAskReport({ run: () => "", identity: UNASKED_IDENTITY });
   assert.match(noResponse, /account UNREADABLE/);
   assert.match(noResponse, /pool UNREADABLE/);
   assert.match(noResponse, /CANNOT say whether the pool is exhausted or something else refused/);
@@ -3590,7 +3961,9 @@ test("#2003: an unreadable probe reports UNREADABLE and never invents a pool", (
     "no count may be printed for a pool that was never read");
 
   // Headers present but unparseable is the same answer, and it is a DIFFERENT failure: a response arrived.
-  const garbled = cannotAskReport({ run: () => "HTTP/2.0 200 OK\r\nX-Ratelimit-Resource: graphql\r\n\r\n{}" });
+  const garbled = cannotAskReport({
+    run: () => "HTTP/2.0 200 OK\r\nX-Ratelimit-Resource: graphql\r\n\r\n{}", identity: UNASKED_IDENTITY,
+  });
   assert.match(garbled, /pool UNREADABLE/,
     "a resource name with no counts is not a pool reading -- remaining and limit are what make it one");
 
@@ -3604,6 +3977,7 @@ test("#2003: an unreadable probe reports UNREADABLE and never invents a pool", (
   const reworded = cannotAskReport({
     run: refusedWith(DEAD_GRAPHQL.replace("for user ID 328832207",
       "for this installation; try again in 3600 seconds")),
+    identity: UNASKED_IDENTITY,
   });
   assert.match(reworded, /account UNREADABLE(?! \()/,
     "no user ID in the message means no user ID in the line, and the pool facts still stand");
@@ -3622,15 +3996,16 @@ test("#2003: the pool reading has ONE definition, and the gate pays for it only 
   assert.equal(gate.match(/poolDiagnosis\(/g)?.length, 1,
     "poolDiagnosis is called once, inside cannotAskReport -- a second call site is a second price");
   const refusalBranch = /if \(prs === null && readyRows === null\) \{([\s\S]*?)\n {2}\}/.exec(gate)?.[1] ?? "";
-  assert.match(refusalBranch, /cannotAskReport\(\{ run: defaultRun \}\)/,
-    "the report is built inside the refusal branch; anywhere else and every healthy tick pays for it");
+  assert.match(refusalBranch, /cannotAskReport\(\{ run: defaultRun, identity: declaredGhAccount\(\) \}\)/,
+    "the report is built inside the refusal branch; anywhere else and every healthy tick pays for it. "
+    + "#1984: identity is read here too, at zero extra gh calls -- a local file read, not a network one");
   // The declaration spells the same call shape, so it is excluded by name rather than by counting matches.
   assert.equal(gate.match(/(?<!function )cannotAskReport\(\{/g)?.length, 1,
     "exactly one call site, and it is the one inside the refusal branch asserted above");
 
   // AND THE READ COUNT IS UNCHANGED, which is the other half of done-when 2: this row adds no
   // unconditional read, and `GH_READS` is the pin that would catch it if it ever did.
-  assert.equal(GH_READS.unconditional.length, 9,
+  assert.equal(GH_READS.unconditional.length, 10,
     "#2003 must not add an unconditional read -- the refusal path is where the extra call lives");
 
   // A SECOND COPY OF "HOW TO READ A POOL" IS REFUSED (#2003's Region says so). The header name is the
@@ -3854,7 +4229,7 @@ test("#2031: the detection makes NO `gh` call -- the pool is gone in the outage 
     + "the exhausted-pool outage that produces the staleness it detects");
   assert.deepEqual(found, [{ branch: BRANCH_2000, head: SHA_2000, row: 2000 }],
     "`main` is not a row branch: the trailing `-<digits>` is the whole match");
-  assert.equal(GH_READS.unconditional.length, 9, "#2031 adds NO gh read -- it is a local git call");
+  assert.equal(GH_READS.unconditional.length, 10, "#2031 adds NO gh read -- it is a local git call");
   assert.ok(GIT_READS.unconditional.some((r: string) => r.includes("ls-remote")),
     "and the free read is COUNTED rather than left out because it is free -- `GH_READS`'s own header "
     + "records what happened last time a read went unwritten-down");
@@ -4077,7 +4452,9 @@ test("#2174: the history-requirement population is unchanged by this row", () =>
     }).sort();
   // PINNED AS A SET AND NOT A COUNT, for `fleetBatchOrders`'s reason: a count collides two different
   // populations of the same size, and the thing worth catching is a file JOINING this list.
-  assert.deepEqual(charged, ["host-units.test.ts", "pre-push-resolve-toward-main.test.ts",
+  // #2620 added `host-project-paths.test.ts`: checked, as this message asks -- it imports `host-units.mjs` for the rendered unit texts, the same
+  // edge `host-units.test.ts` has, and the row's own Acceptance names it, so its pull request declares `History: full` (#497).
+  assert.deepEqual(charged, ["host-project-paths.test.ts", "host-units.test.ts", "pre-push-resolve-toward-main.test.ts",
     "pre-push-stale-base.test.ts", "work-gate.test.ts"],
   "adding a `history` reader to the gate's import closure taxes every test file that reaches it -- if "
   + "this list grew, check what was imported rather than editing the list");
@@ -4111,6 +4488,12 @@ test("#2174: work-gate.mjs loads in a tree with NO node_modules, host-units edge
   assert.ok(closure.size > 10 && closure.has(join(REPO, "packages/agent-org/src/waiting-condition.mjs")),
     `the control: the closure must really be the gate's, got ${closure.size} file(s)`);
   const root = realpathSync(mkdtempSync(join(tmpdir(), "a11y-work-gate-no-modules-")));
+  // #2616: the tool now reads the project's declaration from beside it, so a copied tree must carry it or the reader REFUSES (correctly).
+  closure.add(join(REPO, ".agent-org/project.json"));
+  // #2621: the declaration now points at a PLUGIN (`.agent-org/plugins/causes.mjs`) that `cause-declaration.mjs`
+  // imports DYNAMICALLY, by a string `localImports`'s static walk cannot see -- so it is added here for the
+  // identical reason `project.json` is a line above.
+  closure.add(join(REPO, ".agent-org/plugins/causes.mjs"));
   for (const file of closure) {
     const target = join(root, relative(REPO, file));
     mkdirSync(dirname(target), { recursive: true });
@@ -4353,6 +4736,89 @@ test("#2084: an EMPTY decision is NOT an approval -- the #1968 state has its own
     assert.match(v.why, /#1968 state/);
   }
   assert.equal(new Set(Object.values(REVIEW_STATE)).size, 6, "and the six are genuinely distinct");
+});
+
+// --- #1959: a pull request CODEOWNERS assigns to `ceo`'s pipeline lane, with no review from `ceo` --------
+
+const pipelinePr = (n: number, files: string[], extra: Record<string, unknown> = {}) =>
+  ({ number: n, files: files.map((path) => ({ path })), changedFiles: files.length,
+    author: { login: "a11ign-ai-workers" }, reviews: [], ...extra });
+
+test("#1959 (a): fires for an open PR touching a pipeline path with no code-owner approval", () => {
+  const pr = pipelinePr(10, [".github/workflows/release.yml"]);
+  assert.deepEqual(pipelineCodeownerReviewMissing([pr], comparablePrFiles([pr])).map((m) => m.number), [10]);
+});
+
+test("#1959 (b): does NOT fire for a PR touching ONLY the generated consumer-gate.yml", () => {
+  const pr = pipelinePr(11, [".github/workflows/consumer-gate.yml"]);
+  assert.deepEqual(pipelineCodeownerReviewMissing([pr], comparablePrFiles([pr])), [],
+    "CODEOWNERS carves this file out of the pipeline lane by its own last-matching-pattern rule");
+});
+
+test("#1959: a PR touching BOTH the carve-out and an owned path still fires, on the owned path", () => {
+  const pr = pipelinePr(12, [".github/workflows/consumer-gate.yml", ".github/workflows/ci.yml"]);
+  assert.deepEqual(pipelineCodeownerReviewMissing([pr], comparablePrFiles([pr])).map((m) => m.number), [12]);
+});
+
+test("#1959 (c): does NOT fire once the code owner has approved", () => {
+  const pr = pipelinePr(13, [".github/workflows/release.yml"],
+    { reviews: [{ state: "APPROVED", author: { login: "a11ign-ai-leads" } }] });
+  assert.deepEqual(pipelineCodeownerReviewMissing([pr], comparablePrFiles([pr])), [],
+    "the owner has already reviewed; the gap this row names is closed for this PR");
+});
+
+test("#1959: an APPROVED review from anyone ELSE does not satisfy CODEOWNERS", () => {
+  const pr = pipelinePr(14, [".github/workflows/release.yml"],
+    { reviews: [{ state: "APPROVED", author: { login: "a11ign-bot" } }] });
+  assert.deepEqual(pipelineCodeownerReviewMissing([pr], comparablePrFiles([pr])).map((m) => m.number), [14],
+    "GitHub's own rule: only an approval BY a code owner satisfies the requirement");
+});
+
+test("#1959 (d): does NOT fire for a PR the code owner authored -- GitHub never requests it", () => {
+  const pr = pipelinePr(15, [".github/workflows/release.yml"], { author: { login: "a11ign-ai-leads" } });
+  assert.deepEqual(pipelineCodeownerReviewMissing([pr], comparablePrFiles([pr])), [],
+    "GitHub will not request a review from a pull request's own author, and #2022's bypass allowance "
+    + "covers exactly this case");
+});
+
+test("#1959: a PR touching no pipeline path at all is not this cause's subject", () => {
+  const pr = pipelinePr(16, ["packages/lab/src/packaging/work-gate.test.ts"]);
+  assert.deepEqual(pipelineCodeownerReviewMissing([pr], comparablePrFiles([pr])), []);
+});
+
+test("#1959: a truncated file list (gh's 100-file cap) is dropped, never read short", () => {
+  // `comparablePrFiles` already refuses a PR whose `files.length` does not match `changedFiles` -- the
+  // same truncation guard B4 relies on -- so this cause inherits "silent about what it cannot see" rather
+  // than a false negative built on a partial read.
+  const pr = { number: 17, files: [{ path: "packages/lab/src/packaging/work-gate.test.ts" }],
+    changedFiles: 101, author: { login: "a11ign-ai-workers" }, reviews: [] };
+  assert.deepEqual(comparablePrFiles([pr]), [], "the truncation guard drops it before this cause ever reads it");
+  assert.deepEqual(pipelineCodeownerReviewMissing([pr], comparablePrFiles([pr])), []);
+});
+
+test("#1959: decide() wakes ceo with ONE order naming every PR still missing the review", () => {
+  const a = pipelinePr(20, [".github/workflows/release.yml"]);
+  const b = pipelinePr(21, [".github/workflows/auto-arm.yml"], { labels: [{ name: "session:worker-21" }] });
+  const orders = decide({ prs: [a, b], readyRows: [], prFiles: comparablePrFiles([a, b]) })
+    .filter((o) => o.cause === "pr-codeowner-review-missing");
+  assert.equal(orders.length, 1, "one set order, not one per pull request");
+  assert.equal(orders[0].session, "ceo");
+  assert.match(orders[0].prompt, /#20/);
+  assert.match(orders[0].prompt, /#21 \(worker-21\)/, "a labelled PR names whose branch it is, for context only");
+});
+
+test("#1959: it is FINISH (never withheld by a drain) and an ACTION cause (not in JUDGMENT_CAUSES)", () => {
+  assert.ok(CAUSES.includes("pr-codeowner-review-missing"),
+    "it must be in CAUSES or worker-profile refuses it at run time");
+  assert.ok(!START_CAUSES.includes("pr-codeowner-review-missing"),
+    "FINISH: the pull request already exists, and a drain is the window where leaving it unreviewed until "
+    + "#1756's flip lands would cost most");
+  assert.ok(!JUDGMENT_CAUSES.includes("pr-codeowner-review-missing"),
+    "ACTION: the causeKey already carries the waiting set, so a review that clears one PR mints a new key");
+  const a = pipelinePr(22, [".github/workflows/release.yml"]);
+  const orders = decide({ prs: [a], readyRows: [], prFiles: comparablePrFiles([a]), drain: true })
+    .filter((o) => o.cause === "pr-codeowner-review-missing");
+  assert.equal(orders.length, 1, "a drain stops the org taking on work, not finishing a review already owed");
 });
 
 /**
@@ -4756,6 +5222,7 @@ test("#2202: readClosedAnswerRows asks for the CLOSED rows carrying the repo's o
   const run = (args: string[]) => {
     calls.push(args);
     if (args[0] === "label") return JSON.stringify([{ name: "answer:ceo" }, { name: "answer:orchestrator" }, { name: "answered" }]);
+    if (args[0] === "pr") return "[]"; // #2641: the pull-request half has its own file, `closed-pr-answer-owed.test.ts`
     return JSON.stringify([closedOwedRow(1936, "orchestrator"), { number: 8, state: "CLOSED", labels: [{ name: "backlog" }] }]);
   };
   const rows = readClosedAnswerRows(run);

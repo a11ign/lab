@@ -248,6 +248,16 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "the floor counts files read rather than sites found: a clean list is the expected answer there, "
       + "so 'nothing unexplained' and 'the walk opened no files' are otherwise the same observation.",
   },
+  "packages/lab/src/packaging/survey-helper.test.ts": {
+    guard: 'r1.stdout.includes("TARGET here")',
+    note: "guarded by construction -- #2690's CLI-level test builds its OWN throwaway git working tree "
+      + "(`fixtureRepo`), writes the exact line its two `git grep` calls are asked to find, and then asserts "
+      + "each call's stdout contains that planted line. The grep's own population (what it matched) is "
+      + "therefore non-empty BY CONSTRUCTION and checked directly, the same shape `changed-files-renames."
+      + "test.ts`'s entry above records for its own sandbox repository: a bare content assertion IS the "
+      + "vacuity floor here, because an empty `git grep` result (nothing matched) fails `.includes(...)` "
+      + "immediately rather than passing having examined nothing.",
+  },
   "packages/lab/src/packaging/declared-walk-scope.test.ts": {
     guard: null,
     note: "NOT a discovery test (#929). It spawns git to prove that `walk-scope.mjs` records each argv form "
@@ -490,6 +500,14 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "`discoversFromTree` finds -- not on the listing, because an empty listing empties it too. The same "
       + "file's set-non-empty test holds the OTHER population, `docsReadingTests` itself, to a floor and "
       + "to the #2329 breaker by name.",
+  },
+  "packages/lab/src/packaging/gh-identity-declared.test.ts": {
+    guard: "population.length >= MEASURED_POPULATION_FLOOR",
+    note: "guarded -- #1984's walk spawns `git ls-files` (via `trackedSourceFiles`) and asks which tracked "
+      + "non-test `.mjs`/`.ts` files transitively reach a `gh` spawn. A clean result here (a real, non-trivial "
+      + "population) is the EXPECTED answer -- this is the row's own positive control against a typo'd glob "
+      + "that matched nothing -- so the floor (a real number, `20`, well under the row's own measured `32`) "
+      + "is what tells a genuine population apart from an empty one that happened to pass vacuously.",
   },
 };
 

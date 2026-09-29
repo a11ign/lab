@@ -31,7 +31,7 @@
 //
 // The declaration is verified against the entry's own code, so if one of these functions ever starts
 // doing its own lookups this refuses rather than trusting the comment.
-import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
+import { declareWalkScope } from "../../../agent-org/src/lib/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -157,7 +157,9 @@ import { hostWorkflowFile, hoursSincePreviousRun, watchdogSilenceLine }
 // request. The declaration is ENFORCED rather than trusted: `declareWalkScope` observes what this
 // file actually reads and fails it here if anything lands outside the scope -- so a scope that is
 // too narrow is loud, never a guard that silently stopped running.
-export const WALK_SCOPE = ["docs",".github/workflows"];
+// #2616: `.agent-org` IS IN THE SCOPE because importing `repo-identity.mjs` now reads the project's declaration, `.agent-org/project.json`;
+// the read is real, so a change to it correctly reaches this file.
+export const WALK_SCOPE = ["docs",".github/workflows", ".agent-org"];
 await declareWalkScope(import.meta.url);
 
 test("#590 every workflow the watchdog's HEADER names is one its code actually guards", () => {

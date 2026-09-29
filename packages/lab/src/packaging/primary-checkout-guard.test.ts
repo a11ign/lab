@@ -32,8 +32,8 @@ import { writeFileSync, mkdtempSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
-import type { GitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
+import { withGitSandbox, sandboxGitEnv } from "../../../agent-org/src/lib/git-sandbox.ts";
+import type { GitSandbox } from "../../../agent-org/src/lib/git-sandbox.ts";
 import { updatePrimary } from "../../../agent-org/src/update-primary.mjs";
 import { UPDATE_PRIMARY_ARGV } from "./update-primary-argv.mjs";
 

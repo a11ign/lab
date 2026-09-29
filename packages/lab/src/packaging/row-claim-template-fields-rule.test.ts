@@ -5,7 +5,14 @@
  * the web UI -- every row here is filed with `gh issue create --body`, which bypasses it entirely.
  * Measured 2026-09-09: 39 of ~65 open rows had no Open-check.
  */
-import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
+// no-token: gh
+//
+// template-fields-rule.mjs imports `gh` from `lookups.mjs`, so the acceptance classifier charges this
+// whole file for a token via `REQUIRED_FIELDS -> gh -> lookups.mjs:26` -- measured, refused this row's own
+// acceptance command as filed. No test here calls `gh`: every test passes a literal string body straight
+// into `missingTemplateFields`/`templateFieldsReason`, both pure functions over that string and
+// `REQUIRED_FIELDS` (a plain constant), so reaching `gh` is not part of what this file tests.
+import { declareWalkScope } from "../../../agent-org/src/lib/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -17,7 +24,9 @@ import {
 // request. The declaration is ENFORCED rather than trusted: `declareWalkScope` observes what this
 // file actually reads and fails it here if anything lands outside the scope -- so a scope that is
 // too narrow is loud, never a guard that silently stopped running.
-export const WALK_SCOPE = ["packages/agent-org"];
+// #2616: `.agent-org` IS IN THE SCOPE because importing `repo-identity.mjs` now reads the project's declaration, `.agent-org/project.json`;
+// the read is real, so a change to it correctly reaches this file.
+export const WALK_SCOPE = ["packages/agent-org", ".agent-org"];
 await declareWalkScope(import.meta.url);
 
 // --- missingTemplateFields: THE VERDICT, PURE ---

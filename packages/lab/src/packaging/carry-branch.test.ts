@@ -25,9 +25,9 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../agent-org/src/lib/git-env.mjs";
 import { carryBranch, branchCheckedOutLocally } from "../../../agent-org/src/carry-branch.mjs";
-import { declareTreeWideGuard } from "../../../guards/src/tree-wide-guard.mjs";
+import { declareTreeWideGuard } from "../../../agent-org/src/lib/tree-wide-guard.mjs";
 
 // #716/#704: this file's own population is the whole tracked tree, not one file -- declared here
 // rather than inferred from its source, per ceo's ruling (2026-09-09) that the tree-wide-guard

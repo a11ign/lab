@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { summarizeTestLog } from "../../../agent-org/src/parent-recheck-summary.mjs";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+import { sandboxGitEnv } from "../../../agent-org/src/lib/git-env.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 

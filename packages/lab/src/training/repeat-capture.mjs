@@ -28,6 +28,7 @@ import { assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { captureIsSelfConsistent } from "@a11ign/evidence/verify";
 import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
 import { repeatCapturesRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
+import { wakeNamedWorkers } from "./wake-by-hand.mjs";
 import { EVIDENCE_FIELDS, fieldKey, fieldValues } from "../capture/evidence-diff.mjs";
 import { compareIdentity, documentIdentity } from "@a11ign/evidence/document-identity";
 
@@ -281,6 +282,16 @@ async function main() {
   }
 
   mkdirSync(OUT_DIR, { recursive: true });
+  // Run BY HAND, `--worker` never goes through `lab:job`'s own wake -- #2655's table, row 11. Before
+  // `waitForReady`'s own poll, which sends no packet: this is the one place that does.
+  // #2760 audited this call for the "one down worker must not refuse the whole run" question #2756 raised:
+  // safe as-is, because `--worker` names exactly ONE worker here -- refusing IS the down worker, and there
+  // is no wider pool to narrow the run to.
+  const wake = await wakeNamedWorkers([String(WORKER)]);
+  if (!wake.ok) {
+    console.error(wake.refusal);
+    process.exit(2);
+  }
   // Before the FIRST capture, not just between retries. The gate runs straight after `worker:deploy`
   // reboots the guests, and a capture issued into a still-booting worker is what made a stable page
   // report as failed.

@@ -1,6 +1,6 @@
 // no-token: gh -- reads one markdown file and nothing else; no `gh`, `herdr` or network is reached
 /**
- * #2540: THE ENGINEER BRIEF CARRIES FOUR HABITS FOR KEEPING CONTEXT SMALL, EACH NAMING ITS TOOL.
+ * #2540: THE ENGINEER BRIEF CARRIES FIVE HABITS FOR KEEPING CONTEXT SMALL, EACH NAMING ITS TOOL.
  *
  * The brief is re-read by every engineer at every spawn, and what an engineer pastes early is re-read on every
  * later call, so a habit only helps if it names the tool that makes it cheap. The spellings are asserted inside
@@ -9,6 +9,10 @@
  *
  * Its own file, and not a block in `wake-engineer-brief.test.ts`, because the token-less acceptance job
  * refuses the existing named packaging tests.
+ *
+ * #2690 added the fifth: the COUNT axis beside the four SIZE-axis habits above -- batching several small
+ * `grep`/`sed`/`cat`/`Read` checks into one `npm run survey --` call rather than paying the accumulated
+ * context's re-read once per check.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -16,7 +20,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
-const BRIEF = readFileSync(`${ROOT}packages/agent-org/docs/roles/engineer.md`, "utf8");
+const BRIEF = readFileSync(`${ROOT}.agent-org/roles/engineer.md`, "utf8");
 /** The row's ceiling on what the section may weigh. */
 const SECTION_BYTE_CEILING = 1600;
 const HEADING = /^## Keep your context small\b.*$/gm;
@@ -36,6 +40,7 @@ const HABITS = [
   ["summarise output", "| tail"],
   ["project gh JSON", "--jq"],
   ["explore in a subagent", 'model="haiku"'],
+  ["batch small checks into one command", "npm run survey --"],
 ] as const;
 
 /** Which of the habits' spellings the section lacks: the decider both the real read and the mutations call. */

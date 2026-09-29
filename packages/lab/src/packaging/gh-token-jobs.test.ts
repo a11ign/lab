@@ -23,7 +23,7 @@ import { readFileSync, existsSync, readdirSync, mkdtempSync, writeFileSync, rmSy
 import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { localImports } from "../../../guards/src/local-import-closure.mjs";
+import { localImports } from "../../../agent-org/src/lib/local-import-closure.mjs";
 import { SPAWNS_GH } from "../../../agent-org/src/acceptance-commands.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");

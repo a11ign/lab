@@ -25,6 +25,7 @@ import { hostPagesBase } from "@a11ign/worker-fleet/host-address";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { captureTolerantly } from "@a11ign/worker-fleet/capture-client";
 import { CAPTURE_CLIENT_TIMEOUT_MS } from "@a11ign/worker-fleet/worker-http";
+import { wakeNamedWorkers } from "../training/wake-by-hand.mjs";
 
 /**
  * takes its worker POSITIONALLY and no flags at all, so any flag passed to it is discarded.
@@ -92,6 +93,12 @@ async function capture(base, variant) {
 
 async function main() {
   if (!WORKER) throw new Error("usage: npm run verdict:stability -- http://<guest-ip>:8765");
+  // Run BY HAND, this positional worker never goes through `lab:job`'s own wake -- #2655's table, row 11.
+  // #2760 audited this call for the "one down worker must not refuse the whole run" question #2756 raised:
+  // safe as-is, because this positional argument names exactly ONE worker -- refusing IS the down worker,
+  // and there is no wider pool to narrow the run to.
+  const wake = await wakeNamedWorkers([String(WORKER)]);
+  if (!wake.ok) throw new Error(wake.refusal);
   const lease = await leasePageServer({ root: PAGES, port: 5050, probePath: "form-error-silent/good.html" });
   const base = hostPagesBase(WORKER);
   /** @type {Record<string, any[]>} */

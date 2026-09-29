@@ -4,13 +4,15 @@
  * `packages/agent-org/src/row-claim/waiting-language-rule.mjs` for the full account: a warning, never a
  * refusal, printed by `row-file.mjs` alongside `directoryRegionWarning` and `unrecognisedRegionWarning`.
  */
-import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
+import { declareWalkScope } from "../../../agent-org/src/lib/walk-scope.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { waitingLanguageWarning } from "../../../agent-org/src/row-claim/waiting-language-rule.mjs";
 
 // #929: THIS GUARD READS ONLY `packages/agent-org`, so a diff that cannot reach it need not run this file.
-export const WALK_SCOPE = ["packages/agent-org"];
+// #2619 (child 3d of #69): `.agent-org` joins the scope -- `waiting-condition.mjs` now imports
+// `ANSWER_PREFIX` from `project-vocabulary.mjs`, which reads `.agent-org/project.json` at import time.
+export const WALK_SCOPE = ["packages/agent-org", ".agent-org"];
 await declareWalkScope(import.meta.url);
 
 // --- each of the three named patterns alone triggers the warning ---

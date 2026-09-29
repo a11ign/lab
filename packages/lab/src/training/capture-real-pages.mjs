@@ -32,6 +32,7 @@ import { realCorpusRoot, datasetRoot, refuseIfRunsReadonly } from "../dataset-pa
 import { hostAddressForWorker } from "@a11ign/worker-fleet";
 import { assertOneBrowserAcross as refuseSplitFleet } from "./capture-fleet-guard.mjs";
 import { assertFleetRunsThisCheckout } from "@a11ign/worker-fleet/worker-code-check";
+import { wakeNamedWorkers, survivingNamedWorkers } from "./wake-by-hand.mjs";
 import { drainAcrossPool } from "./worker-pool.mjs";
 import { createHostThrottle, hostOf } from "./host-throttle.mjs";
 import { writeJsonAtomic } from "./write-atomic.mjs";
@@ -473,6 +474,26 @@ function reportRecordedRefusals(declared) {
   }
 }
 
+/**
+ * Run BY HAND, this never goes through `lab:job`'s own wake -- #2655's table, row 7. Before a single
+ * page is fetched, exactly like the `assertWorkerUrl` validation this follows.
+ *
+ * #2760: `workers` here can be the whole fleet (`resolveWorkers()`'s `configuredWorkers()` branch), so one
+ * down worker must not refuse a run the other boxes could still do -- the same question #2756/#2759
+ * answered for `capture-screenreader-dataset.mjs`. `survivingNamedWorkers` narrows to whoever answers
+ * `/health` just now and refuses only if none do; see its own header in `wake-by-hand.mjs`.
+ * @param {string[]} workers
+ * @returns {Promise<string[]>}
+ */
+async function wakeBeforeCapture(workers) {
+  try {
+    return await survivingNamedWorkers(workers, await wakeNamedWorkers(workers));
+  } catch (error) {
+    process.stderr.write(`${/** @type {any} */ (error).message}\n`);
+    process.exit(2);
+  }
+}
+
 async function main() {
   refuseIfRunsReadonly(realCorpusRoot());
   let workers;
@@ -485,6 +506,7 @@ async function main() {
     process.stderr.write(`${/** @type {any} */ (error).message}\n`);
     process.exit(2);
   }
+  workers = await wakeBeforeCapture(workers);
   const declared = ROLE ? pagesFor(/** @type {any} */ (ROLE)) : REAL_PAGES;
   const selected = capturablePages(declared);
   reportRecordedRefusals(declared);

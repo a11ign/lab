@@ -15,8 +15,8 @@ import { spawn, spawnSync, execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 import { join, dirname, relative } from "node:path";
-import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { localImports } from "../../../guards/src/local-import-closure.mjs";
+import { sandboxGitEnv } from "../../../agent-org/src/lib/git-env.mjs";
+import { localImports } from "../../../agent-org/src/lib/local-import-closure.mjs";
 import { oneRowReason } from "../../../agent-org/src/row-claim/runner-rule.mjs";
 import { claimRow } from "../../../agent-org/src/row-claim.mjs";
 import { sparePathsFrom } from "../../../agent-org/src/wake.mjs";
@@ -92,7 +92,7 @@ test("#2407 (3) POSITIVE CONTROLS through `claimRow`: a fresh spare claims, a st
 // the WORKING TREE, so a mutation made there is the one under test.
 const ROW_CLAIM_ENTRY = fileURLToPath(new URL("../../../agent-org/src/row-claim.mjs", import.meta.url));
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
-const SESSIONS_JSON = "packages/agent-org/docs/roles/sessions.json";
+const SESSIONS_JSON = ".agent-org/roles/sessions.json";
 // `HELD_ROWS` is what `gh issue list --label session:<me>` answers: the rows the instance holds NOW.
 const GH_READY_ROW = `#!/bin/sh
 case "$*" in
@@ -125,7 +125,11 @@ function removeFixture(dir: string): void {
 }
 
 function copyClosureAsRepo(copyRoot: string): string {
-  const files = new Set<string>([join(REPO_ROOT, SESSIONS_JSON)]);
+// #2616: the tool now reads the project's declaration from beside it, so a copied tree must carry it or the reader REFUSES (correctly).
+// #2621: the declaration now points at a PLUGIN (`.agent-org/plugins/causes.mjs`), imported DYNAMICALLY by
+// `cause-declaration.mjs` -- invisible to `localImports`'s static walk, so it is carried for the same reason.
+  const files = new Set<string>([join(REPO_ROOT, SESSIONS_JSON), join(REPO_ROOT, ".agent-org/project.json"),
+    join(REPO_ROOT, ".agent-org/plugins/causes.mjs")]);
   const visit = (file: string): void => {
     if (files.has(file)) return;
     files.add(file);
