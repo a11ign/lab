@@ -163,6 +163,10 @@ const GIT_IS_DATA_NOT_A_SPAWN: Record<string, string> = {
     'passes the string "git" to `onlyResolves()`, a local predicate standing in for the injected '
     + "`commandExists` seam -- the file imports node:test, node:assert/strict and the module under test, "
     + "and has no node:child_process import at all (#446, trunk red 2026-09-08T08:00:30Z)",
+  "packages/agent-org/src/wake-review-recheckout.test.ts":
+    'its `git` is an injected fake seam (`checkout: { git, exists, link, root, repoRoot }`) that records each call '
+    + "and answers from a map of tree heads -- the file imports node:test, node:assert/strict, node:fs/os/path and "
+    + "the modules under test, and has no node:child_process import, so nothing here can spawn (#2771)",
 };
 
 /** The spawning capability a file must import before it can spawn anything, whatever the callee is named. */
