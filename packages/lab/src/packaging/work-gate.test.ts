@@ -1065,9 +1065,12 @@ test("every cause is classified as START or FINISH -- a new one cannot default i
   // #2711: `answer-label-unexplained` is FINISH, and an ACTION cause (in `JUDGMENT_CAUSES` neither):
   // `claim-stalled`'s own argument -- its subject is a row a session already holds, which a drain exists to
   // land, and the two remedies (post the question, remove the label) start no new work.
+  // #2729: `lab-job-finished` is FINISH, and a JUDGMENT cause. Its subject is a row a session already holds and the
+  // result of a job that session already dispatched -- the plainest work in flight there is -- and it starts nothing:
+  // it replaces the holder polling `lab:status`. A window that withheld it would leave the holder to poll again.
   assert.deepEqual(finish, ["answer-label-unexplained", "answer-owed", "awaiting-evidence-stale", "blocker-cleared", "chairman-blocked",
     "claim-stalled", "claimed-row-amended", "disk-headroom-low", "draft-awaiting-verdict", "draft-convinced-not-ready", "host-units-stale",
-    "pr-checks-failing", "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "reviewer-auth-failed",
+    "lab-job-finished", "pr-checks-failing", "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "reviewer-auth-failed",
     "row-branch-unshipped", "row-call-count-signal", "row-off-board", "trunk-red", "verdict-comment-unreviewed", "verdict-not-convinced"]);
   for (const cause of START_CAUSES) {
     assert.ok(CAUSES.includes(cause), `${cause} is withheld by a drain but no longer exists`);
