@@ -22,7 +22,9 @@ import {
   closurePlan, labelsToStrip, applyClosurePlan, owedNote, EXIT, closeRowsExit, liveClosureEffects, stripClaimLabels,
   LIVE_SETTLE_DEPS, rateLimitHeaders, rateLimitLine, logRateLimit,
   rowNumberFromBranch, orphanedRowReport, reportOrphanedRow,
+  declaredRowsFromBody, planForMergedPr, closingComment,
 } from "../../../agent-org/src/close-rows-for-merged-pr.mjs";
+import { extractClosesDeclaration } from "../../../agent-org/src/acceptance-commands.mjs";
 import { refusalCause } from "../../../agent-org/src/settle-closed-status.mjs";
 import { moveProjectStatus } from "../../../agent-org/src/row-claim.mjs";
 import { scopedStatus } from "../../../agent-org/src/board-snapshot.mjs";
@@ -564,7 +566,7 @@ test("#1400: liveClosureEffects is the ONE place the live effects are named -- m
   const source = readFileSync(new URL("../../../agent-org/src/close-rows-for-merged-pr.mjs", import.meta.url), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const mainBody = source.slice(source.indexOf("function main() {"));
-  assert.match(mainBody, /applyClosurePlan\(plan, \{ prNumber: number, sha, repo \}, liveClosureEffects\(\)\)/,
+  assert.match(mainBody, /applyClosurePlan\(plan, \{ prNumber: number, sha, repo, basis \}, liveClosureEffects\(\)\)/,
     "main() hands applyClosurePlan the live effects explicitly -- without them production would be refused too");
 });
 
@@ -768,4 +770,120 @@ test("#2036 WIRING: the report posts exactly one comment, on the row the branch 
   assert.deepEqual(askedFor, [2000], "ONE row lookup -- the row's own budget line: no new API call beyond it");
   assert.equal(posted.length, 1, "exactly one comment");
   assert.equal(posted[0].n, 2000);
+});
+
+// ---------------------------------------------------------------------------------------------------
+// #2822: WHEN GITHUB RESOLVED NOTHING, THE BODY'S OWN `Closes` LINES ARE THE PLAN.
+// ---------------------------------------------------------------------------------------------------
+
+const row = (number: number, state = "OPEN", extra: object = {}) =>
+  ({ number, state, labels: [] as string[], reopenedAt: null, ...extra });
+const noLookup = (n: number): never => { throw new Error(`the fallback must not have looked up #${n}`); };
+
+test("#2822 DONE-WHEN 3: GitHub resolved none and the body declares rows -> those rows are the plan, basis `body`", () => {
+  const asked: number[] = [];
+  const result = planForMergedPr({ issues: [], prMergedAt: null, prBody: "Closes #2822\nCloses #2823" },
+    (n) => { asked.push(n); return row(n); });
+  assert.equal(result.basis, "body");
+  assert.deepEqual(result.declared, [2822, 2823]);
+  assert.deepEqual(result.plan.close.map((r) => r.number), [2822, 2823]);
+  assert.equal(result.plan.none, false);
+  assert.deepEqual(asked, [2822, 2823]);
+});
+
+test("#2822 DONE-WHEN 4 POSITIVE CONTROL: a row GitHub DID resolve is closed as today -- the fallback never fires, nothing looked up", () => {
+  const result = planForMergedPr({ issues: [row(2822)], prMergedAt: null, prBody: "Closes #2822\nCloses #2823" }, noLookup);
+  assert.equal(result.basis, "github");
+  assert.deepEqual(result.plan, closurePlan([row(2822)]));
+  assert.deepEqual(result.declared, [], "and the body's second row is NOT closed: a partial resolution is GitHub's answer");
+});
+
+test("#2822 DONE-WHEN 4: `Closes: none` and a body that declares nothing plan nothing -- NONE DECLARED, never a lookup", () => {
+  for (const prBody of ["Closes: none -- docs only", "no declaration at all", "", "It closes #494 once the wiring lands."]) {
+    const result = planForMergedPr({ issues: [], prMergedAt: null, prBody }, noLookup);
+    assert.equal(result.basis, "github", prBody);
+    assert.equal(result.plan.none, true, prBody);
+    assert.deepEqual(result.declared, [], prBody);
+  }
+});
+
+test("#2822: a declared row already CLOSED is `already`, one REOPENED after the merge is `skip`, one unreadable is named and not planned", () => {
+  const result = planForMergedPr(
+    { issues: [], prMergedAt: "2026-09-30T12:00:00Z", prBody: "Closes #1\nCloses #2\nCloses #3\nCloses #4" },
+    (n) => (n === 1 ? row(1, "CLOSED") : n === 2 ? row(2, "OPEN", { reopenedAt: "2026-09-30T13:00:00Z" })
+      : n === 3 ? null : row(4)));
+  assert.deepEqual(result.plan.already.map((r) => r.number), [1]);
+  assert.deepEqual(result.plan.skip.map((r) => r.number), [2]);
+  assert.deepEqual(result.plan.close.map((r) => r.number), [4]);
+  assert.deepEqual(result.unreadable, [3]);
+  const { failed } = applyClosurePlan(result.plan, { prNumber: "9", sha: "abc", repo: "o/r", basis: "body" },
+    { closeOne: () => true, strip: () => {}, settle: settledOk });
+  assert.deepEqual(failed, [3], "and applying the plan reports it as NOT closed, so the run cannot exit DONE over it");
+});
+
+test("#2822: the plan applies through applyClosurePlan carrying its basis to the closer", () => {
+  const seen: { n: number; basis?: string }[] = [];
+  applyClosurePlan(planForMergedPr({ issues: [], prMergedAt: null, prBody: "Closes #7" }, (n) => row(n)).plan,
+    { prNumber: "9", sha: "abc", repo: "a11ign/a11ign", basis: "body" },
+    { closeOne: (n, ctx) => { seen.push({ n, basis: ctx.basis }); return true; }, strip: () => {}, settle: settledOk });
+  assert.deepEqual(seen, [{ n: 7, basis: "body" }]);
+});
+
+test("#2822: the closing comment of a body-basis closure names PR, merge SHA, the body's declaration and GitHub's silence", () => {
+  const text = closingComment(2822, { prNumber: "2830", sha: "cafef00d", basis: "body" });
+  assert.match(text, /FROM THE PR BODY'S DECLARATION/);
+  assert.match(text, /PR #2830 merged as `cafef00d`/);
+  assert.match(text, /declared `Closes #2822`/);
+  assert.match(text, /GitHub resolved NO closing reference/);
+  assert.match(text, /`git show cafef00d` is what actually merged/);
+  assert.doesNotMatch(text, /github-actions\[bot\]/, "and does not tell the bot-merge story, which is not what happened");
+});
+
+test("#2822 DONE-WHEN 4: a GitHub-resolved closure's comment is EXACTLY what it was before this row", () => {
+  assert.equal(closingComment(344, { prNumber: "9", sha: "abc" }),
+    "Closed by the pipeline: PR #9 merged as `abc` and declared `Closes #344`.\n\n"
+    + "GitHub does not apply a closing reference when the merge is performed by `github-actions[bot]` -- measured on "
+    + "#310, #321 and #344 (see #298), where three of three bot merges left their rows open while two of two human "
+    + "merges closed theirs. This comment and this closure are that step, performed explicitly.\n\n"
+    + "If the work did not land, reopen and say so on the row: `git show abc` is what actually merged.");
+});
+
+// The closer cannot import `extractClosesDeclaration` (this job runs with `actions/checkout` and nothing else), so its
+// local line-anchored parser is PINNED to the real one on the same fixtures. `agrees` fixtures are read identically by
+// both. The rest are read by the real parser as rows or as malformed, and the closer deliberately closes NOTHING for
+// them: closing MORE than the real parser accepts would close a row the author only talked about (#549).
+const AGREE: [string, string, number[]][] = [
+  ["one row", "Closes #2822", [2822]],
+  ["colon form", "Closes: #2822", [2822]],
+  ["a list", "Closes #7, #8", [7, 8]],
+  ["an `and` list", "Closes #7 and #8", [7, 8]],
+  ["two lines", "Closes #510\nCloses #497", [510, 497]],
+  ["indented, after prose", "Summary.\n\n  Closes #12\n\nMore.", [12]],
+  ["a reason after the list", "Closes #7 -- the reason", [7]],
+  ["CRLF", "Closes #7\r\nCloses #8\r\n", [7, 8]],
+  ["duplicates", "Closes #7\nCloses #7", [7]],
+  ["`none`", "Closes: none -- docs only", []],
+  ["nothing", "Just prose.", []],
+];
+const STRICTER: [string, string][] = [
+  ["a prose mention", "the wiring PR closes #494 once it lands."],
+  ["an unread tail", "Closes #7, a11ign#8"],
+  ["a qualified reference", "Closes owner/repo#7"],
+];
+
+test("#2822 PARSER PIN: declaredRowsFromBody reads exactly what extractClosesDeclaration reads on every line-start fixture", () => {
+  assert.ok(AGREE.length > 0, "the positive control: the fixtures are not empty");
+  for (const [name, body, expected] of AGREE) {
+    const real = extractClosesDeclaration(body);
+    assert.deepEqual(declaredRowsFromBody(body), expected, name);
+    assert.deepEqual([...new Set(real.kind === "closes" ? real.numbers : [])], expected, `${name}: the real parser`);
+  }
+});
+
+test("#2822 PARSER PIN: where the real parser reads a prose mention, a qualified row or a malformed tail, the closer closes NOTHING", () => {
+  assert.ok(STRICTER.length > 0);
+  for (const [name, body] of STRICTER) {
+    assert.deepEqual(declaredRowsFromBody(body), [], name);
+    assert.notEqual(extractClosesDeclaration(body).kind, "none", `${name}: the fixture is one the real parser reads as something`);
+  }
 });
