@@ -686,7 +686,8 @@ test("#1974: every shipped unit that spawns `gh` declares which account -- over 
   // members.
   assert.deepEqual(spending.map((u) => u.unit).sort(),
     ["a11ign-board-report.service", "a11ign-corpus-release-nightly.service",
-      "a11ign-fleet-watch.service", "a11ign-lab-watch.service", "a11ign-work-tick.service"],
+      "a11ign-fleet-watch.service", "a11ign-lab-watch.service", "a11ign-work-tick.service",
+      "a11ign-worktree-prune.service"],
     "every shipped .service that can reach `gh` -- including the one whose ExecStart this repository "
     + "cannot read, which is charged on UNKNOWN rather than excused on it");
   assert.deepEqual(identityDrift(), [],
@@ -762,7 +763,7 @@ test("#1974: the `npm run` edge inside CODE is followed -- an import walk alone 
   assert.ok(hit, "the nightly reaches a `gh` spawn");
   assert.match(String(hit), /corpus-release\.mjs$/,
     "through the script it SPAWNS, which no import of its own names");
-  assert.equal(ghSpawnReachedFrom(join(REPO_ROOT, "packages/agent-org/src/update-primary.mjs")), null,
+  assert.equal(ghSpawnReachedFrom(join(REPO_ROOT, "packages/agent-org/src/worktree-owner.mjs")), null,
     "POSITIVE CONTROL: a unit entry point that does NOT touch `gh` is not charged for one");
 });
 
@@ -984,40 +985,27 @@ test("#2000: the unit passes `--apply`, or the clock runs a REPORT and the backl
     + "ACTIVITY_WINDOW_MS. Install and the calendar are the two entry points; boot is not one of them");
 });
 
-test("#2000: the prune spends no API budget, and that is READ rather than assumed", () => {
-  // ceo's 2026-09-22 ruling on #1950 refused a `work-gate.mjs` cause for this chore BECAUSE it costs no
-  // API budget and needs no judgment -- a gate cause exists to WAKE somebody. So "it makes zero `gh`
-  // calls" is not a remark about this unit, it is the premise that lets it run on a clock at all, and it
-  // has to be checked rather than restated.
+test("#2782: the prune's API spend is ONE claim read per removable tree, declared under the workers' account, and READ rather than assumed", () => {
+  // `ceo`'s 2026-09-22 ruling on #1950 refused a `work-gate.mjs` cause for this chore because it cost no API budget and needed
+  // no judgment. THE FIRST HALF STOPPED BEING TRUE ON #2782: `wt-2623` was deleted under its live claim twice, and the only
+  // fact that could have stopped it is the `session:` label on the row, which is on GitHub. The second half stands -- no model
+  // turn, no judgment -- and that is the half that puts it on a clock. This test is the collision the previous version of
+  // itself predicted ("THIS ASSERTION IS MEANT TO COLLIDE"), resolved by reading what the spend IS instead of deleting the check.
   const entry = join(REPO_ROOT, "packages/agent-org/src/prune-worktrees.mjs");
-  // THE POSITIVE CONTROL, and it is the whole reason the null below means anything. `ghSpawnReachedFrom`
-  // returns null for a file it cannot read exactly as it does for a file whose closure is clean, so the
-  // assertion that follows would pass against a wrong path, a broken import walk, or a typo. This names
-  // where the control lives: the same function, the same checkout, on a file that does reach `gh`.
-  assert.equal(ghSpawnReachedFrom(join(REPO_ROOT, "packages/agent-org/src/work-tick.mjs")) !== null, true,
-    "control: the import walk can find a `gh` spawn in this checkout, so a null is a reading");
-  assert.equal(ghSpawnReachedFrom(entry), null,
-    "the predicate is `git merge-base --is-ancestor` against origin/main; the closure is `git-env.mjs` "
-    + "and `cli-flags.mjs` and reaches no `gh`");
-  const spending = unitsSpendingGh();
-  assert.ok(spending.length >= 3,
-    `control: the population must not be empty, or absence from it is vacuous; got ${JSON.stringify(spending)}`);
-  assert.ok(!spending.some((u) => u.unit === "a11ign-worktree-prune.service"),
-    "so it must not appear among the units charged for an identity");
-  // AND THE UNIT MUST NOT CARRY THE LINE ANYWAY. `identityDrift` only ever ASKS for a `GH_CONFIG_DIR`
-  // line; nothing anywhere objects to a spurious one, so three units having it makes copying it into a
-  // fourth the obvious edit -- and that line would assert this unit spends an API pool, which is the exact
-  // opposite of the fact that got it scheduled.
-  //
-  // THIS ASSERTION IS MEANT TO COLLIDE. The day a `gh` call appears under this entry point, `identityDrift`
-  // will demand the line and this will refuse it, and the collision is the point: it forces whoever made
-  // that change back to #1950's ruling, which put this chore on a clock instead of a wake-cause precisely
-  // because it spends nothing. A unit that quietly grew an API identity would keep the clock and lose the
-  // argument for it.
+  // THE POSITIVE CONTROL, and it is the whole reason a non-null below means anything: the same function, on a file known not
+  // to reach `gh`, answers null -- so the walk can tell the two apart.
+  assert.equal(ghSpawnReachedFrom(join(REPO_ROOT, "packages/agent-org/src/worktree-owner.mjs")), null,
+    "control: the import walk answers null for a closure that is clean, so the answer below is a reading");
+  assert.match(String(ghSpawnReachedFrom(entry)), /worktree-removal\.mjs$/,
+    "the spend is in the ONE file every remover asks, so it is a single, nameable read rather than a scatter of `gh` calls");
+  const spending = unitsSpendingGh().find((u) => u.unit === "a11ign-worktree-prune.service");
+  assert.ok(spending, "the unit is charged for an identity, so it cannot quietly spend the person's pool");
+  assert.equal(spending.declared, true, "and it declares which account");
+  // AND THE ACCOUNT IS THE WORKERS', never the person's: the same line `work-tick.service` carries.
   const service = shippedText("a11ign-worktree-prune.service");
-  assert.doesNotMatch(service, /^Environment=GH_CONFIG_DIR=/m,
-    "no identity line: this unit spends no pool, and saying it spends one would be false as well as "
-    + "unnecessary");
+  const accountOf = (text: string) => /^Environment=GH_CONFIG_DIR=(\S+)$/m.exec(text)?.[1];
+  assert.ok(accountOf(service), "control: the line is found in the prune unit at all, so the comparison below is not undefined === undefined");
+  assert.equal(accountOf(service), accountOf(shippedText("a11ign-work-tick.service")));
 });
 
 test("#2000: the prune timer is a CALENDAR timer, so `Persistent=` is not inert", () => {
