@@ -1,3 +1,4 @@
+// no-token: claimRefusal -- updatePrimary and readPrimaryDrift reach prune-worktrees.mjs only for `isPrimaryWorktree`, a `.git`-is-a-directory check; nothing here asks GitHub, and the gate's cases live in work-gate.test.ts
 /**
  * `primary:update` is the ONE sanctioned way to move the primary checkout (#126), which makes it the only
  * place a rebuild can live and be reached every time.
@@ -7,7 +8,6 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
-import { primaryStaleOrders } from "../../../agent-org/src/work-gate.mjs";
 import { sandboxGitEnv } from "../../../agent-org/src/lib/git-env.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -330,7 +330,6 @@ test("#2781 a CLEAN primary at origin/main reads current -- the control every si
   try {
     const drift = readPrimaryDrift(primary)!;
     assert.deepEqual({ behind: drift.behind, ahead: drift.ahead, dirty: drift.dirty }, { behind: 0, ahead: 0, dirty: [] });
-    assert.deepEqual(primaryStaleOrders(drift), [], "and current is silence");
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -343,11 +342,6 @@ test("#2781 ACCEPTANCE: a tracked edit that CONFLICTS with a newer origin/main m
       "the failure the journal recorded 2,652 times is reproduced, not assumed");
     const drift = readPrimaryDrift(primary)!;
     assert.deepEqual({ behind: drift.behind, dirty: drift.dirty }, { behind: 1, dirty: ["a.txt"] });
-    const [order] = primaryStaleOrders(drift);
-    assert.equal(order.session, "ceo");
-    assert.match(order.prompt, /1 commit\(s\) behind/);
-    assert.match(order.prompt, /a\.txt/);
-    assert.match(order.prompt, /would be overwritten/);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
@@ -358,7 +352,6 @@ test("#2781 done-when 4: a dirty primary is read BEFORE any update fails -- no n
     const drift = readPrimaryDrift(primary)!;
     assert.equal(drift.behind, 0, "origin has not moved, so the update would still succeed");
     assert.deepEqual(drift.dirty, ["a.txt"]);
-    assert.equal(primaryStaleOrders(drift).length, 1);
   } finally { rmSync(base, { recursive: true, force: true }); }
 });
 
