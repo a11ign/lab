@@ -2131,3 +2131,10 @@ test("#2158: a REAL red inside a sandbox is untouched by the adoption -- same ob
   } catch (error) { caught = error; }
   assert.equal(caught, real, "wrapping the sandboxes must not reword an ordinary failure");
 });
+
+test("#2769 CONTROL: a FRESH worktree claim never passes `adoptedBranch` -- B4's own-PR-by-branch exclusion is `--adopt`'s alone", () => {
+  const run = worktreeClaim(worktreeClaimRun());
+  assert.equal(run.call().claimed, true);
+  const deps = run.claimCalls[0][2] as Record<string, unknown>;
+  assert.equal("adoptedBranch" in deps, false, "a fresh claim creates its branch, so no open PR can be its own by name");
+});
