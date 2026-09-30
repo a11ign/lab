@@ -4536,6 +4536,8 @@ test("#2174: work-gate.mjs loads in a tree with NO node_modules, host-units edge
   const root = realpathSync(mkdtempSync(join(tmpdir(), "a11y-work-gate-no-modules-")));
   // #2616: the tool now reads the project's declaration from beside it, so a copied tree must carry it or the reader REFUSES (correctly).
   closure.add(join(REPO, ".agent-org/project.json"));
+  // #2799: and the host's, because the drain marker, the reviewer state and the ledger default now read its `stateDir` at import.
+  closure.add(join(REPO, ".agent-org/host.json"));
   // #2621: the declaration now points at a PLUGIN (`.agent-org/plugins/causes.mjs`) that `cause-declaration.mjs`
   // imports DYNAMICALLY, by a string `localImports`'s static walk cannot see -- so it is added here for the
   // identical reason `project.json` is a line above.

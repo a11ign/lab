@@ -475,10 +475,12 @@ function decision4Counts(): { total: number; divided: number } {
  * 2026-09-30, #2793, on top of #2729's (child 5b of #2623): 142 total, 17 divided. One MORE total, because the row's own
  * Acceptance names a new test, `host-tool-install.test.ts`, which imports `agent-org/src` (t-import) and matches no product pattern, so
  * `divided` is unchanged. A test of the tool's source cannot avoid this edge, so the count moves with the row that adds the test.
+ * 2026-09-30, #2799 (child 5c of #2623): 143 total, 17 divided. One MORE total, `host-state-dir-wiring.test.ts`, which imports `agent-org/src`
+ * (t-import) and matches no product pattern -- the same reason as #2793's line above. Re-derived by running this test, not inferred.
  * Grows or shrinks with real PRs; a mismatch here means product-manager owes another amendment, not that
  * this test is wrong.
  */
-const RECORDED_DECISION_4 = { total: 142, divided: 17 };
+const RECORDED_DECISION_4 = { total: 143, divided: 17 };
 
 test("decision 4's total/divided counts, re-derived, match the row's currently-amended reading", () => {
   const counts = decision4Counts();
