@@ -75,6 +75,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parse } from "yaml";
 import { parseHostConfig } from "../../../agent-org/src/host-config.mjs";
 import { homeProjectDeclaration, readProjectDeclaration } from "../../../agent-org/src/project-config.mjs";
 import {
@@ -479,4 +480,118 @@ test("decision 4's total/divided counts, re-derived, match the row's currently-a
   const counts = decision4Counts();
   assert.ok(counts.total > 100, `too few files found (${counts.total}): the scan is reading the wrong tree`);
   assert.deepEqual(counts, RECORDED_DECISION_4, "decision 4's population drifted again: report to the row before trusting this file's other assertions");
+});
+
+// ---- 6. the workflow's push job (#2789) ---------------------------------------------------------------
+//
+// Run 36676106251 (2026-09-30, the real push) failed at step 3b with HTTP 422 `Invalid property /rules/0:
+// data matches no possible input`: the ruleset body carried `pull_request` with one parameter and
+// `merge_queue` with none, where GitHub requires the full set. It had also pushed `--all`, putting 20
+// non-`main` branches into the PUBLIC repository, and a second dispatch would have pushed into a
+// non-empty one. Nothing here can run the workflow, so each claim is pinned against its TEXT, with a
+// control that the reader notices the defect it exists for.
+
+const WORKFLOW = ".github/workflows/agent-org-extraction.yml";
+const RULESET_FIXTURE = join(HERE, "fixtures/merge-queue-main-ruleset-rules.json");
+
+type WorkflowStep = { name?: string; run?: string };
+
+function pushJobSteps(workflowText: string): WorkflowStep[] {
+  const steps = (parse(workflowText) as { jobs?: { push?: { steps?: WorkflowStep[] } } }).jobs?.push?.steps;
+  assert.ok(steps && steps.length > 0, "the workflow has no `push` job steps: the reader is looking at the wrong shape");
+  return steps;
+}
+
+function stepIndex(steps: WorkflowStep[], namePrefix: string): number {
+  const index = steps.findIndex((step) => step.name?.startsWith(namePrefix));
+  assert.ok(index >= 0, `no push-job step is named "${namePrefix}..."`);
+  return index;
+}
+
+/** The JSON a step feeds `gh api --input -` through a quoted heredoc. */
+function heredocJson(step: WorkflowStep): { rules: unknown[] } {
+  const body = /<<'JSON'\n([\s\S]*?)\n\s*JSON\s*$/.exec(step.run ?? "")?.[1];
+  assert.ok(body, `step "${step.name}" has no <<'JSON' heredoc`);
+  return JSON.parse(body) as { rules: unknown[] };
+}
+
+/** Rules compared as a set by `type`: GitHub does not order them and neither should this test. */
+function rulesByType(rules: unknown[]): unknown[] {
+  return [...(rules as { type: string }[])].sort((a, b) => a.type.localeCompare(b.type));
+}
+
+function step3bRules(workflowText: string): unknown[] {
+  const steps = pushJobSteps(workflowText);
+  return heredocJson(steps[stepIndex(steps, "Step 3b")]).rules;
+}
+
+const fixtureRules = (): unknown[] => JSON.parse(readFileSync(RULESET_FIXTURE, "utf8")) as unknown[];
+
+test("step 3b's ruleset rules are exactly a11ign/a11ign's ruleset 23681721 (the fixture), parameters and all", () => {
+  const rules = step3bRules(readFileSync(join(REPO_ROOT, WORKFLOW), "utf8"));
+  assert.deepEqual(rulesByType(rules), rulesByType(fixtureRules()));
+});
+
+test("control: the fixture is not vacuous, and the ABBREVIATED body that got a 422 is refused by the same comparison", () => {
+  const fixture = fixtureRules() as { type: string; parameters?: Record<string, unknown> }[];
+  assert.deepEqual(fixture.map((rule) => rule.type).sort(), ["merge_queue", "pull_request"]);
+  assert.ok(Object.keys(fixture.find((rule) => rule.type === "merge_queue")?.parameters ?? {}).length > 1, "the fixture's merge_queue lost its parameters");
+  const abbreviated = readFileSync(join(REPO_ROOT, WORKFLOW), "utf8").replace(
+    /"rules": \[[\s\S]*?\n\s*\]\n(\s*\}\n\s*JSON)/,
+    `"rules": [
+              { "type": "pull_request", "parameters": { "required_approving_review_count": 1 } },
+              { "type": "merge_queue" }
+            ]
+$1`,
+  );
+  assert.notEqual(abbreviated, readFileSync(join(REPO_ROOT, WORKFLOW), "utf8"), "the control's rewrite did not apply, so it proves nothing");
+  assert.notDeepEqual(rulesByType(step3bRules(abbreviated)), rulesByType(fixtureRules()));
+});
+
+/** The `git push` line of the step named `Step 2`, flattened across its `\` continuations. */
+function step2PushCommand(workflowText: string): string {
+  const steps = pushJobSteps(workflowText);
+  const run = (steps[stepIndex(steps, "Step 2")].run ?? "").replace(/\\\n\s*/g, " ");
+  const push = run.split("\n").find((line) => /\bgit\b.*\bpush\b/.test(line));
+  assert.ok(push, "step 2 has no `git push` line");
+  return push;
+}
+
+/** The refspecs a push command names: everything after the URL that is not a flag. */
+function pushedRefs(command: string): string[] {
+  return command.split(/\s+/).slice(command.split(/\s+/).findIndex((word) => word.startsWith('"https://')) + 1).filter((word) => !word.startsWith("-"));
+}
+
+test("step 2 pushes ONE ref, refs/heads/main, and names no flag that pushes more (never --all, --mirror, --tags)", () => {
+  const command = step2PushCommand(readFileSync(join(REPO_ROOT, WORKFLOW), "utf8"));
+  assert.deepEqual(pushedRefs(command), ["refs/heads/main:refs/heads/main"]);
+  assert.doesNotMatch(command, /--(all|mirror|tags|follow-tags)\b/);
+});
+
+test("control: the push reader refuses `--all`, a mirror push, and a second refspec", () => {
+  const url = '"https://x-access-token:${T}@github.com/a11ign/agent-org.git"';
+  const allBranches = `git -C /tmp/x push ${url} --all`;
+  assert.deepEqual(pushedRefs(allBranches), [], "`--all` names no ref, so the ONE-ref assertion must fail on it");
+  assert.match(allBranches, /--(all|mirror|tags|follow-tags)\b/);
+  assert.match(`git push ${url} --mirror`, /--(all|mirror|tags|follow-tags)\b/);
+  assert.deepEqual(pushedRefs(`git push ${url} refs/heads/main:refs/heads/main refs/heads/agent/x:refs/heads/agent/x`).length, 2);
+});
+
+test("the push job refuses a non-empty a11ign/agent-org BEFORE its first write, and a failed read refuses too", () => {
+  const steps = pushJobSteps(readFileSync(join(REPO_ROOT, WORKFLOW), "utf8"));
+  const refuse = stepIndex(steps, "Refuse when a11ign/agent-org is not empty");
+  for (const write of ["Step 1", "Step 2", "Step 3a", "Step 3b"]) {
+    assert.ok(refuse < stepIndex(steps, write), `the emptiness refusal must run before ${write}`);
+  }
+  const run = steps[refuse].run ?? "";
+  assert.match(run, /git ls-remote\b/, "the refusal must READ the target's refs");
+  assert.match(run, /if ! FOUND=\$\(git ls-remote/, "a failed read must be caught, not treated as empty");
+  assert.match(run, /if \[ -n "\$FOUND" \]/, "any ref found must refuse");
+  assert.equal((run.match(/exit 1/g) ?? []).length, 2, "both the failed read and the non-empty target must exit non-zero");
+  assert.match(run, /\$FOUND"?\n/, "the refusal must NAME what it found");
+});
+
+test("control: a workflow that drops the emptiness refusal is noticed by the ordering read", () => {
+  const text = readFileSync(join(REPO_ROOT, WORKFLOW), "utf8").replace("Refuse when a11ign/agent-org is not empty", "Some other step");
+  assert.throws(() => stepIndex(pushJobSteps(text), "Refuse when a11ign/agent-org is not empty"), /no push-job step is named/);
 });
