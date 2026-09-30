@@ -112,7 +112,7 @@ test("a fixture project with NO project cause yields the tool's 30 causes intact
 const EXPECTED_CAUSES = ["answer-label-unexplained", "answer-owed", "awaiting-evidence-stale",
   "blocked-unexaminable", "blocker-cleared", "chairman-blocked", "claim-stalled", "claimed-row-amended",
   "disk-headroom-low", "draft-awaiting-verdict", "draft-convinced-not-ready", "epic-finished", "epic-unfiled",
-  "fleet-batch-due", "host-units-stale", "lane-backlog-unpromoted", "org-stalled", "pr-checks-failing",
+  "fleet-batch-due", "host-units-stale", "lab-job-finished", "lane-backlog-unpromoted", "org-stalled", "pr-checks-failing",
   "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked",
   "ready-queue-empty", "ready-row-unclaimed", "reviewer-auth-failed", "row-branch-unshipped",
   "row-call-count-signal", "row-off-board", "trunk-red", "unclaimed-blocker-cleared",
@@ -120,17 +120,17 @@ const EXPECTED_CAUSES = ["answer-label-unexplained", "answer-owed", "awaiting-ev
 
 const EXPECTED_JUDGMENT = ["answer-owed", "awaiting-evidence-stale", "blocked-unexaminable", "blocker-cleared",
   "chairman-blocked", "claimed-row-amended", "disk-headroom-low", "epic-finished", "epic-unfiled", "fleet-batch-due",
-  "lane-backlog-unpromoted", "org-stalled", "ready-queue-empty", "reviewer-auth-failed",
+  "lab-job-finished", "lane-backlog-unpromoted", "org-stalled", "ready-queue-empty", "reviewer-auth-failed",
   "row-branch-unshipped", "row-call-count-signal", "row-off-board", "unclaimed-blocker-cleared"];
 
 const EXPECTED_START = ["blocked-unexaminable", "epic-finished", "epic-unfiled", "fleet-batch-due",
   "lane-backlog-unpromoted", "org-stalled", "ready-queue-empty", "ready-row-unclaimed", "unclaimed-blocker-cleared"];
 
-test("CAUSES (re-exported by work-gate.mjs) equals today's 32, by value", () => {
+test("CAUSES (re-exported by work-gate.mjs) equals today's 33, by value", () => {
   assert.deepEqual([...CAUSES].sort(), [...EXPECTED_CAUSES].sort());
 });
 
-test("JUDGMENT_CAUSES (re-exported by work-gate.mjs) equals today's 18, by value", () => {
+test("JUDGMENT_CAUSES (re-exported by work-gate.mjs) equals today's 19, by value", () => {
   assert.deepEqual([...JUDGMENT_CAUSES].sort(), [...EXPECTED_JUDGMENT].sort());
 });
 
