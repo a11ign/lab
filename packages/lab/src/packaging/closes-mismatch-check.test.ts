@@ -14,7 +14,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -246,7 +246,7 @@ function runCheck(ghAnswers: { own: number[]; open: unknown[] | "fail" }, body =
   writeFileSync(join(dir, "open.json"), JSON.stringify(open));
   writeFileSync(fake, `#!/bin/sh
 case "$*" in
-  *pullRequests*) [ "${ghAnswers.open === "fail"}" = true ] && exit 1; cat "${dir}/open.json" ;;
+  *pullRequests*) echo "$*" > "${dir}/sibling-query.txt"; [ "${ghAnswers.open === "fail"}" = true ] && exit 1; cat "${dir}/open.json" ;;
   *) cat "${dir}/own.json" ;;
 esac
 `);
@@ -254,7 +254,8 @@ esac
   const result = spawnSync(process.execPath, ["packages/agent-org/src/closes-mismatch-check.mjs", "2810"], {
     encoding: "utf8", env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, PR_BODY: body },
   });
-  return { status: result.status, out: result.stdout };
+  return { status: result.status, out: result.stdout, // null when the check never asked: the sibling query is skipped unless this PR's own facts already fit
+    siblingQuery: existsSync(join(dir, "sibling-query.txt")) ? readFileSync(join(dir, "sibling-query.txt"), "utf8") : null };
 }
 
 const deadNode = (number: number) => ({ number, body: `Closes #${number}`, closingIssuesReferences: { nodes: [] } });
@@ -293,4 +294,48 @@ test("#2822 CLI: a PARTIAL resolution is refused while the condition is repo-wid
     "Closes #2810\nCloses #2811");
   assert.equal(status, 1);
   assert.match(out, /you declared #2811, but GitHub will NOT close it/);
+});
+
+// --- #2830: the siblings are read from OPEN and MERGED PRs, so one open pre-outage PR cannot veto the pass ---
+
+// The shape read at 2026-09-30T12:34Z for #2826: newest first, #2805 (open, opened before the outage) still resolves
+// #2790, and the one merged PR in the newest 3 (#2821) resolves none. Read OPEN-only, #2805 sat in the window.
+const STUCK_WINDOW = (mergedResolved: number[]) => [
+  openPr(2829, "Closes #2827"), openPr(2828, "Closes #2823"), openPr(2826, "Closes #2783"),
+  openPr(2821, "Closes #2782", mergedResolved), openPr(2805, "Closes #2790", [2790]),
+];
+const STUCK_UNDER_TEST = { declared: [2783], resolved: [] as number[] };
+const STUCK_REPORT = closesMismatchReport(CLOSES([2783]), [], "Closes #2783") as { ok: false; reasons: string[] };
+
+test("#2830 DONE-WHEN 2: an older open resolving PR, two open dead siblings and a MERGED dead one is repo-wide", () => {
+  const siblings = recentClosesSiblings(STUCK_WINDOW([]), 2826);
+  assert.deepEqual(siblings, [sibling(2829), sibling(2828), sibling(2821)], "the resolving #2805 is 4th, outside the window");
+  const verdict = mismatchVerdict(STUCK_REPORT, STUCK_UNDER_TEST, siblings);
+  assert.equal(verdict.exit, 0);
+  assert.deepEqual(verdict.lines, [...REPO_WIDE_WARNING]);
+});
+
+test("#2830 DONE-WHEN 2 POSITIVE CONTROL: the same list with the MERGED sibling resolving a number is refused byte for byte", () => {
+  const siblings = recentClosesSiblings(STUCK_WINDOW([2782]), 2826);
+  assert.deepEqual(siblings, [sibling(2829), sibling(2828), sibling(2821, [2782])]);
+  const verdict = mismatchVerdict(STUCK_REPORT, STUCK_UNDER_TEST, siblings);
+  assert.equal(verdict.exit, 1);
+  assert.deepEqual(verdict.lines, refusal(STUCK_REPORT).lines);
+});
+
+test("#2830 CLI: the sibling query asks for OPEN and MERGED PRs, newest first by creation", () => {
+  const merged = deadNode(2809);
+  const stale = { number: 2805, body: "Closes #2790", closingIssuesReferences: { nodes: [{ number: 2790 }] } };
+  const { status, out, siblingQuery } = runCheck({ own: [], open: [deadNode(2812), deadNode(2811), merged, stale] });
+  assert.match(siblingQuery ?? "", /pullRequests\(states:\[OPEN,MERGED\],first:\$count,orderBy:\{field:CREATED_AT,direction:DESC\}\)/);
+  assert.equal(status, 0);
+  assert.match(out, /^CLOSES MISMATCH: WARNING/);
+});
+
+test("#2830 CLI POSITIVE CONTROL: the merged sibling resolving a number is a lone mismatch, exit 1", () => {
+  const mergedLive = { number: 2809, body: "Closes #2809", closingIssuesReferences: { nodes: [{ number: 2809 }] } };
+  const { status, out } = runCheck({ own: [], open: [deadNode(2812), deadNode(2811), mergedLive, deadNode(2805)] });
+  assert.equal(status, 1);
+  assert.match(out, /will NOT close it/);
+  assert.doesNotMatch(out, /repo-wide/);
 });
