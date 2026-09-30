@@ -206,7 +206,9 @@ test("#2793: a fixture host's `stateDir` moves every state path the readers deri
   const spare = sparePathsFrom(ledger);
   const reviewer = reviewerPathsFrom(ledger);
   const paths = [ledgerPathFrom([`--ledger=${ledger}`]), handoffQueuePath(ledger), keptClaimsPath(ledger), ...Object.values(spare), ...Object.values(reviewer)];
-  assert.ok(paths.length >= 8, `POSITIVE CONTROL: eight paths are checked, not none (${paths.length})`);
+  assert.equal(paths.length, 3 + Object.keys(spare).length + Object.keys(reviewer).length,
+    "POSITIVE CONTROL: every path the readers derive is checked -- the count is the three singles plus each spare and reviewer path, derived from the two objects rather than floored");
+  assert.ok(Object.keys(spare).length > 0 && Object.keys(reviewer).length > 0, "POSITIVE CONTROL: both derivations name paths, so the count above is not 3 + 0 + 0");
   const a11ignState = ledgerPathFrom([]).replace(/\/wake-ledger$/, "");
   assert.match(a11ignState, /\/\.cache\/a11ign$/, "POSITIVE CONTROL: the default IS a11ign's directory, so the exclusion below is against something");
   const outside = paths.filter((path) => !path.startsWith("/srv/acme/state/") || path.startsWith(`${a11ignState}/`));
