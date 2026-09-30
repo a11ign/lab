@@ -467,10 +467,14 @@ function decision4Counts(): { total: number; divided: number } {
  * fixture string for the `@a11ign/` control above, the literal `"@a11ign/worker-fleet/cli-flags"`
  * (t-product) -- the same "matches inside a fixture string, not a real import" false positive the
  * row's finding 1 already named.
+ * 2026-09-30, #2729: 141 total, 17 divided. ONE file, `lab-job-finished.test.ts`, is both: it imports `agent-org/src` (the gate's
+ * reader and order builder) and reads `control/ansible/tasks/run-job.yml` by relative path (the playbook whose record they
+ * consume). It is a REAL divided file rather than a fixture-string false positive -- the two packages cannot import each other,
+ * so a contract between them can only be tested from `lab`. Re-derived by running this test, not inferred.
  * Grows or shrinks with real PRs; a mismatch here means product-manager owes another amendment, not that
  * this test is wrong.
  */
-const RECORDED_DECISION_4 = { total: 140, divided: 16 };
+const RECORDED_DECISION_4 = { total: 141, divided: 17 };
 
 test("decision 4's total/divided counts, re-derived, match the row's currently-amended reading", () => {
   const counts = decision4Counts();
