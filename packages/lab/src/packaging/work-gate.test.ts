@@ -2962,6 +2962,34 @@ test("#2027: a shelved fleet row is REPORTED, never silently dropped", () => {
     + "failure `blocked` already is");
 });
 
+// A row answered with `needs:chairman` re-fired: #2728 (a credential-only row, wrongly carrying
+// `fleet-gated`) came back three minutes after `orchestrator` had already answered it, because the
+// label names a person rather than one of the order's three machine-readable exits
+// (`Fleet-hold-until:`, `--add-blocked-by`, `Not-before:`). `waitingOn`/`fleetWaitingOn` deliberately
+// do not read this label (#2583/#2604/#2653 all made the same choice for their own populations), so
+// the fifth reader lives here, in the fleet batch's own filter (#2730).
+test("#2730: `needs:chairman` takes a row out of the fleet batch -- and removing it puts the row back", () => {
+  const asked = gatedRow(2728, { labels: [{ name: "fleet-gated" }, { name: CHAIRMAN_LABEL }] });
+  assert.deepEqual(fleetBatchRows([asked], CLOCK), [],
+    "#2728 is a credential row answered `needs:chairman`; re-dispatching it is re-asking it");
+  assert.deepEqual(fleetBatchRows([gatedRow(2728)], CLOCK).map((r) => r.number), [2728],
+    "POSITIVE CONTROL: removing the label IS the act of answering, and the row returns on that alone");
+});
+
+test("#2730: a `needs:chairman` row is REPORTED as waiting, in the sentence the other conditions get", () => {
+  const asked = gatedRow(2728, { labels: [{ name: "fleet-gated" }, { name: CHAIRMAN_LABEL }] });
+  const { batch, waiting } = partitionFleetBatch([asked, gatedRow(1908)], CLOCK);
+  assert.deepEqual(batch.map((r) => r.number), [1908]);
+  assert.deepEqual(waiting, [{ number: 2728,
+    reason: "waiting on the chairman (needs:chairman) -- declared on the row, and it clears itself" }]);
+});
+
+test("#2730: a whole batch answered `needs:chairman` produces NO ORDER, rather than re-firing on it", () => {
+  const asked = gatedRow(2728, { labels: [{ name: "fleet-gated" }, { name: CHAIRMAN_LABEL }] });
+  assert.deepEqual(fleetBatchOrders([asked], CLOCK), [],
+    "the answer is already recorded in the label; re-reporting it is the treadmill #2027 exists to prevent");
+});
+
 // --- #2027, second half: nothing woke a claim holder when their blocker cleared --------------------
 //
 // PR #1957 merged 2026-09-22T21:26:01Z and closed #1948 at 21:26:02Z, leaving #1908 -- `in-progress`,
@@ -3486,7 +3514,7 @@ test("#2286: a row whose ANSWER has been written is not asked at all, even insid
   const inside = (extra: Record<string, unknown>) => askKeys([{ ...clearedRow(2161), ...extra }], now);
   assert.equal(inside({}).length, 1, "POSITIVE CONTROL: the same row, unanswered, is inside its first window");
   assert.deepEqual(inside({ labels: [{ name: "ready" }] }), [], "`ready` is the promotion");
-  assert.deepEqual(inside({ body: "Not-before: 2026-09-30T00:00:00Z" }), [], "a `Not-before:` is an answer");
+  assert.deepEqual(inside({ body: "Not-before: 2099-01-01T00:00:00Z" }), [], "a `Not-before:` is an answer");
   assert.deepEqual(inside({ labels: [{ name: "backlog" }, { name: `${ANSWER_PREFIX}ceo` }] }), [],
     "`answer:<session>` is an answer");
   assert.deepEqual(inside({ blockedBy: { nodes: [{ number: 2139, state: "CLOSED" },
