@@ -1,0 +1,35 @@
+[
+  {
+    "parameters": {
+      "check_response_timeout_minutes": 60,
+      "grouping_strategy": "ALLGREEN",
+      "max_entries_to_build": 5,
+      "max_entries_to_merge": 5,
+      "merge_method": "MERGE",
+      "min_entries_to_merge": 1,
+      "min_entries_to_merge_wait_minutes": 5
+    },
+    "type": "merge_queue"
+  },
+  {
+    "parameters": {
+      "allowed_merge_methods": [
+        "merge",
+        "squash",
+        "rebase"
+      ],
+      "dismiss_stale_reviews_on_push": false,
+      "dismissal_restriction": {
+        "allowed_actors": [],
+        "enabled": false
+      },
+      "require_code_owner_review": false,
+      "require_extra_approval_for_unattributed_changes": false,
+      "require_last_push_approval": false,
+      "required_approving_review_count": 1,
+      "required_review_thread_resolution": false,
+      "required_reviewers": []
+    },
+    "type": "pull_request"
+  }
+]
