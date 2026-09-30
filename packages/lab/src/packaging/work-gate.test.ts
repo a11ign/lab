@@ -68,7 +68,7 @@ import { primaryLaunchRefusal, launchCheckoutOf }
 
 // Each check carries a NAME because the caller narrows with newestPerName, which keys on it -- a fixture
 // without one is dropped, and the gate would read every PR as having no checks at all.
-import { closesUnresolvedOrders, closesUnresolvedPrs } from "../../../agent-org/src/work-gate.mjs";
+import { closesUnresolvedOrders, closesUnresolvedPrs, primaryStaleOrders, withStalePrimaryNotice } from "../../../agent-org/src/work-gate.mjs";
 const GREEN = [{ name: "ci", status: "COMPLETED", conclusion: "SUCCESS" }];
 const RED = [{ name: "ci", status: "COMPLETED", conclusion: "FAILURE" }];
 const PENDING = [{ name: "ci", status: "IN_PROGRESS", conclusion: null }];
@@ -1071,11 +1071,13 @@ test("every cause is classified as START or FINISH -- a new one cannot default i
   // #2729: `lab-job-finished` is FINISH, and a JUDGMENT cause. Its subject is a row a session already holds and the
   // result of a job that session already dispatched -- the plainest work in flight there is -- and it starts nothing:
   // it replaces the holder polling `lab:status`. A window that withheld it would leave the holder to poll again.
+  // #2781: `primary-stale` is FINISH, and an ACTION cause: it starts no work, it tells `ceo` the gate is running from old code, and
+  // a drain is when withholding it would cost most (the drain window ends in a force-push to this very checkout).
   // #2823: `closes-unresolved-repo-wide` is FINISH, and a JUDGMENT cause. Its subject is pull requests already open whose
   // declared rows GitHub will not close, which the post-merge closer covers -- it starts no work, it names a fault to a reader.
   assert.deepEqual(finish, ["answer-label-unexplained", "answer-owed", "awaiting-evidence-stale", "blocker-cleared", "chairman-blocked",
     "claim-stalled", "claimed-row-amended", "closes-unresolved-repo-wide", "disk-headroom-low", "draft-awaiting-verdict", "draft-convinced-not-ready", "host-units-stale",
-    "lab-job-finished", "pr-checks-failing", "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "ready-row-incomplete", "reviewer-auth-failed",
+    "lab-job-finished", "pr-checks-failing", "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "primary-stale", "ready-row-incomplete", "reviewer-auth-failed",
     "row-branch-unshipped", "row-call-count-signal", "row-off-board", "trunk-red", "verdict-comment-unreviewed", "verdict-not-convinced"]);
   for (const cause of START_CAUSES) {
     assert.ok(CAUSES.includes(cause), `${cause} is withheld by a drain but no longer exists`);
@@ -5737,4 +5739,87 @@ test("#2823 sweep: every CI refusal that names a session maps to a gate cause or
   for (const key of accounted) {
     assert.ok(found.some((hit) => hit.includes(key.split(":").slice(1).join(":"))), `${key} is stale: no refusal says it any more`);
   }
+});
+
+// --- #2781: a primary that is not at origin/main is a signal, not a journal line -----------------------------------------
+//
+// POSITIVE CONTROL FOR THE EMPTINESS ASSERTIONS BELOW is the first test: the same reader over a dirty, behind primary, asserted
+// to name the paths. Without it, every silence test passes against a `primaryStaleOrders` that returns `[]` for everything.
+const PRIMARY_DIRTY_BEHIND = { sha: "a5f407d4f0000000", originSha: "9c6ab24630000000", behind: 41, ahead: 0,
+  dirty: ["packages/lab/src/capture-screenreader-dataset.mjs", "packages/lab/src/packaging/wake-by-hand.test.ts"] };
+const PRIMARY_CURRENT = { sha: "9c6ab24630000000", originSha: "9c6ab24630000000", behind: 0, ahead: 0, dirty: [] };
+
+test("#2781 POSITIVE CONTROL: a dirty, behind primary wakes ceo naming the dirty paths, the shas and the distance", () => {
+  const orders = primaryStaleOrders(PRIMARY_DIRTY_BEHIND);
+  assert.equal(orders.length, 1);
+  const [order] = orders;
+  assert.equal(order.session, "ceo", "ceo owns the primary (.github/CLAUDE.md)");
+  assert.equal(order.cause, "primary-stale");
+  assert.match(order.prompt, /capture-screenreader-dataset\.mjs/);
+  assert.match(order.prompt, /wake-by-hand\.test\.ts/);
+  assert.match(order.prompt, /41 commit\(s\) behind/);
+  assert.match(order.prompt, /a5f407d4f/);
+  assert.match(order.prompt, /9c6ab2463/);
+  assert.match(order.prompt, /salvage/, "the edits are someone's work: save before clearing");
+});
+
+test("#2781 done-when 4: a DIRTY primary already AT origin/main is reported the tick the edit appears, before any update fails", () => {
+  const [order] = primaryStaleOrders({ ...PRIMARY_CURRENT, dirty: ["package.json"] });
+  assert.ok(order, "dirty alone is enough");
+  assert.match(order.prompt, /package\.json/);
+  assert.match(order.prompt, /0 commit\(s\) behind/);
+});
+
+test("#2781: a BEHIND primary that is clean is still a signal, and says to read the update's own output", () => {
+  const [order] = primaryStaleOrders({ ...PRIMARY_CURRENT, sha: "1111111110000000", behind: 3 });
+  assert.match(order.prompt, /No tracked path is dirty/);
+  assert.match(order.prompt, /3 commit\(s\) behind/);
+});
+
+test("#2781: a primary CARRYING commits origin lacks is a signal too", () => {
+  const [order] = primaryStaleOrders({ ...PRIMARY_CURRENT, sha: "2222222220000000", ahead: 2 });
+  assert.match(order.prompt, /carrying 2 commit\(s\) origin lacks/);
+});
+
+test("#2781: a current primary, and an UNASKABLE one, emit nothing -- two different claims, asserted apart", () => {
+  assert.deepEqual(primaryStaleOrders(PRIMARY_CURRENT), [], "looked at, and current");
+  assert.deepEqual(primaryStaleOrders(null), [], "not asked (a linked worktree, CI): never a false alarm");
+  assert.deepEqual(primaryStaleOrders(undefined), [], "omitted is the same claim as null");
+});
+
+test("#2781: the causeKey is stable while nothing changes and new when a merge lands or the dirty set changes", () => {
+  const key = primaryStaleOrders(PRIMARY_DIRTY_BEHIND)[0].causeKey;
+  assert.equal(primaryStaleOrders({ ...PRIMARY_DIRTY_BEHIND, dirty: [...PRIMARY_DIRTY_BEHIND.dirty].reverse() })[0].causeKey, key,
+    "the reader's order is not a new question");
+  assert.notEqual(primaryStaleOrders({ ...PRIMARY_DIRTY_BEHIND, originSha: "3333333330000000" })[0].causeKey, key, "another merge");
+  assert.notEqual(primaryStaleOrders({ ...PRIMARY_DIRTY_BEHIND, dirty: ["one-more.mjs", ...PRIMARY_DIRTY_BEHIND.dirty] })[0].causeKey, key,
+    "another edited file");
+});
+
+test("#2781: it is an ACTION cause (re-offered on the expiry), FINISH not START, and decide() routes it only when handed a drift", () => {
+  assert.ok(CAUSES.includes("primary-stale"), "or worker-profile refuses it at run time");
+  assert.ok(!JUDGMENT_CAUSES.includes("primary-stale"), "a judgment cause is never re-offered; a stale primary must be");
+  assert.ok(!START_CAUSES.includes("primary-stale"), "a drain must not withhold it");
+  assert.ok(decide({ prs: [], readyRows: [], primaryDrift: PRIMARY_DIRTY_BEHIND }).some((o) => o.cause === "primary-stale"));
+  assert.deepEqual(decide({ prs: [], readyRows: [] }).filter((o) => o.cause === "primary-stale"), [], "not asked -> no order");
+  assert.deepEqual(decide({ prs: [], readyRows: [], primaryDrift: PRIMARY_CURRENT }).filter((o) => o.cause === "primary-stale"), []);
+});
+
+test("#2781 done-when 2: every other order is headed with the stale sha and the count; the current primary's orders are untouched", () => {
+  const orders = [{ cause: "host-units-stale", prompt: "run host:install" }, { cause: "primary-stale", prompt: "own text" }];
+  const [other, own] = withStalePrimaryNotice(orders, PRIMARY_DIRTY_BEHIND);
+  assert.match(other.prompt, /^\[THIS GATE IS RUNNING FROM A STALE PRIMARY: a5f407d4f, 41 commit\(s\) behind origin\/main 9c6ab2463/);
+  assert.match(other.prompt, /run host:install$/, "the original text follows, unchanged");
+  assert.equal(own.prompt, "own text", "primary-stale already says it");
+  assert.deepEqual(withStalePrimaryNotice(orders, PRIMARY_CURRENT), orders, "current: not one byte changed");
+  assert.deepEqual(withStalePrimaryNotice(orders, null), orders, "not asked: not one byte changed");
+  assert.deepEqual(withStalePrimaryNotice(orders, { ...PRIMARY_CURRENT, dirty: ["x"] }), orders,
+    "dirty but AT origin/main: the orders ARE current, so they are not bannered");
+});
+
+test("#2781 the tick READS the primary and WIRES it: main() reads it once, feeds decide, and banners the decided orders", () => {
+  const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../agent-org/src/work-gate.mjs"), "utf8");
+  assert.match(source, /primaryDrift = readPrimaryDriftNow\(\)/);
+  assert.match(source, /withStalePrimaryNotice\(decide\(\{ primaryDrift,/);
+  assert.match(source, /\}\), primaryDrift\)/, "the SAME reading banners the orders");
 });
