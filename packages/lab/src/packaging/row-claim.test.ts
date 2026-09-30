@@ -24,7 +24,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 // #2158: every sandbox in this file is built through `withSandbox`, never a bare `mkdtempSync`. The four
 // helpers below each `git init`, `commit` and `worktree add` inside a directory under the agents host's
@@ -37,7 +38,7 @@ import { EXHAUSTION_MARKER, withSandbox } from "../../../guards/src/sandbox-exha
 import {
   claimStatus, decideClaim, fetchLabels, claimRow, dispatchRow, declineRow, moveProjectStatus,
   CLAIM_LABEL, STARTED_LABEL, BLOCKED_LABEL, recordCheck, recordConflict, latestCheckFor,
-  worktreeStatus, removeClaimedWorktree, WORKTREE_LABEL_PREFIX, BRANCH_LABEL_PREFIX,
+  worktreeStatus, removeClaimedWorktree as removeClaimedWorktreeWithClaims, WORKTREE_LABEL_PREFIX, BRANCH_LABEL_PREFIX,
   claimRecordComment, claimRecordFrom, claimedObjects, fetchClaimComments, CLAIM_RECORD_MARKER,
   b4Lines, reportB4, failureReport, landedWritesOf, LANDED_WRITE_EXIT,
   claimWithWorktree,
@@ -46,11 +47,20 @@ import {
   claimRecordSession,
 } from "../../../agent-org/src/row-claim.mjs";
 import { forgetProcessSnapshot, withBoardSnapshot } from "../../../agent-org/src/board-snapshot.mjs";
+import { claimRefusal, REMOVAL_LOG_ENV } from "../../../agent-org/src/worktree-removal.mjs";
 import { refusalCause, PROJECT_UNREADABLE } from "../../../agent-org/src/settle-closed-status.mjs";
 import { laneReason } from "../../../agent-org/src/row-claim/runner-rule.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { READY_LABEL, WAS_READY_LABEL } from "../../../agent-org/src/ready-label-audit.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
+
+// #2782: EVERY REMOVAL WRITES A LINE AND READS THE ROW'S CLAIM, and a fixture must do neither to the host -- a fixture directory
+// named for a row number would otherwise read the real row over `gh`, and every removal would land in the real log. The tests
+// that ARE about either pass their own `claim` and `record` and read the log they pointed this at.
+process.env[REMOVAL_LOG_ENV] = join(mkdtempSync(join(tmpdir(), "removal-log-")), "worktree-removals");
+const NOBODY_CLAIMS = (): { refused: false } => ({ refused: false });
+const removeClaimedWorktree = (path: string, deps: NonNullable<Parameters<typeof removeClaimedWorktreeWithClaims>[1]> = {}) =>
+  removeClaimedWorktreeWithClaims(path, { claim: NOBODY_CLAIMS, ...deps });
 
 // Every claim/dispatch/decline test above the #400 section stubs `moveStatus: () => ({ moved: true })` --
 // #400 is about the Project Status VIEW specifically, and those tests are about the LABEL, the record.
@@ -2137,4 +2147,88 @@ test("#2769 CONTROL: a FRESH worktree claim never passes `adoptedBranch` -- B4's
   assert.equal(run.call().claimed, true);
   const deps = run.claimCalls[0][2] as Record<string, unknown>;
   assert.equal("adoptedBranch" in deps, false, "a fresh claim creates its branch, so no open PR can be its own by name");
+});
+
+// --- #2782: WHO DELETED IT, AND WAS ITS ROW STILL CLAIMED? `row-claim.mjs` has two removers: `decline` (the holder giving its
+// claim back) and the undo of a claim that LOST. Both now write a line; only `decline` asks the row, because the undo runs
+// precisely when the row carries the winner's label and removes a tree this very call created. ---
+
+const removalLog = () => process.env[REMOVAL_LOG_ENV] as string;
+const removalLines = () => (existsSync(removalLog()) ? readFileSync(removalLog(), "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
+
+test("#2782 DONE-WHEN 3: decline's removal is REFUSED when the row the TREE names carries somebody else's session label", () => {
+  withRealWorktree(({ primary, worktree }) => {
+    const gh = () => JSON.stringify({ state: "OPEN", labels: [{ name: "session:worker-other" }] });
+    const result = removeClaimedWorktree(worktree, { run: (_cmd: string, args: string[]) => git(primary, args), session: "worker-me",
+      branch: "agent/test-branch-777", claim: (tree, deps) => claimRefusal(tree, { ...deps, gh }) });
+    assert.equal(result.removed, false);
+    assert.match((result as { reason: string }).reason, /row #777, which still carries session:worker-other/);
+    assert.ok(git(primary, ["worktree", "list", "--porcelain"]).includes(worktree), "nothing was removed");
+  });
+});
+
+test("#2782: the session declining is EXEMPT from its own label -- or every decline would refuse itself -- and the tree is removed", () => {
+  withRealWorktree(({ primary, worktree }) => {
+    const gh = () => JSON.stringify({ state: "OPEN", labels: [{ name: "session:worker-me" }] });
+    let excepted: string | undefined;
+    const result = removeClaimedWorktree(worktree, { run: (_cmd: string, args: string[]) => git(primary, args), session: "worker-me",
+      branch: "agent/test-branch-777", claim: (tree, deps) => { excepted = deps?.except; return claimRefusal(tree, { ...deps, gh }); } });
+    assert.deepEqual(result, { removed: true });
+    assert.equal(excepted, "worker-me", "the decline's own session is what the claim check excuses");
+  });
+});
+
+test("#2782 DONE-WHEN 1: decline's removal writes `removing` then `removed`, naming the tree, branch, caller and who declined", () => {
+  withRealWorktree(({ primary, worktree }) => {
+    // The real `.gitignore` carries `.a11y-owner`; this fixture has none, so without the exclude the stamp reads DIRTY and is refused.
+    writeFileSync(join(primary, ".git", "info", "exclude"), ".a11y-owner\n");
+    writeFileSync(join(worktree, ".a11y-owner"), "worker-me\n");
+    const before = removalLines().length;
+    removeClaimedWorktree(worktree, { run: (_cmd: string, args: string[]) => git(primary, args), session: "worker-me", branch: "agent/test-branch" });
+    const mine = removalLines().slice(before).filter((l) => l.path === worktree);
+    assert.deepEqual(mine.map((l) => l.event), ["removing", "removed"]);
+    assert.equal(mine[0].caller, "row-claim.mjs");
+    assert.equal(mine[0].owner, "worker-me");
+    assert.equal(mine[0].branch, "agent/test-branch");
+    assert.match(mine[0].reason, /decline by worker-me/);
+  });
+});
+
+test("#2782: a removal whose log cannot be written does not happen, and a failed `git worktree remove` is logged as failed", () => {
+  withRealWorktree(({ primary, worktree }) => {
+    const unwritable = removeClaimedWorktree(worktree, { run: (_cmd: string, args: string[]) => git(primary, args),
+      record: () => { throw new Error("ENOSPC"); } });
+    assert.equal(unwritable.removed, false);
+    assert.match((unwritable as { reason: string }).reason, /removal log could not be written/);
+    assert.ok(git(primary, ["worktree", "list", "--porcelain"]).includes(worktree));
+    const events: string[] = [];
+    const failing = removeClaimedWorktree(worktree, { run: (_cmd: string, args: string[]) => {
+      if (args[0] === "worktree" && args[1] === "remove") throw new Error("fatal: locked");
+      return git(primary, args);
+    }, record: (line) => { events.push(line.event); } });
+    assert.equal(failing.removed, false);
+    assert.deepEqual(events, ["removing", "failed"]);
+  });
+});
+
+test("#2782: declineRow hands its session and the recorded branch to the remover, so the claim check can excuse the right session", () => {
+  const seen: { path: string; session?: string; branch?: string | null }[] = [];
+  const { run } = boardRun([CLAIM_LABEL, "session:worker-config", STARTED_LABEL, "worktree:/tmp/a11y-wt-665", "branch:agent/x-665"], { number: 665 });
+  const removeWorktree = (path: string, deps?: { session?: string; branch?: string | null }) => {
+    seen.push({ path, session: deps?.session, branch: deps?.branch });
+    return { removed: true } as const;
+  };
+  declineRow(665, "worker-config", { run, fetchComments: noRecord, moveStatus: () => ({ moved: true }), removeWorktree });
+  assert.deepEqual(seen, [{ path: "/tmp/a11y-wt-665", session: "worker-config", branch: "agent/x-665" }]);
+});
+
+test("#2782: the undo of a LOST claim writes its own line, and never asks the row -- the row carries the winner's label by construction", () => {
+  const before = removalLines().length;
+  const stub = worktreeClaimRun();
+  worktreeClaim(stub, { claimResult: { claimed: false, reason: "B4: overlaps #9" } }).call();
+  const mine = removalLines().slice(before).filter((l) => l.path === "/repos/wt-1432");
+  assert.deepEqual(mine.map((l) => l.event), ["removing", "removed"]);
+  assert.equal(mine[0].caller, "row-claim.mjs");
+  assert.match(mine[0].reason, /the claim did not win/);
+  assert.ok(!stub.calls.some((c) => c[0] === "gh"), "the undo spent no `gh` call on the row");
 });
