@@ -15,8 +15,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { causeDeclarations as A11IGN_CAUSES } from "../../../../.agent-org/plugins/causes.mjs";
 
-test("a11ign's plugin declares exactly ONE cause, and it is `fleet-batch-due` (N=1, at most 2)", () => {
-  assert.equal(A11IGN_CAUSES.length, 1);
-  assert.equal(A11IGN_CAUSES[0].cause, "fleet-batch-due");
+test("a11ign's plugin declares exactly TWO causes: `fleet-batch-due` and `lab-job-finished` (N=2, at most 2)", () => {
+  assert.deepEqual(A11IGN_CAUSES.map((c: { cause: string }) => c.cause), ["fleet-batch-due", "lab-job-finished"]);
   assert.equal(A11IGN_CAUSES[0].group, "judgment-start");
+  // #2729: the second is a JUDGMENT cause and NOT a start one -- it addresses the holder of a claimed row, and a drain
+  // stops the org taking on work, not telling a session its job ended.
+  assert.equal(A11IGN_CAUSES[1].group, "judgment");
 });
