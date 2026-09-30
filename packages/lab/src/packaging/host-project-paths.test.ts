@@ -85,7 +85,8 @@ test("#2620: the constants `wake.mjs` still spells out (rows 3b and 3c) equal wh
 // Sha-256 of the texts as they stood at commit 1b5176697, BEFORE the row: the bytes `host:check` compares the live host against. A
 // rendering that differs by one byte reports every installed unit STALE, so this is the guard on "a11ign's values are unchanged".
 const TODAYS_TEXT = {
-  "a11ign-work-tick.service": "e80119ea128ee2f171b6250eba41f62bb048bb55cd0b5d990205d325780f7c48",
+  // #2781 MOVED THIS ONE, deliberately: the unit gained a comment saying the `-` on `primary:update` is covered by the gate reading the primary.
+  "a11ign-work-tick.service": "b566128df67e75cf012540a9aa8d75a7d9a2fb91d32e12ad901f7b8bce8a171e",
   "a11ign-work-tick.timer": "c47470e624dc884515212badc11c82890fa864b7181175a2ab3570fe182e72ec",
   // #2782 MOVED THIS ONE, deliberately: the prune unit now declares `GH_CONFIG_DIR` (it reads a row's claim before removing a tree). The
   // installed copy reads STALE until `host:install` runs, which is a host action and not this row's.

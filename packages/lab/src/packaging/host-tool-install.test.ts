@@ -36,7 +36,7 @@ import { sandboxGitEnv, withGitSandbox } from "../../../agent-org/src/lib/git-sa
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 /** The digest of the `work-tick` unit the host runs today: the one `host-project-paths.test.ts` pins as `TODAYS_TEXT`, restated so this file's claim is checkable alone. */
-const TODAYS_WORK_TICK_SHA = "e80119ea128ee2f171b6250eba41f62bb048bb55cd0b5d990205d325780f7c48";
+const TODAYS_WORK_TICK_SHA = "b566128df67e75cf012540a9aa8d75a7d9a2fb91d32e12ad901f7b8bce8a171e";
 
 /** A host that is nothing like a11ign's: a different account, prefix, home, state directory and project set. */
 const acmeHost = (extra: Record<string, unknown> = {}) => ({
