@@ -68,6 +68,7 @@ import { primaryLaunchRefusal, launchCheckoutOf }
 
 // Each check carries a NAME because the caller narrows with newestPerName, which keys on it -- a fixture
 // without one is dropped, and the gate would read every PR as having no checks at all.
+import { closesUnresolvedOrders, closesUnresolvedPrs } from "../../../agent-org/src/work-gate.mjs";
 const GREEN = [{ name: "ci", status: "COMPLETED", conclusion: "SUCCESS" }];
 const RED = [{ name: "ci", status: "COMPLETED", conclusion: "FAILURE" }];
 const PENDING = [{ name: "ci", status: "IN_PROGRESS", conclusion: null }];
@@ -1070,8 +1071,10 @@ test("every cause is classified as START or FINISH -- a new one cannot default i
   // #2729: `lab-job-finished` is FINISH, and a JUDGMENT cause. Its subject is a row a session already holds and the
   // result of a job that session already dispatched -- the plainest work in flight there is -- and it starts nothing:
   // it replaces the holder polling `lab:status`. A window that withheld it would leave the holder to poll again.
+  // #2823: `closes-unresolved-repo-wide` is FINISH, and a JUDGMENT cause. Its subject is pull requests already open whose
+  // declared rows GitHub will not close, which the post-merge closer covers -- it starts no work, it names a fault to a reader.
   assert.deepEqual(finish, ["answer-label-unexplained", "answer-owed", "awaiting-evidence-stale", "blocker-cleared", "chairman-blocked",
-    "claim-stalled", "claimed-row-amended", "disk-headroom-low", "draft-awaiting-verdict", "draft-convinced-not-ready", "host-units-stale",
+    "claim-stalled", "claimed-row-amended", "closes-unresolved-repo-wide", "disk-headroom-low", "draft-awaiting-verdict", "draft-convinced-not-ready", "host-units-stale",
     "lab-job-finished", "pr-checks-failing", "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "ready-row-incomplete", "reviewer-auth-failed",
     "row-branch-unshipped", "row-call-count-signal", "row-off-board", "trunk-red", "verdict-comment-unreviewed", "verdict-not-convinced"]);
   for (const cause of START_CAUSES) {
@@ -5612,4 +5615,124 @@ test("#2791: readReadyRows asks for `body`, so the gate reads the same field the
   const calls: string[][] = [];
   readReadyRows((args: string[]) => { calls.push(args); return "[]"; });
   assert.ok(String(calls[0][calls[0].indexOf("--json") + 1]).split(",").includes("body"));
+});
+
+// ---- #2823: THE REPO-WIDE CLOSES CONDITION IS A GATE CAUSE, AND NO CI REFUSAL NAMES A SESSION WITHOUT ONE ----
+
+const CLOSES_NOW = Date.parse("2026-09-30T13:00:00Z");
+/** An open PR declaring `Closes #<n+1000>`; `resolved` is what GitHub answered (`null` = the field was not read). */
+function closesPr(n: number, resolved: number[] | null, body = `Closes #${n + 1000}`) {
+  return { ...draft(n, GREEN), body, createdAt: "2026-09-30T10:00:00Z",
+    ...(resolved === null ? {} : { closingIssuesReferences: resolved.map((number) => ({ number })) }) };
+}
+const FOUR_UNRESOLVED = [closesPr(1, []), closesPr(2, []), closesPr(3, []), closesPr(4, [])];
+
+test("#2823: four open PRs declaring a Closes that GitHub resolved nothing for wake `product-manager` ONCE, with the answer", () => {
+  const orders = closesUnresolvedOrders(FOUR_UNRESOLVED, CLOSES_NOW);
+  assert.equal(orders.length, 1, "one order for the condition, not one per pull request");
+  const [order] = orders;
+  assert.equal(order.session, "product-manager");
+  assert.equal(order.cause, "closes-unresolved-repo-wide");
+  assert.ok(CAUSES.includes(order.cause) && JUDGMENT_CAUSES.includes(order.cause) && !START_CAUSES.includes(order.cause));
+  for (const n of [1, 2, 3, 4]) assert.ok(order.prompt.includes(`#${n}`), `the order names #${n}`);
+  assert.match(order.prompt, /oldest open 3h/, "and says how long the condition has stood");
+  assert.equal(order.causeKey, "product-manager/closes-unresolved-repo-wide/1+2+3+4", "keyed on the SET of pull requests");
+  assert.deepEqual(closesUnresolvedOrders([...FOUR_UNRESOLVED].reverse(), CLOSES_NOW)[0].causeKey, order.causeKey,
+    "and the read order does not change the key");
+  assert.deepEqual(decide({ prs: FOUR_UNRESOLVED, readyRows: [] }).filter((o) => o.cause === order.cause).length, 1,
+    "`decide` emits it -- a builder nobody calls wakes nobody");
+});
+
+test("#2823: the order clears when ANY of them resolves, and is silent on every non-repo-wide shape", () => {
+  const key = (prs: unknown[]) => closesUnresolvedOrders(prs, CLOSES_NOW).map((o) => o.causeKey);
+  assert.deepEqual(key([closesPr(1, []), closesPr(2, []), closesPr(3, []), closesPr(4, [999])]), [],
+    "the newest PR resolved -- GitHub is resolving, so it is not repo-wide");
+  assert.deepEqual(key([closesPr(1, []), closesPr(2, []), closesPr(3, [998]), closesPr(4, [])]), [],
+    "a sibling resolved");
+  assert.deepEqual(key(FOUR_UNRESOLVED.slice(0, 3)), [], "one under test plus only two siblings is 'cannot say', not a fault");
+  assert.deepEqual(key([closesPr(1, []), closesPr(2, []), closesPr(3, []), closesPr(4, [], "Closes: none -- docs")]), [],
+    "a PR declaring `none` is no sibling and no subject");
+  assert.deepEqual(key(FOUR_UNRESOLVED.map((pr) => closesPr(pr.number, null))), [],
+    "an unread `closingIssuesReferences` is not asked, and never reads as 'resolved nothing'");
+  assert.deepEqual(closesUnresolvedOrders(null, CLOSES_NOW), [], "a refused PR read has no PRs to name");
+  assert.equal(closesUnresolvedPrs(FOUR_UNRESOLVED).length, 4, "the positive control for every emptiness above");
+});
+
+test("#2823: a fifth PR changes the key (a new set is a new condition), and a missing createdAt drops only the age", () => {
+  const five = [...FOUR_UNRESOLVED, closesPr(5, [])];
+  assert.equal(closesUnresolvedOrders(five, CLOSES_NOW)[0].causeKey, "product-manager/closes-unresolved-repo-wide/1+2+3+4+5");
+  const undated = FOUR_UNRESOLVED.map((pr) => ({ ...pr, createdAt: undefined }));
+  const [order] = closesUnresolvedOrders(undated, CLOSES_NOW);
+  assert.ok(order && !order.prompt.includes("oldest open"));
+});
+
+test("#2823: readPrs asks for `closingIssuesReferences` and `createdAt`, the two fields the Closes cause reads", () => {
+  const calls: string[][] = [];
+  readPrs((args: string[]) => { calls.push(args); return "[]"; });
+  const fields = String(calls[0][calls[0].indexOf("--json") + 1]).split(",");
+  assert.ok(fields.includes("closingIssuesReferences") && fields.includes("createdAt"));
+});
+
+// THE SWEEP: a refusal that NAMES A SESSION reaches that session only if the gate has a cause for it.
+const WORKFLOWS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", ".github", "workflows");
+const REPO_ROOT = join(WORKFLOWS_DIR, "..", "..");
+const SESSION_NAME = "(?:product-manager|orchestrator|ceo|chairman|reviewer(?:-\\d+)?|worker-\\d+)";
+const SESSION_NAMING_REFUSAL = new RegExp(
+  "\\b(?:tell|ask|route[ds]?\\s+to|send\\s+to|message)\\s+`?" + SESSION_NAME + "\\b", "i");
+
+/** Every line of `text` that is code or a string, not a comment (a comment never reaches a CI log), that tells a session. */
+function sessionNamingLines(text: string): { line: number; text: string }[] {
+  return text.split(/\r?\n/).map((t, i) => ({ line: i + 1, text: t.trim() }))
+    .filter(({ text: t }) => !/^(\/\/|\*|\/\*|#)/.test(t) && SESSION_NAMING_REFUSAL.test(t));
+}
+
+/** Files the workflows run directly: `node <file>` / `tsx <file>`, plus the workflow files themselves. */
+function ciScriptFiles(): string[] {
+  const workflows = readdirSync(WORKFLOWS_DIR).filter((f) => f.endsWith(".yml")).map((f) => join(WORKFLOWS_DIR, f));
+  const scripts = new Set<string>();
+  for (const w of workflows) {
+    for (const m of readFileSync(w, "utf8").matchAll(/\b(?:node|tsx)\s+([\w./-]+\.(?:mjs|ts))/g)) {
+      if (existsSync(join(REPO_ROOT, m[1]))) scripts.add(join(REPO_ROOT, m[1]));
+    }
+  }
+  return [...workflows, ...scripts];
+}
+
+/**
+ * `file:phrase` -> the gate cause that wakes that session for it. A refusal on this list has an owner the org WILL wake.
+ * Empty today: #2825 turned the one line the row was filed about (`Tell \`product-manager\`` in
+ * `closes-mismatch-check.mjs`) into a passing warning, and `closes-unresolved-repo-wide` is the cause that speaks it.
+ */
+const MAPPED_TO_A_CAUSE: Record<string, string> = {};
+/** SHRINK-ONLY: `file:phrase` -> why no gate cause is owed. Adding one is a decision; the ceiling only moves down. */
+const EXEMPT_WITH_A_REASON: Record<string, string> = {};
+const EXEMPT_CEILING = 0;
+
+test("#2823 sweep: the scanner FINDS a session-naming refusal (the positive control for the emptiness below)", () => {
+  const old = "  \"  Tell `product-manager`: GitHub resolved no closing reference for any recent PR.\",";
+  assert.equal(sessionNamingLines(old).length, 1, "the line the row was filed about, as it read before #2825");
+  for (const said of ["ask ceo to rule", "Route to `orchestrator`", "routed to worker-12", "tell reviewer-3"]) {
+    assert.equal(sessionNamingLines(`console.log("${said}");`).length, 1, said);
+  }
+  assert.equal(sessionNamingLines("// Tell `product-manager` -- a comment reaches no log").length, 0, "a comment is not a refusal");
+  assert.equal(sessionNamingLines("console.log('the ceo ruled it')").length, 0, "naming a session is not telling it");
+});
+
+test("#2823 sweep: every CI refusal that names a session maps to a gate cause or a reasoned, shrink-only exemption", () => {
+  const files = ciScriptFiles();
+  assert.ok(files.length > 30, "the population is real, and includes the Closes check");
+  assert.ok(files.some((f) => f.endsWith("closes-mismatch-check.mjs")));
+  const codeLines = files.flatMap((f) => readFileSync(f, "utf8").split(/\r?\n/).map((text) => ({ file: relative(REPO_ROOT, f), text })));
+  assert.ok(codeLines.length > 5000, "the scan reads a real population of lines");
+  const found = codeLines.filter(({ text }) => sessionNamingLines(text).length > 0).map(({ file, text }) => `${file}:${text.trim()}`);
+  const accounted = new Set([...Object.keys(MAPPED_TO_A_CAUSE), ...Object.keys(EXEMPT_WITH_A_REASON)]);
+  const isAccounted = (hit: string) => [...accounted].some((key) => hit.startsWith(key.split(":")[0]) && hit.includes(key.split(":").slice(1).join(":")));
+  assert.deepEqual(found.filter((hit) => !isAccounted(hit)), [],
+    "a CI log is read by nobody: name the gate cause that wakes that session, or exempt it with a reason");
+  for (const [key, cause] of Object.entries(MAPPED_TO_A_CAUSE)) assert.ok(CAUSES.includes(cause), `${key} -> ${cause} is not a declared cause`);
+  for (const [key, why] of Object.entries(EXEMPT_WITH_A_REASON)) assert.ok(why.length > 20, `${key} needs a reason`);
+  assert.ok(Object.keys(EXEMPT_WITH_A_REASON).length <= EXEMPT_CEILING, "the exemption list only shrinks");
+  for (const key of accounted) {
+    assert.ok(found.some((hit) => hit.includes(key.split(":").slice(1).join(":"))), `${key} is stale: no refusal says it any more`);
+  }
 });
