@@ -188,6 +188,11 @@ const DOCUMENTED: Record<string, string> = {
     "#1815, lab-watch.mjs's identical three-state shape one subsystem over: 0 QUIET no worker has been "
     + "non-ready past the threshold; 1 ATTENTION at least one has, named with its own age and reason "
     + "(posted to #928 only under --post); 2 CANNOT_ASK — fleet:status itself could not be read",
+  "packages/control/src/control-unit-drift.mjs":
+    "#2800, fleet-watch.mjs's three-state shape for the control host's installed units: 0 QUIET every unit "
+    + "the control-plane playbooks ship is installed as shipped; 1 ATTENTION at least one differs, is "
+    + "missing on the host, or is installed and shipped by nobody (each named); 2 CANNOT_ASK — the host "
+    + "could not be read or answered empty, or the playbooks derived no units, which is never read as clean",
   "packages/lab/scripts/audit-corpus-starvation.mjs":
     "2 a stale export — the featurizer can't read a pre-`parsed`-block record; 0 otherwise",
   "packages/lab/scripts/audit-corpus-urls.mjs":
