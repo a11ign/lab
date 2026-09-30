@@ -3302,6 +3302,37 @@ test("#2741: anyBlockerClearingCandidate is the gate `main` pays `readRecentlyCl
     "a row the FLEET holds is not a candidate until the hold passes, matching `blockerClearedOrders` itself");
 });
 
+// --- #2780: the CLAIMED-row reader of the `needs:chairman` / `parked` gap ---------------------------
+// #2583, #2604 and #2653 taught the three readers that reach an UNCLAIMED row; `blockerClearedOrders` addresses the
+// holder of a CLAIMED one and was never taught either. #2623 (`needs:chairman`, still claimed) was asked 19+ times in a day.
+
+test("#2780: a CLAIMED row labelled `needs:chairman` is WAITING, so its cleared blockers order no pick-up", () => {
+  const waiting = heldRow(2623, "worker-2623", { ...blockedByClosed,
+    labels: [{ name: "in-progress" }, { name: "session:worker-2623" }, { name: CHAIRMAN_LABEL }] });
+  assert.deepEqual(blockerClearedOrders([waiting], TODAY), [],
+    "#2623 was told to PICK IT BACK UP at every re-ask for a row whose one remaining step was the chairman's");
+  assert.equal(anyBlockerClearingCandidate([waiting], TODAY), false,
+    "`main` pays `readRecentlyClosed` on this predicate, so it must not count the row either");
+  // THE CONTROL: the same row minus the label, so an empty result above is the label's doing.
+  const control = heldRow(2623, "worker-2623", blockedByClosed);
+  assert.equal(blockerClearedOrders([control], TODAY).length, 1,
+    "POSITIVE CONTROL: without `needs:chairman` the same claimed row still reaches its holder");
+  assert.equal(anyBlockerClearingCandidate([control], TODAY), true, "and is still a candidate");
+});
+
+test("#2780: a CLAIMED row labelled `parked` is WAITING on `ceo`, so its cleared blockers order no pick-up", () => {
+  const parked = heldRow(2568, "worker-2568", { ...blockedByClosed,
+    labels: [{ name: "in-progress" }, { name: "session:worker-2568" }, { name: PARKED_LABEL }] });
+  assert.deepEqual(blockerClearedOrders([parked], TODAY), [],
+    "a parked claimed row is scheduled by `ceo`, and a cleared blocker is not the event that resumes it");
+  assert.equal(anyBlockerClearingCandidate([parked], TODAY), false, "nor is it a candidate for the closings read");
+  const control = heldRow(2568, "worker-2568", blockedByClosed);
+  assert.equal(blockerClearedOrders([control], TODAY).length, 1,
+    "POSITIVE CONTROL: without `parked` the same claimed row still reaches its holder");
+  assert.equal(blockerClearedOrders([parked, heldRow(2569, "worker-2569", blockedByClosed)], TODAY)
+    .map((o) => o.session).join(), "worker-2569", "only the labelled row of a mixed set is dropped");
+});
+
 // --- #2139, the other half of #2027: nobody was told when an UNCLAIMED row's last blocker closed ----
 //
 // `blocker-cleared` above is scoped by `labelsOf(row).includes(CLAIM_LABEL)`, and that one condition is
