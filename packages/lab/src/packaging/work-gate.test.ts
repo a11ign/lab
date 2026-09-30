@@ -3511,7 +3511,7 @@ test("#2286: a row whose ANSWER has been written is not asked at all, even insid
   const inside = (extra: Record<string, unknown>) => askKeys([{ ...clearedRow(2161), ...extra }], now);
   assert.equal(inside({}).length, 1, "POSITIVE CONTROL: the same row, unanswered, is inside its first window");
   assert.deepEqual(inside({ labels: [{ name: "ready" }] }), [], "`ready` is the promotion");
-  assert.deepEqual(inside({ body: "Not-before: 2026-09-30T00:00:00Z" }), [], "a `Not-before:` is an answer");
+  assert.deepEqual(inside({ body: "Not-before: 2099-01-01T00:00:00Z" }), [], "a `Not-before:` is an answer");
   assert.deepEqual(inside({ labels: [{ name: "backlog" }, { name: `${ANSWER_PREFIX}ceo` }] }), [],
     "`answer:<session>` is an answer");
   assert.deepEqual(inside({ blockedBy: { nodes: [{ number: 2139, state: "CLOSED" },
