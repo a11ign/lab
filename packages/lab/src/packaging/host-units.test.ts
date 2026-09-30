@@ -35,7 +35,9 @@ import { shippedUnits, unitState, unitDrift, driftReport, hostUnitsInstall, syst
   supersededHostScripts, unitEntryPoints, missingUnitPrograms, workingDirectoryOf,
   programCandidates, hostIdentityDrift, hostIdentityNotes, hostIdentityInstall, ownedIdentityFiles, compileCacheNotes,
   WORKERS_README, HUMAN_ACCOUNT_ALLOWED, compileCacheDrift, declaredCompileCache, PROJECT_UNITS_DIR, shippedUnitText,
-  shippedScriptText, leadsListText } from "../../../agent-org/src/host-units.mjs";
+  shippedScriptText, leadsListText, modelEffortDrift, sessionModelDrift, sessionModelNotes, lastModelIn,
+  liveClaudeSessions } from "../../../agent-org/src/host-units.mjs";
+import { DECLARED_CLAUDE_MODELS, PROFILES, CLAUDE_EFFORTS } from "../../../agent-org/src/worker-profile.mjs";
 
 /**
  * #2620: ONE SHIPPED UNIT AS IT INSTALLS -- the tool's three are rendered from `host/*.in` templates and the project's own are read
@@ -200,6 +202,10 @@ test("#1858: every unit this repository ships is discovered -- against the real 
 // existing session as a bare `claude --resume <uuid>`, and re-resumes all of them when it restarts: six
 // came back at 18:47:27 in one instant, in auto mode. A launch flag cannot hold a posture across a resume.
 
+/** A host `settings.json` that satisfies EVERY settings check: the permission posture and the declared effort entries (#2783). */
+const SATISFIED_SETTINGS = JSON.stringify({ permissions: { defaultMode: "bypassPermissions" },
+  modelSettings: Object.fromEntries(Object.values(DECLARED_CLAUDE_MODELS).map((m) => [m.id, { effortLevel: m.effortLevel }])) });
+
 const settings = (json: string) => ({
   settingsPath: "/home/agent/.claude/settings.json",
   exists: (() => true) as never,
@@ -228,6 +234,157 @@ test("#1863: an ABSENT key and an absent FILE are both findings, neither silentl
   const [absent] = permissionModeDrift({ settingsPath: "/nope", exists: (() => false) as never });
   assert.equal(absent.problem, "NO SETTINGS FILE");
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// #2783: A MODEL CHANGE REACHES ONLY FRESH SESSIONS, AND THE EFFORT THAT GOES WITH IT IS HOST STATE.
+//
+// 2026-09-29: the chairman moved the org to Sonnet 5.5. `ceo`, `product-manager` and `orchestrator`, restarted with
+// `--resume`, came back on Sonnet 5 (a resume keeps the SAVED model; herdr resumes as a bare `claude --resume <uuid>`, so
+// no flag holds it), and `modelSettings.claude-sonnet-5-5.effortLevel: high` existed only because it was added by hand.
+// ---------------------------------------------------------------------------------------------------------------------
+
+const withEffort = (entries: Record<string, { effortLevel: string }>) =>
+  settings(JSON.stringify({ permissions: { defaultMode: "bypassPermissions" }, modelSettings: entries }));
+
+test("#2783: the repo records the effort the org depends on for the CURRENT model (the row's open-check)", () => {
+  assert.deepEqual(DECLARED_CLAUDE_MODELS.sonnet, { id: "claude-sonnet-5-5", effortLevel: "high" });
+});
+
+test("#2783: a host with the declared entry is clean, and MORE effort than declared is not a finding either", () => {
+  assert.deepEqual(modelEffortDrift(withEffort({ "claude-sonnet-5-5": { effortLevel: "high" } })), [],
+    "the positive control -- this check must be capable of passing");
+  assert.deepEqual(modelEffortDrift(withEffort({ "claude-sonnet-5-5": { effortLevel: "xhigh" } })), []);
+});
+
+test("#2783: a MISSING entry is the finding, and it names the model, the value to add and that it cannot fix", () => {
+  // The 2026-09-29 state before the chairman's hand edit: entries for the OLD models only.
+  const [f] = modelEffortDrift(withEffort({ "claude-sonnet-5": { effortLevel: "high" } }));
+  assert.equal(f.problem, "EFFORT NOT SET FOR claude-sonnet-5-5");
+  assert.match(f.detail, /has no entry/);
+  assert.match(f.detail, /"claude-sonnet-5-5": \{ "effortLevel": "high" \}/, "the line to add, not only the complaint");
+  assert.match(f.detail, /cannot fix/, "it says it only checks");
+});
+
+test("#2783: a LOWER or unrecognised effort is a finding, and a file with no modelSettings at all is a missing one", () => {
+  const [lower] = modelEffortDrift(withEffort({ "claude-sonnet-5-5": { effortLevel: "medium" } }));
+  assert.match(lower.detail, /is "medium"/);
+  const [typo] = modelEffortDrift(withEffort({ "claude-sonnet-5-5": { effortLevel: "hgih" } }));
+  assert.match(typo.detail, /is "hgih"/, "a value outside the vocabulary must not compare as 'not lower'");
+  const [none] = modelEffortDrift(settings('{"model":"sonnet"}'));
+  assert.match(none.detail, /has no entry/);
+});
+
+test("#2783: an absent or unparseable file is permissionModeDrift's finding and is NOT repeated here", () => {
+  assert.deepEqual(modelEffortDrift({ settingsPath: "/nope", exists: (() => false) as never }), []);
+  assert.deepEqual(modelEffortDrift(settings("{ this is not json")), []);
+  assert.equal(permissionModeDrift(settings("{ this is not json"))[0].problem, "UNREADABLE",
+    "the emptiness above is only honest because the sibling check DOES report the same fixture");
+});
+
+test("#2783: the declaration is tied to PROFILES -- every claude alias the org runs is declared, at the highest effort asked", () => {
+  const asked = new Map<string, number>();
+  for (const p of Object.values(PROFILES) as { kind: string, model: string, effort: string }[]) {
+    if (p.kind !== "claude") continue;
+    asked.set(p.model, Math.max(asked.get(p.model) ?? -1, CLAUDE_EFFORTS.indexOf(p.effort)));
+  }
+  assert.ok(asked.size > 0, "the population is not empty: PROFILES has claude causes");
+  for (const [alias, rank] of asked) {
+    const declared = (DECLARED_CLAUDE_MODELS as Record<string, { effortLevel: string }>)[alias];
+    assert.ok(declared, `PROFILES runs \`${alias}\` and DECLARED_CLAUDE_MODELS does not declare it`);
+    assert.ok(CLAUDE_EFFORTS.includes(declared.effortLevel),
+      "a declared effort outside the vocabulary would rank -1 and make every host entry compare as satisfying it");
+    assert.ok(CLAUDE_EFFORTS.indexOf(declared.effortLevel) >= rank,
+      `${alias} is declared at ${declared.effortLevel}, below an effort a PROFILES cause asks for`);
+  }
+});
+
+test("#2783: hostUnitDrift carries it -- a host with the permission posture but no effort entry has the finding", () => {
+  const host = hostWithOneUnit("");
+  const clean = hostUnitDrift(host).filter((d) => /EFFORT/.test(d.problem));
+  assert.deepEqual(clean, [], "SATISFIED_SETTINGS satisfies it");
+  writeFileSync(host.settingsPath, '{"permissions":{"defaultMode":"bypassPermissions"}}');
+  assert.deepEqual(hostUnitDrift(host).filter((d) => /EFFORT/.test(d.problem)).map((d) => d.problem),
+    ["EFFORT NOT SET FOR claude-sonnet-5-5"]);
+});
+
+/** One transcript line as Claude Code writes it: an assistant message carries the model that produced it. */
+const answered = (model: string) => JSON.stringify({ type: "assistant", message: { model, role: "assistant" } });
+
+test("#2783: lastModelIn reads the LAST assistant answer, ignores <synthetic>, and survives a record cut in half", () => {
+  const text = ["}, cut mid-record", answered("claude-sonnet-5"), '{"type":"user","message":{"role":"user"}}',
+    answered("claude-sonnet-5-5"), answered("<synthetic>"), '{"type":"last-prompt"}', '{"half":'].join("\n");
+  assert.equal(lastModelIn(text), "claude-sonnet-5-5", "the newest real model, not the first and not the placeholder");
+  assert.equal(lastModelIn('{"type":"user"}\n'), null, "no answer is null, never a guess");
+});
+
+const sessionsDir = (files: Record<string, string>) => {
+  const root = mkdtempSync(join(tmpdir(), "host-units-2783-"));
+  for (const [rel, text] of Object.entries(files)) {
+    mkdirSync(join(root, rel, ".."), { recursive: true });
+    writeFileSync(join(root, rel), text);
+  }
+  return root;
+};
+
+test("#2783: a session on the declared model is clean; one still on the OLD model is the finding, with its remedy", () => {
+  const projectsDir = sessionsDir({
+    "-home-agent-repos-a11y-witness/aaa.jsonl": `${answered("claude-sonnet-5-5")}\n`,
+    "-home-agent-repos-a11y-witness/bbb.jsonl": `${answered("claude-sonnet-5")}\n`,
+    "-home-agent-repos-wt-2783/ccc.jsonl": `${answered("claude-sonnet-5-5")}\n`,
+  });
+  try {
+    const sessions = [
+      { name: "ceo", cwd: "/home/agent/repos/a11y-witness", sessionId: "aaa" },
+      { name: "product-manager", cwd: "/home/agent/repos/a11y-witness", sessionId: "bbb" },
+      { name: "worker-2783", cwd: "/home/agent/repos/wt-2783", sessionId: "ccc" },
+    ];
+    const drift = sessionModelDrift({ sessions, projectsDir });
+    assert.deepEqual(drift.map((d) => d.unit), ["session product-manager"],
+      "only the resumed one; the transcript directory is the cwd with `/` and `.` turned into `-`");
+    assert.equal(drift[0].problem, "SESSION ON AN UNDECLARED MODEL");
+    assert.match(drift[0].detail, /`claude-sonnet-5`/, "it names what it found");
+    assert.match(drift[0].detail, /\/model <alias>/, "and the in-place remedy");
+    assert.match(drift[0].detail, /cannot switch/, "and says it only reads");
+  } finally { rmSync(projectsDir, { recursive: true, force: true }); }
+});
+
+test("#2783: a session with no answer yet is a NOTE, never a finding and never silently clean", () => {
+  const projectsDir = sessionsDir({ "-home-agent-repos-a11y-witness/fresh.jsonl": '{"type":"mode"}\n' });
+  try {
+    const sessions = [{ name: "orchestrator", cwd: "/home/agent/repos/a11y-witness", sessionId: "fresh" },
+      { name: "no-file", cwd: "/home/agent/repos/a11y-witness", sessionId: "missing" }];
+    assert.deepEqual(sessionModelDrift({ sessions, projectsDir }), [],
+      "the gate wakes a session on any finding, and 'has not answered yet' is nothing to wake anybody for");
+    assert.deepEqual(sessionModelNotes({ sessions, projectsDir }).map((n) => [n.unit, n.problem]),
+      [["session orchestrator", "MODEL UNKNOWN"], ["session no-file", "MODEL UNKNOWN"]]);
+  } finally { rmSync(projectsDir, { recursive: true, force: true }); }
+});
+
+test("#2783: only the TAIL of a transcript is read, so a multi-megabyte one costs a bounded read", () => {
+  const filler = `${JSON.stringify({ type: "user", pad: "x".repeat(1000) })}\n`.repeat(600);  // ~600 KB, past the tail
+  const projectsDir = sessionsDir({
+    "-home-agent-repos-a11y-witness/big.jsonl": `${answered("claude-sonnet-5")}\n${filler}${answered("claude-sonnet-5-5")}\n`,
+  });
+  try {
+    const sessions = [{ name: "ceo", cwd: "/home/agent/repos/a11y-witness", sessionId: "big" }];
+    assert.deepEqual(sessionModelDrift({ sessions, projectsDir }), [], "the newest answer wins across the real file read");
+  } finally { rmSync(projectsDir, { recursive: true, force: true }); }
+});
+
+test("#2783: liveClaudeSessions takes herdr's listing, drops codex, and answers null -- not [] -- when herdr cannot be asked", () => {
+  const listing = JSON.stringify({ result: { agents: [
+    { agent: "claude", name: "ceo", cwd: "/x", agent_session: { value: "u1" } },
+    { agent: "codex", name: "reviewer-9", cwd: "/y", agent_session: { value: "u2" } },
+    { agent: "claude", name: "no-session", cwd: "/z" },
+  ] } });
+  assert.deepEqual(liveClaudeSessions(() => listing), [{ name: "ceo", cwd: "/x", sessionId: "u1" }]);
+  assert.equal(liveClaudeSessions(() => { throw new Error("herdr: not running"); }), null);
+  assert.equal(liveClaudeSessions(() => "not json"), null);
+  assert.equal(liveClaudeSessions(() => "{}"), null);
+  assert.deepEqual(sessionModelDrift({ sessions: null }), [], "not asked reads as no findings, and the caller knows it was not asked");
+});
+
+
 
 test("#1863: UNREADABLE is its own verdict -- unknown is not the same as wrong", () => {
   // Reporting broken JSON as "auto mode" would send a reader to change a key in a file that will not
@@ -1556,7 +1713,7 @@ const hostWithOneUnit = (installedSuffix: string) => {
   for (const dir of Object.values(dirs)) mkdirSync(dir, { recursive: true });
   const settingsPath = join(root, "settings.json");
   // PINNED SATISFIED, so the drift under test is exactly the pair and not three findings deep.
-  writeFileSync(settingsPath, '{"permissions":{"defaultMode":"bypassPermissions"}}');
+  writeFileSync(settingsPath, SATISFIED_SETTINGS);
   const unit = "a11ign-board-report.service";
   writeFileSync(join(dirs.shipped, unit), UNIT_BODY(dirs.repo));
   // THE SAME `ExecStart`, so the missing program is not an artefact of the staleness -- the only
