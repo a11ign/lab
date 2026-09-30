@@ -81,7 +81,10 @@ test("#2729: two jobs ending for one row are ONE order, and a later job is a NEW
 });
 
 test("#2729: `decide` emits it, and a drain does not withhold it", () => {
-  const state = { prs: [], readyRows: [], openRows: [held(2718, "worker-2718")], labJobs: [record()] };
+  // `decide` reads the REAL clock, so this record must be young against it: `finishedAgo` is measured from the pinned
+  // `NOW`, and a record 2 minutes old at 12:00Z is past the 90-minute wake window by 13:30Z (#2791 met this red).
+  const justNow = new Date(Date.now() - 2 * MINUTE).toISOString().replace(/\.\d+Z$/, "Z");
+  const state = { prs: [], readyRows: [], openRows: [held(2718, "worker-2718")], labJobs: [record({ finishedAt: justNow })] };
   const mine = (orders: { cause: string }[]) => orders.filter((o) => o.cause === "lab-job-finished");
   assert.equal(mine(decide(state)).length, 1);
   assert.equal(mine(decide({ ...state, drain: true })).length, 1,
