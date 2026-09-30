@@ -3515,6 +3515,12 @@ test("#2286: a row whose ANSWER has been written is not asked at all, even insid
   assert.equal(inside({}).length, 1, "POSITIVE CONTROL: the same row, unanswered, is inside its first window");
   assert.deepEqual(inside({ labels: [{ name: "ready" }] }), [], "`ready` is the promotion");
   assert.deepEqual(inside({ body: "Not-before: 2099-01-01T00:00:00Z" }), [], "a `Not-before:` is an answer");
+  // #2812: the hour is read against the INJECTED clock, so this is 100 minutes after `now` on any wall-clock day.
+  // Before the fix it was read against the real one, where 2026-09-24T00:00Z is long past and the row was asked.
+  const hourAfterNow = new Date(now + 100 * 60_000).toISOString().replace(".000Z", "Z");
+  assert.deepEqual(inside({ body: `Not-before: ${hourAfterNow}` }), [], "an HOUR-form `Not-before:` is read at `now`");
+  assert.equal(inside({ body: `Not-before: ${new Date(now - 60_000).toISOString().replace(".000Z", "Z")}` }).length, 1,
+    "POSITIVE CONTROL: the same wait a minute in the past has lapsed at `now`, so the row IS asked");
   assert.deepEqual(inside({ labels: [{ name: "backlog" }, { name: `${ANSWER_PREFIX}ceo` }] }), [],
     "`answer:<session>` is an answer");
   assert.deepEqual(inside({ blockedBy: { nodes: [{ number: 2139, state: "CLOSED" },
