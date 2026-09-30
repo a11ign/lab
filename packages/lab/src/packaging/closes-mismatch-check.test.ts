@@ -1,3 +1,7 @@
+// no-token: lookupClosingIssues
+// #827. Every fact this file feeds a decider is INJECTED, and the three CLI tests run the script against a fake
+// `gh` first on PATH that answers from files, so nothing here reaches GitHub. The closure walk still finds
+// `lookups.mjs`'s `gh` through `closes-mismatch-check.mjs`'s import; reaching it live is not what is tested.
 /**
  * #549: a PR body can declare `Closes: none` and still close two issues, and nothing compared what the
  * author DECLARED against what GitHub RESOLVED. Measured live, same day: #545 declared `none` and closed
@@ -9,7 +13,14 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { closesMismatchReport, findClosingPhrase } from "../../../agent-org/src/closes-mismatch-check.mjs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  closesMismatchReport, findClosingPhrase, isRepoWideResolutionFault, recentClosesSiblings, refusal,
+  REPO_WIDE_LINES,
+} from "../../../agent-org/src/closes-mismatch-check.mjs";
 import type { ClosesDeclaration } from "../../../agent-org/src/acceptance-commands.mjs";
 
 const NONE: ClosesDeclaration = { kind: "none", reason: "docs-only change" };
@@ -145,4 +156,112 @@ test("#549 MUTATION TARGET: a genuinely clean PR (declared matches resolved, sev
     assert.deepEqual(report, { ok: true },
       `expected a clean match to be allowed: declared ${JSON.stringify(declaration)}, resolved ${JSON.stringify(resolved)}`);
   }
+});
+
+// --- #2810: GitHub resolving NOTHING for every recent PR is a repo-wide condition, not this body ---
+
+const sibling = (number: number, resolved: number[] = []) => ({ number, resolved });
+const THREE_DEAD = [sibling(1), sibling(2), sibling(3)];
+const LONE = { declared: [2810], resolved: [] as number[] };
+const openPr = (number: number, body: string, resolved: number[] = []) => ({ number, body, resolved });
+
+test("#2810 decider: declares, resolves none, and all 3 siblings resolve none -> repo-wide", () => {
+  assert.equal(isRepoWideResolutionFault(LONE, THREE_DEAD), true);
+});
+
+test("#2810 decider POSITIVE CONTROLS: every other input is a lone mismatch", () => {
+  const cases: [string, Parameters<typeof isRepoWideResolutionFault>][] = [
+    ["one sibling resolves a number", [LONE, [sibling(1), sibling(2, [77]), sibling(3)]]],
+    ["fewer than 3 siblings declare a Closes", [LONE, [sibling(1), sibling(2)]]],
+    ["no siblings at all", [LONE, []]],
+    ["the sibling lookup could not ask (null)", [LONE, null]],
+    ["the PR under test has an accidental closure", [{ declared: [2810], resolved: [55] }, THREE_DEAD]],
+    ["the PR under test resolved its own declaration", [{ declared: [2810], resolved: [2810] }, THREE_DEAD]],
+    ["the PR under test declares no number", [{ declared: [], resolved: [] }, THREE_DEAD]],
+  ];
+  for (const [name, args] of cases) assert.equal(isRepoWideResolutionFault(...args), false, name);
+});
+
+test("#2810 siblings: the 3 newest OTHER open PRs declaring a non-empty Closes, drafts included", () => {
+  const prs = [
+    openPr(10, "Closes #1"), openPr(9, "Closes: none — docs only"), openPr(8, "no declaration"),
+    openPr(7, "Closes #2, #3", [2]), openPr(6, "Closes #4"), openPr(5, "Closes #5"),
+  ];
+  assert.deepEqual(recentClosesSiblings(prs, 10), [sibling(7, [2]), sibling(6), sibling(5)]);
+  assert.equal(recentClosesSiblings(null, 10), null, "could not ask stays null, never []");
+});
+
+const OPEN_REFUSAL = closesMismatchReport(CLOSES([2810]), [], "Closes #2810");
+
+test("#2810 repo-wide message names the condition and replaces the per-body advice", () => {
+  assert.equal(OPEN_REFUSAL.ok, false);
+  const { lines } = refusal(OPEN_REFUSAL as { ok: false; reasons: string[] }, true);
+  const text = lines.join("\n");
+  assert.match(text, /last 3 open PRs that declare one/);
+  assert.match(text, /repo-wide and not this body/);
+  assert.match(text, /Do not edit the body\. Do not rerun\. Do not write `Closes: none`/);
+  assert.match(text, /merge stays blocked/);
+  assert.match(text, /`product-manager`/);
+  assert.doesNotMatch(text, /confirm #/);
+  assert.deepEqual(lines.slice(1), [...REPO_WIDE_LINES]);
+});
+
+test("#2810 a lone mismatch keeps today's message byte for byte", () => {
+  const { lines, exit } = refusal(OPEN_REFUSAL as { ok: false; reasons: string[] }, false);
+  assert.equal(exit, 1);
+  assert.deepEqual(lines, [
+    "CLOSES MISMATCH: REFUSED -- what you declared and what GitHub will actually close disagree:",
+    "  you declared #2810, but GitHub will NOT close it -- the declaration did not produce a real closing "
+      + 'reference (confirm #2810 exists in this repo, and that the line reads exactly "Closes #2810")',
+  ]);
+});
+
+test("#2810 the exit STAYS 1 for both wordings, and refusal accepts no ok report to turn into an exit 0", () => {
+  const refused = OPEN_REFUSAL as { ok: false; reasons: string[] };
+  for (const repoWide of [true, false]) assert.equal(refusal(refused, repoWide).exit, 1);
+});
+
+// --- the whole CLI against a fake `gh`, so the exit code is read from a real process ---
+
+function runCheck(ghAnswers: { own: number[]; open: unknown[] | "fail" }) {
+  const dir = mkdtempSync(join(tmpdir(), "closes-check-"));
+  const fake = join(dir, "gh");
+  const open = ghAnswers.open === "fail" ? null : { data: { repository: { pullRequests: { nodes: ghAnswers.open } } } };
+  const own = { data: { repository: { pullRequest: { closingIssuesReferences: {
+    nodes: ghAnswers.own.map((number) => ({ number, title: "t", labels: { nodes: [] } })) } } } } };
+  writeFileSync(join(dir, "own.json"), JSON.stringify(own));
+  writeFileSync(join(dir, "open.json"), JSON.stringify(open));
+  writeFileSync(fake, `#!/bin/sh
+case "$*" in
+  *pullRequests*) [ "${ghAnswers.open === "fail"}" = true ] && exit 1; cat "${dir}/open.json" ;;
+  *) cat "${dir}/own.json" ;;
+esac
+`);
+  chmodSync(fake, 0o755);
+  const result = spawnSync(process.execPath, ["packages/agent-org/src/closes-mismatch-check.mjs", "2810"], {
+    encoding: "utf8", env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, PR_BODY: "Closes #2810" },
+  });
+  return { status: result.status, out: result.stdout };
+}
+
+const deadNode = (number: number) => ({ number, body: `Closes #${number}`, closingIssuesReferences: { nodes: [] } });
+
+test("#2810 CLI: repo-wide condition prints the diagnostic and still exits 1", () => {
+  const { status, out } = runCheck({ own: [], open: [deadNode(2810), deadNode(2809), deadNode(2808), deadNode(2807)] });
+  assert.equal(status, 1);
+  assert.match(out, /repo-wide and not this body/);
+});
+
+test("#2810 CLI: a lone mismatch (a sibling resolved) keeps today's words and exit 1", () => {
+  const live = { number: 2808, body: "Closes #5", closingIssuesReferences: { nodes: [{ number: 5 }] } };
+  const { status, out } = runCheck({ own: [], open: [deadNode(2809), live, deadNode(2807), deadNode(2806)] });
+  assert.equal(status, 1);
+  assert.match(out, /will NOT close it/);
+  assert.doesNotMatch(out, /repo-wide/);
+});
+
+test("#2810 CLI: a sibling lookup that could not ask is a lone mismatch, exit 1", () => {
+  const { status, out } = runCheck({ own: [], open: "fail" });
+  assert.equal(status, 1);
+  assert.match(out, /will NOT close it/);
 });
