@@ -638,7 +638,7 @@ test("the order tells ceo to CLEAR a stale label, or the count stops meaning any
  * turn, and a gate that shelves when it cannot actually tell would starve a queue in silence.
  */
 const regionRow = (n: number, region: string, extra: string[] = []) =>
-  ({ number: n, body: `## Region\n\n- \`${region}\`\n\n## Acceptance\n\nnone\n`,
+  ({ number: n, body: `## Region\n\n- \`${region}\`\n\n## Acceptance\n\nnone\n\n## Open-check\n\nnone\n`,
     labels: [{ name: "ready" }, ...extra.map((e) => ({ name: e }))] });
 
 const prTouching = (n: number, ...files: string[]) => ({ number: n, files, changedFiles: files.length });
@@ -1065,12 +1065,14 @@ test("every cause is classified as START or FINISH -- a new one cannot default i
   // #2711: `answer-label-unexplained` is FINISH, and an ACTION cause (in `JUDGMENT_CAUSES` neither):
   // `claim-stalled`'s own argument -- its subject is a row a session already holds, which a drain exists to
   // land, and the two remedies (post the question, remove the label) start no new work.
+  // #2791: `ready-row-incomplete` is FINISH, and a JUDGMENT cause. It starts no work -- it asks `product-manager` to
+  // AMEND a row so a later claim can succeed, which a window has no reason to hold back.
   // #2729: `lab-job-finished` is FINISH, and a JUDGMENT cause. Its subject is a row a session already holds and the
   // result of a job that session already dispatched -- the plainest work in flight there is -- and it starts nothing:
   // it replaces the holder polling `lab:status`. A window that withheld it would leave the holder to poll again.
   assert.deepEqual(finish, ["answer-label-unexplained", "answer-owed", "awaiting-evidence-stale", "blocker-cleared", "chairman-blocked",
     "claim-stalled", "claimed-row-amended", "disk-headroom-low", "draft-awaiting-verdict", "draft-convinced-not-ready", "host-units-stale",
-    "lab-job-finished", "pr-checks-failing", "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "reviewer-auth-failed",
+    "lab-job-finished", "pr-checks-failing", "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "ready-row-incomplete", "reviewer-auth-failed",
     "row-branch-unshipped", "row-call-count-signal", "row-off-board", "trunk-red", "verdict-comment-unreviewed", "verdict-not-convinced"]);
   for (const cause of START_CAUSES) {
     assert.ok(CAUSES.includes(cause), `${cause} is withheld by a drain but no longer exists`);
@@ -4210,6 +4212,8 @@ const LISTING = `${SHA_2000}\trefs/heads/${BRANCH_2000}\n`
 /** A Ready row as `readReadyRows` returns it: `ready`, no `session:`, no `in-progress`. */
 const readyRow = (n: number, extra: Record<string, unknown> = {}) =>
   ({ number: n, title: `row ${n}`, labels: [{ name: "ready" }], ...extra });
+/** A body stating all three template sections (#2791): a row with a `body` and any of them missing is not stock. */
+const COMPLETE_BODY = "## Region\n\nx.mjs\n\n## Acceptance\n\nnpm test\n\n## Open-check\n\nfalse today\n";
 
 test("#2031: a Ready row whose branch is on origin gets its own cause, and is no longer offered fresh", () => {
   // THE POSITIVE FIRST, and it is the whole row: without it every silence assertion below is satisfied
@@ -4873,7 +4877,7 @@ test("#1959: it is FINISH (never withheld by a drain) and an ACTION cause (not i
  * one.
  */
 test("#2113: a Ready row waiting on an HOUR is shelved before it and offered after, on one date", () => {
-  const dated = readyRow(2002, { body: "## Not-before: 2026-09-23T06:10:00Z" });
+  const dated = readyRow(2002, { body: `${COMPLETE_BODY}\n## Not-before: 2026-09-23T06:10:00Z` });
   const clock = (iso: string) => ({ today: "2026-09-23", nowMs: Date.parse(iso) });
 
   // 00:20Z: the date has arrived and the 06:10Z run has not. Before #2113 this row was OFFERABLE, and a
@@ -4899,7 +4903,7 @@ test("#2113: a date-only Ready row is offered and shelved exactly as it was befo
   // any date-only row's answer would be a behaviour change dressed as a widening. A date-only value is
   // measured against `today` at midnight UTC, and the clock is moved across the whole day to show it
   // does not enter that path at all.
-  const dated = readyRow(2002, { body: "Not-before: 2026-09-24" });
+  const dated = readyRow(2002, { body: `${COMPLETE_BODY}\nNot-before: 2026-09-24` });
   for (const at of ["2026-09-23T00:00:00Z", "2026-09-23T23:59:59Z"]) {
     const { offerable, blocked } = partitionUnclaimed([dated], [],
       { clock: { today: "2026-09-23", nowMs: Date.parse(at) } });
@@ -5546,4 +5550,66 @@ test("#2075: row-off-board is a JUDGMENT cause and FINISH, and `decide` emits it
   assert.deepEqual(causes({}), [], "a caller that did not ask emits nothing");
   assert.deepEqual(causes({ offBoard: null }), [], "a caller whose read was refused emits nothing");
   assert.deepEqual(causes({ offBoard: [old], drain: true }), ["row-off-board"], "a drain does not withhold it");
+});
+
+// --- #2791: a Ready row the claim refuses for a template defect is not stock -------------------------------
+
+/**
+ * #2729 and #2730 read `ready` for ~38h with no `## Open-check`, and `row-claim` refused both
+ * (`NOT CLAIMED: ... is missing Open-check`). The pool counted them, so `ready-queue-empty` never fired and
+ * every engineer waited on a queue with nothing takeable. `missingTemplateFields` is the rule the claim
+ * applies, imported unchanged -- so the gate and the claim cannot disagree about what is claimable.
+ */
+const NO_OPEN_CHECK = "## Region\n\nx.mjs\n\n## Acceptance\n\nnpm test\n";
+const BACKLOG = [{ number: 800, labels: [{ name: "backlog" }] }];
+const shelfCauses = (orders: { cause: string }[]) => orders.map((o) => o.cause).sort();
+
+test("#2791: two unclaimable Ready rows and a promotable backlog -- ready-queue-empty FIRES; completed, it does not", () => {
+  const incomplete = [readyRow(2729, { body: NO_OPEN_CHECK }), readyRow(2730, { body: "" })];
+  const orders = decide({ prs: [], readyRows: incomplete, promotableRows: BACKLOG, prFiles: [] });
+  // THE POSITIVE FIRST: the only thing that changed against the control below is the body.
+  const [shelf] = orders.filter((o: { cause: string }) => o.cause === "ready-queue-empty");
+  assert.ok(shelf, "the pool has nothing an engineer can claim, so product-manager is asked to promote");
+  assert.match(shelf.prompt, /#2729: its body has no `## Open-check`/);
+  assert.match(shelf.prompt, /#2730: its body has no `## Region`, `## Acceptance`, `## Open-check`/);
+  assert.equal(orders.filter((o: { cause: string }) => o.cause === "ready-row-unclaimed").length, 0,
+    "and neither is offered: that order ends in a refused claim");
+  const complete = incomplete.map((r) => ({ ...r, body: COMPLETE_BODY }));
+  const control = decide({ prs: [], readyRows: complete, promotableRows: BACKLOG, prFiles: [] });
+  assert.deepEqual(shelfCauses(control), ["ready-row-unclaimed", "ready-row-unclaimed"],
+    "the same rows with the sections present are offered and the shelf is not empty");
+});
+
+test("#2791: it is not silent -- one order per row naming the missing sections, keyed so it stops when they are added", () => {
+  const rows = [readyRow(2730, { body: "" }), readyRow(2729, { body: NO_OPEN_CHECK })];
+  const orders = decide({ prs: [], readyRows: rows }).filter((o: { cause: string }) => o.cause === "ready-row-incomplete");
+  assert.deepEqual(orders.map((o: { subject: string }) => o.subject), ["row-2729", "row-2730"], "oldest first");
+  assert.ok(orders.every((o: { session: string }) => o.session === "product-manager"));
+  assert.match(orders[0].prompt, /no `## Open-check`/);
+  assert.doesNotMatch(orders[0].prompt, /`## Region`|`## Acceptance`/, "only what is MISSING is named");
+  assert.equal(orders[0].discriminator, "Open-check");
+  assert.match(orders[1].causeKey, /row-2730\/Region\+Acceptance\+Open-check$/);
+  // THE ROW IS THE STATE: completing it removes the order, and a different gap is a different key.
+  assert.deepEqual(decide({ prs: [], readyRows: [readyRow(2729, { body: COMPLETE_BODY })] })
+    .filter((o: { cause: string }) => o.cause === "ready-row-incomplete"), []);
+  const other = decide({ prs: [], readyRows: [readyRow(2729, { body: "## Region\n\nx\n\n## Open-check\n\ny\n" })] })
+    .filter((o: { cause: string }) => o.cause === "ready-row-incomplete");
+  assert.notEqual(other[0].causeKey, orders[0].causeKey);
+});
+
+test("#2791: the shelved row is SHELVED with its reason, and a row whose body was never read is left alone", () => {
+  const { offerable, blocked } = partitionUnclaimed([readyRow(2729, { body: NO_OPEN_CHECK }), readyRow(2731)], [], {});
+  assert.deepEqual(offerable.map((r: { number: number }) => r.number), [2731],
+    "no `body` key is 'not asked', never 'asked and empty' -- otherwise every body-less caller shelves its whole queue");
+  assert.equal(blocked.length, 1);
+  assert.match(blocked[0].reason, /no `## Open-check` -- `row-claim` refuses it/);
+  const claimed = readyRow(2732, { body: "", labels: [{ name: "ready" }, { name: "in-progress" }] });
+  assert.deepEqual(decide({ prs: [], readyRows: [claimed] }).filter((o: { cause: string }) => o.cause === "ready-row-incomplete"), [],
+    "a held row is its holder's, and the claim it went through already required the sections");
+});
+
+test("#2791: readReadyRows asks for `body`, so the gate reads the same field the claim does", () => {
+  const calls: string[][] = [];
+  readReadyRows((args: string[]) => { calls.push(args); return "[]"; });
+  assert.ok(String(calls[0][calls[0].indexOf("--json") + 1]).split(",").includes("body"));
 });
