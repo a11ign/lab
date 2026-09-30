@@ -557,10 +557,33 @@ test("a CommonJS resolution is recorded -- what require.resolve found, or where 
     [`${JUDGE}/src/walk-scope-absent.mjs`]);
 });
 
+/**
+ * What `findPackageJSON` read that it may not have: anything but the directory it walked (`walked`) and the
+ * file the specifier resolves to (`resolved`). Node 22.23.2 reads only the directory; 22.23.3 also reads the
+ * resolved file (#2813), so the expectation is decided from what the runtime may read, not one minor's output.
+ * A sibling package or the repo root is still returned, which is what keeps the assertion from going vacuous.
+ */
+const readsBeyond = (reads: string[], { walked, resolved }: { walked: string, resolved: string }) =>
+  reads.filter((read) => read !== walked && read !== resolved);
+
 test("findPackageJSON reads the directory it walked, and a loader hook is the whole repository", async () => {
   const find = (moduleApi as unknown as { findPackageJSON?: (s: string, b: string) => string | undefined }).findPackageJSON;
-  if (find) assert.deepEqual(await readsDuring(() => find("./rules.ts", pathToFileURL(join(REPO, JUDGE, "src", "x.ts")).href)), [JUDGE]);
+  if (find) {
+    const scope = { walked: JUDGE, resolved: `${JUDGE}/src/rules.ts` };
+    const reads = await readsDuring(() => find("./rules.ts", pathToFileURL(join(REPO, JUDGE, "src", "x.ts")).href));
+    assert.ok(reads.includes(JUDGE), `the walked directory must be read: ${JSON.stringify(reads)}`);
+    assert.deepEqual(readsBeyond(reads, scope), [], "nothing but the directory and the file it resolved to");
+  }
   assert.ok(isUnbounded(await readsDuring(() => assert.throws(() => (moduleApi.register as unknown as () => void)()))));
+});
+
+test("the findPackageJSON read-set check still fails a read outside the directory it walked (#2813)", () => {
+  const scope = { walked: JUDGE, resolved: `${JUDGE}/src/rules.ts` };
+  assert.deepEqual(readsBeyond([JUDGE], scope), [], "22.23.2's read set passes");
+  assert.deepEqual(readsBeyond([JUDGE, scope.resolved], scope), [], "22.23.3's read set passes");
+  assert.deepEqual(readsBeyond([JUDGE, "packages/lab"], scope), ["packages/lab"], "a sibling package fails");
+  assert.deepEqual(readsBeyond([JUDGE, "package.json"], scope), ["package.json"], "the repo root fails");
+  assert.deepEqual(readsBeyond([JUDGE, `${JUDGE}/src/other.ts`], scope), [`${JUDGE}/src/other.ts`], "a different file in the package fails");
 });
 
 // ---------------------------------------------------------------------------------------------------------
