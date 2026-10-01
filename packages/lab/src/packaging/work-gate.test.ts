@@ -1075,9 +1075,11 @@ test("every cause is classified as START or FINISH -- a new one cannot default i
   // a drain is when withholding it would cost most (the drain window ends in a force-push to this very checkout).
   // #2823: `closes-unresolved-repo-wide` is FINISH, and a JUDGMENT cause. Its subject is pull requests already open whose
   // declared rows GitHub will not close, which the post-merge closer covers -- it starts no work, it names a fault to a reader.
+  // #2845: `ready-row-unclaimable` is FINISH, and a JUDGMENT cause. It starts no work -- it asks `product-manager` to unstick a row
+  // the claim keeps refusing -- and a drain is when a stuck row most needs to be seen, since the pool's engineers are withheld anyway.
   assert.deepEqual(finish, ["answer-label-unexplained", "answer-owed", "awaiting-evidence-stale", "blocker-cleared", "chairman-blocked",
     "claim-stalled", "claimed-row-amended", "closes-unresolved-repo-wide", "disk-headroom-low", "draft-awaiting-verdict", "draft-convinced-not-ready", "host-units-stale",
-    "lab-job-finished", "pr-checks-failing", "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "primary-stale", "ready-row-incomplete", "reviewer-auth-failed",
+    "lab-job-finished", "pr-checks-failing", "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "primary-stale", "ready-row-incomplete", "ready-row-unclaimable", "reviewer-auth-failed",
     "row-branch-unshipped", "row-call-count-signal", "row-off-board", "trunk-red", "verdict-comment-unreviewed", "verdict-not-convinced"]);
   for (const cause of START_CAUSES) {
     assert.ok(CAUSES.includes(cause), `${cause} is withheld by a drain but no longer exists`);
