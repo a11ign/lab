@@ -38,13 +38,13 @@ import { basename, extname, resolve } from "node:path";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
-import { npmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
+import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
 
 const run = promisify(execFile);
 
 // Takes no flags -- refuses anything passed rather than silently ignoring it, the same guard every other
 // command line in this repo carries.
-refuseUnknownFlags([], { entry: import.meta.url, command: "npm run corpus:release-nightly" });
+refuseUnknownFlags([], { entry: import.meta.url, command: "pnpm run corpus:release-nightly" });
 
 /**
  * The one thing worth pinning without a network or an `ansible` binary: which source name a fetch's own
@@ -140,8 +140,8 @@ async function main() {
 
   // Inherits stdio so `corpus:release`'s own report -- the count, the size, the verify -- lands in this
   // job's own journal rather than being summarised a second time and possibly disagreeing with it.
-  const npm = npmCliInvocation("npm", ["run", "corpus:release", "--", `--archive=${named}`]);
-  const child = await run(npm.command, npm.args, { maxBuffer: 1 << 24 })
+  const pnpm = pnpmCliInvocation(["run", "corpus:release", "--", `--archive=${named}`]);
+  const child = await run(pnpm.command, pnpm.args, { maxBuffer: 1 << 24 })
     .then((r) => ({ ...r, code: 0 }))
     .catch((/** @type {any} */ e) => ({ stdout: e?.stdout ?? "", stderr: e?.stderr ?? String(e), code: e?.code ?? 1 }));
   process.stdout.write(child.stdout);
@@ -158,7 +158,7 @@ async function main() {
 // Guarded for the same reason corpus-release.mjs guards its own main(): unguarded, `node -e
 // "import('./this.mjs')"` -- this repo's only real "does the file still load" check -- would fetch from
 // the lab and attempt a release as a side effect. Realpath'd (#1086) so the guard still fires through a
-// symlink, such as an npm-installed `.bin` shim.
+// symlink, such as a package-manager-installed `.bin` shim.
 if (import.meta.url === pathToFileURL(process.argv[1] ? realpathSync(process.argv[1]) : "").href) {
   await main();
 }

@@ -2,7 +2,7 @@
 /**
  * The dataset pages, served for the duration of a run — and stopped afterwards.
  *
- * Serving them used to be a manual step (`npx serve runs/screenreader-dataset/pages -l 5050`) that
+ * Serving them used to be a manual step (`pnpm exec serve runs/screenreader-dataset/pages -l 5050`) that
  * nothing owned. Two consequences, both observed:
  *
  *  - **It leaked.** Four `serve` processes were found running on this host, six days old, only one of
@@ -20,9 +20,9 @@
 import { spawn } from "node:child_process";
 import { openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { npmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
+import { pnpmCliInvocation } from "../../../../scripts/npm-cli-executable.mjs";
 
-// Generous because the first `npx serve` on a busy host has to resolve the package before it binds,
+// Generous because the first `pnpm exec serve` on a busy host has to resolve the package before it binds,
 // and this host has had three VMs on it. A too-short window fails the run for a server that was about
 // to work, which is strictly worse than waiting.
 const READY_TIMEOUT_MS = 90_000;
@@ -160,7 +160,7 @@ async function waitUntilServing(url, probePath, deadline) {
 /**
  * Stop a server we started, and nothing else.
  *
- * `npm exec serve` is a parent shell plus the node process that holds the port, so killing the pid
+ * `pnpm exec serve` is a parent shell plus the node process that holds the port, so killing the pid
  * alone orphans the child — which is exactly the shape of the four leaked processes. Spawning
  * detached puts both in their own process group, and a negative pid signals the group.
  */
@@ -222,7 +222,7 @@ async function stopPid(pid) {
     return; // already gone; nothing to insist on
   }
   // WAITED FOR, not fired and forgotten. The SIGKILL used to sit on an `unref()`ed timer, so if node
-  // exited within the grace period it never fired at all -- and `npx serve` does not go quietly: its
+  // exited within the grace period it never fired at all -- and `pnpm exec serve` does not go quietly: its
   // response to SIGTERM is to print "Gracefully shutting down. Please wait..." and keep serving.
   //
   // Measured on the 4h34m corpus recapture: the run finished cleanly, `serve` outlived it, and because a
@@ -275,8 +275,9 @@ export async function leasePageServer({ root, port, probePath }) {
   const logPath = resolve(root, "..", "page-server.log");
   const log = openSync(logPath, "a");
   process.stderr.write(`Serving dataset pages on :${port} (log: ${logPath}) ...\n`);
-  const npx = npmCliInvocation("npx", ["serve", resolve(root), "-l", String(port)]);
-  const child = spawn(npx.command, npx.args, {
+  // `serve` is declared in `packages/lab/package.json`, so `--filter` finds its bin: `exec` from the root sees only the root's own.
+  const pnpm = pnpmCliInvocation(["--filter", "@a11ign/lab", "exec", "serve", resolve(root), "-l", String(port)]);
+  const child = spawn(pnpm.command, pnpm.args, {
     stdio: ["ignore", log, log],
     detached: true, // its own process group, so release() cannot orphan the child
   });

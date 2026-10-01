@@ -27,14 +27,14 @@ import { releasability } from "../src/packaging/releasability.mjs";
 import { readAcceptedSilentHeads } from "../src/packaging/accepted-silent-heads.mjs";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
-import { npmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
+import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
 
 /**
- * a mistyped `--dry-run` runs the REAL retrain; `--silent` in this file is npm's, passed to each step.
+ * a mistyped `--dry-run` runs the REAL retrain; `--silent` in this file is pnpm's, passed to each step.
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--candidate=", "--dry-run"], { entry: import.meta.url, command: "npm run lab:retrain" });
+refuseUnknownFlags(["--candidate=", "--dry-run"], { entry: import.meta.url, command: "pnpm run lab:retrain" });
 
 const REPO = REPO_ROOT;
 
@@ -60,7 +60,7 @@ const STEPS = [
 /**
  * Run one step. Exported so a SECOND pipeline can name it rather than reimplement it — see
  * `everything-pipeline.mjs`, which is the same shape over a longer chain. `step.args` are appended after
- * npm's `--`, for the steps that take one; a step without them is unchanged.
+ * pnpm's `--`, for the steps that take one; a step without them is unchanged.
  */
 /**
  * `env` exists because two steps can be the SAME script and differ only by their environment: the held-out
@@ -78,8 +78,8 @@ export function run(step, { dryRun }) {
   const argv = ["run", "--silent", step.script, ...(step.args?.length ? ["--", ...step.args] : [])];
   const env = step.env ? { ...process.env, ...step.env } : process.env;
   try {
-    const npm = npmCliInvocation("npm", argv);
-    const output = execFileSync(npm.command, npm.args,
+    const pnpm = pnpmCliInvocation(argv);
+    const output = execFileSync(pnpm.command, pnpm.args,
       { cwd: REPO, encoding: "utf8", env, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 64 * 1024 * 1024 });
     process.stdout.write(output.split("\n").slice(-6).join("\n") + "\n");
     return { ok: true, output };
