@@ -64,11 +64,15 @@ const STAYS_MARKER = /\/\/ STAYS npm\b/;
  * Callee and literal, in the two shapes a spawn of the old tool takes in this tree:
  *   - the argv shape, `anything("npm", ...)` / `npmCliInvocation("npx", ...)`, which catches the helper and a local `run`;
  *   - the command-string shape, `execSync("npm run x")`, on the `child_process` names only, so an error message that begins
- *     with the word `npm` is not mistaken for one.
+ *     with the word `npm` is not mistaken for one;
+ *   - the argv shape in a LATER position, `stage(label, "npm", ["run", "x"])`, which a wrapper around `spawnSync` takes
+ *     (`lab-pipeline.mjs` did, and the first version of this guard missed it). The literal must be followed by an argv array,
+ *     so `join(dir, "node_modules", "npm", "bin")` is not mistaken for one.
  * And a bare `pnpm`, which is the Windows hazard the helper exists for, spelled the new way.
  */
 const SPAWN_SHAPES: ReadonlyArray<{ name: string; pattern: RegExp }> = [
   { name: "an npm/npx spawn", pattern: /\b[\w$.]+\(\s*["'`](npm|npx)["'`]\s*[,)]/g },
+  { name: "an npm/npx command with an argv array", pattern: /(?<=,\s*)["'`](npm|npx)["'`]\s*,\s*\[/g },
   { name: "an npm/npx command string", pattern: /\b(?:execSync|exec|execFileSync|execFile|spawnSync|spawn)\(\s*["'`](npm|npx)\s/g },
   { name: "a bare pnpm spawn", pattern: /\b(?:execFileSync|execFile|spawnSync|spawn)\(\s*["'`](pnpm)["'`]/g },
 ];
@@ -114,6 +118,14 @@ test("an npx call is REFUSED, whether through the helper or a child_process call
   assert.deepEqual(refusals({ "packages/lab/src/b.mjs": 'execFileSync("npx", ["tsx"]);' }), ["packages/lab/src/b.mjs:1: an npm/npx spawn (`npx`)"]);
   assert.deepEqual(refusals({ "scripts/c.mjs": 'execSync("npm run x");' }), ["scripts/c.mjs:1: an npm/npx command string (`npm`)"]);
   assert.deepEqual(refusals({ "scripts/d.mjs": "execSync(`npx tsx ${f}`);" }), ["scripts/d.mjs:1: an npm/npx command string (`npx`)"]);
+});
+
+test("an npm spawn handed to a wrapper in a LATER argument is REFUSED (the `stage()` shape), and a path join is not one", () => {
+  const wrapped = 'const labJob = (job) => stage(job, "npm", ["run", "lab:job", "--", "-e", `job=${job}`]);';
+  assert.deepEqual(refusals({ "packages/control/src/h.mjs": wrapped }), ["packages/control/src/h.mjs:1: an npm/npx command with an argv array (`npm`)"]);
+  assert.deepEqual(refusals({ "packages/control/src/i.mjs": 'run(label, "npx", ["tsc"]);' }), ["packages/control/src/i.mjs:1: an npm/npx command with an argv array (`npx`)"]);
+  assert.deepEqual(refusals({ "scripts/j.mjs": 'join(nodeDir, "node_modules", "npm", "bin", script);' }), []);
+  assert.equal(refusals({ "scripts/k.mjs": 'spawnSync("npm", ["ci"]);' }).length, 1, "a first-argument spawn is one hit, not two");
 });
 
 test("a bare pnpm spawn is REFUSED too: it is `pnpm.cmd` on Windows, which CVE-2024-27980 refuses, and the helper is the way", () => {
