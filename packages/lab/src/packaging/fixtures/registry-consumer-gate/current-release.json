@@ -6,7 +6,7 @@
       "npx a11ign --version",
       "import(\"@a11ign/nvda-worker\")",
       "@a11ign/lab",
-      "@a11ign/pdf"
+      "@a11ign/documents"
     ]
   },
   "reading": {
@@ -143,7 +143,7 @@
         }
       },
       {
-        "name": "@a11ign/pdf",
+        "name": "@a11ign/documents",
         "registry": {
           "published": false
         }

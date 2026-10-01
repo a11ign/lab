@@ -1,8 +1,8 @@
 // @ts-check
 // Refuse to start a corpus run if the pipeline does not produce the same evidence twice.
 //
-//   npm run gate:stability                       # before any recapture
-//   npm run gate:stability -- --times=6
+//   pnpm run gate:stability                       # before any recapture
+//   pnpm run gate:stability -- --times=6
 //
 // ## Why this is a gate and not a tool
 //
@@ -44,7 +44,7 @@ import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.mjs";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { assertWorkerUrl } from "../../worker-fleet/src/worker-http.mjs";
 import { datasetRoot } from "../src/dataset-paths.mjs";
-import { npmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
+import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
 
 /**
  * the canaries that must pass before a corpus run. `--probe-forms`, `--task` and `--url` appear in
@@ -52,7 +52,7 @@ import { npmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags(["--base=", "--times=", "--worker=", LOCAL_FLAG], { entry: import.meta.url, command: "npm run gate:stability" });
+refuseUnknownFlags(["--base=", "--times=", "--worker=", LOCAL_FLAG], { entry: import.meta.url, command: "pnpm run gate:stability" });
 
 const run = promisify(execFile);
 
@@ -66,7 +66,7 @@ const TIMES = Number(arg("times", "5"));
  * This gate LEASES what it needs, rather than requiring you to have set it up.
  *
  * It could not run at all before: `repeat-capture.mjs` refuses without a worker, and the canary URLs
- * pointed at a page server nobody started — so with neither `A11Y_WORKER` nor a hand-run `npx serve`,
+ * pointed at a page server nobody started — so with neither `A11Y_WORKER` nor a hand-run `pnpm exec serve`,
  * all five canaries reported "harness did not start" and the gate exited 2. A gate that a corpus run is
  * forbidden to start without, and that cannot start itself, is a gate that gets skipped; `release:gate`
  * was broken from the day it was written for the same reason, and `capture:check` went unrun for months
@@ -235,8 +235,8 @@ async function judgeCanary(/** @type {any} */ { path, url: absolute, reason, tas
   // fix is to name the field here rather than to remember to pass it.
   if (probeFocus) args.push("--probe-focus");
   try {
-    const npx = npmCliInvocation("npx", ["tsx", ...args]);
-    const { stdout } = await run(npx.command, npx.args, { maxBuffer: 1 << 24 });
+    const pnpm = pnpmCliInvocation(["exec", "tsx", ...args]);
+    const { stdout } = await run(pnpm.command, pnpm.args, { maxBuffer: 1 << 24 });
     const varies = stdout.split("\n").filter((l) => l.includes("VARIES"));
     const usable = /(\d+)\/\d+ usable/.exec(stdout)?.[1];
     // SURFACED, not swallowed, and ABSENCE IS NOT ZERO. This read `?? 0`, so a run where the line stopped
