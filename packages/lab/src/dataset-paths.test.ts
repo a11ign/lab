@@ -115,7 +115,7 @@ const EXEMPT: Record<string, string> = {
   "packages/lab/src/capture/evidence-diff.mjs":
     "It is the implementation of the capture-filename half (captureFilePath/rejectedCaptureFilePath).",
   "packages/nvda-worker/src/capture-pure.corpus.test.ts":
-    "@a11ign/lab depends on @a11ign/nvda-worker, so nvda-worker cannot import dataset-paths.mjs "
+    "@a11ign/lab depends on @a11ign/screenreader-worker, so nvda-worker cannot import dataset-paths.mjs "
     + "without a dependency cycle. Kept as its own cwd-anchored copy; see dataset-paths.mjs's own header.",
   "packages/worker-fleet/src/doctor.mjs":
     "@a11ign/lab depends on @a11ign/worker-fleet, so worker-fleet cannot import "

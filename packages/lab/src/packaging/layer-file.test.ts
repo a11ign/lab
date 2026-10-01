@@ -23,7 +23,7 @@ import { tempDir } from "../../../guards/src/test-tmp.mjs";
 import { installedPackageDir, isPublished, layerFile } from "../../../guards/src/layer-file.mjs";
 
 const NAME = "@a11ign/fixture-layer";
-const REAL_LAYER = "@a11ign/nvda-worker";
+const REAL_LAYER = "@a11ign/screenreader-worker";
 const MANIFEST = {
   name: NAME,
   version: "0.0.0",

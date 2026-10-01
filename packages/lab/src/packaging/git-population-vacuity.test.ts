@@ -115,6 +115,13 @@ function discoverGitPopulationTests(): string[] {
  * still literally appear in the file's source below), or `null` with a stated reason no guard applies.
  */
 const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
+  "packages/lab/src/packaging/package-rename-nvda-worker.test.ts": {
+    guard: "files.length > 1000",
+    note: "guarded -- #2885's walk spawns `git ls-files` and asks which non-document files still name the retired "
+      + "scoped `nvda-worker` name. A clean result is the EXPECTED answer, so 'nothing names it' and 'the listing came "
+      + "back empty' would be the same observation; the floor on the files read tells them apart, and the positive "
+      + "control refuses a planted fixture.",
+  },
   "packages/lab/src/packaging/pnpm-publish-path.test.ts": {
     guard: "scanned.length > 500",
     note: "guarded -- #2301's walk spawns `git ls-files -- .github scripts packages` and asks whether any "

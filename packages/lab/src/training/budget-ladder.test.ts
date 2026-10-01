@@ -29,7 +29,7 @@ import {
   readThroughDeadline,
   activationDeadline,
   WORST_CASE_STARTUP_MS,
-} from "@a11ign/nvda-worker/capture-pure";
+} from "@a11ign/screenreader-worker/capture-pure";
 import { sourceFiles } from "../../../worker-fleet/src/source-walk.mjs";
 
 /**
@@ -38,7 +38,7 @@ import { sourceFiles } from "../../../worker-fleet/src/source-walk.mjs";
  * lives in `lab` because the ladder's outermost rung, the host timeout, is `lab`'s, and it reads three packages.
  */
 const workerSource = (file: string) =>
-  join(dirname(createRequire(import.meta.url).resolve("@a11ign/nvda-worker/package.json")), "src", file);
+  join(dirname(createRequire(import.meta.url).resolve("@a11ign/screenreader-worker/package.json")), "src", file);
 
 /**
  * The host's per-capture timeout, READ from the file that owns it rather than copied here.
