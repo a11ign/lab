@@ -910,6 +910,21 @@ test("#1974: `npm run <script>` is followed through package.json to the file it 
   "an unknown script resolves to nothing rather than to a guess");
 });
 
+test("#2892: `pnpm run <script>` is followed exactly as `npm run` is, so a unit that moved is not scored opaque", () => {
+  // The host's units moved from `/usr/bin/npm run` to `%h/.local/bin/pnpm run`. A parser that knew only the
+  // first would return no entry point for all four, and `unitsSpendingGh` reads no entry point as "spends
+  // nothing" -- the unit leaves the population and every suite stays green.
+  const deps = { repoRoot: "/repo", scripts: { "lab:watch": "node packages/lab/scripts/lab-watch.mjs" },
+    exists: (() => true) as never };
+  assert.deepEqual(entriesFromCommand("%h/.local/bin/pnpm run lab:watch -- --post", deps),
+    ["/repo/packages/lab/scripts/lab-watch.mjs"]);
+  assert.deepEqual(opaqueCommands("[Service]\nExecStart=%h/.local/bin/pnpm run lab:watch -- --post\n", deps), [],
+    "a followable pnpm command is not opaque");
+  assert.deepEqual(opaqueCommands("[Service]\nExecStart=%h/.local/bin/yarn run lab:watch\n", deps),
+    ["%h/.local/bin/yarn run lab:watch"],
+    "NEGATIVE CONTROL: a package manager the parser does not know stays opaque, so the answer above is pnpm's alone");
+});
+
 test("#1974: the `npm run` edge inside CODE is followed -- an import walk alone reports this unit clean", () => {
   // corpus-release-nightly.mjs reaches `gh` ONLY through `npmCliInvocation("npm", ["run",
   // "corpus:release"])`. There is no import edge to follow, so a closure walk that knew only about
@@ -1127,7 +1142,7 @@ test("#2000: the unit passes `--apply`, or the clock runs a REPORT and the backl
   // the breakdown before writing a row about worktree accounting, and removed three other sessions'
   // trees), so the flag has to be in the unit, and something has to say that it is.
   const service = shippedText("a11ign-worktree-prune.service");
-  assert.match(service, /^ExecStart=\/usr\/bin\/npm run worktrees:prune -- --apply$/m);
+  assert.match(service, /^ExecStart=%h\/\.local\/bin\/pnpm run worktrees:prune -- --apply$/m);
   assert.deepEqual(entriesFromCommand(execCommands(service)[0]),
     [join(REPO_ROOT, "packages/agent-org/src/prune-worktrees.mjs")],
     "and the command resolves through package.json to the script itself -- a renamed npm script leaves "
@@ -1314,7 +1329,7 @@ test("#2230: each service runs its watcher WITH `--post`, and the command resolv
   const expected = { lab: "packages/control/src/lab-watch.mjs", fleet: "packages/control/src/fleet-watch.mjs" };
   for (const [name, script] of Object.entries(expected)) {
     const service = shippedText(`a11ign-${name}-watch.service`);
-    assert.match(service, new RegExp(`^ExecStart=/usr/bin/npm run ${name}:watch -- --post$`, "m"));
+    assert.match(service, new RegExp(`^ExecStart=%h/\\.local/bin/pnpm run ${name}:watch -- --post$`, "m"));
     assert.deepEqual(entriesFromCommand(execCommands(service).find((c) => c.includes("watch")) as string),
       [join(REPO_ROOT, script)],
       "a renamed or missing npm script leaves the unit syntactically perfect and starting nothing");

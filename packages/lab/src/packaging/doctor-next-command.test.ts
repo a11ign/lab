@@ -31,7 +31,7 @@ const DEPRECATION_REFUSAL = "could not query the local pool (DEPRECATED: worker-
 
 test("#1059 ACCEPTANCE: a deprecation refusal's remedy names the FLEET, not the script that refused", () => {
   const { fix, note } = workerControlFix(DEPRECATION_REFUSAL);
-  assert.equal(fix, "npm run fleet:status",
+  assert.equal(fix, "pnpm run fleet:status",
     "the remedy the refusal itself names — following the old one reproduced the refusal, which is the one "
     + "thing a fix line must never do");
   assert.match(String(note), /deprecated/i, "and the reason stays, in the field nothing executes");
@@ -42,7 +42,7 @@ test("#1059 ACCEPTANCE: a deprecation refusal's remedy names the FLEET, not the 
 test("#1059: `next_command` is that command, driven through the real builder over an injected check", () => {
   const { fix } = workerControlFix(DEPRECATION_REFUSAL);
   const next = nextCommand([{ ok: false, fix }]); // the `worker` check, failing
-  assert.equal(next, "npm run fleet:status");
+  assert.equal(next, "pnpm run fleet:status");
   assert.ok(isRunnableCommand(next), "and it is a command, which is the whole point of the field");
 });
 
@@ -50,7 +50,7 @@ test("#1059: the old line FAILS the shape check — this is the assertion that w
   assert.equal(isRunnableCommand("unlock the Mac if it is locked, then re-run /x/worker-ctl.sh pool"), false,
     "an English imperative is not a command, however clear it is to a human");
   assert.equal(isRunnableCommand("wait — the pool is busy with another run"), false);
-  for (const command of ["npm run fleet:status", "npx tsx x.ts", "node scripts/x.mjs", "git fetch origin",
+  for (const command of ["pnpm run fleet:status", "npm run fleet:status", "npx tsx x.ts", "node scripts/x.mjs", "git fetch origin",
     "/Users/x/worker-ctl.sh pool", "A11Y_LOCAL_VM=1 /x/y.sh pool", "./x.sh"]) {
     assert.ok(isRunnableCommand(command), `${command} is runnable and must pass`);
   }
@@ -63,7 +63,7 @@ test("#1059: a `next_command` that cannot be built is null, never a sentence", (
   assert.equal(nextCommand([{ ok: false, fix: null }]), null, "`contention`: waiting is not a command");
   assert.equal(isRunnableCommand(null), false,
     "and `null` is not 'runnable' either — the caller distinguishes absent from unrunnable, not this");
-  assert.equal(nextCommand([{ ok: true, fix: null }]), "npm run training:capture",
+  assert.equal(nextCommand([{ ok: true, fix: null }]), "pnpm run training:capture",
     "and an all-clear still names the command to run next");
 });
 
@@ -72,7 +72,7 @@ test("#1059 MUTATION TARGET: pointing the remedy back at the deprecated script m
   // above is an equality against the FLEET command, so any remedy naming `worker-ctl.sh` fails it. Deleting
   // the remedy is the mutation a text search agrees with — this keeps the field and changes what it names.
   const asIfReverted = { fix: "unlock the Mac if it is locked, then re-run /x/worker-ctl.sh pool" };
-  assert.notEqual(asIfReverted.fix, "npm run fleet:status");
+  assert.notEqual(asIfReverted.fix, "pnpm run fleet:status");
   assert.equal(isRunnableCommand(asIfReverted.fix), false,
     "and it fails the shape check too, so the two assertions are not one assertion written twice");
 });
