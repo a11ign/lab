@@ -26,7 +26,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdtempSync, rmSync, realpathSync, statSync, symlinkSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, realpathSync, statSync, symlinkSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -288,5 +288,54 @@ test("#1307 ACCEPTANCE: an untracked SYMLINK TO A DIRECTORY is skipped BY NAME, 
   } finally {
     rmSync(repo, { recursive: true, force: true });
     rmSync(target, { recursive: true, force: true });
+  }
+});
+
+test("#2876 ACCEPTANCE: the transient `.corpus-*-mutation-*` directories `corpus-backup.test.ts` makes inside the "
+  + "repo are never listed, so the walk cannot race their deletion", () => {
+  // The walk lists with `git ls-files --others --exclude-standard` and reads every path, so a directory another
+  // worker creates and removes between the listing and the read is `the walk read N files; git lists N+1` --
+  // measured once in a full `test:org` (#2876). The remedy is that git never lists them (`.gitignore`), not that
+  // the walk tolerates a vanished path: `skipped` is asserted exactly, and a tolerated disappearance is the
+  // silent skip it exists to refuse.
+  //
+  // THE PREFIXES COME FROM THE MAKER'S OWN SOURCE, not from a retyped copy of the `.gitignore` pattern: a third
+  // maker, or a renamed prefix, is then a failure here rather than a pattern that quietly stopped matching.
+  const maker = readFileSync(resolve(REPO, "packages/lab/src/packaging/corpus-backup.test.ts"), "utf8");
+  const prefixes = [...maker.matchAll(/mkdtempSync\(join\(REPO, "(packages\/lab\/\.[\w-]*mutation-)"\)\)/g)].map((m) => m[1]);
+  // The count is derived a SECOND way and asserted EQUAL (`reported-counts.test.ts`, #1067): every in-repo
+  // `mkdtempSync(join(REPO, ...))` call in the maker must have been matched by the prefix regex, so a maker
+  // spelled another way is a failure here and not a directory this test never plants. Two makers today.
+  const makerCalls = maker.match(/mkdtempSync\(join\(REPO,/g)?.length;
+  assert.equal(prefixes.length, makerCalls, `every in-repo maker names a prefix the pattern reads; read: ${prefixes}`);
+  assert.equal(makerCalls, 2, "the positive control: both makers exist, so the planted population is not empty");
+
+  // A real repository carrying the REAL `.gitignore`, so the assertion is about this repo's ignore rules and not
+  // about whichever transient directories happen to exist in the live tree this minute.
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "a11y-fixture-transient-")));
+  try {
+    const git = (...args: string[]) =>
+      execFileSync("git", args, { cwd: repo, encoding: "utf8", stdio: "pipe", env: sandboxGitEnv() });
+    git("init", "--quiet");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    writeFileSync(resolve(repo, ".gitignore"), readFileSync(resolve(REPO, ".gitignore"), "utf8"));
+    writeFileSync(resolve(repo, "tracked.ts"), "const a = 1;\n");
+    git("add", ".gitignore", "tracked.ts");
+    git("commit", "--quiet", "-m", "one");
+    const planted = prefixes.map((prefix) => `${prefix}abc123/script.mjs`);
+    for (const path of planted) {
+      mkdirSync(dirname(resolve(repo, path)), { recursive: true });
+      writeFileSync(resolve(repo, path), "export {};\n");
+    }
+
+    const untracked = git("ls-files", "--others", "--exclude-standard").split("\n").filter(Boolean);
+    assert.deepEqual(untracked.filter((f) => planted.includes(f)), [],
+      "git must not LIST a transient mutation directory: a listed path is one a concurrent delete can strand");
+    const tree = trackedWorkingTree(repo);
+    assert.deepEqual([...tree.files].sort(), [".gitignore", "tracked.ts"], "and the walk reads only the real files");
+    assert.deepEqual(tree.skipped, []);
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
   }
 });
