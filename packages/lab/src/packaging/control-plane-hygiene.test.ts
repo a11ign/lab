@@ -42,7 +42,7 @@ test("the real repo's dist-trap check finds every package it claims to check, pr
   assert.deepEqual(trap.exposed.map((p) => p.name), []);
 });
 
-test("rootPrepareBuildsEverything: true when prepare invokes npm run build", () => {
+test("rootPrepareBuildsEverything: true when prepare invokes pnpm run build", () => {
   assert.equal(rootPrepareBuildsEverything(process.cwd()), true);
 });
 
@@ -73,7 +73,7 @@ function fakeRepo(rootBuildsEverything: boolean,
     name: "fake-root",
     scripts: {
       build: "node scripts/fake-build.mjs",
-      prepare: rootBuildsEverything ? "node scripts/fake-hooks.mjs && npm run build" : "node scripts/fake-hooks.mjs",
+      prepare: rootBuildsEverything ? "node scripts/fake-hooks.mjs && pnpm run build" : "node scripts/fake-hooks.mjs",
     },
   }));
   mkdirSync(join(dir, "packages"), { recursive: true });
