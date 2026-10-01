@@ -141,10 +141,10 @@ const SITES: Site[] = [
   { file: ".agent-org/roles/README.md", expect: `\`${PRODUCT_REPO}\`` },
   { file: ".agent-org/roles/memory/org-shape-second-orchestrator.md", expect: `a Project on ${PRODUCT_REPO}` },
   { file: "examples/workflow.yml", expect: `uses: ${REPO}@main` },
-  { layer: "@a11ign/nvda-worker", file: "package.json", expect: PRODUCT_GIT_URL },
+  { layer: "@a11ign/screenreader-worker", file: "package.json", expect: PRODUCT_GIT_URL },
   // COPY-PASTE-EXECUTE, same shape as docs/getting-started.md above -- see that entry's comment for why
   // the `cd a11y-witness` line right after this is not separately pinned.
-  { layer: "@a11ign/nvda-worker", file: "src/README.md", expect: `git clone ${REPO_URL}.git` },
+  { layer: "@a11ign/screenreader-worker", file: "src/README.md", expect: `git clone ${REPO_URL}.git` },
   { file: "packages/worker-fleet/package.json", expect: PRODUCT_GIT_URL },
   { file: "packages/evidence/README.md", expect: `(${PRODUCT_REPO_URL})` },
   { file: "packages/evidence/package.json", expect: PRODUCT_GIT_URL },

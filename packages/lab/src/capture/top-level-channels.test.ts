@@ -53,7 +53,7 @@ test("#977: the top-level channels in EVIDENCE_FIELDS are one-segment paths -- e
 });
 
 /** A `@typedef {{ ... }} Name` line's field names -- the wire test's reading: one line, flat, colon-anchored. */
-const CAPTURE_CORE = readFileSync(layerFile("@a11ign/nvda-worker", "src/capture-core.mjs", { from: import.meta.dirname }), "utf8");
+const CAPTURE_CORE = readFileSync(layerFile("@a11ign/screenreader-worker", "src/capture-core.mjs", { from: import.meta.dirname }), "utf8");
 function typedefFields(name: string): string[] {
   const line = CAPTURE_CORE.split("\n").find((l) => l.includes("@typedef {{") && new RegExp(`\\}\\}\\s*${name}\\b`).test(l));
   assert.ok(line, `@typedef {{ ... }} ${name} not found on one line -- capture-core.mjs has moved`);

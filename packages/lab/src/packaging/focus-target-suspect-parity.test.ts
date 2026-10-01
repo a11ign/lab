@@ -19,10 +19,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-// The worker half BY PACKAGE NAME (#2612): `@a11ign/nvda-worker/capture-pure` resolves to its source in either
+// The worker half BY PACKAGE NAME (#2612): `@a11ign/screenreader-worker/capture-pure` resolves to its source in either
 // layout, so this test no longer names the layer's directory. It lives in `lab` because `evidence` is Apache-2.0
 // and may not import an AGPL package (`licence-boundary.test.ts`), and `lab` already declares the worker.
-import { focusTargetIsSuspect } from "@a11ign/nvda-worker/capture-pure";
+import { focusTargetIsSuspect } from "@a11ign/screenreader-worker/capture-pure";
 // The evidence half, the SOURCE by relative path, never `@a11ign/evidence` — that specifier resolves to `dist`, and a
 // test whose whole job is to catch drift between two files must not be reading a compiled snapshot of one.
 import { censusTargetIsSuspect } from "../../../evidence/src/verify.js";

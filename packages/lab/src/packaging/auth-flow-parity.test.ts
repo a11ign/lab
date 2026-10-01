@@ -6,7 +6,7 @@
  * repository cannot lean on a sibling's file by path, and the two halves of a parity check must stay checked by
  * something, so THE ASSERTION MOVED and was not deleted.
  *
- * It lives in `lab` and not in `cli` because `lab` already declares `@a11ign/nvda-worker`, which this reads BY NAME
+ * It lives in `lab` and not in `cli` because `lab` already declares `@a11ign/screenreader-worker`, which this reads BY NAME
  * (`./auth-flow` is exported for the purpose); `cli` would need a new manifest dependency and a lockfile edit for one
  * test. The CLI half is read by path, which is `lab` reaching a sibling core package and not a layer edge.
  */
@@ -14,7 +14,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { ENV_NAME, EXPECT_DEFAULT_SECONDS, EXPECT_MAX_SECONDS, FLOW_VERBS } from "@a11ign/nvda-worker/auth-flow";
+import { ENV_NAME, EXPECT_DEFAULT_SECONDS, EXPECT_MAX_SECONDS, FLOW_VERBS } from "@a11ign/screenreader-worker/auth-flow";
 import {
   EXPECT_DEFAULT_SECONDS as CLI_EXPECT_DEFAULT, EXPECT_MAX_SECONDS as CLI_EXPECT_MAX, FLOW_VERBS as CLI_FLOW_VERBS,
 } from "../../../cli/src/auth/flows.js";

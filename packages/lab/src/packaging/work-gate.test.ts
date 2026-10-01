@@ -172,18 +172,19 @@ test("#2001: a NOT CONVINCED verdict is routed by the PR's own session label, ca
   assert.match(order.prompt, /product-manager decides/, "which still lands on the queue's first reader");
 });
 
-test("#2001: a NOT CONVINCED verdict on a PR naming no session is unchanged", () => {
-  // THE NEGATIVE CONTROL, and not a formality: with no label there is nobody to route to, and both the
-  // lookup and the decision are genuinely product-manager's. The prompt is pinned WORD FOR WORD because
-  // "unchanged" is the claim -- a branch that quietly rewrote this one would pass a looser assertion.
+test("#2001/#2941: a NOT CONVINCED verdict on a PR NOBODY owns goes to ceo, the last rung, and says so", () => {
+  // THE NEGATIVE CONTROL, and not a formality: with no label, no row, no branch and no stamp there is nobody to route to.
+  // It was `product-manager`, who does not fix code (#2941); the last answer is `ceo`. The prompt is pinned WORD FOR WORD
+  // because a branch that quietly rewrote this one would pass a looser assertion.
   const refused = [{ body: "Review of #13 at `abc12345`, by `reviewer`: not convinced." }];
   const [order] = decide({ prs: [draft(13, GREEN, refused)], readyRows: [] }) as { session: string,
     causeKey: string, prompt: string }[];
-  assert.equal(order.session, "product-manager");
-  assert.equal(order.causeKey, "product-manager/verdict-not-convinced/pr-13/abc12345");
-  assert.equal(order.prompt, "#13 at `abc12345` carries a NOT CONVINCED verdict from reviewer and "
-    + "nothing has moved since. Read the verdict, decide whether it stands, and route the rework to the "
-    + "session holding that row -- or close the PR if the row was wrong.");
+  assert.equal(order.session, "ceo");
+  assert.equal(order.causeKey, "ceo/verdict-not-convinced/pr-13/abc12345");
+  assert.equal(order.prompt, "#13 at `abc12345` carries a NOT CONVINCED verdict from reviewer and NOBODY COULD BE NAMED "
+    + "as its owner (no session label, no live session holding a row it closes, its branch names or stamped its worktree). "
+    + "You are the last answer: read the verdict, route the rework to the session that should do it "
+    + "(`session:<name>` on the PR), or close the PR if the work was abandoned.");
 });
 
 test("#912: a claimed row is not work, and an unclaimed one names no session", () => {
@@ -408,10 +409,10 @@ test("a RED DRAFT counts too -- it can never reach the reviewer lane, which requ
     "a red draft is not 'not ready yet', it is a branch whose author stopped");
 });
 
-test("an unlabelled red pull request falls back to product-manager rather than being dropped", () => {
+test("an unlabelled red pull request falls to ceo, the last rung of ownerOfPr, rather than being dropped", () => {
   const pr = { ...draft(52, RED), isDraft: false, labels: [] };
   assert.deepEqual(decide({ prs: [pr], readyRows: [] })
-    .map((o: { session: string }) => o.session), ["product-manager"]);
+    .map((o: { session: string }) => o.session), ["ceo"]);
 });
 
 test("checks still RUNNING are not red -- an unsettled build is nobody's job yet", () => {
@@ -1325,7 +1326,8 @@ test("a real FAILURE beside a CANCELLED one is red even while something runs -- 
 /**
  * #2400: A HOLD IS AN ANSWER. #2376 carried `hold:product-manager` on purpose; the hold turned `deliberateRefusals`
  * red and `gate` with it, and the gate ordered `product-manager` to fix a cause it had itself placed -- 35 times,
- * then `needs:chairman`. The fixture is that PR's shape: no `session:` label, so the addressee is `product-manager`.
+ * then `needs:chairman`. The fixture is that PR's shape: no `session:` label and nobody else to name, so (#2941) the order would go to `ceo` -- and a hold
+ * by ANY session is the answer for a PR nobody owns, which is what keeps #2376 quiet now that `product-manager` is not the addressee.
  */
 const HELD_RED = [["deliberateRefusals", "FAILURE"], ["gate", "FAILURE"], ["ts / run", "SUCCESS"]] as [string, string][];
 const heldPr = (labels: string[], checks: [string, string][] = HELD_RED) => ({ number: 2376, isDraft: true,
@@ -1349,8 +1351,8 @@ test("the same two red jobs WITHOUT the hold still order -- the null is the exem
   for (const required of [["gate"], null]) {
     const [order, ...rest] = failingOrders(heldPr([]), required);
     assert.equal(rest.length, 0);
-    assert.equal(order?.session, "product-manager");
-    assert.equal(order?.causeKey, "product-manager/pr-checks-failing/pr-2376/b7fd42fe");
+    assert.equal(order?.session, "ceo");
+    assert.equal(order?.causeKey, "ceo/pr-checks-failing/pr-2376/b7fd42fe");
   }
 });
 
@@ -1358,7 +1360,7 @@ test("a THIRD red job ends the exemption, so a real failure under a hold still r
   const real: [string, string][] = [["deliberateRefusals", "FAILURE"], ["gate", "FAILURE"], ["ts / run", "FAILURE"]];
   for (const required of [["gate"], null]) {
     const [order] = failingOrders(heldPr(["hold:product-manager"], real), required);
-    assert.equal(order?.causeKey, "product-manager/pr-checks-failing/pr-2376/b7fd42fe",
+    assert.equal(order?.causeKey, "ceo/pr-checks-failing/pr-2376/b7fd42fe",
       `required=${JSON.stringify(required)}: with gate the only REQUIRED check, reading the blocking set alone `
       + "would have called this the hold's doing");
   }
@@ -1368,14 +1370,36 @@ test("a THIRD red job ends the exemption, so a real failure under a hold still r
 });
 
 test("only the ADDRESSEE's own hold is an answer from it -- #2400", () => {
-  assert.equal(failingOrders(heldPr(["hold:ceo"]), ["gate"]).length, 1,
-    "held by ceo, addressed to product-manager: product-manager has answered nothing");
+  // #2941: a PR NOBODY owns has no addressee with a stake, so a hold by ANY session answers it (#2376's own shape).
+  assert.deepEqual(failingOrders(heldPr(["hold:ceo"]), ["gate"]), [], "unowned and held by ceo, who is the last answer");
+  assert.deepEqual(failingOrders(heldPr(["hold:worker-9"]), ["gate"]), [], "unowned and held by somebody: that is the answer");
   const labelled = (...labels: string[]) => heldPr(["session:worker-5", ...labels]);
   const [routed] = failingOrders(labelled("hold:product-manager"), ["gate"]);
-  assert.equal(routed?.session, "worker-5", "a PR with a session label is addressed to that session");
+  assert.equal(routed?.session, "worker-5", "a PR with a session label is addressed to that session, and a hold by somebody else is no answer from it");
   assert.deepEqual(failingOrders(labelled("hold:worker-5"), ["gate"]), [], "worker-5 holding its own PR");
   assert.deepEqual(failingOrders(labelled("hold:ceo", "hold:worker-5"), ["gate"]), [],
     "two holders, one of them the addressee");
+});
+
+/**
+ * #2935: A ROW-ROUTED ORDER ACCEPTS `hold:product-manager`. #2882 addressed an unlabelled red PR to the session holding
+ * its row (`rowOwner`), so the hold of the session it went to before that change stopped matching and #2883 was
+ * re-ordered every tick. The exemption still ends with either key, and a labelled PR keeps #2400's rule.
+ */
+test("a rowOwner-routed PR held by product-manager generates no order; a third red job or no hold brings it back -- #2935", () => {
+  const routed = (labels: string[], checks: [string, string][] = HELD_RED) =>
+    ({ ...heldPr(labels, checks), rowOwner: { session: "worker-2879", row: 2879, source: "closes" } });
+  for (const required of [["gate"], null]) {
+    assert.deepEqual(failingOrders(routed(["hold:product-manager"]), required), [],
+      `hold:product-manager, row held by worker-2879 (required=${JSON.stringify(required)})`);
+    assert.deepEqual(failingOrders(routed(["hold:worker-2879"]), required), [], "the row holder's own hold still answers");
+    const real: [string, string][] = [["deliberateRefusals", "FAILURE"], ["gate", "FAILURE"], ["ts / run", "FAILURE"]];
+    assert.equal(failingOrders(routed(["hold:product-manager"], real), required)[0]?.session, "worker-2879", "third job red");
+    assert.equal(failingOrders(routed([]), required)[0]?.session, "worker-2879", "hold removed");
+    assert.equal(failingOrders(routed(["hold:ceo"]), required)[0]?.session, "worker-2879", "somebody else's hold");
+  }
+  const labelled = { ...heldPr(["session:worker-5", "hold:product-manager"]), rowOwner: { session: "worker-2879", row: 2879, source: "closes" } };
+  assert.equal(failingOrders(labelled, ["gate"])[0]?.session, "worker-5", "a labelled PR: product-manager's hold is not its answer");
 });
 
 test("HOLD_RED_JOBS names the jobs ci.yml defines, so the exemption cannot go stale on a rename", () => {

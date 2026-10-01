@@ -107,7 +107,7 @@ const UNGUARDED_BY_CYCLE: Record<string, string> = {
     "@a11ign/lab depends on @a11ign/judge, so judge cannot import corpus-settled.mjs without a "
     + "cycle -- the same direction its own dataset-paths EXEMPT entry already records.",
   "packages/nvda-worker/src/capture-pure.corpus.test.ts":
-    "@a11ign/lab depends on @a11ign/nvda-worker; same cycle, same direction as its existing "
+    "@a11ign/lab depends on @a11ign/screenreader-worker; same cycle, same direction as its existing "
     + "dataset-paths EXEMPT entry.",
   "packages/cli/src/cli.test.ts":
     "Reads the corpus through an accessor and skips honestly when it is absent, but sits outside lab, so it "

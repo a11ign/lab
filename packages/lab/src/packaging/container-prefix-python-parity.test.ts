@@ -7,7 +7,7 @@
  * path. A layer that is to leave for its own repository cannot lean on a sibling's file by path, and the two
  * halves of a parity check must stay checked by something, so THE ASSERTION MOVED and was not deleted.
  *
- * It lives in `lab` and not in `scorer` because `lab` already declares `@a11ign/nvda-worker`, which this reads BY
+ * It lives in `lab` and not in `scorer` because `lab` already declares `@a11ign/screenreader-worker`, which this reads BY
  * NAME (`capture-pure` resolves to the worker's source in either layout); `scorer` would need a new manifest
  * dependency on an AGPL package and a lockfile edit for one test.
  */
@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { CONTAINER_PREFIX } from "@a11ign/nvda-worker/capture-pure";
+import { CONTAINER_PREFIX } from "@a11ign/screenreader-worker/capture-pure";
 
 /**
  * THE PYTHON COPY, PINNED AS A KNOWN, DATED DIVERGENCE — NOT AS EQUALITY.

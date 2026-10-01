@@ -60,7 +60,7 @@ const REFUSALS: Array<[fixture: string, rule: string, pkg: string, detail: RegEx
   // The two this gate adds to the row's six, each because its own failure is otherwise a pass or a crash.
   ["cli-unrunnable", "cli-unrunnable", "a11ign", /could not determine executable to run/],
   ["nothing-installed", "nothing-installed", "a11ign", /an empty reading proves nothing/],
-  ["entry-point-throws-where-it-must-work", "import-failed", "@a11ign/nvda-worker", /No available supported screen readers/],
+  ["entry-point-throws-where-it-must-work", "import-failed", "@a11ign/screenreader-worker", /No available supported screen readers/],
 ];
 
 for (const [name, rule, pkg, detail] of REFUSALS) {
@@ -85,7 +85,7 @@ test("the real 0.1.0 (no --version flag, nvda-worker throwing on Linux, layers o
   assert.deepEqual(decision.refused, []);
   const unchecked = decision.unchecked.map((u) => u.what);
   assert.ok(unchecked.includes("npx a11ign --version"), "no --version flag is 'could not tell', never 'matched'");
-  assert.ok(unchecked.includes('import("@a11ign/nvda-worker")'));
+  assert.ok(unchecked.includes('import("@a11ign/screenreader-worker")'));
   assert.ok(unchecked.includes("@a11ign/lab"), "@a11ign/lab is a 404 on the registry and must be named, not passed over");
   assert.match(decision.unchecked.find((u) => u.what === "@a11ign/lab")?.reason ?? "", /E404/);
   assert.ok(!decision.checked.some((line) => /--version printed/.test(line)), "an unchecked version must not also read as checked");
