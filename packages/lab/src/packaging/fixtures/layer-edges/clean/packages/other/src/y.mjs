@@ -1,2 +1,2 @@
-import { OWN } from "@a11ign/nvda-worker/own";
+import { OWN } from "@a11ign/screenreader-worker/own";
 export const Y = OWN;

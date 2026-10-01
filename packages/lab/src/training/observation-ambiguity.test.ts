@@ -242,7 +242,7 @@ test("#947: every channel's `observed` key is a name the CAPTURE writes -- read 
   // `capture-probes.mjs` actually records under: an `observedAs` of the three probe sweeps, a key of the extra
   // sweeps, or the `observed.tableCells` the table probe sets. A rename on either side turns every count for that
   // channel into "no record" with no error, so the correspondence is pinned here.
-  const probes = readFileSync(layerFile("@a11ign/nvda-worker", "src/capture-probes.mjs", { from: import.meta.dirname }), "utf8");
+  const probes = readFileSync(layerFile("@a11ign/screenreader-worker", "src/capture-probes.mjs", { from: import.meta.dirname }), "utf8");
   const written = new Set([
     ...[...probes.matchAll(/observedAs: "([A-Za-z]+)"/g)].map((m) => m[1]),
     ...[...probes.matchAll(/\{ key: "([A-Za-z]+)"/g)].map((m) => m[1]),

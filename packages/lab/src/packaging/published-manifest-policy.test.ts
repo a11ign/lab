@@ -14,7 +14,7 @@
  * ```
  * $ npm install --dry-run          # with "os": ["win32"] on packages/nvda-worker
  * npm error code EBADPLATFORM
- * npm error notsup Unsupported platform for @a11ign/nvda-worker@0.1.0: wanted {"os":"win32"} (current: {"os":"darwin"})
+ * npm error notsup Unsupported platform for [this package, then named nvda-worker]@0.1.0: wanted {"os":"win32"} (current: {"os":"darwin"})
  * exit 1
  * ```
  *
@@ -72,7 +72,7 @@ test("the published population is non-empty and is the one the isolation gate in
   assert.ok(published.length >= 1, "no published packages found -- the derivation is broken, not the tree");
   assert.deepEqual(
     published.map((p) => p.name).sort(),
-    ["@a11ign/evidence", "@a11ign/judge", "@a11ign/nvda-worker", "@a11ign/pdf", "@a11ign/scorer",
+    ["@a11ign/evidence", "@a11ign/judge", "@a11ign/pdf", "@a11ign/scorer", "@a11ign/screenreader-worker",
       "@a11ign/worker-fleet", "a11ign"],
     "the published set changed -- if that is intended, this list is where it is recorded");
 });
@@ -106,8 +106,8 @@ test("#1102: the symlink guard's platform exemption names a constraint the manif
     + "comment-STRIPPED source and anchored to the Set literal, because the path is named in the prose "
     + "above it too, and the first version of this assertion stayed green when the exemption was deleted.");
 
-  const nvdaWorker = publishedManifests().find((p) => p.name === "@a11ign/nvda-worker");
-  assert.ok(nvdaWorker, "@a11ign/nvda-worker is not in the published set");
+  const nvdaWorker = publishedManifests().find((p) => p.name === "@a11ign/screenreader-worker");
+  assert.ok(nvdaWorker, "@a11ign/screenreader-worker is not in the published set");
   assert.equal(nvdaWorker.manifest.os, undefined,
     "nvda-worker now declares `os`, so the exemption's premise is manifest-backed and this test should be "
     + "replaced by one asserting the declared value covers only platforms where the exemption holds");

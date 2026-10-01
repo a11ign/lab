@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { CASES, evidenceUnits, signalMatches, arrowKeysAreInert } from "./case-matrix.mjs";
 import { ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
-import { probeKindFor } from "@a11ign/nvda-worker/capture-pure";
+import { probeKindFor } from "@a11ign/screenreader-worker/capture-pure";
 
 /**
  * The fields of a generated case that these tests read.

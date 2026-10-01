@@ -30,7 +30,7 @@
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
-import { errorText } from "@a11ign/nvda-worker/error-text";
+import { errorText } from "@a11ign/screenreader-worker/error-text";
 import { npmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
 
 /**

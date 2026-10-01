@@ -2,7 +2,7 @@
  * #1611: A CONTROL'S OWN-STATE VOCABULARY IS ONE FACT, WRITTEN IN TWO PACKAGES, AND THIS PINS THEM EQUAL.
  *
  * Capture decides what the PAGE said after an activation by setting aside the words NVDA speaks about the control
- * itself ("checked", "expanded"): `CONTROL_OWN_STATE` in `@a11ign/nvda-worker`'s capture-pure module
+ * itself ("checked", "expanded"): `CONTROL_OWN_STATE` in `@a11ign/screenreader-worker`'s capture-pure module
  * (`onlyControlState`, and #1467's `pageSpeechAfter`). The lab reads a toggle's page response by stripping the same
  * words: `TOGGLE_OWN_STATE` in `signal-predicates.mjs` (`pageResponseTo`). A word added to one and not the other makes
  * capture wait for, or keep, a word the lab then strips, or the reverse, and nothing said so. The capture-side comment
@@ -19,8 +19,8 @@ import { resolve } from "node:path";
 
 import { stripComments } from "@a11ign/evidence/source-text";
 
-import * as capturePure from "@a11ign/nvda-worker/capture-pure";
-import { CONTROL_OWN_STATE } from "@a11ign/nvda-worker/capture-pure";
+import * as capturePure from "@a11ign/screenreader-worker/capture-pure";
+import { CONTROL_OWN_STATE } from "@a11ign/screenreader-worker/capture-pure";
 import { LINK_OWN_STATE, TOGGLE_OWN_STATE } from "./signal-predicates.mjs";
 // #1625: the evidence parser by RELATIVE source path, the shape `cross-boundary-predicate-parity.test.ts` uses for the
 // judge -- `parseAnnouncement` is not exported from `@a11ign/evidence`'s root, and a worktree resolves that package to
