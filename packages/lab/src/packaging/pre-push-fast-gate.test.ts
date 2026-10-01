@@ -170,7 +170,7 @@ function treeExport(): string {
   }
   for (const name of readdirSync(join(REPO, "packages"))) {
     // Each package's OWN `node_modules`: under pnpm a package sees only what it declares, so `pdf-lib` and
-    // `@a11ign/pdf` live at `packages/<name>/node_modules`, not in the root's. npm hoists and has none (#2297).
+    // `@a11ign/documents` live at `packages/<name>/node_modules`, not in the root's. npm hoists and has none (#2297).
     const own = join(REPO, "packages", name, "node_modules");
     if (existsSync(own) && existsSync(join(dir, "packages", name))) symlinkSync(own, join(dir, "packages", name, "node_modules"), "dir");
   }

@@ -4540,7 +4540,10 @@ test("#2174: the history-requirement population is unchanged by this row", () =>
   // row's Acceptance names it, so its pull request declares `History: full`.
   // #2867 added `shadow-window-arm.test.ts`: checked -- it imports `host-units.mjs` for the rendered shadow-window unit texts and the installer, the same
   // edge, and its pull request declares `History: full`.
-  assert.deepEqual(charged, ["host-project-paths.test.ts", "host-tool-install.test.ts", "host-units.test.ts",
+  // #2705 added `documents-extraction.test.ts`: checked -- it asks `--is-shallow-repository` before reading `git log -p` over `packages/pdf`
+  // (the history `filter-repo` carries across is part of the first commit's leak scan), so it genuinely needs history, and its pull request
+  // declares `History: full`.
+  assert.deepEqual(charged, ["documents-extraction.test.ts", "host-project-paths.test.ts", "host-tool-install.test.ts", "host-units.test.ts",
     "pre-push-resolve-toward-main.test.ts", "pre-push-stale-base.test.ts", "shadow-window-arm.test.ts", "work-gate.test.ts"],
   "adding a `history` reader to the gate's import closure taxes every test file that reaches it -- if "
   + "this list grew, check what was imported rather than editing the list");
