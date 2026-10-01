@@ -20,7 +20,9 @@
  * DROPS the `--`, and that is why a flag after a script name reads differently from the npm line it replaced.
  *
  * Headings are compared against the merge-base so a rewrite cannot rename a section out from under its anchor.
- * `packages/*\/README.md` are published READMEs a consumer follows, and are not in this Region.
+ * The READMEs of the two PRIVATE packages (`lab`, `control`) are in the Region (#2923): nobody consumes them, so every
+ * command in them is an instruction to somebody working in this repository. The other `packages/*\/README.md` are
+ * published READMEs a consumer follows (`npx a11ign` is right there), and are not.
  */
 // requires: history
 import { test } from "node:test";
@@ -31,7 +33,13 @@ import { fileURLToPath } from "node:url";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
-const REGION = ["docs", "README.md", "CONTRIBUTING.md", "SECURITY.md", "PLAN.md"];
+const PRIVATE_PACKAGE_READMES = [
+  "packages/lab/README.md",
+  "packages/lab/src/training/README.md",
+  "packages/control/README.md",
+  "packages/control/ansible/README.md",
+];
+const REGION = ["docs", "README.md", "CONTRIBUTING.md", "SECURITY.md", "PLAN.md", ...PRIVATE_PACKAGE_READMES];
 
 /** The row's own open-check expression: what counts as a line that names an npm command. */
 const NPM_COMMAND = /\bnpm (run|test|exec)|\bnpx\b/;
@@ -408,6 +416,22 @@ test("#2895: the real Region has no unlisted npm instruction, and the scan finds
   assert.ok(all.length >= MIN_COMMAND_LINES, `only ${all.length} command lines found; the scan is broken, not the docs shrunk`);
   assert.ok(Object.keys(files).length >= MIN_MARKDOWN_FILES, `only ${Object.keys(files).length} Region files read`);
   assert.deepEqual(refusals(files, PINS), []);
+});
+
+test("#2923: the private packages' READMEs are read by the real Region, and an `npm run` added to one is REFUSED naming file and line", () => {
+  const files = readRegion();
+  for (const file of PRIVATE_PACKAGE_READMES) {
+    assert.ok(file in files, `${file} is not read by the Region: the scan is not looking where the row says`);
+    assert.match(files[file], /\bpnpm (run|exec|dlx)\b/, `${file}: names no pnpm command; a README that names none proves nothing`);
+    const added = `${files[file]}\n\`\`\`bash\nnpm run lab:status\n\`\`\`\n`;
+    const found = refusals({ [file]: added }, {});
+    assert.equal(found.length, 1, `positive control: one added npm line in ${file} must be the one refusal`);
+    assert.match(found[0], new RegExp(`^${file.replace(/[./]/g, "\\$&")}:\\d+: `));
+  }
+});
+
+test("#2923: no private-package README is pinned as a record: every command in them is an instruction", () => {
+  assert.deepEqual(PRIVATE_PACKAGE_READMES.filter((f) => f in PINS), []);
 });
 
 test("#2895: every record group names a reason, and no pin is zero", () => {
