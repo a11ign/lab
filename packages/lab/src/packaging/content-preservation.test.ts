@@ -228,17 +228,27 @@ export function haystack(): string {
   return [claudeMd, ...nested, ...docsFiles.map((f) => norm(readFileSync(f, "utf8")))].join(" ");
 }
 
+/**
+ * #2894: `npm` AND `pnpm` ARE ONE WORD TO THIS GUARD. Respelling a command for the package manager the repo moved to
+ * (#57) changes no content, but it breaks every word run through the command: `**Mechanical — enforced by ESLint
+ * (`npm run lint`); errors block CI:**` can keep at most five consecutive words once `npm` becomes `pnpm`, so the
+ * floor of six reported a respelled line as lost. Folded on BOTH sides, so a line that really is gone still is.
+ */
+const foldPackageManager = (s: string): string => s.replace(/\bpnpm\b/g, "npm");
+
 /** Removed lines whose longest surviving run falls below the floor, each with what it DID match. */
-export function unpreservedLines(removed: string[], hay: string, minRun = MIN_SURVIVING_RUN):
+export function unpreservedLines(removed: string[], rawHay: string, minRun = MIN_SURVIVING_RUN):
 { line: string; matched: string; words: number }[] {
+  const hay = foldPackageManager(rawHay);
   return removed
+    .map((original) => ({ original, line: foldPackageManager(original) }))
     // #1240: A WHOLE LINE PRESENT VERBATIM IS PRESERVED, whatever its word count. The floor exists to
     // tell a surviving RUN from coincidental shared vocabulary -- and an exact match of the entire line
     // is not coincidence, it is the strongest evidence this guard can have. Without this a short line
     // that MOVED wholesale (`npm run worker:deploy -- --vm=a11y-worker-2`, five words) is reported as
     // lost, which is the false positive that would make a reader stop trusting the report.
-    .filter((line) => !hay.includes(line))
-    .map((line) => ({ line, ...longestSurvivingRun(line, hay) }))
+    .filter(({ line }) => !hay.includes(line))
+    .map(({ original, line }) => ({ line: original, ...longestSurvivingRun(line, hay) }))
     .filter((r) => r.words < minRun)
     .map((r) => ({ line: r.line, matched: r.text, words: r.words }));
 }
@@ -360,6 +370,15 @@ test("a re-wrapped line is NOT reported -- a re-wrap moves words across boundari
   const hay = norm("Deploy pushes every hashed file, defined once in worker-files.mjs, and reboots each guest");
   const rewrapped = "Deploy pushes every hashed file, defined once in worker-files.mjs, and";
   assert.deepEqual(unpreservedLines([rewrapped], hay), []);
+});
+
+test("a line respelled npm -> pnpm is NOT reported, and a line whose words are really gone still is (#2894)", () => {
+  const hay = norm("Mechanical — enforced by ESLint (`pnpm run lint`); errors block CI:");
+  const respelled = "Mechanical — enforced by ESLint (`npm run lint`); errors block CI:";
+  assert.deepEqual(unpreservedLines([respelled], hay), []);
+  const gone = "the witness harness reconciles every ledger entry against the shadow manifest nightly";
+  assert.equal(unpreservedLines([gone, respelled], hay).length, 1,
+    "folding the package manager must not make the guard stop reporting a line that is gone");
 });
 
 test("a de-numbered sentence is NOT reported -- the number goes, the sentence stays", () => {

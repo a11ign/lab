@@ -133,12 +133,12 @@ test("the real Region tells no agent to run npm, outside the pinned historical l
 test("POSITIVE CONTROL: the real Region is read and holds at least 20 pnpm command lines", () => {
   const sources = regionSources();
   const commandLines = sources.reduce((n, s) => n + s.text.split("\n").filter((l) => PNPM_COMMAND.test(l)).length, 0);
-  assert.ok(sources.length >= 20, `only ${sources.length} Region files were read`);
-  assert.ok(commandLines >= 20, `only ${commandLines} command lines were found: a Region that lost its commands is not a pass`);
+  assert.ok(sources.length >= 20, "fewer than 20 Region files were read: the walk lost its population");
+  assert.ok(commandLines >= 20, "fewer than 20 command lines were found: a Region that lost its commands is not a pass");
 });
 
 test("the allowlist is pinned by count, and every entry still matches its line", () => {
   assert.equal(HISTORICAL.length, HISTORICAL_COUNT);
   assert.deepEqual(staleAllowances(regionSources(), HISTORICAL), []);
-  for (const a of HISTORICAL) assert.ok(a.why.length > 0, `${a.file}:${a.line} must say why it is exempt`);
+  for (const a of HISTORICAL) assert.notEqual(a.why, "", `${a.file}:${a.line} must say why it is exempt`);
 });
