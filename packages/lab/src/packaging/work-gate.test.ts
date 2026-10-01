@@ -4538,8 +4538,10 @@ test("#2174: the history-requirement population is unchanged by this row", () =>
   // edge `host-units.test.ts` has, and the row's own Acceptance names it, so its pull request declares `History: full` (#497).
   // #2793 added `host-tool-install.test.ts`: checked -- it imports `host-units.mjs` for the rendered `work-tick` unit, the same edge, and the
   // row's Acceptance names it, so its pull request declares `History: full`.
+  // #2867 added `shadow-window-arm.test.ts`: checked -- it imports `host-units.mjs` for the rendered shadow-window unit texts and the installer, the same
+  // edge, and its pull request declares `History: full`.
   assert.deepEqual(charged, ["host-project-paths.test.ts", "host-tool-install.test.ts", "host-units.test.ts",
-    "pre-push-resolve-toward-main.test.ts", "pre-push-stale-base.test.ts", "work-gate.test.ts"],
+    "pre-push-resolve-toward-main.test.ts", "pre-push-stale-base.test.ts", "shadow-window-arm.test.ts", "work-gate.test.ts"],
   "adding a `history` reader to the gate's import closure taxes every test file that reaches it -- if "
   + "this list grew, check what was imported rather than editing the list");
 });
