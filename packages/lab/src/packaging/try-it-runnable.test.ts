@@ -56,7 +56,7 @@ export function runnableCommands(text: string): string[] {
     .map((m) => m[2]);
   return blocks.flatMap((b) => b.split("\n"))
     .map((line) => line.replace(/\s+#.*$/, "").trim())
-    .filter((line) => /^(npm|npx|node|git|cd)\b/.test(line));
+    .filter((line) => /^(npm|npx|pnpm|node|git|cd)\b/.test(line));
 }
 
 /**
@@ -103,8 +103,8 @@ test("#1060 ACCEPTANCE: the page carries a runnable install command and a runnab
   const commands = runnableCommands(page());
   assert.ok(commands.some((c) => /^git clone\b/.test(c)),
     "a reader told to install from the repository needs the clone, not a sentence saying to");
-  assert.ok(commands.some((c) => /^npm install\b/.test(c)), "and the install");
-  assert.ok(commands.some((c) => /^npm run witness\b/.test(c)), "and the command that actually runs it");
+  assert.ok(commands.some((c) => /^pnpm install\b/.test(c)), "and the install");
+  assert.ok(commands.some((c) => /^pnpm run witness\b/.test(c)), "and the command that actually runs it");
 });
 
 test("#1060 POSITIVE CONTROL: prose about installing does not count as a command", () => {
