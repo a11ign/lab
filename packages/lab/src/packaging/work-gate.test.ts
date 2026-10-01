@@ -1378,6 +1378,27 @@ test("only the ADDRESSEE's own hold is an answer from it -- #2400", () => {
     "two holders, one of them the addressee");
 });
 
+/**
+ * #2935: A ROW-ROUTED ORDER ACCEPTS `hold:product-manager`. #2882 addressed an unlabelled red PR to the session holding
+ * its row (`rowOwner`), so the hold of the session it went to before that change stopped matching and #2883 was
+ * re-ordered every tick. The exemption still ends with either key, and a labelled PR keeps #2400's rule.
+ */
+test("a rowOwner-routed PR held by product-manager generates no order; a third red job or no hold brings it back -- #2935", () => {
+  const routed = (labels: string[], checks: [string, string][] = HELD_RED) =>
+    ({ ...heldPr(labels, checks), rowOwner: { session: "worker-2879", row: 2879, source: "closes" } });
+  for (const required of [["gate"], null]) {
+    assert.deepEqual(failingOrders(routed(["hold:product-manager"]), required), [],
+      `hold:product-manager, row held by worker-2879 (required=${JSON.stringify(required)})`);
+    assert.deepEqual(failingOrders(routed(["hold:worker-2879"]), required), [], "the row holder's own hold still answers");
+    const real: [string, string][] = [["deliberateRefusals", "FAILURE"], ["gate", "FAILURE"], ["ts / run", "FAILURE"]];
+    assert.equal(failingOrders(routed(["hold:product-manager"], real), required)[0]?.session, "worker-2879", "third job red");
+    assert.equal(failingOrders(routed([]), required)[0]?.session, "worker-2879", "hold removed");
+    assert.equal(failingOrders(routed(["hold:ceo"]), required)[0]?.session, "worker-2879", "somebody else's hold");
+  }
+  const labelled = { ...heldPr(["session:worker-5", "hold:product-manager"]), rowOwner: { session: "worker-2879", row: 2879, source: "closes" } };
+  assert.equal(failingOrders(labelled, ["gate"])[0]?.session, "worker-5", "a labelled PR: product-manager's hold is not its answer");
+});
+
 test("HOLD_RED_JOBS names the jobs ci.yml defines, so the exemption cannot go stale on a rename", () => {
   const ci = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../../.github/workflows/ci.yml"), "utf8");
   assert.deepEqual([...HOLD_RED_JOBS], ["deliberateRefusals", "gate"]);
