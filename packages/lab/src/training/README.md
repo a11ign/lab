@@ -31,24 +31,24 @@ splits can keep near-duplicate mutations together.
 Generate the pages and manifest on the control machine:
 
 ~~~sh
-npm run training:generate
+pnpm run training:generate
 ~~~
 
 Run the worker-free instrument and manifest audit:
 
 ~~~sh
-npm run training:preflight
+pnpm run training:preflight
 ~~~
 
 The capture command leases the generated page server for the duration of the
-run. Do not start `npx serve` by hand; this avoids leaked servers and a stray
+run. Do not start `pnpm dlx serve` by hand; this avoids leaked servers and a stray
 server serving the wrong directory.
 
 In the interactive Windows session that owns NVDA, start the existing worker:
 
 ~~~powershell
 $env:A11Y_PORT = "8765"
-npm run worker
+pnpm run worker
 ~~~
 
 Then run the capture step from the control machine, with the worker reachable
@@ -57,7 +57,7 @@ over the network:
 ~~~sh
 A11Y_WORKER=http://windows-host:8765 \
 DATASET_BASE_URL=http://control-host:5050 \
-npm run training:capture
+pnpm run training:capture
 ~~~
 
 On a Mac with the local UTM worker VM, set neither. The capture step starts the
@@ -65,7 +65,7 @@ VM on demand, works out the address the guest can use to reach this host, and
 puts the VM back in the state it found it (see docs/local-worker-vm.md):
 
 ~~~sh
-npm run training:capture
+pnpm run training:capture
 ~~~
 
 DATASET_BASE_URL still wins if you set it, but a `localhost` value is rewritten
@@ -79,7 +79,7 @@ and a cache invalidation prices off the disk, and they are not the same number. 
 way it publishes its state instead of expecting you to watch a log:
 
 ~~~sh
-npm run training:status
+pnpm run training:status
 ~~~
 
 ~~~
@@ -111,7 +111,7 @@ evidence:
 # every a11y-worker* VM, started and reported as JSON
 ./scripts/local-worker/worker-ctl.sh pool-up
 
-A11Y_WORKERS=http://REDACTED-INTERNAL-ADDRESS:8765,http://REDACTED-INTERNAL-ADDRESS:8765 npm run training:capture
+A11Y_WORKERS=http://REDACTED-INTERNAL-ADDRESS:8765,http://REDACTED-INTERNAL-ADDRESS:8765 pnpm run training:capture
 ~~~
 
 Add a worker with `./scripts/local-worker/clone-worker.sh` (it handles the duplicate-MAC
@@ -123,8 +123,8 @@ machine.
 Do not poll it in a loop. To block until a run finishes:
 
 ~~~sh
-npm run training:wait              # exits 0 clean, 1 failures, 2 no run, 3 wedged
-npm run training:wait -- --json    # plus next_command
+pnpm run training:wait             # exits 0 clean, 1 failures, 2 no run, 3 wedged
+pnpm run training:wait --json      # plus next_command
 ~~~
 
 It reads `runs/screenreader-dataset/capture-progress.json`, which the run rewrites
@@ -135,7 +135,7 @@ failures, 2 no run recorded, 3 wedged (no update within one capture timeout plus
 slack). A wedged or interrupted run does not have to start over:
 
 ~~~sh
-npm run training:capture -- --resume --no-cache
+pnpm run training:capture --resume --no-cache
 ~~~
 
 Resume skips a case only when the previous run recorded it captured, both files are
@@ -147,7 +147,7 @@ after a fixture edit rather than silently trusting old evidence.
 Before exporting, prove the labels can actually tell the pairs apart:
 
 ~~~sh
-npm run training:check-signals
+pnpm run training:check-signals
 ~~~
 
 It runs each case's `badSignal` against the captures on disk and asserts it fires on
@@ -171,7 +171,7 @@ capture -- useful for a small repeatability probe, not the fast training path --
 setting to the worker through the capture client:
 
 ~~~sh
-DATASET_REUSE_NVDA=0 npm run training:capture -- --only=one-case-id
+DATASET_REUSE_NVDA=0 pnpm run training:capture --only=one-case-id
 ~~~
 
 `A11Y_REUSE_NVDA=0` on the host is not equivalent: NVDA runs in the Windows worker process,
@@ -187,7 +187,7 @@ captures.
 Finally export the model dataset:
 
 ~~~sh
-npm run training:export
+pnpm run training:export
 ~~~
 
 Export also verifies that both captures still match the current page bytes and
@@ -199,12 +199,12 @@ The trained artifact is consumed through a verified score-only boundary. It
 checks the safetensors metadata and the frozen encoder hash before inference:
 
 ~~~sh
-npm run training:score -- --data runs/screenreader-dataset/screenreader-evidence.jsonl
-npm run training:shadow -- --data runs/screenreader-acceptance/screenreader-evidence.jsonl
-npm run training:hardening
+pnpm run training:score --data runs/screenreader-dataset/screenreader-evidence.jsonl
+pnpm run training:shadow --data runs/screenreader-acceptance/screenreader-evidence.jsonl
+pnpm run training:hardening
 ~~~
 
-For a live witness capture, `A11Y_SHADOW_MODEL=1 npm run witness -- <url>
+For a live witness capture, `A11Y_SHADOW_MODEL=1 pnpm run witness <url>
 --task "..."` runs the local scorer beside the existing judge. The result is
 logged only; it does not change findings or bypass deterministic rules.
 
@@ -228,9 +228,9 @@ false positive and false negative. The new acceptance set is separate from the
 training manifest and is evaluated only after capture:
 
 ~~~sh
-npm run training:generate-acceptance
-npm run training:preflight-acceptance
-npm run training:evaluate-acceptance -- \
+pnpm run training:generate-acceptance
+pnpm run training:preflight-acceptance
+pnpm run training:evaluate-acceptance \
   --data runs/screenreader-acceptance/screenreader-evidence.jsonl \
   --data runs/screenreader-acceptance/repeat-1.jsonl \
   --data runs/screenreader-acceptance/repeat-2.jsonl
@@ -253,7 +253,7 @@ The preflight report is runs/screenreader-dataset/preflight.json. A successful
 preflight means the instruments are ready for NVDA; it does not count as a
 captured training example.
 
-Use npm run training:capture -- --only=filter-status to recapture a subset.
+Use pnpm run training:capture --only=filter-status to recapture a subset.
 The generated run directory is ignored by Git; source cases and the pipeline
 remain reviewable in this directory.
 
