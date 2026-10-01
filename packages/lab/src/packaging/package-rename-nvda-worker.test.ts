@@ -69,7 +69,7 @@ test("the package's name is the new one", () => {
 
 test("no non-document file names the old package", () => {
   const files = trackedFiles(REPO);
-  assert.ok(files.length > 1000, `the walk saw only ${files.length} files: it is not looking at the tree`);
+  assert.ok(files.length > 1000, "the walk read almost nothing: it is not looking at the tree");
   assert.deepEqual(filesNamingTheOldName(REPO, files), []);
 });
 
@@ -100,7 +100,8 @@ test("positive control: the walk finds the old name in a fixture and refuses it,
 test("every importer that declares the new name resolves it in pnpm-lock.yaml, as a link to the package", () => {
   const lock = parse(readFileSync(join(REPO, "pnpm-lock.yaml"), "utf8")) as { importers: Record<string, LockImporter> };
   const declarers = workspaceManifests().filter((file) => declaresNewName(readManifest(file)));
-  assert.ok(declarers.length >= 3, `only ${declarers.length} manifests declare ${NEW_NAME}: the walk is not looking at the workspace`);
+  // Derived a second way: the three manifests `git grep` finds naming it, so a walk that lost one is not "enough".
+  assert.deepEqual(declarers, ["package.json", "packages/lab/package.json", "packages/worker-fleet/package.json"]);
   for (const file of declarers) {
     const importer = dirname(file);
     const section = DEPENDENCY_SECTIONS.find((name) => lock.importers[importer]?.[name]?.[NEW_NAME]);
