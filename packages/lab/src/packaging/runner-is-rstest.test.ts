@@ -100,12 +100,12 @@ test("#1319: both branches of the scoped step go through the floor to rstest", (
   assert.equal(floorLine("files", "--min=1 --run --runner=rstest").length, 1, `the selected-files branch:\n${lines.join("\n")}`);
 });
 
-test("#1319: the unscoped step runs `npm run test:all`, and it asks the floor for rstest over every package", () => {
+test("#1319: the unscoped step runs `pnpm run test:all`, and it asks the floor for rstest over every package", () => {
   // `test:all`, not `test:ts`: since the package split `test:ts` is the PRODUCT suite and the org's tests
   // live in agent-org/guards/lab. "Unscoped" means every merge to main gets the full answer regardless of
   // the diff, so it must be the glob that covers every package -- `test:ts` here would run a third of the
   // suite and still read green, which is the defect this whole file exists to pin.
-  assert.deepEqual(codeLines(STEPS[stepNamed(UNSCOPED)].run ?? "").map((line) => line.trim()), ["npm run test:all"]);
+  assert.deepEqual(codeLines(STEPS[stepNamed(UNSCOPED)].run ?? "").map((line) => line.trim()), ["pnpm run test:all"]);
   // The whole-package glob and its floor live on `test:all` now; `test:ts` carries the product brace list.
   assert.match(SCRIPTS["test:all"],
     /assert-glob-not-empty\.mjs "packages\/\*\/src\/\*\*\/\*\.test\.ts" --min=500 --run --runner=rstest /);
