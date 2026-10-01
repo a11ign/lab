@@ -32,6 +32,10 @@ const SRC = fileURLToPath(new URL("../../../agent-org/src/", import.meta.url));
 const FIXTURE_HOME = "/home/fixture";
 const A11IGN_STATE = `${FIXTURE_HOME}/.cache/a11ign`;
 const FIXTURE_STATE_DIR = "/srv/acme/state";
+/** The fixture project's checkout. It does not exist, and `project-config.mjs` now reads `project.json` from the primary's checkout
+ * (#2873), so `readFourUnder` swaps in a checkout that does: this file reads the four paths, not the vocabulary. */
+const FIXTURE_CHECKOUT = "/srv/acme/repos/widgets";
+const REAL_CHECKOUT = fileURLToPath(new URL("../../../../", import.meta.url)).replace(/\/$/, "");
 const STDERR_EXCERPT = 400;
 /** The directory (twice: the reviewer state and the shadow gate's live directory), the drain marker and the ledger. */
 const DISTINCT_PATHS = 3;
@@ -43,7 +47,7 @@ type Four = Record<(typeof FOUR)[number], string>;
 /** A host that is nothing like a11ign's, with or without a `stateDir`. */
 const fixtureHost = (extra: Record<string, unknown> = {}) => JSON.stringify({
   schema: 1, home: "/srv/acme", binDir: "/srv/acme/bin", primary: "widgets",
-  projects: [{ id: "widgets", checkout: "/srv/acme/repos/widgets" }],
+  projects: [{ id: "widgets", checkout: FIXTURE_CHECKOUT }],
   gh: { workers: "/srv/acme/workers", leads: "/srv/acme/leads", leadsHeader: ["acme leads"], leadsWorkspaces: [{ id: "w1", role: "lead" }] },
   ...extra,
 });
@@ -62,7 +66,7 @@ function readFourUnder(hostJson: string | null) {
     const env: Record<string, string | undefined> = { ...process.env, HOME: FIXTURE_HOME, AGENT_ORG_HOST: undefined };
     if (hostJson !== null) {
       const file = join(dir, "host.json");
-      writeFileSync(file, hostJson);
+      writeFileSync(file, hostJson.replace(FIXTURE_CHECKOUT, REAL_CHECKOUT));
       env.AGENT_ORG_HOST = file;
     }
     return spawnSync(process.execPath, ["--input-type=module", "-e", READER], { env: env as NodeJS.ProcessEnv, encoding: "utf8" });
