@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { shadowTick, gapBetween, COPY_MARKER, READS_DIR } from "../../../agent-org/src/shadow-window.mjs";
+import { encodeShadowValue } from "../../../agent-org/src/shadow-reads.mjs";
 
 const RUNNER = fileURLToPath(new URL("../../../agent-org/src/shadow-window.mjs", import.meta.url));
 
@@ -31,6 +32,11 @@ const CANDIDATES = {
   exitsThree: "export function decide() { process.exit(3); }",
   throws: "export function decide() { throw new Error('candidate blew up'); }",
   notOrders: "export function decide() { return { not: 'an array' }; }",
+  // `decide` calls `closings.get` on a Map, as `blockerClearedOrders` does: a Map flattened to `{}` makes it throw, an empty one drops the order.
+  needsClosingsMap: `export function decide(args) {
+  const clearedAt = args.closings.get("2849");
+  return clearedAt === undefined ? [] : [{ causeKey: "blocker-cleared:2849", cause: "blocker-cleared", session: "s", subject: "2849", discriminator: clearedAt, prompt: "p" }];
+}`,
   // Reads the COPY through the env var the runner hands every candidate, one order per ledger line.
   readsCopyLedger: `import { readFileSync } from "node:fs";
 export function decide() {
@@ -251,5 +257,34 @@ test("the command line records a tick, says QUIET when there is none, and exits 
     const refused = spawnSync(process.execPath, argv(r.live), { encoding: "utf8" });
     assert.equal(refused.status, 2);
     assert.match(refused.stderr, /REFUSING/);
+  });
+});
+
+/** A tick whose `args` carries a Map with a blocker clearing, written by the tap's own encoder (`tagged`) or by the bare `JSON.stringify` it replaced. */
+function writeClosingsTick(live: string, tagged: boolean) {
+  const args = { closings: new Map([["2849", "2026-10-01T09:41:00Z"]]) };
+  const orders = [{ causeKey: "blocker-cleared:2849", cause: "blocker-cleared", session: "s", subject: "2849", discriminator: "2026-10-01T09:41:00Z", prompt: "p" }];
+  const written = tagged ? encodeShadowValue(args).encoded : args;
+  writeFileSync(join(live, READS_DIR, `${T1}.json`), JSON.stringify({ tick: T1, args: written, orders }));
+}
+
+test("a TAGGED tick reaches the candidate with its Map restored: the revive happens inside the child, so the Map survives the stdin hop (#2858)", () => {
+  withRig((r) => {
+    writeClosingsTick(r.live, true);
+    shadowTick({ liveDir: r.live, copyDir: r.copy, recordPath: r.record, candidate: r.candidate("needsClosingsMap") });
+    const [record] = lines(r.record);
+    assert.equal(record.candidateExit, 0, `the candidate saw a Map: ${record.differences[0]?.error ?? ""}`);
+    assert.equal(record.candidate.length, 1, "the blocker-cleared order the Map carries was made");
+    assert.deepEqual(record.differences, []);
+  });
+});
+
+test("POSITIVE CONTROL: the same tick written by the bare JSON.stringify the tap used before #2858 is NOT restored, and is recorded as a difference", () => {
+  withRig((r) => {
+    writeClosingsTick(r.live, false);
+    shadowTick({ liveDir: r.live, copyDir: r.copy, recordPath: r.record, candidate: r.candidate("needsClosingsMap") });
+    const [record] = lines(r.record);
+    assert.equal(record.candidateExit, 1, "the Map arrived as {} so `closings.get` threw");
+    assert.equal(record.differences[0].causeKey, "candidate-exit:1");
   });
 });
