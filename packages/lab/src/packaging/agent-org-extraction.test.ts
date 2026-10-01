@@ -483,12 +483,14 @@ function decision4Counts(): { total: number; divided: number } {
  * product pattern -- the same reason as #2793's line above. Re-derived by running this test, not inferred.
  * 2026-10-01, #2873 (child 5d-2 of #69), on top of #2846's 147: 148 total, 17 divided. One MORE total, `standalone-candidate.test.ts`, which imports `agent-org/src`
  * (t-import) and matches no product pattern -- the same reason as #2793's line above. Re-derived by running this test, not inferred.
+ * 2026-10-01, #2875 (child 5d-3 of #69), on top of #2873's 148: 149 total, 17 divided. One MORE total, `standalone-roots.test.ts`, which imports `agent-org/src`
+ * (t-import) and matches no product pattern -- the same reason as #2793's line above. Re-derived by running this test, not inferred.
  * Grows or shrinks with real PRs; a mismatch here means product-manager owes another amendment, not that
  * this test is wrong.
  */
 // 2026-10-01, #2848: 144 total, 17 divided. One MORE total, `repeating-lines.test.ts`, which imports `agent-org/src` (the detector and the gate) and
 // nothing from the product, so it is not divided. A test of the tool's source cannot avoid the edge, so the count moves with the row that adds it.
-const RECORDED_DECISION_4 = { total: 148, divided: 17 };
+const RECORDED_DECISION_4 = { total: 149, divided: 17 };
 
 test("decision 4's total/divided counts, re-derived, match the row's currently-amended reading", () => {
   const counts = decision4Counts();
