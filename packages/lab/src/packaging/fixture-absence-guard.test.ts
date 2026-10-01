@@ -303,7 +303,12 @@ test("#2876 ACCEPTANCE: the transient `.corpus-*-mutation-*` directories `corpus
   // maker, or a renamed prefix, is then a failure here rather than a pattern that quietly stopped matching.
   const maker = readFileSync(resolve(REPO, "packages/lab/src/packaging/corpus-backup.test.ts"), "utf8");
   const prefixes = [...maker.matchAll(/mkdtempSync\(join\(REPO, "(packages\/lab\/\.[\w-]*mutation-)"\)\)/g)].map((m) => m[1]);
-  assert.ok(prefixes.length >= 2, `the positive control: the maker's source names its transient directories; found ${prefixes}`);
+  // The count is derived a SECOND way and asserted EQUAL (`reported-counts.test.ts`, #1067): every in-repo
+  // `mkdtempSync(join(REPO, ...))` call in the maker must have been matched by the prefix regex, so a maker
+  // spelled another way is a failure here and not a directory this test never plants. Two makers today.
+  const makerCalls = maker.match(/mkdtempSync\(join\(REPO,/g)?.length;
+  assert.equal(prefixes.length, makerCalls, `every in-repo maker names a prefix the pattern reads; read: ${prefixes}`);
+  assert.equal(makerCalls, 2, "the positive control: both makers exist, so the planted population is not empty");
 
   // A real repository carrying the REAL `.gitignore`, so the assertion is about this repo's ignore rules and not
   // about whichever transient directories happen to exist in the live tree this minute.
