@@ -1,8 +1,10 @@
 // Row #2849 (the split, child 5d-0 of #69): the live gate taps its own `decide` call, for the shadow runner (#2846).
 //
 // Every claim below runs the real writer against a real temporary directory, and the controls are in this file:
-// the marker-absent case is only worth anything beside the marker-present one that writes a file, the pruner is
-// shown removing exactly one of 31, and the round-trip check is shown FAILING on a `Map`.
+// the marker-absent case is only worth anything beside the marker-present one that writes a file, and the pruner is
+// shown removing exactly one of 31. THE ROUND TRIP OF `args` THROUGH `decide` IS IN `shadow-reads-round-trip.test.ts`: it calls
+// `decide`, which reaches `work-gate.mjs` and so charges the token-less acceptance job a `token` it would refuse (#827, #2610), and
+// this file is the row's Acceptance, so it imports only `shadow-reads.mjs`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -10,7 +12,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { KEEP_TICKS, SHADOW_READS_DIR, SHADOW_WINDOW_MARKER, pruneShadowReads, tapShadowReads }
   from "../../../agent-org/src/shadow-reads.mjs";
-import { decide } from "../../../agent-org/src/work-gate.mjs";
 
 const FIRST_TICK = 1_790_000_000_000;
 const TWO_MINUTES = 120_000;
@@ -163,32 +164,4 @@ test("an unwritable state directory is a diagnostic as well (skipped honestly wh
     chmodSync(join(dir, SHADOW_READS_DIR), 0o700);
     rmSync(dir, { recursive: true, force: true });
   }
-});
-
-// CONSTRAINT 4. `decide` is handed plain arrays and objects today, and also reads `Date.now()` itself, so the clock is pinned for
-// the two calls: what is compared is the arguments' survival of JSON, not the time between two reads.
-const survives = (args: unknown) => {
-  const now = Date.now;
-  Date.now = () => FIRST_TICK;
-  try {
-    const clone = JSON.parse(JSON.stringify(args));
-    assert.deepEqual(clone, args, "the structure survives the round trip");
-    assert.deepEqual(decide(clone as Parameters<typeof decide>[0]), decide(args as Parameters<typeof decide>[0]), "and so does what `decide` says about it");
-  } finally {
-    Date.now = now;
-  }
-};
-
-test("the JSON round trip of `args` leaves `decide`'s answer unchanged on a fixture tick -- and that check can fail (positive control)", () => {
-  const args = FIXTURE_ARGS();
-  const before = JSON.stringify(args);
-  survives(args);
-  assert.equal(JSON.stringify(args), before, "and `decide` did not mutate its arguments, which the tap records AFTER the call");
-  assert.ok(decide(args as Parameters<typeof decide>[0]).length > 0, "the fixture makes `decide` say something, so equal-and-empty is not the whole test");
-
-  // A `Map` in the arguments serialises to `{}`, which is what a later change would do to a window nobody is watching.
-  const withMap = { ...FIXTURE_ARGS(), prFiles: new Map([[7, ["a.ts"]]]) as unknown as never[] };
-  assert.throws(() => survives(withMap), "a Map in `args` FAILS the round-trip check");
-  const withDate = { ...FIXTURE_ARGS(), when: new Date(FIRST_TICK) };
-  assert.throws(() => survives(withDate), "and so does a Date");
 });
