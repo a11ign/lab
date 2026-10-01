@@ -737,9 +737,9 @@ test("#2357: a docs-only diff now SELECTS `ts` (a test reads docs), yet #2348's 
   assert.equal(result.ts, true, "a docs-only diff skips `ts` again, which is #2329 -- re-read #2357");
 });
 
-test("#2348: the guard sweep job runs `npm run guards:sweep` and is not selected by the diff", () => {
+test("#2348: the guard sweep job runs `pnpm run guards:sweep` and is not selected by the diff", () => {
   const block = jobBlockOf(CI_YML, "guardSweep");
-  assert.match(block, /run: npm run guards:sweep\n/, "the job no longer runs the sweep");
+  assert.match(block, /run: pnpm run guards:sweep\n/, "the job no longer runs the sweep");
   assert.equal(selectedByTheDiff(block), false,
     "guardSweep is conditional on needs.changed.outputs.* -- a docs-only PR would skip it, which is #2329");
 });
