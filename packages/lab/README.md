@@ -21,15 +21,15 @@ breaking change.
 ## The five things you will actually run
 
 ```bash
-npm run training:generate         # write the corpus pages from the case definitions
-npm run training:capture          # drive them through the worker fleet (cached; a full run is ~1,100 pairs)
-npm run training:check-signals    # does every case still discriminate its good page from its bad one?
-npm run corpus:starvation         # which features will the corpus starve — asked BEFORE a capture run
-npm run scorer:shortcuts          # which features did a head penalise for free — asked AFTER training
+pnpm run training:generate        # write the corpus pages from the case definitions
+pnpm run training:capture         # drive them through the worker fleet (cached; a full run is ~1,100 pairs)
+pnpm run training:check-signals   # does every case still discriminate its good page from its bad one?
+pnpm run corpus:starvation        # which features will the corpus starve — asked BEFORE a capture run
+pnpm run scorer:shortcuts         # which features did a head penalise for free — asked AFTER training
 ```
 
 Long jobs do **not** run from a shell. They are named jobs dispatched through Ansible and supervised by
-systemd (`npm run lab:job -- -e job=train`), for the reasons in
+systemd (`pnpm run lab:job -e job=train`), for the reasons in
 [ADR 0013](../../docs/adr/0013-lab-job-control.md) — chiefly that the way this project's most expensive
 operations were started used to exist nowhere in the source tree.
 
@@ -61,6 +61,6 @@ adding 60 cases changed zero existing pages, which is how that fix was verified.
 **Acceptance and repeatability runs never cache.** `DATASET_KIND=acceptance` refuses it outright, because
 those runs exist to test whether NVDA's output is still stable.
 
-**`npm run eval` cannot run in CI** — it needs the Python venv. Neither can the corpus-dependent tests, which
+**`pnpm run eval` cannot run in CI** — it needs the Python venv. Neither can the corpus-dependent tests, which
 need `runs/`. Both skip *honestly* rather than passing quietly, because a check that reports success having
 examined nothing is how "verified" comes to mean "unexamined".
