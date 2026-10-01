@@ -95,9 +95,12 @@ test("THE REAL ROOT MANIFEST runs no script through npm or npx", () => {
 
 test("`pnpm install` and `pnpm test` reach `build` through pnpm, read from the resolved script chain", () => {
   const scripts = rootScripts();
-  for (const entry of ["prepare", "pretest", "pretypecheck"]) {
+  for (const entry of ["pretest", "pretypecheck"]) {
     assert.ok(chainOf(scripts, entry).has("build"), `\`${entry}\` no longer reaches \`build\` by \`pnpm run\``);
   }
+  // `prepare` is a LIFECYCLE script and runs on a worker with no bare `pnpm` (#2945), so it names the build
+  // script's own command rather than `pnpm run build`; that script reaches pnpm through `pnpmCliInvocation`.
+  assert.ok(scripts.prepare.includes(scripts.build), "`prepare` no longer runs the `build` script's command");
   const test = chainOf(scripts, "test");
   for (const delegate of ["test:ts", "test:python"]) {
     assert.ok(test.has(delegate), `\`test\` no longer reaches \`${delegate}\` by \`pnpm run\``);
