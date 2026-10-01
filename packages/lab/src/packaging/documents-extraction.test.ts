@@ -98,7 +98,7 @@ function trackedFilesOutsideDocs(): string[] {
 
 test("nothing in the repository names the old package, `cli` included", () => {
   const files = trackedFilesOutsideDocs();
-  assert.ok(files.length > 1000, `only ${files.length} tracked files read: the walk read the wrong place`);
+  assert.ok(files.length > 1000, "too few tracked files read: the walk read the wrong place");
   assert.deepEqual(oldNameMentions(REPO_ROOT, files), []);
 });
 
@@ -217,7 +217,7 @@ test("the tree that becomes the first commit carries nothing the purge rules red
 
 test("control: an internal address and a token-shaped string are each REFUSED", async () => {
   const leaks = await withFixture({
-    "a.ts": 'const host = "REDACTED-INTERNAL-ADDRESS";\n',
+    "a.ts": `const host = "${["192", "168", "1", "20"].join(".")}";\n`,
     "b.ts": `const t = "ghp_${"a".repeat(36)}";\n`,
     "c.ts": "export {};\n",
   }, treeLeaks);
