@@ -34,6 +34,9 @@ import { SHADOW_COPY_MARKER, SHADOW_STATE_DIR_ENV } from "../../../agent-org/src
 const SRC = fileURLToPath(new URL("../../../agent-org/src/", import.meta.url));
 const FIXTURE_HOME = "/home/fixture";
 const STDERR_EXCERPT = 400;
+/** The fixture project's checkout must hold a `project.json`, because `project-config.mjs` reads it from the host's primary (#2873).
+ * This file reads the four state paths, not the vocabulary, so a11ign's own checkout stands in for the fixture's. */
+const PRIMARY_CHECKOUT = fileURLToPath(new URL("../../../../", import.meta.url)).replace(/\/$/, "");
 
 const READER = `
   const gate = await import(${JSON.stringify(`${SRC}work-gate.mjs`)});
@@ -64,7 +67,7 @@ function readFour(root: string, shadowDir: string | undefined, hostStateDir?: st
     const file = join(root, "host.json");
     writeFileSync(file, JSON.stringify({
       schema: 1, home: "/srv/acme", binDir: "/srv/acme/bin", primary: "widgets", stateDir: hostStateDir,
-      projects: [{ id: "widgets", checkout: "/srv/acme/repos/widgets" }],
+      projects: [{ id: "widgets", checkout: PRIMARY_CHECKOUT }],
       gh: { workers: "/srv/acme/workers", leads: "/srv/acme/leads", leadsHeader: ["acme leads"], leadsWorkspaces: [{ id: "w1", role: "lead" }] },
     }));
     env.AGENT_ORG_HOST = file;
