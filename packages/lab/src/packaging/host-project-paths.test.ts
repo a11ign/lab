@@ -53,7 +53,7 @@ const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
 
 test("#2620: no home-directory literal remains in the tool's sources, its templates or its scripts", () => {
   const files = toolFiles();
-  assert.equal(files.length, 3 + 8, "POSITIVE CONTROL: eleven files are scanned (three sources, eight host entries), so an emptiness below is not a scan of nothing");
+  assert.equal(files.length, 3 + 10, "POSITIVE CONTROL: thirteen files are scanned (three sources, ten host entries -- the two the shadow window added, #2867, included), so an emptiness below is not a scan of nothing");
   const offenders = files.filter((file) => HOME_LITERAL.test(readFileSync(file, "utf8")));
   assert.deepEqual(offenders, [], "each of these names a host path the tool must read from host.json instead");
 });
@@ -107,13 +107,14 @@ test("#2620: the three tool units, the wrapper and the leads list render to TODA
   assert.equal(sha256(leadsListText()), TODAYS_LEADS_LIST, "the leads list installed at ~/leads/workspaces.txt");
 });
 
-test("#2620: NO UNIT IS RENAMED -- the installed names are the fourteen there were", () => {
+test("#2620: NO UNIT IS RENAMED -- the installed names are the fourteen there were, and the shadow window's two (#2867)", () => {
   assert.deepEqual(shippedUnits(), [
     "a11ign-board-report.service", "a11ign-board-report.timer",
     "a11ign-corpus-release-nightly.service", "a11ign-corpus-release-nightly.timer",
     "a11ign-corpus-snapshot.service", "a11ign-corpus-snapshot.timer",
     "a11ign-fleet-watch.service", "a11ign-fleet-watch.timer",
     "a11ign-lab-watch.service", "a11ign-lab-watch.timer",
+    "a11ign-shadow-window.service", "a11ign-shadow-window.timer",
     "a11ign-work-tick.service", "a11ign-work-tick.timer",
     "a11ign-worktree-prune.service", "a11ign-worktree-prune.timer",
   ]);
@@ -121,14 +122,16 @@ test("#2620: NO UNIT IS RENAMED -- the installed names are the fourteen there we
 
 // --- 3. the partition of the seventeen ---------------------------------------------------------------------------------------------
 
-test("#2620: the 17 entries are classified 8 tool, 8 project, 1 host data -- asserted against the files", () => {
+test("#2620: the 17 entries are classified 8 tool, 8 project, 1 host data -- asserted against the files, plus the shadow window's two tool entries (#2867)", () => {
   const inTool = readdirSync(SHIPPED_DIR).sort();
   const inProject = readdirSync(PROJECT_UNITS_DIR).sort();
   const hostData = Object.keys(HOST_DATA_ENTRIES);
-  assert.equal(inTool.length, 8, "POSITIVE CONTROL: eight entries stay in the tool's host directory");
+  const shadowPair = inTool.filter((name) => name.startsWith("shadow-window."));
+  assert.equal(shadowPair.length, 2, "POSITIVE CONTROL: #2867's pair is two of them, so the 8 below is the original eight and the pair");
+  assert.equal(inTool.length - shadowPair.length, 8, "POSITIVE CONTROL: eight entries stay in the tool's host directory");
   assert.equal(inProject.length, 8, "POSITIVE CONTROL: eight moved to the project's `.agent-org/units/`");
   assert.equal(hostData.length, 1, "POSITIVE CONTROL: one is host data");
-  assert.equal(inTool.length + inProject.length + hostData.length, 17, "the host directory held seventeen entries");
+  assert.equal(inTool.length - shadowPair.length + inProject.length + hostData.length, 17, "the host directory held seventeen entries");
   assert.deepEqual(inTool, [...TOOL_ENTRIES].sort(), "the tool's directory holds exactly what the tool records");
   assert.deepEqual(inProject, [...units.own].sort(), "the project's directory holds exactly what its declaration lists");
   for (const name of hostData) {
@@ -196,7 +199,7 @@ test("#2620: a fixture project's paths and prefix change the units, the wrapper 
   assert.match(work, /^Environment=HOME=\/srv\/ci$/m);
   assert.match(shippedUnitText("acme-work-tick.timer", ACME) ?? "", /^Requires=acme-work-tick\.service$/m);
   assert.deepEqual(shippedUnits(SHIPPED_DIR, { projectUnitsDir: null, prefix: "acme-" }).filter((u) => u.endsWith(".service")),
-    ["acme-board-report.service", "acme-work-tick.service", "acme-worktree-prune.service"], "the prefix names the tool's units");
+    ["acme-board-report.service", "acme-shadow-window.service", "acme-work-tick.service", "acme-worktree-prune.service"], "the prefix names the tool's units");
   for (const text of [work, shippedScriptText("gh", ACME) ?? ""]) assert.doesNotMatch(text, /\/home\/agent/, "and none of a11ign's host survives");
   assert.match(shippedScriptText("gh", ACME) ?? "", /A11Y_GH_REAL:-\/srv\/ci\/bin\/gh-real/);
   const files = ownedIdentityFiles(ACME);

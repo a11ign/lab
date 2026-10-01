@@ -1253,11 +1253,14 @@ test("#2000: which shipped timers run their service at `host:install`, and which
   assert.deepEqual(requiring, [
     "a11ign-corpus-release-nightly.timer",
     "a11ign-corpus-snapshot.timer",
+    // #2867: the shadow window's timer. Its service runs once at `host:install` and is a DORMANT NO-OP until `shadow-window.mjs --arm` creates the
+    // marker (no marker, nothing read, exit 0), which the unit's own comments say; that is why a fifth entry here is a decision made and not one missed.
+    "a11ign-shadow-window.timer",
     "a11ign-work-tick.timer",
     "a11ign-worktree-prune.timer",
   ], "`Requires=` in a timer's [Unit] is an ordinary start dependency, so `enable --now` on the timer "
     + "starts the service too -- once, at install time, whether or not the timer was already running. "
-    + "Adding a fifth entry here means that service now runs during `host:install`: say so in the unit, "
+    + "Adding another entry here means that service now runs during `host:install`: say so in the unit, "
     + "and check it is a run you want unattended at an operator's keystroke");
   assert.deepEqual(timers.filter((u) => !requiring.includes(u)), [
     "a11ign-board-report.timer",
