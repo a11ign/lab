@@ -135,6 +135,25 @@ test("a write that cannot happen returns a diagnostic naming the cause, writes i
   }
 });
 
+test("a record written but a prune that fails: recorded true, the path, AND the diagnostic returned, and the log line (not stderr alone)", () => {
+  const dir = stateDir(true);
+  try {
+    // A DIRECTORY named like the oldest record: `unlink` refuses it (EISDIR) whoever runs this, root included.
+    mkdirSync(join(dir, SHADOW_READS_DIR, "1.json"), { recursive: true });
+    const lines: string[] = [];
+    const result = tapShadowReads({ args: FIXTURE_ARGS(), orders: [], tick: FIRST_TICK, stateDir: dir, keep: 1, log: (line) => lines.push(line) });
+    assert.equal(result.recorded, true, "the record is on disk, so the tap succeeded");
+    assert.equal(result.path, join(dir, SHADOW_READS_DIR, `${FIRST_TICK}.json`));
+    assert.match(result.diagnostic ?? "", /could not remove .*1\.json/, "the pruning failure reaches the caller, not only stderr");
+    assert.match(result.diagnostic ?? "", /EISDIR|EPERM/, "and names its cause");
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], /^shadow-reads: could not remove .*1\.json/);
+    assert.ok(existsSync(join(dir, SHADOW_READS_DIR, `${FIRST_TICK}.json`)), "the newest record stayed");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("an `args` that cannot be serialised is a diagnostic too, not a thrown error out of the tick", () => {
   const dir = stateDir(true);
   try {
