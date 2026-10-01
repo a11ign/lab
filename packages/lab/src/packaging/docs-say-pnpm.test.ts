@@ -22,6 +22,7 @@
  * Headings are compared against the merge-base so a rewrite cannot rename a section out from under its anchor.
  * `packages/*\/README.md` are published READMEs a consumer follows, and are not in this Region.
  */
+// requires: history
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
