@@ -31,9 +31,9 @@
         }
       },
       {
-        "name": "@a11ign/nvda-worker",
+        "name": "@a11ign/screenreader-worker",
         "version": "0.1.0",
-        "path": "node_modules/@a11ign/nvda-worker",
+        "path": "node_modules/@a11ign/screenreader-worker",
         "entry": true,
         "dependencies": {
           "@guidepup/guidepup": "0.31.0"
@@ -55,7 +55,7 @@
         "entry": true,
         "dependencies": {
           "@a11ign/judge": "0.1.0",
-          "@a11ign/nvda-worker": "0.1.0"
+          "@a11ign/screenreader-worker": "0.1.0"
         }
       },
       {
@@ -97,7 +97,7 @@
         "ok": true
       },
       {
-        "name": "@a11ign/nvda-worker",
+        "name": "@a11ign/screenreader-worker",
         "ok": true
       },
       {

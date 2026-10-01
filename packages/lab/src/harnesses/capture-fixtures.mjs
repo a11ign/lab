@@ -103,7 +103,7 @@ async function captureOverWorker(/** @type {any} */ url, /** @type {any} */ work
 
 /** In-process, for the Windows guest. Imported lazily so this file loads on a Mac or on Linux. */
 async function captureInProcess(/** @type {any} */ url, /** @type {any} */ steps) {
-  const { captureWithNvda } = await import("@a11ign/nvda-worker");
+  const { captureWithNvda } = await import("@a11ign/screenreader-worker");
   return captureWithNvda(url, { steps, probeForms: true });
 }
 

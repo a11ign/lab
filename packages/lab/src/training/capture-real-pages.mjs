@@ -45,7 +45,7 @@ import { captureTolerantly } from "@a11ign/worker-fleet/capture-client";
 // BY CODE, not the literal string — architecture-audit.md §5, item 4. `capture-faults.mjs` has no
 // imports of its own, so it is safe from any portable tree; a renamed fault must not be able to make
 // this branch silently stop firing.
-import { FAULT } from "@a11ign/nvda-worker/capture-faults";
+import { FAULT } from "@a11ign/screenreader-worker/capture-faults";
 
 /**
  * THE script that ran four shards against `--worker=http://:8765` for 29 minutes. `--shard=` arrives

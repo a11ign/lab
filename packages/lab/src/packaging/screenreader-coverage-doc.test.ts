@@ -33,14 +33,14 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { PROBE_FLAGS } from "@a11ign/nvda-worker/capture-pure";
+import { PROBE_FLAGS } from "@a11ign/screenreader-worker/capture-pure";
 
 /**
  * A file of the worker's source, found THROUGH THE PACKAGE NAME (#2612): `./package.json` is exported, so the
  * package directory resolves the same in this checkout and in an install, and no path names where the layer lives.
  */
 const workerSource = (file: string) =>
-  join(dirname(createRequire(import.meta.url).resolve("@a11ign/nvda-worker/package.json")), "src", file);
+  join(dirname(createRequire(import.meta.url).resolve("@a11ign/screenreader-worker/package.json")), "src", file);
 
 const MAP = readFileSync(
   fileURLToPath(new URL("../../../../docs/screenreader-coverage.md", import.meta.url)), "utf8");

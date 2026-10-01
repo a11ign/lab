@@ -8,7 +8,7 @@
  *
  * It lives in `lab` and not in `evidence` because `evidence` is Apache-2.0 and may not import the AGPL worker
  * (`licence-boundary.test.ts`), which is also why the worker's test read evidence and not the reverse. `lab` already
- * declares `@a11ign/nvda-worker`, read here BY NAME.
+ * declares `@a11ign/screenreader-worker`, read here BY NAME.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { stripComments } from "@a11ign/evidence/source-text";
-import { notRunAfterLeaving, sweepObservation } from "@a11ign/nvda-worker/capture-pure";
+import { notRunAfterLeaving, sweepObservation } from "@a11ign/screenreader-worker/capture-pure";
 
 type Observation = { asked: boolean; complete?: boolean; why?: string; stop?: { prev: string; next: string } };
 const SWEEPS = ["headings", "landmarks", "formFields", "graphics", "links", "lists", "frames", "tableCells"];

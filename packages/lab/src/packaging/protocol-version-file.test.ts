@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { layerFile } from "../../../guards/src/layer-file.mjs";
 
 import { PROTOCOL_VERSION_FILE } from "@a11ign/control/fleet-playbook";
-import { CAPTURE_PROTOCOL_VERSION } from "@a11ign/nvda-worker/protocol-version";
+import { CAPTURE_PROTOCOL_VERSION } from "@a11ign/screenreader-worker/protocol-version";
 
 /**
  * The deploy guard SCRAPES `CAPTURE_PROTOCOL_VERSION` out of a worker file, and the file it scrapes moved.
@@ -24,7 +24,7 @@ import { CAPTURE_PROTOCOL_VERSION } from "@a11ign/nvda-worker/protocol-version";
  * This pins the two together. Reading as text is forced by the guidepup problem, so the copies can be
  * neither deleted nor derived — CLAUDE.md's third remedy, pin them equal with a test.
  */
-const workerFile = (name: string) => layerFile("@a11ign/nvda-worker", `src/${name}`, { from: import.meta.dirname });
+const workerFile = (name: string) => layerFile("@a11ign/screenreader-worker", `src/${name}`, { from: import.meta.dirname });
 
 test("the file the deploy guard scrapes is the file that declares CAPTURE_PROTOCOL_VERSION", () => {
   const text = readFileSync(workerFile(PROTOCOL_VERSION_FILE), "utf8");

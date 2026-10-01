@@ -11,7 +11,7 @@
 // .github/workflows/capture-regression.yml. Exits non-zero on any failed check.
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
-import { captureWithNvda } from "@a11ign/nvda-worker";
+import { captureWithNvda } from "@a11ign/screenreader-worker";
 import { capturedText } from "./captured-text.mjs";
 import { leasePageServer } from "../training/page-server.mjs";
 import { hostPagesBase } from "@a11ign/worker-fleet/host-address";
