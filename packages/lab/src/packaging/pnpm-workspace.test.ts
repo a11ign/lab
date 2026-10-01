@@ -8,7 +8,7 @@
  *     unless `linkWorkspacePackages` is on, so an install can succeed while every `@a11ign/*` import reads a
  *     downloaded copy -- the false green this migration exists to remove. Measured 2026-09-24: with the
  *     setting off, `pnpm import` went to the registry and stopped on a 404 for the unpublished
- *     `@a11ign/pdf`; a PUBLISHED package would have installed without complaint. So every internal entry in
+ *     `@a11ign/documents`; a PUBLISHED package would have installed without complaint. So every internal entry in
  *     the lockfile must be a `link:`.
  *
  *   - Most worktrees on the agent host have `node_modules` as a symlink into the primary checkout, and pnpm

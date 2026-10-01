@@ -137,7 +137,7 @@ test("packedRangeProblems: workspace: protocol, an unreadable range and an exclu
   assert.match(packedRangeProblems([stale, evidence])[0], /packed beside it is 0\.1\.0, which that range excludes/);
   const vague = { ...sound, peerDependencies: { "@a11ign/evidence": "*" } , dependencies: {} };
   assert.match(packedRangeProblems([vague, evidence])[0], /not a range this gate can check/);
-  const optionalAbsent = { ...sound, dependencies: {}, optionalDependencies: { "@a11ign/pdf": "workspace:^" } };
+  const optionalAbsent = { ...sound, dependencies: {}, optionalDependencies: { "@a11ign/documents": "workspace:^" } };
   assert.equal(packedRangeProblems([optionalAbsent]).length, 1, "workspace: is refused even when the sibling is not in the pack set");
 });
 

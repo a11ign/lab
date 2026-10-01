@@ -205,7 +205,7 @@ const LEFT_AS_TYPED: RecordGroup[] = [
     kind: "record",
     reason: "GENERATED from each script's own `// command:` header; the header is edited in its own row, then regenerated",
     files: {
-      "docs/commands.md": 2,
+      "docs/commands.md": 1,
     },
   },
   {

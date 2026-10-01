@@ -145,7 +145,7 @@
         }
       },
       {
-        "name": "@a11ign/pdf",
+        "name": "@a11ign/documents",
         "registry": {
           "published": false
         }
