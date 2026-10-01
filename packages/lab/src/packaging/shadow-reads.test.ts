@@ -4,13 +4,14 @@
 // the marker-absent case is only worth anything beside the marker-present one that writes a file, and the pruner is
 // shown removing exactly one of 31. THE ROUND TRIP OF `args` THROUGH `decide` IS IN `shadow-reads-round-trip.test.ts`: it calls
 // `decide`, which reaches `work-gate.mjs` and so charges the token-less acceptance job a `token` it would refuse (#827, #2610), and
-// this file is the row's Acceptance, so it imports only `shadow-reads.mjs`.
+// this file is the row's Acceptance, so it imports only `shadow-reads.mjs`. #2858 (the Map, Set and Date encoding) follows the same split: what is
+// written and read back is HERE, and `decide`'s answer over the revived arguments is in `shadow-reads-round-trip.test.ts`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { KEEP_TICKS, SHADOW_READS_DIR, SHADOW_WINDOW_MARKER, pruneShadowReads, tapShadowReads }
+import { KEEP_TICKS, SHADOW_READS_DIR, SHADOW_WINDOW_MARKER, encodeShadowValue, parseShadowRecord, pruneShadowReads, reviveShadowValue, tapShadowReads }
   from "../../../agent-org/src/shadow-reads.mjs";
 
 const FIRST_TICK = 1_790_000_000_000;
@@ -183,4 +184,103 @@ test("an unwritable state directory is a diagnostic as well (skipped honestly wh
     chmodSync(join(dir, SHADOW_READS_DIR), 0o700);
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// --- #2858: a Map, a Set and a Date are tagged on the way out and revived on the way in; anything else non-plain is named -----------------
+
+/** Write `args` through the real tap into a fresh open window, and read the file back the way the runner does. */
+function tapAndRead(args: unknown, lines: string[] = []) {
+  const dir = stateDir(true);
+  try {
+    const result = tapShadowReads({ args, orders: [], tick: FIRST_TICK, stateDir: dir, log: (line) => lines.push(line) });
+    const file = join(dir, SHADOW_READS_DIR, `${FIRST_TICK}.json`);
+    return { result, text: existsSync(file) ? readFileSync(file, "utf8") : null };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** One of each type, a numeric key and a value, a Map inside an array, and a Set holding a Map -- the shapes `decide`'s arguments could grow. */
+const TYPED_ARGS = () => ({
+  closings: new Map([[2846, 1_790_000_000_000], [2849, 5]]),
+  seen: new Set(["a", 2, null]),
+  when: new Date("2026-10-01T09:46:00.000Z"),
+  nested: [new Map([["inner", new Map([[1, new Set([3])]])]]), { plain: [1, "two", false, null] }],
+  prs: [{ number: 7, labels: [{ name: "lane:any" }] }],
+});
+
+test("a Map (numeric key and value), a Set, a Date and a Map inside an array come back EQUAL by type and content", () => {
+  const args = TYPED_ARGS();
+  const { result, text } = tapAndRead(args);
+  assert.equal(result.recorded, true);
+  assert.equal(result.diagnostic, undefined, "nothing here is a type the tap cannot encode");
+  const back = parseShadowRecord(text ?? "").args;
+  assert.deepEqual(back, args, "equal by type and content (`deepEqual` is strict about a Map against `{}` and a Date against a string)");
+  assert.ok(back.closings instanceof Map && back.seen instanceof Set && back.when instanceof Date && back.nested[0] instanceof Map);
+  assert.equal(back.closings.get(2846), 1_790_000_000_000, "the key is still the NUMBER 2846, which an object's string key would not be");
+  assert.ok(back.nested[0].get("inner")?.get(1) instanceof Set, "and a Map inside a Map inside an array survives");
+});
+
+test("POSITIVE CONTROL: the same arguments written with a bare JSON.stringify do NOT come back equal, so the check above can fail", () => {
+  const args = TYPED_ARGS();
+  const bare = JSON.parse(JSON.stringify({ tick: FIRST_TICK, args, orders: [] }), reviveShadowValue).args;
+  assert.throws(() => assert.deepEqual(bare, args), "the reviver cannot rebuild what was never tagged");
+  assert.deepEqual(bare.closings, {}, "the defect itself: a Map written as `{}`");
+  assert.equal(typeof bare.when, "string", "and a Date written as a string");
+});
+
+test("a record with no tags at all reads unchanged, and so does an object whose `$type` is some other value", () => {
+  const legacy = { tick: FIRST_TICK, args: FIXTURE_ARGS(), orders: [{ cause: "x" }] };
+  assert.deepEqual(parseShadowRecord(JSON.stringify(legacy)), legacy, "a tick file written before #2858 still reads");
+  const strangers = { a: { $type: "Weird", entries: [[1, 2]] }, b: { $type: "Map" }, c: { $type: "Map", entries: [[1, 2, 3]] }, d: { $type: "Date", iso: 5 }, e: { $type: 7 } };
+  assert.deepEqual(parseShadowRecord(JSON.stringify(strangers)), strangers, "an unknown tag, or a known tag of the wrong shape, is returned as it was");
+});
+
+test("an invalid Date survives as an invalid Date, and an empty Map and Set as empty ones", () => {
+  const back = parseShadowRecord(JSON.stringify(encodeShadowValue({ d: new Date(Number.NaN), m: new Map(), s: new Set() }).encoded));
+  assert.ok(back.d instanceof Date && Number.isNaN(back.d.getTime()));
+  assert.deepEqual([back.m, back.s], [new Map(), new Set()]);
+});
+
+test("a class instance in `args`: ONE diagnostic naming its key path and constructor, no throw, and the file is still written", () => {
+  class Surprise { constructor(public value = 1) {} }
+  const lines: string[] = [];
+  const { result, text } = tapAndRead({ ...TYPED_ARGS(), prs: [{ number: 7, extra: new Surprise() }] }, lines);
+  assert.equal(result.recorded, true, "the tick carries on and the record is on disk");
+  assert.match(result.diagnostic ?? "", /args\.prs\[0\]\.extra is a Surprise/, "the key path and the constructor");
+  assert.equal(lines.length, 1, "exactly one diagnostic, not zero (positive control) and not one per field");
+  assert.match(lines[0], /^shadow-reads: args\.prs\[0\]\.extra is a Surprise/);
+  assert.ok(text !== null && parseShadowRecord(text).args.closings instanceof Map, "and the Map beside it was still tagged");
+});
+
+test("POSITIVE CONTROL: the same arguments with plain objects only produce NO diagnostic, so the one above is the class's doing", () => {
+  const lines: string[] = [];
+  const { result } = tapAndRead({ ...TYPED_ARGS(), prs: [{ number: 7, extra: { value: 1 } }] }, lines);
+  assert.deepEqual([result.recorded, result.diagnostic, lines], [true, undefined, []]);
+});
+
+test("a bigint, a function and a symbol are named and left out, and a plain object carrying a known `$type` is named as ambiguous", () => {
+  const { diagnostics, encoded } = encodeShadowValue({ big: 1n, fn: () => 1, sym: Symbol("s"), lookalike: { $type: "Set", values: [1] }, ok: 1 });
+  assert.equal(diagnostics.length, 4);
+  assert.match(diagnostics.join("\n"), /args\.big is a bigint/);
+  assert.match(diagnostics.join("\n"), /args\.fn is a function/);
+  assert.match(diagnostics.join("\n"), /args\.sym is a symbol/);
+  assert.match(diagnostics.join("\n"), /args\.lookalike holds \$type "Set"/);
+  assert.equal(JSON.stringify(encoded).includes("\"big\""), false, "the bigint did not make `JSON.stringify` throw");
+});
+
+test("a tick of 40 unencodable values logs a bounded number of lines, and says that it stopped listing", () => {
+  const { diagnostics } = encodeShadowValue({ many: Array.from({ length: 40 }, () => 1n) });
+  assert.equal(diagnostics.length, 11, "ten named, then one line saying more were left out");
+  assert.match(diagnostics[10], /and more/);
+});
+
+test("a cycle through a Map is named by its key path, and still a diagnostic and not a throw from `tapShadowReads`", () => {
+  const loop = new Map<string, unknown>();
+  loop.set("self", loop);
+  const lines: string[] = [];
+  const { result, text } = tapAndRead({ loop }, lines);
+  assert.equal(result.recorded, false);
+  assert.match(result.diagnostic ?? "", /circular structure at args\.loop\.entries\[0\]\[1\]/);
+  assert.equal(text, null);
 });
