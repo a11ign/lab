@@ -335,6 +335,54 @@ test("POSITIVE CONTROL: one gap records a gap row naming the time and the cause,
   });
 });
 
+test("POSITIVE CONTROL: a tap file from BEFORE T0 is not a tick of the window: it is skipped, counts for nothing, and makes no gap (the 2026-10-01 arming)", () => {
+  withRig((r) => {
+    const stale = T0 - 6 * 60 * MINUTE;
+    writeTick(r.live, stale);
+    arm(r);
+    assert.equal(run(r, new Date(T0 + MINUTE)).status, "QUIET", "a live directory holding only a pre-T0 file has nothing to record");
+    assert.equal(readRecordRows(r.record).length, 0, "and wrote no row");
+    writeTick(r.live, T0 + TICK);
+    assert.equal(run(r, new Date(T0 + 3 * MINUTE)).status, "RECORDED");
+    const rows = readRecordRows(r.record);
+    assert.deepEqual(rows.map((row: { tickMs?: number; kind?: string }) => row.tickMs ?? row.kind), [T0 + TICK], "the post-T0 tick is the FIRST row, and there is no gap row ahead of it");
+    assert.equal(ticksRecorded(rows), 1);
+  });
+});
+
+test("a record the first armed run already wrote with a pre-T0 tick and its false gap row is read from T0: neither counts, and the next tick adds no new gap", () => {
+  withRig((r) => {
+    arm(r);
+    const stale = T0 - 6 * 60 * MINUTE;
+    const row = (tickMs: number) => ({ tick: tickMs, tickMs, utc: new Date(tickMs).toISOString(), differences: [], bootId: "boot-a" });
+    const gap = { kind: "gap", at: new Date(T0 + MINUTE).toISOString(), missing: 194, firstMissingUtc: new Date(stale + TICK).toISOString(),
+      lastMissingUtc: new Date(T0 - TICK).toISOString(), causes: ["no-tap-file"] };
+    mkdirSync(join(r.record, ".."), { recursive: true });
+    writeFileSync(r.record, [row(stale), gap, row(T0 + TICK)].map((line) => `${JSON.stringify(line)}\n`).join(""));
+    assert.equal(ticksRecorded(readRecordRows(r.record)), 2, "the unqualified count still reads the stale row, as the stored record does");
+    assert.equal(ticksRecorded(readRecordRows(r.record), T0), 1, "from T0 it is ONE tick");
+    writeTick(r.live, stale);
+    writeTick(r.live, T0 + 2 * TICK);
+    assert.equal(run(r, new Date(T0 + 5 * MINUTE)).status, "RECORDED");
+    const rows = readRecordRows(r.record);
+    assert.equal(rows.filter((line: { kind?: string }) => line.kind === "gap").length, 1, "still only the one gap row already there");
+    assert.equal(ticksRecorded(rows, T0), 2);
+  });
+});
+
+test("a record holding ONLY a pre-T0 tick starts the window at the next real tick: no gap row is written for the hours before T0", () => {
+  withRig((r) => {
+    arm(r);
+    const stale = T0 - 6 * 60 * MINUTE;
+    mkdirSync(join(r.record, ".."), { recursive: true });
+    writeFileSync(r.record, `${JSON.stringify({ tick: stale, tickMs: stale, utc: new Date(stale).toISOString(), differences: [], bootId: "boot-a" })}\n`);
+    writeTick(r.live, T0 + TICK);
+    assert.equal(run(r, new Date(T0 + 3 * MINUTE)).status, "RECORDED");
+    assert.deepEqual(readRecordRows(r.record).map((row: { kind?: string }) => row.kind ?? "tick"), ["tick", "tick"], "no gap row between them");
+    assert.equal(ticksRecorded(readRecordRows(r.record), T0), 1);
+  });
+});
+
 test("a gap across a host restart names it, and a gap across a refused run names that, and both together name both", () => {
   withRig((r) => {
     arm(r);
