@@ -1075,11 +1075,14 @@ test("every cause is classified as START or FINISH -- a new one cannot default i
   // a drain is when withholding it would cost most (the drain window ends in a force-push to this very checkout).
   // #2823: `closes-unresolved-repo-wide` is FINISH, and a JUDGMENT cause. Its subject is pull requests already open whose
   // declared rows GitHub will not close, which the post-merge closer covers -- it starts no work, it names a fault to a reader.
-  // #2845: `ready-row-unclaimable` is FINISH, and a JUDGMENT cause. It starts no work -- it asks `product-manager` to unstick a row
-  // the claim keeps refusing -- and a drain is when a stuck row most needs to be seen, since the pool's engineers are withheld anyway.
-  assert.deepEqual(finish, ["answer-label-unexplained", "answer-owed", "awaiting-evidence-stale", "blocker-cleared", "chairman-blocked",
+  // #2848: `repeating-log-line` and `backlog-aged-unpromoted` are FINISH, and JUDGMENT causes. Neither starts work: one names a fault
+  // in the tick's own journal and the other asks `product-manager` to decide about a row already filed, and a drain is when
+  // nobody reads the journal.
+  // #2845: `ready-row-unclaimable` is FINISH too. It starts no work -- it asks `product-manager` to unstick a row the claim keeps
+  // refusing -- and a drain is when a stuck row most needs to be seen, since the pool's engineers are withheld anyway.
+  assert.deepEqual(finish, ["answer-label-unexplained", "answer-owed", "awaiting-evidence-stale", "backlog-aged-unpromoted", "blocker-cleared", "chairman-blocked",
     "claim-stalled", "claimed-row-amended", "closes-unresolved-repo-wide", "disk-headroom-low", "draft-awaiting-verdict", "draft-convinced-not-ready", "host-units-stale",
-    "lab-job-finished", "pr-checks-failing", "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "primary-stale", "ready-row-incomplete", "ready-row-unclaimable", "reviewer-auth-failed",
+    "lab-job-finished", "pr-checks-failing", "pr-codeowner-review-missing", "pr-green-unarmed", "pr-merge-conflict", "pr-review-blocked", "primary-stale", "ready-row-incomplete", "ready-row-unclaimable", "repeating-log-line", "reviewer-auth-failed",
     "row-branch-unshipped", "row-call-count-signal", "row-off-board", "trunk-red", "verdict-comment-unreviewed", "verdict-not-convinced"]);
   for (const cause of START_CAUSES) {
     assert.ok(CAUSES.includes(cause), `${cause} is withheld by a drain but no longer exists`);
@@ -5853,6 +5856,8 @@ test("#2781 done-when 2: every other order is headed with the stale sha and the 
 test("#2781 the tick READS the primary and WIRES it: main() reads it once, feeds decide, and banners the decided orders", () => {
   const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../agent-org/src/work-gate.mjs"), "utf8");
   assert.match(source, /primaryDrift = readPrimaryDriftNow\(\)/);
-  assert.match(source, /withStalePrimaryNotice\(decide\(\{ primaryDrift,/);
-  assert.match(source, /\}\), primaryDrift\)/, "the SAME reading banners the orders");
+  // #2849: the argument object is NAMED so the shadow tap can record it, and `decide` is reached through `decideAndTap`.
+  assert.match(source, /const decideArgs = \{ primaryDrift,/);
+  assert.match(source, /withStalePrimaryNotice\(decideAndTap\(decideArgs\), primaryDrift\)/, "the SAME reading banners the orders");
+  assert.match(source, /const orders = decide\(args\);/, "and `decideAndTap` still calls `decide` with the object it was given");
 });
