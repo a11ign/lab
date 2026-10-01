@@ -60,8 +60,8 @@ function rig(): Rig {
 }
 
 /** Write one tick the way #2849's live tick leaves it. */
-function writeTick(live: string, tickMs: number, tick: number, rows: string[]) {
-  writeFileSync(join(live, READS_DIR, `${tickMs}.json`), JSON.stringify({ tick, args: { rows }, orders: rows.map(orderFor) }));
+function writeTick(live: string, tickMs: number, rows: string[]) {
+  writeFileSync(join(live, READS_DIR, `${tickMs}.json`), JSON.stringify({ tick: tickMs, args: { rows }, orders: rows.map(orderFor) }));
 }
 
 /** Every file under `dir`, by relative path, with its bytes -- recursive, because the live directory has subdirectories. */
@@ -86,12 +86,12 @@ function withRig(body: (r: Rig) => void) {
 
 test("one invocation appends exactly one record carrying the tick, both gates' orders and the difference", () => {
   withRig((r) => {
-    writeTick(r.live, T1, 41, ["a", "b"]);
+    writeTick(r.live, T1, ["a", "b"]);
     const result = shadowTick({ liveDir: r.live, copyDir: r.copy, recordPath: r.record, candidate: r.candidate("identical") });
     assert.equal(result.status, "RECORDED");
     const [record, ...rest] = lines(r.record);
     assert.equal(rest.length, 0, "exactly one record");
-    assert.equal(record.tick, 41);
+    assert.equal(record.tick, T1, "the id #2849 writes is the UTC milliseconds");
     assert.equal(record.utc, new Date(T1).toISOString());
     assert.deepEqual(record.live, ["a", "b"].map(orderFor));
     assert.deepEqual(record.candidate, ["a", "b"].map(orderFor));
@@ -103,7 +103,7 @@ test("one invocation appends exactly one record carrying the tick, both gates' o
 
 test("POSITIVE CONTROL: a candidate identical to the live gate records an EMPTY difference over a non-empty order list", () => {
   withRig((r) => {
-    writeTick(r.live, T1, 1, ["a", "b", "c"]);
+    writeTick(r.live, T1, ["a", "b", "c"]);
     shadowTick({ liveDir: r.live, copyDir: r.copy, recordPath: r.record, candidate: r.candidate("identical") });
     const [record] = lines(r.record);
     assert.ok(record.live.length >= 1 && record.candidate.length === record.live.length, "the empty diff is over real orders");
@@ -113,7 +113,7 @@ test("POSITIVE CONTROL: a candidate identical to the live gate records an EMPTY 
 
 test("POSITIVE CONTROL: a candidate that drops one order is recorded as a difference naming that order's cause key", () => {
   withRig((r) => {
-    writeTick(r.live, T1, 1, ["a", "b", "c"]);
+    writeTick(r.live, T1, ["a", "b", "c"]);
     shadowTick({ liveDir: r.live, copyDir: r.copy, recordPath: r.record, candidate: r.candidate("dropsFirst") });
     const [record] = lines(r.record);
     assert.equal(record.differences.length, 1);
@@ -125,39 +125,39 @@ test("POSITIVE CONTROL: a candidate that drops one order is recorded as a differ
 
 test("two invocations append two records and rewrite neither; a third with nothing new is QUIET and appends nothing", () => {
   withRig((r) => {
-    writeTick(r.live, T1, 1, ["a"]);
-    writeTick(r.live, T1 + 2 * MINUTE, 2, ["a", "b"]);
+    writeTick(r.live, T1, ["a"]);
+    writeTick(r.live, T1 + 2 * MINUTE, ["a", "b"]);
     const run = () => shadowTick({ liveDir: r.live, copyDir: r.copy, recordPath: r.record, candidate: r.candidate("identical") });
     run();
     const afterOne = readFileSync(r.record, "utf8");
     run();
     const afterTwo = readFileSync(r.record, "utf8");
     assert.ok(afterTwo.startsWith(afterOne), "the first record is byte-identical after the second invocation");
-    assert.deepEqual(lines(r.record).map((l) => l.tick), [1, 2]);
+    assert.deepEqual(lines(r.record).map((l) => l.tick), [T1, T1 + 2 * MINUTE]);
     assert.equal(run().status, "QUIET");
     assert.equal(readFileSync(r.record, "utf8"), afterTwo, "a quiet invocation appends nothing");
   });
 });
 
-test("the OLDEST unrecorded tick is taken, not the newest, and a gap in the numbering is recorded rather than hidden", () => {
+test("the OLDEST unrecorded tick is taken, not the newest, and a gap in the tick times is recorded rather than hidden", () => {
   withRig((r) => {
-    writeTick(r.live, T1 + 4 * MINUTE, 5, ["e"]);
-    writeTick(r.live, T1, 1, ["a"]);
-    writeTick(r.live, T1 + 2 * MINUTE, 2, ["b"]);
+    writeTick(r.live, T1 + 8 * MINUTE, ["e"]);
+    writeTick(r.live, T1, ["a"]);
+    writeTick(r.live, T1 + 2 * MINUTE, ["b"]);
     const run = () => shadowTick({ liveDir: r.live, copyDir: r.copy, recordPath: r.record, candidate: r.candidate("identical") });
     run(); run(); run();
     const recorded = lines(r.record);
-    assert.deepEqual(recorded.map((l) => l.tick), [1, 2, 5]);
+    assert.deepEqual(recorded.map((l) => l.tick), [T1, T1 + 2 * MINUTE, T1 + 8 * MINUTE]);
     assert.equal(recorded[1].gapBefore, null);
-    assert.deepEqual(recorded[2].gapBefore, { missing: 2, firstMissing: 3 });
-    assert.equal(gapBetween(null, 7), null, "the first record has nothing before it to be a gap from");
-    assert.equal(gapBetween(4, "x"), null, "a tick number that is not an integer claims no gap");
+    assert.deepEqual(recorded[2].gapBefore, { missing: 2, firstMissingUtc: new Date(T1 + 4 * MINUTE).toISOString() });
+    assert.equal(gapBetween(T1, T1 + 2 * MINUTE + 20_000), null, "a timer's seconds of jitter are not a missed tick");
+    assert.equal(gapBetween(null, T1), null, "the first record has nothing before it to be a gap from");
   });
 });
 
 test("the live directory's bytes are identical before and after a run", () => {
   withRig((r) => {
-    writeTick(r.live, T1, 1, ["a", "b"]);
+    writeTick(r.live, T1, ["a", "b"]);
     const before = tree(r.live);
     assert.ok(Object.keys(before).length >= 4, "the snapshot holds real entries, subdirectory included");
     shadowTick({ liveDir: r.live, copyDir: r.copy, recordPath: r.record, candidate: r.candidate("identical") });
@@ -167,8 +167,8 @@ test("the live directory's bytes are identical before and after a run", () => {
 
 test("the copy is refreshed at the start of each invocation: a line the live ledger gained between two runs is seen by the second", () => {
   withRig((r) => {
-    writeTick(r.live, T1, 1, ["a"]);
-    writeTick(r.live, T1 + 2 * MINUTE, 2, ["a"]);
+    writeTick(r.live, T1, ["a"]);
+    writeTick(r.live, T1 + 2 * MINUTE, ["a"]);
     const run = () => shadowTick({ liveDir: r.live, copyDir: r.copy, recordPath: r.record, candidate: r.candidate("readsCopyLedger") });
     run();
     appendFileSync(join(r.live, "wake-ledger"), "line-2\n");
@@ -183,7 +183,7 @@ test("the copy is refreshed at the start of each invocation: a line the live led
 for (const [name, exit] of [["exitsThree", 3], ["throws", 1]] as const) {
   test(`a candidate that fails (${name}) is recorded as a difference naming the exit, not swallowed and not a crash`, () => {
     withRig((r) => {
-      writeTick(r.live, T1, 1, ["a"]);
+      writeTick(r.live, T1, ["a"]);
       const result = shadowTick({ liveDir: r.live, copyDir: r.copy, recordPath: r.record, candidate: r.candidate(name) });
       assert.equal(result.status, "RECORDED");
       const [record] = lines(r.record);
@@ -198,7 +198,7 @@ for (const [name, exit] of [["exitsThree", 3], ["throws", 1]] as const) {
 
 test("a candidate that exits 0 with something that is not a list of orders is a difference too", () => {
   withRig((r) => {
-    writeTick(r.live, T1, 1, ["a"]);
+    writeTick(r.live, T1, ["a"]);
     shadowTick({ liveDir: r.live, copyDir: r.copy, recordPath: r.record, candidate: r.candidate("notOrders") });
     const [record] = lines(r.record);
     assert.equal(record.differences[0].causeKey, "candidate-exit:0");
@@ -208,7 +208,7 @@ test("a candidate that exits 0 with something that is not a list of orders is a 
 
 test("POSITIVE CONTROL: the live directory, and a symlink to it, are REFUSED as the copy before any read or write", () => {
   withRig((r) => {
-    writeTick(r.live, T1, 1, ["a"]);
+    writeTick(r.live, T1, ["a"]);
     const before = tree(r.live);
     const link = join(r.root, "link-to-live");
     symlinkSync(r.live, link);
@@ -222,7 +222,7 @@ test("POSITIVE CONTROL: the live directory, and a symlink to it, are REFUSED as 
 
 test("a copy or a record path INSIDE the live directory is refused, because either would be a write there", () => {
   withRig((r) => {
-    writeTick(r.live, T1, 1, ["a"]);
+    writeTick(r.live, T1, ["a"]);
     const before = tree(r.live);
     assert.throws(() => shadowTick({ liveDir: r.live, copyDir: join(r.live, "copy"), recordPath: r.record, candidate: r.candidate("identical") }), /inside the live/);
     assert.throws(() => shadowTick({ liveDir: r.live, copyDir: r.copy, recordPath: join(r.live, "diff.jsonl"), candidate: r.candidate("identical") }), /inside the live/);
@@ -232,7 +232,7 @@ test("a copy or a record path INSIDE the live directory is refused, because eith
 
 test("a non-empty directory the runner did not make is never emptied", () => {
   withRig((r) => {
-    writeTick(r.live, T1, 1, ["a"]);
+    writeTick(r.live, T1, ["a"]);
     mkdirSync(r.copy);
     writeFileSync(join(r.copy, "somebody-elses.txt"), "keep me\n");
     assert.throws(() => shadowTick({ liveDir: r.live, copyDir: r.copy, recordPath: r.record, candidate: r.candidate("identical") }), /was not made by this runner/);
@@ -242,11 +242,11 @@ test("a non-empty directory the runner did not make is never emptied", () => {
 
 test("the command line records a tick, says QUIET when there is none, and exits 2 on a refusal", () => {
   withRig((r) => {
-    writeTick(r.live, T1, 1, ["a"]);
+    writeTick(r.live, T1, ["a"]);
     const argv = (copy: string) => [RUNNER, `--live-dir=${r.live}`, `--copy-dir=${copy}`, `--record=${r.record}`, `--candidate=${r.candidate("identical")}`];
     const first = spawnSync(process.execPath, argv(r.copy), { encoding: "utf8" });
     assert.equal(first.status, 0, first.stderr);
-    assert.match(first.stdout, /^RECORDED tick 1 .*: 0 difference\(s\)/);
+    assert.match(first.stdout, /^RECORDED tick \d+ .*: 0 difference\(s\)/);
     assert.match(spawnSync(process.execPath, argv(r.copy), { encoding: "utf8" }).stdout, /^QUIET/);
     const refused = spawnSync(process.execPath, argv(r.live), { encoding: "utf8" });
     assert.equal(refused.status, 2);
