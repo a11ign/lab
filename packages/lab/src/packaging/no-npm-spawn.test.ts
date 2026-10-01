@@ -156,7 +156,7 @@ test("the real tree: no spawn of npm or npx outside the named allowlist", () => 
 
 test("positive control: the walk is not empty, and finds the spawns that ARE allowed, in each allowlisted file", () => {
   const sources = scannedSources();
-  assert.ok(Object.keys(sources).length > 200, `only ${Object.keys(sources).length} files scanned: the walk is broken, and an empty walk passes everything`);
+  assert.ok(Object.keys(sources).length > 200, "too few files scanned: the walk is broken, and an empty walk passes everything");
   for (const path of Object.keys(ALLOWED)) {
     assert.ok(path in sources, `${path} is not in the scanned population`);
     assert.ok(spawnsOf(sources[path]).length > 0, `${path} no longer spawns npm: it is a stale allowlist entry, delete it`);
