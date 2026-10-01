@@ -96,13 +96,12 @@ test("#2890: a comment that names the old behaviour is not an instruction, and i
 });
 
 test("#2890: the real provisioners and diagnose script install and advise with pnpm only", () => {
-  const found = REAL.flatMap(({ file, text }) => frozenInstallLines(file, text));
-  // Positive control: measured 2026-10-01 at 4 (bootstrap 1, provision 2 -- the command and the refusal message --
-  // and diagnose 1), counted by this function, so a moved or emptied script cannot pass as a clean one.
-  assert.ok(found.length >= 2, `only ${found.length} frozen pnpm install lines found in the three scripts; the scan is broken`);
-  for (const { file, text } of [REAL[0], REAL[1]]) {
-    assert.ok(frozenInstallLines(file, text).length >= 1, `${file} has no frozen pnpm install line, so it installs nothing`);
-  }
+  // Positive control, EXACT per file: measured 2026-10-01 at bootstrap 1, provision 2 (the command and the refusal
+  // message) and diagnose 1, counted by this function. An equality, not a floor, so a moved or emptied script cannot
+  // pass as a clean one and a count that is reported is a count that is right (#1067).
+  const perFile = Object.fromEntries(REAL.map(({ file, text }) => [file, frozenInstallLines(file, text).length]));
+  assert.deepEqual(perFile, { [BOOTSTRAP]: 1, [PROVISION]: 2, [DIAGNOSE]: 1 },
+    "frozen pnpm install lines per script; a change here is a changed install, or a scan that no longer sees one");
   assert.deepEqual(REAL.flatMap(({ file, text }) => installProblems(file, text)), []);
 });
 
