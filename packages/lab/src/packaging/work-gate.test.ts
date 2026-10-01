@@ -5851,6 +5851,8 @@ test("#2781 done-when 2: every other order is headed with the stale sha and the 
 test("#2781 the tick READS the primary and WIRES it: main() reads it once, feeds decide, and banners the decided orders", () => {
   const source = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../../agent-org/src/work-gate.mjs"), "utf8");
   assert.match(source, /primaryDrift = readPrimaryDriftNow\(\)/);
-  assert.match(source, /withStalePrimaryNotice\(decide\(\{ primaryDrift,/);
-  assert.match(source, /\}\), primaryDrift\)/, "the SAME reading banners the orders");
+  // #2849: the argument object is NAMED so the shadow tap can record it, and `decide` is reached through `decideAndTap`.
+  assert.match(source, /const decideArgs = \{ primaryDrift,/);
+  assert.match(source, /withStalePrimaryNotice\(decideAndTap\(decideArgs\), primaryDrift\)/, "the SAME reading banners the orders");
+  assert.match(source, /const orders = decide\(args\);/, "and `decideAndTap` still calls `decide` with the object it was given");
 });
