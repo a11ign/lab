@@ -1,4 +1,4 @@
-## Before any corpus run: `npm run gate:stability`
+## Before any corpus run: `pnpm run gate:stability`
 
 Five canary pages, captured repeatedly, compared by CONTENT — it fails closed, and a corpus run must not start until it passes. It exists because Edge's autofill suggestion icon (U+FFFC) once contaminated the corpus for weeks with every count-based check green; suppressed now with command-line flags rather than Edge policies, which had already drifted. [Full incident and the fix →](docs/capture-integrity-plan.md#five-canary-pages-and-the-ufffc-autofill-incident)
 
