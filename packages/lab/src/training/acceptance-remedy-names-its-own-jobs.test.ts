@@ -14,7 +14,7 @@
  * The corpus the evaluator reads comes from the catalogue's own `acceptance` job (`--data runs/<dir>/…`),
  * so there is no second copy of "which corpus" here to drift.
  *
- * HOW A JOB'S CORPUS IS DERIVED: `argv` is an `npm run <script>`; the script chain is followed through
+ * HOW A JOB'S CORPUS IS DERIVED: `argv` is an `npm run <script>` or `/usr/bin/corepack pnpm run <script>`; the script chain is followed through
  * `npm run` segments; the corpus is `DATASET_ROOT=runs/<dir>` where a script sets it, else the
  * `datasetRoot("<dir>")` literal in the `.mjs`/`.ts` the script runs, else `datasetRoot()`'s own default.
  * A job whose corpus cannot be determined is REFUSED rather than assumed fine: *could not determine* and
@@ -92,13 +92,22 @@ function corpusOfSource(path: string): string[] {
   return usesDefault ? [...named, defaultDatasetDir()] : named;
 }
 
+/**
+ * The package script a job's argv runs: `npm run [--silent] <name>`, or `/usr/bin/corepack pnpm run [--silent]
+ * <name>` (#2893 moved the lab's jobs there). Anything else is `undefined`, which the callers read as "cannot
+ * be worked out", never as fine.
+ */
+function scriptRunBy(argv: unknown[]): string | undefined {
+  const words = argv.map(String);
+  const runner = /(^|\/)npm$/.test(words[0]) ? 1 : /(^|\/)corepack$/.test(words[0]) && words[1] === "pnpm" ? 2 : 0;
+  return runner && words[runner] === "run" ? words.slice(runner + 1).find((word) => !word.startsWith("-")) : undefined;
+}
+
 /** The `runs/<dir>` a job writes, or `null` when it cannot be worked out (which is never read as "fine"). */
 export function corpusWrittenBy(name: string, jobs: Record<string, Job>,
                                 scripts: Record<string, string>): string | null {
   const argv = [jobs[name]?.argv ?? ""].flat();
-  const script = /(^|\/)npm$/.test(String(argv[0])) && argv[1] === "run"
-    ? argv.slice(2).find((word) => !word.startsWith("-"))
-    : undefined;
+  const script = scriptRunBy(argv);
   if (!script) return null;
   const bodies = scriptChain(script, scripts);
   const fromEnv = bodies.flatMap((body) => [...body.matchAll(/DATASET_ROOT=runs\/([\w-]+)/g)].map((m) => m[1]));
@@ -176,8 +185,7 @@ export function jobsNamedBy(text: string): Array<{ job: string; line: number }> 
 function writesReadFiles(name: string, jobs: Record<string, Job>, scripts: Record<string, string>,
                          corpus: string): boolean {
   const argv = [jobs[name]?.argv ?? ""].flat();
-  const script = argv[1] === "run" ? argv.slice(2).find((word) => !word.startsWith("-")) : undefined;
-  return scriptChain(script ?? "", scripts).some((body) => body.includes(`--out=runs/${corpus}/`));
+  return scriptChain(scriptRunBy(argv) ?? "", scripts).some((body) => body.includes(`--out=runs/${corpus}/`));
 }
 
 /** Every way the message's job names disagree with the catalogue; empty means they agree. */
