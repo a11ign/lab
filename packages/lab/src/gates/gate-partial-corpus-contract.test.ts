@@ -74,7 +74,7 @@ function resolvedScriptFile(argv: unknown): string | undefined {
   const direct = tokens.find((t) => t.endsWith(".mjs") || t.endsWith(".ts"));
   if (direct) return direct;
   const runIndex = tokens.indexOf("run");
-  if (!tokens[0]?.includes("npm") || runIndex < 0) return undefined;
+  if (!/npm|corepack/.test(tokens[0] ?? "") || runIndex < 0) return undefined; // `/usr/bin/corepack pnpm run` (#2893) or npm
   const scriptName = tokens[runIndex + 1] === "--silent" ? tokens[runIndex + 2] : tokens[runIndex + 1];
   const command = PACKAGE_SCRIPTS[scriptName ?? ""];
   return command ? resolvedScriptFile(command.split(/\s+/)) : undefined;
