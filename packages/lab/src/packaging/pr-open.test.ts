@@ -201,6 +201,9 @@ const gitStub = (args: string[]) => (args.includes("--abbrev-ref") ? "agent/my-b
 // them left it out and failed in every tree `row-claim` stamps while passing in CI's unstamped one (#1925).
 const UNSTAMPED = () => null;
 
+// #2929: the line a create that LANDED prints last. Matched on its fixed words, so a line that merely mentions CI does not count.
+const CI_PENDING = /CI has NOT run on it/;
+
 test("#1277: a create that FAILS prints one line with the branch, the head and the cause", () => {
   const lines: string[] = [];
   const code = sendToGitHub("create", ["--title", "x"],
@@ -226,7 +229,9 @@ test("#1277 POSITIVE CONTROL: a create that SUCCEEDS gains no failure line", () 
       owner: UNSTAMPED });
 
   assert.equal(code, 0);
-  assert.deepEqual(lines, [], "silence on success -- the failure line must move with the outcome");
+  assert.equal(lines.length, 1, "a success prints the CI-pending line and no failure line -- the failure line must move with the outcome");
+  assert.match(lines[0], CI_PENDING);
+  assert.doesNotMatch(lines[0], /FAILED|nothing was created/);
   assert.equal(spawned[0][0], "pr", "and the command really ran rather than being skipped");
   // The ARM spawn, which no test asserted: `run(args.slice(1))` sent `gh merge --auto --merge` after every
   // ready create, an unknown command thrown raw after the PR already existed. `armAfterCreate`'s own tests
@@ -249,7 +254,8 @@ test("#1348: a ready create with --head ARMS THAT HEAD, in both spellings -- thr
       { run: (args: string[]) => { spawned.push(args); }, git: gitStub, err: (l: string) => { lines.push(l); },
         owner: UNSTAMPED });
     assert.equal(code, 0, label);
-    assert.deepEqual(lines, [], `${label}: a create that succeeds prints no failure line`);
+    assert.equal(lines.length, 1, `${label}: a create that succeeds prints no failure line, only the CI-pending one`);
+    assert.match(lines[0], CI_PENDING, label);
     assert.deepEqual(spawned[0], ["pr", "create", ...rest], `${label}: the create carries the head as given`);
     assert.deepEqual(spawned.slice(1), [["pr", "merge", "--auto", "--merge", "agent/x"]],
       `${label}: the arm names the branch just opened, never the checkout's (agent/my-branch)`);
@@ -503,7 +509,8 @@ test("#1479 ACCEPTANCE: a create that LANDS and an arm that then FAILS exits EXI
   assert.equal(r.code, EXIT_LANDED_THEN_FAILED);
   assert.ok(![0, EXIT_NOTHING_SENT, EXIT_USAGE].includes(EXIT_LANDED_THEN_FAILED), "a code no other outcome uses");
   assert.deepEqual(r.spawned.map((a) => a.slice(0, 2)), [["pr", "create"], ["pr", "merge"]], "the create really ran first");
-  assert.equal(r.errs.length, 1, "one line");
+  assert.equal(r.errs.length, 1, "one line, and it is not the CI-pending line, which never stands in for it or follows it");
+  assert.doesNotMatch(r.errs[0], CI_PENDING);
   assert.match(r.errs[0], /`gh pr create` LANDED/, "it says the write landed");
   assert.match(r.errs[0], /the PR for `agent\/my-branch` at `abc1234` exists/, "and names the branch whose PR exists");
   assert.match(r.errs[0], /run only `gh pr merge --auto --merge`/, "the one step to re-run, which is the step that failed");
@@ -525,10 +532,12 @@ test("#1479 CONTROL: a create that FAILS still exits EXIT_NOTHING_SENT and never
   assert.deepEqual(failed.spawned.map((a) => a[1]), ["create"], "nothing is armed after a create that failed");
   assert.equal(failed.errs.length, 1);
   assert.match(failed.errs[0], /nothing was created/);
+  assert.doesNotMatch(failed.errs[0], CI_PENDING, "a create that sent nothing has no head for CI to be pending on");
   const clean = driveMain(READY_CREATE, { create: succeeds, arm: succeeds });
   assert.equal(clean.thrown, null);
   assert.equal(clean.code, 0);
-  assert.deepEqual(clean.errs, []);
+  assert.equal(clean.errs.length, 1, "the CI-pending line and nothing else");
+  assert.match(clean.errs[0], CI_PENDING);
   assert.deepEqual(clean.spawned.map((a) => a[1]), ["create", "merge"], "and the arm really ran");
 });
 
@@ -718,7 +727,7 @@ test("#1846: the label is really SPAWNED after a successful create, after the ar
       owner: () => "worker-4" });
 
   assert.equal(code, 0);
-  assert.deepEqual(lines, [], "a create that succeeds says nothing");
+  assert.deepEqual(lines.filter((l) => !CI_PENDING.test(l)), [], "a create that succeeds says nothing but that CI is pending");
   assert.deepEqual(spawned, [
     ["pr", "create", "--title", "x", "--head", "agent/x"],
     ["pr", "merge", "--auto", "--merge", "agent/x"],
@@ -742,10 +751,57 @@ test("#1846: a label that FAILS warns and still exits 0 -- it must not turn a go
   });
 
   assert.equal(code, 0, "NOT EXIT_LANDED_THEN_FAILED -- the PR exists and is armed; only routing is missing");
-  assert.equal(lines.length, 1, "one line, like every other refusal in this file");
-  assert.match(lines[0], /session:ceo/, "and it names the label to apply by hand");
+  assert.equal(lines.length, 2, "the label warning, then the CI-pending line: the PR landed, so it is still pending");
+  assert.match(lines[0], /session:ceo/, "the warning names the label to apply by hand");
   assert.match(lines[0], /product-manager/,
     "and says what it costs -- a silently unlabelled PR is how this survived 20 merges unnoticed");
+  assert.match(lines[1], CI_PENDING, "and the CI-pending line follows it rather than being replaced by it");
+});
+
+// --- #2929: a create that LANDED says CI has not run, and what the recap must therefore say ---------------------
+
+test("#2929: a successful create prints the CI-pending line naming the 8-character head, and changes no exit code", () => {
+  const lines: string[] = [];
+  const asked: string[][] = [];
+  const code = sendToGitHub("create", ["--title", "x", "--head", "agent/x"], {
+    run: () => {},
+    git: (args: string[]) => { asked.push(args); return args.includes("--abbrev-ref") ? "agent/x" : "0123456789abcdef"; },
+    err: (l: string) => { lines.push(l); },
+    owner: UNSTAMPED,
+  });
+  assert.equal(code, 0, "the line carries no judgment");
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], CI_PENDING);
+  assert.match(lines[0], /opened, CI pending on 0123456789abcdef\b/, "the exact recap wording, with the head it names");
+  assert.match(lines[0], /never "passing"/);
+  assert.match(lines[0], /subset/, "a local run of a subset is named as a subset");
+  assert.ok(asked.some((a) => a.includes("--short=8")), "the head is asked for at 8 characters");
+});
+
+test("#2929: a DRAFT create prints it too -- a draft's checks run, and its author writes the same recap", () => {
+  const lines: string[] = [];
+  sendToGitHub("create", ["--title", "x", "--draft"], { run: () => {}, git: gitStub, err: (l: string) => { lines.push(l); }, owner: UNSTAMPED });
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], CI_PENDING);
+});
+
+test("#2929 CONTROL: an `edit`, a failed create and an arm that fails after the create print no CI-pending line", () => {
+  const edited: string[] = [];
+  assert.equal(sendToGitHub("edit", ["1254", "--title", "x"],
+    { run: () => {}, git: gitStub, err: (l: string) => { edited.push(l); }, owner: UNSTAMPED }), 0);
+  assert.deepEqual(edited, [], "an edit opens nothing, so there is no new head to be pending on");
+
+  const failedCreate: string[] = [];
+  sendToGitHub("create", ["--title", "x"], { run: ghFails(), git: gitStub, err: (l: string) => { failedCreate.push(l); } });
+  assert.equal(failedCreate.filter((l) => CI_PENDING.test(l)).length, 0, "nothing was created");
+
+  const armFailed: string[] = [];
+  const code = sendToGitHub("create", ["--title", "x"], {
+    run: (args: string[]) => { if (args[1] === "merge") throw new Error("Command failed: gh pr merge"); },
+    git: gitStub, err: (l: string) => { armFailed.push(l); }, owner: UNSTAMPED,
+  });
+  assert.equal(code, EXIT_LANDED_THEN_FAILED);
+  assert.equal(armFailed.filter((l) => CI_PENDING.test(l)).length, 0, "its own line, not this one in place of it");
 });
 
 // --- #2307: a declared `Mutation:` command is RUN, and a guard that does not bite is WARNED about ---------------
