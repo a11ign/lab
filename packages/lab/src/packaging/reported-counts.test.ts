@@ -89,6 +89,10 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "prose-satisfiable-guards.test.ts: patterns.length",
   "merge-guard-checks-rule.test.ts: files.length",
   "action-inputs.test.ts: inputs.length",
+  // #2875: `modules.length > 50` asks only "did the readdir of `packages/agent-org/src` return a population", a PRECONDITION and not a
+  // stand-in -- the module count changes with every row. The verdict is `deepEqual(offenders, [])`, with its positive control
+  // (the scan flags a fixture string of each shape, and SELF still spells the shape) beside it.
+  "standalone-roots.test.ts: modules.length",
   // agent-org-extraction.test.ts's floors are PRECONDITIONS, not stand-ins: `files.length > 100`,
   // `counts.total > 100`, `travelling.length > 50` and `labFiles.length > 50` only ask "did the walk read
   // the real tree, not an empty or wrong one" -- the real verdicts (RECORDED_DECISION_4, the exact
