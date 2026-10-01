@@ -110,6 +110,10 @@ const NPM_CLI_IS_DATA_NOT_A_SPAWN: Record<string, string> = {
   // both canonical copies side by side -- the identifier at each call site is `rootCandidates`/
   // `localCandidates`/`rootResolve`/`localResolve`/`rootInvocation`/`localInvocation`, never the literal
   // name `callsBareNpmCli` checks for, even though both resolve to the real, safe functions.
+  // #2889: the fixtures of the guard that refuses npm/npx spawns are STRINGS of source text fed to its detector.
+  "packages/lab/src/packaging/no-npm-spawn.test.ts":
+    "its fixtures are STRINGS containing `spawnSync(\"npm\", ...)`-shaped source text, fed to refusals() as the DATA "
+    + "under test -- never code this file itself executes. The same trap as this file's own fixtures above.",
   "packages/worker-fleet/src/npm-cli-executable.test.ts":
     "imports npmCliScriptCandidates/resolveNpmCliScript/npmCliInvocation under aliases (root*/local*) to "
     + "compare the root and worker-fleet copies side by side -- the call site's identifier is the alias, "

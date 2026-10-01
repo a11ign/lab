@@ -30,12 +30,12 @@ import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
 import { isPrimaryWorktree } from "../../agent-org/src/prune-worktrees.mjs";
-import { npmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
+import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
 
 const REPO = REPO_ROOT;
 const MODEL_DIR = resolve(REPO, "packages/scorer/models/screenreader-scorer");
 
-refuseUnknownFlags(["--dry-run"], { entry: import.meta.url, command: "npm run lab:collect-promotion" });
+refuseUnknownFlags(["--dry-run"], { entry: import.meta.url, command: "pnpm run lab:collect-promotion" });
 const DRY_RUN = process.argv.includes("--dry-run");
 
 /**
@@ -67,8 +67,8 @@ const sha = (/** @type {string} */ file) =>
  * @returns {string} the lab-relative source path
  */
 function fetchArtefact(artifact) {
-  const npm = npmCliInvocation("npm", ["run", "--silent", "lab:fetch", "--", "-e", `artifact=${artifact}`]);
-  const output = execFileSync(npm.command, npm.args,
+  const pnpm = pnpmCliInvocation(["run", "--silent", "lab:fetch", "--", "-e", `artifact=${artifact}`]);
+  const output = execFileSync(pnpm.command, pnpm.args,
     { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], maxBuffer: 32 * 1024 * 1024 });
   const source = output.match(/from (\S+) on the lab/);
   if (!source) {
@@ -117,8 +117,8 @@ function main() {
   for (const [script, why] of [["scorer:verify", "the artefact is safetensors, not an executable format"],
                                ["release:provenance", "the changeset accounts for the weights beside it"]]) {
     process.stdout.write(`=== ${script}\n    ${why}\n`);
-    const npm = npmCliInvocation("npm", ["run", "--silent", script]);
-    execFileSync(npm.command, npm.args, { cwd: REPO, stdio: "inherit" });
+    const pnpm = pnpmCliInvocation(["run", "--silent", script]);
+    execFileSync(pnpm.command, pnpm.args, { cwd: REPO, stdio: "inherit" });
   }
 
   const changeset = collected.find((c) => c.artifact === "promoted-changeset");
@@ -144,7 +144,7 @@ function main() {
       + "  git commit && git push\n\n");
   }
   process.stdout.write("then clear the lab, which can only discard what origin already carries:\n\n"
-    + `  npm run lab:reset -- -e apply=true -e remove=${changeset?.source}\n`);
+    + `  pnpm run lab:reset -- -e apply=true -e remove=${changeset?.source}\n`);
 }
 
 // ONLY WHEN THIS MODULE IS THE COMMAND. Called unconditionally at first, and `npm test` caught it within

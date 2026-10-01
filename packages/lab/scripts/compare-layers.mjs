@@ -31,7 +31,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
 import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
 import { errorText } from "@a11ign/nvda-worker/error-text";
-import { npmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
+import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
 
 /**
  * takes its sites as a POSITIONAL JSON argument and no flags; `--json`, `--probe-forms` and `--task`
@@ -39,7 +39,7 @@ import { npmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
  *
  * An unrecognised flag is otherwise IGNORED, so it runs the default and reports success.
  */
-refuseUnknownFlags([], { entry: import.meta.url, command: "npm run layers:compare" });
+refuseUnknownFlags([], { entry: import.meta.url, command: "pnpm run layers:compare" });
 
 // The CLI moved to its own package in M7; this was the cwd-relative `"src/cli.ts"`, right only from the repo
 // root and pointing at nothing afterwards.
@@ -72,8 +72,8 @@ async function main() {
   for (const [url, task] of sites) {
     let out;
     try {
-      const npx = npmCliInvocation("npx", ["tsx", CLI, url, "--task", task, "--probe-forms", "--json"]);
-      out = execFileSync(npx.command, npx.args, {
+      const pnpm = pnpmCliInvocation(["exec", "tsx", CLI, url, "--task", task, "--probe-forms", "--json"]);
+      out = execFileSync(pnpm.command, pnpm.args, {
         env: { ...process.env, JUDGE_BACKEND: "local", A11Y_WORKER: "http://REDACTED-INTERNAL-ADDRESS:8765", A11Y_PYTHON: ".venv/bin/python" },
         encoding: "utf8", maxBuffer: 1 << 26, stdio: ["ignore", "pipe", "pipe"], timeout: 600_000,
       });
