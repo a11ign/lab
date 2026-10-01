@@ -153,7 +153,7 @@ test("#2940: a comment is not a refusal, and naming a session is not telling it"
 
 test("#2940: the scope reaches the tools a SESSION runs, not only the files a workflow runs", () => {
   const files = refusalSourceFiles().map((f) => relative(REPO_ROOT, f));
-  assert.ok(files.length > 300, `the population is real (${files.length} files)`);
+  assert.ok(files.length > 300, "the population is real");
   for (const must of ["packages/control/src/fleet-status.mjs", "packages/control/src/fleet-playbook.mjs",
     "packages/agent-org/src/row-claim.mjs", "packages/agent-org/src/pr-open.mjs", "packages/agent-org/src/prompt-session.mjs",
     "packages/agent-org/src/closes-mismatch-check.mjs"]) {
