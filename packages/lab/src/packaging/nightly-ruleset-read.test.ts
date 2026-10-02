@@ -29,7 +29,7 @@
  *
  * So each load-bearing line is now pinned twice. A SHAPE assertion requires it to BE a command rather than
  * a token inside an `echo` argument, and below that the step's own `run:` text is EXECUTED under `bash -e`
- * -- the shell a `run:` block gets -- with `node` and `npx` stubbed, so what is asserted is "the guard was
+ * -- the shell a `run:` block gets -- with `node` and `pnpm` stubbed, so what is asserted is "the guard was
  * invoked, with this flag, this config and this token" rather than "these words appear somewhere". The
  * `echo` mutation leaves no stub invocation to find, so it cannot pass. That is `auto-arm-sweep.test.ts`'s
  * shape (#1970) and it is here for the same reason: what is at stake is a BEHAVIOUR, so a text scan is the
@@ -99,9 +99,9 @@ function commands(run: string): string[] {
  * check below goes through this function instead of `find((line) => line.includes("rstest run"))`.
  *
  * A leading `VAR=value` prefix is allowed because that is how the opt-in flag is set; anything else in
- * front of `npx` -- an `echo`, a `printf`, a `:` -- means the tokens are an ARGUMENT and nothing runs.
+ * front of `pnpm` -- an `echo`, a `printf`, a `:` -- means the tokens are an ARGUMENT and nothing runs.
  */
-const RUNNER_INVOCATION = /^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*npx\s+rstest\s+run\b/;
+const RUNNER_INVOCATION = /^(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*pnpm\s+exec\s+rstest\s+run\b/;
 
 function runnerLine(): string {
   const mentions = commands(readStep().run ?? "").filter((line) => line.includes("rstest run"));
@@ -156,7 +156,7 @@ test("#2120: the ruleset read runs on the DAILY cron, not the hourly one -- once
 test("#2120: the step sets `A11Y_CHECK_MAIN_RULESET=1` on the command line that runs the guard", () => {
   // The flag is the whole job. Without it the guard prints `NOT RUN` and exits 0 -- the exact silence this
   // row exists to end -- so it is pinned on the same line as the runner rather than anywhere in the step.
-  assert.match(runnerLine(), /^A11Y_CHECK_MAIN_RULESET=1\s+npx\b/,
+  assert.match(runnerLine(), /^A11Y_CHECK_MAIN_RULESET=1\s+pnpm\b/,
     "the opt-in flag must be set on the runner invocation itself; without it the guard skips and passes");
 });
 
@@ -344,11 +344,11 @@ test("#2120: the step reads RSTEST_CONFIG from the floor script, which really ex
 test("#2120: the job BUILDS before that read, because the module it imports resolves to `dist/`", () => {
   // The guard itself imports nothing built, so this step is easy to drop as dead weight. It is not:
   // `assert-glob-not-empty.mjs` imports `@a11ign/worker-fleet/cli-flags`, a package export resolving to
-  // `dist/cli-flags.mjs`, which `npm ci --ignore-scripts` does not produce and this repo does not track.
+  // `dist/cli-flags.mjs`, which `pnpm install --ignore-scripts` does not produce and this repo does not track.
   // Without the build the derivation fails and the nightly reports CANNOT_TELL every night -- loud and
   // honest, but about the wrong thing. Every other nightly job that runs tests builds for the same reason.
   const steps = readJob().steps ?? [];
-  const build = steps.findIndex((s) => (s.run ?? "").trim() === "npm run build");
+  const build = steps.findIndex((s) => (s.run ?? "").trim() === "pnpm run build");
   const read = steps.findIndex((s) => (s.run ?? "").includes(GUARD));
   assert.ok(build >= 0, `\`${JOB}\` must run \`npm run build\`; without it ${FLOOR} cannot be imported`);
   assert.ok(build < read, "and it must build BEFORE the step that imports it");
@@ -429,7 +429,7 @@ function writeStub(dir: string, name: string, body: string): void {
 type StepOutcome = { status: number | null, output: string, ranRstest: string | null };
 
 /**
- * Run the step's OWN `run:` text under `bash -e` -- the shell a `run:` block gets -- with `node` and `npx`
+ * Run the step's OWN `run:` text under `bash -e` -- the shell a `run:` block gets -- with `node` and `pnpm`
  * stubbed, so this needs no secret, no network and no `dist/`, and the runner RECORDS what it was handed.
  *
  * `ranRstest` is `null` when the runner never started. That is the whole point of this helper: every token
@@ -443,7 +443,7 @@ function runReadStep(
   try {
     const record = join(dir, "rstest-invocation.txt");
     writeStub(dir, "node", config === null ? "exit 1\n" : `printf '%s\\n' ${shellQuote(config)}\n`);
-    writeStub(dir, "npx", `{ printf 'ARGV: %s\\n' "$*"\n`
+    writeStub(dir, "pnpm", `{ printf 'ARGV: %s\\n' "$*"\n`
       + `  printf 'A11Y_CHECK_MAIN_RULESET=%s\\n' "$A11Y_CHECK_MAIN_RULESET"\n`
       + `  printf 'GH_TOKEN=%s\\n' "$GH_TOKEN"\n`
       + `} > ${shellQuote(record)}\nprintf '%s\\n' "$STUB_RSTEST_SAYS"\nexit ${rstestExit}\n`);
@@ -468,7 +468,7 @@ test("#2120 EXECUTED: the step really INVOKES the guard, with the flag, the deri
   const invocation = run.ranRstest;
   assert.ok(invocation, "the runner was never invoked. That is reviewer-2's finding at `e81497e6`: an "
     + "`echo` carrying these same tokens satisfied every text assertion in this file while reading nothing");
-  assert.match(invocation, /^ARGV: rstest run /,
+  assert.match(invocation, /^ARGV: exec rstest run /,
     "the step must run rstest itself, rather than passing its name to something else");
   assert.ok(invocation.includes(`--config ${STUB_CONFIG}`),
     "and it must hand rstest the path the derivation PRINTED, not a path of its own");

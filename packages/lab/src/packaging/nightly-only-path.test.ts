@@ -1,7 +1,7 @@
 /**
  * #1135: A NIGHTLY-ONLY TEST POPULATION EXISTS, AND THE WIRING IS THE DELIVERABLE.
  *
- * `npm test` (`test:ts`) and `npm run coverage` resolved the same glob, `packages/*\/src/**\/*.test.ts`, and
+ * `pnpm test` (`test:ts`) and `pnpm run coverage` resolved the same glob, `packages/*\/src/**\/*.test.ts`, and
  * `assert-glob-not-empty` accepts no exclusion -- so every `.test.ts` under `src/` ran on both paths, always,
  * and #908's plan to move a converted guard's run-property residual off the PR path had nowhere to put it.
  * The cheap fix, an env guard that returns early on the PR path, was refused before anyone reached for
@@ -81,11 +81,11 @@ test("#1135 clause 3: nightly.yml runs the nightly-only population as a job that
     jobs: Record<string, { "continue-on-error"?: boolean; steps: Array<{ run?: string; "continue-on-error"?: boolean }> }>;
   };
   const runners = Object.entries(doc.jobs).filter(([, job]) =>
-    job.steps.some((s) => /\bnpm run test:nightly\b/.test(s.run ?? "")));
+    job.steps.some((s) => /\bpnpm run test:nightly\b/.test(s.run ?? "")));
   assert.equal(runners.length, 1, `exactly one job runs test:nightly, got ${runners.map(([n]) => n)}`);
   const [name, job] = runners[0];
   assert.notEqual(job["continue-on-error"], true, `${name} must fail the run when the population fails`);
-  const step = job.steps.find((s) => /\bnpm run test:nightly\b/.test(s.run ?? ""));
+  const step = job.steps.find((s) => /\bpnpm run test:nightly\b/.test(s.run ?? ""));
   assert.notEqual(step?.["continue-on-error"], true, `${name}'s step must not swallow a failure`);
   assert.notEqual(name, "coverage", "its own job, so #169's coverage classifier never reads it as a coverage miss");
 });
@@ -97,7 +97,7 @@ type Job = { steps: Step[] };
 function nightlyOnlyJob(): { name: string; job: Job } {
   const doc = parseYaml(readFileSync(NIGHTLY_WORKFLOW, "utf8")) as { jobs: Record<string, Job> };
   const runners = Object.entries(doc.jobs).filter(([, job]) =>
-    job.steps.some((s) => /\bnpm run test:nightly\b/.test(s.run ?? "")));
+    job.steps.some((s) => /\bpnpm run test:nightly\b/.test(s.run ?? "")));
   assert.equal(runners.length, 1, `exactly one job runs test:nightly, got ${runners.map(([n]) => n)}`);
   return { name: runners[0][0], job: runners[0][1] };
 }
@@ -124,13 +124,13 @@ test("#2576: the nightly-only job posts its failure to #928 from a step conditio
 
 test("#2576: the reporter comes after the tests, and the test step's `tee` cannot turn its red green", () => {
   const { name, job } = nightlyOnlyJob();
-  const testIdx = job.steps.findIndex((s) => /\bnpm run test:nightly\b/.test(s.run ?? ""));
+  const testIdx = job.steps.findIndex((s) => /\bpnpm run test:nightly\b/.test(s.run ?? ""));
   const reportIdx = job.steps.findIndex((s) => /gh issue comment 928\b/.test(s.run ?? ""));
   assert.ok(testIdx >= 0 && reportIdx > testIdx, `${name}: the reporter (${reportIdx}) follows the tests (${testIdx})`);
   const run = job.steps[testIdx].run ?? "";
   assert.match(run, /\bset -o pipefail\b/,
     "`| tee` reports tee's exit status (always 0), so without pipefail the job goes GREEN over a red population");
-  assert.ok(run.indexOf("set -o pipefail") < run.indexOf("npm run test:nightly"), "and pipefail is set BEFORE the pipeline");
+  assert.ok(run.indexOf("set -o pipefail") < run.indexOf("pnpm run test:nightly"), "and pipefail is set BEFORE the pipeline");
   assert.match(run, /tee nightly-only-output\.log/, "the log the reporter reads is the one this step writes");
   assert.notEqual(job.steps[testIdx]["continue-on-error"], true, "the tests' step still fails the job");
 });

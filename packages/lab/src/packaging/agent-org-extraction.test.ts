@@ -490,15 +490,19 @@ function decision4Counts(): { total: number; divided: number } {
  * 2026-10-01, #2936, on top of #2941's 152: 153 total, 17 divided (see the line above `RECORDED_DECISION_4`).
  * 2026-10-01, #2941 (a red PR has an owner by a total function), on top of #2875's 151: 152 total, 17 divided. One MORE total, `pr-owner-total.test.ts`, which imports `agent-org/src`
  * (t-import) and matches no product pattern -- the same reason as #2793's line above. Re-derived by running this test, not inferred.
+ * 2026-10-01, #2939, on top of #2941's 152: 153 total, 17 divided. One MORE total, `hand-fix-ledger.test.ts`, which imports `agent-org/src` (t-import) and matches no product pattern
+ * -- the same reason as #2793's line above. Re-derived by running this test, not inferred.
+ * 2026-10-01, #2938 (the daily retrospective), on top of #2939's 153: 154 total, 17 divided. One MORE total, `org-retro.test.ts`, which imports `agent-org/src` (t-import)
+ * and matches no product pattern -- the same reason as #2793's line above. Re-derived by running this test, not inferred.
  * Grows or shrinks with real PRs; a mismatch here means product-manager owes another amendment, not that
  * this test is wrong.
  */
 // 2026-10-01, #2848: 144 total, 17 divided. One MORE total, `repeating-lines.test.ts`, which imports `agent-org/src` (the detector and the gate) and
 // nothing from the product, so it is not divided. A test of the tool's source cannot avoid the edge, so the count moves with the row that adds it.
 // 2026-10-01, #2867 (child 5f of #69), on top of #2873's 149: 150 total, 17 divided. One MORE total, `shadow-window-arm.test.ts`, which imports `agent-org/src` (t-import) and matches no product pattern.
-// 2026-10-01, #2936 (the gate asks how the org is doing), on top of #2941's 152: 153 total, 17 divided. One MORE total, `org-health.test.ts`, which imports `agent-org/src` (the four readings and
+// 2026-10-01, #2936 (the gate asks how the org is doing), on top of #2938's 154: 155 total, 17 divided. One MORE total, `org-health.test.ts`, which imports `agent-org/src` (the four readings and
 // the gate) and matches no product pattern -- the same reason as #2793's line above. Re-derived by running this test, not inferred.
-const RECORDED_DECISION_4 = { total: 153, divided: 17 };
+const RECORDED_DECISION_4 = { total: 155, divided: 17 };
 
 test("decision 4's total/divided counts, re-derived, match the row's currently-amended reading", () => {
   const counts = decision4Counts();
