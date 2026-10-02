@@ -36,7 +36,7 @@ import { shippedUnits, unitState, unitDrift, driftReport, hostUnitsInstall, syst
   programCandidates, hostIdentityDrift, hostIdentityNotes, hostIdentityInstall, ownedIdentityFiles, compileCacheNotes,
   WORKERS_README, HUMAN_ACCOUNT_ALLOWED, compileCacheDrift, declaredCompileCache, PROJECT_UNITS_DIR, shippedUnitText,
   shippedScriptText, leadsListText, modelEffortDrift, sessionModelDrift, sessionModelNotes, lastModelIn,
-  liveClaudeSessions } from "../../../agent-org/src/host-units.mjs";
+  liveClaudeSessions, OPTIONAL_UNITS, declaredProjectKeys } from "../../../agent-org/src/host-units.mjs";
 import { DECLARED_CLAUDE_MODELS, PROFILES, CLAUDE_EFFORTS } from "../../../agent-org/src/worker-profile.mjs";
 
 /**
@@ -432,7 +432,8 @@ test("#2458: every shipped service puts the compile cache under a home's .cache"
   // THE POPULATION, NAMED: emptiness below is worth what this says about its input. The directory is read
   // two ways (a plain listing, and `shippedUnits`, which is what `compileCacheDrift` walks) and they must
   // agree on a non-empty list; the positive control for "a unit lacking the line is a finding" is the next test.
-  const listed = [...readdirSync(SHIPPED_DIR).filter((f) => f.endsWith(".service.in")).map((f) => `a11ign-${f.slice(0, -".in".length)}`),
+  // An OPTIONAL template (#2901) is not shipped unless the project asks, so it is not this population; its own test is below.
+  const listed = [...readdirSync(SHIPPED_DIR).filter((f) => f.endsWith(".service.in") && !Object.hasOwn(OPTIONAL_UNITS, f)).map((f) => `a11ign-${f.slice(0, -".in".length)}`),
     ...readdirSync(PROJECT_UNITS_DIR).filter((f) => f.endsWith(".service"))].sort();
   const services = listed;
   assert.deepEqual(services, shippedUnits().filter((unit) => unit.endsWith(".service")));
@@ -2394,4 +2395,90 @@ test("#2332: a shipped unit that changes the account is a reviewed change, NOT '
   assert.equal(unitDrift([state])[0].problem, "STALE");
   // CONTROL: the original direction still fires -- shipped declares NOTHING, so the install would delete it.
   assert.deepEqual(staleWithIdentity().identityRevert, ["Environment=GH_CONFIG_DIR=/home/agent/workers/gh"]);
+});
+
+// --- #2901: THE CHAIRMAN-MESSAGING WATCHER IS OPTIONAL, AND OFF BY DEFAULT ----------------------------------------------------------
+//
+// A template that ships only when `.agent-org/project.json` carries the key that asks for it. Absent, `host:check` is silent about it and
+// `host:install` writes nothing; present, it is installed like any other. EVERY TEST BELOW HANDS `declaredKeys` RATHER THAN READING THE REAL
+// PROJECT, so the day `messaging` is configured here (row 6) none of them goes red: the one assertion about the real project is a biconditional.
+
+const isChairmanWatch = (unit: string) => unit.startsWith("a11ign-chairman-watch.");
+const WITHOUT_MESSAGING = new Set(["causes", "units"]);
+const WITH_MESSAGING = new Set(["causes", "units", "messaging"]);
+
+test("#2901: the chairman-watch pair is listed only when the project declares `messaging`, and nothing else moves", () => {
+  const without = shippedUnits(SHIPPED_DIR, { declaredKeys: WITHOUT_MESSAGING });
+  const withKey = shippedUnits(SHIPPED_DIR, { declaredKeys: WITH_MESSAGING });
+  assert.deepEqual(withKey.filter(isChairmanWatch), ["a11ign-chairman-watch.service", "a11ign-chairman-watch.timer"],
+    "POSITIVE CONTROL: with the key the pair IS listed, so the absence below is the key's doing and not a pair that never ships");
+  assert.deepEqual(without.filter(isChairmanWatch), []);
+  assert.deepEqual(withKey.filter((unit) => !isChairmanWatch(unit)), without, "the key adds the pair and changes nothing else");
+  assert.deepEqual(Object.values(OPTIONAL_UNITS), ["messaging", "messaging"], "both templates are asked for by the one key");
+  assert.equal(shippedUnits().some(isChairmanWatch), declaredProjectKeys().has("messaging"),
+    "and the real project gets the pair exactly when its declaration holds the key");
+});
+
+test("#2901: `declaredProjectKeys` reads presence, and an unreadable declaration is a throw, never 'none'", () => {
+  assert.deepEqual([...declaredProjectKeys("/x", (() => JSON.stringify({ schema: 1, messaging: {} })) as never)].sort(), ["messaging", "schema"]);
+  assert.deepEqual([...declaredProjectKeys("/x", (() => "[]") as never)], []);
+  assert.throws(() => declaredProjectKeys("/x", (() => "{ not json") as never), /cannot tell which optional units it asks for/);
+  assert.throws(() => declaredProjectKeys("/x", (() => { throw new Error("EACCES"); }) as never), /EACCES/);
+});
+
+test("#2901: `host:check` does not report the pair as NOT INSTALLED when `messaging` is absent, and does when it is present", () => {
+  const nothingInstalled = (declaredKeys: Set<string>) => unitDrift(shippedUnits(SHIPPED_DIR, { declaredKeys }).map((unit) =>
+    unitState(unit, { exists: (() => false) as never, systemctl: systemctlStub({ "is-enabled": {}, "is-active": {} }) })));
+  const absent = nothingInstalled(WITHOUT_MESSAGING);
+  assert.ok(absent.length >= 10, "POSITIVE CONTROL: every other shipped unit IS reported on this empty host, so silence about the pair is not a check that reports nothing");
+  assert.deepEqual(absent.filter((finding) => isChairmanWatch(finding.unit)), []);
+  assert.deepEqual(nothingInstalled(WITH_MESSAGING).filter((finding) => isChairmanWatch(finding.unit)).map((finding) => finding.problem),
+    ["NOT INSTALLED", "NOT INSTALLED"]);
+});
+
+test("#2901: `host:install` writes and enables the pair only when `messaging` is declared", () => {
+  const install = (declaredKeys: Set<string>) => {
+    const written: string[] = [];
+    const calls: string[][] = [];
+    hostUnitsInstall({
+      declaredKeys, installedDir: "/installed",
+      systemctl: ((args: string[]) => { calls.push(args); return ""; }) as never,
+      write: ((to: string) => { written.push(basename(String(to))); }) as never,
+      mkdir: (() => undefined) as never,
+      out: () => undefined,
+    });
+    return { written, enabled: calls.filter((call) => call[0] === "enable").map((call) => call[2]) };
+  };
+  const off = install(WITHOUT_MESSAGING);
+  assert.ok(off.written.length >= 10, "POSITIVE CONTROL: the other units are written");
+  assert.deepEqual([...off.written, ...off.enabled].filter(isChairmanWatch), []);
+  const on = install(WITH_MESSAGING);
+  assert.deepEqual(on.written.filter(isChairmanWatch), ["a11ign-chairman-watch.service", "a11ign-chairman-watch.timer"]);
+  assert.deepEqual(on.enabled.filter(isChairmanWatch), ["a11ign-chairman-watch.timer"], "`enable --now` on the timer only");
+});
+
+test("#2901: an installed pair is an ORPHAN once the key is removed, so deleting the key is the off switch", () => {
+  const installed = ["a11ign-chairman-watch.service", "a11ign-chairman-watch.timer", "a11ign-work-tick.timer"];
+  const orphans = (declaredKeys: Set<string>) => orphanedUnits({
+    declaredKeys, installedDir: "/installed", readDir: ((dir: string) => (dir === "/installed" ? installed : readdirSync(dir))) as never,
+    git: (() => "") as never,
+  }).map((finding) => finding.unit);
+  assert.deepEqual(orphans(WITHOUT_MESSAGING), ["a11ign-chairman-watch.service", "a11ign-chairman-watch.timer"]);
+  assert.deepEqual(orphans(WITH_MESSAGING), [], "CONTROL: declared, the same installed pair is the shipped one and not an orphan");
+});
+
+test("#2901: the rendered pair holds the properties every other shipped unit is held to, and no secret", () => {
+  // The universal guards above read `shippedUnits()`, which does not include the pair while `messaging` is absent, so they are restated for it here.
+  const service = shippedUnitText("a11ign-chairman-watch.service") ?? "";
+  const timer = shippedUnitText("a11ign-chairman-watch.timer") ?? "";
+  assert.notEqual(service, "", "the service renders");
+  assert.equal(declaredCompileCache(service), "%h/.cache/node-compile-cache");
+  assert.match(service, /^Environment=GH_CONFIG_DIR=\/home\/agent\/workers\/gh$/m, "the workers account, never the person's");
+  assert.doesNotMatch(service, /^\[Install\]/m, "the timer starts it");
+  assert.doesNotMatch(service + timer, /^(Environment|EnvironmentFile)=.*(TOKEN|SECRET|PASSWORD)/im, "no secret is passed in a unit; the program reads the file by reference");
+  assert.doesNotMatch(timer, /^Requires=/m, "no install-time start: this unit messages a person");
+  assert.match(timer, /^OnCalendar=/m);
+  assert.match(timer, /^Persistent=true$/m);
+  assert.match(timer, /^\[Install\]\s*$/m);
+  assert.doesNotMatch(service + timer, /@@/, "every placeholder was rendered");
 });
