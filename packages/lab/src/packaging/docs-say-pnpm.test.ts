@@ -468,7 +468,9 @@ const isRetired = (file: string, drift: string) =>
   RETIRED_HEADINGS.some((r) => r.file === file && drift === `${file}: removed or edited: ${r.heading}`);
 
 test("#3054: a retired heading is allowed to be removed, and an edit of it or any other removal is still REFUSED", () => {
-  for (const r of RETIRED_HEADINGS) assert.ok(r.reason.length > 20, `${r.file}: a retired heading names no reason`);
+  assert.ok(RETIRED_HEADINGS.length > 0, "the control below reads the first entry, so an empty list would compare nothing");
+  assert.deepEqual(RETIRED_HEADINGS.filter((e) => e.reason.length <= 20).map((e) => e.file), [],
+    "a retired heading names no reason");
   const [r] = RETIRED_HEADINGS;
   const removal = `${r.file}: removed or edited: ${r.heading}`;
   assert.ok(isRetired(r.file, removal), "positive control: the listed removal is recognised");
