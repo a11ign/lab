@@ -29,6 +29,7 @@ const PRACTICES = readLoadedRules();
 // now in the new module and passes by absence, which is why the control below names a cause that lives ONLY there.
 const GATE = ["work-gate.mjs", "work-gate/pr-orders.mjs", "work-gate/lab-job-orders.mjs", "trunk-red.mjs", "claim-stall.mjs",
   "repeating-lines.mjs", // #2848: the repeating-line order is built beside the journal reading, not in the gate
+  "org-health.mjs", // #2936: the org-health order beside its four readings
   "org-retro.mjs"] // #2938: and the daily retrospective's beside the numbers it carries
   .map((f) => readFileSync(new URL(`../../../agent-org/src/${f}`, import.meta.url), "utf8")).join("\n");
 
