@@ -27,6 +27,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { COMMANDS as TOOL_COMMANDS } from "agent-org/src/commands.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const HOOKS = `${REPO}scripts/git-hooks/`;
@@ -65,6 +66,7 @@ test("the mark is settable by a documented command, so an unmarked primary is fi
   // An opt-in guard that nobody can find the switch for is an off guard. `doctor` reports the gap and this
   // is what closes it; both are named in the hook's own refusal text.
   const scripts = JSON.parse(readFileSync(`${REPO}package.json`, "utf8")).scripts;
-  assert.equal(scripts["primary:mark"], "node packages/agent-org/src/mark-primary-checkout.mjs");
-  assert.ok(existsSync(`${REPO}packages/agent-org/src/mark-primary-checkout.mjs`));
+  // #2975: the script is the tool's `primary:mark` command now, so it is the tool's command table that must still name a program for it.
+  assert.equal(scripts["primary:mark"], "agent-org primary:mark");
+  assert.equal(TOOL_COMMANDS["primary:mark"], "mark-primary-checkout.mjs", "the installed tool must still name the program `primary:mark` runs");
 });

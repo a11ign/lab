@@ -29,7 +29,7 @@ import { fileURLToPath } from "node:url";
 
 import { TRACKER_WRITERS, TRACKER_WRITER_DIRS, sendsABody, bodyFromArgv, assertNoLeakInArgv }
   from "../../../../packages/lab/src/packaging/leak-patterns.mjs";
-import { localImports } from "../../../guards/src/local-import-closure.mjs";
+import { localImports, stripComments } from "../../../guards/src/local-import-closure.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
@@ -53,10 +53,22 @@ const trackedScripts = () =>
     { cwd: REPO, encoding: "utf8", env: sandboxGitEnv() })
     .split("\n").filter((f) => f.endsWith(".mjs"));
 
+// #2975: a script here now takes the tool by the dependency (`from "agent-org/src/board-data.mjs"`), a bare specifier `localImports`
+// does not follow, so `scripts/npm-token-liveness.mjs` read as reaching no guard though it reaches the very one it did. The walk follows
+// that one specifier into the INSTALLED copy, and the guard counts at either place: the in-tree one for the tool's own files, the installed
+// one for a project script that imports it.
+const INSTALLED_TOOL = resolve(REPO, "node_modules/agent-org");
+const INSTALLED_GUARD = resolve(INSTALLED_TOOL, "src/lib/leak-patterns.mjs");
+const importsThroughDependency = (file: string): string[] => [
+  ...localImports(file),
+  ...[...stripComments(readFileSync(file, "utf8")).matchAll(/from\s+["']agent-org\/(src\/[^"']+)["']/g)]
+    .map((m) => resolve(INSTALLED_TOOL, m[1])),
+];
+
 /** Does `entry`'s local-import closure reach the guard? */
 function reachesGuard(entry: string, deps: { imports?: (f: string) => string[]; guard?: string } = {}) {
-  const imports = deps.imports ?? localImports;
-  const guard = deps.guard ?? GUARD;
+  const imports = deps.imports ?? importsThroughDependency;
+  const guards = deps.guard ? [deps.guard] : [GUARD, INSTALLED_GUARD];
   const seen = new Set<string>();
   const visit = (file: string) => {
     if (seen.has(file)) return;
@@ -64,7 +76,7 @@ function reachesGuard(entry: string, deps: { imports?: (f: string) => string[]; 
     for (const next of imports(file)) visit(next);
   };
   visit(entry);
-  return seen.has(guard);
+  return guards.some((guard) => seen.has(guard));
 }
 
 /**

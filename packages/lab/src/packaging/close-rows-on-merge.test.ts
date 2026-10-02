@@ -265,8 +265,8 @@ test("#909: the closeRows job rides trunk.yml's push to main, and cannot push (c
     "a job triggered by a merge must never be able to push -- the permissions close-rows.yml carried, and no more, "
     + "pinned on THIS job so that no job added beside it later can widen it");
   const run = job.steps.map((s) => s.run ?? "").join("\n");
-  assert.match(run, /close-rows-for-merged-pr\.mjs/, "the same closure plan drives the dispatch path");
-  assert.match(run, /close-rows-sweep\.mjs/, "and the push path");
+  assert.match(run, /agent-org close-rows-for-merged-pr\b/, "the same closure plan drives the dispatch path");
+  assert.match(run, /agent-org close-rows-sweep\b/, "and the push path");
   const env = job.steps.find((s) => s.run?.includes("close-rows"))?.env ?? {};
   assert.equal(env.GH_TOKEN, "${{ github.token }}");
   assert.equal(env.GITHUB_REPOSITORY, "${{ github.repository }}");
@@ -291,14 +291,14 @@ test("#909: the closeRows job actually RUNS the scripts -- a correct plan wired 
   assert.ok(steps.some((s) => typeof s.uses === "string" && s.uses.startsWith("actions/checkout")),
     "it runs a script from the repo, so it needs a checkout -- without one the step fails MODULE_NOT_FOUND, "
     + "the #331 shape where a workflow's missing prerequisite reads as a code bug.");
-  const runner = steps.find((s) => s.run?.includes("close-rows-for-merged-pr.mjs"));
-  assert.ok(runner, "no step runs packages/agent-org/src/close-rows-for-merged-pr.mjs.");
+  const runner = steps.find((s) => s.run?.includes("agent-org close-rows-for-merged-pr"));
+  assert.ok(runner, "no step runs `agent-org close-rows-for-merged-pr`.");
   assert.equal(runner?.env?.GH_TOKEN, "${{ github.token }}");
   assert.ok(runner?.env?.GITHUB_REPOSITORY, "the script exits CANNOT_ASK without it rather than guessing a repo.");
   assert.equal(runner?.env?.DISPATCH_PR, "${{ github.event.inputs.pr }}",
     "the dispatch path acts on the PR the dispatcher names; the push path sweeps the window the merge is in, "
     + "idempotently, because a push event carries no PR number");
-  assert.match(runner?.run ?? "", /close-rows-sweep\.mjs --window=60/);
+  assert.match(runner?.run ?? "", /agent-org close-rows-sweep --window=60/);
 });
 
 // --- #754: labelsToStrip -- the row's claim removed in the SAME act as the close ---
