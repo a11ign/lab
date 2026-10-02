@@ -5,15 +5,17 @@
  * `import.meta.url`, so the extracted gate, run standalone with `$AGENT_ORG_HOST` set, read the home directory for lanes, owned-path
  * facts, git calls and review checkouts even once the import no longer died.
  *
- *   1. A SCAN of the non-test `packages/agent-org/src/*.mjs` finds no `import.meta.url` resolved three levels up in either of the two
- *      shapes the tree spells it, except `project-config.mjs`'s own `beside` (the named `SELF`). The scan flags a fixture string of
+ *   1. A SCAN of the non-test `packages/agent-org/src/*.mjs` finds no `import.meta.url` resolved three levels up in any of the
+ *      three shapes the tree spells it, except `project-config.mjs`'s own `beside` (the named `SELF`). The scan flags a fixture string of
  *      each shape first, so an empty result is not an empty scan.
  *   2. A CHILD `node` per module, with `$AGENT_ORG_HOST` naming a fixture host whose primary checkout is a scratch directory and `src`
  *      copied to `<scratch>/tool/src`, prints the root-derived value, and it names the fixture checkout and not the directory above
  *      `tool`. With the variable unset the in-tree value is the product checkout, as before.
  *
- * NOT SCANNED, AND WHY: `new URL("../../../", import.meta.url)` with a TRAILING SLASH is a third spelling of the same thing, in
- * `board-snapshot-scope.mjs`, `host-units.mjs` and `update-primary.mjs`. They are outside #2875's Region and are filed as #2879; a scan that matched them would be a red assertion on `main`.
+ * #2879 (child 5d-4): `new URL("../../../", import.meta.url)` with a TRAILING SLASH is a third spelling of the same thing, in
+ * `board-snapshot-scope.mjs`, `host-units.mjs` and `update-primary.mjs`. #2875's census did not match it; the scan now does, and the
+ * three modules take `HOME_CHECKOUT`. `host-units`'s `REPO_ROOT` is the PROJECT's checkout and not the tool's: what it reads there (`.agent-org/units`,
+ * `package.json` scripts, git history) is the project's, and `SHIPPED_DIR` is the tool's own location and stays `import.meta.url`-relative.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -24,6 +26,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HOST_ENV } from "../../../agent-org/src/project-config.mjs";
 import { sandboxGitEnv } from "../../../agent-org/src/lib/git-env.mjs";
+import { snapshotDirFor } from "../../../agent-org/src/board-snapshot-scope.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url)).replace(/\/$/, "");
 const SRC = join(REPO, "packages/agent-org/src");
@@ -32,8 +35,11 @@ const CHILD_TIMEOUT_MS = 60_000;
 /** The one file allowed to spell it: `resolveHomeCheckout`'s `beside`, the in-tree answer when `$AGENT_ORG_HOST` is unset. */
 const SELF = { file: "project-config.mjs", reason: "it IS the one place the tool finds itself: `beside` is HOME_CHECKOUT's in-tree default" };
 
-/** `import.meta.url` resolved three levels up: `resolve(dirname(fileURLToPath(import.meta.url)), "../../..")` or `new URL("../../..", import.meta.url)`. */
-const UP_THREE_FROM_URL = /\bimport\.meta\.url\)\s*\)?,\s*"\.\.\/\.\.\/\.\."|\bnew URL\(\s*"\.\.\/\.\.\/\.\."\s*,\s*import\.meta\.url/;
+/**
+ * `import.meta.url` resolved three levels up: `resolve(dirname(fileURLToPath(import.meta.url)), "../../..")`, `new URL("../../..", import.meta.url)`
+ * or the same with a trailing slash, `new URL("../../../", import.meta.url)` (#2879).
+ */
+const UP_THREE_FROM_URL = /\bimport\.meta\.url\)\s*\)?,\s*"\.\.\/\.\.\/\.\."|\bnew URL\(\s*"\.\.\/\.\.\/\.\.\/?"\s*,\s*import\.meta\.url/;
 
 function upThreeSpellings(source: string): boolean {
   return UP_THREE_FROM_URL.test(source);
@@ -42,11 +48,13 @@ function upThreeSpellings(source: string): boolean {
 const nonTestModules = (): string[] =>
   readdirSync(SRC).filter((name) => name.endsWith(".mjs") && !/\.test\./.test(name));
 
-test("POSITIVE CONTROL: the scan flags a fixture string of each of the two shapes", () => {
+test("POSITIVE CONTROL: the scan flags a fixture string of each of the three shapes", () => {
   assert.equal(upThreeSpellings('const R = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");'), true);
   assert.equal(upThreeSpellings('const R = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");'), true);
   assert.equal(upThreeSpellings('const R = new URL("../../..", import.meta.url).pathname;'), true);
   assert.equal(upThreeSpellings('const R = fileURLToPath(new URL("../../..", import.meta.url));'), true);
+  assert.equal(upThreeSpellings('const R = fileURLToPath(new URL("../../../", import.meta.url));'), true, "the trailing-slash shape (#2879)");
+  assert.equal(upThreeSpellings('const own = new URL("../host/", import.meta.url);'), false, "one level up is the tool's own directory");
   assert.equal(upThreeSpellings('const own = new URL("./board-report.mjs", import.meta.url);'), false, "a path inside src is the tool's own location");
   assert.equal(upThreeSpellings('const R = HOME_CHECKOUT;'), false);
 });
@@ -134,6 +142,12 @@ const MODULES: Module[] = [
   { name: "wake REPO_ROOT", file: "wake.mjs", answer: "m.REPO_ROOT",
     expectedInFixture: (checkout) => checkout, expectedInTree: REPO },
   { name: "work-gate REPO_CHECKOUT", file: "work-gate.mjs", answer: "m.REPO_CHECKOUT",
+    expectedInFixture: (checkout) => checkout, expectedInTree: REPO },
+  { name: "board-snapshot-scope SNAPSHOT_DIR", file: "board-snapshot-scope.mjs", answer: "m.SNAPSHOT_DIR",
+    expectedInFixture: (checkout) => join(checkout, "runs", "board-snapshots"), expectedInTree: snapshotDirFor(REPO) },
+  { name: "host-units REPO_ROOT", file: "host-units.mjs", answer: "m.REPO_ROOT",
+    expectedInFixture: (checkout) => checkout, expectedInTree: REPO },
+  { name: "update-primary PRIMARY_CHECKOUT", file: "update-primary.mjs", answer: "m.PRIMARY_CHECKOUT",
     expectedInFixture: (checkout) => checkout, expectedInTree: REPO },
 ];
 
