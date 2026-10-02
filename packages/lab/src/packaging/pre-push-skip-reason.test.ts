@@ -16,7 +16,7 @@
  * remedy is different too. It is this repository's own recorded shape: A GUARD THAT ALREADY EXISTED, AND
  * A WEAKER CHECK SUBSTITUTED FOR IT -- three hand-rolled substitutes, wrong three times.
  *
- * So two things a reader cannot scroll past, matching `A11Y_STALE_BASE_REASON`, `A11Y_RESOLVE_REASON`
+ * So two things a reader cannot scroll past, matching `A11Y_RESOLVE_REASON`
  * and `A11Y_PRIMARY_CHECKOUT_REASON`:
  *
  *   - THE LIST, by name. "nothing was verified" is true and abstract; "lint, typecheck, mjs parse check"
