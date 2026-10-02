@@ -11,8 +11,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { reviewVerdict, verdictAtHead } from "../../../agent-org/src/review-verdict.mjs";
-import { verdictAmong } from "../../../agent-org/src/work-gate.mjs";
+import { reviewVerdict, verdictAtHead, verdictAmong } from "../../../agent-org/src/review-verdict.mjs";
 
 test("#1245: all five spellings, in one test, positives and negatives together", () => {
   const cases: [string, string][] = [
