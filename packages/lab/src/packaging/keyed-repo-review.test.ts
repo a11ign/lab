@@ -20,6 +20,7 @@ import assert from "node:assert/strict";
 import { homeProjectDeclaration } from "../../../agent-org/src/project-config.mjs";
 import { scopesOf, readLanes, scopeTick } from "../../../agent-org/src/work-gate.mjs";
 import { ownerOfPr } from "../../../agent-org/src/work-gate/pr-orders.mjs";
+import { lookupOpenPrFiles } from "../../../agent-org/src/row-claim/file-overlap-rule.mjs";
 import { deliver, noReviewCheckoutFor, prepareReviewCheckout, removeReviewCheckout, reviewCloneOf, reviewerEnvironment,
   linkKeyedDependencies, withReviewCheckout, REPO_ROOT } from "../../../agent-org/src/wake.mjs";
 
@@ -230,4 +231,13 @@ test("(4) a keyed pull request with no `session:` label and no row falls to `ceo
   const unowned = { ...readyPr(6), repoKey: "agent-org", repo: "a11ign/agent-org" };
   assert.deepEqual(ownerOfPr(unowned), { session: "ceo", source: "ceo" });
   assert.deepEqual(ownerOfPr({ ...unowned, labels: [{ name: "session:worker-9" }] }), { session: "worker-9", source: "label" }, "POSITIVE CONTROL: a label still wins");
+});
+
+// --- THE CLAIM'S OVERLAP CHECK READS THE NEW REPOSITORY TOO ----------------------------------------------------------------------
+
+test("a consequence of declaring it: a claim's file-overlap lookup reads the open pull requests of BOTH declared repositories (#2617)", () => {
+  const asked: string[] = [];
+  const run = (args: string[]) => { asked.push(args[args.indexOf("--repo") + 1]); return "[]"; };
+  assert.deepEqual(lookupOpenPrFiles({ run, log: () => {} }), []);
+  assert.deepEqual(asked, ["a11ign/a11ign", "a11ign/agent-org"], "the primary's first, then `agent-org`'s: one call each");
 });
