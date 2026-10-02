@@ -25,8 +25,7 @@ const STANDING = [{ label: "ceo", status: "done" }, { label: "orchestrator", sta
 const listing = (status: string, extra: { label: string; status: string }[] = []) => [...STANDING, { label: "worker-9", status }, ...extra];
 
 /** A pull request exactly as `readPrs` returns one: green checks, a review required, nothing else. */
-const GREEN_PR = { number: 2968, reviewDecision: "REVIEW_REQUIRED", labels: [],
-  statusCheckRollup: [{ name: "gate", status: "COMPLETED", conclusion: "SUCCESS" }] };
+const GREEN_PR = { number: 2968, reviewDecision: "REVIEW_REQUIRED", labels: [], checksPending: false };
 
 const reading = (over: { waitKinds?: string[]; prs?: object[]; agents?: unknown; idleSince?: number | null } = {}) =>
   idleClaimantReading({ session: "worker-9", waitKinds: over.waitKinds ?? [], prs: (over.prs ?? []) as never },
@@ -65,7 +64,7 @@ const CASE: Record<string, Parameters<typeof reading>[0]> = {
   "chairman": { waitKinds: ["chairman"] },
   "fleet-hold": { waitKinds: ["fleet-hold"] },
   "review-requested": PR_WITH_REVIEWER,
-  "checks-pending": { prs: [{ ...GREEN_PR, statusCheckRollup: [{ name: "gate", status: "IN_PROGRESS" }] }] },
+  "checks-pending": { prs: [{ ...GREEN_PR, checksPending: true }] },
   "review-approved": { prs: [{ ...GREEN_PR, reviewDecision: "APPROVED" }] },
   "awaiting-evidence": { prs: [{ ...GREEN_PR, labels: [{ name: EVIDENCE_LABEL }] }] },
 };
@@ -84,14 +83,6 @@ for (const kind of Object.keys(WAIT_FIELDS)) {
     assert.equal(without.kind, "stall", "the control: no field at all stalls");
   });
 }
-
-test("#2999 a superseded still-pending run does not read as pending: only the newest run per check name counts", () => {
-  const stale = { name: "gate", status: "IN_PROGRESS", startedAt: "2026-10-02T10:00:00Z", completedAt: "0001-01-01T00:00:00Z" };
-  const done = { name: "gate", status: "COMPLETED", conclusion: "SUCCESS", startedAt: "2026-10-02T10:05:00Z", completedAt: "2026-10-02T10:09:00Z" };
-  const newer = { name: "gate", status: "IN_PROGRESS", startedAt: "2026-10-02T10:20:00Z", completedAt: "0001-01-01T00:00:00Z" };
-  assert.equal(reading({ prs: [{ ...GREEN_PR, statusCheckRollup: [stale, done] }] }).kind, "stall", "the newer, completed run settles it");
-  assert.equal(reading({ prs: [{ ...GREEN_PR, statusCheckRollup: [done, newer] }] }).kind, "waiting", "the control: the pending run NEWER than the completed one is a wait");
-});
 
 test("#2999 `awaiting-evidence` is the gate's own label, and `blocked` (a claim with no referent) is NOT a wait field", () => {
   assert.equal(EVIDENCE_LABEL, AWAITING_EVIDENCE_LABEL);
@@ -139,7 +130,7 @@ const ctx = (over: object = {}) => ({ now: NOW, restartAt: null, nudge: null, ag
   Parameters<typeof claimReading>[1];
 
 test("#2999 a holder with an open PR is `pr-owned` for the clock and a nudge for the overlay -- unless a reviewer is requested", () => {
-  const pr = { number: 2968, reviewDecision: "REVIEW_REQUIRED", labels: [], statusCheckRollup: [] };
+  const pr = { number: 2968, reviewDecision: "REVIEW_REQUIRED", labels: [], checksPending: false };
   const nudged = claimReading(facts({ openPrs: 1, ownPrs: [pr] }), ctx());
   assert.equal(nudged.kind, "nudge");
   assert.equal((nudged as { idle?: boolean }).idle, true);
@@ -195,7 +186,7 @@ test("#2999 before the clock's own interval a remembered idle nudge is HELD as `
 });
 
 test("#2999 a holder with an open PR is NEVER released by the idle reading: it stays `nudged`", () => {
-  const pr = { number: 2968, reviewDecision: "REVIEW_REQUIRED", labels: [], statusCheckRollup: [] };
+  const pr = { number: 2968, reviewDecision: "REVIEW_REQUIRED", labels: [], checksPending: false };
   const told = { nudgedAt: ago(400), deliveredAt: ago(300), idle: true };
   const held = claimReading(facts({ openPrs: 1, ownPrs: [pr], claimedAt: ago(500) }), ctx({ nudge: told }));
   assert.equal(held.kind, "nudged");
@@ -225,8 +216,17 @@ test("#2999 through the gate: a row carrying a future `Not-before:` or `needs:ch
   assert.equal(gateTick(claimRow("", ["answer:worker-9"])).length, 1, "an answer owed BY THE HOLDER is the row waiting on the holder, which `declaredWait` already refuses to read as one");
 });
 
+test("#2999 through the gate: only the NEWEST run per check name decides `checks-pending`, so a superseded pending run is not a wait", () => {
+  const stale = { name: "gate", status: "IN_PROGRESS", startedAt: "2026-10-02T10:00:00Z", completedAt: "0001-01-01T00:00:00Z" };
+  const done = { name: "gate", status: "COMPLETED", conclusion: "SUCCESS", startedAt: "2026-10-02T10:05:00Z", completedAt: "2026-10-02T10:09:00Z" };
+  const newer = { name: "gate", status: "IN_PROGRESS", startedAt: "2026-10-02T10:20:00Z", completedAt: "0001-01-01T00:00:00Z" };
+  const pr = (statusCheckRollup: object[]) => ({ number: 2968, headRefName: BRANCH, reviewDecision: "REVIEW_REQUIRED", labels: [], statusCheckRollup });
+  assert.equal(gateTick(claimRow(""), { prs: [pr([stale, done])] }).length, 1, "the newer, completed run settles it: the holder is nudged");
+  assert.equal(gateTick(claimRow(""), { prs: [pr([done, newer])] }).length, 0, "the control: the pending run NEWER than the completed one is a wait");
+});
+
 test("#2999 through the gate: an open PR with a live `reviewer-<n>` is not nudged; without it the holder is, and `claimFactsFrom` carries the PR", () => {
-  const pr = { number: 2968, headRefName: BRANCH, reviewDecision: "REVIEW_REQUIRED", labels: [], statusCheckRollup: [] };
+  const pr = { number: 2968, headRefName: BRANCH, reviewDecision: "REVIEW_REQUIRED", labels: [], checksPending: false };
   assert.equal(gateTick(claimRow(""), { prs: [pr] }).length, 1);
   assert.equal(gateTick(claimRow(""), { prs: [pr], agents: listing("idle", [{ label: "reviewer-2968", status: "working" }]) }).length, 0);
   const built = claimFactsFrom({ row: 2999, session: "worker-9", waiting: null, blockedBy: [], comments: [claimComment], openPrs: [pr], mergedPrs: null,
