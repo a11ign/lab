@@ -20,7 +20,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { assertOneBrowserAcross, EXIT_FLEET_INCONSISTENT } from "./capture-fleet-guard.mjs";
-import { fleetConsistency, MUST_MATCH, REPORTED_ONLY } from "@a11ign/worker-fleet/fleet-consistency";
+import { fleetConsistency, MUST_MATCH, REPORTED_ONLY } from "@a11ign/screenreader-fleet/fleet-consistency";
 
 /**
  * Fixture addresses BUILT FROM OCTETS, for the reason `fleet-consistency.test.ts` gives: #63's history

@@ -47,7 +47,7 @@
 import { readdirSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 // `pageServerFixtureAtPath` (and `isFixture` behind it) live in the corpus module (#881, #940), because
 // `realPageFor` and the gate need them too: a declared FIXTURE is the ONLY case where a differing origin is explained rather than
 // coincidental -- a fact about OUR serving arrangement, not something that can happen between two real

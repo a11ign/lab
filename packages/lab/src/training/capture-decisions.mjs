@@ -12,16 +12,16 @@
 // They are pure functions of their inputs, so they can be tested without a worker, a VM or a
 // network — which is the whole point of moving them out of a 650-line orchestrator.
 import { captureHasSubstance, captureIsSelfConsistent, captureMentionsTitle } from "@a11ign/evidence/verify";
-import { assessWorker } from "@a11ign/worker-fleet/health";
+import { assessWorker } from "@a11ign/screenreader-fleet/health";
 
 /**
- * MOVED to `@a11ign/worker-fleet/transient-fault` — architecture-audit.md §5, item 3. `isTransient`
+ * MOVED to `@a11ign/screenreader-fleet/transient-fault` — architecture-audit.md §5, item 3. `isTransient`
  * classifies a worker/network fault, which has nothing lab-specific about it, and `packages/cli` needs it
  * too (to gain the same lost-response recovery this file's sibling `capture-client.mjs` already had) but
  * must never depend on this private, unpublished package. Re-exported here so every existing importer of
  * `capture-decisions.mjs` is unchanged.
  */
-export { isTransient } from "@a11ign/worker-fleet/transient-fault";
+export { isTransient } from "@a11ign/screenreader-fleet/transient-fault";
 
 /** How much of a rejected transcript to quote back. Enough to recognise the wrong page, not a dump. */
 const REJECTED_PREVIEW_PHRASES = 2;

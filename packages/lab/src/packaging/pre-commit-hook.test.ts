@@ -194,7 +194,7 @@ test("A11Y_ALLOW_PIPED_EXIT_STATUS=1 overrides the piped-exit-status refusal spe
 // --- #535: a guard that CANNOT RUN must never be read as a hazard finding ---
 //
 // Every worker session works in a fresh worktree, and `piped-exit-status-guard.mjs` used to import
-// `@a11ign/worker-fleet/cli-flags` -- a workspace package unresolvable before `node_modules` exists there.
+// `@a11ign/screenreader-fleet/cli-flags` -- a workspace package unresolvable before `node_modules` exists there.
 // The import throw was swallowed by `>/dev/null 2>&1` and every staged line was reported as a #180 hazard.
 // This section runs the REAL, unmodified `pre-commit` from an isolated copy with genuinely NO
 // `node_modules` anywhere in its ancestor chain (mirroring `migration-gate-refuses.test.ts`'s own
@@ -271,7 +271,7 @@ test("#535 ACCEPTANCE: the REAL #180 hazard is still caught from a tree with no 
 test("#535 MUTATION TARGET: a guard that genuinely cannot run (an unresolvable import, the pre-fix shape) "
   + "is reported as a GUARD FAILURE, never as a hazard on an unrelated line", () => {
   // Reproduces the ORIGINAL defect directly: a guard script whose entry point throws on import, the exact
-  // shape `@a11ign/worker-fleet/cli-flags` produced in a fresh worktree before this fix.
+  // shape `@a11ign/screenreader-fleet/cli-flags` produced in a fresh worktree before this fix.
   const brokenGuard = `
     import { thisPackageDoesNotExistAnywhere } from "@a11ign/this-package-does-not-exist/cli-flags";
     console.log(thisPackageDoesNotExistAnywhere);

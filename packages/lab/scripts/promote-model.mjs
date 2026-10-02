@@ -34,7 +34,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { releasability } from "../src/packaging/releasability.mjs";
 import { readAcceptedSilentHeads } from "../src/packaging/accepted-silent-heads.mjs";
 import { dirtyTargets, promotionBlockedBy } from "../src/packaging/promotion-targets.mjs";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 
 /**
  * the most dangerous silent default here: a mistyped `--dry-run` PROMOTES.

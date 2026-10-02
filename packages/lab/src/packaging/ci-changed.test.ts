@@ -890,11 +890,11 @@ test("ci.yml's board job runs exactly the board guards and the claim guard, and 
   // A BUILD IS NEEDED, and the first version of this test asserted the opposite on the strength of a grep
   // that checked only these files' own top-level imports. Running the job's real command with no build
   // present (not reading it) found that board-liveness/board-markdown/board-style/board-summary-origin
-  // each drive a scripts/board-*.mjs script that imports @a11ign/worker-fleet/cli-flags -- the
+  // each drive a scripts/board-*.mjs script that imports @a11ign/screenreader-fleet/cli-flags -- the
   // stale-dist trap one hop further than the grep looked.
   assert.match(runLines, /npm run build/,
     "the board job must build -- several of its test files drive a scripts/board-*.mjs script that "
-    + "imports @a11ign/worker-fleet, which resolves to dist and does not exist unbuilt");
+    + "imports @a11ign/screenreader-fleet, which resolves to dist and does not exist unbuilt");
 });
 
 test("nightly.yml (coverage.yml until #901) reports its own failure on the tracking issue -- a nightly nobody reads fails quietly", () => {

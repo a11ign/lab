@@ -11,7 +11,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { realCorpusRoot, runsRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 import { classifyRouteChange } from "../src/training/route-change-identity.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";

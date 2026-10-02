@@ -28,7 +28,7 @@ import { assertManifestMatchesCases } from "./manifest-matches-cases.mjs";
 import { hasUsableCaptureFiles } from "./capture-resume.mjs";
 // #1497: whether the bad capture holds a reading at all, asked before a signal is called blind.
 import { unmeasuredEvidence } from "./signal-evidence-measured.mjs";
-import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
 import { readCapture as readCaptureFile } from "../capture/evidence-diff.mjs";
 import { datasetRoot, captureRoot } from "../dataset-paths.mjs";
 
