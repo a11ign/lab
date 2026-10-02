@@ -580,9 +580,12 @@ test("a pool shelf that is empty with NO unlaned backlog wakes nobody", () => {
 });
 
 // --- #63: the escalation path ended at ceo, and ceo's onward route was a sentence (2026-09-18) ---
+// The key and the window moved with #2989 and their tests with them: `packages/agent-org/src/work-gate-chairman-blocked.test.ts`.
 
 const blockedRow = (n: number, daysAgo: number) =>
   ({ number: n, title: `row ${n}`, updatedAt: new Date(Date.now() - daysAgo * 86_400_000).toISOString() });
+// The order is emitted only in the first two hours of a UTC day (#2989), so these pin a clock inside one.
+const IN_WINDOW = Date.parse("2026-10-02T00:30:00Z");
 
 /**
  * #63 sat four days with eight publish-gated rows behind it. `ceo` escalated correctly and
@@ -590,38 +593,18 @@ const blockedRow = (n: number, daysAgo: number) =>
  * the chairman happened to read a sweep in a terminal.
  */
 test("rows waiting on the chairman wake CEO, the only session that briefs one", () => {
-  const orders = decide({ prs: [], readyRows: [], chairmanBlocked: [blockedRow(63, 4)] });
+  const orders = decide({ prs: [], readyRows: [], chairmanBlocked: [blockedRow(63, 4)], nowMs: IN_WINDOW });
   assert.deepEqual(orders.map((o: { cause: string; session: string }) => [o.cause, o.session]),
     [["chairman-blocked", "ceo"]]);
-  assert.match(orders[0].prompt, /4 day\(s\)/);
   assert.match(orders[0].prompt, /#63/);
-  // `updatedAt` is LAST ACTIVITY, not time waiting: labelling #63 reset it to 0 the first time this ran.
-  // The prompt must not let a reader mistake one for the other.
-  assert.match(orders[0].prompt, /not time spent waiting/);
-});
-
-test("the discriminator is the AGE, so ceo is reminded once a DAY and the reminder grows", () => {
-  const today = decide({ prs: [], readyRows: [], chairmanBlocked: [blockedRow(63, 4)] })[0];
-  const tomorrow = decide({ prs: [], readyRows: [], chairmanBlocked: [blockedRow(63, 5)] })[0];
-  assert.notEqual(today.causeKey, tomorrow.causeKey, "a day older is a new question");
-  const again = decide({ prs: [], readyRows: [], chairmanBlocked: [blockedRow(63, 4)] })[0];
-  assert.equal(today.causeKey, again.causeKey,
-    "and the same day is the same question, or ceo is re-briefed every twenty minutes for days");
-});
-
-test("the AGE is the OLDEST row's, since the list arrives oldest first", () => {
-  const orders = decide({ prs: [], readyRows: [],
-    chairmanBlocked: [blockedRow(63, 9), blockedRow(64, 1)] });
-  assert.match(orders[0].prompt, /9 day\(s\)/, "reporting the newest would understate the stall");
-  assert.match(orders[0].prompt, /2 row\(s\)/);
 });
 
 test("nothing waiting on the chairman wakes nobody", () => {
-  assert.deepEqual(decide({ prs: [], readyRows: [], chairmanBlocked: [] }), []);
+  assert.deepEqual(decide({ prs: [], readyRows: [], chairmanBlocked: [], nowMs: IN_WINDOW }), []);
 });
 
 test("the order tells ceo to CLEAR a stale label, or the count stops meaning anything", () => {
-  const [order] = decide({ prs: [], readyRows: [], chairmanBlocked: [blockedRow(63, 4)] });
+  const [order] = decide({ prs: [], readyRows: [], chairmanBlocked: [blockedRow(63, 4)], nowMs: IN_WINDOW });
   assert.match(order.prompt, /take the label off/);
   assert.match(order.prompt, /four days unread/);
 });
@@ -991,7 +974,7 @@ test("a drain still delivers the FINISH causes -- work in flight must be able to
 });
 
 test("chairman-blocked survives a drain -- it is the WINDOW'S OWN subject", () => {
-  const orders = decide({ prs: [], readyRows: [], chairmanBlocked: [blockedRow(63, 4)], drain: true });
+  const orders = decide({ prs: [], readyRows: [], chairmanBlocked: [blockedRow(63, 4)], drain: true, nowMs: IN_WINDOW });
   assert.deepEqual(orders.map((o: { cause: string }) => o.cause), ["chairman-blocked"],
     "during a transfer the chairman is the one doing the work; silencing their brief silences the "
     + "thing the drain exists to serve");
