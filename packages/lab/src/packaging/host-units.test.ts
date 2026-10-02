@@ -2489,15 +2489,18 @@ const WINDOW_TIMER = "a11ign-shadow-window.timer";
 const STOP_ROW = '{"kind":"stop","cause":"cancelled-by-chairman-ruling","ticks":355,"at":"2026-10-02T06:52:12.000Z"}';
 const TICK_ROW = '{"tickMs":1,"tick":"t","differences":[]}';
 const MARKER_PATH = "/nowhere/shadow-window-open";
+/** An installed directory that exists on no machine: the fixture serves the SHIPPED text for it, so the copy is current on a CI runner as on a host. */
+const FAKE_INSTALLED_DIR = "/nowhere/installed";
 
 /** The REAL shipped pair, with only the record and the marker faked: where the record lives is read off the rendered service, not typed here. */
 const windowHost = ({ record, marker, enabled }: { record: string | null; marker: string | null; enabled: "enabled" | "disabled" }) => {
   const read = ((path: string) => {
     if (String(path).endsWith("diff-record.jsonl")) { if (record === null) throw new Error("ENOENT"); return record; }
     if (path === MARKER_PATH) { if (marker === null) throw new Error("ENOENT"); return marker; }
+    if (String(path).startsWith(`${FAKE_INSTALLED_DIR}/`)) return shippedUnitText(basename(String(path))) ?? "";
     return readFileSync(path, "utf8");
   }) as never;
-  return { read, markerPath: MARKER_PATH, exists: (() => true) as never,
+  return { read, markerPath: MARKER_PATH, installedDir: FAKE_INSTALLED_DIR, exists: (() => true) as never,
     systemctl: systemctlStub({ "is-enabled": { [WINDOW_TIMER]: enabled }, "is-active": { [WINDOW_TIMER]: "active" } }) };
 };
 
