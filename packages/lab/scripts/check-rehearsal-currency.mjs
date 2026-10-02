@@ -14,7 +14,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { gateVerdict, renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { rehearsalCurrencyProblems, rehearsalMarkerSha, REHEARSAL_DOCUMENTS, publishedPackagePaths }
   from "../src/packaging/rehearsal-currency.mjs";

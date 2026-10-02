@@ -49,9 +49,9 @@
         }
       },
       {
-        "name": "@a11ign/worker-fleet",
+        "name": "@a11ign/screenreader-fleet",
         "version": "0.1.0",
-        "path": "node_modules/@a11ign/worker-fleet",
+        "path": "node_modules/@a11ign/screenreader-fleet",
         "entry": true,
         "dependencies": {
           "@a11ign/judge": "0.1.0",
@@ -67,7 +67,7 @@
           "@a11ign/evidence": "0.1.0",
           "@a11ign/judge": "0.1.0",
           "@a11ign/scorer": "0.1.0",
-          "@a11ign/worker-fleet": "0.1.0",
+          "@a11ign/screenreader-fleet": "0.1.0",
           "yaml": "^2.9.0"
         },
         "optionalDependencies": {
@@ -99,7 +99,7 @@
         "ok": true
       },
       {
-        "name": "@a11ign/worker-fleet",
+        "name": "@a11ign/screenreader-fleet",
         "ok": true
       },
       {

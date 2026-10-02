@@ -7,7 +7,7 @@ import { oracleCounts } from "@a11ign/evidence/verify";
 
 import { signalMatches } from "./case-matrix.mjs";
 import { hasUsableCaptureFiles, TEST_GRADE } from "./capture-resume.mjs";
-import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
 import { readCapture as readCaptureFile, isUsableCapture } from "../capture/evidence-diff.mjs";
 import { REPO_ROOT, datasetRoot, captureRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 // #958: the three-direction drift check, moved out of this file so every verdict reader asks the same one.

@@ -33,7 +33,7 @@ import { resolve } from "node:path";
 import { compareCapture } from "../src/capture/evidence-diff.mjs";
 import { probeStates } from "@a11ign/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";
-import { guestReachableUrl } from "@a11ign/worker-fleet";
+import { guestReachableUrl } from "@a11ign/screenreader-fleet";
 import { assertWorkerUrl, CAPTURE_CLIENT_TIMEOUT_MS }
   from "../../worker-fleet/src/worker-http.mjs";
 import { renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
@@ -41,7 +41,7 @@ import { datasetRoot } from "../src/dataset-paths.mjs";
 import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
   from "../src/gates/fleet.mjs";
 import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.mjs";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { captureTolerantly } from "../../worker-fleet/src/capture-client.mjs";
 
 refuseUnknownFlags(["--worker=", "--pages=", "--json", LOCAL_FLAG],

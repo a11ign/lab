@@ -33,7 +33,7 @@
  *
  * TWO CANONICAL COPIES, ONE PUBLISH BOUNDARY. `packages/worker-fleet/src/npm-cli-executable.mjs` is a
  * deliberate, disclosed duplicate of the repo-root file (see its own header): `doctor.mjs` ships inside
- * `@a11ign/worker-fleet`'s published `bin` entries and cannot import outside the package, the identical
+ * `@a11ign/screenreader-fleet`'s published `bin` entries and cannot import outside the package, the identical
  * constraint `git-safe-env.mjs` already carries for the same reason. `npm-cli-executable.test.ts` beside
  * it pins the two behaviourally equal, this repo's own remedy #3 ("pin them equal with a test") for the
  * one case remedy #1 ("delete a copy") cannot reach.
