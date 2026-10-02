@@ -117,6 +117,15 @@ test("copies: two identical copies are clear, and a pair is only 'the same' with
   assert.equal(copyDriftReading({ pairs: [twice] }).status, "tripped", "two changed lines against a header naming one");
 });
 
+test("copies: ONE named line may become several (the #2884 shape), a header naming NOTHING allows no extra line, and an unnamed original line is still drift", () => {
+  const expanded = pairOf({ copyText: `${header(", ONE LINE: `two` became three lines.")}one\ntwo-a\n\ntwo-b\nthree\n`, originalText: "one\ntwo\nthree\n", allowedLines: 1 });
+  assert.equal(copyDriftReading({ pairs: [expanded] }).status, "clear", "one original line changed, named once, however many lines it became");
+  const unnamedAddition = pairOf({ copyText: `${header(": NOTHING but this header.")}one\ntwo\nthree\nfour\n`, allowedLines: 0 });
+  assert.equal(copyDriftReading({ pairs: [unnamedAddition] }).status, "tripped", "a header that names nothing above an extra line");
+  const unnamedChange = pairOf({ copyText: `${header(", ONE LINE: an import.")}ONE\nTWO\nthree\n`, allowedLines: 1 });
+  assert.equal(copyDriftReading({ pairs: [unnamedChange] }).status, "tripped", "two of the original's lines changed against a header naming one");
+});
+
 test("copies: a moved line is not an edit, a copy with no complete header has drifted, and a header that gives no count is unknown", () => {
   assert.equal(copyDriftReading({ pairs: [pairOf({ originalText: "three\none\ntwo\n" })] }).status, "clear");
   const headless = pairOf({ copyText: "// COPIED FROM `a/orig.mjs` at abcdef123 (#1): no end.\none\ntwo\nthree\n" });
