@@ -478,6 +478,18 @@ test("delivering the offer appends exactly one line per UTC date, and a manual r
   assert.equal(recordReading({ stateDir: blocked, date: "2026-10-09", numbers: {} }), "not recorded");
 });
 
+test("a readings file with no line that parses is left as it is, not appended to (#2985)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "org-retro-"));
+  const path = join(dir, READINGS_FILE);
+  writeFileSync(path, "not json\n");
+  assert.equal(recordReading({ stateDir: dir, date: "2026-10-09", numbers: { prsMerged: 1 } }), "not recorded");
+  assert.equal(readFileSync(path, "utf8"), "not json\n", "the corruption is not masked by a valid line beside it");
+  assert.equal(readReadings(path).status, "unreadable", "so the next report still says unknown, never a baseline built on the line we wrote");
+  // The other side: one bad line among good ones is still a file that reads, and today's line is appended.
+  writeFileSync(path, `not json\n${JSON.stringify({ date: "2026-10-01", numbers: { prsMerged: 5 } })}\n`);
+  assert.equal(recordReading({ stateDir: dir, date: "2026-10-09", numbers: { prsMerged: 1 } }), "recorded");
+});
+
 test("a failing write does not stop the offer, and says so", () => {
   const said: string[] = [];
   const orders = retrospectiveTick({ now: OFFER_NOW, stateDir: "/nonexistent", read: fixtureRead as never, log: (l) => said.push(l), readLedger: () => "",
