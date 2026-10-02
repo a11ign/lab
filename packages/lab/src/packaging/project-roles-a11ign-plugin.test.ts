@@ -13,6 +13,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { declareCause, GROUPS } from "agent-org/src/cause-shape.mjs";
 import { causeDeclarations as A11IGN_CAUSES } from "../../../../.agent-org/plugins/causes.mjs";
 
 test("a11ign's plugin declares exactly TWO causes: `fleet-batch-due` and `lab-job-finished` (N=2, at most 2)", () => {
@@ -21,4 +22,15 @@ test("a11ign's plugin declares exactly TWO causes: `fleet-batch-due` and `lab-jo
   // #2729: the second is a JUDGMENT cause and NOT a start one -- it addresses the holder of a claimed row, and a drain
   // stops the org taking on work, not telling a session its job ended.
   assert.equal(A11IGN_CAUSES[1].group, "judgment");
+});
+
+// #2975: the plugin is plain data with NO import (the host's gate loads it from a tree that has run no `pnpm install`), so nothing at
+// load time runs `declareCause`'s refusals. This is where they run: each entry must be exactly what the real `declareCause` returns for
+// its own fields, and its group must be one of the tool's `GROUPS` -- a typo in a literal fails here, not by dropping a cause silently.
+test("every plugin entry is exactly what the tool's own `declareCause` returns for it", () => {
+  assert.ok(A11IGN_CAUSES.length > 0, "the control: there are entries to check");
+  for (const entry of A11IGN_CAUSES) {
+    assert.ok(Object.values(GROUPS).includes(entry.group), `${entry.cause}: ${entry.group} is not one of the tool's groups`);
+    assert.deepEqual(entry, declareCause(entry.cause, entry.group, entry.profile));
+  }
 });
