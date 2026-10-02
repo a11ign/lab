@@ -466,7 +466,7 @@ test("pr-not-progressing: a comment or a review inside the window excuses a PR w
 });
 
 test("pr-not-progressing: the threshold is 180 minutes exactly -- trips AT it and not one millisecond under", () => {
-  assert.equal(PR_NOT_PROGRESSING_MINUTES, 180, "the p94.8 of 670 PR open-to-merge times, 2026-09-18..10-01 (measured with `gh pr list --state merged`)");
+  assert.equal(PR_NOT_PROGRESSING_MINUTES, 180, "the p94.9 of 651 PR open-to-merge times, 2026-09-18..10-01 (measured with `gh pr list --state merged`)");
   const reading = (quietMs: number) => prNotProgressingReading({ now: NOW, stalledPrs: [{ number: 1, reason: "conflicted", owner: null, lastActivityAt: NOW - quietMs }] });
   assert.equal(reading(180 * MINUTE_MS).status, "tripped");
   assert.equal(reading(180 * MINUTE_MS - 1).status, "clear");
