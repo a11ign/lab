@@ -513,9 +513,11 @@ function decision4Counts(): { total: number; divided: number } {
 // divided file, the same kind as `lab-job-finished.test.ts` (#2729) -- the two packages cannot import each other, so the contract between them can only be tested from `lab`. Re-derived by running this test, not inferred.
 // 2026-10-02, #3007 (the gate reads the lab jobs dispatched and not yet ended), on top of #2980's 159: 160 total, 18 divided. One MORE total, `org-health-queued-lab-jobs.test.ts`, which imports
 // `agent-org/src` (t-import) and matches no product pattern -- the same reason as #2793's line above. Re-derived by running this test, not inferred.
-// 2026-10-02, #2996 (a declared wait names its condition), on top of #3007's 160: 161 total, 18 divided. One MORE total, `wait-condition.test.ts`, which imports `agent-org/src` (the leaf, the two
+// 2026-10-02, #2999 (an idle claimant that declared no wait is a stall), on top of #3007's 160: 161 total, 18 divided. One MORE total (not divided), `idle-claimant.test.ts`, which imports `agent-org/src` (the idle reading, the
+// clock reading and the gate) and matches no product pattern -- the same reason as #3007's line above. Re-derived by running this test, not inferred.
+// 2026-10-02, #2996 (a declared wait names its condition), on top of #2999's 161: 162 total, 18 divided. One MORE total, `wait-condition.test.ts`, which imports `agent-org/src` (the leaf, the two
 // readings and the gate) and matches no product pattern -- the same reason as #2793's line above. Re-derived by running this test, not inferred.
-const RECORDED_DECISION_4 = { total: 161, divided: 18 };
+const RECORDED_DECISION_4 = { total: 162, divided: 18 };
 
 test("decision 4's total/divided counts, re-derived, match the row's currently-amended reading", () => {
   const counts = decision4Counts();
