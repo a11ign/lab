@@ -155,7 +155,7 @@ test("a package with NO bin is a declared case, not an absence that reads like a
 test("declaredBins reads the string shorthand, which links the unscoped package name", () => {
   // `"bin": "./cli.mjs"` links ONE name -- the package name with the scope dropped. Reading only the
   // object form would report such a package as declaring no bins, and the check would pass by not looking.
-  assert.deepEqual(declaredBins({ name: "@a11ign/screenreader-fleet", bin: "./dist/doctor.mjs" }), ["worker-fleet"]);
+  assert.deepEqual(declaredBins({ name: "@a11ign/screenreader-fleet", bin: "./dist/doctor.mjs" }), ["screenreader-fleet"]);
   assert.deepEqual(declaredBins({ name: "a11ign", bin: "./dist/cli.js" }), ["a11ign"]);
   assert.deepEqual(declaredBins({ name: "@a11ign/evidence" }), []);
   assert.deepEqual(declaredBins({ name: "@a11ign/scorer", bin: { one: "./a.mjs", two: "./b.mjs" } }), ["one", "two"]);

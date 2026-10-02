@@ -12,6 +12,10 @@
  *   3. every workspace importer that declares the new name resolves it in `pnpm-lock.yaml` as a `link:` to the
  *      package's directory. The directory is still `packages/worker-fleet/`: M2 moves it, this row does not.
  *
+ *   4. every pending changeset's frontmatter names a package that exists: `changeset version` throws on one that
+ *      does not, so a rename that leaves the old name in a pending changeset breaks the RELEASE that publishes
+ *      the new one (found at #2887: #2885's rename had left the same break for `nvda-worker`).
+ *
  * THE OLD NAME IS BUILT, NOT WRITTEN: this file is itself a non-document file, and a literal would make the
  * walk refuse its own source. It is also excluded by name (`SELF`), so a reader meets the decision in code.
  *
@@ -22,7 +26,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { parse } from "yaml";
@@ -108,5 +112,36 @@ test("every importer that declares the new name resolves it in pnpm-lock.yaml, a
     const resolved = section === undefined ? undefined : lock.importers[importer]?.[section]?.[NEW_NAME]?.version;
     const wanted = `link:${relative(importer, PACKAGE_DIR) || "."}`;
     assert.equal(resolved, wanted, `${file} declares ${NEW_NAME}, and pnpm-lock.yaml resolves it to ${resolved ?? "nothing"}`);
+  }
+});
+
+/** The package names a changeset's frontmatter releases: the quoted keys between the opening pair of `---`. */
+function namesInFrontmatter(text: string): string[] {
+  const block = /^---\r?\n([\s\S]*?)\r?\n?---/.exec(text)?.[1] ?? "";
+  return [...block.matchAll(/^\s*["']?([^"':\s]+)["']?\s*:/gm)].map((match) => match[1]);
+}
+
+/** The pending changesets whose frontmatter names something not in `known`. */
+function changesetsNamingAnUnknownPackage(dir: string, known: Set<string>): string[] {
+  return readdirSync(dir)
+    .filter((file) => file.endsWith(".md") && file !== "README.md")
+    .filter((file) => namesInFrontmatter(readFileSync(join(dir, file), "utf8")).some((name) => !known.has(name)));
+}
+
+test("every pending changeset names a package that exists, so `changeset version` can run", () => {
+  const known = new Set(workspaceManifests().map((file) => readManifest(file).name).filter((name): name is string => name !== undefined));
+  assert.ok(known.has(NEW_NAME), "the workspace does not know the new name: the set of known packages was not read");
+  assert.deepEqual(changesetsNamingAnUnknownPackage(join(REPO, ".changeset"), known), []);
+});
+
+test("positive control: a changeset naming the old name is refused, and one naming the new name is not", () => {
+  const dir = mkdtempSync(join(tmpdir(), "changeset-2887-"));
+  try {
+    writeFileSync(join(dir, "stale.md"), `---\n"${OLD_NAME}": patch\n---\n\nbody\n`);
+    writeFileSync(join(dir, "current.md"), `---\n"${NEW_NAME}": patch\n---\n\nmentions ${OLD_NAME} in its body\n`);
+    writeFileSync(join(dir, "README.md"), `${OLD_NAME}\n`);
+    assert.deepEqual(changesetsNamingAnUnknownPackage(dir, new Set([NEW_NAME])), ["stale.md"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

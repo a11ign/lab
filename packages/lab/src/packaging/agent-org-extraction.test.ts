@@ -449,7 +449,7 @@ test("npm run test:org's --min floor, read out of package.json, is still met by 
 
 /** Decision 4's own re-runnable population, re-derived here rather than trusted from the row body's prose. */
 function decision4Counts(): { total: number; divided: number } {
-  const productPattern = /(\.\.\/)+(evidence|judge|cli|worker-fleet|nvda-worker|nvda-speech|scorer|control|pdf)\/|@a11ign\/(evidence|judge|cli|worker-fleet|nvda-worker|scorer|control|pdf)/;
+  const productPattern = /(\.\.\/)+(evidence|judge|cli|worker-fleet|nvda-worker|nvda-speech|scorer|control|pdf)\/|@a11ign\/(evidence|judge|cli|worker-fleet|screenreader-fleet|nvda-worker|scorer|control|pdf)/;
   const files = sourceFilesUnder(REPO_ROOT, "packages/lab").filter((file) => {
     const code = readFileSync(join(REPO_ROOT, file), "utf8");
     return /(from|import\().*agent-org\/(src|host)/.test(code);
