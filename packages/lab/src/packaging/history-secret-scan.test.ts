@@ -92,6 +92,31 @@ test("scanBlob: the file the template is FOR still matches -- the suffix exclusi
 });
 
 /**
+ * #2965: an `.npmrc` is a credential file by what it sets. #2958 and #2962 add credential-free ones
+ * (a comment and `engine-strict=true`), which the filename alone would report.
+ */
+test("scanBlob: a credential-free .npmrc is not a keyFilename finding", () => {
+  for (const path of [".npmrc", "packages/lab/.npmrc"]) {
+    assert.deepEqual(scanBlob("# engines\nengine-strict=true\n", path).filter((f) => f.pattern === "keyFilename"), []);
+  }
+  assert.deepEqual(scanBlob("#//registry.npmjs.org/:_authToken=abc\n", ".npmrc").filter((f) => f.pattern === "keyFilename"), []);
+});
+
+test("scanBlob: an .npmrc that sets _auth, _password or _authToken is still a keyFilename finding", () => {
+  for (const line of ["//registry.npmjs.org/:_authToken=abc", "_auth=abc", "_password=abc",
+    "//reg.example.com/:_password=abc", "  _authToken = abc"]) {
+    for (const path of [".npmrc", "packages/control/.npmrc"]) {
+      assert.ok(scanBlob(`engine-strict=true\n${line}\n`, path).some((f) => f.pattern === "keyFilename"),
+        `expected ${path} holding ${line} to be a keyFilename finding`);
+    }
+  }
+});
+
+test("scanBlob: the npmrc content check does not loosen .env, whatever its content", () => {
+  assert.ok(scanBlob("engine-strict=true\n", ".env").some((f) => f.pattern === "keyFilename"));
+});
+
+/**
  * THE CLAIM THIS ROW EXISTS TO PROVE: a file fixed in a later commit still has its OLD content in every
  * commit before the fix, so a scan of the current tree alone understates history. Built as a real,
  * disposable repository -- two commits, a secret in the first, removed in the second -- so this is
