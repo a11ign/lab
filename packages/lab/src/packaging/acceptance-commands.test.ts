@@ -1252,11 +1252,11 @@ test("#621 local-import-closure.mjs's own JSDoc example is not read as a real im
 });
 
 test("#621 anyCommandUsesHistory (via acceptanceReport): a closure-derived history need is recognised as "
-  + "\"used\" even with no `// requires:` header -- pre-push-stale-base.test.ts needs history (its own "
-  + "REAL ARTEFACT test asks the shallow-checkout question) but declares no header; `History: full` "
-  + "naming it must not warn as unused", () => {
+  + "\"used\" even with no `// requires:` header -- pre-push-resolve-toward-main.test.ts reaches a history "
+  + "reader through its import closure but declares no header; `History: full` naming it must not warn "
+  + "as unused", () => {
   const body = "Closes #1\nAcceptance: npx tsx --test "
-    + "packages/lab/src/packaging/pre-push-stale-base.test.ts\nHistory: full\n";
+    + "packages/lab/src/packaging/pre-push-resolve-toward-main.test.ts\nHistory: full\n";
   const report = acceptanceReport(body, () => 0);
   assert.ok(!report.lines.some((l) => /WARNING/.test(l)),
     `expected no unused-History warning; got: ${report.lines.join(" | ")}`);
