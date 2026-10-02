@@ -361,7 +361,7 @@ test("ceo.md states a bound for EVERY number the report trends, citing the 2026-
   assert.notEqual(own, null);
   const missing = NUMBERS.filter((n) => !own!.includes(`\`${n.id}\``)).map((n) => n.id);
   assert.deepEqual(missing, [], "a number added to NUMBERS without a bound in the role text goes red here");
-  assert.ok(NUMBERS.length >= 8, "POSITIVE CONTROL: the loop above ran over a real population");
+  assert.ok(NUMBERS.some((n) => n.id === "idleMinutes"), "POSITIVE CONTROL: the loop above ran over a real population, the idle-minutes number among it");
   assert.match(own!, /2026-10-02 reading on #928/);
   assert.match(own!, /org-retro-readings\.jsonl/);
 });
@@ -390,7 +390,8 @@ function reportWith({ idleTicks, merged, readings }: { idleTicks: number; merged
 test("POPULATION FROM THE REPORT: every number it carries has a declared direction, and a number it carries with none is a defect, printed as one", () => {
   const report = reportWith({ idleTicks: 5, merged: 3, readings: parseReadings(readingsText(YESTERDAY)) });
   const ids = Object.keys(report.numbers);
-  assert.ok(ids.length >= 8, `POSITIVE CONTROL: the report carries at least the 8 numbers the row names, not an empty population (${ids.length})`);
+  const EIGHT = ["prsMerged", "medianOpenToMergeMinutes", "idleMinutes", "orgStalledWakes", "claimStalledWakes", "claimStallVoidings", "redPrs", "tokensPerMergedPr"];
+  assert.deepEqual(EIGHT.filter((id) => !ids.includes(id)), [], "POSITIVE CONTROL: the report carries the eight numbers the 2026-10-02 reading named, so the population is not empty");
   assert.deepEqual(undeclaredDirections(report.numbers), [], "every number the report carries is in the direction table");
   for (const id of ids) assert.match(NUMBERS.find((n) => n.id === id)?.better ?? "", /^(lower|higher)$/, `${id} declares which way is better`);
   assert.deepEqual(NUMBERS.map((n) => n.id).filter((id) => !ids.includes(id)), [], "and no table entry is dead: each one is a number the report carries");
