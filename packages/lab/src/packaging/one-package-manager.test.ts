@@ -263,7 +263,7 @@ test("the same lock merely UNTRACKED is not refused, and pnpm-lock.yaml and look
 test("the REAL tree tracks neither (and the detector has just been shown to read a tree)", () => {
   const files = trackedFiles(REPO).split("\n").filter(Boolean);
   // The emptiness below is controlled twice over: this floor says the listing was read, and the fixture tests above plant a lock and find it.
-  assert.ok(files.length > 1000, `git ls-files listed ${files.length} file(s): the listing is broken, not the tree clean`);
+  assert.ok(files.length > 1000, "git ls-files listed almost nothing: the listing is broken, and the tree is not thereby clean");
   assert.deepEqual(trackedLockfiles(files.join("\n")), []);
 });
 
