@@ -450,6 +450,33 @@ function mergeBase(): string | null {
   }
 }
 
+/**
+ * Headings DELETED on purpose, with the row that retired the section. A frozen heading guards a rewording sweep
+ * against renaming an anchor; it is not a promise that a section about a deleted mechanism stays. Each entry must
+ * name its file, the exact heading and a reason. It is read only against the merge-base's headings, so once the
+ * merge-base no longer has the heading the entry does nothing and can be deleted.
+ */
+const RETIRED_HEADINGS: { file: string; heading: string; reason: string }[] = [
+  {
+    file: "docs/pipeline.md",
+    heading: "## `update-branch` moves your branch under you — a non-fast-forward is the train, not a violation",
+    reason: "#3054: the update-branch job was deleted by #3046, so nothing pushes main into a PR's branch any more",
+  },
+];
+
+const isRetired = (file: string, drift: string) =>
+  RETIRED_HEADINGS.some((r) => r.file === file && drift === `${file}: removed or edited: ${r.heading}`);
+
+test("#3054: a retired heading is allowed to be removed, and an edit of it or any other removal is still REFUSED", () => {
+  for (const r of RETIRED_HEADINGS) assert.ok(r.reason.length > 20, `${r.file}: a retired heading names no reason`);
+  const [r] = RETIRED_HEADINGS;
+  const removal = `${r.file}: removed or edited: ${r.heading}`;
+  assert.ok(isRetired(r.file, removal), "positive control: the listed removal is recognised");
+  assert.equal(isRetired("docs/other.md", `docs/other.md: removed or edited: ${r.heading}`), false);
+  assert.equal(isRetired(r.file, `${r.file}: removed or edited: ## Another heading`), false);
+  assert.equal(isRetired(r.file, `${r.file}: added or edited: ${r.heading}`), false);
+});
+
 test("#2895: no heading in any Region file differs from the merge-base's", (t) => {
   const base = mergeBase();
   if (base === null) { t.skip(NO_ORIGIN_MAIN); return; }
@@ -460,5 +487,5 @@ test("#2895: no heading in any Region file differs from the merge-base's", (t) =
   const compared = regionFiles().filter((f) => f.endsWith(".md") && atBase.has(f));
   assert.ok(compared.length >= MIN_MARKDOWN_FILES, `only ${compared.length} Markdown files compared against ${base}`);
   const drift = compared.flatMap((f) => headingDrift(git(["show", `${base}:${f}`]), readFileSync(`${REPO_ROOT}${f}`, "utf8")).map((d) => `${f}: ${d}`));
-  assert.deepEqual(drift, []);
+  assert.deepEqual(drift.filter((d) => !RETIRED_HEADINGS.some((r) => isRetired(r.file, d))), []);
 });

@@ -26,8 +26,8 @@
  * a command without being a check. Those are enumerated by name with a reason each, the same shape
  * `cli-flags.test.ts`'s `UNGUARDED` uses, so a new one cannot arrive unnoticed either.
  *
- * THE GIT-ONLY REFUSALS ARE OUT OF SCOPE BY NAME, not by omission — the stale-base check,
- * `resolve-toward-main`, the 300-deletion warning and the `A11Y_SKIP_VERIFY` gate. None is a copy of CI,
+ * THE GIT-ONLY REFUSALS ARE OUT OF SCOPE BY NAME, not by omission — `resolve-toward-main`,
+ * the 300-deletion warning and the `A11Y_SKIP_VERIFY` gate. None is a copy of CI,
  * each is git plumbing costing milliseconds, and each is push SAFETY rather than verification. Asserting
  * over "everything the hook executes" would assert something false and fail on the first `git rev-parse`.
  */
