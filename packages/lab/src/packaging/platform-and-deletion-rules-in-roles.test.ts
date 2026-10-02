@@ -30,6 +30,8 @@ const REVIEWER_ONLY: Obligations = [
   ["says these are refusal criteria", /REFUSAL CRITERIA/],
   ["asks for the `platform:` line", /Ask every PR for both lines/],
   ["asks for the growth reason", /the reason removing or reusing could not do it/],
+  ["makes the design question the FIRST check (#3044)", /THE FIRST CHECK, before you run anything[^:]*: should this exist, and is it the simplest way\?/],
+  ["says a missing body line alone is not grounds to request changes (#3044)", /missing BODY line is never, alone, a reason to `--request-changes`/],
 ];
 const ENGINEER_ONLY: Obligations = [
   ["says a turn does not end on a background job it still needs", /does not end on a background job it still needs/],
@@ -58,7 +60,9 @@ test("positive control: dropping any one obligation from a passage that carries 
   const passage = "USE THE PLATFORM FIRST GitHub, pnpm, systemd or git `platform: <what was checked>` "
     + "reimplements a platform feature is refused PREFER DELETING TO ADDING why removing or reusing could not do it "
     + "net line count is tracked and must go down REFUSAL CRITERIA Ask every PR for both lines "
-    + "the reason removing or reusing could not do it does not end on a background job it still needs";
+    + "the reason removing or reusing could not do it does not end on a background job it still needs "
+    + "THE FIRST CHECK, before you run anything (chairman): should this exist, and is it the simplest way? "
+    + "missing BODY line is never, alone, a reason to `--request-changes`";
   const obligations = [...BRIEF_RULES, ...REVIEWER_ONLY, ...ENGINEER_ONLY];
   assert.deepEqual(missing(flatten(passage), obligations), []);
   for (const [why, pattern] of obligations) {

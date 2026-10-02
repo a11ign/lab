@@ -55,7 +55,7 @@ const HISTORICAL: readonly Allowed[] = [
     why: "what the reconstitution drill ran on a date" },
   { file: ".agent-org/roles/product-manager.md", line: 98, anchor: "Fifth instance, 2026-09-09",
     why: "a dated incident" },
-  { file: ".agent-org/roles/reviewer.md", line: 241, anchor: "Measured on #2376",
+  { file: ".agent-org/roles/reviewer.md", line: 259, anchor: "Measured on #2376",
     why: "a dated incident: `npx` failed before execution" },
   { file: ".agent-org/roles/worker-loop-orchestrator.md", line: 220, anchor: "had already been tried",
     why: "what a worker tried in an incident" },
