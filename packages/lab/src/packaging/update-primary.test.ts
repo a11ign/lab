@@ -145,14 +145,15 @@ test("CONTROL: a `main` already at the target writes nothing -- no ref update, n
  * future edit from inlining the list again, and inlining it is exactly what produced the merge-blocking
  * red on 2026-09-09 — one file updated, the other found by CI.
  *
- * So this asserts on the SOURCE of both test files: neither may contain the argv literal itself. It is a
+ * So this asserts on the SOURCE of the test file: it may not contain the argv literal itself. It is a
  * text check because that is what the defect is — two copies of one fact — and no behavioural test can
  * see the difference between one constant and two identical ones.
  */
-test("neither argv assertion carries its own copy of the list -- the fact is stated once", () => {
+test("the argv assertion does not carry its own copy of the list -- the fact is stated once", () => {
   const here = (name: string) =>
     readFileSync(fileURLToPath(new URL(name, import.meta.url)), "utf8");
-  for (const name of ["update-primary.test.ts", "primary-checkout-guard.test.ts"]) {
+  // `primary-checkout-guard.test.ts` was the second asserter; it travelled to a11ign/agent-org (#2975).
+  for (const name of ["update-primary.test.ts"]) {
     const src = here(name);
     assert.match(src, /UPDATE_PRIMARY_(ARGV|VERBS)/,
       `${name} must assert THROUGH the shared list`);

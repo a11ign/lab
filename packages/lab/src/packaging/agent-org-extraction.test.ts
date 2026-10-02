@@ -517,11 +517,13 @@ function decision4Counts(): { total: number; divided: number } {
 // clock reading and the gate) and matches no product pattern -- the same reason as #3007's line above. Re-derived by running this test, not inferred.
 // 2026-10-02, #2996 (a declared wait names its condition), on top of #2999's 161: 162 total, 18 divided. One MORE total, `wait-condition.test.ts`, which imports `agent-org/src` (the leaf, the two
 // readings and the gate) and matches no product pattern -- the same reason as #2793's line above. Re-derived by running this test, not inferred.
-const RECORDED_DECISION_4 = { total: 162, divided: 18 };
+// 2026-10-02, #2975 (cut-over 4 of 6, the 72 travelled tests deleted): 90 total, 18 divided. Seventy-two FEWER totals and the same divided: each deleted file had a same-named test in
+// a11ign/agent-org and imported `agent-org/src` (t-import) with no product pattern. Re-derived by running this test, not inferred.
+const RECORDED_DECISION_4 = { total: 90, divided: 18 };
 
 test("decision 4's total/divided counts, re-derived, match the row's currently-amended reading", () => {
   const counts = decision4Counts();
-  assert.ok(counts.total > 100, `too few files found (${counts.total}): the scan is reading the wrong tree`);
+  assert.ok(counts.total > 50, `too few files found (${counts.total}): the scan is reading the wrong tree`);
   assert.deepEqual(counts, RECORDED_DECISION_4, "decision 4's population drifted again: report to the row before trusting this file's other assertions");
 });
 

@@ -71,7 +71,6 @@ const REPORTED_FLOOR =
  * losing two thirds of it, in the guard whose whole subject is which tree is being asked.
  */
 const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
-  "acceptance-commands.test.ts: files.length",
   // #1101, and MY OWN RATCHET CAUGHT ME — the second time this one has. The floor is on the file list the
   // no-test-file-imports sweep runs over, and it is a PRECONDITION rather than a stand-in: there is no
   // right number to assert, because the tree's test-file count changes with every row, and the question
@@ -87,12 +86,7 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   // instance through the predicate.
   "prose-satisfiable-guards.test.ts: bound.length",
   "prose-satisfiable-guards.test.ts: patterns.length",
-  "merge-guard-checks-rule.test.ts: files.length",
   "action-inputs.test.ts: inputs.length",
-  // #2875: `modules.length > 50` asks only "did the readdir of `packages/agent-org/src` return a population", a PRECONDITION and not a
-  // stand-in -- the module count changes with every row. The verdict is `deepEqual(offenders, [])`, with its positive control
-  // (the scan flags a fixture string of each shape, and SELF still spells the shape) beside it.
-  "standalone-roots.test.ts: modules.length",
   // agent-org-extraction.test.ts's floors are PRECONDITIONS, not stand-ins: `files.length > 100`,
   // `counts.total > 100`, `travelling.length > 50` and `labFiles.length > 50` only ask "did the walk read
   // the real tree, not an empty or wrong one" -- the real verdicts (RECORDED_DECISION_4, the exact
@@ -123,7 +117,6 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "gates-are-proven.test.ts: proof.unproven.length",
   "generated-paths.test.ts: files.length",
   "generated-paths.test.ts: tracked.size",
-  "gh-token-jobs.test.ts: parsed.length",
   "git-population-vacuity.test.ts: discovered.length",
   "git-population-vacuity.test.ts: files.length",
   "git-spawn-classification.test.ts: files.length",
@@ -143,11 +136,9 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "python-ci-requirements.test.ts: ci.size",
   "python-ci-requirements.test.ts: full.size",
   "ready-label-audit.test.ts: statuses.size",
-  "reconstitution-drill.test.ts: report.agents.length",
   "region-paths.test.ts: roots.length",
   "releasability.test.ts: VERDICTS.cases.length",
   "repo-identity-consolidated.test.ts: SITES.length",
-  "row-claim-stale-rule.test.ts: derived.length",
   "schema-migration-citations.test.ts: SOURCE_FILES.length",
   "schema-migration-citations.test.ts: headings.length",
   "select-changed-tests.test.ts: alwaysRun.length",
@@ -159,7 +150,6 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "trainer-callers.test.ts: invocations.length",
   "tree-wide-guard-walk.test.ts: found.length",
   "tree-wide-guards.test.ts: files.length",
-  "trunk-revert-guard.test.ts: spawns.length",
   "user-facing-docs-file-facts.test.ts: names.length",
   "workflow-commands.test.ts: seen.length",
   "workflow-path-coverage.test.ts: sourceDirectories().length",

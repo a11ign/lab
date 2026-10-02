@@ -40,14 +40,13 @@ test("every entry is a real tracked *.test.ts path, sorted, deduplicated", () =>
   assert.ok(files.every((f) => f.endsWith(".test.ts")), "every entry must be a *.test.ts path");
 });
 
-test("names the known five #716 measured as the most expensive", () => {
+test("names the four of #716's five that still live here, the fifth having travelled to agent-org", () => {
   const files = new Set(treeWideGuardFiles());
   for (const known of [
-    "packages/lab/src/packaging/carry-branch.test.ts",
     "packages/lab/src/referenced-scripts.test.ts",
     "packages/lab/src/packaging/select-changed-tests.test.ts",
     "packages/lab/src/packaging/generated-paths.test.ts",
-  ]) assert.ok(files.has(known), `${known} was one of #716's own five and must still be discovered`);
+  ]) assert.ok(files.has(known), `${known} was one of #716's own five (carry-branch.test.ts travelled to agent-org in #2975) and must still be discovered`);
 });
 
 test("REAL EXAMPLE: ci-changed.test.ts never imports the marker -- its only \"ls-files\" mention was "

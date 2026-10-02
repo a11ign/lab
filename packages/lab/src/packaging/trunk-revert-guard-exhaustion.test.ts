@@ -24,7 +24,9 @@
  *    the first test goes red.
  * 2. Classify everything (`sandboxExhaustionError` returning an error whatever it is given): the real
  *    `git clone` failure is labelled a full disk, and the second test goes red.
- * 3. Put a bare `mkdtempSync` + `git clone` back in `trunk-revert-guard.test.ts`: the source test goes red.
+ *
+ * (A third check, that `trunk-revert-guard.test.ts` builds its clone through `buildSandbox`, read that file's source
+ * and left with it: the guard travelled to a11ign/agent-org in #2975, and the check goes with the file it read.)
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -32,14 +34,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import { EXHAUSTION_MARKER, buildSandbox } from "../../../guards/src/sandbox-exhaustion.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 /** git's exit status for a `fatal:` -- what the measured clone died with, and what a missing repository gives. */
 const GIT_FATAL = 128;
 const PREFIX = "a11y-revert-guard-exhaustion-test-";
-const GUARD_TEST = fileURLToPath(new URL("./trunk-revert-guard.test.ts", import.meta.url));
 
 /** git's own words, exactly as measured on 2026-09-23 -- the two lines a full tmpfs printed. */
 const MEASURED_STDERR = [
@@ -105,15 +105,4 @@ test("#2154: a build that succeeds returns the populated directory and leaves it
     rmSync(root, { recursive: true, force: true });
   }
   assert.ok(!existsSync(root), "and it is the caller's to remove");
-});
-
-test("#2154: the guard's clone IS built through buildSandbox, and no bare mkdtemp is left in that file", () => {
-  // A text proxy and NOT the proof: the tests above are what show the builder classifies. This shows the
-  // guard USES it -- a file that imported the helper and never called it would read differently.
-  const source = readFileSync(GUARD_TEST, "utf8");
-  assert.match(source, /const CLONE = buildSandbox\(\{ prefix: "a11y-revert-guard-" \}/,
-    "the clone is the value of a buildSandbox call");
-  assert.doesNotMatch(source, /mkdtempSync\(/, "a bare mkdtempSync is a sandbox the helper never sees");
-  assert.match(source, /git", \["clone", "--local", "--no-hardlinks"/,
-    "AND the clone is still there -- a source test that passes because the clone was deleted proves nothing");
 });

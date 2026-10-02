@@ -261,6 +261,9 @@ const RESERVED_BY_A_ROW: readonly RegExp[] = [
   // CHILD 3e (#2621) moves these 33 files out of the tool's own tree into `.agent-org/roles/`, which is
   // already reserved above -- so the FROM side, still named in the Region that filed the move, no longer exists.
   /^packages\/agent-org\/docs\/roles\//,
+  // #2975 (cut-over 4 of 6) DELETES the 72 lab tests that travelled to a11ign/agent-org (each has a same-named test there), so the
+  // Region that named one of them no longer finds it on disk. Listed by name: a misspelt path is still refused.
+  /^packages\/lab\/src\/packaging\/(?:pr-open-region|reconstitution-drill|row-claim-one-row|wake-drain|wake|work-gate)\.test\.ts$/,
 ];
 
 /** The paths each appendix entry's Region lists: the lines of the FIRST fenced block under its `## Region`. */

@@ -291,7 +291,7 @@ test("CALIBRATION: the rule refuses ONE of the Acceptance sections on `main`'s o
   const clean = [
     "npx rstest run --config scripts/rstest/rstest.config.mjs --include packages/lab/src/packaging/acceptance-check-at-filing.test.ts",
     "npm run lab:job -- -e job=acceptance",
-    "npx tsx --test packages/lab/src/packaging/acceptance-commands.test.ts",
+    "npx tsx --test packages/lab/src/packaging/tree-wide-guards.test.ts",
     "node packages/guards/src/tree-wide-guards.mjs",
   ];
   assert.ok(clean.length > 0, "the population this filters must not be empty, or the emptiness below is "

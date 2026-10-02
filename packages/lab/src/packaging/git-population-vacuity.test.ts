@@ -201,20 +201,6 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "--exclude-standard`, since plain `ls-files` is blind to the untracked file most likely to carry "
       + "a fresh leak. Its `ls-files` scrubs `GIT_*` through `sandboxGitEnv()` for the usual reason.",
   },
-  "packages/lab/src/packaging/row-reachability.test.ts": {
-    guard: "available === 0",
-    note: "guarded, and the shape is the INVERSE of every other entry here. The usual guard proves a "
-      + "population non-empty BEFORE asserting over it. This one asks whether the checkout can hold a "
-      + "population AT ALL, and skips the assertion by name when it cannot -- `remoteRefsBesidesMain()` "
-      + "counts remote-tracking refs under `origin/` besides main and HEAD, and `refPopulationVerdict` "
-      + "returns \"skip\" at zero. #1064: the floor it gates (`examined.refs > 0`, #772's, and still "
-      + "right) was asserting against an environment CI does not have -- `actions/checkout` fetches the "
-      + "PR's ref and its base, not the other ~290 `origin/agent/*` -- so `docs` was red on #1057 and "
-      + "#1062 and #1057 MERGED through it. THE READ IS DELIBERATELY A DIFFERENT QUESTION: asking "
-      + "\"are there unmerged refs\" a second way would be asking the function under test. And only the "
-      + "floor is conditional -- #719's own subject, that `environmentKey` is not reported missing, still "
-      + "runs and is asserted with the ref question answered as CI answers it.",
-  },
   "packages/lab/src/packaging/backlog-ready.test.ts": {
     guard: null,
     note: "RETIRED WITH ITS SUBJECT by #907, kept as an entry rather than deleted -- the same convention "
@@ -276,16 +262,6 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "population that could be vacuous is the SOURCE walk for bare `git diff --name-only` sites, and "
       + "the floor counts files read rather than sites found: a clean list is the expected answer there, "
       + "so 'nothing unexplained' and 'the walk opened no files' are otherwise the same observation.",
-  },
-  "packages/lab/src/packaging/survey-helper.test.ts": {
-    guard: 'r1.stdout.includes("TARGET here")',
-    note: "guarded by construction -- #2690's CLI-level test builds its OWN throwaway git working tree "
-      + "(`fixtureRepo`), writes the exact line its two `git grep` calls are asked to find, and then asserts "
-      + "each call's stdout contains that planted line. The grep's own population (what it matched) is "
-      + "therefore non-empty BY CONSTRUCTION and checked directly, the same shape `changed-files-renames."
-      + "test.ts`'s entry above records for its own sandbox repository: a bare content assertion IS the "
-      + "vacuity floor here, because an empty `git grep` result (nothing matched) fails `.includes(...)` "
-      + "immediately rather than passing having examined nothing.",
   },
   "packages/lab/src/packaging/declared-walk-scope.test.ts": {
     guard: null,
@@ -453,15 +429,6 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "argument, floored at 20 against the known census of ~26 (23 real spawns plus 3 files carrying "
       + "documented data-not-a-spawn exemptions)",
   },
-  "packages/lab/src/packaging/merge-guard-checks-rule.test.ts": {
-    guard: "files.length > 200",
-    note: "#1101: joined this classification the day its sweep was written, because this file refused it "
-      + "first. Its `tracked()` enumerates every `packages/*/src/**/*.test.ts` to assert that NO test file "
-      + "imports another -- an emptiness assertion, so it needs exactly what this table exists to require: "
-      + "the quoted floor proves `ls-files` returned a population, and a separate control drives the "
-      + "offender predicate over a source that must produce one. The control came first and was not "
-      + "enough: it proved the PREDICATE could match while nothing proved the LIST was non-empty.",
-  },
   "packages/lab/src/packaging/checkout-dash-safety.test.ts": {
     guard: "files.length > 100",
     note: "#637: joined this classification the same way `git-spawn-classification.test.ts` and every "
@@ -529,14 +496,6 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "`discoversFromTree` finds -- not on the listing, because an empty listing empties it too. The same "
       + "file's set-non-empty test holds the OTHER population, `docsReadingTests` itself, to a floor and "
       + "to the #2329 breaker by name.",
-  },
-  "packages/lab/src/packaging/gh-identity-declared.test.ts": {
-    guard: "population.length >= MEASURED_POPULATION_FLOOR",
-    note: "guarded -- #1984's walk spawns `git ls-files` (via `trackedSourceFiles`) and asks which tracked "
-      + "non-test `.mjs`/`.ts` files transitively reach a `gh` spawn. A clean result here (a real, non-trivial "
-      + "population) is the EXPECTED answer -- this is the row's own positive control against a typo'd glob "
-      + "that matched nothing -- so the floor (a real number, `20`, well under the row's own measured `32`) "
-      + "is what tells a genuine population apart from an empty one that happened to pass vacuously.",
   },
 };
 
