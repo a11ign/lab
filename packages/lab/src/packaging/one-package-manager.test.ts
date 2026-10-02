@@ -231,11 +231,14 @@ function trackedLockfiles(lsFiles: string): string[] {
   return lsFiles.split("\n").filter((path) => LOCKFILE_PATH.test(path));
 }
 
-function trackedIn(root: string): string[] {
+/** Everything `git ls-files` lists in `root`, one path per line. */
+function trackedFiles(root: string): string {
   const run = spawnSync("git", ["ls-files"], { cwd: root, encoding: "utf8", env: sandboxGitEnv() });
   assert.equal(run.status, 0, `git ls-files failed in ${root}: ${run.stderr}`);
-  return trackedLockfiles(run.stdout);
+  return run.stdout;
 }
+
+const trackedIn = (root: string): string[] => trackedLockfiles(trackedFiles(root));
 
 test("a fixture tree with a TRACKED package-lock.json is REFUSED, and so is a shrinkwrap and a nested package's lock", () => {
   withGitSandbox((sandbox) => {
@@ -258,7 +261,10 @@ test("the same lock merely UNTRACKED is not refused, and pnpm-lock.yaml and look
 });
 
 test("the REAL tree tracks neither (and the detector has just been shown to read a tree)", () => {
-  assert.deepEqual(trackedIn(REPO), []);
+  const files = trackedFiles(REPO).split("\n").filter(Boolean);
+  // The emptiness below is controlled twice over: this floor says the listing was read, and the fixture tests above plant a lock and find it.
+  assert.ok(files.length > 1000, `git ls-files listed ${files.length} file(s): the listing is broken, not the tree clean`);
+  assert.deepEqual(trackedLockfiles(files.join("\n")), []);
 });
 
 // ---- both are ignored ------------------------------------------------------------------------------------------------------

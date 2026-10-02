@@ -122,6 +122,12 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "back empty' would be the same observation; the floor on the files read tells them apart, and the positive "
       + "control refuses a planted fixture.",
   },
+  "packages/lab/src/packaging/one-package-manager.test.ts": {
+    guard: "files.length > 1000",
+    note: "guarded -- #2897's lock walks `git ls-files` for a TRACKED npm lockfile. A clean result is the EXPECTED answer, "
+      + "so 'nothing is tracked' and 'the listing came back empty' would be the same observation; the floor on the files "
+      + "listed tells them apart, and the fixture tests plant a tracked lock in a sandbox repository and expect it found.",
+  },
   "packages/lab/src/packaging/pnpm-publish-path.test.ts": {
     guard: "scanned.length > 500",
     note: "guarded -- #2301's walk spawns `git ls-files -- .github scripts packages` and asks whether any "
