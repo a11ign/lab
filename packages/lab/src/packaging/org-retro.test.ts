@@ -12,11 +12,14 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { buildReport, renderReport, retrospectiveDue, retrospectiveOrder, retrospectiveKey, retrospectiveTick, ledgerEntries, ledgerStats,
-  idleStats, journalLines, releaseStats, redPrStats, mergedStats, tokenStats, CLASS_FIX_INSTRUCTION, RETRO_CAUSE, RETRO_DESTINATION, UNKNOWN, LEDGER_ABSENT,
+  idleStats, journalLines, releaseStats, redPrStats, mergedStats, tokenStats, CLASS_FIX_INSTRUCTION, RETRO_CAUSE, RETRO_DESTINATION, UNKNOWN,
   utcDate } from "../../../agent-org/src/org-retro.mjs";
-import { CAUSES, JUDGMENT_CAUSES, START_CAUSES } from "../../../agent-org/src/work-gate.mjs";
+import { isBrokenRed, isHeldRed, HOLD_OWN_JOBS } from "../../../agent-org/src/red-pr.mjs";
+import { readLedger as readHandFixLedger, ledgerLine as handFixLine } from "../../../agent-org/src/hand-fix-ledger.mjs";
+import { CAUSES, JUDGMENT_CAUSES, START_CAUSES, HOLD_RED_JOBS } from "../../../agent-org/src/work-gate.mjs";
 import { PROFILES } from "../../../agent-org/src/worker-profile.mjs";
 
 const HOUR_MS = 3_600_000;
@@ -24,6 +27,11 @@ const NOW = Date.parse("2026-10-02T00:00:00Z");
 const SINCE = NOW - 24 * HOUR_MS; // 2026-10-01T00:00:00Z
 const WINDOW = { since: SINCE, until: NOW };
 const at = (iso: string) => Date.parse(iso);
+
+/** One merged change a human account authored, inside the ledger's 14-day window ending at NOW: the ledger's own reading of it is a count of 1. */
+const HUMAN_CHANGE = { key: "pr:2883", number: 2883, title: "a hand fix", at: "2026-09-30T12:00:00Z", author: "DanBeckDev", actors: ["DanBeckDev"], body: "" };
+const HAND_FIXES_ONE = readHandFixLedger({ read: () => [HUMAN_CHANGE], now: new Date(NOW) });
+const HAND_FIXES_REFUSED = readHandFixLedger({ read: () => { throw new Error("gh: HTTP 403"); }, now: new Date(NOW) });
 
 // --- the journal fixture: `journalctl -o short-iso`, one tick = systemd's start line + the node lines --------------------------------------------
 
@@ -101,8 +109,106 @@ const OPEN_PRS = [
 
 test("red-PR age: from the earliest failing check of its NEWEST run per name; median, max and which PR", () => {
   const red = redPrStats(OPEN_PRS, NOW);
-  assert.deepEqual(red, { count: 2, medianMinutes: 75, oldest: { number: 10, minutes: 120 } }, "(120 + 30) / 2 = 75; #11's re-run passed and #13 is running");
-  assert.deepEqual(redPrStats([], NOW), { count: 0, medianMinutes: null, oldest: null });
+  assert.deepEqual(red, { count: 2, medianMinutes: 75, oldest: { number: 10, minutes: 120 }, held: [] }, "(120 + 30) / 2 = 75; #11's re-run passed and #13 is running");
+  assert.deepEqual(redPrStats([], NOW), { count: 0, medianMinutes: null, oldest: null, held: [] });
+});
+
+// --- #2954: a PR red ON PURPOSE is not a broken one, and the hand-fix line is a reading, not a file ------------------------------------------------
+
+const labelled = (labels: string[], checks: ReturnType<typeof check>[]) => ({ number: 2883, labels: labels.map((name) => ({ name })), statusCheckRollup: checks });
+const HOLD = "hold:product-manager";
+const holdsOwnRed = [check("deliberateRefusals", "FAILURE", "2026-10-01T18:27:00Z"), check("gate", "FAILURE", "2026-10-01T18:30:00Z"), check("ts / run", "SUCCESS", "2026-10-01T18:20:00Z")];
+
+test("isBrokenRed: a hold's own two red jobs are HELD, not red; a real red beside a hold IS red; a red deliberateRefusals with no hold IS red", () => {
+  const held = labelled([HOLD], holdsOwnRed);
+  assert.equal(isBrokenRed(held), false, "#2883's shape: held, and red only in the hold's own jobs");
+  assert.equal(isHeldRed(held), true, "and it is reported as held, not dropped");
+  const heldWithRealRed = labelled([HOLD], [...holdsOwnRed, check("ts / run", "FAILURE", "2026-10-01T19:00:00Z")]);
+  assert.equal(isBrokenRed(heldWithRealRed), true, "the hold does not hide a real failure (the newest `ts / run` is the red one)");
+  assert.equal(isHeldRed(heldWithRealRed), false, "a PR is on one line or the other, never both");
+  const raceNotHold = labelled(["session:worker-1"], [check("deliberateRefusals", "FAILURE", "2026-10-01T19:00:00Z"), check("gate", "FAILURE", "2026-10-01T19:01:00Z")]);
+  assert.equal(isBrokenRed(raceNotHold), true, "a head-vs-tip race (#294) fails the same job with no hold, and that is broken");
+  assert.equal(isHeldRed(raceNotHold), false);
+  assert.equal(isBrokenRed(labelled([HOLD], [check("ts / run", "SUCCESS", "2026-10-01T19:00:00Z")])), false, "a held PR that is green is neither");
+  assert.equal(isHeldRed(labelled([HOLD], [check("ts / run", "SUCCESS", "2026-10-01T19:00:00Z")])), false, "...so the held line is for held RED PRs");
+});
+
+test("the hold's two jobs are the jobs ci.yml defines, and the same two the gate's own exemption uses", () => {
+  const ci = readFileSync(new URL("../../../../.github/workflows/ci.yml", import.meta.url), "utf8");
+  assert.deepEqual([...HOLD_OWN_JOBS], [...HOLD_RED_JOBS], "red-pr.mjs is a leaf and cannot import pr-orders.mjs, so the copy is pinned here");
+  for (const job of HOLD_OWN_JOBS) assert.match(ci, new RegExp(`\\n {2}${job}:\\n`), `${job} is a job in ci.yml`);
+  const from = ci.indexOf("\n  deliberateRefusals:\n");
+  const next = ci.slice(from + 1).search(/\n {2}[\w-]+:\n/);
+  assert.match(ci.slice(from, from + 1 + next), /merge-guard\.mjs --ci-gate/, "the job that runs the hold refusal is deliberateRefusals");
+});
+
+test("redPrStats counts the broken and LISTS the held, with who holds it; the report prints both lines", () => {
+  const prs = [{ ...labelled([HOLD], holdsOwnRed), number: 2883 }, { ...OPEN_PRS[2], labels: [] }];
+  const red = redPrStats(prs, NOW)!;
+  assert.equal(red.count, 1, "#12 is red and unheld; #2883 is held");
+  assert.deepEqual(red.held, [{ number: 2883, holders: [HOLD], minutes: 333 }], "red since 18:27 = 5h33m = 333 min, from the hold's own earliest failure");
+  const text = renderReport(buildReport({ merged: MERGED, openPrs: prs, journal: JOURNAL, ledger: LEDGER, turns: TURNS, handFixes: HAND_FIXES_ONE }, NOW));
+  assert.match(text, /Red PRs now: 1; age median 30m, max 30m \(#12\)/);
+  assert.match(text, /Red PRs held on purpose \(not counted above\): 1: #2883 \(hold:product-manager, red 5h33m\)/);
+  const heldOnly = renderReport(buildReport({ merged: MERGED, openPrs: [prs[0]], journal: JOURNAL, ledger: LEDGER, turns: TURNS, handFixes: HAND_FIXES_ONE }, NOW));
+  assert.match(heldOnly, /Red PRs now: 0\n/, "a held PR alone is a real zero of broken PRs");
+  assert.match(heldOnly, /held on purpose[^\n]*#2883/);
+});
+
+test("the hand-fix line is the ledger's own: one human-authored change prints 1, a refused read prints UNKNOWN and never 0", () => {
+  const counted = renderReport(buildReport({ merged: MERGED, openPrs: [], journal: JOURNAL, ledger: LEDGER, turns: TURNS, handFixes: HAND_FIXES_ONE }, NOW));
+  assert.match(counted, /^- HAND FIXES \(last 14d, target 0\): 1 \(1 derived, 0 declared, 0 both\) of 1 changes, 1 of them PRs a human account authored/m);
+  assert.doesNotMatch(counted, /ledger absent/, "the line the report printed on every day until #2954");
+  const refused = renderReport(buildReport({ merged: MERGED, openPrs: [], journal: JOURNAL, ledger: LEDGER, turns: TURNS, handFixes: HAND_FIXES_REFUSED }, NOW));
+  assert.match(refused, /^- HAND FIXES \(last 14d, target 0\): UNKNOWN -- the read was refused \(gh: HTTP 403\)\. This is not zero\./m);
+  assert.ok(refused.includes(`- ${handFixLine(HAND_FIXES_REFUSED)}`));
+  assert.doesNotMatch(refused, /HAND FIXES[^\n]*: 0\b/);
+});
+
+// --- THE CLASS: every file the report reads from the state directory is a file somebody writes ---------------------------------------------------
+
+const AGENT_ORG_SRC = new URL("../../../agent-org/src/", import.meta.url);
+/** The scan's own subject: it reads files and is not the writer it looks for. Excluded in CODE, here, and not by an entry in a list it also matches. */
+const SELF = "org-retro.mjs";
+const WRITE_CALL = /\b(writeFileSync|appendFileSync|renameSync)\(/;
+
+/** Comments removed, so a name that survives only in a header ("until the sibling row lands") is not a reader and not a writer. */
+const code = (source: string) => source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/.*$/gm, "$1");
+
+/** Every `${stateDir}/<name>` (or `${dir}/<name>`) a source reads. */
+function stateFilesRead(source: string): string[] {
+  return [...new Set([...code(source).matchAll(/\$\{\w+\}\/([a-z][\w.-]*)/g)].map((m) => m[1]))];
+}
+
+function sourceFiles(dir: URL): { name: string; text: string }[] {
+  return readdirSync(dir, { withFileTypes: true, recursive: true })
+    .filter((e) => e.isFile() && e.name.endsWith(".mjs") && e.name !== SELF)
+    .map((e) => ({ name: e.name, text: readFileSync(join(e.parentPath, e.name), "utf8") }));
+}
+
+/** The names with no writer: no other source file names the file in code AND calls a write function. */
+function readButNeverWritten(names: string[], writers: { text: string }[]): string[] {
+  return names.filter((name) => !writers.some((w) => code(w.text).includes(name) && WRITE_CALL.test(code(w.text))));
+}
+
+test("every file org-retro.mjs reads from the state directory is written by some module in agent-org (#2954)", () => {
+  const source = readFileSync(new URL(SELF, AGENT_ORG_SRC), "utf8");
+  const writers = sourceFiles(AGENT_ORG_SRC);
+  const read = stateFilesRead(source);
+  assert.ok(read.includes("wake-ledger"), "POSITIVE CONTROL: the scan finds the wake ledger, so the population is not empty");
+  assert.deepEqual(readButNeverWritten(["wake-ledger"], writers), [], "POSITIVE CONTROL: and the writer search finds wake.mjs writing it");
+  assert.deepEqual(readButNeverWritten(read, writers), [], `read from the state directory and never written: ${readButNeverWritten(read, writers).join(", ")}`);
+});
+
+test("the scan notices the fault it exists for, and stops complaining when it is remedied", () => {
+  const source = readFileSync(new URL(SELF, AGENT_ORG_SRC), "utf8");
+  const writers = sourceFiles(AGENT_ORG_SRC);
+  const restored = `${source}\nconst x = readText(\`\${stateDir}/hand-fix-ledger\`);\n`;
+  assert.deepEqual(readButNeverWritten(stateFilesRead(restored), writers), ["hand-fix-ledger"], "the read #2954 removed, restored, goes red");
+  const written = [...writers, { name: "fixture.mjs", text: 'appendFileSync(`${dir}/hand-fix-ledger`, "x");' }];
+  assert.deepEqual(readButNeverWritten(stateFilesRead(restored), written), [], "a writer for it, and the scan stops complaining");
+  const commentOnly = [...writers, { name: "fixture.mjs", text: '// hand-fix-ledger\nwriteFileSync(other, "x");' }];
+  assert.deepEqual(readButNeverWritten(stateFilesRead(restored), commentOnly), ["hand-fix-ledger"], "a name only in a comment is not a writer");
 });
 
 const TURNS = [
@@ -113,36 +219,36 @@ const TURNS = [
 
 test("tokens: every token the model handled in the window, cache reads included, per merged PR", () => {
   assert.deepEqual(tokenStats(TURNS, WINDOW), { turns: 2, total: 1100 });
-  const report = buildReport({ merged: MERGED, openPrs: OPEN_PRS, journal: JOURNAL, ledger: LEDGER, turns: TURNS, handFixLedger: "absent" }, NOW);
+  const report = buildReport({ merged: MERGED, openPrs: OPEN_PRS, journal: JOURNAL, ledger: LEDGER, turns: TURNS, handFixes: HAND_FIXES_ONE }, NOW);
   assert.match(renderReport(report), /Tokens per merged PR: 367 \(1,100 tokens over 2 turns/, "1,100 / 3 merged = 366.67");
 });
 
 // --- the whole report from the fixture window ------------------------------------------------------------------------------------------------------
 
 test("the report computes each number from the fixture window with its hand-checked answer", () => {
-  const text = renderReport(buildReport({ merged: MERGED, openPrs: OPEN_PRS, journal: JOURNAL, ledger: LEDGER, turns: TURNS, handFixLedger: "absent" }, NOW));
+  const text = renderReport(buildReport({ merged: MERGED, openPrs: OPEN_PRS, journal: JOURNAL, ledger: LEDGER, turns: TURNS, handFixes: HAND_FIXES_ONE }, NOW));
   assert.match(text, /PRs merged: 3; median open-to-merge 30m/);
   assert.match(text, /Idle minutes while a claimable row existed: 6 \(3 of 5 ticks/);
   assert.match(text, /Stalls \(org-stalled wakes\): 2; claim-stalled wakes: 1/);
   assert.match(text, /voidings .*: 3 \(gone x2, blocked x1\)/);
   assert.match(text, /org-health offers by signal: merge-gap x2, red-age x1/);
   assert.match(text, /Red PRs now: 2; age median 1h15m, max 2h00m \(#10\)/);
-  assert.match(text, new RegExp(`Hand fixes by the chairman's session: ${LEDGER_ABSENT}`), "until the sibling ledger exists the line says so");
+  assert.ok(text.includes(`- ${handFixLine(HAND_FIXES_ONE)}`), "the hand-fix line is the ledger's own line, verbatim (the next test pins what it says)");
   assert.doesNotMatch(text, /STALL: no PR merged/, "three merged is not a stall");
 });
 
 test("an unreadable source prints `unknown`, never 0 -- and never a stall", () => {
-  const text = renderReport(buildReport({ merged: null, openPrs: null, journal: null, ledger: null, turns: null, handFixLedger: null }, NOW));
+  const text = renderReport(buildReport({ merged: null, openPrs: null, journal: null, ledger: null, turns: null, handFixes: null }, NOW));
   for (const label of ["PRs merged", "Idle minutes while a claimable row existed", "Stalls \\(org-stalled wakes\\)", "voidings", "org-health offers by signal",
-    "Red PRs now", "Tokens per merged PR", "Hand fixes by the chairman's session"]) {
-    assert.match(text, new RegExp(`${label}[^\\n]*: ${UNKNOWN}`), `${label} must read unknown`);
+    "Red PRs now", "Tokens per merged PR", "HAND FIXES"]) {
+    assert.match(text, new RegExp(`${label}[^\\n]*: ${UNKNOWN}`, "i"), `${label} must read unknown`);
   }
   assert.doesNotMatch(text, /STALL/, "an unreadable merged list is not a window with no merges");
   assert.doesNotMatch(text, /: 0\b/, "no refused read may print as a zero");
 });
 
 test("zero merges with a PR list that READ fine, and zero tokens-per-PR, never divides by zero", () => {
-  const text = renderReport(buildReport({ merged: [], openPrs: [], journal: JOURNAL, ledger: LEDGER, turns: TURNS, handFixLedger: "absent" }, NOW));
+  const text = renderReport(buildReport({ merged: [], openPrs: [], journal: JOURNAL, ledger: LEDGER, turns: TURNS, handFixes: HAND_FIXES_ONE }, NOW));
   assert.match(text, /Tokens per merged PR: n\/a, no PR merged/);
   assert.match(text, /Red PRs now: 0/, "a list that read and holds no red PR is a real zero");
 });
@@ -154,7 +260,7 @@ test("POSITIVE CONTROL: the 2026-10-01 window (zero merges, #2824 refused for 21
   const ticks = Array.from({ length: TICKS }, (_, i) =>
     tick(`2026-10-01T${String(Math.floor((i * 2) / 60)).padStart(2, "0")}:${String((i * 2) % 60).padStart(2, "0")}:00+00:00`,
       ["UNDELIVERED engineers/ready-row-unclaimed/2824: --worktree=../wt-2824 ALREADY EXISTS, stamped by `worker-2824`"]));
-  const text = renderReport(buildReport({ merged: [], openPrs: [], journal: ticks.join("\n"), ledger: "", turns: [], handFixLedger: "absent" }, NOW));
+  const text = renderReport(buildReport({ merged: [], openPrs: [], journal: ticks.join("\n"), ledger: "", turns: [], handFixes: HAND_FIXES_ONE }, NOW));
   assert.match(text, /PRs merged: 0/);
   assert.match(text, /STALL: no PR merged in the window; a claimable row waited 422 idle minutes through it/, "211 ticks x 2 minutes");
   assert.match(text, /Idle minutes while a claimable row existed: 422 \(211 of 211 ticks/);
@@ -165,7 +271,7 @@ test("POSITIVE CONTROL: the 2026-10-01 window (zero merges, #2824 refused for 21
 const OFFER_NOW = at("2026-10-02T01:00:00Z");
 const LATER_SAME_DATE = at("2026-10-02T17:30:00Z");
 const NEXT_DATE = at("2026-10-03T00:05:00Z");
-const fixtureRead = () => ({ merged: [], openPrs: [], journal: "", ledger: "", turns: [], handFixLedger: "absent" as const });
+const fixtureRead = () => ({ merged: [], openPrs: [], journal: "", ledger: "", turns: [], handFixes: HAND_FIXES_ONE });
 
 test("the order is keyed on the UTC DATE: one key for the whole day, a new one at the next midnight", () => {
   assert.equal(retrospectiveKey("2026-10-02"), "ceo/org-retrospective/2026-10-02");
