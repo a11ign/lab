@@ -50,7 +50,7 @@ import { calibrationEntries } from "../src/training/real-page-selection.mjs";
 import { refuseUnusableEntries, refusalLines } from "../src/capture/evidence-diff.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { captureProtocolCensus } from "../src/training/capture-protocol-census.mjs";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { REPO_ROOT, realCorpusRoot, abstentionRoot, abstentionSweepPath, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
 /**

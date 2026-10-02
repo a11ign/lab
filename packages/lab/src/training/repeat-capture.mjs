@@ -26,7 +26,7 @@ import { captureTolerantly } from "../../../worker-fleet/src/capture-client.mjs"
 import { workerIsUsable } from "../../../worker-fleet/src/worker-health.mjs";
 import { assertWorkerUrl } from "../../../worker-fleet/src/worker-http.mjs";
 import { captureIsSelfConsistent } from "@a11ign/evidence/verify";
-import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
 import { repeatCapturesRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 import { wakeNamedWorkers } from "./wake-by-hand.mjs";
 import { EVIDENCE_FIELDS, fieldKey, fieldValues } from "../capture/evidence-diff.mjs";

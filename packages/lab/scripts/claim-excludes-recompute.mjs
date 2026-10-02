@@ -33,7 +33,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { posix, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 
 import { sandboxGitEnv } from "../../guards/src/git-env.mjs";
 import { floorRows } from "./calibrate-abstention.mjs";

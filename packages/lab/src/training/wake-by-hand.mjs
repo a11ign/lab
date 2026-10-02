@@ -18,7 +18,7 @@
  * answers `already-up` on the first probe and is sent nothing: nothing here can wake a box twice.
  */
 import { wakeFleet, wakeFailed, wakeReportLine } from "@a11ign/control/fleet-wake";
-import { requestJson } from "@a11ign/worker-fleet/worker-http";
+import { requestJson } from "@a11ign/screenreader-fleet/worker-http";
 
 /**
  * @param {string} url
