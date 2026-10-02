@@ -22,12 +22,15 @@ import { scopesOf, readLanes, scopeTick } from "../../../agent-org/src/work-gate
 import { ownerOfPr } from "../../../agent-org/src/work-gate/pr-orders.mjs";
 import { lookupOpenPrFiles } from "../../../agent-org/src/row-claim/file-overlap-rule.mjs";
 import { deliver, noReviewCheckoutFor, prepareReviewCheckout, removeReviewCheckout, reviewCloneOf, reviewerEnvironment,
-  linkKeyedDependencies, withReviewCheckout, REPO_ROOT } from "../../../agent-org/src/wake.mjs";
+  linkKeyedDependencies, withReviewCheckout, repointedForReviewer, REPO_ROOT } from "../../../agent-org/src/wake.mjs";
 
 const SESSION = "reviewer-agent-org-6";
 const CLONE = "/home/agent/repos/agent-org";
 /** The refusal of a `{ clone } | { refusal }` answer, or `undefined` when it was a clone. */
 const refusalOf = (answer: { clone: string } | { refusal: string }) => ("refusal" in answer ? answer.refusal : undefined);
+/** A host declaration `host-config.mjs` accepts, with `extra` laid over it: `reviewCloneOf` reads through that reader (#2991), so a bare `{ clones }` is no host file. */
+const hostFile = (extra: Record<string, unknown>) => JSON.stringify({ schema: 1, home: "/h", binDir: "/h/bin", primary: "p",
+  projects: [{ id: "p", checkout: "/h/p" }], gh: { workers: "/h/w", leads: "/h/l", leadsHeader: [], leadsWorkspaces: [] }, ...extra });
 
 // --- (1) THE POPULATION, FROM THE API ---------------------------------------------------------------------------------------------
 
@@ -149,9 +152,11 @@ test("(2) `noReviewCheckoutFor` is `null` for a declared key whose clone the hos
   // NEGATIVE: a key the project does not declare is refused even though the host would happily name a clone for it ...
   assert.match(String(noReviewCheckoutFor("reviewer-other-7")), /no review checkout for "reviewer-other-7": the project declares no code repository for key `other`.*WRONG repository's pull request/);
   // ... and a declared key the host gives NO clone is refused by name, never answered with the primary's checkout.
-  assert.match(String(refusalOf(reviewCloneOf("agent-org", { path: "/h.json", read: (() => JSON.stringify({ clones: {} })) as never }))), /declares no absolute `clones.agent-org` path/);
+  assert.match(String(refusalOf(reviewCloneOf("agent-org", { path: "/h.json", read: (() => hostFile({ clones: {} })) as never }))), /declares no absolute `clones.agent-org` path/);
   assert.match(String(refusalOf(reviewCloneOf("agent-org", { path: "/h.json", read: (() => { throw new Error("ENOENT"); }) as never }))), /cannot be read as the host declaration/);
-  assert.match(String(refusalOf(reviewCloneOf("agent-org", { path: "/h.json", read: (() => JSON.stringify({ clones: { "agent-org": "relative/path" } })) as never }))), /declares no absolute/);
+  assert.match(String(refusalOf(reviewCloneOf("agent-org", { path: "/h.json", read: (() => hostFile({ clones: { "agent-org": "relative/path" } })) as never }))), /cannot be read as the host declaration .*`clones.agent-org` it must be an absolute path/);
+  assert.match(String(refusalOf(reviewCloneOf("constructor", { path: "/h.json", read: (() => hostFile({ clones: {} })) as never }))), /declares no absolute `clones.constructor` path/,
+    "an inherited property is not a declared clone");
 });
 
 test("(2) the checkout is fetched from the DECLARED CLONE into a keyed ref, never from `origin` of the primary", () => {
@@ -182,6 +187,23 @@ test("(2) a keyed tree links no `packages/`: a clone with no `node_modules` need
   assert.deepEqual(made, [], "nothing to link");
   assert.equal(linkKeyedDependencies({ path: "/t", repoRoot: "/c", fs: fs(["left-pad", ".cache", ".bin"]) as never }), null);
   assert.deepEqual(made, ["/t/node_modules/left-pad -> /c/node_modules/left-pad", "/t/node_modules/.bin -> /c/node_modules/.bin"], "`.cache` is skipped, as it is for the primary");
+});
+
+test("#2991: a live KEYED reviewer is re-pointed to the pull request's current head, from the clone into the keyed ref", () => {
+  const git = fakeGit();
+  const { prompt } = repointedForReviewer({ session: SESSION, prompt: "Pushed a fix." }, git.seams);
+  const fetched = git.calls.find((args) => args.includes("fetch"));
+  // POSITIVE CONTROL: a fetch was made, or the assertions on its absence below could never have failed.
+  assert.deepEqual(fetched, ["-C", CLONE, "fetch", "--quiet", "origin", "+refs/pull/6/head:refs/review/agent-org/pr-6"]);
+  assert.match(prompt, /^Pushed a fix\./);
+  assert.match(prompt, new RegExp(`Your checkout of #6, \`/reviews-root/${SESSION}\`, has just been re-pointed to the pull request's current head \`${HEAD.slice(0, 8)}\``));
+  assert.equal(git.calls.filter((args) => args[1] === REPO_ROOT).length, 0, "the primary's checkout is never asked");
+});
+
+test("#2991: an UNDECLARED key is returned unchanged and nothing is fetched", () => {
+  const none = fakeGit();
+  assert.deepEqual(repointedForReviewer({ session: "reviewer-other-6", prompt: "p" }, none.seams), { prompt: "p" });
+  assert.deepEqual(none.calls, [], "nothing is fetched for the wrong repository");
 });
 
 // --- (3) THE DOOR -----------------------------------------------------------------------------------------------------------------
