@@ -208,6 +208,12 @@ const EXEMPT: Record<string, string> = {
     + "dataset-paths.mjs in any case: that destination is the PLAYBOOK's rule rather than the dataset's, "
     + "and @a11ign/agent-org declares no dependencies at all, the same direction fleet-watch.mjs is "
     + "exempted for one package along.",
+  "packages/agent-org/src/work-gate.mjs":
+    "#2980: names runs/fleet-captures-state.json to READ the ledger fleet-watch.mjs writes (#2979), the same file "
+    + "fleet-watch.mjs and fleet-auto-off.mjs above are exempted for. It cannot import dataset-paths.mjs: "
+    + "@a11ign/agent-org may not import the product tree (agent-org-outward-edges.test.ts, #2658), and the "
+    + "ledger is a tiny local file under the project checkout, not a dataset root this module owns. "
+    + "org-health-fleet-wiring.test.ts runs the reader over the writer's own ledger, so the name is pinned.",
   "packages/lab/src/packaging/acceptance-check-at-filing.test.ts":
     "#1973: the same literals, as the expected VALUES the refusal above must name -- a test that read "
     + "them from dataset-paths.mjs would be asserting the checker against its own source and could not "
