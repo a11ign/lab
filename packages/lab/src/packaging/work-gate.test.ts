@@ -4634,7 +4634,9 @@ test("#2174: the history-requirement population is unchanged by this row", () =>
   // declares `History: full`.
   // #3046 REMOVED `pre-push-stale-base.test.ts`: it reached a history reader only through its REAL ARTEFACT case (the shallow-checkout question
   // about a pinned sha), which went with the refusal it reproduced; the rewritten file has no such edge.
-  assert.deepEqual(charged, ["documents-extraction.test.ts", "host-project-paths.test.ts", "host-tool-install.test.ts", "host-units.test.ts",
+  // #2975 (cut-over 4 of 6) DELETED `host-project-paths.test.ts`, `host-tool-install.test.ts` and `host-units.test.ts` from this directory: each has a
+  // same-named test in a11ign/agent-org, which now carries the `host-units.mjs` edge above. The set SHRANK by those three and nothing JOINED it.
+  assert.deepEqual(charged, ["documents-extraction.test.ts",
     "pre-push-resolve-toward-main.test.ts", "shadow-window-arm.test.ts", "work-gate.test.ts"],
   "adding a `history` reader to the gate's import closure taxes every test file that reaches it -- if "
   + "this list grew, check what was imported rather than editing the list");
