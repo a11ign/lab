@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { relative, resolve } from "node:path";
 import { CASES } from "./case-matrix.mjs";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 
 /**

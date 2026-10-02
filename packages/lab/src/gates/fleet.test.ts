@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 
 import { gateWorkers, acrossFleet, fleetVerdict, renderShards } from "./fleet.mjs";
-import { inventoryWorkerUrls } from "@a11ign/worker-fleet/fleet-env";
+import { inventoryWorkerUrls } from "@a11ign/screenreader-fleet/fleet-env";
 
 // The real inventory.yml is gitignored (real addresses, restored from the secrets store at bring-up), so
 // this reads inventory.example.yml instead -- INJECTED through `gateWorkers`'s `inventory` seam rather

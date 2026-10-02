@@ -36,7 +36,7 @@ import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { captureSupports, consentBanner } from "@a11ign/evidence/verify";
 import { datasetRoot, captureRoot, realCorpusRoot, repeatCapturesRoot } from "../src/dataset-paths.mjs";
 // "What did it ask?" lives in a module with NO imports (#343), so its test runs where CI's acceptance job

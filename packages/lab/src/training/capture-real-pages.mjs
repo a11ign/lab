@@ -24,24 +24,24 @@ import { pathToFileURL } from "node:url";
 
 import { capturablePages, isRecordedRefusal, pagesFor, REAL_PAGES } from "./real-page-corpus.mjs";
 import { parseShard, shardOf } from "./shard.mjs";
-import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11ign/worker-fleet/worker-http";
-import { workerIsUsable } from "@a11ign/worker-fleet/health";
-import { configuredWorkers, inventoryWorkerUrls } from "@a11ign/worker-fleet/fleet-env";
+import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS, assertWorkerUrl } from "@a11ign/screenreader-fleet/worker-http";
+import { workerIsUsable } from "@a11ign/screenreader-fleet/health";
+import { configuredWorkers, inventoryWorkerUrls } from "@a11ign/screenreader-fleet/fleet-env";
 import { leasePageServer } from "./page-server.mjs";
 import { realCorpusRoot, datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
-import { hostAddressForWorker } from "@a11ign/worker-fleet";
+import { hostAddressForWorker } from "@a11ign/screenreader-fleet";
 import { assertOneBrowserAcross as refuseSplitFleet } from "./capture-fleet-guard.mjs";
-import { assertFleetRunsThisCheckout } from "@a11ign/worker-fleet/worker-code-check";
+import { assertFleetRunsThisCheckout } from "@a11ign/screenreader-fleet/worker-code-check";
 import { wakeNamedWorkers, survivingNamedWorkers } from "./wake-by-hand.mjs";
 import { drainAcrossPool } from "./worker-pool.mjs";
 import { createHostThrottle, hostOf } from "./host-throttle.mjs";
 import { writeJsonAtomic } from "./write-atomic.mjs";
-import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
 import { beginRun } from "./capture-progress.mjs";
 import { resumePlan, describeResume } from "./real-page-resume.mjs";
 import { discoverRoles, roleCoverageLine } from "./real-page-role-coverage.mjs";
 import { identityChecksFor, servedRequestedPageLine } from "./real-page-identity-summary.mjs";
-import { captureTolerantly } from "@a11ign/worker-fleet/capture-client";
+import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
 // BY CODE, not the literal string — architecture-audit.md §5, item 4. `capture-faults.mjs` has no
 // imports of its own, so it is safe from any portable tree; a renamed fault must not be able to make
 // this branch silently stop firing.

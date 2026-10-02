@@ -91,7 +91,7 @@ function zeroMajorViolations({ changesets, versions }: { changesets: Changeset[]
 }
 
 const SEVEN = ["@a11ign/evidence", "@a11ign/judge", "@a11ign/screenreader-worker", "@a11ign/documents", "@a11ign/scorer",
-  "@a11ign/worker-fleet", "a11ign"];
+  "@a11ign/screenreader-fleet", "a11ign"];
 
 test("#1396 THE LIVE TREE: no pending major on a 0.x package, and every unpublished package's first release is a minor", () => {
   const changesets = pendingChangesets();

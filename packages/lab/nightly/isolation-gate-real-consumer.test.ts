@@ -61,7 +61,7 @@ import { checkIsolation, allPackages } from "../../guards/src/isolation-gate.mjs
 
 test("every bin the six published packages declare is reachable in a real consumer install", () => {
   // The population, derived rather than typed: this is the assertion that would have caught the live
-  // defect #1139 found -- all five of `@a11ign/worker-fleet`'s bins pointed at a file that does not exist,
+  // defect #1139 found -- all five of `@a11ign/screenreader-fleet`'s bins pointed at a file that does not exist,
   // and the gate returned `ok: true`, because npm creates no shim, silently, for a target it never
   // received. Slow on purpose: six real packs and installs, which is why it is here and not on the PR path.
   const packages = allPackages();

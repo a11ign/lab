@@ -52,7 +52,7 @@ import { pathToFileURL } from "node:url";
 import { resolve, join } from "node:path";
 
 import { annotateCapture } from "@a11ign/evidence";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { REPO_ROOT, datasetRoot, captureRoot } from "../src/dataset-paths.mjs";
 
 /**

@@ -187,7 +187,7 @@ const NINE_TARGETS = [
 test("#2658 control: over a tree in the shape of 46b59abf0 the walk finds exactly the nine targets", () => {
   const importers: Record<string, string> = {
     "packages/agent-org/src/a.mjs": 'import { f } from "../../worker-fleet/src/cli-flags.mjs";\nimport { g } from "../../guards/src/git-env.mjs";\n',
-    "packages/agent-org/src/b.mjs": 'import { f } from "@a11ign/worker-fleet/cli-flags";\nimport { r } from "../../../scripts/repo-identity.mjs";\n',
+    "packages/agent-org/src/b.mjs": 'import { f } from "@a11ign/screenreader-fleet/cli-flags";\nimport { r } from "../../../scripts/repo-identity.mjs";\n',
     "packages/agent-org/src/merge-guard/c.mjs": 'import { l } from "../../../lab/src/packaging/leak-patterns.mjs";\nimport { c } from "../../../guards/src/changed-files.mjs";\n',
     "packages/agent-org/src/row-claim/d.mjs": 'import { c } from "../../../guards/src/local-import-closure.mjs";\nimport { w } from "../../../guards/src/worktree-resolution.mjs";\n',
     "packages/agent-org/src/work-gate/e.mjs": 'import { n } from "../../../../scripts/npm-cli-executable.mjs";\nimport { p } from "../../../../scripts/product-home.mjs";\n',

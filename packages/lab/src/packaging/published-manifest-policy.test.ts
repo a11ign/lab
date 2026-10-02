@@ -73,7 +73,7 @@ test("the published population is non-empty and is the one the isolation gate in
   assert.deepEqual(
     published.map((p) => p.name).sort(),
     ["@a11ign/documents", "@a11ign/evidence", "@a11ign/judge", "@a11ign/scorer", "@a11ign/screenreader-worker",
-      "@a11ign/worker-fleet", "a11ign"],
+      "@a11ign/screenreader-fleet", "a11ign"],
     "the published set changed -- if that is intended, this list is where it is recorded");
 });
 

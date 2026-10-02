@@ -36,12 +36,12 @@ import { titleOf } from "@a11ign/evidence/verify";
 import { leasePageServer } from "../src/training/page-server.mjs";
 import { nonAuthoritativeHostNotice } from "../src/training/capture-host.mjs";
 import { hasUsableCaptureFiles } from "../src/training/capture-resume.mjs";
-import { hostPagesBase } from "@a11ign/worker-fleet/host-address";
-import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "@a11ign/worker-fleet/worker-http";
-import { workerIsUsable } from "@a11ign/worker-fleet/health";
+import { hostPagesBase } from "@a11ign/screenreader-fleet/host-address";
+import { requestJson, CAPTURE_CLIENT_TIMEOUT_MS } from "@a11ign/screenreader-fleet/worker-http";
+import { workerIsUsable } from "@a11ign/screenreader-fleet/health";
 import { drainAcrossPool } from "../src/training/worker-pool.mjs";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
-import { captureTolerantly } from "@a11ign/worker-fleet/capture-client";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
+import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
 // #958: the three-direction manifest check every verdict reader shares.
 import { assertManifestMatchesCases } from "../src/training/manifest-matches-cases.mjs";
 // #2197: a crash and a CHANGED verdict no longer share an exit code. A leaf module, so a test can read the
