@@ -24,9 +24,10 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SHIPPED_DIR, TOOL_ENTRIES, hostUnitsInstall, shippedUnitText, shippedUnits } from "../../../agent-org/src/host-units.mjs";
+import { SHIPPED_DIR, TOOL_ENTRIES, hostUnitsInstall, shippedUnitText as real_shippedUnitText, shippedUnits } from "../../../agent-org/src/host-units.mjs";
 import { HARD_STOP_MS, WINDOW_TICKS, armWindow, readRecordRows, readWindowMarker, ticksRecorded, windowTick } from "../../../agent-org/src/shadow-window.mjs";
 import { SHADOW_WINDOW_MARKER, tapShadowReads } from "../../../agent-org/src/shadow-reads.mjs";
+import { homeHostConfig } from "../../../agent-org/src/host-config.mjs";
 import { sandboxGitEnv } from "../../../agent-org/src/lib/git-env.mjs";
 
 const RUNNER = fileURLToPath(new URL("../../../agent-org/src/shadow-window.mjs", import.meta.url));
@@ -37,7 +38,17 @@ const T0 = Date.parse("2026-10-02T12:00:00Z");
 const TIMER = "a11ign-shadow-window.timer";
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 /** The digest of the work-tick unit the host runs today, restated from `host-tool-install.test.ts` so this file's claim is checkable alone. */
-const TODAYS_WORK_TICK_SHA = "b566128df67e75cf012540a9aa8d75a7d9a2fb91d32e12ad901f7b8bce8a171e";
+const TODAYS_WORK_TICK_SHA = "1c388b269625507de8067d4620f3bd5a92dd7f94ea06a21516b18061352aa7dd"; // #2974: the pnpm line; the plain rendering, see `plainHost`
+/** a11ign's host with no `tool`, so the digest above is of the template whether or not the cut has set the key. */
+const plainHost = (() => {
+  const plain: Record<string, unknown> = { ...homeHostConfig() };
+  delete plain.tool;
+  return Object.freeze(plain);
+})() as never;
+
+/** `shippedUnitText` on the plain host by default: with `tool` set it reads the host's ABSOLUTE `checkout`, which no CI runner has (#3027). */
+const shippedUnitText = (unit: string, deps: Record<string, unknown> = {}): string | null =>
+  real_shippedUnitText(unit, { host: plainHost, ...deps });
 
 /** What systemd reads out of a unit's non-comment lines. */
 const directives = (unit: string) => unit.split("\n").filter((line) => line.trim() !== "" && !line.trimStart().startsWith("#"));
@@ -75,7 +86,7 @@ test("installing the pair changes no byte of the work-tick unit: it matches toda
   const installed = mkdtempSync(join(tmpdir(), "a11y-shadow-arm-installed-"));
   try {
     const calls: string[] = [];
-    hostUnitsInstall({ installedDir: installed, systemctl: (args: string[]) => (calls.push(args.join(" ")), ""), out: () => undefined });
+    hostUnitsInstall({ host: plainHost, installedDir: installed, systemctl: (args: string[]) => (calls.push(args.join(" ")), ""), out: () => undefined });
     assert.equal(sha256(readFileSync(join(installed, "a11ign-work-tick.service"), "utf8")), TODAYS_WORK_TICK_SHA, "the installed live service is today's bytes");
     for (const unit of ["a11ign-shadow-window.service", TIMER]) assert.ok(existsSync(join(installed, unit)), `${unit} was installed`);
     assert.ok(calls.includes(`enable --now ${TIMER}`), `the timer is enabled with --now, as every timer is: ${calls.join(" | ")}`);

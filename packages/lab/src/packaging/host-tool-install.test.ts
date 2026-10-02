@@ -36,7 +36,18 @@ import { sandboxGitEnv, withGitSandbox } from "../../../agent-org/src/lib/git-sa
 const sha256 = (text: string) => createHash("sha256").update(text).digest("hex");
 
 /** The digest of the `work-tick` unit the host runs today: the one `host-project-paths.test.ts` pins as `TODAYS_TEXT`, restated so this file's claim is checkable alone. */
-const TODAYS_WORK_TICK_SHA = "b566128df67e75cf012540a9aa8d75a7d9a2fb91d32e12ad901f7b8bce8a171e";
+const TODAYS_WORK_TICK_SHA = "1c388b269625507de8067d4620f3bd5a92dd7f94ea06a21516b18061352aa7dd";
+
+/**
+ * a11ign's host with its `tool` taken out. #2974 (cut-over 3 of 6) SET `tool` in a11ign's `host.json`, so the real host now renders the tool
+ * form, and "the template's plain text for a11ign's values" has to be asked of the same host without the key. The digest above moved with the
+ * template's `primary:update` line (npm -> the pnpm shim), the one text change the cut made to the plain form.
+ */
+const plainA11ignHost = (() => {
+  const plain: Record<string, unknown> = { ...homeHostConfig() };
+  delete plain.tool;
+  return Object.freeze(plain);
+})() as never;
 
 /** A host that is nothing like a11ign's: a different account, prefix, home, state directory and project set. */
 const acmeHost = (extra: Record<string, unknown> = {}) => ({
@@ -137,9 +148,9 @@ const workTickOf = (host: ReturnType<typeof parse>) => shippedUnitText("acme-wor
 const linesOnlyIn = (a: string, b: string) => a.split("\n").filter((line) => line !== "" && !line.startsWith("#") && !b.split("\n").includes(line));
 
 test("#2793: with NO `tool` the work-tick unit is today's text BYTE FOR BYTE -- a11ign's, and any host's", () => {
-  assert.equal(homeHostConfig().tool, undefined, "POSITIVE CONTROL: a11ign's host.json names no tool, so this is the running unit");
-  assert.equal(homeHostConfig().stateDir, undefined, "and no stateDir: a11ign's host.json is not edited by this row (#2623 does)");
-  assert.equal(sha256(shippedUnitText("a11ign-work-tick.service") ?? ""), TODAYS_WORK_TICK_SHA, "the unit the host runs, unchanged");
+  assert.equal(Object.hasOwn(plainA11ignHost as object, "tool"), false, "POSITIVE CONTROL: the host asked here names no tool, so this is the plain render");
+  assert.equal(homeHostConfig().stateDir, undefined, "and no stateDir: a11ign's host.json declares none");
+  assert.equal(sha256(shippedUnitText("a11ign-work-tick.service", { host: plainA11ignHost }) ?? ""), TODAYS_WORK_TICK_SHA, "the unit's plain render, unchanged");
   withProjects((dirs) => {
     const host = hostAt(dirs, {});
     const template = readFileSync(join(SHIPPED_DIR, "work-tick.service.in"), "utf8");
@@ -155,7 +166,7 @@ test("#2793: with `tool` set, EXACTLY THREE lines are decision 3's and the rest 
     assert.notEqual(installed, plain, "POSITIVE CONTROL: the two renderings differ, so `equal` above is not one text compared to itself");
     assert.deepEqual(linesOnlyIn(plain, installed), [
       "WorkingDirectory=" + dirs.widgets,
-      "ExecStartPre=-/usr/bin/npm run primary:update",
+      "ExecStartPre=-%h/.local/bin/pnpm run primary:update",
       "ExecStart=/usr/bin/node packages/agent-org/src/work-tick.mjs",
     ], "the three lines that leave");
     assert.deepEqual(linesOnlyIn(installed, plain), [

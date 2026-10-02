@@ -1,16 +1,15 @@
 /**
- * #2892 (row 5 of 10, #57 follow-through): THE AGENTS HOST'S UNITS RUN PNPM, EXCEPT THE WORK-TICK UNIT.
+ * #2892 (row 5 of 10, #57 follow-through): THE AGENTS HOST'S UNITS RUN PNPM.
  *
  * Four units and one template ran `/usr/bin/npm run`, and `pnpm` was not even on this host's PATH until the
  * chairman's session installed the corepack shim at `~/.local/bin/pnpm` on 2026-10-01. A unit that names
  * `npm` after the move is a unit that quietly keeps the old package manager, and nothing but a reader of the
  * unit text would notice.
  *
- * `work-tick.service.in` IS THE ONE UNIT ALLOWED TO STAY, BY NAME AND BY `ceo`'S RULING ON #2867: its two
- * npm lines are the live tick, so editing them is the cut itself -- one `host:install` would perform the
- * cut-over early. They move in #2623's cut-over PR. That PR deletes `NPM_UNTIL_THE_CUT` below, and this test
- * then refuses the file's npm lines like any other's; until it does, the test ALSO refuses the file
- * if it STOPS spelling npm, because an exemption for a file that no longer needs it is a hole nobody reads.
+ * `work-tick.service.in` WAS THE ONE EXEMPTION, BY NAME AND BY `ceo`'S RULING ON #2867: its npm line was the
+ * live tick, so editing it was the cut itself. The cut is #2974 (cut-over 3 of 6, 2026-10-02), which moved the
+ * line to the shim and deleted the exemption (`NPM_UNTIL_THE_CUT`), so this file now refuses every shipped
+ * unit's npm line alike and `work-tick` is among the units that MUST be on the shim.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -27,9 +26,6 @@ const UNIT_FILE = /\.service(\.in)?$/;
 const PNPM_SHIM = "%h/.local/bin/pnpm";
 const PACKAGE_MANAGERS_RETIRED = new Set(["npm", "npx"]);
 
-/** The one unit that still runs npm, until #2623's cut-over PR (done-when 4) moves it. */
-const NPM_UNTIL_THE_CUT = new Set(["packages/agent-org/host/work-tick.service.in"]);
-
 /** The units in this row's Region -- the ones that MUST be on the shim, not merely free of npm. */
 const MOVED = [
   ".agent-org/units/a11ign-corpus-snapshot.service",
@@ -37,6 +33,7 @@ const MOVED = [
   ".agent-org/units/a11ign-fleet-watch.service",
   ".agent-org/units/a11ign-lab-watch.service",
   "packages/agent-org/host/worktree-prune.service.in",
+  "packages/agent-org/host/work-tick.service.in",
 ];
 
 type ExecLine = { line: number; text: string; program: string };
@@ -82,8 +79,8 @@ test("#2892: the same unit on the pnpm shim passes", () => {
     "a comment or another program is not a package-manager command");
 });
 
-test("#2892: the five moved units spell the shim and no Exec line names npm", () => {
-  // POSITIVE CONTROL for the emptiness below: the five real files are READ and their Exec lines COUNTED, so
+test("#2892: the six moved units spell the shim and no Exec line names npm", () => {
+  // POSITIVE CONTROL for the emptiness below: the six real files are READ and their Exec lines COUNTED, so
   // an `assert.deepEqual(offenders, [])` over a population that quietly emptied cannot pass.
   const execs = MOVED.flatMap((file) => execLines(unitText(file)).map((e) => ({ file, ...e })));
   assert.ok(execs.length >= MOVED.length, `read only ${execs.length} Exec lines from ${MOVED.length} units`);
@@ -97,19 +94,11 @@ test("#2892: the five moved units spell the shim and no Exec line names npm", ()
   }
 });
 
-test("#2892: no shipped unit anywhere names npm except work-tick, which is allowlisted BY NAME until the cut", () => {
+test("#2892: no shipped unit anywhere names npm -- work-tick is no longer exempt (#2974)", () => {
   const files = shippedUnitFiles();
-  assert.ok(files.length >= MOVED.length + NPM_UNTIL_THE_CUT.size,
+  assert.ok(files.length >= MOVED.length,
     `POSITIVE CONTROL: only ${files.length} unit files found under ${UNIT_DIRS.join(", ")}`);
-  for (const file of NPM_UNTIL_THE_CUT) assert.ok(files.includes(file), `${file} is allowlisted but is not a shipped unit`);
-  const offenders = files.filter((file) => !NPM_UNTIL_THE_CUT.has(file)).flatMap((file) => npmRefusals(file, unitText(file)));
-  assert.deepEqual(offenders, []);
-});
-
-test("#2892: work-tick.service.in still runs npm -- an exemption for a file that no longer needs one is a hole", () => {
-  for (const file of NPM_UNTIL_THE_CUT) {
-    const refusals = npmRefusals(file, unitText(file));
-    assert.ok(refusals.length >= 1,
-      `${file} no longer names npm: the cut has happened, so delete its NPM_UNTIL_THE_CUT entry`);
-  }
+  assert.ok(files.includes("packages/agent-org/host/work-tick.service.in"),
+    "POSITIVE CONTROL: the file whose exemption was deleted is among the files scanned, so its npm line is read");
+  assert.deepEqual(files.flatMap((file) => npmRefusals(file, unitText(file))), []);
 });
