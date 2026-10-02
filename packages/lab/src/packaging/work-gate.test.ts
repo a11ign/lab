@@ -1373,37 +1373,48 @@ test("a THIRD red job ends the exemption, so a real failure under a hold still r
     "a hold does not excuse a red gate whose cause is not the hold (deliberateRefusals is green here)");
 });
 
-test("only the ADDRESSEE's own hold is an answer from it -- #2400", () => {
-  // #2941: a PR NOBODY owns has no addressee with a stake, so a hold by ANY session answers it (#2376's own shape).
+test("ANY session's hold answers a PR red only from it, the owner's too -- #2993 narrows #2400's clause 1", () => {
+  // #2400 clause 1 ("a hold by anyone else is not an answer from the session being asked") was written for a hold the ADDRESSEE placed.
+  // For a hold the addressee is the SUBJECT of, the order asks "fix your build" and nothing in the build is broken (#2990, five orders).
   assert.deepEqual(failingOrders(heldPr(["hold:ceo"]), ["gate"]), [], "unowned and held by ceo, who is the last answer");
   assert.deepEqual(failingOrders(heldPr(["hold:worker-9"]), ["gate"]), [], "unowned and held by somebody: that is the answer");
-  const labelled = (...labels: string[]) => heldPr(["session:worker-5", ...labels]);
-  const [routed] = failingOrders(labelled("hold:product-manager"), ["gate"]);
-  assert.equal(routed?.session, "worker-5", "a PR with a session label is addressed to that session, and a hold by somebody else is no answer from it");
-  assert.deepEqual(failingOrders(labelled("hold:worker-5"), ["gate"]), [], "worker-5 holding its own PR");
-  assert.deepEqual(failingOrders(labelled("hold:ceo", "hold:worker-5"), ["gate"]), [],
-    "two holders, one of them the addressee");
+  const labelled = (labels: string[], checks: [string, string][] = HELD_RED) => heldPr(["session:worker-5", ...labels], checks);
+  const real: [string, string][] = [["deliberateRefusals", "FAILURE"], ["gate", "FAILURE"], ["ts / run", "FAILURE"]];
+  for (const required of [["gate"], null]) {
+    const where = `required=${JSON.stringify(required)}`;
+    // (1) a foreign hold, owner worker-5: no order
+    assert.deepEqual(failingOrders(labelled(["hold:ceo"]), required), [], `(1) worker-5's PR held by ceo ${where}`);
+    assert.deepEqual(failingOrders(labelled(["hold:product-manager"]), required), [], `(1) held by product-manager ${where}`);
+    assert.deepEqual(failingOrders(labelled(["hold:worker-5"]), required), [], `worker-5 holding its own PR ${where}`);
+    assert.deepEqual(failingOrders(labelled(["hold:ceo", "hold:worker-5"]), required), [], `two holders ${where}`);
+    // (2) a third red job under the same foreign hold still reaches the owner
+    const [order, ...rest] = failingOrders(labelled(["hold:ceo"], real), required);
+    assert.equal(rest.length, 0);
+    assert.equal(order?.session, "worker-5", `(2) a real ts / run failure under a foreign hold ${where}`);
+    // (3) the hold removed, same two red jobs: the null above is the exemption, not an empty rollup
+    assert.equal(failingOrders(labelled([]), required)[0]?.session, "worker-5", `(3) no hold ${where}`);
+  }
 });
 
 /**
- * #2935: A ROW-ROUTED ORDER ACCEPTS `hold:product-manager`. #2882 addressed an unlabelled red PR to the session holding
- * its row (`rowOwner`), so the hold of the session it went to before that change stopped matching and #2883 was
- * re-ordered every tick. The exemption still ends with either key, and a labelled PR keeps #2400's rule.
+ * #2935: A ROW-ROUTED ORDER IS QUIET UNDER A HOLD. #2882 addressed an unlabelled red PR to the session holding its row (`rowOwner`), so
+ * the hold of the session it went to before that change stopped matching and #2883 was re-ordered every tick. Since #2993 no hold has to
+ * match anybody: the exemption still ends with either key (a third red job, or the hold removed).
  */
-test("a rowOwner-routed PR held by product-manager generates no order; a third red job or no hold brings it back -- #2935", () => {
+test("a rowOwner-routed PR under any hold generates no order; a third red job or no hold brings it back -- #2935/#2993", () => {
   const routed = (labels: string[], checks: [string, string][] = HELD_RED) =>
     ({ ...heldPr(labels, checks), rowOwner: { session: "worker-2879", row: 2879, source: "closes" } });
   for (const required of [["gate"], null]) {
     assert.deepEqual(failingOrders(routed(["hold:product-manager"]), required), [],
       `hold:product-manager, row held by worker-2879 (required=${JSON.stringify(required)})`);
-    assert.deepEqual(failingOrders(routed(["hold:worker-2879"]), required), [], "the row holder's own hold still answers");
+    assert.deepEqual(failingOrders(routed(["hold:worker-2879"]), required), [], "the row holder's own hold");
+    assert.deepEqual(failingOrders(routed(["hold:ceo"]), required), [], "somebody else's hold (#2993)");
     const real: [string, string][] = [["deliberateRefusals", "FAILURE"], ["gate", "FAILURE"], ["ts / run", "FAILURE"]];
     assert.equal(failingOrders(routed(["hold:product-manager"], real), required)[0]?.session, "worker-2879", "third job red");
     assert.equal(failingOrders(routed([]), required)[0]?.session, "worker-2879", "hold removed");
-    assert.equal(failingOrders(routed(["hold:ceo"]), required)[0]?.session, "worker-2879", "somebody else's hold");
   }
   const labelled = { ...heldPr(["session:worker-5", "hold:product-manager"]), rowOwner: { session: "worker-2879", row: 2879, source: "closes" } };
-  assert.equal(failingOrders(labelled, ["gate"])[0]?.session, "worker-5", "a labelled PR: product-manager's hold is not its answer");
+  assert.deepEqual(failingOrders(labelled, ["gate"]), [], "a labelled PR under product-manager's hold: no order either (#2993)");
 });
 
 test("HOLD_RED_JOBS names the jobs ci.yml defines, so the exemption cannot go stale on a rename", () => {
@@ -1455,8 +1466,8 @@ test("#2709: a hold does not excuse a REAL red check outside HOLD_RED_JOBS from 
  * breaker at all. The wake half is driven with the ledger already at the cap, which is #2376's state.
  */
 test("a held PR at the cap stops appearing in stuck, and a real failure under the same hold still escalates -- #2400", () => {
-  const at = (checkNames: [string, string][]) => {
-    const orders = failingOrders(heldPr(["hold:product-manager"], checkNames), ["gate"]);
+  const at = (checkNames: [string, string][], labels = ["hold:product-manager"]) => {
+    const orders = failingOrders(heldPr(labels, checkNames), ["gate"]);
     const counts = new Map(orders.map((o) => [o.causeKey, MAX_DELIVERIES]));
     const calls: string[][] = [];
     const { sent, stuck } = deliver(orders, [], [], { counts, run: () => { throw new Error("nothing may be sent"); } });
@@ -1471,6 +1482,23 @@ test("a held PR at the cap stops appearing in stuck, and a real failure under th
   assert.equal(real.stuck.length, 1, "and at the cap it is stuck, by the ordinary count");
   assert.deepEqual(real.labelled, [2376]);
   assert.deepEqual(real.calls, [["issue", "edit", "2376", "--add-label", "answer:ceo"]]);
+});
+
+test("a PR held by SOMEBODY ELSE at the cap is not stuck and gets no needs:chairman -- #2993", () => {
+  const foreign = ["session:worker-5", "hold:ceo"];
+  const at = (checkNames: [string, string][]) => {
+    const orders = failingOrders(heldPr(foreign, checkNames), ["gate"]);
+    const counts = new Map(orders.map((o) => [o.causeKey, MAX_DELIVERIES]));
+    const calls: string[][] = [];
+    const { stuck } = deliver(orders, [], [], { counts, run: () => { throw new Error("nothing may be sent"); } });
+    const labelled = escalateStuck(stuck, (a: string[]) => { calls.push(a); return ""; }, () => {});
+    return { orders, stuck, labelled, calls };
+  };
+  const held = at(HELD_RED);
+  assert.deepEqual([held.orders, held.stuck, held.labelled, held.calls], [[], [], [], []], "(4) a foreign hold: nothing to escalate");
+  const real = at([["deliberateRefusals", "FAILURE"], ["gate", "FAILURE"], ["ts / run", "FAILURE"]]);
+  assert.equal(real.orders[0]?.session, "worker-5", "POSITIVE CONTROL: the owner is still ordered on a real failure");
+  assert.equal(real.stuck.length, 1, "and at the cap it is stuck, by the ordinary count");
 });
 
 test("the expensive question is asked only when something is red", () => {

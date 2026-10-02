@@ -302,7 +302,7 @@ test("redPrFacts consumes the orders `pr-checks-failing` gave: a PR whose red th
 
 const rollupCheck = (name: string, conclusion: string, completedAt: string) => ({ name, status: "COMPLETED", conclusion, startedAt: completedAt, completedAt });
 const HOLD_RED = [rollupCheck("deliberateRefusals", "FAILURE", "2026-10-01T18:27:00Z"), rollupCheck("gate", "FAILURE", "2026-10-01T18:30:00Z")];
-/** #2883's shape: an OWNED PR (`session:worker-7`) that `ceo` holds, so `redOnlyFromHoldOf` still orders its owner (a hold by somebody else is no answer, #2400). */
+/** #2883's shape: an OWNED PR (`session:worker-7`) that `ceo` holds, a hold by somebody else WAS no answer from the owner (#2400 clause 1) until #2993, which made it one. */
 const heldByCeo = (extra: unknown[] = [], over: Record<string, unknown> = {}) => ({ ...redHead, number: 2883, labels: [{ name: "session:worker-7" }, { name: "hold:ceo" }],
   statusCheckRollup: [...HOLD_RED, ...extra], ...over });
 
@@ -316,8 +316,12 @@ function offeredFor(pr: object) {
   return { ordered: decided.some((o: Order) => o.cause === "pr-checks-failing"), facts, orders };
 }
 
-test("#2956 PRECONDITION: a PR held by `ceo` and owned by a worker IS still ordered by `pr-checks-failing` -- the hold is not its addressee's, so the order's own excuse does not cover it", () => {
-  assert.equal(offeredFor(heldByCeo()).ordered, true, "if this goes false the order learned the hold, and the test below no longer proves org-health's own decider");
+test("#2956/#2993 PRECONDITION: a PR held by `ceo` and owned by a worker is NOT ordered by `pr-checks-failing` while only the hold is red, and IS once a real job is -- org-health's decider is asked on its own", () => {
+  // Before #2993 this asserted `true`: a hold by somebody else was no answer from the owner (#2400 clause 1), so the order still went and the
+  // test below could only prove org-health's decider by contrast. The order now asks `isHeldRed` too, so the contrast is gone and the control
+  // moves to the real red, which must still reach the owner.
+  assert.equal(offeredFor(heldByCeo()).ordered, false, "the hold's own red is an answer, whoever placed it");
+  assert.equal(offeredFor(heldByCeo([rollupCheck("ts / run", "FAILURE", "2026-10-01T19:00:00Z")])).ordered, true, "a real red under the same hold still orders its owner");
 });
 
 test("#2956: org-health does NOT offer a held PR whose only red is the hold's; it DOES offer a held PR with a REAL red, dated by THAT check; and still a PR with no owner", () => {
@@ -345,7 +349,7 @@ const EXEMPT: Record<string, string> = {
   "queue-stalled.mjs": "reads the gate verdict of an ARMED PR to tell a stalled queue from a slow one",
   "update-branch-sweep.mjs": "skips a PR whose gate is failing when deciding whom to update; a gate verdict, not a red count",
   "queue-table.mjs": "THE KNOWN FOURTH DECIDER (found by this scan, #2956): its own `isRed` over REST check runs feeds the stalled-PR table's `red` and `absorbed`, so a held PR reads red there too. Outside this row's Region; #2981 moves it onto `isBrokenRed` and deletes this entry",
-  "work-gate/pr-orders.mjs": "ADDRESSEE-relative order logic (`redOnlyFromHoldOf`, #2400: who is asked, not how many are red), `HOLD_RED_JOBS` pinned equal to red-pr.mjs's in org-retro.test.ts",
+  "work-gate/pr-orders.mjs": "the order logic (`redOnlyFromAHold` asks `isHeldRed`, #2993; the rest is who is asked, not how many are red), `HOLD_RED_JOBS` pinned equal to red-pr.mjs's in org-retro.test.ts",
 };
 const EXEMPT_CEILING = 5;
 
