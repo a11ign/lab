@@ -166,10 +166,10 @@ test("control: a fixture tree with ONE import crossing the boundary is found, na
 
 test("control: an `@a11ign/` specifier is an edge even with no relative path, and a comment-only mention is not", async () => {
   const edges = await withFixture({
-    "src/a.mjs": 'import { f } from "@a11ign/worker-fleet/cli-flags";\nexport { f };\n',
+    "src/a.mjs": 'import { f } from "@a11ign/screenreader-fleet/cli-flags";\nexport { f };\n',
     "src/b.mjs": '// import { g } from "../../outside.mjs";\nexport {};\n',
   }, outsideTreeEdges);
-  assert.deepEqual(edges, [{ file: "src/a.mjs", specifier: "@a11ign/worker-fleet/cli-flags" }]);
+  assert.deepEqual(edges, [{ file: "src/a.mjs", specifier: "@a11ign/screenreader-fleet/cli-flags" }]);
 });
 
 // ---- 2. nothing outside agent-org+lab reaches in by a relative path ------------------------------------
@@ -449,7 +449,7 @@ test("npm run test:org's --min floor, read out of package.json, is still met by 
 
 /** Decision 4's own re-runnable population, re-derived here rather than trusted from the row body's prose. */
 function decision4Counts(): { total: number; divided: number } {
-  const productPattern = /(\.\.\/)+(evidence|judge|cli|worker-fleet|nvda-worker|nvda-speech|scorer|control|pdf)\/|@a11ign\/(evidence|judge|cli|worker-fleet|nvda-worker|scorer|control|pdf)/;
+  const productPattern = /(\.\.\/)+(evidence|judge|cli|worker-fleet|nvda-worker|nvda-speech|scorer|control|pdf)\/|@a11ign\/(evidence|judge|cli|worker-fleet|screenreader-fleet|nvda-worker|scorer|control|pdf)/;
   const files = sourceFilesUnder(REPO_ROOT, "packages/lab").filter((file) => {
     const code = readFileSync(join(REPO_ROOT, file), "utf8");
     return /(from|import\().*agent-org\/(src|host)/.test(code);
@@ -465,7 +465,7 @@ function decision4Counts(): { total: number; divided: number } {
  * `packages/lab/src/training/board-gates.mjs` -- and so drops out of the t-import population entirely.
  * `divided` is unchanged: that file never matched the product pattern either before or after. This
  * file itself still counts once toward each: it imports `agent-org/src` (t-import) and, in its own
- * fixture string for the `@a11ign/` control above, the literal `"@a11ign/worker-fleet/cli-flags"`
+ * fixture string for the `@a11ign/` control above, the literal `"@a11ign/screenreader-fleet/cli-flags"`
  * (t-product) -- the same "matches inside a fixture string, not a real import" false positive the
  * row's finding 1 already named.
  * 2026-09-30, #2729: 141 total, 17 divided. ONE file, `lab-job-finished.test.ts`, is both: it imports `agent-org/src` (the gate's

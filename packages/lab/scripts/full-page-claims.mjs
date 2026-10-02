@@ -19,7 +19,7 @@ import { readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { sweepOutcomes, ranOutShortOfTheCensus } from "@a11ign/evidence/conformance";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { realCorpusRoot } from "../src/dataset-paths.mjs";
 import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 

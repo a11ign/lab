@@ -29,7 +29,7 @@
 // axe's for the same page so the difference is a fact rather than a claim.
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFileSync } from "node:child_process";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { errorText } from "@a11ign/screenreader-worker/error-text";
 import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
 

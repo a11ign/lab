@@ -14,8 +14,8 @@
  */
 import { pathToFileURL } from "node:url";
 import { inFlight, isStale, readProgress, stalenessMs, tally } from "./capture-progress.mjs";
-import { refuseUnknownFlags, flagValue } from "@a11ign/worker-fleet/cli-flags";
-import { requestJson } from "@a11ign/worker-fleet/worker-http";
+import { refuseUnknownFlags, flagValue } from "@a11ign/screenreader-fleet/cli-flags";
+import { requestJson } from "@a11ign/screenreader-fleet/worker-http";
 import { datasetRoot } from "../dataset-paths.mjs";
 
 /**

@@ -21,10 +21,10 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { leasePageServer } from "../training/page-server.mjs";
-import { hostPagesBase } from "@a11ign/worker-fleet/host-address";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
-import { captureTolerantly } from "@a11ign/worker-fleet/capture-client";
-import { CAPTURE_CLIENT_TIMEOUT_MS } from "@a11ign/worker-fleet/worker-http";
+import { hostPagesBase } from "@a11ign/screenreader-fleet/host-address";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
+import { captureTolerantly } from "@a11ign/screenreader-fleet/capture-client";
+import { CAPTURE_CLIENT_TIMEOUT_MS } from "@a11ign/screenreader-fleet/worker-http";
 import { wakeNamedWorkers } from "../training/wake-by-hand.mjs";
 
 /**

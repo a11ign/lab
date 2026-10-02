@@ -57,7 +57,7 @@ import { captureAgeLines } from "../src/training/real-page-freshness.mjs";
 import { protocolCensusLines, protocolCensusOfTheMix } from "../src/training/capture-protocol-census.mjs";
 import { rejectedAsTruncated } from "../src/training/rejected-as-truncated.mjs";
 import { captureWasTruncated } from "@a11ign/evidence/verify";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { REPO_ROOT, realCorpusRoot, datasetExportPath, datasetRoot, refuseIfRunsReadonly } from "../src/dataset-paths.mjs";
 
 /**

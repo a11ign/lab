@@ -122,6 +122,13 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "back empty' would be the same observation; the floor on the files read tells them apart, and the positive "
       + "control refuses a planted fixture.",
   },
+  "packages/lab/src/packaging/package-rename-worker-fleet.test.ts": {
+    guard: "files.length > 1000",
+    note: "guarded -- #2887's walk spawns `git ls-files` and asks which non-document files still name the retired "
+      + "scoped `worker-fleet` name. A clean result is the EXPECTED answer, so 'nothing names it' and 'the listing came "
+      + "back empty' would be the same observation; the floor on the files read tells them apart, and the positive "
+      + "control refuses a planted fixture.",
+  },
   "packages/lab/src/packaging/one-package-manager.test.ts": {
     guard: "files.length > 1000",
     note: "guarded -- #2897's lock walks `git ls-files` for a TRACKED npm lockfile. A clean result is the EXPECTED answer, "

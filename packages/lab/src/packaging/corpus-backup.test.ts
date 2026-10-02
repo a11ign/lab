@@ -138,7 +138,7 @@ test("#1042 REGRESSION (reviewer-2 on #1860, three verdicts: `0ece3e54`, `1f91f0
     + '      "" +');
 
   // Written BESIDE the real script, not under `os.tmpdir()`: `corpus-backup.mjs` imports
-  // `@a11ign/worker-fleet/cli-flags` by bare specifier, and Node resolves that by walking up from the
+  // `@a11ign/screenreader-fleet/cli-flags` by bare specifier, and Node resolves that by walking up from the
   // running file to find `node_modules` -- a copy outside this repo's tree has nothing to walk up to and
   // fails with `ERR_MODULE_NOT_FOUND` before the refusal this test wants ever runs. At the package ROOT,
   // not in `scripts/`: `runs-write-guard.test.ts` and `dataset-paths.test.ts` walk `packages/*/{src,scripts}`
@@ -170,7 +170,7 @@ test("#1042 REGRESSION (reviewer-2 on #1860, three verdicts: `0ece3e54`, `1f91f0
  * about a second — the same price as the source scan it replaces.
  *
  * The corpus tree goes under `os.tmpdir()`, unlike the mutated SCRIPT copy above: only a script has to sit
- * inside the repo to resolve `@a11ign/worker-fleet` by walking up to `node_modules`. Data read through an
+ * inside the repo to resolve `@a11ign/screenreader-fleet` by walking up to `node_modules`. Data read through an
  * env var has nowhere to walk.
  */
 function runSnapshot(scriptPath: string, { withCaptures }: { withCaptures: boolean }) {
@@ -256,7 +256,7 @@ test("#2050 REGRESSION: moving the route names out of the advisory and into a co
     .replace(original, '// `corpus:release` publishes to `a11ign/corpus-backups` -- the working route\n    "a job on the control plane, which publishes it somewhere durable\\n" +')
     .replace("`  npm run corpus:release -- --archive=${archive}\\n\\n`", '"  (ask the control plane to publish it)\\n\\n" +')
     // The copy sits at a different depth from the real script, so its ONE relative import is rewritten to
-    // an absolute path. Everything else it needs -- `@a11ign/worker-fleet` -- resolves by walking up to
+    // an absolute path. Everything else it needs -- `@a11ign/screenreader-fleet` -- resolves by walking up to
     // this repo's `node_modules`, which is why the copy stays inside the repo at all.
     .replace('"../src/dataset-paths.mjs"', JSON.stringify(pathToFileURL(DATASET_PATHS).href));
 
