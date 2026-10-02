@@ -295,7 +295,16 @@ const COPIES: ReadonlyArray<{ original: string; edits?: Edit[] }> = [
   },
   {
     original: "packages/guards/src/changed-packages.mjs",
-    edits: [{ from: '"../../worker-fleet/src/cli-flags.mjs"', to: '"./cli-flags.mjs"' }],
+    edits: [
+      { from: '"../../worker-fleet/src/cli-flags.mjs"', to: '"./cli-flags.mjs"' },
+      { from: 'import { fileURLToPath, pathToFileURL } from "node:url";', to: 'import { pathToFileURL } from "node:url";' },
+      {
+        from: 'const REPO = fileURLToPath(new URL("../../../", import.meta.url));',
+        to: 'import { HOME_CHECKOUT } from "../project-config.mjs";\n\n'
+          + "// The PROJECT's checkout, which `$AGENT_ORG_HOST` names; the tool's own `src/lib` up three is `packages/`, one level short of any checkout.\n"
+          + "const REPO = HOME_CHECKOUT;",
+      },
+    ],
   },
   {
     original: "packages/guards/src/isolation-gate.mjs",
