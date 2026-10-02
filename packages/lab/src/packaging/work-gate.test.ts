@@ -2563,6 +2563,22 @@ test("an epic with a recorded blocker is not reported as unfiled", () => {
     "and an epic waiting on a recorded condition produces no order at all");
 });
 
+test("#3088: a `parked` or `needs:chairman` epic is not reported as unfiled, and the unlabelled twin still is", () => {
+  // MEASURED 2026-10-02: #2628 was `parked` by `ceo` and ordered to `product-manager` three times in one day.
+  const epicWith = (number: number, ...labels: string[]) => ({ number, subIssuesSummary: { total: 0 },
+    labels: [{ name: "epic" }, ...labels.map((name) => ({ name }))] });
+  for (const label of [PARKED_LABEL, CHAIRMAN_LABEL]) {
+    assert.deepEqual(unfiledEpics([epicWith(2628, label)]), [], `${label} is a wait, not an unfiled epic`);
+    assert.deepEqual(epicOrders([epicWith(2628, label)], []), [], `and it produces no order on an empty shelf (${label})`);
+  }
+  // POSITIVE CONTROL: the identical epic WITHOUT the label is still reported and still ordered.
+  assert.deepEqual(unfiledEpics([epicWith(2628)]).map((e) => e.number), [2628]);
+  assert.equal(epicOrders([epicWith(2628)], []).length, 1);
+  assert.deepEqual(
+    unfiledEpics([epicWith(2628, PARKED_LABEL), epicWith(34), epicWith(35, CHAIRMAN_LABEL)]).map((e) => e.number),
+    [34], "only the labelled epics of a mixed population are dropped");
+});
+
 test("a CLEARED blocker makes the epic unfiled again, with no human involved", () => {
   // The self-clearing property #1780 was built for, now reaching this cause too.
   const cleared = { number: 57, subIssuesSummary: { total: 0 },
