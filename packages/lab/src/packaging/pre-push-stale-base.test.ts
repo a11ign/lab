@@ -1,19 +1,22 @@
 /**
- * #348: a failed `git checkout` in an `&&` chain leaves you on a branch that LOOKS right.
+ * #348 / #3046: what the pre-push hook still says about a branch built off the wrong point.
+ *
+ * #348's incident: a failed `git checkout` in an `&&` chain leaves you on a branch that LOOKS right.
  * `git checkout -q main && git reset --hard origin/main` silently no-ops past the `&&` when the checkout
  * fails (e.g. `main` is already checked out in another worktree) -- the reset never runs, and a branch
  * built off that stale HEAD is a valid commit on a plausibly-named branch. Measured cost of the real
- * incident: 65 files, 3,281 deletions, caught only by hand -- `c7b1a0a0` was the surviving artefact.
- * **It is no longer reachable from any ref**: it lived only on the branch that carried it, and that
- * branch was deleted when its PR resolved. This header claimed it was "still on disk in this very
- * repository" and that stopped being true without anyone touching this file -- see the real-artefact test
- * below, which pinned it and turned the trunk red permanently (A0). Twice in one day, by two independent
- * sessions, and `ceo` hit the identical trap with `git checkout -B`.
+ * incident: 65 files, 3,281 deletions, caught only by hand.
+ *
+ * **The hook no longer REFUSES a push whose HEAD does not contain `origin/main`'s tip (#3046).** The merge
+ * queue builds every PR on top of `main` and runs `ci` on that merge commit, and the refusal's only remedy
+ * was to merge `main` in -- 49% of 250 recent commits were that merge. What covers the incident shape now is
+ * the 300-deletion WARNING (it reads the gutting, not the ancestry) and the queue's `merge_group` run; the
+ * residual risk is stated in the test below that names it. `A11Y_STALE_BASE_REASON` is deleted with the refusal.
  *
  * DRIVES THE REAL, UNMODIFIED HOOK LOGIC, not a reimplementation -- the same reason
  * `pre-commit-hook.test.ts` and `pre-push-git-scrub.test.ts` give: a second copy of a decision drifts
  * from the first. The pre-push hook cannot be run END TO END here (it runs real `npm run lint`/
- * `typecheck`/`test` past this check, which need this checkout's own `node_modules` and take minutes,
+ * `typecheck`/`test` past this block, which need this checkout's own `node_modules` and take minutes,
  * the same reason `pre-push-fast-gate.test.ts` extracts bounded pieces rather than executing the whole
  * script) -- so this extracts exactly the `#348` block between its own BEGIN/END markers and drives it,
  * verbatim, inside a disposable git sandbox with a synthetic `origin/main`.
@@ -22,82 +25,64 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
 import type { GitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
 
-/**
- * THE SHAs HERE WERE REPINNED ON 2026-09-18, and the old ones are gone rather than moved. #63's history
- * purge rewrote every commit in this repository, so the incident commits these tests reproduce exist
- * under new hashes: `bb7fa639 -> 5cdec4f4`, `3d38dbf0 -> 1d24f61f`, `5ebe02e0 -> 86f32d8b`, read from
- * `git filter-repo`'s own `commit-map` rather than guessed by matching subjects. Each was then checked to
- * still be an ancestor of `origin/main`, which is the property these tests already require and state.
- *
- * `c7b1a0a0` has no successor in that map: it lived on a deleted branch, so the rewrite never reached it.
- * It survives here only as prose about the incident, which is all it was already.
- */
-
-
 const HOOK_PATH = fileURLToPath(new URL("../../../../scripts/git-hooks/pre-push", import.meta.url));
-const REAL_REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
 /** The exact `#348` block, extracted between its own markers -- never retyped. */
-function staleBaseCheckBlock(): string {
+function warningBlock(): string {
   const source = readFileSync(HOOK_PATH, "utf8");
-  const match = /# BEGIN #348 STALE-BASE CHECK.*\n([\s\S]*?)# END #348 STALE-BASE CHECK/.exec(source);
-  assert.ok(match, "expected to find the #348 stale-base-check block, bounded by its own markers, in the pre-push hook");
+  const match = /# BEGIN #348 LARGE-DELETION WARNING.*\n([\s\S]*?)# END #348 LARGE-DELETION WARNING/.exec(source);
+  assert.ok(match, "expected to find the #348 large-deletion-warning block, bounded by its own markers, in the pre-push hook");
   return match[1];
 }
 
 type Verdict = { status: number; stderr: string };
 
 /**
- * Runs ONLY the extracted block, wrapped in the same `set -euo pipefail` and `failed=()`/`skipped=()`
- * preamble it runs under in the real hook, followed by a sentinel echo that proves the block returned
- * control rather than the script having `exit 1`'d out of it.
+ * Runs ONLY the given block (the real one by default), wrapped in the same `set -euo pipefail` and
+ * `failed=()`/`skipped=()` preamble it runs under in the real hook, followed by a sentinel echo that proves
+ * the block returned control rather than the script having `exit 1`'d out of it.
  *
  * `spawnSync`, never `execFileSync` -- the latter's success return is stdout ALONE, with stderr only ever
  * populated in the thrown error on a non-zero exit (the identical trap `pre-push-armed-pr.test.ts` and
- * `pre-push-resolve-toward-main.test.ts` both name in their own drivers). This block's skip/refuse
- * messages are written to `>&2`, and the #583 "skipped, and says why" assertion needs stderr on the
- * exit-0 path too -- caught here by a real test failing on an empty string, not by reading the other
- * two files' comments first.
+ * `pre-push-resolve-toward-main.test.ts` both name in their own drivers). This block's messages are written
+ * to `>&2`, and most assertions here read stderr on the exit-0 path.
  *
- * `stdin`, when given, is git's own pre-push ref-update protocol text -- see `deletionStdin`/
- * `updateStdin` below. Omitted (the default, and every pre-#583 test here), `spawnSync` sends the child
- * an immediately-closed pipe (verified directly: a `cat` reading it returns at once rather than hanging),
- * which is indistinguishable from a caller this check has always had to tolerate -- so every existing
- * test below, none of which ever provided stdin, keeps exercising the ORIGINAL ancestry logic unchanged.
+ * `stdin`, when given, is git's own pre-push ref-update protocol text -- see `deletionStdin`/`updateStdin`.
+ * Omitted, `spawnSync` sends the child an immediately-closed pipe, indistinguishable from a caller that
+ * supplied none.
  */
-function runStaleBaseCheck(sandbox: GitSandbox, env: Record<string, string> = {}, stdin?: string): Verdict {
+function runWarning(sandbox: GitSandbox, stdin?: string, block: string = warningBlock()): Verdict {
   // The real hook only ECHOES `skipped[]`'s contents in its own final summary, well past where the
   // extracted block ends -- this line mirrors that exactly (`scripts/git-hooks/pre-push`'s own
   // `for s in ${skipped+"${skipped[@]}"}; do echo "  SKIPPED $s"; done`), so a skip added inside the
-  // block is actually OBSERVABLE here, the same way it is in a real push. Wrapper code, not extracted --
-  // this file's own header already treats the preamble/sentinel the identical way.
-  const script = `set -euo pipefail\nfailed=()\nskipped=()\n${staleBaseCheckBlock()}\n`
+  // block is actually OBSERVABLE here, the same way it is in a real push. Wrapper code, not extracted.
+  const script = `set -euo pipefail\nfailed=()\nskipped=()\n${block}\n`
     + `for s in \${skipped+"\${skipped[@]}"}; do echo "  SKIPPED $s" >&2; done\necho A11Y_REACHED_END`;
   const run = spawnSync("bash", ["-c", script], {
     cwd: sandbox.dir,
-    env: sandboxGitEnv(env),
+    env: sandboxGitEnv(),
     encoding: "utf8",
     ...(stdin === undefined ? {} : { input: stdin }),
   });
   const stdout = run.stdout ?? "";
   const stderr = run.stderr ?? "";
   const status = run.status ?? 1;
-  // The sentinel proves the block returned control rather than the script having `exit 1`'d out of it
-  // partway through -- on a genuine success (status 0) it must always be present; its absence there means
-  // the block exited early some OTHER way this driver has not accounted for, which is itself worth failing
-  // loudly on rather than reporting a clean status for.
+  // On a genuine success the sentinel must be present; its absence means the block exited early some way
+  // this driver has not accounted for, which is worth failing loudly on rather than reporting clean.
   if (status === 0 && !stdout.includes("A11Y_REACHED_END")) {
     return { status: 1, stderr: `sentinel missing on a reported-clean run: stdout=${stdout} stderr=${stderr}` };
   }
   return { status, stderr };
 }
+
+const ZERO_SHA = "0000000000000000000000000000000000000000";
 
 /**
  * git's REAL pre-push protocol text for deleting `refName` -- githooks(5): one line per ref update,
@@ -106,20 +91,18 @@ function runStaleBaseCheck(sandbox: GitSandbox, env: Record<string, string> = {}
  * value is irrelevant to the check, so a plausible-looking one is used rather than a second real commit).
  */
 function deletionStdin(refName: string, remoteSha = "abc123def456abc123def456abc123def456abcd"): string {
-  return `(delete) 0000000000000000000000000000000000000000 ${refName} ${remoteSha}\n`;
+  return `(delete) ${ZERO_SHA} ${refName} ${remoteSha}\n`;
 }
 
 /** git's real protocol text for an ORDINARY (non-deletion) push of `localSha` to `refName`. */
-function updateStdin(localSha: string, refName: string, remoteSha: string): string {
+function updateStdin(localSha: string, refName: string, remoteSha: string = ZERO_SHA): string {
   return `${refName} ${localSha} ${refName} ${remoteSha}\n`;
 }
 
 /**
- * Forces the sandbox's initial branch to be named `main`, regardless of the host's
- * `init.defaultBranch` -- a real difference measured between this machine (`main`) and a GitHub Actions
- * runner (`master`), which made `git checkout -q main` fail with "pathspec 'main' did not match any
- * file(s)" in CI while passing everywhere this was written and run. `symbolic-ref` works on the UNBORN
- * HEAD a fresh `git init` leaves, before any commit exists to rename.
+ * Forces the sandbox's initial branch to be named `main`, regardless of the host's `init.defaultBranch` --
+ * a real difference measured between this machine (`main`) and a GitHub Actions runner (`master`).
+ * `symbolic-ref` works on the UNBORN HEAD a fresh `git init` leaves, before any commit exists to rename.
  */
 function useMainAsInitialBranch(sandbox: GitSandbox): void {
   sandbox.run(["symbolic-ref", "HEAD", "refs/heads/main"]);
@@ -133,376 +116,233 @@ function commitFile(sandbox: GitSandbox, name: string, content: string): string 
   return sandbox.run(["rev-parse", "HEAD"]).trim();
 }
 
-test("origin/main not resolvable at all is SKIPPED, not refused -- a fresh clone must not be blocked by this", () => {
-  withGitSandbox((sandbox) => {
-    commitFile(sandbox, "a.txt", "1\n");
-    const result = runStaleBaseCheck(sandbox);
-    assert.equal(result.status, 0, `expected success, got: ${result.stderr}`);
-  });
-});
-
-test("HEAD containing origin/main's tip (the normal case) pushes without the override, silently", () => {
-  withGitSandbox((sandbox) => {
-    commitFile(sandbox, "a.txt", "1\n");
-    sandbox.run(["update-ref", "refs/remotes/origin/main", "HEAD"]);
-    commitFile(sandbox, "b.txt", "2\n"); // HEAD now a descendant of origin/main -- the healthy shape
-    const result = runStaleBaseCheck(sandbox);
-    assert.equal(result.status, 0, `a normal branch must push without needing the override: ${result.stderr}`);
-  });
-});
-
-test("the exact incident shape -- a branch built off a point origin/main has moved PAST -- is REFUSED", () => {
-  withGitSandbox((sandbox) => {
-    useMainAsInitialBranch(sandbox);
-    const staleTip = commitFile(sandbox, "a.txt", "1\n");
-    // origin/main moves on; the local branch is a child of the OLD tip, never rebased or merged forward --
-    // exactly what a no-op `&&` chain produces: a commit landed on a branch that never picked up the reset.
-    sandbox.run(["checkout", "-q", "-b", "side", staleTip]);
-    commitFile(sandbox, "side-only.txt", "3\n");
-    sandbox.run(["checkout", "-q", "main"]);
-    commitFile(sandbox, "main-moved-on.txt", "4\n");
-    sandbox.run(["update-ref", "refs/remotes/origin/main", "main"]);
-    sandbox.run(["checkout", "-q", "side"]);
-
-    const result = runStaleBaseCheck(sandbox);
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /#348/);
-    assert.match(result.stderr, /does not contain origin\/main's tip/);
-  });
-});
-
-test("A11Y_STALE_BASE_REASON overrides the refusal, and prints the reason rather than staying silent", () => {
-  withGitSandbox((sandbox) => {
-    useMainAsInitialBranch(sandbox);
-    const staleTip = commitFile(sandbox, "a.txt", "1\n");
-    sandbox.run(["checkout", "-q", "-b", "side", staleTip]);
-    commitFile(sandbox, "side-only.txt", "3\n");
-    sandbox.run(["checkout", "-q", "main"]);
-    commitFile(sandbox, "main-moved-on.txt", "4\n");
-    sandbox.run(["update-ref", "refs/remotes/origin/main", "main"]);
-    sandbox.run(["checkout", "-q", "side"]);
-
-    const result = runStaleBaseCheck(sandbox, { A11Y_STALE_BASE_REASON: "deliberate historical branch" });
-    assert.equal(result.status, 0, `expected the override to allow it, got: ${result.stderr}`);
-  });
-});
-
-test("a large deletion against origin/main is PRINTED, never refused, when ancestry still holds", () => {
-  withGitSandbox((sandbox) => {
-    const big = "line\n".repeat(400);
-    writeFileSync(join(sandbox.dir, "big.txt"), big);
-    sandbox.run(["add", "big.txt"]);
-    sandbox.commit("add big.txt");
-    sandbox.run(["update-ref", "refs/remotes/origin/main", "HEAD"]);
-    // HEAD stays a descendant of origin/main (ancestry holds) while deleting almost all of the file.
-    writeFileSync(join(sandbox.dir, "big.txt"), "line\n");
-    sandbox.run(["add", "big.txt"]);
-    sandbox.commit("gut big.txt");
-
-    const result = runStaleBaseCheck(sandbox);
-    assert.equal(result.status, 0, "a legitimate large deletion with intact ancestry must not be refused");
-  });
-});
-
-/**
- * Does `maybeAncestor` lead to `descendant`? — `git merge-base --is-ancestor`, with its exit codes read
- * rather than its output.
- *
- * Exit 0 is yes and exit 1 is no; **anything else is a real git failure and must not be read as "no"**,
- * which is why this rethrows rather than returning false. A predicate that answers "no" when it means "I
- * could not ask" is the shape this repository names most often, and here it would report a durable pin as
- * unreachable, or an unreachable one as fine.
- *
- * @param maybeAncestor @param descendant
- */
-function isAncestorOf(maybeAncestor: string, descendant: string): boolean {
-  try {
-    execFileSync("git", ["merge-base", "--is-ancestor", maybeAncestor, descendant],
-      { cwd: REAL_REPO_ROOT, stdio: "pipe" });
-    return true;
-  } catch (error) {
-    const status = (error as { status?: number }).status;
-    if (status !== 1) throw error;
-    return false;
-  }
-}
-
-/**
- * Proves the reproduction is REAL, not synthetic, against the actual repository this test lives in --
- * read-only throughout (`merge-base --is-ancestor` and `cat-file -e` never write anything).
- *
- * ## THIS PINNED A COMMIT REACHABLE FROM NO REF, AND TURNED THE TRUNK RED PERMANENTLY — A0, 2026-09-08
- *
- * It used to name `c7b1a0a0`, the commit issue #348's own body records as the surviving artefact of the
- * incident. That commit lived only on the branch that carried it, the branch was deleted after its PR
- * resolved, and **a commit reachable from no ref does not travel**. A clone fetches refs; CI's checkout is
- * full-depth and still never receives the object. So `cat-file -e` failed and this test's `assert.fail`
- * fired on `trunk-guard`'s first two runs of the night, on `main` itself, with nothing wrong on `main`.
- *
- * **The old comment named the wrong cause**, which is why nobody expected it: it said that branch was
- * *"reachable only if history is ever rewritten and this object is pruned"*. Nothing was rewritten.
- * Deleting a branch after its PR merges is routine here and does exactly this, permanently — and a stated
- * cause that is false is worse than no comment, because the next reader stops looking where the fault is.
- *
- * **A pinned commit is a derived artefact**: true in the clone that has it, false in every fresh one. The
- * shallow-clone branch below is a real and separate concern, and it did NOT catch this — CI reports
- * `--is-shallow-repository` false while still being unable to see an object no ref reaches. Two causes,
- * one symptom, and only one of them was guarded.
- *
- * ## What is pinned now, and why it is not the incident commit
- *
- * `86f32d8b` — the merge commit of PR #359, which is #348's own fix. It is an ANCESTOR of `main`, so it is
- * reachable for as long as `main` is, and it satisfies the property under test: it does not contain
- * `main`'s current tip. It is honestly a different artefact from `c7b1a0a0`: that commit is unrecoverable
- * and no pin can bring it back. What survives is what the test was for — a REAL commit from this
- * repository's history standing in the relation the guard refuses, rather than a synthetic shape.
- *
- * The durability requirement is now ASSERTED rather than hoped for, so the next commit pinned here cannot
- * quietly become unreachable the way this one did.
- */
-
-/** The commit this test stands on: a real, permanently reachable commit that does not contain main's tip. */
-const PINNED_STALE_BASE = "86f32d8b";
-
-test("REAL ARTEFACT: a permanently reachable commit that does not contain the current origin/main's tip",
-  (t) => {
-  // A SHALLOW CLONE IS AN HONEST REASON TO SKIP, NOT A FAILURE. `actions/checkout`'s default
-  // `fetch-depth: 1` gives CI a checkout with no history at all beyond the tested commit, so a truncated
-  // clone and a rewritten one produce the IDENTICAL symptom -- `cat-file -e` failing -- for completely
-  // different reasons. Only the second is this test's business; asking `--is-shallow-repository` tells
-  // them apart before treating either as a finding.
-  const shallow = execFileSync("git", ["rev-parse", "--is-shallow-repository"],
-    { cwd: REAL_REPO_ROOT, encoding: "utf8" }).trim() === "true";
-  if (shallow) {
-    t.skip("shallow clone (no full history here) -- cannot prove anything about a specific historical "
-      + "commit; run this locally or in a full-history checkout");
-    return;
-  }
-
-  // THE DURABILITY ASSERTION, and it is the whole of A0. A pin is only as good as its reachability, and
-  // reachability is not a property of the commit -- it is a property of whether some REF still leads to
-  // it. An ancestor of `main` is reachable exactly as long as `main` is, which is the strongest guarantee
-  // this repository can offer. Asserted here rather than assumed, so a future pin that does not have it
-  // fails on the pin rather than months later on an unrelated trunk run.
-  assert.ok(isAncestorOf(PINNED_STALE_BASE, "origin/main"),
-    `${PINNED_STALE_BASE} is not an ancestor of origin/main, so nothing guarantees it stays reachable -- `
-    + "that is how this test pinned `c7b1a0a0`, a commit on a deleted branch, and turned the trunk red on "
-    + "every run. Pin a commit that IS an ancestor of `main` (a merge commit is the obvious choice).");
-
-  assert.equal(isAncestorOf("origin/main", PINNED_STALE_BASE), false,
-    `${PINNED_STALE_BASE} should NOT contain origin/main's current tip -- that gap is exactly what this `
-    + "check refuses a push for, and this proves the reproduction is a real, still-present artefact rather "
-    + "than a synthetic shape");
-});
-
-test("MUTATION: without the ancestry refusal, the incident shape is silently allowed through", () => {
-  // Reproduces the block with its refusal REMOVED, proving the test above can actually fail -- the same
-  // discipline `pre-push-git-scrub.test.ts`'s MUTATION tests apply to the scrub line.
-  withGitSandbox((sandbox) => {
-    useMainAsInitialBranch(sandbox);
-    const staleTip = commitFile(sandbox, "a.txt", "1\n");
-    sandbox.run(["checkout", "-q", "-b", "side", staleTip]);
-    commitFile(sandbox, "side-only.txt", "3\n");
-    sandbox.run(["checkout", "-q", "main"]);
-    commitFile(sandbox, "main-moved-on.txt", "4\n");
-    sandbox.run(["update-ref", "refs/remotes/origin/main", "main"]);
-    sandbox.run(["checkout", "-q", "side"]);
-
-    const withoutRefusal = staleBaseCheckBlock()
-      .replace(/if ! git merge-base --is-ancestor origin\/main HEAD; then[\s\S]*?exit 1\n\s*fi\n\s*fi/,
-        "true # ancestry check removed for this mutation test");
-    assert.notEqual(withoutRefusal, staleBaseCheckBlock(),
-      "the mutation must actually change the block, or this test proves nothing");
-    const script = `set -euo pipefail\nfailed=()\nskipped=()\n${withoutRefusal}\necho A11Y_REACHED_END`;
-    const out = execFileSync("bash", ["-c", script], {
-      cwd: sandbox.dir, env: sandboxGitEnv(), encoding: "utf8",
-    });
-    assert.match(out, /A11Y_REACHED_END/,
-      "without the refusal, the exact incident shape must be silently allowed through -- proving the real "
-      + "refusal above is what does the work, not something else in the block");
-  });
-});
-
-// --- #583: a deletion has no base to be stale against ---
-
-test("#583 ACCEPTANCE: a pure branch deletion is allowed and names why it skipped, even on a branch "
-  + "that IS the #348 incident shape (would otherwise refuse)", () => {
-  withGitSandbox((sandbox) => {
-    useMainAsInitialBranch(sandbox);
-    const staleTip = commitFile(sandbox, "a.txt", "1\n");
-    // The exact refused shape from the test above -- HEAD does not contain origin/main's tip -- but this
-    // time the push being made is a DELETE of some OTHER ref, unrelated to this checkout's own HEAD.
-    sandbox.run(["checkout", "-q", "-b", "side", staleTip]);
-    commitFile(sandbox, "side-only.txt", "3\n");
-    sandbox.run(["checkout", "-q", "main"]);
-    commitFile(sandbox, "main-moved-on.txt", "4\n");
-    sandbox.run(["update-ref", "refs/remotes/origin/main", "main"]);
-    sandbox.run(["checkout", "-q", "side"]); // HEAD is now the stale branch -- the check would refuse it
-
-    const result = runStaleBaseCheck(sandbox, {}, deletionStdin("refs/heads/some-other-branch"));
-    assert.equal(result.status, 0, `a pure deletion must never be refused: ${result.stderr}`);
-    assert.match(result.stderr, /stale-base-check.*no base to be stale against/);
-  });
-});
-
-test("#583 MUTATION direction 2: a REAL update from a stale base still refuses, even with realistic "
-  + "protocol stdin present -- the deletion path must not accidentally swallow a normal push", () => {
-  withGitSandbox((sandbox) => {
-    useMainAsInitialBranch(sandbox);
-    const staleTip = commitFile(sandbox, "a.txt", "1\n");
-    sandbox.run(["checkout", "-q", "-b", "side", staleTip]);
-    commitFile(sandbox, "side-only.txt", "3\n");
-    sandbox.run(["checkout", "-q", "main"]);
-    commitFile(sandbox, "main-moved-on.txt", "4\n");
-    sandbox.run(["update-ref", "refs/remotes/origin/main", "main"]);
-    sandbox.run(["checkout", "-q", "side"]);
-
-    const localSha = sandbox.run(["rev-parse", "side"]).trim();
-    const stdin = updateStdin(localSha, "refs/heads/side", "0000000000000000000000000000000000000000");
-    const result = runStaleBaseCheck(sandbox, {}, stdin);
-    assert.equal(result.status, 1, "a real, non-deletion update from a stale base must still be refused");
-    assert.match(result.stderr, /#348/);
-  });
-});
-
-test("#583: a MIXED push (one real update, one deletion) still refuses on the real update -- only a "
-  + "push where EVERY line is a deletion may skip", () => {
-  withGitSandbox((sandbox) => {
-    useMainAsInitialBranch(sandbox);
-    const staleTip = commitFile(sandbox, "a.txt", "1\n");
-    sandbox.run(["checkout", "-q", "-b", "side", staleTip]);
-    commitFile(sandbox, "side-only.txt", "3\n");
-    sandbox.run(["checkout", "-q", "main"]);
-    commitFile(sandbox, "main-moved-on.txt", "4\n");
-    sandbox.run(["update-ref", "refs/remotes/origin/main", "main"]);
-    sandbox.run(["checkout", "-q", "side"]);
-
-    const localSha = sandbox.run(["rev-parse", "side"]).trim();
-    const stdin = updateStdin(localSha, "refs/heads/side", "0000000000000000000000000000000000000000")
-      + deletionStdin("refs/heads/some-other-branch");
-    const result = runStaleBaseCheck(sandbox, {}, stdin);
-    assert.equal(result.status, 1, "one real update line means this is not an all-deletions push");
-  });
-});
-
-test("#583: empty stdin (no lines at all) is NOT treated as a deletion -- it keeps the check fully "
-  + "active, the same as every pre-#583 caller that never provided any stdin", () => {
-  withGitSandbox((sandbox) => {
-    useMainAsInitialBranch(sandbox);
-    const staleTip = commitFile(sandbox, "a.txt", "1\n");
-    sandbox.run(["checkout", "-q", "-b", "side", staleTip]);
-    commitFile(sandbox, "side-only.txt", "3\n");
-    sandbox.run(["checkout", "-q", "main"]);
-    commitFile(sandbox, "main-moved-on.txt", "4\n");
-    sandbox.run(["update-ref", "refs/remotes/origin/main", "main"]);
-    sandbox.run(["checkout", "-q", "side"]);
-
-    const result = runStaleBaseCheck(sandbox, {}, "");
-    assert.equal(result.status, 1, "empty stdin must behave exactly like no stdin -- the check stays on");
-  });
-});
-
-test("#583 MUTATION direction 1, the issue's own instruction: delete a remote branch with no override "
-  + "set -- it must succeed and name the skip", () => {
-  withGitSandbox((sandbox) => {
-    commitFile(sandbox, "a.txt", "1\n"); // no origin/main at all -- the simplest real deletion shape
-    const result = runStaleBaseCheck(sandbox, {}, deletionStdin("refs/heads/pm/fix-body-budget"));
-    assert.equal(result.status, 0, `expected success, got: ${result.stderr}`);
-  });
-});
-
-// --- #1292: a tag write has no base to be stale against either ---
-
-const ZERO_SHA = "0000000000000000000000000000000000000000";
-
-/** The #348 incident shape: HEAD is `side`, built off a point origin/main has moved past. Returns its sha. */
-function checkoutStaleSide(sandbox: GitSandbox): string {
+/** HEAD is `side`, a child of an OLD tip `origin/main` has moved past by `mainAdds`. Returns `side`'s sha. */
+function checkoutBehindMain(sandbox: GitSandbox, mainAdds = "4\n"): string {
   useMainAsInitialBranch(sandbox);
-  const staleTip = commitFile(sandbox, "a.txt", "1\n");
-  sandbox.run(["checkout", "-q", "-b", "side", staleTip]);
+  const oldTip = commitFile(sandbox, "a.txt", "1\n");
+  sandbox.run(["checkout", "-q", "-b", "side", oldTip]);
   commitFile(sandbox, "side-only.txt", "3\n");
   sandbox.run(["checkout", "-q", "main"]);
-  commitFile(sandbox, "main-moved-on.txt", "4\n");
+  commitFile(sandbox, "main-moved-on.txt", mainAdds);
   sandbox.run(["update-ref", "refs/remotes/origin/main", "main"]);
   sandbox.run(["checkout", "-q", "side"]);
   return sandbox.run(["rev-parse", "side"]).trim();
 }
 
-test("#1292 ACCEPTANCE: a TAG-only push from a stale HEAD is allowed and names why it skipped -- and a "
-  + "BRANCH push from that same HEAD still refuses", () => {
+/** HEAD descends from `origin/main` and deletes 399 of the 400 lines of `big.txt` -- a GUTTING commit. */
+function checkoutGuttingCommit(sandbox: GitSandbox): string {
+  commitFile(sandbox, "big.txt", "line\n".repeat(400));
+  sandbox.run(["update-ref", "refs/remotes/origin/main", "HEAD"]);
+  return commitFile(sandbox, "big.txt", "line\n");
+}
+
+const WARNING = /this push deletes \d+ line\(s\) against origin\/main/;
+const skipReasonIn = (stderr: string) => stderr.split("\n").find((line) => line.includes("SKIPPED large-deletion-warning")) ?? "";
+
+// --- done-when 2: BEHIND origin/main is not a finding ---
+
+test("#3046 ACCEPTANCE: a push whose HEAD is merely BEHIND origin/main passes with no override and no output at all", () => {
   withGitSandbox((sandbox) => {
-    const sha = checkoutStaleSide(sandbox);
+    checkoutBehindMain(sandbox);
+    const result = runWarning(sandbox);
+    assert.equal(result.status, 0, `a behind branch must push: ${result.stderr}`);
+    assert.equal(result.stderr, "", "and say nothing about ancestry, a base, or merging origin/main in");
+  });
+});
+
+test("#3046: the refusal and its override variable are deleted from the hook, not merely unreachable", () => {
+  const source = readFileSync(HOOK_PATH, "utf8");
+  assert.doesNotMatch(source, /A11Y_STALE_BASE_REASON/, "the override of a refusal that no longer exists");
+  // The ancestry test survives ONLY as `resolve-toward-main`'s precondition, outside this block.
+  assert.doesNotMatch(warningBlock(), /merge-base --is-ancestor/, "the ancestry test itself");
+  assert.doesNotMatch(source, /Merge origin\/main in before pushing/, "the advice that made workers push main into branches");
+});
+
+test("origin/main not resolvable at all is SKIPPED and says why -- a fresh clone must not be blocked by this", () => {
+  withGitSandbox((sandbox) => {
+    commitFile(sandbox, "a.txt", "1\n");
+    const result = runWarning(sandbox);
+    assert.equal(result.status, 0, `expected success, got: ${result.stderr}`);
+    assert.match(skipReasonIn(result.stderr), /origin\/main not resolvable here/);
+  });
+});
+
+test("HEAD containing origin/main's tip (the ordinary case) pushes silently", () => {
+  withGitSandbox((sandbox) => {
+    commitFile(sandbox, "a.txt", "1\n");
+    sandbox.run(["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    commitFile(sandbox, "b.txt", "2\n");
+    const result = runWarning(sandbox);
+    assert.equal(result.status, 0);
+    assert.equal(result.stderr, "");
+  });
+});
+
+// --- done-when 2 controls: the warning still PRINTS ---
+
+test("CONTROL: a gutting commit still PRINTS the 300-deletion warning, and is never refused", () => {
+  withGitSandbox((sandbox) => {
+    checkoutGuttingCommit(sandbox);
+    const result = runWarning(sandbox);
+    assert.equal(result.status, 0, "a legitimate large deletion must not be refused");
+    assert.match(result.stderr, WARNING);
+    assert.match(result.stderr, /worth a second look/);
+  });
+});
+
+test("a small deletion stays silent, so the warning above is the threshold's doing and not an always-on message", () => {
+  withGitSandbox((sandbox) => {
+    commitFile(sandbox, "big.txt", "line\n".repeat(50));
+    sandbox.run(["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    commitFile(sandbox, "big.txt", "line\n");
+    assert.equal(runWarning(sandbox).stderr, "");
+  });
+});
+
+// --- done-when 3: what now covers the #348 incident shape ---
+
+test("#3046 RESIDUAL RISK, STATED: the #348 incident shape is no longer refused; the warning reads its deletions "
+  + "when main has moved by more than 300 lines, and the merge queue's merge_group run is the rest", () => {
+  withGitSandbox((sandbox) => {
+    // The incident shape: a branch built off a point origin/main has moved PAST, never merged forward.
+    checkoutBehindMain(sandbox, "main line\n".repeat(400));
+    const result = runWarning(sandbox);
+    assert.equal(result.status, 0, "not refused any more");
+    assert.match(result.stderr, WARNING,
+      "main's 400 added lines read as deletions in the two-dot diff -- the #348 incident's own signature");
+  });
+  withGitSandbox((sandbox) => {
+    // THE HOLE, pinned so nobody reads this as full coverage: the same shape with main having moved by LESS
+    // than the threshold passes silently. What catches it is the merge, which applies only the branch's own
+    // diff (it cannot delete what main added) and the queue's `ci` run on that merge commit.
+    checkoutBehindMain(sandbox, "main line\n".repeat(10));
+    assert.equal(runWarning(sandbox).stderr, "", "a small stale gap is invisible to this hook, by design");
+  });
+});
+
+// --- MUTATION, both directions, each breaking its own test only ---
+
+test("MUTATION direction 1: with the warning's print removed, the gutting commit is silent -- the CONTROL above is what notices", () => {
+  withGitSandbox((sandbox) => {
+    checkoutGuttingCommit(sandbox);
+    const mutated = warningBlock().replace(/echo "pre-push: this push deletes[^\n]*\n/, "true\n");
+    assert.notEqual(mutated, warningBlock(), "the mutation must actually change the block, or this test proves nothing");
+    assert.doesNotMatch(runWarning(sandbox, undefined, mutated).stderr, WARNING);
+  });
+});
+
+test("MUTATION direction 2: with the threshold at zero, a small deletion prints -- the SILENT case above is what notices", () => {
+  withGitSandbox((sandbox) => {
+    commitFile(sandbox, "big.txt", "line\n".repeat(50));
+    sandbox.run(["update-ref", "refs/remotes/origin/main", "HEAD"]);
+    commitFile(sandbox, "big.txt", "line\n");
+    const mutated = warningBlock().replace('-gt 300 ]', '-gt 0 ]');
+    assert.notEqual(mutated, warningBlock(), "the mutation must actually change the block, or this test proves nothing");
+    assert.match(runWarning(sandbox, undefined, mutated).stderr, WARNING);
+  });
+});
+
+// --- #583: a deletion carries no diff to warn about ---
+
+test("#583 ACCEPTANCE: a pure branch deletion is allowed and names why it skipped, from a HEAD that WOULD warn -- "
+  + "and a branch push from that same HEAD still warns", () => {
+  withGitSandbox((sandbox) => {
+    const sha = checkoutGuttingCommit(sandbox);
+    const deletion = runWarning(sandbox, deletionStdin("refs/heads/some-other-branch"));
+    assert.equal(deletion.status, 0, `a pure deletion must never be refused: ${deletion.stderr}`);
+    assert.match(skipReasonIn(deletion.stderr), /only deletes remote ref\(s\)/);
+    assert.doesNotMatch(deletion.stderr, WARNING, "HEAD is not what a deletion pushes");
+    // POSITIVE CONTROL, same sandbox and HEAD: a check that stopped running passes every assertion above.
+    assert.match(runWarning(sandbox, updateStdin(sha, "refs/heads/side")).stderr, WARNING);
+  });
+});
+
+test("#583: a MIXED push (one real update, one deletion) still warns -- only a push where EVERY line is a deletion may skip", () => {
+  withGitSandbox((sandbox) => {
+    const sha = checkoutGuttingCommit(sandbox);
+    const stdin = updateStdin(sha, "refs/heads/side") + deletionStdin("refs/heads/some-other-branch");
+    assert.match(runWarning(sandbox, stdin).stderr, WARNING);
+  });
+});
+
+test("#583: empty stdin (no lines at all) is NOT treated as a deletion -- the check stays fully active", () => {
+  withGitSandbox((sandbox) => {
+    checkoutGuttingCommit(sandbox);
+    assert.match(runWarning(sandbox, "").stderr, WARNING);
+  });
+});
+
+test("#583: a deletion with no origin/main at all succeeds and names the skip", () => {
+  withGitSandbox((sandbox) => {
+    commitFile(sandbox, "a.txt", "1\n");
+    const result = runWarning(sandbox, deletionStdin("refs/heads/pm/fix-body-budget"));
+    assert.equal(result.status, 0, `expected success, got: ${result.stderr}`);
+    assert.match(skipReasonIn(result.stderr), /only deletes remote ref\(s\)/);
+  });
+});
+
+// --- #1292: a tag write advances no branch either ---
+
+test("#1292 ACCEPTANCE: a TAG-only push is skipped and names why -- and a BRANCH push from that same HEAD still warns", () => {
+  withGitSandbox((sandbox) => {
+    const sha = checkoutGuttingCommit(sandbox);
     // Each line shape measured from a real `git push` on git 2.53.0. `<sha>:refs/tags/<name>`, #1246's own
     // form, reports the SHA as its local ref; a named tag reports the tag's refname.
     const tagPushes: Record<string, string> = {
       "sha to tag (#1246's form)": `${sha} ${sha} refs/tags/stranded/agent-x ${ZERO_SHA}\n`,
       "named tag": `refs/tags/v0.1.0 ${sha} refs/tags/v0.1.0 ${ZERO_SHA}\n`,
-      "tag write plus tag deletion": `refs/tags/v0.1.0 ${sha} refs/tags/v0.1.0 ${ZERO_SHA}\n`
-        + deletionStdin("refs/tags/old"),
+      "tag write plus tag deletion": `refs/tags/v0.1.0 ${sha} refs/tags/v0.1.0 ${ZERO_SHA}\n` + deletionStdin("refs/tags/old"),
     };
     for (const [label, stdin] of Object.entries(tagPushes)) {
-      const result = runStaleBaseCheck(sandbox, {}, stdin);
-      assert.equal(result.status, 0, `${label}: a tag-only push must not be refused: ${result.stderr}`);
-      assert.match(result.stderr, /stale-base-check \(this push only writes tag\(s\)/, label);
+      const result = runWarning(sandbox, stdin);
+      assert.equal(result.status, 0, `${label}: ${result.stderr}`);
+      assert.match(skipReasonIn(result.stderr), /this push only writes tag\(s\)/, label);
+      assert.doesNotMatch(result.stderr, WARNING, label);
     }
-    // POSITIVE CONTROL, same sandbox and HEAD: a check that stopped running passes every assertion above.
-    const branch = runStaleBaseCheck(sandbox, {}, updateStdin(sha, "refs/heads/side", ZERO_SHA));
-    assert.equal(branch.status, 1, "a branch push from this stale HEAD must still be refused");
-    assert.match(branch.stderr, /#348/);
+    // POSITIVE CONTROL, same sandbox and HEAD.
+    assert.match(runWarning(sandbox, updateStdin(sha, "refs/heads/side")).stderr, WARNING);
   });
 });
 
-test("#1292: a MIXED push (a tag and a branch) refuses, and names the branch as the ref that needs a base",
-  () => {
+test("#1292: a MIXED push (a tag and a branch) still warns -- a tag riding along must not silence the branch", () => {
   withGitSandbox((sandbox) => {
-    const sha = checkoutStaleSide(sandbox);
+    const sha = checkoutGuttingCommit(sandbox);
     // Measured: a mixed push reports its branch line's LOCAL ref as `HEAD`, so only the remote ref says
     // what is being written -- which is why the hook reads that field.
     const stdin = `HEAD ${sha} refs/heads/side ${ZERO_SHA}\nrefs/tags/v0.1.0 ${sha} refs/tags/v0.1.0 ${ZERO_SHA}\n`;
-    const result = runStaleBaseCheck(sandbox, {}, stdin);
-    assert.equal(result.status, 1, "a tag riding along must not silence the branch's real finding");
-    assert.match(result.stderr, /need a base: refs\/heads\/side$/m);
-    assert.doesNotMatch(result.stderr, /need a base:.*refs\/tags/, "the tag is not what made it refuse");
+    assert.match(runWarning(sandbox, stdin).stderr, WARNING);
   });
 });
 
-test("#1292: a branch whose NAME contains `refs/tags/` is still a branch -- the skip reads the namespace",
-  () => {
+test("#1292: a branch whose NAME contains `refs/tags/` is still a branch -- the skip reads the namespace", () => {
   withGitSandbox((sandbox) => {
-    const sha = checkoutStaleSide(sandbox);
-    const result = runStaleBaseCheck(sandbox, {},
-      updateStdin(sha, "refs/heads/refs/tags/looks-like-a-tag", ZERO_SHA));
-    assert.equal(result.status, 1, "a match anywhere in the ref name would wave this branch push through");
+    const sha = checkoutGuttingCommit(sandbox);
+    assert.match(runWarning(sandbox, updateStdin(sha, "refs/heads/refs/tags/looks-like-a-tag")).stderr, WARNING);
   });
 });
 
 // --- #1309: the skip reason names what the push did -- a deletion in a tag push may be a BRANCH's ---
 
-/** The one `stale-base-check` SKIPPED line a run printed, or "" -- so an assertion reads the reason, not all of stderr. */
-const skipReasonIn = (stderr: string) => stderr.split("\n").find((line) => line.includes("SKIPPED stale-base-check")) ?? "";
-
 test("#1309 ACCEPTANCE: a tag write plus a BRANCH deletion is allowed, and its reason says it deletes a ref -- "
   + "never 'only writes or deletes tag(s)'", () => {
   withGitSandbox((sandbox) => {
-    const sha = checkoutStaleSide(sandbox);
+    const sha = checkoutBehindMain(sandbox);
     const stdin = `refs/tags/v0.1.0 ${sha} refs/tags/v0.1.0 ${ZERO_SHA}\n` + deletionStdin("refs/heads/old-branch");
-    const result = runStaleBaseCheck(sandbox, {}, stdin);
-    assert.equal(result.status, 0, `neither line needs a base, so this push is not refused: ${result.stderr}`);
+    const result = runWarning(sandbox, stdin);
+    assert.equal(result.status, 0, result.stderr);
     const reason = skipReasonIn(result.stderr);
-    assert.match(reason, /this push only writes tag\(s\) and deletes ref\(s\)/,
-      "the reason names both kinds this push carried");
-    assert.doesNotMatch(reason, /writes or deletes tag\(s\)/,
-      "the old sentence, false for a push that deletes a branch -- worker-capture's #1300 probe");
+    assert.match(reason, /this push only writes tag\(s\) and deletes ref\(s\)/, "the reason names both kinds this push carried");
+    assert.doesNotMatch(reason, /writes or deletes tag\(s\)/, "the old sentence, false for a push that deletes a branch");
   });
 });
 
 test("#1309: a tag write with NO deletion says it only writes tag(s), and says nothing about deleting", () => {
   withGitSandbox((sandbox) => {
-    const sha = checkoutStaleSide(sandbox);
-    const result = runStaleBaseCheck(sandbox, {}, `refs/tags/v0.1.0 ${sha} refs/tags/v0.1.0 ${ZERO_SHA}\n`);
+    const sha = checkoutBehindMain(sandbox);
+    const result = runWarning(sandbox, `refs/tags/v0.1.0 ${sha} refs/tags/v0.1.0 ${ZERO_SHA}\n`);
     assert.equal(result.status, 0);
     const reason = skipReasonIn(result.stderr);
     assert.match(reason, /this push only writes tag\(s\), which record an existing commit/);
-    assert.doesNotMatch(reason, /delet/, "a push that deleted nothing must not be described as deleting");
+    assert.doesNotMatch(reason.replace("large-deletion-warning", ""), /delet/, "a push that deleted nothing must not be described as deleting");
   });
 });

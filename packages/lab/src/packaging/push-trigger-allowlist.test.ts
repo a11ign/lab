@@ -17,17 +17,20 @@
  *
  * ## A THIRD CATEGORY -- `TRUNK_FOLLOWUP_ALLOWLIST`, ceo's ruling 2026-09-08 (C2, #416's sibling)
  *
- * `update-branch` (in `auto-arm.yml`) is neither of the first two shapes. It is not a schedule watchdog --
- * there is no cron here for GitHub to silently disable, so the schedule-disable immunity the first
- * category exists for does not apply. And it is not `trunk.yml`'s reactive check on `main`'s OWN
- * tip -- it never builds or tests anything, and a failure here is never meant to be acted on the way a
- * revert is. It is a third, narrower shape: a push-to-main job that acts on OTHER open pull requests after
- * a merge -- never on main's own tip -- and cannot gate anything because the merge it reacts to already
- * happened. `continue-on-error: true` is required by the category's own definition (a red run must never
- * read as a gate failure when nothing downstream waits on it), and each entry's reason must name WHICH
+ * `sweep` and `stalled` (in `auto-arm.yml`) are neither of the first two shapes. They are not schedule
+ * watchdogs -- there is no cron here for GitHub to silently disable, so the schedule-disable immunity the
+ * first category exists for does not apply. And they are not `trunk.yml`'s reactive check on `main`'s OWN
+ * tip -- they never build or test anything, and a failure here is never meant to be acted on the way a
+ * revert is. It is a third, narrower shape: a push-to-main job that acts on or reports about OTHER open pull
+ * requests after a merge -- never on main's own tip -- and cannot gate anything because the merge it reacts to
+ * already happened. `continue-on-error: true` is required by the category's own definition (a red run must
+ * never read as a gate failure when nothing downstream waits on it), and each entry's reason must name WHICH
  * PRs the job touches and WHY a schedule cannot do the job -- the answer is always the same shape: a
  * schedule cannot know a merge just happened, which is exactly why `push` is the right trigger and not a
  * workaround for one.
+ *
+ * The category's first member, the `update-branch` job, was deleted by #3046: the merge queue builds every
+ * PR on `main` and runs `ci` on that merge commit, so nothing pushes `main` into a PR branch any more.
  */
 import { declareWalkScope } from "../../../guards/src/walk-scope.mjs";
 import { test } from "node:test";
@@ -112,15 +115,13 @@ const TRUNK_GATE_ALLOWLIST: Record<string, string> = {
 // the answer is always that a schedule cannot know a merge just happened, which is why `push` is the right
 // trigger and not a workaround for one.
 const TRUNK_FOLLOWUP_ALLOWLIST: Record<string, string> = {
-  "auto-arm.yml": "the `update-branch` job (C2, #416's sibling): after a merge lands on main, it pushes "
-    + "every OPEN PR that is armed, gate green-or-running, and behind main's current tip up to that tip "
-    + "via `gh pr update-branch` -- never touching main's own tip. A schedule cannot do this job: it "
-    + "cannot know a merge just happened, only that some time has passed, so a cron-driven version would "
-    + "either run needlessly often or leave PRs stale for its whole interval. `push` is the one event "
-    + "that means exactly 'the queue just moved'. It deliberately has NO GITHUB_TOKEN fallback, unlike "
-    + "this file's other two jobs -- a push made with that token fires no pull_request: synchronize, so "
-    + "an updated PR would carry a new head with no check run ever triggered for it, worse than leaving "
-    + "it alone. Failing loudly and doing nothing beats succeeding quietly.",
+  "auto-arm.yml": "the `sweep` and `stalled` jobs (#344, #361): after a merge lands on main they ARM every "
+    + "OTHER open PR the queue could not see, and REPORT every armed, green PR that has drifted into a real "
+    + "conflict -- never touching main's own tip and never pushing to a PR's branch (the `update-branch` job "
+    + "that did was deleted by #3046). A schedule cannot do this job: it cannot know a merge just happened, "
+    + "only that some time has passed, so a cron-driven version would either run needlessly often or leave "
+    + "a stranded PR unarmed for its whole interval -- and a cron is what GitHub disables after 60 days of "
+    + "inactivity. `push` is the one event that means exactly 'the queue just moved'.",
 };
 
 const triggersOnPushToMain = (doc: unknown): boolean => {
@@ -182,7 +183,7 @@ test("the trunk-gate allowlist names exactly the one known trunk check", () => {
   assert.deepEqual(Object.keys(TRUNK_GATE_ALLOWLIST).sort(), ["trunk.yml"]);
 });
 
-test("the trunk-followup allowlist names exactly the one known followup job", () => {
+test("the trunk-followup allowlist names exactly the one known followup workflow", () => {
   assert.deepEqual(Object.keys(TRUNK_FOLLOWUP_ALLOWLIST).sort(), ["auto-arm.yml"]);
 });
 
@@ -251,10 +252,10 @@ for (const file of Object.keys(TRUNK_GATE_ALLOWLIST)) {
 // STRUCTURAL PROOF for the followup category: same shape requirement as a watchdog (no build, no full
 // suite, continue-on-error so a red run can never read as a gate) -- but for the OPPOSITE reason. A
 // watchdog is cheap because it only asks "is a schedule silent"; a followup job is cheap because it only
-// pushes OTHER PRs' branches, and building or testing here would mean it had grown into verifying
+// acts on OTHER PRs, and building or testing here would mean it had grown into verifying
 // something -- which is `trunk.yml`'s job, not this one's.
 for (const file of Object.keys(TRUNK_FOLLOWUP_ALLOWLIST)) {
-  test(`${file}: structurally a followup job -- continue-on-error, no build step, no full-suite run`, () => {
+  test(`${file}: structurally a followup workflow -- continue-on-error, no build step, no full-suite run`, () => {
     const text = readWorkflow(file);
     const doc = parseYaml(text) as { jobs: Record<string, { steps: Array<Record<string, unknown>> }> };
 
@@ -266,13 +267,33 @@ for (const file of Object.keys(TRUNK_FOLLOWUP_ALLOWLIST)) {
     const runLines = steps.map((s) => String(s.run ?? "")).join("\n");
 
     assert.ok(!/npm run build\b/.test(runLines),
-      `${file} runs a full monorepo build -- a followup job that only pushes other PRs' branches needs no `
+      `${file} runs a full monorepo build -- a followup job that only acts on other PRs needs no `
       + "build step at all, and one here is a sign this has grown into something that verifies main's tip");
     assert.ok(!/\b(npm test|npm run test|pytest|ansible-playbook|npx tsx --test)\b/.test(runLines),
       `${file} invokes a full test suite -- that is minutes of runtime on every push to main, which is `
       + "exactly the cost the chairman's rule moved off push in the first place");
   });
 }
+
+// #3046 done-when 1: THE DELETION IS THE JOB, NOT THE FILE. A test that only said "no update-branch job"
+// passes on a workflow file that was emptied; the POSITIVE CONTROL is that `arm`, `sweep` and `stalled` are
+// all still here, and still triggered by every event they were triggered by before.
+test("#3046: auto-arm.yml has no job that pushes main into a PR branch, and still has arm, sweep and stalled", () => {
+  const text = readWorkflow("auto-arm.yml");
+  const doc = parseYaml(text) as { jobs: Record<string, { steps?: Array<Record<string, unknown>> }> };
+  assert.deepEqual(Object.keys(doc.jobs).sort(), ["arm", "stalled", "sweep"],
+    "the control: the three jobs that are NOT being deleted are all present, and nothing else is");
+  const runLines = Object.values(doc.jobs).flatMap((job) => job.steps ?? []).map((s) => String(s.run ?? "")).join("\n");
+  assert.doesNotMatch(runLines, /update-branch-sweep|gh pr update-branch|gh api\b[^\n]*update-branch/,
+    "no step calls the sweep that pushed main into armed PRs, or GitHub's own update-branch");
+});
+
+test("#3046: auto-arm.yml is triggered by every event it was before the job went", () => {
+  const { on } = parseYaml(readWorkflow("auto-arm.yml")) as { on: Record<string, unknown> };
+  assert.deepEqual(Object.keys(on).sort(), ["pull_request", "push", "workflow_dispatch", "workflow_run"]);
+  assert.deepEqual(on.push, { branches: ["main"] }, "`sweep` and `stalled` ride a push to main");
+  assert.deepEqual((on.workflow_run as { workflows: string[] }).workflows, ["ci"], "`stalled` rides a ci completion");
+});
 
 test("PROOF: a synthetic third push-to-main workflow, not on the allowlist, fails the guard above", () => {
   const dir = mkdtempSync(join(tmpdir(), "push-trigger-proof-"));

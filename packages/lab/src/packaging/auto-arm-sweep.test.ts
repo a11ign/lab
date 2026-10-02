@@ -213,8 +213,8 @@ test("MUTATION TARGET (#404/#415): removing `reopened` or `synchronize` from the
   const doc = parseYaml(readFileSync(WORKFLOW, "utf8")) as {
     on: { pull_request: { types: string[] } },
   };
-  // #1094 added `auto_merge_enabled`, reasoned in auto-arm-update-branch.test.ts: it is the event on
-  // which update-branch's "is it armed" input flips, and `arm` is excluded from it by its own `if`.
+  // #1094 added `auto_merge_enabled`: it is the event on which a PR becomes
+  // armed, and `arm` is excluded from it by its own `if`.
   assert.deepEqual([...doc.on.pull_request.types].sort(),
     ["auto_merge_enabled", "opened", "ready_for_review", "reopened", "synchronize"],
     "exactly these five trigger types -- if this grows or shrinks without the tests above changing, "
@@ -802,8 +802,8 @@ test("#1970: a drained sweep is still a clean pass, and says nothing", () => {
  * (2026-09-23T18:26Z), because a check colour is one bit and cannot be partially about #N.
  *
  * The property is read STRUCTURALLY off `jobs.sweep`. `push-trigger-allowlist.test.ts`'s file-level
- * regex already passes on `update-branch`'s `continue-on-error`, so a file-level `match` here would be a
- * test that cannot fail -- the second `#2204` test below is what proves the key is on THIS job.
+ * regex passes on a `continue-on-error` in ANY job of the file (`stalled` has none, `sweep` has it), so a
+ * file-level `match` here would be a test that cannot fail -- the second `#2204` test below is what proves the key is on THIS job.
  */
 const jobsOf = () => (parseYaml(readFileSync(WORKFLOW, "utf8")) as {
   jobs: Record<string, { "continue-on-error"?: unknown, steps: Array<{ run?: string, "continue-on-error"?: unknown }> }>,
@@ -811,7 +811,7 @@ const jobsOf = () => (parseYaml(readFileSync(WORKFLOW, "utf8")) as {
 
 test("#2204 ACCEPTANCE: the `sweep` JOB is shielded, so no per-PR check is charged for a repo-wide finding", () => {
   assert.equal(jobsOf().sweep?.["continue-on-error"], true,
-    "`continue-on-error: true` on the JOB -- the category `update-branch` already names");
+    "`continue-on-error: true` on the JOB -- the followup category `push-trigger-allowlist.test.ts` names");
 });
 
 test("#2204 MUTATION TARGET: the shield is on the JOB and never the step, and the step is no `|| true`", () => {
@@ -831,10 +831,10 @@ test("#2204 CONTROL: the finding is still a non-zero exit AND still in the log, 
   assert.match(run.stdout + run.stderr, /could not arm 1: 1743/, "and the finding still reaches the log");
 });
 
-test("#2204: `update-branch` keeps its shield and `arm` does NOT have one", () => {
+test("#2204: `arm` does NOT have the shield `sweep` has", () => {
   // `arm` was handed ONE PR and its refusal is a complete statement about it, so its red stays red (ceo,
   // 2026-09-22). Pinning both directions stops the shield spreading to the one job it must not reach.
   const jobs = jobsOf();
-  assert.equal(jobs["update-branch"]?.["continue-on-error"], true);
+  assert.equal(jobs.sweep?.["continue-on-error"], true, "the control: the shield exists, so its absence on `arm` means something");
   assert.notEqual(jobs.arm?.["continue-on-error"], true, "`arm` stays red: it is a claim about the triggering PR");
 });

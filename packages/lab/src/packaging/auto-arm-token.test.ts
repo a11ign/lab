@@ -18,12 +18,10 @@
  * before the token exists rather than stopping (#382's own lesson: a job that cannot do its intended work
  * must say which path it took).
  *
- * Scoped to EXACTLY these two jobs' own `run:` text, never the whole file -- C2 (#416's sibling) added a
- * THIRD job, `update-branch`, to this same workflow, and it prints its own `A11IGN_BOT_TOKEN is not set`
- * warning for a deliberately DIFFERENT reason (it skips outright rather than falling back -- see that
- * job's own comment). A whole-file regex count would have made this file's assertions couple to a job
- * this file is not about, and either broken a correct third job or hidden a real regression in the two
- * jobs this file actually specifies. See `auto-arm-update-branch.test.ts` for the third job's own tests.
+ * Scoped to EXACTLY these two jobs' own `run:` text, never the whole file: a whole-file regex count would
+ * couple this file's assertions to a job it is not about (`stalled`, and the `update-branch` job that C2,
+ * #416's sibling, added and #3046 deleted, which SKIPPED on a missing secret instead of falling back), and
+ * would either break a correct third job or hide a real regression in the two this file specifies.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -156,8 +154,8 @@ function secretsRead(workflow: string): string[] {
 }
 
 test("#2358: the workflows that act as the arming identity read `secrets.A11IGN_BOT_TOKEN` and no other "
-  + "credential, at the counts measured 2026-09-24 (auto-arm.yml 3, nightly.yml 2)", () => {
-  for (const [workflow, uses] of [["auto-arm.yml", 3], ["nightly.yml", 2]] as const) {
+  + "credential, at the counts measured 2026-10-02 (auto-arm.yml 2, nightly.yml 2; was 3 before #3046 deleted update-branch)", () => {
+  for (const [workflow, uses] of [["auto-arm.yml", 2], ["nightly.yml", 2]] as const) {
     assert.deepEqual(secretsRead(workflow), Array(uses).fill(SECRET_NAME),
       `${workflow} must read exactly ${uses} x secrets.${SECRET_NAME} and nothing else. A rename moves CI onto `
       + `another credential without a red test; \`${SECRET_HOLDER}\` holds ${SECRET_NAME} (#2358), so a `

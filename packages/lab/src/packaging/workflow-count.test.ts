@@ -4,7 +4,7 @@
  * The plan said 8, the row said 10, and both were inherited from a table rather than derived from the
  * decisions that followed it: ceo ruled on #901 that the two board workflows stay (seven London-clock runs a
  * day pinned by board-schedule.test.ts), and on #909 that auto-arm.yml stays (drafts cannot be armed, and it
- * hosts the update-branch train's three non-push triggers). So the number is what the directory holds after
+ * hosts the arming sweep's non-push triggers; its update-branch job went in #3046 and the file stayed). So the number is what the directory holds after
  * trunk-guard.yml, trunk-sweep.yml and close-rows.yml collapsed into trunk.yml: thirteen, each named here so
  * a fourteenth arriving is a failure with a name rather than a number. The fourteenth arrived with #2519's
  * registry gate, named below with its reason. The fifteenth is `agent-org-extraction.yml`, ADR 0040
@@ -22,7 +22,7 @@ const WORKFLOWS_DIR = fileURLToPath(new URL("../../../../.github/workflows/", im
 const THE_FIFTEEN = [
   "action-smoke.yml",
   "agent-org-extraction.yml", // ADR 0040 decision 6's one-time agent-org push, dry-run-gated (#2623)
-  "auto-arm.yml",           // arms drafts on ready_for_review; the update-branch train (#1094, #1100, #1103)
+  "auto-arm.yml",           // arms drafts on ready_for_review; the arming sweep and the stalled report
   "board-report.yml",       // London-clock editions, kept by #901's ruling
   "board-summary-check.yml",
   "capture-regression.yml",
