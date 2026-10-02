@@ -21,9 +21,10 @@
  * Each carries a one-line `STAYS npm` comment saying why, and THIS FILE pins that by file name, so the reason sits where a
  * reader changing the file meets it.
  *
- * `PENDING` is the two places other rows still own: `packages/agent-org/` (frozen for the shadow window, row 9) and
- * `packages/worker-fleet/src/doctor.mjs` (row 3). They are exempt BY NAME with the row that removes each, and the lock (row
- * 10) deletes the constant. Nothing else is, and a new spawn anywhere else is refused naming file and line.
+ * `PENDING` is the one place another row still owns: `packages/agent-org/` (frozen for the shadow window, row 9, #2896). It is
+ * exempt BY NAME with the row that removes it, and row 9 deletes the constant. `packages/worker-fleet/src/doctor.mjs` (row 3)
+ * was the other entry and the lock (row 10, #2897) took it out once row 3 had landed. Nothing else is exempt, and a new spawn
+ * anywhere else is refused naming file and line.
  *
  * WHAT THIS CANNOT SEE: a command assembled at run time (`spawn(tool, ...)` with `tool = "npm"`), or `npm` handed to a shell
  * as part of a longer string such as `sh -c "npm run x"`. It reads the literal at the call, which is the shape every spawn
@@ -51,10 +52,9 @@ const ALLOWED: Record<string, string> = {
   "packages/guards/src/isolation-gate.mjs": "the consumer half installs the packed tarballs with npm, outside any workspace",
 };
 
-/** Exempt until the row that owns it lands, and deleted by the lock (row 10). A path ending in `/` is a directory. */
+/** Exempt until the row that owns it lands, and deleted with it (row 9). A path ending in `/` is a directory. */
 const PENDING: Record<string, string> = {
   "packages/agent-org/": "#2896 (row 9): frozen for the shadow window",
-  "packages/worker-fleet/src/doctor.mjs": "#2890 (row 3): worker and lab provisioning",
 };
 
 /** Every comment in an allowlisted file that says why, matched by this exact opening. */
@@ -90,12 +90,17 @@ function spawnsOf(source: string): Hit[] {
     })));
 }
 
-const isPending = (path: string) => Object.keys(PENDING).some((entry) => (entry.endsWith("/") ? path.startsWith(entry) : path === entry));
+const isPending = (path: string, pending: Record<string, string> = PENDING) =>
+  Object.keys(pending).some((entry) => (entry.endsWith("/") ? path.startsWith(entry) : path === entry));
 
 /** `file:line: shape` for every spawn in a file that is neither allowlisted nor pending. */
-function refusals(sources: Record<string, string>, allowed: readonly string[] = Object.keys(ALLOWED)): string[] {
+function refusals(
+  sources: Record<string, string>,
+  allowed: readonly string[] = Object.keys(ALLOWED),
+  pending: Record<string, string> = PENDING,
+): string[] {
   return Object.entries(sources)
-    .filter(([path]) => !allowed.includes(path) && !isPending(path))
+    .filter(([path]) => !allowed.includes(path) && !isPending(path, pending))
     .flatMap(([path, source]) => spawnsOf(source).map((hit) => `${path}:${hit.line}: ${hit.shape} (\`${hit.spelling}\`)`));
 }
 
@@ -145,10 +150,17 @@ test("prose and messages that merely name npm are not spawns", () => {
 });
 
 test("a pending path is exempt by NAME and only by name: a directory by prefix, a file exactly", () => {
+  // A fixture map, because the real one holds only a directory now and the exact-file rule still needs its own control.
+  const pending = { "packages/agent-org/": "a directory", "packages/somewhere/one-file.mjs": "a file" };
   const source = 'spawnSync("npm", ["ci"]);';
-  assert.deepEqual(refusals({ "packages/agent-org/src/anything.mjs": source, "packages/worker-fleet/src/doctor.mjs": source }), []);
-  assert.equal(refusals({ "packages/worker-fleet/src/other.mjs": source }).length, 1);
-  assert.equal(refusals({ "packages/agent-organiser/src/x.mjs": source }).length, 1, "a directory prefix ends at its slash");
+  assert.deepEqual(refusals({ "packages/agent-org/src/anything.mjs": source, "packages/somewhere/one-file.mjs": source }, [], pending), []);
+  assert.equal(refusals({ "packages/somewhere/other.mjs": source }, [], pending).length, 1, "a file entry is that file and no other");
+  assert.equal(refusals({ "packages/agent-organiser/src/x.mjs": source }, [], pending).length, 1, "a directory prefix ends at its slash");
+});
+
+test("doctor.mjs is NOT pending any more: row 3 landed, so a spawn there is refused like any other file's", () => {
+  assert.equal(isPending("packages/worker-fleet/src/doctor.mjs"), false);
+  assert.equal(refusals({ "packages/worker-fleet/src/doctor.mjs": 'spawnSync("npm", ["ci"]);' }).length, 1);
 });
 
 // ---- the real tree ------------------------------------------------------------------------------------------------------------
@@ -173,11 +185,15 @@ test("positive control: the walk is not empty, and finds the spawns that ARE all
     assert.ok(path in sources, `${path} is not in the scanned population`);
     assert.ok(spawnsOf(sources[path]).length > 0, `${path} no longer spawns npm: it is a stale allowlist entry, delete it`);
   }
-  const pending = Object.keys(sources).filter(isPending).filter((path) => spawnsOf(sources[path]).length > 0);
-  assert.ok(pending.length > 0, "no pending file spawns npm any more: the lock row (10) deletes PENDING");
+  const pending = Object.keys(sources).filter((path) => isPending(path)).filter((path) => spawnsOf(sources[path]).length > 0);
+  assert.ok(pending.length > 0, "no pending file spawns npm any more: row 9 (#2896) has landed, so delete PENDING");
 });
 
-test("the allowlist is EXACTLY these named files, so adding a fourth is a decision made here", () => {
+test("PENDING is EXACTLY the directory row 9 owns, so a new exemption is a decision made here and not a convenience", () => {
+  assert.deepEqual(Object.keys(PENDING), ["packages/agent-org/"]);
+});
+
+test("the allowlist is EXACTLY these named files (the two registry gates and the isolation gate), so a fourth is a decision made here", () => {
   assert.deepEqual(Object.keys(ALLOWED).sort(), [
     "packages/guards/src/isolation-gate.mjs",
     "scripts/registry-consumer-gate.mjs",

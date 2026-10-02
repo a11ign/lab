@@ -89,7 +89,7 @@ function withoutCap(command: string): string {
 }
 
 /** What a check may be executed BY. Anything else is a check turned off while still reading like one. */
-const RUNNERS = new Set(["npx", "npm"]);
+const RUNNERS = new Set(["pnpm", "npx", "npm"]);
 
 /** Every place the hook invokes node, npm, npx or a local binary — checks and helpers alike. */
 function invocations(source: string): string[] {
@@ -138,7 +138,7 @@ test("THE THREE: the hook's checks are lint, typecheck and the leak scan -- and 
       + `reads like the real thing: ${site.command}`);
   }
   assert.ok(commands.some((c) => /\beslint\b/.test(c)), `no lint site among: ${commands.join(" | ")}`);
-  assert.ok(commands.some((c) => /\bnpm run --silent typecheck\b/.test(c)),
+  assert.ok(commands.some((c) => /\bpnpm run --silent typecheck\b/.test(c)),
     `no typecheck site among: ${commands.join(" | ")}`);
   assert.ok(commands.some((c) => /tracked-source-leak-guard\.test\.ts/.test(c)),
     `no leak scan site among: ${commands.join(" | ")}`);
@@ -181,7 +181,7 @@ test("TYPECHECK IS NOT SCOPED, and the hook says why in terms of the MECHANISM",
   const source = hook();
   const site = runSites(source).find((s) => /typecheck/.test(s.command));
   assert.ok(site, "no typecheck site found");
-  assert.match(site!.command, /^npm run --silent typecheck$/,
+  assert.match(site!.command, /^pnpm run --silent typecheck$/,
     "typecheck must run the whole program -- tsc's unit IS the program, not the file");
   // THE REASON, not the conclusion. The next person to reach for this optimisation needs the three facts,
   // or "do not scope this" reads as taste and gets optimised away.
@@ -197,7 +197,7 @@ test("THE LEAK SCAN names both guards by file, EXECUTES them, and both files exi
   assert.ok(site, "no leak scan site found");
   // THE RUNNER FIRST. This check is the one whose value is being before the push, so "it is named in the
   // hook" is not the question -- "the hook runs it" is.
-  assert.match(site!.command, /^npx tsx --test\b/,
+  assert.match(site!.command, /^pnpm exec tsx --test\b/,
     `the leak scan must be EXECUTED by its runner, not merely named: ${site!.command}`);
   for (const guard of ["tracked-source-leak-guard", "tracked-prose-leak-guard"]) {
     assert.match(site!.command, new RegExp(`packages/lab/src/packaging/${guard}\\.test\\.ts`),

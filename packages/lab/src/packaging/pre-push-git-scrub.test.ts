@@ -46,7 +46,8 @@ function scrubLines(source: string): string {
  * pattern so a future restoration of `npm test` (main's FULL gate, say) does not silently stop being
  * checked either.
  */
-const TEST_INVOCATION_RE = /\bnpm test\b|\bnpx tsx --test\b/;
+// `pnpm exec tsx --test` is the spelling since #2897 (the lock); the two older ones stay so a restoration of either is still recognised.
+const TEST_INVOCATION_RE = /\bnpm test\b|\bnpx tsx --test\b|\bpnpm exec tsx --test\b/;
 
 test("the scrub line is present and appears BEFORE any test-spawning invocation runs", () => {
   // MATCHES THE INVOCATION, NOT ITS EXACT PREFIX. The first version of this looked for the literal
@@ -61,7 +62,7 @@ test("the scrub line is present and appears BEFORE any test-spawning invocation 
   const source = stripBashComments(hookSource());
   const scrubIndex = source.indexOf(scrubLines(source));
   const testMatch = TEST_INVOCATION_RE.exec(source);
-  assert.ok(testMatch, "expected to find a test-spawning invocation (npm test or npx tsx --test) somewhere in the hook");
+  assert.ok(testMatch, "expected to find a test-spawning invocation (npm test, npx tsx --test or pnpm exec tsx --test) somewhere in the hook");
   assert.ok(scrubIndex < testMatch.index,
     "the GIT_* scrub must run BEFORE any test invocation, or the hook's own inherited GIT_DIR reaches the test process");
 });
