@@ -113,7 +113,7 @@ test("a decline is distinguishable from a real failure, which is the whole point
  * is derived, and a package with no smoke test is REFUSED rather than skipped. What survived is the one
  * clause about `bin`, and it survived because it is real:
  *
- * **Measured 2026-09-12 on this repo — pointing all five of `@a11ign/worker-fleet`'s bins at a file that
+ * **Measured 2026-09-12 on this repo — pointing all five of `@a11ign/screenreader-fleet`'s bins at a file that
  * does not exist left `checkIsolation` reporting `ok: true`.** Nine bins are declared across four
  * published packages; exactly one (`a11ign`) was ever executed, two were checked for existence, and
  * `worker-fleet`'s five were not looked at.
@@ -155,7 +155,7 @@ test("a package with NO bin is a declared case, not an absence that reads like a
 test("declaredBins reads the string shorthand, which links the unscoped package name", () => {
   // `"bin": "./cli.mjs"` links ONE name -- the package name with the scope dropped. Reading only the
   // object form would report such a package as declaring no bins, and the check would pass by not looking.
-  assert.deepEqual(declaredBins({ name: "@a11ign/worker-fleet", bin: "./dist/doctor.mjs" }), ["worker-fleet"]);
+  assert.deepEqual(declaredBins({ name: "@a11ign/screenreader-fleet", bin: "./dist/doctor.mjs" }), ["screenreader-fleet"]);
   assert.deepEqual(declaredBins({ name: "a11ign", bin: "./dist/cli.js" }), ["a11ign"]);
   assert.deepEqual(declaredBins({ name: "@a11ign/evidence" }), []);
   assert.deepEqual(declaredBins({ name: "@a11ign/scorer", bin: { one: "./a.mjs", two: "./b.mjs" } }), ["one", "two"]);

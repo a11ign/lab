@@ -52,7 +52,7 @@ const REFUSALS: Array<[fixture: string, rule: string, pkg: string, detail: RegEx
   ["workspace-protocol", "workspace-protocol", "@a11ign/judge", /dependencies\["@a11ign\/evidence"\] is "workspace:\*"/],
   ["zero-pin", "zero-pin", "@a11ign/scorer", /dependencies\["@a11ign\/evidence"\] is "0\.0\.0"/],
   ["duplicate-evidence", "duplicate-copy", "@a11ign/evidence", /2 copies installed/],
-  ["unsatisfied-range", "unsatisfied-range", "@a11ign/worker-fleet", /"@a11ign\/judge"\] is "0\.2\.0" -- installed 0\.1\.0 .* does not satisfy/],
+  ["unsatisfied-range", "unsatisfied-range", "@a11ign/screenreader-fleet", /"@a11ign\/judge"\] is "0\.2\.0" -- installed 0\.1\.0 .* does not satisfy/],
   ["version-mismatch", "version-mismatch", "a11ign", /printed 0\.0\.9, but 0\.1\.0 is what was installed/],
   ["entry-point-unresolvable", "import-failed", "@a11ign/judge", /ERR_MODULE_NOT_FOUND/],
   // The #2521 review's case: a Node loader code the first list of seven did not name, which passed as UNCHECKED.

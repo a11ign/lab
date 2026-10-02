@@ -118,7 +118,7 @@ const EXEMPT: Record<string, string> = {
     "@a11ign/lab depends on @a11ign/screenreader-worker, so nvda-worker cannot import dataset-paths.mjs "
     + "without a dependency cycle. Kept as its own cwd-anchored copy; see dataset-paths.mjs's own header.",
   "packages/worker-fleet/src/doctor.mjs":
-    "@a11ign/lab depends on @a11ign/worker-fleet, so worker-fleet cannot import "
+    "@a11ign/lab depends on @a11ign/screenreader-fleet, so worker-fleet cannot import "
     + "dataset-paths.mjs without a cycle. Resolves from its OWN module location instead of process.cwd() "
     + "(the same fix, duplicated for the dependency-direction reason rather than left cwd-anchored).",
   "packages/worker-fleet/src/compare-workers.mjs":

@@ -29,7 +29,7 @@
 import { REAL_PAGES, isRecordedRefusal } from "../src/training/real-page-corpus.mjs";
 import { createHostThrottle, hostOf } from "../src/training/host-throttle.mjs";
 import { pathToFileURL } from "node:url";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 
 /**
  * `--json` for a machine, `--timeout=` for a slow host.

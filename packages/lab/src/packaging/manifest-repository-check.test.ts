@@ -66,7 +66,7 @@ test("#1536 THE INCIDENT, on the real manifests: from run 34816466408's reposito
   const manifests = publishedManifests(REPO);
   assert.deepEqual(manifests.map((m) => m.name),
     ["a11ign", "@a11ign/evidence", "@a11ign/judge", "@a11ign/screenreader-worker", "@a11ign/documents", "@a11ign/scorer",
-      "@a11ign/worker-fleet"],
+      "@a11ign/screenreader-fleet"],
     "the seven packages Changesets publishes -- lab, control, guards, agent-org and nvda-speech are private "
       + "(@a11ign/documents is #68's addition, the first since this test was written)");
   const fromIncident = manifestRepositoryMismatches({ manifests, repository: INCIDENT_RUN_REPOSITORY });

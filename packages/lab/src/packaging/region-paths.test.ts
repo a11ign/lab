@@ -1,7 +1,7 @@
 /**
  * EVERY REPO-RELATIVE PATH NAMED IN A ROW'S PROSE -- a LEAF module (#462, B4), extracted out of
  * `row-reachability.mjs` so `row-claim/file-overlap-rule.mjs` can read the SAME extraction without
- * dragging in that file's own `@a11ign/worker-fleet/cli-flags` import (fine for ITS `main()`, fatal
+ * dragging in that file's own `@a11ign/screenreader-fleet/cli-flags` import (fine for ITS `main()`, fatal
  * before `npm ci`/`npm run build` if reached from a pre-install entry -- `pre-install-import-graph.test.ts`
  * caught exactly this the first time sharing the regex was tried by importing the whole file).
  */

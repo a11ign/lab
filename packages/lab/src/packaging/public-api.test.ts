@@ -80,15 +80,15 @@ test("the layer ordering is the waterfall the report depends on", async () => {
 });
 
 test("worker-fleet exports the lease surface and the script paths", async () => {
-  const fleet = await import("@a11ign/worker-fleet");
+  const fleet = await import("@a11ign/screenreader-fleet");
   for (const name of ["leaseWorker", "leaseWorkerPool", "isAfterRun", "guestReachableUrl",
     "hostAddressForWorker", "fleetScriptPaths"]) {
     assert.equal(typeof exportsOf(fleet)[name], "function", `worker-fleet must export ${name} (ADR 0004)`);
   }
   assert.match(fleet.DEFAULT_WORKER, /^https?:\/\//);
-  const health = await import("@a11ign/worker-fleet/health");
+  const health = await import("@a11ign/screenreader-fleet/health");
   assert.equal(typeof health.assessWorker, "function");
-  const capacity = await import("@a11ign/worker-fleet/capacity");
+  const capacity = await import("@a11ign/screenreader-fleet/capacity");
   for (const name of ["availableHostMemoryMb", "workersHostCanRun"]) {
     assert.equal(typeof exportsOf(capacity)[name], "function", name);
   }

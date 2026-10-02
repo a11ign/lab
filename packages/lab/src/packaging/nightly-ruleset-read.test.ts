@@ -343,7 +343,7 @@ test("#2120: the step reads RSTEST_CONFIG from the floor script, which really ex
 
 test("#2120: the job BUILDS before that read, because the module it imports resolves to `dist/`", () => {
   // The guard itself imports nothing built, so this step is easy to drop as dead weight. It is not:
-  // `assert-glob-not-empty.mjs` imports `@a11ign/worker-fleet/cli-flags`, a package export resolving to
+  // `assert-glob-not-empty.mjs` imports `@a11ign/screenreader-fleet/cli-flags`, a package export resolving to
   // `dist/cli-flags.mjs`, which `pnpm install --ignore-scripts` does not produce and this repo does not track.
   // Without the build the derivation fails and the nightly reports CANNOT_TELL every night -- loud and
   // honest, but about the wrong thing. Every other nightly job that runs tests builds for the same reason.
