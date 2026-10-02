@@ -58,7 +58,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { REPO_ROOT, runsRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 import { gateVerdict, renderVerdict, exitCodeFor } from "../gates/verdict.mjs";
 import { DEFAULT_REPO } from "../../scripts/corpus-release.mjs";

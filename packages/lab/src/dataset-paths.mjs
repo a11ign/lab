@@ -39,7 +39,7 @@
  *
  * ## What is deliberately NOT here
  *
- * `@a11ign/lab` depends on `@a11ign/screenreader-worker`, `@a11ign/worker-fleet` and
+ * `@a11ign/lab` depends on `@a11ign/screenreader-worker`, `@a11ign/screenreader-fleet` and
  * `@a11ign/judge`, so none of those packages can import this module without a dependency cycle.
  * `a11ign` (cli) is the same shape since #199 (see this file's own header): it depends on nothing
  * that depends on `lab`, but its own test needed real captures, so it computes its own copy too rather

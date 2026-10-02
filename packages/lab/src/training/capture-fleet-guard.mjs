@@ -73,8 +73,8 @@
  * named where the refusals are distinguishable, so both are options on this function now and neither can
  * waive the other.
  */
-import { requestJson } from "@a11ign/worker-fleet/worker-http";
-import { fleetConsistency, describeMismatches } from "@a11ign/worker-fleet/fleet-consistency";
+import { requestJson } from "@a11ign/screenreader-fleet/worker-http";
+import { fleetConsistency, describeMismatches } from "@a11ign/screenreader-fleet/fleet-consistency";
 
 /** One guest's `/health` is a cheap read, and a box that needs longer than this is not one to capture on. */
 const HEALTH_TIMEOUT_MS = 10_000;

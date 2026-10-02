@@ -59,7 +59,7 @@
  * Widening past W3C means finding other publishers who state their own conformance — not labelling pages
  * ourselves, which would put us back where we started.
  */
-import { ipv4ToInt } from "@a11ign/worker-fleet/host-address";
+import { ipv4ToInt } from "@a11ign/screenreader-fleet/host-address";
 
 /**
  * WHAT THE POSITIVE SIDE OF THIS CORPUS ACTUALLY IS — measured 2026-08-22, and smaller than it looks.

@@ -5,7 +5,7 @@ import { relative, resolve } from "node:path";
 // ALL of them, single- and multi-defect. Generating only the single-defect set is what made held-out
 // acceptance blind to the case the trained heads actually fail on — see `alsoCarrying` for the measurement.
 import { ALL_ACCEPTANCE_CASES } from "./acceptance-matrix.mjs";
-import { refuseUnknownFlags } from "@a11ign/worker-fleet/cli-flags";
+import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { datasetRoot, refuseIfRunsReadonly } from "../dataset-paths.mjs";
 
 /**
