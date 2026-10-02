@@ -20,6 +20,8 @@
  * DROPS the `--`, and that is why a flag after a script name reads differently from the npm line it replaced.
  *
  * Headings are compared against the merge-base so a rewrite cannot rename a section out from under its anchor.
+ * Only a heading that is GONE strands an anchor, and a rename always leaves the old text gone, so a heading merely ADDED
+ * (a new known-gaps section, #2911) is not drift: refusing it blocked every new section in a Region file.
  * The READMEs of the two PRIVATE packages (`lab`, `control`) are in the Region (#2923): nobody consumes them, so every
  * command in them is an instruction to somebody working in this repository. The other `packages/*\/README.md` are
  * published READMEs a consumer follows (`npx a11ign` is right there), and are not.
@@ -86,6 +88,11 @@ export function headingDrift(before: string, after: string): string[] {
     ...b.filter((h) => !a.includes(h)).map((h) => `removed or edited: ${h}`),
     ...a.filter((h) => !b.includes(h)).map((h) => `added or edited: ${h}`),
   ];
+}
+
+/** The headings an anchor could be stranded by: present before and gone after. An added heading is not one. */
+export function strandedHeadings(before: string, after: string): string[] {
+  return headingDrift(before, after).filter((d) => d.startsWith("removed or edited: "));
 }
 
 /**
@@ -403,6 +410,13 @@ test("#2895: a heading is exempt (its text is frozen), a `# comment` inside a co
   assert.equal(commandLines("```bash\n# npm run x  (a comment)\n```").map((h) => h.kind).join(), "instruction");
 });
 
+test("#2911: a heading ADDED is not refused, and a rename is still refused by the heading it removed", () => {
+  const before = "# One\n\n## Two\n";
+  assert.deepEqual(strandedHeadings(before, `${before}\n## Three\n`), []);
+  assert.deepEqual(strandedHeadings(before, before.replace("## Two", "## Three")), ["removed or edited: ## Two"]);
+  assert.deepEqual(strandedHeadings(before, "# One\n"), ["removed or edited: ## Two"]);
+});
+
 test("#2895: a changed heading is REFUSED; a body edit and a fenced comment are not", () => {
   const before = "# One\n\nrun `npm test`\n\n```bash\n# a comment\n```\n\n## Two\n";
   assert.deepEqual(headingDrift(before, before.replace("npm test", "pnpm test").replace("# a comment", "# another")), []);
@@ -488,6 +502,6 @@ test("#2895: no heading in any Region file differs from the merge-base's", (t) =
   const atBase = new Set(git(["ls-tree", "-r", "--name-only", base, "--", ...REGION]).split("\n"));
   const compared = regionFiles().filter((f) => f.endsWith(".md") && atBase.has(f));
   assert.ok(compared.length >= MIN_MARKDOWN_FILES, `only ${compared.length} Markdown files compared against ${base}`);
-  const drift = compared.flatMap((f) => headingDrift(git(["show", `${base}:${f}`]), readFileSync(`${REPO_ROOT}${f}`, "utf8")).map((d) => `${f}: ${d}`));
+  const drift = compared.flatMap((f) => strandedHeadings(git(["show", `${base}:${f}`]), readFileSync(`${REPO_ROOT}${f}`, "utf8")).map((d) => `${f}: ${d}`));
   assert.deepEqual(drift.filter((d) => !RETIRED_HEADINGS.some((r) => isRetired(r.file, d))), []);
 });
