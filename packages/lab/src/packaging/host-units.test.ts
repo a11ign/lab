@@ -38,13 +38,25 @@ import { shippedUnits, unitState, unitDrift, driftReport, hostUnitsInstall, syst
   shippedScriptText, leadsListText, modelEffortDrift, sessionModelDrift, sessionModelNotes, lastModelIn,
   liveClaudeSessions, OPTIONAL_UNITS, declaredProjectKeys, windowEnd, windowEndNotes } from "../../../agent-org/src/host-units.mjs";
 import { DECLARED_CLAUDE_MODELS, PROFILES, CLAUDE_EFFORTS } from "../../../agent-org/src/worker-profile.mjs";
+import { homeHostConfig } from "../../../agent-org/src/host-config.mjs";
+
+/**
+ * a11ign's host AS THE TEMPLATES RENDER FOR IT, whether or not its `host.json` names a `tool` (#2974: the cut sets it). The tests below that
+ * pin what a template says -- its `ExecStart`, its working directory, its schedule -- read it through this, so they keep asking the template
+ * and not the host's install form. The tool form of every unit is asserted in `a11ign/agent-org`, which owns the tool from the cut.
+ */
+const PLAIN_A11IGN_HOST = (() => {
+  const plain: Record<string, unknown> = { ...homeHostConfig() };
+  delete plain.tool;
+  return Object.freeze(plain);
+})();
 
 /**
  * #2620: ONE SHIPPED UNIT AS IT INSTALLS -- the tool's three are rendered from `host/*.in` templates and the project's own are read
  * verbatim from `.agent-org/units/`, so a test that wants a unit's text asks for it by its installed name and not by a directory.
  */
 const shippedText = (unit: string): string => {
-  const text = shippedUnitText(unit);
+  const text = shippedUnitText(unit, { host: PLAIN_A11IGN_HOST as never });
   assert.ok(text !== null, `nothing ships a unit named ${unit}`);
   return text;
 };
@@ -835,7 +847,7 @@ test("#1974: every shipped unit that spawns `gh` declares which account -- over 
   // package.json whose scripts do not resolve, or a glob that matches nothing all yield an EMPTY
   // population, and an empty population has no undeclared members. The assertion below would pass over a
   // check that had stopped working, which is the failure this repository keeps re-learning.
-  const spending = unitsSpendingGh();
+  const spending = unitsSpendingGh({ host: PLAIN_A11IGN_HOST as never });
   assert.ok(spending.length >= 3,
     `the population must not be empty or this check passes vacuously; found ${JSON.stringify(spending)}`);
   // THE FLOOR IS RAISED RATHER THAN LEFT WHERE IT WAS (#1993). `>= 2` held at 2 and would have held at
@@ -848,7 +860,7 @@ test("#1974: every shipped unit that spawns `gh` declares which account -- over 
       "a11ign-worktree-prune.service"],
     "every shipped .service that can reach `gh` -- including the one whose ExecStart this repository "
     + "cannot read, which is charged on UNKNOWN rather than excused on it");
-  assert.deepEqual(identityDrift(), [],
+  assert.deepEqual(identityDrift({ host: PLAIN_A11IGN_HOST as never }), [],
     "a unit reaching a `gh` spawn with no Environment=GH_CONFIG_DIR= line inherits `~/.config/gh` -- a "
     + "person's account -- and spends a human's rate limit until it runs out");
 });
