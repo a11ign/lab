@@ -211,6 +211,7 @@ export const TRACKER_WRITERS = Object.freeze([
   // rule module became a body sender. It reaches this guard through `merge-guard/lookups.mjs`'s own `gh`
   // helper, which is the reachability the second test asserts -- the call site adds nothing.
   "own-pr-health-rule.mjs",
+  "pr-hold.mjs",
   "pr-open.mjs",
   "row-claim.mjs",
   "row-file.mjs",
