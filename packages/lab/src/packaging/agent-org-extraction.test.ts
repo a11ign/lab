@@ -506,10 +506,12 @@ function decision4Counts(): { total: number; divided: number } {
 // (the two added readings) and matches no product pattern -- the same reason as #2793's line above. Re-derived by running this test, not inferred.
 // 2026-10-02, #2968 (the total stall classifier), on top of #2937's 156: 157 total, 17 divided. One MORE total, `pr-stall-reason.test.ts`, which imports `agent-org/src` (the gate) and matches no
 // product pattern -- the same reason as the line above. Re-derived by running this test, not inferred.
-// 2026-10-02, #2980 (the gate passes the fleet facts), on top of #2968's 157: 158 total, 18 divided. One MORE total AND one MORE divided, `org-health-fleet-wiring.test.ts`, which imports `agent-org/src`
+// 2026-10-02, #2969 (agent-org declared as a code scope; its keyed reviewer gets a checkout and the door), on top of #2968's 157: 158 total, 17 divided. One MORE total, `keyed-repo-review.test.ts`,
+// which imports `agent-org/src` (t-import) and matches no product pattern -- the same reason as #2793's line above. Re-derived by running this test, not inferred.
+// 2026-10-02, #2980 (the gate passes the fleet facts), on top of #2969's 158: 159 total, 18 divided. One MORE total AND one MORE divided, `org-health-fleet-wiring.test.ts`, which imports `agent-org/src`
 // (t-import) and ALSO reads `control/src/fleet-watch.mjs` by relative path (t-product): it runs the ledger's writer and the gate's reader over the same file, so a rename on either side is red. It is a REAL
 // divided file, the same kind as `lab-job-finished.test.ts` (#2729) -- the two packages cannot import each other, so the contract between them can only be tested from `lab`. Re-derived by running this test, not inferred.
-const RECORDED_DECISION_4 = { total: 158, divided: 18 };
+const RECORDED_DECISION_4 = { total: 159, divided: 18 };
 
 test("decision 4's total/divided counts, re-derived, match the row's currently-amended reading", () => {
   const counts = decision4Counts();
