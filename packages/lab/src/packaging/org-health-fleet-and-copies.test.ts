@@ -14,6 +14,9 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { HOME_CHECKOUT } from "../../../agent-org/src/project-config.mjs";
 import {
   FLEET_IDLE_HOURS, SIGNALS, fleetIdleReading, copyDriftReading, readDeclaredCopies, orgHealthReadings, orgHealthOrders, orgHealthTick,
 } from "../../../agent-org/src/org-health.mjs";
@@ -138,7 +141,10 @@ test("copies: an unreadable original, an unreadable directory and an EMPTY disco
 
 test("control: the real tree's declared copies are discovered, every original is readable, and the pair set is CLEAN", () => {
   const pairs = realPairs();
-  assert.ok(pairs.length >= 19, `the tree declares nineteen copies (agent-org-outward-edges.test.ts), discovery found ${pairs.length}`);
+  // The count is derived a second way, by a plain scan for a line opening with the header's first words, and asserted EQUAL: a floor is satisfied by 19, by 58 and by 157 (reported-counts.test.ts).
+  const headed = readdirSync(join(HOME_CHECKOUT, "packages/agent-org/src/lib")).filter((name) => readFileSync(join(HOME_CHECKOUT, "packages/agent-org/src/lib", name), "utf8").match(/^\/\/ COPIED FROM `/m));
+  assert.equal(pairs.length, headed.length, `discovery found ${pairs.length} pairs and a scan of lib/ finds ${headed.length} headed files`);
+  assert.ok(headed.length > 0, "the scan is not empty: the tree's copies are what the control compares");
   assert.ok(pairs.some((pair) => pair.copy === ISOLATION && pair.original === "packages/guards/src/isolation-gate.mjs"), "the pair #2921 edited by hand");
   assert.deepEqual(pairs.filter((pair) => pair.originalText === null).map((pair) => pair.copy), [], "an unreadable original would make 'clean' mean 'not asked'");
   assert.equal(copyDriftReading({ pairs }).status, "clear", copyDriftReading({ pairs }).detail);
