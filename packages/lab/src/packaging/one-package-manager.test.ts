@@ -2,20 +2,26 @@
  * THE LOCK: A MIXED TREE CANNOT COME BACK (#2897, row 10 of 10 of "Finish the move to pnpm", #57's follow-through).
  *
  * An untracked `package-lock.json` sat in the primary checkout after the move to pnpm: someone ran `npm install` and nothing
- * said no. Two halves make the old way a refusal instead of a habit, and this file holds both to what they claim:
+ * said no. Three halves make the old way a refusal instead of a habit, and this file holds each to what it claims:
  *
  *   1. the root `preinstall` runs `scripts/refuse-other-installers.mjs`, which refuses any installer whose user agent is not
  *      pnpm's (an unknown one included: unknown is not pnpm), naming pnpm and the `packageManager` pin. The CHECK fetches nothing
  *      (it imports built-ins and `cli-flags.mjs` by relative path, and no network-capable built-in: read below). What npm had
- *      already fetched BEFORE it ran the check is a limit of every lifecycle script, measured and pinned below, and #2958 is
- *      the early refusal that removes it;
- *   2. `package-lock.json` and `npm-shrinkwrap.json` are ignored, and a TRACKED one is refused, which an ignore alone does not
+ *      already fetched BEFORE it ran the check is a limit of every lifecycle script, pinned below as the positive control
+ *      for the next half;
+ *   2. `engines.npm` in the root manifest (a range no npm satisfies, whose text names pnpm) plus `engine-strict=true` in the root
+ *      `.npmrc` (#2958): npm checks `engines` BEFORE it fetches, so with the switch on it stops with EBADENGINE having written
+ *      neither `node_modules` nor a lockfile. Either alone refuses nothing (without the switch npm only warns);
+ *   3. `package-lock.json` and `npm-shrinkwrap.json` are ignored, and a TRACKED one is refused, which an ignore alone does not
  *      prevent (`git add -f`, or an add made before the ignore).
  *
  * THE POSITIVE CONTROLS, so that neither half passes by examining nothing:
  *
- *   - the REAL root manifest carries the `preinstall` entry, and the fixture installs below copy THAT entry rather than
- *     retyping it, so deleting it from `package.json` fails here and does not merely stop being exercised;
+ *   - the REAL root manifest carries the `preinstall` entry and the `engines.npm` entry, the REAL `.npmrc` carries the switch, and
+ *     the fixture installs below copy THOSE rather than retyping them, so deleting one fails here and does not merely stop
+ *     being exercised;
+ *   - the fixture WITHOUT the switch is refused by the `preinstall` alone, AFTER npm has installed: the early refusal is shown
+ *     to be the switch's doing and not the script's;
  *   - the real pnpm, started for real, runs the script and it passes (`pnpm install` and `pnpm exec`), and the real npm,
  *     started for real, is refused: the user agents are not only strings in a table;
  *   - the tracked-lockfile detector refuses a lock really `git add`-ed in a sandbox repository and passes the same tree with
@@ -49,7 +55,8 @@ import { refusalFor } from "../../../../scripts/refuse-other-installers.mjs";
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const SCRIPT_PATH = "scripts/refuse-other-installers.mjs";
 const SCRIPT = join(REPO, SCRIPT_PATH);
-const MANIFEST = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")) as { scripts?: Record<string, string> };
+const MANIFEST = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")) as { scripts?: Record<string, string>; engines?: Record<string, string> };
+const NPMRC_PATH = ".npmrc";
 const LOCKFILES = ["package-lock.json", "npm-shrinkwrap.json"];
 
 // ---- the user agents -----------------------------------------------------------------------------------------------------
@@ -176,14 +183,20 @@ test("the REAL root manifest carries a preinstall that runs the script, and the 
 
 // ---- the real installers, started for real --------------------------------------------------------------------------------
 
+/** Which of the repository's refusals a fixture carries: both of them, or the `preinstall` alone (no `engines.npm`, no `.npmrc`). */
+type Lock = "whole" | "preinstall-only";
+
 /**
- * A directory holding a manifest with the REAL `preinstall` entry, a copy of the real script where that entry says and what
- * it imports, and ONE `file:` dependency so an installer has something to install without any network: an install target.
+ * A directory holding a manifest with the REAL `preinstall` entry (and, for the whole lock, the REAL `engines` and `.npmrc`), a copy
+ * of the real script where that entry says and what it imports, and ONE `file:` dependency so an installer has something to
+ * install without any network: an install target.
  */
-function installFixture(): string {
+function installFixture(lock: Lock = "whole"): string {
   const dir = tempDir("one-package-manager-");
-  const manifest = { name: "fixture", version: "0.0.0", private: true, scripts: { preinstall: MANIFEST.scripts?.preinstall }, dependencies: { left: "file:./left" } };
+  const manifest = { name: "fixture", version: "0.0.0", private: true, scripts: { preinstall: MANIFEST.scripts?.preinstall },
+    ...(lock === "whole" ? { engines: MANIFEST.engines } : {}), dependencies: { left: "file:./left" } };
   writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
+  if (lock === "whole") copyFileSync(join(REPO, NPMRC_PATH), join(dir, NPMRC_PATH));
   mkdirSync(join(dir, "left"));
   writeFileSync(join(dir, "left", "package.json"), JSON.stringify({ name: "left", version: "1.0.0" }));
   // The script's one relative import comes along, at the path it names, and `node_modules` is NOT: a fresh checkout has none.
@@ -200,27 +213,39 @@ function install(tool: { command: string; args: string[] }, dir: string, env: No
 
 const NPM_INSTALL = ["install", "--offline", "--no-audit", "--no-fund"];
 
-test("`npm install` is REFUSED naming pnpm: non-zero, with the message, and no pnpm-lock.yaml", () => {
+test("the REAL root manifest carries engines.npm, and the REAL .npmrc turns engine-strict on", () => {
+  assert.equal(typeof MANIFEST.engines?.npm, "string", "package.json has no engines.npm: npm has nothing to refuse on");
+  assert.match(MANIFEST.engines?.npm ?? "", /pnpm/, "engines.npm is the message npm prints, and it must name pnpm");
+  assert.ok(existsSync(join(REPO, NPMRC_PATH)), `${NPMRC_PATH} is not on disk`);
+  const switches = readFileSync(join(REPO, NPMRC_PATH), "utf8").split("\n").map((line) => line.trim()).filter((line) => /^[^#;]/.test(line));
+  assert.ok(switches.includes("engine-strict=true"), `${NPMRC_PATH} does not set engine-strict=true: without it npm only warns about engines.npm`);
+});
+
+test("`npm install` is REFUSED EARLY: EBADENGINE naming pnpm, and no node_modules, no package-lock.json, no pnpm-lock.yaml", () => {
   const dir = installFixture();
   const run = install(npmCliInvocation("npm", NPM_INSTALL), dir, envWith(undefined));
   assert.notEqual(run.status, 0, `npm install succeeded: ${run.stdout}${run.stderr}`);
+  assert.match(run.stderr, /EBADENGINE/);
+  assert.match(run.stderr, /pnpm/);
+  for (const written of ["node_modules", "package-lock.json", "pnpm-lock.yaml"]) assert.equal(existsSync(join(dir, written)), false, `npm wrote ${written} before refusing`);
+});
+
+test("positive control: without engine-strict the preinstall alone refuses naming pnpm, but only AFTER npm has installed (the limit of a lifecycle script)", () => {
+  // npm 9.2.0 on the real manifest, 2026-10-02: 226 top-level node_modules entries (350 MB) and a 362-entry lockfile, then the
+  // preinstall failed the command. A `file:` dependency shows the same ORDER with no network. If this stops holding, the preinstall
+  // has become an early refusal by itself, and the `.npmrc` and `engines.npm` are no longer what this file says they are for.
+  const dir = installFixture("preinstall-only");
+  const run = install(npmCliInvocation("npm", NPM_INSTALL), dir, envWith(undefined));
+  assert.notEqual(run.status, 0, `npm install succeeded: ${run.stdout}${run.stderr}`);
+  assert.doesNotMatch(run.stderr, /EBADENGINE/);
   assert.match(run.stderr, /installs with pnpm only/);
   assert.match(run.stderr, /`packageManager`/);
+  assert.equal(existsSync(join(dir, "node_modules", "left")), true, "npm refused BEFORE installing without engine-strict: the limit is gone");
+  assert.equal(existsSync(join(dir, "package-lock.json")), true, "npm wrote no lockfile before refusing: the limit is gone");
   assert.equal(existsSync(join(dir, "pnpm-lock.yaml")), false);
 });
 
-test("THE LIMIT, measured: npm has already installed the dependency when the refusal arrives, so a lifecycle script is not an EARLY refusal", () => {
-  // npm 9.2.0 on the real manifest, 2026-10-02: 226 top-level node_modules entries (350 MB) and a 362-entry lockfile, then the
-  // preinstall failed the command. A `file:` dependency shows the same ORDER with no network. #2958 is the early refusal
-  // (`engines.npm` plus `engine-strict`); when it lands this assertion flips, and the day it does is the day to delete it.
-  const dir = installFixture();
-  const run = install(npmCliInvocation("npm", NPM_INSTALL), dir, envWith(undefined));
-  assert.notEqual(run.status, 0);
-  assert.equal(existsSync(join(dir, "node_modules", "left")), true, "npm refused BEFORE installing: the limit is gone, so delete this test and the script header's section on it");
-  assert.equal(existsSync(join(dir, "package-lock.json")), true, "npm wrote no lockfile before refusing: the limit is gone");
-});
-
-test("`pnpm install` SUCCEEDS and the preinstall passes under it", () => {
+test("`pnpm install` SUCCEEDS under the whole lock (engine-strict and engines.npm included) and the preinstall passes under it", () => {
   const dir = installFixture();
   const run = install(pnpmCliInvocation(["install", "--offline"]), dir, envWith(undefined));
   assert.equal(run.status, 0, `pnpm install failed: ${run.stdout}${run.stderr}`);
@@ -235,10 +260,19 @@ test("the real pnpm sets the agent the script accepts: `pnpm exec node <script>`
 });
 
 test("an npm started from inside a pnpm run INHERITS pnpm's agent and is let through: the scrub above is what makes the refusal real", () => {
-  const dir = installFixture();
+  const dir = installFixture("preinstall-only");
   const inherited = { ...envWith(undefined), npm_config_user_agent: PNPM_AGENTS[0] };
   const run = install(npmCliInvocation("npm", ["install", "--offline", "--no-audit", "--no-fund", "--no-package-lock"]), dir, inherited);
   assert.equal(run.status, 0, "npm no longer inherits the agent, so this limit is gone: delete this test and the paragraph naming it");
+});
+
+test("the engines refusal does not read the agent at all: the same inherited-agent npm is refused under the whole lock", () => {
+  const dir = installFixture();
+  const inherited = { ...envWith(undefined), npm_config_user_agent: PNPM_AGENTS[0] };
+  const run = install(npmCliInvocation("npm", NPM_INSTALL), dir, inherited);
+  assert.notEqual(run.status, 0, `an npm inheriting pnpm's agent got through the engines refusal: ${run.stdout}${run.stderr}`);
+  assert.match(run.stderr, /EBADENGINE/);
+  assert.equal(existsSync(join(dir, "node_modules")), false);
 });
 
 // ---- a tracked lockfile is refused ----------------------------------------------------------------------------------------
@@ -335,4 +369,70 @@ test("the control for the line above: a directory under a manifest, and a direct
   mkdirSync(join(dir, "consumer"));
   assert.deepEqual(manifestsAtOrAbove(join(dir, "consumer")), [join(dir, "package.json")]);
   assert.ok(manifestsAtOrAbove(join(REPO, "packages", "lab")).includes(join(REPO, "package.json")));
+});
+
+// ---- a nested package is its own npm project (#2962) ----------------------------------------------------------------------
+
+/**
+ * npm takes the NEAREST `package.json` as the project, so `cd packages/lab && npm install` never reads the root's `preinstall`,
+ * `engines` or `.npmrc`: the root's lock does not reach it, and the package carries the early half of its own. `packages/lab`
+ * is the one PRIVATE package with dependencies. THE LIMIT, named and not fixed: the published packages with dependencies (`cli`,
+ * `judge`, `nvda-worker`, `pdf`, `scorer`, `worker-fleet`) cannot take `engines.npm`, since it would refuse their consumers'
+ * `npm install` too, so an `npm install` inside one of them is still not refused.
+ */
+const LAB_DIR = join(REPO, "packages", "lab");
+const LAB_MANIFEST = JSON.parse(readFileSync(join(LAB_DIR, "package.json"), "utf8")) as { engines?: Record<string, string> };
+
+/** Whether `.npmrc` text sets `engine-strict=true` on a line of its own, comments ignored. */
+const setsEngineStrict = (npmrc: string): boolean => npmrc.split("\n").map((line) => line.trim()).includes("engine-strict=true");
+
+/**
+ * A copy of the REAL `packages/lab` manifest (its dependencies replaced by one `file:` dependency, so there is something to install
+ * without a network) and, unless `withNpmrc` is false, the REAL `.npmrc` beside it. Nothing sits above it: the lab's own files are
+ * all that npm may read, which is the situation the nearest-manifest rule creates.
+ */
+function labFixture(withNpmrc: boolean): string {
+  const dir = tempDir("one-package-manager-lab-");
+  const manifest = JSON.parse(readFileSync(join(LAB_DIR, "package.json"), "utf8"));
+  delete manifest.devDependencies;
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ ...manifest, dependencies: { left: "file:./left" } }));
+  if (withNpmrc) copyFileSync(join(LAB_DIR, ".npmrc"), join(dir, ".npmrc"));
+  mkdirSync(join(dir, "left"));
+  writeFileSync(join(dir, "left", "package.json"), JSON.stringify({ name: "left", version: "1.0.0" }));
+  return dir;
+}
+
+test("the REAL packages/lab manifest carries engines.npm naming pnpm, and its REAL .npmrc turns engine-strict on", () => {
+  assert.equal(typeof LAB_MANIFEST.engines?.npm, "string", "packages/lab/package.json has no engines.npm: npm has nothing to refuse on");
+  assert.match(LAB_MANIFEST.engines?.npm ?? "", /pnpm/, "engines.npm is the message npm prints, and it must name pnpm");
+  assert.equal(setsEngineStrict(readFileSync(join(LAB_DIR, ".npmrc"), "utf8")), true, "packages/lab/.npmrc does not set engine-strict=true: npm only warns");
+});
+
+test("the control for the line above: the reading sees a switch that is set and one that is only commented out or set false", () => {
+  assert.equal(setsEngineStrict("# why\nengine-strict=true\n"), true);
+  assert.equal(setsEngineStrict("# engine-strict=true\n"), false);
+  assert.equal(setsEngineStrict("engine-strict=false\n"), false);
+});
+
+test("`npm install` inside a copy of packages/lab is REFUSED EARLY: EBADENGINE, no node_modules and no lockfile", () => {
+  const dir = labFixture(true);
+  const run = install(npmCliInvocation("npm", NPM_INSTALL), dir, envWith(undefined));
+  assert.notEqual(run.status, 0, `npm install succeeded inside the lab copy: ${run.stdout}${run.stderr}`);
+  assert.match(run.stderr, /EBADENGINE/);
+  assert.match(run.stderr, /pnpm/);
+  for (const written of ["node_modules", "package-lock.json", "pnpm-lock.yaml"]) assert.equal(existsSync(join(dir, written)), false, `npm wrote ${written} before refusing`);
+});
+
+test("positive control: the same copy WITHOUT engine-strict installs, so the refusal above is the switch's doing", () => {
+  const dir = labFixture(false);
+  const run = install(npmCliInvocation("npm", NPM_INSTALL), dir, envWith(undefined));
+  assert.equal(run.status, 0, `npm install failed without the switch, so the copy is not an install target: ${run.stdout}${run.stderr}`);
+  assert.equal(existsSync(join(dir, "node_modules", "left")), true);
+});
+
+test("`pnpm install` in the same copy SUCCEEDS: engines.npm and engine-strict refuse npm and not pnpm", () => {
+  const dir = labFixture(true);
+  const run = install(pnpmCliInvocation(["install", "--offline"]), dir, envWith(undefined));
+  assert.equal(run.status, 0, `pnpm install failed in the lab copy: ${run.stdout}${run.stderr}`);
+  assert.equal(existsSync(join(dir, "node_modules", "left")), true, "pnpm exited 0 and installed nothing");
 });
