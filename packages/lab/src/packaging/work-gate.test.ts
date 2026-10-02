@@ -1571,6 +1571,39 @@ test("the base having moved changes NO predicate: same session, subject, discrim
   assert.equal(redOrder(TIP_AFTER, green), undefined, "a green PR gets no red order however far main moved");
 });
 
+/**
+ * #3005: A RED PULL REQUEST THAT TURNS CONFLICTED AT THE SAME HEAD IS A NEW CAUSE. #2990 sat 63 minutes at one
+ * `pr-checks-failing` key (delivered six times, owner idle) because a conflicting branch gets no `pull_request` run, so
+ * the head and the red never changed while the work went from "fix the check" to "rebase".
+ */
+const MERGEABLE_2087 = { ...RED_2087, mergeStateStatus: "BLOCKED", mergeable: "MERGEABLE" };
+const CONFLICTING_2087 = { ...RED_2087, mergeStateStatus: "DIRTY", mergeable: "CONFLICTING" };
+const MERGEABLE_KEY = "worker-judge/pr-checks-failing/pr-2087/06a52308";
+
+test("#3005 a red CONFLICTING pull request is ordered with a prompt that names the conflict first", () => {
+  const order = redOrder(null, CONFLICTING_2087);
+  assert.equal(order.cause, "pr-checks-failing");
+  assert.equal(order.session, "worker-judge", "same owner: only the cause changed");
+  assert.match(order.prompt, /conflict/i);
+  assert.ok(order.prompt.indexOf("CONFLICTS") < order.prompt.indexOf("WHICH FIX"), "the rebase is named before the triage");
+  assert.doesNotMatch(redOrder(null, MERGEABLE_2087).prompt, /conflict/i, "POSITIVE CONTROL: a mergeable red PR says nothing of it");
+});
+
+test("#3005 the conflicted key differs from the mergeable key, and the mergeable key is today's literal", () => {
+  assert.equal(redOrder(null, MERGEABLE_2087).causeKey, MERGEABLE_KEY, "a conflict-free red PR keeps its key byte for byte");
+  assert.equal(redOrder(null, RED_2087).causeKey, MERGEABLE_KEY, "and so does one that carries no merge fields at all (UNKNOWN)");
+  assert.equal(redOrder(null, CONFLICTING_2087).causeKey, `${MERGEABLE_KEY}/conflicting`);
+});
+
+test("#3005 through deliver: an order sent at the mergeable key is sent again once the PR conflicts at the same head", () => {
+  const atCap = new Map([[MERGEABLE_KEY, MAX_DELIVERIES]]);
+  const quiet = () => { throw new Error("nothing may be typed into a session in this test"); };
+  const before = deliver([redOrder(null, MERGEABLE_2087)], [], [], { counts: atCap, run: quiet });
+  assert.equal(before.stuck.length, 1, "POSITIVE CONTROL: at the cap the mergeable key is stuck, as in #2990");
+  const after = deliver([redOrder(null, CONFLICTING_2087)], [], [], { counts: atCap, run: quiet });
+  assert.deepEqual(after.stuck, [], "the same head, now conflicted, is a fresh key with a fresh count");
+});
+
 test("the prompt names BOTH regimes and chooses neither", () => {
   for (const baseTip of [TIP_AFTER, TIP_BEFORE, null]) {
     const { prompt } = redOrder(baseTip);
