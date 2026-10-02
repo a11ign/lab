@@ -181,6 +181,28 @@ test("#975: ANCHORED TO THE TREE -- a word with a dot that is not a root file de
   assert.equal(tree.has("evidence.json"), false);
 });
 
+test("#2959: a root DOTFILE the tree has is declared, and one the tree lacks is not", () => {
+  // `ROOT_FILE_CANDIDATE` began `[A-Za-z0-9_]`, so `.gitignore` could not match and `pr:open` refused a diff for
+  // the very file the row's Region named (#2897). Both directions, against a listing the test controls: the
+  // root has the file, or it does not. `.gitignore` carries no extension and `.pnpmfile.cjs` carries one, so
+  // both shapes of dotfile are exercised.
+  const region = "## Region\n\n```\npackage.json\n.gitignore\n.pnpmfile.cjs\n```\n";
+  const has = new Set(["package.json", ".gitignore", ".pnpmfile.cjs"]);
+  assert.deepEqual(declaredRegionFiles(region, { rootFiles: has }), ["package.json", ".gitignore", ".pnpmfile.cjs"]);
+  const lacks = new Set(["package.json"]);
+  assert.deepEqual(declaredRegionFiles(region, { rootFiles: lacks }), ["package.json"]);
+  // In prose, backticked, and followed by sentence punctuation, which the name must not swallow.
+  assert.deepEqual(declaredRegionFiles("## Region\n\nEdit `.gitignore`, then .gitignore.\n", { rootFiles: has }), [".gitignore"]);
+  // A dotfile NESTED in a directory is that path's business, never the root file's.
+  assert.deepEqual(declaredRegionFiles("## Region\n\nscripts/.gitignore\n", { rootFiles: has }), []);
+  // The tree anchor stays: a prose word is not declared by being dotted, and `./x` is not a root dotfile.
+  assert.deepEqual(declaredRegionFiles("## Region\n\nthe census writes evidence.json\n", { rootFiles: has }), []);
+  assert.deepEqual(declaredRegionFiles("## Region\n\n./.gitignore\n", { rootFiles: has }), []);
+  // Positive control against the real tree: `.gitignore` is at the root of `origin/main`, so the rule bites.
+  assert.ok(rootFilesOnMain().files.has(".gitignore"), "the root listing lacks .gitignore, so the real-tree control asserts nothing");
+  assert.deepEqual(declaredRegionFiles("## Region\n\n.gitignore\n"), [".gitignore"]);
+});
+
 test("#975: a root file named in the Region's PROSE is a declaration, and one named elsewhere in the body is not", () => {
   // The parsed-section rule: what the Region says is a declaration, wherever in the section it appears. A row
   // that cites `package.json` in its "What it is" is not declaring it -- `extractRegionSection` bounds this.
