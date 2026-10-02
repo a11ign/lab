@@ -54,6 +54,31 @@ test("MUTATION: an index block hand-edited to add a stale entry is caught", () =
   assert.notEqual(applyIndexBlock(tampered), tampered, "a hand-added stale entry was not caught");
 });
 
+// #3081: the generator printed the `npm` instruction while the file carried the `pnpm` one, so every regenerate
+// was a one-line diff nobody made. The entries were identical, so the entries' own comparison (the nightly
+// cross-reference report) could not see it; only the WHOLE block can.
+test("the committed index block EQUALS the generated one on the real file, instruction line included", () => {
+  const current = text();
+  assert.equal(currentIndexBlock(current), buildIndexBlock(current),
+    "the committed index block differs from the generated one -- run `pnpm run docs:known-gaps-index --write`");
+});
+
+test("MUTATION: the equality is not vacuous -- editing only the instruction line breaks it", () => {
+  const current = text();
+  const block = currentIndexBlock(current);
+  assert.ok(block);
+  const instruction = block!.split("\n").find((l) => l.startsWith("**Open sections**"));
+  assert.ok(instruction, "the index block has no instruction line -- fixture assumption broke");
+  const tampered = current.replace(instruction!, instruction!.replace("pnpm run", "npm run"));
+  assert.notEqual(tampered, current, "the mutation did not change the file -- the replace target is stale");
+  assert.notEqual(currentIndexBlock(tampered), buildIndexBlock(tampered),
+    "an edited instruction line still equals the generated block -- the equality does not bite");
+});
+
+test("the instruction line the generator prints is the pnpm form, the one the briefs use", () => {
+  assert.ok(buildIndexBlock(text()).includes("`pnpm run docs:known-gaps-index --write`"));
+});
+
 test("CONTROL: a small fixture's freshly built index is stable under re-application", () => {
   const fixture = [
     "# Title",
