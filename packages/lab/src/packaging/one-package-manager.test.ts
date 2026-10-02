@@ -5,8 +5,10 @@
  * said no. Two halves make the old way a refusal instead of a habit, and this file holds both to what they claim:
  *
  *   1. the root `preinstall` runs `scripts/refuse-other-installers.mjs`, which refuses any installer whose user agent is not
- *      pnpm's (an unknown one included: unknown is not pnpm), naming pnpm and the `packageManager` pin, having fetched nothing
- *      (it imports built-ins and `cli-flags.mjs` by relative path, and no network-capable built-in: read below);
+ *      pnpm's (an unknown one included: unknown is not pnpm), naming pnpm and the `packageManager` pin. The CHECK fetches nothing
+ *      (it imports built-ins and `cli-flags.mjs` by relative path, and no network-capable built-in: read below). What npm had
+ *      already fetched BEFORE it ran the check is a limit of every lifecycle script, measured and pinned below, and #2958 is
+ *      the early refusal that removes it;
  *   2. `package-lock.json` and `npm-shrinkwrap.json` are ignored, and a TRACKED one is refused, which an ignore alone does not
  *      prevent (`git add -f`, or an add made before the ignore).
  *
@@ -174,10 +176,16 @@ test("the REAL root manifest carries a preinstall that runs the script, and the 
 
 // ---- the real installers, started for real --------------------------------------------------------------------------------
 
-/** A directory holding a manifest with the REAL `preinstall` entry and a copy of the real script where that entry says, and what it imports: an install target. */
+/**
+ * A directory holding a manifest with the REAL `preinstall` entry, a copy of the real script where that entry says and what
+ * it imports, and ONE `file:` dependency so an installer has something to install without any network: an install target.
+ */
 function installFixture(): string {
   const dir = tempDir("one-package-manager-");
-  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "fixture", version: "0.0.0", private: true, scripts: { preinstall: MANIFEST.scripts?.preinstall } }));
+  const manifest = { name: "fixture", version: "0.0.0", private: true, scripts: { preinstall: MANIFEST.scripts?.preinstall }, dependencies: { left: "file:./left" } };
+  writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
+  mkdirSync(join(dir, "left"));
+  writeFileSync(join(dir, "left", "package.json"), JSON.stringify({ name: "left", version: "1.0.0" }));
   // The script's one relative import comes along, at the path it names, and `node_modules` is NOT: a fresh checkout has none.
   mkdirSync(join(dir, "scripts"));
   mkdirSync(join(dir, "packages", "worker-fleet", "src"), { recursive: true });
@@ -190,16 +198,26 @@ function install(tool: { command: string; args: string[] }, dir: string, env: No
   return spawnSync(tool.command, tool.args, { cwd: dir, encoding: "utf8", env, timeout: 120_000 });
 }
 
-/** What a refused install must not have made. `package-lock.json` is NOT here: npm 9.2.0 writes it before `preinstall` runs (see the script), and `.gitignore` covers it. */
-const MADE_NOTHING = ["node_modules", "pnpm-lock.yaml"];
+const NPM_INSTALL = ["install", "--offline", "--no-audit", "--no-fund"];
 
-test("`npm install` is REFUSED naming pnpm, and makes no node_modules", () => {
+test("`npm install` is REFUSED naming pnpm: non-zero, with the message, and no pnpm-lock.yaml", () => {
   const dir = installFixture();
-  const run = install(npmCliInvocation("npm", ["install", "--offline", "--no-audit", "--no-fund"]), dir, envWith(undefined));
+  const run = install(npmCliInvocation("npm", NPM_INSTALL), dir, envWith(undefined));
   assert.notEqual(run.status, 0, `npm install succeeded: ${run.stdout}${run.stderr}`);
   assert.match(run.stderr, /installs with pnpm only/);
   assert.match(run.stderr, /`packageManager`/);
-  assert.deepEqual(MADE_NOTHING.filter((name) => existsSync(join(dir, name))), []);
+  assert.equal(existsSync(join(dir, "pnpm-lock.yaml")), false);
+});
+
+test("THE LIMIT, measured: npm has already installed the dependency when the refusal arrives, so a lifecycle script is not an EARLY refusal", () => {
+  // npm 9.2.0 on the real manifest, 2026-10-02: 226 top-level node_modules entries (350 MB) and a 362-entry lockfile, then the
+  // preinstall failed the command. A `file:` dependency shows the same ORDER with no network. #2958 is the early refusal
+  // (`engines.npm` plus `engine-strict`); when it lands this assertion flips, and the day it does is the day to delete it.
+  const dir = installFixture();
+  const run = install(npmCliInvocation("npm", NPM_INSTALL), dir, envWith(undefined));
+  assert.notEqual(run.status, 0);
+  assert.equal(existsSync(join(dir, "node_modules", "left")), true, "npm refused BEFORE installing: the limit is gone, so delete this test and the script header's section on it");
+  assert.equal(existsSync(join(dir, "package-lock.json")), true, "npm wrote no lockfile before refusing: the limit is gone");
 });
 
 test("`pnpm install` SUCCEEDS and the preinstall passes under it", () => {
@@ -207,6 +225,7 @@ test("`pnpm install` SUCCEEDS and the preinstall passes under it", () => {
   const run = install(pnpmCliInvocation(["install", "--offline"]), dir, envWith(undefined));
   assert.equal(run.status, 0, `pnpm install failed: ${run.stdout}${run.stderr}`);
   assert.doesNotMatch(run.stderr, /installs with pnpm only/);
+  assert.equal(existsSync(join(dir, "node_modules", "left")), true, "pnpm passed the preinstall and then installed nothing");
 });
 
 test("the real pnpm sets the agent the script accepts: `pnpm exec node <script>` passes with nothing set by this test", () => {
