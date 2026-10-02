@@ -370,3 +370,69 @@ test("the control for the line above: a directory under a manifest, and a direct
   assert.deepEqual(manifestsAtOrAbove(join(dir, "consumer")), [join(dir, "package.json")]);
   assert.ok(manifestsAtOrAbove(join(REPO, "packages", "lab")).includes(join(REPO, "package.json")));
 });
+
+// ---- a nested package is its own npm project (#2962) ----------------------------------------------------------------------
+
+/**
+ * npm takes the NEAREST `package.json` as the project, so `cd packages/lab && npm install` never reads the root's `preinstall`,
+ * `engines` or `.npmrc`: the root's lock does not reach it, and the package carries the early half of its own. `packages/lab`
+ * is the one PRIVATE package with dependencies. THE LIMIT, named and not fixed: the published packages with dependencies (`cli`,
+ * `judge`, `nvda-worker`, `pdf`, `scorer`, `worker-fleet`) cannot take `engines.npm`, since it would refuse their consumers'
+ * `npm install` too, so an `npm install` inside one of them is still not refused.
+ */
+const LAB_DIR = join(REPO, "packages", "lab");
+const LAB_MANIFEST = JSON.parse(readFileSync(join(LAB_DIR, "package.json"), "utf8")) as { engines?: Record<string, string> };
+
+/** Whether `.npmrc` text sets `engine-strict=true` on a line of its own, comments ignored. */
+const setsEngineStrict = (npmrc: string): boolean => npmrc.split("\n").map((line) => line.trim()).includes("engine-strict=true");
+
+/**
+ * A copy of the REAL `packages/lab` manifest (its dependencies replaced by one `file:` dependency, so there is something to install
+ * without a network) and, unless `withNpmrc` is false, the REAL `.npmrc` beside it. Nothing sits above it: the lab's own files are
+ * all that npm may read, which is the situation the nearest-manifest rule creates.
+ */
+function labFixture(withNpmrc: boolean): string {
+  const dir = tempDir("one-package-manager-lab-");
+  const manifest = JSON.parse(readFileSync(join(LAB_DIR, "package.json"), "utf8"));
+  delete manifest.devDependencies;
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ ...manifest, dependencies: { left: "file:./left" } }));
+  if (withNpmrc) copyFileSync(join(LAB_DIR, ".npmrc"), join(dir, ".npmrc"));
+  mkdirSync(join(dir, "left"));
+  writeFileSync(join(dir, "left", "package.json"), JSON.stringify({ name: "left", version: "1.0.0" }));
+  return dir;
+}
+
+test("the REAL packages/lab manifest carries engines.npm naming pnpm, and its REAL .npmrc turns engine-strict on", () => {
+  assert.equal(typeof LAB_MANIFEST.engines?.npm, "string", "packages/lab/package.json has no engines.npm: npm has nothing to refuse on");
+  assert.match(LAB_MANIFEST.engines?.npm ?? "", /pnpm/, "engines.npm is the message npm prints, and it must name pnpm");
+  assert.equal(setsEngineStrict(readFileSync(join(LAB_DIR, ".npmrc"), "utf8")), true, "packages/lab/.npmrc does not set engine-strict=true: npm only warns");
+});
+
+test("the control for the line above: the reading sees a switch that is set and one that is only commented out or set false", () => {
+  assert.equal(setsEngineStrict("# why\nengine-strict=true\n"), true);
+  assert.equal(setsEngineStrict("# engine-strict=true\n"), false);
+  assert.equal(setsEngineStrict("engine-strict=false\n"), false);
+});
+
+test("`npm install` inside a copy of packages/lab is REFUSED EARLY: EBADENGINE, no node_modules and no lockfile", () => {
+  const dir = labFixture(true);
+  const run = install(npmCliInvocation("npm", NPM_INSTALL), dir, envWith(undefined));
+  assert.notEqual(run.status, 0, `npm install succeeded inside the lab copy: ${run.stdout}${run.stderr}`);
+  assert.match(run.stderr, /EBADENGINE/);
+  assert.match(run.stderr, /pnpm/);
+  for (const written of ["node_modules", "package-lock.json", "pnpm-lock.yaml"]) assert.equal(existsSync(join(dir, written)), false, `npm wrote ${written} before refusing`);
+});
+
+test("positive control: the same copy WITHOUT engine-strict installs, so the refusal above is the switch's doing", () => {
+  const dir = labFixture(false);
+  const run = install(npmCliInvocation("npm", NPM_INSTALL), dir, envWith(undefined));
+  assert.equal(run.status, 0, `npm install failed without the switch, so the copy is not an install target: ${run.stdout}${run.stderr}`);
+  assert.equal(existsSync(join(dir, "node_modules", "left")), true);
+});
+
+test("`pnpm install` in the same copy SUCCEEDS: engines.npm and engine-strict refuse npm and not pnpm", () => {
+  const dir = labFixture(true);
+  const run = install(pnpmCliInvocation(["install", "--offline"]), dir, envWith(undefined));
+  assert.equal(run.status, 0, `pnpm install failed in the lab copy: ${run.stdout}${run.stderr}`);
+  assert.equal(existsSync(join(dir, "node_modules", "left")), true, "pnpm exited 0 and installed nothing");
+});
