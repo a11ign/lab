@@ -4,8 +4,10 @@
  * at `0.0.0`, so a second dispatch recomputed the identical already-published target version and
  * `changeset publish` silently no-op'd every already-shipped package.
  *
- * `release.yml` now runs `scripts/release-commit-version-bump.mjs` right after `Publish`, gated on the
- * identical `if:`. This file pins three things: the pure path-selection logic (`versionBumpPaths`), which
+ * #3131: the script no longer pushes `main` (its required review refuses it). `release.yml`'s `version-pr` job runs it
+ * right after `release:version`, and it force-pushes `VERSION_BRANCH`, from which the ONE version pull request is
+ * opened. It also writes one EMPTY changeset, which is what lets that pull request pass `ci.yml`'s `changeset` job.
+ * This file pins three things: the pure path-selection logic (`versionBumpPaths`), which
  * is what avoids the glob-pathspec trap `git add` falls into (see that function's own header); the script
  * run for real, in a sandbox, on both of its branches; and the workflow wiring itself, the same way
  * `release-safety.test.ts` pins its neighbouring guards.
@@ -40,7 +42,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, copyFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,7 +50,8 @@ import { execFileSync } from "node:child_process";
 import { withGitSandbox, sandboxGitEnv } from "../../../../scripts/test-support/git-sandbox.ts";
 import type { GitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
 import { localImports } from "../../../guards/src/local-import-closure.mjs";
-import { versionBumpPaths } from "../../../../scripts/release-commit-version-bump.mjs";
+import { parse as parseYaml } from "yaml";
+import { versionBumpPaths, VERSION_BRANCH } from "../../../../scripts/release-commit-version-bump.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOW = readFileSync(join(REPO, ".github/workflows/release.yml"), "utf8");
@@ -89,12 +92,13 @@ test("#1824 NEGATIVE CONTROL: a path that does not exist is never returned -- no
   }
 });
 
-test("#1824 on the real repository: every package directory contributes package.json; no CHANGELOG.md exists yet", () => {
+test("#1824 on the real repository: every package directory contributes package.json, and every CHANGELOG.md returned exists", () => {
   // THE POSITIVE CONTROL FOR THE GLOB-PATHSPEC BUG THIS FUNCTION EXISTS TO AVOID: `git add -A --
-  // 'packages/*/CHANGELOG.md'` refuses the WHOLE call with "did not match any files" today, because no
-  // package here has ever had a changeset applied. If a future release changes that, this assertion is
-  // meant to start failing -- the day it does, the fixture test above is what still proves the function
-  // itself handles a mix of the two shapes correctly.
+  // 'packages/*/CHANGELOG.md'` refuses the WHOLE call with "did not match any files" whenever even one package has
+  // no `CHANGELOG.md`. This used to assert that NO package has one, which was true until the first version pull
+  // request -- and that pull request is the one that creates them, so the assertion would have gone red on the very
+  // change it exists to support (#3131, measured by running the packaging suite on a simulated version commit). It
+  // now asserts what holds on either side of that moment: nothing nonexistent is returned.
   //
   // READ-ONLY against this checkout, which is why it stays pointed at it while the script's own run below
   // does not: `versionBumpPaths` calls `existsSync` and nothing else.
@@ -102,9 +106,7 @@ test("#1824 on the real repository: every package directory contributes package.
   assert.ok(paths.includes("packages/scorer/package.json"), "packages/scorer/package.json must be tracked");
   assert.ok(paths.includes("package.json") && paths.includes("pnpm-lock.yaml") && paths.includes(".changeset"),
     "the root package.json, pnpm-lock.yaml and .changeset must all be tracked -- they all exist");
-  assert.deepEqual(paths.filter((p) => p.endsWith("CHANGELOG.md")), [],
-    "no package here has a CHANGELOG.md yet -- if this fails, `changeset version` has run for real and the "
-    + "glob-pathspec trap this function avoids is worth re-testing against the real tree it describes");
+  for (const path of paths) assert.ok(existsSync(join(REPO, path)), `${path} is returned but does not exist: a glob-shaped pathspec in all but name`);
 });
 
 /**
@@ -129,7 +131,7 @@ function scriptClosure(): string[] {
 /**
  * A throwaway repository the script can be run against FOR REAL: a byte-identical copy of it and its
  * import closure, the tracked paths `versionBumpPaths` looks for, one base commit, and a bare remote of
- * its own so `git push origin HEAD:main` lands somewhere that is not this repository.
+ * its own so the push lands somewhere that is not this repository.
  *
  * A COPY and not a symlink, because `import.meta.url` is what the script derives its repo root from and
  * Node resolves an entry point through symlinks before setting it -- a symlinked script would compute the
@@ -208,25 +210,35 @@ test("#1824/#2057 THE SCRIPT ITSELF, run for real against a SANDBOX repository: 
   });
 });
 
-test("#2057 POSITIVE CONTROL: with an uncommitted `.changeset/` edit the script COMMITS and PUSHES it -- the defect, where it can do no harm", () => {
+test("#2057/#3131 POSITIVE CONTROL: with an uncommitted `.changeset/` edit the script COMMITS and pushes the VERSION BRANCH, never main -- the defect, where it can do no harm", () => {
   withScriptSandbox((sandbox, remote) => {
     writeFileSync(join(sandbox.dir, ".changeset/README.md"), "# Changesets\n\nan engineer's in-flight edit\n");
-    const publishedAt = sandbox.run(["rev-parse", "--short", "HEAD"]).trim();
+    const basedOn = sandbox.run(["rev-parse", "--short", "HEAD"]).trim();
+    const remoteRef = (ref: string): string => {
+      try {
+        return execFileSync("git", ["--git-dir", remote, "rev-parse", "--verify", "--quiet", ref], { encoding: "utf8", env: sandboxGitEnv() }).trim();
+      } catch (error) {
+        // `--quiet --verify` exits 1 for an absent ref, which is the answer wanted for `main`; anything else is a real failure.
+        if ((error as { status?: number }).status === 1) return "";
+        throw new Error(`could not ask the throwaway remote about ${ref}`, { cause: error });
+      }
+    };
 
     const result = runScript(sandbox);
 
-    assert.match(result, /committing this version bump back to main/,
-      "the script must announce the commit it is about to write");
-    assert.equal(sandbox.run(["log", "-1", "--format=%s"]).trim(),
-      `release: apply version bump published at ${publishedAt}`,
+    assert.match(result, new RegExp(`committing this version bump to ${VERSION_BRANCH}`),
+      "the script must announce the commit it is about to write, and where it goes");
+    assert.equal(sandbox.run(["log", "-1", "--format=%s"]).trim(), `release: version packages (main at ${basedOn})`,
       "the message describes a release -- which is why finding this on your own branch reads as somebody else's work");
-    assert.match(sandbox.run(["show", "--stat", "--format=", "HEAD"]), /\.changeset\/README\.md/,
-      "the in-flight edit planted above is what the release commit swept up");
-    assert.equal(
-      execFileSync("git", ["--git-dir", remote, "rev-parse", "main"], { encoding: "utf8", env: sandboxGitEnv() }).trim(),
-      sandbox.run(["rev-parse", "HEAD"]).trim(),
-      "and it pushed: `main` in the throwaway remote names the commit just written, so the whole "
+    const shown = sandbox.run(["show", "--stat", "--format=", "HEAD"]);
+    assert.match(shown, /\.changeset\/README\.md/, "the in-flight edit planted above is what the release commit swept up");
+    assert.match(shown, /\.changeset\/version-packages\.md/,
+      "the EMPTY changeset rides along: without it `changeset status --since` exits 1 on a version commit and the pull request never merges");
+    assert.equal(remoteRef(`refs/heads/${VERSION_BRANCH}`), sandbox.run(["rev-parse", "HEAD"]).trim(),
+      "and it pushed: the version branch in the throwaway remote names the commit just written, so the whole "
       + "config/add/commit/push path ran rather than stopping at the commit");
+    assert.equal(remoteRef("refs/heads/main"), "",
+      "MAIN WAS NOT PUSHED: `main`'s required review refuses a direct push, and this script pushing it was the defect #3131 removes");
 
     // THE DISGUISE, asserted because it is what let this survive being seen: the assertion that catches the
     // commit can only fire AFTER the damage, and the re-run somebody does next reads clean.
@@ -238,30 +250,39 @@ test("#2057 POSITIVE CONTROL: with an uncommitted `.changeset/` edit the script 
   });
 });
 
-test("#1824 THE WORKFLOW CALLS IT: right after Publish, gated on the identical if:", () => {
-  const publish = WORKFLOW.indexOf("- name: Publish\n");
-  const commitStep = WORKFLOW.indexOf("- name: Commit the version bump back to main");
-  const sayWhatHappened = WORKFLOW.indexOf("- name: Say plainly what happened");
-  assert.ok(publish !== -1 && commitStep !== -1 && sayWhatHappened !== -1,
-    "release.yml's Publish, commit-back or closing step moved; re-read this test");
-  assert.ok(publish < commitStep && commitStep < sayWhatHappened,
-    "the commit-back step must run after Publish and before the closing summary step");
-
-  const nearby = WORKFLOW.slice(commitStep, sayWhatHappened);
-  assert.match(nearby, /if:\s*inputs\.dry-run == false && inputs\.confirm == 'publish-for-real'/,
-    "the commit-back step must carry the identical guard Publish itself carries -- a dry run never touched "
-    + "the registry, so committing a version nothing actually shipped would make main claim a version that "
-    + "does not exist");
-  assert.match(nearby, /run:\s*node scripts\/release-commit-version-bump\.mjs/,
-    "the commit-back step must actually run the script, or the guard above is decorative");
+test("#3131: the version branch is FORCE-pushed, so a second run after main moved replaces it rather than failing", () => {
+  withScriptSandbox((sandbox, remote) => {
+    writeFileSync(join(sandbox.dir, ".changeset/README.md"), "# Changesets\n\nfirst\n");
+    runScript(sandbox);
+    // `main` moves under an open version pull request: the next run starts from the new tip, which the old branch does not contain.
+    sandbox.run(["reset", "--hard", "HEAD~1"]);
+    writeFileSync(join(sandbox.dir, "unrelated.txt"), "main moved\n");
+    sandbox.run(["add", "unrelated.txt"]);
+    sandbox.commit("main moved on");
+    writeFileSync(join(sandbox.dir, ".changeset/README.md"), "# Changesets\n\nsecond\n");
+    runScript(sandbox);
+    assert.equal(
+      execFileSync("git", ["--git-dir", remote, "rev-parse", `refs/heads/${VERSION_BRANCH}`], { encoding: "utf8", env: sandboxGitEnv() }).trim(),
+      sandbox.run(["rev-parse", "HEAD"]).trim(),
+      "a fast-forward-only push would have been refused here, which is the ordinary case for an open version pull request");
+  });
 });
 
-test("#1824: the release job already grants contents: write, which pushing the version bump needs", () => {
-  // Granted since the first publish (#63) for the git tag `changeset publish` creates -- this step reuses
-  // that same permission rather than widening it further.
-  const releaseJob = WORKFLOW.indexOf("\n  release:\n");
-  assert.notEqual(releaseJob, -1, "the release job must exist");
-  const permissionsBlock = WORKFLOW.slice(releaseJob, WORKFLOW.indexOf("steps:", releaseJob));
-  assert.match(permissionsBlock, /contents:\s*write/,
-    "the release job must grant contents: write, or pushing the version bump back to main fails");
+test("#1824/#3131 THE WORKFLOW CALLS IT: in the version-pr job, after release:version, and NOT in the publishing job", () => {
+  const doc = parseYaml(WORKFLOW) as { jobs: Record<string, { steps?: { name?: string; run?: string }[]; if?: string }> };
+  const steps = doc.jobs["version-pr"]?.steps ?? [];
+  const version = steps.findIndex((step) => step.run === "pnpm run release:version");
+  const commit = steps.findIndex((step) => step.run === "node scripts/release-commit-version-bump.mjs");
+  assert.ok(version !== -1 && commit !== -1, "release.yml's version-pr job lost its release:version or commit step; re-read this test");
+  assert.ok(version < commit, "the commit must run AFTER release:version, or it commits nothing");
+  assert.match(doc.jobs["version-pr"].if ?? "", /mode == 'version-pr'/, "it runs only when a changeset is pending");
+  const inPublishing = (doc.jobs.release.steps ?? []).filter((step) => /release-commit-version-bump/.test(step.run ?? ""));
+  assert.deepEqual(inPublishing, [], "the publishing job must not commit a bump: it publishes a version already merged to main");
+});
+
+test("#3131: the script is told apart from its old self by what it pushes -- never `HEAD:main`", () => {
+  const source = readFileSync(join(REPO, SCRIPT), "utf8");
+  assert.doesNotMatch(source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, ""), /HEAD:main/);
+  assert.equal(VERSION_BRANCH, "release/version-packages");
+  assert.match(WORKFLOW, new RegExp(`--head ${VERSION_BRANCH}`), "release.yml opens the pull request from the branch the script pushes");
 });
