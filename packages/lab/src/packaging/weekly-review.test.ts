@@ -165,17 +165,20 @@ test("the re-check says nothing twice, nothing on an unread open row, and someth
 
 // ---- 6. the workflow -------------------------------------------------------------------------------------
 
-test("the workflow has schedule and workflow_dispatch only, and permissions that write issues and nothing else", () => {
+// `schedule` is gone on purpose (ceo, #3183; row #3318): the board step cannot run under `github.token`, so the weekly
+// filing is a host systemd timer and the workflow is the by-hand backstop. A cron here would file a row with no board item.
+test("the workflow is workflow_dispatch only, and permissions that write issues and nothing else", () => {
   const workflow = parseYaml(read(".github/workflows/weekly-review.yml")) as {
     on: Record<string, unknown>; permissions: Record<string, string>;
   };
-  assert.deepEqual(Object.keys(workflow.on).sort(), ["schedule", "workflow_dispatch"]);
+  assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
   assert.equal(workflow.permissions.issues, "write");
   const writes = Object.entries(workflow.permissions).filter(([, level]) => level !== "read").map(([scope]) => scope);
   assert.deepEqual(writes, ["issues"]);
   // POSITIVE CONTROL for the shape check: a pull_request trigger and a broader scope are both seen as such.
   const bad = parseYaml("on:\n  pull_request:\n  schedule: []\npermissions:\n  issues: write\n  contents: write\n") as typeof workflow;
   assert.ok("pull_request" in bad.on);
+  assert.ok("schedule" in bad.on);
   assert.deepEqual(Object.entries(bad.permissions).filter(([, level]) => level !== "read").map(([scope]) => scope), ["issues", "contents"]);
 });
 
