@@ -4,7 +4,7 @@
 //          published package the rehearsal exercised since it
 
 /**
- * `#813`'s gate half: `release:gate:ci` calls this, and it refuses `publish-for-real` unless the most recent
+ * `#813`'s gate half: `release:gate:ci` calls this, and it refuses a publish unless the most recent
  * V1 rehearsal still covers the commit about to be released -- its marker an ANCESTOR of that commit, and
  * nothing the rehearsal exercised changed since (#1265, which replaced a marker-EQUALS-release rule that no
  * committed tree could satisfy). The runbook half (`RELEASE.md`'s own prose) says the rule; this is what
