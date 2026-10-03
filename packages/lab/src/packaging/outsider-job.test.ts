@@ -54,7 +54,7 @@ test("the ref, the url and the task are the ONLY lines free to differ", () => {
 });
 
 test("a step ADDED to README's job is refused, naming the README line it displaced", () => {
-  const checkout = "      - uses: actions/checkout@v4";
+  const checkout = "      - uses: actions/checkout@v7";
   const mutated = replaced(generated, `${checkout}\n`, `${checkout}\n      - run: echo an extra step\n`);
   assert.throws(() => refuseDriftFromReadme(readme, mutated),
     new RegExp(`README\\.md line ${readmeLineOf(checkout) + 1} reads .*but the workflow has .*an extra step`));
@@ -66,7 +66,7 @@ test("a step ADDED at the very end of README's job is refused as a line the fenc
 });
 
 test("a step REMOVED from README's job is refused, naming its README line", () => {
-  const upload = "      - uses: actions/upload-artifact@v4";
+  const upload = "      - uses: actions/upload-artifact@v7";
   const mutated = replaced(generated, `${upload}\n`, "");
   assert.throws(() => refuseDriftFromReadme(readme, mutated), new RegExp(`README\\.md line ${readmeLineOf(upload)} reads`));
 });
@@ -89,7 +89,7 @@ test("a job that lost the pin check's `needs:` is refused rather than gating not
 
 test("a fence with one extra step generates a workflow the REAL README refuses", () => {
   const fence = extractDocumentedJobsBlock(readme);
-  const changed = readme.replace(fence, replaced(fence, "      - uses: actions/checkout@v4", "      - uses: actions/checkout@v4\n      - run: echo hi"));
+  const changed = readme.replace(fence, replaced(fence, "      - uses: actions/checkout@v7", "      - uses: actions/checkout@v7\n      - run: echo hi"));
   assert.throws(() => refuseDriftFromReadme(readme, generateOutsiderJob(changed, SHA)), /echo hi/);
 });
 
@@ -218,7 +218,7 @@ test("the pin job tells whoever regenerates it to pass the version too", () => {
 
 test("the real file carries nothing forbidden, and README's own checkout of the reader's repository is not one", () => {
   assert.deepEqual(forbiddenReferences(generated), []);
-  assert.match(generated, /uses: actions\/checkout@v4/, "positive control: README's checkout IS in the file, and is allowed");
+  assert.match(generated, /uses: actions\/checkout@v7/, "positive control: README's checkout IS in the file, and is allowed");
   assert.deepEqual(forbiddenReferences(readFileSync(OUT, "utf8")), []);
 });
 
@@ -227,7 +227,7 @@ test("a planted secret, repository_dispatch, pull_request_target and foreign che
     ["secrets.A11IGN_BOT_TOKEN", replaced(generated, "          GH_REPO:", "          T: ${{ secrets.A11IGN_BOT_TOKEN }}\n          GH_REPO:"), /line \d+ .*secrets\.A11IGN_BOT_TOKEN/],
     ["repository_dispatch", replaced(generated, "on:\n", "on:\n  repository_dispatch:\n"), /line \d+ .*repository_dispatch/],
     ["pull_request_target", replaced(generated, "on:\n", "on:\n  pull_request_target:\n"), /line \d+ .*pull_request_target/],
-    ["a checkout of a11ign", replaced(generated, "      - uses: actions/checkout@v4\n", "      - uses: actions/checkout@v4\n        with:\n          repository: a11ign/a11ign\n"), /checkout of a repository other than the one running/],
+    ["a checkout of a11ign", replaced(generated, "      - uses: actions/checkout@v7\n", "      - uses: actions/checkout@v7\n        with:\n          repository: a11ign/a11ign\n"), /checkout of a repository other than the one running/],
   ] as const;
   for (const [name, text, expected] of planted) {
     assert.match(forbiddenReferences(text).join("\n"), expected, `${name} must be refused`);
