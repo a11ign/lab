@@ -87,15 +87,6 @@ const KNOWN_REPORTED_FLOORS: readonly string[] = Object.freeze([
   "prose-satisfiable-guards.test.ts: bound.length",
   "prose-satisfiable-guards.test.ts: patterns.length",
   "action-inputs.test.ts: inputs.length",
-  // agent-org-extraction.test.ts's floors are PRECONDITIONS, not stand-ins: `files.length > 100`,
-  // `counts.total > 100`, `travelling.length > 50` and `labFiles.length > 50` only ask "did the walk read
-  // the real tree, not an empty or wrong one" -- the real verdicts (RECORDED_DECISION_4, the exact
-  // outward-edge, relative-import and misplaced-travelling-file counts, and claim 2c's rewrite-pair
-  // equality) are separate, exact assertions a few lines below each floor.
-  "agent-org-extraction.test.ts: counts.total",
-  "agent-org-extraction.test.ts: files.length",
-  "agent-org-extraction.test.ts: labFiles.length",
-  "agent-org-extraction.test.ts: travelling.length",
   "candidate-gate-examines-the-candidate.test.ts: stages.length",
   "changed-files-renames.test.ts: scanned",
   "checkout-dash-safety.test.ts: discovered.length",

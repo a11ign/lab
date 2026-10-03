@@ -7,10 +7,9 @@
  * hosts the arming sweep's non-push triggers; its update-branch job went in #3046 and the file stayed). So the number is what the directory holds after
  * trunk-guard.yml, trunk-sweep.yml and close-rows.yml collapsed into trunk.yml: thirteen, each named here so
  * a fourteenth arriving is a failure with a name rather than a number. The fourteenth arrived with #2519's
- * registry gate, named below with its reason. The fifteenth is `agent-org-extraction.yml`, ADR 0040
- * decision 6's one-time, `workflow_dispatch`-only, dry-run-gated push of `agent-org` into its own
- * repository (row #2623, `ceo`'s ruling 2026-09-28T04:12:30Z). A row that removes or adds one moves
- * this list in the same commit and says why.
+ * registry gate, named below with its reason. (A fifteenth, `agent-org-extraction.yml`, ADR 0040 decision 6's one-time push of
+ * `agent-org` into its own repository, left with `packages/agent-org/` in #2976: it had done its one push.) A row that removes or
+ * adds one moves this list in the same commit and says why.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -19,9 +18,8 @@ import { fileURLToPath } from "node:url";
 
 const WORKFLOWS_DIR = fileURLToPath(new URL("../../../../.github/workflows/", import.meta.url));
 
-const THE_FIFTEEN = [
+const THE_FOURTEEN = [
   "action-smoke.yml",
-  "agent-org-extraction.yml", // ADR 0040 decision 6's one-time agent-org push, dry-run-gated (#2623)
   "auto-arm.yml",           // arms drafts on ready_for_review; the arming sweep and the stalled report
   "board-report.yml",       // London-clock editions, kept by #901's ruling
   "board-summary-check.yml",
@@ -37,11 +35,11 @@ const THE_FIFTEEN = [
   "trunk.yml",              // #909: gate, revert-on-red, close-rows and the watchdogs, on every push to main
 ];
 
-test("#909: the workflow directory holds exactly the fifteen named here, no more and no fewer", () => {
+test("#909: the workflow directory holds exactly the fourteen named here, no more and no fewer", () => {
   const onDisk = readdirSync(WORKFLOWS_DIR).filter((f) => /\.ya?ml$/.test(f)).sort();
-  assert.deepEqual(onDisk, [...THE_FIFTEEN].sort(),
+  assert.deepEqual(onDisk, [...THE_FOURTEEN].sort(),
     "a workflow arrived or left without this list moving in the same commit -- name it here with its reason");
-  assert.equal(onDisk.length, 15);
+  assert.equal(onDisk.length, 14);
 });
 
 test("#909: the three collapsed workflows are gone, and the one that replaced them exists", () => {

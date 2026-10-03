@@ -113,12 +113,6 @@ const EXEMPT: Record<string, string> = {
     "Its only write (writeFileSync(BASELINE, ...)) targets packages/lab/baselines/real-page-findings.json "
     + "-- tracked source, a deliberate checked-in baseline update, not a runs/ write. It does resolve "
     + "runs/ paths (realCorpusRoot(), datasetRoot()) to READ the corpus it is scoring.",
-  "packages/agent-org/src/work-gate.mjs":
-    "#2980: its only runs/ path is runs/fleet-captures-state.json, which it READS (readFleetCaptures) and "
-    + "never writes. Its one write (appendFileSync in reviewerAuthTick) appends the reviewer-refresh ledger "
-    + "under the reviewer state dir, outside runs/ altogether; the two share a file because the scan is per "
-    + "file, not per call. It cannot call refuseIfRunsReadonly: that lives in @a11ign/lab, which "
-    + "@a11ign/agent-org may not import (agent-org-outward-edges.test.ts, #2658).",
   "packages/cli/src/cli.ts":
     "Cannot call refuseIfRunsReadonly without importing dataset-paths.mjs, which would recreate the #199 "
     + "cycle dataset-paths.test.ts's own EXEMPT entry for this file already documents (a11ign/cli is "

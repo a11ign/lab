@@ -257,6 +257,8 @@ const RESERVED_BY_A_ROW: readonly RegExp[] = [
   /^\.agent-org\//,
   // #2976 deletes `packages/agent-org/` outright; the appendix Regions that named files in it then name files that no longer exist.
   /^packages\/agent-org\//,
+  // #2976 also deletes the two-copy period's instruments, which only measured or performed the extraction. Listed by name.
+  /^(?:docs\/split-baseline\.md|scripts\/split-baseline\.mjs|scripts\/agent-org-extraction-rehearsal\.mjs|\.github\/workflows\/agent-org-extraction\.yml)$/,
   /^\.changeset\//,
   /^packages\/agent-org\/src\/(?:lib\/|project-config\.mjs$|project-vocabulary\.mjs$|host-config\.mjs$|cause-declaration\.mjs$|shadow-gate\.mjs$)/,
   /^packages\/lab\/src\/packaging\/(?:project-config|multi-board-claim|multi-board-gate|project-vocabulary|project-roles|host-project-paths|shadow-gate|agent-org-extraction|agent-org-outward-edges|package-rename-nvda-worker|package-rename-worker-fleet|agent-org-monorepo-copy-removed|screenreader-worker-extraction|screenreader-fleet-extraction|lab-extraction|control-extraction|documents-extraction|cli-documents-dependency)\.test\.ts$/,

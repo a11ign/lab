@@ -89,15 +89,8 @@ const MAPPED_TO_A_CAUSE: Record<string, string> = {};
  * SHRINK-ONLY: `file:phrase` -> why no delivery is owed. Adding one is a decision, and `EXEMPT_CEILING` is pinned to this
  * list's length so that growing it shows in the diff as a raised number, and shrinking it lowers one.
  */
-const EXEMPT_WITH_A_REASON: Record<string, string> = {
-  "packages/agent-org/src/row-file.mjs:process.stderr.write(\"row-file: NOT routed to orchestrator -- a \"":
-    "A filing outcome written on the stderr of the session that just ran `row-file`: that session IS the reader, nobody "
-    + "is asked to do anything, and the verb is passive (\"was not given lane:orchestrator\"), not an order.",
-  "packages/agent-org/src/row-file.mjs:return `row-file: NOT routed to orchestrator -- the row declares \"No\" to":
-    "The same filing outcome as the line above, for the declared-No shape (#2175): the filer reads it where it ran, and "
-    + "the remedy it names (change the answer) is the filer's own.",
-};
-const EXEMPT_CEILING = 2;
+const EXEMPT_WITH_A_REASON: Record<string, string> = {};
+const EXEMPT_CEILING = 0;
 
 const isAccounted = (hit: string, key: string) => hit.startsWith(key.split(":")[0] + ":") && hit.includes(key.split(":").slice(1).join(":"));
 
@@ -112,8 +105,8 @@ function reasonProblems(exempt: Record<string, string>): string[] {
 }
 
 /**
- * What is wrong with a mapping: a cause the gate does not declare. READ AS TEXT from `cause-declaration.mjs`, never imported:
- * `agent-org-extraction.test.ts` counts every test that imports `agent-org/src`, so an import moves a pin outside this row's Region.
+ * What is wrong with a mapping: a cause the gate does not declare. READ AS TEXT from `cause-declaration.mjs` in the installed
+ * tool (`node_modules/agent-org`), never imported.
  */
 const DECLARED_CAUSES_SOURCE = readFileSync(join(REPO_ROOT, "node_modules", "agent-org", "src", "cause-declaration.mjs"), "utf8");
 function causeProblems(mapped: Record<string, string>): string[] {
@@ -154,9 +147,7 @@ test("#2940: a comment is not a refusal, and naming a session is not telling it"
 test("#2940: the scope reaches the tools a SESSION runs, not only the files a workflow runs", () => {
   const files = refusalSourceFiles().map((f) => relative(REPO_ROOT, f));
   assert.ok(files.length > 300, "the population is real");
-  for (const must of ["packages/control/src/fleet-status.mjs", "packages/control/src/fleet-playbook.mjs",
-    "packages/agent-org/src/row-claim.mjs", "packages/agent-org/src/pr-open.mjs", "packages/agent-org/src/prompt-session.mjs",
-    "packages/agent-org/src/closes-mismatch-check.mjs"]) {
+  for (const must of ["packages/control/src/fleet-status.mjs", "packages/control/src/fleet-playbook.mjs"]) {
     assert.ok(files.includes(must), `${must} is in the walk`);
   }
   assert.ok(files.some((f) => f.startsWith(".github/workflows/")), "and the workflows still are");

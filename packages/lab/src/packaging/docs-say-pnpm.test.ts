@@ -337,13 +337,6 @@ const LEFT_AS_TYPED: RecordGroup[] = [
   },
   {
     kind: "record",
-    reason: "a baseline taken at a commit",
-    files: {
-      "docs/split-baseline.md": 1,
-    },
-  },
-  {
-    kind: "record",
     reason: "an audit of rows on a date",
     files: {
       "docs/stale-row-audit.md": 1,

@@ -40,8 +40,8 @@ const LAYER_FILE = "packages/nvda-worker/src/x.mjs";
 
 // ------------------------------------------------------------------ the declared layers
 
-test("the layer packages are DECLARED, both of them, and packageOf reads the directory under packages/", () => {
-  assert.deepEqual([...LAYER_PACKAGES], ["nvda-worker", "nvda-speech"]);
+test("the layer packages are DECLARED, all three, and packageOf reads the directory under packages/", () => {
+  assert.deepEqual([...LAYER_PACKAGES], ["nvda-worker", "nvda-speech", "agent-org"]);
   assert.equal(packageOf("packages/nvda-worker/src/server.mjs"), "nvda-worker");
   assert.equal(packageOf("packages/nvda-speech"), "nvda-speech");
   assert.equal(packageOf("scripts/x.mjs"), null, "the repository root and scripts/ are in no package");

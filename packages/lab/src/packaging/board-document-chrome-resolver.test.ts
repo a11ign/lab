@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { resolveChromeBinary } from "../../../agent-org/src/board-document.mjs";
+import { resolveChromeBinary } from "agent-org/src/board-document.mjs";
 
-const SCRIPT = fileURLToPath(new URL("../../../agent-org/src/board-document.mjs", import.meta.url));
+const SCRIPT = fileURLToPath(new URL("../../../../node_modules/agent-org/src/board-document.mjs", import.meta.url));
 
 /**
  * #280: `board-report.yml` had never once succeeded, on any route -- the publish step hardcoded
@@ -48,7 +48,7 @@ test("resolveChromeBinary finds the real Chrome on THIS machine, with no overrid
 test("the env var override is used when it points at something real", () => {
   const found = resolveChromeBinary({
     env: { BOARD_DOCUMENT_CHROME: "/fake/but/checked/chrome" },
-    exists: (p) => p === "/fake/but/checked/chrome",
+    exists: (p: string) => p === "/fake/but/checked/chrome",
   });
   assert.equal(found, "/fake/but/checked/chrome");
 });
@@ -63,7 +63,7 @@ test("the env var override REFUSES with a readable message when it points at not
 test("falls through the candidate list to the one that exists", () => {
   const found = resolveChromeBinary({
     env: {},
-    exists: (p) => p === "/usr/bin/google-chrome-stable",
+    exists: (p: string) => p === "/usr/bin/google-chrome-stable",
   });
   assert.equal(found, "/usr/bin/google-chrome-stable");
 });
@@ -72,7 +72,7 @@ test("falls back to PATH when no candidate path exists", () => {
   const found = resolveChromeBinary({
     env: {},
     exists: () => false,
-    which: (name) => (name === "chromium" ? "/snap/bin/chromium" : ""),
+    which: (name: string) => (name === "chromium" ? "/snap/bin/chromium" : ""),
   });
   assert.equal(found, "/snap/bin/chromium");
 });

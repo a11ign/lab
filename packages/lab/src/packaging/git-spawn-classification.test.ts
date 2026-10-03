@@ -158,12 +158,9 @@ const SPAWNS_GIT_DIRECTLY = /\b\w+\(\s*["']git["']/;
  * file that genuinely imports no spawning capability, so an entry added to silence a REAL offender fails
  * on its own terms rather than passing quietly.
  */
-const GIT_IS_DATA_NOT_A_SPAWN: Record<string, string> = {
-  "packages/agent-org/src/wake-review-recheckout.test.ts":
-    'its `git` is an injected fake seam (`checkout: { git, exists, link, root, repoRoot }`) that records each call '
-    + "and answers from a map of tree heads -- the file imports node:test, node:assert/strict, node:fs/os/path and "
-    + "the modules under test, and has no node:child_process import, so nothing here can spawn (#2771)",
-};
+// Empty since `packages/agent-org/` left this repository (#2976): its one member, the tool's
+// `wake-review-recheckout.test.ts`, went with it. The mechanism stays for the next file whose `"git"` is data.
+const GIT_IS_DATA_NOT_A_SPAWN: Record<string, string> = {};
 
 /** The spawning capability a file must import before it can spawn anything, whatever the callee is named. */
 const CAN_SPAWN = /from\s+["']node:child_process["']|require\(\s*["']node:child_process["']/;

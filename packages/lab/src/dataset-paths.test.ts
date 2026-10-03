@@ -193,19 +193,6 @@ const EXEMPT: Record<string, string> = {
     + "@a11ign/control cannot import @a11ign/lab, and runs/fleet-auto-off-state.json is a tiny local "
     + "ledger of idle-since/shutdown-requested-at timestamps between one auto-off tick and the next, not "
     + "a dataset root this module owns at all.",
-  "packages/agent-org/src/acceptance-commands.mjs":
-    "#1973: `runs/fetched/<out>.<artifact><ext>` is QUOTED FROM lab-fetch.yml's own \"Name it after what "
-    + "it actually is\" task, to tell a row filer which path their Acceptance meant -- a string in a "
-    + "refusal message, never a path this module resolves, opens or writes. It cannot be read from "
-    + "dataset-paths.mjs in any case: that destination is the PLAYBOOK's rule rather than the dataset's, "
-    + "and @a11ign/agent-org declares no dependencies at all, the same direction fleet-watch.mjs is "
-    + "exempted for one package along.",
-  "packages/agent-org/src/work-gate.mjs":
-    "#2980: names runs/fleet-captures-state.json to READ the ledger fleet-watch.mjs writes (#2979), the same file "
-    + "fleet-watch.mjs and fleet-auto-off.mjs above are exempted for. It cannot import dataset-paths.mjs: "
-    + "@a11ign/agent-org may not import the product tree (agent-org-outward-edges.test.ts, #2658), and the "
-    + "ledger is a tiny local file under the project checkout, not a dataset root this module owns. "
-    + "org-health-fleet-wiring.test.ts runs the reader over the writer's own ledger, so the name is pinned.",
   "packages/lab/src/packaging/acceptance-check-at-filing.test.ts":
     "#1973: the same literals, as the expected VALUES the refusal above must name -- a test that read "
     + "them from dataset-paths.mjs would be asserting the checker against its own source and could not "

@@ -308,26 +308,14 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "reporting a false pass on the same empty population. Kept as an entry rather than deleted, the "
       + "same as `backlog-ready.test.ts` above, so the record says RETIRED rather than quietly dropped.",
   },
-  // #1144 MOVED THIS to `packages/lab/nightly/` when its per-node half became an ESLint rule. The
-  // discovery walk (`git ls-files "*.test.ts"`) reaches the new path unchanged; only this KEY was a
-  // path literal, so the table went stale the moment the file moved and CI failed on an ENOENT.
-  //
-  // WORTH KNOWING FOR THE REST OF #908: every conversion that relocates a residual breaks any
-  // path-keyed classification naming it, in a file the mover has no reason to open.
   "packages/lab/nightly/bounded-window-reads.test.ts": {
-    guard: "Object.keys(EXPECTED_READERS).filter((file) => !readers.includes(file))",
-    note: "guarded — #634. It walks `git ls-files` for every file whose CODE reads `statusCheckRollup` "
-      + "off an object and requires each read to narrow the rollup to the newest run per NAME. Vacuity "
-      + "is the failure with teeth here and it ALREADY HAPPENED once inside that file: its discovery "
-      + "regex carried a lookbehind that excluded the READS instead of the `--json` field list, and it "
-      + "found 3 reader FILES where there were 4. Every other assertion in that file is about the "
-      + "RESULT — are the sites it found classified? — and each is SATISFIED by finding fewer sites. "
-      + "Only this floor asks about the SEARCH. THE FLOOR IS NOW A LIST OF NAMES, not `readers.length "
-      + ">= 4` (2026-09-09): `queue-table.mjs` legitimately stopped reading the rollup when the table "
-      + "moved to REST `check-runs`, and the repair a bare count offers is to write 3 — the same edit "
-      + "that would paper over the predicate shrinking again. A named list makes a departure a deleted "
-      + "line that must say what answers the question now, and makes a broken predicate lose every "
-      + "entry at once. Strictly stronger than the cardinality it replaces: it pins WHICH.",
+    guard: null,
+    note: "RETIRED WITH ITS POPULATION, 2026-10-03 (#2976). It walked `git ls-files` for every file whose CODE reads "
+      + "`statusCheckRollup` off an object (#634) and held a by-name list of the readers it must still find, each "
+      + "lived in `packages/agent-org/`: `merge-queue.mjs`, `queue-stalled.mjs` and `update-branch-sweep.mjs`. They "
+      + "went to `a11ign/agent-org` with the directory, so the list could only pass having examined nothing, and the "
+      + "discovery and its list were removed. The file stays for the newest-per-name fixtures, which read no tree. "
+      + "Kept as an entry rather than deleted, as `action-reference.test.ts` above is, so the record says RETIRED.",
   },
   "packages/lab/src/packaging/guest-paths-are-measured.test.ts": {
     guard: "named.length >= 15",
