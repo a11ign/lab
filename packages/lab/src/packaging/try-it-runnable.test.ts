@@ -26,13 +26,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const PAGE = resolve(REPO, "docs/try-it.md");
 const page = () => readFileSync(PAGE, "utf8");
+/** The other two places a stranger meets the install claim (#3197): the repo front page and the CLI's own page. */
+const README = resolve(REPO, "README.md");
+const CLI_README = resolve(REPO, "packages/cli/README.md");
 
 /** The runs that REACHED the page, and so the exact size of the checked population (#1060, widened to the
  * full eleven-run measurement by #311's 2026-09-19 reconciliation with #915). */
@@ -256,6 +259,7 @@ const UNPUBLISHED_CLAIMS: readonly RegExp[] = [
   /nothing\s+is\s+published/gi,
   /(?:not|isn't)\s+published(?:\s+to\s+npm)?\s+yet/gi,
   /(?:does|will)\s+not\s+work\s+yet/gi,
+  /no\s+package\s+has\s+been\s+(?:pushed|published)/gi,
 ];
 
 /**
@@ -292,6 +296,22 @@ function pageBefore3186(): string {
 
 test("#3186 ACCEPTANCE: the page makes no claim that the package is unpublished or that npx does not work", () => {
   assert.deepEqual(unpublishedClaims(page()), []);
+});
+
+test("#3197 ACCEPTANCE: README.md and packages/cli/README.md make no claim that the package is unpublished either", () => {
+  // One list across both files, so a failure names every offender as `file:line` rather than stopping at the first.
+  const offenders = [README, CLI_README].flatMap((file) => unpublishedClaims(readFileSync(file, "utf8"))
+    .map((claim) => `${relative(REPO, file)}:${claim.line} ${claim.text}`));
+  assert.deepEqual(offenders, []);
+});
+
+test("#3197 POSITIVE CONTROL: the sentences as they stood in both READMEs are refused, wrapped or not", () => {
+  // The control for the emptiness assertions above: README.md's line 16 and the CLI README's banner, verbatim.
+  const readmeBefore = "a\nb\n> yours instead. (`npx a11ign` is not published yet — see\n> [`packages/cli/README.md`]";
+  const cliBefore = "> **`npx a11ign` does NOT work yet, and that is why it is not the first thing on this page.**\n"
+    + "> works from a checkout — but no package has been pushed to npm, so run as typed it returns `E404`";
+  assert.deepEqual(unpublishedClaims(readmeBefore).map((c) => c.line), [3]);
+  assert.deepEqual(unpublishedClaims(cliBefore).map((c) => c.line), [1, 2]);
 });
 
 test("#3186 POSITIVE CONTROL: the sentences as they stood are refused, at lines 34 and 294", () => {
