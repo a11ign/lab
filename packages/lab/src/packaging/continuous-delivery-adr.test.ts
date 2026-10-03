@@ -36,8 +36,17 @@ const REPOSITORIES = ["a11ign", "agent-org", "screenreader-worker", "screenreade
 const MECHANISM = /OIDC|git tag/;
 /** The four DORA metrics, each defined with an input. */
 const DORA_METRICS = ["DEPLOYMENT FREQUENCY", "LEAD TIME", "CHANGE FAILURE RATE", "TIME TO RESTORE"] as const;
-/** The rows filed beside the ADR (#928, 2026-10-03), which the real document's appendix must name. */
-const ROWS_FILED_BESIDE: readonly number[] = [3130, 3131, 3132, 3133, 3134, 3135, 3136, 3137, 3138];
+/**
+ * Every row the real document's appendix must name: the nine filed beside the ADR (#928, 2026-10-03), the cross-repository
+ * refusal test filed for decision 1, the five split moves, the `cli` move, and the monorepo's own release.
+ * Listing only the first nine let the other nine be deleted with the Acceptance still green (review of #3144).
+ */
+const ROWS_FILED_BESIDE: readonly number[] = [
+  3130, 3131, 3132, 3133, 3134, 3135, 3136, 3137, 3138,
+  3143,
+  2701, 2702, 2703, 2704, 2705, 3125,
+  3126,
+];
 /** What the row's Done-when 2 says Alternatives rejected holds at least: what it is, the phrase that shows it, and a sentence the fixture uses. */
 const REQUIRED_ALTERNATIVES: readonly { what: string; marker: RegExp; fixtureText: string }[] = [
   { what: "a shared release train", marker: /shared release train/i, fixtureText: "A shared release train for all repositories." },
@@ -398,9 +407,11 @@ test("ADR 0041 has all seven decisions with readings, the four metrics, the seve
   const text = readFileSync(`${ADR_DIR}${ADR_FILE}`, "utf8");
   const index = readFileSync(`${ADR_DIR}README.md`, "utf8");
   // The population is proved non-empty by the controls above (the complete fixture passes and each broken one reports);
-  // this asserts the real document reports nothing, and that it really holds seven decisions and the nine rows.
+  // this asserts the real document reports nothing, and that it really holds seven decisions and exactly the listed rows,
+  // so a row added to the appendix without being listed here is as visible as one deleted from it.
   assert.equal([...text.matchAll(/^### DECISION \d+\b/gm)].length, DECISION_COUNT);
-  assert.equal([...text.matchAll(/^### ROW \d+\b/gm)].length >= ROWS_FILED_BESIDE.length, true);
+  const appendixRows = [...text.matchAll(/^### ROW (\d+)\b/gm)].map((m) => Number(m[1]));
+  assert.deepEqual([...appendixRows].sort(), [...ROWS_FILED_BESIDE].sort());
   assert.deepEqual(checkAdr(text, index, ADR_FILE, ROWS_FILED_BESIDE), []);
   assert.deepEqual(pointerProblems(readFileSync(`${ADR_DIR}${ADR_0040_FILE}`, "utf8")), []);
 });
