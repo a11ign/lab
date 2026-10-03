@@ -1,0 +1,148 @@
+{
+  "pr": 3157,
+  "title": "deps: bump @guidepup/guidepup from 0.31.0 to 0.34.0",
+  "baseRefOid": "bf7a6cb966237383f1579f4bf95d717e22258d42",
+  "headRefOid": "fef4742f9a2097a63afb7eb7cc8888b0f1d99706",
+  "files": [
+    "package.json",
+    "packages/lab/package.json",
+    "packages/nvda-worker/package.json",
+    "pnpm-lock.yaml"
+  ],
+  "manifests": {
+    "package.json": {
+      "before": {
+        "name": "a11ign-monorepo",
+        "version": "0.0.0",
+        "private": true,
+        "dependencies": {
+          "@a11ign/evidence": "0.0.0",
+          "@a11ign/judge": "0.0.0",
+          "@a11ign/scorer": "0.0.0",
+          "@a11ign/screenreader-fleet": "0.0.0",
+          "@a11ign/screenreader-worker": "0.0.0",
+          "@anthropic-ai/sdk": "^0.106.0",
+          "@guidepup/guidepup": "^0.31.0",
+          "a11ign": "0.0.0"
+        },
+        "devDependencies": {
+          "@changesets/cli": "3.0.1",
+          "@eslint/js": "^10.0.1",
+          "@guidepup/setup": "0.25.2",
+          "@rstest/core": "0.11.12",
+          "@rstest/coverage-v8": "0.11.12",
+          "@types/node": "^26.0.1",
+          "agent-org": "github:a11ign/agent-org#semver:^0.1.0",
+          "eslint": "^10.5.0",
+          "globals": "^17.7.0",
+          "tsx": "^4.22.4",
+          "typescript": "^6.0.3",
+          "typescript-eslint": "^8.62.0"
+        },
+        "optionalDependencies": {
+          "@axe-core/playwright": "^4.12.1",
+          "playwright": "^1.61.1"
+        }
+      },
+      "after": {
+        "name": "a11ign-monorepo",
+        "version": "0.0.0",
+        "private": true,
+        "dependencies": {
+          "@a11ign/evidence": "0.0.0",
+          "@a11ign/judge": "0.0.0",
+          "@a11ign/scorer": "0.0.0",
+          "@a11ign/screenreader-fleet": "0.0.0",
+          "@a11ign/screenreader-worker": "0.0.0",
+          "@anthropic-ai/sdk": "^0.106.0",
+          "@guidepup/guidepup": "^0.34.0",
+          "a11ign": "0.0.0"
+        },
+        "devDependencies": {
+          "@changesets/cli": "3.0.1",
+          "@eslint/js": "^10.0.1",
+          "@guidepup/setup": "0.25.2",
+          "@rstest/core": "0.11.12",
+          "@rstest/coverage-v8": "0.11.12",
+          "@types/node": "^26.0.1",
+          "agent-org": "github:a11ign/agent-org#semver:^0.1.0",
+          "eslint": "^10.5.0",
+          "globals": "^17.7.0",
+          "tsx": "^4.22.4",
+          "typescript": "^6.0.3",
+          "typescript-eslint": "^8.62.0"
+        },
+        "optionalDependencies": {
+          "@axe-core/playwright": "^4.12.1",
+          "playwright": "^1.61.1"
+        }
+      }
+    },
+    "packages/lab/package.json": {
+      "before": {
+        "name": "@a11ign/lab",
+        "version": "0.1.0",
+        "private": true,
+        "dependencies": {
+          "@a11ign/evidence": "0.0.0",
+          "@a11ign/judge": "0.0.0",
+          "@a11ign/scorer": "0.0.0",
+          "@a11ign/screenreader-fleet": "0.0.0",
+          "@a11ign/screenreader-worker": "0.0.0",
+          "@a11ign/nvda-speech": "0.0.0"
+        },
+        "devDependencies": {
+          "@a11ign/control": "0.1.0",
+          "@guidepup/guidepup": "0.31.0",
+          "a11ign": "0.0.0",
+          "serve": "14.2.6",
+          "typescript": "^6.0.3",
+          "yaml": "^2.9.0"
+        }
+      },
+      "after": {
+        "name": "@a11ign/lab",
+        "version": "0.1.0",
+        "private": true,
+        "dependencies": {
+          "@a11ign/evidence": "0.0.0",
+          "@a11ign/judge": "0.0.0",
+          "@a11ign/scorer": "0.0.0",
+          "@a11ign/screenreader-fleet": "0.0.0",
+          "@a11ign/screenreader-worker": "0.0.0",
+          "@a11ign/nvda-speech": "0.0.0"
+        },
+        "devDependencies": {
+          "@a11ign/control": "0.1.0",
+          "@guidepup/guidepup": "0.34.0",
+          "a11ign": "0.0.0",
+          "serve": "14.2.6",
+          "typescript": "^6.0.3",
+          "yaml": "^2.9.0"
+        }
+      }
+    },
+    "packages/nvda-worker/package.json": {
+      "before": {
+        "name": "@a11ign/screenreader-worker",
+        "version": "0.0.0",
+        "dependencies": {
+          "@guidepup/guidepup": "0.31.0"
+        },
+        "devDependencies": {
+          "@a11ign/evidence": "0.0.0"
+        }
+      },
+      "after": {
+        "name": "@a11ign/screenreader-worker",
+        "version": "0.0.0",
+        "dependencies": {
+          "@guidepup/guidepup": "0.34.0"
+        },
+        "devDependencies": {
+          "@a11ign/evidence": "0.0.0"
+        }
+      }
+    }
+  }
+}
