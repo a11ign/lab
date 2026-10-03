@@ -574,14 +574,13 @@ const RECORDED_ORGANISATION = [
  */
 const EXEMPT: Record<string, string> = {
   "corpus-backups": "release storage only: 0 pull requests, all or open (measured 2026-10-02, `gh pr list -R a11ign/corpus-backups --state all`)",
-  "documents": "a layer repository (#2612) whose issues live on a11ign/a11ign; 0 pull requests measured 2026-10-02",
   "control": "a layer repository (#2612) whose issues live on a11ign/a11ign; 0 pull requests measured 2026-10-02",
   "lab": "a layer repository (#2612) whose issues live on a11ign/a11ign; 0 pull requests measured 2026-10-02",
   "screenreader-fleet": "a layer repository (#2612) whose issues live on a11ign/a11ign; 0 pull requests measured 2026-10-02",
   "auth-capture-check": "a private test bed (#2561) whose pull requests are workflow-run vehicles, NOT work to review or merge; 7 open on "
     + "2026-10-02, the same class, routed to product-manager on #2969 rather than declared here",
 };
-const EXEMPTION_CEILING = 6;
+const EXEMPTION_CEILING = 5;
 
 /** The non-archived repositories of `organisation` that are neither a declared scope nor exempt: the offenders. */
 function undeclared(organisation: { name: string; isArchived: boolean }[], declared: Set<string>): string[] {
