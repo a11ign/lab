@@ -207,6 +207,81 @@ test("the version pull request is the only write: a branch, with a token that le
 
 const clone = (): Workflow => structuredClone(liveWorkflow());
 
+/**
+ * #3170: what the `version-pr` job must do with a dependency pull request's accepted entry. Named properties, as in
+ * `refusals()`, so a red run says which one went. `compile` must run in THIS job (the publishing job never writes
+ * entries), after the install, before `release:version` has spent the changesets, and on a checkout that holds the tags.
+ */
+function compileStepProblems(workflow: Workflow): string[] {
+  const steps = workflow.jobs["version-pr"]?.steps ?? [];
+  const at = (match: (step: Step) => boolean): number => steps.findIndex(match);
+  const compile = at((step) => /node scripts\/dependency-changeset\.mjs compile(\s|$)/.test(step.run ?? ""));
+  if (compile < 0) return ["compile-step-missing: the version-pr job never runs `dependency-changeset.mjs compile`"];
+  const install = at((step) => /pnpm install/.test(step.run ?? ""));
+  const version = at((step) => /pnpm run release:version/.test(step.run ?? ""));
+  const problems: string[] = [];
+  if (install < 0 || compile < install) problems.push("compile-before-install: it runs before the install");
+  if (version < 0 || compile > version) problems.push("compile-after-release-version: `changeset version` has already spent the changesets");
+  return [...problems, ...compileContextProblems(workflow)];
+}
+
+/** The two properties of the SURROUNDINGS: the checkout holds the tags, and no publishing step writes entries. */
+function compileContextProblems(workflow: Workflow): string[] {
+  const checkout = workflow.jobs["version-pr"]?.steps?.find((step) => /^actions\/checkout@/.test(step.uses ?? ""));
+  const publishing = workflow.jobs[PUBLISHING_JOB]?.steps ?? [];
+  return [
+    ...(checkout?.with?.["fetch-depth"] === 0 ? [] : ["checkout-has-no-tags: a shallow checkout holds no release tag, so compile reads nothing moved"]),
+    ...(publishing.some((step) => /dependency-changeset\.mjs compile/.test(step.run ?? "")) ? ["compile-in-publishing-job: entries are written in version-pr, never where a publish happens"] : []),
+  ];
+}
+
+test("the version-pr job writes the dependency entry after install and before release:version, on a checkout with tags (#3170)", () => {
+  assert.deepEqual(compileStepProblems(liveWorkflow()), []);
+});
+
+/** Position of the live compile step, so the controls below move or remove exactly that step. */
+const compileIndex = (workflow: Workflow): number => workflow.jobs["version-pr"].steps!.findIndex((step) => /dependency-changeset\.mjs compile/.test(step.run ?? ""));
+
+test("POSITIVE CONTROL (#3170): the compile step is in the live job to begin with, so the controls below have something to break", () => {
+  assert.ok(compileIndex(liveWorkflow()) > 0);
+});
+
+test("POSITIVE CONTROL (#3170): the compile step deleted is refused, naming it", () => {
+  const workflow = clone();
+  workflow.jobs["version-pr"].steps!.splice(compileIndex(workflow), 1);
+  assert.deepEqual(compileStepProblems(workflow).map((p) => p.split(":")[0]), ["compile-step-missing"]);
+});
+
+test("POSITIVE CONTROL (#3170): the compile step moved after release:version is refused, and only for that", () => {
+  const workflow = clone();
+  const steps = workflow.jobs["version-pr"].steps!;
+  const [compile] = steps.splice(compileIndex(workflow), 1);
+  steps.splice(steps.findIndex((step) => /pnpm run release:version/.test(step.run ?? "")) + 1, 0, compile);
+  assert.deepEqual(compileStepProblems(workflow).map((p) => p.split(":")[0]), ["compile-after-release-version"]);
+});
+
+test("POSITIVE CONTROL (#3170): the compile step moved before the install is refused, and only for that", () => {
+  const workflow = clone();
+  const steps = workflow.jobs["version-pr"].steps!;
+  const [compile] = steps.splice(compileIndex(workflow), 1);
+  steps.splice(steps.findIndex((step) => /pnpm install/.test(step.run ?? "")), 0, compile);
+  assert.deepEqual(compileStepProblems(workflow).map((p) => p.split(":")[0]), ["compile-before-install"]);
+});
+
+test("POSITIVE CONTROL (#3170): a shallow checkout is refused, and only for that", () => {
+  const workflow = clone();
+  const checkout = workflow.jobs["version-pr"].steps!.find((step) => /^actions\/checkout@/.test(step.uses ?? ""))!;
+  delete checkout.with!["fetch-depth"];
+  assert.deepEqual(compileStepProblems(workflow).map((p) => p.split(":")[0]), ["checkout-has-no-tags"]);
+});
+
+test("POSITIVE CONTROL (#3170): compile in the publishing job is refused, and only for that", () => {
+  const workflow = clone();
+  workflow.jobs[PUBLISHING_JOB].steps!.push({ name: "Compile", run: "node scripts/dependency-changeset.mjs compile" });
+  assert.deepEqual(compileStepProblems(workflow).map((p) => p.split(":")[0]), ["compile-in-publishing-job"]);
+});
+
+
 test("POSITIVE CONTROL: no push trigger is refused, naming it", () => {
   const workflow = clone();
   workflow.on = { workflow_dispatch: {} };
