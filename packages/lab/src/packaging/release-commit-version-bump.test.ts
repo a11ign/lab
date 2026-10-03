@@ -355,7 +355,10 @@ test("#3346 THE HOOK STAYS IN FORCE: an ordinary 13-file commit without the vari
     plantWideBump(sandbox, hooksPath);
     // The positive control for the claim "the hook is live in this sandbox": the same 13 files, committed plainly, are refused.
     sandbox.run(["add", "-A"]);
-    assert.throws(() => sandbox.run(["commit", "-q", "-m", "plain"], WITHOUT_AMBIENT_BREADTH),
+    // Identity PER COMMAND, as `GitSandbox.commit` does: a runner has no global identity, and without one git refuses
+    // for "Author identity unknown" BEFORE the hook runs, so the regex below would never see the breadth refusal.
+    assert.throws(() => sandbox.run(["-c", "user.name=Git Sandbox Test", "-c", "user.email=git-sandbox-test@example.invalid",
+      "commit", "-q", "-m", "plain"], WITHOUT_AMBIENT_BREADTH),
       (error: { stderr?: string }) => /13 files staged \(limit 12\)/.test(String(error.stderr)));
     // Narrowed to ONE bumped manifest before the script runs, so this test depends on the push and not on the commit's
     // breadth: dropping the variable must break the test above and no other.
