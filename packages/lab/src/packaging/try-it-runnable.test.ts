@@ -28,6 +28,7 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse as parseYaml } from "yaml";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const PAGE = resolve(REPO, "docs/try-it.md");
@@ -233,4 +234,93 @@ test("#1060: every link and anchor on the page resolves", () => {
     if (!existsSync(target)) broken.push(link);
   }
   assert.deepEqual(broken, [], "a page that sends a reader somewhere must send them somewhere that exists");
+});
+
+// #3186: THE PAGE SAID NOTHING WAS PUBLISHED, AND THE REGISTRY HAD SERVED `a11ign@0.1.0` SINCE 2026-09-19.
+//
+// Nothing checked it: `registry-consumer-gate.yml` ran `npx a11ign <url>` on a Windows runner while the page told a
+// stranger it could not be done. Two decisions, both pure over the page's text, so the real page is one more input and
+// a fixture that violates the rule proves the rule can fail.
+//
+// The command is READ FROM THE GATE, not retyped here: a test that spelled out `npx a11ign` itself would stay green
+// after the gate moved to another bin, and the page would go on promising the old one.
+const REGISTRY_GATE = resolve(REPO, ".github/workflows/registry-consumer-gate.yml");
+
+/** The page's sentences while the package was already on the registry, verbatim, for the positive control. */
+const OLD_LINE_34 = "- **Nothing is published to npm yet.** You install from the repository — [the commands are below]"
+  + "(#the-other-route-run-it-from-the-repository), and `npx a11ign` will not work yet.";
+const OLD_LINE_294 = "It is the same tool; the difference is where the Windows machine comes from. **`npx a11ign` does not work\n"
+  + "yet** — nothing is published — so the package comes from a clone.";
+
+const UNPUBLISHED_CLAIMS: readonly RegExp[] = [
+  /nothing\s+is\s+published/gi,
+  /(?:not|isn't)\s+published(?:\s+to\s+npm)?\s+yet/gi,
+  /(?:does|will)\s+not\s+work\s+yet/gi,
+];
+
+/**
+ * Every claim that the package is unpublished or that `npx a11ign` fails, by the line it STARTS on. The text is read
+ * whole because sentences wrap: line 294's `does not work` / `yet` broke across two lines.
+ */
+export function unpublishedClaims(text: string): { line: number; text: string }[] {
+  return UNPUBLISHED_CLAIMS
+    .flatMap((pattern) => [...text.matchAll(pattern)].map((m) => ({
+      line: text.slice(0, m.index).split("\n").length, text: m[0].replace(/\s+/g, " "),
+    })))
+    .sort((a, b) => a.line - b.line);
+}
+
+/** What a stranger types, taken from the gate's own invocation minus `--no-install`, which is there only because the gate has installed it. */
+export function consumerCommand(workflowYaml: string): string {
+  const workflow = parseYaml(workflowYaml) as { jobs: Record<string, { steps: { run?: string }[] }> };
+  const runs = Object.values(workflow.jobs).flatMap((job) => job.steps.map((step) => step.run ?? ""));
+  const invocation = /\bnpx\s+(?:--no-install\s+)?(a11ign)\s+"\$\w+"/.exec(runs.join("\n"));
+  if (invocation === null) throw new Error("registry-consumer-gate.yml runs no `npx a11ign \"$VAR\"` step, so there is no command to compare the page with");
+  return `npx ${invocation[1]}`;
+}
+
+/** Whether a line STARTS with the command and a URL: a command in a fence, not prose about one. */
+export function statesRoute(text: string, command: string): boolean {
+  return text.split("\n").some((line) => line.startsWith(`${command} http`));
+}
+
+/** The old sentences at their old line numbers, filler between them: the page at the commit before #3186. */
+function pageBefore3186(): string {
+  const filler = (count: number): string[] => Array.from({ length: count }, () => "filler");
+  return [...filler(33), OLD_LINE_34, ...filler(259), OLD_LINE_294].join("\n");
+}
+
+test("#3186 ACCEPTANCE: the page makes no claim that the package is unpublished or that npx does not work", () => {
+  assert.deepEqual(unpublishedClaims(page()), []);
+});
+
+test("#3186 POSITIVE CONTROL: the sentences as they stood are refused, at lines 34 and 294", () => {
+  // The control for the emptiness assertion above. Line 295 is a third claim, `nothing is published`, which the old
+  // text also made one line below the wrapped `does not work yet`.
+  const refusals = unpublishedClaims(pageBefore3186());
+  assert.deepEqual([...new Set(refusals.map((r) => r.line))], [34, 294, 295]);
+  assert.ok(refusals.some((r) => r.line === 294 && /does not work yet/.test(r.text)),
+    "the claim that wrapped across two lines was missed");
+});
+
+test("#3186: each unpublished claim is refused on its own, wrapped or not, and the true sentence is not", () => {
+  for (const sentence of ["Nothing is published to npm yet.", "nothing is\npublished", "it is not published yet",
+    "`npx a11ign` will not work yet", "`npx a11ign` does not work\nyet"]) {
+    assert.ok(unpublishedClaims(`one\ntwo\n${sentence}`).length > 0, `not refused: ${JSON.stringify(sentence)}`);
+  }
+  assert.deepEqual(unpublishedClaims("npx a11ign works, and the package is published to npm."), []);
+});
+
+test("#3186: the command is read from the registry gate, and a gate without one is an error, not an empty answer", () => {
+  assert.equal(consumerCommand(readFileSync(REGISTRY_GATE, "utf8")), "npx a11ign");
+  assert.throws(() => consumerCommand("jobs:\n  a:\n    steps:\n      - run: echo nothing\n"), /no command to compare/);
+});
+
+test("#3186 ACCEPTANCE: the page states the route that works today, and a page without it is refused", () => {
+  const command = consumerCommand(readFileSync(REGISTRY_GATE, "utf8"));
+  assert.equal(statesRoute(page(), command), true);
+  const withoutRoute = page().split("\n").filter((line) => !line.startsWith(command)).join("\n");
+  assert.equal(statesRoute(withoutRoute, command), false);
+  assert.equal(statesRoute(`prose about ${command} https://example.com`, command), false,
+    "a mention in a sentence is not the command a stranger can paste");
 });
