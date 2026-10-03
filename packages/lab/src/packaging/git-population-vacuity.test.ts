@@ -286,6 +286,14 @@ const CLASSIFICATION: Record<string, { guard: string | null; note: string }> = {
       + "known and a listing that came back empty fails them (an empty result cannot equal the planted entry). It "
       + "never asserts that git found nothing, so there is no population to be vacuous about.",
   },
+  "packages/cli/src/action/summary-md-output.test.ts": {
+    guard: null,
+    note: "NOT a discovery test (#3292). Its `git show <ref>:action.yml` reads ONE named file at each ref a docs example "
+      + "pins, and the claim is about what that file declares, never that git found nothing. The ways it could pass "
+      + "over nothing are closed separately: an unresolvable ref REFUSES (fetched by name when the clone lacks it), "
+      + "a floor requires at least four docs examples that read an output, and a control reads the real `v0.1.0` and "
+      + "demands that `summary-md` is flagged there.",
+  },
   "packages/lab/src/packaging/rescue-hunk.test.ts": {
     guard: null,
     note: "NOT a discovery test — it drives `git merge-file` and `git show` on ONE named pair of refs "
