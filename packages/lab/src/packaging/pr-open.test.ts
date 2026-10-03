@@ -132,11 +132,25 @@ test("--body wins when both are given, matching gh's own last-flag-wins conventi
 
 // --- NO SECOND PARSER: `checkBody` calls the tree's own functions, never re-derives the question ---
 
-test("checkBody's own source imports acceptanceReport and closesDeclarationReport from "
-  + "acceptance-commands.mjs, and calls both -- never a local regex re-implementing the question", () => {
-  const path = fileURLToPath(new URL("../../../../node_modules/agent-org/src/pr-open.mjs", import.meta.url));
-  const source = stripComments(readFileSync(path, "utf8"));
+test("checkBody's own source imports its reports from acceptance-commands.mjs and calls them there -- never a "
+  + "local regex re-implementing the question", () => {
+  const dir = fileURLToPath(new URL("../../../../node_modules/agent-org/src/", import.meta.url));
+  const source = stripComments(readFileSync(`${dir}pr-open.mjs`, "utf8"));
   assert.match(source, /from\s+["']\.\/acceptance-commands\.mjs["']/);
+  // agent-org 0.2.4 (#3209) composes the reports through `runCiBodyReports`, so the two named functions are called
+  // from the list in acceptance-commands.mjs and not from pr-open.mjs. Either spelling is the SAME parser; what this
+  // pins is that no third spelling (a local regex) stands in for it.
+  if (/\brunCiBodyReports\s*\(/.test(source)) {
+    // The LIST, not the file: both names also appear as definitions elsewhere in acceptance-commands.mjs, so a
+    // whole-file match would pass with the list's own call deleted.
+    const all = stripComments(readFileSync(`${dir}acceptance-commands.mjs`, "utf8"));
+    const start = all.indexOf("export const CI_BODY_REPORTS");
+    assert.ok(start >= 0, "acceptance-commands.mjs exports CI_BODY_REPORTS");
+    const list = all.slice(start, all.indexOf("\n];", start));
+    assert.match(list, /\bacceptanceReport\s*\(/);
+    assert.match(list, /\bclosesDeclarationReport\s*\(/);
+    return;
+  }
   assert.match(source, /\bacceptanceReport\s*\(/);
   assert.match(source, /\bclosesDeclarationReport\s*\(/);
 });
