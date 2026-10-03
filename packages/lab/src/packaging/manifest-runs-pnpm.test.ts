@@ -48,7 +48,7 @@ function npmCallers(scripts: Scripts): string[] {
 /** The scripts a script runs by `pnpm run <name>` (flags such as `--silent` allowed before the name). */
 function delegatesOf(value: string): string[] {
   return segmentsOf(value).flatMap((segment) => {
-    const match = /^pnpm\s+run\s+(?:-{1,2}[\w-]+\s+)*([\w:-]+)/.exec(segment);
+    const match = /^(?:pnpm|node\s+scripts\/pnpm\.mjs)\s+run\s+(?:-{1,2}[\w-]+\s+)*([\w:-]+)/.exec(segment);
     return match ? [match[1]] : [];
   });
 }
