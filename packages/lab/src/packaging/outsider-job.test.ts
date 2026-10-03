@@ -172,7 +172,7 @@ test("a `uses:` line that is not a full sha, or a second one, leaves no pin to r
 
 test("the pin job checks out the repository it runs in, with no `repository:` of anyone else's", () => {
   const pin = generated.slice(generated.indexOf("  pin:"), generated.indexOf("  # >>> README's job"));
-  assert.match(pin, /- uses: actions\/checkout@v4/);
+  assert.match(pin, /- uses: actions\/checkout@v7/);
   assert.deepEqual(forbiddenReferences(generated), []);
 });
 
