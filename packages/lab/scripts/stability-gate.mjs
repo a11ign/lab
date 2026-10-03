@@ -41,9 +41,10 @@ import { renderVerdict, exitCodeFor } from "../src/gates/verdict.mjs";
 import { gateWorkers, acrossFleet, fleetVerdict, renderShards }
   from "../src/gates/fleet.mjs";
 import { dispatchUnlessLocal, LOCAL_FLAG } from "../src/gates/dispatch.mjs";
+import { varianceLines, canaryOutDir, unstableDetail, repeatCaptureArgs } from "../src/gates/stability-canary.mjs";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { assertWorkerUrl } from "../../worker-fleet/src/worker-http.mjs";
-import { datasetRoot } from "../src/dataset-paths.mjs";
+import { datasetRoot, repeatCapturesRoot } from "../src/dataset-paths.mjs";
 import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
 
 /**
@@ -61,6 +62,9 @@ const arg = (/** @type {any} */ name, /** @type {any} */ fallback) =>
   process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 
 const TIMES = Number(arg("times", "5"));
+
+// One id per gate RUN, so two runs dispatched at once (as #3132's rounds were) cannot share a capture directory.
+const RUN_ID = `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
 
 /**
  * This gate LEASES what it needs, rather than requiring you to have set it up.
@@ -219,25 +223,19 @@ async function judgeCanary(/** @type {any} */ { path, url: absolute, reason, tas
   const name = absolute ?? path;
   const url = absolute ?? `${base}/${path}`;
   process.stdout.write(`\n=== ${name} (${TIMES}x) ===\n    why: ${reason}\n`);
-  // tsx, not node: repeat-capture imports isTransient from capture-decisions.mjs, which imports the
-  // TypeScript verify.js. Under plain node that is ERR_MODULE_NOT_FOUND before a single line of output
-  // -- which is precisely how five canaries came back "Command failed" with nothing to read. The repo
-  // has hit this before with evidence-check.mjs; the fix there was the same.
-  const args = [REPEAT_CAPTURE, `--url=${url}`, `--times=${TIMES}`,
-    `--worker=${worker}`];
-  // Opt-in per canary: a capture must never pay for evidence nobody asked for, and a probe that does not
-  // run is cheaper than one that does.
-  if (probeForms) args.push("--probe-forms", `--task=${task}`);
-  // FORWARDED, because it was not. `probeFocus` on a canary was read by nobody: `judgeCanary` destructured
-  // four fields and this was not among them, so the flag would have been discarded, the canary would have
-  // run without the focus probe, and it would have reported STABLE having compared an empty `focusOrder`
-  // against an empty `focusOrder`. That is this repo's own "a flag nobody reads" defect, and the reason the
-  // fix is to name the field here rather than to remember to pass it.
-  if (probeFocus) args.push("--probe-focus");
+  // Its OWN directory, per canary and per run: the shared one was overwritten by the next canary, so the
+  // captures of a failed run were gone before anyone could read why it failed (#3273).
+  const outDir = canaryOutDir({ root: repeatCapturesRoot(), runId: RUN_ID, name });
+  const args = repeatCaptureArgs({ script: REPEAT_CAPTURE, url, times: TIMES, worker, outDir,
+    probeForms, task, probeFocus });
   try {
+    // tsx, not node: repeat-capture imports isTransient from capture-decisions.mjs, which imports the
+    // TypeScript verify.js. Under plain node that is ERR_MODULE_NOT_FOUND before a single line of output
+    // -- which is precisely how five canaries came back "Command failed" with nothing to read. The repo
+    // has hit this before with evidence-check.mjs; the fix there was the same.
     const pnpm = pnpmCliInvocation(["exec", "tsx", ...args]);
     const { stdout } = await run(pnpm.command, pnpm.args, { maxBuffer: 1 << 24 });
-    const varies = stdout.split("\n").filter((l) => l.includes("VARIES"));
+    const varies = varianceLines(stdout);
     const usable = /(\d+)\/\d+ usable/.exec(stdout)?.[1];
     // SURFACED, not swallowed, and ABSENCE IS NOT ZERO. This read `?? 0`, so a run where the line stopped
     // being printed was indistinguishable from a clean one -- the "unchecked is not clean" defect, in the
@@ -253,8 +251,8 @@ async function judgeCanary(/** @type {any} */ { path, url: absolute, reason, tas
       }
     }
     if (varies.length) {
-      results.push({ path: name, ok: false, detail: varies.map((v) => v.trim()).join("; ") });
-      process.stdout.write(varies.map((v) => `  ${v.trim()}\n`).join(""));
+      results.push({ path: name, ok: false, detail: unstableDetail({ lines: varies, outDir }) });
+      process.stdout.write(varies.map((v) => `  ${v}\n`).join("") + `  captures kept in ${outDir}\n`);
     } else if (Number(usable ?? 0) < 2) {
       // Too few usable captures is not a PASS. A gate that passes when it could not measure is worse
       // than no gate, because it launders "unknown" into "fine".
@@ -265,7 +263,7 @@ async function judgeCanary(/** @type {any} */ { path, url: absolute, reason, tas
       process.stdout.write(`  STABLE — ${usable} usable, all fields identical\n`);
     }
   } catch (error) {
-    interpretFailure(error, path, results);
+    interpretFailure(error, name, results, outDir);
   }
 }
 
@@ -277,9 +275,10 @@ async function judgeCanary(/** @type {any} */ { path, url: absolute, reason, tas
  * "Command failed" once made a transient capture error read exactly like genuine instability and cost a
  * re-run to discover the page was fine. repeat-capture puts its report on stdout even when it exits 1.
  */
-function interpretFailure(/** @type {any} */ error, /** @type {any} */ path, /** @type {any} */ results) {
+function interpretFailure(/** @type {any} */ error, /** @type {any} */ path, /** @type {any} */ results,
+  /** @type {string} */ outDir) {
   const out = String(error.stdout ?? "");
-  const varies = out.split("\n").filter((l) => l.includes("VARIES")).map((l) => l.trim());
+  const varies = varianceLines(out);
   const empty = /(\d+) capture\(s\) heard nothing/.exec(out)?.[1];
   const failedRuns = out.split("\n").filter((l) => l.trim().startsWith("FAILED")).map((l) => l.trim());
   // An empty stdout means the child never started -- a module resolution error, a missing file -- and
@@ -293,7 +292,7 @@ function interpretFailure(/** @type {any} */ error, /** @type {any} */ path, /**
     process.stdout.write(`  BROKEN — ${detail}\n`);
     return;
   }
-  const detail = varies.length ? `UNSTABLE: ${varies.join("; ")}`
+  const detail = varies.length ? `UNSTABLE: ${unstableDetail({ lines: varies, outDir })}`
     : empty ? `${empty} empty capture(s) — the foreground flake, not instability`
     : failedRuns.length ? `${failedRuns.length} capture(s) errored: ${failedRuns[0]}`
     : error.message.split("\n")[0];
