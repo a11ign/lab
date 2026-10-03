@@ -476,6 +476,11 @@ const RETIRED_HEADINGS: { file: string; heading: string; reason: string }[] = [
     heading: "## `update-branch` moves your branch under you — a non-fast-forward is the train, not a violation",
     reason: "#3054: the update-branch job was deleted by #3046, so nothing pushes main into a PR's branch any more",
   },
+  {
+    file: "docs/row-filing.md",
+    heading: "## A row that finishes in another repository says so: `Finished-in:` (#2995, #3009)",
+    reason: "#3059: the Finished-in field was ruled never to be built (#928), so the section describing it was replaced",
+  },
 ];
 
 const isRetired = (file: string, drift: string) =>
