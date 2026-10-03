@@ -77,7 +77,9 @@ function resolvedScriptFile(argv: unknown): string | undefined {
   if (!/npm|corepack/.test(tokens[0] ?? "") || runIndex < 0) return undefined; // `/usr/bin/corepack pnpm run` (#2893) or npm
   const scriptName = tokens[runIndex + 1] === "--silent" ? tokens[runIndex + 2] : tokens[runIndex + 1];
   const command = PACKAGE_SCRIPTS[scriptName ?? ""];
-  return command ? resolvedScriptFile(command.split(/\s+/)) : undefined;
+  // A chained script reaches pnpm as `node scripts/pnpm.mjs run X` (#3141); read it as the `pnpm run X` it passes through
+  // to, or `scripts/pnpm.mjs` would be taken for the gate's own file.
+  return command ? resolvedScriptFile(command.replaceAll(/node scripts\/pnpm\.mjs\b/g, "pnpm").split(/\s+/)) : undefined;
 }
 
 function adoptsVerdict(scriptFile: string | undefined): boolean {

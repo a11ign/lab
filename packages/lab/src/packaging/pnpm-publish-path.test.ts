@@ -94,7 +94,7 @@ test("#2301: the dry run REHEARSES the pnpm-to-npm hand-off with the same proven
 
 test("#2301: `release:version` refreshes the pnpm lockfile, and the release commit stages that one", () => {
   const scripts = JSON.parse(read("package.json")).scripts as Record<string, string>;
-  assert.equal(scripts["release:version"], "changeset version && pnpm install --lockfile-only");
+  assert.equal(scripts["release:version"], "changeset version && node scripts/pnpm.mjs install --lockfile-only");
   const bump = read("scripts/release-commit-version-bump.mjs");
   assert.match(stripComments(bump), /"pnpm-lock\.yaml"/);
 });

@@ -158,7 +158,7 @@ test("the workspaces lockfile trap is handled", () => {
   // ships describing the PREVIOUS versions, and the next frozen install refuses the release commit.
   // Asserted on the npm script, since that is the one place both CI and a human use. pnpm's, since #2301.
   const scripts = JSON.parse(readFileSync(resolve(REPO, "package.json"), "utf8")).scripts;
-  assert.match(scripts["release:version"], /changeset version\s*&&\s*pnpm install --lockfile-only/,
+  assert.match(scripts["release:version"], /changeset version\s*&&\s*(?:pnpm|node scripts\/pnpm\.mjs) install --lockfile-only/,
     "release:version must reinstall after versioning, or the lockfile ships stale");
 });
 

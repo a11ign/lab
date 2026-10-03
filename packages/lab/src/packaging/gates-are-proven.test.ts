@@ -189,7 +189,7 @@ function gatesInUse(): string[] {
     .map((step: { script: string }) => step.script);
   // `release:gate` is a shell chain of npm scripts; read it rather than restating it, or the two drift
   // and this test starts vouching for a list nobody runs.
-  const release = [...String(SCRIPTS["release:gate"]).matchAll(/npm run ([a-z0-9:_-]+)/g)].map((m) => m[1]);
+  const release = [...String(SCRIPTS["release:gate"]).matchAll(/pnpm(?:\.mjs)? run ([a-z0-9:_-]+)/g)].map((m) => m[1]);
   return [...new Set([...chain, ...release])];
 }
 
@@ -226,7 +226,7 @@ test("a composite gate is proven only if every stage it runs is proven", () => {
     .filter(([, p]) => "provenBy" in p).map(([gate]) => gate));
   for (const [gate, proof] of Object.entries(GATE_PROOFS)) {
     if (!("provenByComposition" in proof)) continue;
-    const stages = [...String(SCRIPTS[gate]).matchAll(/npm run ([a-z0-9:_-]+)/g)].map((m) => m[1]);
+    const stages = [...String(SCRIPTS[gate]).matchAll(/pnpm(?:\.mjs)? run ([a-z0-9:_-]+)/g)].map((m) => m[1]);
     assert.ok(stages.length > 0,
       `${gate} claims composition but runs no npm stages, so there is nothing holding the claim up`);
     const unproven = stages.filter((stage) => !proven.has(stage));
