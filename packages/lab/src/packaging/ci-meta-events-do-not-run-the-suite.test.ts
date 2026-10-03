@@ -108,7 +108,11 @@ const runsOn = (job: Job, ctx: Ctx): boolean => job.if === undefined || Boolean(
 // --- which jobs are which -----------------------------------------------------------------------------------------
 
 /** A job READS A PULL-REQUEST INPUT when its definition names the pull request's body or number: what a body edit or a label changes. */
-const readsAPullRequestInput = (job: Job): boolean => /github\.event\.pull_request\.(body|number)/.test(JSON.stringify(job));
+// #3286: `acceptance` hands no body to its called workflow any more, which reads the LIVE body by pull-request number
+// in a job of its own, so a call to that workflow is the read and the event text no longer names it here.
+const READS_THE_LIVE_BODY = "./.github/workflows/reusable-acceptance.yml";
+const readsAPullRequestInput = (job: Job): boolean =>
+  /github\.event\.pull_request\.(body|number)/.test(JSON.stringify(job)) || job.uses === READS_THE_LIVE_BODY;
 
 /** `changed` decides what the diff touched and `gate` is the verdict; neither is a check of its own. */
 const FRAME = ["changed", "gate"];
