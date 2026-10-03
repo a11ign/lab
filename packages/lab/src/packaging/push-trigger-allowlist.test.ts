@@ -145,18 +145,32 @@ const allWorkflowFiles = (): string[] => readdirSync(WORKFLOWS_DIR).filter((f) =
 const stripYamlComments = (source: string): string =>
   source.split("\n").map((line) => line.replace(/(?<!["'\S])#.*$/, "")).join("\n");
 
-test("every workflow triggering on push to main is on one of the three closed allowlists, with a reason", () => {
+// A FOURTH, SEPARATE closed category -- #3131 (child of #928, ADR 0041; ceo's ruled design: "on a push to `main` ... the
+// workflow opens or updates ONE version pull request ... on the merge of THAT pull request, the workflow publishes").
+// It is none of the three above: not a watchdog, not a check of main's own tip, not a followup on other PRs. It gates
+// NOTHING -- every guard it holds runs as a job BEFORE it publishes and the code it releases was gated on its pull
+// request -- and it is the one workflow whose job is to react to a merge by RELEASING. A schedule cannot do it for the
+// reason the followup category gives: only `push` means "the queue just moved". Its `paths` filter is the structural
+// requirement (checked below), so it does not run on the merges that carry neither a changeset nor a version change.
+const RELEASE_ALLOWLIST: Record<string, string> = {
+  "release.yml": "#3131: a merge to main that carries a changeset opens the version pull request, and the merge of THAT "
+    + "pull request publishes. The version pull request goes through `main`'s required review and the queue, so nothing "
+    + "here writes `main`; the guards run as jobs before the publish. `push` is the one event that means 'a merge just "
+    + "landed', which a schedule cannot know.",
+};
+
+test("every workflow triggering on push to main is on one of the four closed allowlists, with a reason", () => {
   const offenders: string[] = [];
   for (const file of allWorkflowFiles()) {
     const doc = parseYaml(readWorkflow(file));
     if (triggersOnPushToMain(doc) && !(file in PUSH_TO_MAIN_ALLOWLIST) && !(file in TRUNK_GATE_ALLOWLIST)
-      && !(file in TRUNK_FOLLOWUP_ALLOWLIST)) {
+      && !(file in TRUNK_FOLLOWUP_ALLOWLIST) && !(file in RELEASE_ALLOWLIST)) {
       offenders.push(file);
     }
   }
   assert.deepEqual(offenders, [],
     `${offenders.join(", ")} trigger(s) on push to main and are not on PUSH_TO_MAIN_ALLOWLIST, `
-    + "TRUNK_GATE_ALLOWLIST or TRUNK_FOLLOWUP_ALLOWLIST -- a check that gates code must run on the PR "
+    + "TRUNK_GATE_ALLOWLIST, TRUNK_FOLLOWUP_ALLOWLIST or RELEASE_ALLOWLIST -- a check that gates code must run on the PR "
     + "(chairman's direction, 2026-09-06: a check that runs after the merge cannot stop it). If this is a "
     + "non-gating watchdog immune to the schedule-disable problem the same way board-liveness.yml is, add "
     + "it to PUSH_TO_MAIN_ALLOWLIST; if it is a reactive trunk check like trunk.yml, argue its case "
@@ -186,6 +200,14 @@ test("the trunk-gate allowlist names exactly the one known trunk check", () => {
 
 test("the trunk-followup allowlist names exactly the one known followup workflow", () => {
   assert.deepEqual(Object.keys(TRUNK_FOLLOWUP_ALLOWLIST).sort(), ["auto-arm.yml"]);
+});
+
+test("#3131: the release allowlist names exactly release.yml, and its push trigger is filtered to the paths it acts on", () => {
+  assert.deepEqual(Object.keys(RELEASE_ALLOWLIST), ["release.yml"]);
+  const doc = parseYaml(readWorkflow("release.yml")) as { on: { push?: { branches?: string[]; paths?: string[] } } };
+  assert.deepEqual(doc.on.push?.branches, ["main"]);
+  assert.ok((doc.on.push?.paths ?? []).length > 0,
+    "an unfiltered push trigger would start a release plan on every merge, which carries neither a changeset nor a version");
 });
 
 // STRUCTURAL PROOF that each allowlisted entry is actually a watchdog and not a gate wearing the allowlist
