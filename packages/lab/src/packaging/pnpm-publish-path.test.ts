@@ -60,7 +60,9 @@ test("#2301: the release job installs with pnpm, frozen, with pnpm on PATH befor
     "registry-url is what writes the .npmrc npm publishes with");
   const installs = steps.flatMap(commandLines).filter((line) => /\b(npm|pnpm) (ci|install)\b/.test(line));
   assert.ok(installs.includes("pnpm install --frozen-lockfile"));
-  assert.deepEqual(installs.filter((line) => line !== "pnpm install --frozen-lockfile"), [],
+  // The one global install of npm ITSELF (#3180: trusted publishing needs npm 11.5.1+) resolves no project tree.
+  const upgradesNpmItself = (line: string) => /^npm install (-g|--global)\s+"?npm@[^\s"]+"?$/.test(line);
+  assert.deepEqual(installs.filter((line) => line !== "pnpm install --frozen-lockfile" && !upgradesNpmItself(line)), [],
     "no other install: an npm one resolves a tree the lockfile does not describe");
 });
 
