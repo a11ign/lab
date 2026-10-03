@@ -1,4 +1,4 @@
-// no-token: gh -- importing `work-gate.mjs` reaches `defaultRun` (`execFileSync("gh", ...)`), and this file never lets it run: `orgHealthNow` is handed the clock, the last merge, the ledger reader and the log, and `readFleetCaptures` is given a fake `read`.
+// no-token: gh -- importing `work-gate.mjs` reaches `defaultRun` (`execFileSync("gh", ...)`), and this file never lets it run: `orgHealthNow` is handed the clock, the last merge, the ledger reader, the lab-job reader and the log, and `readFleetCaptures` is given a fake `read`.
 /**
  * #2980 (found by #2937): THE GATE PASSES THE FLEET FACTS, so the idle-fleet signal fires live.
  *
@@ -40,13 +40,17 @@ const gatedRow = (number: number, extra: Record<string, unknown> = {}) =>
 
 const decideArgs = { prs: [], required: [], readyRows: [], prFiles: new Map(), rowBranches: [], openRows: [], primaryDrift: null, claimRefusals: [] };
 
-/** One org-health tick as `main` runs it, over a ledger, with the other readings kept clear (a merge an hour ago, nothing to claim). */
+/**
+ * One org-health tick as `main` runs it, over a ledger, with the other readings kept clear (a merge an hour ago, nothing to claim, NO LAB JOB
+ * dispatched). The lab-job reader is pinned because its default reads the HOST: on a box with a `gate-stability` job in flight it reported
+ * "1 thing(s) wait for the fleet" into the two "nothing waiting" tests (#3147).
+ */
 function tickOver(ledger: unknown, openRowsRead: unknown[] | null, over: { readCaptures?: (now: number) => unknown } = {}) {
   const said: string[] = [];
   const orders = orgHealthNow(
     { prsRead: [], readyRead: [], openRowsRead, decideArgs, decided: [] } as never,
     {
-      now: NOW, lastMergedAt: () => NOW - HOUR_MS, log: (line: string) => said.push(line), readCopies: () => [] as never,
+      now: NOW, lastMergedAt: () => NOW - HOUR_MS, log: (line: string) => said.push(line), readCopies: () => [] as never, readLabJobs: () => [],
       readCaptures: (over.readCaptures ?? ((at: number) => readFleetCaptures({ now: at, read: readerOf(ledger) }))) as never,
     },
   );
