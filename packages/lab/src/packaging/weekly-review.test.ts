@@ -94,7 +94,9 @@ test("the real documents yield requirements 1..N and the four questions, and the
   const requirements = extractRequirements(RELEASE);
   const questions = extractQuestions(TRY_IT);
   assert.deepEqual(requirements.map((r) => r.n), requirements.map((_, i) => i + 1));
-  assert.ok(requirements.length >= 5, `read ${requirements.length} requirements`);
+  // The count derived a second way: the numbered items RELEASE.md's own list holds, which the extractor must not drop or invent.
+  assert.equal(requirements.length, (RELEASE.match(/^\d+\. \*\*/gm) ?? []).length);
+  assert.notEqual(requirements.length, 0, "control: the document holds a list");
   assert.equal(questions.length, 4);
   const body = buildBody(input({ requirements, questions, waitsOnOutsiderRepo: true }));
   assert.equal(bodyReadFromSources(body, { requirements, questions }), null);

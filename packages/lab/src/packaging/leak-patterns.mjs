@@ -203,6 +203,8 @@ export const TRACKER_WRITERS = Object.freeze([
   // #2975 PR 3: the other ten declared writers went with the tool (`board-report`, `carry-branch`, `pr-open`, `row-claim`, `wake` and the rest),
   // so the registry names the one that stayed: it guards the publish token rather than the tracker.
   "npm-token-liveness.mjs",
+  // #3183: the weekly outsider review files a row and comments on last week's; both bodies are checked before they leave.
+  "weekly-review.mjs",
 ]);
 
 /** Where a declared writer may live. The prefixes are here so the registry above holds no path-shaped
