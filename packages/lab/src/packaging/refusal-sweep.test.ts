@@ -115,7 +115,7 @@ function reasonProblems(exempt: Record<string, string>): string[] {
  * What is wrong with a mapping: a cause the gate does not declare. READ AS TEXT from `cause-declaration.mjs`, never imported:
  * `agent-org-extraction.test.ts` counts every test that imports `agent-org/src`, so an import moves a pin outside this row's Region.
  */
-const DECLARED_CAUSES_SOURCE = readFileSync(join(REPO_ROOT, "packages", "agent-org", "src", "cause-declaration.mjs"), "utf8");
+const DECLARED_CAUSES_SOURCE = readFileSync(join(REPO_ROOT, "node_modules", "agent-org", "src", "cause-declaration.mjs"), "utf8");
 function causeProblems(mapped: Record<string, string>): string[] {
   return Object.entries(mapped).filter(([, cause]) => !DECLARED_CAUSES_SOURCE.includes(`"${cause}"`))
     .map(([key, cause]) => `${key} -> ${cause} is not a declared cause`);

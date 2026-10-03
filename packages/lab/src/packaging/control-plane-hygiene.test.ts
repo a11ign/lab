@@ -190,7 +190,7 @@ test("undecidedRefusal returns null when every row has a real decision", () => {
 // seconds, and both places that state the rule -- this page and the script that regenerates it -- said the
 // opposite until then. Each is read as TEXT, because the rows are built inside `main()` and printing them would
 // need the live host's worktrees.
-const HYGIENE_SOURCES = ["docs/control-plane-hygiene.md", "packages/agent-org/src/control-plane-hygiene.mjs"]
+const HYGIENE_SOURCES = ["docs/control-plane-hygiene.md", "node_modules/agent-org/src/control-plane-hygiene.mjs"]
   .map((rel) => ({ rel, text: readFileSync(fileURLToPath(new URL(`../../../../${rel}`, import.meta.url)), "utf8") }));
 
 test("#2300: neither the hygiene page nor its report calls the symlink deliberate, or pnpm post-publish", () => {

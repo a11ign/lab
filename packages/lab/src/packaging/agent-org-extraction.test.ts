@@ -520,7 +520,9 @@ function decision4Counts(): { total: number; divided: number } {
 // MORE DIVIDED: it imports `agent-org/src` AND `control/src/fleet-playbook.mjs`, the two packages that cannot import each other.
 // 2026-10-03, #2975 (cut-over 4 of 6, PR 3: the 67 further travelled tests deleted): 28 total, 19 divided, from 95/19, by running this test. Sixty-seven FEWER totals and no fewer divided: each deleted file had a
 // same-named test in a11ign/agent-org carrying every one of its test titles, and none matched a product pattern. The floors above (`> 5` travelling, `> 10` total) fell with them; this file goes with the directory in #2976.
-const RECORDED_DECISION_4 = { total: 28, divided: 19 };
+// 2026-10-03, #2975 (cut-over 4 of 6, PR 3: `shadow-window`, `shadow-window-arm` and `shadow-state-dir` deleted, each carrying every test title in a11ign/agent-org; one title's wording differs): 25 total, 19 divided, from 28/19,
+// by running this test. Three FEWER totals, no fewer divided: none matched a product pattern.
+const RECORDED_DECISION_4 = { total: 25, divided: 19 };
 
 test("decision 4's total/divided counts, re-derived, match the row's currently-amended reading", () => {
   const counts = decision4Counts();

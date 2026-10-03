@@ -4638,8 +4638,9 @@ test("#2174: the history-requirement population is unchanged by this row", () =>
   // same-named test in a11ign/agent-org, which now carries the `host-units.mjs` edge above. The set SHRANK by those three and nothing JOINED it.
   // #2975 PR 3 repointed THIS file's imports to the dependency (`agent-org/src/...`), a bare specifier `deriveClosureRequirements` does not follow, so
   // it LEFT this set without any change in what it needs: a blind spot of the walk, not a fix. #3103 teaches the walk the specifier; this file returns then.
-  assert.deepEqual(charged, ["documents-extraction.test.ts",
-    "pre-push-resolve-toward-main.test.ts", "shadow-window-arm.test.ts"],
+  // #2975 PR 3 DELETED `shadow-window-arm.test.ts` too (and `shadow-window.test.ts`, `shadow-state-dir.test.ts`): each has every test title in a11ign/agent-org
+  // (one title's wording differs, "monorepo commits" -> "tool commits"), which carries the `host-units.mjs` edge. The set shrank by it and nothing joined.
+  assert.deepEqual(charged, ["documents-extraction.test.ts", "pre-push-resolve-toward-main.test.ts"],
   "adding a `history` reader to the gate's import closure taxes every test file that reaches it -- if "
   + "this list grew, check what was imported rather than editing the list");
 });
