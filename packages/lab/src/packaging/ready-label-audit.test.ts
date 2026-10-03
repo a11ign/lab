@@ -2003,7 +2003,7 @@ test("#2150: findings come back in row-number order whatever order the board pag
 
 test("#2150 (done-when 2): the interrupted promotion's remedy is `--promote`, named as idempotent", () => {
   const remedy = statusLabelRemedy(2133, STATUS_LABEL_KINDS.INTERRUPTED_PROMOTION);
-  assert.match(remedy, /npm run row-file -- --promote=2133 --session=<you>/);
+  assert.match(remedy, /pnpm run row-file --promote=2133 --session=<you>/);
   assert.match(remedy, /idempotent/);
   assert.doesNotMatch(remedy, /TWO READINGS/, "a known cause gets ONE answer, not two");
 });
@@ -2012,7 +2012,7 @@ test("#2150 (done-when 2): a hand-moved field states BOTH readings and picks nei
   for (const kind of [STATUS_LABEL_KINDS.STATUS_READY_LABEL_ABSENT, STATUS_LABEL_KINDS.LABEL_READY_STATUS_ELSEWHERE]) {
     const remedy = statusLabelRemedy(7, kind);
     assert.match(remedy, /TWO READINGS/, kind);
-    assert.match(remedy, /if the row IS ready, `npm run row-file -- --promote=7/, kind);
+    assert.match(remedy, /if the row IS ready, `pnpm run row-file --promote=7/, kind);
     assert.match(remedy, /if it is NOT/, kind);
   }
   assert.match(statusLabelRemedy(7, STATUS_LABEL_KINDS.LABEL_READY_STATUS_ELSEWHERE), /remove `ready`/);

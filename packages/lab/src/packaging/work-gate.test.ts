@@ -55,6 +55,8 @@ import { MAX_ROW_ORDERS_PER_TICK, decide, checksSettledGreen, readPrs, readReady
   pipelineCodeownerReviewMissing, bareAnswerLabelOrders, readRowTimeline }
   from "agent-org/src/work-gate.mjs";
 import { SESSION_PREFIX } from "agent-org/src/project-vocabulary.mjs";
+// #3091 (agent-org v0.2.0): every project git read carries `-C <HOME_CHECKOUT>`, so the expected argv is built from the same export.
+import { HOME_CHECKOUT } from "agent-org/src/project-config.mjs";
 // #2182: the SHIPPED reader that decides whether a delivered cause is still live, imported so this file
 // can assert what the membership BUYS rather than only that the name is in the list. `wake.mjs` runs
 // nothing on import (its `main()` is behind an `import.meta.url` guard) and these three are pure, so this
@@ -4395,7 +4397,7 @@ test("#2031: the detection makes NO `gh` call -- the pool is gone in the outage 
     calls.push([cmd, args]);
     return LISTING;
   });
-  assert.deepEqual(calls, [["git", ["ls-remote", "--heads", "origin"]]],
+  assert.deepEqual(calls, [["git", ["-C", HOME_CHECKOUT, "ls-remote", "--heads", "origin"]]],
     "one local git call, and `gh` is never spawned -- a detector that spent GraphQL would be blind in "
     + "the exhausted-pool outage that produces the staleness it detects");
   assert.deepEqual(found, [{ branch: BRANCH_2000, head: SHA_2000, row: 2000 }],
@@ -4643,7 +4645,10 @@ test("#2174: the history-requirement population is unchanged by this row", () =>
   // #2701 added `screenreader-worker-extraction.test.ts`: checked -- it asks `--is-shallow-repository` before reading `git log` over `packages/nvda-worker`
   // and `packages/nvda-speech` (the history `filter-repo` carries across, file contents AND commit messages, is part of the first commit's leak scan),
   // so it genuinely needs history, and its pull request declares `History: full`.
-  assert.deepEqual(charged, ["documents-extraction.test.ts", "pre-push-resolve-toward-main.test.ts", "screenreader-worker-extraction.test.ts"],
+  // The pin's move to ^0.2.0 (#2905) is the "this file returns then" above: agent-org's walk follows the `agent-org/src/...` specifier, and THIS file
+  // imports `shippedUnits` from `agent-org/src/host-units.mjs`, the same edge `host-units.test.ts` had. Checked rather than edited past: no import was
+  // added, the walk got able to see one that was already here. No Acceptance names this file, so no pull request owes a `History: full` for it.
+  assert.deepEqual(charged, ["documents-extraction.test.ts", "pre-push-resolve-toward-main.test.ts", "screenreader-worker-extraction.test.ts", "work-gate.test.ts"],
   "adding a `history` reader to the gate's import closure taxes every test file that reaches it -- if "
   + "this list grew, check what was imported rather than editing the list");
 });
@@ -4902,7 +4907,7 @@ test("#2283: an UNRECOGNISED decision stays at product-manager even on a labelle
 test("#2283: through `decide`, a labelled AWAITING_REVIEW PR reaches its session with the reviewer named", () => {
   const orders = decide({ prs: [labelled(2308, "worker-9", "REVIEW_REQUIRED")], readyRows: [], required: ["gate"] });
   assert.deepEqual(orders.map((o: UntypedTool) => [o.cause, o.session]), [["pr-review-blocked", "worker-9"]]);
-  assert.match(orders[0].prompt, /prompt:session -- reviewer-2308/);
+  assert.match(orders[0].prompt, /prompt:session reviewer-2308/);
   assert.match(orders[0].prompt, /never entered the reviewer lane/);
 });
 

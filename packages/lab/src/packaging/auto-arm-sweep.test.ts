@@ -316,7 +316,7 @@ test("#1595 ACCEPTANCE, MUTATION TARGET: #1592's shape STILL ARMS, and each hold
   for (const label of PR_1592.labels) {
     const line = said.find((l) => l.includes(`\`${label}\``)) ?? "";
     assert.match(line, /^SWEEP: #1592 carries .*looks like a hold but is not one/, `${label}: ${line}`);
-    assert.match(line, /npm run pr:hold -- 1592 --session=<name>.*`hold:<name>`/, `${label} names the real hold`);
+    assert.match(line, /pnpm run pr:hold 1592 --session=<name>.*`hold:<name>`/, `${label} names the real hold`);
   }
 });
 
