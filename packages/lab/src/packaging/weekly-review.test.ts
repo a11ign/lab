@@ -178,3 +178,18 @@ test("the workflow has schedule and workflow_dispatch only, and permissions that
   assert.ok("pull_request" in bad.on);
   assert.deepEqual(Object.entries(bad.permissions).filter(([, level]) => level !== "read").map(([scope]) => scope), ["issues", "contents"]);
 });
+
+// The first dispatch (#3183) failed because `row-file` refuses a plain clone and a runner's checkout is one. The step that
+// runs the script must carry the printed override, with a reason, or the schedule can never file.
+test("the filing step carries row-file's printed launch override with a non-blank reason", () => {
+  const stepEnv = (yaml: string) => {
+    const workflow = parseYaml(yaml) as { jobs: { file: { steps: { run?: string; env?: Record<string, string> }[] } } };
+    return workflow.jobs.file.steps.find((step) => step.run === "node scripts/weekly-review.mjs")?.env ?? {};
+  };
+  const reason = stepEnv(read(".github/workflows/weekly-review.yml")).A11Y_POLICY_LAUNCH_REASON;
+  assert.ok(typeof reason === "string" && reason.trim() !== "", "the filing step has no A11Y_POLICY_LAUNCH_REASON");
+  // POSITIVE CONTROL: a step without it, and one with a blank reason, are both seen as lacking it.
+  const bare = "jobs:\n  file:\n    steps:\n      - run: node scripts/weekly-review.mjs\n        env:\n          GH_TOKEN: x\n";
+  assert.equal(stepEnv(bare).A11Y_POLICY_LAUNCH_REASON, undefined);
+  assert.equal((stepEnv(bare.replace("GH_TOKEN: x", "A11Y_POLICY_LAUNCH_REASON: ' '")).A11Y_POLICY_LAUNCH_REASON ?? "").trim(), "");
+});
