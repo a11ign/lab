@@ -95,10 +95,13 @@ test("the title and number reach the script as environment variables, not as exp
 
 // ---- running the script the workflow carries, against a stub `gh` ----
 
+/** The owner's own list, read from the repository: the workflow reads it at the base commit and must not carry a copy. */
+const OWNED = (JSON.parse(readFileSync(resolve(REPO, "docs/owned-path-facts.json"), "utf8")) as { owned: string[] }).owned;
+
 interface Outcome { status: number | null; log: string; body: string | null; patched: boolean }
 
 /** Runs the workflow's own script. `gh` is a stub that answers the files call and copies the `body=@file` it is given. */
-function runScript({ title, files }: { title: string; files: string[] }): Outcome {
+function runScript({ title, files, owned = OWNED }: { title: string; files: string[]; owned?: string[] }): Outcome {
   const dir = mkdtempSync(join(tmpdir(), "dep-pr-body-"));
   try {
     const gh = join(dir, "gh");
@@ -106,6 +109,7 @@ function runScript({ title, files }: { title: string; files: string[] }): Outcom
       "#!/bin/sh",
       'case "$*" in',
       '  *"/files"*) printf "%s\\n" "$FAKE_FILES" ;;',
+      '  *owned-path-facts*) printf "%s\\n" "$FAKE_OWNED" ;;',
       '  *PATCH*) touch "$DIR/patched"; for a in "$@"; do case "$a" in body=@*) cp "${a#body=@}" "$DIR/body";; esac; done ;;',
       "esac",
     ].join("\n"));
@@ -113,7 +117,7 @@ function runScript({ title, files }: { title: string; files: string[] }): Outcom
     const script = Object.values(read().jobs!)[0].steps![0].run!;
     const result = spawnSync("bash", ["-c", script], {
       encoding: "utf8",
-      env: { PATH: `${dir}:/usr/bin:/bin`, DIR: dir, FAKE_FILES: files.join("\n"), PR_TITLE: title, PR_NUMBER: "7", REPO: "o/r",
+      env: { PATH: `${dir}:/usr/bin:/bin`, DIR: dir, FAKE_FILES: files.join("\n"), FAKE_OWNED: owned.join("\n"), BASE_SHA: "abc123", PR_TITLE: title, PR_NUMBER: "7", REPO: "o/r",
         A11IGN_BOT_TOKEN: "stub", FALLBACK_TOKEN: "stub" },
     });
     const exists = (name: string) => spawnSync("test", ["-e", join(dir, name)]).status === 0;
@@ -156,10 +160,18 @@ test("the readers REFUSE a duplicated Acceptance section and a missing Closes (t
   assert.equal(noCloses.ok, false, "a body with no Closes must be refused");
 });
 
-const WRITES_NOTHING: [string, { title: string; files: string[] }, RegExp][] = [
+test("the owned paths are the owner's list, and a path that only shares a prefix is not owned (positive control for the cases below)", () => {
+  assert.ok(OWNED.includes("packages/nvda-worker/"), "the list this test reads must carry the NVDA worker");
+  const out = runScript({ title: MINOR, files: [...MANIFESTS, "packages/nvda-worker-notes/package.json"] });
+  assert.ok(out.body, `a sibling directory sharing the prefix was treated as owned: ${out.log}`);
+});
+
+const WRITES_NOTHING: [string, { title: string; files: string[]; owned?: string[] }, RegExp][] = [
   ["a major bump", { title: "deps: bump typescript from 5.9.3 to 6.0.3", files: MANIFESTS }, /major bump/],
   ["a 0.x minor bump, which is the breaking one below 1.0", { title: "deps: bump agent-org from 0.1.4 to 0.2.0", files: MANIFESTS }, /major bump/],
   ["a pull request touching more than the manifests and the lockfile", { title: MINOR, files: [...MANIFESTS, "scripts/x.mjs"] }, /other than the manifests/],
+  ["a bump of the NVDA driver, which touches an owned path", { title: MINOR, files: [...MANIFESTS, "packages/nvda-worker/package.json"] }, /owned path \(packages\/nvda-worker\/\)/],
+  ["a pull request whose owned-path list cannot be read, because not being able to ask is not a pass", { title: MINOR, files: MANIFESTS, owned: [] }, /owned-path list could not be read/],
   ["a pull request touching no file the API lists", { title: MINOR, files: [] }, /other than the manifests/],
   ["a title that is not the dependency shape", { title: "deps: tidy up", files: MANIFESTS }, /not 'deps: bump/],
   ["a title carrying shell syntax", { title: "deps: bump yaml from 2.8.1 to 2.8.2; touch pwned", files: MANIFESTS }, /not 'deps: bump/],
