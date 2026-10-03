@@ -522,7 +522,9 @@ function decision4Counts(): { total: number; divided: number } {
 // same-named test in a11ign/agent-org carrying every one of its test titles, and none matched a product pattern. The floors above (`> 5` travelling, `> 10` total) fell with them; this file goes with the directory in #2976.
 // 2026-10-03, #2975 (cut-over 4 of 6, PR 3: `shadow-window`, `shadow-window-arm` and `shadow-state-dir` deleted, each carrying every test title in a11ign/agent-org; one title's wording differs): 25 total, 19 divided, from 28/19,
 // by running this test. Three FEWER totals, no fewer divided: none matched a product pattern.
-const RECORDED_DECISION_4 = { total: 25, divided: 19 };
+// 2026-10-03, #2975 (the merge queue's ejection of #3107): 26 total, 19 divided, from 25/19, by running this test. ONE MORE total: `board-document-chrome-resolver.test.ts` is kept, because the tool's own
+// `gh-token-jobs.test.ts` and `acceptance-commands.test.ts` read it AT THAT PATH as the project's fixture, and the `agentOrg` job runs the tool's suite in this project. It leaves with the directory in #2976.
+const RECORDED_DECISION_4 = { total: 26, divided: 19 };
 
 test("decision 4's total/divided counts, re-derived, match the row's currently-amended reading", () => {
   const counts = decision4Counts();
