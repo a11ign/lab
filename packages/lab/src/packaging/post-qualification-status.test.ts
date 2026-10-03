@@ -1,3 +1,4 @@
+// no-token: lookups.mjs
 /**
  * #3289 -- THE FLEET PART'S VERDICT AS A `qualification` COMMIT STATUS.
  *
