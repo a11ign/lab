@@ -28,7 +28,7 @@ function refusalFor(paths: readonly string[]): string | null {
 test("the real tree tracks nothing under packages/agent-org/", () => {
   const tracked = walkTree({ kind: "all", roots: [] }).map((file) => file.path);
   // Positive control for the emptiness below: the walk read a real tree, not an empty or wrong one.
-  assert.ok(tracked.length > 1000, `only ${tracked.length} tracked paths: the walk is broken, and an empty walk passes`);
+  assert.ok(tracked.length > 1000, "the walk read far fewer tracked paths than this repository has: it is broken, and an empty walk passes");
   assert.equal(refusalFor(tracked), null);
 });
 
