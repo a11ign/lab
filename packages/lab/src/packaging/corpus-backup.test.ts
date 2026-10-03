@@ -145,6 +145,9 @@ test("#1042 REGRESSION (reviewer-2 on #1860, three verdicts: `0ece3e54`, `1f91f0
   // concurrently and read every file they list, so a copy deleted between their listing and their read
   // failed them with ENOENT (#1919, #944's shape). The script's other paths resolve from `process.cwd()`,
   // so nothing else depends on where the copy sits.
+  // The dot-directory name is load-bearing too: `source-walk.mjs`'s `sourceFiles` skips dot-directories, which
+  // is what keeps `mjs-parses.test.ts` from listing this copy and reading it after the `finally` removes it
+  // (#3337). `source-walk.test.ts` pins that skip; rename the prefix and that pin no longer covers this.
   const dir = mkdtempSync(join(REPO, "packages/lab/.corpus-backup-mutation-"));
   try {
     const mutatedScript = join(dir, "corpus-backup.mjs");
