@@ -260,6 +260,7 @@ for (const file of VERSION_COMMIT_REWRITES) {
 
 test("#3359: release.yml's push trigger is still a filter -- no catch-all glob, and an ordinary change does not match", () => {
   const globs = releasePushPaths();
+  assert.ok(globs.length > 0, "the control: an emptied filter would pass the catch-all check below for the wrong reason");
   const catchAlls = globs.filter((glob) => ["*", "**", "**/*", "/**"].includes(glob));
   assert.deepEqual(catchAlls, [], "a catch-all runs `plan` on every merge, which is the cost the filter exists to avoid (#3131)");
   for (const ordinary of ["README.md", "docs/backlog.md", "packages/lab/src/example.ts", ".github/workflows/ci.yml"]) {
