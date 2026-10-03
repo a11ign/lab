@@ -8,12 +8,12 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
-import { sandboxGitEnv } from "../../../agent-org/src/lib/git-env.mjs";
+import { sandboxGitEnv } from "agent-org/src/lib/git-env.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { updatePrimary, lockfileMoved, readPrimaryDrift } from "../../../agent-org/src/update-primary.mjs";
-import { changedFiles } from "../../../agent-org/src/lib/changed-files.mjs";
-import { withGitSandbox } from "../../../agent-org/src/lib/git-sandbox.ts";
+import { updatePrimary, lockfileMoved, readPrimaryDrift } from "agent-org/src/update-primary.mjs";
+import { changedFiles } from "agent-org/src/lib/changed-files.mjs";
+import { withGitSandbox } from "../../../../scripts/test-support/git-sandbox.ts";
 import { UPDATE_PRIMARY_VERBS } from "./update-primary-argv.mjs";
 
 /**
@@ -39,7 +39,7 @@ test("#749 updatePrimary BUILDS after the fast-forward -- the source moves and d
   try {
     mkdirSync(join(root, ".git"));
     const built: string[] = [];
-    updatePrimary(root, (args) => { calls.push(args); return "abc123\n"; }, (cwd) => built.push(cwd));
+    updatePrimary(root, (args: UntypedTool) => { calls.push(args); return "abc123\n"; }, (cwd: UntypedTool) => built.push(cwd));
     assert.deepEqual(built, [root], "the build runs, once, in the primary");
     const order = calls.map((c) => c[0]);
     // The second `rev-parse` is `moveLocalMain` reading `refs/heads/main`; this stub returns the same sha
@@ -58,7 +58,7 @@ test("#749 a FAILED build throws, naming what it means, and does NOT roll the ch
     mkdirSync(join(root, ".git"));
     const calls: string[][] = [];
     assert.throws(
-      () => updatePrimary(root, (args) => { calls.push(args); return "abc123\n"; },
+      () => updatePrimary(root, (args: UntypedTool) => { calls.push(args); return "abc123\n"; },
         () => { throw Object.assign(new Error("boom"), { status: 2 }); }),
       /worktree resolves THIS checkout's dist/,
       "the message must say what a stale dist DOES, not merely that a build failed");
@@ -77,7 +77,7 @@ test("#749 MUTATION TARGET: without the build call the source moves and dist doe
   try {
     mkdirSync(join(root, ".git"));
     const built: string[] = [];
-    updatePrimary(root, (args) => { calls.push(args); return "abc123\n"; }, (cwd) => built.push(cwd));
+    updatePrimary(root, (args: UntypedTool) => { calls.push(args); return "abc123\n"; }, (cwd: UntypedTool) => built.push(cwd));
     assert.notDeepEqual(built, [], "if this passes with an empty list, the build is no longer wired");
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
@@ -101,7 +101,7 @@ function driveUpdate(reply: (args: string[]) => string) {
   const root = mkdtempSync(join(tmpdir(), "a11y-primary-main-"));
   try {
     mkdirSync(join(root, ".git"));
-    updatePrimary(root, (args) => { calls.push(args); return reply(args); }, () => {});
+    updatePrimary(root, (args: UntypedTool) => { calls.push(args); return reply(args); }, () => {});
   } finally { rmSync(root, { recursive: true, force: true }); }
   return calls;
 }
@@ -200,7 +200,7 @@ function driveMove(changedAnswer: string[], npm: (args: string[]) => void = () =
     };
     const changed = (range: string[], pathspec: string[]) => { asked.push({ range, pathspec }); return changedAnswer; };
     try {
-      updatePrimary(root, run, (_cwd, args) => { npmCalls.push(args); npm(args); }, changed);
+      updatePrimary(root, run, (_cwd: UntypedTool, args: UntypedTool) => { npmCalls.push(args); npm(args); }, changed);
     } catch (error) {
       thrown = error;
     }
@@ -242,8 +242,8 @@ test("#1384 a HEAD that did not move asks no lockfile question at all", () => {
   const root = mkdtempSync(join(tmpdir(), "a11y-primary-unmoved-"));
   try {
     mkdirSync(join(root, ".git"));
-    updatePrimary(root, () => "same333\n", (_cwd, args) => npmCalls.push(args),
-      (range, pathspec) => { asked.push({ range, pathspec }); return ["pnpm-lock.yaml"]; });
+    updatePrimary(root, () => "same333\n", (_cwd: UntypedTool, args: UntypedTool) => npmCalls.push(args),
+      (range: UntypedTool, pathspec: UntypedTool) => { asked.push({ range, pathspec }); return ["pnpm-lock.yaml"]; });
   } finally { rmSync(root, { recursive: true, force: true }); }
   assert.deepEqual(asked, [], "a range from a commit to itself is empty by construction, so it is not asked");
   assert.deepEqual(npmCalls, [["npm", "run", "build"]]);
@@ -386,7 +386,7 @@ test("#2781 UNASKABLE is null, never a clean reading: a linked worktree, and a r
 });
 
 test("#2781 the CLI `--drift` only READS: from a worktree it answers asked:false and moves nothing", () => {
-  const entry = fileURLToPath(new URL("../../../agent-org/src/update-primary.mjs", import.meta.url));
+  const entry = fileURLToPath(new URL("../../../../node_modules/agent-org/src/update-primary.mjs", import.meta.url));
   const run = spawnSync(process.execPath, [entry, "--drift"], { encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
   const parsed = JSON.parse(run.stdout);
@@ -397,9 +397,9 @@ test("#2781 the CLI `--drift` only READS: from a worktree it answers asked:false
 });
 
 test("#2781 done-when 3: the `-` on ExecStartPre may stay ONLY while the gate reads the primary and has a cause for it", () => {
-  const unit = readFileSync(fileURLToPath(new URL("../../../agent-org/host/work-tick.service.in", import.meta.url)), "utf8");
+  const unit = readFileSync(fileURLToPath(new URL("../../../../node_modules/agent-org/host/work-tick.service.in", import.meta.url)), "utf8");
   const silent = /^ExecStartPre=-.*primary:update/m.test(unit);
-  const gate = readFileSync(fileURLToPath(new URL("../../../agent-org/src/work-gate.mjs", import.meta.url)), "utf8");
+  const gate = readFileSync(fileURLToPath(new URL("../../../../node_modules/agent-org/src/work-gate.mjs", import.meta.url)), "utf8");
   assert.ok(/^ExecStartPre=.*primary:update/m.test(unit), "control: the unit still runs the update, so this test is asking about something");
   if (silent) {
     assert.match(gate, /readPrimaryDriftNow\(\)/, "a silent update with no reader is the 22 hours");

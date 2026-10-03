@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 // in `work-gate.test.ts`'s closure population, for a path this file can compute itself.
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 
-const UNIT_DIRS = [".agent-org/units", "packages/agent-org/host"];
+const UNIT_DIRS = [".agent-org/units", "node_modules/agent-org/host"];
 const UNIT_FILE = /\.service(\.in)?$/;
 const PNPM_SHIM = "%h/.local/bin/pnpm";
 const PACKAGE_MANAGERS_RETIRED = new Set(["npm", "npx"]);
@@ -32,8 +32,8 @@ const MOVED = [
   ".agent-org/units/a11ign-corpus-release-nightly.service",
   ".agent-org/units/a11ign-fleet-watch.service",
   ".agent-org/units/a11ign-lab-watch.service",
-  "packages/agent-org/host/worktree-prune.service.in",
-  "packages/agent-org/host/work-tick.service.in",
+  "node_modules/agent-org/host/worktree-prune.service.in",
+  "node_modules/agent-org/host/work-tick.service.in",
 ];
 
 type ExecLine = { line: number; text: string; program: string };
@@ -98,7 +98,7 @@ test("#2892: no shipped unit anywhere names npm -- work-tick is no longer exempt
   const files = shippedUnitFiles();
   assert.ok(files.length >= MOVED.length,
     `POSITIVE CONTROL: only ${files.length} unit files found under ${UNIT_DIRS.join(", ")}`);
-  assert.ok(files.includes("packages/agent-org/host/work-tick.service.in"),
+  assert.ok(files.includes("node_modules/agent-org/host/work-tick.service.in"),
     "POSITIVE CONTROL: the file whose exemption was deleted is among the files scanned, so its npm line is read");
   assert.deepEqual(files.flatMap((file) => npmRefusals(file, unitText(file))), []);
 });

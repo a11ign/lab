@@ -81,9 +81,9 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   //
   // (#1014 added the thirteenth import and this assertion caught it, which is the test working. It was
   // an exact `12` then; it is the difference now, for the reason above.)
-  const walked = localImports(`${REPO}packages/agent-org/src/row-claim.mjs`).length;
+  const walked = localImports(`${REPO}node_modules/agent-org/src/row-claim.mjs`).length;
   const rawSpecifiers = new Set(
-    [...readFileSync(`${REPO}packages/agent-org/src/row-claim.mjs`, "utf8").matchAll(/from\s+"(\.[^"]*)"/g)].map((m) => m[1]),
+    [...readFileSync(`${REPO}node_modules/agent-org/src/row-claim.mjs`, "utf8").matchAll(/from\s+"(\.[^"]*)"/g)].map((m) => m[1]),
   ).size;
   assert.ok(walked >= 12, `expected row-claim.mjs's imports to be visible, walked ${walked}`);
   assert.equal(rawSpecifiers - walked, 1,
@@ -120,11 +120,11 @@ test("#1019 THE LIVE INSTANCE: row-claim.mjs's local imports are visible, and on
   // `roleBriefPath` -- `SESSIONS_FILE` moved from a literal `new URL("../docs/roles/...")` to the
   // project's declared role-briefs directory.
   assert.deepEqual(
-    localImports(`${REPO}packages/agent-org/src/arm-pr.mjs`).map((p: string) => p.replace(REPO, "")).sort(),
-    ["packages/agent-org/src/acceptance-commands.mjs", "packages/agent-org/src/api-pool.mjs",
-      "packages/agent-org/src/lib/cli-flags.mjs", "packages/agent-org/src/pr-armed-state.mjs",
-      "packages/agent-org/src/pr-hold-state.mjs", "packages/agent-org/src/project-roles.mjs",
-      "packages/agent-org/src/project-vocabulary.mjs", "packages/agent-org/src/trunk-red.mjs"],
+    localImports(`${REPO}node_modules/agent-org/src/arm-pr.mjs`).map((p: string) => p.replace(REPO, "")).sort(),
+    ["node_modules/agent-org/src/acceptance-commands.mjs", "node_modules/agent-org/src/api-pool.mjs",
+      "node_modules/agent-org/src/lib/cli-flags.mjs", "node_modules/agent-org/src/pr-armed-state.mjs",
+      "node_modules/agent-org/src/pr-hold-state.mjs", "node_modules/agent-org/src/project-roles.mjs",
+      "node_modules/agent-org/src/project-vocabulary.mjs", "node_modules/agent-org/src/trunk-red.mjs"],
     "arm-pr.mjs's local imports must all be visible to the walk");
 });
 

@@ -44,7 +44,6 @@ const ADOPTERS = [
   "packages/lab/src/packaging/corpus-restore-drill.test.ts",
   "packages/lab/src/packaging/promote-model.test.ts",
   "packages/lab/src/packaging/mutation-check.test.ts",
-  "packages/lab/src/packaging/acceptance-exit-code.test.ts",
   "packages/cli/src/scan/axe-results.test.ts",
   "packages/lab/src/training/rule-ownership.test.ts",
   "packages/lab/src/training/page-server-holders.test.ts",

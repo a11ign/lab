@@ -159,10 +159,6 @@ const SPAWNS_GIT_DIRECTLY = /\b\w+\(\s*["']git["']/;
  * on its own terms rather than passing quietly.
  */
 const GIT_IS_DATA_NOT_A_SPAWN: Record<string, string> = {
-  "packages/lab/src/packaging/acceptance-prose.test.ts":
-    'passes the string "git" to `onlyResolves()`, a local predicate standing in for the injected '
-    + "`commandExists` seam -- the file imports node:test, node:assert/strict and the module under test, "
-    + "and has no node:child_process import at all (#446, trunk red 2026-09-08T08:00:30Z)",
   "packages/agent-org/src/wake-review-recheckout.test.ts":
     'its `git` is an injected fake seam (`checkout: { git, exists, link, root, repoRoot }`) that records each call '
     + "and answers from a map of tree heads -- the file imports node:test, node:assert/strict, node:fs/os/path and "

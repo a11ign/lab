@@ -255,6 +255,8 @@ function appendixProblems(text: string): string[] {
  */
 const RESERVED_BY_A_ROW: readonly RegExp[] = [
   /^\.agent-org\//,
+  // #2976 deletes `packages/agent-org/` outright; the appendix Regions that named files in it then name files that no longer exist.
+  /^packages\/agent-org\//,
   /^\.changeset\//,
   /^packages\/agent-org\/src\/(?:lib\/|project-config\.mjs$|project-vocabulary\.mjs$|host-config\.mjs$|cause-declaration\.mjs$|shadow-gate\.mjs$)/,
   /^packages\/lab\/src\/packaging\/(?:project-config|multi-board-claim|multi-board-gate|project-vocabulary|project-roles|host-project-paths|shadow-gate|agent-org-extraction|agent-org-outward-edges|package-rename-nvda-worker|package-rename-worker-fleet|agent-org-monorepo-copy-removed|screenreader-worker-extraction|screenreader-fleet-extraction|lab-extraction|control-extraction|documents-extraction|cli-documents-dependency)\.test\.ts$/,
@@ -264,6 +266,9 @@ const RESERVED_BY_A_ROW: readonly RegExp[] = [
   // #2975 (cut-over 4 of 6) DELETES the lab tests that travelled to a11ign/agent-org (each has a same-named test there), so the
   // Region that named one of them no longer finds it on disk. Listed by name: a misspelt path is still refused.
   /^packages\/lab\/src\/packaging\/(?:pr-open-region|reconstitution-drill|row-claim-one-row|wake-drain|wake)\.test\.ts$/,
+  // #2975 PR 3 deletes the 67 further lab tests whose subject now lives in a11ign/agent-org and whose every test title is in
+  // that repository's same-named test (and the two update-branch tests, whose module the tool no longer has).
+  /^packages\/lab\/src\/packaging\/(?:acceptance-exit-code|acceptance-prose|arm-pr-labels-live|auto-arm-sweep-parity|auto-arm-token|board-appendix-gate-kind|board-appendix-gate-record|board-data-issues-paging|board-document-chrome-resolver|board-gate-source|board-liveness|board-report-smoke|board-reported-data-integrity|board-schedule-liveness|board-snapshot|board-status-health|board-summary-check|branch-inventory|closed-pr-answer-owed|closes-declaration|conflict-metrics|decision-declaration|enumeration-completeness|fleet-gated-nightly|hand-fix-ledger|host-state-dir-wiring|idle-claimant|keyed-repo-review|late-edition|merge-queue|merge-ref-staleness|org-health-queued-lab-jobs|pr-hold|pr-owner-total|pr-stall-reason|pr-template-acceptance|prompt-session|prompt-session-direct-record|prune-tmp|public-claim|queue-table|review-verdict|row-call-count-signal|row-claim-live|settle-closed-status|shadow-gate|shadow-reads|shadow-reads-round-trip|shared-stash-guard|stuck-escalation-goes-to-ceo|tracker-comment|tracker-writer-spawn-guard|update-branch-decision|update-branch-sweep|waiting-condition|wake-clear-settle|wake-engineer-brief|wake-escalation-answered|wake-followup-header|wake-limited-session|wake-no-clear-for-instances|wake-one-row|wake-rehand|wake-row-named-instance|wake-spare-family|wake-stranded-order|workflow-run-liveness)\.test\.ts$/,
 ];
 
 /** The paths each appendix entry's Region lists: the lines of the FIRST fenced block under its `## Region`. */

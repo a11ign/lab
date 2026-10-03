@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
-import { declaredRegionFiles, directoryReservations, extractLabeledSection, extractRegionSection, hasTemplateField, pathInProse, regionCovers, regionPathsFromBody, rootFilesOnMain, slashlessDirectoryEntries, trackedTopLevelDirs, unrecognisedRegionPaths } from "../../../agent-org/src/region-paths.mjs";
+import { declaredRegionFiles, directoryReservations, extractLabeledSection, extractRegionSection, hasTemplateField, pathInProse, regionCovers, regionPathsFromBody, rootFilesOnMain, slashlessDirectoryEntries, trackedTopLevelDirs, unrecognisedRegionPaths } from "agent-org/src/region-paths.mjs";
 
 /** #999's fixture lives beside the others this directory already keeps (`pr-584-body.md`, `issue-687-body.txt`). */
 const FIXTURES = fileURLToPath(new URL("./fixtures", import.meta.url));
@@ -848,7 +848,7 @@ test("#2233: an excluded path is not reported STRAY either -- it is out of the s
 // The pre-#2233 grammar, verbatim -- the extension ended `\.[A-Za-z]{2,4}` with nothing after it -- so the
 // truncation is REPRODUCED here rather than described.
 const oldRegionPaths = (text: string): string[] => {
-  const alts = trackedTopLevelDirs().map((d) => d.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const alts = trackedTopLevelDirs().map((d: UntypedTool) => d.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
   const old = new RegExp(`(?:^|[\\s\`"'(])((?:${alts})\\/[A-Za-z0-9/_.-]+\\.[A-Za-z]{2,4})`, "g");
   return [...text.matchAll(old)].map((m) => m[1]);
 };

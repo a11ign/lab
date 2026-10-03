@@ -45,13 +45,13 @@ import {
   worktreeTargetReason,
   worktreeFlagsReason,
   claimRecordSession,
-} from "../../../agent-org/src/row-claim.mjs";
-import { forgetProcessSnapshot, withBoardSnapshot } from "../../../agent-org/src/board-snapshot.mjs";
-import { claimRefusal, REMOVAL_LOG_ENV } from "../../../agent-org/src/worktree-removal.mjs";
-import { refusalCause, PROJECT_UNREADABLE } from "../../../agent-org/src/settle-closed-status.mjs";
-import { laneReason } from "../../../agent-org/src/row-claim/runner-rule.mjs";
+} from "agent-org/src/row-claim.mjs";
+import { forgetProcessSnapshot, withBoardSnapshot } from "agent-org/src/board-snapshot.mjs";
+import { claimRefusal, REMOVAL_LOG_ENV } from "agent-org/src/worktree-removal.mjs";
+import { refusalCause, PROJECT_UNREADABLE } from "agent-org/src/settle-closed-status.mjs";
+import { laneReason } from "agent-org/src/row-claim/runner-rule.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { READY_LABEL, WAS_READY_LABEL } from "../../../agent-org/src/ready-label-audit.mjs";
+import { READY_LABEL, WAS_READY_LABEL } from "agent-org/src/ready-label-audit.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 // #2782: EVERY REMOVAL WRITES A LINE AND READS THE ROW'S CLAIM, and a fixture must do neither to the host -- a fixture directory
@@ -1059,7 +1059,7 @@ test("#1275: through the real caller, a Project the token cannot read is still r
     throw error;
   };
   const result = moveProjectStatus(1275, "Done", { run, log: () => {},
-    snapshot: (mutate, deps) => withBoardSnapshot(mutate, { ...deps, run, mkdir: () => {}, writeFile: () => {}, log: () => {} }) });
+    snapshot: (mutate: UntypedTool, deps: UntypedTool) => withBoardSnapshot(mutate, { ...deps, run, mkdir: () => {}, writeFile: () => {}, log: () => {} }) });
   assert.equal(result.moved, false);
   assert.equal((result as { notOnBoard: boolean }).notOnBoard, false, "unreadable is not the same as not on the board");
   assert.equal(refusalCause((result as { reason: string }).reason), PROJECT_UNREADABLE);
@@ -1362,7 +1362,7 @@ test("#1464: the live set these tests read is sessions.json's -- non-empty, and 
 });
 
 test("#1464: arm-pr's LIVE_SESSIONS is the same list -- derived from the same file, pinned by its SOURCE line", () => {
-  const source = readFileSync(new URL("../../../agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../../../../node_modules/agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
   assert.deepEqual(source.split("\n").filter((line) => line.includes("SESSIONS.live.filter(")),
     ["export const LIVE_SESSIONS = SESSIONS.live.filter((s) => s.family === undefined).map((s) => s.name);"],
     "arm-pr derives its list from `.live`'s names in exactly one line, as `LIVE` above does");
@@ -1542,7 +1542,7 @@ test("#1063: `renderStatus`'s UNCLAIMED branch calls reportB4 -- the row's deliv
   // SCOPED TO THE BRANCH, so it fails loudly if the call moves rather than passing vacuously somewhere
   // else in the file.
   const source = stripComments(readFileSync(
-    new URL("../../../agent-org/src/row-claim.mjs", import.meta.url), "utf8"));
+    new URL("../../../../node_modules/agent-org/src/row-claim.mjs", import.meta.url), "utf8"));
   const unclaimedBranch = /if \(!status\.claimed\) \{([\s\S]*?)\n {2}\}/.exec(source);
   assert.ok(unclaimedBranch, "the UNCLAIMED branch must still be findable, or this asserts nothing");
   assert.match(unclaimedBranch[1], /reportB4\(issueNumber\)/,
@@ -1567,7 +1567,7 @@ test("#1275: a Status move reads only the item it touches, through the real call
         { id: `PVTI_${issue}`, project: { number: 1 }, fieldValueByName: { name: "Ready" } }] } } } } });
   };
   const results = [1, 2, 3, 3].map((n) => moveProjectStatus(n, "In progress",
-    { run, log: () => {}, snapshot: (mutate, deps) => withBoardSnapshot(mutate,
+    { run, log: () => {}, snapshot: (mutate: UntypedTool, deps: UntypedTool) => withBoardSnapshot(mutate,
       // `exists: () => true` because `writeFile` is stubbed to drop the file -- with the real
       // `existsSync` the snapshot this test never wrote reads as deleted and every reuse takes a fresh
       // read, which is the disk check doing its job against a fixture rather than a defect.
@@ -1818,7 +1818,7 @@ test("#2746 REGRESSION: a decline label edit that exits CLEAN but does not durab
 });
 
 test("#1399 WIRING: the claim/dispatch and decline CLIs report a thrown error through failureReport", () => {
-  const source = stripComments(readFileSync(new URL("../../../agent-org/src/row-claim.mjs", import.meta.url), "utf8"));
+  const source = stripComments(readFileSync(new URL("../../../../node_modules/agent-org/src/row-claim.mjs", import.meta.url), "utf8"));
   for (const fn of ["runDispatchOrClaim", "runDecline"]) {
     const start = source.indexOf(`function ${fn}(`);
     assert.ok(start >= 0, `${fn} not found`);
@@ -2160,7 +2160,7 @@ test("#2782 DONE-WHEN 3: decline's removal is REFUSED when the row the TREE name
   withRealWorktree(({ primary, worktree }) => {
     const gh = () => JSON.stringify({ state: "OPEN", labels: [{ name: "session:worker-other" }] });
     const result = removeClaimedWorktree(worktree, { run: (_cmd: string, args: string[]) => git(primary, args), session: "worker-me",
-      branch: "agent/test-branch-777", claim: (tree, deps) => claimRefusal(tree, { ...deps, gh }) });
+      branch: "agent/test-branch-777", claim: (tree: UntypedTool, deps: UntypedTool) => claimRefusal(tree, { ...deps, gh }) });
     assert.equal(result.removed, false);
     assert.match((result as { reason: string }).reason, /row #777, which still carries session:worker-other/);
     assert.ok(git(primary, ["worktree", "list", "--porcelain"]).includes(worktree), "nothing was removed");
@@ -2172,7 +2172,7 @@ test("#2782: the session declining is EXEMPT from its own label -- or every decl
     const gh = () => JSON.stringify({ state: "OPEN", labels: [{ name: "session:worker-me" }] });
     let excepted: string | undefined;
     const result = removeClaimedWorktree(worktree, { run: (_cmd: string, args: string[]) => git(primary, args), session: "worker-me",
-      branch: "agent/test-branch-777", claim: (tree, deps) => { excepted = deps?.except; return claimRefusal(tree, { ...deps, gh }); } });
+      branch: "agent/test-branch-777", claim: (tree: UntypedTool, deps: UntypedTool) => { excepted = deps?.except; return claimRefusal(tree, { ...deps, gh }); } });
     assert.deepEqual(result, { removed: true });
     assert.equal(excepted, "worker-me", "the decline's own session is what the claim check excuses");
   });
@@ -2205,7 +2205,7 @@ test("#2782: a removal whose log cannot be written does not happen, and a failed
     const failing = removeClaimedWorktree(worktree, { run: (_cmd: string, args: string[]) => {
       if (args[0] === "worktree" && args[1] === "remove") throw new Error("fatal: locked");
       return git(primary, args);
-    }, record: (line) => { events.push(line.event); } });
+    }, record: (line: UntypedTool) => { events.push(line.event); } });
     assert.equal(failing.removed, false);
     assert.deepEqual(events, ["removing", "failed"]);
   });

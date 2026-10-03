@@ -85,7 +85,7 @@ test("the budget is close to what the code actually does", async () => {
   // first scope that has one (#2546). This linted all of `packages` and `scripts` for ~22s to learn what `wake.mjs` alone says in
   // seconds. If NO function is over the floor every scope is still linted and the assertion below still fires, so nothing it
   // could catch is skipped: only the order changes, and the likeliest home of a long function goes first.
-  const SCOPES = ["packages/agent-org/src", "packages", "scripts"];
+  const SCOPES = ["packages", "scripts"];
   let reports: unknown[] = [];
   for (const scope of SCOPES) {
     reports = (await probe.lintFiles([scope])).flatMap((r) => r.messages).filter((m) => m.ruleId === PHYSICAL);

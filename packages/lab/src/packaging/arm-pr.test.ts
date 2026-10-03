@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 // #2046: the armed predicate now lives beside the hold predicate, in its own leaf module.
-import { armedQueryArgs, armedReason } from "../../../agent-org/src/pr-armed-state.mjs";
+import { armedQueryArgs, armedReason } from "agent-org/src/pr-armed-state.mjs";
 import {
   closedRowNumbers,
   sessionLabelsOf,
@@ -50,7 +50,7 @@ import {
   jumpDecision,
   atFrontOfQueue,
   enqueueAtFront,
-} from "../../../agent-org/src/arm-pr.mjs";
+} from "agent-org/src/arm-pr.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -195,7 +195,7 @@ test("#1000: the live and retired sets are DISJOINT, and the split is checked ag
   // So the DISJOINTNESS is checked here (pure, always), and the COVERAGE is checked against `gh label
   // list` in arm-pr-labels-live.test.ts (#1140) -- which needs a token, so it reports honestly rather than
   // passing when it cannot ask.
-  assert.deepEqual(LIVE_SESSIONS.filter((s) => RETIRED_SESSIONS.includes(s)), [],
+  assert.deepEqual(LIVE_SESSIONS.filter((s: UntypedTool) => RETIRED_SESSIONS.includes(s)), [],
     "a session cannot be both live and retired");
   assert.ok(LIVE_SESSIONS.length >= 1 && RETIRED_SESSIONS.length >= 1);
 });
@@ -497,7 +497,7 @@ test("#2046 PURE: armedReason names the state `armedFromApi` decided, and answer
 
 test("#2046 ONE PREDICATE, ONE MODULE: arm-pr reads the armed rule from `pr-armed-state.mjs` and spells "
   + "no copy of it -- the shape this row is the third instance of", () => {
-  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/arm-pr.mjs`, "utf8"));
+  const source = stripComments(readFileSync(`${REPO}node_modules/agent-org/src/arm-pr.mjs`, "utf8"));
   assert.match(source, /from "\.\/pr-armed-state\.mjs"/,
     "the predicate is IMPORTED, the way `pr-hold-state.mjs` already is on the line above it");
   // #2391 NARROWED, NOT DELETED. The two proxies this test used to use -- the strings `mergeQueueEntry` and
@@ -524,12 +524,12 @@ test("#2046 WIRING: both callers of the armed read build it from the SAME `armed
   const queued = armedQueryArgs({ number: "2044", repo: "a11ign/a11ign" });
   assert.deepEqual(queued.slice(0, 2), ["api", "graphql"],
     "REST structurally cannot see the merge queue -- this must be the GraphQL read");
-  assert.ok(queued.some((a) => a.includes("mergeQueueEntry")),
+  assert.ok(queued.some((a: UntypedTool) => a.includes("mergeQueueEntry")),
     "and it must ask for every field `armedFromApi` decides on, `mergeQueueEntry` above all");
   assert.ok(queued.includes("o=a11ign") && queued.includes("r=a11ign") && queued.includes("n=2044"),
     "the owner, repo and number are variables, never interpolated into the query text");
   for (const caller of ["arm-pr.mjs", "auto-arm-sweep.mjs"]) {
-    assert.match(stripComments(readFileSync(`${REPO}packages/agent-org/src/${caller}`, "utf8")),
+    assert.match(stripComments(readFileSync(`${REPO}node_modules/agent-org/src/${caller}`, "utf8")),
       /armedQueryArgs\(\{ number, repo \}\)/, `${caller} must build the read from the shared argv`);
   }
 });
@@ -648,7 +648,7 @@ function typedSessionArrays(source: string, names: string[]): string[] {
 test("#1453 STRUCTURAL: arm-pr.mjs declares no session-name array -- a typed list is refused", () => {
   const file = sessionsFile();
   const names = [...file.live, ...file.retired].map((s) => s.name);
-  const source = readFileSync(new URL("../../../agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../../../../node_modules/agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
   assert.deepEqual(typedSessionArrays(source, names), [],
     "arm-pr.mjs types a session list instead of reading .agent-org/roles/sessions.json");
   // POSITIVE CONTROL, built from the file's own names so this test file types no list either: the shape of the line #1453
@@ -762,7 +762,7 @@ test("#1478: a missing --pr exits CANNOT_ASK before any call", () => {
 
 test("#1478: the script's header documents every exit code, the partial-success code included", () => {
   assert.deepEqual(EXIT, { DONE: 0, REFUSED: 1, CANNOT_ASK: 2, ARMED_THEN_LABEL_FAILED: 3, JUMP_UNCONFIRMED: 4 });
-  const source = readFileSync(new URL("../../../agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../../../../node_modules/agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
   const header = source.slice(0, source.indexOf("export const EXIT"));
   for (const [name, code] of Object.entries(EXIT)) {
     assert.match(header, new RegExp(`\`${code}\` ${name}:`), `the header documents ${code} ${name}`);
@@ -1004,11 +1004,11 @@ test("#2391 PURE: extractTrunkFixDeclaration keeps none, fixes-trunk and malform
 
 test("#2391 PURE: redStreak is the run of reds up to the newest green -- through a cancelled or in-flight run", () => {
   assert.deepEqual(redStreak(GREEN_MAIN), []);
-  assert.deepEqual(redStreak(RED_MAIN).map((r) => r.id), [3]);
+  assert.deepEqual(redStreak(RED_MAIN).map((r: UntypedTool) => r.id), [3]);
   const runs = [trunkRun(6, "aaaaaaa", "failure"), trunkRun(5, "bbbbbbb", "cancelled"), trunkRun(4, "ccccccc", null, "in_progress"),
     trunkRun(3, "ddddddd", "failure"), trunkRun(2, "eeeeeee", "success"), trunkRun(1, "fffffff", "failure")];
-  assert.deepEqual(redStreak({ workflow_runs: runs }).map((r) => r.id), [6, 3], "cancelled and running say nothing about main; the green ends it");
-  assert.deepEqual(redStreak({ workflow_runs: [...runs].reverse() }).map((r) => r.id), [6, 3], "the order the API hands them in decides nothing");
+  assert.deepEqual(redStreak({ workflow_runs: runs }).map((r: UntypedTool) => r.id), [6, 3], "cancelled and running say nothing about main; the green ends it");
+  assert.deepEqual(redStreak({ workflow_runs: [...runs].reverse() }).map((r: UntypedTool) => r.id), [6, 3], "the order the API hands them in decides nothing");
   assert.deepEqual(redStreak({ workflow_runs: [trunkRun(1, "aaaaaaa", "cancelled")] }), [], "no verdict at all is not a red");
   assert.deepEqual(redStreak(null as never), []);
 });
@@ -1099,7 +1099,7 @@ test("#2441 PURE: redStreakReading says whether the streak is KNOWN to have ende
   assert.deepEqual(redStreakReading(RED_MAIN).ended, true);
   assert.deepEqual(redStreakReading(GREEN_MAIN), { streak: [], ended: true });
   const unfinished = redStreakReading({ workflow_runs: [trunkRun(3, RED_SHA, "failure"), trunkRun(2, OLDER_RED_SHA, "failure")] });
-  assert.deepEqual(unfinished.streak.map((r) => r.id), [3, 2]);
+  assert.deepEqual(unfinished.streak.map((r: UntypedTool) => r.id), [3, 2]);
   assert.equal(unfinished.ended, false, "reds that run out of runs are a streak that may go on");
   assert.equal(redStreakReading({ workflow_runs: [trunkRun(2, RED_SHA, "failure"), trunkRun(1, GREEN_SHA, "cancelled")] }).ended, false, "a cancelled run ends nothing");
   assert.deepEqual(redStreakReading(null as never), { streak: [], ended: false });

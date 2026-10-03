@@ -29,7 +29,7 @@ import { resolve, dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { refuseUnknownFlags } from "@a11ign/screenreader-fleet/cli-flags";
 import { REPO_ROOT, runsRoot } from "../src/dataset-paths.mjs";
-import { isPrimaryWorktree } from "../../agent-org/src/prune-worktrees.mjs";
+import { isPrimaryWorktree } from "agent-org/src/prune-worktrees.mjs";
 import { pnpmCliInvocation } from "../../../scripts/npm-cli-executable.mjs";
 
 const REPO = REPO_ROOT;

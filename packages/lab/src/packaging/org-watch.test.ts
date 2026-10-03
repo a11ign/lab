@@ -26,9 +26,9 @@ import {
   METRICS, EXIT, figure, passRate, renderFigure, renderTable, totalCount, mainColour,
   firstFailingAssertion, byConclusion, queueReport, utilisation, boardDeadline, watchReport,
   redWindows, redHoursFigure, runsHaveStopped, weeklyRedHoursFigure, RUNS_PAGE_SIZE,
-} from "../../../agent-org/src/org-watch.mjs";
+} from "agent-org/src/org-watch.mjs";
 
-const metric = (key: string) => METRICS.find((m) => m.key === key)!;
+const metric = (key: string) => METRICS.find((m: UntypedTool) => m.key === key)!;
 
 test("#912: every metric renders with its baseline and target beside the value, so a number that moved "
   + "the wrong way is visible without arithmetic", () => {
@@ -363,7 +363,7 @@ test("#1047: TWO breaks in one interval are two windows, not one", () => {
   ];
   const { windows, examined } = redWindows(runs, new Date("2026-09-12T07:00:00Z"));
   assert.equal(windows.length, 2, "a reader told `1 window` would go looking for one cause");
-  assert.deepEqual(windows.map((w) => w.hours), [1, 1]);
+  assert.deepEqual(windows.map((w: UntypedTool) => w.hours), [1, 1]);
   assert.equal(examined, 5);
 });
 
@@ -610,7 +610,7 @@ test("#1072: every declared EXIT value is one some path can produce", () => {
   // satisfy this. All three references in the script today are real assignments; if one ever moves into
   // a message, this needs to narrow to an assignment context rather than a mention.
   const source = stripComments(readFileSync(
-    fileURLToPath(new URL("../../../agent-org/src/org-watch.mjs", import.meta.url)), "utf8"));
+    fileURLToPath(new URL("../../../../node_modules/agent-org/src/org-watch.mjs", import.meta.url)), "utf8"));
   const produced = new Set([...source.matchAll(/EXIT\.([A-Z_]+)/g)].map((m) => m[1]));
   produced.delete("");
   for (const name of Object.keys(EXIT)) {
@@ -738,7 +738,7 @@ test("#1286: a queue with content is unaffected -- the third state is additive",
 // `mainColour` returns.
 
 const weeklyRow = (colour: ReturnType<typeof mainColour>) => renderTable({ redHours: weeklyRedHoursFigure(colour) })
-  .split("\n").find((line) => line.includes(metric("redHours").label)) ?? "";
+  .split("\n").find((line: UntypedTool) => line.includes(metric("redHours").label)) ?? "";
 
 test("#1267 ACCEPTANCE: the weekly figure for a main that could not be read is NOT MEASURED, never 0", () => {
   const unreadable = mainColour({ repo: "o/r", run: () => { throw new Error("gh: HTTP 502"); } });
@@ -804,7 +804,7 @@ test("#1267: a page that begins mid-red says 'at least' in the weekly VALUE (#10
 });
 
 test("#1267: main() builds the weekly figure ONLY through weeklyRedHoursFigure(colour) -- no second expression", () => {
-  const source = stripComments(readFileSync(new URL("../../../agent-org/src/org-watch.mjs", import.meta.url), "utf8"));
+  const source = stripComments(readFileSync(new URL("../../../../node_modules/agent-org/src/org-watch.mjs", import.meta.url), "utf8"));
   const start = source.indexOf("function main()");
   assert.ok(start > 0, "main() must still be findable, or this asserts nothing");
   const body = source.slice(start, source.indexOf("\n}\n", start));
