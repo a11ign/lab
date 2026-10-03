@@ -1,3 +1,6 @@
+// no-token: gh -- every test below drives pure functions or reads two committed files; the one `gh api` read
+// (`ghApiRead`, in `gh-api-read.mjs`) is reached only from the live test, which returns before it unless
+// `A11Y_CHECK_MAIN_RULESET=1`, and the acceptance job sets neither that nor a token.
 /**
  * #3123 (ADR 0039 item 5): EVERY CODE REPOSITORY CARRIES THE REVIEW REQUIREMENT AND THE MERGE QUEUE, AND
  * THAT IS PROVABLE BEFORE ITS FIRST PUSH.
@@ -34,10 +37,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
+import { ghApiRead } from "./gh-api-read.mjs";
 
 const REPO_ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
 const PROJECT_FILE = ".agent-org/project.json";
@@ -316,17 +319,7 @@ test("#3123: the four verdicts are genuinely distinct, and none is a spelling of
 
 // --- the live read, over every entry ----------------------------------------------------------------------
 
-/** One `gh api` read, keeping "refused" (403/404) distinguishable from "could not look". Never an empty catch. */
-function ghRead<T>(path: string): Read<T> {
-  try {
-    const out = execFileSync("gh", ["api", path], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    return { kind: "ok", value: JSON.parse(out) as T };
-  } catch (cause) {
-    const stderr = String((cause as { stderr?: unknown }).stderr ?? "");
-    const status = /HTTP (\d{3})/.exec(stderr)?.[1];
-    return status === "404" || status === "403" ? { kind: "refused" } : { kind: "unreadable", why: stderr.trim() || String(cause) };
-  }
-}
+const ghRead = <T>(path: string): Read<T> => ghApiRead(path) as Read<T>;
 
 function liveRead({ repo, defaultBranch }: Entry): RepoRead {
   return {
