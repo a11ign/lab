@@ -8,12 +8,12 @@ import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
-import { sandboxGitEnv } from "../../../agent-org/src/lib/git-env.mjs";
+import { sandboxGitEnv } from "agent-org/src/lib/git-env.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { updatePrimary, lockfileMoved, readPrimaryDrift } from "../../../agent-org/src/update-primary.mjs";
-import { changedFiles } from "../../../agent-org/src/lib/changed-files.mjs";
-import { withGitSandbox } from "../../../agent-org/src/lib/git-sandbox.ts";
+import { updatePrimary, lockfileMoved, readPrimaryDrift } from "agent-org/src/update-primary.mjs";
+import { changedFiles } from "agent-org/src/lib/changed-files.mjs";
+import { withGitSandbox } from "agent-org/src/lib/git-sandbox.ts";
 import { UPDATE_PRIMARY_VERBS } from "./update-primary-argv.mjs";
 
 /**
@@ -386,7 +386,7 @@ test("#2781 UNASKABLE is null, never a clean reading: a linked worktree, and a r
 });
 
 test("#2781 the CLI `--drift` only READS: from a worktree it answers asked:false and moves nothing", () => {
-  const entry = fileURLToPath(new URL("../../../agent-org/src/update-primary.mjs", import.meta.url));
+  const entry = fileURLToPath(new URL("../../../../node_modules/agent-org/src/update-primary.mjs", import.meta.url));
   const run = spawnSync(process.execPath, [entry, "--drift"], { encoding: "utf8" });
   assert.equal(run.status, 0, run.stderr);
   const parsed = JSON.parse(run.stdout);
@@ -397,9 +397,9 @@ test("#2781 the CLI `--drift` only READS: from a worktree it answers asked:false
 });
 
 test("#2781 done-when 3: the `-` on ExecStartPre may stay ONLY while the gate reads the primary and has a cause for it", () => {
-  const unit = readFileSync(fileURLToPath(new URL("../../../agent-org/host/work-tick.service.in", import.meta.url)), "utf8");
+  const unit = readFileSync(fileURLToPath(new URL("../../../../node_modules/agent-org/host/work-tick.service.in", import.meta.url)), "utf8");
   const silent = /^ExecStartPre=-.*primary:update/m.test(unit);
-  const gate = readFileSync(fileURLToPath(new URL("../../../agent-org/src/work-gate.mjs", import.meta.url)), "utf8");
+  const gate = readFileSync(fileURLToPath(new URL("../../../../node_modules/agent-org/src/work-gate.mjs", import.meta.url)), "utf8");
   assert.ok(/^ExecStartPre=.*primary:update/m.test(unit), "control: the unit still runs the update, so this test is asking about something");
   if (silent) {
     assert.match(gate, /readPrimaryDriftNow\(\)/, "a silent update with no reader is the 22 hours");

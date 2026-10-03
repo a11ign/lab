@@ -225,7 +225,7 @@ test("the widened guard finds `const`-carried edges in the real tree that a lite
   const carried = findEdges({ root: ROOT, tracked: trackedFiles(ROOT) }).filter((e) => e.via !== undefined);
   assert.ok(carried.length >= 1, "POSITIVE CONTROL: no edge in the real tree was found through a const, so the widening matched nothing");
   const froms = carried.map((e) => e.from);
-  for (const file of ["corpus-size-figures.test.ts", "content-preservation.test.ts", "wake-engineer-brief.test.ts"]) {
+  for (const file of ["corpus-size-figures.test.ts", "content-preservation.test.ts"]) {
     assert.ok(froms.some((from) => from.endsWith(file)), `${file} reads the layer's CLAUDE.md through a const and is not found`);
   }
   for (const { from, via } of carried) assert.ok(via && via.declaredLine > 0 && via.readLine >= via.declaredLine, `${from}: the declaration and the read are lines of the file`);

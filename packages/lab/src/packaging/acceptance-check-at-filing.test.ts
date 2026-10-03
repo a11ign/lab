@@ -37,14 +37,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
-import { wholeSuiteAcceptanceReason } from "../../../agent-org/src/row-claim/template-fields-rule.mjs";
-import { fileRefusalReason } from "../../../agent-org/src/row-file.mjs";
+import { wholeSuiteAcceptanceReason } from "agent-org/src/row-claim/template-fields-rule.mjs";
+import { fileRefusalReason } from "agent-org/src/row-file.mjs";
 import { parse } from "yaml";
 import {
   acceptancePathTokens, acceptancePathsReason, labFetchArtifacts, labFetchPathHits, runsTheWholeSuite,
   testFileArgumentsResolve, unresolvedAcceptancePaths,
-} from "../../../agent-org/src/acceptance-commands.mjs";
-import { trackedTopLevelDirs } from "../../../agent-org/src/region-paths.mjs";
+} from "agent-org/src/acceptance-commands.mjs";
+import { trackedTopLevelDirs } from "agent-org/src/region-paths.mjs";
 
 // #1943: THE REGION DECLARES THE TEST FILE TOO, and that is not fixture housekeeping. This body used to
 // declare `packages/x/y.ts` while its Acceptance ran `packages/x/y.test.ts` — a row that names a file it
@@ -116,7 +116,7 @@ test("the refusal names the tool that refused, so two callers do not read as one
 
 test("the import is the SHARED function, not a second copy", () => {
   const rule = readFileSync(
-    resolve(import.meta.dirname, "../../../agent-org/src/row-claim/template-fields-rule.mjs"), "utf8");
+    resolve(import.meta.dirname, "../../../../node_modules/agent-org/src/row-claim/template-fields-rule.mjs"), "utf8");
   assert.match(rule, /import \{[^}]*runsTheWholeSuite[^}]*\} from "\.\.\/acceptance-commands\.mjs"/,
     "template-fields-rule must IMPORT the whole-suite test; a local regex here would be the second "
     + "implementation this row exists to avoid");
@@ -309,7 +309,7 @@ test("CALIBRATION: the rule refuses ONE of the Acceptance sections on `main`'s o
 });
 
 test("the path check is the SHARED function in `row-file`, not a second copy", () => {
-  const tool = readFileSync(resolve(import.meta.dirname, "../../../agent-org/src/row-file.mjs"), "utf8");
+  const tool = readFileSync(resolve(import.meta.dirname, "../../../../node_modules/agent-org/src/row-file.mjs"), "utf8");
   assert.match(tool, /import \{[^}]*acceptancePathsReason[^}]*\} from "\.\/acceptance-commands\.mjs"/s,
     "row-file must IMPORT the path check; a local `existsSync` loop here would be the second "
     + "implementation this row exists to avoid");
@@ -504,7 +504,7 @@ test("a playbook with no `lab_artifacts` map THROWS rather than reporting an emp
 });
 
 test("the lab-fetch check is the SHARED function in `row-file`, not a second copy", () => {
-  const tool = readFileSync(resolve(import.meta.dirname, "../../../agent-org/src/row-file.mjs"), "utf8");
+  const tool = readFileSync(resolve(import.meta.dirname, "../../../../node_modules/agent-org/src/row-file.mjs"), "utf8");
   assert.match(tool, /import \{[^}]*labFetchPathReason[^}]*\} from "\.\/acceptance-commands\.mjs"/s,
     "row-file must IMPORT the check; a local copy of the fetch mapping here would be the third statement "
     + "of a path that already exists twice");

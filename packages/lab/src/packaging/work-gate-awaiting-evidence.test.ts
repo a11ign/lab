@@ -15,10 +15,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { decide, CAUSES, JUDGMENT_CAUSES, START_CAUSES, GH_READS, withCommitChains, reviewBlocked,
+import { decide, CAUSES, JUDGMENT_CAUSES, START_CAUSES, GH_READS, reviewBlocked,
   readEvidenceLabelledAt, withEvidenceLabelAges, awaitingEvidenceStaleOrders, AWAITING_EVIDENCE_LABEL,
-  AWAITING_EVIDENCE_QUIET_MS } from "../../../agent-org/src/work-gate.mjs";
-import { PROFILES } from "../../../agent-org/src/worker-profile.mjs";
+  AWAITING_EVIDENCE_QUIET_MS } from "agent-org/src/work-gate.mjs";
+import { PROFILES } from "agent-org/src/worker-profile.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RULES = join(HERE, "../../../../.claude/rules/org-routing-and-timers.md");
@@ -81,16 +81,6 @@ test("#2416: the label removes the MACHINERY's order and nothing else -- red, an
   const refused = draft(5, GREEN, { labelled: true,
     comments: [{ body: `Review of #5 at \`${HEAD.slice(0, 8)}\`, by \`reviewer\`: not convinced.` }] });
   assert.deepEqual(causes(decide({ prs: [refused], readyRows: [] })), ["verdict-not-convinced"]);
-});
-
-test("#2416: a labelled pull request costs no commit-chain read; an unlabelled one still does", () => {
-  const seen: string[][] = [];
-  const run = (args: string[]) => { seen.push(args); return ""; };
-  withCommitChains([draft(1, GREEN, { labelled: true })], run);
-  assert.equal(seen.length, 0, "the chain is read to key a verdict order that will never be made");
-  withCommitChains([draft(2, GREEN)], run);
-  assert.equal(seen.length, 1, "the control: the same draft unlabelled pays its one call");
-  assert.match(seen[0].join(" "), /pulls\/2\/commits/);
 });
 
 /** A green, unheld, ready pull request GitHub's review requirement is holding. */

@@ -45,13 +45,13 @@ import {
   worktreeTargetReason,
   worktreeFlagsReason,
   claimRecordSession,
-} from "../../../agent-org/src/row-claim.mjs";
-import { forgetProcessSnapshot, withBoardSnapshot } from "../../../agent-org/src/board-snapshot.mjs";
-import { claimRefusal, REMOVAL_LOG_ENV } from "../../../agent-org/src/worktree-removal.mjs";
-import { refusalCause, PROJECT_UNREADABLE } from "../../../agent-org/src/settle-closed-status.mjs";
-import { laneReason } from "../../../agent-org/src/row-claim/runner-rule.mjs";
+} from "agent-org/src/row-claim.mjs";
+import { forgetProcessSnapshot, withBoardSnapshot } from "agent-org/src/board-snapshot.mjs";
+import { claimRefusal, REMOVAL_LOG_ENV } from "agent-org/src/worktree-removal.mjs";
+import { refusalCause, PROJECT_UNREADABLE } from "agent-org/src/settle-closed-status.mjs";
+import { laneReason } from "agent-org/src/row-claim/runner-rule.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
-import { READY_LABEL, WAS_READY_LABEL } from "../../../agent-org/src/ready-label-audit.mjs";
+import { READY_LABEL, WAS_READY_LABEL } from "agent-org/src/ready-label-audit.mjs";
 import { sandboxGitEnv } from "../../../guards/src/git-env.mjs";
 
 // #2782: EVERY REMOVAL WRITES A LINE AND READS THE ROW'S CLAIM, and a fixture must do neither to the host -- a fixture directory
@@ -1362,7 +1362,7 @@ test("#1464: the live set these tests read is sessions.json's -- non-empty, and 
 });
 
 test("#1464: arm-pr's LIVE_SESSIONS is the same list -- derived from the same file, pinned by its SOURCE line", () => {
-  const source = readFileSync(new URL("../../../agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../../../../node_modules/agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
   assert.deepEqual(source.split("\n").filter((line) => line.includes("SESSIONS.live.filter(")),
     ["export const LIVE_SESSIONS = SESSIONS.live.filter((s) => s.family === undefined).map((s) => s.name);"],
     "arm-pr derives its list from `.live`'s names in exactly one line, as `LIVE` above does");
@@ -1542,7 +1542,7 @@ test("#1063: `renderStatus`'s UNCLAIMED branch calls reportB4 -- the row's deliv
   // SCOPED TO THE BRANCH, so it fails loudly if the call moves rather than passing vacuously somewhere
   // else in the file.
   const source = stripComments(readFileSync(
-    new URL("../../../agent-org/src/row-claim.mjs", import.meta.url), "utf8"));
+    new URL("../../../../node_modules/agent-org/src/row-claim.mjs", import.meta.url), "utf8"));
   const unclaimedBranch = /if \(!status\.claimed\) \{([\s\S]*?)\n {2}\}/.exec(source);
   assert.ok(unclaimedBranch, "the UNCLAIMED branch must still be findable, or this asserts nothing");
   assert.match(unclaimedBranch[1], /reportB4\(issueNumber\)/,
@@ -1818,7 +1818,7 @@ test("#2746 REGRESSION: a decline label edit that exits CLEAN but does not durab
 });
 
 test("#1399 WIRING: the claim/dispatch and decline CLIs report a thrown error through failureReport", () => {
-  const source = stripComments(readFileSync(new URL("../../../agent-org/src/row-claim.mjs", import.meta.url), "utf8"));
+  const source = stripComments(readFileSync(new URL("../../../../node_modules/agent-org/src/row-claim.mjs", import.meta.url), "utf8"));
   for (const fn of ["runDispatchOrClaim", "runDecline"]) {
     const start = source.indexOf(`function ${fn}(`);
     assert.ok(start >= 0, `${fn} not found`);

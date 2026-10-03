@@ -29,7 +29,7 @@ import { parse as parseYaml } from "yaml";
 import {
   sweepDecision, EXIT, mergedMeanwhile, MERGED_MEANWHILE_READS, MERGED_MEANWHILE_WAIT_MS, holdLookalikes, decideAndWarn,
   confirmArmed, CONFIRM_ARMED_READS, CONFIRM_ARMED_WAIT_MS, armedFromApi, unarmedCandidates, armFailureVerdict,
-} from "../../../agent-org/src/auto-arm-sweep.mjs";
+} from "agent-org/src/auto-arm-sweep.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
@@ -234,7 +234,7 @@ test("MUTATION TARGET (#404/#415): removing `reopened` or `synchronize` from the
  */
 test("the sweep's source asks the API whether the PR merged, rather than matching on the error text", () => {
   const src = readFileSync(
-    fileURLToPath(new URL("../../../agent-org/src/auto-arm-sweep.mjs", import.meta.url)), "utf8");
+    fileURLToPath(new URL("../../../../node_modules/agent-org/src/auto-arm-sweep.mjs", import.meta.url)), "utf8");
   assert.match(src, /function mergedMeanwhile/);
   assert.match(src, /pulls\/\$\{number\}/,
     "it must ASK -- a predicate reading `cause.message` cannot tell a merge from a network fault");
@@ -340,7 +340,7 @@ test("#1595 WIRING: the sweep's per-PR loop asks decideAndWarn, so the warning i
   // main() spawns `gh` and is never invoked here, so the call site is read from the comment-stripped source -- the
   // same approach as the merged-meanwhile source test above. Without it, main() could call sweepDecision directly
   // and every test above would still pass while the sweep printed nothing.
-  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
+  const source = stripComments(readFileSync(`${REPO}node_modules/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
   const body = source.slice(source.indexOf("function main("));
   assert.ok(body.length > 0 && /const \{ arm, reason \} = decideAndWarn\(\{ number, labels, checkRunCount \}\)/.test(body),
     "main() must decide through decideAndWarn");
@@ -405,7 +405,7 @@ test("#1729 MUTATION TARGET: `confirmArmed`'s own bound matches `mergedMeanwhile
 test("#1729 WIRING: main() calls confirmArmed after `gh pr merge --auto`, and ARMED is logged only inside "
   + "that confirmation's true branch -- an unconfirmed arm must report ARM CLAIMED BUT NOT CONFIRMED and "
   + "join the failed list, not merely skip", () => {
-  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
+  const source = stripComments(readFileSync(`${REPO}node_modules/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
   const body = source.slice(source.indexOf("function main("));
   const mergeCallIndex = body.indexOf('gh(["pr", "merge", "--auto"');
   const confirmCallIndex = body.indexOf("confirmArmed(number, repo)");
@@ -478,7 +478,7 @@ test("and an unarmed pull request is still unarmed", () => {
  */
 test("#2046: the armed predicate is DEFINED in `pr-armed-state.mjs` and only re-exported here -- the "
   + "sweep is one of its readers, not its owner", () => {
-  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
+  const source = stripComments(readFileSync(`${REPO}node_modules/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
   assert.match(source, /from "\.\/pr-armed-state\.mjs"/,
     "read from the shared module, the way `pr-hold-state.mjs` is on the line above it");
   assert.doesNotMatch(source, /export function armedFromApi/,
@@ -486,7 +486,7 @@ test("#2046: the armed predicate is DEFINED in `pr-armed-state.mjs` and only re-
   assert.doesNotMatch(source, /pr\.merged === true \|\| pr\.autoMergeRequest != null/,
     "nor may the three-state rule be re-spelled here -- a second copy is the shape #1729, #2004 and "
     + "#2046 are each an instance of");
-  const shared = stripComments(readFileSync(`${REPO}packages/agent-org/src/pr-armed-state.mjs`, "utf8"));
+  const shared = stripComments(readFileSync(`${REPO}node_modules/agent-org/src/pr-armed-state.mjs`, "utf8"));
   assert.match(shared, /export function armedFromApi/, "the one definition lives there");
   assert.doesNotMatch(shared, /^\s*import /m,
     "and it imports NOTHING: both callers state as a property of themselves that they run under a bare "
@@ -558,7 +558,7 @@ test("#2004: a read that returned nothing yields no candidates rather than throw
 
 test("#2004 MUTATION TARGET: the sweep's candidate read is the GraphQL one, asks for `mergeQueueEntry`, "
   + "and no REST `--jq` predicate survives beside it", () => {
-  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
+  const source = stripComments(readFileSync(`${REPO}node_modules/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
   assert.match(source, /pullRequests\(states:OPEN,baseRefName:\$b,first:\$limit\)/,
     "the candidate population must be asked of GraphQL — REST structurally cannot see the merge queue");
   assert.match(source, /nodes\{number isDraft merged autoMergeRequest\{enabledAt\} mergeQueueEntry\{state\}\}/,
@@ -576,7 +576,7 @@ test("#2004 WIRING: main() builds its candidates through `unarmedCandidates`, so
   // main() spawns `gh` and is never invoked here, so the call site is read from the comment-stripped
   // source — the same approach the #1595 and #1729 wiring tests above take. Without it, `unarmedCandidates`
   // could be a correct, exported, fully tested function that nothing calls: `refreshBrowseBuffer`'s shape.
-  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
+  const source = stripComments(readFileSync(`${REPO}node_modules/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
   const body = source.slice(source.indexOf("function main("));
   assert.ok(body.length > 0, "main() must still exist");
   assert.match(body, /candidates = unarmedCandidates\(readOpenPullRequests\(repo\)\)/,
@@ -645,7 +645,7 @@ test("#2004: the two reads SHORT-CIRCUIT, so only the genuinely failing path pay
 
 test("#2004 WIRING: main()'s catch decides through `armFailureVerdict`, and adds the PR to `failed` only "
   + "when that verdict says it failed", () => {
-  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
+  const source = stripComments(readFileSync(`${REPO}node_modules/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
   const body = source.slice(source.indexOf("function main("));
   const mergeCallIndex = body.indexOf('gh(["pr", "merge", "--auto"');
   const verdictIndex = body.indexOf("armFailureVerdict({ number, repo, cause })");
@@ -724,7 +724,7 @@ const UNSET_REPO = "CANNOT ASK: GITHUB_REPOSITORY is unset, so there is no repo 
 
 test("#1970: the SCRIPT still exits CANNOT_ASK -- the remedy is in the workflow, and a version that moved "
   + "it down here would make `I could not look` and `the queue is drained` one observable to every caller", () => {
-  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
+  const source = stripComments(readFileSync(`${REPO}node_modules/agent-org/src/auto-arm-sweep.mjs`, "utf8"));
   const exits = [...source.matchAll(/process\.exit\(EXIT\.CANNOT_ASK\)/g)];
   assert.equal(exits.length, 2, "both lookup failures -- an unset GITHUB_REPOSITORY and a failed `gh pr "
     + "list` -- must still exit CANNOT_ASK, not 0. ceo refused remedy 1 on #1970 precisely because one of "

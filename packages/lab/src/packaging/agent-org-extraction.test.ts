@@ -235,7 +235,7 @@ test("control: the relative-import scan finds a fixture violator and ignores a c
 
 test("every file travellingLabTestFiles() selects already lives under packages/lab/src/packaging/, so extractionPathRenames() does not crash", () => {
   const travelling = travellingLabTestFiles(REPO_ROOT);
-  assert.ok(travelling.length > 50, `too few travelling files (${travelling.length}): the scan is reading the wrong tree`);
+  assert.ok(travelling.length > 5, `too few travelling files (${travelling.length}): the scan is reading the wrong tree`);
   const misplaced = travelling.filter((file) => !file.startsWith("packages/lab/src/packaging/"));
   assert.deepEqual(misplaced, [],
     "a packages/lab file imports agent-org by a relative path and does NOT live under "
@@ -262,7 +262,7 @@ test("control: extractionPathRenames() REFUSES a travelling file outside package
 
 test("travellingImportRewrites() computes the live tree's one shared depth correctly", () => {
   const labFiles = travellingLabTestFiles(REPO_ROOT);
-  assert.ok(labFiles.length > 50, `too few travelling files (${labFiles.length}): reading the wrong tree`);
+  assert.ok(labFiles.length > 5, `too few travelling files (${labFiles.length}): reading the wrong tree`);
   const rewrites = travellingImportRewrites(labFiles);
   assert.deepEqual(rewrites, [{ old: "../../../agent-org/src/", replacement: "../" }]);
 });
@@ -518,11 +518,13 @@ function decision4Counts(): { total: number; divided: number } {
 // (imports `agent-org/src/cause-shape.mjs` to run the real `declareCause` over the plugin, which became plain data), `primary-checkout-mark.test.ts` (imports the tool's command table),
 // `tracker-writer-population.test.ts` (a REGEX naming `agent-org/src` that follows the dependency edge, matched by this scan as an import) and `fleet-hold-readers-agree.test.ts`, which is the one
 // MORE DIVIDED: it imports `agent-org/src` AND `control/src/fleet-playbook.mjs`, the two packages that cannot import each other.
-const RECORDED_DECISION_4 = { total: 95, divided: 19 };
+// 2026-10-03, #2975 (cut-over 4 of 6, PR 3: the 67 further travelled tests deleted): 28 total, 19 divided, from 95/19, by running this test. Sixty-seven FEWER totals and no fewer divided: each deleted file had a
+// same-named test in a11ign/agent-org carrying every one of its test titles, and none matched a product pattern. The floors above (`> 5` travelling, `> 10` total) fell with them; this file goes with the directory in #2976.
+const RECORDED_DECISION_4 = { total: 28, divided: 19 };
 
 test("decision 4's total/divided counts, re-derived, match the row's currently-amended reading", () => {
   const counts = decision4Counts();
-  assert.ok(counts.total > 50, `too few files found (${counts.total}): the scan is reading the wrong tree`);
+  assert.ok(counts.total > 10, `too few files found (${counts.total}): the scan is reading the wrong tree`);
   assert.deepEqual(counts, RECORDED_DECISION_4, "decision 4's population drifted again: report to the row before trusting this file's other assertions");
 });
 

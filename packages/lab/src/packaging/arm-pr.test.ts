@@ -28,7 +28,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { stripComments } from "@a11ign/evidence/source-text";
 // #2046: the armed predicate now lives beside the hold predicate, in its own leaf module.
-import { armedQueryArgs, armedReason } from "../../../agent-org/src/pr-armed-state.mjs";
+import { armedQueryArgs, armedReason } from "agent-org/src/pr-armed-state.mjs";
 import {
   closedRowNumbers,
   sessionLabelsOf,
@@ -50,7 +50,7 @@ import {
   jumpDecision,
   atFrontOfQueue,
   enqueueAtFront,
-} from "../../../agent-org/src/arm-pr.mjs";
+} from "agent-org/src/arm-pr.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 
@@ -497,7 +497,7 @@ test("#2046 PURE: armedReason names the state `armedFromApi` decided, and answer
 
 test("#2046 ONE PREDICATE, ONE MODULE: arm-pr reads the armed rule from `pr-armed-state.mjs` and spells "
   + "no copy of it -- the shape this row is the third instance of", () => {
-  const source = stripComments(readFileSync(`${REPO}packages/agent-org/src/arm-pr.mjs`, "utf8"));
+  const source = stripComments(readFileSync(`${REPO}node_modules/agent-org/src/arm-pr.mjs`, "utf8"));
   assert.match(source, /from "\.\/pr-armed-state\.mjs"/,
     "the predicate is IMPORTED, the way `pr-hold-state.mjs` already is on the line above it");
   // #2391 NARROWED, NOT DELETED. The two proxies this test used to use -- the strings `mergeQueueEntry` and
@@ -529,7 +529,7 @@ test("#2046 WIRING: both callers of the armed read build it from the SAME `armed
   assert.ok(queued.includes("o=a11ign") && queued.includes("r=a11ign") && queued.includes("n=2044"),
     "the owner, repo and number are variables, never interpolated into the query text");
   for (const caller of ["arm-pr.mjs", "auto-arm-sweep.mjs"]) {
-    assert.match(stripComments(readFileSync(`${REPO}packages/agent-org/src/${caller}`, "utf8")),
+    assert.match(stripComments(readFileSync(`${REPO}node_modules/agent-org/src/${caller}`, "utf8")),
       /armedQueryArgs\(\{ number, repo \}\)/, `${caller} must build the read from the shared argv`);
   }
 });
@@ -648,7 +648,7 @@ function typedSessionArrays(source: string, names: string[]): string[] {
 test("#1453 STRUCTURAL: arm-pr.mjs declares no session-name array -- a typed list is refused", () => {
   const file = sessionsFile();
   const names = [...file.live, ...file.retired].map((s) => s.name);
-  const source = readFileSync(new URL("../../../agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../../../../node_modules/agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
   assert.deepEqual(typedSessionArrays(source, names), [],
     "arm-pr.mjs types a session list instead of reading .agent-org/roles/sessions.json");
   // POSITIVE CONTROL, built from the file's own names so this test file types no list either: the shape of the line #1453
@@ -762,7 +762,7 @@ test("#1478: a missing --pr exits CANNOT_ASK before any call", () => {
 
 test("#1478: the script's header documents every exit code, the partial-success code included", () => {
   assert.deepEqual(EXIT, { DONE: 0, REFUSED: 1, CANNOT_ASK: 2, ARMED_THEN_LABEL_FAILED: 3, JUMP_UNCONFIRMED: 4 });
-  const source = readFileSync(new URL("../../../agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
+  const source = readFileSync(new URL("../../../../node_modules/agent-org/src/arm-pr.mjs", import.meta.url), "utf8");
   const header = source.slice(0, source.indexOf("export const EXIT"));
   for (const [name, code] of Object.entries(EXIT)) {
     assert.match(header, new RegExp(`\`${code}\` ${name}:`), `the header documents ${code} ${name}`);

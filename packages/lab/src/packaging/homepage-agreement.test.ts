@@ -113,7 +113,7 @@ function boardDocumentHome(): { file: string; homepage: string | null } {
  * told something nobody checked — which is the state this row was filed about.
  */
 test("#1113: the board document RENDERS the derived home — it does not state one", () => {
-  const source = stripComments(readFileSync(join(REPO, "packages/agent-org/src/board-document.mjs"), "utf8"));
+  const source = stripComments(readFileSync(join(REPO, "node_modules/agent-org/src/board-document.mjs"), "utf8"));
 
   assert.match(source, /productHome\(\)/,
     "board-document.mjs must CALL productHome(). Without this the eighth place is a literal again, and "

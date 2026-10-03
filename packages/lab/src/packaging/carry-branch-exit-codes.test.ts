@@ -17,7 +17,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { noteCarryOnPr, carryMain, EXIT } from "../../../agent-org/src/carry-branch.mjs";
+import { noteCarryOnPr, carryMain, EXIT } from "agent-org/src/carry-branch.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 
 // --- noteCarryOnPr: fake `run`, matching this package's own convention for gh-calling functions ---
@@ -137,7 +137,7 @@ test("#1477: noteCarryOnPr reports (never throws) when the COMMENT itself fails,
 });
 
 test("#1477 WIRING: `main` applies carryMain's exit code and makes no carry decision of its own", () => {
-  const source = stripComments(readFileSync(new URL("../../../agent-org/src/carry-branch.mjs", import.meta.url), "utf8"));
+  const source = stripComments(readFileSync(new URL("../../../../node_modules/agent-org/src/carry-branch.mjs", import.meta.url), "utf8"));
   const start = source.indexOf("function main(");
   assert.ok(start >= 0, "main not found");
   const end = source.indexOf("\n}\n", start);
@@ -148,7 +148,7 @@ test("#1477 WIRING: `main` applies carryMain's exit code and makes no carry deci
 
 test("#1477: the exit codes are the ones this script's header documents -- 3 is CARRIED, NOT NOTED", () => {
   assert.deepEqual({ ...EXIT }, { CARRIED: 0, NOT_CARRIED: 1, USAGE: 2, CARRIED_NOT_NOTED: 3 });
-  const header = readFileSync(new URL("../../../agent-org/src/carry-branch.mjs", import.meta.url), "utf8").split("import ")[0];
+  const header = readFileSync(new URL("../../../../node_modules/agent-org/src/carry-branch.mjs", import.meta.url), "utf8").split("import ")[0];
   assert.match(header, /^\/\/ +3 +CARRIED, NOT NOTED -- the branch WAS pushed/m, "the header must document exit 3");
 });
 

@@ -110,7 +110,7 @@ test("#2623: MARKER_MODULES names exactly two paths, and MARKER_MODULE is the fi
   + "reading the old single-path export silently loses the original", () => {
   assert.equal(MARKER_MODULES.length, 2);
   assert.equal(MARKER_MODULES[0], MARKER_MODULE);
-  assert.ok(MARKER_MODULES[1].endsWith("packages/agent-org/src/lib/tree-wide-guard.mjs"),
+  assert.ok(MARKER_MODULES[1].endsWith("node_modules/agent-org/src/lib/tree-wide-guard.mjs"),
     `the second accepted path must be the agent-org copy, got ${MARKER_MODULES[1]}`);
 });
 

@@ -23,17 +23,17 @@ import {
   LIVE_SETTLE_DEPS, rateLimitHeaders, rateLimitLine, logRateLimit,
   rowNumberFromBranch, orphanedRowReport, reportOrphanedRow,
   declaredRowsFromBody, planForMergedPr, closingComment,
-} from "../../../agent-org/src/close-rows-for-merged-pr.mjs";
-import { extractClosesDeclaration } from "../../../agent-org/src/acceptance-commands.mjs";
-import { refusalCause } from "../../../agent-org/src/settle-closed-status.mjs";
-import { moveProjectStatus } from "../../../agent-org/src/row-claim.mjs";
-import { scopedStatus } from "../../../agent-org/src/board-snapshot.mjs";
+} from "agent-org/src/close-rows-for-merged-pr.mjs";
+import { extractClosesDeclaration } from "agent-org/src/acceptance-commands.mjs";
+import { refusalCause } from "agent-org/src/settle-closed-status.mjs";
+import { moveProjectStatus } from "agent-org/src/row-claim.mjs";
+import { scopedStatus } from "agent-org/src/board-snapshot.mjs";
 import { stripComments } from "@a11ign/evidence/source-text";
 // THE AUDIT'S OWN DEBRIS CHECK, imported rather than re-derived -- #754's own mutation target is that
 // THIS function, unchanged, must go quiet once labelsToStrip has done its work, and must report the
 // finding again the moment it has not. Proving that with a re-implemented predicate would prove nothing
 // about the real audit.
-import { closedDebris } from "../../../agent-org/src/ready-label-audit.mjs";
+import { closedDebris } from "agent-org/src/ready-label-audit.mjs";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const WORKFLOW = `${REPO}.github/workflows/trunk.yml`; // #909: close-rows.yml folded into trunk.yml's closeRows job
@@ -521,7 +521,7 @@ test("bridge: the dispatch path exits DONE with ONE DEGRADED line when every ref
 
 /** COMMENTS STRIPPED: commenting the call out IS the mutation a prose search agrees with. */
 test("#1299: the dispatch path's main() EXITS WITH that decision -- worker-capture's M1 on #1357 left it untested", () => {
-  const source = readFileSync(new URL("../../../agent-org/src/close-rows-for-merged-pr.mjs", import.meta.url), "utf8")
+  const source = readFileSync(new URL("../../../../node_modules/agent-org/src/close-rows-for-merged-pr.mjs", import.meta.url), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const mainBody = source.slice(source.indexOf("function main() {"));
   assert.match(mainBody, /const \{ code, lines \} = closeRowsExit\(applyClosurePlan\(/,
@@ -563,10 +563,10 @@ test("#1400: liveClosureEffects is the ONE place the live effects are named -- m
   assert.deepEqual(Object.keys(live).sort(), ["closeOne", "settle", "strip"]);
   assert.equal(live.strip, stripClaimLabels, "the live strip is the exported gh issue edit");
   for (const effect of Object.values(live)) assert.equal(typeof effect, "function", "each is a function, and none is called here");
-  const source = readFileSync(new URL("../../../agent-org/src/close-rows-for-merged-pr.mjs", import.meta.url), "utf8")
+  const source = readFileSync(new URL("../../../../node_modules/agent-org/src/close-rows-for-merged-pr.mjs", import.meta.url), "utf8")
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const mainBody = source.slice(source.indexOf("function main() {"));
-  assert.match(mainBody, /applyClosurePlan\(plan, \{ prNumber: number, sha, repo, basis \}, liveClosureEffects\(\)\)/,
+  assert.match(mainBody, /applyClosurePlan\(plan, \{ prNumber: prRef, sha, repo: REPO, basis \}, liveClosureEffects\(\)\)/,
     "main() hands applyClosurePlan the live effects explicitly -- without them production would be refused too");
 });
 
