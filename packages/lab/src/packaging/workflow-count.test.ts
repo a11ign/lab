@@ -8,7 +8,7 @@
  * trunk-guard.yml, trunk-sweep.yml and close-rows.yml collapsed into trunk.yml: thirteen, each named here so
  * a fourteenth arriving is a failure with a name rather than a number. The fourteenth arrived with #2519's
  * registry gate, named below with its reason. The fifteenth is `dependency-pr-body.yml` (#3137, ADR 0041 decision 4): the one narrow way
- * a dependency pull request passes the body checks. The sixteenth is `weekly-review.yml` (#3183): the schedule that files the weekly outsider review row. The seventeenth is `ci-health.yml` (#3212): the schedule that reads the chairman's CI targets and comments them on #928. (A workflow once named `agent-org-extraction.yml`, ADR 0040 decision 6's one-time push of
+ * a dependency pull request passes the body checks. The sixteenth is `weekly-review.yml` (#3183): the schedule that files the weekly outsider review row. The seventeenth is `ci-health.yml` (#3212): the schedule that reads the chairman's CI targets and comments them on #928. The eighteenth is `mutation-comment.yml` (#3282, decided on #3213): the survivors of a pull request's own changed lines as a NON-BLOCKING comment, in two jobs so the one that runs the pull request's code holds no write token. (A workflow once named `agent-org-extraction.yml`, ADR 0040 decision 6's one-time push of
  * `agent-org` into its own repository, left with the directory in #2976: it had done its one push.) A row that removes or
  * adds one moves this list in the same commit and says why.
  */
@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url";
 
 const WORKFLOWS_DIR = fileURLToPath(new URL("../../../../.github/workflows/", import.meta.url));
 
-const THE_SEVENTEEN = [
+const THE_EIGHTEEN = [
   "action-smoke.yml",
   "auto-arm.yml",           // arms drafts on ready_for_review; the arming sweep and the stalled report
   "board-report.yml",       // London-clock editions, kept by #901's ruling
@@ -29,6 +29,7 @@ const THE_SEVENTEEN = [
   "ci.yml",                 // the one required check, `gate`
   "consumer-gate.yml",
   "dependency-pr-body.yml", // #3137: a fixed body fragment on a minor or patch Dependabot pull request, so the Acceptance and Closes checks read it
+  "mutation-comment.yml",   // #3282: survivors of the changed lines as a non-blocking comment; the job that runs the PR's code holds `contents: read` only
   "nightly.yml",            // coverage, ready-audit, doc-report, the org watch, and #417's hourly sweeps
   "registry-consumer-gate.yml", // #2519: install what the registry SERVES into an empty directory; daily, after `release`, on demand
   "release.yml",
@@ -39,11 +40,11 @@ const THE_SEVENTEEN = [
   "weekly-review.yml",      // #3183: files ONE row a week for the outsider review; a schedule, never a gate, `issues: write` only
 ];
 
-test("#909: the workflow directory holds exactly the seventeen named here, no more and no fewer", () => {
+test("#909: the workflow directory holds exactly the eighteen named here, no more and no fewer", () => {
   const onDisk = readdirSync(WORKFLOWS_DIR).filter((f) => /\.ya?ml$/.test(f)).sort();
-  assert.deepEqual(onDisk, [...THE_SEVENTEEN].sort(),
+  assert.deepEqual(onDisk, [...THE_EIGHTEEN].sort(),
     "a workflow arrived or left without this list moving in the same commit -- name it here with its reason");
-  assert.equal(onDisk.length, 17);
+  assert.equal(onDisk.length, 18);
 });
 
 test("#909: the three collapsed workflows are gone, and the one that replaced them exists", () => {
