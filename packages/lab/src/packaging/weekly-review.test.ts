@@ -12,10 +12,10 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { fileRefusalReason } from "agent-org/src/row-file.mjs";
+import { declaresRelease, fileRefusalReason, outOfReleaseArgv } from "agent-org/src/row-file.mjs";
 import {
   TITLE_PREFIX, bodyReadFromSources, buildBody, eligible, extractQuestions, extractRequirements, filingPlan,
-  ineligibleFromBody, ineligibleSessions, isoWeek, isoWeekLabel, recheckLastWeek, reviewTitle, reviewWindow,
+  ineligibleFromBody, ineligibleSessions, isoWeek, isoWeekLabel, recheckLastWeek, reviewTitle, reviewWindow, rowFileArgs,
 } from "../../../../scripts/weekly-review.mjs";
 
 const REPO = resolve(import.meta.dirname, "../../../..");
@@ -192,4 +192,14 @@ test("the filing step carries row-file's printed launch override with a non-blan
   const bare = "jobs:\n  file:\n    steps:\n      - run: node scripts/weekly-review.mjs\n        env:\n          GH_TOKEN: x\n";
   assert.equal(stepEnv(bare).A11Y_POLICY_LAUNCH_REASON, undefined);
   assert.equal((stepEnv(bare.replace("GH_TOKEN: x", "A11Y_POLICY_LAUNCH_REASON: ' '")).A11Y_POLICY_LAUNCH_REASON ?? "").trim(), "");
+});
+
+// The second dispatch (#3183) got past the launch guard and was refused for declaring no release: the contract test above
+// reads the BODY, and a release is declared in the ARGV, which nothing read.
+test("the row-file arguments declare a release, and row-file pairs the label with the Out of release milestone", () => {
+  const argv = rowFileArgs("Weekly outsider review 2026-W40", "/tmp/body.md");
+  assert.ok(declaresRelease(argv), "row-file would refuse this filing: no milestone and no out-of-release label");
+  assert.ok(outOfReleaseArgv(argv).includes("Out of release"), "the label is not paired with the milestone");
+  // POSITIVE CONTROL: the arguments as they stood at the failed dispatch are seen as declaring none.
+  assert.equal(declaresRelease(argv.filter((arg) => arg !== "--label" && arg !== "out-of-release")), false);
 });
