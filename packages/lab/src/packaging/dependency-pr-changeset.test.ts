@@ -122,20 +122,63 @@ test("THE POPULATION IS NOT EMPTY: the fixtures carry the real manifests the two
   }
 });
 
-interface Step { id?: string; if?: string; run?: string }
+interface Step { id?: string; if?: string; run?: string; env?: Record<string, string> }
 const changesetSteps = (): Step[] => {
   const ci = parseYaml(readFileSync(resolve(REPO, ".github/workflows/ci.yml"), "utf8")) as { jobs: Record<string, { steps: Step[] }> };
   return ci.jobs.changeset.steps;
 };
 
-test("THE JOB IS WIRED: a `deps:` pull request, and its queue entry, is read from the diff; any other pull request keeps the old rule", () => {
+/**
+ * #3220: a REAL `merge_group` `head_commit.message`, run 37120613262 (#3155's queue entry, whose `changeset` job failed). The
+ * `merge-queue-main` ruleset (23681721) has `merge_method: MERGE`, so the message is the MERGE commit's: the branch on its first
+ * line, a blank line, then the pull request's title. `startsWith(..., 'deps:')` on it is false, which is what ejected the entry.
+ */
+const REAL_QUEUE_MESSAGE = "Merge pull request #3155 from a11ign/dependabot/npm_and_yarn/yaml-2.9.1\n\ndeps: bump yaml from 2.9.0 to 2.9.1";
+const OWNER = "a11ign";
+
+/** Evaluates a step's `if:` (JavaScript reads this operator subset the same way) against the given contexts. */
+function evaluate(expression: string, context: Record<string, unknown>): boolean {
+  assert.match(expression, /^[\w\s.'&|!=(),:/-]+$/, "the `if:` uses something this evaluator does not model; extend it before trusting it");
+  const startsWith = (text: string, prefix: string): boolean => text.startsWith(prefix);
+  return Boolean(new Function("github", "steps", "startsWith", `return (${expression});`)(context.github, context.steps, startsWith));
+}
+
+/** Runs the queue-recognition step's own shell on a queue entry's message, as the runner would, and returns whether it set `queue`. */
+function recognisedInTheQueue(step: Step, message: string): boolean {
+  assert.equal(step.env?.QUEUE_MESSAGE, "${{ github.event.merge_group.head_commit.message }}",
+    "the message must reach the shell as an env var, never interpolated into the script (a title is untrusted text)");
+  const dir = mkdtempSync(join(tmpdir(), "a11y-deps-queue-step-"));
+  try {
+    const output = join(dir, "output");
+    writeFileSync(output, "");
+    execFileSync("bash", ["-c", step.run ?? ""], { env: { PATH: process.env.PATH ?? "", QUEUE_MESSAGE: message, GITHUB_OUTPUT: output, GITHUB_REPOSITORY_OWNER: OWNER } });
+    return readFileSync(output, "utf8").trim() === "queue=true";
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** Whether the `dependency` step RUNS for this event, the job having found a published package touched. */
+function dependencyStepRuns(event: { title?: string; queueMessage?: string }): boolean {
+  const steps = changesetSteps();
+  const dependency = steps.find((s) => s.run?.includes("dependency-changeset.mjs check"));
+  const recogniser = steps.find((s) => s.id === "dependencyQueue");
+  assert.ok(dependency?.if && recogniser?.run, "ci.yml's `changeset` job lost the derivation or the step that recognises its queue entry; re-read this test");
+  const queue = event.queueMessage !== undefined && evaluate(recogniser.if ?? "false", { github: { event_name: "merge_group" } })
+    && recognisedInTheQueue(recogniser, event.queueMessage);
+  return evaluate(dependency.if, {
+    github: { event: { pull_request: { title: event.title ?? "" } } },
+    steps: { precise: { outputs: { changeset: "true" } }, dependencyQueue: { outputs: { queue: queue ? "true" : "" } } },
+  });
+}
+
+test("THE JOB IS WIRED: a `deps:` pull request is read from the diff; any other pull request keeps the old rule", () => {
   const steps = changesetSteps();
   const dependency = steps.find((s) => s.run?.includes("dependency-changeset.mjs check"));
   assert.ok(dependency, "ci.yml's `changeset` job no longer runs the derivation");
   assert.ok(dependency.id, "the derivation step needs an id for the standard step to read its outcome");
-  assert.match(dependency.if ?? "", /startsWith\(github\.event\.pull_request\.title/, "the pull_request event is recognised by its title prefix");
-  assert.match(dependency.if ?? "", /merge_group\.head_commit\.message/, "the queue entry is recognised too, or the merge group ejects the pull request this job passed");
-  assert.match(dependency.if ?? "", /'deps:'/);
+  assert.equal(dependencyStepRuns({ title: "deps: bump yaml from 2.9.0 to 2.9.1" }), true, "the pull_request event is recognised by its title prefix");
+  assert.equal(dependencyStepRuns({ title: "Fix the thing" }), false);
   const standard = steps.find((s) => s.run?.includes("changeset status --since"));
   assert.ok(standard, "the standard `changeset status` step must stay, for every pull request that is not a dependency one");
   assert.match(standard.if ?? "", new RegExp(`steps\\.${dependency.id}\\.outputs\\.settled`), "the standard step stands down only when the derivation settled");
@@ -143,6 +186,17 @@ test("THE JOB IS WIRED: a `deps:` pull request, and its queue entry, is read fro
   assert.doesNotMatch(dependency.run ?? "", /github\.event\.pull_request\.title/, "the title is never interpolated into a shell line");
   assert.match(dependency.run ?? "", /--since=\$\{\{ github\.event\.merge_group\.base_sha \}\}/,
     "a queue entry is diffed against its own parent, or entry 2 is blamed for entry 1's files and ejected");
+});
+
+test("#3220: a dependency pull request's QUEUE ENTRY (a MERGE commit, not a squash) is read from the diff, and only that", () => {
+  assert.equal(dependencyStepRuns({ queueMessage: REAL_QUEUE_MESSAGE }), true, "the real entry that was ejected twice (#3155) must reach the derivation");
+  const message = (branch: string, title: string) => `Merge pull request #1 from ${OWNER}/${branch}\n\n${title}`;
+  assert.equal(dependencyStepRuns({ queueMessage: message("agent/some-row-1", "The thing (#1)") }), false, "an ordinary entry keeps the old rule");
+  assert.equal(dependencyStepRuns({ queueMessage: message("agent/x", "see deps: bump") }), false, "the title is read from the START of its line");
+  assert.equal(dependencyStepRuns({ queueMessage: "Merge pull request #1 from a11ign/agent/x\n\nbody\ndeps: bump yaml" }), false, "only the title line counts");
+  assert.equal(dependencyStepRuns({ queueMessage: "deps: bump yaml from 2.9.0 to 2.9.1 (#3155)" }), false,
+    "a SQUASH-shaped message is not what this queue writes (merge_method MERGE), so it is not claimed to be recognised");
+  assert.equal(dependencyStepRuns({ title: "Fix the thing", queueMessage: undefined }), false);
 });
 
 /** A throwaway QUEUE: entry 1 (`main` plus an unrelated source file) and, on top of it, entry 2 (the dependency bump). */
