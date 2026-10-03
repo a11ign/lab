@@ -85,19 +85,23 @@ test("POSITIVE CONTROL: with the two names left out of units.own the classificat
 test("the unit runs the live tool, which has `--board=`, and declares the host and the launch reason it needs", () => {
   const text = unitText(SERVICE);
   const exec = setting(text, "ExecStart") ?? "";
-  assert.match(exec, /%h\/repos\/agent-org\/src\/bin\.mjs row-file --board=/, "the pinned install's `agent-org` refuses --board (read 2026-10-03)");
+  assert.match(exec, /\/usr\/bin\/node %h\/repos\/agent-org\/src\/bin\.mjs row-file --board=/, "the pinned install's `agent-org` refuses --board (read 2026-10-03)");
   assert.doesNotMatch(exec, /pnpm exec agent-org/);
   assert.match(setting(text, "Environment=AGENT_ORG_HOST") ?? "", /\.agent-org\/host\.json$/);
   const reason = setting(text, "Environment=\"A11Y_POLICY_LAUNCH_REASON");
   assert.ok(reason !== null && reason.length > 1, "without it `row-file` refuses the host's primary checkout and the unit fails every fire");
 });
 
-/** The script inside `sh -c '...'`, with systemd's `$$` and `%h` resolved the way systemd resolves them. */
+/**
+ * The script inside `sh -c '...'`, with systemd's `$$` and `%h` resolved the way systemd resolves them, and the host's
+ * `/usr/bin/node` swapped for the interpreter running this test: a CI runner keeps node elsewhere, and the unit's own path
+ * is pinned by the text reading above, so the behaviour readings need only a node that exists.
+ */
 function scriptFor(text: string, home: string): string {
   const exec = setting(text, "ExecStart") ?? "";
   const quoted = /^\/usr\/bin\/sh -c '(.*)'$/.exec(exec)?.[1];
   assert.ok(quoted, `ExecStart is not a single-quoted sh -c: ${exec}`);
-  return quoted.replaceAll("$$", "$").replaceAll("%h", home);
+  return quoted.replaceAll("$$", "$").replaceAll("%h", home).replaceAll("/usr/bin/node", process.execPath);
 }
 
 interface Sweep { status: number | null; boarded: string[]; stderr: string }
