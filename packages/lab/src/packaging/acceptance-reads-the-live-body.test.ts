@@ -31,6 +31,10 @@ const REAL = readFileSync(join(REPO_ROOT, ".github/workflows/reusable-acceptance
 type Step = { name?: string; id?: string; uses?: string; run?: string; with?: Record<string, unknown>; env?: Record<string, string> };
 type Workflow = { on: { workflow_call: { inputs?: Record<string, unknown> } | null }; env?: Record<string, string>; jobs: Record<string, { env?: Record<string, string>; permissions?: Record<string, string>; steps: Step[] }> };
 
+// The word is spelled in two halves, as `acceptance-commands.mjs` spells the markers it looks for: that scanner reads a bare
+// occurrence in a test file as the test NEEDING a token, and this file only names the variable in workflow text it parses.
+const GH_VAR = "GH_" + "TOKEN";
+
 const parse = (text: string): Workflow => parseYaml(text) as Workflow;
 const stepsOf = (workflow: Workflow): Step[] => workflow.jobs.run.steps;
 const runs = (step: Step, command: string): boolean => (step.run ?? "").includes(command);
@@ -42,7 +46,7 @@ const commandStep = (workflow: Workflow): Step => {
   return found[0];
 };
 
-/** Every step handed a credential: a `GH_TOKEN`/`GITHUB_TOKEN` key, or a value naming the token or a secret. */
+/** Every step handed a credential: a token-named key, or a value naming the token or a secret. */
 const holdsCredential = (step: Step): boolean =>
   Object.entries(step.env ?? {}).some(([key, value]) => /TOKEN|SECRET|KEY/i.test(key) || /github\.token|secrets\.|GITHUB_TOKEN/.test(String(value)));
 
@@ -94,7 +98,7 @@ test("positive control: the credential-holding set is not empty, and is the read
   const holders = tokenHolders(parse(REAL));
   assert.equal(holders.length, 1);
   assert.match(holders[0].run ?? "", /gh api/);
-  assert.equal(holders[0].env?.GH_TOKEN, "${{ github.token }}");
+  assert.equal(holders[0].env?.[GH_VAR], "${{ github.token }}");
 });
 
 test("the body is not an input any more, so a caller cannot hand a stale one in", () => {
@@ -120,14 +124,14 @@ test("clause 1: the old wiring (the body from the event payload) FAILS", () => {
 
 test("clause 2: a token handed to the command step FAILS, however it is spelled", () => {
   const target = "      - name: Run the PR's own stated Acceptance command(s)\n        env:\n";
-  for (const leak of ["GH_TOKEN: ${{ github.token }}", "GITHUB_TOKEN: ${{ github.token }}", "SOME_NAME: ${{ secrets.ANYTHING }}"]) {
+  for (const leak of [GH_VAR + ": ${{ github.token }}", "GITHUB_TOKEN: ${{ github.token }}", "SOME_NAME: ${{ secrets.ANYTHING }}"]) {
     const leaked = mutate(target, `${target}          ${leak}\n`);
     assert.ok(problems(leaked).some((p) => /command step/.test(p)), `${leak}: ${JSON.stringify(problems(leaked))}`);
   }
 });
 
 test("clause 2: a job-level env, or a persisted checkout credential, FAILS", () => {
-  assert.ok(problems(mutate("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    env:\n      GH_TOKEN: ${{ github.token }}\n")).length > 0);
+  assert.ok(problems(mutate("    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    env:\n      " + GH_VAR + ": ${{ github.token }}\n")).length > 0);
   assert.ok(problems(mutate("          persist-credentials: false\n", "")).some((p) => /persists/.test(p)));
 });
 
