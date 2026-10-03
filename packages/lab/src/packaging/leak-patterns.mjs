@@ -205,6 +205,8 @@ export const TRACKER_WRITERS = Object.freeze([
   "npm-token-liveness.mjs",
   // #3183: the weekly outsider review files a row and comments on last week's; both bodies are checked before they leave.
   "weekly-review.mjs",
+  // #3212: the weekly CI-health reading comments its table on #928; the body is checked before it leaves.
+  "ci-health.mjs",
 ]);
 
 /** Where a declared writer may live. The prefixes are here so the registry above holds no path-shaped
