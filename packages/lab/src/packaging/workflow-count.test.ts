@@ -7,7 +7,8 @@
  * hosts the arming sweep's non-push triggers; its update-branch job went in #3046 and the file stayed). So the number is what the directory holds after
  * trunk-guard.yml, trunk-sweep.yml and close-rows.yml collapsed into trunk.yml: thirteen, each named here so
  * a fourteenth arriving is a failure with a name rather than a number. The fourteenth arrived with #2519's
- * registry gate, named below with its reason. (A fifteenth, `agent-org-extraction.yml`, ADR 0040 decision 6's one-time push of
+ * registry gate, named below with its reason. The fifteenth is `dependency-pr-body.yml` (#3137, ADR 0041 decision 4): the one narrow way
+ * a dependency pull request passes the body checks. (A workflow once named `agent-org-extraction.yml`, ADR 0040 decision 6's one-time push of
  * `agent-org` into its own repository, left with the directory in #2976: it had done its one push.) A row that removes or
  * adds one moves this list in the same commit and says why.
  */
@@ -18,7 +19,7 @@ import { fileURLToPath } from "node:url";
 
 const WORKFLOWS_DIR = fileURLToPath(new URL("../../../../.github/workflows/", import.meta.url));
 
-const THE_FOURTEEN = [
+const THE_FIFTEEN = [
   "action-smoke.yml",
   "auto-arm.yml",           // arms drafts on ready_for_review; the arming sweep and the stalled report
   "board-report.yml",       // London-clock editions, kept by #901's ruling
@@ -26,6 +27,7 @@ const THE_FOURTEEN = [
   "capture-regression.yml",
   "ci.yml",                 // the one required check, `gate`
   "consumer-gate.yml",
+  "dependency-pr-body.yml", // #3137: a fixed body fragment on a minor or patch Dependabot pull request, so the Acceptance and Closes checks read it
   "nightly.yml",            // coverage, ready-audit, doc-report, the org watch, and #417's hourly sweeps
   "registry-consumer-gate.yml", // #2519: install what the registry SERVES into an empty directory; daily, after `release`, on demand
   "release.yml",
@@ -35,11 +37,11 @@ const THE_FOURTEEN = [
   "trunk.yml",              // #909: gate, revert-on-red, close-rows and the watchdogs, on every push to main
 ];
 
-test("#909: the workflow directory holds exactly the fourteen named here, no more and no fewer", () => {
+test("#909: the workflow directory holds exactly the fifteen named here, no more and no fewer", () => {
   const onDisk = readdirSync(WORKFLOWS_DIR).filter((f) => /\.ya?ml$/.test(f)).sort();
-  assert.deepEqual(onDisk, [...THE_FOURTEEN].sort(),
+  assert.deepEqual(onDisk, [...THE_FIFTEEN].sort(),
     "a workflow arrived or left without this list moving in the same commit -- name it here with its reason");
-  assert.equal(onDisk.length, 14);
+  assert.equal(onDisk.length, 15);
 });
 
 test("#909: the three collapsed workflows are gone, and the one that replaced them exists", () => {
