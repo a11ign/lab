@@ -4689,6 +4689,15 @@ test("#2174: work-gate.mjs loads in a tree with NO node_modules, host-units edge
     copyFileSync(file, target);
   }
   assert.ok(!existsSync(join(root, "node_modules")), "the tree really has none -- the premise");
+  // The declaration names the HOST's own paths (`/home/agent/repos/a11y-witness`), which exist on the machine that runs the fleet and nowhere
+  // else: a CI runner has no such directory and the tool refuses to read the project from it. The copy points at ITSELF (and drops `tool`, which the tool refuses inside a checkout), so the test asks
+  // only what it means to ask -- that the gate loads with no `node_modules` -- and holds wherever it runs.
+  const hostFile = join(root, ".agent-org/host.json");
+  const host = JSON.parse(readFileSync(hostFile, "utf8"));
+  delete host.tool;
+  writeFileSync(hostFile, JSON.stringify({
+    ...host, projects: host.projects.map((project: { id: string }) => ({ ...project, checkout: root })),
+  }));
   const run = spawnSync(process.execPath, ["--input-type=module", "-e",
     `import(${JSON.stringify(pathToFileURL(join(root, "agent-org/src/work-gate.mjs")).href)})`
     + ".then(m => { if (!m.CAUSES.includes('host-units-stale')) throw new Error('cause missing'); })"],
