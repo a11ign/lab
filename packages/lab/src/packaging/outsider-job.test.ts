@@ -95,6 +95,44 @@ test("a short sha is refused: `uses:` accepts only a full one", () => {
   assert.throws(() => generateOutsiderJob(readme, SHA.slice(0, 7)), /not a full 40-character commit sha/);
 });
 
+// --- the pin's `# v<version>` comment, which is what lets Dependabot bump a sha pin (ruled on #3182) ---
+
+const PIN_LINE = `      - uses: a11ign/a11ign@${SHA}`;
+const annotated = generateOutsiderJob(readme, SHA, "1.2.3");
+
+test("a version writes `# v<version>` after the pin, and the file without one carries no comment", () => {
+  assert.ok(annotated.split("\n").includes(`${PIN_LINE} # v1.2.3`));
+  assert.ok(generated.split("\n").includes(PIN_LINE), "no version, no comment: a false one would name a release the sha is not");
+});
+
+test("the comment changes nothing a reader of the pin reads: the sha, the drift check, the pin job and --check", () => {
+  assert.equal(extractPinnedSha(annotated), SHA);
+  refuseDriftFromReadme(readme, annotated);
+  assert.ok(annotated.includes(`pinned=${SHA}\n`), "the pin job compares the bare sha, never the comment");
+  assert.deepEqual(checkCommitted(readme, annotated), { ok: true });
+});
+
+test("a comment that is not a version is drift, and so is a pin line whose comment was dropped or changed", () => {
+  const stale = replaced(annotated, `${PIN_LINE} # v1.2.3`, `${PIN_LINE} # pinned by hand`);
+  const verdict = checkCommitted(readme, stale);
+  assert.equal(verdict.ok, false);
+  assert.match(verdict.ok ? "" : verdict.diff, /pinned by hand/);
+  assert.throws(() => refuseDriftFromReadme(readme, stale), /pinned by hand/);
+});
+
+test("a version this generator cannot name a pin for, or a pin line that already has a comment, is refused", () => {
+  for (const version of ["1.2", "v1.2.3", "latest", ""]) {
+    assert.throws(() => generateOutsiderJob(readme, SHA, version), /not a version this generator can name/);
+  }
+  const fence = extractDocumentedJobsBlock(readme);
+  const commented = readme.replace(fence, replaced(fence, "- uses: a11ign/a11ign@v0.1.0", "- uses: a11ign/a11ign@v0.1.0 # mine"));
+  assert.throws(() => generateOutsiderJob(commented, SHA, "1.2.3"), /already ends in "# mine"/);
+});
+
+test("the pin job tells whoever regenerates it to pass the version too", () => {
+  assert.match(generated, /generate\.mjs --sha=\$\{tag_sha\} --version=\$\{version\}/);
+});
+
 // --- 2. nothing a reader's own copy could not carry ---
 
 test("the real file carries nothing forbidden, and README's own checkout of the reader's repository is not one", () => {
