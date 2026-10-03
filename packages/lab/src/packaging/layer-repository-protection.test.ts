@@ -103,6 +103,29 @@ test("#3123: every code repository in `.agent-org/project.json` has an entry wit
   assert.deepEqual(entryProblems(entries), []);
 });
 
+/**
+ * Repositories that are PROTECTED and have an entry but are not yet in `.agent-org/project.json`'s `code` array,
+ * because declaring one is a host act (a `host.json` clone) and not this file's. The coverage assertion above
+ * reads only the declared list, so without this one deleting such an entry would stay green (#3176 review).
+ * Remove a name from here when `code` declares it: the assertion above covers it from then on.
+ */
+const protectedBeforeDeclared = ["a11ign/screenreader-worker"];
+
+test("#3176: a repository protected before it is declared still has its entry, with a default branch and a check", () => {
+  const entries = protectionEntries();
+  assert.deepEqual(uncovered(protectedBeforeDeclared, entries), [],
+    `a repository that was seeded and protected has no entry in ${PROTECTION_FILE}: the read-back returns CANNOT_TELL`);
+  const covered = entries.filter((e) => protectedBeforeDeclared.includes(e.repo));
+  assert.equal(covered.length, protectedBeforeDeclared.length);
+  assert.deepEqual(entryProblems(covered), []);
+});
+
+test("#3176 POSITIVE CONTROL: the protected-before-declared list is non-empty and is refused against an entry-less file", () => {
+  assert.ok(protectedBeforeDeclared.length >= 1, "the list is empty, so the assertion above covers nothing");
+  const withoutIt: Entry[] = [{ repo: "a11ign/a11ign", defaultBranch: "main", requiredCheck: "gate" }];
+  assert.deepEqual(uncovered(protectedBeforeDeclared, withoutIt), protectedBeforeDeclared);
+});
+
 test("#3123 POSITIVE CONTROL: a declared repository with no entry is REFUSED, and the refusal names it", () => {
   const fixtureEntries: Entry[] = [{ repo: "a11ign/has-an-entry", defaultBranch: "main", requiredCheck: "gate" }];
   const missing = uncovered(["a11ign/has-an-entry", "a11ign/has-none"], fixtureEntries);
