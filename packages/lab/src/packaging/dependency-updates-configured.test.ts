@@ -93,3 +93,11 @@ test("#3133: `ignore` is exactly the workspace members the manifests depend on",
     "a workspace member is pinned and linked, so Dependabot must not offer the registry's copy over it; "
     + "a member that left the workspace is consumed by range and must come OFF this list");
 });
+
+test("#3244: `agent-org` is NOT in `ignore`, because `ignore` cannot stop its in-range lockfile move", () => {
+  const ignored = (read().updates?.[0]?.ignore ?? []).map((i) => i["dependency-name"]);
+  assert.ok(ignored.includes("@a11ign/evidence"), "POSITIVE CONTROL: the list is populated, so absence is a reading");
+  assert.ok(!ignored.includes("agent-org"),
+    "`ignore` only stops Dependabot proposing an `agent-org` bump; the lockfile still re-resolves it, and the "
+    + "reviewer accepts that (.agent-org/roles/reviewer.md); see the comment beside `ignore` in dependabot.yml");
+});
