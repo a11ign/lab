@@ -29,6 +29,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
+import { warnUtmDeprecated } from "../../../worker-fleet/src/utm-deprecated.mjs";
+import { DEFAULT_WORKER } from "../../../worker-fleet/src/local-vm.js";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const PAGE = resolve(REPO, "docs/try-it.md");
@@ -323,4 +325,97 @@ test("#3186 ACCEPTANCE: the page states the route that works today, and a page w
   assert.equal(statesRoute(withoutRoute, command), false);
   assert.equal(statesRoute(`prose about ${command} https://example.com`, command), false,
     "a mention in a sentence is not the command a stranger can paste");
+});
+
+// #3198: THE PAGE QUOTES THE REFUSAL "EXACTLY ... QUOTED RATHER THAN PARAPHRASED" AND LEFT OUT THE FOUR LINES THE
+// CLI PRINTS BEFORE IT. Measured 2026-10-03 with the published `npx a11ign` from an empty directory and no worker: a
+// UTM deprecation notice, then `Using http://localhost:8765 (default)`, then the refusal `quoted-cli-output.test.ts`
+// already compares. A stranger who typed the page's command got a screen the page had never shown them.
+//
+// The expected text is DERIVED, never retyped: the notice from `warnUtmDeprecated` itself (its stderr captured), the
+// sentence it is called with from the call site in `local-vm.ts`, and the source label from `describeSource` in `cli.ts`.
+// A fourth copy of the string here would be the defect this row is about. The refusal stays in its own fence and its
+// own test, so the two comparisons do not share a failure.
+const LOCAL_VM_SOURCE = resolve(REPO, "packages/worker-fleet/src/local-vm.ts");
+const CLI_SOURCE = resolve(REPO, "packages/cli/src/cli.ts");
+const REFUSAL_OPENING = "No capture worker answered";
+
+const normalized = (text: string): string => text.trim().replace(/\s+/g, " ");
+
+function firstMatch(source: string, pattern: RegExp, what: string): string {
+  const found = source.match(pattern);
+  if (!found) throw new Error(`no ${what} found in the CLI's source -- the marker moved, so this test can read nothing`);
+  return found[1];
+}
+
+function capturedStderr(write: () => void): string {
+  const original = process.stderr.write;
+  let captured = "";
+  process.stderr.write = ((chunk: string | Uint8Array) => { captured += String(chunk); return true; }) as typeof process.stderr.write;
+  try { write(); } finally { process.stderr.write = original; }
+  return captured;
+}
+
+/** The lines the CLI writes before the refusal on a run with no worker named and no fleet configured. */
+function preambleFromSource(): string {
+  const caller = firstMatch(readFileSync(LOCAL_VM_SOURCE, "utf8"), /warnUtmDeprecated\("([^"]+)"\)/, "warnUtmDeprecated call");
+  const label = firstMatch(readFileSync(CLI_SOURCE, "utf8"),
+    /function describeSource[\s\S]*?return "([^"]+)";\s*\}/, "describeSource fallback label");
+  return `${capturedStderr(() => warnUtmDeprecated(caller))}Using ${DEFAULT_WORKER} (${label})`;
+}
+
+/** Every fenced block on the page, in order, read line by line: a closing fence is not mistaken for an opening one. */
+function fencedBlocks(pageText: string): string[] {
+  const blocks: string[] = [];
+  let open: string[] | undefined;
+  for (const line of pageText.split("\n")) {
+    if (open === undefined && line.startsWith("```")) open = [];
+    else if (open !== undefined && line === "```") { blocks.push(open.join("\n")); open = undefined; }
+    else if (open !== undefined) open.push(line);
+  }
+  return blocks;
+}
+
+/** The fenced block that opens the quote, or undefined: the one that comes BEFORE the refusal's own fence. */
+function preambleQuote(pageText: string): string | undefined {
+  const blocks = fencedBlocks(pageText);
+  const refusalAt = blocks.findIndex((body) => body.startsWith(REFUSAL_OPENING));
+  return blocks.slice(0, Math.max(refusalAt, 0)).find((body) => body.startsWith("DEPRECATED"));
+}
+
+function quotesPreamble(pageText: string, expected: string): boolean {
+  const quoted = preambleQuote(pageText);
+  return quoted !== undefined && normalized(quoted) === normalized(expected);
+}
+
+test("#3198 ACCEPTANCE: the page quotes the lines the CLI prints before the refusal", () => {
+  assert.equal(quotesPreamble(page(), preambleFromSource()), true,
+    "docs/try-it.md's first fenced quote is not what the CLI prints before `No capture worker answered` -- update the page");
+});
+
+test("#3198 POSITIVE CONTROL: the expected text is the real notice, and a page without it is refused", () => {
+  const expected = preambleFromSource();
+  assert.match(expected, /^DEPRECATED: this run \(no worker named, no fleet configured\) manages a local UTM worker VM\./);
+  assert.match(expected, /\nUsing http:\/\/localhost:8765 \(default\)$/);
+  const quote = preambleQuote(page());
+  assert.ok(quote !== undefined, "the real page has no preamble fence for the control to drop");
+  const dropped = page().replace(`\`\`\`\n${quote}\n\`\`\``, "");
+  assert.notEqual(dropped, page(), "the fixture dropped nothing");
+  assert.equal(quotesPreamble(dropped, expected), false, "a page with the preamble dropped was accepted");
+});
+
+test("#3198: a quote missing either half of the preamble, or one that changed a word, is refused", () => {
+  const expected = preambleFromSource();
+  const fence = (body: string): string => `\`\`\`\n${body}\n\`\`\`\n\n\`\`\`\n${REFUSAL_OPENING} at x\n\`\`\``;
+  const [notice, using] = [expected.split("\nUsing ")[0], `Using ${expected.split("\nUsing ")[1]}`];
+  assert.equal(quotesPreamble(fence(expected), expected), true, "the exact text was refused");
+  assert.equal(quotesPreamble(fence(notice), expected), false, "the `Using` line was not required");
+  assert.equal(quotesPreamble(fence(using), expected), false, "the notice was not required");
+  assert.equal(quotesPreamble(fence(expected.replace("UTM", "VM")), expected), false, "a changed word was accepted");
+});
+
+test("#3198: a preamble fence AFTER the refusal is not the quote of what comes first", () => {
+  const expected = preambleFromSource();
+  const after = `\`\`\`\n${REFUSAL_OPENING} at x\n\`\`\`\n\n\`\`\`\n${expected}\n\`\`\``;
+  assert.equal(quotesPreamble(after, expected), false);
 });
