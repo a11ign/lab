@@ -113,6 +113,13 @@ const EXEMPT: Record<string, string> = {
     "Its only write (writeFileSync(BASELINE, ...)) targets packages/lab/baselines/real-page-findings.json "
     + "-- tracked source, a deliberate checked-in baseline update, not a runs/ write. It does resolve "
     + "runs/ paths (realCorpusRoot(), datasetRoot()) to READ the corpus it is scoring.",
+  "packages/control/src/fleet-watch.mjs":
+    "Writes the fleet's own bookkeeping (the capture ledger and the non-ready-since state, both under the checkout's ignored state directory) on the "
+    + "control plane's timer, never the corpus the guard protects, and it always did: those writes took "
+    + "`writeFileSync` as a default PARAMETER, which this discovery's call-shaped regex did not see, until the "
+    + "ledger write became a staging-file-plus-rename (#3208). It cannot call refuseIfRunsReadonly: "
+    + "`@a11ign/control` does not depend on `@a11ign/lab`, and adding that edge for one env var is a larger "
+    + "change than the guard is worth here. `A11Y_RUNS_READONLY=1` is for lab/corpus tooling.",
   "packages/cli/src/cli.ts":
     "Cannot call refuseIfRunsReadonly without importing dataset-paths.mjs, which would recreate the #199 "
     + "cycle dataset-paths.test.ts's own EXEMPT entry for this file already documents (a11ign/cli is "
