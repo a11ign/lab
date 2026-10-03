@@ -8,7 +8,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  ensureRegressionLabel, fileOnce, fileThroughRowFile, regressionTitle, rowFileArgs, FILING_SESSION, REGRESSION_LABEL,
+  ensureRegressionLabel, fileOnce, fileThroughRowFile, regressionTitle, regressionBody, rowFileArgs, FILING_SESSION, REGRESSION_LABEL,
 } from "../../../../scripts/outsider/verdict-job.mjs";
 
 /** A fake `gh` over one label list: records every call, and `createFails` makes the create throw as a lost race does. */
@@ -103,4 +103,21 @@ test("the row is filed through agent-org row-file as the job's own session, read
 test("a body that leaks is REFUSED before anything is spawned", () => {
   // `pct exec <n>` is one of the shared leak patterns; refusing is a throw, so the spawn after it was never reached.
   assert.throws(() => fileThroughRowFile("a title", "run `pct exec 101` on the host"), /pct exec|leak|refus/i);
+});
+
+/** The `## Region` section of a body: from its heading to the next `## ` heading, as `row-file`'s `declaresNoCommit` reads it. */
+const regionSection = (body: string): string | undefined => /^## Region\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m.exec(body)?.[1];
+
+const NOT_A_COMMIT = /its deliverable is not a commit/i; // agent-org `region-paths.mjs` NOT_A_COMMIT: the sentence `row-file` accepts for a Region naming no file
+
+test("the regression row's body declares `its deliverable is not a commit` in its Region, so row-file does not refuse it at filing (#3348)", () => {
+  const body = regressionBody({
+    version: "0.1.1", tagSha: "abc1234", outsiderRepository: "a11ign/outsider", runUrl: "https://example.test/run/1",
+    result: { verdict: "red", reason: "the run ended failure", run: { createdAt: "2026-10-03T00:00:00Z", conclusion: "failure" } },
+  } as Parameters<typeof regressionBody>[0]);
+  const region = regionSection(body);
+  assert.ok(region, "the body has a `## Region` section");
+  assert.match(region, NOT_A_COMMIT);
+  // Positive control: the wording the job wrote before this row names no such sentence, so the check above can fail.
+  assert.doesNotMatch("none -- this row asks for a diagnosis; the fixing row's Region is written when the cause is known", NOT_A_COMMIT);
 });
